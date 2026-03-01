@@ -1,0 +1,8 @@
+{
+  "name": "plan-tasks",
+  "version": "0.1.0",
+  "description": "Reads a plan or spec file and generates a structured task list using TaskCreate, plus a companion markdown task file.",
+  "author": {
+    "name": "johnteague"
+  }
+}

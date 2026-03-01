@@ -1,0 +1,28 @@
+{
+  "plansDirectory": "plans",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/johnteague/my-stuff/wheelbase/.claude/hooks/post-edit-quality.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/johnteague/my-stuff/wheelbase/.claude/hooks/pre-stop-quality.sh",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}

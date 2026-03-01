@@ -1,0 +1,29 @@
+{
+  "servers": {
+    "alpaca": {
+      "command": "uvx",
+      "args": [
+        "alpaca-mcp-server",
+        "serve"
+      ],
+      "env": {
+        "ALPACA_API_KEY": "${env:ALPACA_API_KEY}",
+        "ALPACA_SECRET_KEY": "${env:ALPACA_SECRET_KEY}"
+      }
+    },
+    "postgres": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://wheel:wheel@localhost:5432/wheelbase"
+      ]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest"
+      ]
+    }
+  }
+}
