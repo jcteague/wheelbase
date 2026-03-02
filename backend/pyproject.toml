@@ -25,8 +25,11 @@ dev = [
 ]
 
 [tool.ruff]
-select = ["E", "F", "I"]
 line-length = 100
+exclude = ["app/db/migrations/versions/"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

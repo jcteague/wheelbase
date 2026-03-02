@@ -21,6 +21,7 @@ frontend:
 
 test:
 	cd backend && uv run pytest
+	cd frontend && pnpm test
 
 lint:
 	cd backend && uv run ruff check .

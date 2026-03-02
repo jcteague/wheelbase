@@ -1,13 +1,13 @@
 {
-  "enabledPlugins": {
-    "pyright-lsp@claude-plugins-official": true
-  },
-  "disabledMcpjsonServers": [
-    "alpaca",
-    "postgres",
-    "playwright"
-  ],
   "permissions": {
+    "allow": [
+      "Bash(pnpm typecheck:*)",
+      "Skill(implement-plan)",
+      "Bash(make test:*)",
+      "Bash(uv run:*)",
+      "Bash(pnpm test:*)",
+      "Bash(pnpm lint:*)"
+    ],
     "deny": [
       "Read(**/.env)",
       "Read(**/.env.*)",
@@ -16,5 +16,14 @@
       "Write(**/.env)",
       "Write(**/.env.*)"
     ]
+  },
+  "disabledMcpjsonServers": [
+    "alpaca",
+    "postgres",
+    "playwright"
+  ],
+  "enabledPlugins": {
+    "pyright-lsp@claude-plugins-official": true,
+    "code-simplifier@claude-plugins-official": true
   }
 }

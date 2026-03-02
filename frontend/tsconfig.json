@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "types": ["vitest/globals", "@testing-library/jest-dom"],
     "target": "ES2022",
     "useDefineForClassFields": true,
     "module": "ESNext",
@@ -14,7 +15,11 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "react": ["./node_modules/preact/compat/"],
+      "react/jsx-runtime": ["./node_modules/preact/jsx-runtime/"],
+      "react-dom": ["./node_modules/preact/compat/"],
+      "react-dom/*": ["./node_modules/preact/compat/*"]
     }
   },
   "include": ["src"],

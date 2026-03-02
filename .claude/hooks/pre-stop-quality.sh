@@ -16,13 +16,17 @@ except Exception:
 
 [[ "$STOP_HOOK_ACTIVE" == "true" ]] && exit 0
 
+# ── Resolve project root (two levels up from .claude/hooks/) ───────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
 # ── Run quality checks ─────────────────────────────────────────────────────────
 FAILED=0
 
-LINT_OUTPUT=$(make lint 2>&1)
+LINT_OUTPUT=$(make -C "$PROJECT_ROOT" lint 2>&1)
 LINT_EXIT=$?
 
-TYPECHECK_OUTPUT=$(make typecheck 2>&1)
+TYPECHECK_OUTPUT=$(make -C "$PROJECT_ROOT" typecheck 2>&1)
 TYPECHECK_EXIT=$?
 
 # ── Report failures ────────────────────────────────────────────────────────────

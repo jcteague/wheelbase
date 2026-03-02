@@ -1,14 +1,19 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { JSX } from 'preact';
+import { Route, Switch } from 'wouter';
+
+import { NewWheelPage } from './pages/NewWheelPage';
+import { PositionDetailPage } from './pages/PositionDetailPage';
 
 const queryClient = new QueryClient();
 
-export function App() {
+export function App(): JSX.Element {
   return (
     <QueryClientProvider client={queryClient}>
-      <main>
-        <h1>Wheelbase</h1>
-        <p>Option Wheel Manager — coming soon.</p>
-      </main>
+      <Switch>
+        <Route path="/" component={NewWheelPage} />
+        <Route path="/positions/:id" component={PositionDetailPage} />
+      </Switch>
     </QueryClientProvider>
   );
 }

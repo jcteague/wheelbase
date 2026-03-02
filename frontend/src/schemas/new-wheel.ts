@@ -7,7 +7,7 @@ export const newWheelSchema = z.object({
   expiration: isoDateSchema,
   contracts: positiveIntegerSchema,
   premiumPerContract: positiveMoneySchema,
-  fillDate: isoDateSchema.optional(),
+  fillDate: z.preprocess((v) => (v === '' ? undefined : v), isoDateSchema.optional()),
   thesis: z.string().trim().max(500).optional(),
   notes: z.string().trim().max(5_000).optional(),
 });

@@ -60,7 +60,7 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
 7. **Delegate to the `code-simplifier` Agent**
    - Collect the list of files modified during the green phase (from `green-phase-results.md`)
    - Delegate to the `code-simplifier` agent using the Task tool:
-     - `subagent_type`: `"code-simplifier"`
+     - `subagent_type`: `"code-simplifier:code-simplifier"`
      - Prompt: provide the list of modified files and instruct it to apply clarity, consistency, and maintainability improvements while preserving all functionality and keeping all tests green
    - After the agent completes, run `make test` to confirm nothing regressed
    - If tests fail after the agent's changes, revert those changes and proceed with manual refactoring only

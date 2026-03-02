@@ -9,8 +9,7 @@ action: block
 **Before stopping, confirm all quality checks have passed.**
 
 Run the full post-change checklist (in order):
-
-1. **Tests** — `make test` (all must pass)
+1. **Format** — `make format` (properly formatted) 
 2. **Lint** — `make lint` (zero errors)
 3. **Type-check** — `make typecheck` (zero TypeScript errors)
 
