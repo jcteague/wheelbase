@@ -2,6 +2,8 @@
 
 import datetime
 
+from sqlalchemy import text
+
 VALID_BODY = {
     "ticker": "AAPL",
     "strike": "150.00",
@@ -18,9 +20,29 @@ TOMORROW = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
 # ---------------------------------------------------------------------------
 
 
-async def test_create_position_returns_201(client):
+async def test_create_position_returns_201(client, db_session):
     response = await client.post("/api/positions", json=VALID_BODY)
     assert response.status_code == 201
+    payload = response.json()
+
+    position_row = await db_session.execute(
+        text("SELECT id, ticker, phase FROM positions WHERE id = CAST(:id AS uuid)"),
+        {"id": payload["position"]["id"]},
+    )
+    leg_row = await db_session.execute(
+        text("SELECT id FROM legs WHERE id = CAST(:id AS uuid)"),
+        {"id": payload["leg"]["id"]},
+    )
+    snapshot_row = await db_session.execute(
+        text("SELECT id FROM cost_basis_snapshots WHERE id = CAST(:id AS uuid)"),
+        {"id": payload["cost_basis_snapshot"]["id"]},
+    )
+
+    position = position_row.mappings().one()
+    assert position["ticker"] == "AAPL"
+    assert position["phase"] == "CSP_OPEN"
+    assert leg_row.scalar_one() is not None
+    assert snapshot_row.scalar_one() is not None
 
 
 async def test_create_position_response_has_top_level_keys(client):
