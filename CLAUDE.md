@@ -69,8 +69,24 @@ After every code change, run in order:
 1. **Tests** — all must pass
 2. **Lint** — fix any lint errors before committing
 3. **Type-check** — no TypeScript errors permitted
+4. **Logging** — adequate production and debug coverage (see Logging Standards below)
 
-Do not consider a task done until all three are clean.
+Do not consider a task done until all four are clean.
+
+### Logging Standards (Backend)
+
+Library: `structlog` with JSON output. Configured in `backend/app/logging_config.py`.
+
+Every backend task must include logging at both levels:
+
+- **Production (INFO):** key business events — what was created, what failed validation, what phase transitioned. These run in production at the default log level.
+- **Debug (DEBUG):** inputs before processing, results from pure-function calls, DB transaction checkpoints (before write, after flush). These are suppressed in production and enabled with `LOG_LEVEL=DEBUG`.
+
+**Rules:**
+- Use `structlog.get_logger(__name__)` — not `logging.getLogger` — so structured kwargs and `capture_logs()` in tests work correctly
+- Never add logging to `app/core/` engines (`lifecycle.py`, `costbasis.py`, `alerts.py`) — they are pure functions with no I/O imports
+- All log records emitted within a request automatically carry `request_id`, `http_method`, and `http_path` via `LoggingMiddleware` + `structlog.contextvars`
+- Log tests use `structlog.testing.capture_logs()`; pass `processors=[structlog.contextvars.merge_contextvars]` when asserting on context-bound fields like `request_id`
 
 ---
 

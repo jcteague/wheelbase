@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     alpaca_api_secret: str = ""
     alpaca_paper: bool = True
     debug: bool = False
+    log_level: str = "INFO"
 
 
 settings = Settings()

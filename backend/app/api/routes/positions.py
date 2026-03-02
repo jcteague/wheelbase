@@ -3,6 +3,7 @@
 import datetime
 import uuid
 
+import structlog
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +19,8 @@ from app.core.lifecycle import OpenWheelInput, ValidationError, open_wheel
 from app.core.types import LegAction, LegRole, OptionType, StrategyType, WheelStatus
 from app.db import get_session
 from app.models import CostBasisSnapshot, Leg, Position
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
@@ -35,6 +38,16 @@ async def create_position(
     fill_date = body.fill_date or datetime.date.today()
     now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
 
+    logger.debug(
+        "create_position_inputs",
+        ticker=body.ticker,
+        strike=str(body.strike),
+        expiration=str(body.expiration),
+        contracts=body.contracts,
+        premium_per_contract=str(body.premium_per_contract),
+        fill_date=str(fill_date),
+    )
+
     try:
         lifecycle_result = open_wheel(
             OpenWheelInput(
@@ -48,12 +61,20 @@ async def create_position(
             )
         )
     except ValidationError as exc:
+        logger.info(
+            "position_validation_failed",
+            field=exc.field,
+            code=exc.code,
+            ticker=body.ticker,
+        )
         return JSONResponse(
             status_code=400,
             content=ValidationErrorResponse(
                 detail=[FieldError(field=exc.field, code=exc.code, message=exc.message)]
             ).model_dump(),
         )
+
+    logger.debug("lifecycle_validated", phase=lifecycle_result.phase.value)
 
     basis_result = calculate_initial_csp_basis(
         CspLegInput(
@@ -62,11 +83,22 @@ async def create_position(
             contracts=body.contracts,
         )
     )
+    logger.debug(
+        "cost_basis_calculated",
+        basis_per_share=str(basis_result.basis_per_share),
+        total_premium_collected=str(basis_result.total_premium_collected),
+    )
 
     position_id = uuid.uuid4()
     leg_id = uuid.uuid4()
     snapshot_id = uuid.uuid4()
 
+    logger.debug(
+        "db_write_start",
+        position_id=str(position_id),
+        leg_id=str(leg_id),
+        snapshot_id=str(snapshot_id),
+    )
     async with session.begin():
         position = Position(
             id=position_id,
@@ -106,9 +138,21 @@ async def create_position(
         )
         session.add_all([position, leg, snapshot])
         await session.flush()
+        logger.debug("db_flush_ok", position_id=str(position_id))
         await session.refresh(position)
         await session.refresh(leg)
         await session.refresh(snapshot)
+
+    logger.info(
+        "position_created",
+        position_id=str(position_id),
+        ticker=body.ticker,
+        phase=lifecycle_result.phase.value,
+        contracts=body.contracts,
+        strike=str(body.strike),
+        basis_per_share=str(basis_result.basis_per_share),
+        total_premium_collected=str(basis_result.total_premium_collected),
+    )
 
     return CreatePositionResponse(
         position=position,
