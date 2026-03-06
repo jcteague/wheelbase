@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:16
-    container_name: wheelbase-db
+    container_name: wheelbase-db-ui-fix
     environment:
       POSTGRES_DB: wheelbase
       POSTGRES_USER: wheel
