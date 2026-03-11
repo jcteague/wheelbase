@@ -2,6 +2,7 @@
 
 import datetime
 import uuid
+from decimal import Decimal
 
 import structlog
 from fastapi import APIRouter, Depends
@@ -61,15 +62,25 @@ async def list_positions(
                 strike=strike,
                 expiration=expiration,
                 dte=dte,
-                premium_collected=latest_snapshot.total_premium_collected if latest_snapshot else 0,
-                effective_cost_basis=latest_snapshot.basis_per_share if latest_snapshot else 0,
+                premium_collected=(
+                    latest_snapshot.total_premium_collected if latest_snapshot else Decimal(0)
+                ),
+                effective_cost_basis=(
+                    latest_snapshot.basis_per_share if latest_snapshot else Decimal(0)
+                ),
             )
         )
 
-    items.sort(key=lambda x: (x.dte is None, x.dte if x.dte is not None else 0))
+    # Positions with a known DTE sort ascending; null-DTE positions sort last.
+    items.sort(key=_dte_sort_key)
 
     logger.info("positions_listed", count=len(items))
     return items
+
+
+def _dte_sort_key(item: PositionListItemResponse) -> tuple[bool, int]:
+    """Sort key: positions with DTE ascending first, null-DTE last."""
+    return (item.dte is None, item.dte if item.dte is not None else 0)
 
 
 def _active_leg(position: Position) -> Leg | None:

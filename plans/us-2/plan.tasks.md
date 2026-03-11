@@ -25,9 +25,9 @@ Total tasks: 16
 
 ## Refactor — Clean Up
 
-- [ ] **T003** [Refactor] Clean up PositionListItemResponse schema
-- [ ] **T006** [Refactor] Clean up GET /api/positions handler
-- [ ] **T008** [Refactor] Clean up frontend API layer additions
-- [ ] **T010** [Refactor] Clean up usePositions hook
-- [ ] **T013** [Refactor] Clean up PositionCard component
-- [ ] **T016** [Refactor] Clean up PositionsListPage and routing
+- [x] **T003** [Refactor] Clean up PositionListItemResponse schema
+- [x] **T006** [Refactor] Clean up GET /api/positions handler
+- [x] **T008** [Refactor] Clean up frontend API layer additions
+- [x] **T010** [Refactor] Clean up usePositions hook
+- [x] **T013** [Refactor] Clean up PositionCard component
+- [x] **T016** [Refactor] Clean up PositionsListPage and routing

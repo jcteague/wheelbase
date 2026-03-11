@@ -80,10 +80,12 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
 
 10. **Document Results**
     - Create `plans/<feature-dir>/green-phase-results.md` with:
-      - List of files created/modified
+      - Feature directory path and linked artifacts (story file, plan file, red-phase-results)
+      - List of files created/modified (exact paths, purpose of each)
+      - Key public interfaces implemented (function signatures, endpoints, component props)
       - Implementation approach summary
       - Any deviations from the plan and why
-      - Known limitations or tech debt
+      - Known limitations or tech debt (primary input for refactor phase)
       - Full test execution output (all passing)
 
 11. **Prepare for Refactor Phase**

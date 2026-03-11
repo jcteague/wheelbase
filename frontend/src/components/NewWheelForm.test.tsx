@@ -166,7 +166,7 @@ it('shows inline field error from 400 response', async () => {
     data: undefined,
     error: {
       status: 400,
-      body: { errors: [{ field: 'ticker', message: 'invalid format' }] },
+      body: { detail: [{ field: 'ticker', message: 'invalid format' }] },
     },
   } as unknown as ReturnType<typeof useCreatePosition>);
   render(<NewWheelForm />);

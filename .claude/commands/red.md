@@ -90,8 +90,11 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
 
 10. **Document Test Results**
     - Create `plans/<feature-dir>/red-phase-results.md` with:
-      - List of all test files created/modified
+      - Feature directory path and linked artifacts (story file, plan file)
+      - List of all test files created/modified (absolute paths)
       - Summary of what behaviours are tested
+      - Key function/class signatures being tested (so green phase can create the right interfaces)
+      - Any non-obvious test design decisions or assumptions
       - Pytest output showing failures
       - Explicit confirmation that every failure is due to missing implementation, not test bugs
 
@@ -175,11 +178,34 @@ After completing the red phase, create `plans/<feature-dir>/red-phase-results.md
 ````markdown
 # Red Phase Results: [Feature Name]
 
+## Feature Context
+
+- **Feature directory**: `plans/<feature-dir>/`
+- **User story**: `phase-1-stories/<story-file>.md`
+- **Plan file**: `plans/<feature-dir>/plan.md`
+
 ## Test Files Created/Modified
 
-- [ ] `backend/tests/core/test_costbasis.py` — cost basis math and roll handling
-- [ ] `backend/tests/core/test_lifecycle.py` — phase transition state machine
-- [ ] `backend/tests/api/test_positions.py` — REST endpoint contracts
+- `backend/tests/core/test_costbasis.py` — cost basis math and roll handling
+- `backend/tests/core/test_lifecycle.py` — phase transition state machine
+- `backend/tests/api/test_positions.py` — REST endpoint contracts
+
+## Interfaces Under Test
+
+List every public function, class, or endpoint the tests import or call. Green phase must create exactly these:
+
+```python
+# backend/app/core/costbasis.py
+def calculate_cost_basis(legs: list[Leg]) -> Decimal: ...
+
+# backend/app/core/lifecycle.py
+def transition(current_phase: WheelPhase, event: PhaseEvent) -> WheelPhase: ...
+class PhaseTransitionError(Exception): ...
+
+# backend/app/api/routes/positions.py
+# POST /positions → 201 PositionResponse
+# GET  /positions → 200 list[PositionResponse]
+```
 
 ## Test Coverage Summary
 
@@ -195,6 +221,10 @@ After completing the red phase, create `plans/<feature-dir>/red-phase-results.md
 
 - [x] POST /positions returns 201 with created wheel
 - [x] GET /positions returns list of active wheels
+
+## Test Design Assumptions
+
+[Non-obvious decisions made while writing tests — e.g., "Decimal precision to 4 dp", "roll debit is positive, roll credit is negative in the Leg model"]
 
 ## Test Execution Results
 
@@ -216,11 +246,14 @@ FAILED tests/core/test_lifecycle.py::test_csp_open_to_holding_shares
 - ✅ No syntax errors in test files
 - ✅ No fixture or import errors caused by test setup mistakes
 
-## Next Steps
+## Handoff to Green Phase
 
-Ready for GREEN phase — implement features to make tests pass.
+To resume: run `/green [feature-name]`. Green phase should:
+1. Read this file to find all test files and the exact interfaces to implement
+2. Read `plans/<feature-dir>/plan.md` for architecture decisions
+3. Implement only the interfaces listed under "Interfaces Under Test"
 
 ## Notes
 
-[Any clarifications, assumptions, or open questions]
+[Any clarifications or open questions]
 ````

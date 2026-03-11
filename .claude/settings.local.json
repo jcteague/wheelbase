@@ -7,7 +7,8 @@
       "Bash(uv run:*)",
       "Bash(pnpm test:*)",
       "Bash(pnpm lint:*)",
-      "Bash(uv sync:*)"
+      "Bash(uv sync:*)",
+      "Read(//Users/johnteague/.claude/**)"
     ],
     "deny": [
       "Read(**/.env)",

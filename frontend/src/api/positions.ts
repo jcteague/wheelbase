@@ -1,3 +1,17 @@
+export type WheelPhase =
+  | 'CSP_OPEN'
+  | 'CSP_EXPIRED'
+  | 'CSP_CLOSED_PROFIT'
+  | 'CSP_CLOSED_LOSS'
+  | 'HOLDING_SHARES'
+  | 'CC_OPEN'
+  | 'CC_EXPIRED'
+  | 'CC_CLOSED_PROFIT'
+  | 'CC_CLOSED_LOSS'
+  | 'WHEEL_COMPLETE';
+
+export type WheelStatus = 'active' | 'paused' | 'closed';
+
 export type CreatePositionPayload = {
   ticker: string;
   strike: number;
@@ -12,8 +26,8 @@ export type CreatePositionPayload = {
 export type PositionData = {
   id: string;
   ticker: string;
-  phase: string;
-  status: string;
+  phase: WheelPhase;
+  status: WheelStatus;
 };
 
 export type LegData = {
@@ -39,8 +53,8 @@ export type CreatePositionResponse = {
 export type PositionListItem = {
   id: string;
   ticker: string;
-  phase: string;
-  status: string;
+  phase: WheelPhase;
+  status: WheelStatus;
   strike: string | null;
   expiration: string | null;
   dte: number | null;
