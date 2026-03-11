@@ -30,14 +30,14 @@ A trader can place single-leg and multi-leg orders directly through the app via 
 
 ## Stories
 
-- [ ] Place a single-leg sell-to-open order (CSP or CC) via Alpaca
-- [ ] Place a buy-to-close order from the position management UI
-- [ ] Place a roll as a linked close + open order pair
-- [ ] Place a multi-leg diagonal spread order for PMCC entry
-- [ ] Track order status in real-time via Alpaca websocket
-- [ ] Auto-create Leg records and update cost basis when orders fill
-- [ ] Display order confirmation dialog with estimated fill and environment badge
-- [ ] Handle order rejection with clear error messaging
+- [ ] US-69: Place a single-leg sell-to-open order (CSP or CC) via Alpaca
+- [ ] US-70: Place a buy-to-close order from the position management UI
+- [ ] US-71: Place a roll as a linked close + open order pair
+- [ ] US-72: Place a multi-leg diagonal spread order for PMCC entry
+- [ ] US-73: Track order status in real-time via Alpaca websocket
+- [ ] US-74: Auto-create Leg records and update cost basis when orders fill
+- [ ] US-75: Display order confirmation dialog with estimated fill and environment badge
+- [ ] US-76: Handle order rejection with clear error messaging
 
 ## Dependencies
 

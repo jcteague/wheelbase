@@ -36,6 +36,18 @@ export type CreatePositionResponse = {
   cost_basis_snapshot: CostBasisSnapshotData;
 };
 
+export type PositionListItem = {
+  id: string;
+  ticker: string;
+  phase: string;
+  status: string;
+  strike: string | null;
+  expiration: string | null;
+  dte: number | null;
+  premium_collected: string;
+  effective_cost_basis: string;
+};
+
 export type ApiFieldError = {
   field: string;
   code: string;
@@ -49,6 +61,13 @@ export type ApiError = {
 
 function apiError(status: number, body: unknown): ApiError {
   return { status, body };
+}
+
+export async function listPositions(): Promise<PositionListItem[]> {
+  const response = await fetch('/api/positions');
+  const body: unknown = await response.json();
+  if (!response.ok) throw apiError(response.status, body);
+  return body as PositionListItem[];
 }
 
 export async function createPosition(

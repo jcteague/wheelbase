@@ -1,4 +1,4 @@
-"""POST /positions — open a new wheel (sell a CSP)."""
+"""Positions routes — open a new wheel and list all positions."""
 
 import datetime
 import uuid
@@ -6,12 +6,15 @@ import uuid
 import structlog
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.schemas import (
     CreatePositionRequest,
     CreatePositionResponse,
     FieldError,
+    PositionListItemResponse,
     ValidationErrorResponse,
 )
 from app.core.costbasis import CspLegInput, calculate_initial_csp_basis
@@ -23,6 +26,63 @@ from app.models import CostBasisSnapshot, Leg, Position
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/positions", response_model=list[PositionListItemResponse])
+async def list_positions(
+    session: AsyncSession = Depends(get_session),
+) -> list[PositionListItemResponse]:
+    logger.debug("list_positions_query_start")
+
+    stmt = select(Position).options(
+        selectinload(Position.legs),
+        selectinload(Position.cost_basis_snapshots),
+    )
+    result = await session.execute(stmt)
+    positions = result.scalars().all()
+
+    logger.debug("list_positions_query_complete", count=len(positions))
+
+    items: list[PositionListItemResponse] = []
+    for position in positions:
+        active_leg = _active_leg(position)
+        latest_snapshot = _latest_snapshot(position)
+
+        strike = active_leg.strike if active_leg else None
+        expiration = active_leg.expiration if active_leg else None
+        dte = (expiration - datetime.date.today()).days if expiration else None
+
+        items.append(
+            PositionListItemResponse(
+                id=position.id,
+                ticker=position.ticker,
+                phase=position.phase,
+                status=position.status,
+                strike=strike,
+                expiration=expiration,
+                dte=dte,
+                premium_collected=latest_snapshot.total_premium_collected if latest_snapshot else 0,
+                effective_cost_basis=latest_snapshot.basis_per_share if latest_snapshot else 0,
+            )
+        )
+
+    items.sort(key=lambda x: (x.dte is None, x.dte if x.dte is not None else 0))
+
+    logger.info("positions_listed", count=len(items))
+    return items
+
+
+def _active_leg(position: Position) -> Leg | None:
+    open_legs = [leg for leg in position.legs if leg.action == LegAction.open]
+    if not open_legs:
+        return None
+    return max(open_legs, key=lambda leg: leg.fill_date)
+
+
+def _latest_snapshot(position: Position) -> CostBasisSnapshot | None:
+    if not position.cost_basis_snapshots:
+        return None
+    return max(position.cost_basis_snapshots, key=lambda s: s.snapshot_at)
 
 
 @router.post(

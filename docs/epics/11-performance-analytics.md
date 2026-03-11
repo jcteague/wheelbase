@@ -28,15 +28,15 @@ A trader can review their performance at the position level, portfolio level, an
 
 ## Stories
 
-- [ ] Display per-position P&L waterfall showing cost basis reduction through each leg
-- [ ] Show monthly income bar chart with breakdown by strategy, ticker, and leg type
-- [ ] Display YTD premium total prominently on dashboard and analytics page
-- [ ] Calculate and display capital efficiency per position (annualized return on deployed capital)
-- [ ] Show win/loss analysis with win rate, average win/loss, and expected value
-- [ ] Compare Wheel vs. PMCC performance side-by-side for shared tickers
-- [ ] Export trade history as CSV with all leg details
-- [ ] Export income and P&L reports as CSV for tax preparation
-- [ ] Filter analytics by date range, ticker, strategy type, and phase
+- [ ] US-77: Display per-position P&L waterfall showing cost basis reduction through each leg
+- [ ] US-78: Show monthly income bar chart with breakdown by strategy, ticker, and leg type
+- [ ] US-79: Display YTD premium total prominently on dashboard and analytics page
+- [ ] US-80: Calculate and display capital efficiency per position (annualized return on deployed capital)
+- [ ] US-81: Show win/loss analysis with win rate, average win/loss, and expected value
+- [ ] US-82: Compare Wheel vs. PMCC performance side-by-side for shared tickers
+- [ ] US-83: Export trade history as CSV with all leg details
+- [ ] US-84: Export income and P&L reports as CSV for tax preparation
+- [ ] US-85: Filter analytics by date range, ticker, strategy type, and phase
 
 ## Dependencies
 

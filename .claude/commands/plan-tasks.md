@@ -17,11 +17,22 @@ Read the specified plan file, analyze its contents, and produce a concrete, acti
 1. Create each task using the TaskCreate tool
 2. Write a companion markdown task file alongside the plan
 
-## Step 1 — Read the plan file
+## Step 1 — Read the plan file and all supporting documents
 
 Use the Read tool to read the file at: `$ARGUMENTS`
 
 If the file does not exist, tell the user clearly: "File not found: `$ARGUMENTS`". Stop there.
+
+Derive the story directory from the plan file path (e.g. `plans/us-2/plan.md` → `plans/us-2/`). The `/create-plan` command generates four supporting documents alongside every plan. **Read each of these that exists before proceeding:**
+
+| File | Purpose |
+|---|---|
+| `{story-dir}/research.md` | Design decisions and rationale — explains *why* things are built a certain way |
+| `{story-dir}/data-model.md` | Entity fields, types, nullability, selection logic, and validation rules |
+| `{story-dir}/contracts/*.md` | API endpoint contracts — exact request/response shapes, field formats, sort rules, error responses |
+| `{story-dir}/quickstart.md` | Test commands, migration steps, acceptance verification |
+
+These files are the source of specificity for task descriptions. Task descriptions written without consulting `data-model.md` and `contracts/` will be vague and miss field-level detail that the implementer needs.
 
 ## Step 2 — Break the plan into granular, actionable tasks
 
@@ -43,13 +54,21 @@ Every task belongs to one of three phases. Label each with a prefix:
 **[Red] — write failing tests**
 - The task is to write tests that define the expected behaviour and confirm they fail before any implementation exists.
 - Subject pattern: `TXXX [Red] Write failing tests for <specific thing>`
-- Description: Start with "Use the /red skill." Then name the test file/module, list the specific cases to cover, and state that tests must be run and confirmed failing before the paired Green task begins. End with: `Refer to \`<plan-file-path>\` for full specification.`
+- Description: Start with "Use the /red skill." Then name the test file/module and list the specific cases to cover. Include a **Reference documents** section citing the specific supporting files the implementer needs when constructing fixtures and assertions:
+  - `{story-dir}/contracts/*.md` — exact field names, example values, and response shape to assert against
+  - `{story-dir}/data-model.md` — field types, nullability rules, and selection logic for fixture setup
+  - `{story-dir}/quickstart.md` — test command and acceptance verification steps
+  State that tests must be confirmed failing before the paired Green task begins. End with: `Refer to \`<plan-file-path>\` for full specification.`
 - activeForm pattern: `Writing failing tests for <specific thing>`
 
 **[Green] — implement to pass tests**
 - The task is to write the minimum code to make the paired Red tests pass. No gold-plating.
 - Subject pattern: `TXXX [Green] Implement <specific thing>`
-- Description: Start with "Use the /green skill." Then describe what to build. Reference the Red task's test file as the acceptance bar. Done when all those tests pass. End with: `Refer to \`<plan-file-path>\` for full specification.`
+- Description: Start with "Use the /green skill." Include a **Reference documents** section at the top citing the specific supporting files for this task:
+  - `{story-dir}/data-model.md` — field definitions, types, and selection/computation logic
+  - `{story-dir}/contracts/*.md` — complete response shape, field formats, sort rules, and null-field behaviour
+  - `{story-dir}/research.md` — design decisions that constrain the implementation (e.g. why selectinload was chosen over a join)
+  Then describe what to build, referencing the paired Red task's test file as the acceptance bar. End with: `Refer to \`<plan-file-path>\` for full specification.`
 - activeForm pattern: `Implementing <specific thing>`
 
 **[Refactor] — clean up**

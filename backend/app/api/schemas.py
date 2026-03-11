@@ -83,6 +83,20 @@ class CreatePositionResponse(BaseModel):
     cost_basis_snapshot: CostBasisSnapshotResponse
 
 
+class PositionListItemResponse(BaseModel):
+    model_config = {"from_attributes": False}
+
+    id: uuid.UUID
+    ticker: str
+    phase: WheelPhase
+    status: WheelStatus
+    strike: Decimal | None
+    expiration: datetime.date | None
+    dte: int | None
+    premium_collected: Decimal
+    effective_cost_basis: Decimal
+
+
 # -- Errors -------------------------------------------------------------------
 
 

@@ -70,6 +70,20 @@ async def db_engine(test_database_url: str) -> AsyncGenerator[AsyncEngine, None]
     await engine.dispose()
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def truncate_tables(test_database_url: str) -> AsyncGenerator[None, None]:
+    """Truncate all data tables before each test so tests are isolated."""
+    engine = create_async_engine(test_database_url)
+    async with engine.begin() as conn:
+        await conn.execute(
+            __import__("sqlalchemy", fromlist=["text"]).text(
+                "TRUNCATE TABLE legs, cost_basis_snapshots, positions RESTART IDENTITY CASCADE"
+            )
+        )
+    await engine.dispose()
+    yield
+
+
 @pytest.fixture
 def app_with_db(
     db_engine: AsyncEngine,
