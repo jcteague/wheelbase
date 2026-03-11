@@ -30,7 +30,7 @@ it('renders ticker', () => {
 
 it('renders phase badge', () => {
   render(<PositionCard item={BASE_ITEM} />);
-  expect(screen.getByText('CSP_OPEN')).toBeInTheDocument();
+  expect(screen.getByText('CSP Open')).toBeInTheDocument();
 });
 
 it('renders strike formatted as currency', () => {

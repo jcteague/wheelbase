@@ -11,11 +11,13 @@ const queryClient = new QueryClient();
 export function App(): JSX.Element {
   return (
     <QueryClientProvider client={queryClient}>
-      <Switch>
-        <Route path="/" component={NewWheelPage} />
-        <Route path="/positions" component={PositionsListPage} />
-        <Route path="/positions/:id" component={PositionDetailPage} />
-      </Switch>
+      <div class="dark min-h-screen bg-background text-foreground">
+        <Switch>
+          <Route path="/" component={NewWheelPage} />
+          <Route path="/positions" component={PositionsListPage} />
+          <Route path="/positions/:id" component={PositionDetailPage} />
+        </Switch>
+      </div>
     </QueryClientProvider>
   );
 }

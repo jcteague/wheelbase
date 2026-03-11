@@ -54,8 +54,26 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
 
 6. **Follow Code Conventions**
    - Python: type-annotated, `Decimal` for all monetary values, functional style over classes where practical
-   - TypeScript: strict mode, pure functions, signals for local state, Zustand only for cross-view state
-   - No mutation — prefer returning new dataclasses / objects
+   - TypeScript: strict mode, pure functions, Zustand only for cross-view state
+   - No mutation — prefer returning new objects/values
+
+7. **Enforce Single Responsibility — one file, one concern**
+   - `core/` — pure domain logic only; no DB, no IPC, no Alpaca
+   - `services/` — DB access + core logic composition; no IPC concerns
+   - `ipc/` — thin wrappers only; validate input, call service, return result; no business logic
+   - Components — presentational only; no data fetching or business logic
+   - Hooks — data fetching/mutation only; no business logic
+   - **Hard stop: if a file exceeds ~200 lines, split it before proceeding**
+
+8. **Enforce Open/Closed**
+   - Add new behaviour by creating new functions/modules, not editing existing engine files
+   - Core engines must not grow to accommodate new callers — callers adapt, engines stay stable
+
+9. **No Backwards Compatibility Cruft**
+   - When a requirement changes, delete the old logic — do not preserve it alongside the new
+   - No deprecated wrappers, `_old` suffixes, commented-out blocks, or dead code paths
+   - If a function or module is no longer called after a change, delete it
+   - Exception only if explicitly told to keep it
 
 ### Phase 3: Iterative Test Execution
 
@@ -167,13 +185,36 @@ After completing the green phase, create `plans/<feature-dir>/green-phase-result
 ````markdown
 # Green Phase Results: [Feature Name]
 
+## Feature Context
+
+- **Feature directory**: `plans/<feature-dir>/`
+- **User story**: `phase-1-stories/<story-file>.md`
+- **Plan file**: `plans/<feature-dir>/plan.md`
+- **Red phase results**: `plans/<feature-dir>/red-phase-results.md`
+
 ## Implementation Files Created/Modified
 
-- [ ] `backend/app/core/costbasis.py` — cost basis calculation
-- [ ] `backend/app/core/lifecycle.py` — phase state machine
-- [ ] `backend/app/models/__init__.py` — Wheel, Leg, CostBasisSnapshot ORM models
-- [ ] `backend/app/api/routes/positions.py` — position CRUD endpoints
-- [ ] `frontend/src/components/PositionCard.tsx` — position summary component
+- `backend/app/core/costbasis.py` — cost basis calculation engine
+- `backend/app/core/lifecycle.py` — phase state machine
+- `backend/app/models/__init__.py` — Wheel, Leg, CostBasisSnapshot ORM models
+- `backend/app/api/routes/positions.py` — position CRUD endpoints
+- `frontend/src/components/PositionCard.tsx` — position summary component
+
+## Public Interfaces Implemented
+
+Exact signatures created — refactor phase should not change these without re-running tests:
+
+```python
+# backend/app/core/costbasis.py
+def calculate_cost_basis(legs: list[Leg]) -> Decimal: ...
+
+# backend/app/core/lifecycle.py
+def transition(current_phase: WheelPhase, event: PhaseEvent) -> WheelPhase: ...
+class PhaseTransitionError(Exception): ...
+class WheelPhase(str, Enum): ...
+
+# POST /positions → 201, GET /positions → 200 list
+```
 
 ## Implementation Summary
 
@@ -211,11 +252,14 @@ PASSED tests/core/test_lifecycle.py::test_illegal_transition_raises
 
 ## Known Limitations / Tech Debt
 
-[Code smells, shortcuts taken, or areas needing refactoring]
+[Code smells, shortcuts taken, or areas needing refactoring — this is the primary input for the refactor phase]
 
-## Next Steps
+## Handoff to Refactor Phase
 
-Ready for REFACTOR phase — improve code quality while keeping tests green.
+To resume: run `/refactor [feature-name]`. Refactor phase should:
+1. Read this file to find implementation files and known tech debt
+2. Run `make test` to confirm baseline is green before touching anything
+3. Focus refactoring on files listed above and issues in "Known Limitations / Tech Debt"
 
 ## Notes
 

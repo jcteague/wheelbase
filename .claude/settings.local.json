@@ -8,7 +8,13 @@
       "Bash(pnpm test:*)",
       "Bash(pnpm lint:*)",
       "Bash(uv sync:*)",
-      "Read(//Users/johnteague/.claude/**)"
+      "Read(//Users/johnteague/.claude/**)",
+      "WebFetch(domain:www.electronjs.org)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.alpaca.markets)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:hono.dev)",
+      "WebFetch(domain:alpaca.markets)"
     ],
     "deny": [
       "Read(**/.env)",

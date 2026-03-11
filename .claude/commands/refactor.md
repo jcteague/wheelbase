@@ -45,10 +45,28 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
 
 5. **Architecture Review**
    - Verify adherence to project principles:
-     - **Pure engines**: `lifecycle.py`, `costbasis.py`, `alerts.py` contain zero db/broker imports
-     - **Alpaca isolation**: Nothing outside `integrations/alpaca.py` imports `alpaca-py`
+     - **Pure engines**: `lifecycle.py`/`lifecycle.ts`, `costbasis.py`/`costbasis.ts`, `alerts` contain zero db/broker imports
+     - **Alpaca isolation**: Nothing outside `integrations/alpaca.*` imports the Alpaca SDK
      - **Roll integrity**: No leg is mutated in place; rolls are always stored as linked pairs
-     - **Decimal discipline**: All monetary values use `Decimal`, not `float`
+     - **Decimal discipline**: All monetary values use `Decimal`/`decimal.js`, not `float`/`number`
+
+6. **Single Responsibility Check**
+   - Each file should have exactly one reason to change
+   - `core/` — pure logic only; if it touches a DB handle or IPC event, it's in the wrong place
+   - `services/` — DB + core composition; if it contains IPC/routing logic, extract it
+   - `ipc/` handlers — if they contain more than ~10 lines of logic, extract to a service
+   - Components — if they contain fetch logic, move to a hook
+   - **File size gate**: any file over ~200 lines must be split before refactor is considered complete
+
+7. **Open/Closed Check**
+   - Would adding a new leg role, phase, or alert type require editing a core engine file?
+   - If yes, refactor the engine to be extensible without modification (e.g., dispatch table, strategy pattern with plain functions)
+
+8. **Dead Code Removal**
+   - After any refactoring, scan for functions, types, or modules that are no longer referenced
+   - Delete them — do not leave them with a comment explaining they were removed
+   - No backwards-compatibility wrappers unless explicitly required
+   - `make typecheck` / `tsc --noEmit` will surface unused exports; treat them as errors
 
 6. **Prioritise Refactorings**
    - High priority: duplication, type safety (`Any`/`any`), architectural violations
