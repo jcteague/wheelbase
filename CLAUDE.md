@@ -4,10 +4,9 @@
 
 A single-user trading journal and management tool for the **options wheel strategy**. Traders sell cash-secured puts (CSPs), accept assignment into shares, then sell covered calls (CCs) until the shares are called away — repeating the cycle. The app tracks every leg, maintains accurate cost basis through rolls and premiums, and fires management alerts.
 
-Three-layer architecture:
-- **Frontend** — Preact 10 SPA (Vite, TypeScript)
-- **Backend** — Python FastAPI with APScheduler background jobs
-- **Database** — PostgreSQL 16 via SQLAlchemy 2 / Alembic
+Two-layer architecture (Electron desktop app):
+- **Renderer** — React 19 SPA (electron-vite, TypeScript, TanStack Query, React Hook Form, Zod, wouter)
+- **Main process** — TypeScript, better-sqlite3 + custom SQL migrations, IPC handlers, pure core engines
 
 Alpaca is the broker integration (read-only through Phase 3, order execution in Phase 4).
 
@@ -23,21 +22,41 @@ Alpaca is the broker integration (read-only through Phase 3, order execution in 
 
 ---
 
-## Tech Stack (brief)
+## Tech Stack
 
 | Concern | Choice |
 |---|---|
-| Frontend framework | Preact 10 + Vite + TypeScript |
-| Component/page state | **Preact Signals** (`@preact/signals`) — preferred |
-| Global UI state | **Zustand** (cross-view state only) |
-| Server state / polling | TanStack Query (React Query) |
-| Forms | React Hook Form (via preact/compat) |
-| Schema validation | **Zod** (frontend runtime validation + inferred TS types) |
-| UI components | **shadcn/ui** (adopted incrementally for shared primitives) |
-| Backend | Python FastAPI + Pydantic v2 |
-| Scheduling | APScheduler (in-process) |
-| Database | PostgreSQL 16, SQLAlchemy 2, Alembic |
-| Broker | alpaca-py SDK, all calls isolated in `integrations/alpaca.py` |
+| App shell | Electron + electron-vite |
+| Renderer framework | React 19 + TypeScript |
+| Routing | wouter (hash-based — required for Electron `file://` URLs) |
+| Server state / polling | TanStack Query |
+| Forms | React Hook Form + Zod resolver |
+| Schema validation | **Zod v4** (IPC payload validation + inferred TS types) |
+| UI components | shadcn/ui |
+| Main process | TypeScript (Node) |
+| Database | SQLite via `better-sqlite3`; custom migration runner in `src/main/db/migrate.ts` |
+| Money math | `decimal.js` with `ROUND_HALF_UP`, stored as TEXT (4 dp) |
+| Logging | `pino` (`silent` in Vitest, `info` in production) |
+| Broker | `@alpacahq/typescript-sdk`, all calls isolated in `src/main/integrations/alpaca.ts` |
+| Testing | Vitest (unit + integration), Playwright `_electron` (E2E) |
+
+---
+
+## Key File Locations
+
+| Purpose | Path |
+|---|---|
+| Electron main entry | `src/main/index.ts` |
+| IPC handlers | `src/main/ipc/` |
+| Service layer (DB + core) | `src/main/services/` |
+| Core engines (pure) | `src/main/core/` |
+| Alpaca integration | `src/main/integrations/alpaca.ts` |
+| DB init + migrations | `src/main/db/` |
+| Preload / contextBridge | `src/preload/index.ts` |
+| Renderer entry | `src/renderer/src/main.tsx` |
+| API adapter (IPC → hooks) | `src/renderer/src/api/positions.ts` |
+| SQL migrations | `migrations/` |
+| E2E tests | `e2e/` |
 
 ---
 
@@ -50,52 +69,57 @@ Every task follows the **Red → Green → Refactor** cycle:
 2. **Green** — write the minimum code to make it pass
 3. **Refactor** — clean up without breaking the test
 
-All tests must pass before a task is considered done. If tests are failing, keep working until they pass — do not mark work complete with a red suite.
-
-### Code Quality Over Raw Performance
-
-Prefer **clean, readable, maintainable** code. Optimise only when there is a measured need. Clarity for the next reader is the default goal.
-
-### Functional Programming Style (TypeScript)
-
-- Prefer pure functions and immutable data; avoid mutation
-- Use `map`, `filter`, `reduce` over imperative loops
-- Avoid classes in TypeScript; use plain functions and types
-- Keep side effects at the boundaries (API calls, signal writes); keep core logic pure
+All tests must pass before a task is considered done.
 
 ### Post-Change Checklist
 
 After every code change, run in order:
-1. **Tests** — all must pass
-2. **Lint** — fix any lint errors before committing
-3. **Type-check** — no TypeScript errors permitted
-4. **Logging** — adequate production and debug coverage (see Logging Standards below)
+1. `pnpm test` — all must pass
+2. `pnpm lint` — fix any lint errors
+3. `pnpm typecheck` — no TypeScript errors permitted
+4. **Logging** — INFO for business events, DEBUG for inputs/checkpoints
 
-Do not consider a task done until all four are clean.
+### Functional Programming Style
 
-### Logging Standards (Backend)
+- Prefer pure functions and immutable data; avoid mutation
+- Use `map`, `filter`, `reduce` over imperative loops
+- Avoid classes in TypeScript; use plain functions and types
+- Keep side effects at the boundaries (IPC calls, DB writes); keep core logic pure
 
-Library: `structlog` with JSON output. Configured in `backend/app/logging_config.py`.
+### Logging Standards
 
-Every backend task must include logging at both levels:
+Library: `pino`. Configured in `src/main/logger.ts`.
 
-- **Production (INFO):** key business events — what was created, what failed validation, what phase transitioned. These run in production at the default log level.
-- **Debug (DEBUG):** inputs before processing, results from pure-function calls, DB transaction checkpoints (before write, after flush). These are suppressed in production and enabled with `LOG_LEVEL=DEBUG`.
-
-**Rules:**
-- Use `structlog.get_logger(__name__)` — not `logging.getLogger` — so structured kwargs and `capture_logs()` in tests work correctly
-- Never add logging to `app/core/` engines (`lifecycle.py`, `costbasis.py`, `alerts.py`) — they are pure functions with no I/O imports
-- All log records emitted within a request automatically carry `request_id`, `http_method`, and `http_path` via `LoggingMiddleware` + `structlog.contextvars`
-- Log tests use `structlog.testing.capture_logs()`; pass `processors=[structlog.contextvars.merge_contextvars]` when asserting on context-bound fields like `request_id`
+- **INFO:** key business events — what was created, what failed validation, what phase transitioned
+- **DEBUG:** inputs before processing, results from pure-function calls, DB transaction checkpoints
+- Never add logging to `src/main/core/` engines — they are pure functions with no I/O imports
 
 ---
 
 ## Architecture Rules
 
-- The core Python engines (`lifecycle.py`, `costbasis.py`, `alerts.py`) have **no broker or database imports** — they take plain dataclasses and return results. Test them without a live DB or API.
-- All Alpaca API calls live exclusively in `integrations/alpaca.py`. Nothing else imports `alpaca-py`.
-- Rolls are **always** stored as linked leg pairs, never in-place updates. The full transaction history is the primary long-term asset of the app.
-- The local PostgreSQL database is the source of truth; Alpaca is the execution layer only.
+- `src/main/core/` engines (`lifecycle.ts`, `costbasis.ts`) have **no DB or broker imports** — they take plain values and return results
+- All `@alpacahq/typescript-sdk` calls live exclusively in `src/main/integrations/alpaca.ts`
+- IPC handlers never throw to the renderer — always return `{ ok: true, ...result } | { ok: false, errors: [...] }`
+- Rolls are **always** stored as linked leg pairs, never in-place updates
+- SQLite is the source of truth; Alpaca is the execution layer only
+- Wouter **must** use hash-based routing (`useHashLocation`) — browser-history routing breaks in packaged Electron
+
+---
+
+## Running the App
+
+```bash
+pnpm dev          # development mode (hot reload)
+pnpm test         # unit + integration tests (Vitest)
+pnpm test:e2e     # E2E tests — must run from a GUI terminal (iTerm/Terminal.app), not from Claude Code's shell
+pnpm typecheck    # tsc type-check
+pnpm lint         # ESLint
+pnpm build        # production build
+```
+
+> **Note:** After `pnpm install`, run `pnpm rebuild better-sqlite3` before running `pnpm test`.
+> The `postinstall` script rebuilds better-sqlite3 for Electron's Node version; Vitest uses system Node and needs the system build.
 
 ---
 
@@ -103,7 +127,7 @@ Every backend task must include logging at both levels:
 
 | Phase | Focus |
 |---|---|
-| 1 | Core engines + manual trade entry. No broker connection. Full unit test coverage of cost basis math. |
+| 1 | Core engines + manual trade entry. No broker connection. Full unit test coverage. ✅ Complete |
 | 2 | Alpaca read integration — live prices, Greeks, assignment detection via polling |
 | 3 | Alert engine + candidate screener |
 | 4 | Order execution via Alpaca write API |

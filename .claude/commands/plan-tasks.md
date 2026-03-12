@@ -1,168 +1,232 @@
 ---
-description: Reads a plan or spec file and generates a structured task list. Creates TaskCreate entries in the todo list and writes a companion .tasks.md file in the same directory.
-argument-hint: <file-path>
+description: Reads a plan file and creates a hierarchical beads issue structure (epic → feature → tasks) with TDD Red/Green/Refactor tasks, plan context, and verified dependency wiring.
+argument-hint: <plan-file-path>
 allowed-tools:
   - Read
-  - Write
-  - TaskCreate
+  - Bash
 ---
 
 # plan-tasks command
 
-The user has invoked the `/plan-tasks` command with a file path argument: `$ARGUMENTS`
+The user has invoked `/plan-tasks` with: `$ARGUMENTS`
 
-## Your job
+Use the beads-plan skill throughout this workflow.
 
-Read the specified plan file, analyze its contents, and produce a concrete, actionable task list. Then:
-1. Create each task using the TaskCreate tool
-2. Write a companion markdown task file alongside the plan
+---
 
-## Step 1 — Read the plan file and all supporting documents
+## Step 1 — Read the Plan and Supporting Documents
 
-Use the Read tool to read the file at: `$ARGUMENTS`
+Read the file at: `$ARGUMENTS`
 
-If the file does not exist, tell the user clearly: "File not found: `$ARGUMENTS`". Stop there.
+If not found, stop: "File not found: `$ARGUMENTS`"
 
-Derive the story directory from the plan file path (e.g. `plans/us-2/plan.md` → `plans/us-2/`). The `/create-plan` command generates four supporting documents alongside every plan. **Read each of these that exists before proceeding:**
+Derive the story directory from the plan path (e.g., `plans/us-3/plan.md` → `plans/us-3/`). Read each supporting document that exists:
 
-| File | Purpose |
+| File | Read for |
 |---|---|
-| `{story-dir}/research.md` | Design decisions and rationale — explains *why* things are built a certain way |
-| `{story-dir}/data-model.md` | Entity fields, types, nullability, selection logic, and validation rules |
-| `{story-dir}/contracts/*.md` | API endpoint contracts — exact request/response shapes, field formats, sort rules, error responses |
-| `{story-dir}/quickstart.md` | Test commands, migration steps, acceptance verification |
+| `{story-dir}/research.md` | Design decisions → `--design` on features and Green tasks |
+| `{story-dir}/data-model.md` | Field types, nullability, validation → task descriptions |
+| `{story-dir}/contracts/*.md` | API shapes, response formats, error codes → task descriptions |
+| `{story-dir}/quickstart.md` | Test commands, verification steps → `--acceptance` |
 
-These files are the source of specificity for task descriptions. Task descriptions written without consulting `data-model.md` and `contracts/` will be vague and miss field-level detail that the implementer needs.
+---
 
-## Step 2 — Break the plan into granular, actionable tasks
+## Step 2 — Create the Epic
 
-Study the plan carefully. Generate a full list of concrete, actionable tasks — as many as the plan's scope warrants (typically 15–40). Do NOT limit yourself to one task per work unit.
-
-Think at the level of individual things to build, test, or fix — e.g., a single endpoint, a single model, a single business rule, a single UI component. Each task should be completable in one focused session.
-
-**Task quality rules:**
-- Each task must carry a **unique short ID** in the form `TXXX` (three zero-padded digits): `T001`, `T002`, … `T042`. Assign IDs sequentially in the final dependency-ordered list — do NOT assign them while brainstorming, only once the full ordered list is known.
-- The ID must appear at the **very start** of the `subject` field, before the phase prefix: `T001 [Red] Write failing tests for …`
-- Tasks must be **concrete** — reference specific files, modules, classes, or endpoints, not vague nouns
-- Order tasks by **natural dependency** — foundational work (models, schemas, core logic) before higher-level work (routes, UI, integrations)
-- Do NOT create duplicate tasks or tasks that overlap in scope
-
-## Step 3 — Assign every task a TDD phase
-
-Every task belongs to one of three phases. Label each with a prefix:
-
-**[Red] — write failing tests**
-- The task is to write tests that define the expected behaviour and confirm they fail before any implementation exists.
-- Subject pattern: `TXXX [Red] Write failing tests for <specific thing>`
-- Description: Start with "Use the /red skill." Then name the test file/module and list the specific cases to cover. Include a **Reference documents** section citing the specific supporting files the implementer needs when constructing fixtures and assertions:
-  - `{story-dir}/contracts/*.md` — exact field names, example values, and response shape to assert against
-  - `{story-dir}/data-model.md` — field types, nullability rules, and selection logic for fixture setup
-  - `{story-dir}/quickstart.md` — test command and acceptance verification steps
-  State that tests must be confirmed failing before the paired Green task begins. End with: `Refer to \`<plan-file-path>\` for full specification.`
-- activeForm pattern: `Writing failing tests for <specific thing>`
-
-**[Green] — implement to pass tests**
-- The task is to write the minimum code to make the paired Red tests pass. No gold-plating.
-- Subject pattern: `TXXX [Green] Implement <specific thing>`
-- Description: Start with "Use the /green skill." Include a **Reference documents** section at the top citing the specific supporting files for this task:
-  - `{story-dir}/data-model.md` — field definitions, types, and selection/computation logic
-  - `{story-dir}/contracts/*.md` — complete response shape, field formats, sort rules, and null-field behaviour
-  - `{story-dir}/research.md` — design decisions that constrain the implementation (e.g. why selectinload was chosen over a join)
-  Then describe what to build, referencing the paired Red task's test file as the acceptance bar. End with: `Refer to \`<plan-file-path>\` for full specification.`
-- activeForm pattern: `Implementing <specific thing>`
-
-**[Refactor] — clean up**
-- The task is to improve the implementation without changing behaviour. Tests must stay green throughout.
-- Subject pattern: `TXXX [Refactor] Clean up <specific thing>`
-- Description: Start with "Use the /refactor skill." Then describe what to look for — duplication, naming, readability, structure. If nothing warrants cleanup, this task is quick but still required. End with: `Refer to \`<plan-file-path>\` for full specification.`
-- activeForm pattern: `Refactoring <specific thing>`
-
-**Grouping rule:** Red → Green → Refactor tasks that cover the same specific thing form a natural group, but you are not limited to one group per work area. A complex endpoint might have several Red tasks, each with its own Green and Refactor counterpart.
-
-## Step 4 — Create tasks using TaskCreate
-
-Call the TaskCreate tool once per task. Order the calls so that all three phases for a given thing appear together (Red → Green → Refactor), and groups are ordered by dependency across the plan. Use all three fields: `subject`, `description`, and `activeForm`.
-
-**ID assignment rule:** Number every task sequentially starting at `T001`, incrementing by one regardless of phase. The ID is part of the `subject` and must be stable — once assigned, it never changes.
-
-Example showing multiple tasks for one area (do not copy literally — generate tasks specific to the plan):
-```
-TaskCreate:
-  subject: "T001 [Red] Write failing tests for Wheel model fields"
-  description: "Use the /red skill. In tests/test_models.py, write tests asserting the Wheel model has ticker, status, assignment_strike, created_at, updated_at. Run pytest and confirm all tests fail before proceeding. Refer to `plans/my-plan.md` for full specification."
-  activeForm: "Writing failing tests for Wheel model"
-
-TaskCreate:
-  subject: "T002 [Green] Implement Wheel SQLAlchemy model"
-  description: "Use the /green skill. Define the Wheel model with all fields asserted in T001's tests. Done when tests/test_models.py passes. Refer to `plans/my-plan.md` for full specification."
-  activeForm: "Implementing Wheel model"
-
-TaskCreate:
-  subject: "T003 [Refactor] Clean up Wheel model definition"
-  description: "Use the /refactor skill. Review field ordering, naming, and any duplication with other models. Tests must stay green. Refer to `plans/my-plan.md` for full specification."
-  activeForm: "Refactoring Wheel model"
-
-TaskCreate:
-  subject: "T004 [Red] Write failing tests for Wheel Alembic migration"
-  description: "Use the /red skill. In tests/test_migrations.py, write a test that applies the migration against a test DB and asserts the wheels table has the correct schema. Confirm it fails before proceeding. Refer to `plans/my-plan.md` for full specification."
-  activeForm: "Writing failing tests for Wheel migration"
-
-TaskCreate:
-  subject: "T005 [Green] Write Alembic migration for Wheel model"
-  description: "Use the /green skill. Generate and edit the migration so tests/test_migrations.py passes. Do not modify the model itself. Refer to `plans/my-plan.md` for full specification."
-  activeForm: "Writing Wheel migration"
-
-TaskCreate:
-  subject: "T006 [Refactor] Clean up Wheel migration file"
-  description: "Use the /refactor skill. Check migration for correctness, comments, and consistency with other migrations. Tests must stay green. Refer to `plans/my-plan.md` for full specification."
-  activeForm: "Refactoring Wheel migration"
+```bash
+EPIC_ID=$(bd create \
+  --type=epic \
+  --title="<Story ID> — <Story Title from plan heading>" \
+  --description="<Context section from plan — why this story exists and what it establishes>" \
+  --labels="<story-id-slug>" \
+  --priority=2 \
+  --silent)
+echo "Epic: $EPIC_ID"
 ```
 
-## Step 5 — Write the companion markdown file
+---
 
-Derive the output file path from the input file path:
-- Input: `phase-1-stories/epic.md` → Output: `phase-1-stories/epic.tasks.md`
-- Input: `product documents/spec.md` → Output: `product documents/spec.tasks.md`
-- Replace the file extension with `.tasks.md`
+## Step 3 — Identify Functional Areas
 
-Use the Write tool to create this file with the following structure:
+Scan the plan's implementation steps. Group them into logical functional areas — each becomes one feature issue. Common areas for this project:
 
-```markdown
-# Tasks: <Plan Title>
+- Types / enums module
+- Core engine function (lifecycle, costbasis)
+- Database migration
+- Service layer
+- IPC handler
+- Renderer API client / hooks
+- UI components
+- Pages
 
-Generated from: `<input file path>`
-Generated: <today's date>
-Total tasks: <N>
+The plan's implementation order determines cross-feature dependency order (Step 7).
 
-> Task IDs (T001–TXXX) are stable references — use them to call out a specific task in a prompt,
-> e.g. "implement T007" or "skip to T012".
+---
 
-## Red — Write Failing Tests
+## Step 4 — Create Feature Issues
 
-- [ ] **T001** [Red] <subject without the ID prefix>
-- [ ] **T004** [Red] <subject without the ID prefix>
-...
+For each functional area, in implementation order:
 
-## Green — Implement
-
-- [ ] **T002** [Green] <subject without the ID prefix>
-- [ ] **T005** [Green] <subject without the ID prefix>
-...
-
-## Refactor — Clean Up
-
-- [ ] **T003** [Refactor] <subject without the ID prefix>
-- [ ] **T006** [Refactor] <subject without the ID prefix>
-...
+```bash
+FEATURE_ID=$(bd create \
+  --type=feature \
+  --title="<functional area name>" \
+  --parent=$EPIC_ID \
+  --description="<What this area does and its role in the story. One short paragraph.>" \
+  --design="<Relevant excerpt from research.md — why this approach, key architectural decisions>" \
+  --spec-id="$ARGUMENTS" \
+  --labels="<story-id-slug>,<area-slug>" \
+  --priority=2 \
+  --silent)
+echo "Feature: $FEATURE_ID"
 ```
 
-Each section lists only tasks of that phase. IDs are non-sequential within a section (they reflect global ordering), which is expected.
+---
 
-## Step 6 — Report to the user
+## Step 5 — Create Red/Green/Refactor Tasks per Feature Area
 
-After completing all steps, summarize:
-- Total tasks created and how they break down across Red / Green / Refactor
-- The path to the companion markdown file
-- Any ambiguities or gaps noticed in the plan (briefly)
+For each feature, create exactly three tasks. Capture all three IDs.
 
-Keep the summary concise — 3-5 lines.
+### Red task
+
+```bash
+RED_ID=$(bd create \
+  --type=task \
+  --title="[Red] Write failing tests for <specific thing>" \
+  --parent=$FEATURE_ID \
+  --description="Use the /red skill.
+
+Test file: <path/to/test-file.ts>
+
+Test cases:
+- <specific case: function name, input values, expected output>
+- <one test per validation rule from plan>
+- <happy path case>
+
+Run pnpm test and confirm all new tests fail before marking done." \
+  --acceptance="All new tests failing. Run: pnpm test <test-file>" \
+  --spec-id="$ARGUMENTS" \
+  --labels="red,<story-id-slug>,<area-slug>" \
+  --priority=2 \
+  --silent)
+echo "Red: $RED_ID"
+```
+
+### Green task
+
+```bash
+GREEN_ID=$(bd create \
+  --type=task \
+  --title="[Green] Implement <specific thing>" \
+  --parent=$FEATURE_ID \
+  --description="Use the /green skill.
+
+Implementation file: <path/to/impl-file.ts>
+Paired test file: <path/to/test-file.ts> (make these pass)
+
+Key implementation details:
+- <function signature with exact parameter and return types>
+- <validation rule or business logic from plan>
+- <field type / nullability from data-model.md>
+- <response shape or constraint from contracts/>
+
+Write minimum code to pass the paired tests. No extra logic." \
+  --acceptance="pnpm test <test-file> passes. pnpm typecheck and pnpm lint clean." \
+  --design="<Design decisions from research.md relevant to this implementation>" \
+  --spec-id="$ARGUMENTS" \
+  --labels="green,<story-id-slug>,<area-slug>" \
+  --priority=2 \
+  --silent)
+echo "Green: $GREEN_ID"
+```
+
+### Refactor task
+
+```bash
+REFACTOR_ID=$(bd create \
+  --type=task \
+  --title="[Refactor] Clean up <specific thing>" \
+  --parent=$FEATURE_ID \
+  --description="Use the /refactor skill.
+
+Files to review:
+- <impl-file>
+- <test-file>
+
+Look for:
+- Naming clarity and consistency with codebase conventions
+- Duplication within or across these files
+- Functions longer than 20 lines (extract)
+- Type annotation completeness
+- Log levels: INFO for business events, DEBUG for inputs/checkpoints (never in core/)
+
+Behaviour must not change. Tests must stay green throughout." \
+  --acceptance="pnpm test still passes. pnpm lint and pnpm typecheck clean." \
+  --spec-id="$ARGUMENTS" \
+  --labels="refactor,<story-id-slug>,<area-slug>" \
+  --priority=3 \
+  --silent)
+echo "Refactor: $REFACTOR_ID"
+```
+
+---
+
+## Step 6 — Wire Intra-Feature Dependencies
+
+For each functional area, wire the Red → Green → Refactor chain:
+
+```bash
+bd dep add $GREEN_ID $RED_ID        # Green depends on Red
+bd dep add $REFACTOR_ID $GREEN_ID   # Refactor depends on Green
+```
+
+---
+
+## Step 7 — Wire Cross-Feature Dependencies
+
+Following the plan's implementation order, wire each downstream area's Red task to the upstream area's Green task. This ensures prerequisite code exists before downstream tests are written.
+
+```bash
+# Example: service layer must be implemented before IPC handler tests can be written
+bd dep add <ipc-red-id> <service-green-id>
+```
+
+If the plan shows no ordering constraint between two areas, leave them unlinked — they run in parallel.
+
+---
+
+## Step 8 — Verify the Dependency Graph
+
+```bash
+bd graph $EPIC_ID --json
+```
+
+Check `layout.Layers`:
+- Layer 0: first Red task(s) — nothing blocking them
+- Subsequent layers depend on previous
+- Parallel areas appear in the same layer
+
+Fix any incorrect dependencies, re-run until the graph matches the plan's implementation order. Do not report success until verification passes.
+
+---
+
+## Step 9 — Report
+
+Print a concise tree:
+
+```
+Epic: <title> (<epic-id>)
+
+  <Feature area> (<feature-id>)
+    [Red]      <red-id>     — ready
+    [Green]    <green-id>   — blocked by <red-id>
+    [Refactor] <refactor-id> — blocked by <green-id>
+
+  <Next feature> (<feature-id>)
+    ...
+
+Features: N  |  Tasks: M (N Red, N Green, N Refactor)
+Spec: $ARGUMENTS
+
+Next: bd ready
+```

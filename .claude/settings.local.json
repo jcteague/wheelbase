@@ -1,39 +1,19 @@
 {
   "permissions": {
     "allow": [
-      "Bash(pnpm typecheck:*)",
-      "Skill(implement-plan)",
-      "Bash(make test:*)",
-      "Bash(uv run:*)",
-      "Bash(pnpm test:*)",
-      "Bash(pnpm lint:*)",
-      "Bash(uv sync:*)",
-      "Read(//Users/johnteague/.claude/**)",
-      "WebFetch(domain:www.electronjs.org)",
-      "WebFetch(domain:github.com)",
-      "WebFetch(domain:docs.alpaca.markets)",
-      "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:hono.dev)",
-      "WebFetch(domain:alpaca.markets)"
-    ],
-    "deny": [
-      "Read(**/.env)",
-      "Read(**/.env.*)",
-      "Edit(**/.env)",
-      "Edit(**/.env.*)",
-      "Write(**/.env)",
-      "Write(**/.env.*)"
+      "Bash(bd --help 2>&1 | head -80)",
+      "Bash(bd create:*)",
+      "Bash(bd update:*)",
+      "Bash(bd dep:*)",
+      "Read(//Users/johnteague/.claude/plugins/**)",
+      "Bash(bd epic:*)"
     ]
   },
-  "disabledMcpjsonServers": [
+  "enabledMcpjsonServers": [
     "alpaca",
-    "postgres",
     "playwright"
   ],
-  "enabledPlugins": {
-    "pyright-lsp@claude-plugins-official": true,
-    "code-simplifier@claude-plugins-official": true,
-    "code-review@claude-plugins-official": true,
-    "frontend-design@claude-plugins-official": true
-  }
+  "disabledMcpjsonServers": [
+    "postgres"
+  ]
 }

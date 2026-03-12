@@ -23,10 +23,10 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # ── Run quality checks ─────────────────────────────────────────────────────────
 FAILED=0
 
-LINT_OUTPUT=$(make -C "$PROJECT_ROOT" lint 2>&1)
+LINT_OUTPUT=$(cd "$PROJECT_ROOT" && pnpm lint 2>&1)
 LINT_EXIT=$?
 
-TYPECHECK_OUTPUT=$(make -C "$PROJECT_ROOT" typecheck 2>&1)
+TYPECHECK_OUTPUT=$(cd "$PROJECT_ROOT" && pnpm typecheck 2>&1)
 TYPECHECK_EXIT=$?
 
 # ── Report failures ────────────────────────────────────────────────────────────
@@ -35,13 +35,13 @@ if [[ $LINT_EXIT -ne 0 || $TYPECHECK_EXIT -ne 0 ]]; then
     echo "" >&2
 
     if [[ $LINT_EXIT -ne 0 ]]; then
-        echo "=== make lint ===" >&2
+        echo "=== pnpm lint ===" >&2
         echo "$LINT_OUTPUT" >&2
         echo "" >&2
     fi
 
     if [[ $TYPECHECK_EXIT -ne 0 ]]; then
-        echo "=== make typecheck ===" >&2
+        echo "=== pnpm typecheck ===" >&2
         echo "$TYPECHECK_OUTPUT" >&2
     fi
 

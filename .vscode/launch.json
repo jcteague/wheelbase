@@ -2,33 +2,38 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug Backend",
-      "type": "debugpy",
+      "name": "Debug Main Process",
+      "type": "node",
       "request": "launch",
-      "module": "uvicorn",
-      "args": ["app.main:app", "--reload", "--port", "8000"],
-      "cwd": "${workspaceFolder}/backend",
-      "env": {
-        "PYTHONPATH": "${workspaceFolder}/backend"
+      "cwd": "${workspaceRoot}",
+      "runtimeExecutable": "${workspaceRoot}/node_modules/.bin/electron-vite",
+      "windows": {
+        "runtimeExecutable": "${workspaceRoot}/node_modules/.bin/electron-vite.cmd"
       },
-      "justMyCode": true
+      "runtimeArgs": ["--sourcemap"],
+      "env": {
+        "REMOTE_DEBUGGING_PORT": "9222"
+      }
     },
     {
-      "name": "Debug Frontend",
+      "name": "Debug Renderer Process",
+      "port": 9222,
+      "request": "attach",
       "type": "chrome",
-      "request": "launch",
-      "url": "http://localhost:5173",
-      "webRoot": "${workspaceFolder}/frontend/src",
-      "sourceMapPathOverrides": {
-        "webpack:///./src/*": "${webRoot}/*"
+      "webRoot": "${workspaceFolder}/src/renderer",
+      "timeout": 60000,
+      "presentation": {
+        "hidden": true
       }
     }
   ],
   "compounds": [
     {
-      "name": "Full Stack",
-      "configurations": ["Debug Backend", "Debug Frontend"],
-      "stopAll": true
+      "name": "Debug All",
+      "configurations": ["Debug Main Process", "Debug Renderer Process"],
+      "presentation": {
+        "order": 1
+      }
     }
   ]
 }
