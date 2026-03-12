@@ -1,3 +1,5 @@
+// Adapter between the renderer (snake_case) and the IPC layer (camelCase).
+
 export type WheelPhase =
   | 'CSP_OPEN'
   | 'CSP_EXPIRED'
@@ -10,7 +12,7 @@ export type WheelPhase =
   | 'CC_CLOSED_LOSS'
   | 'WHEEL_COMPLETE'
 
-export type WheelStatus = 'active' | 'paused' | 'closed'
+export type WheelStatus = 'active' | 'paused' | 'closed' | 'ACTIVE' | 'CLOSED'
 
 export type CreatePositionPayload = {
   ticker: string
@@ -77,27 +79,69 @@ function apiError(status: number, body: unknown): ApiError {
   return { status, body }
 }
 
+// IPC camelCase field names → renderer snake_case form field names
+const IPC_TO_FORM_FIELD: Record<string, string> = {
+  premiumPerContract: 'premium_per_contract',
+  fillDate: 'fill_date'
+}
+
 export async function listPositions(): Promise<PositionListItem[]> {
-  const response = await fetch('/api/positions')
-  const body: unknown = await response.json()
-  if (!response.ok) throw apiError(response.status, body)
-  return body as PositionListItem[]
+  const items = await window.api.listPositions()
+  return items.map((item) => ({
+    id: item.id,
+    ticker: item.ticker,
+    phase: item.phase as WheelPhase,
+    status: item.status as WheelStatus,
+    strike: item.strike,
+    expiration: item.expiration,
+    dte: item.dte,
+    premium_collected: item.premiumCollected,
+    effective_cost_basis: item.effectiveCostBasis
+  }))
 }
 
 export async function createPosition(
   payload: CreatePositionPayload
 ): Promise<CreatePositionResponse> {
-  const response = await fetch('/api/positions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+  const result = await window.api.createPosition({
+    ticker: payload.ticker,
+    strike: payload.strike,
+    expiration: payload.expiration,
+    contracts: payload.contracts,
+    premiumPerContract: payload.premium_per_contract,
+    fillDate: payload.fill_date,
+    thesis: payload.thesis,
+    notes: payload.notes
   })
 
-  const body: unknown = await response.json()
-
-  if (!response.ok) {
-    throw apiError(response.status, body)
+  if (!result.ok) {
+    throw apiError(400, {
+      detail: result.errors.map((e) => ({
+        field: IPC_TO_FORM_FIELD[e.field] ?? e.field,
+        code: e.code,
+        message: e.message
+      }))
+    })
   }
 
-  return body as CreatePositionResponse
+  return {
+    position: {
+      id: result.position.id,
+      ticker: result.position.ticker,
+      phase: result.position.phase as WheelPhase,
+      status: result.position.status as WheelStatus
+    },
+    leg: {
+      id: result.leg.id,
+      strike: result.leg.strike,
+      expiration: result.leg.expiration,
+      contracts: result.leg.contracts,
+      premium_per_contract: result.leg.premiumPerContract
+    },
+    cost_basis_snapshot: {
+      id: result.costBasisSnapshot.id,
+      basis_per_share: result.costBasisSnapshot.basisPerShare,
+      total_premium_collected: result.costBasisSnapshot.totalPremiumCollected
+    }
+  }
 }

@@ -1,0 +1,89 @@
+import { z } from 'zod'
+import type {
+  LegAction,
+  LegRole,
+  OptionType,
+  StrategyType,
+  WheelPhase,
+  WheelStatus
+} from './core/types'
+
+// ---------------------------------------------------------------------------
+// IPC input schema
+// ---------------------------------------------------------------------------
+
+export const CreatePositionPayloadSchema = z.object({
+  ticker: z.string(),
+  strike: z.number().positive(),
+  expiration: z.string(),
+  contracts: z.number().int().positive(),
+  premiumPerContract: z.number().positive(),
+  fillDate: z.string().optional(),
+  accountId: z.string().optional(),
+  thesis: z.string().optional(),
+  notes: z.string().optional()
+})
+
+export type CreatePositionPayload = z.infer<typeof CreatePositionPayloadSchema>
+
+// ---------------------------------------------------------------------------
+// Return types
+// ---------------------------------------------------------------------------
+
+export interface PositionRecord {
+  id: string
+  ticker: string
+  phase: WheelPhase
+  status: WheelStatus
+  strategyType: StrategyType
+  openedDate: string
+  closedDate: string | null
+  accountId: string | null
+  notes: string | null
+  thesis: string | null
+  tags: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface LegRecord {
+  id: string
+  positionId: string
+  legRole: LegRole
+  action: LegAction
+  optionType: OptionType
+  strike: string
+  expiration: string
+  contracts: number
+  premiumPerContract: string
+  fillDate: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CostBasisSnapshotRecord {
+  id: string
+  positionId: string
+  basisPerShare: string
+  totalPremiumCollected: string
+  snapshotAt: string
+  createdAt: string
+}
+
+export interface CreatePositionResult {
+  position: PositionRecord
+  leg: LegRecord
+  costBasisSnapshot: CostBasisSnapshotRecord
+}
+
+export interface PositionListItem {
+  id: string
+  ticker: string
+  phase: WheelPhase
+  status: WheelStatus
+  strike: string | null
+  expiration: string | null
+  dte: number | null
+  premiumCollected: string
+  effectiveCostBasis: string
+}
