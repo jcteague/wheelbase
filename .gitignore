@@ -1,44 +1,35 @@
-# Environment
+# Dependencies
+node_modules
+
+# Build output
+dist
+out
+
+# Vite / electron-vite
+.DS_Store
+.eslintcache
+*.log*
+*.tsbuildinfo
+
+# Environment (may contain API credentials)
 .env
 .env.local
 
 # MCP config (contains API credentials)
 .mcp.json
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-.venv/
-venv/
-*.egg-info/
-dist/
-build/
-.mypy_cache/
-.ruff_cache/
-.pytest_cache/
-
-# Node
-node_modules/
-dist/
-.vite/
-
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-
-# Database
+# Database files
 *.db
 *.sqlite
+
+# macOS
+.AppleDouble
+.LSOverride
 
 # IDE
 .idea/
 *.swp
 *.swo
 
-# Logs
-*.log
-*.tsbuildinfo
+# Dolt database files (added by bd init)
+.dolt/
