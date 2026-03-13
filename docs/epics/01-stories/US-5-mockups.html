@@ -1,0 +1,1206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>US-5 Mockups — Record CSP Expiration</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-base:    #070a0e;
+    --bg-surface: #0d1117;
+    --bg-raised:  #141b24;
+    --bg-hover:   #1a2230;
+    --border:     #1e2a38;
+    --border-lit: #2d3f55;
+
+    --text-primary:  #d4dfe9;
+    --text-secondary:#7a92aa;
+    --text-muted:    #3d5268;
+
+    --teal:      #00c8a8;
+    --teal-dim:  #00503f;
+    --teal-glow: rgba(0,200,168,0.12);
+
+    --amber:     #f0a940;
+    --amber-dim: #3d2a00;
+
+    --green:     #3de07e;
+    --green-dim: #0e3320;
+
+    --red:       #f05757;
+    --red-dim:   #350d0d;
+
+    --scrim:     rgba(7,10,14,0.72);
+
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--mono);
+    background: #040608;
+    color: var(--text-primary);
+    min-height: 100vh;
+    padding: 48px 32px;
+  }
+
+  /* ─── PAGE HEADER ─────────────────────────────── */
+  .page-header {
+    margin-bottom: 64px;
+    padding-bottom: 28px;
+    border-bottom: 1px solid var(--border);
+  }
+  .page-header h1 {
+    font-family: var(--sans);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--teal);
+    margin-bottom: 10px;
+  }
+  .page-header h2 {
+    font-family: var(--sans);
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+  }
+  .page-header p {
+    font-size: 11px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+  }
+
+  /* ─── SECTION ─────────────────────────────────── */
+  .section-label {
+    font-family: var(--sans);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+  .mockup-section { margin-bottom: 80px; }
+
+  /* ─── APP SHELL ───────────────────────────────── */
+  .app-shell {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.03);
+    max-width: 1100px;
+    position: relative; /* sheet anchor */
+  }
+
+  .titlebar {
+    background: var(--bg-base);
+    height: 38px;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+    user-select: none;
+    position: relative;
+    z-index: 10;
+  }
+  .titlebar-dot { width: 12px; height: 12px; border-radius: 50%; }
+  .dot-red    { background: #ff5f57; }
+  .dot-yellow { background: #febc2e; }
+  .dot-green  { background: #28c840; }
+  .titlebar-title {
+    flex: 1;
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+  }
+
+  /* ─── LAYOUT ──────────────────────────────────── */
+  .app-layout {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    min-height: 620px;
+    position: relative;
+  }
+
+  /* ─── SIDEBAR ─────────────────────────────────── */
+  .sidebar {
+    background: var(--bg-base);
+    border-right: 1px solid var(--border);
+    padding: 24px 0;
+    position: relative;
+    z-index: 5;
+  }
+  .sidebar-logo {
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--text-primary);
+    padding: 0 20px 24px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+  .sidebar-logo span { color: var(--teal); }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 20px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .nav-item.active {
+    color: var(--text-primary);
+    background: var(--bg-raised);
+    border-right: 2px solid var(--teal);
+  }
+  .nav-item .nav-icon { font-size: 14px; width: 18px; text-align: center; opacity: 0.7; }
+
+  /* ─── MAIN CONTENT ────────────────────────────── */
+  .main-content {
+    padding: 32px;
+    overflow: auto;
+    position: relative;
+    transition: filter 0.2s, opacity 0.2s;
+  }
+  .main-content.dimmed {
+    filter: blur(1.5px);
+    opacity: 0.35;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  /* ─── SCRIM ───────────────────────────────────── */
+  .scrim {
+    position: absolute;
+    inset: 0;
+    background: var(--scrim);
+    z-index: 20;
+    /* covers just the main area, sidebar sits above via z-index */
+  }
+
+  /* ─── SHEET ───────────────────────────────────── */
+  .sheet {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 400px;
+    background: var(--bg-surface);
+    border-left: 1px solid var(--border-lit);
+    display: flex;
+    flex-direction: column;
+    z-index: 30;
+    box-shadow: -12px 0 48px rgba(0,0,0,0.5), -1px 0 0 rgba(255,255,255,0.03);
+  }
+
+  /* Sheet width variants */
+  .sheet.sheet-sm { width: 360px; }
+  .sheet.sheet-lg { width: 440px; }
+
+  .sheet-handle {
+    /* decorative drag handle at top */
+    width: 32px;
+    height: 3px;
+    background: var(--border-lit);
+    border-radius: 2px;
+    margin: 0 auto;
+    flex-shrink: 0;
+  }
+
+  .sheet-header {
+    padding: 20px 24px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .sheet-eyebrow {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--teal);
+    margin-bottom: 6px;
+  }
+
+  .sheet-title {
+    font-family: var(--sans);
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+
+  .sheet-subtitle {
+    font-size: 11px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  .sheet-close {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-left: 12px;
+    margin-top: 2px;
+  }
+
+  .sheet-body {
+    padding: 20px 24px;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .sheet-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    flex-shrink: 0;
+    background: var(--bg-surface);
+  }
+
+  /* ─── POSITION HEADER ─────────────────────────── */
+  .position-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 28px;
+  }
+  .ticker-block { display: flex; align-items: center; gap: 14px; }
+  .ticker {
+    font-family: var(--sans);
+    font-size: 36px;
+    font-weight: 800;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+  }
+  .phase-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .phase-badge.csp-open {
+    background: var(--amber-dim);
+    color: var(--amber);
+    border: 1px solid rgba(240,169,64,0.25);
+  }
+  .phase-badge.csp-open::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--amber);
+    animation: pulse 2s infinite;
+  }
+  .phase-badge.wheel-complete {
+    background: var(--green-dim);
+    color: var(--green);
+    border: 1px solid rgba(61,224,126,0.25);
+  }
+  .phase-badge.wheel-complete::before {
+    content: '✓';
+    font-size: 9px;
+  }
+  @keyframes pulse {
+    0%,100% { opacity:1; } 50% { opacity:0.3; }
+  }
+  .action-buttons { display: flex; gap: 8px; }
+
+  /* ─── STAT GRID ───────────────────────────────── */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 28px;
+  }
+  .stat-cell { background: var(--bg-raised); padding: 16px 18px; }
+  .stat-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .stat-value {
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+  }
+  .stat-value.amber { color: var(--amber); }
+  .stat-value.teal  { color: var(--teal); }
+  .stat-sub { font-size: 10px; color: var(--text-secondary); margin-top: 3px; }
+
+  /* ─── LEG TABLE ───────────────────────────────── */
+  .section-header {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .leg-table { width: 100%; border-collapse: collapse; }
+  .leg-table th {
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 500;
+  }
+  .leg-table td {
+    padding: 11px 12px;
+    font-size: 11px;
+    border-bottom: 1px solid rgba(30,42,56,0.5);
+  }
+  .leg-table tr:last-child td { border-bottom: none; }
+  .leg-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 7px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .action-open   { background: rgba(0,200,168,0.12); color: var(--teal); }
+  .action-expire { background: var(--green-dim); color: var(--green); }
+
+  /* ─── BUTTONS ─────────────────────────────────── */
+  .btn {
+    padding: 9px 18px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    border-radius: 5px;
+    cursor: pointer;
+    border: 1px solid;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-secondary);
+    border-color: var(--border);
+  }
+  .btn-ghost:hover { color: var(--text-primary); border-color: var(--border-lit); background: var(--bg-hover); }
+  .btn-teal {
+    background: var(--teal-glow);
+    color: var(--teal);
+    border-color: rgba(0,200,168,0.4);
+  }
+  .btn-danger {
+    background: transparent;
+    color: var(--red);
+    border-color: rgba(240,87,87,0.3);
+  }
+  .btn-teal-solid {
+    background: var(--teal);
+    color: #000;
+    border-color: var(--teal);
+    font-weight: 700;
+    flex: 1;
+  }
+  .btn-teal-solid:hover { background: #00e4be; }
+  .btn-green-solid {
+    background: var(--green);
+    color: #000;
+    border-color: var(--green);
+    font-weight: 700;
+    width: 100%;
+    padding: 13px;
+    font-size: 12px;
+    text-align: center;
+    border-radius: 7px;
+  }
+  .btn-disabled {
+    background: transparent;
+    color: var(--text-muted);
+    border-color: var(--border);
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+
+  /* ─── SHEET CONTENT COMPONENTS ───────────────── */
+  .summary-card {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .summary-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(30,42,56,0.5);
+  }
+  .summary-row:last-child { border-bottom: none; }
+  .summary-key { font-size: 11px; color: var(--text-secondary); }
+  .summary-val { font-size: 11px; font-weight: 600; color: var(--text-primary); text-align: right; }
+  .summary-highlight {
+    background: linear-gradient(90deg, var(--green-dim), rgba(14,51,32,0.4));
+  }
+  .summary-highlight .summary-key { color: var(--green); opacity: 0.75; }
+  .summary-highlight .summary-val { color: var(--green); font-size: 15px; font-weight: 700; }
+
+  .warning-box {
+    background: var(--amber-dim);
+    border: 1px solid rgba(240,169,64,0.2);
+    border-radius: 6px;
+    padding: 11px 14px;
+    font-size: 11px;
+    color: var(--amber);
+    line-height: 1.65;
+    margin-bottom: 16px;
+  }
+  .warning-box strong { font-weight: 700; display: block; margin-bottom: 3px; }
+
+  .error-box {
+    background: var(--red-dim);
+    border: 1px solid rgba(240,87,87,0.2);
+    border-radius: 6px;
+    padding: 11px 14px;
+    font-size: 11px;
+    color: var(--red);
+    line-height: 1.65;
+    margin-bottom: 16px;
+  }
+  .error-box strong { font-weight: 700; display: block; margin-bottom: 3px; }
+
+  .pnl-display {
+    background: linear-gradient(135deg, var(--green-dim), rgba(7,10,14,0.4));
+    border: 1px solid rgba(61,224,126,0.22);
+    border-radius: 10px;
+    padding: 22px;
+    text-align: center;
+    margin-bottom: 18px;
+  }
+  .pnl-label {
+    font-size: 9px;
+    color: var(--green);
+    opacity: 0.7;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .pnl-amount {
+    font-size: 40px;
+    font-weight: 700;
+    color: var(--green);
+    letter-spacing: -0.03em;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .pnl-sub { font-size: 11px; color: var(--green); opacity: 0.55; }
+
+  .shortcut-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 14px 18px;
+    background: var(--teal-glow);
+    border: 1px solid rgba(0,200,168,0.3);
+    border-radius: 8px;
+    color: var(--teal);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 10px;
+  }
+  .shortcut-btn:hover { background: rgba(0,200,168,0.18); border-color: var(--teal); }
+  .shortcut-btn-sub { font-size: 10px; color: var(--teal); opacity: 0.55; font-weight: 400; margin-top: 2px; }
+  .shortcut-btn-arrow { font-size: 16px; opacity: 0.5; }
+
+  .dismiss-link {
+    display: block;
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 8px;
+  }
+
+  /* ─── SUCCESS BANNER (inline on detail page) ─── */
+  .success-banner {
+    background: linear-gradient(90deg, var(--green-dim), transparent);
+    border: 1px solid rgba(61,224,126,0.18);
+    border-radius: 8px;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .success-check {
+    width: 30px;
+    height: 30px;
+    background: var(--green-dim);
+    border: 1px solid rgba(61,224,126,0.3);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: var(--green);
+    flex-shrink: 0;
+  }
+
+  /* ─── POSITION CARDS (list page) ─────────────── */
+  .position-card {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 20px;
+    align-items: center;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .position-card:hover { border-color: var(--border-lit); background: var(--bg-hover); }
+  .position-card.complete { opacity: 0.55; }
+  .card-ticker { font-family: var(--sans); font-size: 15px; font-weight: 700; margin-bottom: 3px; }
+  .card-meta { font-size: 11px; color: var(--text-secondary); display: flex; gap: 10px; }
+  .card-pnl { text-align: right; }
+  .card-pnl-value { font-size: 15px; font-weight: 700; color: var(--green); }
+  .card-pnl-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+
+  /* ─── ANNOTATIONS ─────────────────────────────── */
+  .annotations { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .annotation {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+    color: var(--text-secondary);
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 10px;
+  }
+  .annotation::before { content: '↑'; color: var(--teal); }
+
+  /* ─── MISC ────────────────────────────────────── */
+  .back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: transparent;
+    margin-bottom: 28px;
+  }
+  .page-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-lit); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>Wheelbase · Option Wheel Manager</h1>
+  <h2>US-5 Mockups — Record CSP Expiration Worthless</h2>
+  <p>5 screens · All overlays use a right-side sheet that slides in over the detail page</p>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     SCREEN 1 — DETAIL PAGE, NO SHEET (baseline)
+══════════════════════════════════════════════════════════ -->
+<div class="mockup-section">
+  <div class="section-label">Screen 1 — Position detail: CSP_OPEN, expiration action available</div>
+
+  <div class="app-shell">
+    <div class="titlebar">
+      <div class="titlebar-dot dot-red"></div>
+      <div class="titlebar-dot dot-yellow"></div>
+      <div class="titlebar-dot dot-green"></div>
+      <div class="titlebar-title">Wheelbase</div>
+    </div>
+    <div class="app-layout">
+      <div class="sidebar">
+        <div class="sidebar-logo">Wheel<span>base</span></div>
+        <div class="nav-item"><span class="nav-icon">◈</span> Dashboard</div>
+        <div class="nav-item active"><span class="nav-icon">⊞</span> Positions</div>
+        <div class="nav-item"><span class="nav-icon">◉</span> Screener</div>
+        <div class="nav-item"><span class="nav-icon">⚑</span> Alerts</div>
+        <div class="nav-item"><span class="nav-icon">≡</span> History</div>
+      </div>
+      <div class="main-content">
+        <button class="back-btn">← All Positions</button>
+
+        <div class="position-header">
+          <div class="ticker-block">
+            <div class="ticker">AAPL</div>
+            <span class="phase-badge csp-open">CSP Open</span>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-ghost">Roll</button>
+            <button class="btn btn-danger btn-ghost">Close Early</button>
+            <button class="btn btn-teal">Record Expiration →</button>
+          </div>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat-cell">
+            <div class="stat-label">Strike</div>
+            <div class="stat-value">$180.00</div>
+            <div class="stat-sub">PUT · Apr 17 2026</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-label">DTE</div>
+            <div class="stat-value amber">5</div>
+            <div class="stat-sub">Near expiry</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-label">Premium Collected</div>
+            <div class="stat-value teal">$250.00</div>
+            <div class="stat-sub">1 contract @ $2.50</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-label">Eff. Cost Basis</div>
+            <div class="stat-value">$177.50</div>
+            <div class="stat-sub">If assigned</div>
+          </div>
+        </div>
+
+        <div class="section-header">Leg History</div>
+        <table class="leg-table">
+          <thead>
+            <tr>
+              <th>Action</th><th>Type</th><th>Strike</th>
+              <th>Exp Date</th><th>Contracts</th><th>Premium</th>
+              <th>Total</th><th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="leg-action action-open">Open</span></td>
+              <td>PUT</td><td>$180.00</td><td>Apr 17 2026</td><td>1</td><td>$2.50</td>
+              <td style="color:var(--teal); font-weight:700">+$250.00</td>
+              <td style="color:var(--text-secondary)">Mar 06 2026</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="annotations">
+    <div class="annotation">Primary CTA top-right — "Record Expiration →"</div>
+    <div class="annotation">DTE amber at ≤ 7 days remaining</div>
+    <div class="annotation">Clicking the button slides in a sheet from the right</div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     SCREEN 2 — CONFIRMATION SHEET OPEN
+══════════════════════════════════════════════════════════ -->
+<div class="mockup-section">
+  <div class="section-label">Screen 2 — Confirmation sheet slides in; background dims</div>
+
+  <div class="app-shell">
+    <div class="titlebar">
+      <div class="titlebar-dot dot-red"></div>
+      <div class="titlebar-dot dot-yellow"></div>
+      <div class="titlebar-dot dot-green"></div>
+      <div class="titlebar-title">Wheelbase</div>
+    </div>
+    <div class="app-layout">
+      <!-- sidebar stays crisp above scrim -->
+      <div class="sidebar">
+        <div class="sidebar-logo">Wheel<span>base</span></div>
+        <div class="nav-item"><span class="nav-icon">◈</span> Dashboard</div>
+        <div class="nav-item active"><span class="nav-icon">⊞</span> Positions</div>
+        <div class="nav-item"><span class="nav-icon">◉</span> Screener</div>
+        <div class="nav-item"><span class="nav-icon">⚑</span> Alerts</div>
+        <div class="nav-item"><span class="nav-icon">≡</span> History</div>
+      </div>
+
+      <!-- main content area: scrim + blurred content + sheet -->
+      <div style="position: relative; overflow: hidden;">
+
+        <!-- dimmed background content -->
+        <div class="main-content dimmed" style="padding-right: 416px;">
+          <button class="back-btn">← All Positions</button>
+          <div class="position-header">
+            <div class="ticker-block">
+              <div class="ticker">AAPL</div>
+              <span class="phase-badge csp-open">CSP Open</span>
+            </div>
+          </div>
+          <div class="stat-grid">
+            <div class="stat-cell"><div class="stat-label">Strike</div><div class="stat-value">$180.00</div></div>
+            <div class="stat-cell"><div class="stat-label">DTE</div><div class="stat-value amber">5</div></div>
+            <div class="stat-cell"><div class="stat-label">Premium</div><div class="stat-value teal">$250.00</div></div>
+            <div class="stat-cell"><div class="stat-label">Cost Basis</div><div class="stat-value">$177.50</div></div>
+          </div>
+          <div class="section-header">Leg History</div>
+          <table class="leg-table">
+            <thead><tr><th>Action</th><th>Type</th><th>Strike</th><th>Premium</th><th>Total</th><th>Date</th></tr></thead>
+            <tbody><tr>
+              <td><span class="leg-action action-open">Open</span></td>
+              <td>PUT</td><td>$180.00</td><td>$2.50</td>
+              <td style="color:var(--teal);font-weight:700">+$250.00</td>
+              <td style="color:var(--text-secondary)">Mar 06 2026</td>
+            </tr></tbody>
+          </table>
+        </div>
+
+        <!-- sheet -->
+        <div class="sheet">
+          <div class="sheet-header">
+            <div>
+              <div class="sheet-eyebrow">Record Expiration</div>
+              <div class="sheet-title">Expire CSP Worthless</div>
+              <div class="sheet-subtitle">AAPL PUT $180 · Apr 17, 2026</div>
+            </div>
+            <button class="sheet-close">×</button>
+          </div>
+
+          <div class="sheet-body">
+            <div class="summary-card">
+              <div class="summary-row">
+                <span class="summary-key">Position</span>
+                <span class="summary-val">AAPL PUT $180 · Apr 17</span>
+              </div>
+              <div class="summary-row">
+                <span class="summary-key">Contracts</span>
+                <span class="summary-val">1</span>
+              </div>
+              <div class="summary-row">
+                <span class="summary-key">Phase transition</span>
+                <span class="summary-val" style="font-size:10px">CSP_OPEN → WHEEL_COMPLETE</span>
+              </div>
+              <div class="summary-row">
+                <span class="summary-key">Leg recorded</span>
+                <span class="summary-val">expire · no fill price</span>
+              </div>
+              <div class="summary-row summary-highlight">
+                <span class="summary-key">Final P&amp;L</span>
+                <span class="summary-val">+$250.00 <span style="font-size:10px;opacity:0.65">(100% captured)</span></span>
+              </div>
+            </div>
+
+            <div class="warning-box">
+              <strong>This cannot be undone.</strong>
+              The position will be closed and marked WHEEL_COMPLETE. Full leg history is preserved.
+            </div>
+          </div>
+
+          <div class="sheet-footer">
+            <button class="btn btn-ghost">Cancel</button>
+            <button class="btn btn-teal-solid">Confirm Expiration</button>
+          </div>
+        </div>
+
+      </div><!-- /relative wrapper -->
+    </div>
+  </div>
+
+  <div class="annotations">
+    <div class="annotation">Sheet anchors to right edge of app content area</div>
+    <div class="annotation">Background blurs + dims; sidebar stays fully interactive</div>
+    <div class="annotation">Cancel or × closes sheet, no action taken</div>
+    <div class="annotation">Sheet is scrollable if content overflows</div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     SCREEN 3 — SUCCESS SHEET
+══════════════════════════════════════════════════════════ -->
+<div class="mockup-section">
+  <div class="section-label">Screen 3 — Success sheet: wheel complete + open new wheel shortcut</div>
+
+  <div class="app-shell">
+    <div class="titlebar">
+      <div class="titlebar-dot dot-red"></div>
+      <div class="titlebar-dot dot-yellow"></div>
+      <div class="titlebar-dot dot-green"></div>
+      <div class="titlebar-title">Wheelbase</div>
+    </div>
+    <div class="app-layout">
+      <div class="sidebar">
+        <div class="sidebar-logo">Wheel<span>base</span></div>
+        <div class="nav-item"><span class="nav-icon">◈</span> Dashboard</div>
+        <div class="nav-item active"><span class="nav-icon">⊞</span> Positions</div>
+        <div class="nav-item"><span class="nav-icon">◉</span> Screener</div>
+        <div class="nav-item"><span class="nav-icon">⚑</span> Alerts</div>
+        <div class="nav-item"><span class="nav-icon">≡</span> History</div>
+      </div>
+
+      <div style="position: relative; overflow: hidden;">
+
+        <!-- background: updated detail showing WHEEL_COMPLETE -->
+        <div class="main-content dimmed" style="padding-right: 416px;">
+          <button class="back-btn">← All Positions</button>
+          <div class="position-header">
+            <div class="ticker-block">
+              <div class="ticker">AAPL</div>
+              <span class="phase-badge wheel-complete">Wheel Complete</span>
+            </div>
+          </div>
+
+          <div class="success-banner">
+            <div class="success-check">✓</div>
+            <div>
+              <div style="font-size:12px;font-weight:600;color:var(--green);margin-bottom:2px;">CSP expired worthless — 100% premium captured</div>
+              <div style="font-size:10px;color:var(--text-secondary);">Position closed · Apr 17, 2026</div>
+            </div>
+          </div>
+
+          <div class="stat-grid">
+            <div class="stat-cell"><div class="stat-label">Strike</div><div class="stat-value">$180.00</div></div>
+            <div class="stat-cell"><div class="stat-label">Status</div><div class="stat-value" style="font-size:13px;color:var(--green)">Closed</div></div>
+            <div class="stat-cell"><div class="stat-label">Premium Captured</div><div class="stat-value teal">$250.00</div></div>
+            <div class="stat-cell"><div class="stat-label">Final P&L</div><div class="stat-value" style="color:var(--green)">+$250.00</div></div>
+          </div>
+
+          <div class="section-header">Leg History</div>
+          <table class="leg-table">
+            <thead><tr><th>Action</th><th>Type</th><th>Strike</th><th>Premium</th><th>Total</th><th>Date</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><span class="leg-action action-open">Open</span></td>
+                <td>PUT</td><td>$180.00</td><td>$2.50</td>
+                <td style="color:var(--teal);font-weight:700">+$250.00</td>
+                <td style="color:var(--text-secondary)">Mar 06 2026</td>
+              </tr>
+              <tr>
+                <td><span class="leg-action action-expire">Expire</span></td>
+                <td>PUT</td><td>$180.00</td><td>—</td>
+                <td style="color:var(--text-muted)">—</td>
+                <td style="color:var(--text-secondary)">Apr 17 2026</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- success sheet -->
+        <div class="sheet">
+          <div class="sheet-header" style="border-bottom-color: rgba(61,224,126,0.15);">
+            <div>
+              <div class="sheet-eyebrow" style="color:var(--green);">Wheel Complete</div>
+              <div class="sheet-title">AAPL Expired Worthless</div>
+              <div class="sheet-subtitle">PUT $180 · Apr 17, 2026</div>
+            </div>
+            <button class="sheet-close">×</button>
+          </div>
+
+          <div class="sheet-body">
+            <div class="pnl-display">
+              <div class="pnl-label">Final P&amp;L</div>
+              <div class="pnl-amount">+$250</div>
+              <div class="pnl-sub">100% premium captured · 1 contract</div>
+            </div>
+
+            <div class="summary-card" style="margin-bottom:20px;">
+              <div class="summary-row">
+                <span class="summary-key">Leg recorded</span>
+                <span class="summary-val" style="color:var(--green)">expire · Apr 17</span>
+              </div>
+              <div class="summary-row">
+                <span class="summary-key">Phase</span>
+                <span class="summary-val">WHEEL_COMPLETE</span>
+              </div>
+              <div class="summary-row">
+                <span class="summary-key">Status</span>
+                <span class="summary-val">Closed</span>
+              </div>
+            </div>
+
+            <div style="font-size:10px;color:var(--text-muted);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:10px;">What's next?</div>
+
+            <button class="shortcut-btn">
+              <div>
+                <div>Open new wheel on AAPL</div>
+                <div class="shortcut-btn-sub">Ticker pre-filled · continue the cycle</div>
+              </div>
+              <span class="shortcut-btn-arrow">→</span>
+            </button>
+
+            <a class="dismiss-link">View full position history</a>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="annotations">
+    <div class="annotation">Background updates immediately: badge flips, expire leg appears in table</div>
+    <div class="annotation">Sheet stays open until dismissed or shortcut taken</div>
+    <div class="annotation">Shortcut navigates to New Wheel form with AAPL pre-filled</div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     SCREEN 4 — VALIDATION ERROR SHEETS (two side-by-side)
+══════════════════════════════════════════════════════════ -->
+<div class="mockup-section">
+  <div class="section-label">Screen 4 — Validation error sheets</div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start;">
+
+    <!-- Error A: wrong phase -->
+    <div>
+      <div style="font-size:10px;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:14px;">Error A — Position not in CSP_OPEN</div>
+      <div class="app-shell" style="max-width:100%;">
+        <div class="titlebar">
+          <div class="titlebar-dot dot-red"></div>
+          <div class="titlebar-dot dot-yellow"></div>
+          <div class="titlebar-dot dot-green"></div>
+          <div class="titlebar-title">Wheelbase</div>
+        </div>
+        <div class="app-layout" style="min-height:440px;">
+          <div class="sidebar" style="padding:16px 0;">
+            <div class="sidebar-logo" style="padding:0 16px 16px;">Wheel<span>base</span></div>
+            <div class="nav-item active"><span class="nav-icon">⊞</span> Positions</div>
+          </div>
+          <div style="position:relative;overflow:hidden;">
+            <div class="main-content dimmed" style="padding:24px;padding-right:376px;">
+              <div class="ticker" style="font-size:24px;margin-bottom:8px;">AAPL</div>
+              <div class="stat-grid" style="grid-template-columns:repeat(2,1fr);">
+                <div class="stat-cell"><div class="stat-label">Phase</div><div class="stat-value" style="font-size:13px;color:var(--red)">CSP_CLOSED_PROFIT</div></div>
+                <div class="stat-cell"><div class="stat-label">Status</div><div class="stat-value" style="font-size:13px;">Open</div></div>
+              </div>
+            </div>
+            <div class="sheet sheet-sm">
+              <div class="sheet-header">
+                <div>
+                  <div class="sheet-eyebrow" style="color:var(--red);">Action Unavailable</div>
+                  <div class="sheet-title">Cannot Record Expiration</div>
+                  <div class="sheet-subtitle">Wrong phase for this action.</div>
+                </div>
+                <button class="sheet-close">×</button>
+              </div>
+              <div class="sheet-body">
+                <div class="error-box">
+                  <strong>Position is not in CSP_OPEN phase</strong>
+                  Current phase: <strong style="color:var(--red)">CSP_CLOSED_PROFIT</strong>. Expiration can only be recorded for an actively open put.
+                </div>
+                <div class="summary-card">
+                  <div class="summary-row">
+                    <span class="summary-key">Current phase</span>
+                    <span class="summary-val" style="color:var(--red)">CSP_CLOSED_PROFIT</span>
+                  </div>
+                  <div class="summary-row">
+                    <span class="summary-key">Required</span>
+                    <span class="summary-val">CSP_OPEN</span>
+                  </div>
+                </div>
+              </div>
+              <div class="sheet-footer">
+                <button class="btn btn-ghost" style="flex:1;">Dismiss</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error B: too early -->
+    <div>
+      <div style="font-size:10px;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:14px;">Error B — Before expiration date</div>
+      <div class="app-shell" style="max-width:100%;">
+        <div class="titlebar">
+          <div class="titlebar-dot dot-red"></div>
+          <div class="titlebar-dot dot-yellow"></div>
+          <div class="titlebar-dot dot-green"></div>
+          <div class="titlebar-title">Wheelbase</div>
+        </div>
+        <div class="app-layout" style="min-height:440px;">
+          <div class="sidebar" style="padding:16px 0;">
+            <div class="sidebar-logo" style="padding:0 16px 16px;">Wheel<span>base</span></div>
+            <div class="nav-item active"><span class="nav-icon">⊞</span> Positions</div>
+          </div>
+          <div style="position:relative;overflow:hidden;">
+            <div class="main-content dimmed" style="padding:24px;padding-right:376px;">
+              <div class="ticker" style="font-size:24px;margin-bottom:8px;">AAPL</div>
+              <span class="phase-badge csp-open">CSP Open</span>
+              <div style="margin-top:12px;" class="stat-grid" style="grid-template-columns:repeat(2,1fr);">
+                <div class="stat-cell"><div class="stat-label">Expiration</div><div class="stat-value" style="font-size:13px;">Apr 17 2026</div></div>
+                <div class="stat-cell"><div class="stat-label">Today</div><div class="stat-value amber" style="font-size:13px;">Apr 10 2026</div></div>
+              </div>
+            </div>
+            <div class="sheet sheet-sm">
+              <div class="sheet-header">
+                <div>
+                  <div class="sheet-eyebrow" style="color:var(--amber);">Not Yet Available</div>
+                  <div class="sheet-title">Too Early to Record</div>
+                  <div class="sheet-subtitle">Option hasn't reached its expiration date.</div>
+                </div>
+                <button class="sheet-close">×</button>
+              </div>
+              <div class="sheet-body">
+                <div class="error-box" style="background:var(--amber-dim);border-color:rgba(240,169,64,0.2);color:var(--amber);">
+                  <strong>Cannot record expiration before the expiration date</strong>
+                  This option expires Apr 17, 2026. Come back on or after that date.
+                </div>
+                <div class="summary-card">
+                  <div class="summary-row">
+                    <span class="summary-key">Today</span>
+                    <span class="summary-val" style="color:var(--amber)">Apr 10, 2026</span>
+                  </div>
+                  <div class="summary-row">
+                    <span class="summary-key">Expiration date</span>
+                    <span class="summary-val">Apr 17, 2026</span>
+                  </div>
+                  <div class="summary-row">
+                    <span class="summary-key">Days remaining</span>
+                    <span class="summary-val" style="color:var(--amber)">7</span>
+                  </div>
+                </div>
+              </div>
+              <div class="sheet-footer">
+                <button class="btn btn-ghost" style="flex:1;">Dismiss</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="annotations">
+    <div class="annotation">Error A: red tone — wrong phase, no recoverable path</div>
+    <div class="annotation">Error B: amber tone — time-based, will resolve automatically</div>
+    <div class="annotation">Both use same sheet pattern; dismiss closes with no side effects</div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     SCREEN 5 — POSITIONS LIST WITH WHEEL_COMPLETE
+══════════════════════════════════════════════════════════ -->
+<div class="mockup-section">
+  <div class="section-label">Screen 5 — Positions list: WHEEL_COMPLETE badge after expiration recorded</div>
+
+  <div class="app-shell" style="max-width: 820px;">
+    <div class="titlebar">
+      <div class="titlebar-dot dot-red"></div>
+      <div class="titlebar-dot dot-yellow"></div>
+      <div class="titlebar-dot dot-green"></div>
+      <div class="titlebar-title">Wheelbase — Positions</div>
+    </div>
+    <div class="main-content" style="padding: 28px;">
+      <div class="page-title-row">
+        <div>
+          <div style="font-family:var(--sans);font-size:20px;font-weight:800;margin-bottom:4px;">Positions</div>
+          <div style="font-size:11px;color:var(--text-secondary)">2 active · 1 closed this cycle</div>
+        </div>
+        <button class="btn btn-teal-solid" style="flex:none;width:auto;">+ New Wheel</button>
+      </div>
+
+      <div style="font-size:10px;color:var(--text-muted);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:10px;">Active</div>
+
+      <div class="position-card">
+        <div>
+          <div class="card-ticker">MSFT</div>
+          <div class="card-meta"><span>PUT $400 · Jun 20</span><span>DTE 100</span><span>1 contract</span></div>
+        </div>
+        <span class="phase-badge csp-open">CSP Open</span>
+        <div class="card-pnl"><div class="card-pnl-value">$500.00</div><div class="card-pnl-label">Premium</div></div>
+      </div>
+
+      <div class="position-card">
+        <div>
+          <div class="card-ticker">NVDA</div>
+          <div class="card-meta"><span>PUT $850 · May 16</span><span>DTE 65</span><span>1 contract</span></div>
+        </div>
+        <span class="phase-badge csp-open">CSP Open</span>
+        <div class="card-pnl"><div class="card-pnl-value">$920.00</div><div class="card-pnl-label">Premium</div></div>
+      </div>
+
+      <div style="font-size:10px;color:var(--text-muted);letter-spacing:0.12em;text-transform:uppercase;margin:20px 0 10px;">Closed</div>
+
+      <div class="position-card complete">
+        <div>
+          <div class="card-ticker">AAPL</div>
+          <div class="card-meta"><span>PUT $180 · Apr 17</span><span>Expired Apr 17, 2026</span><span>1 contract</span></div>
+        </div>
+        <span class="phase-badge wheel-complete">Wheel Complete</span>
+        <div class="card-pnl"><div class="card-pnl-value">+$250.00</div><div class="card-pnl-label">Final P&L</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="annotations">
+    <div class="annotation">Closed positions grouped below active — de-emphasized at 0.55 opacity</div>
+    <div class="annotation">WHEEL_COMPLETE badge in green; CSP_OPEN in amber with pulse dot</div>
+    <div class="annotation">Final P&L replaces "Premium" label for closed positions</div>
+  </div>
+</div>
+
+</body>
+</html>
