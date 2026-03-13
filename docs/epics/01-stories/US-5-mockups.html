@@ -698,7 +698,7 @@
         <div class="position-header">
           <div class="ticker-block">
             <div class="ticker">AAPL</div>
-            <span class="phase-badge csp-open">CSP Open</span>
+            <span class="phase-badge csp-open">Put Open</span>
           </div>
           <div class="action-buttons">
             <button class="btn btn-ghost">Roll</button>
@@ -793,7 +793,7 @@
           <div class="position-header">
             <div class="ticker-block">
               <div class="ticker">AAPL</div>
-              <span class="phase-badge csp-open">CSP Open</span>
+              <span class="phase-badge csp-open">Put Open</span>
             </div>
           </div>
           <div class="stat-grid">
@@ -837,7 +837,7 @@
               </div>
               <div class="summary-row">
                 <span class="summary-key">Phase transition</span>
-                <span class="summary-val" style="font-size:10px">CSP_OPEN → WHEEL_COMPLETE</span>
+                <span class="summary-val" style="font-size:10px">Put Open → Complete</span>
               </div>
               <div class="summary-row">
                 <span class="summary-key">Leg recorded</span>
@@ -851,7 +851,7 @@
 
             <div class="warning-box">
               <strong>This cannot be undone.</strong>
-              The position will be closed and marked WHEEL_COMPLETE. Full leg history is preserved.
+              The position will be closed and marked complete. Full leg history is preserved.
             </div>
           </div>
 
@@ -905,7 +905,7 @@
           <div class="position-header">
             <div class="ticker-block">
               <div class="ticker">AAPL</div>
-              <span class="phase-badge wheel-complete">Wheel Complete</span>
+              <span class="phase-badge wheel-complete">Complete</span>
             </div>
           </div>
 
@@ -948,7 +948,7 @@
         <div class="sheet">
           <div class="sheet-header" style="border-bottom-color: rgba(61,224,126,0.15);">
             <div>
-              <div class="sheet-eyebrow" style="color:var(--green);">Wheel Complete</div>
+              <div class="sheet-eyebrow" style="color:var(--green);">Complete</div>
               <div class="sheet-title">AAPL Expired Worthless</div>
               <div class="sheet-subtitle">PUT $180 · Apr 17, 2026</div>
             </div>
@@ -969,7 +969,7 @@
               </div>
               <div class="summary-row">
                 <span class="summary-key">Phase</span>
-                <span class="summary-val">WHEEL_COMPLETE</span>
+                <span class="summary-val">Complete</span>
               </div>
               <div class="summary-row">
                 <span class="summary-key">Status</span>
@@ -1013,7 +1013,7 @@
 
     <!-- Error A: wrong phase -->
     <div>
-      <div style="font-size:10px;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:14px;">Error A — Position not in CSP_OPEN</div>
+      <div style="font-size:10px;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:14px;">Error A — Put already closed</div>
       <div class="app-shell" style="max-width:100%;">
         <div class="titlebar">
           <div class="titlebar-dot dot-red"></div>
@@ -1030,7 +1030,7 @@
             <div class="main-content dimmed" style="padding:24px;padding-right:376px;">
               <div class="ticker" style="font-size:24px;margin-bottom:8px;">AAPL</div>
               <div class="stat-grid" style="grid-template-columns:repeat(2,1fr);">
-                <div class="stat-cell"><div class="stat-label">Phase</div><div class="stat-value" style="font-size:13px;color:var(--red)">CSP_CLOSED_PROFIT</div></div>
+                <div class="stat-cell"><div class="stat-label">Status</div><div class="stat-value" style="font-size:13px;color:var(--red)">Put Closed</div></div>
                 <div class="stat-cell"><div class="stat-label">Status</div><div class="stat-value" style="font-size:13px;">Open</div></div>
               </div>
             </div>
@@ -1045,17 +1045,17 @@
               </div>
               <div class="sheet-body">
                 <div class="error-box">
-                  <strong>Position is not in CSP_OPEN phase</strong>
-                  Current phase: <strong style="color:var(--red)">CSP_CLOSED_PROFIT</strong>. Expiration can only be recorded for an actively open put.
+                  <strong>This position doesn't have an open put.</strong>
+                  Expiration can only be recorded while a put is still open. Current status: <strong style="color:var(--red)">Put Closed</strong>.
                 </div>
                 <div class="summary-card">
                   <div class="summary-row">
                     <span class="summary-key">Current phase</span>
-                    <span class="summary-val" style="color:var(--red)">CSP_CLOSED_PROFIT</span>
+                    <span class="summary-val" style="color:var(--red)">Put Closed</span>
                   </div>
                   <div class="summary-row">
                     <span class="summary-key">Required</span>
-                    <span class="summary-val">CSP_OPEN</span>
+                    <span class="summary-val">Open Put</span>
                   </div>
                 </div>
               </div>
@@ -1086,7 +1086,7 @@
           <div style="position:relative;overflow:hidden;">
             <div class="main-content dimmed" style="padding:24px;padding-right:376px;">
               <div class="ticker" style="font-size:24px;margin-bottom:8px;">AAPL</div>
-              <span class="phase-badge csp-open">CSP Open</span>
+              <span class="phase-badge csp-open">Put Open</span>
               <div style="margin-top:12px;" class="stat-grid" style="grid-template-columns:repeat(2,1fr);">
                 <div class="stat-cell"><div class="stat-label">Expiration</div><div class="stat-value" style="font-size:13px;">Apr 17 2026</div></div>
                 <div class="stat-cell"><div class="stat-label">Today</div><div class="stat-value amber" style="font-size:13px;">Apr 10 2026</div></div>
@@ -1169,7 +1169,7 @@
           <div class="card-ticker">MSFT</div>
           <div class="card-meta"><span>PUT $400 · Jun 20</span><span>DTE 100</span><span>1 contract</span></div>
         </div>
-        <span class="phase-badge csp-open">CSP Open</span>
+        <span class="phase-badge csp-open">Put Open</span>
         <div class="card-pnl"><div class="card-pnl-value">$500.00</div><div class="card-pnl-label">Premium</div></div>
       </div>
 
@@ -1178,7 +1178,7 @@
           <div class="card-ticker">NVDA</div>
           <div class="card-meta"><span>PUT $850 · May 16</span><span>DTE 65</span><span>1 contract</span></div>
         </div>
-        <span class="phase-badge csp-open">CSP Open</span>
+        <span class="phase-badge csp-open">Put Open</span>
         <div class="card-pnl"><div class="card-pnl-value">$920.00</div><div class="card-pnl-label">Premium</div></div>
       </div>
 
@@ -1189,7 +1189,7 @@
           <div class="card-ticker">AAPL</div>
           <div class="card-meta"><span>PUT $180 · Apr 17</span><span>Expired Apr 17, 2026</span><span>1 contract</span></div>
         </div>
-        <span class="phase-badge wheel-complete">Wheel Complete</span>
+        <span class="phase-badge wheel-complete">Complete</span>
         <div class="card-pnl"><div class="card-pnl-value">+$250.00</div><div class="card-pnl-label">Final P&L</div></div>
       </div>
     </div>
@@ -1197,7 +1197,7 @@
 
   <div class="annotations">
     <div class="annotation">Closed positions grouped below active — de-emphasized at 0.55 opacity</div>
-    <div class="annotation">WHEEL_COMPLETE badge in green; CSP_OPEN in amber with pulse dot</div>
+    <div class="annotation">Complete badge in green; Put Open in amber with pulse dot</div>
     <div class="annotation">Final P&L replaces "Premium" label for closed positions</div>
   </div>
 </div>
