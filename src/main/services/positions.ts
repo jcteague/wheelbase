@@ -10,6 +10,8 @@ import { logger } from '../logger'
 import type { CreatePositionPayload, CreatePositionResult } from '../schemas'
 
 export { listPositions } from './list-positions'
+export { getPosition } from './get-position'
+export { closeCspPosition } from './close-csp-position'
 
 // ---------------------------------------------------------------------------
 // createPosition
@@ -139,6 +141,7 @@ export function createPosition(
       positionId,
       basisPerShare: basisFormatted,
       totalPremiumCollected: totalPremiumFormatted,
+      finalPnl: null,
       snapshotAt: now,
       createdAt: now
     }

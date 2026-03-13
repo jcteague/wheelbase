@@ -70,3 +70,49 @@ export function openWheel(input: OpenWheelInput): OpenWheelResult {
 
   return { phase: 'CSP_OPEN' }
 }
+
+export interface CloseCspInput {
+  currentPhase: WheelPhase
+  closePricePerContract: string
+  openPremiumPerContract: string
+  closeFillDate: string
+  openFillDate: string
+  expiration: string
+}
+
+export interface CloseCspResult {
+  phase: 'CSP_CLOSED_PROFIT' | 'CSP_CLOSED_LOSS'
+}
+
+export function closeCsp(input: CloseCspInput): CloseCspResult {
+  if (input.currentPhase !== 'CSP_OPEN') {
+    throw new ValidationError('__phase__', 'invalid_phase', 'Position is not in CSP_OPEN phase')
+  }
+
+  if (new Decimal(input.closePricePerContract).lte(0)) {
+    throw new ValidationError(
+      'closePricePerContract',
+      'must_be_positive',
+      'Close price must be positive'
+    )
+  }
+
+  if (input.closeFillDate < input.openFillDate) {
+    throw new ValidationError(
+      'fillDate',
+      'close_date_before_open',
+      'Close date cannot be before the open date'
+    )
+  }
+
+  if (input.closeFillDate > input.expiration) {
+    throw new ValidationError(
+      'fillDate',
+      'close_date_after_expiration',
+      'Close date cannot be after expiration date'
+    )
+  }
+
+  const netPnl = new Decimal(input.openPremiumPerContract).minus(input.closePricePerContract)
+  return { phase: netPnl.gt(0) ? 'CSP_CLOSED_PROFIT' : 'CSP_CLOSED_LOSS' }
+}

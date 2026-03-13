@@ -59,21 +59,38 @@ interface IpcCostBasisSnapshotRecord {
   positionId: string
   basisPerShare: string
   totalPremiumCollected: string
+  finalPnl: string | null
   snapshotAt: string
   createdAt: string
 }
 
-type IpcCreatePositionResult =
-  | {
-      ok: true
-      position: IpcPositionRecord
-      leg: IpcLegRecord
-      costBasisSnapshot: IpcCostBasisSnapshotRecord
-    }
-  | {
-      ok: false
-      errors: Array<{ field: string; code: string; message: string }>
-    }
+type IpcResult<T> =
+  | ({ ok: true } & T)
+  | { ok: false; errors: Array<{ field: string; code: string; message: string }> }
+
+type IpcCreatePositionResult = IpcResult<{
+  position: IpcPositionRecord
+  leg: IpcLegRecord
+  costBasisSnapshot: IpcCostBasisSnapshotRecord
+}>
+
+type IpcGetPositionResult = IpcResult<{
+  position: IpcPositionRecord
+  activeLeg: IpcLegRecord | null
+  costBasisSnapshot: IpcCostBasisSnapshotRecord | null
+}>
+
+interface IpcCloseCspPayload {
+  positionId: string
+  closePricePerContract: number
+  fillDate?: string
+}
+
+type IpcCloseCspResult = IpcResult<{
+  position: { id: string; ticker: string; phase: string; status: string; closedDate: string }
+  leg: IpcLegRecord
+  costBasisSnapshot: IpcCostBasisSnapshotRecord & { finalPnl: string }
+}>
 
 declare global {
   interface Window {
@@ -82,6 +99,8 @@ declare global {
       ping: () => Promise<string>
       listPositions: () => Promise<IpcPositionListItem[]>
       createPosition: (payload: IpcCreatePositionPayload) => Promise<IpcCreatePositionResult>
+      getPosition: (positionId: string) => Promise<IpcGetPositionResult>
+      closePosition: (payload: IpcCloseCspPayload) => Promise<IpcCloseCspResult>
     }
   }
 }

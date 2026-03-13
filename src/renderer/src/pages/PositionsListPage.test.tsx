@@ -6,8 +6,10 @@ import { PositionsListPage } from './PositionsListPage'
 
 vi.mock('../hooks/usePositions')
 vi.mock('../components/PositionCard', () => ({
-  PositionCard: ({ item }: { item: PositionListItem }) => (
-    <div data-testid="position-card">{item.ticker}</div>
+  PositionRow: ({ item }: { item: PositionListItem }) => (
+    <tr data-testid="position-card">
+      <td>{item.ticker}</td>
+    </tr>
   )
 }))
 
@@ -17,7 +19,7 @@ const ITEM_1: PositionListItem = {
   id: 'aaa',
   ticker: 'AAPL',
   phase: 'CSP_OPEN',
-  status: 'active',
+  status: 'ACTIVE',
   strike: '180.0000',
   expiration: '2026-04-17',
   dte: 40,
@@ -29,13 +31,25 @@ const ITEM_2: PositionListItem = {
   id: 'bbb',
   ticker: 'MSFT',
   phase: 'CSP_OPEN',
-  status: 'active',
+  status: 'ACTIVE',
   strike: '400.0000',
   expiration: '2026-04-04',
   dte: 27,
   premium_collected: '300.0000',
   effective_cost_basis: '397.0000'
 }
+
+it('renders a new wheel button in the header', () => {
+  mockUsePositions.mockReturnValue({
+    isLoading: false,
+    data: [],
+    isError: false,
+    error: null
+  } as unknown as ReturnType<typeof usePositions>)
+
+  render(<PositionsListPage />)
+  expect(screen.getByRole('link', { name: /\+ new wheel/i })).toHaveAttribute('href', '#/new')
+})
 
 it('renders loading state', () => {
   mockUsePositions.mockReturnValue({
@@ -59,7 +73,10 @@ it('renders empty state when no positions', () => {
 
   render(<PositionsListPage />)
   expect(screen.getByText(/no positions yet/i)).toBeInTheDocument()
-  expect(screen.getByRole('link', { name: /open your first wheel/i })).toHaveAttribute('href', '#/')
+  expect(screen.getByRole('link', { name: /open your first wheel/i })).toHaveAttribute(
+    'href',
+    '#/new'
+  )
 })
 
 it('renders a card for each position', () => {

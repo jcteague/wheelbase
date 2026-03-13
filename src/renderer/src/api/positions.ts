@@ -1,4 +1,4 @@
-// Adapter between the renderer (snake_case) and the IPC layer (camelCase).
+// Adapter between the renderer and the IPC preload layer.
 
 export type WheelPhase =
   | 'CSP_OPEN'
@@ -12,7 +12,7 @@ export type WheelPhase =
   | 'CC_CLOSED_LOSS'
   | 'WHEEL_COMPLETE'
 
-export type WheelStatus = 'active' | 'paused' | 'closed' | 'ACTIVE' | 'CLOSED'
+export type WheelStatus = 'ACTIVE' | 'CLOSED'
 
 export type CreatePositionPayload = {
   ticker: string
@@ -82,7 +82,16 @@ function apiError(status: number, body: unknown): ApiError {
 // IPC camelCase field names → renderer snake_case form field names
 const IPC_TO_FORM_FIELD: Record<string, string> = {
   premiumPerContract: 'premium_per_contract',
-  fillDate: 'fill_date'
+  fillDate: 'fill_date',
+  closePricePerContract: 'close_price_per_contract'
+}
+
+function mapIpcErrors(errors: { field: string; code: string; message: string }[]): ApiFieldError[] {
+  return errors.map((e) => ({
+    field: IPC_TO_FORM_FIELD[e.field] ?? e.field,
+    code: e.code,
+    message: e.message
+  }))
 }
 
 export async function listPositions(): Promise<PositionListItem[]> {
@@ -100,6 +109,85 @@ export async function listPositions(): Promise<PositionListItem[]> {
   }))
 }
 
+export type PositionDetail = {
+  position: {
+    id: string
+    ticker: string
+    phase: WheelPhase
+    status: WheelStatus
+    strategyType: string
+    openedDate: string
+    closedDate: string | null
+    accountId: string | null
+    notes: string | null
+    thesis: string | null
+    tags: string[]
+    createdAt: string
+    updatedAt: string
+  }
+  activeLeg: {
+    id: string
+    positionId: string
+    legRole: string
+    action: string
+    optionType: string
+    strike: string
+    expiration: string
+    contracts: number
+    premiumPerContract: string
+    fillDate: string
+    createdAt: string
+    updatedAt: string
+  } | null
+  costBasisSnapshot: {
+    id: string
+    positionId: string
+    basisPerShare: string
+    totalPremiumCollected: string
+    finalPnl: string | null
+    snapshotAt: string
+    createdAt: string
+  } | null
+}
+
+export type CloseCspPayload = {
+  position_id: string
+  close_price_per_contract: number
+  fill_date?: string
+}
+
+export type CloseCspResponse = {
+  position: {
+    id: string
+    ticker: string
+    phase: WheelPhase
+    status: WheelStatus
+    closedDate: string
+  }
+  leg: LegData & { fillDate: string; fillPrice: string }
+  costBasisSnapshot: CostBasisSnapshotData & { finalPnl: string }
+}
+
+export async function getPosition(positionId: string): Promise<PositionDetail> {
+  const result = await window.api.getPosition(positionId)
+  if (!result.ok) {
+    throw apiError(404, { detail: result.errors })
+  }
+  return result as unknown as PositionDetail
+}
+
+export async function closePosition(payload: CloseCspPayload): Promise<CloseCspResponse> {
+  const result = await window.api.closePosition({
+    positionId: payload.position_id,
+    closePricePerContract: payload.close_price_per_contract,
+    fillDate: payload.fill_date
+  })
+  if (!result.ok) {
+    throw apiError(400, { detail: mapIpcErrors(result.errors) })
+  }
+  return result as unknown as CloseCspResponse
+}
+
 export async function createPosition(
   payload: CreatePositionPayload
 ): Promise<CreatePositionResponse> {
@@ -115,13 +203,7 @@ export async function createPosition(
   })
 
   if (!result.ok) {
-    throw apiError(400, {
-      detail: result.errors.map((e) => ({
-        field: IPC_TO_FORM_FIELD[e.field] ?? e.field,
-        code: e.code,
-        message: e.message
-      }))
-    })
+    throw apiError(400, { detail: mapIpcErrors(result.errors) })
   }
 
   return {

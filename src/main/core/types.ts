@@ -2,7 +2,18 @@ import { z } from 'zod'
 
 export const StrategyType = z.enum(['WHEEL', 'PMCC'])
 export const WheelStatus = z.enum(['ACTIVE', 'CLOSED'])
-export const WheelPhase = z.enum(['CSP_OPEN', 'HOLDING_SHARES', 'CC_OPEN', 'WHEEL_COMPLETE'])
+export const WheelPhase = z.enum([
+  'CSP_OPEN',
+  'CSP_EXPIRED',
+  'CSP_CLOSED_PROFIT',
+  'CSP_CLOSED_LOSS',
+  'HOLDING_SHARES',
+  'CC_OPEN',
+  'CC_EXPIRED',
+  'CC_CLOSED_PROFIT',
+  'CC_CLOSED_LOSS',
+  'WHEEL_COMPLETE'
+])
 export const LegRole = z.enum([
   'CSP_OPEN',
   'CSP_CLOSE',

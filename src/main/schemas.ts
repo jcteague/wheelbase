@@ -66,6 +66,7 @@ export interface CostBasisSnapshotRecord {
   positionId: string
   basisPerShare: string
   totalPremiumCollected: string
+  finalPnl: string | null
   snapshotAt: string
   createdAt: string
 }
@@ -74,6 +75,36 @@ export interface CreatePositionResult {
   position: PositionRecord
   leg: LegRecord
   costBasisSnapshot: CostBasisSnapshotRecord
+}
+
+// ---------------------------------------------------------------------------
+// Close CSP schemas
+// ---------------------------------------------------------------------------
+
+export const CloseCspPayloadSchema = z.object({
+  positionId: z.string().uuid(),
+  closePricePerContract: z.number().positive(),
+  fillDate: z.string().optional()
+})
+
+export type CloseCspPayload = z.infer<typeof CloseCspPayloadSchema>
+
+export interface CloseCspPositionResult {
+  position: {
+    id: string
+    ticker: string
+    phase: WheelPhase
+    status: WheelStatus
+    closedDate: string
+  }
+  leg: LegRecord
+  costBasisSnapshot: CostBasisSnapshotRecord & { finalPnl: string }
+}
+
+export interface GetPositionResult {
+  position: PositionRecord
+  activeLeg: LegRecord | null
+  costBasisSnapshot: CostBasisSnapshotRecord | null
 }
 
 export interface PositionListItem {

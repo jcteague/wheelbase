@@ -118,8 +118,10 @@ pnpm lint         # ESLint
 pnpm build        # production build
 ```
 
-> **Note:** After `pnpm install`, run `pnpm rebuild better-sqlite3` before running `pnpm test`.
-> The `postinstall` script rebuilds better-sqlite3 for Electron's Node version; Vitest uses system Node and needs the system build.
+> **Note:** `better-sqlite3` must be built twice — once for each Node ABI:
+> - After `pnpm install`, run `npx electron-rebuild -f -w better-sqlite3` to build for Electron (required for `pnpm dev` / `pnpm build`)
+> - Then run `pnpm rebuild better-sqlite3` to rebuild for system Node (required for `pnpm test` via Vitest)
+> - Order matters: run electron-rebuild first, then the system rebuild, so tests work in the same shell session.
 
 ---
 

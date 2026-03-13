@@ -6,6 +6,34 @@ import { NewWheelForm } from './NewWheelForm'
 
 vi.mock('../hooks/useCreatePosition')
 
+// DatePicker uses Radix Popover which needs a DOM environment;
+// mock it as a controlled text input so tests can type dates directly.
+vi.mock('@/components/ui/date-picker', () => ({
+  DatePicker: ({
+    value,
+    onChange,
+    onBlur,
+    id,
+    'aria-label': ariaLabel
+  }: {
+    value?: string
+    onChange: (v: string) => void
+    onBlur?: () => void
+    id?: string
+    hasError?: boolean
+    'aria-label'?: string
+  }) => (
+    <input
+      id={id}
+      aria-label={ariaLabel}
+      value={value ?? ''}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={onBlur}
+      placeholder="YYYY-MM-DD"
+    />
+  )
+}))
+
 const mockMutate = vi.fn()
 const mockUseCreatePosition = vi.mocked(useCreatePosition)
 

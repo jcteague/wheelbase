@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { ValidationError, openWheel } from './lifecycle'
-import type { OpenWheelInput } from './lifecycle'
+import { ValidationError, openWheel, closeCsp } from './lifecycle'
+import type { CloseCspInput, OpenWheelInput } from './lifecycle'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -149,6 +149,111 @@ describe('openWheel', () => {
     )
     expect(e.field).toBe('expiration')
     expect(e.code).toBe('must_be_after_fill_date')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// closeCsp
+// ---------------------------------------------------------------------------
+
+describe('closeCsp', () => {
+  const BASE_OPEN_DATE = '2026-03-01'
+  const BASE_EXPIRATION = '2026-04-17'
+
+  function validCloseInput(): CloseCspInput {
+    return {
+      currentPhase: 'CSP_OPEN',
+      closePricePerContract: '1.00',
+      openPremiumPerContract: '2.50',
+      closeFillDate: '2026-03-15',
+      openFillDate: BASE_OPEN_DATE,
+      expiration: BASE_EXPIRATION
+    }
+  }
+
+  it('throws ValidationError when currentPhase is not CSP_OPEN', () => {
+    const e = catchValidation(() =>
+      closeCsp({ ...validCloseInput(), currentPhase: 'HOLDING_SHARES' as never })
+    )
+    expect(e.field).toBe('__phase__')
+    expect(e.code).toBe('invalid_phase')
+    expect(e.message).toBe('Position is not in CSP_OPEN phase')
+  })
+
+  it('throws ValidationError when closePricePerContract is 0', () => {
+    const e = catchValidation(() => closeCsp({ ...validCloseInput(), closePricePerContract: '0' }))
+    expect(e.field).toBe('closePricePerContract')
+    expect(e.code).toBe('must_be_positive')
+  })
+
+  it('throws ValidationError when closePricePerContract is negative', () => {
+    const e = catchValidation(() =>
+      closeCsp({ ...validCloseInput(), closePricePerContract: '-1.00' })
+    )
+    expect(e.field).toBe('closePricePerContract')
+    expect(e.code).toBe('must_be_positive')
+  })
+
+  it('throws ValidationError when closeFillDate is before openFillDate', () => {
+    const e = catchValidation(() =>
+      closeCsp({
+        ...validCloseInput(),
+        closeFillDate: '2026-03-15',
+        openFillDate: '2026-03-20'
+      })
+    )
+    expect(e.field).toBe('fillDate')
+    expect(e.code).toBe('close_date_before_open')
+    expect(e.message).toBe('Close date cannot be before the open date')
+  })
+
+  it('throws ValidationError when closeFillDate is after expiration', () => {
+    const e = catchValidation(() =>
+      closeCsp({
+        ...validCloseInput(),
+        closeFillDate: '2026-04-18',
+        expiration: '2026-04-17'
+      })
+    )
+    expect(e.field).toBe('fillDate')
+    expect(e.code).toBe('close_date_after_expiration')
+    expect(e.message).toBe('Close date cannot be after expiration date')
+  })
+
+  it('returns CSP_CLOSED_PROFIT when closePrice < openPremium', () => {
+    const result = closeCsp({
+      ...validCloseInput(),
+      closePricePerContract: '1.00',
+      openPremiumPerContract: '2.50'
+    })
+    expect(result.phase).toBe('CSP_CLOSED_PROFIT')
+  })
+
+  it('returns CSP_CLOSED_LOSS when closePrice > openPremium', () => {
+    const result = closeCsp({
+      ...validCloseInput(),
+      closePricePerContract: '3.50',
+      openPremiumPerContract: '2.50'
+    })
+    expect(result.phase).toBe('CSP_CLOSED_LOSS')
+  })
+
+  it('returns CSP_CLOSED_LOSS when closePrice equals openPremium (breakeven)', () => {
+    const result = closeCsp({
+      ...validCloseInput(),
+      closePricePerContract: '2.50',
+      openPremiumPerContract: '2.50'
+    })
+    expect(result.phase).toBe('CSP_CLOSED_LOSS')
+  })
+
+  it('passes validation when closeFillDate equals expiration', () => {
+    const result = closeCsp({
+      ...validCloseInput(),
+      closeFillDate: '2026-04-17',
+      expiration: '2026-04-17'
+    })
+    expect(result.phase).toBe('CSP_CLOSED_PROFIT')
   })
 })
 

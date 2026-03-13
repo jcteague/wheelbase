@@ -1,6 +1,6 @@
 ---
-description: Implements tasks from a plan file in TDD order (Red → Green → Refactor → Documentation). Reads the plan and companion .tasks.md file, executes each task using the appropriate skill, verifies correctness, marks tasks complete, and writes implementation docs. Optionally filter to a phase or task range.
-argument-hint: <plan-file-path> [all|red|green|refactor|<N>|<N>-<M>]
+description: Implements tasks from a plan file in TDD order (Red → Green → Refactor → Documentation). Reads the plan and beads issues, executes each task using the appropriate skill, verifies correctness, marks tasks complete in beads. Optionally filter to a phase or task range.
+argument-hint: <us-id|plan-file-path> [all|red|green|refactor|<N>|<N>-<M>]
 allowed-tools:
   - Read
   - Write
@@ -20,49 +20,54 @@ The user has invoked `/implement-plan` with arguments: `$ARGUMENTS`
 ## Step 0 — Parse Arguments
 
 Split `$ARGUMENTS` on the first space:
-- **Plan file path** = the first token (required)
+- **First token** = story ID or plan file path (required)
 - **Filter** = the second token (optional, default: `all`)
 
+**Resolve the plan file path:**
+- If the first token looks like a story ID (e.g. `us-4`, `us-12`) → derive the path as `plans/<id>/plan.md`
+- Otherwise treat it as a literal file path
+
 Valid filter values:
-- `all` — every unchecked task
-- `red` — only `[Red]` unchecked tasks
-- `green` — only `[Green]` unchecked tasks
-- `refactor` — only `[Refactor]` unchecked tasks
+- `all` — every open task
+- `red` — only `[Red]` tasks
+- `green` — only `[Green]` tasks
+- `refactor` — only `[Refactor]` tasks
 - A single integer (e.g. `3`) — only that numbered task
 - A range (e.g. `2-7`) — tasks at those positions (inclusive)
 
 ---
 
-## Step 1 — Load the Plan and Tasks File
+## Step 1 — Load the Plan and Beads Tasks
 
 1. Use Read to load the plan file at the given path. If it does not exist, stop and tell the user: "File not found: `<path>`"
 
-2. Derive the tasks file path by replacing the `.md` extension with `.tasks.md` (e.g. `plans/my-plan.md` → `plans/my-plan.tasks.md`). Use Read to load it.
+2. Run `bd ready` to list tasks that are ready to work (no blockers). Also run `bd list --status=open` to see all open tasks related to this plan.
 
-3. If the tasks file does not exist, stop and tell the user:
-   > "No tasks file found at `<derived-path>`. Run `/plan-tasks <plan-file>` first to generate it."
+3. Identify the beads issues for this plan by looking at the issue titles — they should reference the plan's feature areas (e.g. `[Red]`, `[Green]`, `[Refactor]` tasks). If no beads issues exist, stop and tell the user:
+   > "No beads tasks found. Run `/plan-tasks <plan-file>` first to generate them."
 
 ---
 
 ## Step 2 — Build the Execution Set
 
-Parse the tasks file. Each task is a line matching one of:
-- `- [ ] [Red] <subject>` — unchecked
-- `- [ ] [Green] <subject>` — unchecked
-- `- [ ] [Refactor] <subject>` — unchecked
-- `- [x] [Phase] <subject>` — already complete, skip
+List all beads tasks related to this plan. Each task has:
+- A beads ID (e.g. `wheelbase-ink.4.1`)
+- A phase tag in the title: `[Red]`, `[Green]`, or `[Refactor]`
+- A status: `open`, `in_progress`, or `closed`
 
-Number tasks sequentially by document order (1, 2, 3, …), counting both checked and unchecked lines so numbers are stable.
+Skip any task whose status is `closed` (already complete).
 
-Apply the filter to select the unchecked subset.
+Number tasks sequentially by their beads ID order (counting both closed and open so numbers are stable).
+
+Apply the filter to select the open subset.
 
 **Enforce this execution order across the full selected set:**
-1. All selected `[Red]` tasks — in their document order
-2. All selected `[Green]` tasks — in their document order
-3. All selected `[Refactor]` tasks — in their document order
+1. All selected `[Red]` tasks — in beads ID order
+2. All selected `[Green]` tasks — in beads ID order
+3. All selected `[Refactor]` tasks — in beads ID order
 4. Documentation step — after task execution completes
 
-**Dependency guard:** Before running any `[Green]` task, verify its paired `[Red]` task is already checked (`[x]`) in the tasks file. If it is not (and was not just completed in this run), warn the user and ask whether to proceed or skip. Do not silently execute Green work without confirmed Red coverage.
+**Dependency guard:** Before running any `[Green]` task, verify its paired `[Red]` task is `closed` in beads. If it is not (and was not just completed in this run), warn the user and ask whether to proceed or skip. Do not silently execute Green work without confirmed Red coverage.
 
 Report the plan before starting:
 ```
@@ -71,7 +76,7 @@ Tasks selected: <N> (<Red count> Red, <Green count> Green, <Refactor count> Refa
 Already complete: <M> tasks skipped
 ```
 
-If zero tasks are selected (all are already checked), tell the user and stop.
+If zero tasks are selected (all are already closed), tell the user and stop.
 
 ---
 
@@ -79,13 +84,19 @@ If zero tasks are selected (all are already checked), tell the user and stop.
 
 Work through the execution set in the order determined in Step 2. For each task:
 
-### 3a — Announce
+### 3a — Announce and Claim
 
 Print a clear header:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Task <current> of <total selected>: [Phase] <subject>
+Beads: <id>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+Mark the task in progress:
+```bash
+bd update <id> --status=in_progress
 ```
 
 ### 3b — Extract Context from the Plan
@@ -96,6 +107,8 @@ Read the plan to find the section(s) relevant to this task. Extract:
 - Validation rules, formulas, or business logic
 - Test cases or acceptance criteria explicitly called out
 - Any "tests first" or dependency notes
+
+Also run `bd show <id>` to pull any additional context stored in the beads issue.
 
 This context is what you pass to the skill — do not skip it.
 
@@ -119,19 +132,26 @@ Run the appropriate check after the skill completes:
 
 | Phase | Command to run | Expected outcome |
 |---|---|---|
-| Red | `cd backend && python -m pytest <test-file> -v` (or frontend equivalent) | Tests **fail** (they define behaviour not yet implemented) |
-| Green | `cd backend && python -m pytest <test-file> -v` (or frontend equivalent) | Tests **pass** |
-| Refactor | Same test command as the paired Green task | Tests still **pass** |
+| Red | `pnpm test` | Tests **fail** (they define behaviour not yet implemented) |
+| Green | `pnpm test` | Tests **pass** |
+| Refactor | `pnpm test` | Tests still **pass** |
 
 **If Red tests pass instead of fail:** The implementation may already exist. Note this, keep the task marked complete, and continue — do not treat it as a failure.
 
 **If Green or Refactor tests fail:** Do not mark the task complete. Diagnose the failure, fix it, re-run. If you cannot resolve it in one attempt, describe the blocker to the user and pause.
 
-After all backend work in a session, also run `make lint` and `make typecheck` if applicable.
+After Green and Refactor tasks, also run:
+```bash
+pnpm lint && pnpm typecheck
+```
+Fix any errors before marking the task complete.
 
-### 3e — Mark Complete
+### 3e — Mark Complete in Beads
 
-When verification passes, use Edit to update the tasks file: change `- [ ] [Phase] <subject>` → `- [x] [Phase] <subject>` for exactly this task (match on the full subject line).
+When verification passes, close the beads task:
+```bash
+bd close <id>
+```
 
 ---
 
@@ -150,24 +170,30 @@ If the selected set contains only `[Red]` tasks, skip this step.
 
 ---
 
-## Step 5 — Final Report
+## Step 5 — Final Report and Session Close
 
-After all selected tasks are processed, print:
+After all selected tasks are processed, run the full suite:
+```bash
+pnpm test && pnpm lint && pnpm typecheck
+```
 
+Report whether the suite is clean. If anything fails, show the output and describe what needs fixing — do not mark the overall run as successful if the suite is red.
+
+Sync beads and commit:
+```bash
+bd dolt pull
+git add <changed files>
+git commit -m "<summary of what was implemented>"
+```
+
+Print the final report:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 implement-plan complete
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Completed: <N> tasks
-Remaining: <M> tasks in <tasks-file-path>
+Remaining: <M> open tasks
 ```
-
-If all Green and Refactor tasks in the selected set are complete, run the full suite:
-```bash
-make test && make lint && make typecheck
-```
-
-Report whether the suite is clean. If anything fails, show the output and describe what needs fixing — do not mark the overall run as successful if the suite is red.
 
 If tasks remain in other phases, tell the user the command to continue:
 ```

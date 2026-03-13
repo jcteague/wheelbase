@@ -1,125 +1,163 @@
+import { useState } from 'react'
 import type { PositionListItem, WheelPhase } from '../api/positions'
 
-const FONT_MONO = "'JetBrains Mono', monospace"
+const MONO = 'ui-monospace, "SF Mono", Menlo, monospace'
 
-const COLOR_ZINC_200 = 'rgb(228 228 231)'
-const COLOR_ZINC_800 = 'rgb(39 39 42)'
-const COLOR_ZINC_900 = 'rgb(24 24 27)'
-const COLOR_EMERALD_400 = '#34d399'
-const COLOR_AMBER_500 = '#f59e0b'
-
-function formatCurrency(value: string): string {
+function fmt(value: string): string {
   return `$${parseFloat(value).toFixed(2)}`
 }
 
-/** Colors used for the left border accent and phase badge -- keyed by phase. */
 const PHASE_COLOR: Record<WheelPhase, string> = {
-  CSP_OPEN: '#f59e0b', // amber-500
-  CSP_EXPIRED: '#71717a', // zinc-500
-  CSP_CLOSED_PROFIT: '#10b981', // emerald-500
-  CSP_CLOSED_LOSS: '#ef4444', // red-500
-  HOLDING_SHARES: '#38bdf8', // sky-400
-  CC_OPEN: '#a78bfa', // violet-400
-  CC_EXPIRED: '#71717a', // zinc-500
-  CC_CLOSED_PROFIT: '#10b981', // emerald-500
-  CC_CLOSED_LOSS: '#ef4444', // red-500
-  WHEEL_COMPLETE: '#34d399' // emerald-400
+  CSP_OPEN: '#e6a817',
+  CSP_EXPIRED: '#484f58',
+  CSP_CLOSED_PROFIT: '#3fb950',
+  CSP_CLOSED_LOSS: '#f85149',
+  HOLDING_SHARES: '#79c0ff',
+  CC_OPEN: '#d2a8ff',
+  CC_EXPIRED: '#484f58',
+  CC_CLOSED_PROFIT: '#3fb950',
+  CC_CLOSED_LOSS: '#f85149',
+  WHEEL_COMPLETE: '#3fb950'
 }
 
 const PHASE_LABEL: Record<WheelPhase, string> = {
   CSP_OPEN: 'CSP Open',
   CSP_EXPIRED: 'CSP Expired',
-  CSP_CLOSED_PROFIT: 'CSP Closed +',
-  CSP_CLOSED_LOSS: 'CSP Closed −',
-  HOLDING_SHARES: 'Holding Shares',
+  CSP_CLOSED_PROFIT: 'CSP ✓',
+  CSP_CLOSED_LOSS: 'CSP ✗',
+  HOLDING_SHARES: 'Shares',
   CC_OPEN: 'CC Open',
   CC_EXPIRED: 'CC Expired',
-  CC_CLOSED_PROFIT: 'CC Closed +',
-  CC_CLOSED_LOSS: 'CC Closed −',
+  CC_CLOSED_PROFIT: 'CC ✓',
+  CC_CLOSED_LOSS: 'CC ✗',
   WHEEL_COMPLETE: 'Complete'
 }
 
-type Props = { item: PositionListItem }
+type Props = { item: PositionListItem; index: number }
 
-export function PositionCard({ item }: Props): React.JSX.Element {
+export function PositionRow({ item, index }: Props): React.JSX.Element {
+  const [hovered, setHovered] = useState(false)
   const color = PHASE_COLOR[item.phase]
   const dteUrgent = item.dte !== null && item.dte <= 7
 
   return (
-    <article
-      className="relative rounded-r-lg overflow-hidden cursor-pointer transition-colors duration-150 hover:brightness-110"
+    <tr
+      onClick={() => {
+        window.location.hash = `/positions/${item.id}`
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
-        background: COLOR_ZINC_900,
-        borderTop: `1px solid ${COLOR_ZINC_800}`,
-        borderRight: `1px solid ${COLOR_ZINC_800}`,
-        borderBottom: `1px solid ${COLOR_ZINC_800}`,
-        borderLeft: `4px solid ${color}`
+        borderBottom: '1px solid var(--wb-border-subtle)',
+        background: hovered
+          ? 'var(--wb-bg-hover)'
+          : index % 2 === 0
+            ? 'transparent'
+            : 'rgba(255,255,255,0.01)',
+        cursor: 'pointer',
+        transition: 'background 0.1s',
+        borderLeft: `3px solid ${hovered ? color : 'transparent'}`
       }}
     >
-      <div className="px-5 py-4">
-        <div className="flex items-start justify-between gap-4 mb-4">
-          <div className="flex items-baseline gap-3">
-            <span
-              className="text-xl font-black text-zinc-100 tracking-tight leading-none"
-              style={{ fontFamily: FONT_MONO }}
-            >
-              {item.ticker}
-            </span>
-            <span className="text-xs text-zinc-500 font-mono">{item.status}</span>
-          </div>
-
+      {/* Ticker */}
+      <td style={{ padding: '10px 16px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           <span
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono font-medium tracking-wide border"
             style={{
-              color,
-              background: `${color}18`,
-              borderColor: `${color}40`
+              fontFamily: MONO,
+              fontWeight: 700,
+              fontSize: '0.875rem',
+              color: 'var(--wb-text-primary)',
+              letterSpacing: '0.02em'
             }}
           >
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
-            {PHASE_LABEL[item.phase]}
+            {item.ticker}
+          </span>
+          <span style={{ fontSize: '0.65rem', color: 'var(--wb-text-muted)', fontFamily: MONO }}>
+            {item.status}
           </span>
         </div>
+      </td>
 
-        <div className="grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-4">
-          <Stat label="Strike" value={item.strike ? formatCurrency(item.strike) : '—'} />
-          <Stat label="Expiration" value={item.expiration ?? '—'} />
-          <Stat
-            label="DTE"
-            value={item.dte !== null ? `${item.dte}d` : 'Expired'}
-            accentColor={dteUrgent ? COLOR_AMBER_500 : undefined}
+      {/* Phase */}
+      <td style={{ padding: '10px 16px' }}>
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            padding: '2px 8px',
+            borderRadius: 4,
+            fontSize: '0.7rem',
+            fontWeight: 500,
+            fontFamily: MONO,
+            color,
+            background: `${color}18`,
+            border: `1px solid ${color}30`
+          }}
+        >
+          <span
+            style={{ width: 5, height: 5, borderRadius: '50%', background: color, flexShrink: 0 }}
           />
-          <Stat
-            label="Premium Collected"
-            value={formatCurrency(item.premium_collected)}
-            accentColor={COLOR_EMERALD_400}
-          />
-          <Stat label="Cost Basis" value={formatCurrency(item.effective_cost_basis)} />
-        </div>
-      </div>
-    </article>
-  )
-}
+          {PHASE_LABEL[item.phase]}
+        </span>
+      </td>
 
-type StatProps = {
-  label: string
-  value: string
-  accentColor?: string
-}
+      {/* Strike */}
+      <td style={{ padding: '10px 16px' }}>
+        <span style={{ fontFamily: MONO, fontSize: '0.8125rem', color: 'var(--wb-text-primary)' }}>
+          {item.strike ? fmt(item.strike) : '—'}
+        </span>
+      </td>
 
-function Stat({ label, value, accentColor }: StatProps): React.JSX.Element {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[10px] font-mono tracking-widest uppercase text-zinc-500">{label}</span>
-      <span
-        className="text-sm font-medium"
-        style={{
-          fontFamily: FONT_MONO,
-          color: accentColor ?? COLOR_ZINC_200
-        }}
-      >
-        {value}
-      </span>
-    </div>
+      {/* Expiration */}
+      <td style={{ padding: '10px 16px' }}>
+        <span
+          style={{
+            fontFamily: MONO,
+            fontSize: '0.8125rem',
+            color: 'var(--wb-text-secondary)',
+            letterSpacing: '0.03em'
+          }}
+        >
+          {item.expiration ?? '—'}
+        </span>
+      </td>
+
+      {/* DTE */}
+      <td style={{ padding: '10px 16px' }}>
+        <span
+          style={{
+            fontFamily: MONO,
+            fontSize: '0.8125rem',
+            fontWeight: dteUrgent ? 600 : 400,
+            color: dteUrgent ? 'var(--wb-gold)' : 'var(--wb-text-secondary)'
+          }}
+        >
+          {item.dte !== null ? `${item.dte}d` : '—'}
+        </span>
+      </td>
+
+      {/* Premium */}
+      <td style={{ padding: '10px 16px' }}>
+        <span
+          style={{
+            fontFamily: MONO,
+            fontSize: '0.8125rem',
+            color: 'var(--wb-green)',
+            fontWeight: 500
+          }}
+        >
+          {fmt(item.premium_collected)}
+        </span>
+      </td>
+
+      {/* Cost Basis */}
+      <td style={{ padding: '10px 16px' }}>
+        <span style={{ fontFamily: MONO, fontSize: '0.8125rem', color: 'var(--wb-text-primary)' }}>
+          {fmt(item.effective_cost_basis)}
+        </span>
+      </td>
+    </tr>
   )
 }

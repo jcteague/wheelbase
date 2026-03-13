@@ -34,3 +34,28 @@ export function calculateInitialCspBasis(leg: CspLegInput): CostBasisResult {
     totalPremiumCollected: totalPremiumCollected.toString()
   }
 }
+
+export interface CspCloseInput {
+  openPremiumPerContract: string
+  closePricePerContract: string
+  contracts: number
+}
+
+export interface CspCloseResult {
+  finalPnl: string
+  pnlPercentage: string
+}
+
+export function calculateCspClose(input: CspCloseInput): CspCloseResult {
+  const openPremium = new Decimal(input.openPremiumPerContract)
+  const closePrice = new Decimal(input.closePricePerContract)
+  const netPnlPerContract = openPremium.minus(closePrice)
+
+  const finalPnl = round4(netPnlPerContract.times(input.contracts).times(100))
+  const pnlPercentage = round4(netPnlPerContract.dividedBy(openPremium).times(100))
+
+  return {
+    finalPnl: finalPnl.toFixed(4),
+    pnlPercentage: pnlPercentage.toFixed(4)
+  }
+}

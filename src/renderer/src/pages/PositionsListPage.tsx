@@ -1,67 +1,190 @@
-import { PositionCard } from '../components/PositionCard'
+import { PositionRow } from '../components/PositionCard'
+import { PageHeader, PageLayout } from '../components/PageLayout'
 import { usePositions } from '../hooks/usePositions'
 
-const STAGGER_DELAY_MS = 60
+const MONO = 'ui-monospace, "SF Mono", Menlo, monospace'
+
+function PositionsHeader({ count }: { count?: number }): React.JSX.Element {
+  return (
+    <PageHeader
+      left={
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <h1
+            style={{
+              fontSize: '0.875rem',
+              fontWeight: 600,
+              color: 'var(--wb-text-primary)',
+              margin: 0
+            }}
+          >
+            Active Positions
+          </h1>
+          {count != null && count > 0 && (
+            <span
+              style={{
+                fontSize: '0.65rem',
+                fontWeight: 500,
+                padding: '1px 7px',
+                borderRadius: 10,
+                background: 'var(--wb-gold-dim)',
+                color: 'var(--wb-gold)',
+                border: '1px solid var(--wb-gold-border)',
+                fontFamily: MONO
+              }}
+            >
+              {count}
+            </span>
+          )}
+        </div>
+      }
+      right={
+        <a
+          href="#/new"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '5px 14px',
+            borderRadius: 6,
+            fontSize: '0.75rem',
+            fontWeight: 500,
+            color: 'var(--wb-bg-base)',
+            background: 'var(--wb-gold)',
+            textDecoration: 'none',
+            letterSpacing: '0.02em',
+            transition: 'opacity 0.15s'
+          }}
+          onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.opacity = '0.85')}
+          onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.opacity = '1')}
+        >
+          + New Wheel
+        </a>
+      }
+    />
+  )
+}
 
 export function PositionsListPage(): React.JSX.Element {
   const { data, isLoading, isError } = usePositions()
 
   return (
-    <div className="min-h-screen bg-zinc-950">
-      <header className="border-b border-zinc-800 px-6 py-5">
-        <div className="mx-auto max-w-5xl flex items-baseline gap-4">
-          <h1
-            className="text-2xl font-black tracking-tight text-zinc-100"
-            style={{ fontFamily: "'Syne', sans-serif" }}
-          >
-            WHEELBASE
-          </h1>
-          <span className="text-xs font-mono text-zinc-500 tracking-widest uppercase">
-            Positions
-          </span>
+    <PageLayout header={<PositionsHeader count={data?.length} />}>
+      {isLoading && (
+        <div
+          style={{
+            padding: '32px 24px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            color: 'var(--wb-text-muted)',
+            fontSize: '0.8125rem'
+          }}
+        >
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: 'var(--wb-gold)',
+              display: 'inline-block',
+              animation: 'pulse 1.5s ease-in-out infinite'
+            }}
+          />
+          Loading positions…
         </div>
-      </header>
+      )}
 
-      <main className="mx-auto max-w-5xl px-6 py-8">
-        {isLoading && (
-          <div className="flex items-center gap-3 text-zinc-500">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
-            <span className="text-sm font-mono tracking-wide">Loading positions…</span>
-          </div>
-        )}
+      {isError && (
+        <div
+          style={{
+            margin: '16px 24px',
+            padding: '10px 14px',
+            borderRadius: 6,
+            background: 'var(--wb-red-dim)',
+            border: '1px solid rgba(248,81,73,0.25)',
+            color: 'var(--wb-red)',
+            fontSize: '0.8125rem',
+            fontFamily: MONO
+          }}
+        >
+          Failed to load positions — check that the database is accessible.
+        </div>
+      )}
 
-        {isError && (
-          <div className="rounded border border-red-900/50 bg-red-950/30 px-4 py-3 text-sm text-red-400 font-mono">
-            Failed to load positions — check that the backend is running.
-          </div>
-        )}
+      {!isLoading && !isError && (!data || data.length === 0) && (
+        <div
+          style={{
+            padding: '64px 24px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: 16
+          }}
+        >
+          <p style={{ color: 'var(--wb-text-muted)', fontSize: '0.875rem', margin: 0 }}>
+            No positions yet
+          </p>
+          <a
+            href="#/new"
+            style={{
+              padding: '6px 16px',
+              borderRadius: 6,
+              fontSize: '0.75rem',
+              fontWeight: 500,
+              color: 'var(--wb-gold)',
+              background: 'var(--wb-gold-dim)',
+              border: '1px solid var(--wb-gold-border)',
+              textDecoration: 'none'
+            }}
+          >
+            Open your first wheel →
+          </a>
+        </div>
+      )}
 
-        {!isLoading && !isError && (!data || data.length === 0) && (
-          <div className="flex flex-col items-start gap-4 py-16">
-            <p className="text-zinc-500 text-sm font-mono">No positions yet</p>
-            <a
-              href="#/"
-              className="text-xs font-mono tracking-widest uppercase text-amber-500 hover:text-amber-400 transition-colors border border-amber-500/30 hover:border-amber-500/60 px-4 py-2 rounded"
+      {data && data.length > 0 && (
+        <table
+          style={{
+            width: '100%',
+            borderCollapse: 'collapse',
+            fontSize: '0.8125rem'
+          }}
+        >
+          <thead>
+            <tr
+              style={{
+                background: 'var(--wb-bg-surface)',
+                borderBottom: '1px solid var(--wb-border)'
+              }}
             >
-              Open your first wheel →
-            </a>
-          </div>
-        )}
-
-        {data && data.length > 0 && (
-          <div className="flex flex-col gap-3">
+              {['Ticker', 'Phase', 'Strike', 'Expiration', 'DTE', 'Premium', 'Cost Basis'].map(
+                (col) => (
+                  <th
+                    key={col}
+                    style={{
+                      padding: '8px 16px',
+                      textAlign: 'left',
+                      fontWeight: 500,
+                      fontSize: '0.65rem',
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      color: 'var(--wb-text-muted)',
+                      fontFamily: MONO
+                    }}
+                  >
+                    {col}
+                  </th>
+                )
+              )}
+            </tr>
+          </thead>
+          <tbody>
             {data.map((item, i) => (
-              <div
-                key={item.id}
-                style={{ animationDelay: `${i * STAGGER_DELAY_MS}ms` }}
-                className="animate-in fade-in slide-in-from-bottom-2 duration-300 fill-mode-both"
-              >
-                <PositionCard item={item} />
-              </div>
+              <PositionRow key={item.id} item={item} index={i} />
             ))}
-          </div>
-        )}
-      </main>
-    </div>
+          </tbody>
+        </table>
+      )}
+    </PageLayout>
   )
 }

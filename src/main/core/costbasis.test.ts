@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculateInitialCspBasis } from './costbasis'
+import { calculateInitialCspBasis, calculateCspClose } from './costbasis'
 import type { CostBasisResult, CspLegInput } from './costbasis'
 
 describe('calculateInitialCspBasis', () => {
@@ -59,5 +59,60 @@ describe('calculateInitialCspBasis', () => {
     const result: CostBasisResult = calculateInitialCspBasis(leg)
     expect(result).toHaveProperty('basisPerShare')
     expect(result).toHaveProperty('totalPremiumCollected')
+  })
+})
+
+describe('calculateCspClose', () => {
+  it('calculates profit: open 2.50, close 1.00, 1 contract', () => {
+    const result = calculateCspClose({
+      openPremiumPerContract: '2.50',
+      closePricePerContract: '1.00',
+      contracts: 1
+    })
+    expect(result.finalPnl).toBe('150.0000')
+    expect(result.pnlPercentage).toBe('60.0000')
+  })
+
+  it('calculates loss: open 2.50, close 3.50, 1 contract', () => {
+    const result = calculateCspClose({
+      openPremiumPerContract: '2.50',
+      closePricePerContract: '3.50',
+      contracts: 1
+    })
+    expect(result.finalPnl).toBe('-100.0000')
+    expect(result.pnlPercentage).toBe('-40.0000')
+  })
+
+  it('scales total P&L by contract count (percentage is per-contract)', () => {
+    const result = calculateCspClose({
+      openPremiumPerContract: '2.50',
+      closePricePerContract: '1.00',
+      contracts: 2
+    })
+    expect(result.finalPnl).toBe('300.0000')
+    expect(result.pnlPercentage).toBe('60.0000')
+  })
+
+  it('returns zero for breakeven close', () => {
+    const result = calculateCspClose({
+      openPremiumPerContract: '2.50',
+      closePricePerContract: '2.50',
+      contracts: 1
+    })
+    expect(result.finalPnl).toBe('0.0000')
+    expect(result.pnlPercentage).toBe('0.0000')
+  })
+
+  it('rounds to 4 decimal places with ROUND_HALF_UP', () => {
+    // netPnlPerContract = 1.33 - 0.66 = 0.67
+    // finalPnl = 0.67 * 1 * 100 = 67.00 → 67.0000
+    // pnlPercentage = 0.67 / 1.33 * 100 = 50.3759398... → 50.3759 (ROUND_HALF_UP)
+    const result = calculateCspClose({
+      openPremiumPerContract: '1.33',
+      closePricePerContract: '0.66',
+      contracts: 1
+    })
+    expect(result.finalPnl).toBe('67.0000')
+    expect(result.pnlPercentage).toBe('50.3759')
   })
 })
