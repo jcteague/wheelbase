@@ -156,16 +156,45 @@ export type CloseCspPayload = {
   fill_date?: string
 }
 
+export type ClosedPositionData = {
+  id: string
+  ticker: string
+  phase: WheelPhase
+  status: WheelStatus
+  closedDate: string
+}
+
+export type ClosedSnapshotData = CostBasisSnapshotData & {
+  positionId: string
+  finalPnl: string
+  snapshotAt: string
+  createdAt: string
+}
+
 export type CloseCspResponse = {
-  position: {
-    id: string
-    ticker: string
-    phase: WheelPhase
-    status: WheelStatus
-    closedDate: string
-  }
+  position: ClosedPositionData
   leg: LegData & { fillDate: string; fillPrice: string }
-  costBasisSnapshot: CostBasisSnapshotData & { finalPnl: string }
+  costBasisSnapshot: ClosedSnapshotData
+}
+
+export type ExpireCspPayload = {
+  position_id: string
+  expiration_date_override?: string
+}
+
+export type ExpireCspResponse = {
+  position: ClosedPositionData
+  leg: LegData & {
+    positionId: string
+    legRole: string
+    action: string
+    optionType: string
+    premiumPerContract: string
+    fillDate: string
+    createdAt: string
+    updatedAt: string
+  }
+  costBasisSnapshot: ClosedSnapshotData
 }
 
 export async function getPosition(positionId: string): Promise<PositionDetail> {
@@ -186,6 +215,17 @@ export async function closePosition(payload: CloseCspPayload): Promise<CloseCspR
     throw apiError(400, { detail: mapIpcErrors(result.errors) })
   }
   return result as unknown as CloseCspResponse
+}
+
+export async function expirePosition(payload: ExpireCspPayload): Promise<ExpireCspResponse> {
+  const result = await window.api.expirePosition({
+    positionId: payload.position_id,
+    expirationDateOverride: payload.expiration_date_override
+  })
+  if (!result.ok) {
+    throw apiError(400, { detail: mapIpcErrors(result.errors) })
+  }
+  return result as unknown as ExpireCspResponse
 }
 
 export async function createPosition(

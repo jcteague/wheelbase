@@ -46,6 +46,16 @@ export interface CspCloseResult {
   pnlPercentage: string
 }
 
+export interface CspExpirationInput {
+  openPremiumPerContract: string
+  contracts: number
+}
+
+export interface CspExpirationResult {
+  finalPnl: string
+  pnlPercentage: string
+}
+
 export function calculateCspClose(input: CspCloseInput): CspCloseResult {
   const openPremium = new Decimal(input.openPremiumPerContract)
   const closePrice = new Decimal(input.closePricePerContract)
@@ -57,5 +67,17 @@ export function calculateCspClose(input: CspCloseInput): CspCloseResult {
   return {
     finalPnl: finalPnl.toFixed(4),
     pnlPercentage: pnlPercentage.toFixed(4)
+  }
+}
+
+export function calculateCspExpiration(input: CspExpirationInput): CspExpirationResult {
+  const openPremium = new Decimal(input.openPremiumPerContract)
+  
+  // CSP expires worthless: we keep 100% of the premium
+  const finalPnl = round4(openPremium.times(input.contracts).times(100))
+  
+  return {
+    finalPnl: finalPnl.toFixed(4),
+    pnlPercentage: '100.0000'
   }
 }

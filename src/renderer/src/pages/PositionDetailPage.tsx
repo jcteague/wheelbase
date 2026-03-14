@@ -1,23 +1,13 @@
+import { useState } from 'react'
 import { useParams } from 'wouter'
 import type { WheelPhase } from '../api/positions'
 import { CloseCspForm } from '../components/CloseCspForm'
+import { ExpirationSheet } from '../components/ExpirationSheet'
 import { PageHeader, PageLayout } from '../components/PageLayout'
 import { usePosition } from '../hooks/usePosition'
+import { PHASE_COLOR } from '../lib/phase'
 
 const MONO = 'ui-monospace, "SF Mono", Menlo, monospace'
-
-const PHASE_COLOR: Record<WheelPhase, string> = {
-  CSP_OPEN: '#e6a817',
-  CSP_EXPIRED: '#484f58',
-  CSP_CLOSED_PROFIT: '#3fb950',
-  CSP_CLOSED_LOSS: '#f85149',
-  HOLDING_SHARES: '#79c0ff',
-  CC_OPEN: '#d2a8ff',
-  CC_EXPIRED: '#484f58',
-  CC_CLOSED_PROFIT: '#3fb950',
-  CC_CLOSED_LOSS: '#f85149',
-  WHEEL_COMPLETE: '#3fb950'
-}
 
 const PHASE_LABEL: Record<WheelPhase, string> = {
   CSP_OPEN: 'Sell Put',
@@ -125,6 +115,7 @@ function StatGrid({ minWidth, items }: StatGridProps): React.JSX.Element {
 export function PositionDetailPage(): React.JSX.Element {
   const { id } = useParams<{ id: string }>()
   const { isLoading, isError, data } = usePosition(id)
+  const [showExpiration, setShowExpiration] = useState(false)
 
   if (isLoading) {
     return (
@@ -222,39 +213,83 @@ export function PositionDetailPage(): React.JSX.Element {
             </div>
           }
           right={
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-                padding: '2px 9px',
-                borderRadius: 4,
-                fontSize: '0.7rem',
-                fontWeight: 500,
-                fontFamily: MONO,
-                color: phaseColor,
-                background: `${phaseColor}18`,
-                border: `1px solid ${phaseColor}30`
-              }}
-            >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span
                 style={{
-                  width: 5,
-                  height: 5,
-                  borderRadius: '50%',
-                  background: phaseColor,
-                  flexShrink: 0
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '2px 9px',
+                  borderRadius: 4,
+                  fontSize: '0.7rem',
+                  fontWeight: 500,
+                  fontFamily: MONO,
+                  color: phaseColor,
+                  background: `${phaseColor}18`,
+                  border: `1px solid ${phaseColor}30`
                 }}
-              />
-              {PHASE_LABEL[position.phase]}
-            </span>
+              >
+                <span
+                  style={{
+                    width: 5,
+                    height: 5,
+                    borderRadius: '50%',
+                    background: phaseColor,
+                    flexShrink: 0
+                  }}
+                />
+                {PHASE_LABEL[position.phase]}
+              </span>
+              {position.phase === 'CSP_OPEN' && (
+                <button
+                  data-testid="record-expiration-btn"
+                  onClick={() => setShowExpiration(true)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    padding: '4px 12px',
+                    borderRadius: 4,
+                    fontSize: '0.7rem',
+                    fontWeight: 500,
+                    fontFamily: MONO,
+                    color: 'var(--wb-teal)',
+                    background: 'var(--wb-teal-dim)',
+                    border: '1px solid rgba(45,212,191,0.3)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    const btn = e.currentTarget
+                    btn.style.background = 'var(--wb-teal-bright)'
+                    btn.style.borderColor = 'rgba(45,212,191,0.4)'
+                  }}
+                  onMouseLeave={(e) => {
+                    const btn = e.currentTarget
+                    btn.style.background = 'var(--wb-teal-dim)'
+                    btn.style.borderColor = 'rgba(45,212,191,0.3)'
+                  }}
+                >
+                  Record Expiration →
+                </button>
+              )}
+            </div>
           }
         />
       }
     >
       <main
         data-testid="position-detail"
-        style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: 16 }}
+        style={{
+          padding: '24px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16,
+          transition: 'filter 0.2s, opacity 0.2s',
+          ...(showExpiration
+            ? { filter: 'blur(1.5px)', opacity: 0.35, pointerEvents: 'none', userSelect: 'none' }
+            : {})
+        }}
       >
         {activeLeg && (
           <section style={sectionStyle}>
@@ -355,6 +390,18 @@ export function PositionDetailPage(): React.JSX.Element {
           </div>
         )}
       </main>
+      {showExpiration && activeLeg && costBasisSnapshot && (
+        <ExpirationSheet
+          open={showExpiration}
+          positionId={position.id}
+          ticker={position.ticker}
+          strike={activeLeg.strike}
+          expiration={activeLeg.expiration}
+          contracts={activeLeg.contracts}
+          totalPremiumCollected={costBasisSnapshot.totalPremiumCollected}
+          onClose={() => setShowExpiration(false)}
+        />
+      )}
     </PageLayout>
   )
 }

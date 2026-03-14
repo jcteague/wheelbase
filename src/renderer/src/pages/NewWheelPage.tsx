@@ -1,4 +1,4 @@
-import { useLocation } from 'wouter'
+import { useLocation, useSearch } from 'wouter'
 import { NewWheelForm } from '../components/NewWheelForm'
 import { PageHeader, PageLayout } from '../components/PageLayout'
 
@@ -39,11 +39,13 @@ function NewWheelHeader(): React.JSX.Element {
 
 export function NewWheelPage(): React.JSX.Element {
   const [, navigate] = useLocation()
+  const search = useSearch()
+  const defaultTicker = new URLSearchParams(search).get('ticker') ?? undefined
 
   return (
     <PageLayout header={<NewWheelHeader />} contentStyle={{ padding: '28px 32px' }}>
       <div style={{ maxWidth: 560 }}>
-        <NewWheelForm navigate={navigate} />
+        <NewWheelForm navigate={navigate} defaultTicker={defaultTicker} />
       </div>
     </PageLayout>
   )

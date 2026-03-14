@@ -10,7 +10,8 @@
       "mcp__electron__send_command_to_electron",
       "mcp__electron__get_electron_window_info",
       "mcp__electron__take_screenshot",
-      "Bash(pnpm lint:*)"
+      "Bash(pnpm lint:*)",
+      "Skill(implement-plan)"
     ]
   },
   "enableAllProjectMcpServers": true,

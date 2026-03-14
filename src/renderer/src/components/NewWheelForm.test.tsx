@@ -224,3 +224,17 @@ it('expands advanced section and shows fill date field on click', async () => {
   expect(toggle).toHaveAttribute('aria-expanded', 'true')
   expect(screen.getByLabelText(/fill date/i)).toBeInTheDocument()
 })
+
+// ---------------------------------------------------------------------------
+// defaultTicker prop
+// ---------------------------------------------------------------------------
+
+it('pre-populates ticker input when defaultTicker is provided', () => {
+  render(<NewWheelForm defaultTicker="AAPL" />)
+  expect(screen.getByLabelText(/ticker/i)).toHaveValue('AAPL')
+})
+
+it('leaves ticker input empty when no defaultTicker is provided', () => {
+  render(<NewWheelForm />)
+  expect(screen.getByLabelText(/ticker/i)).toHaveValue('')
+})

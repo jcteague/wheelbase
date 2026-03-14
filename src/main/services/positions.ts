@@ -12,6 +12,7 @@ import type { CreatePositionPayload, CreatePositionResult } from '../schemas'
 export { listPositions } from './list-positions'
 export { getPosition } from './get-position'
 export { closeCspPosition } from './close-csp-position'
+export { expireCspPosition } from './expire-csp-position'
 
 // ---------------------------------------------------------------------------
 // createPosition
@@ -132,6 +133,7 @@ export function createPosition(
       expiration: payload.expiration,
       contracts: payload.contracts,
       premiumPerContract: premiumFormatted,
+      fillPrice: premiumFormatted,
       fillDate,
       createdAt: now,
       updatedAt: now

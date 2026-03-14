@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { ValidationError, openWheel, closeCsp } from './lifecycle'
-import type { CloseCspInput, OpenWheelInput } from './lifecycle'
+import { ValidationError, openWheel, closeCsp, expireCsp } from './lifecycle'
+import type { CloseCspInput, ExpireCspInput, OpenWheelInput } from './lifecycle'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -254,6 +254,51 @@ describe('closeCsp', () => {
       expiration: '2026-04-17'
     })
     expect(result.phase).toBe('CSP_CLOSED_PROFIT')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// expireCsp
+// ---------------------------------------------------------------------------
+
+describe('expireCsp', () => {
+  const BASE_EXPIRATION = '2025-01-17'
+
+  function validExpireInput(overrides: Partial<ExpireCspInput> = {}): ExpireCspInput {
+    return {
+      currentPhase: 'CSP_OPEN',
+      expirationDate: BASE_EXPIRATION,
+      referenceDate: BASE_EXPIRATION,
+      ...overrides
+    }
+  }
+
+  it('returns WHEEL_COMPLETE when referenceDate equals expirationDate (same-day boundary)', () => {
+    const result = expireCsp(validExpireInput())
+    expect(result.phase).toBe('WHEEL_COMPLETE')
+  })
+
+  it('returns WHEEL_COMPLETE when referenceDate is after expirationDate', () => {
+    const result = expireCsp(validExpireInput({ referenceDate: '2025-01-18' }))
+    expect(result.phase).toBe('WHEEL_COMPLETE')
+  })
+
+  it('throws ValidationError with invalid_phase when currentPhase is not CSP_OPEN', () => {
+    const e = catchValidation(() =>
+      expireCsp(validExpireInput({ currentPhase: 'CSP_CLOSED_PROFIT' as never }))
+    )
+    expect(e.field).toBe('__phase__')
+    expect(e.code).toBe('invalid_phase')
+    expect(e.message).toBe('Position is not in CSP_OPEN phase')
+  })
+
+  it('throws ValidationError with too_early when referenceDate is before expirationDate', () => {
+    const e = catchValidation(() =>
+      expireCsp(validExpireInput({ referenceDate: '2025-01-16' }))
+    )
+    expect(e.field).toBe('expiration')
+    expect(e.code).toBe('too_early')
+    expect(e.message).toBe('Cannot record expiration before the expiration date')
   })
 })
 

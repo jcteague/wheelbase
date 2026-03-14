@@ -116,3 +116,29 @@ export function closeCsp(input: CloseCspInput): CloseCspResult {
   const netPnl = new Decimal(input.openPremiumPerContract).minus(input.closePricePerContract)
   return { phase: netPnl.gt(0) ? 'CSP_CLOSED_PROFIT' : 'CSP_CLOSED_LOSS' }
 }
+
+export interface ExpireCspInput {
+  currentPhase: WheelPhase
+  expirationDate: string
+  referenceDate: string
+}
+
+export interface ExpireCspResult {
+  phase: 'WHEEL_COMPLETE'
+}
+
+export function expireCsp(input: ExpireCspInput): ExpireCspResult {
+  if (input.currentPhase !== 'CSP_OPEN') {
+    throw new ValidationError('__phase__', 'invalid_phase', 'Position is not in CSP_OPEN phase')
+  }
+
+  if (input.referenceDate < input.expirationDate) {
+    throw new ValidationError(
+      'expiration',
+      'too_early',
+      'Cannot record expiration before the expiration date'
+    )
+  }
+
+  return { phase: 'WHEEL_COMPLETE' }
+}

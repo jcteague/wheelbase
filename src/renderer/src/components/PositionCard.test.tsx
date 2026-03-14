@@ -73,3 +73,17 @@ it('renders — when dte is null', () => {
   // dte null shows dash placeholder; strike and expiration also null
   expect(screen.getAllByText('—').length).toBeGreaterThan(0)
 })
+
+
+it('renders data-testid position-card-closed for a CLOSED position', () => {
+  const item: PositionListItem = {
+    ...BASE_ITEM,
+    phase: 'WHEEL_COMPLETE',
+    status: 'CLOSED',
+    strike: null,
+    expiration: null,
+    dte: null
+  }
+  renderRow(item)
+  expect(screen.getByTestId('position-card-closed')).toBeInTheDocument()
+})

@@ -1,23 +1,11 @@
 import { useState } from 'react'
 import type { PositionListItem, WheelPhase } from '../api/positions'
+import { PHASE_COLOR } from '../lib/phase'
 
 const MONO = 'ui-monospace, "SF Mono", Menlo, monospace'
 
 function fmt(value: string): string {
   return `$${parseFloat(value).toFixed(2)}`
-}
-
-const PHASE_COLOR: Record<WheelPhase, string> = {
-  CSP_OPEN: '#e6a817',
-  CSP_EXPIRED: '#484f58',
-  CSP_CLOSED_PROFIT: '#3fb950',
-  CSP_CLOSED_LOSS: '#f85149',
-  HOLDING_SHARES: '#79c0ff',
-  CC_OPEN: '#d2a8ff',
-  CC_EXPIRED: '#484f58',
-  CC_CLOSED_PROFIT: '#3fb950',
-  CC_CLOSED_LOSS: '#f85149',
-  WHEEL_COMPLETE: '#3fb950'
 }
 
 const PHASE_LABEL: Record<WheelPhase, string> = {
@@ -33,15 +21,17 @@ const PHASE_LABEL: Record<WheelPhase, string> = {
   WHEEL_COMPLETE: 'Complete'
 }
 
-type Props = { item: PositionListItem; index: number }
+type Props = { item: PositionListItem; index: number; isClosed?: boolean }
 
-export function PositionRow({ item, index }: Props): React.JSX.Element {
+export function PositionRow({ item, index, isClosed }: Props): React.JSX.Element {
   const [hovered, setHovered] = useState(false)
   const color = PHASE_COLOR[item.phase]
   const dteUrgent = item.dte !== null && item.dte <= 7
+  const closed = isClosed ?? item.status === 'CLOSED'
 
   return (
     <tr
+      data-testid={closed ? 'position-card-closed' : 'position-card'}
       onClick={() => {
         window.location.hash = `/positions/${item.id}`
       }}

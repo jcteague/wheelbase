@@ -1,8 +1,21 @@
+import type { PositionListItem } from '../api/positions'
 import { PositionRow } from '../components/PositionCard'
 import { PageHeader, PageLayout } from '../components/PageLayout'
 import { usePositions } from '../hooks/usePositions'
 
 const MONO = 'ui-monospace, "SF Mono", Menlo, monospace'
+const TABLE_COLUMNS = ['Ticker', 'Phase', 'Strike', 'Expiration', 'DTE', 'Premium', 'Cost Basis']
+
+const thStyle: React.CSSProperties = {
+  padding: '8px 16px',
+  textAlign: 'left',
+  fontWeight: 500,
+  fontSize: '0.65rem',
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase',
+  color: 'var(--wb-text-muted)',
+  fontFamily: MONO
+}
 
 function PositionsHeader({ count }: { count?: number }): React.JSX.Element {
   return (
@@ -64,11 +77,57 @@ function PositionsHeader({ count }: { count?: number }): React.JSX.Element {
   )
 }
 
+function SectionHeader({ title }: { title: string }): React.JSX.Element {
+  return (
+    <div
+      style={{
+        padding: '16px 24px 8px',
+        fontSize: '0.65rem',
+        fontWeight: 500,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        color: 'var(--wb-text-muted)',
+        fontFamily: MONO
+      }}
+    >
+      {title}
+    </div>
+  )
+}
+
+type PositionTableProps = {
+  items: PositionListItem[]
+  isClosed?: boolean
+  style?: React.CSSProperties
+}
+
+function PositionTable({ items, isClosed, style }: PositionTableProps): React.JSX.Element {
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem', ...style }}>
+      <thead>
+        <tr style={{ background: 'var(--wb-bg-surface)', borderBottom: '1px solid var(--wb-border)' }}>
+          {TABLE_COLUMNS.map((col) => (
+            <th key={col} style={thStyle}>{col}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((item, i) => (
+          <PositionRow key={item.id} item={item} index={i} isClosed={isClosed} />
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
 export function PositionsListPage(): React.JSX.Element {
   const { data, isLoading, isError } = usePositions()
 
+  const activePositions = data?.filter((p) => p.status === 'ACTIVE') ?? []
+  const closedPositions = data?.filter((p) => p.status === 'CLOSED') ?? []
+
   return (
-    <PageLayout header={<PositionsHeader count={data?.length} />}>
+    <PageLayout header={<PositionsHeader count={activePositions.length} />}>
       {isLoading && (
         <div
           style={{
@@ -143,47 +202,17 @@ export function PositionsListPage(): React.JSX.Element {
       )}
 
       {data && data.length > 0 && (
-        <table
-          style={{
-            width: '100%',
-            borderCollapse: 'collapse',
-            fontSize: '0.8125rem'
-          }}
-        >
-          <thead>
-            <tr
-              style={{
-                background: 'var(--wb-bg-surface)',
-                borderBottom: '1px solid var(--wb-border)'
-              }}
-            >
-              {['Ticker', 'Phase', 'Strike', 'Expiration', 'DTE', 'Premium', 'Cost Basis'].map(
-                (col) => (
-                  <th
-                    key={col}
-                    style={{
-                      padding: '8px 16px',
-                      textAlign: 'left',
-                      fontWeight: 500,
-                      fontSize: '0.65rem',
-                      letterSpacing: '0.08em',
-                      textTransform: 'uppercase',
-                      color: 'var(--wb-text-muted)',
-                      fontFamily: MONO
-                    }}
-                  >
-                    {col}
-                  </th>
-                )
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((item, i) => (
-              <PositionRow key={item.id} item={item} index={i} />
-            ))}
-          </tbody>
-        </table>
+        <>
+          <SectionHeader title="Active" />
+          <PositionTable items={activePositions} />
+
+          {closedPositions.length > 0 && (
+            <>
+              <SectionHeader title="Closed" />
+              <PositionTable items={closedPositions} isClosed style={{ opacity: 0.55 }} />
+            </>
+          )}
+        </>
       )}
     </PageLayout>
   )
