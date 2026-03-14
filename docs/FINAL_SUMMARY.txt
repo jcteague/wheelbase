@@ -1,0 +1,317 @@
+================================================================================
+WHEELBASE CODEBASE ANALYSIS FOR US-5 (CSP EXPIRATION)
+================================================================================
+
+Generated: $(date)
+Scope: Complete analysis of 7 areas with implementation gaps identified
+
+================================================================================
+QUICK STATUS: What's Ready vs Missing
+================================================================================
+
+✅ DATABASE SCHEMA — 100% Ready
+   - All tables exist (positions, legs, cost_basis_snapshots)
+   - All required fields present
+   - No migrations needed
+
+✅ POSITION MODELS & TYPES — 70% Ready
+   - WheelPhase, WheelStatus, LegRole, LegAction, OptionType defined
+   - MISSING: CostBasisSnapshotRecord lacks finalPnl and annualizedReturn fields
+
+✅ LEG MODELS & TYPES — 100% Complete
+   - LegRole includes 'EXPIRE'
+   - Database supports all needed fields for expiration legs
+
+❌ LIFECYCLE ENGINE — 30% Done
+   - openWheel() exists and works
+   - MISSING: expireCSP() function (~20 LOC)
+
+❌ COST BASIS ENGINE — 50% Done
+   - calculateInitialCspBasis() exists
+   - MISSING: Expiration P&L calculation (~15 LOC)
+
+❌ IPC HANDLERS — 0% Done
+   - Handler pattern exists
+   - MISSING: positions:expire handler (~30 LOC)
+
+❌ FRONTEND INTEGRATION — 50% Done
+   - PositionCard renders all phases correctly
+   - MISSING: expirePosition() API function
+   - MISSING: PositionDetailPage (stub exists, needs implementation)
+   - MISSING: "Mark Expired" button + confirmation dialog
+   - MISSING: Post-expiration "New wheel" shortcut
+
+================================================================================
+7-POINT ANALYSIS SUMMARY
+================================================================================
+
+1. POSITION MODELS AND TYPES
+   Location: src/main/core/types.ts, src/main/schemas.ts
+   
+   Current:
+   - WheelPhase enum: CSP_OPEN, HOLDING_SHARES, CC_OPEN, WHEEL_COMPLETE
+   - WheelStatus enum: ACTIVE, CLOSED
+   - PositionRecord interface with all phase fields
+   
+   Gap:
+   - CostBasisSnapshotRecord missing: finalPnl, annualizedReturn
+     (Fields exist in database schema, just not in TypeScript type)
+   - Backend phases differ from frontend (renderer knows about expired phases)
+   
+   Action:
+   - Add optional finalPnl and annualizedReturn to CostBasisSnapshotRecord
+
+---
+
+2. LEG MODELS AND TYPES
+   Location: src/main/core/types.ts, migrations/001_initial_schema.sql
+   
+   Current:
+   - LegRole includes 'EXPIRE' (already defined)
+   - LegAction: SELL, BUY
+   - OptionType: PUT, CALL
+   - Legs table has all needed fields
+   
+   Status:
+   - ✅ Complete and ready for expiration
+   - No changes needed
+
+---
+
+3. LIFECYCLE ENGINE
+   Location: src/main/core/lifecycle.ts
+   Pattern: Pure function (no DB/broker/Electron imports)
+   
+   Current:
+   - openWheel(input) → { phase: 'CSP_OPEN' }
+   - Validates ticker, strike, contracts, premium, fillDate, expiration
+   - Throws ValidationError on invalid input
+   - Tests: src/main/core/lifecycle.test.ts (comprehensive)
+   
+   Missing:
+   - expireCSP(position, currentDate) → { phase: 'WHEEL_COMPLETE' }
+     Must validate:
+     1. position.phase === 'CSP_OPEN'
+     2. currentDate >= position.expirationDate
+     Return: { phase: 'WHEEL_COMPLETE' }
+   
+   Size: ~20 lines + ~10 test cases
+
+---
+
+4. COST BASIS ENGINE
+   Location: src/main/core/costbasis.ts
+   Pattern: Pure function using Decimal.js
+   
+   Current:
+   - calculateInitialCspBasis(leg) → { basisPerShare, totalPremiumCollected }
+   - Formula: basis = strike - premium, total = premium × contracts × 100
+   - Rounding: ROUND_HALF_UP to 4 decimal places
+   - Tests: src/main/core/costbasis.test.ts (comprehensive)
+   
+   Missing:
+   - Expiration P&L calculation
+     At expiration: finalPnl = totalPremiumCollected (100% profit)
+     Option A: New function calculateCspExpiration(totalPremiumCollected)
+     Option B: Return extended result type with optional finalPnl
+   
+   Size: ~15 lines + ~5 test cases
+
+---
+
+5. IPC HANDLERS
+   Location: src/main/ipc/positions.ts
+   Pattern: ipcMain.handle() registration
+   
+   Current:
+   - positions:list → GET all positions
+   - positions:create → POST new position
+   - Both follow error/success response pattern
+   
+   Missing:
+   - positions:expire handler
+     Accept: { positionId: string, expirationDateOverride?: string }
+     Call: expirePosition(db, positionId)
+     Return: { ok: true, position, leg, costBasisSnapshot } | { ok: false, errors }
+   
+   Size: ~30 lines + error handling
+
+---
+
+6. FRONTEND INTEGRATION
+   Location: src/renderer/src/api/positions.ts, pages, components
+   
+   Current:
+   - PositionCard component renders all phases with colors/labels
+   - PHASE_COLOR and PHASE_LABEL include CSP_EXPIRED, WHEEL_COMPLETE
+   - Frontend types include all expanded phases
+   - usePositions hook loads position list
+   - PositionsListPage displays list
+   
+   Missing:
+   - expirePosition(positionId) API function
+   - PositionDetailPage implementation (stub exists)
+     Must show:
+     - Position summary
+     - Leg history
+     - "Mark Expired" action button
+     - Confirmation dialog before expiring
+     - Success message with "Open new wheel on TICKER" link
+   
+   Size: ~50 lines frontend code + component
+
+---
+
+7. DATABASE SCHEMA
+   Location: migrations/001_initial_schema.sql
+   
+   Current:
+   - positions table: id, ticker, strategy_type, status, phase, opened_date, closed_date, etc.
+   - legs table: id, position_id, leg_role, action, option_type, strike, expiration, etc.
+   - cost_basis_snapshots: basis_per_share, total_premium_collected, final_pnl, etc.
+   
+   Status:
+   - ✅ 100% Ready
+   - All needed fields exist
+   - No schema migrations required for US-5
+
+================================================================================
+IMPLEMENTATION CHECKLIST
+================================================================================
+
+PHASE 1: BACKEND CORE ENGINES (Pure functions, no dependencies)
+─────────────────────────────────────────────────────────────
+  [ ] Add expireCSP() to src/main/core/lifecycle.ts
+      - Input: position, currentDate
+      - Validate: phase === CSP_OPEN, currentDate >= expirationDate
+      - Return: { phase: 'WHEEL_COMPLETE' }
+  
+  [ ] Add expiration calculation to src/main/core/costbasis.ts
+      - Input: totalPremiumCollected
+      - Return: finalPnl (100% of premium)
+  
+  [ ] Add tests for both functions
+      - Happy path
+      - Validation error cases
+      - Date boundary conditions (on vs after expiration)
+  
+  [ ] Update types in src/main/schemas.ts
+      - Add finalPnl?: string to CostBasisSnapshotRecord
+      - Add annualizedReturn?: string to CostBasisSnapshotRecord
+
+PHASE 2: BACKEND SERVICE & IPC
+─────────────────────────────
+  [ ] Add expirePosition() service to src/main/services/positions.ts
+      - Query position and latest leg/snapshot
+      - Call lifecycle engine (validation)
+      - Call cost basis engine (P&L calculation)
+      - Create EXPIRE leg record
+      - Create final cost basis snapshot
+      - Update position phase → WHEEL_COMPLETE, status → CLOSED
+      - All in transaction
+  
+  [ ] Register positions:expire handler in src/main/ipc/positions.ts
+      - Accept positionId, expirationDateOverride (optional)
+      - Call expirePosition service
+      - Return { ok: true, ... } or { ok: false, errors: [] }
+
+PHASE 3: FRONTEND API
+─────────────────────
+  [ ] Add expirePosition() function to src/renderer/src/api/positions.ts
+      - Call window.api.expirePosition({ positionId })
+      - Transform response camelCase → snake_case
+      - Handle errors
+
+PHASE 4: FRONTEND UI (Requires PositionDetailPage)
+──────────────────────────────────────────────────
+  [ ] Implement PositionDetailPage (currently stub)
+      - Show position details (ticker, phase, opening info)
+      - List all legs with their details
+      - Add "Mark Expired" action button (conditional on phase === CSP_OPEN)
+  
+  [ ] Add ConfirmExpireDialog component
+      - Show position ticker and expiration date
+      - "Confirm Expire" and "Cancel" buttons
+      - On confirm: call expirePosition(), show success message
+  
+  [ ] Add post-expiration success screen
+      - Show: "AAPL wheel complete with $250 profit"
+      - Button: "Open new wheel on AAPL" → navigate to NewWheelPage with ticker pre-filled
+  
+  [ ] Wire up button in PositionDetailPage
+      - Show when position.phase === 'CSP_OPEN'
+      - Open confirm dialog
+      - Handle success/error
+
+OPTIONAL ENHANCEMENTS
+─────────────────────
+  [ ] Add unit tests for service layer
+  [ ] Add integration tests for IPC handler
+  [ ] Add component tests for PositionDetailPage
+  [ ] Add E2E test for full expiration flow
+
+================================================================================
+FILES TO MODIFY (In Priority Order)
+================================================================================
+
+Backend Core (Phase 1):
+  1. src/main/core/lifecycle.ts — Add expireCSP()
+  2. src/main/core/lifecycle.test.ts — Add tests
+  3. src/main/core/costbasis.ts — Add expiration calculation
+  4. src/main/core/costbasis.test.ts — Add tests
+  5. src/main/schemas.ts — Update CostBasisSnapshotRecord
+
+Backend Service (Phase 2):
+  6. src/main/services/positions.ts — Add expirePosition()
+  7. src/main/ipc/positions.ts — Register positions:expire handler
+
+Frontend (Phase 3+4):
+  8. src/renderer/src/api/positions.ts — Add expirePosition()
+  9. src/renderer/src/pages/PositionDetailPage.tsx — Implement detail view
+  10. src/renderer/src/components/ConfirmExpireDialog.tsx — New component (optional)
+
+================================================================================
+KEY DEPENDENCIES & CONSTRAINTS
+================================================================================
+
+✓ No database migrations needed
+✓ No new database tables needed
+✓ Existing patterns can be replicated:
+  - Pure functions (lifecycle.ts, costbasis.ts)
+  - Service layer composition (services/positions.ts)
+  - IPC handler registration (ipc/positions.ts)
+  - Frontend API adapter (api/positions.ts)
+  - Component architecture (React components)
+
+⚠ PositionDetailPage is a stub — must be implemented for UI
+⚠ Expiration date validation: allow on or after expiration date
+  (Options expire Saturday but cease trading Friday)
+
+================================================================================
+ESTIMATED EFFORT
+================================================================================
+
+Backend Pure Functions (lifecycle + cost basis): ~1-2 hours
+  - expireCSP: ~20 LOC + 10 tests
+  - Cost basis: ~15 LOC + 5 tests
+  - Type updates: ~5 LOC
+
+Backend Service & IPC: ~1-2 hours
+  - Service function: ~40 LOC
+  - Handler: ~30 LOC
+  - Tests: ~20 LOC
+
+Frontend API: ~30 minutes
+  - expirePosition function: ~20 LOC
+
+Frontend UI: ~2-3 hours
+  - PositionDetailPage: ~100-150 LOC
+  - ConfirmDialog: ~50 LOC
+  - Success screen: ~30 LOC
+  - Integration: ~30 LOC
+
+Total: ~5-8 hours (including tests)
+
+================================================================================
+END OF ANALYSIS
+================================================================================
