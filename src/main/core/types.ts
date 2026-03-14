@@ -24,7 +24,7 @@ export const LegRole = z.enum([
   'ROLL_TO',
   'EXPIRE'
 ])
-export const LegAction = z.enum(['SELL', 'BUY'])
+export const LegAction = z.enum(['SELL', 'BUY', 'EXPIRE'])
 export const OptionType = z.enum(['PUT', 'CALL'])
 
 export type StrategyType = z.infer<typeof StrategyType>

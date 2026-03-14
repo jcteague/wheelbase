@@ -38,6 +38,7 @@ interface PositionRow {
   expiration: string | null
   contracts: number | null
   premium_per_contract: string | null
+  fill_price: string | null
   fill_date: string | null
   leg_created_at: string | null
   leg_updated_at: string | null
@@ -64,6 +65,7 @@ const GET_QUERY = `
     l.expiration,
     l.contracts,
     l.premium_per_contract,
+    l.fill_price,
     l.fill_date,
     l.created_at   AS leg_created_at,
     l.updated_at   AS leg_updated_at,
@@ -123,6 +125,7 @@ export function getPosition(db: Database.Database, positionId: string): GetPosit
         expiration: row.expiration!,
         contracts: row.contracts!,
         premiumPerContract: row.premium_per_contract!,
+        fillPrice: row.fill_price!,
         fillDate: row.fill_date!,
         createdAt: row.leg_created_at!,
         updatedAt: row.leg_updated_at!

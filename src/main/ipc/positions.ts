@@ -2,8 +2,14 @@ import { ipcMain } from 'electron'
 import type Database from 'better-sqlite3'
 import { ValidationError } from '../core/lifecycle'
 import { logger } from '../logger'
-import { CloseCspPayloadSchema } from '../schemas'
-import { closeCspPosition, createPosition, getPosition, listPositions } from '../services/positions'
+import { CloseCspPayloadSchema, ExpireCspPayloadSchema } from '../schemas'
+import {
+  closeCspPosition,
+  createPosition,
+  expireCspPosition,
+  getPosition,
+  listPositions
+} from '../services/positions'
 import type { CreatePositionPayload } from '../schemas'
 
 function handleIpcCall(
@@ -50,6 +56,13 @@ export function registerPositionsHandlers(db: Database.Database): void {
     handleIpcCall('positions_close_csp_unhandled_error', () => {
       const parsed = CloseCspPayloadSchema.parse(payload)
       return closeCspPosition(db, parsed.positionId, parsed)
+    })
+  )
+
+  ipcMain.handle('positions:expire-csp', (_, payload: unknown) =>
+    handleIpcCall('positions_expire_csp_unhandled_error', () => {
+      const parsed = ExpireCspPayloadSchema.parse(payload)
+      return expireCspPosition(db, parsed.positionId, parsed)
     })
   )
 }

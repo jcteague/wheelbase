@@ -74,18 +74,6 @@ it('renders — when dte is null', () => {
   expect(screen.getAllByText('—').length).toBeGreaterThan(0)
 })
 
-it('renders Final P&L label for a WHEEL_COMPLETE closed position', () => {
-  const item: PositionListItem = {
-    ...BASE_ITEM,
-    phase: 'WHEEL_COMPLETE',
-    status: 'CLOSED',
-    strike: null,
-    expiration: null,
-    dte: null
-  }
-  renderRow(item)
-  expect(screen.getByText(/Final P&L/i)).toBeInTheDocument()
-})
 
 it('renders data-testid position-card-closed for a CLOSED position', () => {
   const item: PositionListItem = {

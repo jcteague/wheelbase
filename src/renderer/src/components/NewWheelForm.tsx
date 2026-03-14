@@ -22,6 +22,7 @@ const API_TO_FORM_FIELD: Record<string, keyof NewWheelFormValues> = {
 
 type NewWheelFormProps = {
   navigate?: (path: string) => void
+  defaultTicker?: string
 }
 
 function FieldLabel({ children }: { children: React.ReactNode }): React.JSX.Element {
@@ -94,7 +95,7 @@ const inputErrorStyle: React.CSSProperties = {
   borderColor: 'var(--wb-red)'
 }
 
-export function NewWheelForm({ navigate = () => {} }: NewWheelFormProps): React.JSX.Element {
+export function NewWheelForm({ navigate = () => {}, defaultTicker }: NewWheelFormProps): React.JSX.Element {
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const mutation = useCreatePosition()
 
@@ -108,7 +109,7 @@ export function NewWheelForm({ navigate = () => {} }: NewWheelFormProps): React.
     resolver: zodResolver(newWheelSchema),
     mode: 'onBlur',
     defaultValues: {
-      ticker: '',
+      ticker: defaultTicker ?? '',
       strike: '',
       expiration: '',
       contracts: '',

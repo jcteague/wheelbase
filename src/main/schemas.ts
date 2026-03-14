@@ -56,6 +56,7 @@ export interface LegRecord {
   expiration: string
   contracts: number
   premiumPerContract: string
+  fillPrice: string | null
   fillDate: string
   createdAt: string
   updatedAt: string
@@ -117,4 +118,27 @@ export interface PositionListItem {
   dte: number | null
   premiumCollected: string
   effectiveCostBasis: string
+}
+
+// ---------------------------------------------------------------------------
+// Expire CSP schemas
+// ---------------------------------------------------------------------------
+
+export const ExpireCspPayloadSchema = z.object({
+  positionId: z.string().uuid(),
+  expirationDateOverride: z.string().optional()
+})
+
+export type ExpireCspPayload = z.infer<typeof ExpireCspPayloadSchema>
+
+export interface ExpireCspPositionResult {
+  position: {
+    id: string
+    ticker: string
+    phase: 'WHEEL_COMPLETE'
+    status: 'CLOSED'
+    closedDate: string
+  }
+  leg: LegRecord
+  costBasisSnapshot: CostBasisSnapshotRecord & { finalPnl: string }
 }

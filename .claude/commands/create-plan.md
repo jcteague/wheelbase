@@ -15,9 +15,18 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 1. **Setup**: Carefully read the user story file provided by user input. If no file is provided, review the stories in `docs/epics/` subdirectories. If it is unclear which user story should be used, ask the user.
 
-2. **Understand context**: Read `CLAUDE.md` and relevant existing source files to understand what is already implemented. Identify gaps between the current codebase and what the story requires.
+2. **Mockup check**: After identifying the user story file, check whether a mockup file exists alongside it. The convention is `{story-filename-without-extension}-mockups.html` in the same directory (e.g., story `US-5-record-csp-expiration.md` → `US-5-record-csp-expiration-mockups.html`). If found, read it now and extract:
+   - Screen names and descriptions
+   - Component layout and interaction patterns (e.g. right-side sheet, inline form, overlay)
+   - Visible data fields and labels on each screen
+   - Annotated callouts (the `annotation` elements in the HTML)
+   - Error states and their visual treatment (red vs amber)
+   - Post-success UX (shortcuts, navigation, badge changes)
+   Keep these notes in memory — they will directly inform the frontend implementation areas in Phase 2.
 
-3. **Execute plan workflow**: Follow the Phase 0, Phase 1, and Phase 2 workflow below to:
+3. **Understand context**: Read `CLAUDE.md` and relevant existing source files to understand what is already implemented. Identify gaps between the current codebase and what the story requires.
+
+4. **Execute plan workflow**: Follow the Phase 0, Phase 1, and Phase 2 workflow below to:
    - Phase 0: Generate `research.md` (resolve all unknowns)
    - Phase 1: Generate `data-model.md`, `contracts/`, `quickstart.md`
    - Phase 2: Generate `plan.md` (ordered TDD implementation plan)
@@ -143,6 +152,7 @@ Read these before starting implementation — they contain the decisions, data m
 - Green bullets must name the exact file and construct to build (e.g. "`PositionListItemResponse` Pydantic model in `backend/app/api/schemas.py`"), not vague nouns
 - Every acceptance criterion from the user story must be covered by at least one area
 - Do not describe TDD phases abstractly — write what the tests check and what the code does
+- **If a mockup file was found in step 2**, every frontend area's Green section must reference the mockup: name the specific screens, component shapes, interaction patterns, and annotations that apply. Do not describe generic UI — describe the UI shown in the mockup. Include: component names derived from what the mockup shows (e.g. `ExpirationSheet`, not just "a modal"), the sheet/overlay pattern if used, the exact fields visible on each screen, post-success navigation and shortcuts, and error state visual treatments (color, tone).
 
 **Output**: `plans/{story-id}/plan.md`
 

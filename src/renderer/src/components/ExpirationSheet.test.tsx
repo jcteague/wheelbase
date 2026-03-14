@@ -1,12 +1,15 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
+import type { ExpireCspResponse } from '../api/positions'
 import { useExpirePosition } from '../hooks/useExpirePosition'
 import { ExpirationSheet } from './ExpirationSheet'
 
 vi.mock('../hooks/useExpirePosition')
+
+const mockNavigate = vi.fn()
 vi.mock('wouter', () => ({
-  useLocation: () => ['/', vi.fn()]
+  useLocation: () => ['/', mockNavigate]
 }))
 
 const mockMutate = vi.fn()
@@ -25,6 +28,7 @@ const DEFAULT_PROPS = {
 
 beforeEach(() => {
   mockMutate.mockReset()
+  mockNavigate.mockReset()
   DEFAULT_PROPS.onClose.mockReset()
   mockUseExpirePosition.mockReturnValue({
     mutate: mockMutate,
@@ -101,7 +105,7 @@ it('shows error message when mutation fails', () => {
     isSuccess: false,
     isError: true,
     data: undefined,
-    error: { message: 'Position is not in CSP_OPEN phase' }
+    error: { status: 400, body: 'Position is not in CSP_OPEN phase' }
   } as unknown as ReturnType<typeof useExpirePosition>)
 
   render(<ExpirationSheet {...DEFAULT_PROPS} />)
@@ -109,15 +113,15 @@ it('shows error message when mutation fails', () => {
 })
 
 it('switches to success state after mutation succeeds', () => {
-  mockUseExpirePosition.mockImplementation(({ onSuccess }: { onSuccess?: (data: unknown) => void }) => {
+  mockUseExpirePosition.mockImplementation(({ onSuccess }: { onSuccess?: (data: ExpireCspResponse) => void } = {}) => {
     return {
-      mutate: (payload: unknown) => {
-        onSuccess?.({ position: { phase: 'WHEEL_COMPLETE' }, costBasisSnapshot: { finalPnl: '250.0000' } })
+      mutate: () => {
+        onSuccess?.({ position: { phase: 'WHEEL_COMPLETE' }, costBasisSnapshot: { finalPnl: '250.0000' } } as ExpireCspResponse)
       },
       isPending: false,
       isSuccess: true,
       isError: false,
-      data: { position: { phase: 'WHEEL_COMPLETE' }, costBasisSnapshot: { finalPnl: '250.0000' } },
+      data: { position: { phase: 'WHEEL_COMPLETE' }, costBasisSnapshot: { finalPnl: '250.0000' } } as ExpireCspResponse,
       error: null
     } as unknown as ReturnType<typeof useExpirePosition>
   })
@@ -129,10 +133,9 @@ it('switches to success state after mutation succeeds', () => {
 })
 
 it('shows success sheet title and P&L after confirming', async () => {
-  const user = userEvent.setup()
-  let capturedOnSuccess: ((data: unknown) => void) | undefined
+  let capturedOnSuccess: ((data: ExpireCspResponse) => void) | undefined
 
-  mockUseExpirePosition.mockImplementation(({ onSuccess }: { onSuccess?: (data: unknown) => void } = {}) => {
+  mockUseExpirePosition.mockImplementation(({ onSuccess }: { onSuccess?: (data: ExpireCspResponse) => void } = {}) => {
     capturedOnSuccess = onSuccess
     return {
       mutate: mockMutate,
@@ -147,7 +150,7 @@ it('shows success sheet title and P&L after confirming', async () => {
   const { rerender } = render(<ExpirationSheet {...DEFAULT_PROPS} />)
 
   // Simulate success by triggering onSuccess
-  capturedOnSuccess?.({ position: { phase: 'WHEEL_COMPLETE' }, costBasisSnapshot: { finalPnl: '250.0000' } })
+  capturedOnSuccess?.({ position: { phase: 'WHEEL_COMPLETE' }, costBasisSnapshot: { finalPnl: '250.0000' } } as ExpireCspResponse)
 
   rerender(<ExpirationSheet {...DEFAULT_PROPS} />)
 
@@ -156,9 +159,9 @@ it('shows success sheet title and P&L after confirming', async () => {
 })
 
 it('shows Open new wheel and View full position history in success state', async () => {
-  let capturedOnSuccess: ((data: unknown) => void) | undefined
+  let capturedOnSuccess: ((data: ExpireCspResponse) => void) | undefined
 
-  mockUseExpirePosition.mockImplementation(({ onSuccess }: { onSuccess?: (data: unknown) => void } = {}) => {
+  mockUseExpirePosition.mockImplementation(({ onSuccess }: { onSuccess?: (data: ExpireCspResponse) => void } = {}) => {
     capturedOnSuccess = onSuccess
     return {
       mutate: mockMutate,
@@ -171,7 +174,7 @@ it('shows Open new wheel and View full position history in success state', async
   })
 
   const { rerender } = render(<ExpirationSheet {...DEFAULT_PROPS} />)
-  capturedOnSuccess?.({ position: { phase: 'WHEEL_COMPLETE' }, costBasisSnapshot: { finalPnl: '250.0000' } })
+  capturedOnSuccess?.({ position: { phase: 'WHEEL_COMPLETE' }, costBasisSnapshot: { finalPnl: '250.0000' } } as ExpireCspResponse)
   rerender(<ExpirationSheet {...DEFAULT_PROPS} />)
 
   await screen.findByText(/Open new wheel on AAPL/i)
@@ -180,9 +183,9 @@ it('shows Open new wheel and View full position history in success state', async
 
 it('clicking View full position history calls onClose', async () => {
   const user = userEvent.setup()
-  let capturedOnSuccess: ((data: unknown) => void) | undefined
+  let capturedOnSuccess: ((data: ExpireCspResponse) => void) | undefined
 
-  mockUseExpirePosition.mockImplementation(({ onSuccess }: { onSuccess?: (data: unknown) => void } = {}) => {
+  mockUseExpirePosition.mockImplementation(({ onSuccess }: { onSuccess?: (data: ExpireCspResponse) => void } = {}) => {
     capturedOnSuccess = onSuccess
     return {
       mutate: mockMutate,
@@ -195,7 +198,7 @@ it('clicking View full position history calls onClose', async () => {
   })
 
   const { rerender } = render(<ExpirationSheet {...DEFAULT_PROPS} />)
-  capturedOnSuccess?.({ position: { phase: 'WHEEL_COMPLETE' }, costBasisSnapshot: { finalPnl: '250.0000' } })
+  capturedOnSuccess?.({ position: { phase: 'WHEEL_COMPLETE' }, costBasisSnapshot: { finalPnl: '250.0000' } } as ExpireCspResponse)
   rerender(<ExpirationSheet {...DEFAULT_PROPS} />)
 
   const link = await screen.findByText(/View full position history/i)
@@ -205,14 +208,10 @@ it('clicking View full position history calls onClose', async () => {
 
 it('clicking Open new wheel navigates to /new?ticker=AAPL', async () => {
   const user = userEvent.setup()
-  const mockNavigate = vi.fn()
-  vi.mock('wouter', () => ({
-    useLocation: () => ['/', mockNavigate]
-  }))
+  
+  let capturedOnSuccess: ((data: ExpireCspResponse) => void) | undefined
 
-  let capturedOnSuccess: ((data: unknown) => void) | undefined
-
-  mockUseExpirePosition.mockImplementation(({ onSuccess }: { onSuccess?: (data: unknown) => void } = {}) => {
+  mockUseExpirePosition.mockImplementation(({ onSuccess }: { onSuccess?: (data: ExpireCspResponse) => void } = {}) => {
     capturedOnSuccess = onSuccess
     return {
       mutate: mockMutate,
@@ -225,7 +224,7 @@ it('clicking Open new wheel navigates to /new?ticker=AAPL', async () => {
   })
 
   const { rerender } = render(<ExpirationSheet {...DEFAULT_PROPS} />)
-  capturedOnSuccess?.({ position: { phase: 'WHEEL_COMPLETE' }, costBasisSnapshot: { finalPnl: '250.0000' } })
+  capturedOnSuccess?.({ position: { phase: 'WHEEL_COMPLETE' }, costBasisSnapshot: { finalPnl: '250.0000' } } as ExpireCspResponse)
   rerender(<ExpirationSheet {...DEFAULT_PROPS} />)
 
   const btn = await screen.findByText(/Open new wheel on AAPL/i)

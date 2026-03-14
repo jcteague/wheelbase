@@ -113,6 +113,7 @@ export function closeCspPosition(
       expiration: openLeg.expiration,
       contracts: openLeg.contracts,
       premiumPerContract: closePriceFormatted,
+      fillPrice: closePriceFormatted,
       fillDate,
       createdAt: now,
       updatedAt: now
