@@ -280,7 +280,16 @@ export function PositionDetailPage(): React.JSX.Element {
     >
       <main
         data-testid="position-detail"
-        style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: 16 }}
+        style={{
+          padding: '24px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16,
+          transition: 'filter 0.2s, opacity 0.2s',
+          ...(showExpiration
+            ? { filter: 'blur(1.5px)', opacity: 0.35, pointerEvents: 'none', userSelect: 'none' }
+            : {})
+        }}
       >
         {activeLeg && (
           <section style={sectionStyle}>
