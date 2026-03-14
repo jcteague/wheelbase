@@ -1,15 +1,15 @@
 CREATE TABLE positions (
   id             TEXT PRIMARY KEY,
   ticker         TEXT NOT NULL,
-  strategy_type  TEXT NOT NULL,
-  status         TEXT NOT NULL,
+  strategy_type  TEXT NOT NULL DEFAULT 'WHEEL',
+  status         TEXT NOT NULL DEFAULT 'ACTIVE',
   phase          TEXT NOT NULL,
   opened_date    TEXT NOT NULL,
   closed_date    TEXT,
   account_id     TEXT,
   notes          TEXT,
   thesis         TEXT,
-  tags           TEXT,
+  tags           TEXT NOT NULL DEFAULT '[]',
   created_at     TEXT NOT NULL,
   updated_at     TEXT NOT NULL
 );
@@ -28,7 +28,7 @@ CREATE TABLE legs (
   contracts             INTEGER NOT NULL,
   premium_per_contract  TEXT NOT NULL,
   fill_price            TEXT,
-  fill_date             TEXT,
+  fill_date             TEXT NOT NULL,
   order_id              TEXT,
   roll_chain_id         TEXT,
   created_at            TEXT NOT NULL,
