@@ -33,7 +33,7 @@ describe('expireCspPosition', () => {
     expect(result.position.closedDate).toBe(expirationDate)
   })
 
-  it('records expire leg with correct role, action, and null fill_price', () => {
+  it('records expire leg with correct role, action, null fill_price, and zero premium', () => {
     const db = makeTestDb()
     const { position } = makeOpenPosition(db)
     const expirationDate = isoDate(EXPIRATION_OFFSET)
@@ -47,6 +47,26 @@ describe('expireCspPosition', () => {
     expect(result.leg.action).toBe('EXPIRE')
     expect(result.leg.fillPrice).toBeNull()
     expect(result.leg.fillDate).toBe(expirationDate)
+    expect(result.leg.premiumPerContract).toBe('0.0000')
+  })
+
+  it('defaults closedDate to the contract expiration when no override is provided', () => {
+    const db = makeTestDb()
+    // Use a past expiry so today passes the too_early check without an override
+    const pastExpiry = isoDate(-1)
+    const { position } = createPosition(db, {
+      ticker: 'AAPL',
+      strike: 180,
+      expiration: pastExpiry,
+      contracts: 1,
+      premiumPerContract: 2.5,
+      fillDate: isoDate(-30)
+    })
+
+    const result = expireCspPosition(db, position.id, { positionId: position.id })
+
+    expect(result.position.closedDate).toBe(pastExpiry)
+    expect(result.leg.fillDate).toBe(pastExpiry)
   })
 
   it('records cost basis snapshot with final_pnl equal to total premium collected', () => {

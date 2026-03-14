@@ -86,6 +86,74 @@ describe('close CSP early flow', () => {
   })
 })
 
+describe('expire CSP worthless flow', () => {
+  let app: ElectronApplication
+  let dbPath: string
+
+  afterEach(async () => {
+    await app?.close()
+    if (dbPath && fs.existsSync(dbPath)) fs.unlinkSync(dbPath)
+  })
+
+  it('opens a position, expires it worthless, and shows success state', async () => {
+    dbPath = path.join(os.tmpdir(), `wheelbase-e2e-expire-${Date.now()}.db`)
+
+    app = await electron.launch({
+      args: [APP_PATH, '--no-sandbox'],
+      cwd: APP_CWD,
+      env: { ...process.env, WHEELBASE_DB_PATH: dbPath }
+    })
+
+    const page = await app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+
+    // Open a new wheel
+    await page.evaluate(() => { location.hash = '#/new' })
+    await page.waitForSelector('label:has-text("Ticker")')
+
+    await page.fill('#ticker', 'SPY')
+    await page.fill('#strike', '500')
+    await page.fill('#contracts', '1')
+    await page.fill('#premiumPerContract', '3.00')
+
+    await page.click('#expiration')
+    const targetHeading = new Date(EXPIRATION_YEAR, EXPIRATION_MONTH - 1, 1).toLocaleString(
+      'en-US',
+      { month: 'long', year: 'numeric' }
+    )
+    for (let i = 0; i < 12; i++) {
+      const heading = await page.textContent('.rdp-month_caption')
+      if (heading?.includes(targetHeading)) break
+      await page.click('.rdp-button_next')
+    }
+    await page.click(`.rdp-day_button:not(.rdp-outside):has-text("${EXPIRATION_DAY}")`)
+    await page.waitForSelector(`text=${EXPIRATION_ISO}`)
+
+    await page.click('button[type="submit"]')
+    await page.waitForSelector('[role="status"]')
+
+    // Navigate to detail page
+    await page.evaluate(() => { location.hash = '#/' })
+    await page.waitForSelector('text=SPY')
+    await page.click('text=SPY')
+    await page.waitForSelector('[data-testid="position-detail"]')
+
+    // Open expiration sheet
+    await page.click('[data-testid="record-expiration-btn"]')
+    await page.waitForSelector('text=Expire CSP Worthless')
+
+    // Confirm expiration
+    await page.click('button:has-text("Confirm Expiration")')
+
+    // Success state should appear
+    await page.waitForSelector('text=SPY Expired Worthless')
+    const bodyText = await page.textContent('body')
+    expect(bodyText).toContain('SPY Expired Worthless')
+    expect(bodyText).toContain('Open new wheel on SPY')
+    expect(bodyText).toContain('View full position history')
+  })
+})
+
 describe('create → list flow', () => {
   let app: ElectronApplication
   let dbPath: string

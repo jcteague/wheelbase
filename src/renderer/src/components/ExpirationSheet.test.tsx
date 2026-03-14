@@ -80,7 +80,7 @@ it('clicking Confirm Expiration calls mutation.mutate with position_id', async (
   const user = userEvent.setup()
   render(<ExpirationSheet {...DEFAULT_PROPS} />)
   await user.click(screen.getByRole('button', { name: /confirm expiration/i }))
-  expect(mockMutate).toHaveBeenCalledWith({ position_id: 'pos-123' })
+  expect(mockMutate).toHaveBeenCalledWith({ position_id: 'pos-123', expiration_date_override: DEFAULT_PROPS.expiration })
 })
 
 it('disables Confirm button and shows Confirming... when isPending', () => {
@@ -105,7 +105,7 @@ it('shows error message when mutation fails', () => {
     isSuccess: false,
     isError: true,
     data: undefined,
-    error: { status: 400, body: 'Position is not in CSP_OPEN phase' }
+    error: { status: 400, body: { detail: [{ field: '__root__', code: 'invalid_phase', message: 'Position is not in CSP_OPEN phase' }] } }
   } as unknown as ReturnType<typeof useExpirePosition>)
 
   render(<ExpirationSheet {...DEFAULT_PROPS} />)
