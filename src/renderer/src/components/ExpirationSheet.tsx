@@ -18,6 +18,8 @@ function fmtDate(iso: string): string {
 // Sidebar is 200px wide — overlay covers only the content area to the right of it
 const SIDEBAR_WIDTH = 200
 
+const MONO = 'ui-monospace, "SF Mono", Menlo, monospace'
+
 export interface ExpirationSheetProps {
   open: boolean
   positionId: string
@@ -40,6 +42,7 @@ export function ExpirationSheet({
   onClose
 }: ExpirationSheetProps): React.JSX.Element | null {
   const [, navigate] = useLocation()
+  const [isClosing, setIsClosing] = useState(false)
   const [successState, setSuccessState] = useState<{
     position: { phase: string }
     costBasisSnapshot: { finalPnl: string }
@@ -52,6 +55,11 @@ export function ExpirationSheet({
   })
 
   if (!open) return null
+
+  const handleClose = (): void => {
+    setIsClosing(true)
+    setTimeout(onClose, 300)
+  }
 
   const handleConfirmExpiration = (): void => {
     mutate({ position_id: positionId, expiration_date_override: expiration })
@@ -85,90 +93,179 @@ export function ExpirationSheet({
     borderLeft: '1px solid var(--wb-border)',
     display: 'flex',
     flexDirection: 'column',
+    fontFamily: MONO,
     boxShadow: '-12px 0 48px rgba(0,0,0,0.5)'
   }
 
+  const headerStyle: React.CSSProperties = {
+    padding: '20px 24px 18px',
+    borderBottom: '1px solid var(--wb-border)',
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    flexShrink: 0
+  }
+
+  const eyebrowStyle: React.CSSProperties = {
+    fontSize: 9,
+    fontWeight: 700,
+    letterSpacing: '0.18em',
+    textTransform: 'uppercase',
+    marginBottom: 6
+  }
+
+  const titleStyle: React.CSSProperties = {
+    fontSize: 17,
+    fontWeight: 700,
+    color: 'var(--wb-text-primary)',
+    marginBottom: 4
+  }
+
+  const subtitleStyle: React.CSSProperties = {
+    fontSize: 11,
+    color: 'var(--wb-text-secondary)',
+    lineHeight: 1.6
+  }
+
+  const closeButtonStyle: React.CSSProperties = {
+    background: 'var(--wb-bg-elevated)',
+    border: '1px solid var(--wb-border)',
+    color: 'var(--wb-text-muted)',
+    fontSize: 14,
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    marginLeft: 12,
+    marginTop: 2
+  }
+
+  const bodyStyle: React.CSSProperties = {
+    padding: '20px 24px',
+    overflowY: 'auto',
+    flex: 1
+  }
+
+  const footerStyle: React.CSSProperties = {
+    padding: '16px 24px',
+    borderTop: '1px solid var(--wb-border)',
+    display: 'flex',
+    gap: 10,
+    flexShrink: 0,
+    background: 'var(--wb-bg-surface)'
+  }
+
+  const summaryCardStyle: React.CSSProperties = {
+    background: 'var(--wb-bg-elevated)',
+    border: '1px solid var(--wb-border)',
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginBottom: 16
+  }
+
+  const summaryRowStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '10px 14px',
+    borderBottom: '1px solid rgba(30,42,56,0.5)'
+  }
+
+  const summaryKeyStyle: React.CSSProperties = {
+    fontSize: 11,
+    color: 'var(--wb-text-secondary)'
+  }
+
+  const summaryValStyle: React.CSSProperties = {
+    fontSize: 11,
+    fontWeight: 600,
+    color: 'var(--wb-text-primary)',
+    textAlign: 'right'
+  }
+
+  const panelAnimClass = isClosing
+    ? 'animate-out slide-out-to-right duration-300'
+    : 'animate-in slide-in-from-right duration-300'
+
   if (successState) {
+    const pnl = parseFloat(successState.costBasisSnapshot.finalPnl)
+
     return createPortal(
       <div style={overlayStyle}>
-        {/* Background overlay */}
-        <div style={scrimStyle} onClick={onClose} />
-
-        {/* Sheet */}
-        <div style={panelStyle} className="animate-in slide-in-from-right duration-300">
+        <div style={scrimStyle} onClick={handleClose} />
+        <div style={panelStyle} className={panelAnimClass}>
           {/* Header */}
-          <div className="px-6 py-4 border-b border-[rgba(61,224,126,0.15)]">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-xs font-mono text-[var(--wb-green)] uppercase tracking-wide mb-1">
-                  Complete
-                </div>
-                <div className="text-lg font-semibold text-[var(--wb-text-primary)]">
-                  {ticker} Expired Worthless
-                </div>
-                <div className="text-sm text-[var(--wb-text-secondary)]">
-                  PUT ${strike} · {expiration}
-                </div>
+          <div style={{ ...headerStyle, borderBottomColor: 'rgba(63,185,80,0.2)' }}>
+            <div>
+              <div style={{ ...eyebrowStyle, color: 'var(--wb-green)' }}>Complete</div>
+              <div style={titleStyle}>{ticker} Expired Worthless</div>
+              <div style={subtitleStyle}>
+                PUT ${strike} · {expiration}
               </div>
-              <button
-                onClick={onClose}
-                className="text-[var(--wb-text-secondary)] hover:text-[var(--wb-text-primary)] text-xl"
-              >
-                ×
-              </button>
             </div>
+            <button style={closeButtonStyle} onClick={handleClose}>×</button>
           </div>
 
           {/* Body */}
-          <div className="flex-1 px-6 py-6">
-            {/* P&L Display */}
-            <div className="text-center mb-6">
-              <div className="text-xs text-[var(--wb-text-secondary)] mb-1">Final P&L</div>
-              <div className="text-2xl font-bold text-[var(--wb-green)]">
-                {formatPremium(successState.costBasisSnapshot.finalPnl)}
+          <div style={bodyStyle}>
+            {/* P&L display */}
+            <div style={{
+              background: 'linear-gradient(135deg, var(--wb-green-dim), rgba(7,10,14,0.4))',
+              border: '1px solid rgba(63,185,80,0.22)',
+              borderRadius: 10,
+              padding: 22,
+              textAlign: 'center',
+              marginBottom: 18
+            }}>
+              <div style={{ fontSize: 9, color: 'var(--wb-green)', opacity: 0.7, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 8 }}>
+                Final P&amp;L
               </div>
-              <div className="text-xs text-[var(--wb-text-secondary)]">
+              <div style={{ fontSize: 40, fontWeight: 700, color: 'var(--wb-green)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
+                {pnl >= 0 ? '+' : ''}${Math.abs(pnl).toFixed(0)}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--wb-green)', opacity: 0.55 }}>
                 100% premium captured · {contracts} contract{contracts !== 1 ? 's' : ''}
               </div>
             </div>
 
             {/* Summary */}
-            <div className="bg-[var(--wb-bg-elevated)] border border-[var(--wb-border)] rounded-lg mb-5">
-              <div className="flex justify-between items-center px-4 py-3 border-b border-[var(--wb-border)]">
-                <span className="text-xs text-[var(--wb-text-secondary)]">Leg recorded</span>
-                <span className="text-xs font-semibold text-[var(--wb-green)]">
+            <div style={summaryCardStyle}>
+              <div style={summaryRowStyle}>
+                <span style={summaryKeyStyle}>Leg recorded</span>
+                <span style={{ ...summaryValStyle, color: 'var(--wb-green)' }}>
                   expire · {fmtDate(expiration)}
                 </span>
               </div>
-              <div className="flex justify-between items-center px-4 py-3 border-b border-[var(--wb-border)]">
-                <span className="text-xs text-[var(--wb-text-secondary)]">Phase</span>
-                <span className="text-xs font-semibold text-[var(--wb-text-primary)]">Complete</span>
+              <div style={summaryRowStyle}>
+                <span style={summaryKeyStyle}>Phase</span>
+                <span style={summaryValStyle}>Complete</span>
               </div>
-              <div className="flex justify-between items-center px-4 py-3">
-                <span className="text-xs text-[var(--wb-text-secondary)]">Status</span>
-                <span className="text-xs font-semibold text-[var(--wb-text-primary)]">Closed</span>
+              <div style={{ ...summaryRowStyle, borderBottom: 'none' }}>
+                <span style={summaryKeyStyle}>Status</span>
+                <span style={summaryValStyle}>Closed</span>
               </div>
             </div>
 
             {/* What's next */}
-            <div className="text-xs text-[var(--wb-text-muted)] uppercase tracking-wide mb-3">
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--wb-text-muted)', marginBottom: 12 }}>
               What&apos;s next?
             </div>
 
             <Button
               onClick={handleOpenNewWheel}
-              className="w-full bg-[var(--wb-green)] text-black font-bold text-sm py-3 mb-4 hover:bg-[var(--wb-green)]/90"
+              style={{ width: '100%', marginBottom: 12, background: 'var(--wb-green)', color: '#000', fontWeight: 700 }}
             >
-              <div>
-                <div>Open new wheel on {ticker}</div>
-                <div className="text-xs opacity-75">Ticker pre-filled · continue the cycle</div>
-              </div>
-              <span>→</span>
+              <span>Open new wheel on {ticker}</span>
+              <span style={{ marginLeft: 'auto', opacity: 0.7 }}>→</span>
             </Button>
 
             <button
-              onClick={onClose}
-              className="w-full text-sm text-[var(--wb-text-secondary)] hover:text-[var(--wb-text-primary)] underline"
+              onClick={handleClose}
+              style={{ width: '100%', fontSize: 11, color: 'var(--wb-text-secondary)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontFamily: MONO }}
             >
               View full position history
             </button>
@@ -182,97 +279,94 @@ export function ExpirationSheet({
   // Confirmation state
   return createPortal(
     <div style={overlayStyle}>
-      {/* Background overlay */}
-      <div style={scrimStyle} onClick={onClose} />
-
-      {/* Sheet */}
-      <div style={panelStyle} className="animate-in slide-in-from-right duration-300">
+      <div style={scrimStyle} onClick={handleClose} />
+      <div style={panelStyle} className={panelAnimClass}>
         {/* Header */}
-        <div className="px-6 py-4 border-b border-[var(--wb-border)]">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-xs font-mono text-[var(--wb-text-secondary)] uppercase tracking-wide mb-1">
-                Record Expiration
-              </div>
-              <div className="text-lg font-semibold text-[var(--wb-text-primary)]">
-                Expire CSP Worthless
-              </div>
-              <div className="text-sm text-[var(--wb-text-secondary)]">
-                {ticker} PUT ${strike} · {expiration}
-              </div>
+        <div style={headerStyle}>
+          <div>
+            <div style={{ ...eyebrowStyle, color: 'var(--wb-text-secondary)' }}>Record Expiration</div>
+            <div style={titleStyle}>Expire CSP Worthless</div>
+            <div style={subtitleStyle}>
+              {ticker} PUT ${strike} · {expiration}
             </div>
-            <button
-              onClick={onClose}
-              className="text-[var(--wb-text-secondary)] hover:text-[var(--wb-text-primary)] text-xl"
-            >
-              ×
-            </button>
           </div>
+          <button style={closeButtonStyle} onClick={handleClose}>×</button>
         </div>
 
         {/* Body */}
-        <div className="flex-1 px-6 py-6">
-          {/* Summary */}
-          <div className="bg-[var(--wb-bg-elevated)] border border-[var(--wb-border)] rounded-lg mb-4">
-            <div className="flex justify-between items-center px-4 py-3 border-b border-[var(--wb-border)]">
-              <span className="text-xs text-[var(--wb-text-secondary)]">Position</span>
-              <span className="text-xs font-semibold text-[var(--wb-text-primary)]">
-                {ticker} PUT ${strike} · {fmtDate(expiration)}
-              </span>
+        <div style={bodyStyle}>
+          {/* Summary card */}
+          <div style={summaryCardStyle}>
+            <div style={summaryRowStyle}>
+              <span style={summaryKeyStyle}>Position</span>
+              <span style={summaryValStyle}>{ticker} PUT ${strike} · {fmtDate(expiration)}</span>
             </div>
-            <div className="flex justify-between items-center px-4 py-3 border-b border-[var(--wb-border)]">
-              <span className="text-xs text-[var(--wb-text-secondary)]">Contracts</span>
-              <span className="text-xs font-semibold text-[var(--wb-text-primary)]">{contracts}</span>
+            <div style={summaryRowStyle}>
+              <span style={summaryKeyStyle}>Contracts</span>
+              <span style={summaryValStyle}>{contracts}</span>
             </div>
-            <div className="flex justify-between items-center px-4 py-3 border-b border-[var(--wb-border)]">
-              <span className="text-xs text-[var(--wb-text-secondary)]">Phase transition</span>
-              <span className="text-xs font-semibold text-[var(--wb-text-primary)]">Put Open → Complete</span>
+            <div style={summaryRowStyle}>
+              <span style={summaryKeyStyle}>Phase transition</span>
+              <span style={summaryValStyle}>Put Open → Complete</span>
             </div>
-            <div className="flex justify-between items-center px-4 py-3 border-b border-[var(--wb-border)]">
-              <span className="text-xs text-[var(--wb-text-secondary)]">Leg recorded</span>
-              <span className="text-xs font-semibold text-[var(--wb-text-primary)]">expire · no fill price</span>
+            <div style={summaryRowStyle}>
+              <span style={summaryKeyStyle}>Leg recorded</span>
+              <span style={summaryValStyle}>expire · no fill price</span>
             </div>
-            <div className="flex justify-between items-center px-4 py-3 bg-[var(--wb-green-dim)]">
-              <span className="text-xs text-[var(--wb-green)] opacity-75">Final P&L</span>
-              <span className="text-base font-bold text-[var(--wb-green)]">
+            <div style={{
+              ...summaryRowStyle,
+              borderBottom: 'none',
+              background: 'linear-gradient(90deg, var(--wb-green-dim), rgba(14,51,32,0.4))'
+            }}>
+              <span style={{ ...summaryKeyStyle, color: 'var(--wb-green)', opacity: 0.75 }}>Final P&amp;L</span>
+              <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--wb-green)' }}>
                 {formatPremium(totalPremiumCollected)}{' '}
-                <span className="text-xs opacity-65">(100% captured)</span>
+                <span style={{ fontSize: 10, opacity: 0.65 }}>(100% captured)</span>
               </span>
             </div>
           </div>
 
           {/* Warning */}
-          <div className="bg-[var(--wb-gold-dim)] border border-[var(--wb-gold-border)] rounded-md p-4 mb-4">
-            <div className="text-xs text-[var(--wb-gold)]">
-              <strong>This cannot be undone.</strong>
-              <br />
-              The position will be closed and marked complete. Full leg history is preserved.
-            </div>
+          <div style={{
+            background: 'var(--wb-gold-dim)',
+            border: '1px solid rgba(230,168,23,0.2)',
+            borderRadius: 6,
+            padding: '11px 14px',
+            fontSize: 11,
+            color: 'var(--wb-gold)',
+            lineHeight: 1.65,
+            marginBottom: 16
+          }}>
+            <strong style={{ fontWeight: 700, display: 'block', marginBottom: 3 }}>This cannot be undone.</strong>
+            The position will be closed and marked complete. Full leg history is preserved.
           </div>
 
           {/* Error */}
           {isError && error && (
-            <div className="bg-[var(--wb-red-dim)] border border-[var(--wb-red)] rounded-md p-4 mb-4">
-              <div className="text-xs text-[var(--wb-red)]">
-                {(error.body as { detail?: Array<{ message: string }> } | null)?.detail?.[0]?.message ?? 'An error occurred'}
-              </div>
+            <div style={{
+              background: 'var(--wb-red-dim)',
+              border: '1px solid rgba(248,81,73,0.2)',
+              borderRadius: 6,
+              padding: '11px 14px',
+              fontSize: 11,
+              color: 'var(--wb-red)',
+              lineHeight: 1.65,
+              marginBottom: 16
+            }}>
+              {(error.body as { detail?: Array<{ message: string }> } | null)?.detail?.[0]?.message ?? 'An error occurred'}
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-[var(--wb-border)] flex gap-3">
-          <Button
-            variant="outline"
-            onClick={onClose}
-            className="flex-1"
-          >
+        <div style={footerStyle}>
+          <Button variant="outline" onClick={handleClose} style={{ flex: 1 }}>
             Cancel
           </Button>
           <Button
             onClick={handleConfirmExpiration}
             disabled={isPending}
-            className="flex-1 bg-[var(--wb-gold)] text-black font-bold hover:bg-[var(--wb-gold)]/90"
+            style={{ flex: 1, background: 'var(--wb-gold)', color: '#000', fontWeight: 700 }}
           >
             {isPending ? 'Confirming...' : 'Confirm Expiration'}
           </Button>

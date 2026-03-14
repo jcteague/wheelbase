@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 import type { ExpireCspResponse } from '../api/positions'
@@ -73,7 +73,7 @@ it('clicking Cancel calls onClose', async () => {
   const user = userEvent.setup()
   render(<ExpirationSheet {...DEFAULT_PROPS} />)
   await user.click(screen.getByRole('button', { name: /cancel/i }))
-  expect(DEFAULT_PROPS.onClose).toHaveBeenCalled()
+  await waitFor(() => expect(DEFAULT_PROPS.onClose).toHaveBeenCalled())
 })
 
 it('clicking Confirm Expiration calls mutation.mutate with position_id', async () => {
@@ -203,7 +203,7 @@ it('clicking View full position history calls onClose', async () => {
 
   const link = await screen.findByText(/View full position history/i)
   await user.click(link)
-  expect(DEFAULT_PROPS.onClose).toHaveBeenCalled()
+  await waitFor(() => expect(DEFAULT_PROPS.onClose).toHaveBeenCalled())
 })
 
 it('clicking Open new wheel navigates to /new?ticker=AAPL', async () => {
