@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculateInitialCspBasis, calculateCspClose } from './costbasis'
+import { calculateInitialCspBasis, calculateCspClose, calculateCspExpiration } from './costbasis'
 import type { CostBasisResult, CspLegInput } from './costbasis'
 
 describe('calculateInitialCspBasis', () => {
@@ -103,7 +103,7 @@ describe('calculateCspClose', () => {
     expect(result.pnlPercentage).toBe('0.0000')
   })
 
-  it('rounds to 4 decimal places with ROUND_HALF_UP', () => {
+  it('rounds to 4 decimal places ROUND_HALF_UP', () => {
     // netPnlPerContract = 1.33 - 0.66 = 0.67
     // finalPnl = 0.67 * 1 * 100 = 67.00 → 67.0000
     // pnlPercentage = 0.67 / 1.33 * 100 = 50.3759398... → 50.3759 (ROUND_HALF_UP)
@@ -114,5 +114,26 @@ describe('calculateCspClose', () => {
     })
     expect(result.finalPnl).toBe('67.0000')
     expect(result.pnlPercentage).toBe('50.3759')
+  })
+})
+
+describe('calculateCspExpiration', () => {
+  it('1 contract at $2.50 → finalPnl $250 and 100% captured', () => {
+    const result = calculateCspExpiration({ openPremiumPerContract: '2.50', contracts: 1 })
+    expect(result.finalPnl).toBe('250.0000')
+    expect(result.pnlPercentage).toBe('100.0000')
+  })
+
+  it('3 contracts at $1.35 → finalPnl $405 and 100% captured', () => {
+    const result = calculateCspExpiration({ openPremiumPerContract: '1.35', contracts: 3 })
+    expect(result.finalPnl).toBe('405.0000')
+    expect(result.pnlPercentage).toBe('100.0000')
+  })
+
+  it('edge case: $0.005 premium with ROUND_HALF_UP → finalPnl $0.5000', () => {
+    // 0.005 * 1 * 100 = 0.5 → 0.5000 (ROUND_HALF_UP)
+    const result = calculateCspExpiration({ openPremiumPerContract: '0.005', contracts: 1 })
+    expect(result.finalPnl).toBe('0.5000')
+    expect(result.pnlPercentage).toBe('100.0000')
   })
 })

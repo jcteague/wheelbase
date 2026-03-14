@@ -6,8 +6,8 @@ import { PositionsListPage } from './PositionsListPage'
 
 vi.mock('../hooks/usePositions')
 vi.mock('../components/PositionCard', () => ({
-  PositionRow: ({ item }: { item: PositionListItem }) => (
-    <tr data-testid="position-card">
+  PositionRow: ({ item, isClosed }: { item: PositionListItem; isClosed?: boolean }) => (
+    <tr data-testid={isClosed ? 'position-card-closed' : 'position-card'}>
       <td>{item.ticker}</td>
     </tr>
   )
@@ -37,6 +37,18 @@ const ITEM_2: PositionListItem = {
   dte: 27,
   premium_collected: '300.0000',
   effective_cost_basis: '397.0000'
+}
+
+const CLOSED_ITEM: PositionListItem = {
+  id: 'ccc',
+  ticker: 'AAPL',
+  phase: 'WHEEL_COMPLETE',
+  status: 'CLOSED',
+  strike: null,
+  expiration: null,
+  dte: null,
+  premium_collected: '250.0000',
+  effective_cost_basis: '177.5000'
 }
 
 it('renders a new wheel button in the header', () => {
@@ -102,4 +114,52 @@ it('renders all expected tickers when populated', () => {
   render(<PositionsListPage />)
   expect(screen.getByText('AAPL')).toBeInTheDocument()
   expect(screen.getByText('MSFT')).toBeInTheDocument()
+})
+
+it('renders Active section header above active positions', () => {
+  mockUsePositions.mockReturnValue({
+    isLoading: false,
+    data: [ITEM_1, CLOSED_ITEM],
+    isError: false,
+    error: null
+  } as unknown as ReturnType<typeof usePositions>)
+
+  render(<PositionsListPage />)
+  expect(screen.getByText(/^Active$/i)).toBeInTheDocument()
+})
+
+it('renders Closed section header when closed positions exist', () => {
+  mockUsePositions.mockReturnValue({
+    isLoading: false,
+    data: [ITEM_1, CLOSED_ITEM],
+    isError: false,
+    error: null
+  } as unknown as ReturnType<typeof usePositions>)
+
+  render(<PositionsListPage />)
+  expect(screen.getByText(/^Closed$/i)).toBeInTheDocument()
+})
+
+it('does not render Closed section header when no closed positions', () => {
+  mockUsePositions.mockReturnValue({
+    isLoading: false,
+    data: [ITEM_1, ITEM_2],
+    isError: false,
+    error: null
+  } as unknown as ReturnType<typeof usePositions>)
+
+  render(<PositionsListPage />)
+  expect(screen.queryByText(/^Closed$/i)).not.toBeInTheDocument()
+})
+
+it('renders closed position card with isClosed testid', () => {
+  mockUsePositions.mockReturnValue({
+    isLoading: false,
+    data: [ITEM_1, CLOSED_ITEM],
+    isError: false,
+    error: null
+  } as unknown as ReturnType<typeof usePositions>)
+
+  render(<PositionsListPage />)
+  expect(screen.getByTestId('position-card-closed')).toBeInTheDocument()
 })

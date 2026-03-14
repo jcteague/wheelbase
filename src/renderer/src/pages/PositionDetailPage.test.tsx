@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 import { usePosition } from '../hooks/usePosition'
 import { PositionDetailPage } from './PositionDetailPage'
@@ -8,6 +9,12 @@ vi.mock('../hooks/usePosition')
 // Mock CloseCspForm to avoid testing it in isolation here
 vi.mock('../components/CloseCspForm', () => ({
   CloseCspForm: () => <div data-testid="close-csp-form">CloseCspForm</div>
+}))
+
+// Mock ExpirationSheet to avoid testing it in isolation here
+vi.mock('../components/ExpirationSheet', () => ({
+  ExpirationSheet: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="expiration-sheet">Expire CSP Worthless</div> : null
 }))
 
 // Mock wouter so useParams works
@@ -97,6 +104,53 @@ it('shows error message when position fails to load', () => {
 
   render(<PositionDetailPage />)
   expect(screen.getByRole('alert')).toBeInTheDocument()
+})
+
+it('renders Record Expiration button when position is CSP_OPEN', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: CSP_OPEN_DETAIL,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  expect(screen.getByTestId('record-expiration-btn')).toBeInTheDocument()
+})
+
+it('opens ExpirationSheet when Record Expiration button is clicked', async () => {
+  const user = userEvent.setup()
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: CSP_OPEN_DETAIL,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  await user.click(screen.getByTestId('record-expiration-btn'))
+  expect(screen.getByText('Expire CSP Worthless')).toBeInTheDocument()
+})
+
+it('does not render Record Expiration button and shows closed banner for WHEEL_COMPLETE', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: {
+      ...CSP_OPEN_DETAIL,
+      position: {
+        ...CSP_OPEN_DETAIL.position,
+        phase: 'WHEEL_COMPLETE',
+        status: 'CLOSED',
+        closedDate: '2026-04-17'
+      }
+    },
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  expect(screen.queryByTestId('record-expiration-btn')).not.toBeInTheDocument()
+  expect(screen.getByText(/Closed on/i)).toBeInTheDocument()
 })
 
 it('does not render CloseCspForm for a closed position', () => {
