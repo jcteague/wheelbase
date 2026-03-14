@@ -5,6 +5,7 @@ import {
   type CloseCspResponse,
   closePosition
 } from '../api/positions'
+import { positionQueryKeys } from './positionQueryKeys'
 
 export function useClosePosition(): ReturnType<
   typeof useMutation<CloseCspResponse, ApiError, CloseCspPayload>
@@ -13,7 +14,7 @@ export function useClosePosition(): ReturnType<
   return useMutation<CloseCspResponse, ApiError, CloseCspPayload>({
     mutationFn: closePosition,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['positions'] })
+      queryClient.invalidateQueries({ queryKey: positionQueryKeys.all })
     }
   })
 }

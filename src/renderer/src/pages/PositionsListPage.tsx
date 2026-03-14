@@ -1,9 +1,10 @@
 import type { PositionListItem } from '../api/positions'
 import { PositionRow } from '../components/PositionCard'
 import { PageHeader, PageLayout } from '../components/PageLayout'
+import { ErrorAlert } from '../components/ui/ErrorAlert'
+import { LoadingState } from '../components/ui/LoadingState'
 import { usePositions } from '../hooks/usePositions'
-
-const MONO = 'ui-monospace, "SF Mono", Menlo, monospace'
+import { MONO } from '../lib/tokens'
 const TABLE_COLUMNS = ['Ticker', 'Phase', 'Strike', 'Expiration', 'DTE', 'Premium', 'Cost Basis']
 
 const thStyle: React.CSSProperties = {
@@ -53,6 +54,7 @@ function PositionsHeader({ count }: { count?: number }): React.JSX.Element {
       right={
         <a
           href="#/new"
+          className="wb-hover-opacity"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -67,8 +69,6 @@ function PositionsHeader({ count }: { count?: number }): React.JSX.Element {
             letterSpacing: '0.02em',
             transition: 'opacity 0.15s'
           }}
-          onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.opacity = '0.85')}
-          onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.opacity = '1')}
         >
           + New Wheel
         </a>
@@ -105,9 +105,13 @@ function PositionTable({ items, isClosed, style }: PositionTableProps): React.JS
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem', ...style }}>
       <thead>
-        <tr style={{ background: 'var(--wb-bg-surface)', borderBottom: '1px solid var(--wb-border)' }}>
+        <tr
+          style={{ background: 'var(--wb-bg-surface)', borderBottom: '1px solid var(--wb-border)' }}
+        >
           {TABLE_COLUMNS.map((col) => (
-            <th key={col} style={thStyle}>{col}</th>
+            <th key={col} style={thStyle}>
+              {col}
+            </th>
           ))}
         </tr>
       </thead>
@@ -128,45 +132,11 @@ export function PositionsListPage(): React.JSX.Element {
 
   return (
     <PageLayout header={<PositionsHeader count={activePositions.length} />}>
-      {isLoading && (
-        <div
-          style={{
-            padding: '32px 24px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            color: 'var(--wb-text-muted)',
-            fontSize: '0.8125rem'
-          }}
-        >
-          <span
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: '50%',
-              background: 'var(--wb-gold)',
-              display: 'inline-block',
-              animation: 'pulse 1.5s ease-in-out infinite'
-            }}
-          />
-          Loading positions…
-        </div>
-      )}
+      {isLoading && <LoadingState message="Loading positions…" />}
 
       {isError && (
-        <div
-          style={{
-            margin: '16px 24px',
-            padding: '10px 14px',
-            borderRadius: 6,
-            background: 'var(--wb-red-dim)',
-            border: '1px solid rgba(248,81,73,0.25)',
-            color: 'var(--wb-red)',
-            fontSize: '0.8125rem',
-            fontFamily: MONO
-          }}
-        >
-          Failed to load positions — check that the database is accessible.
+        <div style={{ margin: '16px 24px' }}>
+          <ErrorAlert message="Failed to load positions — check that the database is accessible." />
         </div>
       )}
 

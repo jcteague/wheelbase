@@ -1,12 +1,12 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { useLocation } from 'wouter'
 import { z } from 'zod'
 import type { ApiError, ApiFieldError } from '../api/positions'
 import { useClosePosition } from '../hooks/useClosePosition'
-
-const MONO = 'ui-monospace, "SF Mono", Menlo, monospace'
+import { fmtMoney, fmtPct } from '../lib/format'
+import { MONO } from '../lib/tokens'
+import { SectionCard } from './ui/SectionCard'
 
 const closeCspSchema = z.object({
   close_price_per_contract: z
@@ -37,14 +37,6 @@ type CloseCspFormProps = {
   contracts: number
 }
 
-function fmt(n: number): string {
-  return n < 0 ? `-$${Math.abs(n).toFixed(2)}` : `$${n.toFixed(2)}`
-}
-
-function fmtPct(n: number): string {
-  return n < 0 ? `-${Math.abs(n).toFixed(0)}%` : `${n.toFixed(0)}%`
-}
-
 function extractFieldErrors(error: ApiError): ApiFieldError[] {
   const { body } = error
   if (body && typeof body === 'object' && 'detail' in body) {
@@ -73,21 +65,21 @@ export function CloseCspForm({
 
   const closePriceStr = watch('close_price_per_contract') ?? ''
 
-  useEffect(() => {
-    if (!mutation.isError || !mutation.error) return
-    const fieldErrors = extractFieldErrors(mutation.error as ApiError)
-    fieldErrors.forEach((e) => {
-      setError(e.field as keyof CloseCspFormValues, { message: e.message })
-    })
-  }, [mutation.isError, mutation.error, setError])
-
   function onSubmit(values: CloseCspFormValues): void {
     mutation.mutate(
       {
         position_id: positionId,
         close_price_per_contract: parseFloat(values.close_price_per_contract)
       },
-      { onSuccess: () => navigate('/') }
+      {
+        onSuccess: () => navigate('/'),
+        onError: (error) => {
+          const fieldErrors = extractFieldErrors(error as ApiError)
+          fieldErrors.forEach((e) => {
+            setError(e.field as keyof CloseCspFormValues, { message: e.message })
+          })
+        }
+      }
     )
   }
 
@@ -97,29 +89,7 @@ export function CloseCspForm({
   const isProfit = preview !== null && preview.netPnl >= 0
 
   return (
-    <section
-      style={{
-        background: 'var(--wb-bg-surface)',
-        border: '1px solid var(--wb-border)',
-        borderRadius: 8,
-        overflow: 'hidden'
-      }}
-    >
-      <div
-        style={{
-          padding: '10px 20px',
-          borderBottom: '1px solid var(--wb-border)',
-          fontSize: '0.65rem',
-          fontWeight: 600,
-          letterSpacing: '0.1em',
-          textTransform: 'uppercase',
-          color: 'var(--wb-text-muted)',
-          fontFamily: MONO
-        }}
-      >
-        Buy to Close
-      </div>
-
+    <SectionCard header="Buy to Close">
       <form
         onSubmit={handleSubmit(onSubmit)}
         style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 16 }}
@@ -188,8 +158,8 @@ export function CloseCspForm({
               color: isProfit ? 'var(--wb-green)' : 'var(--wb-red)'
             }}
           >
-            <div>Net P&L: {fmt(preview.netPnl)}</div>
-            <div>Total P&L: {fmt(preview.totalPnl)}</div>
+            <div>Net P&L: {fmtMoney(preview.netPnl.toString())}</div>
+            <div>Total P&L: {fmtMoney(preview.totalPnl.toString())}</div>
             <div style={{ fontWeight: 600 }}>{fmtPct(preview.pct)}</div>
           </div>
         )}
@@ -199,6 +169,7 @@ export function CloseCspForm({
             type="submit"
             data-testid="close-csp-submit"
             disabled={mutation.isPending}
+            className="wb-hover-opacity"
             style={{
               padding: '7px 20px',
               borderRadius: 6,
@@ -212,17 +183,11 @@ export function CloseCspForm({
               color: mutation.isPending ? 'var(--wb-text-muted)' : 'var(--wb-bg-base)',
               transition: 'opacity 0.15s, background 0.15s'
             }}
-            onMouseEnter={(e) => {
-              if (!mutation.isPending) (e.currentTarget as HTMLElement).style.opacity = '0.85'
-            }}
-            onMouseLeave={(e) => {
-              ;(e.currentTarget as HTMLElement).style.opacity = '1'
-            }}
           >
             {mutation.isPending ? 'Closing...' : 'Close Position'}
           </button>
         </div>
       </form>
-    </section>
+    </SectionCard>
   )
 }

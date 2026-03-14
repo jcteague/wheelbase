@@ -1,10 +1,15 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 import { useClosePosition } from '../hooks/useClosePosition'
 import { CloseCspForm } from './CloseCspForm'
 
 vi.mock('../hooks/useClosePosition')
+
+const mockNavigate = vi.fn()
+vi.mock('wouter', () => ({
+  useLocation: () => ['/', mockNavigate]
+}))
 
 const mockMutate = vi.fn()
 const mockUseClosePosition = vi.mocked(useClosePosition)
@@ -19,6 +24,7 @@ const DEFAULT_PROPS = {
 
 beforeEach(() => {
   mockMutate.mockReset()
+  mockNavigate.mockReset()
   mockUseClosePosition.mockReturnValue({
     mutate: mockMutate,
     isPending: false,
@@ -101,14 +107,46 @@ it('shows loading state when mutation is pending', () => {
   expect(btn).toBeDisabled()
 })
 
-it('shows server validation error next to the field', async () => {
-  mockUseClosePosition.mockReturnValue({
-    mutate: mockMutate,
-    isPending: false,
-    isSuccess: false,
-    isError: true,
-    data: undefined,
-    error: {
+it('navigates home from the mutation success callback after submit', async () => {
+  const user = userEvent.setup()
+  render(<CloseCspForm {...DEFAULT_PROPS} />)
+
+  await user.type(screen.getByTestId('close-price-input'), '1.00')
+  await user.click(screen.getByTestId('close-csp-submit'))
+
+  await waitFor(() => {
+    expect(mockMutate).toHaveBeenCalledOnce()
+  })
+
+  const options = mockMutate.mock.calls[0][1]
+  expect(options).toEqual(
+    expect.objectContaining({
+      onSuccess: expect.any(Function)
+    })
+  )
+
+  act(() => {
+    options.onSuccess()
+  })
+
+  expect(mockNavigate).toHaveBeenCalledWith('/')
+})
+
+it('shows server validation error from the mutation error callback', async () => {
+  const user = userEvent.setup()
+  render(<CloseCspForm {...DEFAULT_PROPS} />)
+
+  await user.type(screen.getByTestId('close-price-input'), '1.00')
+  await user.click(screen.getByTestId('close-csp-submit'))
+
+  await waitFor(() => {
+    expect(mockMutate).toHaveBeenCalledOnce()
+  })
+
+  const options = mockMutate.mock.calls[0][1]
+
+  act(() => {
+    options.onError({
       status: 400,
       body: {
         detail: [
@@ -119,10 +157,47 @@ it('shows server validation error next to the field', async () => {
           }
         ]
       }
-    }
-  } as unknown as ReturnType<typeof useClosePosition>)
+    })
+  })
 
+  await waitFor(() => {
+    expect(screen.getByText(/close price must be positive/i)).toBeInTheDocument()
+  })
+})
+
+it('maps server field errors from the mutation error callback', async () => {
+  const user = userEvent.setup()
   render(<CloseCspForm {...DEFAULT_PROPS} />)
+
+  await user.type(screen.getByTestId('close-price-input'), '1.00')
+  await user.click(screen.getByTestId('close-csp-submit'))
+
+  await waitFor(() => {
+    expect(mockMutate).toHaveBeenCalledOnce()
+  })
+
+  const options = mockMutate.mock.calls[0][1]
+  expect(options).toEqual(
+    expect.objectContaining({
+      onError: expect.any(Function)
+    })
+  )
+
+  act(() => {
+    options.onError({
+      status: 400,
+      body: {
+        detail: [
+          {
+            field: 'close_price_per_contract',
+            code: 'must_be_positive',
+            message: 'Close price must be positive'
+          }
+        ]
+      }
+    })
+  })
+
   await waitFor(() => {
     expect(screen.getByText(/close price must be positive/i)).toBeInTheDocument()
   })

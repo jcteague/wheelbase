@@ -1,53 +1,29 @@
-import { useState } from 'react'
-import type { PositionListItem, WheelPhase } from '../api/positions'
+import type { PositionListItem } from '../api/positions'
+import { fmtMoney } from '../lib/format'
 import { PHASE_COLOR } from '../lib/phase'
-
-const MONO = 'ui-monospace, "SF Mono", Menlo, monospace'
-
-function fmt(value: string): string {
-  return `$${parseFloat(value).toFixed(2)}`
-}
-
-const PHASE_LABEL: Record<WheelPhase, string> = {
-  CSP_OPEN: 'CSP Open',
-  CSP_EXPIRED: 'CSP Expired',
-  CSP_CLOSED_PROFIT: 'CSP ✓',
-  CSP_CLOSED_LOSS: 'CSP ✗',
-  HOLDING_SHARES: 'Shares',
-  CC_OPEN: 'CC Open',
-  CC_EXPIRED: 'CC Expired',
-  CC_CLOSED_PROFIT: 'CC ✓',
-  CC_CLOSED_LOSS: 'CC ✗',
-  WHEEL_COMPLETE: 'Complete'
-}
+import { MONO } from '../lib/tokens'
+import { PhaseBadge } from './PhaseBadge'
 
 type Props = { item: PositionListItem; index: number; isClosed?: boolean }
 
 export function PositionRow({ item, index, isClosed }: Props): React.JSX.Element {
-  const [hovered, setHovered] = useState(false)
   const color = PHASE_COLOR[item.phase]
   const dteUrgent = item.dte !== null && item.dte <= 7
   const closed = isClosed ?? item.status === 'CLOSED'
+  const rowStyle = {
+    borderBottom: '1px solid var(--wb-border-subtle)',
+    ['--wb-row-bg' as string]: index % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)',
+    ['--wb-row-phase-color' as string]: color
+  } as React.CSSProperties
 
   return (
     <tr
       data-testid={closed ? 'position-card-closed' : 'position-card'}
+      className="wb-position-row"
       onClick={() => {
         window.location.hash = `/positions/${item.id}`
       }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        borderBottom: '1px solid var(--wb-border-subtle)',
-        background: hovered
-          ? 'var(--wb-bg-hover)'
-          : index % 2 === 0
-            ? 'transparent'
-            : 'rgba(255,255,255,0.01)',
-        cursor: 'pointer',
-        transition: 'background 0.1s',
-        borderLeft: `3px solid ${hovered ? color : 'transparent'}`
-      }}
+      style={rowStyle}
     >
       {/* Ticker */}
       <td style={{ padding: '10px 16px' }}>
@@ -71,32 +47,13 @@ export function PositionRow({ item, index, isClosed }: Props): React.JSX.Element
 
       {/* Phase */}
       <td style={{ padding: '10px 16px' }}>
-        <span
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 5,
-            padding: '2px 8px',
-            borderRadius: 4,
-            fontSize: '0.7rem',
-            fontWeight: 500,
-            fontFamily: MONO,
-            color,
-            background: `${color}18`,
-            border: `1px solid ${color}30`
-          }}
-        >
-          <span
-            style={{ width: 5, height: 5, borderRadius: '50%', background: color, flexShrink: 0 }}
-          />
-          {PHASE_LABEL[item.phase]}
-        </span>
+        <PhaseBadge phase={item.phase} variant="short" />
       </td>
 
       {/* Strike */}
       <td style={{ padding: '10px 16px' }}>
         <span style={{ fontFamily: MONO, fontSize: '0.8125rem', color: 'var(--wb-text-primary)' }}>
-          {item.strike ? fmt(item.strike) : '—'}
+          {item.strike ? fmtMoney(item.strike) : '—'}
         </span>
       </td>
 
@@ -138,14 +95,14 @@ export function PositionRow({ item, index, isClosed }: Props): React.JSX.Element
             fontWeight: 500
           }}
         >
-          {fmt(item.premium_collected)}
+          {fmtMoney(item.premium_collected)}
         </span>
       </td>
 
       {/* Cost Basis */}
       <td style={{ padding: '10px 16px' }}>
         <span style={{ fontFamily: MONO, fontSize: '0.8125rem', color: 'var(--wb-text-primary)' }}>
-          {fmt(item.effective_cost_basis)}
+          {fmtMoney(item.effective_cost_basis)}
         </span>
       </td>
     </tr>

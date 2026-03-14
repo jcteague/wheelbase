@@ -1,8 +1,7 @@
 import { useLocation, useSearch } from 'wouter'
 import { NewWheelForm } from '../components/NewWheelForm'
 import { PageHeader, PageLayout } from '../components/PageLayout'
-
-const MONO = 'ui-monospace, "SF Mono", Menlo, monospace'
+import { MONO } from '../lib/tokens'
 
 function NewWheelHeader(): React.JSX.Element {
   return (
@@ -11,11 +10,12 @@ function NewWheelHeader(): React.JSX.Element {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <a
             href="#/"
+            className="wb-nav-link"
             style={{
-              color: 'var(--wb-text-muted)',
               textDecoration: 'none',
               fontSize: '0.75rem',
-              fontFamily: MONO
+              fontFamily: MONO,
+              ['--wb-nav-link-color' as string]: 'var(--wb-text-muted)'
             }}
           >
             ← Positions

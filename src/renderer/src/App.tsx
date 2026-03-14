@@ -2,6 +2,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Route, Router, Switch, useLocation } from 'wouter'
 import { useHashLocation } from 'wouter/use-hash-location'
 
+import { NavItem } from './components/NavItem'
+import { MONO } from './lib/tokens'
 import { NewWheelPage } from './pages/NewWheelPage'
 import { PositionDetailPage } from './pages/PositionDetailPage'
 import { PositionsListPage } from './pages/PositionsListPage'
@@ -10,30 +12,6 @@ const queryClient = new QueryClient()
 
 function Sidebar(): React.JSX.Element {
   const [location] = useLocation()
-
-  const navItem = (href: string, label: string, icon: string): React.JSX.Element => {
-    const active = location === href || (href === '/' && location === '')
-    return (
-      <a
-        href={`#${href}`}
-        className="flex items-center gap-2.5 px-3 py-2.5 rounded text-sm transition-colors"
-        style={{
-          color: active ? 'var(--wb-gold)' : 'var(--wb-text-secondary)',
-          background: active ? 'var(--wb-gold-dim)' : 'transparent',
-          textDecoration: 'none'
-        }}
-        onMouseEnter={(e) => {
-          if (!active) (e.currentTarget as HTMLElement).style.color = 'var(--wb-text-primary)'
-        }}
-        onMouseLeave={(e) => {
-          if (!active) (e.currentTarget as HTMLElement).style.color = 'var(--wb-text-secondary)'
-        }}
-      >
-        <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>{icon}</span>
-        <span>{label}</span>
-      </a>
-    )
-  }
 
   return (
     <aside
@@ -64,7 +42,7 @@ function Sidebar(): React.JSX.Element {
           className="font-bold tracking-widest uppercase text-xs"
           style={{
             color: 'var(--wb-text-primary)',
-            fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+            fontFamily: MONO,
             letterSpacing: '0.15em'
           }}
         >
@@ -82,13 +60,13 @@ function Sidebar(): React.JSX.Element {
             letterSpacing: '0.1em',
             textTransform: 'uppercase',
             color: 'var(--wb-text-muted)',
-            fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace'
+            fontFamily: MONO
           }}
         >
           Trading
         </div>
-        {navItem('/', 'Positions', '◈')}
-        {navItem('/new', 'Open Wheel', '+')}
+        <NavItem href="/" label="Positions" icon="◈" active={location === '/' || location === ''} />
+        <NavItem href="/new" label="Open Wheel" icon="+" active={location === '/new'} />
       </nav>
 
       {/* Footer */}
@@ -98,7 +76,7 @@ function Sidebar(): React.JSX.Element {
           borderTop: '1px solid var(--wb-border)',
           fontSize: '0.65rem',
           color: 'var(--wb-text-muted)',
-          fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace'
+          fontFamily: MONO
         }}
       >
         Wheel Strategy

@@ -1,16 +1,17 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { ApiError, ExpireCspPayload, ExpireCspResponse } from '../api/positions'
 import { expirePosition } from '../api/positions'
+import { positionQueryKeys } from './positionQueryKeys'
 
-export function useExpirePosition(options?: { 
-  onSuccess?: (data: ExpireCspResponse) => void 
+export function useExpirePosition(options?: {
+  onSuccess?: (data: ExpireCspResponse) => void
 }): ReturnType<typeof useMutation<ExpireCspResponse, ApiError, ExpireCspPayload>> {
   const queryClient = useQueryClient()
-  
+
   return useMutation<ExpireCspResponse, ApiError, ExpireCspPayload>({
     mutationFn: expirePosition,
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['positions'] })
+      queryClient.invalidateQueries({ queryKey: positionQueryKeys.all })
       options?.onSuccess?.(data)
     }
   })

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 import { useCreatePosition } from '../hooks/useCreatePosition'
@@ -155,6 +155,42 @@ it('calls mutation with correct payload on valid submit', async () => {
   expect(payload.contracts).toBe(1)
 })
 
+it('navigates to the created position from the mutation success callback', async () => {
+  const user = userEvent.setup()
+  const navigate = vi.fn()
+  render(<NewWheelForm navigate={navigate} />)
+
+  await user.type(screen.getByLabelText(/ticker/i), VALID_FORM_VALUES.ticker)
+  await user.type(screen.getByLabelText(/strike/i), VALID_FORM_VALUES.strike)
+  await user.type(screen.getByLabelText(/expiration/i), VALID_FORM_VALUES.expiration)
+  await user.type(screen.getByLabelText(/contracts/i), VALID_FORM_VALUES.contracts)
+  await user.type(
+    screen.getByLabelText(/premium per contract/i),
+    VALID_FORM_VALUES.premiumPerContract
+  )
+
+  await user.click(screen.getByRole('button', { name: /open wheel|submit/i }))
+
+  await waitFor(() => {
+    expect(mockMutate).toHaveBeenCalledOnce()
+  })
+
+  const options = mockMutate.mock.calls[0][1]
+  expect(options).toEqual(
+    expect.objectContaining({
+      onSuccess: expect.any(Function)
+    })
+  )
+
+  act(() => {
+    options.onSuccess({
+      position: { id: 'pos-456' }
+    })
+  })
+
+  expect(navigate).toHaveBeenCalledWith('/positions/pos-456')
+})
+
 it('shows success confirmation panel after successful submission', async () => {
   mockUseCreatePosition.mockReturnValue({
     mutate: mockMutate,
@@ -179,21 +215,82 @@ it('shows success confirmation panel after successful submission', async () => {
 // Error handling
 // ---------------------------------------------------------------------------
 
-it('shows inline field error from 400 response', async () => {
-  mockUseCreatePosition.mockReturnValue({
-    mutate: mockMutate,
-    isPending: false,
-    isSuccess: false,
-    isError: true,
-    data: undefined,
-    error: {
+it('shows inline field error from the 400 mutation error callback', async () => {
+  const user = userEvent.setup()
+  render(<NewWheelForm />)
+
+  await user.type(screen.getByLabelText(/ticker/i), VALID_FORM_VALUES.ticker)
+  await user.type(screen.getByLabelText(/strike/i), VALID_FORM_VALUES.strike)
+  await user.type(screen.getByLabelText(/expiration/i), VALID_FORM_VALUES.expiration)
+  await user.type(screen.getByLabelText(/contracts/i), VALID_FORM_VALUES.contracts)
+  await user.type(
+    screen.getByLabelText(/premium per contract/i),
+    VALID_FORM_VALUES.premiumPerContract
+  )
+
+  await user.click(screen.getByRole('button', { name: /open wheel|submit/i }))
+
+  await waitFor(() => {
+    expect(mockMutate).toHaveBeenCalledOnce()
+  })
+
+  const options = mockMutate.mock.calls[0][1]
+
+  act(() => {
+    options.onError({
       status: 400,
       body: { detail: [{ field: 'ticker', message: 'invalid format' }] }
-    }
-  } as unknown as ReturnType<typeof useCreatePosition>)
-  render(<NewWheelForm />)
+    })
+  })
+
   await waitFor(() => {
     expect(screen.getByText(/invalid format/i)).toBeInTheDocument()
+  })
+})
+
+it('maps 400 field errors onto form fields from the mutation error callback', async () => {
+  const user = userEvent.setup()
+  render(<NewWheelForm />)
+
+  await user.type(screen.getByLabelText(/ticker/i), VALID_FORM_VALUES.ticker)
+  await user.type(screen.getByLabelText(/strike/i), VALID_FORM_VALUES.strike)
+  await user.type(screen.getByLabelText(/expiration/i), VALID_FORM_VALUES.expiration)
+  await user.type(screen.getByLabelText(/contracts/i), VALID_FORM_VALUES.contracts)
+  await user.type(
+    screen.getByLabelText(/premium per contract/i),
+    VALID_FORM_VALUES.premiumPerContract
+  )
+
+  await user.click(screen.getByRole('button', { name: /open wheel|submit/i }))
+
+  await waitFor(() => {
+    expect(mockMutate).toHaveBeenCalledOnce()
+  })
+
+  const options = mockMutate.mock.calls[0][1]
+  expect(options).toEqual(
+    expect.objectContaining({
+      onError: expect.any(Function)
+    })
+  )
+
+  act(() => {
+    options.onError({
+      status: 400,
+      body: {
+        detail: [
+          {
+            field: 'premium_per_contract',
+            code: 'must_be_positive',
+            message: 'Premium must be positive'
+          }
+        ]
+      }
+    })
+  })
+
+  await waitFor(() => {
+    expect(screen.getByText(/premium must be positive/i)).toBeInTheDocument()
   })
 })
 

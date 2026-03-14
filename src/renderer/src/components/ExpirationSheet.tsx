@@ -2,23 +2,13 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation } from 'wouter'
 import { useExpirePosition } from '../hooks/useExpirePosition'
+import { fmtDate, fmtMoney } from '../lib/format'
+import { MONO } from '../lib/tokens'
 import { Button } from './ui/button'
-
-function formatPremium(premium: string): string {
-  const value = parseFloat(premium)
-  return `+$${Math.abs(value).toFixed(0)}`
-}
-
-// Parse ISO date string (YYYY-MM-DD) as local date to avoid UTC midnight timezone shift
-function fmtDate(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
+import { ErrorAlert } from './ui/ErrorAlert'
 
 // Sidebar is 200px wide — overlay covers only the content area to the right of it
 const SIDEBAR_WIDTH = 200
-
-const MONO = 'ui-monospace, "SF Mono", Menlo, monospace'
 
 export interface ExpirationSheetProps {
   open: boolean
@@ -68,6 +58,7 @@ export function ExpirationSheet({
   const handleOpenNewWheel = (): void => {
     navigate(`/new?ticker=${ticker}`)
   }
+  const premiumSummary = `+${fmtMoney(totalPremiumCollected).replace(/\.00$/, '')}`
 
   const overlayStyle: React.CSSProperties = {
     position: 'fixed',
@@ -207,24 +198,46 @@ export function ExpirationSheet({
                 PUT ${strike} · {expiration}
               </div>
             </div>
-            <button style={closeButtonStyle} onClick={handleClose}>×</button>
+            <button style={closeButtonStyle} onClick={handleClose}>
+              ×
+            </button>
           </div>
 
           {/* Body */}
           <div style={bodyStyle}>
             {/* P&L display */}
-            <div style={{
-              background: 'linear-gradient(135deg, var(--wb-green-dim), rgba(7,10,14,0.4))',
-              border: '1px solid rgba(63,185,80,0.22)',
-              borderRadius: 10,
-              padding: 22,
-              textAlign: 'center',
-              marginBottom: 18
-            }}>
-              <div style={{ fontSize: 9, color: 'var(--wb-green)', opacity: 0.7, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 8 }}>
+            <div
+              style={{
+                background: 'linear-gradient(135deg, var(--wb-green-dim), rgba(7,10,14,0.4))',
+                border: '1px solid rgba(63,185,80,0.22)',
+                borderRadius: 10,
+                padding: 22,
+                textAlign: 'center',
+                marginBottom: 18
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 9,
+                  color: 'var(--wb-green)',
+                  opacity: 0.7,
+                  letterSpacing: '0.18em',
+                  textTransform: 'uppercase',
+                  marginBottom: 8
+                }}
+              >
                 Final P&amp;L
               </div>
-              <div style={{ fontSize: 40, fontWeight: 700, color: 'var(--wb-green)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
+              <div
+                style={{
+                  fontSize: 40,
+                  fontWeight: 700,
+                  color: 'var(--wb-green)',
+                  letterSpacing: '-0.03em',
+                  lineHeight: 1,
+                  marginBottom: 6
+                }}
+              >
                 {pnl >= 0 ? '+' : ''}${Math.abs(pnl).toFixed(0)}
               </div>
               <div style={{ fontSize: 11, color: 'var(--wb-green)', opacity: 0.55 }}>
@@ -251,13 +264,28 @@ export function ExpirationSheet({
             </div>
 
             {/* What's next */}
-            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--wb-text-muted)', marginBottom: 12 }}>
+            <div
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: '0.15em',
+                textTransform: 'uppercase',
+                color: 'var(--wb-text-muted)',
+                marginBottom: 12
+              }}
+            >
               What&apos;s next?
             </div>
 
             <Button
               onClick={handleOpenNewWheel}
-              style={{ width: '100%', marginBottom: 12, background: 'var(--wb-green)', color: '#000', fontWeight: 700 }}
+              style={{
+                width: '100%',
+                marginBottom: 12,
+                background: 'var(--wb-green)',
+                color: '#000',
+                fontWeight: 700
+              }}
             >
               <span>Open new wheel on {ticker}</span>
               <span style={{ marginLeft: 'auto', opacity: 0.7 }}>→</span>
@@ -265,7 +293,16 @@ export function ExpirationSheet({
 
             <button
               onClick={handleClose}
-              style={{ width: '100%', fontSize: 11, color: 'var(--wb-text-secondary)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontFamily: MONO }}
+              style={{
+                width: '100%',
+                fontSize: 11,
+                color: 'var(--wb-text-secondary)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                textDecoration: 'underline',
+                fontFamily: MONO
+              }}
             >
               View full position history
             </button>
@@ -284,13 +321,17 @@ export function ExpirationSheet({
         {/* Header */}
         <div style={headerStyle}>
           <div>
-            <div style={{ ...eyebrowStyle, color: 'var(--wb-text-secondary)' }}>Record Expiration</div>
+            <div style={{ ...eyebrowStyle, color: 'var(--wb-text-secondary)' }}>
+              Record Expiration
+            </div>
             <div style={titleStyle}>Expire CSP Worthless</div>
             <div style={subtitleStyle}>
               {ticker} PUT ${strike} · {expiration}
             </div>
           </div>
-          <button style={closeButtonStyle} onClick={handleClose}>×</button>
+          <button style={closeButtonStyle} onClick={handleClose}>
+            ×
+          </button>
         </div>
 
         {/* Body */}
@@ -299,7 +340,9 @@ export function ExpirationSheet({
           <div style={summaryCardStyle}>
             <div style={summaryRowStyle}>
               <span style={summaryKeyStyle}>Position</span>
-              <span style={summaryValStyle}>{ticker} PUT ${strike} · {fmtDate(expiration)}</span>
+              <span style={summaryValStyle}>
+                {ticker} PUT ${strike} · {fmtDate(expiration)}
+              </span>
             </div>
             <div style={summaryRowStyle}>
               <span style={summaryKeyStyle}>Contracts</span>
@@ -313,47 +356,51 @@ export function ExpirationSheet({
               <span style={summaryKeyStyle}>Leg recorded</span>
               <span style={summaryValStyle}>expire · no fill price</span>
             </div>
-            <div style={{
-              ...summaryRowStyle,
-              borderBottom: 'none',
-              background: 'linear-gradient(90deg, var(--wb-green-dim), rgba(14,51,32,0.4))'
-            }}>
-              <span style={{ ...summaryKeyStyle, color: 'var(--wb-green)', opacity: 0.75 }}>Final P&amp;L</span>
+            <div
+              style={{
+                ...summaryRowStyle,
+                borderBottom: 'none',
+                background: 'linear-gradient(90deg, var(--wb-green-dim), rgba(14,51,32,0.4))'
+              }}
+            >
+              <span style={{ ...summaryKeyStyle, color: 'var(--wb-green)', opacity: 0.75 }}>
+                Final P&amp;L
+              </span>
               <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--wb-green)' }}>
-                {formatPremium(totalPremiumCollected)}{' '}
+                {premiumSummary}{' '}
                 <span style={{ fontSize: 10, opacity: 0.65 }}>(100% captured)</span>
               </span>
             </div>
           </div>
 
           {/* Warning */}
-          <div style={{
-            background: 'var(--wb-gold-dim)',
-            border: '1px solid rgba(230,168,23,0.2)',
-            borderRadius: 6,
-            padding: '11px 14px',
-            fontSize: 11,
-            color: 'var(--wb-gold)',
-            lineHeight: 1.65,
-            marginBottom: 16
-          }}>
-            <strong style={{ fontWeight: 700, display: 'block', marginBottom: 3 }}>This cannot be undone.</strong>
+          <div
+            style={{
+              background: 'var(--wb-gold-dim)',
+              border: '1px solid rgba(230,168,23,0.2)',
+              borderRadius: 6,
+              padding: '11px 14px',
+              fontSize: 11,
+              color: 'var(--wb-gold)',
+              lineHeight: 1.65,
+              marginBottom: 16
+            }}
+          >
+            <strong style={{ fontWeight: 700, display: 'block', marginBottom: 3 }}>
+              This cannot be undone.
+            </strong>
             The position will be closed and marked complete. Full leg history is preserved.
           </div>
 
           {/* Error */}
           {isError && error && (
-            <div style={{
-              background: 'var(--wb-red-dim)',
-              border: '1px solid rgba(248,81,73,0.2)',
-              borderRadius: 6,
-              padding: '11px 14px',
-              fontSize: 11,
-              color: 'var(--wb-red)',
-              lineHeight: 1.65,
-              marginBottom: 16
-            }}>
-              {(error.body as { detail?: Array<{ message: string }> } | null)?.detail?.[0]?.message ?? 'An error occurred'}
+            <div style={{ marginBottom: 16 }}>
+              <ErrorAlert
+                message={
+                  (error.body as { detail?: Array<{ message: string }> } | null)?.detail?.[0]
+                    ?.message ?? 'An error occurred'
+                }
+              />
             </div>
           )}
         </div>
