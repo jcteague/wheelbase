@@ -60,11 +60,11 @@ export function openWheel(input: OpenWheelInput): OpenWheelResult {
     throw new ValidationError('fillDate', 'cannot_be_future', 'Fill date cannot be in the future')
   }
 
-  if (input.expiration <= input.fillDate) {
+  if (input.expiration < input.fillDate) {
     throw new ValidationError(
       'expiration',
-      'must_be_after_fill_date',
-      'Expiration must be strictly after fill date'
+      'must_be_before_fill_date',
+      'Expiration cannot be before fill date'
     )
   }
 

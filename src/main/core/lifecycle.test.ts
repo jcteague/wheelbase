@@ -135,12 +135,9 @@ describe('openWheel', () => {
   // Expiration validation
   // -------------------------------------------------------------------------
 
-  it('rejects expiration same as fill date', () => {
-    const e = catchValidation(() =>
-      openWheel(validInput({ fillDate: YESTERDAY, expiration: YESTERDAY }))
-    )
-    expect(e.field).toBe('expiration')
-    expect(e.code).toBe('must_be_after_fill_date')
+  it('allows same-day expiration (0-DTE)', () => {
+    const result = openWheel(validInput({ fillDate: YESTERDAY, expiration: YESTERDAY }))
+    expect(result.phase).toBe('CSP_OPEN')
   })
 
   it('rejects expiration before fill date', () => {
@@ -148,7 +145,7 @@ describe('openWheel', () => {
       openWheel(validInput({ fillDate: TODAY, expiration: YESTERDAY }))
     )
     expect(e.field).toBe('expiration')
-    expect(e.code).toBe('must_be_after_fill_date')
+    expect(e.code).toBe('must_be_before_fill_date')
   })
 })
 

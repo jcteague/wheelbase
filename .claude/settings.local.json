@@ -11,7 +11,9 @@
       "mcp__electron__get_electron_window_info",
       "mcp__electron__take_screenshot",
       "Bash(pnpm lint:*)",
-      "Skill(implement-plan)"
+      "Skill(implement-plan)",
+      "Bash(pnpm typecheck:*)",
+      "Bash(pnpm test:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
