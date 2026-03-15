@@ -231,6 +231,7 @@ Extract shared constants, formatters, and UI primitives from 7+ frontend files t
 **Red — tests to write:**
 - No new test files needed. Existing tests verify rendered content, not hover visual state. The `PositionCard.test.tsx` tests check for text, `testid`, and formatting — none depend on hover state.
 - Verify existing tests pass after `useState` removal (they will — no test triggers hover).
+- Red verification note: reviewed `src/renderer/src/components/PositionCard.test.tsx`, `src/renderer/src/pages/PositionsListPage.test.tsx`, and `src/renderer/src/pages/PositionDetailPage.test.tsx`. These tests assert rendered text, test IDs, loading/error states, and click behavior only; none use hover events or depend on `useState`, `onMouseEnter`, or `onMouseLeave`.
 
 **Green — implementation:**
 - `index.css`: Add CSS rules:

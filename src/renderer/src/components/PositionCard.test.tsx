@@ -74,7 +74,6 @@ it('renders — when dte is null', () => {
   expect(screen.getAllByText('—').length).toBeGreaterThan(0)
 })
 
-
 it('renders data-testid position-card-closed for a CLOSED position', () => {
   const item: PositionListItem = {
     ...BASE_ITEM,

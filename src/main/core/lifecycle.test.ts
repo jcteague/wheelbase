@@ -293,9 +293,7 @@ describe('expireCsp', () => {
   })
 
   it('throws ValidationError with too_early when referenceDate is before expirationDate', () => {
-    const e = catchValidation(() =>
-      expireCsp(validExpireInput({ referenceDate: '2025-01-16' }))
-    )
+    const e = catchValidation(() => expireCsp(validExpireInput({ referenceDate: '2025-01-16' })))
     expect(e.field).toBe('expiration')
     expect(e.code).toBe('too_early')
     expect(e.message).toBe('Cannot record expiration before the expiration date')

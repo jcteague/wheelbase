@@ -1,10 +1,9 @@
 import { format, parse, isValid } from 'date-fns'
 import { useState } from 'react'
+import { MONO } from '../../lib/tokens'
 
 import { Calendar } from './calendar'
 import { Popover, PopoverContent, PopoverTrigger } from './popover'
-
-const MONO = 'ui-monospace, "SF Mono", Menlo, monospace'
 
 type DatePickerProps = {
   value?: string // YYYY-MM-DD string

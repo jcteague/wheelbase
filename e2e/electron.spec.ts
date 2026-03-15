@@ -108,7 +108,9 @@ describe('expire CSP worthless flow', () => {
     await page.waitForLoadState('domcontentloaded')
 
     // Open a new wheel
-    await page.evaluate(() => { location.hash = '#/new' })
+    await page.evaluate(() => {
+      location.hash = '#/new'
+    })
     await page.waitForSelector('label:has-text("Ticker")')
 
     await page.fill('#ticker', 'SPY')
@@ -133,7 +135,9 @@ describe('expire CSP worthless flow', () => {
     await page.waitForSelector('[role="status"]')
 
     // Navigate to detail page
-    await page.evaluate(() => { location.hash = '#/' })
+    await page.evaluate(() => {
+      location.hash = '#/'
+    })
     await page.waitForSelector('text=SPY')
     await page.click('text=SPY')
     await page.waitForSelector('[data-testid="position-detail"]')

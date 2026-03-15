@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 
 import { DatePicker } from '@/components/ui/date-picker'
@@ -7,10 +7,8 @@ import { DatePicker } from '@/components/ui/date-picker'
 import { newWheelSchema, type NewWheelFormValues } from '@/schemas/new-wheel'
 import type { ApiError, ApiFieldError } from '../api/positions'
 import { useCreatePosition } from '../hooks/useCreatePosition'
-
-const MONO = 'ui-monospace, "SF Mono", Menlo, monospace'
-const REDIRECT_DELAY_MS = 2000
-
+import { MONO } from '../lib/tokens'
+import { ErrorAlert } from './ui/ErrorAlert'
 const API_TO_FORM_FIELD: Record<string, keyof NewWheelFormValues> = {
   ticker: 'ticker',
   strike: 'strike',
@@ -95,7 +93,10 @@ const inputErrorStyle: React.CSSProperties = {
   borderColor: 'var(--wb-red)'
 }
 
-export function NewWheelForm({ navigate = () => {}, defaultTicker }: NewWheelFormProps): React.JSX.Element {
+export function NewWheelForm({
+  navigate = () => {},
+  defaultTicker
+}: NewWheelFormProps): React.JSX.Element {
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const mutation = useCreatePosition()
 
@@ -120,35 +121,36 @@ export function NewWheelForm({ navigate = () => {}, defaultTicker }: NewWheelFor
     }
   })
 
-  useEffect(() => {
-    if (!mutation.isSuccess || !mutation.data) return
-    const id = mutation.data.position.id
-    const timer = setTimeout(() => navigate(`/positions/${id}`), REDIRECT_DELAY_MS)
-    return () => clearTimeout(timer)
-  }, [mutation.isSuccess, mutation.data, navigate])
-
-  useEffect(() => {
-    if (!mutation.isError || !mutation.error) return
-    const err = mutation.error as ApiError
-    if (err.status !== 400) return
-    const body = err.body as { detail?: ApiFieldError[] }
+  function mapFieldErrors(error: ApiError): void {
+    if (error.status !== 400) return
+    const body = error.body as { detail?: ApiFieldError[] }
     body.detail?.forEach((fe) => {
       const key = API_TO_FORM_FIELD[fe.field]
       if (key) setError(key, { message: fe.message })
     })
-  }, [mutation.isError, mutation.error, setError])
+  }
 
   function onSubmit(values: NewWheelFormValues): void {
-    mutation.mutate({
-      ticker: values.ticker,
-      strike: parseFloat(values.strike),
-      expiration: values.expiration,
-      contracts: parseInt(values.contracts, 10),
-      premium_per_contract: parseFloat(values.premiumPerContract),
-      fill_date: values.fillDate || undefined,
-      thesis: values.thesis || undefined,
-      notes: values.notes || undefined
-    })
+    mutation.mutate(
+      {
+        ticker: values.ticker,
+        strike: parseFloat(values.strike),
+        expiration: values.expiration,
+        contracts: parseInt(values.contracts, 10),
+        premium_per_contract: parseFloat(values.premiumPerContract),
+        fill_date: values.fillDate || undefined,
+        thesis: values.thesis || undefined,
+        notes: values.notes || undefined
+      },
+      {
+        onSuccess: (data) => {
+          setTimeout(() => navigate(`/positions/${data.position.id}`), 2000)
+        },
+        onError: (error) => {
+          mapFieldErrors(error as ApiError)
+        }
+      }
+    )
   }
 
   const isServerError = mutation.isError && (mutation.error as ApiError)?.status !== 400
@@ -226,22 +228,7 @@ export function NewWheelForm({ navigate = () => {}, defaultTicker }: NewWheelFor
       noValidate
       style={{ display: 'flex', flexDirection: 'column', gap: 24 }}
     >
-      {isServerError && (
-        <div
-          style={{
-            padding: '10px 14px',
-            borderRadius: 6,
-            background: 'var(--wb-red-dim)',
-            border: '1px solid rgba(248,81,73,0.25)',
-            color: 'var(--wb-red)',
-            fontSize: '0.75rem',
-            fontFamily: MONO
-          }}
-          role="alert"
-        >
-          Something went wrong. Please try again.
-        </div>
-      )}
+      {isServerError && <ErrorAlert message="Something went wrong. Please try again." />}
 
       {/* Primary fields — 2 column grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
@@ -303,7 +290,9 @@ export function NewWheelForm({ navigate = () => {}, defaultTicker }: NewWheelFor
               aria-label="Expiration"
               value={field.value}
               onChange={field.onChange}
-              onBlur={() => { if (field.value) field.onBlur() }}
+              onBlur={() => {
+                if (field.value) field.onBlur()
+              }}
               hasError={!!errors.expiration}
             />
           )}
@@ -355,7 +344,9 @@ export function NewWheelForm({ navigate = () => {}, defaultTicker }: NewWheelFor
                     aria-label="Fill date"
                     value={field.value}
                     onChange={field.onChange}
-                    onBlur={() => { if (field.value) field.onBlur() }}
+                    onBlur={() => {
+                      if (field.value) field.onBlur()
+                    }}
                     hasError={!!errors.fillDate}
                   />
                 )}

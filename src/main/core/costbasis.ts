@@ -72,10 +72,10 @@ export function calculateCspClose(input: CspCloseInput): CspCloseResult {
 
 export function calculateCspExpiration(input: CspExpirationInput): CspExpirationResult {
   const openPremium = new Decimal(input.openPremiumPerContract)
-  
+
   // CSP expires worthless: we keep 100% of the premium
   const finalPnl = round4(openPremium.times(input.contracts).times(100))
-  
+
   return {
     finalPnl: finalPnl.toFixed(4),
     pnlPercentage: '100.0000'

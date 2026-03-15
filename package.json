@@ -18,11 +18,13 @@
     "postinstall": "electron-builder install-app-deps && electron-rebuild -f -w better-sqlite3",
     "pretest": "pnpm rebuild better-sqlite3",
     "test": "vitest run",
+    "pretest:e2e": "electron-rebuild -f -w better-sqlite3",
     "test:e2e": "electron-vite build && vitest run --config vitest.e2e.config.ts",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "electron-vite build && electron-builder --mac",
-    "build:linux": "electron-vite build && electron-builder --linux"
+    "build:linux": "electron-vite build && electron-builder --linux",
+    "mockups": "vite --config mockup-viewer.vite.config.ts"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
@@ -54,6 +56,8 @@
     "@electron-toolkit/eslint-config-ts": "^3.1.0",
     "@electron-toolkit/tsconfig": "^2.0.0",
     "@electron/rebuild": "^4.0.3",
+    "@mdx-js/react": "^3.1.1",
+    "@mdx-js/rollup": "^3.1.1",
     "@tailwindcss/vite": "^4.2.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

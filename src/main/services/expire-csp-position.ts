@@ -62,7 +62,7 @@ export function expireCspPosition(
       openLeg.expiration,
       openLeg.contracts,
       '0.0000', // expiration collects no premium
-      null,     // fill_price is null for expiration
+      null, // fill_price is null for expiration
       recordedDate,
       now,
       now
