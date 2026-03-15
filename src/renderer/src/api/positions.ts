@@ -148,6 +148,20 @@ export type PositionDetail = {
     snapshotAt: string
     createdAt: string
   } | null
+  legs: Array<{
+    id: string
+    positionId: string
+    legRole: string
+    action: string
+    optionType: string
+    strike: string
+    expiration: string
+    contracts: number
+    premiumPerContract: string
+    fillDate: string
+    createdAt: string
+    updatedAt: string
+  }>
 }
 
 export type CloseCspPayload = {

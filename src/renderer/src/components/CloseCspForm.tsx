@@ -8,16 +8,32 @@ import { fmtMoney, fmtPct } from '../lib/format'
 import { MONO } from '../lib/tokens'
 import { SectionCard } from './ui/SectionCard'
 
-const closeCspSchema = z.object({
-  close_price_per_contract: z
-    .string()
-    .refine(
-      (v) => v !== '' && !isNaN(parseFloat(v)) && parseFloat(v) > 0,
-      'Close price must be positive'
-    )
-})
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
-type CloseCspFormValues = z.infer<typeof closeCspSchema>
+function makeCloseCspSchema(
+  openFillDate: string,
+  expiration: string
+): z.ZodObject<{
+  close_price_per_contract: z.ZodString
+  fill_date: z.ZodOptional<z.ZodString>
+}> {
+  return z.object({
+    close_price_per_contract: z
+      .string()
+      .refine(
+        (v) => v !== '' && !isNaN(parseFloat(v)) && parseFloat(v) > 0,
+        'Close price must be positive'
+      ),
+    fill_date: z
+      .string()
+      .refine((v) => v === '' || ISO_DATE_RE.test(v), 'Fill date must be a valid date (YYYY-MM-DD)')
+      .refine((v) => v === '' || v >= openFillDate, 'Close date cannot be before the open date')
+      .refine((v) => v === '' || v <= expiration, 'Close date cannot be after expiration date')
+      .optional()
+  })
+}
+
+type CloseCspFormValues = { close_price_per_contract: string; fill_date?: string }
 
 type PnlPreview = { netPnl: number; totalPnl: number; pct: number }
 
@@ -35,6 +51,8 @@ type CloseCspFormProps = {
   positionId: string
   openPremiumPerContract: string
   contracts: number
+  openFillDate: string
+  expiration: string
 }
 
 function extractFieldErrors(error: ApiError): ApiFieldError[] {
@@ -48,7 +66,9 @@ function extractFieldErrors(error: ApiError): ApiFieldError[] {
 export function CloseCspForm({
   positionId,
   openPremiumPerContract,
-  contracts
+  contracts,
+  openFillDate,
+  expiration
 }: CloseCspFormProps): React.JSX.Element {
   const [, navigate] = useLocation()
   const mutation = useClosePosition()
@@ -60,7 +80,7 @@ export function CloseCspForm({
     setError,
     formState: { errors }
   } = useForm<CloseCspFormValues>({
-    resolver: zodResolver(closeCspSchema)
+    resolver: zodResolver(makeCloseCspSchema(openFillDate, expiration))
   })
 
   const closePriceStr = watch('close_price_per_contract') ?? ''
@@ -69,7 +89,8 @@ export function CloseCspForm({
     mutation.mutate(
       {
         position_id: positionId,
-        close_price_per_contract: parseFloat(values.close_price_per_contract)
+        close_price_per_contract: parseFloat(values.close_price_per_contract),
+        ...(values.fill_date && values.fill_date !== '' ? { fill_date: values.fill_date } : {})
       },
       {
         onSuccess: () => navigate('/'),
@@ -139,6 +160,52 @@ export function CloseCspForm({
               }}
             >
               {errors.close_price_per_contract.message}
+            </span>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <label
+            htmlFor="fill_date"
+            style={{
+              fontSize: '0.65rem',
+              fontWeight: 600,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: 'var(--wb-text-muted)',
+              fontFamily: MONO
+            }}
+          >
+            Fill date (optional)
+          </label>
+          <input
+            id="fill_date"
+            type="date"
+            data-testid="fill-date-input"
+            className="wb-input"
+            style={{
+              background: 'var(--wb-bg-elevated)',
+              border: '1px solid var(--wb-border)',
+              borderRadius: 6,
+              padding: '8px 12px',
+              fontFamily: MONO,
+              fontSize: '0.875rem',
+              color: 'var(--wb-text-primary)',
+              width: 200,
+              transition: 'border-color 0.15s'
+            }}
+            {...register('fill_date')}
+          />
+          {errors.fill_date && (
+            <span
+              role="alert"
+              style={{
+                fontSize: '0.75rem',
+                color: 'var(--wb-red)',
+                fontFamily: MONO
+              }}
+            >
+              {errors.fill_date.message}
             </span>
           )}
         </div>

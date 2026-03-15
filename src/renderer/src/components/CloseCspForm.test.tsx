@@ -41,6 +41,39 @@ it('renders close price input and submit button', () => {
   expect(screen.getByTestId('close-csp-submit')).toBeInTheDocument()
 })
 
+it('renders a fill date input', () => {
+  render(<CloseCspForm {...DEFAULT_PROPS} />)
+  expect(screen.getByTestId('fill-date-input')).toBeInTheDocument()
+})
+
+it('shows error when fill date is before the open fill date', async () => {
+  const user = userEvent.setup()
+  render(<CloseCspForm {...DEFAULT_PROPS} />)
+
+  await user.type(screen.getByTestId('close-price-input'), '1.00')
+  await user.type(screen.getByTestId('fill-date-input'), '2026-02-28')
+  await user.click(screen.getByTestId('close-csp-submit'))
+
+  await waitFor(() => {
+    expect(screen.getByText(/Close date cannot be before the open date/i)).toBeInTheDocument()
+    expect(mockMutate).not.toHaveBeenCalled()
+  })
+})
+
+it('shows error when fill date is after expiration', async () => {
+  const user = userEvent.setup()
+  render(<CloseCspForm {...DEFAULT_PROPS} />)
+
+  await user.type(screen.getByTestId('close-price-input'), '1.00')
+  await user.type(screen.getByTestId('fill-date-input'), '2026-04-18')
+  await user.click(screen.getByTestId('close-csp-submit'))
+
+  await waitFor(() => {
+    expect(screen.getByText(/Close date cannot be after expiration date/i)).toBeInTheDocument()
+    expect(mockMutate).not.toHaveBeenCalled()
+  })
+})
+
 it('shows P&L preview for a profit close (close < premium)', async () => {
   const user = userEvent.setup()
   render(<CloseCspForm {...DEFAULT_PROPS} />)

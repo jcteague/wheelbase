@@ -63,7 +63,8 @@ const CSP_OPEN_DETAIL = {
     finalPnl: null,
     snapshotAt: '2026-03-01T00:00:00.000Z',
     createdAt: '2026-03-01T00:00:00.000Z'
-  }
+  },
+  legs: []
 }
 
 it('shows position details and CloseCspForm for a CSP_OPEN position', () => {
@@ -151,6 +152,99 @@ it('does not render Record Expiration button and shows closed banner for WHEEL_C
   render(<PositionDetailPage />)
   expect(screen.queryByTestId('record-expiration-btn')).not.toBeInTheDocument()
   expect(screen.getByText(/Closed on/i)).toBeInTheDocument()
+})
+
+it('renders leg history section with two legs in order', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: {
+      ...CSP_OPEN_DETAIL,
+      legs: [
+        {
+          id: 'leg-1',
+          positionId: 'pos-123',
+          legRole: 'CSP_OPEN',
+          action: 'SELL',
+          optionType: 'PUT',
+          strike: '180.0000',
+          expiration: '2026-04-17',
+          contracts: 1,
+          premiumPerContract: '2.5000',
+          fillDate: '2026-03-01',
+          createdAt: '2026-03-01T00:00:00.000Z',
+          updatedAt: '2026-03-01T00:00:00.000Z'
+        },
+        {
+          id: 'leg-2',
+          positionId: 'pos-123',
+          legRole: 'CSP_CLOSE',
+          action: 'BUY',
+          optionType: 'PUT',
+          strike: '180.0000',
+          expiration: '2026-04-17',
+          contracts: 1,
+          premiumPerContract: '1.0000',
+          fillDate: '2026-03-10',
+          createdAt: '2026-03-10T00:00:00.000Z',
+          updatedAt: '2026-03-10T00:00:00.000Z'
+        }
+      ]
+    },
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+
+  const rows = screen.getAllByRole('row')
+  // First data row should be the open leg (CSP_OPEN / SELL)
+  expect(rows[1]).toHaveTextContent('SELL')
+  // Second data row should be the close leg (CSP_CLOSE / BUY)
+  expect(rows[2]).toHaveTextContent('BUY')
+})
+
+it('does not render leg history section when legs array is empty', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: CSP_OPEN_DETAIL,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  expect(screen.queryByText('Leg History')).not.toBeInTheDocument()
+})
+
+it('renders thesis and notes when both are present', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: {
+      ...CSP_OPEN_DETAIL,
+      position: {
+        ...CSP_OPEN_DETAIL.position,
+        thesis: 'Bullish on services revenue',
+        notes: 'Selling at support level'
+      }
+    },
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  expect(screen.getByText('Bullish on services revenue')).toBeInTheDocument()
+  expect(screen.getByText('Selling at support level')).toBeInTheDocument()
+})
+
+it('does not render notes section when both thesis and notes are null', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: CSP_OPEN_DETAIL,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  expect(screen.queryByText(/Notes/i)).not.toBeInTheDocument()
 })
 
 it('does not render CloseCspForm for a closed position', () => {

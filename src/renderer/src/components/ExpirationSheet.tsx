@@ -52,7 +52,7 @@ export function ExpirationSheet({
   }
 
   const handleConfirmExpiration = (): void => {
-    mutate({ position_id: positionId, expiration_date_override: expiration })
+    mutate({ position_id: positionId })
   }
 
   const handleOpenNewWheel = (): void => {

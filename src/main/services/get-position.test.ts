@@ -45,6 +45,55 @@ describe('getPosition', () => {
     expect(result).toBeNull()
   })
 
+  it('returns legs array with all legs in chronological order', () => {
+    const db = makeTestDb()
+    const created = createPosition(db, {
+      ticker: 'AAPL',
+      strike: 180,
+      expiration: isoDate(30),
+      contracts: 1,
+      premiumPerContract: 2.5,
+      fillDate: isoDate(0)
+    })
+    const positionId = created.position.id
+    const openLegId = created.leg.id
+
+    // Insert a close leg manually (later date)
+    const closeLegId = randomUUID()
+    const now = new Date().toISOString()
+    db.prepare(
+      `
+      INSERT INTO legs (id, position_id, leg_role, action, option_type, strike, expiration, contracts, premium_per_contract, fill_price, fill_date, created_at, updated_at)
+      VALUES (?, ?, 'CSP_CLOSE', 'BUY', 'PUT', '180.0000', ?, 1, '1.0000', '1.0000', ?, ?, ?)
+    `
+    ).run(closeLegId, positionId, isoDate(30), isoDate(10), now, now)
+
+    const detail = getPosition(db, positionId)
+
+    expect(detail).not.toBeNull()
+    expect(detail!.legs).toHaveLength(2)
+    expect(detail!.legs[0].id).toBe(openLegId)
+    expect(detail!.legs[0].legRole).toBe('CSP_OPEN')
+    expect(detail!.legs[1].id).toBe(closeLegId)
+    expect(detail!.legs[1].legRole).toBe('CSP_CLOSE')
+  })
+
+  it('returns empty legs array when position has no legs', () => {
+    const db = makeTestDb()
+    const positionId = randomUUID()
+    const now = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO positions
+        (id, ticker, strategy_type, status, phase, opened_date, account_id, notes, thesis, tags, created_at, updated_at)
+       VALUES (?, 'TSLA', 'WHEEL', 'ACTIVE', 'CSP_OPEN', ?, NULL, NULL, NULL, '[]', ?, ?)`
+    ).run(positionId, isoDate(0), now, now)
+
+    const detail = getPosition(db, positionId)
+
+    expect(detail).not.toBeNull()
+    expect(detail!.legs).toEqual([])
+  })
+
   it('returns activeLeg as null when no open leg exists', () => {
     const db = makeTestDb()
     const positionId = randomUUID()

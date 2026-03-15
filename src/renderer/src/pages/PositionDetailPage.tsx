@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useParams } from 'wouter'
 import { CloseCspForm } from '../components/CloseCspForm'
 import { ExpirationSheet } from '../components/ExpirationSheet'
+import { LegHistoryTable } from '../components/LegHistoryTable'
 import { PageHeader, PageLayout } from '../components/PageLayout'
 import { PhaseBadge } from '../components/PhaseBadge'
 import { ErrorAlert } from '../components/ui/ErrorAlert'
@@ -85,7 +86,7 @@ export function PositionDetailPage(): React.JSX.Element {
     )
   }
 
-  const { position, activeLeg, costBasisSnapshot } = data
+  const { position, activeLeg, costBasisSnapshot, legs } = data
   const dte = activeLeg ? computeDte(activeLeg.expiration) : null
   const dteUrgent = dte !== null && dte <= 7
 
@@ -238,11 +239,80 @@ export function PositionDetailPage(): React.JSX.Element {
           </SectionCard>
         )}
 
+        {legs && legs.length > 0 && (
+          <SectionCard header="Leg History">
+            <LegHistoryTable legs={legs} />
+          </SectionCard>
+        )}
+
+        {(position.thesis || position.notes) && (
+          <SectionCard header="Notes">
+            <div
+              style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}
+            >
+              {position.thesis && (
+                <div>
+                  <div
+                    style={{
+                      fontFamily: MONO,
+                      fontSize: '0.6rem',
+                      fontWeight: 600,
+                      letterSpacing: '0.1em',
+                      textTransform: 'uppercase',
+                      color: 'var(--wb-text-muted)',
+                      marginBottom: 4
+                    }}
+                  >
+                    Thesis
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: MONO,
+                      fontSize: '0.875rem',
+                      color: 'var(--wb-text-primary)'
+                    }}
+                  >
+                    {position.thesis}
+                  </div>
+                </div>
+              )}
+              {position.notes && (
+                <div>
+                  <div
+                    style={{
+                      fontFamily: MONO,
+                      fontSize: '0.6rem',
+                      fontWeight: 600,
+                      letterSpacing: '0.1em',
+                      textTransform: 'uppercase',
+                      color: 'var(--wb-text-muted)',
+                      marginBottom: 4
+                    }}
+                  >
+                    Notes
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: MONO,
+                      fontSize: '0.875rem',
+                      color: 'var(--wb-text-primary)'
+                    }}
+                  >
+                    {position.notes}
+                  </div>
+                </div>
+              )}
+            </div>
+          </SectionCard>
+        )}
+
         {position.phase === 'CSP_OPEN' && activeLeg && (
           <CloseCspForm
             positionId={position.id}
             openPremiumPerContract={activeLeg.premiumPerContract}
             contracts={activeLeg.contracts}
+            openFillDate={activeLeg.fillDate}
+            expiration={activeLeg.expiration}
           />
         )}
 

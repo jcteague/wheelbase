@@ -51,6 +51,31 @@ interface PositionRow {
   snapshot_created_at: string | null
 }
 
+const GET_LEGS_QUERY = `
+  SELECT
+    id, position_id, leg_role, action, option_type, strike, expiration,
+    contracts, premium_per_contract, fill_price, fill_date, created_at, updated_at
+  FROM legs
+  WHERE position_id = ?
+  ORDER BY fill_date ASC, created_at ASC
+`
+
+interface LegRow {
+  id: string
+  position_id: string
+  leg_role: LegRole
+  action: LegAction
+  option_type: OptionType
+  strike: string
+  expiration: string
+  contracts: number
+  premium_per_contract: string
+  fill_price: string | null
+  fill_date: string
+  created_at: string
+  updated_at: string
+}
+
 const GET_QUERY = `
   SELECT
     p.id, p.ticker, p.phase, p.status,
@@ -98,6 +123,8 @@ export function getPosition(db: Database.Database, positionId: string): GetPosit
 
   if (!row) return null
 
+  const legRows = db.prepare(GET_LEGS_QUERY).all(positionId) as LegRow[]
+
   const position: PositionRecord = {
     id: row.id,
     ticker: row.ticker,
@@ -144,7 +171,23 @@ export function getPosition(db: Database.Database, positionId: string): GetPosit
       }
     : null
 
+  const legs: LegRecord[] = legRows.map((r) => ({
+    id: r.id,
+    positionId: r.position_id,
+    legRole: r.leg_role,
+    action: r.action,
+    optionType: r.option_type,
+    strike: r.strike,
+    expiration: r.expiration,
+    contracts: r.contracts,
+    premiumPerContract: r.premium_per_contract,
+    fillPrice: r.fill_price,
+    fillDate: r.fill_date,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  }))
+
   logger.info({ positionId }, 'position_fetched')
 
-  return { position, activeLeg, costBasisSnapshot }
+  return { position, activeLeg, costBasisSnapshot, legs }
 }

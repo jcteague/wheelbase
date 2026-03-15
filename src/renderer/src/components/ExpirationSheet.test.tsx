@@ -76,14 +76,38 @@ it('clicking Cancel calls onClose', async () => {
   await waitFor(() => expect(DEFAULT_PROPS.onClose).toHaveBeenCalled())
 })
 
-it('clicking Confirm Expiration calls mutation.mutate with position_id', async () => {
+it('clicking Confirm Expiration calls mutation.mutate with position_id only — no expiration_date_override', async () => {
   const user = userEvent.setup()
   render(<ExpirationSheet {...DEFAULT_PROPS} />)
   await user.click(screen.getByRole('button', { name: /confirm expiration/i }))
-  expect(mockMutate).toHaveBeenCalledWith({
-    position_id: 'pos-123',
-    expiration_date_override: DEFAULT_PROPS.expiration
-  })
+  expect(mockMutate).toHaveBeenCalledWith({ position_id: 'pos-123' })
+})
+
+it('shows "Cannot record expiration before the expiration date" error when mutation returns too_early', () => {
+  mockUseExpirePosition.mockReturnValue({
+    mutate: mockMutate,
+    isPending: false,
+    isSuccess: false,
+    isError: true,
+    data: undefined,
+    error: {
+      status: 400,
+      body: {
+        detail: [
+          {
+            field: '__root__',
+            code: 'too_early',
+            message: 'Cannot record expiration before the expiration date'
+          }
+        ]
+      }
+    }
+  } as unknown as ReturnType<typeof useExpirePosition>)
+
+  render(<ExpirationSheet {...DEFAULT_PROPS} />)
+  expect(
+    screen.getByText(/Cannot record expiration before the expiration date/i)
+  ).toBeInTheDocument()
 })
 
 it('disables Confirm button and shows Confirming... when isPending', () => {
