@@ -9,6 +9,7 @@ import type { ApiError, ApiFieldError } from '../api/positions'
 import { useCreatePosition } from '../hooks/useCreatePosition'
 import { MONO } from '../lib/tokens'
 import { ErrorAlert } from './ui/ErrorAlert'
+import { Field } from './ui/FormField'
 const API_TO_FORM_FIELD: Record<string, keyof NewWheelFormValues> = {
   ticker: 'ticker',
   strike: 'strike',
@@ -21,59 +22,6 @@ const API_TO_FORM_FIELD: Record<string, keyof NewWheelFormValues> = {
 type NewWheelFormProps = {
   navigate?: (path: string) => void
   defaultTicker?: string
-}
-
-function FieldLabel({ children }: { children: React.ReactNode }): React.JSX.Element {
-  return (
-    <label
-      style={{
-        display: 'block',
-        fontSize: '0.7rem',
-        fontWeight: 600,
-        letterSpacing: '0.07em',
-        textTransform: 'uppercase',
-        color: 'var(--wb-text-muted)',
-        fontFamily: MONO,
-        marginBottom: 6
-      }}
-    >
-      {children}
-    </label>
-  )
-}
-
-type FieldProps = {
-  label: string
-  error?: string
-  hint?: string
-  children: React.ReactNode
-}
-
-function Field({ label, error, hint, children }: FieldProps): React.JSX.Element {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      <FieldLabel>{label}</FieldLabel>
-      {children}
-      {hint && !error && (
-        <span style={{ fontSize: '0.7rem', color: 'var(--wb-text-muted)', marginTop: 4 }}>
-          {hint}
-        </span>
-      )}
-      {error && (
-        <span
-          style={{
-            fontSize: '0.7rem',
-            color: 'var(--wb-red)',
-            marginTop: 4,
-            fontFamily: MONO
-          }}
-          role="alert"
-        >
-          {error}
-        </span>
-      )}
-    </div>
-  )
 }
 
 const inputStyle: React.CSSProperties = {

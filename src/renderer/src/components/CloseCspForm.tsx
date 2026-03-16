@@ -6,6 +6,7 @@ import type { ApiError, ApiFieldError } from '../api/positions'
 import { useClosePosition } from '../hooks/useClosePosition'
 import { fmtMoney, fmtPct } from '../lib/format'
 import { MONO } from '../lib/tokens'
+import { Field } from './ui/FormField'
 import { SectionCard } from './ui/SectionCard'
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -115,20 +116,11 @@ export function CloseCspForm({
         onSubmit={handleSubmit(onSubmit)}
         style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 16 }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <label
-            htmlFor="close_price_per_contract"
-            style={{
-              fontSize: '0.65rem',
-              fontWeight: 600,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              color: 'var(--wb-text-muted)',
-              fontFamily: MONO
-            }}
-          >
-            Close price per contract
-          </label>
+        <Field
+          label="Close price per contract"
+          htmlFor="close_price_per_contract"
+          error={errors.close_price_per_contract?.message}
+        >
           <input
             id="close_price_per_contract"
             type="number"
@@ -150,34 +142,9 @@ export function CloseCspForm({
             }}
             {...register('close_price_per_contract')}
           />
-          {errors.close_price_per_contract && (
-            <span
-              role="alert"
-              style={{
-                fontSize: '0.75rem',
-                color: 'var(--wb-red)',
-                fontFamily: MONO
-              }}
-            >
-              {errors.close_price_per_contract.message}
-            </span>
-          )}
-        </div>
+        </Field>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <label
-            htmlFor="fill_date"
-            style={{
-              fontSize: '0.65rem',
-              fontWeight: 600,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              color: 'var(--wb-text-muted)',
-              fontFamily: MONO
-            }}
-          >
-            Fill date (optional)
-          </label>
+        <Field label="Fill date (optional)" htmlFor="fill_date" error={errors.fill_date?.message}>
           <input
             id="fill_date"
             type="date"
@@ -196,19 +163,7 @@ export function CloseCspForm({
             }}
             {...register('fill_date')}
           />
-          {errors.fill_date && (
-            <span
-              role="alert"
-              style={{
-                fontSize: '0.75rem',
-                color: 'var(--wb-red)',
-                fontFamily: MONO
-              }}
-            >
-              {errors.fill_date.message}
-            </span>
-          )}
-        </div>
+        </Field>
 
         {preview && (
           <div
