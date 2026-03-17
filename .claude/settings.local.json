@@ -14,7 +14,9 @@
       "Skill(implement-plan)",
       "Bash(pnpm typecheck:*)",
       "Bash(pnpm test:*)",
-      "Bash(bd list:*)"
+      "Bash(bd list:*)",
+      "Bash(bd show:*)",
+      "Bash(bd help:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

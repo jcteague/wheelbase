@@ -10,6 +10,21 @@ description: 'Refactor code to improve quality while keeping tests green (TDD re
 $ARGUMENTS
 ```
 
+## Beads Status
+
+If a beads task ID was provided in the arguments (e.g. `wheelbase-ink.N.M`), mark it in progress before starting:
+```bash
+bd update <id> --status=in_progress
+```
+If no task ID was given, proceed without beads tracking — `/implement-plan` manages status when driving this skill.
+
+At the end, after tests, lint, and typecheck all pass, close the task:
+```bash
+bd close <id>
+```
+
+---
+
 ## Outline
 
 You are implementing the **REFACTOR phase** of Test-Driven Development for Wheelbase (Option Wheel Manager). Your goal is to improve code quality, eliminate duplication, and enhance maintainability while keeping all tests passing.
@@ -80,7 +95,7 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
    - Delegate to the `code-simplifier` agent using the Task tool:
      - `subagent_type`: `"code-simplifier:code-simplifier"`
      - Prompt: provide the list of modified files and instruct it to apply clarity, consistency, and maintainability improvements while preserving all functionality and keeping all tests green
-   - After the agent completes, run `make test` to confirm nothing regressed
+   - After the agent completes, run `pnpm test` to confirm nothing regressed
    - If tests fail after the agent's changes, revert those changes and proceed with manual refactoring only
 
 ### Phase 4: Manual Refactoring

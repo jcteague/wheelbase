@@ -10,6 +10,21 @@ description: 'Write failing tests for TDD red phase (test-first development)'
 $ARGUMENTS
 ```
 
+## Beads Status
+
+If a beads task ID was provided in the arguments (e.g. `wheelbase-ink.N.M`), mark it in progress before starting:
+```bash
+bd update <id> --status=in_progress
+```
+If no task ID was given, proceed without beads tracking — `/implement-plan` manages status when driving this skill.
+
+At the end, after confirming all tests fail for the right reason, close the task:
+```bash
+bd close <id>
+```
+
+---
+
 ## Outline
 
 You are implementing the **RED phase** of Test-Driven Development for Wheelbase (Option Wheel Manager). Your goal is to write comprehensive failing tests that define the expected behaviour before any implementation exists.
@@ -25,11 +40,11 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
    - Read the user story for acceptance criteria and edge cases
    - Read the plan for architecture decisions and planned file structure
    - Identify which layer(s) are affected:
-     - **Backend core engines** — `backend/app/core/` (pure Python, no db/broker)
-     - **Backend API** — `backend/app/api/routes/`
-     - **Backend DB models** — `backend/app/models/`
-     - **Frontend components** — `frontend/src/components/`
-     - **Frontend hooks** — `frontend/src/hooks/`
+     - **Core engines** — `src/main/core/` (pure TypeScript, no db/broker imports)
+     - **Service layer** — `src/main/services/`
+     - **IPC handlers** — `src/main/ipc/`
+     - **Renderer components** — `src/renderer/src/components/`
+     - **Renderer hooks** — `src/renderer/src/hooks/`
 
 3. **Identify Test Scope**
    - Classify tests by type:
@@ -84,9 +99,9 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
 9. **Every Test Must Fail Because the Feature Doesn't Exist Yet**
    - **CRITICAL**: This is a hard gate. Do not proceed until every new test fails for the correct reason.
    - Acceptable failures:
-     - `ImportError` / `ModuleNotFoundError` — implementation file doesn't exist yet
-     - `AttributeError` — function or class not yet defined
-     - `AssertionError` — implementation is stubbed and returns wrong result
+     - `ReferenceError` / module-not-found — implementation file doesn't exist yet
+     - Type error — function or type not yet defined
+     - Assertion error — implementation is stubbed and returns wrong result
    - **Unacceptable failures — fix immediately and re-run:**
      - Syntax errors in the test file itself
      - Broken imports caused by test setup mistakes
@@ -129,19 +144,19 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
 3. **Test Independence**
    - Each test must run independently, in any order
    - No shared mutable state between tests
-   - Use `pytest` fixtures for setup/teardown
+   - Use Vitest `beforeEach` / `afterEach` for setup/teardown
    - Mock external dependencies (DB, Alpaca) at the boundary
 
 ### Wheelbase-Specific Testing Rules
 
 4. **Core Engines are Pure — Test Them as Such**
-   - `lifecycle.py`, `costbasis.py`, `alerts.py` accept plain dataclasses and return results
-   - No database session, no Alpaca client — these tests run without a DB connection
+   - `lifecycle.ts`, `costbasis.ts`, `alerts.ts` accept plain typed objects and return results
+   - No database connection, no Alpaca client — these tests run without any I/O
    - If you find yourself needing DB in a core engine test, something is wrong with the design
 
 5. **Cost Basis Math Precision**
-   - Use `decimal.Decimal` for all monetary calculations in tests
-   - Compare with `pytest.approx(rel=1e-9)` when Decimal isn't used
+   - Use `decimal.js` for all monetary calculations in tests
+   - Compare with `.equals()` or `.toFixed(4)` — never use floating point equality
    - Test the formula explicitly: `assignment_strike − CSP_premiums − CC_premiums + roll_debits − roll_credits`
 
 6. **Lifecycle State Machine**

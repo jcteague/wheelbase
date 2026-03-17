@@ -182,14 +182,7 @@ Files to review:
 - <impl-file>
 - <test-file>
 
-Look for:
-- Naming clarity and consistency with codebase conventions
-- Duplication within or across these files
-- Functions longer than 20 lines (extract)
-- Type annotation completeness
-- Log levels: INFO for business events, DEBUG for inputs/checkpoints (never in core/)
-
-Behaviour must not change. Tests must stay green throughout." \
+Refactoring needed. Behaviour must not change. Tests must stay green throughout." \
   --acceptance="pnpm test still passes. pnpm lint and pnpm typecheck clean." \
   --spec-id="$ARGUMENTS" \
   --labels="refactor,<story-id-slug>,<area-slug>" \

@@ -10,6 +10,21 @@ description: 'Implement features to make failing tests pass (TDD green phase)'
 $ARGUMENTS
 ```
 
+## Beads Status
+
+If a beads task ID was provided in the arguments (e.g. `wheelbase-ink.N.M`), mark it in progress before starting:
+```bash
+bd update <id> --status=in_progress
+```
+If no task ID was given, proceed without beads tracking — `/implement-plan` manages status when driving this skill.
+
+At the end, after all tests pass and lint/typecheck are clean, close the task:
+```bash
+bd close <id>
+```
+
+---
+
 ## Outline
 
 You are implementing the **GREEN phase** of Test-Driven Development for Wheelbase (Option Wheel Manager). Your goal is to write the minimum code necessary to make all failing tests pass.

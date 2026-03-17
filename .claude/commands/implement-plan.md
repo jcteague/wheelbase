@@ -41,21 +41,34 @@ Valid filter values:
 
 1. Use Read to load the plan file at the given path. If it does not exist, stop and tell the user: "File not found: `<path>`"
 
-2. Run `bd ready` to list tasks that are ready to work (no blockers). Also run `bd list --status=open` to see all open tasks related to this plan.
+2. Find the beads issues for this plan using two queries:
 
-3. Identify the beads issues for this plan by looking at the issue titles — they should reference the plan's feature areas (e.g. `[Red]`, `[Green]`, `[Refactor]` tasks). If no beads issues exist, stop and tell the user:
+```bash
+# All tasks (Red/Green/Refactor) — execution set
+bd list --spec=<plan-path> --type=task --all --limit 0
+
+# Epic and features — needed for hierarchy closure later
+bd list --spec=<plan-path> --type=epic --all --limit 0
+bd list --spec=<plan-path> --type=feature --all --limit 0
+```
+
+If the task query returns nothing, stop and tell the user:
    > "No beads tasks found. Run `/plan-tasks <plan-file>` first to generate them."
+
+Record the epic ID and all feature IDs from the second and third queries — you will need them to close parent issues as tasks complete.
+
+Run `bd ready` to see which tasks are currently unblocked.
 
 ---
 
 ## Step 2 — Build the Execution Set
 
-List all beads tasks related to this plan. Each task has:
+Use the task list from Step 1 (`--type=task`). Each task has:
 - A beads ID (e.g. `wheelbase-ink.4.1`)
 - A phase tag in the title: `[Red]`, `[Green]`, or `[Refactor]`
 - A status: `open`, `in_progress`, or `closed`
 
-Skip any task whose status is `closed` (already complete).
+Skip any task whose status is `closed` (already complete). Epics and features are not in the execution set.
 
 Number tasks sequentially by their beads ID order (counting both closed and open so numbers are stable).
 
@@ -151,6 +164,22 @@ Fix any errors before marking the task complete.
 When verification passes, close the beads task:
 ```bash
 bd close <id>
+```
+
+Then check if all sibling tasks under the parent feature are now closed. If so, close the feature too:
+```bash
+OPEN_SIBLINGS=$(bd list --parent=<feature-id> --status=open --flat | grep -c .)
+if [ "$OPEN_SIBLINGS" -eq 0 ]; then
+  bd close <feature-id>
+fi
+```
+
+After every feature is closed, close the epic:
+```bash
+OPEN_FEATURES=$(bd list --parent=<epic-id> --status=open --flat | grep -c .)
+if [ "$OPEN_FEATURES" -eq 0 ]; then
+  bd close <epic-id>
+fi
 ```
 
 ---
