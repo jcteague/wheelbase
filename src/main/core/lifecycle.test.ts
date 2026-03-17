@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import * as lifecycle from './lifecycle'
 import { ValidationError, openWheel, closeCsp, expireCsp } from './lifecycle'
 import type { CloseCspInput, ExpireCspInput, OpenWheelInput } from './lifecycle'
 
@@ -294,6 +295,87 @@ describe('expireCsp', () => {
     expect(e.field).toBe('expiration')
     expect(e.code).toBe('too_early')
     expect(e.message).toBe('Cannot record expiration before the expiration date')
+  })
+})
+
+describe('recordAssignment', () => {
+  type RecordAssignmentTestInput = {
+    currentPhase: 'CSP_OPEN' | 'HOLDING_SHARES' | 'CC_OPEN'
+    assignmentDate: string
+    openFillDate: string
+  }
+
+  const recordAssignment = (
+    lifecycle as typeof lifecycle & {
+      recordAssignment?: (input: RecordAssignmentTestInput) => { phase: string }
+    }
+  ).recordAssignment
+
+  function validAssignmentInput(
+    overrides: Partial<RecordAssignmentTestInput> = {}
+  ): RecordAssignmentTestInput {
+    return {
+      currentPhase: 'CSP_OPEN',
+      assignmentDate: '2026-01-17',
+      openFillDate: '2026-01-03',
+      ...overrides
+    }
+  }
+
+  it('returns HOLDING_SHARES for valid CSP_OPEN input', () => {
+    const result = recordAssignment!(validAssignmentInput())
+    expect(result.phase).toBe('HOLDING_SHARES')
+  })
+
+  it('throws invalid_phase when currentPhase is HOLDING_SHARES', () => {
+    const e = catchValidation(() =>
+      recordAssignment!(validAssignmentInput({ currentPhase: 'HOLDING_SHARES' }))
+    )
+    expect(e.field).toBe('__phase__')
+    expect(e.code).toBe('invalid_phase')
+    expect(e.message).toBe('Assignment can only be recorded on a CSP_OPEN position')
+  })
+
+  it('throws invalid_phase when currentPhase is CC_OPEN', () => {
+    const e = catchValidation(() =>
+      recordAssignment!(validAssignmentInput({ currentPhase: 'CC_OPEN' }))
+    )
+    expect(e.field).toBe('__phase__')
+    expect(e.code).toBe('invalid_phase')
+    expect(e.message).toBe('Assignment can only be recorded on a CSP_OPEN position')
+  })
+
+  it('throws date_before_open when assignmentDate is before openFillDate', () => {
+    const e = catchValidation(() =>
+      recordAssignment!(
+        validAssignmentInput({
+          assignmentDate: '2026-01-02',
+          openFillDate: '2026-01-03'
+        })
+      )
+    )
+    expect(e.field).toBe('assignmentDate')
+    expect(e.code).toBe('date_before_open')
+    expect(e.message).toBe('Assignment date cannot be before the CSP open date')
+  })
+
+  it('succeeds when assignmentDate is a future date', () => {
+    const result = recordAssignment!(
+      validAssignmentInput({
+        assignmentDate: '2099-01-01'
+      })
+    )
+    expect(result.phase).toBe('HOLDING_SHARES')
+  })
+
+  it('succeeds when assignmentDate equals openFillDate', () => {
+    const result = recordAssignment!(
+      validAssignmentInput({
+        assignmentDate: '2026-01-03',
+        openFillDate: '2026-01-03'
+      })
+    )
+    expect(result.phase).toBe('HOLDING_SHARES')
   })
 })
 
