@@ -5,6 +5,8 @@ import { ExpirationSheet } from '../components/ExpirationSheet'
 import { LegHistoryTable } from '../components/LegHistoryTable'
 import { PageHeader, PageLayout } from '../components/PageLayout'
 import { PhaseBadge } from '../components/PhaseBadge'
+import { Breadcrumb } from '../components/ui/Breadcrumb'
+import { Caption } from '../components/ui/Caption'
 import { ErrorAlert } from '../components/ui/ErrorAlert'
 import { LoadingState } from '../components/ui/LoadingState'
 import { SectionCard } from '../components/ui/SectionCard'
@@ -38,36 +40,7 @@ export function PositionDetailPage(): React.JSX.Element {
     <PageLayout
       header={
         <PageHeader
-          left={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <a
-                href="#/"
-                className="wb-nav-link"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 5,
-                  fontSize: '0.75rem',
-                  textDecoration: 'none',
-                  fontFamily: MONO
-                }}
-              >
-                ← Positions
-              </a>
-              <span style={{ color: 'var(--wb-border)', userSelect: 'none' }}>/</span>
-              <span
-                style={{
-                  fontFamily: MONO,
-                  fontWeight: 700,
-                  fontSize: '0.875rem',
-                  letterSpacing: '0.04em',
-                  color: 'var(--wb-text-primary)'
-                }}
-              >
-                {position.ticker}
-              </span>
-            </div>
-          }
+          left={<Breadcrumb backTo="#/" backLabel="Positions" current={position.ticker} />}
           right={
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <PhaseBadge phase={position.phase} />
@@ -196,18 +169,8 @@ export function PositionDetailPage(): React.JSX.Element {
             >
               {position.thesis && (
                 <div>
-                  <div
-                    style={{
-                      fontFamily: MONO,
-                      fontSize: '0.6rem',
-                      fontWeight: 600,
-                      letterSpacing: '0.1em',
-                      textTransform: 'uppercase',
-                      color: 'var(--wb-text-muted)',
-                      marginBottom: 4
-                    }}
-                  >
-                    Thesis
+                  <div style={{ marginBottom: 4 }}>
+                    <Caption>Thesis</Caption>
                   </div>
                   <div
                     style={{
@@ -222,18 +185,8 @@ export function PositionDetailPage(): React.JSX.Element {
               )}
               {position.notes && (
                 <div>
-                  <div
-                    style={{
-                      fontFamily: MONO,
-                      fontSize: '0.6rem',
-                      fontWeight: 600,
-                      letterSpacing: '0.1em',
-                      textTransform: 'uppercase',
-                      color: 'var(--wb-text-muted)',
-                      marginBottom: 4
-                    }}
-                  >
-                    Notes
+                  <div style={{ marginBottom: 4 }}>
+                    <Caption>Notes</Caption>
                   </div>
                   <div
                     style={{

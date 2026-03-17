@@ -10,6 +10,7 @@ import { useCreatePosition } from '../hooks/useCreatePosition'
 import { MONO } from '../lib/tokens'
 import { ErrorAlert } from './ui/ErrorAlert'
 import { Field } from './ui/FormField'
+import { FormButton } from './ui/FormButton'
 const API_TO_FORM_FIELD: Record<string, keyof NewWheelFormValues> = {
   ticker: 'ticker',
   strike: 'strike',
@@ -329,26 +330,12 @@ export function NewWheelForm({
       {/* Divider */}
       <div style={{ borderTop: '1px solid var(--wb-border)' }} />
 
-      <button
-        type="submit"
-        disabled={mutation.isPending}
+      <FormButton
+        label="Open Wheel"
+        pendingLabel="Opening…"
+        isPending={mutation.isPending}
         aria-label="Open wheel"
-        style={{
-          padding: '11px 24px',
-          borderRadius: 6,
-          border: 'none',
-          background: mutation.isPending ? 'rgba(230,168,23,0.4)' : 'var(--wb-gold)',
-          color: 'var(--wb-bg-base)',
-          fontSize: '0.9375rem',
-          fontWeight: 600,
-          fontFamily: MONO,
-          cursor: mutation.isPending ? 'not-allowed' : 'pointer',
-          letterSpacing: '0.04em',
-          transition: 'opacity 0.15s'
-        }}
-      >
-        {mutation.isPending ? 'Opening…' : 'Open Wheel'}
-      </button>
+      />
     </form>
   )
 }

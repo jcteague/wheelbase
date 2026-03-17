@@ -1,22 +1,13 @@
 import type { PositionListItem } from '../api/positions'
 import { PositionRow } from '../components/PositionCard'
 import { PageHeader, PageLayout } from '../components/PageLayout'
+import { Badge } from '../components/ui/Badge'
 import { ErrorAlert } from '../components/ui/ErrorAlert'
 import { LoadingState } from '../components/ui/LoadingState'
+import { TableHeader } from '../components/ui/TablePrimitives'
 import { usePositions } from '../hooks/usePositions'
 import { MONO } from '../lib/tokens'
 const TABLE_COLUMNS = ['Ticker', 'Phase', 'Strike', 'Expiration', 'DTE', 'Premium', 'Cost Basis']
-
-const thStyle: React.CSSProperties = {
-  padding: '8px 16px',
-  textAlign: 'left',
-  fontWeight: 500,
-  fontSize: '0.65rem',
-  letterSpacing: '0.08em',
-  textTransform: 'uppercase',
-  color: 'var(--wb-text-muted)',
-  fontFamily: MONO
-}
 
 function PositionsHeader({ count }: { count?: number }): React.JSX.Element {
   return (
@@ -33,22 +24,7 @@ function PositionsHeader({ count }: { count?: number }): React.JSX.Element {
           >
             Active Positions
           </h1>
-          {count != null && count > 0 && (
-            <span
-              style={{
-                fontSize: '0.65rem',
-                fontWeight: 500,
-                padding: '1px 7px',
-                borderRadius: 10,
-                background: 'var(--wb-gold-dim)',
-                color: 'var(--wb-gold)',
-                border: '1px solid var(--wb-gold-border)',
-                fontFamily: MONO
-              }}
-            >
-              {count}
-            </span>
-          )}
+          {count != null && count > 0 && <Badge>{count}</Badge>}
         </div>
       }
       right={
@@ -109,9 +85,9 @@ function PositionTable({ items, isClosed, style }: PositionTableProps): React.JS
           style={{ background: 'var(--wb-bg-surface)', borderBottom: '1px solid var(--wb-border)' }}
         >
           {TABLE_COLUMNS.map((col) => (
-            <th key={col} style={thStyle}>
+            <TableHeader key={col} style={{ padding: '8px 16px' }}>
               {col}
-            </th>
+            </TableHeader>
           ))}
         </tr>
       </thead>

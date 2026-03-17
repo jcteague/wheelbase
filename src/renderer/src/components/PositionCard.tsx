@@ -3,6 +3,7 @@ import { fmtMoney } from '../lib/format'
 import { PHASE_COLOR } from '../lib/phase'
 import { MONO } from '../lib/tokens'
 import { PhaseBadge } from './PhaseBadge'
+import { TableCell } from './ui/TablePrimitives'
 
 type Props = { item: PositionListItem; index: number; isClosed?: boolean }
 
@@ -26,7 +27,7 @@ export function PositionRow({ item, index, isClosed }: Props): React.JSX.Element
       style={rowStyle}
     >
       {/* Ticker */}
-      <td style={{ padding: '10px 16px' }}>
+      <TableCell style={{ padding: '10px 16px', borderBottom: 'none' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           <span
             style={{
@@ -43,22 +44,22 @@ export function PositionRow({ item, index, isClosed }: Props): React.JSX.Element
             {item.status}
           </span>
         </div>
-      </td>
+      </TableCell>
 
       {/* Phase */}
-      <td style={{ padding: '10px 16px' }}>
+      <TableCell style={{ padding: '10px 16px', borderBottom: 'none' }}>
         <PhaseBadge phase={item.phase} variant="short" />
-      </td>
+      </TableCell>
 
       {/* Strike */}
-      <td style={{ padding: '10px 16px' }}>
+      <TableCell style={{ padding: '10px 16px', borderBottom: 'none' }}>
         <span style={{ fontFamily: MONO, fontSize: '0.8125rem', color: 'var(--wb-text-primary)' }}>
           {item.strike ? fmtMoney(item.strike) : '—'}
         </span>
-      </td>
+      </TableCell>
 
       {/* Expiration */}
-      <td style={{ padding: '10px 16px' }}>
+      <TableCell style={{ padding: '10px 16px', borderBottom: 'none' }}>
         <span
           style={{
             fontFamily: MONO,
@@ -69,10 +70,10 @@ export function PositionRow({ item, index, isClosed }: Props): React.JSX.Element
         >
           {item.expiration ?? '—'}
         </span>
-      </td>
+      </TableCell>
 
       {/* DTE */}
-      <td style={{ padding: '10px 16px' }}>
+      <TableCell style={{ padding: '10px 16px', borderBottom: 'none' }}>
         <span
           style={{
             fontFamily: MONO,
@@ -83,10 +84,10 @@ export function PositionRow({ item, index, isClosed }: Props): React.JSX.Element
         >
           {item.dte !== null ? `${item.dte}d` : '—'}
         </span>
-      </td>
+      </TableCell>
 
       {/* Premium */}
-      <td style={{ padding: '10px 16px' }}>
+      <TableCell style={{ padding: '10px 16px', borderBottom: 'none' }}>
         <span
           style={{
             fontFamily: MONO,
@@ -97,14 +98,14 @@ export function PositionRow({ item, index, isClosed }: Props): React.JSX.Element
         >
           {fmtMoney(item.premium_collected)}
         </span>
-      </td>
+      </TableCell>
 
       {/* Cost Basis */}
-      <td style={{ padding: '10px 16px' }}>
+      <TableCell style={{ padding: '10px 16px', borderBottom: 'none' }}>
         <span style={{ fontFamily: MONO, fontSize: '0.8125rem', color: 'var(--wb-text-primary)' }}>
           {fmtMoney(item.effective_cost_basis)}
         </span>
-      </td>
+      </TableCell>
     </tr>
   )
 }

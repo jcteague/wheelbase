@@ -7,6 +7,7 @@ import { useClosePosition } from '../hooks/useClosePosition'
 import { fmtMoney, fmtPct } from '../lib/format'
 import { MONO } from '../lib/tokens'
 import { Field } from './ui/FormField'
+import { FormButton } from './ui/FormButton'
 import { SectionCard } from './ui/SectionCard'
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -187,27 +188,13 @@ export function CloseCspForm({
         )}
 
         <div>
-          <button
-            type="submit"
+          <FormButton
+            label="Close Position"
+            pendingLabel="Closing..."
+            isPending={mutation.isPending}
             data-testid="close-csp-submit"
-            disabled={mutation.isPending}
-            className="wb-hover-opacity"
-            style={{
-              padding: '7px 20px',
-              borderRadius: 6,
-              border: 'none',
-              fontFamily: MONO,
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              letterSpacing: '0.03em',
-              cursor: mutation.isPending ? 'not-allowed' : 'pointer',
-              background: mutation.isPending ? 'var(--wb-bg-elevated)' : 'var(--wb-gold)',
-              color: mutation.isPending ? 'var(--wb-text-muted)' : 'var(--wb-bg-base)',
-              transition: 'opacity 0.15s, background 0.15s'
-            }}
-          >
-            {mutation.isPending ? 'Closing...' : 'Close Position'}
-          </button>
+            style={{ padding: '7px 20px', fontSize: '0.75rem', letterSpacing: '0.03em' }}
+          />
         </div>
       </form>
     </SectionCard>
