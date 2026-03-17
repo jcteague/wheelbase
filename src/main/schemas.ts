@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type {
   LegAction,
   LegRole,
-  OptionType,
+  InstrumentType,
   StrategyType,
   WheelPhase,
   WheelStatus
@@ -51,7 +51,7 @@ export interface LegRecord {
   positionId: string
   legRole: LegRole
   action: LegAction
-  optionType: OptionType
+  instrumentType: InstrumentType
   strike: string
   expiration: string
   contracts: number
@@ -142,4 +142,28 @@ export interface ExpireCspPositionResult {
   }
   leg: LegRecord
   costBasisSnapshot: CostBasisSnapshotRecord & { finalPnl: string }
+}
+
+// ---------------------------------------------------------------------------
+// Assign CSP schemas
+// ---------------------------------------------------------------------------
+
+export const AssignCspPayloadSchema = z.object({
+  positionId: z.string().uuid(),
+  assignmentDate: z.string()
+})
+
+export type AssignCspPayload = z.infer<typeof AssignCspPayloadSchema>
+
+export interface AssignCspPositionResult {
+  position: {
+    id: string
+    ticker: string
+    phase: 'HOLDING_SHARES'
+    status: 'ACTIVE'
+    closedDate: null
+  }
+  leg: LegRecord
+  costBasisSnapshot: CostBasisSnapshotRecord
+  premiumWaterfall: Array<{ label: string; amount: string }>
 }

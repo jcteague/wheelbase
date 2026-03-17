@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useParams } from 'wouter'
+import { AssignmentSheet } from '../components/AssignmentSheet'
 import { CloseCspForm } from '../components/CloseCspForm'
 import { ExpirationSheet } from '../components/ExpirationSheet'
 import { LegHistoryTable } from '../components/LegHistoryTable'
@@ -19,6 +20,7 @@ export function PositionDetailPage(): React.JSX.Element {
   const { id } = useParams<{ id: string }>()
   const { isLoading, isError, data } = usePosition(id)
   const [showExpiration, setShowExpiration] = useState(false)
+  const [showAssignment, setShowAssignment] = useState(false)
 
   if (isLoading) {
     return <LoadingState message="Loading position..." />
@@ -35,6 +37,32 @@ export function PositionDetailPage(): React.JSX.Element {
   const { position, activeLeg, costBasisSnapshot, legs } = data
   const dte = activeLeg ? computeDte(activeLeg.expiration) : null
   const dteUrgent = dte !== null && dte <= 7
+  const actionButtonStyle: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '4px 12px',
+    borderRadius: 4,
+    fontSize: '0.7rem',
+    fontWeight: 500,
+    fontFamily: MONO,
+    color: 'var(--wb-teal)',
+    cursor: 'pointer'
+  }
+
+  const premiumWaterfall =
+    legs
+      .filter((leg) => leg.legRole === 'CSP_OPEN' || leg.legRole === 'ROLL_TO')
+      .map((leg) => ({
+        label: leg.legRole === 'ROLL_TO' ? 'Roll credit' : 'CSP premium',
+        amount: leg.premiumPerContract
+      })) || []
+  const assignmentWaterfall =
+    premiumWaterfall.length > 0 && activeLeg
+      ? premiumWaterfall
+      : activeLeg
+        ? [{ label: 'CSP premium', amount: activeLeg.premiumPerContract }]
+        : []
 
   return (
     <PageLayout
@@ -45,25 +73,24 @@ export function PositionDetailPage(): React.JSX.Element {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <PhaseBadge phase={position.phase} />
               {position.phase === 'CSP_OPEN' && (
-                <button
-                  data-testid="record-expiration-btn"
-                  className="wb-teal-button"
-                  onClick={() => setShowExpiration(true)}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    padding: '4px 12px',
-                    borderRadius: 4,
-                    fontSize: '0.7rem',
-                    fontWeight: 500,
-                    fontFamily: MONO,
-                    color: 'var(--wb-teal)',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Record Expiration →
-                </button>
+                <>
+                  <button
+                    data-testid="record-assignment-btn"
+                    className="wb-teal-button"
+                    onClick={() => setShowAssignment(true)}
+                    style={actionButtonStyle}
+                  >
+                    Record Assignment →
+                  </button>
+                  <button
+                    data-testid="record-expiration-btn"
+                    className="wb-teal-button"
+                    onClick={() => setShowExpiration(true)}
+                    style={actionButtonStyle}
+                  >
+                    Record Expiration →
+                  </button>
+                </>
               )}
             </div>
           }
@@ -78,7 +105,7 @@ export function PositionDetailPage(): React.JSX.Element {
           flexDirection: 'column',
           gap: 16,
           transition: 'filter 0.2s, opacity 0.2s',
-          ...(showExpiration
+          ...(showExpiration || showAssignment
             ? { filter: 'blur(1.5px)', opacity: 0.35, pointerEvents: 'none', userSelect: 'none' }
             : {})
         }}
@@ -239,6 +266,20 @@ export function PositionDetailPage(): React.JSX.Element {
           contracts={activeLeg.contracts}
           totalPremiumCollected={costBasisSnapshot.totalPremiumCollected}
           onClose={() => setShowExpiration(false)}
+        />
+      )}
+      {showAssignment && activeLeg && costBasisSnapshot && (
+        <AssignmentSheet
+          open={showAssignment}
+          positionId={position.id}
+          ticker={position.ticker}
+          strike={activeLeg.strike}
+          expiration={activeLeg.expiration}
+          contracts={activeLeg.contracts}
+          openFillDate={activeLeg.fillDate}
+          premiumWaterfall={assignmentWaterfall}
+          projectedBasisPerShare={costBasisSnapshot.basisPerShare}
+          onClose={() => setShowAssignment(false)}
         />
       )}
     </PageLayout>
