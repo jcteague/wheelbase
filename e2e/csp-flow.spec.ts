@@ -14,11 +14,11 @@ const EXPIRATION_MONTH = 4 // April
 const EXPIRATION_DAY = 17
 const EXPIRATION_ISO = `${EXPIRATION_YEAR}-04-${String(EXPIRATION_DAY).padStart(2, '0')}`
 
-// Expire test: use today so the service's referenceDate (today) >= expirationDate check passes
+// Expire test: use today in UTC — must match the service's fillDate default (toISOString().slice(0,10))
 const _expireToday = new Date()
-const EXPIRE_YEAR = _expireToday.getFullYear()
-const EXPIRE_MONTH = _expireToday.getMonth() + 1
-const EXPIRE_DAY = _expireToday.getDate()
+const EXPIRE_YEAR = _expireToday.getUTCFullYear()
+const EXPIRE_MONTH = _expireToday.getUTCMonth() + 1
+const EXPIRE_DAY = _expireToday.getUTCDate()
 const EXPIRE_ISO = `${EXPIRE_YEAR}-${String(EXPIRE_MONTH).padStart(2, '0')}-${String(EXPIRE_DAY).padStart(2, '0')}`
 
 describe('close CSP early flow', () => {

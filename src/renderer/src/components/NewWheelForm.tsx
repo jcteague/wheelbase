@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 
 import { DatePicker } from '@/components/ui/date-picker'
@@ -48,6 +48,11 @@ export function NewWheelForm({
 }: NewWheelFormProps): React.JSX.Element {
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const mutation = useCreatePosition()
+  useEffect(() => {
+    if (!mutation.isSuccess || !mutation.data) return
+    const timer = setTimeout(() => navigate(`/positions/${mutation.data!.position.id}`), 2000)
+    return () => clearTimeout(timer)
+  }, [mutation.isSuccess, mutation.data, navigate])
 
   const {
     register,
@@ -92,9 +97,6 @@ export function NewWheelForm({
         notes: values.notes || undefined
       },
       {
-        onSuccess: (data) => {
-          setTimeout(() => navigate(`/positions/${data.position.id}`), 2000)
-        },
         onError: (error) => {
           mapFieldErrors(error as ApiError)
         }

@@ -8,11 +8,11 @@ import path from 'node:path'
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
 const APP_CWD = path.join(__dirname, '..')
 
-// Near expiration: today — ensures DTE=0 (shorter than FAR) and allows same-day expiration in tests
+// Near expiration: today in UTC — must match the service's fillDate default (toISOString().slice(0,10))
 const _near = new Date()
-const NEAR_YEAR = _near.getFullYear()
-const NEAR_MONTH = _near.getMonth() + 1
-const NEAR_DAY = _near.getDate()
+const NEAR_YEAR = _near.getUTCFullYear()
+const NEAR_MONTH = _near.getUTCMonth() + 1
+const NEAR_DAY = _near.getUTCDate()
 const NEAR_ISO = `${NEAR_YEAR}-${String(NEAR_MONTH).padStart(2, '0')}-${String(NEAR_DAY).padStart(2, '0')}`
 
 // Far expiration: June 2026

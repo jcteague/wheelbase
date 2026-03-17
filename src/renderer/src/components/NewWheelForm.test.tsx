@@ -156,38 +156,27 @@ it('calls mutation with correct payload on valid submit', async () => {
 })
 
 it('navigates to the created position 2 seconds after mutation success', async () => {
-  const user = userEvent.setup()
-  const navigate = vi.fn()
-  render(<NewWheelForm navigate={navigate} />)
-
-  await user.type(screen.getByLabelText(/ticker/i), VALID_FORM_VALUES.ticker)
-  await user.type(screen.getByLabelText(/strike/i), VALID_FORM_VALUES.strike)
-  await user.type(screen.getByLabelText(/expiration/i), VALID_FORM_VALUES.expiration)
-  await user.type(screen.getByLabelText(/contracts/i), VALID_FORM_VALUES.contracts)
-  await user.type(
-    screen.getByLabelText(/premium per contract/i),
-    VALID_FORM_VALUES.premiumPerContract
-  )
-
-  await user.click(screen.getByRole('button', { name: /open wheel|submit/i }))
-
-  await waitFor(() => {
-    expect(mockMutate).toHaveBeenCalledOnce()
-  })
-
-  const options = mockMutate.mock.calls[0][1]
-  expect(options).toEqual(
-    expect.objectContaining({
-      onSuccess: expect.any(Function)
-    })
-  )
-
-  // Switch to fake timers only for the setTimeout check
   vi.useFakeTimers()
   try {
-    act(() => {
-      options.onSuccess({ position: { id: 'pos-456' } })
-    })
+    const navigate = vi.fn()
+    const successData = {
+      position: { id: 'pos-456', ticker: 'AAPL', phase: 'CSP_OPEN' },
+      cost_basis_snapshot: { total_premium_collected: '350.00', basis_per_share: '146.50' }
+    }
+
+    const { rerender } = render(<NewWheelForm navigate={navigate} />)
+
+    // Simulate mutation transitioning to success
+    mockUseCreatePosition.mockReturnValue({
+      mutate: mockMutate,
+      isPending: false,
+      isSuccess: true,
+      isError: false,
+      data: successData,
+      error: null
+    } as unknown as ReturnType<typeof useCreatePosition>)
+
+    rerender(<NewWheelForm navigate={navigate} />)
 
     expect(navigate).not.toHaveBeenCalled()
 
