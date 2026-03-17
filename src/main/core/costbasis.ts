@@ -70,6 +70,61 @@ export function calculateCspClose(input: CspCloseInput): CspCloseResult {
   }
 }
 
+export interface AssignmentPremiumLeg {
+  legRole: string
+  premiumPerContract: string
+  contracts: number
+}
+
+export interface AssignmentBasisInput {
+  strike: string
+  contracts: number
+  premiumLegs: AssignmentPremiumLeg[]
+}
+
+export interface WaterfallEntry {
+  label: string
+  amount: string
+}
+
+export interface AssignmentBasisResult {
+  basisPerShare: string
+  sharesHeld: number
+  totalPremiumCollected: string
+  premiumWaterfall: WaterfallEntry[]
+}
+
+const LEG_ROLE_LABEL: Record<string, string> = {
+  CSP_OPEN: 'CSP premium',
+  ROLL_TO: 'Roll credit'
+}
+
+export function calculateAssignmentBasis(input: AssignmentBasisInput): AssignmentBasisResult {
+  const strike = new Decimal(input.strike)
+
+  const totalPremiumPerShare = input.premiumLegs.reduce(
+    (sum, leg) => sum.plus(new Decimal(leg.premiumPerContract)),
+    new Decimal(0)
+  )
+
+  const totalPremiumCollected = input.premiumLegs.reduce(
+    (sum, leg) => sum.plus(new Decimal(leg.premiumPerContract).times(leg.contracts).times(100)),
+    new Decimal(0)
+  )
+
+  const premiumWaterfall: WaterfallEntry[] = input.premiumLegs.map((leg) => ({
+    label: LEG_ROLE_LABEL[leg.legRole] ?? leg.legRole,
+    amount: leg.premiumPerContract
+  }))
+
+  return {
+    basisPerShare: round4(strike.minus(totalPremiumPerShare)).toFixed(4),
+    sharesHeld: input.contracts * 100,
+    totalPremiumCollected: round4(totalPremiumCollected).toFixed(4),
+    premiumWaterfall
+  }
+}
+
 export function calculateCspExpiration(input: CspExpirationInput): CspExpirationResult {
   const openPremium = new Decimal(input.openPremiumPerContract)
 

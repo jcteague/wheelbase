@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { calculateInitialCspBasis, calculateCspClose, calculateCspExpiration } from './costbasis'
+import {
+  calculateInitialCspBasis,
+  calculateCspClose,
+  calculateCspExpiration,
+  calculateAssignmentBasis
+} from './costbasis'
 import type { CostBasisResult, CspLegInput } from './costbasis'
 
 describe('calculateInitialCspBasis', () => {
@@ -135,5 +140,72 @@ describe('calculateCspExpiration', () => {
     const result = calculateCspExpiration({ openPremiumPerContract: '0.005', contracts: 1 })
     expect(result.finalPnl).toBe('0.5000')
     expect(result.pnlPercentage).toBe('100.0000')
+  })
+})
+
+describe('calculateAssignmentBasis', () => {
+  it('calculates basis per share and shares held for a single CSP leg', () => {
+    const result = calculateAssignmentBasis({
+      strike: '180.00',
+      contracts: 1,
+      premiumLegs: [{ legRole: 'CSP_OPEN', premiumPerContract: '3.50', contracts: 1 }]
+    })
+
+    expect(result.basisPerShare).toBe('176.5000')
+    expect(result.sharesHeld).toBe(100)
+  })
+
+  it('accounts for CSP premium and roll credit in assignment basis', () => {
+    const result = calculateAssignmentBasis({
+      strike: '175.00',
+      contracts: 1,
+      premiumLegs: [
+        { legRole: 'CSP_OPEN', premiumPerContract: '2.00', contracts: 1 },
+        { legRole: 'ROLL_TO', premiumPerContract: '1.50', contracts: 1 }
+      ]
+    })
+
+    expect(result.basisPerShare).toBe('171.5000')
+    expect(result.sharesHeld).toBe(100)
+  })
+
+  it('scales shares held by contract count while keeping basis per share unchanged', () => {
+    const result = calculateAssignmentBasis({
+      strike: '180.00',
+      contracts: 2,
+      premiumLegs: [{ legRole: 'CSP_OPEN', premiumPerContract: '3.50', contracts: 2 }]
+    })
+
+    expect(result.basisPerShare).toBe('176.5000')
+    expect(result.sharesHeld).toBe(200)
+  })
+
+  it('builds a premium waterfall with CSP and roll credit labels', () => {
+    const result = calculateAssignmentBasis({
+      strike: '175.00',
+      contracts: 1,
+      premiumLegs: [
+        { legRole: 'CSP_OPEN', premiumPerContract: '2.00', contracts: 1 },
+        { legRole: 'ROLL_TO', premiumPerContract: '1.50', contracts: 1 }
+      ]
+    })
+
+    expect(result.premiumWaterfall).toEqual([
+      { label: 'CSP premium', amount: '2.00' },
+      { label: 'Roll credit', amount: '1.50' }
+    ])
+  })
+
+  it('sums total premium collected across all premium legs', () => {
+    const result = calculateAssignmentBasis({
+      strike: '175.00',
+      contracts: 1,
+      premiumLegs: [
+        { legRole: 'CSP_OPEN', premiumPerContract: '2.00', contracts: 1 },
+        { legRole: 'ROLL_TO', premiumPerContract: '1.50', contracts: 1 }
+      ]
+    })
+
+    expect(result.totalPremiumCollected).toBe('350.0000')
   })
 })
