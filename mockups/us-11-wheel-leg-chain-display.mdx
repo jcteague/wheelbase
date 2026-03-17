@@ -1,0 +1,508 @@
+---
+title: "US-11: Wheel Leg Chain Display"
+story: "As a wheel trader reviewing an active or completed position, I want to see every leg in the wheel in chronological order alongside the running cost basis at each step, so that I can understand the complete history of the position and how each action contributed to my current or final cost basis."
+states: ["partial", "mid-cycle", "complete"]
+---
+
+import { useState } from 'react'
+
+# US-11: Wheel Leg Chain Display
+
+_As a wheel trader reviewing an active or completed position, I want to see every leg in the wheel in chronological order alongside the running cost basis at each step, so that I can understand the complete history of the position and how each action contributed to my current or final cost basis._
+
+## Acceptance Criteria States
+
+- **partial**: Single CSP_OPEN row; running basis shows initial basis $176.50; no footer
+- **mid-cycle**: Three rows (CSP_OPEN → ASSIGN → CC_OPEN); ASSIGN row shows "— (assigned)" for premium; CC_OPEN running basis drops to $174.20
+- **complete**: Five rows through called-away; final P&L footer row "+$780.00" in green at bottom of chain
+
+---
+
+export const MONO = "'JetBrains Mono', 'Fira Mono', 'Cascadia Code', monospace"
+
+// ── Role badge color map ──────────────────────────────────────────────────────
+export const ROLE_COLOR = {
+  CSP_OPEN:    '#e6a817',
+  ASSIGN:      '#79c0ff',
+  CC_OPEN:     '#d2a8ff',
+  CC_CLOSE:    '#3fb950',
+  CC_EXPIRED:  '#484f58',
+  CALLED_AWAY: '#3fb950',
+}
+
+export const ROLE_LABEL = {
+  CSP_OPEN:    'CSP Open',
+  ASSIGN:      'Assign',
+  CC_OPEN:     'CC Open',
+  CC_CLOSE:    'CC Close',
+  CC_EXPIRED:  'CC Expired',
+  CALLED_AWAY: 'Called Away',
+}
+
+// ── Phase badge map ───────────────────────────────────────────────────────────
+export const PHASE_COLOR = {
+  CSP_OPEN:       '#e6a817',
+  HOLDING_SHARES: '#79c0ff',
+  CC_OPEN:        '#d2a8ff',
+  WHEEL_COMPLETE: '#3fb950',
+}
+export const PHASE_LABEL = {
+  CSP_OPEN:       'Sell Put',
+  HOLDING_SHARES: 'Holding Shares',
+  CC_OPEN:        'Sell Call',
+  WHEEL_COMPLETE: 'Wheel Complete',
+}
+
+// ── Mock data ─────────────────────────────────────────────────────────────────
+
+export const LEGS_PARTIAL = [
+  { id: '1', legRole: 'CSP_OPEN', action: 'open',   instrumentType: 'PUT',  strike: '180.00', expiration: '2026-03-21', premiumPerContract: '3.50',  fillDate: '2026-01-03', runningCostBasis: '176.50' },
+]
+
+export const LEGS_MID = [
+  { id: '1', legRole: 'CSP_OPEN', action: 'open',   instrumentType: 'PUT',  strike: '180.00', expiration: '2026-01-17', premiumPerContract: '3.50',  fillDate: '2026-01-03', runningCostBasis: '176.50' },
+  { id: '2', legRole: 'ASSIGN',   action: 'assign', instrumentType: 'PUT',  strike: '180.00', expiration: null,         premiumPerContract: null,     fillDate: '2026-01-17', runningCostBasis: '176.50' },
+  { id: '3', legRole: 'CC_OPEN',  action: 'open',   instrumentType: 'CALL', strike: '182.00', expiration: '2026-02-21', premiumPerContract: '2.30',  fillDate: '2026-01-20', runningCostBasis: '174.20' },
+]
+
+export const LEGS_COMPLETE = [
+  { id: '1', legRole: 'CSP_OPEN',    action: 'open',   instrumentType: 'PUT',  strike: '180.00', expiration: '2026-01-17', premiumPerContract: '3.50',  fillDate: '2026-01-03', runningCostBasis: '176.50' },
+  { id: '2', legRole: 'ASSIGN',      action: 'assign', instrumentType: 'PUT',  strike: '180.00', expiration: null,         premiumPerContract: null,     fillDate: '2026-01-17', runningCostBasis: '176.50' },
+  { id: '3', legRole: 'CC_OPEN',     action: 'open',   instrumentType: 'CALL', strike: '182.00', expiration: '2026-02-21', premiumPerContract: '2.30',  fillDate: '2026-01-20', runningCostBasis: '174.20' },
+  { id: '4', legRole: 'CC_CLOSE',    action: 'close',  instrumentType: 'CALL', strike: '182.00', expiration: '2026-02-21', premiumPerContract: '1.80',  fillDate: '2026-02-14', runningCostBasis: '172.40' },
+  { id: '5', legRole: 'CALLED_AWAY', action: 'assign', instrumentType: 'CALL', strike: '182.00', expiration: null,         premiumPerContract: null,     fillDate: '2026-02-21', runningCostBasis: null      },
+]
+
+// ── Primitive mocks — visually match src/renderer/src/components/ui/ ─────────
+
+// Matches: Badge.tsx
+// Real usage: <Badge color={ROLE_COLOR[legRole]}>{ROLE_LABEL[legRole]}</Badge>
+export function MockBadge({ children, color }) {
+  const fg = color ?? '#e6a817'
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 5,
+      fontSize: '0.65rem',
+      fontWeight: 500,
+      padding: '2px 7px',
+      borderRadius: 4,
+      background: `${fg}18`,
+      color: fg,
+      border: `1px solid ${fg}30`,
+      fontFamily: MONO,
+      whiteSpace: 'nowrap',
+    }}>
+      <span style={{
+        width: 4,
+        height: 4,
+        borderRadius: '50%',
+        background: fg,
+        flexShrink: 0,
+      }} />
+      {children}
+    </span>
+  )
+}
+
+// Matches: PhaseBadge.tsx
+// Real usage: <PhaseBadge phase="CSP_OPEN" />
+export function MockPhaseBadge({ phase }) {
+  const color = PHASE_COLOR[phase] ?? '#8899aa'
+  const label = PHASE_LABEL[phase] ?? phase
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 5,
+      fontSize: '0.7rem',
+      fontWeight: 500,
+      padding: '2px 9px',
+      borderRadius: 4,
+      background: `${color}18`,
+      color: color,
+      border: `1px solid ${color}30`,
+      fontFamily: MONO,
+    }}>
+      <span style={{
+        width: 5,
+        height: 5,
+        borderRadius: '50%',
+        background: color,
+        flexShrink: 0,
+      }} />
+      {label}
+    </span>
+  )
+}
+
+// Matches: ui/TablePrimitives — TableHeader
+// Real usage: <TableHeader style={…}>{label}</TableHeader>
+export function MockTableHeader({ children, style = {} }) {
+  return (
+    <th style={{
+      padding: '8px 12px',
+      fontFamily: MONO,
+      fontSize: '0.62rem',
+      fontWeight: 600,
+      letterSpacing: '0.08em',
+      textTransform: 'uppercase',
+      color: 'var(--wb-text-muted, #4a5a6a)',
+      textAlign: 'left',
+      borderBottom: '1px solid var(--wb-border, #1e2a38)',
+      whiteSpace: 'nowrap',
+      ...style,
+    }}>
+      {children}
+    </th>
+  )
+}
+
+// Matches: ui/TablePrimitives — TableCell
+// Real usage: <TableCell style={…}>{value}</TableCell>
+export function MockTableCell({ children, style = {} }) {
+  return (
+    <td style={{
+      padding: '8px 12px',
+      fontFamily: MONO,
+      fontSize: '0.8125rem',
+      color: 'var(--wb-text-primary, #e2eaf2)',
+      borderBottom: '1px solid rgba(30,42,56,0.4)',
+      whiteSpace: 'nowrap',
+      ...style,
+    }}>
+      {children}
+    </td>
+  )
+}
+
+// Matches: ui/SectionCard.tsx
+// Real usage: <SectionCard header="Leg History">…</SectionCard>
+export function MockSectionCard({ header, children }) {
+  return (
+    <section style={{
+      background: 'var(--wb-bg-surface, #070a0e)',
+      border: '1px solid var(--wb-border, #1e2a38)',
+      borderRadius: 8,
+      overflow: 'hidden',
+    }}>
+      {header && (
+        <div style={{
+          padding: '10px 20px',
+          borderBottom: '1px solid var(--wb-border, #1e2a38)',
+          fontSize: '0.65rem',
+          fontWeight: 600,
+          letterSpacing: '0.1em',
+          textTransform: 'uppercase',
+          color: 'var(--wb-text-muted, #4a5a6a)',
+          fontFamily: MONO,
+        }}>
+          {header}
+        </div>
+      )}
+      {children}
+    </section>
+  )
+}
+
+// ── Premium cell renderer ─────────────────────────────────────────────────────
+// Matches display logic described in US-11 technical notes:
+//   ASSIGN: "— (assigned)", EXPIRE: "expired worthless", else "+$N.NN"
+export function PremiumCell({ leg }) {
+  if (leg.legRole === 'ASSIGN' || leg.legRole === 'CALLED_AWAY') {
+    return (
+      <span style={{ color: 'var(--wb-text-muted, #4a5a6a)', fontStyle: 'italic' }}>
+        — (assigned)
+      </span>
+    )
+  }
+  if (leg.legRole === 'CC_EXPIRED' || leg.action === 'expire') {
+    return (
+      <span style={{ color: 'var(--wb-text-muted, #4a5a6a)', fontStyle: 'italic' }}>
+        expired worthless
+      </span>
+    )
+  }
+  if (!leg.premiumPerContract) return <span style={{ color: 'var(--wb-text-muted, #4a5a6a)' }}>—</span>
+  return (
+    <span style={{ color: 'var(--wb-green, #3fb950)' }}>
+      +${leg.premiumPerContract}
+    </span>
+  )
+}
+
+// ── Running cost basis cell ───────────────────────────────────────────────────
+// Sky-blue accent; null rendered as "—" (called-away row has no forward basis)
+export function BasisCell({ value }) {
+  if (!value) return (
+    <span style={{ color: 'var(--wb-text-muted, #4a5a6a)' }}>—</span>
+  )
+  return (
+    <span style={{ color: '#79c0ff', fontWeight: 600 }}>
+      ${value}
+    </span>
+  )
+}
+
+// ── The extended LegHistoryTable ──────────────────────────────────────────────
+// This is what LegHistoryTable.tsx becomes after US-11:
+//   columns: Role | Action | Strike | Expiration | Premium | Fill Date | Running Cost Basis
+//   optional finalPnl prop renders the footer row
+export function MockLegHistoryTable({ legs, finalPnl }) {
+  const RUNNING_BASIS_HEADER_BG = 'rgba(121,192,255,0.05)'
+  const RUNNING_BASIS_BORDER    = '1px solid rgba(121,192,255,0.12)'
+
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <thead>
+        <tr>
+          {/* Real: <TableHeader>Role</TableHeader> */}
+          <MockTableHeader>Role</MockTableHeader>
+          {/* Real: <TableHeader>Action</TableHeader> */}
+          <MockTableHeader>Action</MockTableHeader>
+          {/* Real: <TableHeader>Strike</TableHeader> */}
+          <MockTableHeader>Strike</MockTableHeader>
+          {/* Real: <TableHeader>Expiration</TableHeader> */}
+          <MockTableHeader>Expiration</MockTableHeader>
+          {/* Real: <TableHeader>Premium</TableHeader> */}
+          <MockTableHeader>Premium</MockTableHeader>
+          {/* Real: <TableHeader>Fill Date</TableHeader> */}
+          <MockTableHeader>Fill Date</MockTableHeader>
+          {/* Running Cost Basis — new column; sky-blue header tint distinguishes it */}
+          {/* Real: <TableHeader style={{ background: RUNNING_BASIS_HEADER_BG, borderLeft: RUNNING_BASIS_BORDER, color: '#79c0ff' }}>Running Basis / Share</TableHeader> */}
+          <MockTableHeader style={{
+            background: RUNNING_BASIS_HEADER_BG,
+            borderLeft: RUNNING_BASIS_BORDER,
+            color: '#79c0ff',
+          }}>
+            Running Basis / Share
+          </MockTableHeader>
+        </tr>
+      </thead>
+      <tbody>
+        {legs.map((leg) => (
+          <tr key={leg.id} style={{ transition: 'background 0.1s' }}>
+            {/* Role badge */}
+            {/* Real: <TableCell><Badge color={ROLE_COLOR[leg.legRole]}>{ROLE_LABEL[leg.legRole]}</Badge></TableCell> */}
+            <MockTableCell>
+              <MockBadge color={ROLE_COLOR[leg.legRole] ?? '#8899aa'}>
+                {ROLE_LABEL[leg.legRole] ?? leg.legRole}
+              </MockBadge>
+            </MockTableCell>
+
+            {/* Action */}
+            {/* Real: <TableCell style={{ color: 'var(--wb-text-secondary)' }}>{leg.action}</TableCell> */}
+            <MockTableCell style={{ color: 'var(--wb-text-secondary, #8899aa)' }}>
+              {leg.action}
+            </MockTableCell>
+
+            {/* Strike */}
+            {/* Real: <TableCell style={{ color: 'var(--wb-gold)' }}>${leg.strike}</TableCell> */}
+            <MockTableCell style={{ color: 'var(--wb-gold, #e6a817)' }}>
+              ${leg.strike}
+            </MockTableCell>
+
+            {/* Expiration */}
+            {/* Real: <TableCell>{leg.expiration ?? '—'}</TableCell> */}
+            <MockTableCell style={{ color: leg.expiration ? undefined : 'var(--wb-text-muted, #4a5a6a)' }}>
+              {leg.expiration ?? '—'}
+            </MockTableCell>
+
+            {/* Premium — special rendering for ASSIGN and EXPIRE */}
+            {/* Real: <TableCell><PremiumCell leg={leg} /></TableCell> */}
+            <MockTableCell>
+              <PremiumCell leg={leg} />
+            </MockTableCell>
+
+            {/* Fill Date */}
+            {/* Real: <TableCell>{leg.fillDate}</TableCell> */}
+            <MockTableCell>
+              {leg.fillDate}
+            </MockTableCell>
+
+            {/* Running Cost Basis — new column; left separator + sky tint on cell */}
+            {/* Real: <TableCell style={{ borderLeft: RUNNING_BASIS_BORDER, background: RUNNING_BASIS_HEADER_BG }}><BasisCell value={leg.runningCostBasis} /></TableCell> */}
+            <MockTableCell style={{
+              borderLeft: RUNNING_BASIS_BORDER,
+              background: RUNNING_BASIS_HEADER_BG,
+            }}>
+              <BasisCell value={leg.runningCostBasis} />
+            </MockTableCell>
+          </tr>
+        ))}
+      </tbody>
+
+      {/* Final P&L footer — only rendered when position is WHEEL_COMPLETE */}
+      {/* Real: rendered inside LegHistoryTable when finalPnl prop is truthy */}
+      {finalPnl && (
+        <tfoot>
+          <tr>
+            <td
+              colSpan={7}
+              style={{
+                padding: '12px 16px',
+                fontFamily: MONO,
+                fontSize: '0.8125rem',
+                fontWeight: 700,
+                // Top border uses green-dim to signal "closing statement"
+                borderTop: '1px solid rgba(63,185,80,0.25)',
+                background: 'rgba(63,185,80,0.04)',
+                color: '#3fb950',
+                letterSpacing: '0.04em',
+              }}
+            >
+              <span style={{ color: 'var(--wb-text-muted, #4a5a6a)', fontWeight: 500, marginRight: 10 }}>
+                Final P&amp;L
+              </span>
+              {finalPnl}
+            </td>
+          </tr>
+        </tfoot>
+      )}
+    </table>
+  )
+}
+
+// ── Simulated page header chrome ──────────────────────────────────────────────
+// Matches PositionDetailPage layout: Breadcrumb + ticker + PhaseBadge
+export function MockPageChrome({ phase }) {
+  return (
+    <div style={{
+      padding: '14px 24px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 14,
+      borderBottom: '1px solid var(--wb-border, #1e2a38)',
+      fontFamily: MONO,
+    }}>
+      {/* Real: <Breadcrumb backTo="#/" backLabel="Positions" current="AAPL" /> */}
+      <span style={{ fontSize: '0.75rem', color: 'var(--wb-text-muted, #4a5a6a)' }}>
+        ← Positions
+      </span>
+      <span style={{ color: 'var(--wb-border, #1e2a38)', fontSize: '0.75rem' }}>/</span>
+      <span style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--wb-text-primary, #e2eaf2)', letterSpacing: '0.04em' }}>
+        AAPL
+      </span>
+      <MockPhaseBadge phase={phase} />
+    </div>
+  )
+}
+
+// ── Main Mockup ───────────────────────────────────────────────────────────────
+
+export function Mockup() {
+  const [state, setState] = useState('partial')
+
+  const states = ['partial', 'mid-cycle', 'complete']
+
+  const config = {
+    partial: {
+      phase: 'CSP_OPEN',
+      legs: LEGS_PARTIAL,
+      finalPnl: null,
+    },
+    'mid-cycle': {
+      phase: 'CC_OPEN',
+      legs: LEGS_MID,
+      finalPnl: null,
+    },
+    complete: {
+      phase: 'WHEEL_COMPLETE',
+      legs: LEGS_COMPLETE,
+      finalPnl: '+$780.00',
+    },
+  }
+
+  const { phase, legs, finalPnl } = config[state]
+
+  return (
+    <div style={{ fontFamily: MONO, background: '#040608', minHeight: 460 }}>
+
+      {/* Dev state toggle */}
+      <div style={{
+        display: 'flex',
+        gap: 6,
+        padding: '10px 14px',
+        background: '#0d1117',
+        borderBottom: '1px solid #1e2a38',
+        flexWrap: 'wrap',
+      }}>
+        <span style={{
+          fontSize: 9,
+          color: '#4a5a6a',
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          alignSelf: 'center',
+          marginRight: 4,
+        }}>
+          State:
+        </span>
+        {states.map(s => (
+          <button
+            key={s}
+            onClick={() => setState(s)}
+            style={{
+              fontSize: 10,
+              fontFamily: MONO,
+              padding: '3px 10px',
+              borderRadius: 4,
+              border: '1px solid',
+              borderColor: s === state ? '#e6a817' : '#1e2a38',
+              background: s === state ? 'rgba(230,168,23,0.12)' : 'transparent',
+              color: s === state ? '#e6a817' : '#6a7a8a',
+              cursor: 'pointer',
+              letterSpacing: '0.04em',
+            }}
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+
+      {/* Simulated page chrome — dimmed to keep focus on the table */}
+      <div style={{ opacity: 0.4, pointerEvents: 'none', userSelect: 'none' }}>
+        <MockPageChrome phase={phase} />
+      </div>
+
+      {/* Main content area */}
+      <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+        {/* Dimmed stub: Open Leg card (already exists on page; not this story's focus) */}
+        <div style={{ opacity: 0.2, pointerEvents: 'none', userSelect: 'none' }}>
+          <MockSectionCard header="Open Leg">
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(6, 1fr)',
+              gap: 1,
+              background: '#1e2a38',
+            }}>
+              {[
+                ['Strike', '$180.00'],
+                ['Expiration', '2026-03-21'],
+                ['DTE', '4d'],
+                ['Contracts', '1'],
+                ['Premium / Contract', '+$3.50'],
+                ['Fill Date', '2026-01-03'],
+              ].map(([label, value]) => (
+                <div key={label} style={{ padding: '14px 16px', background: '#070a0e' }}>
+                  <div style={{ fontSize: 9, color: '#4a5a6a', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 5 }}>{label}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#e2eaf2' }}>{value}</div>
+                </div>
+              ))}
+            </div>
+          </MockSectionCard>
+        </div>
+
+        {/* THE FOCAL ELEMENT: Leg History table with running cost basis */}
+        {/* Real: <SectionCard header="Leg History"><LegHistoryTable legs={legs} finalPnl={finalPnl} /></SectionCard> */}
+        <MockSectionCard header="Leg History">
+          <MockLegHistoryTable legs={legs} finalPnl={finalPnl} />
+        </MockSectionCard>
+
+      </div>
+    </div>
+  )
+}
+
+<Mockup />

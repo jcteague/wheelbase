@@ -1,0 +1,624 @@
+---
+title: "US-10: Record Shares Called Away"
+story: "As a wheel trader whose covered call has been exercised, I want to record that my shares were called away at the CC strike, so that the wheel cycle completes with an accurate final P&L."
+states: ["confirmation", "success"]
+---
+
+import { useState } from 'react'
+
+# US-10: Record Shares Called Away
+
+_As a wheel trader whose covered call has been exercised, I want to record that my shares were called away at the CC strike, so that the wheel cycle completes with an accurate final P&L that accounts for all premiums collected and the share appreciation from cost basis to strike._
+
+## Acceptance Criteria States
+
+- **confirmation**: Sheet open showing CC details; P&L waterfall (CC strike − effective cost basis × shares + total premiums = final P&L); fill date auto-derived from CC (read-only); irrevocable warning; Confirm / Cancel footer
+- **success**: "WHEEL COMPLETE" hero card with final P&L (+$780.00) displayed prominently in green; cycle summary card with per-component breakdown; "Start New Wheel on AAPL →" CTA
+
+---
+
+export const MOCK_POSITION = {
+  ticker: 'AAPL',
+  ccStrike: '182.00',
+  ccExpiration: '2026-02-21',
+  ccOpenDate: '2026-01-20',
+  contracts: 1,
+  sharesHeld: 100,
+  basisPerShare: '174.20',
+  totalPremiumCollected: '580.00',
+  appreciationPerShare: '7.80',     // 182.00 − 174.20
+  appreciationTotal: '780.00',      // 7.80 × 100
+  finalPnl: '780.00',               // 780.00 + 0 (premiums already baked into basis)
+  // P&L waterfall rows per acceptance criteria
+  waterfallRows: [
+    { label: 'CC strike (shares delivered)', value: '$182.00',  color: null },
+    { label: '− Effective cost basis',        value: '$174.20', color: 'var(--wb-red, #f85149)' },
+    { label: '= Appreciation per share',      value: '$7.80',   color: null, indent: true },
+    { label: '× 100 shares',                  value: '$780.00', color: 'var(--wb-green, #3fb950)', bold: true },
+    { label: '+ Total premium collected',     value: '+$580.00',color: 'var(--wb-green, #3fb950)' },
+  ],
+}
+
+export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
+
+// ── Primitive mocks — visually match the real components in src/renderer/src/components/ui/ ─────
+
+// Matches: Badge.tsx
+// Real usage: <Badge color="var(--wb-green)">Wheel Complete</Badge>
+export function MockBadge({ children, color }) {
+  const fg = color ?? 'var(--wb-gold, #e6a817)'
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      fontSize: '0.65rem',
+      fontWeight: 500,
+      padding: '1px 7px',
+      borderRadius: 10,
+      background: `${fg}18`,
+      color: fg,
+      border: `1px solid ${fg}30`,
+      fontFamily: MONO,
+    }}>
+      {children}
+    </span>
+  )
+}
+
+// Matches: AlertBox.tsx — variant="warning" | "info"
+// Real usage: <AlertBox variant="warning"><strong>This cannot be undone.</strong>…</AlertBox>
+export function MockAlertBox({ variant, children }) {
+  const styles = {
+    warning: { bg: 'rgba(230,168,23,0.06)',  border: 'rgba(230,168,23,0.25)',  color: 'var(--wb-gold, #e6a817)' },
+    info:    { bg: 'rgba(88,166,255,0.06)',   border: 'rgba(88,166,255,0.25)',  color: 'var(--wb-sky, #58a6ff)' },
+    error:   { bg: 'rgba(248,81,73,0.06)',    border: 'rgba(248,81,73,0.25)',   color: 'var(--wb-red, #f85149)' },
+    success: { bg: 'rgba(63,185,80,0.06)',    border: 'rgba(63,185,80,0.25)',   color: 'var(--wb-green, #3fb950)' },
+  }
+  const { bg, border, color } = styles[variant] ?? styles.warning
+  return (
+    <div style={{
+      padding: '12px 16px',
+      borderRadius: 6,
+      background: bg,
+      border: `1px solid ${border}`,
+      color,
+      fontFamily: MONO,
+      fontSize: '0.8125rem',
+    }}>
+      {children}
+    </div>
+  )
+}
+
+// Matches: SectionCard.tsx
+// Real usage: <SectionCard header="P&L Breakdown">…rows…</SectionCard>
+export function MockSectionCard({ header, children }) {
+  return (
+    <section style={{
+      background: 'var(--wb-bg-surface, #070a0e)',
+      border: '1px solid var(--wb-border, #1e2a38)',
+      borderRadius: 8,
+      overflow: 'hidden',
+    }}>
+      {header && (
+        <div style={{
+          padding: '10px 20px',
+          borderBottom: '1px solid var(--wb-border, #1e2a38)',
+          fontSize: '0.65rem',
+          fontWeight: 600,
+          letterSpacing: '0.1em',
+          textTransform: 'uppercase',
+          color: 'var(--wb-text-muted, #4a5a6a)',
+          fontFamily: MONO,
+        }}>
+          {header}
+        </div>
+      )}
+      {children}
+    </section>
+  )
+}
+
+// Matches: FormButton.tsx (primary/gold submit button)
+// Real usage: <FormButton label="Confirm Call-Away" pendingLabel="Confirming…" isPending={isPending} />
+export function MockFormButton({ label, isPending, onClick, style = {} }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={isPending}
+      style={{
+        padding: '11px 24px',
+        borderRadius: 6,
+        border: 'none',
+        background: isPending ? 'rgba(230,168,23,0.4)' : 'var(--wb-gold, #e6a817)',
+        color: '#000',
+        fontSize: '0.9375rem',
+        fontWeight: 600,
+        fontFamily: MONO,
+        cursor: isPending ? 'not-allowed' : 'pointer',
+        letterSpacing: '0.04em',
+        transition: 'opacity 0.15s',
+        ...style,
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+
+// Matches: Button variant="outline" (shadcn ui/button)
+// Real usage: <Button variant="outline" onClick={onClose}>Cancel</Button>
+export function MockOutlineButton({ children, onClick, style = {} }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: '11px 24px',
+        borderRadius: 6,
+        border: '1px solid var(--wb-border, #2a3a4a)',
+        background: 'transparent',
+        color: 'var(--wb-text-secondary, #8899aa)',
+        fontSize: '0.9375rem',
+        fontWeight: 500,
+        fontFamily: MONO,
+        cursor: 'pointer',
+        letterSpacing: '0.04em',
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+// Phase badge using Badge primitive colors
+// Real usage: <Badge color={PHASE_COLORS[phase]}>{PHASE_LABELS[phase]}</Badge>
+export function MockPhaseBadge({ phase }) {
+  const map = {
+    CSP_OPEN:        { label: 'Put Open',       color: '#e6a817' },
+    HOLDING_SHARES:  { label: 'Holding',        color: '#58a6ff' },
+    CC_OPEN:         { label: 'Call Open',      color: '#bc8cff' },
+    WHEEL_COMPLETE:  { label: 'Wheel Complete', color: '#3fb950' },
+    CLOSED:          { label: 'Closed',         color: '#8899aa' },
+  }
+  const { label, color } = map[phase] ?? { label: phase, color: '#8899aa' }
+  return <MockBadge color={color}>{label}</MockBadge>
+}
+
+// Summary row: used inside SectionCard for key/value pairs
+export function MockSummaryRow({ label, value, noBorder, highlight }) {
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '10px 14px',
+      borderBottom: noBorder ? 'none' : '1px solid rgba(30,42,56,0.6)',
+      background: highlight ? 'linear-gradient(90deg, rgba(63,185,80,0.04), transparent)' : undefined,
+    }}>
+      <span style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)' }}>{label}</span>
+      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--wb-text-primary, #e2eaf2)', textAlign: 'right' }}>
+        {value}
+      </span>
+    </div>
+  )
+}
+
+// Read-only "field" used for derived/auto-populated values
+// Real usage: <Field label="Fill Price (CC Strike)"> <Input readOnly value={strike} /> </Field>
+export function MockReadOnlyField({ label, value, hint }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+      <label style={{
+        display: 'block',
+        fontSize: '0.7rem',
+        fontWeight: 600,
+        letterSpacing: '0.07em',
+        textTransform: 'uppercase',
+        color: 'var(--wb-text-muted, #4a5a6a)',
+        fontFamily: MONO,
+        marginBottom: 6,
+      }}>
+        {label}
+      </label>
+      <div style={{
+        width: '100%',
+        padding: '10px 14px',
+        borderRadius: 6,
+        border: '1px solid var(--wb-border, #2a3a4a)',
+        background: 'rgba(14,24,36,0.6)',
+        color: 'var(--wb-text-secondary, #8899aa)',
+        fontSize: 14,
+        fontFamily: MONO,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        boxSizing: 'border-box',
+      }}>
+        <span>{value}</span>
+        <span style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--wb-text-muted, #4a5a6a)', marginLeft: 8 }}>
+          auto
+        </span>
+      </div>
+      {hint && (
+        <span style={{ fontSize: '0.7rem', color: 'var(--wb-text-muted, #4a5a6a)', marginTop: 4 }}>
+          {hint}
+        </span>
+      )}
+    </div>
+  )
+}
+
+// ── Shared panel chrome ───────────────────────────────────────────────────────
+
+export const panelStyle = {
+  position: 'absolute',
+  top: 0,
+  right: 0,
+  bottom: 0,
+  width: 400,
+  background: 'var(--wb-bg-surface, #070a0e)',
+  borderLeft: '1px solid var(--wb-border, #1e2a38)',
+  display: 'flex',
+  flexDirection: 'column',
+  fontFamily: MONO,
+  boxShadow: '-12px 0 48px rgba(0,0,0,0.55)',
+  color: 'var(--wb-text-primary, #e2eaf2)',
+}
+
+// ── Main Mockup ───────────────────────────────────────────────────────────────
+
+export function Mockup() {
+  const [state, setState] = useState('confirmation')
+  const pos = MOCK_POSITION
+
+  const states = ['confirmation', 'success']
+  const isSuccess = state === 'success'
+
+  return (
+    <div style={{ fontFamily: MONO, background: '#040608', minHeight: 520 }}>
+
+      {/* Dev state toggle */}
+      <div style={{
+        display: 'flex',
+        gap: 6,
+        padding: '10px 14px',
+        background: '#0d1117',
+        borderBottom: '1px solid #1e2a38',
+        flexWrap: 'wrap',
+      }}>
+        <span style={{ fontSize: 9, color: '#4a5a6a', letterSpacing: '0.12em', textTransform: 'uppercase', alignSelf: 'center', marginRight: 4 }}>State:</span>
+        {states.map(s => (
+          <button
+            key={s}
+            onClick={() => setState(s)}
+            style={{
+              fontSize: 10,
+              fontFamily: MONO,
+              padding: '3px 10px',
+              borderRadius: 4,
+              border: '1px solid',
+              borderColor: s === state ? 'var(--wb-gold, #e6a817)' : '#1e2a38',
+              background: s === state ? 'rgba(230,168,23,0.12)' : 'transparent',
+              color: s === state ? 'var(--wb-gold, #e6a817)' : '#6a7a8a',
+              cursor: 'pointer',
+              letterSpacing: '0.04em',
+            }}
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+
+      {/* Simulated content area with sheet overlay */}
+      <div style={{ position: 'relative', height: 680, overflow: 'hidden', background: '#040608' }}>
+
+        {/* Background: simulated position detail (CC_OPEN phase) */}
+        <div style={{ padding: '24px 28px', opacity: 0.25, pointerEvents: 'none', userSelect: 'none' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
+            <span style={{ fontSize: 22, fontWeight: 700, color: '#e2eaf2', letterSpacing: '0.04em' }}>AAPL</span>
+            <MockPhaseBadge phase="CC_OPEN" />
+            <span style={{ fontSize: 11, color: '#8899aa' }}>CALL ${pos.ccStrike} · Feb 21, 2026 · 1 contract</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+              {/* Real: <FormButton label="Record Expiry →" … /> and <FormButton label="Record Call-Away →" … /> */}
+              <MockFormButton label="Record Expiry →" style={{ fontSize: 11, padding: '6px 14px', background: 'rgba(88,166,255,0.2)', color: '#58a6ff' }} />
+              <MockFormButton label="Record Call-Away →" style={{ fontSize: 11, padding: '6px 14px' }} />
+            </span>
+          </div>
+          {/* Real: <StatGrid minWidth={120} items={[…]} /> from Stat.tsx */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, background: '#1e2a38', borderRadius: 6, overflow: 'hidden' }}>
+            {[['CC Strike', `$${pos.ccStrike}`], ['Expiration', 'Feb 21'], ['Cost Basis', `$${pos.basisPerShare}`], ['Premiums', `+$${pos.totalPremiumCollected}`]].map(([l, v]) => (
+              <div key={l} style={{ padding: '14px 18px', background: '#070a0e' }}>
+                <div style={{ fontSize: 9, color: '#4a5a6a', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 5 }}>{l}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#e2eaf2' }}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Scrim */}
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(4,6,8,0.45)' }} />
+
+        {/* Sheet panel */}
+        <div style={panelStyle}>
+
+          {/* ── Header ── */}
+          <div style={{
+            padding: '20px 24px 18px',
+            borderBottom: `1px solid ${isSuccess ? 'rgba(63,185,80,0.2)' : 'var(--wb-border, #1e2a38)'}`,
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            flexShrink: 0,
+          }}>
+            <div>
+              {/* Real: <Caption>{isSuccess ? 'Wheel Complete' : 'Record Call-Away'}</Caption> */}
+              <div style={{
+                fontSize: '0.65rem',
+                fontWeight: 600,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                marginBottom: 6,
+                color: isSuccess ? 'var(--wb-green, #3fb950)' : 'var(--wb-text-secondary, #8899aa)',
+                fontFamily: MONO,
+              }}>
+                {isSuccess ? 'Wheel Complete' : 'Record Call-Away'}
+              </div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--wb-text-primary, #e2eaf2)', marginBottom: 4 }}>
+                {isSuccess ? 'AAPL Cycle Closed' : 'Shares Called Away'}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)', lineHeight: 1.6 }}>
+                CALL ${pos.ccStrike} · Feb 21, 2026
+              </div>
+            </div>
+            <button style={{
+              background: 'var(--wb-bg-elevated, #0d1821)',
+              border: '1px solid var(--wb-border, #1e2a38)',
+              color: 'var(--wb-text-muted, #4a5a6a)',
+              fontSize: 14,
+              width: 28,
+              height: 28,
+              borderRadius: 6,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              marginLeft: 12,
+              marginTop: 2,
+            }}>×</button>
+          </div>
+
+          {/* ── Body ── */}
+          <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
+
+            {isSuccess ? (
+              <>
+                {/* Hero card — "WHEEL COMPLETE" */}
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(63,185,80,0.1), rgba(7,10,14,0.5))',
+                  border: '1px solid rgba(63,185,80,0.25)',
+                  borderRadius: 10,
+                  padding: '22px 20px',
+                  textAlign: 'center',
+                  marginBottom: 18,
+                }}>
+                  {/* Real: <Caption>Wheel Complete</Caption> */}
+                  <div style={{ fontSize: 9, color: 'var(--wb-green, #3fb950)', opacity: 0.8, letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 10 }}>
+                    Wheel Complete
+                  </div>
+                  <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--wb-text-primary, #e2eaf2)', letterSpacing: '-0.02em', lineHeight: 1.1, marginBottom: 6 }}>
+                    WHEEL COMPLETE
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)', marginBottom: 16 }}>
+                    {pos.ticker} · 100 shares called away at ${pos.ccStrike}
+                  </div>
+                  {/* Final P&L — prominent display */}
+                  <div style={{
+                    display: 'inline-flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    background: 'rgba(63,185,80,0.1)',
+                    border: '1px solid rgba(63,185,80,0.28)',
+                    borderRadius: 8,
+                    padding: '12px 28px',
+                  }}>
+                    {/* Real: <Caption>Final Cycle P&L</Caption> */}
+                    <span style={{ fontSize: 9, color: 'var(--wb-green, #3fb950)', opacity: 0.75, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 5 }}>Final Cycle P&L</span>
+                    <span style={{ fontSize: 30, fontWeight: 700, color: 'var(--wb-green, #3fb950)', letterSpacing: '-0.02em', fontFamily: MONO }}>+${pos.finalPnl}</span>
+                    <span style={{ fontSize: 9, color: 'var(--wb-green, #3fb950)', opacity: 0.55, marginTop: 2 }}>total realized gain</span>
+                  </div>
+                </div>
+
+                {/* Cycle summary — Real: <SectionCard header="Cycle Summary"> */}
+                <div style={{ marginBottom: 16 }}>
+                  <MockSectionCard header="Cycle Summary">
+                    <MockSummaryRow label="Leg recorded" value={<span style={{ color: 'var(--wb-green, #3fb950)' }}>cc_close · Feb 21, 2026</span>} />
+                    <MockSummaryRow
+                      label="Phase"
+                      value={
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <MockPhaseBadge phase="CC_OPEN" />
+                          <span style={{ fontSize: 9, color: 'var(--wb-text-muted, #4a5a6a)' }}>→</span>
+                          <MockPhaseBadge phase="WHEEL_COMPLETE" />
+                        </span>
+                      }
+                    />
+                    <MockSummaryRow label="Shares delivered" value={<span style={{ color: 'var(--wb-text-primary, #e2eaf2)' }}>100 @ ${pos.ccStrike}</span>} />
+                    <MockSummaryRow label="Share appreciation" value={<span style={{ color: 'var(--wb-green, #3fb950)' }}>+${pos.appreciationTotal}</span>} />
+                    <MockSummaryRow label="Total premiums collected" value={<span style={{ color: 'var(--wb-green, #3fb950)' }}>+${pos.totalPremiumCollected}</span>} />
+                    <MockSummaryRow
+                      noBorder
+                      highlight
+                      label={<span style={{ fontWeight: 700, color: 'var(--wb-text-primary, #e2eaf2)', fontSize: 11 }}>Final cycle P&L</span>}
+                      value={<span style={{ fontSize: 14, fontWeight: 700, color: 'var(--wb-green, #3fb950)' }}>+${pos.finalPnl}</span>}
+                    />
+                  </MockSectionCard>
+                </div>
+
+                {/* What's next */}
+                {/* Real: <Caption>What's next?</Caption> */}
+                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--wb-text-muted, #4a5a6a)', marginBottom: 12 }}>
+                  What&apos;s next?
+                </div>
+
+                {/* Real: <FormButton label={`Start New Wheel on ${ticker} →`} style={{ width: '100%' }} /> */}
+                <MockFormButton
+                  label={`Start New Wheel on ${pos.ticker} →`}
+                  style={{ width: '100%', marginBottom: 10 }}
+                />
+
+                <button onClick={() => {}} style={{
+                  width: '100%',
+                  marginTop: 2,
+                  fontSize: 11,
+                  color: 'var(--wb-text-secondary, #8899aa)',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  fontFamily: MONO,
+                }}>
+                  View full position history
+                </button>
+              </>
+            ) : (
+              <>
+                {/* Position summary card — Real: <SectionCard> */}
+                <div style={{ marginBottom: 18 }}>
+                  <MockSectionCard>
+                    <MockSummaryRow label="Position" value={`${pos.ticker} CALL $${pos.ccStrike} · Feb 21`} />
+                    <MockSummaryRow label="Contracts" value={pos.contracts} />
+                    <MockSummaryRow
+                      label="Shares to deliver"
+                      value={<span style={{ color: 'var(--wb-text-primary, #e2eaf2)' }}>{pos.sharesHeld} shares</span>}
+                    />
+                    <MockSummaryRow
+                      label="Phase transition"
+                      value={
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <MockPhaseBadge phase="CC_OPEN" />
+                          <span style={{ fontSize: 9, color: 'var(--wb-text-muted, #4a5a6a)' }}>→</span>
+                          <MockPhaseBadge phase="WHEEL_COMPLETE" />
+                        </span>
+                      }
+                    />
+
+                    {/* P&L waterfall subsection — nested inside SectionCard */}
+                    <div style={{
+                      padding: '10px 14px',
+                      borderBottom: '1px solid rgba(30,42,56,0.6)',
+                      background: 'rgba(14,24,36,0.3)',
+                    }}>
+                      {/* Real: <Caption>P&L Breakdown</Caption> */}
+                      <div style={{ fontSize: 9, color: 'var(--wb-text-muted, #4a5a6a)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>
+                        P&amp;L Breakdown
+                      </div>
+
+                      {/* Row: CC strike */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <span style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)' }}>CC strike (shares delivered)</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--wb-text-primary, #e2eaf2)', fontFamily: MONO }}>${pos.ccStrike}</span>
+                      </div>
+
+                      {/* Row: − Effective cost basis */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <span style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)' }}>− Effective cost basis</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--wb-red, #f85149)', fontFamily: MONO }}>${pos.basisPerShare}</span>
+                      </div>
+
+                      {/* Row: = Appreciation per share (indented) */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2, paddingLeft: 12 }}>
+                        <span style={{ fontSize: 10, color: 'var(--wb-text-muted, #4a5a6a)' }}>= Appreciation per share</span>
+                        <span style={{ fontSize: 10, color: 'var(--wb-text-secondary, #8899aa)', fontFamily: MONO }}>${pos.appreciationPerShare}</span>
+                      </div>
+
+                      {/* Row: × 100 shares → subtotal */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, paddingLeft: 12 }}>
+                        <span style={{ fontSize: 10, color: 'var(--wb-text-muted, #4a5a6a)' }}>× {pos.sharesHeld} shares</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--wb-green, #3fb950)', fontFamily: MONO }}>${pos.appreciationTotal}</span>
+                      </div>
+
+                      {/* Divider */}
+                      <div style={{ height: 1, background: 'rgba(30,42,56,0.8)', margin: '6px 0' }} />
+
+                      {/* Row: + Total premium collected */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <span style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)' }}>+ Total premium collected</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--wb-green, #3fb950)', fontFamily: MONO }}>+${pos.totalPremiumCollected}</span>
+                      </div>
+
+                      {/* Total row */}
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        paddingTop: 8,
+                        borderTop: '1px solid rgba(30,42,56,0.8)',
+                      }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--wb-green, #3fb950)' }}>= Final cycle P&amp;L</span>
+                        <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--wb-green, #3fb950)', fontFamily: MONO }}>+${pos.finalPnl}</span>
+                      </div>
+                    </div>
+
+                    <MockSummaryRow
+                      noBorder
+                      label={<span style={{ fontSize: 10, color: 'var(--wb-text-muted, #4a5a6a)' }}>effective cost basis · {pos.sharesHeld} shares</span>}
+                      value={`$${pos.basisPerShare}/share · $${(parseFloat(pos.basisPerShare) * pos.sharesHeld).toFixed(2)} total`}
+                    />
+                  </MockSectionCard>
+                </div>
+
+                {/* Fill date — read-only, auto-derived from CC_OPEN leg
+                  Real:
+                    <Field label="Fill Date (CC Expiration)" hint="Derived from your CC — the day shares are delivered">
+                      <Input readOnly value={ccExpiration} />
+                    </Field>
+                  The fill price is always the CC strike; the trader does not enter it manually.
+                */}
+                <div style={{ marginBottom: 6 }}>
+                  <MockReadOnlyField
+                    label="Fill Date"
+                    value={pos.ccExpiration}
+                    hint="Derived from your CC — the day shares are delivered to the buyer"
+                  />
+                </div>
+
+                {/* Irrevocable warning — Real: <AlertBox variant="warning">…</AlertBox> */}
+                <div style={{ marginTop: 16 }}>
+                  <MockAlertBox variant="warning">
+                    <strong style={{ fontWeight: 700, display: 'block', marginBottom: 3 }}>This cannot be undone.</strong>
+                    The position will close as WHEEL_COMPLETE. Full leg history is preserved.
+                  </MockAlertBox>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* ── Footer ── */}
+          {!isSuccess && (
+            <div style={{
+              padding: '16px 24px',
+              borderTop: '1px solid var(--wb-border, #1e2a38)',
+              display: 'flex',
+              gap: 10,
+              flexShrink: 0,
+              background: 'var(--wb-bg-surface, #070a0e)',
+            }}>
+              {/* Real: <Button variant="outline" onClick={onClose} style={{ flex: 1 }}>Cancel</Button> */}
+              <MockOutlineButton style={{ flex: 1 }}>Cancel</MockOutlineButton>
+              {/* Real: <FormButton label="Confirm Call-Away" pendingLabel="Confirming…" isPending={isPending} style={{ flex: 1 }} /> */}
+              <MockFormButton
+                label="Confirm Call-Away"
+                onClick={() => setState('success')}
+                style={{ flex: 1, fontWeight: 700 }}
+              />
+            </div>
+          )}
+
+        </div>
+      </div>
+    </div>
+  )
+}
+
+<Mockup />
