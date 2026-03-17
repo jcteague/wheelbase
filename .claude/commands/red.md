@@ -33,20 +33,27 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
 
 3. **Identify Test Scope**
    - Classify tests by type:
-     - **Unit tests** (pure engine logic) — `backend/tests/core/`
-     - **API integration tests** — `backend/tests/api/`
-     - **Model/DB tests** — `backend/tests/models/`
-     - **Frontend component tests** — `frontend/src/**/*.test.tsx` (vitest + @testing-library/preact)
+     - **Unit tests** (pure engine logic) — colocated with source, e.g. `src/main/core/*.test.ts`
+     - **Service integration tests** — `src/main/services/*.test.ts` (in-memory SQLite)
+     - **IPC handler tests** — `src/main/ipc/*.test.ts`
+     - **Frontend component tests** — `src/renderer/src/**/*.test.tsx` (Vitest + @testing-library/react)
    - Note which existing test files need updates
+
+### Test Granularity
+
+**Unit and integration tests are implementation-driven** — they are fine-grained and cover individual code paths, validation rules, and edge cases. There is no 1:1 relationship between unit tests and ACs; a single AC may require many unit tests to cover all the logic it depends on.
+
+**E2e tests are AC-driven** — there is exactly one `it()` per AC bullet from the user story. E2e test names must mirror the AC language directly so it is immediately clear which AC is covered. Do not lump multiple ACs into a single e2e test. When writing e2e tests, list every AC from the story and write a test for each one before considering the red phase done.
+
+---
 
 ### Phase 2: Write Failing Tests
 
-4. **Backend Test Structure**
-   - Place unit tests in `backend/tests/core/` for pure engine functions
-   - Place API tests in `backend/tests/api/`
-   - Follow naming: `test_{module}.py`
-   - Use `pytest-asyncio` for any async tests (mode is `auto` — no decorator needed)
-   - For API tests, use `httpx.AsyncClient` with the FastAPI `app` directly
+4. **Test File Structure**
+   - Place unit tests alongside the source file (e.g. `src/main/core/lifecycle.test.ts`)
+   - Follow naming: `<module>.test.ts` or `<module>.test.tsx`
+   - Use `describe` / `it` / `expect` from Vitest
+   - For async tests, use `async`/`await` — no special decorator needed
 
 5. **Write Test Cases**
    - Write tests that describe EXPECTED behaviour, not current behaviour
@@ -55,14 +62,13 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
      - Edge cases (zero premiums, multiple rolls, negative cost basis)
      - Error / invalid input conditions
    - Follow project conventions:
-     - **Python**: `pytest`, `pytest-asyncio`, `httpx`
-     - **TypeScript**: vitest + `@testing-library/preact`
-     - Descriptive function names: `test_cost_basis_decreases_after_csp_premium`
+     - **TypeScript**: Vitest + `@testing-library/react` for components
+     - Descriptive test names: `calculates cost basis after CSP premium collection`
 
 6. **Core Engine Test Guidelines** (most critical for Phase 1)
-   - Import ONLY from `app.core.*` — never from `app.db` or `app.integrations`
-   - Pass plain dataclasses or simple dicts; do not connect to the database
-   - Verify exact numeric results for cost basis math (use `Decimal` or compare with `pytest.approx`)
+   - Import ONLY from `src/main/core/*` — never from `src/main/db`, `src/main/services`, or `src/main/integrations`
+   - Pass plain typed objects and primitives; never connect to the database
+   - Verify exact numeric results using `decimal.js` — compare with `.equals()` or `.toFixed(4)`
    - Test every valid lifecycle phase transition and every illegal transition that must raise
 
 7. **Add Test Documentation**
@@ -72,8 +78,8 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
 ### Phase 3: Verify Tests Fail for the Right Reason
 
 8. **Run Tests**
-   - Backend: `make test` (or `cd backend && uv run pytest -v`)
-   - Frontend: `cd frontend && pnpm test --run` (once test infra is set up)
+   - `pnpm test` — runs all Vitest tests
+   - To run a specific file: `pnpm test src/main/core/lifecycle.test.ts`
 
 9. **Every Test Must Fail Because the Feature Doesn't Exist Yet**
    - **CRITICAL**: This is a hard gate. Do not proceed until every new test fails for the correct reason.
@@ -143,22 +149,22 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
    - Test every illegal transition raises the appropriate exception
    - Test roll transitions: CSP roll, CC roll
 
-7. **API Tests**
-   - Use `httpx.AsyncClient(app=app, base_url="http://test")` as an async context manager
-   - Never hit a real database in API tests — use dependency override for `get_session`
-   - Verify response schema, not just status code
+7. **IPC Handler Tests**
+   - Call the handler's underlying service directly with an in-memory SQLite database
+   - Verify the `{ ok: true, ...result }` / `{ ok: false, errors: [...] }` response shape
+   - Never throw from a handler — test that errors are caught and returned as `ok: false`
 
 8. **Alpaca Isolation**
-   - Mock `app.integrations.alpaca` at the module level
-   - Never import `alpaca-py` in tests directly
-   - Integration-layer tests go in `backend/tests/integrations/` (separate from core)
+   - Mock `src/main/integrations/alpaca` at the module level with `vi.mock()`
+   - Never import the Alpaca SDK in tests directly
+   - Integration-layer tests go in `src/main/integrations/` (separate from core)
 
 ## Error Conditions
 
 - **ERROR**: User story or plan doesn't exist → request these documents first
 - **ERROR**: Tests pass immediately → implementation already exists (skip red phase or add more tests)
 - **ERROR**: Any test fails for a reason other than missing implementation → fix the test, re-run; do not proceed until clean
-- **ERROR**: Core engine test imports from `app.db` or `app.integrations` → architectural violation, fix the test design
+- **ERROR**: Core engine test imports from `src/main/db` or `src/main/integrations` → architectural violation, fix the test design
 
 ## Success Criteria
 
@@ -186,41 +192,41 @@ After completing the red phase, create `plans/<feature-dir>/red-phase-results.md
 
 ## Test Files Created/Modified
 
-- `backend/tests/core/test_costbasis.py` — cost basis math and roll handling
-- `backend/tests/core/test_lifecycle.py` — phase transition state machine
-- `backend/tests/api/test_positions.py` — REST endpoint contracts
+- `src/main/core/costbasis.test.ts` — cost basis math and roll handling
+- `src/main/core/lifecycle.test.ts` — phase transition state machine
+- `src/main/ipc/positions.test.ts` — IPC handler response contracts
 
 ## Interfaces Under Test
 
 List every public function, class, or endpoint the tests import or call. Green phase must create exactly these:
 
-```python
-# backend/app/core/costbasis.py
-def calculate_cost_basis(legs: list[Leg]) -> Decimal: ...
+```typescript
+// src/main/core/costbasis.ts
+export function calculateCostBasis(legs: Leg[]): Decimal
 
-# backend/app/core/lifecycle.py
-def transition(current_phase: WheelPhase, event: PhaseEvent) -> WheelPhase: ...
-class PhaseTransitionError(Exception): ...
+// src/main/core/lifecycle.ts
+export function transition(currentPhase: WheelPhase, event: PhaseEvent): WheelPhase
+export class PhaseTransitionError extends Error {}
 
-# backend/app/api/routes/positions.py
-# POST /positions → 201 PositionResponse
-# GET  /positions → 200 list[PositionResponse]
+// src/main/ipc/positions.ts (IPC channels)
+// 'positions:create' → { ok: true, position: Position } | { ok: false, errors: string[] }
+// 'positions:list'   → { ok: true, positions: Position[] }
 ```
 
 ## Test Coverage Summary
 
-### Core Engine Tests (backend/tests/core/)
+### Core Engine Tests (src/main/core/)
 
 - [x] Cost basis is assignment strike when no premiums collected
 - [x] CSP premium reduces cost basis
 - [x] CC premium further reduces cost basis
 - [x] Roll credit reduces cost basis; roll debit increases it
-- [x] Illegal phase transition raises PhaseTransitionError
+- [x] Illegal phase transition throws PhaseTransitionError
 
-### API Tests (backend/tests/api/)
+### IPC Handler Tests (src/main/ipc/)
 
-- [x] POST /positions returns 201 with created wheel
-- [x] GET /positions returns list of active wheels
+- [x] positions:create returns ok:true with created position
+- [x] positions:list returns ok:true with array of positions
 
 ## Test Design Assumptions
 
@@ -229,13 +235,15 @@ class PhaseTransitionError(Exception): ...
 ## Test Execution Results
 
 ```bash
-cd backend && uv run pytest -v
+pnpm test
 
-FAILED tests/core/test_costbasis.py::test_cost_basis_decreases_after_csp_premium
-  ImportError: cannot import name 'calculate_cost_basis' from 'app.core.costbasis'
+FAIL src/main/core/costbasis.test.ts
+  ● calculateCostBasis › reduces cost basis by CSP premium
+    ReferenceError: calculateCostBasis is not defined
 
-FAILED tests/core/test_lifecycle.py::test_csp_open_to_holding_shares
-  ImportError: cannot import name 'transition' from 'app.core.lifecycle'
+FAIL src/main/core/lifecycle.test.ts
+  ● transition › CSP_OPEN to HOLDING_SHARES is a valid transition
+    ReferenceError: transition is not defined
 
 2 failed, 0 passed
 ```

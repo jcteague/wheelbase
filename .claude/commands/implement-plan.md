@@ -170,9 +170,30 @@ If the selected set contains only `[Red]` tasks, skip this step.
 
 ---
 
-## Step 5 — Final Report and Session Close
+## Step 5 — AC Audit
 
-After all selected tasks are processed, run the full suite:
+Before reporting success, re-read the user story's acceptance criteria and verify every AC is covered by a closed e2e test.
+
+1. Locate the user story file (from the plan's Supporting Documents section).
+2. List every AC bullet.
+3. For each AC, name the specific `it('...')` test in the e2e test file that covers it.
+4. If any AC has no corresponding closed e2e test, do not mark the plan complete — create or reopen the missing test and run it through the Red → Green cycle first.
+
+Print the audit result:
+```
+AC Audit:
+  ✓ AC-1: <ac text> → it('<test name>')
+  ✓ AC-2: <ac text> → it('<test name>')
+  ✗ AC-3: <ac text> → NO E2E TEST — blocked
+```
+
+Only proceed to Step 6 when every AC has a ✓.
+
+---
+
+## Step 6 — Final Report and Session Close
+
+After the AC audit passes, run the full suite:
 ```bash
 pnpm test && pnpm lint && pnpm typecheck
 ```

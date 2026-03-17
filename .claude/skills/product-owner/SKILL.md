@@ -1,6 +1,7 @@
 ---
-description: 'This skill should be used when the user asks to "write a user story", "create an epic", "define acceptance criteria", "break down a feature", "manage stories in GitHub", "refine a story", "add stories to the project board", "prioritize the backlog", or needs product ownership guidance for Wheelbase feature development.'
-argument-hint: <feature idea, story draft, epic to decompose, backlog question, or requirement to refine>
+name: product-owner
+description: 'This skill should be used when the user asks to "write a user story", "create an epic", "define acceptance criteria", "break down a feature", "manage stories in beads", "refine a story", "track stories", "prioritize the backlog", or needs product ownership guidance for Wheelbase feature development.'
+version: 0.1.0
 ---
 
 # Product Owner — Feature Elicitation and Story Management
@@ -13,15 +14,16 @@ $ARGUMENTS
 
 ## Purpose
 
-Act as the product owner for **Wheelbase**, an options wheel and PMCC management application. Elicit features from high-level ideas, decompose them into well-scoped user stories with Gherkin acceptance criteria, and manage the backlog in GitHub Projects and Issues.
+Act as the product owner for **Wheelbase**, an options wheel and PMCC management application. Elicit features from high-level ideas, decompose them into well-scoped user stories with Gherkin acceptance criteria, and manage the backlog using beads (`bd` CLI).
 
 ## Core Responsibilities
 
 1. **Feature elicitation** — Convert vague ideas into concrete, scoped features by asking clarifying questions
 2. **Story writing** — Produce user stories in standard format with Given-When-Then acceptance criteria
 3. **Epic management** — Group related stories into epics, track dependencies, maintain the hierarchy
-4. **Backlog management** — Create and organize issues in GitHub Projects using the `gh` CLI
-5. **Domain consultation** — Invoke the `/options-expert` skill when options trading domain knowledge is needed to validate requirements or surface edge cases
+4. **Backlog management** — Create and organize issues in beads using the `bd` CLI
+5. **Domain consultation** — Invoke the `options-expert` skill when options trading domain knowledge is needed to validate requirements or surface edge cases
+6. **Mockup creation** — Invoke the `mockup` skill after writing each user story to produce a UI mockup
 
 ## Wheelbase Context
 
@@ -44,14 +46,14 @@ For detailed product behavior, consult:
 Load on demand based on the task:
 
 - **`docs/product-owner/user-story-standards.md`** — Story format, Gherkin syntax rules, acceptance criteria patterns for CRUD/lifecycle/alerts/cost-basis, sizing guidelines, epic structure, and anti-patterns. Load when writing or reviewing stories.
-- **`docs/product-owner/github-workflow.md`** — `gh` CLI commands for creating projects, managing labels, creating epics and stories as issues, adding items to the project board, and querying the backlog. Load when performing GitHub operations.
+- **`docs/product-owner/beads-workflow.md`** — `bd` CLI commands for creating epics, stories, wiring dependencies, and querying the backlog. Load when performing beads tracking operations.
 
 ## Domain Knowledge Integration
 
 When a feature involves options trading mechanics, risk management, trader workflows, or behavioral patterns:
 
 1. Identify the domain question embedded in the feature request
-2. Invoke the `/options-expert` skill with the specific domain question
+2. Invoke the `options-expert` skill with the specific domain question
 3. Incorporate the expert response into the story's context, acceptance criteria, and edge cases
 
 Examples of when to consult the options expert:
@@ -93,34 +95,60 @@ For each story, produce all sections:
 Assign a point estimate using the sizing guidelines:
 - 1-2 points: Single form, display change, or validation
 - 3-5 points: Full CRUD, lifecycle transition, or new alert rule
-- 8 points: Multi-step workflow spanning frontend and backend
+- 8 points: Multi-step workflow spanning renderer and main process
 - 13+ points: Too large — decompose further
 
-### Step 5: Create or Draft
+### Step 5: Create Mockup
 
-**Default behavior:** Present the story in chat for review. Wait for approval before creating the GitHub issue.
+After writing a story, always invoke the `mockup` skill to produce a UI mockup for the story. Pass the full story content as context.
 
-**When asked to "just create it" or "push to GitHub":** Create the issue directly using `gh issue create`, add appropriate labels, and add it to the project board.
+### Step 6: Create or Draft
 
-## GitHub Operations
+**Default behavior:** Present the story and mockup in chat for review. Wait for approval before creating a beads issue.
 
-### Creating Issues
+**When asked to "just create it" or "track it":** Create the beads issue directly using `bd create`.
 
-Use `gh issue create` with:
-- Title: `US-{N}: {verb} {object} {context}` (check existing issues for the next number)
-- Labels: `story` + `phase:{N}` + strategy label + priority label
-- Body: Full story content formatted per the template in `docs/product-owner/github-workflow.md`
+## Beads Operations
+
+All story and epic tracking uses the `bd` CLI. Do NOT use GitHub Issues or `gh` commands.
+
+### Creating Stories
+
+```bash
+bd create \
+  --title="US-{N}: {verb} {object} {context}" \
+  --description="<full story body including context, AC, and technical notes>" \
+  --type=feature \
+  --priority=2
+```
+
+- Check `bd list` to find the next US-{N} number and avoid duplicates
+- Story numbers must match the epic doc (e.g., `docs/epics/02-assignment-and-covered-calls.md`)
+- Priority: 0=critical, 1=high, 2=medium, 3=low, 4=backlog
 
 ### Managing Epics
 
-Epics are issues with the `epic` label. Create them with:
-- Title: `Epic: {capability description}`
-- Body: Goal, success criteria, and a checklist of child story issue numbers
-- Update the epic checklist as stories are created
+```bash
+bd create \
+  --title="Epic: {capability description}" \
+  --description="Goal, success criteria, and list of child story IDs" \
+  --type=feature \
+  --priority=2
+```
 
-### Project Board
+After creating child stories, wire dependencies:
 
-Add created issues to the GitHub Project board. Set custom fields (Phase, Points, Type) when the project is configured.
+```bash
+bd dep add beads-{story-id} beads-{epic-id}  # story depends on epic
+```
+
+### Querying the Backlog
+
+```bash
+bd list --status=open       # all open issues
+bd search "US-6"            # find a specific story
+bd show beads-{id}          # full detail including dependencies
+```
 
 ## Acceptance Criteria Rules
 
@@ -149,6 +177,7 @@ Key rules:
 3. **Concrete over abstract.** Use specific dollar amounts, ticker symbols, and DTE values in acceptance criteria.
 4. **Always include the negative case.** What happens with invalid input? What if the precondition isn't met?
 5. **Respect the phase boundary.** Stories should belong to the current or next phase. Flag stories that depend on future-phase infrastructure.
-6. **Consult the domain expert.** When uncertain about trader behavior, workflow, or edge cases, invoke `/options-expert` rather than guessing.
-7. **Draft by default, create on request.** Present stories for review unless explicitly told to create them directly.
-8. **Track story numbers.** Check existing issues to avoid duplicate numbering. Use `gh issue list` to find the latest US-{N}.
+6. **Consult the domain expert.** When uncertain about trader behavior, workflow, or edge cases, invoke `options-expert` rather than guessing.
+7. **Draft by default, create on request.** Present the story and mockup for review unless explicitly told to create them directly.
+8. **Track story numbers.** Check existing beads issues to avoid duplicate numbering. Use `bd list` or `bd search "US-"` to find the latest US-{N}.
+9. **Always create a mockup.** After writing a user story, invoke the `mockup` skill before presenting results.

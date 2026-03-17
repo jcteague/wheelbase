@@ -112,6 +112,35 @@ Run pnpm test and confirm all new tests fail before marking done." \
 echo "Red: $RED_ID"
 ```
 
+**E2e Red tasks are different — use this format instead when the feature area is "E2e Tests":**
+
+```bash
+E2E_RED_ID=$(bd create \
+  --type=task \
+  --title="[Red] Write e2e tests for <Story ID> acceptance criteria" \
+  --parent=$FEATURE_ID \
+  --description="Use the /red skill.
+
+Test file: e2e/<story-slug>.spec.ts
+
+These tests are AC-driven — one it() per AC bullet from the user story.
+Test names must mirror the AC language directly.
+
+AC coverage:
+- AC-1: <quote or close paraphrase of AC text> → it('<ac-1 test name>')
+- AC-2: <quote or close paraphrase of AC text> → it('<ac-2 test name>')
+- AC-3: <quote or close paraphrase of AC text> → it('<ac-3 test name>')
+[continue for every AC in the story]
+
+Run pnpm test:e2e and confirm all new tests fail before marking done." \
+  --acceptance="One failing e2e test per AC. Run: pnpm test:e2e" \
+  --spec-id="$ARGUMENTS" \
+  --labels="red,e2e,<story-id-slug>" \
+  --priority=2 \
+  --silent)
+echo "E2e Red: $E2E_RED_ID"
+```
+
 ### Green task
 
 ```bash

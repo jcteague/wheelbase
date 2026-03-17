@@ -18,11 +18,11 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
 
 1. **Locate Feature Artifacts**
    - Find the feature plan under `plans/<feature-dir>/`
-   - Required: `plans/<feature-dir>/green-phase-results.md` — if missing, run `/green` first
-   - Review "Known Limitations / Tech Debt" in `green-phase-results.md` for refactoring candidates
+   - If `plans/<feature-dir>/green-phase-results.md` exists, read it and use "Known Limitations / Tech Debt" as the starting refactoring candidates
+   - If it doesn't exist, identify the implementation files directly from the plan or from context (e.g. files the user just mentioned), then proceed
 
 2. **Verify Tests Pass Before Starting**
-   - Run full test suite: `make test`
+   - Run full test suite: `pnpm test`
    - **CRITICAL**: All tests MUST be green before any refactoring begins
    - If any tests fail, return to the green phase and fix them first
    - Establish the passing baseline — you will return to it after every change
@@ -45,8 +45,8 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
 
 5. **Architecture Review**
    - Verify adherence to project principles:
-     - **Pure engines**: `lifecycle.py`/`lifecycle.ts`, `costbasis.py`/`costbasis.ts`, `alerts` contain zero db/broker imports
-     - **Alpaca isolation**: Nothing outside `integrations/alpaca.*` imports the Alpaca SDK
+     - **Pure engines**: `lifecycle.ts`, `costbasis.ts`, `alerts.ts` contain zero db/broker imports
+     - **Alpaca isolation**: Nothing outside `src/main/integrations/alpaca.ts` imports the Alpaca SDK
      - **Roll integrity**: No leg is mutated in place; rolls are always stored as linked pairs
      - **Decimal discipline**: All monetary values use `Decimal`/`decimal.js`, not `float`/`number`
 
@@ -87,7 +87,7 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
 
 8. **One Change at a Time (for anything code-simplifier did not address)**
    - **CRITICAL**: Make ONE small refactoring at a time
-   - Run `make test` after EACH change
+   - Run `pnpm test` after EACH change
    - If tests fail: REVERT the change immediately — do not accumulate failures
    - Only proceed to the next refactoring after tests are green
 
@@ -101,7 +101,7 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
    **Extract Constant**
    - Replace magic strings/numbers with named constants
    - Group related constants (e.g., `PhaseTransition`, `WheelPhase` enum values)
-   - Python: module-level `SCREAMING_SNAKE_CASE`; TypeScript: `const` objects or enums
+   - TypeScript: `const` objects or string literal union types or enums
 
    **Rename**
    - Use domain language from CLAUDE.md: `wheel`, `leg`, `roll`, `cost_basis`, `phase`
@@ -113,46 +113,45 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
    - Replace repeated `if phase == X` chains with dispatch tables or match statements
 
    **Remove Duplication**
-   - Extract shared logic into `backend/app/core/` utilities (if pure) or `backend/app/db/` helpers
-   - Frontend: extract repeated JSX patterns into sub-components under `frontend/src/components/`
+   - Extract shared logic into `src/main/core/` utilities (if pure) or `src/main/services/` helpers
+   - Renderer: extract repeated JSX patterns into sub-components under `src/renderer/src/components/`
 
    **Improve Types**
-   - Python: replace `Any` with specific types; use `TypeAlias` for complex types; prefer `Enum` for phases and statuses
-   - TypeScript: replace `any` with specific types; use union/literal types for constrained values
+   - TypeScript: replace `any` with specific types; use union/literal types for constrained values; prefer enums or const objects for phases and statuses
 
 10. **Wheelbase-Specific Refactorings**
 
     **Core Engine Layer**
     - Keep engine functions thin; extract business sub-rules to named helper functions
     - Consolidate status/phase derivation into single, independently testable functions
-    - Ensure `costbasis.py` has one clear entry point with a documented formula
+    - Ensure `costbasis.ts` has one clear entry point with a documented formula
 
-    **Model Layer**
-    - Ensure monetary `Numeric` columns map cleanly to `Decimal` with no implicit conversion
-    - Confirm `roll_from_id` / `roll_to_id` FK constraints are symmetric and enforced
-    - Keep model definitions focused — no business logic in ORM models
+    **DB / Service Layer**
+    - Ensure monetary TEXT columns convert cleanly to `Decimal` via `decimal.js` with no implicit coercion
+    - Confirm `roll_from_id` / `roll_to_id` FK constraints are symmetric and enforced in migrations
+    - Keep service functions focused — no business logic beyond DB access and core engine calls
 
-    **API Layer**
-    - Keep route handlers thin: validate input, call a service/engine, return a response model
-    - Extract repeated response-shaping logic into shared Pydantic response models
-    - Ensure all error cases return consistent `{"detail": "..."}` shapes
+    **IPC Layer**
+    - Keep IPC handlers thin: validate input with Zod, call a service, return result
+    - Extract repeated response-shaping logic into shared typed result types
+    - Ensure all error cases return consistent `{ ok: false, errors: string[] }` shapes
 
-    **Frontend Layer**
+    **Renderer Layer**
     - Keep components presentational; push data logic into hooks
-    - Ensure `useEffect` cleanups are explicit (cancel queries, close connections)
-    - Replace inline styles or magic pixel values with named tokens
+    - Ensure `useEffect` cleanups are explicit (cancel queries, remove IPC listeners)
+    - Replace inline styles or magic pixel values with Tailwind classes or shadcn/ui tokens
 
     **Test Utilities**
-    - Extract shared test data factories (e.g., `make_leg()`, `make_wheel()`) to `backend/tests/factories.py`
-    - Reduce fixture duplication with shared `conftest.py` fixtures
-    - Ensure all mocks are reset between tests
+    - Extract shared test data factories (e.g., `makeLeg()`, `makeWheel()`) to a shared test helper file
+    - Reduce setup duplication with shared `beforeEach` helpers or Vitest fixtures
+    - Ensure all `vi.mock()` mocks are reset between tests with `vi.clearAllMocks()` or `vi.restoreAllMocks()`
 
 ### Phase 5: Continuous Verification
 
 11. **Run Quality Checks After Each Refactoring**
-    - `make test` — must stay green throughout
-    - `make lint` — fix any new lint errors before continuing
-    - `make typecheck` — fix any new type errors before continuing
+    - `pnpm test` — must stay green throughout
+    - `pnpm lint` — fix any new lint errors before continuing
+    - `pnpm typecheck` — fix any new type errors before continuing
 
 ### Phase 6: Documentation and Handoff
 
@@ -164,7 +163,7 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
       - Any remaining tech debt
 
 13. **Feature Complete**
-    - Run final quality check: `make test && make lint && make typecheck`
+    - Run final quality check: `pnpm test && pnpm lint && pnpm typecheck`
     - Feature is complete and ready for review
 
 ## Guidelines
@@ -188,15 +187,13 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
    - Don't fix bugs during refactoring — log them and do separately
 
 4. **Follow Project Conventions**
-   - Python: `ruff`-clean, `mypy --strict`-clean, `Decimal` for money
-   - TypeScript: ESLint-clean, `tsc --strict`-clean, no `any`
+   - TypeScript: ESLint-clean, `tsc --strict`-clean, no `any`, `decimal.js` for money
 
 ## Error Conditions
 
-- **ERROR**: `green-phase-results.md` doesn't exist → run `/green` first
 - **ERROR**: Tests fail before refactoring begins → fix in green phase first
 - **ERROR**: Tests fail after the `code-simplifier` agent → revert agent changes, proceed with manual refactoring only
-- **ERROR**: Tests fail after a manual refactoring → REVERT immediately, do not continue
+- **ERROR**: Tests fail after a manual refactoring → REVERT immediately, do not continue (`pnpm test` to confirm)
 - **ERROR**: Refactoring changes observable behaviour → that is not a refactoring; revert and reconsider
 - **ERROR**: Unsure whether a change is safe → skip it, document as remaining tech debt
 
@@ -205,8 +202,8 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
 - ✅ All tests remain passing throughout every step of refactoring
 - ✅ Code quality improved: reduced duplication, better names, stronger types, no magic values
 - ✅ Architecture rules verified: pure engines, isolated Alpaca, linked roll pairs, Decimal money
-- ✅ `make lint` passes with no errors
-- ✅ `make typecheck` passes with no errors
+- ✅ `pnpm lint` passes with no errors
+- ✅ `pnpm typecheck` passes with no errors
 - ✅ Results documented in `plans/<feature-dir>/refactor-phase-results.md`
 - ✅ Feature complete and ready for review
 
@@ -226,37 +223,37 @@ After completing the refactor phase, create `plans/<feature-dir>/refactor-phase-
 
 ### 1. Extract Function — `derive_cost_basis()`
 
-**File**: `backend/app/core/costbasis.py`
+**File**: `src/main/core/costbasis.ts`
 **Before**: Inline arithmetic repeated across three call sites
-**After**: Single pure function `derive_cost_basis(legs: list[Leg]) -> Decimal`
+**After**: Single pure function `deriveCostBasis(legs: Leg[]): Decimal`
 **Reason**: Eliminated duplication; formula is now tested and documented in one place
 
 ### 2. Extract Constant — `WheelPhase` enum
 
-**File**: `backend/app/core/lifecycle.py`
+**File**: `src/main/core/lifecycle.ts`
 **Before**: Magic strings `"CSP_OPEN"`, `"HOLDING_SHARES"` scattered throughout
-**After**: `class WheelPhase(str, Enum)` with named members
-**Reason**: Compile-time safety; mypy catches invalid phase comparisons
+**After**: `export enum WheelPhase` with named members
+**Reason**: Compile-time safety; TypeScript catches invalid phase comparisons
 
 [Continue for all refactorings...]
 
 ## Test Execution Results
 
 ```bash
-make test
+pnpm test
 
-PASSED backend/tests/core/test_costbasis.py (4 tests)
-PASSED backend/tests/core/test_lifecycle.py (6 tests)
-PASSED backend/tests/api/test_positions.py (3 tests)
+PASS src/main/core/costbasis.test.ts (4 tests)
+PASS src/main/core/lifecycle.test.ts (6 tests)
+PASS src/main/ipc/positions.test.ts (3 tests)
 
 13 passed, 0 failed
 ```
 
 ## Quality Checks
 
-- ✅ `make test` passed (no regressions)
-- ✅ `make lint` passed
-- ✅ `make typecheck` passed
+- ✅ `pnpm test` passed (no regressions)
+- ✅ `pnpm lint` passed
+- ✅ `pnpm typecheck` passed
 
 ## Remaining Tech Debt
 

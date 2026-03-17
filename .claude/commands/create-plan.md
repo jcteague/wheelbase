@@ -15,7 +15,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 1. **Setup**: Carefully read the user story file provided by user input. If no file is provided, review the stories in `docs/epics/` subdirectories. If it is unclear which user story should be used, ask the user.
 
-2. **Mockup check**: After identifying the user story file, check whether a mockup file exists alongside it. The convention is `{story-filename-without-extension}-mockups.html` in the same directory (e.g., story `US-5-record-csp-expiration.md` → `US-5-record-csp-expiration-mockups.html`). If found, read it now and extract:
+2. **Mockup check**: After identifying the user story file, check whether a mockup file exists in the `mockups/` directory at the project root. The convention is `{story-id-kebab-case}.mdx` (e.g., story `US-6-record-csp-assignment.md` → `mockups/us-6-record-csp-assignment.mdx`). If found, read it now and extract:
    - Screen names and descriptions
    - Component layout and interaction patterns (e.g. right-side sheet, inline form, overlay)
    - Visible data fields and labels on each screen
@@ -46,7 +46,7 @@ Write all artifacts to `plans/{story-id}/` where `{story-id}` is derived from th
 2. For any technical element not already covered by the existing codebase or tech stack, identify it as an unknown requiring research.
 
 3. **Dispatch research agents** for each unknown. Use the Agent tool to research unknowns in parallel when queries are independent. Example tasks:
-   - "Research {unknown} for {feature context} in a FastAPI + SQLAlchemy 2 project"
+   - "Research {unknown} for {feature context} in an Electron + better-sqlite3 + React 19 project"
    - "Find best practices for {tech} in {domain}"
 
 4. **Consolidate findings** in `plans/{story-id}/research.md` using this format:
@@ -76,9 +76,9 @@ Write all artifacts to `plans/{story-id}/` where `{story-id}` is derived from th
    - State transitions if applicable
 
 2. **Define interface contracts** → `plans/{story-id}/contracts/`:
-   - Document the API endpoints, request/response shapes, and error formats the story requires
-   - Use the existing schema patterns in `backend/app/api/schemas.py` as the reference format
-   - Skip if the story has no new API surface (pure frontend or pure engine work)
+   - Document the IPC channels, Zod payload schemas, and response shapes the story requires
+   - Use the existing IPC handler patterns in `src/main/ipc/` and `src/main/schemas.ts` as the reference format
+   - Skip if the story has no new IPC surface (pure engine or pure renderer work)
 
 3. **Write a quickstart** → `plans/{story-id}/quickstart.md`:
    - Step-by-step instructions to run the tests for this story locally
@@ -149,10 +149,15 @@ Read these before starting implementation — they contain the decisions, data m
 
 - Order areas strictly by dependency — never reference a file or symbol before the area that creates it
 - Red bullets must be specific enough to write actual test functions from (name the test file, the case, the assertion)
-- Green bullets must name the exact file and construct to build (e.g. "`PositionListItemResponse` Pydantic model in `backend/app/api/schemas.py`"), not vague nouns
+- Green bullets must name the exact file and construct to build (e.g. "`PositionListItemSchema` Zod schema in `src/main/schemas.ts`" or "`positions:list` IPC handler in `src/main/ipc/positions.ts`"), not vague nouns
 - Every acceptance criterion from the user story must be covered by at least one area
 - Do not describe TDD phases abstractly — write what the tests check and what the code does
 - **If a mockup file was found in step 2**, every frontend area's Green section must reference the mockup: name the specific screens, component shapes, interaction patterns, and annotations that apply. Do not describe generic UI — describe the UI shown in the mockup. Include: component names derived from what the mockup shows (e.g. `ExpirationSheet`, not just "a modal"), the sheet/overlay pattern if used, the exact fields visible on each screen, post-success navigation and shortcuts, and error state visual treatments (color, tone).
+- **The last implementation area must always be "E2e Tests".** Unit/integration test areas are implementation-driven — Red bullets cover fine-grained code paths and edge cases. The E2e area is AC-driven — each Red bullet maps to exactly one AC from the user story, and the test name must mirror the AC language. Do not lump multiple ACs into a single e2e test.
+
+#### AC Audit (required before Phase 2 is done)
+
+Before writing `plan.md`, list every AC bullet from the user story. Confirm that each one appears as a named e2e test case in the E2e area's Red section. If any AC has no corresponding e2e test case, add one. Do not mark the plan complete with uncovered ACs.
 
 **Output**: `plans/{story-id}/plan.md`
 

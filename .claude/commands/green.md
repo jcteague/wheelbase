@@ -29,13 +29,13 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
 
 3. **Identify Implementation Scope**
    - Determine which files need to be created or modified:
-     - `backend/app/core/` — pure engine functions (no db/broker imports ever)
-     - `backend/app/api/routes/` — FastAPI route handlers
-     - `backend/app/models/` — SQLAlchemy ORM models
-     - `backend/app/db/` — session / migration support
-     - `frontend/src/components/` — Preact components
-     - `frontend/src/hooks/` — TanStack Query + signal hooks
-     - `frontend/src/api/` — typed fetch wrappers
+     - `src/main/core/` — pure engine functions (no DB/IPC/broker imports ever)
+     - `src/main/services/` — DB access + core logic composition
+     - `src/main/ipc/` — IPC handlers (thin wrappers only)
+     - `src/main/db/` — migrations and DB init
+     - `src/renderer/src/components/` — React 19 components (shadcn/ui)
+     - `src/renderer/src/hooks/` — TanStack Query hooks
+     - `src/renderer/src/api/` — IPC → hooks adapter (typed IPC calls)
 
 ### Phase 2: Implement Features
 
@@ -47,14 +47,17 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
    - Let the tests drive every decision
 
 5. **Follow Architecture Rules (non-negotiable)**
-   - `backend/app/core/` engines import ONLY Python stdlib and `app.core.*` siblings — no SQLAlchemy, no alpaca-py
-   - All Alpaca API calls stay in `backend/app/integrations/alpaca.py`
-   - Rolls are always stored as linked leg pairs (`roll_from` / `roll_to`) — never mutate a leg in place
+   - `src/main/core/` engines import ONLY `decimal.js` and other pure utilities — no `better-sqlite3`, no Alpaca SDK, no IPC
+   - All Alpaca API calls stay in `src/main/integrations/alpaca.ts`
+   - IPC handlers never throw to the renderer — always return `{ ok: true, ...result } | { ok: false, errors: [...] }`
+   - Rolls are always stored as linked leg pairs (`roll_from_id` / `roll_to_id`) — never mutate a leg in place
    - Cost basis formula: `assignment_strike − CSP_premiums − CC_premiums + roll_debits − roll_credits`
+   - Use Zod v4 for all IPC payload validation — infer TypeScript types from schemas
 
 6. **Follow Code Conventions**
-   - Python: type-annotated, `Decimal` for all monetary values, functional style over classes where practical
-   - TypeScript: strict mode, pure functions, Zustand only for cross-view state
+   - TypeScript strict mode throughout
+   - `decimal.js` with `ROUND_HALF_UP` for all monetary values — never `number` for money
+   - Functional style: pure functions over classes, `map`/`filter`/`reduce` over loops
    - No mutation — prefer returning new objects/values
 
 7. **Enforce Single Responsibility — one file, one concern**
@@ -78,20 +81,20 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
 ### Phase 3: Iterative Test Execution
 
 7. **Run Tests Frequently**
-   - After every small change: `cd backend && uv run pytest -v`
+   - After every small change: `pnpm test`
+   - To target a specific file: `pnpm test src/main/core/lifecycle.test.ts`
    - Fix failures one at a time — do not batch unrelated changes
-   - Frontend: `cd frontend && pnpm test --run`
 
 8. **Verify All Tests Pass**
    - All tests from the red phase must be green
    - No regressions in any previously passing tests
-   - Run the full suite: `make test`
+   - Run the full suite: `pnpm test`
 
 ### Phase 4: Quality Gates
 
 9. **Run All Quality Checks — fix any failures before documenting**
-   - `make lint` — ruff (Python) + ESLint (TypeScript)
-   - `make typecheck` — mypy (Python strict) + tsc (TypeScript strict)
+   - `pnpm lint` — ESLint
+   - `pnpm typecheck` — tsc --noEmit (strict mode)
    - Do not consider the green phase complete until all three pass: tests, lint, typecheck
 
 ### Phase 5: Documentation and Handoff
@@ -132,49 +135,50 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
 
 ### Wheelbase-Specific Implementation Rules
 
-4. **Core Engines (`backend/app/core/`)**
-   - Accept plain dataclasses as input; return plain dataclasses or primitives
-   - `lifecycle.py`: pure state machine — given current phase + event, return new phase or raise `PhaseTransitionError`
-   - `costbasis.py`: pure calculation — given a list of legs, return `Decimal`
-   - `alerts.py`: pure rule evaluator — given position data, return list of alert objects
+4. **Core Engines (`src/main/core/`)**
+   - Accept plain typed objects as input; return plain typed objects or primitives
+   - `lifecycle.ts`: pure state machine — given current phase + event, return new phase or throw `PhaseTransitionError`
+   - `costbasis.ts`: pure calculation — given a list of legs, return `Decimal`
+   - `alerts.ts`: pure rule evaluator — given position data, return list of alert objects
 
 5. **Phase State Machine**
    - Valid transitions: `CSP_OPEN → HOLDING_SHARES`, `HOLDING_SHARES → CC_OPEN`, `CC_OPEN → HOLDING_SHARES` (CC expired/closed), `CC_OPEN → EXITED` (shares called away)
    - Roll transitions keep the same phase but create a new linked leg pair
    - All other transitions must raise `PhaseTransitionError`
 
-6. **SQLAlchemy Models**
-   - Use async-compatible `DeclarativeBase`
-   - `Wheel` (position), `Leg` (single option transaction), `CostBasisSnapshot`, `Alert`
-   - `Leg` has optional `roll_from_id` / `roll_to_id` FKs — rolls are always pairs, never mutations
-   - Monetary columns: `Numeric(10, 4)` mapped to Python `Decimal`
+6. **Database Layer (`src/main/services/`)**
+   - Use `better-sqlite3` synchronous API — no async needed
+   - Monetary columns stored as TEXT (4 decimal places), loaded as `Decimal` via `decimal.js`
+   - Migrations live in `migrations/` and run via the custom runner in `src/main/db/migrate.ts`
+   - Never expose raw DB rows to the renderer — map to typed domain objects in the service layer
 
-7. **FastAPI Routes**
-   - Use `Annotated[AsyncSession, Depends(get_session)]` for DB injection
-   - Return Pydantic v2 response models — never expose ORM objects directly
-   - Override `get_session` in tests — never touch a real DB in API tests
+7. **IPC Handlers (`src/main/ipc/`)**
+   - Validate all incoming payloads with Zod v4 — parse, don't cast
+   - Call the service layer — no DB or business logic directly in handlers
+   - Always return `{ ok: true, ...result }` or `{ ok: false, errors: string[] }` — never throw
 
-8. **Frontend**
-   - Preact signals for component-local reactive state
-   - TanStack Query for server state (fetching, caching, invalidation)
-   - Zustand only for state shared across unrelated views
-   - Components under `frontend/src/components/`; page-level under `frontend/src/pages/`
+8. **Renderer (React 19)**
+   - TanStack Query for all server state (fetching, caching, invalidation)
+   - React Hook Form + Zod resolver for all forms
+   - shadcn/ui for all UI components
+   - Wouter with `useHashLocation` for routing — never `BrowserRouter` (breaks in Electron `file://`)
+   - No direct IPC calls in components — go through hooks in `src/renderer/src/hooks/`
 
 ## Error Conditions
 
 - **ERROR**: `red-phase-results.md` doesn't exist → run `/red` first
 - **ERROR**: Tests still fail after implementation → debug and fix; do not document until green
 - **ERROR**: New failures appear in previously passing tests → fix regressions immediately
-- **ERROR**: Core engine file imports from `app.db` or `app.integrations` → architectural violation, fix immediately
+- **ERROR**: Core engine file imports from `src/main/db` or `src/main/integrations` → architectural violation, fix immediately
 - **ERROR**: Lint or typecheck fails → fix before marking phase complete
 
 ## Success Criteria
 
 - ✅ Every test from the red phase is now passing
 - ✅ No regressions in previously passing tests
-- ✅ `make lint` passes with no errors
-- ✅ `make typecheck` passes with no errors
-- ✅ Implementation follows architecture rules (pure engines, isolated Alpaca, linked roll pairs)
+- ✅ `pnpm lint` passes with no errors
+- ✅ `pnpm typecheck` passes with no errors
+- ✅ Implementation follows architecture rules (pure engines, isolated Alpaca, linked roll pairs, decimal.js money)
 - ✅ Results documented in `plans/<feature-dir>/green-phase-results.md`
 - ✅ Ready to proceed to REFACTOR phase
 
@@ -194,26 +198,28 @@ After completing the green phase, create `plans/<feature-dir>/green-phase-result
 
 ## Implementation Files Created/Modified
 
-- `backend/app/core/costbasis.py` — cost basis calculation engine
-- `backend/app/core/lifecycle.py` — phase state machine
-- `backend/app/models/__init__.py` — Wheel, Leg, CostBasisSnapshot ORM models
-- `backend/app/api/routes/positions.py` — position CRUD endpoints
-- `frontend/src/components/PositionCard.tsx` — position summary component
+- `src/main/core/costbasis.ts` — cost basis calculation engine
+- `src/main/core/lifecycle.ts` — phase state machine
+- `src/main/services/positions.ts` — position CRUD and cost basis persistence
+- `src/main/ipc/positions.ts` — IPC handler for position operations
+- `src/renderer/src/components/PositionCard.tsx` — position summary component
 
 ## Public Interfaces Implemented
 
 Exact signatures created — refactor phase should not change these without re-running tests:
 
-```python
-# backend/app/core/costbasis.py
-def calculate_cost_basis(legs: list[Leg]) -> Decimal: ...
+```typescript
+// src/main/core/costbasis.ts
+export function calculateCostBasis(legs: Leg[]): Decimal
 
-# backend/app/core/lifecycle.py
-def transition(current_phase: WheelPhase, event: PhaseEvent) -> WheelPhase: ...
-class PhaseTransitionError(Exception): ...
-class WheelPhase(str, Enum): ...
+// src/main/core/lifecycle.ts
+export function transition(currentPhase: WheelPhase, event: PhaseEvent): WheelPhase
+export class PhaseTransitionError extends Error {}
+export enum WheelPhase { CSP_OPEN = 'CSP_OPEN', HOLDING_SHARES = 'HOLDING_SHARES', ... }
 
-# POST /positions → 201, GET /positions → 200 list
+// IPC channels
+// 'positions:create' → { ok: true, position: Position } | { ok: false, errors: string[] }
+// 'positions:list'   → { ok: true, positions: Position[] }
 ```
 
 ## Implementation Summary
@@ -234,21 +240,20 @@ class WheelPhase(str, Enum): ...
 ## Test Execution Results
 
 ```bash
-cd backend && uv run pytest -v
+pnpm test
 
-PASSED tests/core/test_costbasis.py::test_cost_basis_is_strike_with_no_premiums
-PASSED tests/core/test_costbasis.py::test_csp_premium_reduces_cost_basis
-PASSED tests/core/test_lifecycle.py::test_csp_open_to_holding_shares
-PASSED tests/core/test_lifecycle.py::test_illegal_transition_raises
+PASS src/main/core/costbasis.test.ts (4 tests)
+PASS src/main/core/lifecycle.test.ts (6 tests)
+PASS src/main/ipc/positions.test.ts (3 tests)
 
-4 passed, 0 failed
+13 passed, 0 failed
 ```
 
 ## Quality Checks
 
-- ✅ `make test` passed
-- ✅ `make lint` passed
-- ✅ `make typecheck` passed
+- ✅ `pnpm test` passed
+- ✅ `pnpm lint` passed
+- ✅ `pnpm typecheck` passed
 
 ## Known Limitations / Tech Debt
 

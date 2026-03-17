@@ -13,7 +13,8 @@
       "Bash(pnpm lint:*)",
       "Skill(implement-plan)",
       "Bash(pnpm typecheck:*)",
-      "Bash(pnpm test:*)"
+      "Bash(pnpm test:*)",
+      "Bash(bd list:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
