@@ -8,7 +8,7 @@ import type {
 import type {
   LegAction,
   LegRole,
-  OptionType,
+  InstrumentType,
   StrategyType,
   WheelPhase,
   WheelStatus
@@ -33,7 +33,7 @@ interface PositionRow {
   leg_id: string | null
   leg_role: LegRole | null
   action: LegAction | null
-  option_type: OptionType | null
+  instrument_type: InstrumentType | null
   strike: string | null
   expiration: string | null
   contracts: number | null
@@ -53,7 +53,7 @@ interface PositionRow {
 
 const GET_LEGS_QUERY = `
   SELECT
-    id, position_id, leg_role, action, option_type, strike, expiration,
+    id, position_id, leg_role, action, instrument_type, strike, expiration,
     contracts, premium_per_contract, fill_price, fill_date, created_at, updated_at
   FROM legs
   WHERE position_id = ?
@@ -65,7 +65,7 @@ interface LegRow {
   position_id: string
   leg_role: LegRole
   action: LegAction
-  option_type: OptionType
+  instrument_type: InstrumentType
   strike: string
   expiration: string
   contracts: number
@@ -85,7 +85,7 @@ const GET_QUERY = `
     l.id           AS leg_id,
     l.leg_role,
     l.action,
-    l.option_type,
+    l.instrument_type,
     l.strike,
     l.expiration,
     l.contracts,
@@ -103,7 +103,11 @@ const GET_QUERY = `
   FROM positions p
   LEFT JOIN legs l ON l.id = (
     SELECT id FROM legs
-    WHERE position_id = p.id AND leg_role IN ('CSP_OPEN', 'CC_OPEN')
+    WHERE position_id = p.id
+      AND (
+        (p.phase = 'CSP_OPEN' AND leg_role = 'CSP_OPEN')
+        OR (p.phase = 'CC_OPEN' AND leg_role = 'CC_OPEN')
+      )
     ORDER BY fill_date DESC, created_at DESC
     LIMIT 1
   )
@@ -147,7 +151,7 @@ export function getPosition(db: Database.Database, positionId: string): GetPosit
         positionId: row.id,
         legRole: row.leg_role!,
         action: row.action!,
-        optionType: row.option_type!,
+        instrumentType: row.instrument_type!,
         strike: row.strike!,
         expiration: row.expiration!,
         contracts: row.contracts!,
@@ -176,7 +180,7 @@ export function getPosition(db: Database.Database, positionId: string): GetPosit
     positionId: r.position_id,
     legRole: r.leg_role,
     action: r.action,
-    optionType: r.option_type,
+    instrumentType: r.instrument_type,
     strike: r.strike,
     expiration: r.expiration,
     contracts: r.contracts,

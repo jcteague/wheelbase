@@ -36,7 +36,11 @@ describe('runMigrations', () => {
       db.prepare('SELECT name FROM _migrations ORDER BY name').all() as { name: string }[]
     ).map((r) => r.name)
 
-    expect(applied).toEqual(['001_initial_schema.sql', '002_add_query_indexes.sql'])
+    expect(applied).toEqual([
+      '001_initial_schema.sql',
+      '002_add_query_indexes.sql',
+      '003_rename_option_type_to_instrument_type.sql'
+    ])
   })
 
   it('is idempotent — running twice does not error', () => {

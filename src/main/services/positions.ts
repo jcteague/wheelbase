@@ -13,6 +13,7 @@ export { listPositions } from './list-positions'
 export { getPosition } from './get-position'
 export { closeCspPosition } from './close-csp-position'
 export { expireCspPosition } from './expire-csp-position'
+export { assignCspPosition } from './assign-csp-position'
 
 // ---------------------------------------------------------------------------
 // createPosition
@@ -81,7 +82,7 @@ export function createPosition(
 
     db.prepare(
       `INSERT INTO legs
-        (id, position_id, leg_role, action, option_type, strike, expiration, contracts, premium_per_contract, fill_date, created_at, updated_at)
+        (id, position_id, leg_role, action, instrument_type, strike, expiration, contracts, premium_per_contract, fill_date, created_at, updated_at)
        VALUES (?, ?, 'CSP_OPEN', 'SELL', 'PUT', ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       legId,
@@ -128,7 +129,7 @@ export function createPosition(
       positionId,
       legRole: 'CSP_OPEN',
       action: 'SELL',
-      optionType: 'PUT',
+      instrumentType: 'PUT',
       strike: strikeFormatted,
       expiration: payload.expiration,
       contracts: payload.contracts,

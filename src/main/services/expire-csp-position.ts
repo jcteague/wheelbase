@@ -21,6 +21,10 @@ export function expireCspPosition(
     throw new ValidationError('__root__', 'not_found', 'Position not found')
   }
 
+  if (positionDetail.position.phase !== 'CSP_OPEN') {
+    throw new ValidationError('__phase__', 'invalid_phase', 'Position is not in CSP_OPEN phase')
+  }
+
   const openLeg = positionDetail.activeLeg
   if (!openLeg) {
     throw new ValidationError('__root__', 'no_active_leg', 'Position has no active leg')
@@ -52,7 +56,7 @@ export function expireCspPosition(
   db.transaction(() => {
     db.prepare(
       `INSERT INTO legs
-        (id, position_id, leg_role, action, option_type, strike, expiration, contracts,
+        (id, position_id, leg_role, action, instrument_type, strike, expiration, contracts,
          premium_per_contract, fill_price, fill_date, created_at, updated_at)
        VALUES (?, ?, 'EXPIRE', 'EXPIRE', 'PUT', ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
@@ -105,7 +109,7 @@ export function expireCspPosition(
       positionId,
       legRole: 'EXPIRE',
       action: 'EXPIRE',
-      optionType: 'PUT',
+      instrumentType: 'PUT',
       strike: openLeg.strike,
       expiration: openLeg.expiration,
       contracts: openLeg.contracts,

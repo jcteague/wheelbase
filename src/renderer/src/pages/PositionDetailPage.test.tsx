@@ -17,6 +17,12 @@ vi.mock('../components/ExpirationSheet', () => ({
     open ? <div data-testid="expiration-sheet">Expire CSP Worthless</div> : null
 }))
 
+// Mock AssignmentSheet to avoid testing it in isolation here
+vi.mock('../components/AssignmentSheet', () => ({
+  AssignmentSheet: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="assignment-sheet">Assign CSP to Shares</div> : null
+}))
+
 // Mock wouter so useParams works
 vi.mock('wouter', () => ({
   useParams: () => ({ id: 'pos-123' }),
@@ -46,7 +52,7 @@ const CSP_OPEN_DETAIL = {
     positionId: 'pos-123',
     legRole: 'CSP_OPEN' as const,
     action: 'SELL' as const,
-    optionType: 'PUT' as const,
+    instrumentType: 'PUT' as const,
     strike: '180.0000',
     expiration: '2026-04-17',
     contracts: 1,
@@ -133,6 +139,67 @@ it('opens ExpirationSheet when Record Expiration button is clicked', async () =>
   expect(screen.getByText('Expire CSP Worthless')).toBeInTheDocument()
 })
 
+it('shows "Record Assignment →" button when phase is CSP_OPEN', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: CSP_OPEN_DETAIL,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  expect(screen.getByTestId('record-assignment-btn')).toBeInTheDocument()
+})
+
+it('does not show "Record Assignment →" button when phase is HOLDING_SHARES', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: {
+      ...CSP_OPEN_DETAIL,
+      position: {
+        ...CSP_OPEN_DETAIL.position,
+        phase: 'HOLDING_SHARES'
+      }
+    },
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  expect(screen.queryByTestId('record-assignment-btn')).not.toBeInTheDocument()
+})
+
+it('opens AssignmentSheet when "Record Assignment →" is clicked', async () => {
+  const user = userEvent.setup()
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: CSP_OPEN_DETAIL,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  await user.click(screen.getByTestId('record-assignment-btn'))
+  expect(screen.getByTestId('assignment-sheet')).toBeInTheDocument()
+})
+
+it('blurs and disables the detail page content when AssignmentSheet is open', async () => {
+  const user = userEvent.setup()
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: CSP_OPEN_DETAIL,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  const detail = screen.getByTestId('position-detail')
+
+  await user.click(screen.getByTestId('record-assignment-btn'))
+
+  expect(detail).toHaveStyle({ filter: 'blur(1.5px)', opacity: '0.35', pointerEvents: 'none' })
+})
+
 it('does not render Record Expiration button and shows closed banner for WHEEL_COMPLETE', () => {
   mockUsePosition.mockReturnValue({
     isLoading: false,
@@ -166,7 +233,7 @@ it('renders leg history section with two legs in order', () => {
           positionId: 'pos-123',
           legRole: 'CSP_OPEN',
           action: 'SELL',
-          optionType: 'PUT',
+          instrumentType: 'PUT',
           strike: '180.0000',
           expiration: '2026-04-17',
           contracts: 1,
@@ -180,7 +247,7 @@ it('renders leg history section with two legs in order', () => {
           positionId: 'pos-123',
           legRole: 'CSP_CLOSE',
           action: 'BUY',
-          optionType: 'PUT',
+          instrumentType: 'PUT',
           strike: '180.0000',
           expiration: '2026-04-17',
           contracts: 1,

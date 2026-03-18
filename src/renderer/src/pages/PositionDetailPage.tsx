@@ -19,8 +19,14 @@ import { MONO } from '../lib/tokens'
 export function PositionDetailPage(): React.JSX.Element {
   const { id } = useParams<{ id: string }>()
   const { isLoading, isError, data } = usePosition(id)
-  const [showExpiration, setShowExpiration] = useState(false)
-  const [showAssignment, setShowAssignment] = useState(false)
+  const [expirationCtx, setExpirationCtx] = useState<{
+    activeLeg: NonNullable<typeof data>['activeLeg']
+    snapshot: NonNullable<typeof data>['costBasisSnapshot']
+  } | null>(null)
+  const [assignmentCtx, setAssignmentCtx] = useState<{
+    activeLeg: NonNullable<typeof data>['activeLeg']
+    snapshot: NonNullable<typeof data>['costBasisSnapshot']
+  } | null>(null)
 
   if (isLoading) {
     return <LoadingState message="Loading position..." />
@@ -77,7 +83,10 @@ export function PositionDetailPage(): React.JSX.Element {
                   <button
                     data-testid="record-assignment-btn"
                     className="wb-teal-button"
-                    onClick={() => setShowAssignment(true)}
+                    onClick={() => {
+                      if (activeLeg && costBasisSnapshot)
+                        setAssignmentCtx({ activeLeg, snapshot: costBasisSnapshot })
+                    }}
                     style={actionButtonStyle}
                   >
                     Record Assignment →
@@ -85,7 +94,10 @@ export function PositionDetailPage(): React.JSX.Element {
                   <button
                     data-testid="record-expiration-btn"
                     className="wb-teal-button"
-                    onClick={() => setShowExpiration(true)}
+                    onClick={() => {
+                      if (activeLeg && costBasisSnapshot)
+                        setExpirationCtx({ activeLeg, snapshot: costBasisSnapshot })
+                    }}
                     style={actionButtonStyle}
                   >
                     Record Expiration →
@@ -105,7 +117,7 @@ export function PositionDetailPage(): React.JSX.Element {
           flexDirection: 'column',
           gap: 16,
           transition: 'filter 0.2s, opacity 0.2s',
-          ...(showExpiration || showAssignment
+          ...(expirationCtx || assignmentCtx
             ? { filter: 'blur(1.5px)', opacity: 0.35, pointerEvents: 'none', userSelect: 'none' }
             : {})
         }}
@@ -256,30 +268,30 @@ export function PositionDetailPage(): React.JSX.Element {
           </div>
         )}
       </main>
-      {showExpiration && activeLeg && costBasisSnapshot && (
+      {expirationCtx?.activeLeg && expirationCtx.snapshot && (
         <ExpirationSheet
-          open={showExpiration}
+          open
           positionId={position.id}
           ticker={position.ticker}
-          strike={activeLeg.strike}
-          expiration={activeLeg.expiration}
-          contracts={activeLeg.contracts}
-          totalPremiumCollected={costBasisSnapshot.totalPremiumCollected}
-          onClose={() => setShowExpiration(false)}
+          strike={expirationCtx.activeLeg.strike}
+          expiration={expirationCtx.activeLeg.expiration}
+          contracts={expirationCtx.activeLeg.contracts}
+          totalPremiumCollected={expirationCtx.snapshot.totalPremiumCollected}
+          onClose={() => setExpirationCtx(null)}
         />
       )}
-      {showAssignment && activeLeg && costBasisSnapshot && (
+      {assignmentCtx?.activeLeg && assignmentCtx.snapshot && (
         <AssignmentSheet
-          open={showAssignment}
+          open
           positionId={position.id}
           ticker={position.ticker}
-          strike={activeLeg.strike}
-          expiration={activeLeg.expiration}
-          contracts={activeLeg.contracts}
-          openFillDate={activeLeg.fillDate}
+          strike={assignmentCtx.activeLeg.strike}
+          expiration={assignmentCtx.activeLeg.expiration}
+          contracts={assignmentCtx.activeLeg.contracts}
+          openFillDate={assignmentCtx.activeLeg.fillDate}
           premiumWaterfall={assignmentWaterfall}
-          projectedBasisPerShare={costBasisSnapshot.basisPerShare}
-          onClose={() => setShowAssignment(false)}
+          projectedBasisPerShare={assignmentCtx.snapshot.basisPerShare}
+          onClose={() => setAssignmentCtx(null)}
         />
       )}
     </PageLayout>

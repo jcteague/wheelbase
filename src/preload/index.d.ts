@@ -44,11 +44,12 @@ interface IpcLegRecord {
   positionId: string
   legRole: string
   action: string
-  optionType: string
+  instrumentType: string
   strike: string
   expiration: string
   contracts: number
   premiumPerContract: string
+  fillPrice?: string | null
   fillDate: string
   createdAt: string
   updatedAt: string
@@ -103,6 +104,18 @@ type IpcExpireCspResult = IpcResult<{
   costBasisSnapshot: IpcCostBasisSnapshotRecord & { finalPnl: string }
 }>
 
+interface IpcAssignCspPayload {
+  positionId: string
+  assignmentDate: string
+}
+
+type IpcAssignCspResult = IpcResult<{
+  position: { id: string; ticker: string; phase: string; status: string }
+  leg: IpcLegRecord
+  costBasisSnapshot: IpcCostBasisSnapshotRecord
+  premiumWaterfall: Array<{ label: string; amount: string }>
+}>
+
 declare global {
   interface Window {
     electron: ElectronAPI
@@ -113,6 +126,7 @@ declare global {
       getPosition: (positionId: string) => Promise<IpcGetPositionResult>
       closePosition: (payload: IpcCloseCspPayload) => Promise<IpcCloseCspResult>
       expirePosition: (payload: IpcExpireCspPayload) => Promise<IpcExpireCspResult>
+      assignPosition: (payload: IpcAssignCspPayload) => Promise<IpcAssignCspResult>
     }
   }
 }

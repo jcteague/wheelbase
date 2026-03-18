@@ -4,7 +4,7 @@ type LegHistoryEntry = {
   id: string
   action: string
   legRole: string
-  optionType: string
+  instrumentType: string
   strike: string
   premiumPerContract: string
   fillDate: string

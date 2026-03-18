@@ -34,6 +34,7 @@ export type PositionData = {
 
 export type LegData = {
   id: string
+  instrumentType: string
   strike: string
   expiration: string
   contracts: number
@@ -83,7 +84,8 @@ function apiError(status: number, body: unknown): ApiError {
 const IPC_TO_FORM_FIELD: Record<string, string> = {
   premiumPerContract: 'premium_per_contract',
   fillDate: 'fill_date',
-  closePricePerContract: 'close_price_per_contract'
+  closePricePerContract: 'close_price_per_contract',
+  assignmentDate: 'assignment_date'
 }
 
 function mapIpcErrors(errors: { field: string; code: string; message: string }[]): ApiFieldError[] {
@@ -130,7 +132,7 @@ export type PositionDetail = {
     positionId: string
     legRole: string
     action: string
-    optionType: string
+    instrumentType: string
     strike: string
     expiration: string
     contracts: number
@@ -153,7 +155,7 @@ export type PositionDetail = {
     positionId: string
     legRole: string
     action: string
-    optionType: string
+    instrumentType: string
     strike: string
     expiration: string
     contracts: number
@@ -202,13 +204,43 @@ export type ExpireCspResponse = {
     positionId: string
     legRole: string
     action: string
-    optionType: string
+    instrumentType: string
     premiumPerContract: string
     fillDate: string
     createdAt: string
     updatedAt: string
   }
   costBasisSnapshot: ClosedSnapshotData
+}
+
+export type AssignCspPayload = {
+  position_id: string
+  assignment_date: string
+}
+
+export type AssignCspResponse = {
+  position: PositionData
+  leg: LegData & {
+    positionId: string
+    legRole: string
+    action: string
+    instrumentType: string
+    premiumPerContract: string
+    fillPrice: null
+    fillDate: string
+    createdAt: string
+    updatedAt: string
+  }
+  costBasisSnapshot: {
+    id: string
+    positionId: string
+    basisPerShare: string
+    totalPremiumCollected: string
+    finalPnl: null
+    snapshotAt: string
+    createdAt: string
+  }
+  premiumWaterfall: Array<{ label: string; amount: string }>
 }
 
 export async function getPosition(positionId: string): Promise<PositionDetail> {
@@ -242,6 +274,17 @@ export async function expirePosition(payload: ExpireCspPayload): Promise<ExpireC
   return result as unknown as ExpireCspResponse
 }
 
+export async function assignPosition(payload: AssignCspPayload): Promise<AssignCspResponse> {
+  const result = await window.api.assignPosition({
+    positionId: payload.position_id,
+    assignmentDate: payload.assignment_date
+  })
+  if (!result.ok) {
+    throw apiError(400, { detail: mapIpcErrors(result.errors) })
+  }
+  return result as unknown as AssignCspResponse
+}
+
 export async function createPosition(
   payload: CreatePositionPayload
 ): Promise<CreatePositionResponse> {
@@ -269,6 +312,7 @@ export async function createPosition(
     },
     leg: {
       id: result.leg.id,
+      instrumentType: result.leg.instrumentType,
       strike: result.leg.strike,
       expiration: result.leg.expiration,
       contracts: result.leg.contracts,

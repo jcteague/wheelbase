@@ -7,7 +7,8 @@ const api = {
   createPosition: (payload: unknown) => ipcRenderer.invoke('positions:create', payload),
   getPosition: (positionId: string) => ipcRenderer.invoke('positions:get', { positionId }),
   closePosition: (payload: unknown) => ipcRenderer.invoke('positions:close-csp', payload),
-  expirePosition: (payload: unknown) => ipcRenderer.invoke('positions:expire-csp', payload)
+  expirePosition: (payload: unknown) => ipcRenderer.invoke('positions:expire-csp', payload),
+  assignPosition: (payload: unknown) => ipcRenderer.invoke('positions:assign-csp', payload)
 }
 
 if (process.contextIsolated) {

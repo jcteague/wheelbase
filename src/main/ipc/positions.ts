@@ -1,9 +1,11 @@
 import { ipcMain } from 'electron'
 import type Database from 'better-sqlite3'
+import { ZodError } from 'zod'
 import { ValidationError } from '../core/lifecycle'
 import { logger } from '../logger'
-import { CloseCspPayloadSchema, ExpireCspPayloadSchema } from '../schemas'
+import { AssignCspPayloadSchema, CloseCspPayloadSchema, ExpireCspPayloadSchema } from '../schemas'
 import {
+  assignCspPosition,
   closeCspPosition,
   createPosition,
   expireCspPosition,
@@ -23,6 +25,16 @@ function handleIpcCall(
   } catch (err) {
     if (err instanceof ValidationError) {
       return { ok: false, errors: [{ field: err.field, code: err.code, message: err.message }] }
+    }
+    if (err instanceof ZodError) {
+      return {
+        ok: false,
+        errors: err.issues.map((issue) => ({
+          field: String(issue.path[0] ?? '__root__'),
+          code: issue.code,
+          message: issue.message
+        }))
+      }
     }
     logger.error({ err }, logLabel)
     return {
@@ -56,6 +68,13 @@ export function registerPositionsHandlers(db: Database.Database): void {
     handleIpcCall('positions_close_csp_unhandled_error', () => {
       const parsed = CloseCspPayloadSchema.parse(payload)
       return closeCspPosition(db, parsed.positionId, parsed)
+    })
+  )
+
+  ipcMain.handle('positions:assign-csp', (_, payload: unknown) =>
+    handleIpcCall('positions_assign_csp_unhandled_error', () => {
+      const parsed = AssignCspPayloadSchema.parse(payload)
+      return assignCspPosition(db, parsed.positionId, parsed)
     })
   )
 

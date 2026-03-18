@@ -40,6 +40,7 @@ describe('createPosition', () => {
   it('leg has correct fields', () => {
     const db = makeTestDb()
     const { leg } = createPosition(db, VALID_PAYLOAD)
+    expect(leg.instrumentType).toBe('PUT')
     expect(leg.strike).toBe('150.0000')
     expect(leg.premiumPerContract).toBe('3.5000')
     expect(leg.contracts).toBe(1)

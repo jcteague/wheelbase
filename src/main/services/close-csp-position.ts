@@ -55,7 +55,7 @@ export function closeCspPosition(
   db.transaction(() => {
     db.prepare(
       `INSERT INTO legs
-        (id, position_id, leg_role, action, option_type, strike, expiration, contracts,
+        (id, position_id, leg_role, action, instrument_type, strike, expiration, contracts,
          premium_per_contract, fill_price, fill_date, created_at, updated_at)
        VALUES (?, ?, 'CSP_CLOSE', 'BUY', 'PUT', ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
@@ -108,7 +108,7 @@ export function closeCspPosition(
       positionId,
       legRole: 'CSP_CLOSE',
       action: 'BUY',
-      optionType: 'PUT',
+      instrumentType: 'PUT',
       strike: openLeg.strike,
       expiration: openLeg.expiration,
       contracts: openLeg.contracts,

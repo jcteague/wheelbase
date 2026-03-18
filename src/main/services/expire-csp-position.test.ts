@@ -45,6 +45,7 @@ describe('expireCspPosition', () => {
 
     expect(result.leg.legRole).toBe('EXPIRE')
     expect(result.leg.action).toBe('EXPIRE')
+    expect(result.leg.instrumentType).toBe('PUT')
     expect(result.leg.fillPrice).toBeNull()
     expect(result.leg.fillDate).toBe(expirationDate)
     expect(result.leg.premiumPerContract).toBe('0.0000')

@@ -24,12 +24,12 @@ export const LegRole = z.enum([
   'ROLL_TO',
   'EXPIRE'
 ])
-export const LegAction = z.enum(['SELL', 'BUY', 'EXPIRE'])
-export const OptionType = z.enum(['PUT', 'CALL'])
+export const LegAction = z.enum(['SELL', 'BUY', 'EXPIRE', 'ASSIGN'])
+export const InstrumentType = z.enum(['PUT', 'CALL', 'STOCK'])
 
 export type StrategyType = z.infer<typeof StrategyType>
 export type WheelStatus = z.infer<typeof WheelStatus>
 export type WheelPhase = z.infer<typeof WheelPhase>
 export type LegRole = z.infer<typeof LegRole>
 export type LegAction = z.infer<typeof LegAction>
-export type OptionType = z.infer<typeof OptionType>
+export type InstrumentType = z.infer<typeof InstrumentType>

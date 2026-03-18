@@ -93,7 +93,7 @@ export function AssignmentSheet(props: AssignmentSheetProps): React.JSX.Element 
       onClose={props.onClose}
     />
   ) : (
-    <div style={{ display: 'flex', flex: 1, flexDirection: 'column' }}>
+    <div style={{ display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
       <AssignmentHeader
         eyebrow="Record Assignment"
         title="Assign CSP to Shares"

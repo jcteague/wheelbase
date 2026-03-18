@@ -142,3 +142,33 @@ export function expireCsp(input: ExpireCspInput): ExpireCspResult {
 
   return { phase: 'WHEEL_COMPLETE' }
 }
+
+export interface RecordAssignmentInput {
+  currentPhase: WheelPhase
+  assignmentDate: string
+  openFillDate: string
+}
+
+export interface RecordAssignmentResult {
+  phase: 'HOLDING_SHARES'
+}
+
+export function recordAssignment(input: RecordAssignmentInput): RecordAssignmentResult {
+  if (input.currentPhase !== 'CSP_OPEN') {
+    throw new ValidationError(
+      '__phase__',
+      'invalid_phase',
+      'Assignment can only be recorded on a CSP_OPEN position'
+    )
+  }
+
+  if (input.assignmentDate < input.openFillDate) {
+    throw new ValidationError(
+      'assignmentDate',
+      'date_before_open',
+      'Assignment date cannot be before the CSP open date'
+    )
+  }
+
+  return { phase: 'HOLDING_SHARES' }
+}

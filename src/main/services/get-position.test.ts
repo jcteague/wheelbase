@@ -63,7 +63,7 @@ describe('getPosition', () => {
     const now = new Date().toISOString()
     db.prepare(
       `
-      INSERT INTO legs (id, position_id, leg_role, action, option_type, strike, expiration, contracts, premium_per_contract, fill_price, fill_date, created_at, updated_at)
+      INSERT INTO legs (id, position_id, leg_role, action, instrument_type, strike, expiration, contracts, premium_per_contract, fill_price, fill_date, created_at, updated_at)
       VALUES (?, ?, 'CSP_CLOSE', 'BUY', 'PUT', '180.0000', ?, 1, '1.0000', '1.0000', ?, ?, ?)
     `
     ).run(closeLegId, positionId, isoDate(30), isoDate(10), now, now)

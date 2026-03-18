@@ -4,6 +4,9 @@
 
 Implement the full assignment flow that transitions a `CSP_OPEN` position to `HOLDING_SHARES` when the trader records a broker assignment. Work spans a DB migration (rename `option_type` → `instrument_type`, add `STOCK` value), two core engine additions, a new service, IPC handler, preload binding, renderer API/hook, and a right-side `AssignmentSheet` component. Done state: a trader can open the assignment sheet from the position detail page, confirm a date, and see the position transition to HOLDING_SHARES with the correct cost basis and the strategic nudge.
 
+## Beads Reference
+The beads identifier for this epic is `wheelbase-2gx`
+
 ## Supporting Documents
 
 - **User Story & Acceptance Criteria:** `docs/epics/02-stories/US-6-record-csp-assignment.md`
@@ -337,30 +340,45 @@ interface AssignmentSheetProps {
 }
 ```
 
+**Primitive components to use** (all from `src/renderer/src/components/ui/`):
+
+| Need | Component | Import |
+|---|---|---|
+| Phase badges | `Badge` | `import { Badge } from './ui/Badge'` |
+| Summary card wrapper | `SectionCard` | `import { SectionCard } from './ui/SectionCard'` |
+| Date field label + error/hint | `Field` | `import { Field } from './ui/FormField'` |
+| Irrevocable warning (gold) | `AlertBox variant="warning"` | `import { AlertBox } from './ui/AlertBox'` |
+| Future date warning (gold) | `AlertBox variant="warning"` | same |
+| Strategic nudge (blue) | `AlertBox variant="info"` | same |
+| Server-side errors | `ErrorAlert` | `import { ErrorAlert } from './ui/ErrorAlert'` |
+| Confirm Assignment button | `FormButton` | `import { FormButton } from './ui/FormButton'` |
+| Cancel button | `Button variant="outline"` | `import { Button } from './ui/button'` |
+| Section eyebrow labels | `Caption` | `import { Caption } from './ui/Caption'` |
+
 **Form state** (mirrors mockup `form`, `validation-error`, `date-before-open`, `future-date-warning` states):
-- Sheet header: eyebrow "Record Assignment", title "Assign CSP to Shares", subtitle "PUT $[strike] · [expiration]", close (×) button.
-- Summary card: rows for Position, Contracts, Shares to receive (`contracts × 100`, gold), Phase transition (CSP_OPEN badge → HOLDING_SHARES badge).
-- Cost Basis Calculation waterfall subsection (dark background within the card): "Assignment strike" row, one "− [label]" row per `premiumWaterfall` entry (amounts in green), separator line, "= Effective cost basis" row (gold, larger text).
+- Sheet header: `<Caption>` eyebrow "Record Assignment", title "Assign CSP to Shares", subtitle "PUT $[strike] · [expiration]", close (×) button.
+- Summary card: `<SectionCard>` with rows for Position, Contracts, Shares to receive (`contracts × 100`, gold), Phase transition (`<Badge>` CSP_OPEN → `<Badge>` HOLDING_SHARES).
+- Cost Basis Calculation waterfall subsection (dark background nested inside `SectionCard`): "Assignment strike" row, one "− [label]" row per `premiumWaterfall` entry (amounts in green), separator line, "= Effective cost basis" row (gold, larger text).
 - Total basis footer row: "per share · [sharesHeld] shares total" / "$[total] total basis".
-- Assignment Date field: `<input type="date">` or date picker. Client-side validation:
-  - Missing → red error "Assignment date is required" (block submission)
-  - Before `openFillDate` → red error "Assignment date cannot be before the CSP open date" (block submission)
-  - After today → gold warning "This date is in the future — are you sure?" (allow submission)
-- Irrevocable warning callout (gold border): "This cannot be undone. The position will transition to Holding Shares. Full leg history is preserved."
-- Footer: Cancel (outline), Confirm Assignment (gold). Confirm disabled while `isPending`.
+- Assignment Date field: wrap `<DatePicker>` in `<Field label="Assignment Date" error={dateError} hint="The date your broker assigned the shares (typically expiration date)">`. Client-side validation:
+  - Missing → pass `error="Assignment date is required"` to `Field` (blocks submission)
+  - Before `openFillDate` → pass `error="Assignment date cannot be before the CSP open date"` to `Field` (blocks submission)
+  - After today → render `<AlertBox variant="warning">This date is in the future — are you sure?</AlertBox>` below the `Field` (allows submission)
+- Irrevocable warning: `<AlertBox variant="warning"><strong>This cannot be undone.</strong> The position will transition to Holding Shares. Full leg history is preserved.</AlertBox>`
+- Footer: `<Button variant="outline" style={{ flex: 1 }}>Cancel</Button>` and `<FormButton label="Confirm Assignment" pendingLabel="Confirming…" isPending={isPending} style={{ flex: 1 }} />`.
 
 **Success state** (mirrors mockup `success` state):
-- Sheet header: eyebrow "Complete" (gold), title "[ticker] Assigned".
-- Hero card (gold gradient): "HOLDING [sharesHeld] SHARES" headline; "[ticker] · [contracts] contract assigned at $[strike]" subtitle; "Effective Cost Basis $[basisPerShare] per share" inline badge (gold on dark).
-- Result summary card: "Leg recorded" → "assign · [fmtDate(assignmentDate)]" (gold), "Phase" → HOLDING_SHARES badge, "Shares held" → sharesHeld (gold), "Effective cost basis" → "$[basisPerShare] / share".
-- Strategic nudge: blue-tinted callout (blue border, `rgba(88,166,255,0.06)` background), 💡 icon, text: "Many traders wait **1–3 days** for a bounce before selling the first covered call — avoid locking in a low strike right after assignment."
-- "What's next?" label (muted uppercase).
-- "Open Covered Call on [ticker] →" button (gold, full width) — navigates to the open CC route.
-- "View full position history" ghost link (calls `onClose`).
+- Sheet header: `<Caption>` eyebrow "Complete" (gold color override), title "[ticker] Assigned".
+- Hero card (gold gradient, hand-crafted inline styles): "HOLDING [sharesHeld] SHARES" headline; "[ticker] · [contracts] contract assigned at $[strike]" subtitle; "Effective Cost Basis $[basisPerShare] per share" inline badge (gold on dark).
+- Result summary card: `<SectionCard>` with rows — "Leg recorded" → "assign · [fmtDate(assignmentDate)]" (gold), "Phase" → `<Badge>` HOLDING_SHARES, "Shares held" → sharesHeld (gold), "Effective cost basis" → "$[basisPerShare] / share".
+- Strategic nudge: `<AlertBox variant="info">💡 Many traders wait <strong>1–3 days</strong> for a bounce before selling the first covered call — avoid locking in a low strike right after assignment.</AlertBox>`
+- `<Caption>` "What's next?" label.
+- `<FormButton label={`Open Covered Call on ${ticker} →`} style={{ width: '100%' }} />` — navigates to the open CC route.
+- "View full position history" ghost link button (calls `onClose`).
 - No footer buttons in success state.
 
 **Refactor — cleanup to consider:**
-- Extract shared inline styles (panel chrome, summary row, eyebrow) into shared constants consistent with `ExpirationSheet` — only if extraction avoids meaningful duplication.
+- Extract shared inline styles (panel chrome, summary row) into shared constants consistent with `ExpirationSheet` — only if extraction avoids meaningful duplication.
 
 **Acceptance criteria covered:**
 - AC: "Summary card shows the full premium waterfall"

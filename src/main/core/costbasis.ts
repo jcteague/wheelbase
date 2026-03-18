@@ -70,7 +70,7 @@ export function calculateCspClose(input: CspCloseInput): CspCloseResult {
   }
 }
 
-export interface AssignmentPremiumLeg {
+export interface AssignmentBasisLeg {
   legRole: string
   premiumPerContract: string
   contracts: number
@@ -79,7 +79,7 @@ export interface AssignmentPremiumLeg {
 export interface AssignmentBasisInput {
   strike: string
   contracts: number
-  premiumLegs: AssignmentPremiumLeg[]
+  premiumLegs: AssignmentBasisLeg[]
 }
 
 export interface WaterfallEntry {
