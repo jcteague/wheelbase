@@ -13,7 +13,6 @@ import { ErrorAlert } from './ui/ErrorAlert'
 import { Field } from './ui/FormField'
 import { FormButton } from './ui/FormButton'
 import { SectionCard } from './ui/SectionCard'
-import { Button } from './ui/button'
 import { DatePicker } from '@/components/ui/date-picker'
 
 const SIDEBAR_WIDTH = 200
@@ -160,9 +159,12 @@ export function AssignmentSheet(props: AssignmentSheetProps): React.JSX.Element 
           gap: 10
         }}
       >
-        <Button variant="outline" style={{ flex: 1 }} onClick={props.onClose}>
-          Cancel
-        </Button>
+        <FormButton
+          label="Cancel"
+          variant="secondary"
+          onClick={props.onClose}
+          style={{ flex: 1 }}
+        />
         <FormButton
           label="Confirm Assignment"
           pendingLabel="Confirming…"
@@ -313,7 +315,7 @@ function AssignmentSummary({
         >
           <div style={rowStyle}>
             <span style={{ color: 'var(--wb-text-secondary)' }}>Assignment strike</span>
-            <span>{fmtMoney(strike)}</span>
+            <span style={{ color: 'var(--wb-text-primary)' }}>{fmtMoney(strike)}</span>
           </div>
           {premiumWaterfall.map((line) => (
             <div key={`${line.label}-${line.amount}`} style={rowStyle}>

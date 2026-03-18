@@ -2,6 +2,7 @@ import { MONO } from '../../lib/tokens'
 
 type FormButtonProps = {
   label: string
+  variant?: 'primary' | 'secondary'
   pendingLabel?: string
   isPending?: boolean
   onClick?: () => void
@@ -10,8 +11,23 @@ type FormButtonProps = {
   style?: React.CSSProperties
 }
 
+const variantStyles: Record<'primary' | 'secondary', (isPending: boolean) => React.CSSProperties> =
+  {
+    primary: (isPending) => ({
+      border: 'none',
+      background: isPending ? 'rgba(230,168,23,0.4)' : 'var(--wb-gold)',
+      color: 'var(--wb-bg-base)'
+    }),
+    secondary: (isPending) => ({
+      border: '1px solid var(--wb-border)',
+      background: isPending ? 'var(--wb-bg-elevated)' : 'transparent',
+      color: 'var(--wb-text-primary)'
+    })
+  }
+
 export function FormButton({
   label,
+  variant = 'primary',
   pendingLabel,
   isPending = false,
   onClick,
@@ -21,7 +37,7 @@ export function FormButton({
 }: FormButtonProps): React.JSX.Element {
   return (
     <button
-      type="submit"
+      type={variant === 'primary' ? 'submit' : 'button'}
       disabled={isPending}
       onClick={onClick}
       data-testid={dataTestId}
@@ -29,15 +45,13 @@ export function FormButton({
       style={{
         padding: '11px 24px',
         borderRadius: 6,
-        border: 'none',
-        background: isPending ? 'rgba(230,168,23,0.4)' : 'var(--wb-gold)',
-        color: 'var(--wb-bg-base)',
         fontSize: '0.9375rem',
         fontWeight: 600,
         fontFamily: MONO,
         cursor: isPending ? 'not-allowed' : 'pointer',
         letterSpacing: '0.04em',
         transition: 'opacity 0.15s',
+        ...variantStyles[variant](isPending),
         ...style
       }}
     >

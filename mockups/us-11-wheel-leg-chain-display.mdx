@@ -20,36 +20,35 @@ _As a wheel trader reviewing an active or completed position, I want to see ever
 
 export const MONO = "'JetBrains Mono', 'Fira Mono', 'Cascadia Code', monospace"
 
-// ── Role badge color map ──────────────────────────────────────────────────────
 export const ROLE_COLOR = {
-  CSP_OPEN:    '#e6a817',
-  ASSIGN:      '#79c0ff',
-  CC_OPEN:     '#d2a8ff',
-  CC_CLOSE:    '#3fb950',
-  CC_EXPIRED:  '#484f58',
+  CSP_OPEN: '#e6a817',
+  ASSIGN: '#79c0ff',
+  CC_OPEN: '#d2a8ff',
+  CC_CLOSE: '#3fb950',
+  CC_EXPIRED: '#484f58',
   CALLED_AWAY: '#3fb950',
 }
 
 export const ROLE_LABEL = {
-  CSP_OPEN:    'CSP Open',
-  ASSIGN:      'Assign',
-  CC_OPEN:     'CC Open',
-  CC_CLOSE:    'CC Close',
-  CC_EXPIRED:  'CC Expired',
+  CSP_OPEN: 'CSP Open',
+  ASSIGN: 'Assign',
+  CC_OPEN: 'CC Open',
+  CC_CLOSE: 'CC Close',
+  CC_EXPIRED: 'CC Expired',
   CALLED_AWAY: 'Called Away',
 }
 
-// ── Phase badge map ───────────────────────────────────────────────────────────
 export const PHASE_COLOR = {
-  CSP_OPEN:       '#e6a817',
+  CSP_OPEN: '#e6a817',
   HOLDING_SHARES: '#79c0ff',
-  CC_OPEN:        '#d2a8ff',
+  CC_OPEN: '#d2a8ff',
   WHEEL_COMPLETE: '#3fb950',
 }
+
 export const PHASE_LABEL = {
-  CSP_OPEN:       'Sell Put',
+  CSP_OPEN: 'Sell Put',
   HOLDING_SHARES: 'Holding Shares',
-  CC_OPEN:        'Sell Call',
+  CC_OPEN: 'Sell Call',
   WHEEL_COMPLETE: 'Wheel Complete',
 }
 
@@ -73,10 +72,6 @@ export const LEGS_COMPLETE = [
   { id: '5', legRole: 'CALLED_AWAY', action: 'assign', instrumentType: 'CALL', strike: '182.00', expiration: null,         premiumPerContract: null,     fillDate: '2026-02-21', runningCostBasis: null      },
 ]
 
-// ── Primitive mocks — visually match src/renderer/src/components/ui/ ─────────
-
-// Matches: Badge.tsx
-// Real usage: <Badge color={ROLE_COLOR[legRole]}>{ROLE_LABEL[legRole]}</Badge>
 export function MockBadge({ children, color }) {
   const fg = color ?? '#e6a817'
   return (
@@ -88,9 +83,9 @@ export function MockBadge({ children, color }) {
       fontWeight: 500,
       padding: '2px 7px',
       borderRadius: 4,
-      background: `${fg}18`,
+      background: fg + '18',
       color: fg,
-      border: `1px solid ${fg}30`,
+      border: '1px solid ' + fg + '30',
       fontFamily: MONO,
       whiteSpace: 'nowrap',
     }}>
@@ -120,9 +115,9 @@ export function MockPhaseBadge({ phase }) {
       fontWeight: 500,
       padding: '2px 9px',
       borderRadius: 4,
-      background: `${color}18`,
+      background: color + '18',
       color: color,
-      border: `1px solid ${color}30`,
+      border: '1px solid ' + color + '30',
       fontFamily: MONO,
     }}>
       <span style={{

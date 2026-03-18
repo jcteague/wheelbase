@@ -16,7 +16,8 @@
       "Bash(pnpm test:*)",
       "Bash(bd list:*)",
       "Bash(bd show:*)",
-      "Bash(bd help:*)"
+      "Bash(bd help:*)",
+      "Bash(find /Users/johnteague/my-stuff/wheelbase -name *.mdx -o -name *mockup*)"
     ]
   },
   "enableAllProjectMcpServers": true,

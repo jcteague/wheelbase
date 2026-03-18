@@ -47,9 +47,9 @@ export function MockBadge({ children, color }) {
       fontWeight: 500,
       padding: '1px 7px',
       borderRadius: 10,
-      background: `${fg}18`,
+      background: fg + '18',
       color: fg,
-      border: `1px solid ${fg}30`,
+      border: '1px solid ' + fg + '30',
       fontFamily: MONO,
     }}>
       {children}
@@ -71,7 +71,7 @@ export function MockAlertBox({ variant, children }) {
       padding: '12px 16px',
       borderRadius: 6,
       background: bg,
-      border: `1px solid ${border}`,
+      border: '1px solid ' + border,
       color,
       fontFamily: MONO,
       fontSize: '0.8125rem',
@@ -249,7 +249,7 @@ export function MockPriceInput({ value, hasError, onChange, placeholder }) {
           width: '100%',
           padding: '10px 14px 10px 26px',
           borderRadius: 6,
-          border: `1px solid ${borderColor}`,
+          border: '1px solid ' + borderColor,
           background: 'var(--wb-bg-elevated, #0d1821)',
           color: 'var(--wb-text-primary, #e2eaf2)',
           fontSize: 14,
@@ -276,7 +276,7 @@ export function MockDatePicker({ value, hasError, onChange }) {
         width: '100%',
         padding: '10px 14px',
         borderRadius: 6,
-        border: `1px solid ${borderColor}`,
+        border: '1px solid ' + borderColor,
         background: 'var(--wb-bg-elevated, #0d1821)',
         color: value ? 'var(--wb-text-primary, #e2eaf2)' : 'var(--wb-text-muted, #4a5a6a)',
         fontSize: 14,
@@ -323,8 +323,8 @@ export function MockPnlPreview({ openPremium, closePrice, contracts }) {
   const border = isProfit ? 'rgba(63,185,80,0.22)' : 'rgba(248,81,73,0.22)'
   const sign = isProfit ? '+' : ''
   const pctLabel = isProfit
-    ? `${Math.abs(pct).toFixed(1)}% of max`
-    : `${Math.abs(pct).toFixed(1)}% above open`
+    ? Math.abs(pct).toFixed(1) + '% of max'
+    : Math.abs(pct).toFixed(1) + '% above open'
 
   return (
     <div style={{
@@ -334,7 +334,7 @@ export function MockPnlPreview({ openPremium, closePrice, contracts }) {
       padding: '10px 14px',
       borderRadius: 6,
       background: bg,
-      border: `1px solid ${border}`,
+      border: '1px solid ' + border,
     }}>
       <span style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)', fontFamily: MONO }}>
         P&amp;L preview
@@ -468,7 +468,7 @@ export function Mockup() {
           {/* ── Header ── */}
           <div style={{
             padding: '20px 24px 18px',
-            borderBottom: `1px solid ${isSuccess ? (successIsProfit ? 'rgba(63,185,80,0.2)' : 'rgba(248,81,73,0.2)') : 'var(--wb-border, #1e2a38)'}`,
+            borderBottom: '1px solid ' + (isSuccess ? (successIsProfit ? 'rgba(63,185,80,0.2)' : 'rgba(248,81,73,0.2)') : 'var(--wb-border, #1e2a38)'),
             display: 'flex',
             alignItems: 'flex-start',
             justifyContent: 'space-between',
@@ -493,7 +493,7 @@ export function Mockup() {
                 {isSuccess ? `AAPL CC Closed` : 'Close Covered Call Early'}
               </div>
               <div style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)', lineHeight: 1.6 }}>
-                CALL ${pos.strike} · {isSuccess ? `filled ${successPrice}` : 'Feb 21, 2026'}
+                CALL ${pos.strike} · {isSuccess ? 'filled ' + successPrice : 'Feb 21, 2026'}
               </div>
             </div>
             <button style={{
@@ -528,12 +528,12 @@ export function Mockup() {
                   const heroBorder = successIsProfit ? 'rgba(63,185,80,0.22)' : 'rgba(248,81,73,0.22)'
                   const sign = successIsProfit ? '+' : '−'
                   const pctLabel = successIsProfit
-                    ? `${successPct}% of max captured`
-                    : `${successPct}% above open premium`
+                    ? successPct + '% of max captured'
+                    : successPct + '% above open premium'
                   return (
                     <div style={{
                       background: heroBg,
-                      border: `1px solid ${heroBorder}`,
+                      border: '1px solid ' + heroBorder,
                       borderRadius: 10,
                       padding: '22px 20px',
                       textAlign: 'center',
@@ -558,8 +558,8 @@ export function Mockup() {
                     label="Leg recorded"
                     value={<span style={{ color: successIsProfit ? 'var(--wb-green, #3fb950)' : 'var(--wb-red, #f85149)' }}>CC_CLOSE · Feb 01, 2026</span>}
                   />
-                  <MockSummaryRow label="Fill price" value={`$${successPrice} / contract`} />
-                  <MockSummaryRow label="Open premium" value={`$${pos.openPremium} / contract`} />
+                  <MockSummaryRow label="Fill price" value={'$' + successPrice + ' / contract'} />
+                  <MockSummaryRow label="Open premium" value={'$' + pos.openPremium + ' / contract'} />
                   <MockSummaryRow
                     label="Phase"
                     value={
@@ -572,7 +572,7 @@ export function Mockup() {
                   />
                   <MockSummaryRow
                     label="Cost basis"
-                    value={`$${pos.costBasisPerShare} / share (unchanged)`}
+                    value={'$' + pos.costBasisPerShare + ' / share (unchanged)'}
                     noBorder
                   />
                 </MockSectionCard>
@@ -593,7 +593,7 @@ export function Mockup() {
 
                 {/* Real: <FormButton label="Sell New Covered Call on AAPL →" style={{ width: '100%' }} /> */}
                 <MockFormButton
-                  label={`Sell New Covered Call on ${pos.ticker} →`}
+                  label={'Sell New Covered Call on ' + pos.ticker + ' →'}
                   style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
                 />
 
@@ -615,7 +615,7 @@ export function Mockup() {
                 {/* Position summary card
                   Real: <SectionCard> with <MockSummaryRow> rows */}
                 <MockSectionCard>
-                  <MockSummaryRow label="Position" value={`${pos.ticker} CALL $${pos.strike} · Feb 21`} />
+                  <MockSummaryRow label="Position" value={pos.ticker + ' CALL $' + pos.strike + ' · Feb 21'} />
                   <MockSummaryRow label="Contracts" value={pos.contracts} />
                   <MockSummaryRow
                     label="Open premium"
@@ -637,7 +637,7 @@ export function Mockup() {
                   />
                   <MockSummaryRow
                     label="Cost basis after close"
-                    value={`$${pos.costBasisPerShare} / share (unchanged)`}
+                    value={'$' + pos.costBasisPerShare + ' / share (unchanged)'}
                     noBorder
                     highlight
                   />
