@@ -77,6 +77,11 @@ The `frontend-design` skill owns all visual design decisions. Let it make bold c
 
 ## Step 4: Write the MDX File
 
+> **MDX parse rules — read `references/mdx-gotchas.md` before writing.** The most common failure:
+> `//` comments that appear *between* `export` blocks are parsed as Markdown, not JavaScript.
+> If those comments contain JSX-like syntax (`<Badge>`, `<Input>`, etc.) MDX will throw a parse error.
+> **Rule:** only put `//` comments *inside* function bodies, or use `{/* */}` block comments at the file root.
+
 Use this structure:
 
 ```mdx
@@ -139,6 +144,10 @@ Report back:
 ## Viewing Mockups
 
 Run `pnpm mockups` from the project root to open the standalone Vite viewer at `localhost:5173`. The viewer auto-discovers all `.mdx` files in `mockups/` and lists them in the sidebar.
+
+## Additional Resources
+
+- **`references/mdx-gotchas.md`** — MDX parse rules and common failure patterns. Read this before writing any MDX file.
 
 ## Wheelbase Design Context
 

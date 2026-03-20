@@ -6,6 +6,11 @@
       "sourceType": "github",
       "computedHash": "c3193721f3420d8e669ad42f33de538acc1ddaeacfceb58309f80eafb0b00752"
     },
+    "mdx-sanitizer": {
+      "source": "erichowens/some_claude_skills",
+      "sourceType": "github",
+      "computedHash": "40dc9c500397d1a7f63eb44a62484bf31bfc53ad8382d72d4b8699e49b4ada10"
+    },
     "vercel-react-best-practices": {
       "source": "vercel-labs/agent-skills",
       "sourceType": "github",
