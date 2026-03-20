@@ -12,6 +12,7 @@ type DatePickerProps = {
   hasError?: boolean
   id?: string
   'aria-label'?: string
+  'data-testid'?: string
 }
 
 export function DatePicker({
@@ -20,7 +21,8 @@ export function DatePicker({
   onBlur,
   hasError,
   id,
-  'aria-label': ariaLabel
+  'aria-label': ariaLabel,
+  'data-testid': dataTestId
 }: DatePickerProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
 
@@ -39,6 +41,7 @@ export function DatePicker({
       <PopoverTrigger asChild>
         <button
           id={id}
+          data-testid={dataTestId}
           type="button"
           aria-label={ariaLabel ?? 'Pick a date'}
           aria-haspopup="dialog"

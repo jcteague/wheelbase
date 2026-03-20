@@ -116,6 +116,21 @@ type IpcAssignCspResult = IpcResult<{
   premiumWaterfall: Array<{ label: string; amount: string }>
 }>
 
+interface IpcOpenCcPayload {
+  positionId: string
+  strike: number
+  expiration: string
+  contracts: number
+  premiumPerContract: number
+  fillDate?: string
+}
+
+type IpcOpenCcResult = IpcResult<{
+  position: { id: string; ticker: string; phase: string; status: string; closedDate: null }
+  leg: IpcLegRecord
+  costBasisSnapshot: IpcCostBasisSnapshotRecord
+}>
+
 declare global {
   interface Window {
     electron: ElectronAPI
@@ -127,6 +142,7 @@ declare global {
       closePosition: (payload: IpcCloseCspPayload) => Promise<IpcCloseCspResult>
       expirePosition: (payload: IpcExpireCspPayload) => Promise<IpcExpireCspResult>
       assignPosition: (payload: IpcAssignCspPayload) => Promise<IpcAssignCspResult>
+      openCoveredCall: (payload: IpcOpenCcPayload) => Promise<IpcOpenCcResult>
     }
   }
 }

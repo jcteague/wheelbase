@@ -11,6 +11,7 @@ import { MONO } from '../lib/tokens'
 import { ErrorAlert } from './ui/ErrorAlert'
 import { Field } from './ui/FormField'
 import { FormButton } from './ui/FormButton'
+import { NumberInput } from './ui/NumberInput'
 const API_TO_FORM_FIELD: Record<string, keyof NewWheelFormValues> = {
   ticker: 'ticker',
   strike: 'strike',
@@ -23,23 +24,6 @@ const API_TO_FORM_FIELD: Record<string, keyof NewWheelFormValues> = {
 type NewWheelFormProps = {
   navigate?: (path: string) => void
   defaultTicker?: string
-}
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '10px 14px',
-  borderRadius: 6,
-  border: '1px solid var(--wb-border)',
-  background: 'var(--wb-bg-elevated)',
-  color: 'var(--wb-text-primary)',
-  fontSize: '0.9375rem',
-  fontFamily: MONO,
-  transition: 'border-color 0.15s'
-}
-
-const inputErrorStyle: React.CSSProperties = {
-  ...inputStyle,
-  borderColor: 'var(--wb-red)'
 }
 
 export function NewWheelForm({
@@ -184,49 +168,45 @@ export function NewWheelForm({
       {/* Primary fields — 2 column grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
         <Field label="Ticker" error={errors.ticker?.message}>
-          <input
+          <NumberInput
             {...register('ticker')}
             id="ticker"
             aria-label="Ticker"
             placeholder="TSLA"
-            className="wb-input"
-            style={errors.ticker ? inputErrorStyle : inputStyle}
+            hasError={Boolean(errors.ticker)}
           />
         </Field>
 
         <Field label="Contracts" error={errors.contracts?.message}>
-          <input
+          <NumberInput
             {...register('contracts')}
             id="contracts"
             aria-label="Contracts"
             inputMode="numeric"
             placeholder="1"
-            className="wb-input"
-            style={errors.contracts ? inputErrorStyle : inputStyle}
+            hasError={Boolean(errors.contracts)}
           />
         </Field>
 
         <Field label="Strike Price" error={errors.strike?.message}>
-          <input
+          <NumberInput
             {...register('strike')}
             id="strike"
             aria-label="Strike"
             inputMode="decimal"
             placeholder="245.00"
-            className="wb-input"
-            style={errors.strike ? inputErrorStyle : inputStyle}
+            hasError={Boolean(errors.strike)}
           />
         </Field>
 
         <Field label="Premium / Contract" error={errors.premiumPerContract?.message}>
-          <input
+          <NumberInput
             {...register('premiumPerContract')}
             id="premiumPerContract"
             aria-label="Premium per contract"
             inputMode="decimal"
             placeholder="3.20"
-            className="wb-input"
-            style={errors.premiumPerContract ? inputErrorStyle : inputStyle}
+            hasError={Boolean(errors.premiumPerContract)}
           />
         </Field>
       </div>
@@ -305,24 +285,20 @@ export function NewWheelForm({
             </Field>
 
             <Field label="Thesis" error={errors.thesis?.message}>
-              <input
+              <NumberInput
                 {...register('thesis')}
                 id="thesis"
                 aria-label="Thesis"
                 placeholder="Why this trade?"
-                className="wb-input"
-                style={inputStyle}
               />
             </Field>
 
             <Field label="Notes" error={errors.notes?.message}>
-              <input
+              <NumberInput
                 {...register('notes')}
                 id="notes"
                 aria-label="Notes"
                 placeholder="Additional notes…"
-                className="wb-input"
-                style={inputStyle}
               />
             </Field>
           </div>

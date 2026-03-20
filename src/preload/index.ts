@@ -8,7 +8,8 @@ const api = {
   getPosition: (positionId: string) => ipcRenderer.invoke('positions:get', { positionId }),
   closePosition: (payload: unknown) => ipcRenderer.invoke('positions:close-csp', payload),
   expirePosition: (payload: unknown) => ipcRenderer.invoke('positions:expire-csp', payload),
-  assignPosition: (payload: unknown) => ipcRenderer.invoke('positions:assign-csp', payload)
+  assignPosition: (payload: unknown) => ipcRenderer.invoke('positions:assign-csp', payload),
+  openCoveredCall: (payload: unknown) => ipcRenderer.invoke('positions:open-cc', payload)
 }
 
 if (process.contextIsolated) {

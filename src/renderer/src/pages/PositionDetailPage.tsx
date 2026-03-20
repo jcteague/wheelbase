@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useParams } from 'wouter'
 import { AssignmentSheet } from '../components/AssignmentSheet'
 import { CloseCspForm } from '../components/CloseCspForm'
 import { ExpirationSheet } from '../components/ExpirationSheet'
+import { OpenCoveredCallSheet } from '../components/OpenCoveredCallSheet'
 import { LegHistoryTable } from '../components/LegHistoryTable'
 import { PageHeader, PageLayout } from '../components/PageLayout'
-import { PhaseBadge } from '../components/PhaseBadge'
+import { PositionDetailActions } from '../components/PositionDetailActions'
 import { Breadcrumb } from '../components/ui/Breadcrumb'
 import { Caption } from '../components/ui/Caption'
 import { ErrorAlert } from '../components/ui/ErrorAlert'
@@ -27,6 +28,39 @@ export function PositionDetailPage(): React.JSX.Element {
     activeLeg: NonNullable<typeof data>['activeLeg']
     snapshot: NonNullable<typeof data>['costBasisSnapshot']
   } | null>(null)
+  const [openCcCtx, setOpenCcCtx] = useState<{
+    basisPerShare: string
+    totalPremiumCollected: string
+    contracts: number
+    assignmentDate: string
+  } | null>(null)
+
+  const handleOpenCc = useCallback(() => {
+    const assignLeg = data?.legs?.find((l) => l.legRole === 'ASSIGN')
+    const snapshot = data?.costBasisSnapshot
+    if (assignLeg && snapshot) {
+      setOpenCcCtx({
+        basisPerShare: snapshot.basisPerShare,
+        totalPremiumCollected: snapshot.totalPremiumCollected,
+        contracts: assignLeg.contracts,
+        assignmentDate: assignLeg.fillDate
+      })
+    }
+  }, [data])
+
+  const handleRecordAssignment = useCallback(() => {
+    if (data?.activeLeg && data?.costBasisSnapshot)
+      setAssignmentCtx({ activeLeg: data.activeLeg, snapshot: data.costBasisSnapshot })
+  }, [data])
+
+  const handleRecordExpiration = useCallback(() => {
+    if (data?.activeLeg && data?.costBasisSnapshot)
+      setExpirationCtx({ activeLeg: data.activeLeg, snapshot: data.costBasisSnapshot })
+  }, [data])
+
+  const handleCloseExpiration = useCallback(() => setExpirationCtx(null), [])
+  const handleCloseAssignment = useCallback(() => setAssignmentCtx(null), [])
+  const handleCloseOpenCc = useCallback(() => setOpenCcCtx(null), [])
 
   if (isLoading) {
     return <LoadingState message="Loading position..." />
@@ -43,18 +77,6 @@ export function PositionDetailPage(): React.JSX.Element {
   const { position, activeLeg, costBasisSnapshot, legs } = data
   const dte = activeLeg ? computeDte(activeLeg.expiration) : null
   const dteUrgent = dte !== null && dte <= 7
-  const actionButtonStyle: React.CSSProperties = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 4,
-    padding: '4px 12px',
-    borderRadius: 4,
-    fontSize: '0.7rem',
-    fontWeight: 500,
-    fontFamily: MONO,
-    color: 'var(--wb-teal)',
-    cursor: 'pointer'
-  }
 
   const premiumWaterfall =
     legs
@@ -76,35 +98,13 @@ export function PositionDetailPage(): React.JSX.Element {
         <PageHeader
           left={<Breadcrumb backTo="#/" backLabel="Positions" current={position.ticker} />}
           right={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <PhaseBadge phase={position.phase} />
-              {position.phase === 'CSP_OPEN' && (
-                <>
-                  <button
-                    data-testid="record-assignment-btn"
-                    className="wb-teal-button"
-                    onClick={() => {
-                      if (activeLeg && costBasisSnapshot)
-                        setAssignmentCtx({ activeLeg, snapshot: costBasisSnapshot })
-                    }}
-                    style={actionButtonStyle}
-                  >
-                    Record Assignment →
-                  </button>
-                  <button
-                    data-testid="record-expiration-btn"
-                    className="wb-teal-button"
-                    onClick={() => {
-                      if (activeLeg && costBasisSnapshot)
-                        setExpirationCtx({ activeLeg, snapshot: costBasisSnapshot })
-                    }}
-                    style={actionButtonStyle}
-                  >
-                    Record Expiration →
-                  </button>
-                </>
-              )}
-            </div>
+            <PositionDetailActions
+              phase={position.phase}
+              hasCostBasis={Boolean(costBasisSnapshot)}
+              onOpenCc={handleOpenCc}
+              onRecordAssignment={handleRecordAssignment}
+              onRecordExpiration={handleRecordExpiration}
+            />
           }
         />
       }
@@ -117,7 +117,7 @@ export function PositionDetailPage(): React.JSX.Element {
           flexDirection: 'column',
           gap: 16,
           transition: 'filter 0.2s, opacity 0.2s',
-          ...(expirationCtx || assignmentCtx
+          ...(expirationCtx || assignmentCtx || openCcCtx
             ? { filter: 'blur(1.5px)', opacity: 0.35, pointerEvents: 'none', userSelect: 'none' }
             : {})
         }}
@@ -277,7 +277,7 @@ export function PositionDetailPage(): React.JSX.Element {
           expiration={expirationCtx.activeLeg.expiration}
           contracts={expirationCtx.activeLeg.contracts}
           totalPremiumCollected={expirationCtx.snapshot.totalPremiumCollected}
-          onClose={() => setExpirationCtx(null)}
+          onClose={handleCloseExpiration}
         />
       )}
       {assignmentCtx?.activeLeg && assignmentCtx.snapshot && (
@@ -291,7 +291,19 @@ export function PositionDetailPage(): React.JSX.Element {
           openFillDate={assignmentCtx.activeLeg.fillDate}
           premiumWaterfall={assignmentWaterfall}
           projectedBasisPerShare={assignmentCtx.snapshot.basisPerShare}
-          onClose={() => setAssignmentCtx(null)}
+          onClose={handleCloseAssignment}
+        />
+      )}
+      {openCcCtx && (
+        <OpenCoveredCallSheet
+          open
+          positionId={position.id}
+          ticker={position.ticker}
+          basisPerShare={openCcCtx.basisPerShare}
+          totalPremiumCollected={openCcCtx.totalPremiumCollected}
+          contracts={openCcCtx.contracts}
+          assignmentDate={openCcCtx.assignmentDate}
+          onClose={handleCloseOpenCc}
         />
       )}
     </PageLayout>

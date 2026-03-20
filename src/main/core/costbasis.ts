@@ -125,6 +125,37 @@ export function calculateAssignmentBasis(input: AssignmentBasisInput): Assignmen
   }
 }
 
+export interface CcOpenBasisInput {
+  prevBasisPerShare: string
+  prevTotalPremiumCollected: string
+  ccPremiumPerContract: string
+  contracts: number
+  positionContracts: number
+}
+
+export interface CcOpenBasisResult {
+  basisPerShare: string
+  totalPremiumCollected: string
+}
+
+export function calculateCcOpenBasis(input: CcOpenBasisInput): CcOpenBasisResult {
+  const prev = new Decimal(input.prevBasisPerShare)
+  const premium = new Decimal(input.ccPremiumPerContract)
+  const prevTotal = new Decimal(input.prevTotalPremiumCollected)
+
+  // Prorate per-share basis reduction: total CC income spread across all shares held
+  const totalCcIncome = premium.times(input.contracts).times(100)
+  const totalShares = input.positionContracts * 100
+  const basisReductionPerShare = totalCcIncome.dividedBy(totalShares)
+  const basisPerShare = round4(prev.minus(basisReductionPerShare))
+  const totalPremiumCollected = round4(prevTotal.plus(totalCcIncome))
+
+  return {
+    basisPerShare: basisPerShare.toFixed(4),
+    totalPremiumCollected: totalPremiumCollected.toFixed(4)
+  }
+}
+
 export function calculateCspExpiration(input: CspExpirationInput): CspExpirationResult {
   const openPremium = new Decimal(input.openPremiumPerContract)
 

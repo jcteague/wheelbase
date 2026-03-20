@@ -14,6 +14,7 @@ export { getPosition } from './get-position'
 export { closeCspPosition } from './close-csp-position'
 export { expireCspPosition } from './expire-csp-position'
 export { assignCspPosition } from './assign-csp-position'
+export { openCoveredCallPosition } from './open-covered-call-position'
 
 // ---------------------------------------------------------------------------
 // createPosition

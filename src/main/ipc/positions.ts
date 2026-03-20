@@ -3,14 +3,20 @@ import type Database from 'better-sqlite3'
 import { ZodError } from 'zod'
 import { ValidationError } from '../core/lifecycle'
 import { logger } from '../logger'
-import { AssignCspPayloadSchema, CloseCspPayloadSchema, ExpireCspPayloadSchema } from '../schemas'
+import {
+  AssignCspPayloadSchema,
+  CloseCspPayloadSchema,
+  ExpireCspPayloadSchema,
+  OpenCcPayloadSchema
+} from '../schemas'
 import {
   assignCspPosition,
   closeCspPosition,
   createPosition,
   expireCspPosition,
   getPosition,
-  listPositions
+  listPositions,
+  openCoveredCallPosition
 } from '../services/positions'
 import type { CreatePositionPayload } from '../schemas'
 
@@ -82,6 +88,13 @@ export function registerPositionsHandlers(db: Database.Database): void {
     handleIpcCall('positions_expire_csp_unhandled_error', () => {
       const parsed = ExpireCspPayloadSchema.parse(payload)
       return expireCspPosition(db, parsed.positionId, parsed)
+    })
+  )
+
+  ipcMain.handle('positions:open-cc', (_, payload: unknown) =>
+    handleIpcCall('positions_open_cc_unhandled_error', () => {
+      const parsed = OpenCcPayloadSchema.parse(payload)
+      return openCoveredCallPosition(db, parsed.positionId, parsed)
     })
   )
 }

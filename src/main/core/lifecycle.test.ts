@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import * as lifecycle from './lifecycle'
-import { ValidationError, openWheel, closeCsp, expireCsp } from './lifecycle'
-import type { CloseCspInput, ExpireCspInput, OpenWheelInput } from './lifecycle'
+import { ValidationError, openWheel, closeCsp, expireCsp, openCoveredCall } from './lifecycle'
+import type {
+  CloseCspInput,
+  ExpireCspInput,
+  OpenWheelInput,
+  OpenCoveredCallInput
+} from './lifecycle'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -376,6 +381,98 @@ describe('recordAssignment', () => {
       })
     )
     expect(result.phase).toBe('HOLDING_SHARES')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// openCoveredCall
+// ---------------------------------------------------------------------------
+
+describe('openCoveredCall', () => {
+  function validCcInput(overrides: Partial<OpenCoveredCallInput> = {}): OpenCoveredCallInput {
+    return {
+      currentPhase: 'HOLDING_SHARES',
+      strike: '182.00',
+      contracts: 1,
+      positionContracts: 1,
+      premiumPerContract: '2.30',
+      fillDate: '2026-01-20',
+      assignmentDate: '2026-01-17',
+      referenceDate: '2026-03-20',
+      expiration: '2026-04-17',
+      ...overrides
+    }
+  }
+
+  it('returns CC_OPEN when current phase is HOLDING_SHARES', () => {
+    const result = openCoveredCall(validCcInput())
+    expect(result.phase).toBe('CC_OPEN')
+  })
+
+  it('throws ValidationError when phase is CC_OPEN', () => {
+    const e = catchValidation(() => openCoveredCall(validCcInput({ currentPhase: 'CC_OPEN' })))
+    expect(e.field).toBe('__phase__')
+    expect(e.code).toBe('invalid_phase')
+    expect(e.message).toBe('A covered call is already open on this position')
+  })
+
+  it('throws ValidationError when phase is CSP_OPEN', () => {
+    const e = catchValidation(() => openCoveredCall(validCcInput({ currentPhase: 'CSP_OPEN' })))
+    expect(e.field).toBe('__phase__')
+    expect(e.code).toBe('invalid_phase')
+    expect(e.message).toBe('Position is not in HOLDING_SHARES phase')
+  })
+
+  it('throws ValidationError when contracts exceed position contracts', () => {
+    const e = catchValidation(() =>
+      openCoveredCall(validCcInput({ contracts: 2, positionContracts: 1 }))
+    )
+    expect(e.field).toBe('contracts')
+    expect(e.code).toBe('exceeds_shares')
+  })
+
+  it('throws ValidationError when fill date is before assignment date', () => {
+    const e = catchValidation(() =>
+      openCoveredCall(validCcInput({ fillDate: '2026-01-16', assignmentDate: '2026-01-17' }))
+    )
+    expect(e.field).toBe('fillDate')
+    expect(e.code).toBe('before_assignment')
+  })
+
+  it('throws ValidationError when fill date is in the future', () => {
+    const e = catchValidation(() =>
+      openCoveredCall(validCcInput({ fillDate: '2026-03-21', referenceDate: '2026-03-20' }))
+    )
+    expect(e.field).toBe('fillDate')
+    expect(e.code).toBe('cannot_be_future')
+  })
+
+  it('throws ValidationError when strike is not positive', () => {
+    const e = catchValidation(() => openCoveredCall(validCcInput({ strike: '0' })))
+    expect(e.field).toBe('strike')
+    expect(e.code).toBe('must_be_positive')
+  })
+
+  it('throws ValidationError when premium is not positive', () => {
+    const e = catchValidation(() => openCoveredCall(validCcInput({ premiumPerContract: '0' })))
+    expect(e.field).toBe('premiumPerContract')
+    expect(e.code).toBe('must_be_positive')
+  })
+
+  it('throws ValidationError when expiration is before fill date', () => {
+    const e = catchValidation(() =>
+      openCoveredCall(validCcInput({ fillDate: '2026-01-20', expiration: '2026-01-19' }))
+    )
+    expect(e.field).toBe('expiration')
+    expect(e.code).toBe('before_fill_date')
+  })
+
+  it('throws ValidationError when expiration is in the past', () => {
+    const e = catchValidation(() =>
+      openCoveredCall(validCcInput({ expiration: '2026-03-19', referenceDate: '2026-03-20' }))
+    )
+    expect(e.field).toBe('expiration')
+    expect(e.code).toBe('already_expired')
   })
 })
 

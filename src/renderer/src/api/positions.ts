@@ -285,6 +285,53 @@ export async function assignPosition(payload: AssignCspPayload): Promise<AssignC
   return result as unknown as AssignCspResponse
 }
 
+export type OpenCcPayload = {
+  position_id: string
+  strike: number
+  expiration: string
+  contracts: number
+  premium_per_contract: number
+  fill_date?: string
+}
+
+export type OpenCcResponse = {
+  position: { id: string; ticker: string; phase: 'CC_OPEN'; status: 'ACTIVE'; closedDate: null }
+  leg: LegData & {
+    positionId: string
+    legRole: string
+    action: string
+    instrumentType: string
+    premiumPerContract: string
+    fillDate: string
+    createdAt: string
+    updatedAt: string
+  }
+  costBasisSnapshot: {
+    id: string
+    positionId: string
+    basisPerShare: string
+    totalPremiumCollected: string
+    finalPnl: null
+    snapshotAt: string
+    createdAt: string
+  }
+}
+
+export async function openCoveredCall(payload: OpenCcPayload): Promise<OpenCcResponse> {
+  const result = await window.api.openCoveredCall({
+    positionId: payload.position_id,
+    strike: payload.strike,
+    expiration: payload.expiration,
+    contracts: payload.contracts,
+    premiumPerContract: payload.premium_per_contract,
+    fillDate: payload.fill_date
+  })
+  if (!result.ok) {
+    throw apiError(400, { detail: mapIpcErrors(result.errors) })
+  }
+  return result as unknown as OpenCcResponse
+}
+
 export async function createPosition(
   payload: CreatePositionPayload
 ): Promise<CreatePositionResponse> {

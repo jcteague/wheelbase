@@ -167,3 +167,24 @@ export interface AssignCspPositionResult {
   costBasisSnapshot: CostBasisSnapshotRecord
   premiumWaterfall: Array<{ label: string; amount: string }>
 }
+
+// ---------------------------------------------------------------------------
+// Open CC schemas
+// ---------------------------------------------------------------------------
+
+export const OpenCcPayloadSchema = z.object({
+  positionId: z.string().uuid(),
+  strike: z.number().positive(),
+  expiration: z.string(),
+  contracts: z.number().int().positive(),
+  premiumPerContract: z.number().positive(),
+  fillDate: z.string().optional()
+})
+
+export type OpenCcPayload = z.infer<typeof OpenCcPayloadSchema>
+
+export interface OpenCcPositionResult {
+  position: { id: string; ticker: string; phase: 'CC_OPEN'; status: 'ACTIVE'; closedDate: null }
+  leg: LegRecord
+  costBasisSnapshot: CostBasisSnapshotRecord
+}

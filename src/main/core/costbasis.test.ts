@@ -3,9 +3,10 @@ import {
   calculateInitialCspBasis,
   calculateCspClose,
   calculateCspExpiration,
-  calculateAssignmentBasis
+  calculateAssignmentBasis,
+  calculateCcOpenBasis
 } from './costbasis'
-import type { CostBasisResult, CspLegInput } from './costbasis'
+import type { CostBasisResult, CspLegInput, CcOpenBasisInput } from './costbasis'
 
 describe('calculateInitialCspBasis', () => {
   it('calculates basis per share', () => {
@@ -207,5 +208,62 @@ describe('calculateAssignmentBasis', () => {
     })
 
     expect(result.totalPremiumCollected).toBe('350.0000')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// calculateCcOpenBasis
+// ---------------------------------------------------------------------------
+
+describe('calculateCcOpenBasis', () => {
+  function validCcBasisInput(overrides: Partial<CcOpenBasisInput> = {}): CcOpenBasisInput {
+    return {
+      prevBasisPerShare: '176.5000',
+      prevTotalPremiumCollected: '350.0000',
+      ccPremiumPerContract: '2.3000',
+      contracts: 1,
+      positionContracts: 1,
+      ...overrides
+    }
+  }
+
+  it('reduces basis per share by CC premium', () => {
+    const result = calculateCcOpenBasis(validCcBasisInput())
+    expect(result.basisPerShare).toBe('174.2000')
+  })
+
+  it('adds CC premium to total premium collected', () => {
+    // prevTotalPremium 350.0000 + 2.30 × 1 × 100 = 350 + 230 = 580
+    const result = calculateCcOpenBasis(validCcBasisInput())
+    expect(result.totalPremiumCollected).toBe('580.0000')
+  })
+
+  it('handles multi-contract CC — per-share basis unchanged when fully covered, total increases by full amount', () => {
+    // Selling 2 CC on 2-contract position (fully covered)
+    // basisPerShare = 176.5 - 2.3 = 174.2 (same per-share regardless of contracts)
+    // totalPremiumCollected = 350 + 2.3 × 2 × 100 = 350 + 460 = 810
+    const result = calculateCcOpenBasis(validCcBasisInput({ contracts: 2, positionContracts: 2 }))
+    expect(result.basisPerShare).toBe('174.2000')
+    expect(result.totalPremiumCollected).toBe('810.0000')
+  })
+
+  it('prorates basis reduction for partial coverage', () => {
+    // Selling 1 CC on 2-contract position (200 shares)
+    // Premium income = 2.30 × 1 × 100 = $230 across 200 shares = $1.15/share
+    // basisPerShare = 176.5 - 1.15 = 175.35
+    // totalPremiumCollected = 350 + 230 = 580
+    const result = calculateCcOpenBasis(
+      validCcBasisInput({ contracts: 1, positionContracts: 2 })
+    )
+    expect(result.basisPerShare).toBe('175.3500')
+    expect(result.totalPremiumCollected).toBe('580.0000')
+  })
+
+  it('returns 4dp precision for fractional premium', () => {
+    const result = calculateCcOpenBasis(
+      validCcBasisInput({ ccPremiumPerContract: '1.1111', prevBasisPerShare: '176.5000' })
+    )
+    // 176.5000 - 1.1111 = 175.3889
+    expect(result.basisPerShare).toBe('175.3889')
   })
 })

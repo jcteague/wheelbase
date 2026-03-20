@@ -31,14 +31,28 @@ export interface OpenWheelResult {
 
 const TICKER_RE = /^[A-Z]{1,5}$/
 
+function requirePositiveStrike(strike: string): void {
+  if (new Decimal(strike).lte(0)) {
+    throw new ValidationError('strike', 'must_be_positive', 'Strike must be positive')
+  }
+}
+
+function requirePositivePremium(premiumPerContract: string): void {
+  if (new Decimal(premiumPerContract).lte(0)) {
+    throw new ValidationError(
+      'premiumPerContract',
+      'must_be_positive',
+      'Premium per contract must be positive'
+    )
+  }
+}
+
 export function openWheel(input: OpenWheelInput): OpenWheelResult {
   if (!TICKER_RE.test(input.ticker)) {
     throw new ValidationError('ticker', 'invalid_format', 'Ticker must be 1–5 uppercase letters')
   }
 
-  if (new Decimal(input.strike).lte(0)) {
-    throw new ValidationError('strike', 'must_be_positive', 'Strike must be positive')
-  }
+  requirePositiveStrike(input.strike)
 
   if (!Number.isInteger(input.contracts) || input.contracts <= 0) {
     throw new ValidationError(
@@ -48,13 +62,7 @@ export function openWheel(input: OpenWheelInput): OpenWheelResult {
     )
   }
 
-  if (new Decimal(input.premiumPerContract).lte(0)) {
-    throw new ValidationError(
-      'premiumPerContract',
-      'must_be_positive',
-      'Premium per contract must be positive'
-    )
-  }
+  requirePositivePremium(input.premiumPerContract)
 
   if (input.fillDate > input.referenceDate) {
     throw new ValidationError('fillDate', 'cannot_be_future', 'Fill date cannot be in the future')
@@ -141,6 +149,81 @@ export function expireCsp(input: ExpireCspInput): ExpireCspResult {
   }
 
   return { phase: 'WHEEL_COMPLETE' }
+}
+
+export interface OpenCoveredCallInput {
+  currentPhase: WheelPhase
+  strike: string
+  contracts: number
+  positionContracts: number
+  premiumPerContract: string
+  fillDate: string
+  assignmentDate: string
+  referenceDate: string
+  expiration: string
+}
+
+export interface OpenCoveredCallResult {
+  phase: 'CC_OPEN'
+}
+
+export function openCoveredCall(input: OpenCoveredCallInput): OpenCoveredCallResult {
+  if (input.currentPhase === 'CC_OPEN') {
+    throw new ValidationError(
+      '__phase__',
+      'invalid_phase',
+      'A covered call is already open on this position'
+    )
+  }
+
+  if (input.currentPhase !== 'HOLDING_SHARES') {
+    throw new ValidationError(
+      '__phase__',
+      'invalid_phase',
+      'Position is not in HOLDING_SHARES phase'
+    )
+  }
+
+  requirePositiveStrike(input.strike)
+  requirePositivePremium(input.premiumPerContract)
+
+  if (input.contracts > input.positionContracts) {
+    throw new ValidationError(
+      'contracts',
+      'exceeds_shares',
+      `Contracts cannot exceed shares held (${input.positionContracts})`
+    )
+  }
+
+  if (input.fillDate < input.assignmentDate) {
+    throw new ValidationError(
+      'fillDate',
+      'before_assignment',
+      'Fill date cannot be before the assignment date'
+    )
+  }
+
+  if (input.fillDate > input.referenceDate) {
+    throw new ValidationError('fillDate', 'cannot_be_future', 'Fill date cannot be in the future')
+  }
+
+  if (input.expiration < input.fillDate) {
+    throw new ValidationError(
+      'expiration',
+      'before_fill_date',
+      'Expiration cannot be before fill date'
+    )
+  }
+
+  if (input.expiration <= input.referenceDate) {
+    throw new ValidationError(
+      'expiration',
+      'already_expired',
+      'Expiration date has already passed'
+    )
+  }
+
+  return { phase: 'CC_OPEN' }
 }
 
 export interface RecordAssignmentInput {

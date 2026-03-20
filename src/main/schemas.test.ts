@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AssignCspPayloadSchema } from './schemas'
+import { AssignCspPayloadSchema, OpenCcPayloadSchema } from './schemas'
 
 const VALID_POSITION_ID = '11111111-1111-4111-8111-111111111111'
 
@@ -35,5 +35,46 @@ describe('AssignCspPayloadSchema', () => {
 
   it('rejects an empty payload', () => {
     expect(() => AssignCspPayloadSchema.parse({})).toThrow()
+  })
+})
+
+const VALID_CC_PAYLOAD = {
+  positionId: '11111111-1111-4111-8111-111111111111',
+  strike: 182,
+  expiration: '2026-02-21',
+  contracts: 1,
+  premiumPerContract: 2.3
+}
+
+describe('OpenCcPayloadSchema', () => {
+  it('parses valid payload', () => {
+    const result = OpenCcPayloadSchema.parse(VALID_CC_PAYLOAD)
+    expect(result.positionId).toBe(VALID_CC_PAYLOAD.positionId)
+    expect(result.strike).toBe(182)
+    expect(result.contracts).toBe(1)
+  })
+
+  it('rejects missing positionId', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { positionId, ...rest } = VALID_CC_PAYLOAD
+    expect(() => OpenCcPayloadSchema.parse(rest)).toThrow()
+  })
+
+  it('rejects non-positive strike', () => {
+    expect(() => OpenCcPayloadSchema.parse({ ...VALID_CC_PAYLOAD, strike: 0 })).toThrow()
+  })
+
+  it('rejects non-integer contracts', () => {
+    expect(() => OpenCcPayloadSchema.parse({ ...VALID_CC_PAYLOAD, contracts: 1.5 })).toThrow()
+  })
+
+  it('accepts optional fillDate when present', () => {
+    const result = OpenCcPayloadSchema.parse({ ...VALID_CC_PAYLOAD, fillDate: '2026-01-20' })
+    expect(result.fillDate).toBe('2026-01-20')
+  })
+
+  it('accepts missing fillDate', () => {
+    const result = OpenCcPayloadSchema.parse(VALID_CC_PAYLOAD)
+    expect(result.fillDate).toBeUndefined()
   })
 })

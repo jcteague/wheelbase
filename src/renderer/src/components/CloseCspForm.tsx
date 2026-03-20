@@ -8,6 +8,7 @@ import { fmtMoney, fmtPct } from '../lib/format'
 import { MONO } from '../lib/tokens'
 import { Field } from './ui/FormField'
 import { FormButton } from './ui/FormButton'
+import { NumberInput } from './ui/NumberInput'
 import { SectionCard } from './ui/SectionCard'
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -122,46 +123,30 @@ export function CloseCspForm({
           htmlFor="close_price_per_contract"
           error={errors.close_price_per_contract?.message}
         >
-          <input
+          <NumberInput
             id="close_price_per_contract"
             type="number"
             step="0.01"
             placeholder="0.00"
             data-testid="close-price-input"
-            className="wb-input"
+            hasError={Boolean(errors.close_price_per_contract)}
             style={{
-              background: 'var(--wb-bg-elevated)',
-              border: '1px solid var(--wb-border)',
-              borderRadius: 6,
               padding: '8px 12px',
-              fontFamily: MONO,
               fontSize: '0.875rem',
-              color: 'var(--wb-text-primary)',
               width: 200,
-              transition: 'border-color 0.15s',
-              appearance: 'none'
+              appearance: 'none' as const
             }}
             {...register('close_price_per_contract')}
           />
         </Field>
 
         <Field label="Fill date (optional)" htmlFor="fill_date" error={errors.fill_date?.message}>
-          <input
+          <NumberInput
             id="fill_date"
             type="date"
             data-testid="fill-date-input"
-            className="wb-input"
-            style={{
-              background: 'var(--wb-bg-elevated)',
-              border: '1px solid var(--wb-border)',
-              borderRadius: 6,
-              padding: '8px 12px',
-              fontFamily: MONO,
-              fontSize: '0.875rem',
-              color: 'var(--wb-text-primary)',
-              width: 200,
-              transition: 'border-color 0.15s'
-            }}
+            hasError={Boolean(errors.fill_date)}
+            style={{ padding: '8px 12px', fontSize: '0.875rem', width: 200 }}
             {...register('fill_date')}
           />
         </Field>
