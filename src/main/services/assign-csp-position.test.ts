@@ -81,6 +81,7 @@ describe('assignCspPosition', () => {
   })
 
   it('throws ValidationError(invalid_phase) when the position is already HOLDING_SHARES', () => {
+    expect.assertions(2)
     const db = makeTestDb()
     const { position } = makeOpenPosition(db)
 
@@ -98,6 +99,7 @@ describe('assignCspPosition', () => {
   })
 
   it('throws ValidationError(date_before_open) when assignmentDate is before the CSP open fill date', () => {
+    expect.assertions(2)
     const db = makeTestDb()
     const { position } = makeOpenPosition(db)
 

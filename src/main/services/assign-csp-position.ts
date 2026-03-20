@@ -45,7 +45,7 @@ export function assignCspPosition(
 
   const assignLegId = randomUUID()
   const snapshotId = randomUUID()
-  const snapshotAt = new Date(Date.now() + 1).toISOString()
+  const snapshotAt = now
 
   db.transaction(() => {
     db.prepare(

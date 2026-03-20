@@ -150,7 +150,7 @@ export interface ExpireCspPositionResult {
 
 export const AssignCspPayloadSchema = z.object({
   positionId: z.string().uuid(),
-  assignmentDate: z.string()
+  assignmentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be a valid date (YYYY-MM-DD)')
 })
 
 export type AssignCspPayload = z.infer<typeof AssignCspPayloadSchema>
