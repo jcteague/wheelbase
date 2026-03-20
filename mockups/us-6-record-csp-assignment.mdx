@@ -36,10 +36,9 @@ export const MOCK_POSITION = {
 
 export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
 
-// ── Primitive mocks — visually match the real components in src/renderer/src/components/ui/ ─────
 
 // Matches: Badge.tsx
-// Real usage: <Badge color="var(--wb-gold)">Put Open</Badge>
+
 export function MockBadge({ children, color }) {
   const fg = color ?? 'var(--wb-gold, #e6a817)'
   return (
@@ -60,9 +59,7 @@ export function MockBadge({ children, color }) {
   )
 }
 
-// Matches: AlertBox.tsx — variant="warning" | "info"
-// Real usage: <AlertBox variant="warning">This cannot be undone…</AlertBox>
-//             <AlertBox variant="info">💡 Many traders wait…</AlertBox>
+
 export function MockAlertBox({ variant, children }) {
   const styles = {
     warning: { bg: 'rgba(230,168,23,0.06)',  border: 'rgba(230,168,23,0.25)',  color: 'var(--wb-gold, #e6a817)' },
@@ -86,10 +83,7 @@ export function MockAlertBox({ variant, children }) {
   )
 }
 
-// Matches: FormField.tsx — Field wrapper with FieldLabel + error/hint
-// Real usage: <Field label="Assignment Date" error={errorMsg} hint="The date your broker assigned the shares">
-//               <DatePicker … />
-//             </Field>
+
 export function MockField({ label, error, hint, children }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -121,7 +115,7 @@ export function MockField({ label, error, hint, children }) {
 }
 
 // Matches: SectionCard.tsx
-// Real usage: <SectionCard header="Cost Basis Calculation">…rows…</SectionCard>
+
 export function MockSectionCard({ header, children }) {
   return (
     <section style={{
@@ -150,7 +144,7 @@ export function MockSectionCard({ header, children }) {
 }
 
 // Matches: FormButton.tsx (primary/gold submit button)
-// Real usage: <FormButton label="Confirm Assignment" pendingLabel="Confirming…" isPending={isPending} />
+
 export function MockFormButton({ label, isPending, onClick, style = {} }) {
   return (
     <button
@@ -177,7 +171,7 @@ export function MockFormButton({ label, isPending, onClick, style = {} }) {
 }
 
 // Matches: Button variant="outline" (shadcn ui/button)
-// Real usage: <Button variant="outline" onClick={onClose}>Cancel</Button>
+
 export function MockOutlineButton({ children, onClick, style = {} }) {
   return (
     <button
@@ -202,7 +196,7 @@ export function MockOutlineButton({ children, onClick, style = {} }) {
 }
 
 // Phase badge using Badge primitive colors
-// Real usage: <Badge color={PHASE_COLORS[phase]}>{PHASE_LABELS[phase]}</Badge>
+
 export function MockPhaseBadge({ phase }) {
   const map = {
     CSP_OPEN:       { label: 'Put Open',  color: '#e6a817' },
@@ -215,7 +209,7 @@ export function MockPhaseBadge({ phase }) {
 }
 
 // DatePicker input stub
-// Real usage: <DatePicker … /> from src/renderer/src/components/ui/date-picker.tsx
+
 export function MockDatePicker({ value, hasError, onChange }) {
   const borderColor = hasError
     ? 'var(--wb-red, #f85149)'
@@ -253,7 +247,6 @@ export function MockDatePicker({ value, hasError, onChange }) {
   )
 }
 
-// ── Shared panel chrome ───────────────────────────────────────────────────────
 
 export const panelStyle = {
   position: 'absolute',
@@ -271,6 +264,7 @@ export const panelStyle = {
 }
 
 // Summary row: used inside SectionCard for key/value pairs
+
 export function MockSummaryRow({ label, value, noBorder, highlight }) {
   return (
     <div style={{
@@ -289,7 +283,6 @@ export function MockSummaryRow({ label, value, noBorder, highlight }) {
   )
 }
 
-// ── Main Mockup ───────────────────────────────────────────────────────────────
 
 export function Mockup() {
   const [state, setState] = useState('form')

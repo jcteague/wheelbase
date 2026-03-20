@@ -1,7 +1,7 @@
 ---
 title: "US-7: Open a Covered Call"
 story: "As a wheel trader holding shares after CSP assignment, I want to sell a covered call against my shares and see whether the strike protects my cost basis."
-states: ["form", "below-cost-basis", "at-cost-basis", "above-cost-basis", "success"]
+states: ["form", "below-cost-basis", "at-cost-basis", "above-cost-basis", "partial-coverage", "future-fill-date", "zero-premium", "past-expiration", "success"]
 ---
 
 import { useState } from 'react'
@@ -15,7 +15,11 @@ _As a wheel trader holding shares after CSP assignment, I want to sell a covered
 - **form**: Sheet open with default values; strike $182.00, expiration "2026-02-21", premium $2.30, 1 contract; above-cost-basis info note shown
 - **below-cost-basis**: Strike $174.00 entered (below $176.50 cost basis) — gold warning "This strike is below your cost basis — you would lock in a loss of $2.50/share if called away"; Confirm button remains enabled
 - **at-cost-basis**: Strike $176.50 entered (equal to cost basis) — gold warning "This strike is at your cost basis — you would break even if called away"
-- **above-cost-basis**: Strike $182.00 entered — info note "Shares called away at $182.00 → profit of $5.50/share"
+- **above-cost-basis**: Strike $182.00 entered — info note "Shares called away at $182.00 → profit of $5.50/share · $550.00 total"
+- **partial-coverage**: Trader holds 200 shares (2 contracts) but enters 1 contract — blue notice "1 of 2 contracts covered — 100 shares uncovered"
+- **future-fill-date**: Fill date entered is tomorrow — gold warning "This date is in the future — are you sure?"; Confirm button remains enabled
+- **zero-premium**: Premium entered as $0.00 — gold warning "Premium is $0.00 — are you sure?"; Confirm button remains enabled
+- **past-expiration**: Expiration date is in the past — red error "Expiration date must be in the future"; Confirm button is disabled
 - **success**: Hero card "HOLDING 100 SHARES · CC OPEN"; result summary showing CC_OPEN leg, updated cost basis $174.20/share, total premium collected $460.00
 
 ---
@@ -37,10 +41,9 @@ export const MOCK_POSITION = {
 
 export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
 
-// ── Primitive mocks — visually match the real components in src/renderer/src/components/ui/ ─────
 
 // Matches: Badge.tsx
-// Real usage: <Badge color="var(--wb-gold)">Call Open</Badge>
+
 export function MockBadge({ children, color }) {
   const fg = color ?? 'var(--wb-gold, #e6a817)'
   return (
@@ -61,9 +64,7 @@ export function MockBadge({ children, color }) {
   )
 }
 
-// Matches: AlertBox.tsx — variant="warning" | "info"
-// Real usage: <AlertBox variant="warning">This strike is below…</AlertBox>
-//             <AlertBox variant="info">Shares called away at…</AlertBox>
+
 export function MockAlertBox({ variant, children }) {
   const styles = {
     warning: { bg: 'rgba(230,168,23,0.06)',  border: 'rgba(230,168,23,0.25)',  color: 'var(--wb-gold, #e6a817)' },
@@ -88,8 +89,7 @@ export function MockAlertBox({ variant, children }) {
   )
 }
 
-// Matches: FormField.tsx — Field wrapper with FieldLabel + error/hint
-// Real usage: <Field label="Strike" error={errorMsg} hint="…"><Input … /></Field>
+
 export function MockField({ label, error, hint, children }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -121,7 +121,7 @@ export function MockField({ label, error, hint, children }) {
 }
 
 // Matches: SectionCard.tsx
-// Real usage: <SectionCard header="Position Summary">…rows…</SectionCard>
+
 export function MockSectionCard({ header, children }) {
   return (
     <section style={{
@@ -150,7 +150,7 @@ export function MockSectionCard({ header, children }) {
 }
 
 // Matches: FormButton.tsx (primary/gold submit button)
-// Real usage: <FormButton label="Open Covered Call" pendingLabel="Opening…" isPending={isPending} />
+
 export function MockFormButton({ label, isPending, onClick, style = {} }) {
   return (
     <button
@@ -177,7 +177,7 @@ export function MockFormButton({ label, isPending, onClick, style = {} }) {
 }
 
 // Matches: Button variant="outline" (shadcn ui/button)
-// Real usage: <Button variant="outline" onClick={onClose}>Cancel</Button>
+
 export function MockOutlineButton({ children, onClick, style = {} }) {
   return (
     <button
@@ -202,7 +202,7 @@ export function MockOutlineButton({ children, onClick, style = {} }) {
 }
 
 // Phase badge using Badge primitive colors
-// Real usage: <Badge color={PHASE_COLORS[phase]}>{PHASE_LABELS[phase]}</Badge>
+
 export function MockPhaseBadge({ phase }) {
   const map = {
     CSP_OPEN:       { label: 'Put Open',  color: '#e6a817' },
@@ -215,7 +215,7 @@ export function MockPhaseBadge({ phase }) {
 }
 
 // Text input stub
-// Real usage: <Input type="number" … /> from src/renderer/src/components/ui/input.tsx
+
 export function MockInput({ value, hasError, placeholder, onChange, prefix }) {
   const borderColor = hasError
     ? 'var(--wb-red, #f85149)'
@@ -264,7 +264,7 @@ export function MockInput({ value, hasError, placeholder, onChange, prefix }) {
 }
 
 // DatePicker input stub
-// Real usage: <DatePicker … /> from src/renderer/src/components/ui/date-picker.tsx
+
 export function MockDatePicker({ value, hasError, onChange }) {
   const borderColor = hasError
     ? 'var(--wb-red, #f85149)'
@@ -302,7 +302,6 @@ export function MockDatePicker({ value, hasError, onChange }) {
   )
 }
 
-// ── Shared panel chrome ───────────────────────────────────────────────────────
 
 export const panelStyle = {
   position: 'absolute',
@@ -320,6 +319,7 @@ export const panelStyle = {
 }
 
 // Summary row: used inside SectionCard for key/value pairs
+
 export function MockSummaryRow({ label, value, noBorder, highlight }) {
   return (
     <div style={{
@@ -338,9 +338,9 @@ export function MockSummaryRow({ label, value, noBorder, highlight }) {
   )
 }
 
-// ── Guardrail logic ───────────────────────────────────────────────────────────
 // Client-side only: strike vs basisPerShare comparison
 // Real usage: inline in OpenCoveredCallSheet component
+
 export function computeGuardrail(strikeStr, basisStr, sharesHeld) {
   const strike = parseFloat(strikeStr)
   const basis  = parseFloat(basisStr)
@@ -360,41 +360,51 @@ export function computeGuardrail(strikeStr, basisStr, sharesHeld) {
   }
   return {
     type: 'above',
-    message: 'Shares called away at $' + strike.toFixed(2) + ' → profit of $' + diff.toFixed(2) + '/share',
+    message: 'Shares called away at $' + strike.toFixed(2) + ' → profit of $' + diff.toFixed(2) + '/share · $' + (diff * sharesHeld).toFixed(2) + ' total',
   }
 }
 
-// ── Main Mockup ───────────────────────────────────────────────────────────────
 
 export function Mockup() {
   const [state, setState] = useState('form')
   const pos = MOCK_POSITION
 
-  const states = ['form', 'below-cost-basis', 'at-cost-basis', 'above-cost-basis', 'success']
+  const states = ['form', 'below-cost-basis', 'at-cost-basis', 'above-cost-basis', 'partial-coverage', 'future-fill-date', 'zero-premium', 'past-expiration', 'success']
 
   // Per-state form values
   const strikeByState = {
-    'form':            '182.00',
-    'below-cost-basis':'174.00',
-    'at-cost-basis':   '176.50',
-    'above-cost-basis':'182.00',
-    'success':         '182.00',
+    'form':             '182.00',
+    'below-cost-basis': '174.00',
+    'at-cost-basis':    '176.50',
+    'above-cost-basis': '182.00',
+    'partial-coverage': '182.00',
+    'future-fill-date': '182.00',
+    'zero-premium':     '182.00',
+    'past-expiration':  '182.00',
+    'success':          '182.00',
   }
 
-  const strike = strikeByState[state] ?? '182.00'
-  const expiration  = '2026-02-21'
-  const premium     = '2.30'
+  const strike      = strikeByState[state] ?? '182.00'
+  const expiration  = state === 'past-expiration' ? '2024-06-21' : '2026-02-21'
+  const premium     = state === 'zero-premium' ? '0.00' : '2.30'
   const contracts   = '1'
-  const fillDate    = '2026-01-20'
+  const sharesHeld  = state === 'partial-coverage' ? 200 : pos.sharesHeld
+  const totalContracts = state === 'partial-coverage' ? 2 : pos.contracts
+  const fillDate    = state === 'future-fill-date' ? '2099-01-01' : '2026-01-20'
 
-  const isSuccess = state === 'success'
+  const isSuccess     = state === 'success'
+  const isPastExpiry  = state === 'past-expiration'
+  const isPartial     = state === 'partial-coverage'
+  const isFutureFill  = state === 'future-fill-date'
+  const isZeroPremium = state === 'zero-premium'
 
   // Guardrail — only shown in non-success form states
-  const guardrail = !isSuccess ? computeGuardrail(strike, pos.basisPerShare, pos.sharesHeld) : null
+  const guardrail = !isSuccess ? computeGuardrail(strike, pos.basisPerShare, sharesHeld) : null
 
-  // Post-CC cost basis: basisPerShare − premiumPerContract
-  const updatedBasis = (parseFloat(pos.basisPerShare) - parseFloat(premium)).toFixed(2)
-  const updatedTotalPremium = (parseFloat(pos.totalPremiumCollected) + parseFloat(premium) * 100).toFixed(2)
+  // Post-CC cost basis: basisPerShare − (premiumPerContract × contracts × 100) / totalShares
+  const premiumFloat = parseFloat(premium)
+  const updatedBasis = (parseFloat(pos.basisPerShare) - premiumFloat).toFixed(2)
+  const updatedTotalPremium = (parseFloat(pos.totalPremiumCollected) + premiumFloat * 100).toFixed(2)
 
   return (
     <div style={{ fontFamily: MONO, background: '#040608', minHeight: 520 }}>
@@ -616,7 +626,7 @@ export function Mockup() {
                     Real: <SectionCard> with position context rows */}
                 <MockSectionCard header="Position">
                   <MockSummaryRow label="Ticker" value={pos.ticker} />
-                  <MockSummaryRow label="Shares held" value={<span style={{ color: 'var(--wb-sky, #58a6ff)' }}>{pos.sharesHeld} shares · {pos.contracts} contract</span>} />
+                  <MockSummaryRow label="Shares held" value={<span style={{ color: 'var(--wb-sky, #58a6ff)' }}>{sharesHeld} shares · {totalContracts} contract{totalContracts > 1 ? 's' : ''}</span>} />
                   <MockSummaryRow label="Assignment strike" value={'$' + pos.assignmentStrike} />
                   <MockSummaryRow
                     label="Effective cost basis"
@@ -659,7 +669,7 @@ export function Mockup() {
                   </MockField>
                   <MockField
                     label="Contracts"
-                    hint={'Max ' + pos.contracts}
+                    hint={'Max ' + totalContracts}
                   >
                     <MockInput
                       value={contracts}
@@ -668,11 +678,26 @@ export function Mockup() {
                   </MockField>
                 </div>
 
+                {/* Partial coverage notice — Real: <AlertBox variant="info"> when ccContracts < totalContracts */}
+                {isPartial && (
+                  <MockAlertBox variant="info">
+                    {contracts} of {totalContracts} contracts covered — {(totalContracts - parseInt(contracts)) * 100} shares uncovered
+                  </MockAlertBox>
+                )}
+
+                {/* Zero premium warning — Real: <AlertBox variant="warning"> when premium === 0 */}
+                {isZeroPremium && (
+                  <MockAlertBox variant="warning">
+                    Premium is $0.00 — are you sure?
+                  </MockAlertBox>
+                )}
+
                 <MockField
                   label="Expiration"
                   hint="Option expiration date"
+                  error={isPastExpiry ? 'Expiration date must be in the future' : undefined}
                 >
-                  <MockDatePicker value={expiration} />
+                  <MockDatePicker value={expiration} hasError={isPastExpiry} />
                 </MockField>
 
                 <MockField
@@ -681,6 +706,13 @@ export function Mockup() {
                 >
                   <MockDatePicker value={fillDate} />
                 </MockField>
+
+                {/* Future fill date warning — Real: <AlertBox variant="warning"> when fillDate > today */}
+                {isFutureFill && (
+                  <MockAlertBox variant="warning">
+                    This date is in the future — are you sure?
+                  </MockAlertBox>
+                )}
 
                 {/* Irrevocable warning — Real: <AlertBox variant="warning"><strong>This cannot be undone.</strong>…</AlertBox> */}
                 <MockAlertBox variant="warning">
@@ -706,8 +738,9 @@ export function Mockup() {
               {/* Real: <FormButton label="Open Covered Call" pendingLabel="Opening…" isPending={isPending} style={{ flex: 1 }} /> */}
               <MockFormButton
                 label="Open Covered Call"
-                onClick={() => setState('success')}
-                style={{ flex: 1, fontWeight: 700 }}
+                onClick={() => !isPastExpiry && setState('success')}
+                isPending={isPastExpiry}
+                style={{ flex: 1, fontWeight: 700, opacity: isPastExpiry ? 0.4 : 1, cursor: isPastExpiry ? 'not-allowed' : 'pointer' }}
               />
             </div>
           )}

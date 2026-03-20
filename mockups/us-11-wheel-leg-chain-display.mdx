@@ -52,7 +52,6 @@ export const PHASE_LABEL = {
   WHEEL_COMPLETE: 'Wheel Complete',
 }
 
-// ── Mock data ─────────────────────────────────────────────────────────────────
 
 export const LEGS_PARTIAL = [
   { id: '1', legRole: 'CSP_OPEN', action: 'open',   instrumentType: 'PUT',  strike: '180.00', expiration: '2026-03-21', premiumPerContract: '3.50',  fillDate: '2026-01-03', runningCostBasis: '176.50' },
@@ -102,7 +101,7 @@ export function MockBadge({ children, color }) {
 }
 
 // Matches: PhaseBadge.tsx
-// Real usage: <PhaseBadge phase="CSP_OPEN" />
+
 export function MockPhaseBadge({ phase }) {
   const color = PHASE_COLOR[phase] ?? '#8899aa'
   const label = PHASE_LABEL[phase] ?? phase
@@ -132,8 +131,7 @@ export function MockPhaseBadge({ phase }) {
   )
 }
 
-// Matches: ui/TablePrimitives — TableHeader
-// Real usage: <TableHeader style={…}>{label}</TableHeader>
+
 export function MockTableHeader({ children, style = {} }) {
   return (
     <th style={{
@@ -154,8 +152,7 @@ export function MockTableHeader({ children, style = {} }) {
   )
 }
 
-// Matches: ui/TablePrimitives — TableCell
-// Real usage: <TableCell style={…}>{value}</TableCell>
+
 export function MockTableCell({ children, style = {} }) {
   return (
     <td style={{
@@ -173,7 +170,7 @@ export function MockTableCell({ children, style = {} }) {
 }
 
 // Matches: ui/SectionCard.tsx
-// Real usage: <SectionCard header="Leg History">…</SectionCard>
+
 export function MockSectionCard({ header, children }) {
   return (
     <section style={{
@@ -201,9 +198,8 @@ export function MockSectionCard({ header, children }) {
   )
 }
 
-// ── Premium cell renderer ─────────────────────────────────────────────────────
 // Matches display logic described in US-11 technical notes:
-//   ASSIGN: "— (assigned)", EXPIRE: "expired worthless", else "+$N.NN"
+
 export function PremiumCell({ leg }) {
   if (leg.legRole === 'ASSIGN' || leg.legRole === 'CALLED_AWAY') {
     return (
@@ -227,8 +223,7 @@ export function PremiumCell({ leg }) {
   )
 }
 
-// ── Running cost basis cell ───────────────────────────────────────────────────
-// Sky-blue accent; null rendered as "—" (called-away row has no forward basis)
+
 export function BasisCell({ value }) {
   if (!value) return (
     <span style={{ color: 'var(--wb-text-muted, #4a5a6a)' }}>—</span>
@@ -240,10 +235,10 @@ export function BasisCell({ value }) {
   )
 }
 
-// ── The extended LegHistoryTable ──────────────────────────────────────────────
 // This is what LegHistoryTable.tsx becomes after US-11:
 //   columns: Role | Action | Strike | Expiration | Premium | Fill Date | Running Cost Basis
 //   optional finalPnl prop renders the footer row
+
 export function MockLegHistoryTable({ legs, finalPnl }) {
   const RUNNING_BASIS_HEADER_BG = 'rgba(121,192,255,0.05)'
   const RUNNING_BASIS_BORDER    = '1px solid rgba(121,192,255,0.12)'
@@ -359,8 +354,8 @@ export function MockLegHistoryTable({ legs, finalPnl }) {
   )
 }
 
-// ── Simulated page header chrome ──────────────────────────────────────────────
 // Matches PositionDetailPage layout: Breadcrumb + ticker + PhaseBadge
+
 export function MockPageChrome({ phase }) {
   return (
     <div style={{
@@ -384,7 +379,6 @@ export function MockPageChrome({ phase }) {
   )
 }
 
-// ── Main Mockup ───────────────────────────────────────────────────────────────
 
 export function Mockup() {
   const [state, setState] = useState('partial')

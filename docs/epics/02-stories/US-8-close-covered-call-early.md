@@ -35,11 +35,17 @@ Scenario: Close at a loss shows negative P&L
   And the CC leg P&L shows −$120.00 (($2.30 − $3.50) × 1 × 100)
   And the position remains in HOLDING_SHARES
 
-Scenario: P&L preview shown on the form before submission
+Scenario: P&L preview shown on the form before submission — profit close
   Given the close price field shows $1.15
   When the trader views the close CC form
   Then a P&L preview shows "+$115.00 profit (50% of max)"
   And the preview updates as the trader changes the close price
+
+Scenario: P&L preview shown on the form before submission — loss close
+  Given the close price field shows $3.50 (above the $2.30 open premium)
+  When the trader views the close CC form
+  Then a P&L preview shows "−$120.00 loss"
+  And no percentage-of-max label is shown
 
 Scenario: Reject close when not in CC_OPEN phase
   Given the position is in HOLDING_SHARES phase
@@ -57,6 +63,12 @@ Scenario: Reject fill date before CC open date
   When the trader enters fill date "2026-01-19"
   Then a validation error appears: "Fill date cannot be before the CC open date"
   And no leg is created
+
+Scenario: Reject fill date after CC expiration date
+  Given the CC expires on "2026-02-21"
+  When the trader enters fill date "2026-02-22"
+  Then a validation error appears: "Fill date cannot be after the CC expiration date — use Record Expiry instead"
+  And no leg is created
 ```
 
 ---
@@ -67,8 +79,9 @@ Scenario: Reject fill date before CC open date
 - `LegRole: CC_CLOSE`, `LegAction: BUY`, `InstrumentType: CALL`
 - P&L for the CC leg: `(openPremiumPerContract − closePricePerContract) × contracts × 100`
 - Cost basis snapshot: **not updated** on CC close — the snapshot created when the CC was opened already reflects the CC premium reduction; closing the CC does not reverse that
-- The "50% of max" label in the preview: `(openPremium − closePrice) / openPremium × 100` — show as a percentage alongside the dollar P&L
-- Fill date must be ≤ today and ≥ CC open fill date
+- The "50% of max" label in the preview: `(openPremium − closePrice) / openPremium × 100` — show as a percentage alongside the dollar P&L only when `closePrice < openPremium` (profit). Show only the dollar loss amount when `closePrice > openPremium`. Show "Break-even" when exactly equal.
+- Fill date must be ≤ today, ≥ CC open fill date, and ≤ CC expiration date
+- Contracts field must be read-only (or validated to match the open contract count exactly); partial close is not supported
 - Close button appears in position detail header when `phase = CC_OPEN`
 
 ---
@@ -78,6 +91,7 @@ Scenario: Reject fill date before CC open date
 - Rolling the CC (close + reopen in one atomic action) — Epic 03, US-14
 - Automatic close at 50% profit alert — Epic 07
 - Closing only a subset of contracts (partial close) — deferred
+- Suppressing the Close Early button when the CC has already passed expiration date — tracked separately (position detail header UX story)
 
 ---
 

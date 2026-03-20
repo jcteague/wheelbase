@@ -63,6 +63,7 @@ Scenario: Single-leg position (CSP still open) shows partial chain
 - This story is primarily a **frontend display change** — no new backend data is required
 - All needed data is already returned by `getPosition` (`legs: LegRecord[]` + `costBasisSnapshot[]`)
 - Running cost basis per leg: derive from the ordered array of `cost_basis_snapshots` matched to leg `fill_date`; if no snapshot for a leg, carry forward the previous value
+- CC_CLOSE leg contribution: the net CC premium = `open_premium − close_price`. This can be negative if the CC was closed at a loss (close price > open premium). The running basis should reflect this: a loss close effectively raises the running basis compared to what the CC_OPEN leg reduced it to. Ensure the display handles the negative-contribution case without showing a misleading basis reduction.
 - The existing `LegHistoryTable` component (`src/renderer/src/components/LegHistoryTable.tsx`) should be extended to add the running basis column
 - ASSIGN leg display: `premium_per_contract` is `'0.0000'` — render as "— (assigned)" rather than "$0.00"
 - EXPIRE leg display: render as "expired worthless" in a muted style

@@ -18,7 +18,7 @@ After assignment the trader holds 100 shares per contract at their effective cos
 Background:
   Given the trader has a HOLDING_SHARES position on AAPL
   And the effective cost basis is $176.50 per share
-  And the trader holds 100 shares (1 contract assigned)
+  And the trader holds 100 shares (assigned from 1 CSP contract)
 
 Scenario: Successfully open a covered call above cost basis
   Given the trader enters strike $182.00, expiration "2026-02-21", premium $2.30, 1 contract
@@ -51,22 +51,52 @@ Scenario: Reject open CC when not in HOLDING_SHARES phase
   Then the action is rejected with message "A covered call is already open on this position"
   And the position remains in CC_OPEN
 
+Scenario: Reject open CC when position is WHEEL_COMPLETE
+  Given the position is in WHEEL_COMPLETE phase
+  When the trader attempts to open a new covered call
+  Then the action is rejected with message "This position is closed"
+  And the position remains in WHEEL_COMPLETE
+
 Scenario: Reject open CC with missing required fields
   Given the open CC form is submitted without a strike
   Then a validation error appears: "Strike is required"
   And no leg is created
 
 Scenario: Reject CC with contracts exceeding shares held
-  Given the trader holds 100 shares (1 contract)
+  Given the trader holds 100 shares (assigned from 1 CSP contract)
   When the trader enters contracts as 2
   Then a validation error appears: "Contracts cannot exceed shares held (1)"
   And no leg is created
 
+Scenario: Open CC covering fewer contracts than shares held (intentional partial coverage)
+  Given the trader holds 200 shares (assigned from 2 CSP contracts)
+  When the trader enters contracts as 1
+  Then the leg is accepted and the position transitions to CC_OPEN
+  And a notice reads: "1 of 2 contracts covered — 100 shares uncovered"
+
 Scenario: Reject fill date before assignment date
-  Given the position was assigned on "2026-01-17"
+  Given the position was assigned on "2026-01-17" (the ASSIGN leg's fillDate)
   When the trader enters fill date "2026-01-16"
   Then a validation error appears: "Fill date cannot be before the assignment date"
   And no leg is created
+
+Scenario: Fill date in the future shows soft warning but does not block submission
+  Given the trader enters a fill date of tomorrow
+  When the open CC form renders
+  Then a gold warning appears: "This date is in the future — are you sure?"
+  And the Confirm button remains enabled
+
+Scenario: Expiration date in the past is rejected
+  Given the trader enters an expiration date that has already passed
+  When the open CC form renders
+  Then a validation error appears: "Expiration date must be in the future"
+  And the Confirm button is disabled
+
+Scenario: Zero premium shows soft warning but does not block submission
+  Given the trader enters premium as $0.00
+  When the open CC form renders
+  Then a gold warning appears: "Premium is $0.00 — are you sure?"
+  And the Confirm button remains enabled
 ```
 
 ---
@@ -76,10 +106,11 @@ Scenario: Reject fill date before assignment date
 - New lifecycle transition: `HOLDING_SHARES → CC_OPEN` triggered by opening a CC leg
 - `LegRole: CC_OPEN`, `LegAction: SELL`, `InstrumentType: CALL`
 - Cost basis guardrail is client-side only: `strike < basisPerShare` → warning; `strike >= basisPerShare` → profit preview
-- Profit preview (if called away at strike): `(strike − basisPerShare) × sharesHeld`
-- After CC open, create new `cost_basis_snapshot`: `basisPerShare = prevBasisPerShare − ccPremiumPerContract`
-- Contracts validation: `contracts ≤ position.contracts` (from assignment leg)
-- Fill date must be ≤ today (no future fill dates)
+- Profit preview (if called away at strike): `(strike − basisPerShare) × sharesHeld` — show both per-share and total dollar amounts (e.g. "$5.50/share · $550 total")
+- After CC open, create new `cost_basis_snapshot`: `basisPerShare = prevBasisPerShare − (ccPremiumPerContract × ccContracts × 100) / totalShares` where `totalShares` = ASSIGN leg contracts × 100
+- Contracts validation: `ccContracts ≤ assignLeg.contracts` — source of truth for shares held is the `ASSIGN` leg created in US-6; partial coverage (`ccContracts < assignLeg.contracts`) is allowed with a UI notice
+- Future fill dates: soft warning only (consistent with US-6 assignment date behaviour)
+- Assignment date for fill date validation comes from the `ASSIGN` leg's `fillDate`, not the position record
 - CC form appears in position detail header when `phase = HOLDING_SHARES`
 
 ---

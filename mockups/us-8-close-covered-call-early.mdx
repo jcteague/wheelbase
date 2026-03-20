@@ -34,9 +34,9 @@ export const MOCK_POSITION = {
 
 export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
 
-// ── Primitive mocks — visually match the real components in src/renderer/src/components/ui/ ─────
 
 // Matches: Badge.tsx
+
 export function MockBadge({ children, color }) {
   const fg = color ?? 'var(--wb-gold, #e6a817)'
   return (
@@ -57,7 +57,7 @@ export function MockBadge({ children, color }) {
   )
 }
 
-// Matches: AlertBox.tsx — variant="warning" | "info" | "error" | "success"
+
 export function MockAlertBox({ variant, children }) {
   const styles = {
     warning: { bg: 'rgba(230,168,23,0.06)',  border: 'rgba(230,168,23,0.25)',  color: 'var(--wb-gold, #e6a817)' },
@@ -82,7 +82,7 @@ export function MockAlertBox({ variant, children }) {
   )
 }
 
-// Matches: FormField.tsx — Field wrapper with FieldLabel + error/hint
+
 export function MockField({ label, error, hint, children }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -114,6 +114,7 @@ export function MockField({ label, error, hint, children }) {
 }
 
 // Matches: SectionCard.tsx
+
 export function MockSectionCard({ header, children }) {
   return (
     <section style={{
@@ -142,6 +143,7 @@ export function MockSectionCard({ header, children }) {
 }
 
 // Matches: FormButton.tsx (primary/gold submit button)
+
 export function MockFormButton({ label, isPending, onClick, style = {} }) {
   return (
     <button
@@ -168,6 +170,7 @@ export function MockFormButton({ label, isPending, onClick, style = {} }) {
 }
 
 // Matches: Button variant="outline" (shadcn ui/button)
+
 export function MockOutlineButton({ children, onClick, style = {} }) {
   return (
     <button
@@ -192,6 +195,7 @@ export function MockOutlineButton({ children, onClick, style = {} }) {
 }
 
 // Phase badge using Badge primitive colors
+
 export function MockPhaseBadge({ phase }) {
   const map = {
     CSP_OPEN:       { label: 'Put Open',  color: '#e6a817' },
@@ -204,6 +208,7 @@ export function MockPhaseBadge({ phase }) {
 }
 
 // Summary row: used inside SectionCard for key/value pairs
+
 export function MockSummaryRow({ label, value, noBorder, highlight }) {
   return (
     <div style={{
@@ -222,7 +227,7 @@ export function MockSummaryRow({ label, value, noBorder, highlight }) {
   )
 }
 
-// Numeric price input — styled to match shadcn Input in trading terminal dark theme
+
 export function MockPriceInput({ value, hasError, onChange, placeholder }) {
   const borderColor = hasError
     ? 'var(--wb-red, #f85149)'
@@ -265,6 +270,7 @@ export function MockPriceInput({ value, hasError, onChange, placeholder }) {
 }
 
 // DatePicker input stub
+
 export function MockDatePicker({ value, hasError, onChange }) {
   const borderColor = hasError
     ? 'var(--wb-red, #f85149)'
@@ -301,9 +307,8 @@ export function MockDatePicker({ value, hasError, onChange }) {
   )
 }
 
-// ── P&L preview pill ──────────────────────────────────────────────────────────
 
-// Computes CC leg P&L: (openPremium − closePrice) × contracts × 100
+
 export function computePnl(openPremium, closePrice, contracts) {
   const open = parseFloat(openPremium)
   const close = parseFloat(closePrice)
@@ -351,7 +356,6 @@ export function MockPnlPreview({ openPremium, closePrice, contracts }) {
   )
 }
 
-// ── Shared panel chrome ───────────────────────────────────────────────────────
 
 export const panelStyle = {
   position: 'absolute',
@@ -368,7 +372,6 @@ export const panelStyle = {
   color: 'var(--wb-text-primary, #e2eaf2)',
 }
 
-// ── Main Mockup ───────────────────────────────────────────────────────────────
 
 export function Mockup() {
   const [state, setState] = useState('form')

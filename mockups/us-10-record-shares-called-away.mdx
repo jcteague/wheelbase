@@ -40,10 +40,9 @@ export const MOCK_POSITION = {
 
 export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
 
-// ── Primitive mocks — visually match the real components in src/renderer/src/components/ui/ ─────
 
 // Matches: Badge.tsx
-// Real usage: <Badge color="var(--wb-green)">Wheel Complete</Badge>
+
 export function MockBadge({ children, color }) {
   const fg = color ?? 'var(--wb-gold, #e6a817)'
   return (
@@ -64,8 +63,7 @@ export function MockBadge({ children, color }) {
   )
 }
 
-// Matches: AlertBox.tsx — variant="warning" | "info"
-// Real usage: <AlertBox variant="warning"><strong>This cannot be undone.</strong>…</AlertBox>
+
 export function MockAlertBox({ variant, children }) {
   const styles = {
     warning: { bg: 'rgba(230,168,23,0.06)', border: 'rgba(230,168,23,0.25)', color: 'var(--wb-gold, #e6a817)' },
@@ -90,7 +88,7 @@ export function MockAlertBox({ variant, children }) {
 }
 
 // Matches: SectionCard.tsx
-// Real usage: <SectionCard header="P&L Breakdown">…rows…</SectionCard>
+
 export function MockSectionCard({ header, children }) {
   return (
     <section style={{
@@ -119,7 +117,7 @@ export function MockSectionCard({ header, children }) {
 }
 
 // Matches: FormButton.tsx (primary/gold submit button)
-// Real usage: <FormButton label="Confirm Call-Away" pendingLabel="Confirming…" isPending={isPending} />
+
 export function MockFormButton({ label, isPending, onClick, style = {} }) {
   return (
     <button
@@ -146,7 +144,7 @@ export function MockFormButton({ label, isPending, onClick, style = {} }) {
 }
 
 // Matches: Button variant="outline" (shadcn ui/button)
-// Real usage: <Button variant="outline" onClick={onClose}>Cancel</Button>
+
 export function MockOutlineButton({ children, onClick, style = {} }) {
   return (
     <button
@@ -171,7 +169,7 @@ export function MockOutlineButton({ children, onClick, style = {} }) {
 }
 
 // Phase badge using Badge primitive colors
-// Real usage: <Badge color={PHASE_COLORS[phase]}>{PHASE_LABELS[phase]}</Badge>
+
 export function MockPhaseBadge({ phase }) {
   const map = {
     CSP_OPEN: { label: 'Put Open', color: '#e6a817' },
@@ -185,6 +183,7 @@ export function MockPhaseBadge({ phase }) {
 }
 
 // Summary row: used inside SectionCard for key/value pairs
+
 export function MockSummaryRow({ label, value, noBorder, highlight }) {
   return (
     <div style={{
@@ -204,7 +203,7 @@ export function MockSummaryRow({ label, value, noBorder, highlight }) {
 }
 
 // Read-only "field" used for derived/auto-populated values
-// Real usage: <Field label="Fill Price (CC Strike)"> <Input readOnly value={strike} /> </Field>
+
 export function MockReadOnlyField({ label, value, hint }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -248,7 +247,6 @@ export function MockReadOnlyField({ label, value, hint }) {
   )
 }
 
-// ── Shared panel chrome ───────────────────────────────────────────────────────
 
 export const panelStyle = {
   position: 'absolute',
@@ -265,7 +263,6 @@ export const panelStyle = {
   color: 'var(--wb-text-primary, #e2eaf2)',
 }
 
-// ── Main Mockup ───────────────────────────────────────────────────────────────
 
 export function Mockup() {
   const [state, setState] = useState('confirmation')
