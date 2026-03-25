@@ -248,8 +248,8 @@ describe('close covered call early', () => {
 
     const bodyText = await page.textContent('body')
     expect(bodyText).toMatch(/close price must be greater than zero/i)
-    // Position should still show CC_OPEN (no phase change)
-    expect(bodyText).not.toContain('CC_CLOSE')
+    // Success state was not reached — form is still showing, not the "CC Closed" success screen
+    expect(bodyText).not.toContain('CC Closed')
   })
 
   it('reject fill date before CC open date — validation error appears, no leg created', async () => {
