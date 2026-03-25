@@ -185,13 +185,14 @@ describe('close covered call early', () => {
 
     await page.click('[data-testid="close-cc-early-btn"]')
     await page.waitForSelector('text=Close Covered Call Early')
-    // openPremium=2.30, closePrice=1.15 → pnl = (2.30-1.15)*1*100 = $115.00
-    await page.fill('[data-testid="cc-close-price"]', '1.15')
+    // openPremium=2.30, closePrice=1.10 → pnl = (2.30-1.10)*1*100 = $120.00
+    // % of max captured = (2.30-1.10)/2.30*100 = 52.2%
+    await page.fill('[data-testid="cc-close-price"]', '1.10')
 
     const bodyText = await page.textContent('body')
-    expect(bodyText).toContain('115')
+    expect(bodyText).toContain('120')
     expect(bodyText).toMatch(/profit/i)
-    expect(bodyText).toMatch(/50|% of max/i)
+    expect(bodyText).toContain('52.2% of max')
   })
 
   it('P&L preview shown on the form before submission — loss close shows negative amount without percentage-of-max', async () => {
