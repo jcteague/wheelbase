@@ -30,8 +30,12 @@ export function CcPnlPreview({
   let color: string
 
   if (pnl.gt(0)) {
-    // Profit: closePrice/openPremium × 100 = % of max you're paying back
-    const pct = closeDecimal.div(open).times(100).toDecimalPlaces(1, Decimal.ROUND_HALF_UP)
+    // Profit: % of max profit captured = (openPremium − closePrice) / openPremium × 100
+    const pct = open
+      .minus(closeDecimal)
+      .div(open)
+      .times(100)
+      .toDecimalPlaces(1, Decimal.ROUND_HALF_UP)
     label = `+$${pnlFormatted} profit · ${pct}% of max`
     color = 'var(--wb-green, #22c55e)'
   } else if (pnl.lt(0)) {
