@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { useParams } from 'wouter'
 import { AssignmentSheet } from '../components/AssignmentSheet'
+import { CloseCcEarlySheet } from '../components/CloseCcEarlySheet'
 import { CloseCspForm } from '../components/CloseCspForm'
 import { ExpirationSheet } from '../components/ExpirationSheet'
 import { OpenCoveredCallSheet } from '../components/OpenCoveredCallSheet'
@@ -34,6 +35,14 @@ export function PositionDetailPage(): React.JSX.Element {
     contracts: number
     assignmentDate: string
   } | null>(null)
+  const [closeCcCtx, setCloseCcCtx] = useState<{
+    contracts: number
+    openPremium: string
+    ccOpenFillDate: string
+    ccExpiration: string
+    strike: string
+    basisPerShare: string
+  } | null>(null)
 
   const handleOpenCc = useCallback(() => {
     const assignLeg = data?.legs?.find((l) => l.legRole === 'ASSIGN')
@@ -57,10 +66,28 @@ export function PositionDetailPage(): React.JSX.Element {
     if (data?.activeLeg && data?.costBasisSnapshot)
       setExpirationCtx({ activeLeg: data.activeLeg, snapshot: data.costBasisSnapshot })
   }, [data])
+  const handleCloseCcEarly = useCallback(() => {
+    const activeCcLeg =
+      data?.legs?.find((leg) => leg.legRole === 'CC_OPEN') ??
+      (data?.activeLeg?.legRole === 'CC_OPEN' ? data.activeLeg : null)
+    const snapshot = data?.costBasisSnapshot
+
+    if (activeCcLeg && snapshot) {
+      setCloseCcCtx({
+        contracts: activeCcLeg.contracts,
+        openPremium: activeCcLeg.premiumPerContract,
+        ccOpenFillDate: activeCcLeg.fillDate,
+        ccExpiration: activeCcLeg.expiration,
+        strike: activeCcLeg.strike,
+        basisPerShare: snapshot.basisPerShare
+      })
+    }
+  }, [data])
 
   const handleCloseExpiration = useCallback(() => setExpirationCtx(null), [])
   const handleCloseAssignment = useCallback(() => setAssignmentCtx(null), [])
   const handleCloseOpenCc = useCallback(() => setOpenCcCtx(null), [])
+  const handleCloseCloseCcEarly = useCallback(() => setCloseCcCtx(null), [])
 
   if (isLoading) {
     return <LoadingState message="Loading position..." />
@@ -104,6 +131,7 @@ export function PositionDetailPage(): React.JSX.Element {
               onOpenCc={handleOpenCc}
               onRecordAssignment={handleRecordAssignment}
               onRecordExpiration={handleRecordExpiration}
+              onCloseCcEarly={handleCloseCcEarly}
             />
           }
         />
@@ -117,7 +145,7 @@ export function PositionDetailPage(): React.JSX.Element {
           flexDirection: 'column',
           gap: 16,
           transition: 'filter 0.2s, opacity 0.2s',
-          ...(expirationCtx || assignmentCtx || openCcCtx
+          ...(expirationCtx || assignmentCtx || openCcCtx || closeCcCtx
             ? { filter: 'blur(1.5px)', opacity: 0.35, pointerEvents: 'none', userSelect: 'none' }
             : {})
         }}
@@ -306,6 +334,18 @@ export function PositionDetailPage(): React.JSX.Element {
           onClose={handleCloseOpenCc}
         />
       )}
+      <CloseCcEarlySheet
+        open={closeCcCtx !== null}
+        positionId={position.id}
+        ticker={position.ticker}
+        contracts={closeCcCtx?.contracts ?? 0}
+        openPremium={closeCcCtx?.openPremium ?? ''}
+        ccOpenFillDate={closeCcCtx?.ccOpenFillDate ?? ''}
+        ccExpiration={closeCcCtx?.ccExpiration ?? ''}
+        strike={closeCcCtx?.strike ?? ''}
+        basisPerShare={closeCcCtx?.basisPerShare ?? ''}
+        onClose={handleCloseCloseCcEarly}
+      />
     </PageLayout>
   )
 }

@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import * as lifecycle from './lifecycle'
-import { ValidationError, openWheel, closeCsp, expireCsp, openCoveredCall } from './lifecycle'
+import {
+  ValidationError,
+  openWheel,
+  closeCsp,
+  expireCsp,
+  openCoveredCall,
+  closeCoveredCall
+} from './lifecycle'
 import type {
   CloseCspInput,
+  CloseCoveredCallInput,
   ExpireCspInput,
   OpenWheelInput,
   OpenCoveredCallInput
@@ -473,6 +481,102 @@ describe('openCoveredCall', () => {
     )
     expect(e.field).toBe('expiration')
     expect(e.code).toBe('already_expired')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// closeCoveredCall
+// ---------------------------------------------------------------------------
+
+describe('closeCoveredCall', () => {
+  function validCloseCcInput(
+    overrides: Partial<CloseCoveredCallInput> = {}
+  ): CloseCoveredCallInput {
+    return {
+      currentPhase: 'CC_OPEN',
+      closePricePerContract: '1.10',
+      openFillDate: '2026-01-20',
+      fillDate: '2026-02-01',
+      expiration: '2026-02-21',
+      ...overrides
+    }
+  }
+
+  it('throws ValidationError with field=__phase__, code=invalid_phase when currentPhase is HOLDING_SHARES', () => {
+    const e = catchValidation(() =>
+      closeCoveredCall(validCloseCcInput({ currentPhase: 'HOLDING_SHARES' }))
+    )
+    expect(e.field).toBe('__phase__')
+    expect(e.code).toBe('invalid_phase')
+    expect(e.message).toBe('No open covered call on this position')
+  })
+
+  it('throws ValidationError with field=__phase__, code=invalid_phase when currentPhase is CSP_OPEN', () => {
+    const e = catchValidation(() =>
+      closeCoveredCall(validCloseCcInput({ currentPhase: 'CSP_OPEN' }))
+    )
+    expect(e.field).toBe('__phase__')
+    expect(e.code).toBe('invalid_phase')
+    expect(e.message).toBe('No open covered call on this position')
+  })
+
+  it('throws ValidationError with field=closePricePerContract, code=must_be_positive when closePricePerContract is 0', () => {
+    const e = catchValidation(() =>
+      closeCoveredCall(validCloseCcInput({ closePricePerContract: '0' }))
+    )
+    expect(e.field).toBe('closePricePerContract')
+    expect(e.code).toBe('must_be_positive')
+    expect(e.message).toBe('Close price must be greater than zero')
+  })
+
+  it('throws ValidationError with field=closePricePerContract, code=must_be_positive when closePricePerContract is negative', () => {
+    const e = catchValidation(() =>
+      closeCoveredCall(validCloseCcInput({ closePricePerContract: '-1' }))
+    )
+    expect(e.field).toBe('closePricePerContract')
+    expect(e.code).toBe('must_be_positive')
+  })
+
+  it('throws ValidationError with field=fillDate, code=close_date_before_open when fillDate is before openFillDate', () => {
+    const e = catchValidation(() =>
+      closeCoveredCall(validCloseCcInput({ fillDate: '2026-01-19', openFillDate: '2026-01-20' }))
+    )
+    expect(e.field).toBe('fillDate')
+    expect(e.code).toBe('close_date_before_open')
+    expect(e.message).toBe('Fill date cannot be before the CC open date')
+  })
+
+  it('throws ValidationError with field=fillDate, code=close_date_after_expiration when fillDate is after expiration', () => {
+    const e = catchValidation(() =>
+      closeCoveredCall(validCloseCcInput({ fillDate: '2026-02-22', expiration: '2026-02-21' }))
+    )
+    expect(e.field).toBe('fillDate')
+    expect(e.code).toBe('close_date_after_expiration')
+    expect(e.message).toContain('Record Expiry')
+  })
+
+  it('returns { phase: HOLDING_SHARES } for valid profit close (closePrice < openPremium)', () => {
+    const result = closeCoveredCall(validCloseCcInput({ closePricePerContract: '1.10' }))
+    expect(result.phase).toBe('HOLDING_SHARES')
+  })
+
+  it('returns { phase: HOLDING_SHARES } for valid loss close (closePrice > openPremium)', () => {
+    const result = closeCoveredCall(validCloseCcInput({ closePricePerContract: '3.50' }))
+    expect(result.phase).toBe('HOLDING_SHARES')
+  })
+
+  it('returns { phase: HOLDING_SHARES } when fillDate equals openFillDate (boundary)', () => {
+    const result = closeCoveredCall(
+      validCloseCcInput({ fillDate: '2026-01-20', openFillDate: '2026-01-20' })
+    )
+    expect(result.phase).toBe('HOLDING_SHARES')
+  })
+
+  it('returns { phase: HOLDING_SHARES } when fillDate equals expiration (boundary)', () => {
+    const result = closeCoveredCall(
+      validCloseCcInput({ fillDate: '2026-02-21', expiration: '2026-02-21' })
+    )
+    expect(result.phase).toBe('HOLDING_SHARES')
   })
 })
 

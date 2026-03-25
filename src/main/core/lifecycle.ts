@@ -47,6 +47,16 @@ function requirePositivePremium(premiumPerContract: string): void {
   }
 }
 
+function requirePositiveClosePrice(closePricePerContract: string): void {
+  if (new Decimal(closePricePerContract).lte(0)) {
+    throw new ValidationError(
+      'closePricePerContract',
+      'must_be_positive',
+      'Close price must be greater than zero'
+    )
+  }
+}
+
 export function openWheel(input: OpenWheelInput): OpenWheelResult {
   if (!TICKER_RE.test(input.ticker)) {
     throw new ValidationError('ticker', 'invalid_format', 'Ticker must be 1–5 uppercase letters')
@@ -97,13 +107,7 @@ export function closeCsp(input: CloseCspInput): CloseCspResult {
     throw new ValidationError('__phase__', 'invalid_phase', 'Position is not in CSP_OPEN phase')
   }
 
-  if (new Decimal(input.closePricePerContract).lte(0)) {
-    throw new ValidationError(
-      'closePricePerContract',
-      'must_be_positive',
-      'Close price must be positive'
-    )
-  }
+  requirePositiveClosePrice(input.closePricePerContract)
 
   if (input.closeFillDate < input.openFillDate) {
     throw new ValidationError(
@@ -216,11 +220,7 @@ export function openCoveredCall(input: OpenCoveredCallInput): OpenCoveredCallRes
   }
 
   if (input.expiration <= input.referenceDate) {
-    throw new ValidationError(
-      'expiration',
-      'already_expired',
-      'Expiration date has already passed'
-    )
+    throw new ValidationError('expiration', 'already_expired', 'Expiration date has already passed')
   }
 
   return { phase: 'CC_OPEN' }
@@ -250,6 +250,44 @@ export function recordAssignment(input: RecordAssignmentInput): RecordAssignment
       'assignmentDate',
       'date_before_open',
       'Assignment date cannot be before the CSP open date'
+    )
+  }
+
+  return { phase: 'HOLDING_SHARES' }
+}
+
+export interface CloseCoveredCallInput {
+  currentPhase: WheelPhase
+  closePricePerContract: string
+  openFillDate: string
+  fillDate: string
+  expiration: string
+}
+
+export interface CloseCoveredCallResult {
+  phase: 'HOLDING_SHARES'
+}
+
+export function closeCoveredCall(input: CloseCoveredCallInput): CloseCoveredCallResult {
+  if (input.currentPhase !== 'CC_OPEN') {
+    throw new ValidationError('__phase__', 'invalid_phase', 'No open covered call on this position')
+  }
+
+  requirePositiveClosePrice(input.closePricePerContract)
+
+  if (input.fillDate < input.openFillDate) {
+    throw new ValidationError(
+      'fillDate',
+      'close_date_before_open',
+      'Fill date cannot be before the CC open date'
+    )
+  }
+
+  if (input.fillDate > input.expiration) {
+    throw new ValidationError(
+      'fillDate',
+      'close_date_after_expiration',
+      'Fill date cannot be after the CC expiration date — use Record Expiry instead'
     )
   }
 

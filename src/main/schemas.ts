@@ -188,3 +188,27 @@ export interface OpenCcPositionResult {
   leg: LegRecord
   costBasisSnapshot: CostBasisSnapshotRecord
 }
+
+// ---------------------------------------------------------------------------
+// Close CC schemas
+// ---------------------------------------------------------------------------
+
+export const CloseCcPayloadSchema = z.object({
+  positionId: z.string().uuid(),
+  closePricePerContract: z.number().positive(),
+  fillDate: z.string().optional()
+})
+
+export type CloseCcPayload = z.infer<typeof CloseCcPayloadSchema>
+
+export interface CloseCcPositionResult {
+  position: {
+    id: string
+    ticker: string
+    phase: 'HOLDING_SHARES'
+    status: 'ACTIVE'
+    closedDate: null
+  }
+  leg: LegRecord
+  ccLegPnl: string
+}

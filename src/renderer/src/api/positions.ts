@@ -332,6 +332,48 @@ export async function openCoveredCall(payload: OpenCcPayload): Promise<OpenCcRes
   return result as unknown as OpenCcResponse
 }
 
+export type CloseCcEarlyPayload = {
+  position_id: string
+  close_price_per_contract: number
+  fill_date?: string
+}
+
+export type CloseCcEarlyResponse = {
+  position: {
+    id: string
+    ticker: string
+    phase: 'HOLDING_SHARES'
+    status: 'ACTIVE'
+    closedDate: null
+  }
+  leg: LegData & {
+    positionId: string
+    legRole: string
+    action: string
+    instrumentType: string
+    premiumPerContract: string
+    fillPrice: string
+    fillDate: string
+    createdAt: string
+    updatedAt: string
+  }
+  ccLegPnl: string
+}
+
+export async function closeCoveredCallEarly(
+  payload: CloseCcEarlyPayload
+): Promise<CloseCcEarlyResponse> {
+  const result = await window.api.closeCoveredCallEarly({
+    positionId: payload.position_id,
+    closePricePerContract: payload.close_price_per_contract,
+    fillDate: payload.fill_date
+  })
+  if (!result.ok) {
+    throw apiError(400, { detail: mapIpcErrors(result.errors) })
+  }
+  return result as unknown as CloseCcEarlyResponse
+}
+
 export async function createPosition(
   payload: CreatePositionPayload
 ): Promise<CreatePositionResponse> {

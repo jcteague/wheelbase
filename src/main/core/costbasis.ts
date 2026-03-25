@@ -167,3 +167,20 @@ export function calculateCspExpiration(input: CspExpirationInput): CspExpiration
     pnlPercentage: '100.0000'
   }
 }
+
+export interface CcCloseInput {
+  openPremiumPerContract: string
+  closePricePerContract: string
+  contracts: number
+}
+
+export interface CcCloseResult {
+  ccLegPnl: string
+}
+
+export function calculateCcClose(input: CcCloseInput): CcCloseResult {
+  const open = new Decimal(input.openPremiumPerContract)
+  const close = new Decimal(input.closePricePerContract)
+  const ccLegPnl = round4(open.minus(close).times(input.contracts).times(100))
+  return { ccLegPnl: ccLegPnl.toFixed(4) }
+}

@@ -131,6 +131,18 @@ type IpcOpenCcResult = IpcResult<{
   costBasisSnapshot: IpcCostBasisSnapshotRecord
 }>
 
+interface IpcCloseCcPayload {
+  positionId: string
+  closePricePerContract: number
+  fillDate?: string
+}
+
+type IpcCloseCcResult = IpcResult<{
+  position: { id: string; ticker: string; phase: string; status: string; closedDate: null }
+  leg: IpcLegRecord & { fillPrice: string }
+  ccLegPnl: string
+}>
+
 declare global {
   interface Window {
     electron: ElectronAPI
@@ -143,6 +155,7 @@ declare global {
       expirePosition: (payload: IpcExpireCspPayload) => Promise<IpcExpireCspResult>
       assignPosition: (payload: IpcAssignCspPayload) => Promise<IpcAssignCspResult>
       openCoveredCall: (payload: IpcOpenCcPayload) => Promise<IpcOpenCcResult>
+      closeCoveredCallEarly: (payload: IpcCloseCcPayload) => Promise<IpcCloseCcResult>
     }
   }
 }

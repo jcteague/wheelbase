@@ -5,6 +5,7 @@ import { ValidationError } from '../core/lifecycle'
 import { logger } from '../logger'
 import {
   AssignCspPayloadSchema,
+  CloseCcPayloadSchema,
   CloseCspPayloadSchema,
   ExpireCspPayloadSchema,
   OpenCcPayloadSchema
@@ -18,6 +19,7 @@ import {
   listPositions,
   openCoveredCallPosition
 } from '../services/positions'
+import { closeCoveredCallPosition } from '../services/close-covered-call-position'
 import type { CreatePositionPayload } from '../schemas'
 
 function handleIpcCall(
@@ -95,6 +97,13 @@ export function registerPositionsHandlers(db: Database.Database): void {
     handleIpcCall('positions_open_cc_unhandled_error', () => {
       const parsed = OpenCcPayloadSchema.parse(payload)
       return openCoveredCallPosition(db, parsed.positionId, parsed)
+    })
+  )
+
+  ipcMain.handle('positions:close-cc-early', (_, payload: unknown) =>
+    handleIpcCall('positions_close_cc_early_unhandled_error', () => {
+      const parsed = CloseCcPayloadSchema.parse(payload)
+      return closeCoveredCallPosition(db, parsed.positionId, parsed)
     })
   )
 }

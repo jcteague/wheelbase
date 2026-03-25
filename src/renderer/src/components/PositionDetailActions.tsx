@@ -21,6 +21,7 @@ type PositionDetailActionsProps = {
   onOpenCc: () => void
   onRecordAssignment: () => void
   onRecordExpiration: () => void
+  onCloseCcEarly: () => void
 }
 
 export function PositionDetailActions({
@@ -28,11 +29,22 @@ export function PositionDetailActions({
   hasCostBasis,
   onOpenCc,
   onRecordAssignment,
-  onRecordExpiration
+  onRecordExpiration,
+  onCloseCcEarly
 }: PositionDetailActionsProps): React.JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
       <PhaseBadge phase={phase} />
+      {phase === 'CC_OPEN' && (
+        <button
+          data-testid="close-cc-early-btn"
+          className="wb-teal-button"
+          onClick={onCloseCcEarly}
+          style={actionButtonStyle}
+        >
+          Close CC Early →
+        </button>
+      )}
       {phase === 'HOLDING_SHARES' && hasCostBasis && (
         <button
           data-testid="open-covered-call-btn"

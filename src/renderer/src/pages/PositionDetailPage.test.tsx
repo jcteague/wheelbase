@@ -23,6 +23,12 @@ vi.mock('../components/AssignmentSheet', () => ({
     open ? <div data-testid="assignment-sheet">Assign CSP to Shares</div> : null
 }))
 
+// Mock CloseCcEarlySheet to avoid testing it in isolation here
+vi.mock('../components/CloseCcEarlySheet', () => ({
+  CloseCcEarlySheet: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="close-cc-early-sheet">Close Covered Call Early</div> : null
+}))
+
 // Mock wouter so useParams works
 vi.mock('wouter', () => ({
   useParams: () => ({ id: 'pos-123' }),
@@ -332,4 +338,67 @@ it('does not render CloseCspForm for a closed position', () => {
 
   render(<PositionDetailPage />)
   expect(screen.queryByTestId('close-csp-form')).not.toBeInTheDocument()
+})
+
+const CC_OPEN_DETAIL = {
+  ...CSP_OPEN_DETAIL,
+  position: {
+    ...CSP_OPEN_DETAIL.position,
+    phase: 'CC_OPEN' as const
+  },
+  activeLeg: {
+    id: 'leg-cc',
+    positionId: 'pos-123',
+    legRole: 'CC_OPEN' as const,
+    action: 'SELL' as const,
+    instrumentType: 'CALL' as const,
+    strike: '182.0000',
+    expiration: '2026-02-21',
+    contracts: 1,
+    premiumPerContract: '2.3000',
+    fillDate: '2026-01-20',
+    createdAt: '2026-01-20T00:00:00.000Z',
+    updatedAt: '2026-01-20T00:00:00.000Z'
+  }
+}
+
+it('shows "Close CC Early →" button when position phase is CC_OPEN', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: CC_OPEN_DETAIL,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  expect(screen.getByTestId('close-cc-early-btn')).toBeInTheDocument()
+})
+
+it('does not show "Close CC Early →" button when phase is HOLDING_SHARES', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: {
+      ...CC_OPEN_DETAIL,
+      position: { ...CC_OPEN_DETAIL.position, phase: 'HOLDING_SHARES' as const }
+    },
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  expect(screen.queryByTestId('close-cc-early-btn')).not.toBeInTheDocument()
+})
+
+it('opens CloseCcEarlySheet when "Close CC Early →" button is clicked', async () => {
+  const user = userEvent.setup()
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: CC_OPEN_DETAIL,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  await user.click(screen.getByTestId('close-cc-early-btn'))
+  expect(screen.getByTestId('close-cc-early-sheet')).toBeInTheDocument()
 })

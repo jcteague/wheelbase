@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const assignCspPosition = vi.fn()
 const createPosition = vi.fn()
 const closeCspPosition = vi.fn()
+const closeCoveredCallPosition = vi.fn()
 const expireCspPosition = vi.fn()
 const getPosition = vi.fn()
 const listPositions = vi.fn()
@@ -30,6 +31,10 @@ vi.mock('../services/positions', () => ({
   openCoveredCallPosition
 }))
 
+vi.mock('../services/close-covered-call-position', () => ({
+  closeCoveredCallPosition
+}))
+
 function getRegisteredHandler(
   calls: Array<[string, (...args: unknown[]) => unknown]>,
   channel: string
@@ -43,6 +48,7 @@ describe('registerPositionsHandlers', () => {
     assignCspPosition.mockReset()
     createPosition.mockReset()
     closeCspPosition.mockReset()
+    closeCoveredCallPosition.mockReset()
     expireCspPosition.mockReset()
     getPosition.mockReset()
     listPositions.mockReset()
@@ -241,5 +247,125 @@ describe('registerPositionsHandlers', () => {
     })
 
     expect(result).toMatchObject({ ok: false })
+  })
+
+  it('registers a positions:close-cc-early handler', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+
+    registerPositionsHandlers({} as never)
+
+    expect(vi.mocked(ipcMain.handle)).toHaveBeenCalledWith(
+      'positions:close-cc-early',
+      expect.any(Function)
+    )
+  })
+
+  it('positions:close-cc-early returns ok:true with HOLDING_SHARES position and ccLegPnl for valid payload', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+    const db = {} as never
+
+    closeCoveredCallPosition.mockReturnValue({
+      position: {
+        id: '11111111-1111-4111-8111-111111111111',
+        ticker: 'AAPL',
+        phase: 'HOLDING_SHARES',
+        status: 'ACTIVE',
+        closedDate: null
+      },
+      leg: { id: 'leg-1', legRole: 'CC_CLOSE', action: 'BUY' },
+      ccLegPnl: '120.0000'
+    })
+
+    registerPositionsHandlers(db)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:close-cc-early'
+    )
+
+    const result = await handler?.(null, {
+      positionId: '11111111-1111-4111-8111-111111111111',
+      closePricePerContract: 1.1,
+      fillDate: '2026-02-01'
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      position: { phase: 'HOLDING_SHARES' },
+      ccLegPnl: '120.0000'
+    })
+  })
+
+  it('positions:close-cc-early returns ok:false for invalid_phase (position not in CC_OPEN)', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+    const db = {} as never
+    const { ValidationError } = await import('../core/lifecycle')
+
+    closeCoveredCallPosition.mockImplementation(() => {
+      throw new ValidationError(
+        '__phase__',
+        'invalid_phase',
+        'No open covered call on this position'
+      )
+    })
+
+    registerPositionsHandlers(db)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:close-cc-early'
+    )
+
+    const result = await handler?.(null, {
+      positionId: '11111111-1111-4111-8111-111111111111',
+      closePricePerContract: 1.1,
+      fillDate: '2026-02-01'
+    })
+
+    expect(result).toMatchObject({ ok: false })
+    expect((result as { errors: unknown[] }).errors).toBeDefined()
+  })
+
+  it('positions:close-cc-early returns ok:false for zero closePricePerContract (Zod validation)', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+
+    registerPositionsHandlers({} as never)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:close-cc-early'
+    )
+
+    const result = await handler?.(null, {
+      positionId: '11111111-1111-4111-8111-111111111111',
+      closePricePerContract: 0
+    })
+
+    expect(result).toMatchObject({ ok: false })
+    expect((result as { errors: unknown[] }).errors).toBeDefined()
+  })
+
+  it('positions:close-cc-early returns ok:false for invalid positionId (Zod validation)', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+
+    registerPositionsHandlers({} as never)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:close-cc-early'
+    )
+
+    const result = await handler?.(null, {
+      positionId: 'not-a-uuid',
+      closePricePerContract: 1.1
+    })
+
+    expect(result).toMatchObject({ ok: false })
+    expect((result as { errors: unknown[] }).errors).toBeDefined()
   })
 })
