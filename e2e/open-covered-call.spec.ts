@@ -31,8 +31,8 @@ async function selectDate(page: Page, triggerSelector: string, iso: string): Pro
     )
   }
 
-  await page.click(`.rdp-day_button:not(.rdp-outside):has-text("${day}")`)
-  await page.waitForSelector(`text=${iso}`)
+  await page.click(`.rdp-day:not(.rdp-outside) .rdp-day_button:has-text("${day}")`)
+  await page.waitForSelector(`${triggerSelector}:has-text("${iso}")`)
 }
 
 async function openPosition(
@@ -138,9 +138,9 @@ describe('US-7: Open a Covered Call', () => {
     await selectDate(page, '[data-testid="cc-fill-date"]', today)
     await page.click('[data-testid="cc-submit"]')
 
-    await page.waitForSelector('text=HOLDING 100 SHARES')
+    await page.waitForSelector('text=AAPL CC Opened')
     const bodyText = await page.textContent('body')
-    expect(bodyText).toContain('CC OPEN')
+    expect(bodyText).toContain('CC OPEN · CALL $182.00')
     expect(bodyText).toContain('174.20')
   })
 

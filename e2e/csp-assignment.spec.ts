@@ -60,8 +60,8 @@ async function selectDate(page: Page, triggerSelector: string, iso: string): Pro
     )
   }
 
-  await page.click(`.rdp-day_button:not(.rdp-outside):has-text("${day}")`)
-  await page.waitForSelector(`text=${iso}`)
+  await page.click(`.rdp-day:not(.rdp-outside) .rdp-day_button:has-text("${day}")`)
+  await page.waitForSelector(`${triggerSelector}:has-text("${iso}")`)
 }
 
 async function openDetailFor(page: Page, ticker: string): Promise<void> {
