@@ -100,6 +100,7 @@ export function CloseCcEarlySheet(props: CloseCcEarlySheetProps): React.JSX.Elem
           display: 'flex',
           flexDirection: 'column',
           fontFamily: MONO,
+          color: 'var(--wb-text-primary)',
           boxShadow: '-12px 0 48px rgba(0,0,0,0.5)'
         }}
       >

@@ -1,3 +1,4 @@
+import { LEG_ROLE_LABEL } from '../lib/phase'
 import { TableCell, TableHeader } from './ui/TablePrimitives'
 
 type LegHistoryEntry = {
@@ -31,7 +32,7 @@ export function LegHistoryTable({ legs }: LegHistoryTableProps): React.JSX.Eleme
           <tr key={leg.id}>
             <TableCell>{leg.fillDate}</TableCell>
             <TableCell>{leg.action}</TableCell>
-            <TableCell>{leg.legRole}</TableCell>
+            <TableCell>{LEG_ROLE_LABEL[leg.legRole] ?? leg.legRole}</TableCell>
             <TableCell>{leg.strike}</TableCell>
             <TableCell>{leg.premiumPerContract}</TableCell>
           </tr>

@@ -65,7 +65,7 @@ export function CcSuccess({
         title={`${ticker} CC Opened`}
         subtitle={`CALL ${fmtMoney(strike)} · ${fmtDate(expiration)}`}
         onClose={onClose}
-        eyebrowColor="var(--wb-purple)"
+        eyebrowColor="var(--wb-violet)"
       />
       <div
         style={{
@@ -89,7 +89,7 @@ export function CcSuccess({
           <div
             style={{
               fontSize: 9,
-              color: 'var(--wb-purple)',
+              color: 'var(--wb-violet)',
               opacity: 0.75,
               letterSpacing: '0.18em',
               textTransform: 'uppercase',
@@ -109,7 +109,7 @@ export function CcSuccess({
             HOLDING {sharesHeld} SHARES
           </div>
           <div
-            style={{ fontSize: 11, color: 'var(--wb-purple)', fontWeight: 600, marginBottom: 12 }}
+            style={{ fontSize: 11, color: 'var(--wb-violet)', fontWeight: 600, marginBottom: 12 }}
           >
             CC OPEN · CALL {fmtMoney(strike)} · {fmtDate(expiration)}
           </div>
@@ -117,7 +117,7 @@ export function CcSuccess({
             <StatBox
               label="Updated Cost Basis"
               value={`${fmtMoney(basisPerShare)}/share`}
-              color="var(--wb-purple)"
+              color="var(--wb-violet)"
             />
             <StatBox
               label="Total Premium"
@@ -156,7 +156,7 @@ export function CcSuccess({
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Badge>HOLDING_SHARES</Badge>
                 <span style={{ color: 'var(--wb-text-muted)' }}>→</span>
-                <Badge color="var(--wb-purple)">CC_OPEN</Badge>
+                <Badge color="var(--wb-violet)">CC_OPEN</Badge>
               </div>
             </div>
           </div>

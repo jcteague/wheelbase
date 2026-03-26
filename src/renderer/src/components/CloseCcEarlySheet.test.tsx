@@ -110,8 +110,8 @@ it('renders form header "Close Covered Call Early" when open=true', () => {
 it('renders position summary card with ticker, contracts, open premium, phase transition, and cost basis', () => {
   render(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
   expect(screen.getByText(/AAPL/)).toBeInTheDocument()
-  expect(screen.getByText(/CC_OPEN/)).toBeInTheDocument()
-  expect(screen.getByText(/HOLDING_SHARES/)).toBeInTheDocument()
+  expect(screen.getAllByText(/Sell Call/i).length).toBeGreaterThan(0)
+  expect(screen.getAllByText(/Holding Shares/i).length).toBeGreaterThan(0)
   expect(screen.getByText(/unchanged/i)).toBeInTheDocument()
 })
 
@@ -277,8 +277,8 @@ it('renders phase transition CC_OPEN→HOLDING_SHARES in success summary card', 
   capturedOnSuccess?.(SUCCESS_PROFIT_RESPONSE)
   rerender(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
 
-  expect(screen.getByText(/CC_OPEN/)).toBeInTheDocument()
-  expect(screen.getByText(/HOLDING_SHARES/)).toBeInTheDocument()
+  expect(screen.getAllByText(/Sell Call/i).length).toBeGreaterThan(0)
+  expect(screen.getAllByText(/Holding Shares/i).length).toBeGreaterThan(0)
 })
 
 it('renders cost basis "(unchanged)" in success summary card', () => {

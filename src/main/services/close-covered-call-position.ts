@@ -26,19 +26,24 @@ export function closeCoveredCallPosition(
     throw new ValidationError('__root__', 'not_found', 'Position not found')
   }
 
-  const ccOpenLeg = positionDetail.legs.find((l) => l.legRole === 'CC_OPEN')
+  if (positionDetail.position.phase !== 'CC_OPEN') {
+    throw new ValidationError('__phase__', 'invalid_phase', 'No open covered call on this position')
+  }
 
-  closeCoveredCall({
-    currentPhase: positionDetail.position.phase,
-    closePricePerContract: String(payload.closePricePerContract),
-    openFillDate: ccOpenLeg?.fillDate ?? fillDate,
-    fillDate,
-    expiration: ccOpenLeg?.expiration ?? fillDate
-  })
+  const ccOpenLeg =
+    positionDetail.activeLeg?.legRole === 'CC_OPEN' ? positionDetail.activeLeg : null
 
   if (!ccOpenLeg) {
     throw new ValidationError('__root__', 'no_cc_open_leg', 'Position has no open covered call leg')
   }
+
+  closeCoveredCall({
+    currentPhase: positionDetail.position.phase,
+    closePricePerContract: String(payload.closePricePerContract),
+    openFillDate: ccOpenLeg.fillDate,
+    fillDate,
+    expiration: ccOpenLeg.expiration
+  })
 
   const closePriceStr = String(payload.closePricePerContract)
   const closePriceFormatted = new Decimal(closePriceStr).toFixed(4)

@@ -1,7 +1,6 @@
 import Decimal from 'decimal.js'
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useLocation } from 'wouter'
 import type { AssignCspResponse } from '../api/positions'
 import { fmtDate, fmtMoney } from '../lib/format'
 import { MONO } from '../lib/tokens'
@@ -28,10 +27,15 @@ export interface AssignmentSheetProps {
   premiumWaterfall: Array<{ label: string; amount: string }>
   projectedBasisPerShare: string
   onClose: () => void
+  onOpenCoveredCall: (ctx: {
+    basisPerShare: string
+    totalPremiumCollected: string
+    contracts: number
+    assignmentDate: string
+  }) => void
 }
 
 export function AssignmentSheet(props: AssignmentSheetProps): React.JSX.Element | null {
-  const [, navigate] = useLocation()
   const [assignmentDate, setAssignmentDate] = useState('')
   const [dateError, setDateError] = useState<string | null>(null)
   const [successState, setSuccessState] = useState<AssignCspResponse | null>(null)
@@ -88,7 +92,14 @@ export function AssignmentSheet(props: AssignmentSheetProps): React.JSX.Element 
       sharesHeld={sharesHeld}
       assignmentDate={successState.leg.fillDate}
       basisPerShare={successState.costBasisSnapshot.basisPerShare}
-      navigateToCoveredCall={() => navigate(`/new?ticker=${props.ticker}`)}
+      onOpenCoveredCall={() =>
+        props.onOpenCoveredCall({
+          basisPerShare: successState.costBasisSnapshot.basisPerShare,
+          totalPremiumCollected: successState.costBasisSnapshot.totalPremiumCollected,
+          contracts: props.contracts,
+          assignmentDate: successState.leg.fillDate
+        })
+      }
       onClose={props.onClose}
     />
   ) : (
@@ -348,7 +359,7 @@ function AssignmentSuccess({
   sharesHeld,
   assignmentDate,
   basisPerShare,
-  navigateToCoveredCall,
+  onOpenCoveredCall,
   onClose
 }: {
   ticker: string
@@ -357,7 +368,7 @@ function AssignmentSuccess({
   sharesHeld: number
   assignmentDate: string
   basisPerShare: string
-  navigateToCoveredCall: () => void
+  onOpenCoveredCall: () => void
   onClose: () => void
 }): React.JSX.Element {
   return (
@@ -441,7 +452,7 @@ function AssignmentSuccess({
         <Caption>What&apos;s next?</Caption>
         <FormButton
           label={`Open Covered Call on ${ticker} →`}
-          onClick={navigateToCoveredCall}
+          onClick={onOpenCoveredCall}
           style={{ width: '100%' }}
         />
         <button

@@ -320,6 +320,10 @@ export function PositionDetailPage(): React.JSX.Element {
           premiumWaterfall={assignmentWaterfall}
           projectedBasisPerShare={assignmentCtx.snapshot.basisPerShare}
           onClose={handleCloseAssignment}
+          onOpenCoveredCall={(ctx) => {
+            setAssignmentCtx(null)
+            setOpenCcCtx(ctx)
+          }}
         />
       )}
       {openCcCtx && (
@@ -334,18 +338,20 @@ export function PositionDetailPage(): React.JSX.Element {
           onClose={handleCloseOpenCc}
         />
       )}
-      <CloseCcEarlySheet
-        open={closeCcCtx !== null}
-        positionId={position.id}
-        ticker={position.ticker}
-        contracts={closeCcCtx?.contracts ?? 0}
-        openPremium={closeCcCtx?.openPremium ?? ''}
-        ccOpenFillDate={closeCcCtx?.ccOpenFillDate ?? ''}
-        ccExpiration={closeCcCtx?.ccExpiration ?? ''}
-        strike={closeCcCtx?.strike ?? ''}
-        basisPerShare={closeCcCtx?.basisPerShare ?? ''}
-        onClose={handleCloseCloseCcEarly}
-      />
+      {closeCcCtx && (
+        <CloseCcEarlySheet
+          open
+          positionId={position.id}
+          ticker={position.ticker}
+          contracts={closeCcCtx.contracts}
+          openPremium={closeCcCtx.openPremium}
+          ccOpenFillDate={closeCcCtx.ccOpenFillDate}
+          ccExpiration={closeCcCtx.ccExpiration}
+          strike={closeCcCtx.strike}
+          basisPerShare={closeCcCtx.basisPerShare}
+          onClose={handleCloseCloseCcEarly}
+        />
+      )}
     </PageLayout>
   )
 }

@@ -51,13 +51,14 @@ const DEFAULT_PROPS = {
     { label: 'Roll credit', amount: '0.2500' }
   ],
   projectedBasisPerShare: '177.2500',
-  onClose: vi.fn()
+  onClose: vi.fn(),
+  onOpenCoveredCall: vi.fn()
 }
 
 const SUCCESS_RESPONSE = {
   position: { id: 'pos-123', ticker: 'AAPL', phase: 'HOLDING_SHARES', status: 'ACTIVE' },
   leg: { fillDate: '2026-04-17', contracts: 1, strike: '180.0000' },
-  costBasisSnapshot: { basisPerShare: '177.2500' },
+  costBasisSnapshot: { basisPerShare: '177.2500', totalPremiumCollected: '2.7500' },
   premiumWaterfall: DEFAULT_PROPS.premiumWaterfall
 }
 

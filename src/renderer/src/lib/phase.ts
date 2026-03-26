@@ -26,6 +26,16 @@ export const PHASE_LABEL: Record<WheelPhase, string> = {
   WHEEL_COMPLETE: 'Wheel Complete'
 }
 
+export const LEG_ROLE_LABEL: Record<string, string> = {
+  CSP_OPEN: 'Sell Put',
+  CSP_CLOSE: 'Buy to Close Put',
+  ASSIGN: 'Assignment',
+  CC_OPEN: 'Sell Call',
+  CC_CLOSE: 'Buy to Close Call',
+  EXPIRE: 'Expired',
+  ROLL_TO: 'Roll'
+}
+
 export const PHASE_LABEL_SHORT: Record<WheelPhase, string> = {
   CSP_OPEN: 'CSP Open',
   CSP_EXPIRED: 'CSP Expired',

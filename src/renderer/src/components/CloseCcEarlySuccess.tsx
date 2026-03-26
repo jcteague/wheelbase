@@ -87,7 +87,6 @@ export function CloseCcEarlySuccess({
               <div
                 style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}
               >
-                <span>CC_OPEN → HOLDING_SHARES</span>
                 <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                   <PhaseBadge phase="CC_OPEN" />
                   <span>→</span>
