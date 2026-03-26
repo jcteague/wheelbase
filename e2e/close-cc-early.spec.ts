@@ -157,9 +157,9 @@ describe('close covered call early', () => {
     await selectDate(page, '[data-testid="cc-close-fill-date"]', today)
     await page.click('[data-testid="cc-close-submit"]')
 
-    await page.waitForSelector('text=HOLDING_SHARES')
+    await page.waitForSelector('text=Holding Shares')
     const bodyText = await page.textContent('body')
-    expect(bodyText).toContain('CC_CLOSE')
+    expect(bodyText).toContain('Buy to Close Call')
     expect(bodyText).toContain('120')
   })
 
@@ -173,9 +173,9 @@ describe('close covered call early', () => {
     await selectDate(page, '[data-testid="cc-close-fill-date"]', today)
     await page.click('[data-testid="cc-close-submit"]')
 
-    await page.waitForSelector('text=HOLDING_SHARES')
+    await page.waitForSelector('text=Holding Shares')
     const bodyText = await page.textContent('body')
-    expect(bodyText).toContain('CC_CLOSE')
+    expect(bodyText).toContain('Buy to Close Call')
     expect(bodyText).toMatch(/−?\$?120|−120|-120/)
   })
 
