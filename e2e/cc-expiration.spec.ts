@@ -81,7 +81,9 @@ async function openDetailFor(page: Page, ticker: string): Promise<void> {
  * Seeds a position all the way to CC_OPEN state.
  * Uses a PAST expiration for the CC so that "Record Expiration →" button appears (DTE ≤ 0).
  */
-async function reachCcOpenStateWithExpiredCc(page: Page): Promise<{ today: string; ccExpiration: string }> {
+async function reachCcOpenStateWithExpiredCc(
+  page: Page
+): Promise<{ today: string; ccExpiration: string }> {
   const today = new Date().toISOString().slice(0, 10)
   // CC expiration is in the past so DTE ≤ 0 and "Record Expiration →" button appears
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
@@ -192,7 +194,9 @@ describe('US-9: Record CC expiring worthless', () => {
     const page = await launchFreshApp()
     const today = new Date().toISOString().slice(0, 10)
     // Use a future CC expiration — DTE > 0 → button should not appear
-    const futureExpiration = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const futureExpiration = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10)
 
     await openPosition(page, {
       ticker: 'AAPL',

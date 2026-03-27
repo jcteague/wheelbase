@@ -618,18 +618,14 @@ describe('expireCc', () => {
   })
 
   it('throws ValidationError with too_early when referenceDate is before expirationDate', () => {
-    const e = catchValidation(() =>
-      expireCc(validExpireCcInput({ referenceDate: '2026-02-19' }))
-    )
+    const e = catchValidation(() => expireCc(validExpireCcInput({ referenceDate: '2026-02-19' })))
     expect(e.field).toBe('expiration')
     expect(e.code).toBe('too_early')
     expect(e.message).toBe('Cannot record expiration before the expiration date (2026-02-21)')
   })
 
   it('throws too_early when referenceDate is one day before expirationDate (boundary case)', () => {
-    const e = catchValidation(() =>
-      expireCc(validExpireCcInput({ referenceDate: '2026-02-20' }))
-    )
+    const e = catchValidation(() => expireCc(validExpireCcInput({ referenceDate: '2026-02-20' })))
     expect(e.field).toBe('expiration')
     expect(e.code).toBe('too_early')
     expect(e.message).toBe('Cannot record expiration before the expiration date (2026-02-21)')

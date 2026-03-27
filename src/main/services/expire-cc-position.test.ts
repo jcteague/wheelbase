@@ -8,7 +8,9 @@ import { createPosition } from './positions'
 
 const CC_EXPIRATION = '2026-02-21'
 
-function makeCcOpenPosition(db: ReturnType<typeof makeTestDb>) {
+function makeCcOpenPosition(
+  db: ReturnType<typeof makeTestDb>
+): ReturnType<typeof openCoveredCallPosition> {
   const created = createPosition(db, {
     ticker: 'AAPL',
     strike: 180,

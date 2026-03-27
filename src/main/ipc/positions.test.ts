@@ -439,9 +439,7 @@ describe('registerPositionsHandlers', () => {
 
     expect(result).toMatchObject({ ok: false })
     expect(
-      (result as { errors: Array<{ code: string }> }).errors.some((e) =>
-        e.code.includes('invalid')
-      )
+      (result as { errors: Array<{ code: string }> }).errors.some((e) => e.code.includes('invalid'))
     ).toBe(true)
   })
 
@@ -452,7 +450,11 @@ describe('registerPositionsHandlers', () => {
     const { ValidationError } = await import('../core/lifecycle')
 
     expireCcPosition.mockImplementation(() => {
-      throw new ValidationError('__phase__', 'invalid_phase', 'No open covered call on this position')
+      throw new ValidationError(
+        '__phase__',
+        'invalid_phase',
+        'No open covered call on this position'
+      )
     })
 
     registerPositionsHandlers(db)
@@ -468,7 +470,13 @@ describe('registerPositionsHandlers', () => {
 
     expect(result).toMatchObject({
       ok: false,
-      errors: [{ field: '__phase__', code: 'invalid_phase', message: 'No open covered call on this position' }]
+      errors: [
+        {
+          field: '__phase__',
+          code: 'invalid_phase',
+          message: 'No open covered call on this position'
+        }
+      ]
     })
   })
 })

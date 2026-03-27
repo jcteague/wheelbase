@@ -86,7 +86,7 @@ it('clicking "Confirm Expiration" calls useExpireCoveredCall.mutate with { posit
 // Success state
 // ---------------------------------------------------------------------------
 
-function renderSuccess() {
+function renderSuccess(): Promise<void> {
   let capturedOnSuccess: ((data: unknown) => void) | undefined
   mockUseExpireCoveredCall.mockImplementation(
     (options?: { onSuccess?: (data: unknown) => void }) => {
@@ -94,8 +94,20 @@ function renderSuccess() {
       return {
         mutate: () => {
           capturedOnSuccess?.({
-            position: { id: 'pos-123', ticker: 'AAPL', phase: 'HOLDING_SHARES', status: 'ACTIVE', closedDate: null },
-            leg: { legRole: 'EXPIRE', action: 'EXPIRE', instrumentType: 'CALL', fillDate: '2026-02-21', premiumPerContract: '0.0000' },
+            position: {
+              id: 'pos-123',
+              ticker: 'AAPL',
+              phase: 'HOLDING_SHARES',
+              status: 'ACTIVE',
+              closedDate: null
+            },
+            leg: {
+              legRole: 'EXPIRE',
+              action: 'EXPIRE',
+              instrumentType: 'CALL',
+              fillDate: '2026-02-21',
+              premiumPerContract: '0.0000'
+            },
             costBasisSnapshot: { basisPerShare: '174.2000', totalPremiumCollected: '580.0000' },
             sharesHeld: 100
           })
@@ -163,17 +175,21 @@ it('success state renders strategic nudge text in info AlertBox', async () => {
 it('success state renders "Sell New Covered Call on AAPL →" FormButton', async () => {
   await renderSuccess()
   await waitFor(() => {
-    expect(screen.getByRole('button', { name: /Sell New Covered Call on AAPL/i })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /Sell New Covered Call on AAPL/i })
+    ).toBeInTheDocument()
   })
 })
 
 it('clicking "Sell New Covered Call on AAPL →" calls onClose', async () => {
   await renderSuccess()
   await waitFor(() =>
-    expect(screen.getByRole('button', { name: /Sell New Covered Call on AAPL/i })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /Sell New Covered Call on AAPL/i })
+    ).toBeInTheDocument()
   )
-  await userEvent.setup().click(
-    screen.getByRole('button', { name: /Sell New Covered Call on AAPL/i })
-  )
+  await userEvent
+    .setup()
+    .click(screen.getByRole('button', { name: /Sell New Covered Call on AAPL/i }))
   expect(DEFAULT_PROPS.onClose).toHaveBeenCalled()
 })

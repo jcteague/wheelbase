@@ -231,7 +231,13 @@ describe('expireCc', () => {
   it('calls window.api.expireCc with camelCase positionId when given snake_case position_id', async () => {
     mockExpireCc.mockResolvedValue({
       ok: true,
-      position: { id: VALID_UUID, ticker: 'AAPL', phase: 'HOLDING_SHARES', status: 'ACTIVE', closedDate: null },
+      position: {
+        id: VALID_UUID,
+        ticker: 'AAPL',
+        phase: 'HOLDING_SHARES',
+        status: 'ACTIVE',
+        closedDate: null
+      },
       leg: { legRole: 'EXPIRE', action: 'EXPIRE', instrumentType: 'CALL' },
       costBasisSnapshot: { basisPerShare: '174.2000', totalPremiumCollected: '580.0000' },
       sharesHeld: 100
@@ -248,7 +254,13 @@ describe('expireCc', () => {
   it('maps expiration_date_override to expirationDateOverride in the camelCase call', async () => {
     mockExpireCc.mockResolvedValue({
       ok: true,
-      position: { id: VALID_UUID, ticker: 'AAPL', phase: 'HOLDING_SHARES', status: 'ACTIVE', closedDate: null },
+      position: {
+        id: VALID_UUID,
+        ticker: 'AAPL',
+        phase: 'HOLDING_SHARES',
+        status: 'ACTIVE',
+        closedDate: null
+      },
       leg: { legRole: 'EXPIRE' },
       costBasisSnapshot: {},
       sharesHeld: 100
@@ -265,13 +277,25 @@ describe('expireCc', () => {
   it('throws ApiError with status 400 when window.api.expireCc returns ok:false', async () => {
     mockExpireCc.mockResolvedValue({
       ok: false,
-      errors: [{ field: '__phase__', code: 'invalid_phase', message: 'No open covered call on this position' }]
+      errors: [
+        {
+          field: '__phase__',
+          code: 'invalid_phase',
+          message: 'No open covered call on this position'
+        }
+      ]
     })
 
     await expect(apiModule.expireCc?.({ position_id: VALID_UUID })).rejects.toMatchObject({
       status: 400,
       body: {
-        detail: [{ field: '__phase__', code: 'invalid_phase', message: 'No open covered call on this position' }]
+        detail: [
+          {
+            field: '__phase__',
+            code: 'invalid_phase',
+            message: 'No open covered call on this position'
+          }
+        ]
       }
     })
   })
@@ -279,7 +303,13 @@ describe('expireCc', () => {
   it('resolves with result when window.api.expireCc returns ok:true', async () => {
     const successPayload = {
       ok: true,
-      position: { id: VALID_UUID, ticker: 'AAPL', phase: 'HOLDING_SHARES', status: 'ACTIVE', closedDate: null },
+      position: {
+        id: VALID_UUID,
+        ticker: 'AAPL',
+        phase: 'HOLDING_SHARES',
+        status: 'ACTIVE',
+        closedDate: null
+      },
       leg: { legRole: 'EXPIRE', action: 'EXPIRE', instrumentType: 'CALL' },
       costBasisSnapshot: { basisPerShare: '174.2000', totalPremiumCollected: '580.0000' },
       sharesHeld: 100
