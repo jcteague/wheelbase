@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AssignCspPayloadSchema, OpenCcPayloadSchema } from './schemas'
+import { AssignCspPayloadSchema, ExpireCcPayloadSchema, OpenCcPayloadSchema } from './schemas'
 
 const VALID_POSITION_ID = '11111111-1111-4111-8111-111111111111'
 
@@ -45,6 +45,27 @@ const VALID_CC_PAYLOAD = {
   contracts: 1,
   premiumPerContract: 2.3
 }
+
+describe('ExpireCcPayloadSchema', () => {
+  it('parses a valid payload with positionId only', () => {
+    const result = ExpireCcPayloadSchema.parse({ positionId: VALID_POSITION_ID })
+    expect(result.positionId).toBe(VALID_POSITION_ID)
+    expect(result.expirationDateOverride).toBeUndefined()
+  })
+
+  it('rejects a non-UUID positionId', () => {
+    expect(() => ExpireCcPayloadSchema.parse({ positionId: 'not-a-uuid' })).toThrow()
+  })
+
+  it('parses a valid payload with expirationDateOverride', () => {
+    const result = ExpireCcPayloadSchema.parse({
+      positionId: VALID_POSITION_ID,
+      expirationDateOverride: '2026-02-21'
+    })
+    expect(result.positionId).toBe(VALID_POSITION_ID)
+    expect(result.expirationDateOverride).toBe('2026-02-21')
+  })
+})
 
 describe('OpenCcPayloadSchema', () => {
   it('parses valid payload', () => {

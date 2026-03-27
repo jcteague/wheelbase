@@ -29,6 +29,12 @@ vi.mock('../components/CloseCcEarlySheet', () => ({
     open ? <div data-testid="close-cc-early-sheet">Close Covered Call Early</div> : null
 }))
 
+// Mock CcExpirationSheet to avoid testing it in isolation here
+vi.mock('../components/CcExpirationSheet', () => ({
+  CcExpirationSheet: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="cc-expiration-sheet">Expire CC Worthless</div> : null
+}))
+
 // Mock wouter so useParams works
 vi.mock('wouter', () => ({
   useParams: () => ({ id: 'pos-123' }),
@@ -401,4 +407,70 @@ it('opens CloseCcEarlySheet when "Close CC Early →" button is clicked', async 
   render(<PositionDetailPage />)
   await user.click(screen.getByTestId('close-cc-early-btn'))
   expect(screen.getByTestId('close-cc-early-sheet')).toBeInTheDocument()
+})
+
+// ---------------------------------------------------------------------------
+// CC Expiration wiring (US-9)
+// ---------------------------------------------------------------------------
+
+// CC_OPEN_DETAIL uses expiration '2026-02-21' which is in the past (today 2026-03-26)
+// so computeDte <= 0 → the "Record Expiration →" button should appear
+
+it('renders "record-cc-expiration-btn" when phase is CC_OPEN and CC expiration is in the past (DTE ≤ 0)', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: CC_OPEN_DETAIL,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  expect(screen.getByTestId('record-cc-expiration-btn')).toBeInTheDocument()
+  expect(screen.getByTestId('record-cc-expiration-btn')).toHaveTextContent('Record Expiration')
+})
+
+it('does NOT render "record-cc-expiration-btn" when CC_OPEN expiration is in the future (DTE > 0)', () => {
+  // Use a far-future expiration so DTE > 0
+  const futureExpiration = '2099-12-31'
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: {
+      ...CC_OPEN_DETAIL,
+      activeLeg: { ...CC_OPEN_DETAIL.activeLeg, expiration: futureExpiration }
+    },
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  expect(screen.queryByTestId('record-cc-expiration-btn')).not.toBeInTheDocument()
+})
+
+it('does NOT render "record-cc-expiration-btn" when phase is HOLDING_SHARES', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: {
+      ...CC_OPEN_DETAIL,
+      position: { ...CC_OPEN_DETAIL.position, phase: 'HOLDING_SHARES' as const }
+    },
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  expect(screen.queryByTestId('record-cc-expiration-btn')).not.toBeInTheDocument()
+})
+
+it('clicking "record-cc-expiration-btn" opens CcExpirationSheet (renders cc-expiration-sheet)', async () => {
+  const user = userEvent.setup()
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: CC_OPEN_DETAIL,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  await user.click(screen.getByTestId('record-cc-expiration-btn'))
+  expect(screen.getByTestId('cc-expiration-sheet')).toBeInTheDocument()
 })

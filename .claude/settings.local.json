@@ -18,7 +18,8 @@
       "Bash(bd show:*)",
       "Bash(bd help:*)",
       "Bash(find /Users/johnteague/my-stuff/wheelbase -name *.mdx -o -name *mockup*)",
-      "Bash(pnpm test:e2e)"
+      "Bash(pnpm test:e2e)",
+      "Read(//Users/johnteague/my-stuff/wheelbase/.beads/dolt/.dolt/**)"
     ]
   },
   "enableAllProjectMcpServers": true,
