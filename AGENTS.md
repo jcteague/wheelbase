@@ -1,16 +1,13 @@
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+This project uses **markdown task files** for work tracking. Tasks live in `plans/<story-id>/tasks.md` as checkboxes.
 
 ## Quick Reference
 
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work atomically
-bd close <id>         # Complete work
-bd sync               # Sync with git
-```
+- Open tasks: `- [ ]` — check off when done: `- [x]`
+- Task files: `plans/<story-id>/tasks.md`
+- Create task files: `/plan-tasks plans/<story-id>/plan.md`
+- Execute tasks: `/implement-plan <story-id>`
 
 ## Non-Interactive Shell Commands
 
@@ -36,115 +33,59 @@ cp -rf source dest          # NOT: cp -r source dest
 - `apt-get` - use `-y` flag
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
 
-<!-- BEGIN BEADS INTEGRATION -->
-## Issue Tracking with bd (beads)
+## Task Tracking
 
-**IMPORTANT**: This project uses **bd (beads)** for ALL issue tracking. Do NOT use markdown TODOs, task lists, or other tracking methods.
+This project uses **markdown task files** — no external issue tracker.
 
-### Why bd?
+### Task File Location
 
-- Dependency-aware: Track blockers and relationships between issues
-- Version-controlled: Built on Dolt with cell-level merge
-- Agent-optimized: JSON output, ready work detection, discovered-from links
-- Prevents duplicate tracking systems and confusion
+`plans/<story-id>/tasks.md` — one file per user story.
 
-### Quick Start
+### Task Format
 
-**Check for ready work:**
-
-```bash
-bd ready --json
+```markdown
+- [ ] **[Red]** Write failing tests — `path/to/test.ts`
+- [x] **[Green]** Implement — `path/to/impl.ts` *(depends on: Red ✓)*
+- [ ] **[Refactor]** Clean up *(depends on: Green ✓)*
 ```
 
-**Create new issues:**
-
-```bash
-bd create "Issue title" --description="Detailed context" -t bug|feature|task -p 0-4 --json
-bd create "Issue title" --description="What this issue is about" -p 1 --deps discovered-from:bd-123 --json
-```
-
-**Claim and update:**
-
-```bash
-bd update <id> --claim --json
-bd update bd-42 --priority 1 --json
-```
-
-**Complete work:**
-
-```bash
-bd close bd-42 --reason "Completed" --json
-```
-
-### Issue Types
-
-- `bug` - Something broken
-- `feature` - New functionality
-- `task` - Work item (tests, docs, refactoring)
-- `epic` - Large feature with subtasks
-- `chore` - Maintenance (dependencies, tooling)
-
-### Priorities
-
-- `0` - Critical (security, data loss, broken builds)
-- `1` - High (major features, important bugs)
-- `2` - Medium (default, nice-to-have)
-- `3` - Low (polish, optimization)
-- `4` - Backlog (future ideas)
+Check off tasks as you complete them: `[ ]` → `[x]`
 
 ### Workflow for AI Agents
 
-1. **Check ready work**: `bd ready` shows unblocked issues
-2. **Claim your task atomically**: `bd update <id> --claim`
-3. **Work on it**: Implement, test, document
-4. **Discover new work?** Create linked issue:
-   - `bd create "Found bug" --description="Details about what was found" -p 1 --deps discovered-from:<parent-id>`
-5. **Complete**: `bd close <id> --reason "Done"`
+1. **Find work**: Read `plans/<story-id>/tasks.md` — look for unchecked `- [ ]` tasks
+2. **Check dependencies**: Only start a task when all its `*(depends on: ...)*` items are checked off
+3. **Work on it**: Use `/red`, `/green`, or `/refactor` commands
+4. **Complete**: Edit tasks.md and change `- [ ]` to `- [x]`
 
-### Auto-Sync
+### Parallel Execution
 
-bd automatically syncs with git:
-
-- Exports to `.beads/issues.jsonl` after changes (5s debounce)
-- Imports from JSONL when newer (e.g., after `git pull`)
-- No manual export/import needed!
+Tasks are organized into **layers** in tasks.md. All areas within a layer can be dispatched as parallel agents. Areas in later layers must wait for their upstream dependencies to be checked off.
 
 ### Important Rules
 
-- ✅ Use bd for ALL task tracking
-- ✅ Always use `--json` flag for programmatic use
-- ✅ Link discovered work with `discovered-from` dependencies
-- ✅ Check `bd ready` before asking "what should I work on?"
-- ❌ Do NOT create markdown TODO lists
+- ✅ Track all work in `plans/<story-id>/tasks.md`
+- ✅ Respect dependency order — Red before Green before Refactor
+- ✅ Check off tasks immediately when done
 - ❌ Do NOT use external issue trackers
-- ❌ Do NOT duplicate tracking systems
-
-For more details, see README.md and docs/QUICKSTART.md.
 
 ## Landing the Plane (Session Completion)
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+**When ending a work session**, complete ALL steps below before stopping.
 
 **MANDATORY WORKFLOW:**
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
+1. **Note remaining work** — add any discovered tasks to the relevant `tasks.md`
+2. **Run quality gates** (if code changed) — `pnpm test && pnpm lint && pnpm typecheck`
+3. **PUSH TO REMOTE** — This is MANDATORY:
    ```bash
    git pull --rebase
-   bd sync
    git push
    git status  # MUST show "up to date with origin"
    ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+4. **Verify** — All changes committed AND pushed
+5. **Hand off** — Provide context for next session
 
 **CRITICAL RULES:**
 - Work is NOT complete until `git push` succeeds
 - NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
-
-<!-- END BEADS INTEGRATION -->

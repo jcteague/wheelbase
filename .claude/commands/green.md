@@ -10,21 +10,6 @@ description: 'Implement features to make failing tests pass (TDD green phase)'
 $ARGUMENTS
 ```
 
-## Beads Status
-
-If a beads task ID was provided in the arguments (e.g. `wheelbase-ink.N.M`), mark it in progress before starting:
-```bash
-bd update <id> --status=in_progress
-```
-If no task ID was given, proceed without beads tracking — `/implement-plan` manages status when driving this skill.
-
-At the end, after all tests pass and lint/typecheck are clean, close the task:
-```bash
-bd close <id>
-```
-
----
-
 ## Outline
 
 You are implementing the **GREEN phase** of Test-Driven Development for Wheelbase (Option Wheel Manager). Your goal is to write the minimum code necessary to make all failing tests pass.
@@ -37,12 +22,26 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
    - Required: `plans/<feature-dir>/red-phase-results.md` — if missing, run `/red` first
    - If `red-phase-results.md` is missing, locate failing tests directly in the repo
 
-2. **Review Test Requirements**
+2. **Mockup Check** (renderer tasks only)
+   - Determine whether this task touches `src/renderer/`. If it does not, skip this step.
+   - Derive the story ID from the feature directory name (e.g. `plans/us-10/` → `us-10`).
+   - Check whether `mockups/{story-id}.mdx` exists (e.g. `mockups/us-10-record-shares-called-away.mdx`). Use Glob to find it if the exact filename is uncertain.
+   - If found, read the file now and extract:
+     - Screen names and their descriptions
+     - Component layout and interaction patterns (sheet, overlay, inline form, etc.)
+     - Visible field labels and their order on each screen
+     - Annotation callouts — these describe intent, not just layout
+     - Error state visual treatments (red vs amber, inline vs banner)
+     - Post-success UX (navigation shortcuts, badge changes, next-step prompts)
+   - Keep these notes active throughout implementation — every renderer file you create must match the mockup. Do not invent component names, field labels, or interaction patterns that the mockup does not show.
+   - If no mockup file exists, proceed without it and note the absence in the green-phase-results.
+
+3. **Review Test Requirements**
    - Read `red-phase-results.md` to understand which tests need to pass
    - Open each listed test file and review every assertion
    - Understand the expected data shapes, return types, and error conditions
 
-3. **Identify Implementation Scope**
+4. **Identify Implementation Scope**
    - Determine which files need to be created or modified:
      - `src/main/core/` — pure engine functions (no DB/IPC/broker imports ever)
      - `src/main/services/` — DB access + core logic composition
@@ -54,7 +53,7 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
 
 ### Phase 2: Implement Features
 
-4. **Write Minimal Implementation**
+5. **Write Minimal Implementation**
    - **CRITICAL**: Write the SIMPLEST code that makes tests pass
    - Do not add features not covered by tests
    - Do not optimise prematurely

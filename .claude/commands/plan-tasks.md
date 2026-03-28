@@ -1,16 +1,14 @@
 ---
-description: Reads a plan file and creates a hierarchical beads issue structure (epic → feature → tasks) with TDD Red/Green/Refactor tasks, plan context, and verified dependency wiring.
+description: Reads a plan file and creates a tasks.md checklist with TDD Red/Green/Refactor tasks, dependency notes, and parallel execution groups.
 argument-hint: <plan-file-path>
 allowed-tools:
   - Read
-  - Bash
+  - Write
 ---
 
 # plan-tasks command
 
 The user has invoked `/plan-tasks` with: `$ARGUMENTS`
-
-Use the beads-plan skill throughout this workflow.
 
 ---
 
@@ -24,31 +22,15 @@ Derive the story directory from the plan path (e.g., `plans/us-3/plan.md` → `p
 
 | File | Read for |
 |---|---|
-| `{story-dir}/research.md` | Design decisions → `--design` on features and Green tasks |
-| `{story-dir}/data-model.md` | Field types, nullability, validation → task descriptions |
-| `{story-dir}/contracts/*.md` | API shapes, response formats, error codes → task descriptions |
-| `{story-dir}/quickstart.md` | Test commands, verification steps → `--acceptance` |
+| `{story-dir}/research.md` | Design decisions, architectural notes |
+| `{story-dir}/data-model.md` | Field types, nullability, validation |
+| `{story-dir}/contracts/*.md` | API shapes, response formats, error codes |
 
 ---
 
-## Step 2 — Create the Epic
+## Step 2 — Identify Functional Areas
 
-```bash
-EPIC_ID=$(bd create \
-  --type=epic \
-  --title="<Story ID> — <Story Title from plan heading>" \
-  --description="<Context section from plan — why this story exists and what it establishes>" \
-  --labels="<story-id-slug>" \
-  --priority=2 \
-  --silent)
-echo "Epic: $EPIC_ID"
-```
-
----
-
-## Step 3 — Identify Functional Areas
-
-Scan the plan's implementation steps. Group them into logical functional areas — each becomes one feature issue. Common areas for this project:
+Scan the plan's implementation steps. Group them into logical functional areas — each becomes one section in the task list. Common areas for this project:
 
 - Types / enums module
 - Core engine function (lifecycle, costbasis)
@@ -58,197 +40,134 @@ Scan the plan's implementation steps. Group them into logical functional areas �
 - Renderer API client / hooks
 - UI components
 - Pages
+- E2E tests
 
-The plan's implementation order determines cross-feature dependency order (Step 7).
-
----
-
-## Step 4 — Create Feature Issues
-
-For each functional area, in implementation order:
-
-```bash
-FEATURE_ID=$(bd create \
-  --type=feature \
-  --title="<functional area name>" \
-  --parent=$EPIC_ID \
-  --description="<What this area does and its role in the story. One short paragraph.>" \
-  --design="<Relevant excerpt from research.md — why this approach, key architectural decisions>" \
-  --spec-id="$ARGUMENTS" \
-  --labels="<story-id-slug>,<area-slug>" \
-  --priority=2 \
-  --silent)
-echo "Feature: $FEATURE_ID"
-```
+The plan's implementation order determines cross-area dependency order.
 
 ---
 
-## Step 5 — Create Red/Green/Refactor Tasks per Feature Area
+## Step 3 — Assign Parallel Layers
 
-For each feature, create exactly three tasks. Capture all three IDs.
+Analyze the dependency graph across functional areas and group them into parallel layers:
 
-### Red task
+- **Layer 1** — areas with no cross-area dependencies (can start immediately)
+- **Layer 2** — areas that depend on Layer 1 completions
+- **Layer N** — areas that depend on Layer N-1 completions
 
-```bash
-RED_ID=$(bd create \
-  --type=task \
-  --title="[Red] Write failing tests for <specific thing>" \
-  --parent=$FEATURE_ID \
-  --description="Use the /red skill.
+Within each layer, all areas can be worked in parallel by independent agents.
 
-Test file: <path/to/test-file.ts>
+Within each area, tasks are always sequential: Red → Green → Refactor.
 
-Test cases:
-- <specific case: function name, input values, expected output>
-- <one test per validation rule from plan>
-- <happy path case>
+Cross-area dependencies are always on the **Green** task of the upstream area (implementation must exist before downstream tests can be written).
 
-Run pnpm test and confirm all new tests fail before marking done." \
-  --acceptance="All new tests failing. Run: pnpm test <test-file>" \
-  --spec-id="$ARGUMENTS" \
-  --labels="red,<story-id-slug>,<area-slug>" \
-  --priority=2 \
-  --silent)
-echo "Red: $RED_ID"
-```
+---
 
-**E2e Red tasks are different — use this format instead when the feature area is "E2e Tests":**
+## Step 4 — Write tasks.md
 
-```bash
-E2E_RED_ID=$(bd create \
-  --type=task \
-  --title="[Red] Write e2e tests for <Story ID> acceptance criteria" \
-  --parent=$FEATURE_ID \
-  --description="Use the /red skill.
+Create `{story-dir}/tasks.md` with the following structure:
 
-Test file: e2e/<story-slug>.spec.ts
+```markdown
+# {Story ID} — {Story Title} — Tasks
 
-These tests are AC-driven — one it() per AC bullet from the user story.
-Test names must mirror the AC language directly.
+## How to Use
 
-AC coverage:
-- AC-1: <quote or close paraphrase of AC text> → it('<ac-1 test name>')
-- AC-2: <quote or close paraphrase of AC text> → it('<ac-2 test name>')
-- AC-3: <quote or close paraphrase of AC text> → it('<ac-3 test name>')
-[continue for every AC in the story]
+- Check off tasks as they complete: change `[ ]` to `[x]`
+- Tasks within each area run **sequentially**: Red → Green → Refactor
+- Areas in the same layer run **in parallel** — dispatch separate agents for each
+- Cross-area dependencies are noted inline; do not start a task until its dependency is checked off
 
-Run pnpm test:e2e and confirm all new tests fail before marking done." \
-  --acceptance="One failing e2e test per AC. Run: pnpm test:e2e" \
-  --spec-id="$ARGUMENTS" \
-  --labels="red,e2e,<story-id-slug>" \
-  --priority=2 \
-  --silent)
-echo "E2e Red: $E2E_RED_ID"
-```
+---
 
-### Green task
+## Layer 1 — {description, e.g. "Foundation (no dependencies)"}
 
-```bash
-GREEN_ID=$(bd create \
-  --type=task \
-  --title="[Green] Implement <specific thing>" \
-  --parent=$FEATURE_ID \
-  --description="Use the /green skill.
+> These areas can be started immediately and run in parallel.
 
-Implementation file: <path/to/impl-file.ts>
-Paired test file: <path/to/test-file.ts> (make these pass)
+### {Area Name 1}
 
-Key implementation details:
-- <function signature with exact parameter and return types>
-- <validation rule or business logic from plan>
-- <field type / nullability from data-model.md>
-- <response shape or constraint from contracts/>
+- [ ] **[Red]** Write failing tests — `{test-file-path}`
+  - Test cases: {specific cases from plan}
+  - Run `pnpm test {test-file}` — all new tests must fail
+- [ ] **[Green]** Implement — `{impl-file-path}` *(depends on: {Area Name 1} Red ✓)*
+  - {key function signatures and logic from plan}
+  - Run `pnpm test {test-file}` — all tests must pass
+- [ ] **[Refactor]** Clean up — `{impl-file-path}` *(depends on: {Area Name 1} Green ✓)*
+  - Run `pnpm test && pnpm lint && pnpm typecheck`
 
-Write minimum code to pass the paired tests. No extra logic." \
-  --acceptance="pnpm test <test-file> passes. pnpm typecheck and pnpm lint clean." \
-  --design="<Design decisions from research.md relevant to this implementation>" \
-  --spec-id="$ARGUMENTS" \
-  --labels="green,<story-id-slug>,<area-slug>" \
-  --priority=2 \
-  --silent)
-echo "Green: $GREEN_ID"
-```
+### {Area Name 2}
 
-### Refactor task
+- [ ] **[Red]** Write failing tests — `{test-file-path}`
+  - Test cases: {specific cases from plan}
+  - Run `pnpm test {test-file}` — all new tests must fail
+- [ ] **[Green]** Implement — `{impl-file-path}` *(depends on: {Area Name 2} Red ✓)*
+  - {key function signatures and logic from plan}
+  - Run `pnpm test {test-file}` — all tests must pass
+- [ ] **[Refactor]** Clean up *(depends on: {Area Name 2} Green ✓)*
+  - Run `pnpm test && pnpm lint && pnpm typecheck`
 
-```bash
-REFACTOR_ID=$(bd create \
-  --type=task \
-  --title="[Refactor] Clean up <specific thing>" \
-  --parent=$FEATURE_ID \
-  --description="Use the /refactor skill.
+---
 
-Files to review:
-- <impl-file>
-- <test-file>
+## Layer 2 — {description, e.g. "Service + IPC (depends on Layer 1)"}
 
-Refactoring needed. Behaviour must not change. Tests must stay green throughout." \
-  --acceptance="pnpm test still passes. pnpm lint and pnpm typecheck clean." \
-  --spec-id="$ARGUMENTS" \
-  --labels="refactor,<story-id-slug>,<area-slug>" \
-  --priority=3 \
-  --silent)
-echo "Refactor: $REFACTOR_ID"
+> These areas can run in parallel with each other **after** their Layer 1 dependencies are complete.
+
+### {Area Name 3}
+
+**Requires:** {Area Name 1} Green ✓
+
+- [ ] **[Red]** Write failing tests — `{test-file-path}` *(depends on: {Area Name 1} Green ✓)*
+  - Test cases: {specific cases}
+  - Run `pnpm test {test-file}` — all new tests must fail
+- [ ] **[Green]** Implement — `{impl-file-path}` *(depends on: {Area Name 3} Red ✓)*
+  - {key details}
+  - Run `pnpm test {test-file}` — all tests must pass
+- [ ] **[Refactor]** Clean up *(depends on: {Area Name 3} Green ✓)*
+  - Run `pnpm test && pnpm lint && pnpm typecheck`
+
+---
+
+## Layer N — E2E Tests
+
+**Requires:** All Green tasks from previous layers ✓
+
+### E2E Tests
+
+- [ ] **[Red]** Write failing e2e tests — `e2e/{story-slug}.spec.ts` *(depends on: all Green tasks ✓)*
+  - One `it()` per AC bullet from the user story — test names must mirror AC language
+  - AC coverage:
+    - AC-1: {ac text} → `it('{test name}')`
+    - AC-2: {ac text} → `it('{test name}')`
+  - Run `pnpm test:e2e` — all new tests must fail
+- [ ] **[Green]** Make e2e tests pass *(depends on: E2E Red ✓)*
+  - Run `pnpm test:e2e` — all tests must pass
+- [ ] **[Refactor]** Clean up e2e tests *(depends on: E2E Green ✓)*
+
+---
+
+## Completion Checklist
+
+- [ ] All Red tasks complete (tests written and failing for right reason)
+- [ ] All Green tasks complete (all tests passing)
+- [ ] All Refactor tasks complete (lint + typecheck clean)
+- [ ] E2E tests cover every AC
+- [ ] `pnpm test && pnpm lint && pnpm typecheck` — all clean
 ```
 
 ---
 
-## Step 6 — Wire Intra-Feature Dependencies
+## Step 5 — Report
 
-For each functional area, wire the Red → Green → Refactor chain:
-
-```bash
-bd dep add $GREEN_ID $RED_ID        # Green depends on Red
-bd dep add $REFACTOR_ID $GREEN_ID   # Refactor depends on Green
-```
-
----
-
-## Step 7 — Wire Cross-Feature Dependencies
-
-Following the plan's implementation order, wire each downstream area's Red task to the upstream area's Green task. This ensures prerequisite code exists before downstream tests are written.
-
-```bash
-# Example: service layer must be implemented before IPC handler tests can be written
-bd dep add <ipc-red-id> <service-green-id>
-```
-
-If the plan shows no ordering constraint between two areas, leave them unlinked — they run in parallel.
-
----
-
-## Step 8 — Verify the Dependency Graph
-
-```bash
-bd graph $EPIC_ID --json
-```
-
-Check `layout.Layers`:
-- Layer 0: first Red task(s) — nothing blocking them
-- Subsequent layers depend on previous
-- Parallel areas appear in the same layer
-
-Fix any incorrect dependencies, re-run until the graph matches the plan's implementation order. Do not report success until verification passes.
-
----
-
-## Step 9 — Report
-
-Print a concise tree:
+Print a summary:
 
 ```
-Epic: <title> (<epic-id>)
+Created: {story-dir}/tasks.md
 
-  <Feature area> (<feature-id>)
-    [Red]      <red-id>     — ready
-    [Green]    <green-id>   — blocked by <red-id>
-    [Refactor] <refactor-id> — blocked by <green-id>
+Layers: N
+  Layer 1: {area names} — parallel, start immediately
+  Layer 2: {area names} — parallel, after Layer 1 Green tasks
+  ...
 
-  <Next feature> (<feature-id>)
-    ...
-
-Features: N  |  Tasks: M (N Red, N Green, N Refactor)
+Tasks: N total (N Red, N Green, N Refactor)
 Spec: $ARGUMENTS
 
-Next: bd ready
+Next: /implement-plan $ARGUMENTS
 ```
