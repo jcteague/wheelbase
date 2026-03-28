@@ -28,11 +28,10 @@ Scenario: Successfully record shares called away
   And the position status changes to CLOSED
   And a CC_CLOSE leg is recorded with fill_price $182.00 and fill_date "2026-02-21"
   And the final P&L shows +$780.00
-    | Component                      | Amount    |
-    | Share appreciation             | +$200.00  |
-    | ($182.00 − $174.20) × 100 shares|          |
-    | Total premium collected        | +$580.00  |
-    | Final P&L                      | +$780.00  |
+    | Component                           | Amount    |
+    | Share appreciation                  | +$780.00  |
+    | ($182.00 − $174.20) × 100 shares   |           |
+    | Final P&L                           | +$780.00  |
 
 Scenario: Called-away below cost basis shows a loss
   Given the effective cost basis is $176.50 per share
@@ -49,7 +48,6 @@ Scenario: P&L breakdown shown on the form before submission
     | − Effective cost basis        | $174.20  |
     | = Appreciation per share      | $7.80    |
     | × 100 shares                  | $780.00  |
-    | + Total premium collected     | $580.00  |
     | = Final cycle P&L             | $780.00  |
 
 Scenario: Reject call-away when not in CC_OPEN phase
@@ -67,6 +65,8 @@ Scenario: Success state shows complete wheel summary
   Given the shares-called-away has been confirmed
   Then the success screen shows "WHEEL COMPLETE"
   And the total cycle P&L is displayed prominently
+  And the cycle duration in calendar days is shown (position open date to fill date)
+  And the annualized return percentage is displayed
   And a "Start New Wheel on AAPL →" CTA is visible
 ```
 
@@ -75,21 +75,25 @@ Scenario: Success state shows complete wheel summary
 ## Technical Notes
 
 - Lifecycle transition: `CC_OPEN → WHEEL_COMPLETE`, status → `CLOSED`
-- `LegRole: CC_CLOSE`, `LegAction: BUY` (the shares are delivered), `InstrumentType: CALL`, `fill_price: CC strike`
-- The fill date is the day shares are delivered (typically the trading day after expiration Friday)
-- Final P&L formula: `(ccStrike − basisPerShare) × sharesHeld + totalPremiumCollected`
+- `LegRole: CC_CLOSE`, `LegAction: EXERCISE` (shares are delivered by exercise, not a market buy), `InstrumentType: CALL`, `fill_price: CC strike`
+- The fill date is the day shares are delivered (typically the trading day after expiration Friday; T+1 for equity settlement)
+- Final P&L formula: `(ccStrike − basisPerShare) × sharesHeld`
+  - `basisPerShare` is the **effective** cost basis already reduced by all premiums collected — do NOT add `totalPremiumCollected` separately, it is already embedded in `basisPerShare`
   - `sharesHeld = contracts × 100`
-  - `totalPremiumCollected` from the final cost basis snapshot
+  - Annualized return: `(finalPnl / capitalDeployed) × (365 / cycleDays) × 100`, where `capitalDeployed = basisPerShare × sharesHeld` and `cycleDays = closedDate − position.openDate`
+- After call-away, set `closed_date = fill_date` on the `CC_OPEN` leg and link it to the new `CC_CLOSE` leg; this is an exercise linkage, not a roll pair
 - Store `final_pnl` in `cost_basis_snapshot`; set `closed_date` and `status = CLOSED` on the position
 - The "called away" confirmation is a separate action from "CC expired worthless" — both are accessible from the position detail header when `phase = CC_OPEN`
 - The fill price is **always the CC strike** — the trader does not enter it manually; it is derived from the CC_OPEN leg
-- The "Start New Wheel" CTA navigates to `/new?ticker=AAPL`
+- Fill date validation compares against the `fill_date` of the `CC_OPEN` leg (not the position open date)
+- The "Start New Wheel" CTA uses internal router navigation to `/new?ticker=AAPL` (hash-based routing via wouter)
 
 ---
 
 ## Out of Scope
 
-- Early exercise / assignment before expiration (treated identically — no Phase 1 special handling)
+- Early exercise / assignment before expiration (treated identically — no Phase 1 special handling; `closed_date` reflects actual delivery date, not the CC expiry date)
+- Multi-contract positions (> 1 contract): call-away is not supported in this release; the form must reject positions with `contracts > 1` with message "Multi-contract call-away is not yet supported"
 - Partial call-away (some contracts exercised) — deferred
 - Tax lot tracking — future epic
 - Automatic detection via Alpaca — Epic 06
