@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { useParams } from 'wouter'
 import { AssignmentSheet } from '../components/AssignmentSheet'
+import { CcExpirationSheet } from '../components/CcExpirationSheet'
 import { CloseCcEarlySheet } from '../components/CloseCcEarlySheet'
 import { CloseCspForm } from '../components/CloseCspForm'
 import { ExpirationSheet } from '../components/ExpirationSheet'
@@ -15,7 +16,7 @@ import { LoadingState } from '../components/ui/LoadingState'
 import { SectionCard } from '../components/ui/SectionCard'
 import { StatGrid } from '../components/ui/Stat'
 import { usePosition } from '../hooks/usePosition'
-import { computeDte, fmtMoney, pnlColor } from '../lib/format'
+import { computeDte, fmtDate, fmtMoney, pnlColor } from '../lib/format'
 import { MONO } from '../lib/tokens'
 
 export function PositionDetailPage(): React.JSX.Element {
@@ -42,6 +43,10 @@ export function PositionDetailPage(): React.JSX.Element {
     ccExpiration: string
     strike: string
     basisPerShare: string
+  } | null>(null)
+  const [ccExpCtx, setCcExpCtx] = useState<{
+    activeLeg: NonNullable<typeof data>['activeLeg']
+    snapshot: NonNullable<typeof data>['costBasisSnapshot']
   } | null>(null)
 
   const handleOpenCc = useCallback(() => {
@@ -84,10 +89,16 @@ export function PositionDetailPage(): React.JSX.Element {
     }
   }, [data])
 
+  const handleRecordCcExpiration = useCallback(() => {
+    if (data?.activeLeg && data?.costBasisSnapshot)
+      setCcExpCtx({ activeLeg: data.activeLeg, snapshot: data.costBasisSnapshot })
+  }, [data])
+
   const handleCloseExpiration = useCallback(() => setExpirationCtx(null), [])
   const handleCloseAssignment = useCallback(() => setAssignmentCtx(null), [])
   const handleCloseOpenCc = useCallback(() => setOpenCcCtx(null), [])
   const handleCloseCloseCcEarly = useCallback(() => setCloseCcCtx(null), [])
+  const handleCloseCcExpiration = useCallback(() => setCcExpCtx(null), [])
 
   if (isLoading) {
     return <LoadingState message="Loading position..." />
@@ -104,6 +115,9 @@ export function PositionDetailPage(): React.JSX.Element {
   const { position, activeLeg, costBasisSnapshot, legs } = data
   const dte = activeLeg ? computeDte(activeLeg.expiration) : null
   const dteUrgent = dte !== null && dte <= 7
+  const ccExpired =
+    position.phase === 'CC_OPEN' && activeLeg ? computeDte(activeLeg.expiration) <= 0 : false
+  const assignLeg = legs.find((l) => l.legRole === 'ASSIGN')
 
   const premiumWaterfall =
     legs
@@ -128,10 +142,12 @@ export function PositionDetailPage(): React.JSX.Element {
             <PositionDetailActions
               phase={position.phase}
               hasCostBasis={Boolean(costBasisSnapshot)}
+              ccExpired={ccExpired}
               onOpenCc={handleOpenCc}
               onRecordAssignment={handleRecordAssignment}
               onRecordExpiration={handleRecordExpiration}
               onCloseCcEarly={handleCloseCcEarly}
+              onRecordCcExpiration={handleRecordCcExpiration}
             />
           }
         />
@@ -145,7 +161,7 @@ export function PositionDetailPage(): React.JSX.Element {
           flexDirection: 'column',
           gap: 16,
           transition: 'filter 0.2s, opacity 0.2s',
-          ...(expirationCtx || assignmentCtx || openCcCtx || closeCcCtx
+          ...(expirationCtx || assignmentCtx || openCcCtx || closeCcCtx || ccExpCtx
             ? { filter: 'blur(1.5px)', opacity: 0.35, pointerEvents: 'none', userSelect: 'none' }
             : {})
         }}
@@ -350,6 +366,20 @@ export function PositionDetailPage(): React.JSX.Element {
           strike={closeCcCtx.strike}
           basisPerShare={closeCcCtx.basisPerShare}
           onClose={handleCloseCloseCcEarly}
+        />
+      )}
+      {ccExpCtx?.activeLeg && (
+        <CcExpirationSheet
+          open
+          positionId={position.id}
+          ticker={position.ticker}
+          strike={ccExpCtx.activeLeg.strike}
+          expiration={ccExpCtx.activeLeg.expiration}
+          expirationDisplay={fmtDate(ccExpCtx.activeLeg.expiration)}
+          contracts={ccExpCtx.activeLeg.contracts}
+          premiumPerContract={ccExpCtx.activeLeg.premiumPerContract}
+          sharesHeld={assignLeg?.contracts ? assignLeg.contracts * 100 : 0}
+          onClose={handleCloseCcExpiration}
         />
       )}
     </PageLayout>

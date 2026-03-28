@@ -156,6 +156,7 @@ declare global {
       assignPosition: (payload: IpcAssignCspPayload) => Promise<IpcAssignCspResult>
       openCoveredCall: (payload: IpcOpenCcPayload) => Promise<IpcOpenCcResult>
       closeCoveredCallEarly: (payload: IpcCloseCcPayload) => Promise<IpcCloseCcResult>
+      expireCc: (payload: unknown) => Promise<{ ok: boolean; [key: string]: unknown }>
     }
   }
 }

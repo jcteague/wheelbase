@@ -219,7 +219,7 @@ export function openCoveredCall(input: OpenCoveredCallInput): OpenCoveredCallRes
     )
   }
 
-  if (input.expiration <= input.referenceDate) {
+  if (input.expiration < input.referenceDate) {
     throw new ValidationError('expiration', 'already_expired', 'Expiration date has already passed')
   }
 
@@ -250,6 +250,32 @@ export function recordAssignment(input: RecordAssignmentInput): RecordAssignment
       'assignmentDate',
       'date_before_open',
       'Assignment date cannot be before the CSP open date'
+    )
+  }
+
+  return { phase: 'HOLDING_SHARES' }
+}
+
+export interface ExpireCcInput {
+  currentPhase: WheelPhase
+  expirationDate: string
+  referenceDate: string
+}
+
+export interface ExpireCcResult {
+  phase: 'HOLDING_SHARES'
+}
+
+export function expireCc(input: ExpireCcInput): ExpireCcResult {
+  if (input.currentPhase !== 'CC_OPEN') {
+    throw new ValidationError('__phase__', 'invalid_phase', 'No open covered call on this position')
+  }
+
+  if (input.referenceDate < input.expirationDate) {
+    throw new ValidationError(
+      'expiration',
+      'too_early',
+      `Cannot record expiration before the expiration date (${input.expirationDate})`
     )
   }
 

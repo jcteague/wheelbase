@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
+import type { ExpireCcResponse } from '../api/positions'
 import { useExpireCoveredCall } from '../hooks/useExpireCoveredCall'
 import { CcExpirationSheet } from './CcExpirationSheet'
 
@@ -87,9 +88,9 @@ it('clicking "Confirm Expiration" calls useExpireCoveredCall.mutate with { posit
 // ---------------------------------------------------------------------------
 
 function renderSuccess(): Promise<void> {
-  let capturedOnSuccess: ((data: unknown) => void) | undefined
+  let capturedOnSuccess: ((data: ExpireCcResponse) => void) | undefined
   mockUseExpireCoveredCall.mockImplementation(
-    (options?: { onSuccess?: (data: unknown) => void }) => {
+    (options?: { onSuccess?: (data: ExpireCcResponse) => void }) => {
       capturedOnSuccess = options?.onSuccess
       return {
         mutate: () => {
@@ -110,7 +111,7 @@ function renderSuccess(): Promise<void> {
             },
             costBasisSnapshot: { basisPerShare: '174.2000', totalPremiumCollected: '580.0000' },
             sharesHeld: 100
-          })
+          } as unknown as ExpireCcResponse)
         },
         isPending: false,
         isSuccess: true,
@@ -144,7 +145,7 @@ it('success state renders "Still Holding: 100 shares of AAPL" badge inside hero 
 it('success state renders result summary: leg recorded (expire · Feb 21, 2026)', async () => {
   await renderSuccess()
   await waitFor(() => {
-    expect(screen.getByText(/expire/i)).toBeInTheDocument()
+    expect(screen.getByText(/expire · Feb 21, 2026/i)).toBeInTheDocument()
     expect(screen.getByText(/Feb 21, 2026/i)).toBeInTheDocument()
   })
 })

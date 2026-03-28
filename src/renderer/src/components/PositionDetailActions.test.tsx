@@ -5,10 +5,12 @@ import { PositionDetailActions } from './PositionDetailActions'
 
 const BASE_PROPS = {
   hasCostBasis: true,
+  ccExpired: false,
   onOpenCc: vi.fn(),
   onRecordAssignment: vi.fn(),
   onRecordExpiration: vi.fn(),
-  onCloseCcEarly: vi.fn()
+  onCloseCcEarly: vi.fn(),
+  onRecordCcExpiration: vi.fn()
 }
 
 beforeEach(() => {

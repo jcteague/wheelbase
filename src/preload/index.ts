@@ -11,7 +11,8 @@ const api = {
   assignPosition: (payload: unknown) => ipcRenderer.invoke('positions:assign-csp', payload),
   openCoveredCall: (payload: unknown) => ipcRenderer.invoke('positions:open-cc', payload),
   closeCoveredCallEarly: (payload: unknown) =>
-    ipcRenderer.invoke('positions:close-cc-early', payload)
+    ipcRenderer.invoke('positions:close-cc-early', payload),
+  expireCc: (payload: unknown) => ipcRenderer.invoke('positions:expire-cc', payload)
 }
 
 if (process.contextIsolated) {

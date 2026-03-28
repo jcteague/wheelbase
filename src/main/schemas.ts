@@ -190,6 +190,30 @@ export interface OpenCcPositionResult {
 }
 
 // ---------------------------------------------------------------------------
+// Expire CC schemas
+// ---------------------------------------------------------------------------
+
+export const ExpireCcPayloadSchema = z.object({
+  positionId: z.string().uuid(),
+  expirationDateOverride: z.string().optional()
+})
+
+export type ExpireCcPayload = z.infer<typeof ExpireCcPayloadSchema>
+
+export interface ExpireCcPositionResult {
+  position: {
+    id: string
+    ticker: string
+    phase: 'HOLDING_SHARES'
+    status: 'ACTIVE'
+    closedDate: null
+  }
+  leg: LegRecord
+  costBasisSnapshot: CostBasisSnapshotRecord
+  sharesHeld: number
+}
+
+// ---------------------------------------------------------------------------
 // Close CC schemas
 // ---------------------------------------------------------------------------
 

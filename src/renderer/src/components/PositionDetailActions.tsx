@@ -18,19 +18,23 @@ const actionButtonStyle: React.CSSProperties = {
 type PositionDetailActionsProps = {
   phase: WheelPhase
   hasCostBasis: boolean
+  ccExpired: boolean
   onOpenCc: () => void
   onRecordAssignment: () => void
   onRecordExpiration: () => void
   onCloseCcEarly: () => void
+  onRecordCcExpiration: () => void
 }
 
 export function PositionDetailActions({
   phase,
   hasCostBasis,
+  ccExpired,
   onOpenCc,
   onRecordAssignment,
   onRecordExpiration,
-  onCloseCcEarly
+  onCloseCcEarly,
+  onRecordCcExpiration
 }: PositionDetailActionsProps): React.JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -43,6 +47,16 @@ export function PositionDetailActions({
           style={actionButtonStyle}
         >
           Close CC Early →
+        </button>
+      )}
+      {phase === 'CC_OPEN' && ccExpired && (
+        <button
+          data-testid="record-cc-expiration-btn"
+          className="wb-teal-button"
+          onClick={onRecordCcExpiration}
+          style={actionButtonStyle}
+        >
+          Record Expiration →
         </button>
       )}
       {phase === 'HOLDING_SHARES' && hasCostBasis && (

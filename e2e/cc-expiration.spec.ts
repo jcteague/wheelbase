@@ -85,8 +85,6 @@ async function reachCcOpenStateWithExpiredCc(
   page: Page
 ): Promise<{ today: string; ccExpiration: string }> {
   const today = new Date().toISOString().slice(0, 10)
-  // CC expiration is in the past so DTE ≤ 0 and "Record Expiration →" button appears
-  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
 
   await openPosition(page, {
     ticker: 'AAPL',
@@ -107,21 +105,25 @@ async function reachCcOpenStateWithExpiredCc(
   await page.click('text=View full position history')
   await page.waitForSelector('[data-testid="position-detail"]')
 
-  // Open a CC with yesterday as expiration (past) so it shows as expired
+  // Open a CC with today as expiration (DTE = 0 ≤ 0) so "Record Expiration →" button appears
   await page.click('[data-testid="open-covered-call-btn"]')
   await page.waitForSelector('text=Open Covered Call')
   await page.fill('[data-testid="cc-strike"]', '182')
   await page.fill('[data-testid="cc-premium"]', '2.30')
-  // We use yesterday as expiration — this bypasses the DTE > 0 guard in the date picker
-  // and sets the CC as expired so "Record Expiration →" appears
-  await selectDate(page, '[data-testid="cc-expiration"]', yesterday)
-  await selectDate(page, '[data-testid="cc-fill-date"]', yesterday)
+  await selectDate(page, '[data-testid="cc-expiration"]', today)
+  await selectDate(page, '[data-testid="cc-fill-date"]', today)
   await page.click('[data-testid="cc-submit"]')
   await page.waitForSelector('text=CC OPEN')
-  await page.click('text=View full position history')
+  // Navigate away and back to dismiss the success sheet and land on the fresh position detail
+  await page.evaluate(() => {
+    location.hash = '#/'
+  })
+  await page.waitForFunction(() => location.hash === '#/')
+  await page.waitForSelector('text=AAPL')
+  await page.click('text=AAPL')
   await page.waitForSelector('[data-testid="position-detail"]')
 
-  return { today, ccExpiration: yesterday }
+  return { today, ccExpiration: today }
 }
 
 // ---------------------------------------------------------------------------
