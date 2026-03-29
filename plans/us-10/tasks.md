@@ -15,15 +15,15 @@
 
 ### Area 1: LegAction Enum Extension
 
-- [ ] **[Red]** Write failing tests — `src/main/core/types.test.ts`
+- [x] **[Red]** Write failing tests — `src/main/core/types.test.ts`
   - Test cases:
     - `LegAction.parse('EXERCISE')` succeeds without throwing
     - `LegAction.parse('INVALID')` throws a ZodError
   - Run `pnpm test src/main/core/types.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/core/types.ts` *(depends on: Area 1 Red ✓)*
+- [x] **[Green]** Implement — `src/main/core/types.ts` *(depends on: Area 1 Red ✓)*
   - Extend `LegAction` from `z.enum(['SELL', 'BUY', 'EXPIRE', 'ASSIGN'])` to `z.enum(['SELL', 'BUY', 'EXPIRE', 'ASSIGN', 'EXERCISE'])`
   - Run `pnpm test src/main/core/types.test.ts` — all tests must pass
-- [ ] **[Refactor]** Clean up — `src/main/core/types.ts` *(depends on: Area 1 Green ✓)*
+- [x] **[Refactor]** Clean up — `src/main/core/types.ts` *(depends on: Area 1 Green ✓)*
   - Check for duplication and naming consistency
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
@@ -31,7 +31,7 @@
 
 ### Area 2: Core Lifecycle Engine — `recordCallAway()`
 
-- [ ] **[Red]** Write failing tests — `src/main/core/lifecycle.test.ts`
+- [x] **[Red]** Write failing tests — `src/main/core/lifecycle.test.ts`
   - Test cases (`describe('recordCallAway')`):
     - `returns { phase: 'WHEEL_COMPLETE' } when currentPhase is CC_OPEN and fillDate equals ccOpenFillDate`
     - `throws ValidationError (invalid_phase) when currentPhase is HOLDING_SHARES` — field='__phase__', code='invalid_phase', message='No open covered call on this position'
@@ -40,7 +40,7 @@
     - `throws ValidationError (close_date_before_open) when fillDate is before ccOpenFillDate` — field='fillDate', code='close_date_before_open', message='Fill date cannot be before the CC open date'
     - `returns WHEEL_COMPLETE when fillDate is after ccOpenFillDate`
   - Run `pnpm test src/main/core/lifecycle.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/core/lifecycle.ts` *(depends on: Area 2 Red ✓)*
+- [x] **[Green]** Implement — `src/main/core/lifecycle.ts` *(depends on: Area 2 Red ✓)*
   - Add interfaces `RecordCallAwayInput` and `RecordCallAwayResult`
   - Add `export function recordCallAway(input: RecordCallAwayInput): RecordCallAwayResult`
   - Validate `currentPhase === 'CC_OPEN'` → throw `ValidationError('__phase__', 'invalid_phase', 'No open covered call on this position')`
@@ -48,7 +48,7 @@
   - Validate `input.fillDate >= input.ccOpenFillDate` → throw `ValidationError('fillDate', 'close_date_before_open', 'Fill date cannot be before the CC open date')`
   - Return `{ phase: 'WHEEL_COMPLETE' }`
   - Run `pnpm test src/main/core/lifecycle.test.ts` — all tests must pass
-- [ ] **[Refactor]** Clean up — `src/main/core/lifecycle.ts` *(depends on: Area 2 Green ✓)*
+- [x] **[Refactor]** Clean up — `src/main/core/lifecycle.ts` *(depends on: Area 2 Green ✓)*
   - Ensure error messages exactly match strings in acceptance criteria and technical notes
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
@@ -56,15 +56,15 @@
 
 ### Area 3: Core Costbasis Engine — `calculateCallAway()`
 
-- [ ] **[Red]** Write failing tests — `src/main/core/costbasis.test.ts`
+- [x] **[Red]** Write failing tests — `src/main/core/costbasis.test.ts`
   - Test cases (`describe('calculateCallAway')`):
     - `returns +$780.00 when ccStrike=182, basisPerShare=174.20, contracts=1` — assert finalPnl === '780.0000'
     - `returns −$250.00 when ccStrike=174.00, basisPerShare=176.50, contracts=1` — assert finalPnl === '-250.0000'
-    - `annualizedReturn is correct for 99 cycle days, $780 gain on $17420 capital` — assert annualizedReturn ≈ '16.7500' (formula: (780/17420)×(365/99)×100)
+    - `annualizedReturn is correct for 99 cycle days, $780 gain on $17420 capital` — assert annualizedReturn ≈ '16.5084' (formula: (780/17420)×(365/99)×100, ROUND_HALF_UP)
     - `annualizedReturn returns "0.0000" when cycleDays is 0` — guard against division by zero
     - `sets capitalDeployed correctly as basisPerShare × sharesHeld` — assert capitalDeployed === '17420.0000'
   - Run `pnpm test src/main/core/costbasis.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/core/costbasis.ts` *(depends on: Area 3 Red ✓)*
+- [x] **[Green]** Implement — `src/main/core/costbasis.ts` *(depends on: Area 3 Red ✓)*
   - Add interfaces `CallAwayInput` and `CallAwayResult`
   - Add `export function calculateCallAway(input: CallAwayInput): CallAwayResult`
   - `sharesHeld = contracts × 100`
@@ -74,7 +74,7 @@
   - `annualizedReturn = cycleDays <= 0 ? '0.0000' : round4((finalPnl / capitalDeployed) × (365 / cycleDays) × 100)`
   - All math via `decimal.js` with `ROUND_HALF_UP`
   - Run `pnpm test src/main/core/costbasis.test.ts` — all tests must pass
-- [ ] **[Refactor]** Clean up — `src/main/core/costbasis.ts` *(depends on: Area 3 Green ✓)*
+- [x] **[Refactor]** Clean up — `src/main/core/costbasis.ts` *(depends on: Area 3 Green ✓)*
   - Extract `cycleDays` calculation into a small helper if repeated elsewhere
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
@@ -82,18 +82,18 @@
 
 ### Area 4: Schemas + Response Types
 
-- [ ] **[Red]** Write failing tests — `src/main/schemas.test.ts`
+- [x] **[Red]** Write failing tests — `src/main/schemas.test.ts`
   - Test cases:
     - `RecordCallAwayPayloadSchema.parse({ positionId: 'valid-uuid' })` succeeds
     - `RecordCallAwayPayloadSchema.parse({ positionId: 'not-a-uuid' })` throws ZodError with field `positionId`
     - `RecordCallAwayPayloadSchema.parse({})` throws ZodError with field `positionId`
   - Run `pnpm test src/main/schemas.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/schemas.ts` *(depends on: Area 4 Red ✓)*
+- [x] **[Green]** Implement — `src/main/schemas.ts` *(depends on: Area 4 Red ✓)*
   - Add `RecordCallAwayPayloadSchema = z.object({ positionId: z.string().uuid() })`
   - Add `RecordCallAwayPayload` type (inferred)
   - Add `RecordCallAwayResult` interface with `position`, `leg`, `costBasisSnapshot`, `finalPnl`, `cycleDays`, `annualizedReturn`, `basisPerShare`
   - Run `pnpm test src/main/schemas.test.ts` — all tests must pass
-- [ ] **[Refactor]** Clean up — `src/main/schemas.ts` *(depends on: Area 4 Green ✓)*
+- [x] **[Refactor]** Clean up — `src/main/schemas.ts` *(depends on: Area 4 Green ✓)*
   - Check for duplication and naming consistency with existing schemas
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
@@ -107,7 +107,7 @@
 
 **Requires:** Areas 1, 2, 3, 4 Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/main/services/record-call-away-position.test.ts` *(depends on: Areas 1–4 Green ✓)*
+- [x] **[Red]** Write failing tests — `src/main/services/record-call-away-position.test.ts` *(depends on: Areas 1–4 Green ✓)*
   - Uses real in-memory SQLite DB (follow pattern of `close-covered-call-position.test.ts`)
   - Test cases:
     - `records CC_CLOSE (EXERCISE) leg with fill_price=ccStrike, fill_date=ccExpiration on valid CC_OPEN position` — assert legRole='CC_CLOSE', action='EXERCISE', fillPrice=ccStrike, fillDate=ccExpiration
@@ -119,7 +119,7 @@
     - `throws ValidationError (not_found) when positionId does not exist`
     - `throws ValidationError (no_cc_open_leg) when position is CC_OPEN but no CC_OPEN leg exists`
   - Run `pnpm test src/main/services/record-call-away-position.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/services/record-call-away-position.ts` *(depends on: Area 5 Red ✓)*
+- [x] **[Green]** Implement — `src/main/services/record-call-away-position.ts` *(depends on: Area 5 Red ✓)*
   - Imports: `Database`, `randomUUID`, `Decimal`, `calculateCallAway`, `recordCallAway`, `ValidationError`, `logger`, `RecordCallAwayPayload`, `RecordCallAwayResult`, `getPosition`
   - Derive `fillDate = ccOpenLeg.expiration`
   - Call `recordCallAway({ currentPhase, contracts, fillDate, ccOpenFillDate })`
@@ -131,7 +131,7 @@
   - Log `logger.info({ positionId, phase: 'WHEEL_COMPLETE', finalPnl }, 'call_away_recorded')`
   - Return `RecordCallAwayResult`
   - Run `pnpm test src/main/services/record-call-away-position.test.ts` — all tests must pass
-- [ ] **[Refactor]** Clean up — `src/main/services/record-call-away-position.ts` *(depends on: Area 5 Green ✓)*
+- [x] **[Refactor]** Clean up — `src/main/services/record-call-away-position.ts` *(depends on: Area 5 Green ✓)*
   - Ensure `db.transaction()` is the exclusive DB-write boundary
   - Check for duplication with `closeCoveredCallPosition`
   - Run `pnpm test && pnpm lint && pnpm typecheck`
@@ -146,7 +146,7 @@
 
 **Requires:** Areas 4, 5 Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/main/ipc/positions.test.ts` *(depends on: Areas 4, 5 Green ✓)*
+- [x] **[Red]** Write failing tests — `src/main/ipc/positions.test.ts` *(depends on: Areas 4, 5 Green ✓)*
   - Following the `close-cc-early` test pattern:
     - `registers a positions:record-call-away handler` — assert `ipcMain.handle` called with channel name
     - `returns ok:true with WHEEL_COMPLETE position and finalPnl for valid positionId` — mock returns fixture; assert `ok: true`, `position.phase === 'WHEEL_COMPLETE'`, `finalPnl`
@@ -154,7 +154,7 @@
     - `returns ok:false for invalid_phase (not in CC_OPEN)` — mock throws `ValidationError('__phase__', 'invalid_phase', ...)`
     - `returns ok:false for multi_contract_unsupported` — mock throws `ValidationError('contracts', 'multi_contract_unsupported', ...)`
   - Run `pnpm test src/main/ipc/positions.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/ipc/positions.ts` *(depends on: Area 6 Red ✓)*
+- [x] **[Green]** Implement — `src/main/ipc/positions.ts` *(depends on: Area 6 Red ✓)*
   - Import `RecordCallAwayPayloadSchema` from `'../schemas'`
   - Import `recordCallAwayPosition` from `'../services/record-call-away-position'`
   - Add inside `registerPositionsHandlers`:
@@ -167,7 +167,7 @@
     )
     ```
   - Run `pnpm test src/main/ipc/positions.test.ts` — all tests must pass
-- [ ] **[Refactor]** Clean up — `src/main/ipc/positions.ts` *(depends on: Area 6 Green ✓)*
+- [x] **[Refactor]** Clean up — `src/main/ipc/positions.ts` *(depends on: Area 6 Green ✓)*
   - Check for duplication and naming consistency
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
@@ -177,7 +177,7 @@
 
 **Requires:** Areas 4, 5 Green ✓
 
-- [ ] **[Green]** Implement — `src/preload/index.ts` + `src/renderer/src/api/positions.ts` *(depends on: Areas 4, 5 Green ✓)*
+- [x] **[Green]** Implement — `src/preload/index.ts` + `src/renderer/src/api/positions.ts` *(depends on: Areas 4, 5 Green ✓)*
   - No dedicated unit test (consistent with existing adapters like `openCoveredCall`, `closeCoveredCallEarly`)
   - In `src/preload/index.ts`, add to `api`:
     ```ts
@@ -189,7 +189,7 @@
     - `RecordCallAwayResponse` type (full shape per contract)
     - `export async function recordCallAway(payload: RecordCallAwayPayload): Promise<RecordCallAwayResponse>`
   - Run `pnpm test && pnpm typecheck`
-- [ ] **[Refactor]** Clean up *(depends on: Area 7 Green ✓)*
+- [x] **[Refactor]** Clean up *(depends on: Area 7 Green ✓)*
   - Check for duplication and naming consistency with existing adapters
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
@@ -203,15 +203,15 @@
 
 **Requires:** Area 7 Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/hooks/useRecordCallAway.test.ts` *(depends on: Area 7 Green ✓)*
+- [x] **[Red]** Write failing tests — `src/renderer/src/hooks/useRecordCallAway.test.ts` *(depends on: Area 7 Green ✓)*
   - Following `useCloseCoveredCallEarly.test.ts` pattern:
     - `calls recordCallAway with positionId and invokes onSuccess with response data` — mock `recordCallAway` API; render hook; call mutate; assert onSuccess called with response
     - `invalidates positionQueryKeys.all on success` — assert `queryClient.invalidateQueries` called with `{ queryKey: positionQueryKeys.all }`
   - Run `pnpm test src/renderer/src/hooks/useRecordCallAway.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/renderer/src/hooks/useRecordCallAway.ts` *(depends on: Area 8 Red ✓)*
+- [x] **[Green]** Implement — `src/renderer/src/hooks/useRecordCallAway.ts` *(depends on: Area 8 Red ✓)*
   - `useMutation` wrapping `recordCallAway` with `onSuccess` that invalidates `positionQueryKeys.all` and calls `options?.onSuccess?.(data)`
   - Run `pnpm test src/renderer/src/hooks/useRecordCallAway.test.ts` — all tests must pass
-- [ ] **[Refactor]** Clean up *(depends on: Area 8 Green ✓)*
+- [x] **[Refactor]** Clean up *(depends on: Area 8 Green ✓)*
   - Check for duplication with `useCloseCoveredCallEarly`
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
@@ -225,7 +225,7 @@
 
 **Requires:** Areas 7, 8 Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/components/CallAwaySheet.test.tsx` *(depends on: Areas 7, 8 Green ✓)*
+- [x] **[Red]** Write failing tests — `src/renderer/src/components/CallAwaySheet.test.tsx` *(depends on: Areas 7, 8 Green ✓)*
   - Test cases:
     - `renders null when open=false` — assert container not in DOM
     - `renders "Record Call-Away" header and P&L waterfall when open=true` — assert "Record Call-Away", "Shares Called Away", "P&L Breakdown", CC strike value, cost basis value, final P&L value
@@ -235,13 +235,13 @@
     - `success state shows WHEEL COMPLETE, finalPnl, cycleDays, annualizedReturn, Start New Wheel button`
     - `P&L is displayed in red (negative color) when finalPnl is negative`
   - Run `pnpm test src/renderer/src/components/CallAwaySheet.test.tsx` — all new tests must fail
-- [ ] **[Green]** Implement — `CallAwayForm.tsx` + `CallAwaySuccess.tsx` + `CallAwaySheet.tsx` *(depends on: Area 9 Red ✓)*
+- [x] **[Green]** Implement — `CallAwayForm.tsx` + `CallAwaySuccess.tsx` + `CallAwaySheet.tsx` *(depends on: Area 9 Red ✓)*
   - **`CallAwayForm.tsx`**: confirmation screen with P&L waterfall, read-only fill date field, irrevocable warning, Cancel + Confirm footer
   - **`CallAwaySuccess.tsx`**: hero card with "WHEEL COMPLETE" heading, cycle summary table, "Start New Wheel" CTA
   - **`CallAwaySheet.tsx`**: `createPortal` container, state machine (`successState: RecordCallAwayResponse | null`), renders form or success screen, uses `useRecordCallAway`
   - Add `data-testid` attributes: `record-call-away-btn`, `call-away-submit`
   - Run `pnpm test src/renderer/src/components/CallAwaySheet.test.tsx` — all tests must pass
-- [ ] **[Refactor]** Clean up *(depends on: Area 9 Green ✓)*
+- [x] **[Refactor]** Clean up *(depends on: Area 9 Green ✓)*
   - Verify P&L sign rendering: negative finalPnl shows red (`var(--wb-red)`)
   - Ensure `pnlColor` utility from `lib/format` used consistently
   - Run `pnpm test && pnpm lint && pnpm typecheck`
@@ -256,13 +256,13 @@
 
 **Requires:** Area 9 Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/components/PositionDetailActions.test.tsx` *(depends on: Area 9 Green ✓)*
+- [x] **[Red]** Write failing tests — `src/renderer/src/components/PositionDetailActions.test.tsx` *(depends on: Area 9 Green ✓)*
   - Test cases:
     - `renders "Record Call-Away →" button when phase is CC_OPEN` — assert `data-testid="record-call-away-btn"` visible
     - `does not render "Record Call-Away →" button when phase is HOLDING_SHARES`
     - `calls onRecordCallAway when the button is clicked`
   - Run `pnpm test src/renderer/src/components/PositionDetailActions.test.tsx` — all new tests must fail
-- [ ] **[Green]** Implement — `PositionDetailActions.tsx` + `PositionDetailPage.tsx` *(depends on: Area 10 Red ✓)*
+- [x] **[Green]** Implement — `PositionDetailActions.tsx` + `PositionDetailPage.tsx` *(depends on: Area 10 Red ✓)*
   - **`PositionDetailActions.tsx`**: add `onRecordCallAway: () => void` prop; add `data-testid="record-call-away-btn"` button with `wb-teal-button` class in `CC_OPEN` block
   - **`PositionDetailPage.tsx`**:
     - Add `callAwayCtx` state: `{ ccStrike; ccExpiration; contracts; basisPerShare; positionOpenedDate } | null`
@@ -271,7 +271,7 @@
     - Add `callAwayCtx` to the blur condition
     - Render `<CallAwaySheet open={Boolean(callAwayCtx)} ... onClose={handleCloseCallAway} />`
   - Run `pnpm test src/renderer/src/components/PositionDetailActions.test.tsx` — all tests must pass
-- [ ] **[Refactor]** Clean up *(depends on: Area 10 Green ✓)*
+- [x] **[Refactor]** Clean up *(depends on: Area 10 Green ✓)*
   - Verify blur/overlay conditions include `callAwayCtx`
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 

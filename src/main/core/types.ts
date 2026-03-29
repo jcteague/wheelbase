@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+const LEG_ACTION_VALUES = ['SELL', 'BUY', 'EXPIRE', 'ASSIGN', 'EXERCISE'] as const
+
 export const StrategyType = z.enum(['WHEEL', 'PMCC'])
 export const WheelStatus = z.enum(['ACTIVE', 'CLOSED'])
 export const WheelPhase = z.enum([
@@ -24,7 +26,7 @@ export const LegRole = z.enum([
   'ROLL_TO',
   'EXPIRE'
 ])
-export const LegAction = z.enum(['SELL', 'BUY', 'EXPIRE', 'ASSIGN'])
+export const LegAction = z.enum(LEG_ACTION_VALUES)
 export const InstrumentType = z.enum(['PUT', 'CALL', 'STOCK'])
 
 export type StrategyType = z.infer<typeof StrategyType>

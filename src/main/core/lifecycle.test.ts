@@ -581,6 +581,99 @@ describe('closeCoveredCall', () => {
 })
 
 // ---------------------------------------------------------------------------
+// recordCallAway
+// ---------------------------------------------------------------------------
+
+describe('recordCallAway', () => {
+  const recordCallAway = (
+    lifecycle as typeof lifecycle & {
+      recordCallAway?: (input: {
+        currentPhase: string
+        contracts: number
+        fillDate: string
+        ccOpenFillDate: string
+      }) => { phase: string }
+    }
+  ).recordCallAway
+
+  it('returns { phase: WHEEL_COMPLETE } when currentPhase is CC_OPEN and fillDate equals ccOpenFillDate', () => {
+    const result = recordCallAway!({
+      currentPhase: 'CC_OPEN',
+      contracts: 1,
+      fillDate: '2026-01-17',
+      ccOpenFillDate: '2026-01-17'
+    })
+    expect(result.phase).toBe('WHEEL_COMPLETE')
+  })
+
+  it('throws ValidationError (invalid_phase) when currentPhase is HOLDING_SHARES', () => {
+    const e = catchValidation(() =>
+      recordCallAway!({
+        currentPhase: 'HOLDING_SHARES',
+        contracts: 1,
+        fillDate: '2026-01-17',
+        ccOpenFillDate: '2026-01-03'
+      })
+    )
+    expect(e.field).toBe('__phase__')
+    expect(e.code).toBe('invalid_phase')
+    expect(e.message).toBe('No open covered call on this position')
+  })
+
+  it('throws ValidationError (invalid_phase) when currentPhase is CSP_OPEN', () => {
+    const e = catchValidation(() =>
+      recordCallAway!({
+        currentPhase: 'CSP_OPEN',
+        contracts: 1,
+        fillDate: '2026-01-17',
+        ccOpenFillDate: '2026-01-03'
+      })
+    )
+    expect(e.field).toBe('__phase__')
+    expect(e.code).toBe('invalid_phase')
+    expect(e.message).toBe('No open covered call on this position')
+  })
+
+  it('throws ValidationError (multi_contract_unsupported) when contracts > 1', () => {
+    const e = catchValidation(() =>
+      recordCallAway!({
+        currentPhase: 'CC_OPEN',
+        contracts: 2,
+        fillDate: '2026-01-17',
+        ccOpenFillDate: '2026-01-03'
+      })
+    )
+    expect(e.field).toBe('contracts')
+    expect(e.code).toBe('multi_contract_unsupported')
+    expect(e.message).toBe('Multi-contract call-away is not yet supported')
+  })
+
+  it('throws ValidationError (close_date_before_open) when fillDate is before ccOpenFillDate', () => {
+    const e = catchValidation(() =>
+      recordCallAway!({
+        currentPhase: 'CC_OPEN',
+        contracts: 1,
+        fillDate: '2026-01-02',
+        ccOpenFillDate: '2026-01-03'
+      })
+    )
+    expect(e.field).toBe('fillDate')
+    expect(e.code).toBe('close_date_before_open')
+    expect(e.message).toBe('Fill date cannot be before the CC open date')
+  })
+
+  it('returns WHEEL_COMPLETE when fillDate is after ccOpenFillDate', () => {
+    const result = recordCallAway!({
+      currentPhase: 'CC_OPEN',
+      contracts: 1,
+      fillDate: '2026-01-17',
+      ccOpenFillDate: '2026-01-03'
+    })
+    expect(result.phase).toBe('WHEEL_COMPLETE')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Helper
 // ---------------------------------------------------------------------------
 

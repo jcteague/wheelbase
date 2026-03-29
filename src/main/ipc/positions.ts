@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import type Database from 'better-sqlite3'
-import { ZodError } from 'zod'
+import { ZodError, type ZodType } from 'zod'
 import { ValidationError } from '../core/lifecycle'
 import { logger } from '../logger'
 import {
@@ -8,7 +8,8 @@ import {
   CloseCcPayloadSchema,
   CloseCspPayloadSchema,
   ExpireCspPayloadSchema,
-  OpenCcPayloadSchema
+  OpenCcPayloadSchema,
+  RecordCallAwayPayloadSchema
 } from '../schemas'
 import {
   assignCspPosition,
@@ -20,6 +21,7 @@ import {
   openCoveredCallPosition
 } from '../services/positions'
 import { closeCoveredCallPosition } from '../services/close-covered-call-position'
+import { recordCallAwayPosition } from '../services/record-call-away-position'
 import type { CreatePositionPayload } from '../schemas'
 
 function handleIpcCall(
@@ -54,6 +56,21 @@ function handleIpcCall(
   }
 }
 
+function registerParsedPositionHandler<Payload extends { positionId: string }>(
+  db: Database.Database,
+  channel: string,
+  logLabel: string,
+  schema: ZodType<Payload>,
+  handler: (db: Database.Database, positionId: string, payload: Payload) => object
+): void {
+  ipcMain.handle(channel, (_, payload: unknown) =>
+    handleIpcCall(logLabel, () => {
+      const parsed = schema.parse(payload)
+      return handler(db, parsed.positionId, parsed)
+    })
+  )
+}
+
 export function registerPositionsHandlers(db: Database.Database): void {
   ipcMain.handle('positions:list', () => listPositions(db))
 
@@ -72,38 +89,51 @@ export function registerPositionsHandlers(db: Database.Database): void {
     return { ok: true, ...result }
   })
 
-  ipcMain.handle('positions:close-csp', (_, payload: unknown) =>
-    handleIpcCall('positions_close_csp_unhandled_error', () => {
-      const parsed = CloseCspPayloadSchema.parse(payload)
-      return closeCspPosition(db, parsed.positionId, parsed)
-    })
+  registerParsedPositionHandler(
+    db,
+    'positions:close-csp',
+    'positions_close_csp_unhandled_error',
+    CloseCspPayloadSchema,
+    closeCspPosition
   )
 
-  ipcMain.handle('positions:assign-csp', (_, payload: unknown) =>
-    handleIpcCall('positions_assign_csp_unhandled_error', () => {
-      const parsed = AssignCspPayloadSchema.parse(payload)
-      return assignCspPosition(db, parsed.positionId, parsed)
-    })
+  registerParsedPositionHandler(
+    db,
+    'positions:assign-csp',
+    'positions_assign_csp_unhandled_error',
+    AssignCspPayloadSchema,
+    assignCspPosition
   )
 
-  ipcMain.handle('positions:expire-csp', (_, payload: unknown) =>
-    handleIpcCall('positions_expire_csp_unhandled_error', () => {
-      const parsed = ExpireCspPayloadSchema.parse(payload)
-      return expireCspPosition(db, parsed.positionId, parsed)
-    })
+  registerParsedPositionHandler(
+    db,
+    'positions:expire-csp',
+    'positions_expire_csp_unhandled_error',
+    ExpireCspPayloadSchema,
+    expireCspPosition
   )
 
-  ipcMain.handle('positions:open-cc', (_, payload: unknown) =>
-    handleIpcCall('positions_open_cc_unhandled_error', () => {
-      const parsed = OpenCcPayloadSchema.parse(payload)
-      return openCoveredCallPosition(db, parsed.positionId, parsed)
-    })
+  registerParsedPositionHandler(
+    db,
+    'positions:open-cc',
+    'positions_open_cc_unhandled_error',
+    OpenCcPayloadSchema,
+    openCoveredCallPosition
   )
 
-  ipcMain.handle('positions:close-cc-early', (_, payload: unknown) =>
-    handleIpcCall('positions_close_cc_early_unhandled_error', () => {
-      const parsed = CloseCcPayloadSchema.parse(payload)
-      return closeCoveredCallPosition(db, parsed.positionId, parsed)
-    })
+  registerParsedPositionHandler(
+    db,
+    'positions:close-cc-early',
+    'positions_close_cc_early_unhandled_error',
+    CloseCcPayloadSchema,
+    closeCoveredCallPosition
+  )
+
+  registerParsedPositionHandler(
+    db,
+    'positions:record-call-away',
+    'positions_record_call_away_unhandled_error',
+    RecordCallAwayPayloadSchema,
+    recordCallAwayPosition
   )
 }

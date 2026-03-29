@@ -1,17 +1,20 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
+const invoke = (channel: string, payload?: unknown): Promise<unknown> =>
+  ipcRenderer.invoke(channel, payload)
+
 const api = {
-  ping: (): Promise<string> => ipcRenderer.invoke('ping'),
-  listPositions: () => ipcRenderer.invoke('positions:list'),
-  createPosition: (payload: unknown) => ipcRenderer.invoke('positions:create', payload),
-  getPosition: (positionId: string) => ipcRenderer.invoke('positions:get', { positionId }),
-  closePosition: (payload: unknown) => ipcRenderer.invoke('positions:close-csp', payload),
-  expirePosition: (payload: unknown) => ipcRenderer.invoke('positions:expire-csp', payload),
-  assignPosition: (payload: unknown) => ipcRenderer.invoke('positions:assign-csp', payload),
-  openCoveredCall: (payload: unknown) => ipcRenderer.invoke('positions:open-cc', payload),
-  closeCoveredCallEarly: (payload: unknown) =>
-    ipcRenderer.invoke('positions:close-cc-early', payload)
+  ping: (): Promise<string> => invoke('ping') as Promise<string>,
+  listPositions: () => invoke('positions:list'),
+  createPosition: (payload: unknown) => invoke('positions:create', payload),
+  getPosition: (positionId: string) => invoke('positions:get', { positionId }),
+  closePosition: (payload: unknown) => invoke('positions:close-csp', payload),
+  expirePosition: (payload: unknown) => invoke('positions:expire-csp', payload),
+  assignPosition: (payload: unknown) => invoke('positions:assign-csp', payload),
+  openCoveredCall: (payload: unknown) => invoke('positions:open-cc', payload),
+  closeCoveredCallEarly: (payload: unknown) => invoke('positions:close-cc-early', payload),
+  recordCallAway: (payload: unknown) => invoke('positions:record-call-away', payload)
 }
 
 if (process.contextIsolated) {

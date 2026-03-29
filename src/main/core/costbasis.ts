@@ -7,6 +7,8 @@ import Decimal from 'decimal.js'
 
 Decimal.set({ rounding: Decimal.ROUND_HALF_UP })
 
+const SHARES_PER_CONTRACT = 100
+
 export interface CspLegInput {
   strike: string
   premiumPerContract: string
@@ -22,12 +24,22 @@ function round4(value: Decimal): Decimal {
   return value.toDecimalPlaces(4)
 }
 
+function sharesFromContracts(contracts: number): number {
+  return contracts * SHARES_PER_CONTRACT
+}
+
+function calculateCycleDays(positionOpenedDate: string, fillDate: string): number {
+  const openedMs = new Date(positionOpenedDate).getTime()
+  const fillMs = new Date(fillDate).getTime()
+  return Math.round((fillMs - openedMs) / (1000 * 60 * 60 * 24))
+}
+
 export function calculateInitialCspBasis(leg: CspLegInput): CostBasisResult {
   const strike = new Decimal(leg.strike)
   const premium = new Decimal(leg.premiumPerContract)
 
   const basisPerShare = round4(strike.minus(premium))
-  const totalPremiumCollected = round4(premium.times(leg.contracts).times(100))
+  const totalPremiumCollected = round4(premium.times(sharesFromContracts(leg.contracts)))
 
   return {
     basisPerShare: basisPerShare.toString(),
@@ -61,7 +73,7 @@ export function calculateCspClose(input: CspCloseInput): CspCloseResult {
   const closePrice = new Decimal(input.closePricePerContract)
   const netPnlPerContract = openPremium.minus(closePrice)
 
-  const finalPnl = round4(netPnlPerContract.times(input.contracts).times(100))
+  const finalPnl = round4(netPnlPerContract.times(sharesFromContracts(input.contracts)))
   const pnlPercentage = round4(netPnlPerContract.dividedBy(openPremium).times(100))
 
   return {
@@ -108,7 +120,8 @@ export function calculateAssignmentBasis(input: AssignmentBasisInput): Assignmen
   )
 
   const totalPremiumCollected = input.premiumLegs.reduce(
-    (sum, leg) => sum.plus(new Decimal(leg.premiumPerContract).times(leg.contracts).times(100)),
+    (sum, leg) =>
+      sum.plus(new Decimal(leg.premiumPerContract).times(sharesFromContracts(leg.contracts))),
     new Decimal(0)
   )
 
@@ -119,7 +132,7 @@ export function calculateAssignmentBasis(input: AssignmentBasisInput): Assignmen
 
   return {
     basisPerShare: round4(strike.minus(totalPremiumPerShare)).toFixed(4),
-    sharesHeld: input.contracts * 100,
+    sharesHeld: sharesFromContracts(input.contracts),
     totalPremiumCollected: round4(totalPremiumCollected).toFixed(4),
     premiumWaterfall
   }
@@ -144,8 +157,8 @@ export function calculateCcOpenBasis(input: CcOpenBasisInput): CcOpenBasisResult
   const prevTotal = new Decimal(input.prevTotalPremiumCollected)
 
   // Prorate per-share basis reduction: total CC income spread across all shares held
-  const totalCcIncome = premium.times(input.contracts).times(100)
-  const totalShares = input.positionContracts * 100
+  const totalCcIncome = premium.times(sharesFromContracts(input.contracts))
+  const totalShares = sharesFromContracts(input.positionContracts)
   const basisReductionPerShare = totalCcIncome.dividedBy(totalShares)
   const basisPerShare = round4(prev.minus(basisReductionPerShare))
   const totalPremiumCollected = round4(prevTotal.plus(totalCcIncome))
@@ -160,7 +173,7 @@ export function calculateCspExpiration(input: CspExpirationInput): CspExpiration
   const openPremium = new Decimal(input.openPremiumPerContract)
 
   // CSP expires worthless: we keep 100% of the premium
-  const finalPnl = round4(openPremium.times(input.contracts).times(100))
+  const finalPnl = round4(openPremium.times(sharesFromContracts(input.contracts)))
 
   return {
     finalPnl: finalPnl.toFixed(4),
@@ -181,6 +194,48 @@ export interface CcCloseResult {
 export function calculateCcClose(input: CcCloseInput): CcCloseResult {
   const open = new Decimal(input.openPremiumPerContract)
   const close = new Decimal(input.closePricePerContract)
-  const ccLegPnl = round4(open.minus(close).times(input.contracts).times(100))
+  const ccLegPnl = round4(open.minus(close).times(sharesFromContracts(input.contracts)))
   return { ccLegPnl: ccLegPnl.toFixed(4) }
+}
+
+export interface CallAwayInput {
+  ccStrike: string
+  basisPerShare: string
+  contracts: number
+  positionOpenedDate: string
+  fillDate: string
+}
+
+export interface CallAwayResult {
+  finalPnl: string
+  capitalDeployed: string
+  cycleDays: number
+  annualizedReturn: string
+}
+
+export function calculateCallAway(input: CallAwayInput): CallAwayResult {
+  const ccStrike = new Decimal(input.ccStrike)
+  const basisPerShare = new Decimal(input.basisPerShare)
+  const sharesHeld = sharesFromContracts(input.contracts)
+
+  const finalPnl = round4(ccStrike.minus(basisPerShare).times(sharesHeld))
+  const capitalDeployed = round4(basisPerShare.times(sharesHeld))
+  const cycleDays = calculateCycleDays(input.positionOpenedDate, input.fillDate)
+
+  const annualizedReturn =
+    cycleDays <= 0
+      ? new Decimal('0')
+      : round4(
+          finalPnl
+            .dividedBy(capitalDeployed)
+            .times(new Decimal(365).dividedBy(cycleDays))
+            .times(100)
+        )
+
+  return {
+    finalPnl: finalPnl.toFixed(4),
+    capitalDeployed: capitalDeployed.toFixed(4),
+    cycleDays,
+    annualizedReturn: annualizedReturn.toFixed(4)
+  }
 }
