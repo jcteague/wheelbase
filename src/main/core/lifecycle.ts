@@ -219,10 +219,6 @@ export function openCoveredCall(input: OpenCoveredCallInput): OpenCoveredCallRes
     )
   }
 
-  if (input.expiration < input.referenceDate) {
-    throw new ValidationError('expiration', 'already_expired', 'Expiration date has already passed')
-  }
-
   return { phase: 'CC_OPEN' }
 }
 
