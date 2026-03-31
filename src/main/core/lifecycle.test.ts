@@ -475,12 +475,9 @@ describe('openCoveredCall', () => {
     expect(e.code).toBe('before_fill_date')
   })
 
-  it('throws ValidationError when expiration is in the past', () => {
-    const e = catchValidation(() =>
-      openCoveredCall(validCcInput({ expiration: '2026-03-19', referenceDate: '2026-03-20' }))
-    )
-    expect(e.field).toBe('expiration')
-    expect(e.code).toBe('already_expired')
+  it('accepts 0DTE — expiration equal to fillDate is valid', () => {
+    const result = openCoveredCall(validCcInput({ expiration: '2026-01-20', fillDate: '2026-01-20' }))
+    expect(result.phase).toBe('CC_OPEN')
   })
 })
 

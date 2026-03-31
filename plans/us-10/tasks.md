@@ -283,7 +283,7 @@
 
 ### E2E Tests
 
-- [ ] **[Red]** Write failing e2e tests — `e2e/call-away.spec.ts` *(depends on: all Green tasks ✓)*
+- [x] **[Red]** Write failing e2e tests — `e2e/call-away.spec.ts` *(depends on: all Green tasks ✓)*
   - One `it()` per AC — test names must mirror AC language
   - AC coverage:
     - AC-1: successfully record shares called away → `it('successfully records shares called away — position transitions to WHEEL_COMPLETE with +$780.00 P&L')`
@@ -295,11 +295,11 @@
   - Use `reachCcOpenState()` helper (inline or from `e2e/helpers.ts`)
   - Selectors: `[data-testid="record-call-away-btn"]`, `text=Record Call-Away`, `[data-testid="call-away-submit"]`, `text=WHEEL COMPLETE`
   - Run `pnpm test:e2e` — all new tests must fail
-- [ ] **[Green]** Make e2e tests pass *(depends on: E2E Red ✓)*
+- [x] **[Green]** Make e2e tests pass *(depends on: E2E Red ✓)*
   - Add any missing `data-testid` attributes to components
   - Extract shared `reachCcOpenState()` helper to `e2e/helpers.ts` if not already done
   - Run `pnpm test:e2e` — all tests must pass
-- [ ] **[Refactor]** Clean up e2e tests *(depends on: E2E Green ✓)*
+- [x] **[Refactor]** Clean up e2e tests *(depends on: E2E Green ✓)*
   - Consolidate helpers; remove duplication with `close-cc-early.spec.ts`
 
 ---
