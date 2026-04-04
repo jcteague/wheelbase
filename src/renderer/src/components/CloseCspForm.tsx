@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { useLocation } from 'wouter'
 import { z } from 'zod'
 import type { ApiError, ApiFieldError } from '../api/positions'
@@ -79,14 +79,14 @@ export function CloseCspForm({
   const {
     register,
     handleSubmit,
-    watch,
+    control,
     setError,
     formState: { errors }
   } = useForm<CloseCspFormValues>({
     resolver: zodResolver(makeCloseCspSchema(openFillDate, expiration))
   })
 
-  const closePriceStr = watch('close_price_per_contract') ?? ''
+  const closePriceStr = useWatch({ control, name: 'close_price_per_contract' }) ?? ''
 
   function onSubmit(values: CloseCspFormValues): void {
     mutation.mutate(

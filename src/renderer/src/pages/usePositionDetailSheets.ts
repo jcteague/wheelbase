@@ -42,16 +42,19 @@ type PositionDetailSheetsResult = {
   openCcCtx: OpenCoveredCallContext | null
   closeCcCtx: CloseCoveredCallContext | null
   callAwayCtx: CallAwayContext | null
+  ccExpirationCtx: ActiveLegSheetContext | null
   handleOpenCc: () => void
   handleRecordAssignment: () => void
   handleRecordExpiration: () => void
   handleCloseCcEarly: () => void
   handleRecordCallAway: () => void
+  handleRecordCcExpiration: () => void
   handleCloseExpiration: () => void
   handleCloseAssignment: () => void
   handleCloseOpenCc: () => void
   handleCloseCloseCcEarly: () => void
   handleCloseCallAway: () => void
+  handleCloseCcExpiration: () => void
   handleOpenCoveredCallFromAssignment: (nextContext: OpenCoveredCallContext) => void
 }
 
@@ -102,11 +105,17 @@ export function usePositionDetailSheets(
   const [openCcCtx, setOpenCcCtx] = useState<OpenCoveredCallContext | null>(null)
   const [closeCcCtx, setCloseCcCtx] = useState<CloseCoveredCallContext | null>(null)
   const [callAwayCtx, setCallAwayCtx] = useState<CallAwayContext | null>(null)
+  const [ccExpirationCtx, setCcExpirationCtx] = useState<ActiveLegSheetContext | null>(null)
 
   const assignmentWaterfall = useMemo(() => getAssignmentWaterfall(data), [data])
-  const overlayOpen = [expirationCtx, assignmentCtx, openCcCtx, closeCcCtx, callAwayCtx].some(
-    (sheetCtx) => sheetCtx !== null
-  )
+  const overlayOpen = [
+    expirationCtx,
+    assignmentCtx,
+    openCcCtx,
+    closeCcCtx,
+    callAwayCtx,
+    ccExpirationCtx
+  ].some((sheetCtx) => sheetCtx !== null)
 
   const handleOpenCc = useCallback(() => {
     const assignLeg = data?.legs.find((leg) => leg.legRole === 'ASSIGN')
@@ -167,6 +176,13 @@ export function usePositionDetailSheets(
     }
   }, [data])
 
+  const handleRecordCcExpiration = useCallback(() => {
+    const nextContext = getActiveLegSheetContext(data)
+    if (nextContext) {
+      setCcExpirationCtx(nextContext)
+    }
+  }, [data])
+
   return {
     assignmentWaterfall,
     overlayOpen,
@@ -175,16 +191,19 @@ export function usePositionDetailSheets(
     openCcCtx,
     closeCcCtx,
     callAwayCtx,
+    ccExpirationCtx,
     handleOpenCc,
     handleRecordAssignment,
     handleRecordExpiration,
     handleCloseCcEarly,
     handleRecordCallAway,
+    handleRecordCcExpiration,
     handleCloseExpiration: () => setExpirationCtx(null),
     handleCloseAssignment: () => setAssignmentCtx(null),
     handleCloseOpenCc: () => setOpenCcCtx(null),
     handleCloseCloseCcEarly: () => setCloseCcCtx(null),
     handleCloseCallAway: () => setCallAwayCtx(null),
+    handleCloseCcExpiration: () => setCcExpirationCtx(null),
     handleOpenCoveredCallFromAssignment: (nextContext: OpenCoveredCallContext) => {
       setAssignmentCtx(null)
       setOpenCcCtx(nextContext)

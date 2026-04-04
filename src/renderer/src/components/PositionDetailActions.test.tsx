@@ -5,11 +5,13 @@ import { PositionDetailActions } from './PositionDetailActions'
 
 const BASE_PROPS = {
   hasCostBasis: true,
+  ccExpired: false,
   onOpenCc: vi.fn(),
   onRecordAssignment: vi.fn(),
   onRecordExpiration: vi.fn(),
   onCloseCcEarly: vi.fn(),
-  onRecordCallAway: vi.fn()
+  onRecordCallAway: vi.fn(),
+  onRecordCcExpiration: vi.fn()
 }
 
 beforeEach(() => {
@@ -18,6 +20,7 @@ beforeEach(() => {
   BASE_PROPS.onRecordExpiration.mockReset()
   BASE_PROPS.onCloseCcEarly.mockReset()
   BASE_PROPS.onRecordCallAway.mockReset()
+  BASE_PROPS.onRecordCcExpiration.mockReset()
 })
 
 it('renders "Close CC Early →" button when phase=CC_OPEN', () => {

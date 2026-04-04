@@ -1,6 +1,7 @@
 import { useParams } from 'wouter'
 import { AssignmentSheet } from '../components/AssignmentSheet'
 import { CallAwaySheet } from '../components/CallAwaySheet'
+import { CcExpirationSheet } from '../components/CcExpirationSheet'
 import { CloseCcEarlySheet } from '../components/CloseCcEarlySheet'
 import { ExpirationSheet } from '../components/ExpirationSheet'
 import { OpenCoveredCallSheet } from '../components/OpenCoveredCallSheet'
@@ -10,12 +11,14 @@ import { Breadcrumb } from '../components/ui/Breadcrumb'
 import { ErrorAlert } from '../components/ui/ErrorAlert'
 import { LoadingState } from '../components/ui/LoadingState'
 import { usePosition } from '../hooks/usePosition'
+import { computeDte, fmtDate } from '../lib/format'
 import { PositionDetailContent } from './PositionDetailContent'
 import { usePositionDetailSheets } from './usePositionDetailSheets'
 
 export function PositionDetailPage(): React.JSX.Element {
   const { id } = useParams<{ id: string }>()
   const { isLoading, isError, data } = usePosition(id)
+
   const {
     assignmentWaterfall,
     overlayOpen,
@@ -24,16 +27,19 @@ export function PositionDetailPage(): React.JSX.Element {
     openCcCtx,
     closeCcCtx,
     callAwayCtx,
+    ccExpirationCtx,
     handleOpenCc,
     handleRecordAssignment,
     handleRecordExpiration,
     handleCloseCcEarly,
     handleRecordCallAway,
+    handleRecordCcExpiration,
     handleCloseExpiration,
     handleCloseAssignment,
     handleCloseOpenCc,
     handleCloseCloseCcEarly,
     handleCloseCallAway,
+    handleCloseCcExpiration,
     handleOpenCoveredCallFromAssignment
   } = usePositionDetailSheets(data)
 
@@ -49,7 +55,10 @@ export function PositionDetailPage(): React.JSX.Element {
     )
   }
 
-  const { position, costBasisSnapshot } = data
+  const { position, activeLeg, costBasisSnapshot, legs } = data
+  const ccExpired =
+    position.phase === 'CC_OPEN' && activeLeg ? computeDte(activeLeg.expiration) <= 0 : false
+  const assignLeg = legs.find((leg) => leg.legRole === 'ASSIGN')
 
   return (
     <PageLayout
@@ -60,11 +69,13 @@ export function PositionDetailPage(): React.JSX.Element {
             <PositionDetailActions
               phase={position.phase}
               hasCostBasis={Boolean(costBasisSnapshot)}
+              ccExpired={ccExpired}
               onOpenCc={handleOpenCc}
               onRecordAssignment={handleRecordAssignment}
               onRecordExpiration={handleRecordExpiration}
               onCloseCcEarly={handleCloseCcEarly}
               onRecordCallAway={handleRecordCallAway}
+              onRecordCcExpiration={handleRecordCcExpiration}
             />
           }
         />
@@ -135,6 +146,20 @@ export function PositionDetailPage(): React.JSX.Element {
           basisPerShare={callAwayCtx.basisPerShare}
           positionOpenedDate={callAwayCtx.positionOpenedDate}
           onClose={handleCloseCallAway}
+        />
+      )}
+      {ccExpirationCtx?.activeLeg && (
+        <CcExpirationSheet
+          open
+          positionId={position.id}
+          ticker={position.ticker}
+          strike={ccExpirationCtx.activeLeg.strike}
+          expiration={ccExpirationCtx.activeLeg.expiration}
+          expirationDisplay={fmtDate(ccExpirationCtx.activeLeg.expiration)}
+          contracts={ccExpirationCtx.activeLeg.contracts}
+          premiumPerContract={ccExpirationCtx.activeLeg.premiumPerContract}
+          sharesHeld={assignLeg?.contracts ? assignLeg.contracts * 100 : 0}
+          onClose={handleCloseCcExpiration}
         />
       )}
     </PageLayout>

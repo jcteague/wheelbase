@@ -7,6 +7,7 @@ import {
   AssignCspPayloadSchema,
   CloseCcPayloadSchema,
   CloseCspPayloadSchema,
+  ExpireCcPayloadSchema,
   ExpireCspPayloadSchema,
   OpenCcPayloadSchema,
   RecordCallAwayPayloadSchema
@@ -15,6 +16,7 @@ import {
   assignCspPosition,
   closeCspPosition,
   createPosition,
+  expireCcPosition,
   expireCspPosition,
   getPosition,
   listPositions,
@@ -135,5 +137,12 @@ export function registerPositionsHandlers(db: Database.Database): void {
     'positions_record_call_away_unhandled_error',
     RecordCallAwayPayloadSchema,
     recordCallAwayPosition
+  )
+
+  ipcMain.handle('positions:expire-cc', (_, payload: unknown) =>
+    handleIpcCall('positions_expire_cc_unhandled_error', () => {
+      const parsed = ExpireCcPayloadSchema.parse(payload)
+      return expireCcPosition(db, parsed.positionId, parsed)
+    })
   )
 }

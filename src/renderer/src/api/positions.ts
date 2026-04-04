@@ -418,6 +418,53 @@ export async function recordCallAway(
   return result as unknown as RecordCallAwayResponse
 }
 
+export type ExpireCcPayload = {
+  position_id: string
+  expiration_date_override?: string
+}
+
+export type ExpireCcResponse = {
+  position: {
+    id: string
+    ticker: string
+    phase: 'HOLDING_SHARES'
+    status: 'ACTIVE'
+    closedDate: null
+  }
+  leg: LegData & {
+    positionId: string
+    legRole: string
+    action: string
+    instrumentType: string
+    premiumPerContract: string
+    fillPrice: null
+    fillDate: string
+    createdAt: string
+    updatedAt: string
+  }
+  costBasisSnapshot: {
+    id: string
+    positionId: string
+    basisPerShare: string
+    totalPremiumCollected: string
+    finalPnl: null
+    snapshotAt: string
+    createdAt: string
+  }
+  sharesHeld: number
+}
+
+export async function expireCc(payload: ExpireCcPayload): Promise<ExpireCcResponse> {
+  const result = await window.api.expireCc({
+    positionId: payload.position_id,
+    expirationDateOverride: payload.expiration_date_override
+  })
+  if (!result.ok) {
+    throwMappedIpcErrors(result.errors)
+  }
+  return result as unknown as ExpireCcResponse
+}
+
 export async function createPosition(
   payload: CreatePositionPayload
 ): Promise<CreatePositionResponse> {

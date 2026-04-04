@@ -37,7 +37,7 @@ export function openCoveredCallPosition(
     premiumPerContract: premiumStr,
     fillDate,
     assignmentDate: assignLeg?.fillDate ?? fillDate,
-    referenceDate: today,
+    referenceDate: fillDate,
     expiration: payload.expiration
   })
 

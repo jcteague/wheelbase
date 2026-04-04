@@ -15,14 +15,21 @@ type OpenCoveredCallFn = (payload: {
   fill_date?: string
 }) => Promise<unknown>
 
+type ExpireCcFn = (payload: {
+  position_id: string
+  expiration_date_override?: string
+}) => Promise<unknown>
+
 type PositionsModuleWithAssign = typeof positionsApi & {
   assignPosition?: AssignPositionFn
   openCoveredCall?: OpenCoveredCallFn
+  expireCc?: ExpireCcFn
 }
 
 const apiModule = positionsApi as PositionsModuleWithAssign
 const mockAssignPosition = vi.fn()
 const mockOpenCoveredCall = vi.fn()
+const mockExpireCc = vi.fn()
 
 const SUCCESS_RESPONSE = {
   ok: true,
@@ -204,6 +211,117 @@ describe('openCoveredCall', () => {
           }
         ]
       }
+    })
+  })
+})
+
+describe('expireCc', () => {
+  const VALID_UUID = '11111111-1111-4111-8111-111111111111'
+
+  beforeEach(() => {
+    mockExpireCc.mockReset()
+    Object.assign(window, {
+      api: {
+        ...(window.api ?? {}),
+        expireCc: mockExpireCc
+      }
+    })
+  })
+
+  it('calls window.api.expireCc with camelCase positionId when given snake_case position_id', async () => {
+    mockExpireCc.mockResolvedValue({
+      ok: true,
+      position: {
+        id: VALID_UUID,
+        ticker: 'AAPL',
+        phase: 'HOLDING_SHARES',
+        status: 'ACTIVE',
+        closedDate: null
+      },
+      leg: { legRole: 'EXPIRE', action: 'EXPIRE', instrumentType: 'CALL' },
+      costBasisSnapshot: { basisPerShare: '174.2000', totalPremiumCollected: '580.0000' },
+      sharesHeld: 100
+    })
+
+    await apiModule.expireCc?.({ position_id: VALID_UUID })
+
+    expect(mockExpireCc).toHaveBeenCalledWith({
+      positionId: VALID_UUID,
+      expirationDateOverride: undefined
+    })
+  })
+
+  it('maps expiration_date_override to expirationDateOverride in the camelCase call', async () => {
+    mockExpireCc.mockResolvedValue({
+      ok: true,
+      position: {
+        id: VALID_UUID,
+        ticker: 'AAPL',
+        phase: 'HOLDING_SHARES',
+        status: 'ACTIVE',
+        closedDate: null
+      },
+      leg: { legRole: 'EXPIRE' },
+      costBasisSnapshot: {},
+      sharesHeld: 100
+    })
+
+    await apiModule.expireCc?.({ position_id: VALID_UUID, expiration_date_override: '2026-02-21' })
+
+    expect(mockExpireCc).toHaveBeenCalledWith({
+      positionId: VALID_UUID,
+      expirationDateOverride: '2026-02-21'
+    })
+  })
+
+  it('throws ApiError with status 400 when window.api.expireCc returns ok:false', async () => {
+    mockExpireCc.mockResolvedValue({
+      ok: false,
+      errors: [
+        {
+          field: '__phase__',
+          code: 'invalid_phase',
+          message: 'No open covered call on this position'
+        }
+      ]
+    })
+
+    await expect(apiModule.expireCc?.({ position_id: VALID_UUID })).rejects.toMatchObject({
+      status: 400,
+      body: {
+        detail: [
+          {
+            field: '__phase__',
+            code: 'invalid_phase',
+            message: 'No open covered call on this position'
+          }
+        ]
+      }
+    })
+  })
+
+  it('resolves with result when window.api.expireCc returns ok:true', async () => {
+    const successPayload = {
+      ok: true,
+      position: {
+        id: VALID_UUID,
+        ticker: 'AAPL',
+        phase: 'HOLDING_SHARES',
+        status: 'ACTIVE',
+        closedDate: null
+      },
+      leg: { legRole: 'EXPIRE', action: 'EXPIRE', instrumentType: 'CALL' },
+      costBasisSnapshot: { basisPerShare: '174.2000', totalPremiumCollected: '580.0000' },
+      sharesHeld: 100
+    }
+    mockExpireCc.mockResolvedValue(successPayload)
+
+    const result = await apiModule.expireCc?.({ position_id: VALID_UUID })
+
+    expect(result).toMatchObject({
+      position: { phase: 'HOLDING_SHARES' },
+      leg: { legRole: 'EXPIRE' },
+      sharesHeld: 100
     })
   })
 })

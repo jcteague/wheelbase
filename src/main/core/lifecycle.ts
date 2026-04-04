@@ -296,6 +296,32 @@ export function recordAssignment(input: RecordAssignmentInput): RecordAssignment
   return { phase: 'HOLDING_SHARES' }
 }
 
+export interface ExpireCcInput {
+  currentPhase: WheelPhase
+  expirationDate: string
+  referenceDate: string
+}
+
+export interface ExpireCcResult {
+  phase: 'HOLDING_SHARES'
+}
+
+export function expireCc(input: ExpireCcInput): ExpireCcResult {
+  if (input.currentPhase !== 'CC_OPEN') {
+    throw new ValidationError('__phase__', 'invalid_phase', 'No open covered call on this position')
+  }
+
+  if (input.referenceDate < input.expirationDate) {
+    throw new ValidationError(
+      'expiration',
+      'too_early',
+      `Cannot record expiration before the expiration date (${input.expirationDate})`
+    )
+  }
+
+  return { phase: 'HOLDING_SHARES' }
+}
+
 export interface CloseCoveredCallInput {
   currentPhase: WheelPhase
   closePricePerContract: string

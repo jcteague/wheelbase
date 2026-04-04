@@ -4,6 +4,7 @@ const assignCspPosition = vi.fn()
 const createPosition = vi.fn()
 const closeCspPosition = vi.fn()
 const closeCoveredCallPosition = vi.fn()
+const expireCcPosition = vi.fn()
 const expireCspPosition = vi.fn()
 const getPosition = vi.fn()
 const listPositions = vi.fn()
@@ -26,6 +27,7 @@ vi.mock('../services/positions', () => ({
   assignCspPosition,
   createPosition,
   closeCspPosition,
+  expireCcPosition,
   expireCspPosition,
   getPosition,
   listPositions,
@@ -54,6 +56,7 @@ describe('registerPositionsHandlers', () => {
     createPosition.mockReset()
     closeCspPosition.mockReset()
     closeCoveredCallPosition.mockReset()
+    expireCcPosition.mockReset()
     expireCspPosition.mockReset()
     getPosition.mockReset()
     listPositions.mockReset()
@@ -401,7 +404,11 @@ describe('registerPositionsHandlers', () => {
         closedDate: '2026-02-21'
       },
       leg: { legRole: 'CC_CLOSE', action: 'EXERCISE', instrumentType: 'CALL' },
-      costBasisSnapshot: { basisPerShare: '174.2000', totalPremiumCollected: '580.0000', finalPnl: '780.0000' },
+      costBasisSnapshot: {
+        basisPerShare: '174.2000',
+        totalPremiumCollected: '580.0000',
+        finalPnl: '780.0000'
+      },
       finalPnl: '780.0000',
       cycleDays: 99,
       annualizedReturn: '16.5084',
@@ -452,7 +459,11 @@ describe('registerPositionsHandlers', () => {
     const { ValidationError } = await import('../core/lifecycle')
 
     recordCallAwayPosition.mockImplementation(() => {
-      throw new ValidationError('__phase__', 'invalid_phase', 'No open covered call on this position')
+      throw new ValidationError(
+        '__phase__',
+        'invalid_phase',
+        'No open covered call on this position'
+      )
     })
 
     registerPositionsHandlers(db)
@@ -479,7 +490,11 @@ describe('registerPositionsHandlers', () => {
     const { ValidationError } = await import('../core/lifecycle')
 
     recordCallAwayPosition.mockImplementation(() => {
-      throw new ValidationError('contracts', 'multi_contract_unsupported', 'Multi-contract call-away is not yet supported')
+      throw new ValidationError(
+        'contracts',
+        'multi_contract_unsupported',
+        'Multi-contract call-away is not yet supported'
+      )
     })
 
     registerPositionsHandlers(db)
@@ -496,6 +511,114 @@ describe('registerPositionsHandlers', () => {
     expect(result).toMatchObject({
       ok: false,
       errors: [expect.objectContaining({ field: 'contracts', code: 'multi_contract_unsupported' })]
+    })
+  })
+
+  it('registers a positions:expire-cc handler', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+
+    registerPositionsHandlers({} as never)
+
+    expect(vi.mocked(ipcMain.handle)).toHaveBeenCalledWith(
+      'positions:expire-cc',
+      expect.any(Function)
+    )
+  })
+
+  it('positions:expire-cc returns ok:true with position, leg, costBasisSnapshot, sharesHeld for valid payload', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+    const db = {} as never
+
+    expireCcPosition.mockReturnValue({
+      position: {
+        id: '11111111-1111-4111-8111-111111111111',
+        ticker: 'AAPL',
+        phase: 'HOLDING_SHARES',
+        status: 'ACTIVE',
+        closedDate: null
+      },
+      leg: { legRole: 'EXPIRE', action: 'EXPIRE', instrumentType: 'CALL' },
+      costBasisSnapshot: { basisPerShare: '174.2000', totalPremiumCollected: '580.0000' },
+      sharesHeld: 100
+    })
+
+    registerPositionsHandlers(db)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:expire-cc'
+    )
+
+    const result = await handler?.(null, {
+      positionId: '11111111-1111-4111-8111-111111111111'
+    })
+
+    expect(expireCcPosition).toHaveBeenCalledWith(db, '11111111-1111-4111-8111-111111111111', {
+      positionId: '11111111-1111-4111-8111-111111111111'
+    })
+    expect(result).toMatchObject({
+      ok: true,
+      position: { phase: 'HOLDING_SHARES' },
+      leg: { legRole: 'EXPIRE' },
+      sharesHeld: 100
+    })
+  })
+
+  it('positions:expire-cc returns ok:false with invalid_string error when positionId is not a UUID', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+
+    registerPositionsHandlers({} as never)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:expire-cc'
+    )
+
+    const result = await handler?.(null, { positionId: 'not-a-uuid' })
+
+    expect(result).toMatchObject({ ok: false })
+    expect(
+      (result as { errors: Array<{ code: string }> }).errors.some((e) => e.code.includes('invalid'))
+    ).toBe(true)
+  })
+
+  it('positions:expire-cc returns ok:false with ValidationError errors when service throws', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+    const db = {} as never
+    const { ValidationError } = await import('../core/lifecycle')
+
+    expireCcPosition.mockImplementation(() => {
+      throw new ValidationError(
+        '__phase__',
+        'invalid_phase',
+        'No open covered call on this position'
+      )
+    })
+
+    registerPositionsHandlers(db)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:expire-cc'
+    )
+
+    const result = await handler?.(null, {
+      positionId: '11111111-1111-4111-8111-111111111111'
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      errors: [
+        {
+          field: '__phase__',
+          code: 'invalid_phase',
+          message: 'No open covered call on this position'
+        }
+      ]
     })
   })
 })

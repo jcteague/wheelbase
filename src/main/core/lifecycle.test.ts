@@ -6,11 +6,13 @@ import {
   closeCsp,
   expireCsp,
   openCoveredCall,
-  closeCoveredCall
+  closeCoveredCall,
+  expireCc
 } from './lifecycle'
 import type {
   CloseCspInput,
   CloseCoveredCallInput,
+  ExpireCcInput,
   ExpireCspInput,
   OpenWheelInput,
   OpenCoveredCallInput
@@ -476,7 +478,9 @@ describe('openCoveredCall', () => {
   })
 
   it('accepts 0DTE — expiration equal to fillDate is valid', () => {
-    const result = openCoveredCall(validCcInput({ expiration: '2026-01-20', fillDate: '2026-01-20' }))
+    const result = openCoveredCall(
+      validCcInput({ expiration: '2026-01-20', fillDate: '2026-01-20' })
+    )
     expect(result.phase).toBe('CC_OPEN')
   })
 })
@@ -667,6 +671,60 @@ describe('recordCallAway', () => {
       ccOpenFillDate: '2026-01-03'
     })
     expect(result.phase).toBe('WHEEL_COMPLETE')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// expireCc
+// ---------------------------------------------------------------------------
+
+describe('expireCc', () => {
+  const BASE_EXPIRATION = '2026-02-21'
+
+  function validExpireCcInput(overrides: Partial<ExpireCcInput> = {}): ExpireCcInput {
+    return {
+      currentPhase: 'CC_OPEN',
+      expirationDate: BASE_EXPIRATION,
+      referenceDate: BASE_EXPIRATION,
+      ...overrides
+    }
+  }
+
+  it('returns HOLDING_SHARES when referenceDate equals expirationDate (same-day boundary)', () => {
+    const result = expireCc(validExpireCcInput())
+    expect(result.phase).toBe('HOLDING_SHARES')
+  })
+
+  it('returns HOLDING_SHARES when referenceDate is after expirationDate', () => {
+    const result = expireCc(validExpireCcInput({ referenceDate: '2026-02-22' }))
+    expect(result.phase).toBe('HOLDING_SHARES')
+  })
+
+  it('throws ValidationError with invalid_phase when currentPhase is not CC_OPEN', () => {
+    const e = catchValidation(() =>
+      expireCc(validExpireCcInput({ currentPhase: 'HOLDING_SHARES' }))
+    )
+    expect(e.field).toBe('__phase__')
+    expect(e.code).toBe('invalid_phase')
+    expect(e.message).toBe('No open covered call on this position')
+  })
+
+  it('throws ValidationError with too_early when referenceDate is before expirationDate', () => {
+    const e = catchValidation(() => expireCc(validExpireCcInput({ referenceDate: '2026-02-19' })))
+    expect(e.field).toBe('expiration')
+    expect(e.code).toBe('too_early')
+    expect(e.message).toBe('Cannot record expiration before the expiration date (2026-02-21)')
+  })
+
+  it('throws too_early when referenceDate is one day before expirationDate (boundary case)', () => {
+    const e = catchValidation(() => expireCc(validExpireCcInput({ referenceDate: '2026-02-20' })))
+    expect(e.field).toBe('expiration')
+    expect(e.code).toBe('too_early')
+    expect(e.message).toBe('Cannot record expiration before the expiration date (2026-02-21)')
+  })
+
+  it('does NOT throw when referenceDate equals expirationDate exactly (boundary passing)', () => {
+    expect(() => expireCc(validExpireCcInput({ referenceDate: '2026-02-21' }))).not.toThrow()
   })
 })
 

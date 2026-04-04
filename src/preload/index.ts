@@ -14,7 +14,8 @@ const api = {
   assignPosition: (payload: unknown) => invoke('positions:assign-csp', payload),
   openCoveredCall: (payload: unknown) => invoke('positions:open-cc', payload),
   closeCoveredCallEarly: (payload: unknown) => invoke('positions:close-cc-early', payload),
-  recordCallAway: (payload: unknown) => invoke('positions:record-call-away', payload)
+  recordCallAway: (payload: unknown) => invoke('positions:record-call-away', payload),
+  expireCc: (payload: unknown) => invoke('positions:expire-cc', payload)
 }
 
 if (process.contextIsolated) {

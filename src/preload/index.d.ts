@@ -157,6 +157,18 @@ type IpcRecordCallAwayResult = IpcResult<{
   basisPerShare: string
 }>
 
+interface IpcExpireCcPayload {
+  positionId: string
+  expirationDateOverride?: string
+}
+
+type IpcExpireCcResult = IpcResult<{
+  position: { id: string; ticker: string; phase: string; status: string; closedDate: null }
+  leg: IpcLegRecord
+  costBasisSnapshot: IpcCostBasisSnapshotRecord
+  sharesHeld: number
+}>
+
 declare global {
   interface Window {
     electron: ElectronAPI
@@ -171,6 +183,7 @@ declare global {
       openCoveredCall: (payload: IpcOpenCcPayload) => Promise<IpcOpenCcResult>
       closeCoveredCallEarly: (payload: IpcCloseCcPayload) => Promise<IpcCloseCcResult>
       recordCallAway: (payload: IpcRecordCallAwayPayload) => Promise<IpcRecordCallAwayResult>
+      expireCc: (payload: IpcExpireCcPayload) => Promise<IpcExpireCcResult>
     }
   }
 }
