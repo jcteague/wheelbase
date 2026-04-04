@@ -33,3 +33,5 @@ out
 
 # Dolt database files (added by bd init)
 .dolt/
+# bd worktree
+us-10/

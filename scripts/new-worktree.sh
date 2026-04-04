@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# new-worktree.sh — create a git worktree and configure beads to use the main repo's database
+# new-worktree.sh — create a git worktree and configure beads to share the main repo's database
 #
 # Usage: scripts/new-worktree.sh <branch-name> [worktree-dir]
 #
@@ -23,8 +23,12 @@ WORKTREE_DIR="${2:-${REPO_PARENT}/${BRANCH}}"
 echo "Creating worktree: $WORKTREE_DIR (branch: $BRANCH)"
 git worktree add "$WORKTREE_DIR" -b "$BRANCH"
 
-echo "Configuring beads data-dir → $MAIN_REPO/.beads/dolt"
-(cd "$WORKTREE_DIR" && bd dolt set data-dir "$MAIN_REPO/.beads/dolt")
+BEADS_DIR="$WORKTREE_DIR/.beads"
+MAIN_BEADS="$MAIN_REPO/.beads"
+
+echo "Configuring beads redirect → $MAIN_BEADS"
+mkdir -p "$BEADS_DIR"
+printf '%s\n' "$MAIN_BEADS" > "$BEADS_DIR/redirect"
 
 echo ""
 echo "Ready. To start working:"
