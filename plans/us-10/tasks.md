@@ -306,8 +306,8 @@
 
 ## Completion Checklist
 
-- [ ] All Red tasks complete (tests written and failing for right reason)
-- [ ] All Green tasks complete (all tests passing)
-- [ ] All Refactor tasks complete (lint + typecheck clean)
-- [ ] E2E tests cover every AC (AC-1 through AC-6)
-- [ ] `pnpm test && pnpm lint && pnpm typecheck` — all clean
+- [x] All Red tasks complete (tests written and failing for right reason)
+- [x] All Green tasks complete (all tests passing)
+- [x] All Refactor tasks complete (lint + typecheck clean)
+- [x] E2E tests cover every AC (AC-1 through AC-6)
+- [x] `pnpm test && pnpm lint && pnpm typecheck` — all clean
