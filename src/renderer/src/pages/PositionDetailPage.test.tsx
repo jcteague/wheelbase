@@ -29,6 +29,12 @@ vi.mock('../components/CloseCcEarlySheet', () => ({
     open ? <div data-testid="close-cc-early-sheet">Close Covered Call Early</div> : null
 }))
 
+// Mock CallAwaySheet to avoid testing it in isolation here
+vi.mock('../components/CallAwaySheet', () => ({
+  CallAwaySheet: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="call-away-sheet">Record Call-Away</div> : null
+}))
+
 // Mock wouter so useParams works
 vi.mock('wouter', () => ({
   useParams: () => ({ id: 'pos-123' }),
@@ -401,4 +407,22 @@ it('opens CloseCcEarlySheet when "Close CC Early →" button is clicked', async 
   render(<PositionDetailPage />)
   await user.click(screen.getByTestId('close-cc-early-btn'))
   expect(screen.getByTestId('close-cc-early-sheet')).toBeInTheDocument()
+})
+
+it('opens CallAwaySheet and blurs the detail page when "Record Call-Away →" is clicked', async () => {
+  const user = userEvent.setup()
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: CC_OPEN_DETAIL,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  const detail = screen.getByTestId('position-detail')
+
+  await user.click(screen.getByTestId('record-call-away-btn'))
+
+  expect(screen.getByTestId('call-away-sheet')).toBeInTheDocument()
+  expect(detail).toHaveStyle({ filter: 'blur(1.5px)', opacity: '0.35', pointerEvents: 'none' })
 })

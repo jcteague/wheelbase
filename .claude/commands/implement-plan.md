@@ -1,6 +1,6 @@
 ---
-description: Implements tasks from a plan file in TDD order (Red → Green → Refactor → Documentation). Reads the plan and beads issues, executes each task using the appropriate skill, verifies correctness, marks tasks complete in beads. Optionally filter to a phase or task range.
-argument-hint: <us-id|plan-file-path> [all|red|green|refactor|<N>|<N>-<M>]
+description: Implements tasks from a plan file in TDD order (Red → Green → Refactor → Documentation). Reads tasks.md, executes each task using the appropriate skill, verifies correctness, and checks off completed tasks. Optionally filter to a phase or layer.
+argument-hint: <us-id|plan-file-path> [all|red|green|refactor|layer-N]
 allowed-tools:
   - Read
   - Write
@@ -27,186 +27,150 @@ Split `$ARGUMENTS` on the first space:
 - If the first token looks like a story ID (e.g. `us-4`, `us-12`) → derive the path as `plans/<id>/plan.md`
 - Otherwise treat it as a literal file path
 
+**Derive tasks file path:** same directory as the plan, named `tasks.md` (e.g. `plans/us-4/tasks.md`)
+
 Valid filter values:
 - `all` — every open task
 - `red` — only `[Red]` tasks
 - `green` — only `[Green]` tasks
 - `refactor` — only `[Refactor]` tasks
-- A single integer (e.g. `3`) — only that numbered task
-- A range (e.g. `2-7`) — tasks at those positions (inclusive)
+- `layer-N` — only tasks in Layer N (e.g. `layer-1`, `layer-2`)
 
 ---
 
-## Step 1 — Load the Plan and Beads Tasks
+## Step 1 — Load the Plan and Tasks
 
-1. Use Read to load the plan file at the given path. If it does not exist, stop and tell the user: "File not found: `<path>`"
+1. Read the plan file. If it does not exist, stop: "File not found: `<path>`"
+2. Read `tasks.md`. If it does not exist, stop:
+   > "No tasks file found. Run `/plan-tasks <plan-file>` first to generate it."
 
-2. Find the beads issues for this plan using two queries:
+Parse the tasks file to build the execution list:
+- Each unchecked `- [ ]` line with `[Red]`, `[Green]`, or `[Refactor]` is an open task
+- Each checked `- [x]` line is already complete — skip it
+- Note the area name (the `###` heading above each task group) and layer (the `##` heading)
+- Note any `*(depends on: ...)*` annotations for dependency enforcement
 
-```bash
-# All tasks (Red/Green/Refactor) — execution set
-bd list --spec=<plan-path> --type=task --all --limit 0
-
-# Epic and features — needed for hierarchy closure later
-bd list --spec=<plan-path> --type=epic --all --limit 0
-bd list --spec=<plan-path> --type=feature --all --limit 0
-```
-
-If the task query returns nothing, stop and tell the user:
-   > "No beads tasks found. Run `/plan-tasks <plan-file>` first to generate them."
-
-Record the epic ID and all feature IDs from the second and third queries — you will need them to close parent issues as tasks complete.
-
-Run `bd ready` to see which tasks are currently unblocked.
-
----
-
-## Step 2 — Build the Execution Set
-
-Use the task list from Step 1 (`--type=task`). Each task has:
-- A beads ID (e.g. `wheelbase-ink.4.1`)
-- A phase tag in the title: `[Red]`, `[Green]`, or `[Refactor]`
-- A status: `open`, `in_progress`, or `closed`
-
-Skip any task whose status is `closed` (already complete). Epics and features are not in the execution set.
-
-Number tasks sequentially by their beads ID order (counting both closed and open so numbers are stable).
-
-Apply the filter to select the open subset.
-
-**Enforce this execution order across the full selected set:**
-1. All selected `[Red]` tasks — in beads ID order
-2. All selected `[Green]` tasks — in beads ID order
-3. All selected `[Refactor]` tasks — in beads ID order
-4. Documentation step — after task execution completes
-
-**Dependency guard:** Before running any `[Green]` task, verify its paired `[Red]` task is `closed` in beads. If it is not (and was not just completed in this run), warn the user and ask whether to proceed or skip. Do not silently execute Green work without confirmed Red coverage.
+Apply the filter to select the working subset.
 
 Report the plan before starting:
 ```
 Plan: <plan-file-path>
-Tasks selected: <N> (<Red count> Red, <Green count> Green, <Refactor count> Refactor)
+Tasks: <plan-file-path>
+Tasks selected: <N> (<Red> Red, <Green> Green, <Refactor> Refactor)
 Already complete: <M> tasks skipped
 ```
 
-If zero tasks are selected (all are already closed), tell the user and stop.
+If zero open tasks remain, tell the user and stop.
+
+---
+
+## Step 2 — Determine Execution Order and Parallelism
+
+From the tasks file structure, identify:
+
+1. **Sequential chains within each area:** Red → Green → Refactor (never skip or reorder)
+2. **Parallel groups:** areas in the same layer that have no cross-area dependencies
+3. **Cross-layer blockers:** a downstream area's Red task cannot start until the upstream area's Green task is checked off
+
+**Dependency guard:** Before executing any `[Green]` task, verify its paired `[Red]` task is checked off (`[x]`). If not, warn the user and stop — do not silently execute Green without confirmed Red coverage.
+
+**Parallel execution:** When multiple areas in the same layer are all unblocked, announce that they can be dispatched as parallel agents:
+
+```
+Layer N has <M> areas ready to run in parallel:
+  - {Area 1}: [Red] task
+  - {Area 2}: [Red] task
+  - {Area 3}: [Red] task
+
+Dispatching parallel agents...
+```
+
+Use the `superpowers:dispatching-parallel-agents` skill to dispatch these. Each agent receives:
+- The area name
+- The specific task description (file paths, function signatures, test cases from tasks.md)
+- The skill to invoke (`/red`, `/green`, or `/refactor`)
+- Instructions to check off the task in tasks.md when complete
 
 ---
 
 ## Step 3 — Execute Each Task
 
-Work through the execution set in the order determined in Step 2. For each task:
+For tasks that cannot be parallelized (sequential within an area, or single-area layers), work through them one at a time.
 
-### 3a — Announce and Claim
+### 3a — Announce
 
 Print a clear header:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Task <current> of <total selected>: [Phase] <subject>
-Beads: <id>
+[Phase] Area: <subject>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-Mark the task in progress:
-```bash
-bd update <id> --status=in_progress
-```
+### 3b — Extract Context from tasks.md and plan.md
 
-### 3b — Extract Context from the Plan
-
-Read the plan to find the section(s) relevant to this task. Extract:
+From the tasks.md entry, extract:
 - Specific file paths to create or modify
-- Function signatures, dataclass fields, or schema shapes
-- Validation rules, formulas, or business logic
-- Test cases or acceptance criteria explicitly called out
-- Any "tests first" or dependency notes
+- Function signatures, schema shapes, test cases
+- Validation rules and business logic
 
-Also run `bd show <id>` to pull any additional context stored in the beads issue.
-
-This context is what you pass to the skill — do not skip it.
+From the plan, pull any additional architectural guidance for this area.
 
 ### 3c — Invoke the Correct Skill
 
 **For `[Red]` tasks** — use the `/red` skill:
-- Pass: the test file path, the specific test cases from the plan, and the plan path for reference.
-- Tell the skill: these tests must be written and confirmed **failing** before this step is done.
+- Pass: test file path, specific test cases, plan path for reference
+- Goal: tests written and confirmed failing
 
 **For `[Green]` tasks** — use the `/green` skill:
-- Pass: the implementation file path, the paired test file as the acceptance bar, and the specific logic from the plan.
-- Tell the skill: done when all paired tests pass; do not add logic not required by the tests.
+- Pass: implementation file path, paired test file, specific logic from plan
+- Goal: all paired tests passing; no extra logic
 
 **For `[Refactor]` tasks** — use the `/refactor` skill:
-- Pass: the file(s) to clean up and the test file to keep green.
-- Tell the skill: look for naming, duplication, structure issues; behaviour must not change.
+- Pass: file(s) to clean up, test file to keep green
+- Goal: code quality improved; behaviour unchanged; tests still green
 
 ### 3d — Verify
 
-Run the appropriate check after the skill completes:
-
-| Phase | Command to run | Expected outcome |
+| Phase | Command | Expected outcome |
 |---|---|---|
-| Red | `pnpm test` | Tests **fail** (they define behaviour not yet implemented) |
+| Red | `pnpm test` | Tests **fail** (missing implementation) |
 | Green | `pnpm test` | Tests **pass** |
-| Refactor | `pnpm test` | Tests still **pass** |
+| Refactor | `pnpm test && pnpm lint && pnpm typecheck` | All **pass** |
 
-**If Red tests pass instead of fail:** The implementation may already exist. Note this, keep the task marked complete, and continue — do not treat it as a failure.
+If Red tests pass instead of fail: implementation may already exist — note this and continue.
 
-**If Green or Refactor tests fail:** Do not mark the task complete. Diagnose the failure, fix it, re-run. If you cannot resolve it in one attempt, describe the blocker to the user and pause.
+If Green or Refactor fail: diagnose, fix, re-run. If unresolvable, describe the blocker and pause.
 
-After Green and Refactor tasks, also run:
-```bash
-pnpm lint && pnpm typecheck
+### 3e — Check Off the Task
+
+When verification passes, update tasks.md by changing `- [ ]` to `- [x]` for the completed task:
+
 ```
-Fix any errors before marking the task complete.
-
-### 3e — Mark Complete in Beads
-
-When verification passes, close the beads task:
-```bash
-bd close <id>
-```
-
-Then check if all sibling tasks under the parent feature are now closed. If so, close the feature too:
-```bash
-OPEN_SIBLINGS=$(bd list --parent=<feature-id> --status=open --flat | grep -c .)
-if [ "$OPEN_SIBLINGS" -eq 0 ]; then
-  bd close <feature-id>
-fi
-```
-
-After every feature is closed, close the epic:
-```bash
-OPEN_FEATURES=$(bd list --parent=<epic-id> --status=open --flat | grep -c .)
-if [ "$OPEN_FEATURES" -eq 0 ]; then
-  bd close <epic-id>
-fi
+- [x] **[Green]** Implement — `src/main/core/lifecycle.ts` *(depends on: Lifecycle Red ✓)*
 ```
 
 ---
 
 ## Step 4 — Write Implementation Documentation
 
-After all selected tasks finish, add a documentation file in the `docs/` folder describing what was implemented.
+After all selected tasks finish, create or update `docs/<plan-file-stem>-implementation.md`:
 
-- Create or update: `docs/<plan-file-stem>-implementation.md`
-- Include:
-  - The feature implemented (purpose, scope, and behavior)
-  - Key files/components changed
-  - Process explanation of what was created
-  - At least one diagram that helps understanding (use Mermaid when appropriate)
+- Feature implemented (purpose, scope, behavior)
+- Key files/components changed
+- At least one Mermaid diagram
 
-If the selected set contains only `[Red]` tasks, skip this step.
+Skip this step if the selected set contains only `[Red]` tasks.
 
 ---
 
 ## Step 5 — AC Audit
 
-Before reporting success, re-read the user story's acceptance criteria and verify every AC is covered by a closed e2e test.
+Before reporting success, re-read the user story's acceptance criteria and verify every AC is covered by a checked-off e2e test in tasks.md.
 
-1. Locate the user story file (from the plan's Supporting Documents section).
-2. List every AC bullet.
-3. For each AC, name the specific `it('...')` test in the e2e test file that covers it.
-4. If any AC has no corresponding closed e2e test, do not mark the plan complete — create or reopen the missing test and run it through the Red → Green cycle first.
+1. Locate the user story file (from the plan's context)
+2. List every AC bullet
+3. For each AC, confirm the matching `it('...')` in the e2e test file is complete
+4. If any AC has no corresponding checked task, do not mark the plan complete — run the missing test through the Red → Green cycle first
 
 Print the audit result:
 ```
@@ -220,20 +184,11 @@ Only proceed to Step 6 when every AC has a ✓.
 
 ---
 
-## Step 6 — Final Report and Session Close
+## Step 6 — Final Report
 
-After the AC audit passes, run the full suite:
+Run the full suite:
 ```bash
 pnpm test && pnpm lint && pnpm typecheck
-```
-
-Report whether the suite is clean. If anything fails, show the output and describe what needs fixing — do not mark the overall run as successful if the suite is red.
-
-Sync beads and commit:
-```bash
-bd dolt pull
-git add <changed files>
-git commit -m "<summary of what was implemented>"
 ```
 
 Print the final report:
@@ -245,7 +200,7 @@ Completed: <N> tasks
 Remaining: <M> open tasks
 ```
 
-If tasks remain in other phases, tell the user the command to continue:
+If tasks remain, tell the user the command to continue:
 ```
 To continue: /implement-plan <plan-file> green
 ```

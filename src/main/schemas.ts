@@ -12,6 +12,8 @@ import type {
 // IPC input schema
 // ---------------------------------------------------------------------------
 
+const PositionIdSchema = z.string().uuid()
+
 export const CreatePositionPayloadSchema = z.object({
   ticker: z.string(),
   strike: z.number().positive(),
@@ -83,7 +85,7 @@ export interface CreatePositionResult {
 // ---------------------------------------------------------------------------
 
 export const CloseCspPayloadSchema = z.object({
-  positionId: z.string().uuid(),
+  positionId: PositionIdSchema,
   closePricePerContract: z.number().positive(),
   fillDate: z.string().optional()
 })
@@ -126,7 +128,7 @@ export interface PositionListItem {
 // ---------------------------------------------------------------------------
 
 export const ExpireCspPayloadSchema = z.object({
-  positionId: z.string().uuid(),
+  positionId: PositionIdSchema,
   expirationDateOverride: z.string().optional()
 })
 
@@ -149,7 +151,7 @@ export interface ExpireCspPositionResult {
 // ---------------------------------------------------------------------------
 
 export const AssignCspPayloadSchema = z.object({
-  positionId: z.string().uuid(),
+  positionId: PositionIdSchema,
   assignmentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be a valid date (YYYY-MM-DD)')
 })
 
@@ -173,7 +175,7 @@ export interface AssignCspPositionResult {
 // ---------------------------------------------------------------------------
 
 export const OpenCcPayloadSchema = z.object({
-  positionId: z.string().uuid(),
+  positionId: PositionIdSchema,
   strike: z.number().positive(),
   expiration: z.string(),
   contracts: z.number().int().positive(),
@@ -190,11 +192,37 @@ export interface OpenCcPositionResult {
 }
 
 // ---------------------------------------------------------------------------
+// Record Call-Away schemas
+// ---------------------------------------------------------------------------
+
+export const RecordCallAwayPayloadSchema = z.object({
+  positionId: PositionIdSchema
+})
+
+export type RecordCallAwayPayload = z.infer<typeof RecordCallAwayPayloadSchema>
+
+export interface RecordCallAwayResult {
+  position: {
+    id: string
+    ticker: string
+    phase: 'WHEEL_COMPLETE'
+    status: 'CLOSED'
+    closedDate: string
+  }
+  leg: LegRecord
+  costBasisSnapshot: CostBasisSnapshotRecord & { finalPnl: string }
+  finalPnl: string
+  cycleDays: number
+  annualizedReturn: string
+  basisPerShare: string
+}
+
+// ---------------------------------------------------------------------------
 // Close CC schemas
 // ---------------------------------------------------------------------------
 
 export const CloseCcPayloadSchema = z.object({
-  positionId: z.string().uuid(),
+  positionId: PositionIdSchema,
   closePricePerContract: z.number().positive(),
   fillDate: z.string().optional()
 })

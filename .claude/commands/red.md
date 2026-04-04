@@ -10,21 +10,6 @@ description: 'Write failing tests for TDD red phase (test-first development)'
 $ARGUMENTS
 ```
 
-## Beads Status
-
-If a beads task ID was provided in the arguments (e.g. `wheelbase-ink.N.M`), mark it in progress before starting:
-```bash
-bd update <id> --status=in_progress
-```
-If no task ID was given, proceed without beads tracking — `/implement-plan` manages status when driving this skill.
-
-At the end, after confirming all tests fail for the right reason, close the task:
-```bash
-bd close <id>
-```
-
----
-
 ## Outline
 
 You are implementing the **RED phase** of Test-Driven Development for Wheelbase (Option Wheel Manager). Your goal is to write comprehensive failing tests that define the expected behaviour before any implementation exists.

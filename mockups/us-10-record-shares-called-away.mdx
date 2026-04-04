@@ -12,8 +12,8 @@ _As a wheel trader whose covered call has been exercised, I want to record that 
 
 ## Acceptance Criteria States
 
-- **confirmation**: Sheet open showing CC details; P&L waterfall (CC strike − effective cost basis × shares + total premiums = final P&L); fill date auto-derived from CC (read-only); irrevocable warning; Confirm / Cancel footer
-- **success**: "WHEEL COMPLETE" hero card with final P&L (+$780.00) displayed prominently in green; cycle summary card with per-component breakdown; "Start New Wheel on AAPL →" CTA
+- **confirmation**: Sheet open showing CC details; P&L waterfall (CC strike − effective cost basis × shares = final P&L); fill date auto-derived from CC_OPEN leg (read-only, editable for early assignment); irrevocable warning; Confirm / Cancel footer
+- **success**: "WHEEL COMPLETE" hero card with final P&L (+$780.00) prominently in green; cycle summary showing cycle duration, annualized return %, and final P&L; "Start New Wheel on AAPL →" CTA
 
 ---
 
@@ -22,20 +22,16 @@ export const MOCK_POSITION = {
   ccStrike: '182.00',
   ccExpiration: '2026-02-21',
   ccOpenDate: '2026-01-20',
+  positionOpenDate: '2025-11-14',
   contracts: 1,
   sharesHeld: 100,
   basisPerShare: '174.20',
-  totalPremiumCollected: '580.00',
+  capitalDeployed: '17420.00',
   appreciationPerShare: '7.80',
   appreciationTotal: '780.00',
   finalPnl: '780.00',
-  waterfallRows: [
-    { label: 'CC strike (shares delivered)', value: '$182.00', color: null },
-    { label: '- Effective cost basis', value: '$174.20', color: 'var(--wb-red, #f85149)' },
-    { label: '= Appreciation per share', value: '$7.80', color: null, indent: true },
-    { label: 'x 100 shares', value: '$780.00', color: 'var(--wb-green, #3fb950)', bold: true },
-    { label: '+ Total premium collected', value: '+$580.00', color: 'var(--wb-green, #3fb950)' },
-  ],
+  cycleDays: 99,
+  annualizedReturn: '16.7',
 }
 
 export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
@@ -441,8 +437,8 @@ export function Mockup() {
                       }
                     />
                     <MockSummaryRow label="Shares delivered" value={<span style={{ color: 'var(--wb-text-primary, #e2eaf2)' }}>100 @ ${pos.ccStrike}</span>} />
-                    <MockSummaryRow label="Share appreciation" value={<span style={{ color: 'var(--wb-green, #3fb950)' }}>+${pos.appreciationTotal}</span>} />
-                    <MockSummaryRow label="Total premiums collected" value={<span style={{ color: 'var(--wb-green, #3fb950)' }}>+${pos.totalPremiumCollected}</span>} />
+                    <MockSummaryRow label="Cycle duration" value={<span style={{ color: 'var(--wb-text-primary, #e2eaf2)' }}>{pos.cycleDays} days</span>} />
+                    <MockSummaryRow label="Annualized return" value={<span style={{ color: 'var(--wb-green, #3fb950)' }}>~{pos.annualizedReturn}%</span>} />
                     <MockSummaryRow
                       noBorder
                       highlight
@@ -529,19 +525,10 @@ export function Mockup() {
                         <span style={{ fontSize: 10, color: 'var(--wb-text-secondary, #8899aa)', fontFamily: MONO }}>${pos.appreciationPerShare}</span>
                       </div>
 
-                      {/* Row: × 100 shares → subtotal */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, paddingLeft: 12 }}>
+                      {/* Row: × 100 shares → final P&L */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, paddingLeft: 12 }}>
                         <span style={{ fontSize: 10, color: 'var(--wb-text-muted, #4a5a6a)' }}>× {pos.sharesHeld} shares</span>
                         <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--wb-green, #3fb950)', fontFamily: MONO }}>${pos.appreciationTotal}</span>
-                      </div>
-
-                      {/* Divider */}
-                      <div style={{ height: 1, background: 'rgba(30,42,56,0.8)', margin: '6px 0' }} />
-
-                      {/* Row: + Total premium collected */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                        <span style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)' }}>+ Total premium collected</span>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--wb-green, #3fb950)', fontFamily: MONO }}>+${pos.totalPremiumCollected}</span>
                       </div>
 
                       {/* Total row */}

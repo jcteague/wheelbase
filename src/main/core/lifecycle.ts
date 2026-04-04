@@ -30,6 +30,7 @@ export interface OpenWheelResult {
 }
 
 const TICKER_RE = /^[A-Z]{1,5}$/
+const NO_OPEN_COVERED_CALL_MESSAGE = 'No open covered call on this position'
 
 function requirePositiveStrike(strike: string): void {
   if (new Decimal(strike).lte(0)) {
@@ -54,6 +55,18 @@ function requirePositiveClosePrice(closePricePerContract: string): void {
       'must_be_positive',
       'Close price must be greater than zero'
     )
+  }
+}
+
+function requireCcOpenPhase(currentPhase: WheelPhase): void {
+  if (currentPhase !== 'CC_OPEN') {
+    throw new ValidationError('__phase__', 'invalid_phase', NO_OPEN_COVERED_CALL_MESSAGE)
+  }
+}
+
+function requireFillDateOnOrAfterOpen(fillDate: string, openDate: string, message: string): void {
+  if (fillDate < openDate) {
+    throw new ValidationError('fillDate', 'close_date_before_open', message)
   }
 }
 
@@ -219,11 +232,38 @@ export function openCoveredCall(input: OpenCoveredCallInput): OpenCoveredCallRes
     )
   }
 
-  if (input.expiration <= input.referenceDate) {
-    throw new ValidationError('expiration', 'already_expired', 'Expiration date has already passed')
+  return { phase: 'CC_OPEN' }
+}
+
+export interface RecordCallAwayInput {
+  currentPhase: WheelPhase
+  contracts: number
+  fillDate: string
+  ccOpenFillDate: string
+}
+
+export interface RecordCallAwayResult {
+  phase: 'WHEEL_COMPLETE'
+}
+
+export function recordCallAway(input: RecordCallAwayInput): RecordCallAwayResult {
+  requireCcOpenPhase(input.currentPhase)
+
+  if (input.contracts > 1) {
+    throw new ValidationError(
+      'contracts',
+      'multi_contract_unsupported',
+      'Multi-contract call-away is not yet supported'
+    )
   }
 
-  return { phase: 'CC_OPEN' }
+  requireFillDateOnOrAfterOpen(
+    input.fillDate,
+    input.ccOpenFillDate,
+    'Fill date cannot be before the CC open date'
+  )
+
+  return { phase: 'WHEEL_COMPLETE' }
 }
 
 export interface RecordAssignmentInput {
@@ -269,19 +309,15 @@ export interface CloseCoveredCallResult {
 }
 
 export function closeCoveredCall(input: CloseCoveredCallInput): CloseCoveredCallResult {
-  if (input.currentPhase !== 'CC_OPEN') {
-    throw new ValidationError('__phase__', 'invalid_phase', 'No open covered call on this position')
-  }
+  requireCcOpenPhase(input.currentPhase)
 
   requirePositiveClosePrice(input.closePricePerContract)
 
-  if (input.fillDate < input.openFillDate) {
-    throw new ValidationError(
-      'fillDate',
-      'close_date_before_open',
-      'Fill date cannot be before the CC open date'
-    )
-  }
+  requireFillDateOnOrAfterOpen(
+    input.fillDate,
+    input.openFillDate,
+    'Fill date cannot be before the CC open date'
+  )
 
   if (input.fillDate > input.expiration) {
     throw new ValidationError(

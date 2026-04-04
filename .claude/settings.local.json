@@ -18,7 +18,9 @@
       "Bash(bd show:*)",
       "Bash(bd help:*)",
       "Bash(find /Users/johnteague/my-stuff/wheelbase -name *.mdx -o -name *mockup*)",
-      "Bash(pnpm test:e2e)"
+      "Bash(pnpm test:e2e)",
+      "Read(//Users/johnteague/.local/bin/**)",
+      "Read(//Users/johnteague/.local/**)"
     ]
   },
   "enableAllProjectMcpServers": true,

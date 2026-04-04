@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AssignCspPayloadSchema, OpenCcPayloadSchema } from './schemas'
+import { AssignCspPayloadSchema, OpenCcPayloadSchema, RecordCallAwayPayloadSchema } from './schemas'
 
 const VALID_POSITION_ID = '11111111-1111-4111-8111-111111111111'
 
@@ -45,6 +45,22 @@ const VALID_CC_PAYLOAD = {
   contracts: 1,
   premiumPerContract: 2.3
 }
+
+describe('RecordCallAwayPayloadSchema', () => {
+  it('parses a valid call-away payload with a UUID positionId', () => {
+    expect(RecordCallAwayPayloadSchema.parse({ positionId: VALID_POSITION_ID })).toEqual({
+      positionId: VALID_POSITION_ID
+    })
+  })
+
+  it('rejects a non-UUID positionId', () => {
+    expect(() => RecordCallAwayPayloadSchema.parse({ positionId: 'not-a-uuid' })).toThrow()
+  })
+
+  it('rejects an empty payload', () => {
+    expect(() => RecordCallAwayPayloadSchema.parse({})).toThrow()
+  })
+})
 
 describe('OpenCcPayloadSchema', () => {
   it('parses valid payload', () => {

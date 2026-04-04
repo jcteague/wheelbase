@@ -8,6 +8,7 @@ const expireCspPosition = vi.fn()
 const getPosition = vi.fn()
 const listPositions = vi.fn()
 const openCoveredCallPosition = vi.fn()
+const recordCallAwayPosition = vi.fn()
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -35,6 +36,10 @@ vi.mock('../services/close-covered-call-position', () => ({
   closeCoveredCallPosition
 }))
 
+vi.mock('../services/record-call-away-position', () => ({
+  recordCallAwayPosition
+}))
+
 function getRegisteredHandler(
   calls: Array<[string, (...args: unknown[]) => unknown]>,
   channel: string
@@ -53,6 +58,7 @@ describe('registerPositionsHandlers', () => {
     getPosition.mockReset()
     listPositions.mockReset()
     openCoveredCallPosition.mockReset()
+    recordCallAwayPosition.mockReset()
   })
 
   it('registers a positions:assign-csp handler', async () => {
@@ -367,5 +373,129 @@ describe('registerPositionsHandlers', () => {
 
     expect(result).toMatchObject({ ok: false })
     expect((result as { errors: unknown[] }).errors).toBeDefined()
+  })
+
+  it('registers a positions:record-call-away handler', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+
+    registerPositionsHandlers({} as never)
+
+    expect(vi.mocked(ipcMain.handle)).toHaveBeenCalledWith(
+      'positions:record-call-away',
+      expect.any(Function)
+    )
+  })
+
+  it('positions:record-call-away returns ok:true with WHEEL_COMPLETE position and finalPnl for valid positionId', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+    const db = {} as never
+
+    recordCallAwayPosition.mockReturnValue({
+      position: {
+        id: '11111111-1111-4111-8111-111111111111',
+        ticker: 'AAPL',
+        phase: 'WHEEL_COMPLETE',
+        status: 'CLOSED',
+        closedDate: '2026-02-21'
+      },
+      leg: { legRole: 'CC_CLOSE', action: 'EXERCISE', instrumentType: 'CALL' },
+      costBasisSnapshot: { basisPerShare: '174.2000', totalPremiumCollected: '580.0000', finalPnl: '780.0000' },
+      finalPnl: '780.0000',
+      cycleDays: 99,
+      annualizedReturn: '16.5084',
+      basisPerShare: '174.2000'
+    })
+
+    registerPositionsHandlers(db)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:record-call-away'
+    )
+
+    const result = await handler?.(null, {
+      positionId: '11111111-1111-4111-8111-111111111111'
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      position: { phase: 'WHEEL_COMPLETE' },
+      finalPnl: '780.0000'
+    })
+  })
+
+  it('positions:record-call-away returns ok:false when positionId is not a UUID', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+
+    registerPositionsHandlers({} as never)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:record-call-away'
+    )
+
+    const result = await handler?.(null, { positionId: 'not-a-uuid' })
+
+    expect(result).toMatchObject({ ok: false })
+    expect((result as { errors: { field: string }[] }).errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: 'positionId' })])
+    )
+  })
+
+  it('positions:record-call-away returns ok:false for invalid_phase (not in CC_OPEN)', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+    const db = {} as never
+    const { ValidationError } = await import('../core/lifecycle')
+
+    recordCallAwayPosition.mockImplementation(() => {
+      throw new ValidationError('__phase__', 'invalid_phase', 'No open covered call on this position')
+    })
+
+    registerPositionsHandlers(db)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:record-call-away'
+    )
+
+    const result = await handler?.(null, {
+      positionId: '11111111-1111-4111-8111-111111111111'
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      errors: [expect.objectContaining({ field: '__phase__', code: 'invalid_phase' })]
+    })
+  })
+
+  it('positions:record-call-away returns ok:false for multi_contract_unsupported', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+    const db = {} as never
+    const { ValidationError } = await import('../core/lifecycle')
+
+    recordCallAwayPosition.mockImplementation(() => {
+      throw new ValidationError('contracts', 'multi_contract_unsupported', 'Multi-contract call-away is not yet supported')
+    })
+
+    registerPositionsHandlers(db)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:record-call-away'
+    )
+
+    const result = await handler?.(null, {
+      positionId: '11111111-1111-4111-8111-111111111111'
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      errors: [expect.objectContaining({ field: 'contracts', code: 'multi_contract_unsupported' })]
+    })
   })
 })

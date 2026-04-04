@@ -5,7 +5,8 @@ import {
   calculateCspExpiration,
   calculateAssignmentBasis,
   calculateCcOpenBasis,
-  calculateCcClose
+  calculateCcClose,
+  calculateCallAway
 } from './costbasis'
 import type { CostBasisResult, CspLegInput, CcOpenBasisInput } from './costbasis'
 
@@ -332,5 +333,74 @@ describe('calculateCcClose', () => {
     })
     // Result must be a string with exactly 4 decimal places
     expect(result.ccLegPnl).toMatch(/^-?\d+\.\d{4}$/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// calculateCallAway
+// ---------------------------------------------------------------------------
+
+describe('calculateCallAway', () => {
+  it('returns +$780.00 when ccStrike=182, basisPerShare=174.20, contracts=1', () => {
+    // finalPnl = (182 - 174.20) × 1 × 100 = 7.80 × 100 = 780.00
+    const result = calculateCallAway({
+      ccStrike: '182.00',
+      basisPerShare: '174.20',
+      contracts: 1,
+      positionOpenedDate: '2025-01-01',
+      fillDate: '2025-04-10'
+    })
+    expect(result.finalPnl).toBe('780.0000')
+  })
+
+  it('returns −$250.00 when ccStrike=174.00, basisPerShare=176.50, contracts=1', () => {
+    // finalPnl = (174.00 - 176.50) × 1 × 100 = -2.50 × 100 = -250.00
+    const result = calculateCallAway({
+      ccStrike: '174.00',
+      basisPerShare: '176.50',
+      contracts: 1,
+      positionOpenedDate: '2025-01-01',
+      fillDate: '2025-04-10'
+    })
+    expect(result.finalPnl).toBe('-250.0000')
+  })
+
+  it('annualizedReturn is correct for 99 cycle days, $780 gain on $17420 capital', () => {
+    // cycleDays = 99 (2025-01-01 to 2025-04-10)
+    // capitalDeployed = 174.20 × 100 = 17420
+    // annualizedReturn = (780 / 17420) × (365 / 99) × 100
+    // = (39/871) × (365/99) × 100 = 1423500 / 86229 = 16.50838... → ROUND_HALF_UP → 16.5084
+    const result = calculateCallAway({
+      ccStrike: '182.00',
+      basisPerShare: '174.20',
+      contracts: 1,
+      positionOpenedDate: '2025-01-01',
+      fillDate: '2025-04-10'
+    })
+    expect(result.annualizedReturn).toBe('16.5084')
+  })
+
+  it('annualizedReturn returns "0.0000" when cycleDays is 0', () => {
+    // Same open and fill date → cycleDays = 0 → guard against division by zero
+    const result = calculateCallAway({
+      ccStrike: '182.00',
+      basisPerShare: '174.20',
+      contracts: 1,
+      positionOpenedDate: '2025-01-01',
+      fillDate: '2025-01-01'
+    })
+    expect(result.annualizedReturn).toBe('0.0000')
+  })
+
+  it('sets capitalDeployed correctly as basisPerShare × sharesHeld', () => {
+    // capitalDeployed = 174.20 × (1 × 100) = 174.20 × 100 = 17420
+    const result = calculateCallAway({
+      ccStrike: '182.00',
+      basisPerShare: '174.20',
+      contracts: 1,
+      positionOpenedDate: '2025-01-01',
+      fillDate: '2025-04-10'
+    })
+    expect(result.capitalDeployed).toBe('17420.0000')
   })
 })

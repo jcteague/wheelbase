@@ -76,6 +76,12 @@ export type ApiError = {
   body: unknown
 }
 
+type IpcFieldError = {
+  field: string
+  code: string
+  message: string
+}
+
 function apiError(status: number, body: unknown): ApiError {
   return { status, body }
 }
@@ -88,12 +94,16 @@ const IPC_TO_FORM_FIELD: Record<string, string> = {
   assignmentDate: 'assignment_date'
 }
 
-function mapIpcErrors(errors: { field: string; code: string; message: string }[]): ApiFieldError[] {
+function mapIpcErrors(errors: IpcFieldError[]): ApiFieldError[] {
   return errors.map((e) => ({
     field: IPC_TO_FORM_FIELD[e.field] ?? e.field,
     code: e.code,
     message: e.message
   }))
+}
+
+function throwMappedIpcErrors(errors: IpcFieldError[]): never {
+  throw apiError(400, { detail: mapIpcErrors(errors) })
 }
 
 export async function listPositions(): Promise<PositionListItem[]> {
@@ -346,17 +356,7 @@ export type CloseCcEarlyResponse = {
     status: 'ACTIVE'
     closedDate: null
   }
-  leg: LegData & {
-    positionId: string
-    legRole: string
-    action: string
-    instrumentType: string
-    premiumPerContract: string
-    fillPrice: string
-    fillDate: string
-    createdAt: string
-    updatedAt: string
-  }
+  leg: FilledOptionCloseLegData
   ccLegPnl: string
 }
 
@@ -369,9 +369,53 @@ export async function closeCoveredCallEarly(
     fillDate: payload.fill_date
   })
   if (!result.ok) {
-    throw apiError(400, { detail: mapIpcErrors(result.errors) })
+    throwMappedIpcErrors(result.errors)
   }
   return result as unknown as CloseCcEarlyResponse
+}
+
+export type RecordCallAwayPayload = {
+  position_id: string
+}
+
+type FilledOptionCloseLegData = LegData & {
+  positionId: string
+  legRole: string
+  action: string
+  instrumentType: string
+  premiumPerContract: string
+  fillPrice: string
+  fillDate: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type RecordCallAwayResponse = {
+  position: {
+    id: string
+    ticker: string
+    phase: 'WHEEL_COMPLETE'
+    status: 'CLOSED'
+    closedDate: string
+  }
+  leg: FilledOptionCloseLegData
+  costBasisSnapshot: ClosedSnapshotData
+  finalPnl: string
+  cycleDays: number
+  annualizedReturn: string
+  basisPerShare: string
+}
+
+export async function recordCallAway(
+  payload: RecordCallAwayPayload
+): Promise<RecordCallAwayResponse> {
+  const result = await window.api.recordCallAway({
+    positionId: payload.position_id
+  })
+  if (!result.ok) {
+    throwMappedIpcErrors(result.errors)
+  }
+  return result as unknown as RecordCallAwayResponse
 }
 
 export async function createPosition(

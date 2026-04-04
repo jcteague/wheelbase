@@ -1,6 +1,6 @@
 ---
 name: product-owner
-description: 'This skill should be used when the user asks to "write a user story", "create an epic", "define acceptance criteria", "break down a feature", "manage stories in beads", "refine a story", "track stories", "prioritize the backlog", or needs product ownership guidance for Wheelbase feature development.'
+description: 'This skill should be used when the user asks to "write a user story", "create an epic", "define acceptance criteria", "break down a feature", "refine a story", "track stories", "prioritize the backlog", or needs product ownership guidance for Wheelbase feature development.'
 version: 0.1.0
 ---
 
@@ -21,7 +21,7 @@ Act as the product owner for **Wheelbase**, an options wheel and PMCC management
 1. **Feature elicitation** — Convert vague ideas into concrete, scoped features by asking clarifying questions
 2. **Story writing** — Produce user stories in standard format with Given-When-Then acceptance criteria
 3. **Epic management** — Group related stories into epics, track dependencies, maintain the hierarchy
-4. **Backlog management** — Create and organize issues in beads using the `bd` CLI
+4. **Story files** — Save stories as markdown files in `docs/epics/02-stories/`
 5. **Domain consultation** — Invoke the `options-expert` skill when options trading domain knowledge is needed to validate requirements or surface edge cases
 6. **Mockup creation** — Invoke the `mockup` skill after writing each user story to produce a UI mockup
 
@@ -102,52 +102,62 @@ Assign a point estimate using the sizing guidelines:
 
 After writing a story, always invoke the `mockup` skill to produce a UI mockup for the story. Pass the full story content as context.
 
-### Step 6: Create or Draft
+### Step 5b: Domain Review of Mockup
 
-**Default behavior:** Present the story and mockup in chat for review. Wait for approval before creating a beads issue.
+After the mockup is generated, invoke the `options-expert` skill to review it for domain accuracy. Pass the mockup file path and a summary of the story. Ask the expert to validate:
 
-**When asked to "just create it" or "track it":** Create the beads issue directly using `bd create`.
+- P&L formulas, cost basis arithmetic, and any financial calculations shown in the UI
+- Lifecycle state transitions and phase labels
+- Field semantics (what each displayed value represents and whether it's correct)
+- Error states and validation messages against real trading workflows
 
-## Beads Operations
+Apply any corrections to both the story file and the mockup before proceeding. The mockup must reflect the corrected story before it is treated as planning-ready.
 
-All story and epic tracking uses the `bd` CLI. Do NOT use GitHub Issues or `gh` commands.
+### Step 6: Save Story File
 
-### Creating Stories
+**Default behavior:** Present the story and mockup in chat for review. Wait for approval before saving to disk. The story and mockup presented here are the post-review versions — options-expert corrections are already applied.
 
+**When asked to "save it", "write it", or "create it":** Save the story as a markdown file:
+- Path: `docs/epics/02-stories/US-{N}-{story-slug}.md`
+- Check existing files in that directory to find the next US-{N} number
+
+## Story File Operations
+
+Stories are plain markdown files saved to `docs/epics/02-stories/`. No external issue tracker.
+
+### Naming Convention
+
+`US-{N}-{kebab-case-story-title}.md`
+
+Check the directory for the highest existing US-{N} to get the next number:
 ```bash
-bd create \
-  --title="US-{N}: {verb} {object} {context}" \
-  --description="<full story body including context, AC, and technical notes>" \
-  --type=feature \
-  --priority=2
+ls docs/epics/02-stories/
 ```
 
-- Check `bd list` to find the next US-{N} number and avoid duplicates
-- Story numbers must match the epic doc (e.g., `docs/epics/02-assignment-and-covered-calls.md`)
-- Priority: 0=critical, 1=high, 2=medium, 3=low, 4=backlog
+### Story File Format
 
-### Managing Epics
+```markdown
+# US-{N}: {Story Title}
 
-```bash
-bd create \
-  --title="Epic: {capability description}" \
-  --description="Goal, success criteria, and list of child story IDs" \
-  --type=feature \
-  --priority=2
-```
+**Story:** As a {role}, I want {action} so that {outcome}.
 
-After creating child stories, wire dependencies:
+## Context
+{Why this story exists in domain terms}
 
-```bash
-bd dep add beads-{story-id} beads-{epic-id}  # story depends on epic
-```
+## Acceptance Criteria
+{Gherkin scenarios}
 
-### Querying the Backlog
+## Technical Notes
+{Implementation guidance if relevant}
 
-```bash
-bd list --status=open       # all open issues
-bd search "US-6"            # find a specific story
-bd show beads-{id}          # full detail including dependencies
+## Out of Scope
+{Explicit exclusions}
+
+## Dependencies
+{Links to prerequisite stories, e.g. "Depends on US-5"}
+
+## Estimate
+{N} points
 ```
 
 ## Acceptance Criteria Rules
@@ -178,6 +188,6 @@ Key rules:
 4. **Always include the negative case.** What happens with invalid input? What if the precondition isn't met?
 5. **Respect the phase boundary.** Stories should belong to the current or next phase. Flag stories that depend on future-phase infrastructure.
 6. **Consult the domain expert.** When uncertain about trader behavior, workflow, or edge cases, invoke `options-expert` rather than guessing.
-7. **Draft by default, create on request.** Present the story and mockup for review unless explicitly told to create them directly.
-8. **Track story numbers.** Check existing beads issues to avoid duplicate numbering. Use `bd list` or `bd search "US-"` to find the latest US-{N}.
-9. **Always create a mockup.** After writing a user story, invoke the `mockup` skill before presenting results.
+7. **Draft by default, save on request.** Present the story and mockup for review unless explicitly told to save them.
+8. **Track story numbers.** Check `docs/epics/02-stories/` to find the highest existing US-{N} before numbering a new story.
+9. **Always create a mockup and review it.** After writing a user story: (a) invoke `mockup`, then (b) invoke `options-expert` to validate domain accuracy of the mockup. Apply corrections to both story and mockup before presenting results.

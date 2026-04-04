@@ -21,4 +21,12 @@ describe('LegAction', () => {
   it('accepts ASSIGN as a valid leg action', () => {
     expect(LegAction.parse('ASSIGN')).toBe('ASSIGN')
   })
+
+  it('accepts EXERCISE as a valid leg action', () => {
+    expect(LegAction.parse('EXERCISE')).toBe('EXERCISE')
+  })
+
+  it('rejects invalid leg actions', () => {
+    expect(() => LegAction.parse('INVALID')).toThrow()
+  })
 })
