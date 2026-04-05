@@ -1,0 +1,157 @@
+---
+title: "US-17: Roll Button Visibility by Phase"
+story: "As a wheel trader, I want the app to show the Roll button only when the position is in a rollable phase (CSP_OPEN or CC_OPEN)."
+states: ["csp-open", "cc-open", "holding-shares", "wheel-complete"]
+---
+
+import { useState } from 'react'
+
+# US-17: Roll Button Visibility by Phase
+
+_The Roll button appears in the action bar only for CSP\_OPEN and CC\_OPEN phases. All other phases hide it._
+
+## Acceptance Criteria States
+
+- **csp-open**: CSP_OPEN phase — "Roll CSP" button visible alongside Close/Expire/Assign actions
+- **cc-open**: CC_OPEN phase — "Roll CC" button visible alongside Close/Expire/Call Away actions
+- **holding-shares**: HOLDING_SHARES phase — no roll button, only "Sell Covered Call" shown
+- **wheel-complete**: WHEEL_COMPLETE phase — no actions, position is closed
+
+---
+
+export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
+
+export function MockBadge({ children, color }) {
+  const fg = color ?? 'var(--wb-gold, #e6a817)'
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: '0.65rem', fontWeight: 500, padding: '1px 7px', borderRadius: 10, background: fg + '18', color: fg, border: '1px solid ' + fg + '30', fontFamily: MONO }}>{children}</span>
+  )
+}
+
+export function MockPhaseBadge({ phase }) {
+  const map = {
+    CSP_OPEN: { label: 'Put Open', color: '#e6a817' },
+    HOLDING_SHARES: { label: 'Holding Shares', color: '#58a6ff' },
+    CC_OPEN: { label: 'Call Open', color: '#bc8cff' },
+    WHEEL_COMPLETE: { label: 'Complete', color: '#3fb950' },
+  }
+  const { label, color } = map[phase] ?? { label: phase, color: '#8899aa' }
+  return <MockBadge color={color}>{label}</MockBadge>
+}
+
+export function ActionButton({ label, variant, highlight }) {
+  const isPrimary = variant === 'primary'
+  const isRoll = highlight
+  return (
+    <button style={{
+      padding: '8px 16px', borderRadius: 6, fontFamily: MONO, fontSize: 12, fontWeight: 600,
+      cursor: 'pointer', letterSpacing: '0.04em',
+      border: isPrimary ? 'none' : isRoll ? '2px solid var(--wb-gold, #e6a817)' : '1px solid var(--wb-border, #2a3a4a)',
+      background: isPrimary ? 'var(--wb-gold, #e6a817)' : isRoll ? 'rgba(230,168,23,0.08)' : 'transparent',
+      color: isPrimary ? '#000' : isRoll ? 'var(--wb-gold, #e6a817)' : 'var(--wb-text-secondary, #8899aa)',
+      boxShadow: isRoll ? '0 0 8px rgba(230,168,23,0.15)' : undefined,
+    }}>
+      {label}
+    </button>
+  )
+}
+
+export function Mockup() {
+  const [state, setState] = useState('csp-open')
+  const allStates = ['csp-open', 'cc-open', 'holding-shares', 'wheel-complete']
+
+  const phaseMap = {
+    'csp-open': 'CSP_OPEN',
+    'cc-open': 'CC_OPEN',
+    'holding-shares': 'HOLDING_SHARES',
+    'wheel-complete': 'WHEEL_COMPLETE',
+  }
+  const phase = phaseMap[state]
+
+  const actionSets = {
+    CSP_OPEN: [
+      { label: 'Roll CSP \u2192', highlight: true },
+      { label: 'Close CSP' },
+      { label: 'Record Assignment' },
+      { label: 'Expire CSP' },
+    ],
+    CC_OPEN: [
+      { label: 'Roll CC \u2192', highlight: true },
+      { label: 'Close CC Early' },
+      { label: 'Record Call Away' },
+      { label: 'Expire CC' },
+    ],
+    HOLDING_SHARES: [
+      { label: 'Sell Covered Call \u2192', variant: 'primary' },
+    ],
+    WHEEL_COMPLETE: [],
+  }
+
+  const actions = actionSets[phase] ?? []
+  const detailMap = {
+    CSP_OPEN: 'PUT $180.00 · Apr 18, 2026 · 1 contract',
+    CC_OPEN: 'CALL $185.00 · Apr 18, 2026 · 1 contract',
+    HOLDING_SHARES: '100 shares · Cost basis $176.50',
+    WHEEL_COMPLETE: 'Closed · Final P&L: +$780.00',
+  }
+
+  return (
+    <div style={{ fontFamily: MONO, background: '#040608', color: 'var(--wb-text-primary, #e2eaf2)', minHeight: 300 }}>
+      <div style={{ display: 'flex', gap: 6, padding: '10px 14px', background: '#0d1117', borderBottom: '1px solid #1e2a38', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 9, color: '#4a5a6a', letterSpacing: '0.12em', textTransform: 'uppercase', alignSelf: 'center', marginRight: 4 }}>Phase:</span>
+        {allStates.map(s => (
+          <button key={s} onClick={() => setState(s)} style={{ fontSize: 10, fontFamily: MONO, padding: '3px 10px', borderRadius: 4, border: '1px solid', borderColor: s === state ? 'var(--wb-gold, #e6a817)' : '#1e2a38', background: s === state ? 'rgba(230,168,23,0.12)' : 'transparent', color: s === state ? 'var(--wb-gold, #e6a817)' : '#6a7a8a', cursor: 'pointer' }}>{s}</button>
+        ))}
+      </div>
+
+      <div style={{ padding: '28px 32px' }}>
+        {/* Position header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 8 }}>
+          <span style={{ fontSize: 24, fontWeight: 700, letterSpacing: '0.04em' }}>AAPL</span>
+          <MockPhaseBadge phase={phase} />
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--wb-text-secondary, #8899aa)', marginBottom: 24 }}>
+          {detailMap[phase]}
+        </div>
+
+        {/* Action bar */}
+        <div style={{
+          background: 'var(--wb-bg-surface, #070a0e)',
+          border: '1px solid var(--wb-border, #1e2a38)',
+          borderRadius: 8, padding: '16px 20px',
+        }}>
+          <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--wb-text-muted, #4a5a6a)', marginBottom: 12 }}>
+            Available Actions
+          </div>
+
+          {actions.length > 0 ? (
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              {actions.map(a => (
+                <ActionButton key={a.label} label={a.label} variant={a.variant} highlight={a.highlight} />
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: 'var(--wb-text-muted, #4a5a6a)', padding: '8px 0' }}>
+              No actions available — this wheel cycle is complete.
+            </div>
+          )}
+
+          {/* Roll button annotation */}
+          {(phase === 'CSP_OPEN' || phase === 'CC_OPEN') && (
+            <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 6, background: 'rgba(230,168,23,0.04)', border: '1px solid rgba(230,168,23,0.12)', fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)' }}>
+              {'\u2192'} <span style={{ color: 'var(--wb-gold, #e6a817)', fontWeight: 600 }}>Roll {phase === 'CSP_OPEN' ? 'CSP' : 'CC'}</span> opens the roll form to close this leg and open a new one as a linked pair
+            </div>
+          )}
+
+          {phase === 'HOLDING_SHARES' && (
+            <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 6, background: 'rgba(88,166,255,0.04)', border: '1px solid rgba(88,166,255,0.12)', fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)' }}>
+              Roll is not available during Holding Shares — only open options can be rolled
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+<Mockup />

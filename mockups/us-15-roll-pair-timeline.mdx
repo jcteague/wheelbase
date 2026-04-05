@@ -1,0 +1,200 @@
+---
+title: "US-15: Roll Pair Display in Leg Timeline"
+story: "As a wheel trader reviewing a position with rolls, I want to see each roll as a visually linked pair in the leg timeline with net credit/debit and roll numbering."
+states: ["single-roll", "multiple-rolls", "debit-roll"]
+---
+
+import { useState } from 'react'
+
+# US-15: Roll Pair Display in Leg Timeline
+
+_Display linked roll pairs (ROLL\_FROM + ROLL\_TO) as visually grouped sections in the position leg timeline with net credit/debit and sequential numbering._
+
+## Acceptance Criteria States
+
+- **single-roll**: One CSP roll pair shown grouped with net credit, alongside normal legs
+- **multiple-rolls**: Three sequential CSP rolls with cumulative summary, followed by assignment and CC open
+- **debit-roll**: A roll pair with net debit shown in amber
+
+---
+
+export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
+
+export function MockBadge({ children, color }) {
+  const fg = color ?? 'var(--wb-gold, #e6a817)'
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: '0.6rem', fontWeight: 500, padding: '1px 6px', borderRadius: 10, background: fg + '18', color: fg, border: '1px solid ' + fg + '30', fontFamily: MONO }}>{children}</span>
+  )
+}
+
+export function LegRow({ role, action, type, strike, exp, premium, basis, isRoll }) {
+  const roleColors = {
+    CSP_OPEN: '#e6a817', ROLL_FROM: '#8899aa', ROLL_TO: '#58a6ff',
+    ASSIGN: '#bc8cff', CC_OPEN: '#bc8cff', CC_CLOSE: '#8899aa', EXPIRE: '#4a5a6a',
+  }
+  const color = roleColors[role] ?? '#8899aa'
+  return (
+    <div style={{
+      display: 'grid', gridTemplateColumns: '110px 60px 80px 80px 90px 90px',
+      padding: isRoll ? '8px 14px 8px 28px' : '10px 14px',
+      borderBottom: '1px solid rgba(30,42,56,0.4)',
+      background: isRoll ? 'rgba(88,166,255,0.02)' : undefined,
+      fontFamily: MONO, fontSize: 11, color: 'var(--wb-text-primary, #e2eaf2)',
+      alignItems: 'center',
+    }}>
+      <span><MockBadge color={color}>{role}</MockBadge></span>
+      <span style={{ color: '#8899aa' }}>{action}</span>
+      <span>{type} ${strike}</span>
+      <span style={{ color: '#8899aa' }}>{exp}</span>
+      <span style={{ color: premium.startsWith('+') ? 'var(--wb-green, #3fb950)' : premium.startsWith('-') ? 'var(--wb-red, #f85149)' : '#8899aa' }}>{premium}</span>
+      <span style={{ textAlign: 'right', fontWeight: 600 }}>{basis}</span>
+    </div>
+  )
+}
+
+export function RollGroupHeader({ number, rollType, fillDate, netCredit, isCredit }) {
+  const color = isCredit ? 'var(--wb-green, #3fb950)' : 'var(--wb-gold, #e6a817)'
+  const bg = isCredit ? 'rgba(63,185,80,0.04)' : 'rgba(230,168,23,0.04)'
+  const border = isCredit ? 'rgba(63,185,80,0.15)' : 'rgba(230,168,23,0.15)'
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '8px 14px', background: bg,
+      borderTop: '2px solid ' + border, borderBottom: '1px solid rgba(30,42,56,0.4)',
+      fontFamily: MONO,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color }}>Roll #{number}</span>
+        <MockBadge color={color}>{rollType}</MockBadge>
+        <span style={{ fontSize: 10, color: 'var(--wb-text-muted, #4a5a6a)' }}>{fillDate}</span>
+      </div>
+      <span style={{ fontSize: 12, fontWeight: 700, color, fontFamily: MONO }}>
+        {isCredit ? '+' : '-'}${Math.abs(parseFloat(netCredit)).toFixed(2)}/contract
+      </span>
+    </div>
+  )
+}
+
+export function TableHeader() {
+  return (
+    <div style={{
+      display: 'grid', gridTemplateColumns: '110px 60px 80px 80px 90px 90px',
+      padding: '8px 14px',
+      borderBottom: '1px solid var(--wb-border, #1e2a38)',
+      fontFamily: MONO, fontSize: 9, fontWeight: 600,
+      letterSpacing: '0.08em', textTransform: 'uppercase',
+      color: 'var(--wb-text-muted, #4a5a6a)',
+    }}>
+      <span>Leg</span>
+      <span>Action</span>
+      <span>Contract</span>
+      <span>Expiration</span>
+      <span>Premium</span>
+      <span style={{ textAlign: 'right' }}>Cost Basis</span>
+    </div>
+  )
+}
+
+export function CumulativeSummary({ totalCredits, totalDebits }) {
+  const net = totalCredits - totalDebits
+  const isNet = net >= 0
+  const color = isNet ? 'var(--wb-green, #3fb950)' : 'var(--wb-red, #f85149)'
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '10px 14px', background: 'rgba(88,166,255,0.03)',
+      borderTop: '1px solid rgba(88,166,255,0.12)', borderBottom: '1px solid var(--wb-border, #1e2a38)',
+      fontFamily: MONO, fontSize: 11,
+    }}>
+      <span style={{ color: 'var(--wb-text-muted, #4a5a6a)' }}>Roll Summary ({totalCredits > 0 && totalDebits > 0 ? '3 rolls' : '1 roll'})</span>
+      <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+        <span style={{ color: 'var(--wb-green, #3fb950)' }}>Credits: +${totalCredits.toFixed(2)}</span>
+        {totalDebits > 0 && <span style={{ color: 'var(--wb-gold, #e6a817)' }}>Debits: -${totalDebits.toFixed(2)}</span>}
+        <span style={{ fontWeight: 700, color }}>Net: {isNet ? '+' : '-'}${Math.abs(net).toFixed(2)}</span>
+      </div>
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [state, setState] = useState('single-roll')
+  const allStates = ['single-roll', 'multiple-rolls', 'debit-roll']
+
+  return (
+    <div style={{ fontFamily: MONO, background: '#040608', color: 'var(--wb-text-primary, #e2eaf2)' }}>
+
+      <div style={{ display: 'flex', gap: 6, padding: '10px 14px', background: '#0d1117', borderBottom: '1px solid #1e2a38', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 9, color: '#4a5a6a', letterSpacing: '0.12em', textTransform: 'uppercase', alignSelf: 'center', marginRight: 4 }}>State:</span>
+        {allStates.map(s => (
+          <button key={s} onClick={() => setState(s)} style={{ fontSize: 10, fontFamily: MONO, padding: '3px 10px', borderRadius: 4, border: '1px solid', borderColor: s === state ? 'var(--wb-gold, #e6a817)' : '#1e2a38', background: s === state ? 'rgba(230,168,23,0.12)' : 'transparent', color: s === state ? 'var(--wb-gold, #e6a817)' : '#6a7a8a', cursor: 'pointer' }}>{s}</button>
+        ))}
+      </div>
+
+      <div style={{ padding: '20px 24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+          <span style={{ fontSize: 18, fontWeight: 700 }}>AAPL</span>
+          <MockBadge color="#e6a817">Put Open</MockBadge>
+          <span style={{ fontSize: 11, color: '#8899aa' }}>Leg History</span>
+        </div>
+
+        <section style={{ background: 'var(--wb-bg-surface, #070a0e)', border: '1px solid var(--wb-border, #1e2a38)', borderRadius: 8, overflow: 'hidden' }}>
+          <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--wb-border, #1e2a38)', fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--wb-text-muted, #4a5a6a)' }}>
+            Leg Timeline
+          </div>
+
+          <TableHeader />
+
+          {state === 'single-roll' && (
+            <>
+              <LegRow role="CSP_OPEN" action="SELL" type="PUT" strike="180.00" exp="Apr 18" premium="+$3.50" basis="$176.50" />
+
+              <RollGroupHeader number={1} rollType="Roll Out" fillDate="Apr 04, 2026" netCredit="1.60" isCredit />
+              <LegRow role="ROLL_FROM" action="BUY" type="PUT" strike="180.00" exp="Apr 18" premium="-$1.20" basis="" isRoll />
+              <LegRow role="ROLL_TO" action="SELL" type="PUT" strike="180.00" exp="May 16" premium="+$2.80" basis="$174.90" isRoll />
+
+              <CumulativeSummary totalCredits={1.60} totalDebits={0} />
+            </>
+          )}
+
+          {state === 'multiple-rolls' && (
+            <>
+              <LegRow role="CSP_OPEN" action="SELL" type="PUT" strike="180.00" exp="Mar 21" premium="+$3.50" basis="$176.50" />
+
+              <RollGroupHeader number={1} rollType="Roll Out" fillDate="Mar 14, 2026" netCredit="0.70" isCredit />
+              <LegRow role="ROLL_FROM" action="BUY" type="PUT" strike="180.00" exp="Mar 21" premium="-$0.80" basis="" isRoll />
+              <LegRow role="ROLL_TO" action="SELL" type="PUT" strike="180.00" exp="Apr 18" premium="+$1.50" basis="$175.80" isRoll />
+
+              <RollGroupHeader number={2} rollType="Roll Down & Out" fillDate="Apr 10, 2026" netCredit="0.80" isCredit />
+              <LegRow role="ROLL_FROM" action="BUY" type="PUT" strike="180.00" exp="Apr 18" premium="-$1.00" basis="" isRoll />
+              <LegRow role="ROLL_TO" action="SELL" type="PUT" strike="177.00" exp="May 16" premium="+$1.80" basis="$175.00" isRoll />
+
+              <RollGroupHeader number={3} rollType="Roll Out" fillDate="May 08, 2026" netCredit="0.60" isCredit />
+              <LegRow role="ROLL_FROM" action="BUY" type="PUT" strike="177.00" exp="May 16" premium="-$0.90" basis="" isRoll />
+              <LegRow role="ROLL_TO" action="SELL" type="PUT" strike="177.00" exp="Jun 20" premium="+$1.50" basis="$174.40" isRoll />
+
+              <CumulativeSummary totalCredits={2.10} totalDebits={0} />
+
+              <LegRow role="ASSIGN" action="ASSIGN" type="PUT" strike="177.00" exp="Jun 20" premium={'\u2014 (assigned)'} basis="$174.40" />
+              <LegRow role="CC_OPEN" action="SELL" type="CALL" strike="180.00" exp="Jul 18" premium="+$2.00" basis="$172.40" />
+            </>
+          )}
+
+          {state === 'debit-roll' && (
+            <>
+              <LegRow role="CSP_OPEN" action="SELL" type="PUT" strike="180.00" exp="Apr 18" premium="+$3.50" basis="$176.50" />
+
+              <RollGroupHeader number={1} rollType="Roll Down & Out" fillDate="Apr 10, 2026" netCredit="-0.50" isCredit={false} />
+              <LegRow role="ROLL_FROM" action="BUY" type="PUT" strike="180.00" exp="Apr 18" premium="-$3.00" basis="" isRoll />
+              <LegRow role="ROLL_TO" action="SELL" type="PUT" strike="175.00" exp="May 16" premium="+$2.50" basis="$177.00" isRoll />
+
+              <CumulativeSummary totalCredits={0} totalDebits={0.50} />
+            </>
+          )}
+
+        </section>
+      </div>
+    </div>
+  )
+}
+
+<Mockup />

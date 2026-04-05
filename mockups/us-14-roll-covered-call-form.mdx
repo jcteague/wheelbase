@@ -1,0 +1,292 @@
+---
+title: "US-14: Roll Covered Call Form"
+story: "As a wheel trader with an open CC, I want to roll the call to a higher strike and/or later expiration and see the net credit or debit before confirming."
+states: ["up-and-out", "below-basis-warning", "roll-out", "success"]
+---
+
+import { useState } from 'react'
+
+# US-14: Roll Covered Call Form
+
+_Roll an open covered call to a new strike and/or expiration with cost basis context and net credit/debit preview._
+
+## Acceptance Criteria States
+
+- **up-and-out**: Roll up and out — $185 to $190 strike, net credit $0.70/contract, cost basis shown
+- **below-basis-warning**: New strike $175 is below cost basis $176.50 — amber warning displayed, still submittable
+- **roll-out**: Roll out — same $185 strike, later expiration, net credit $1.30
+- **success**: Roll confirmed — linked pair created, position stays CC_OPEN
+
+---
+
+export const MOCK_POSITION = {
+  ticker: 'AAPL',
+  strike: '185.00',
+  expiration: '2026-04-18',
+  contracts: 1,
+  premium: '2.50',
+  phase: 'CC_OPEN',
+  basisPerShare: '176.50',
+  dte: 14,
+}
+
+export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
+
+export function MockBadge({ children, color }) {
+  const fg = color ?? 'var(--wb-gold, #e6a817)'
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: '0.65rem', fontWeight: 500, padding: '1px 7px', borderRadius: 10, background: fg + '18', color: fg, border: '1px solid ' + fg + '30', fontFamily: MONO }}>{children}</span>
+  )
+}
+
+export function MockPhaseBadge({ phase }) {
+  const map = {
+    CSP_OPEN: { label: 'Put Open', color: '#e6a817' },
+    CC_OPEN: { label: 'Call Open', color: '#bc8cff' },
+    HOLDING_SHARES: { label: 'Holding', color: '#58a6ff' },
+  }
+  const { label, color } = map[phase] ?? { label: phase, color: '#8899aa' }
+  return <MockBadge color={color}>{label}</MockBadge>
+}
+
+export function MockAlertBox({ variant, children }) {
+  const styles = {
+    warning: { bg: 'rgba(230,168,23,0.06)', border: 'rgba(230,168,23,0.25)', color: 'var(--wb-gold, #e6a817)' },
+    info: { bg: 'rgba(88,166,255,0.06)', border: 'rgba(88,166,255,0.25)', color: 'var(--wb-sky, #58a6ff)' },
+    error: { bg: 'rgba(248,81,73,0.06)', border: 'rgba(248,81,73,0.25)', color: 'var(--wb-red, #f85149)' },
+    success: { bg: 'rgba(63,185,80,0.06)', border: 'rgba(63,185,80,0.25)', color: 'var(--wb-green, #3fb950)' },
+  }
+  const { bg, border, color } = styles[variant] ?? styles.warning
+  return (
+    <div style={{ padding: '12px 16px', borderRadius: 6, background: bg, border: '1px solid ' + border, color, fontFamily: MONO, fontSize: '0.8125rem', lineHeight: 1.6 }}>{children}</div>
+  )
+}
+
+export function MockField({ label, error, hint, children }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+      <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--wb-text-muted, #4a5a6a)', fontFamily: MONO, marginBottom: 6 }}>{label}</label>
+      {children}
+      {hint && !error && <span style={{ fontSize: '0.7rem', color: 'var(--wb-text-muted, #4a5a6a)', marginTop: 4 }}>{hint}</span>}
+      {error && <span role="alert" style={{ fontSize: '0.7rem', color: 'var(--wb-red, #f85149)', marginTop: 4, fontFamily: MONO }}>{error}</span>}
+    </div>
+  )
+}
+
+export function MockSectionCard({ header, children }) {
+  return (
+    <section style={{ background: 'var(--wb-bg-surface, #070a0e)', border: '1px solid var(--wb-border, #1e2a38)', borderRadius: 8, overflow: 'hidden' }}>
+      {header && <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--wb-border, #1e2a38)', fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--wb-text-muted, #4a5a6a)', fontFamily: MONO }}>{header}</div>}
+      {children}
+    </section>
+  )
+}
+
+export function MockSummaryRow({ label, value, noBorder, highlight }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: noBorder ? 'none' : '1px solid rgba(30,42,56,0.6)', background: highlight ? 'linear-gradient(90deg, rgba(230,168,23,0.04), transparent)' : undefined }}>
+      <span style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)' }}>{label}</span>
+      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--wb-text-primary, #e2eaf2)', textAlign: 'right' }}>{value}</span>
+    </div>
+  )
+}
+
+export function MockFormButton({ label, onClick, style = {} }) {
+  return (
+    <button onClick={onClick} style={{ padding: '11px 24px', borderRadius: 6, border: 'none', background: 'var(--wb-gold, #e6a817)', color: '#000', fontSize: '0.9375rem', fontWeight: 600, fontFamily: MONO, cursor: 'pointer', letterSpacing: '0.04em', ...style }}>{label}</button>
+  )
+}
+
+export function MockOutlineButton({ children, style = {} }) {
+  return (
+    <button style={{ padding: '11px 24px', borderRadius: 6, border: '1px solid var(--wb-border, #2a3a4a)', background: 'transparent', color: 'var(--wb-text-secondary, #8899aa)', fontSize: '0.9375rem', fontWeight: 500, fontFamily: MONO, cursor: 'pointer', ...style }}>{children}</button>
+  )
+}
+
+export function MockPriceInput({ value, disabled }) {
+  return (
+    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+      <span style={{ position: 'absolute', left: 12, fontSize: 13, color: 'var(--wb-text-secondary, #8899aa)', fontFamily: MONO, pointerEvents: 'none' }}>$</span>
+      <input type="number" value={value} disabled={disabled} readOnly style={{ width: '100%', padding: '10px 14px 10px 26px', borderRadius: 6, border: '1px solid var(--wb-border, #2a3a4a)', background: disabled ? 'var(--wb-bg-surface, #070a0e)' : 'var(--wb-bg-elevated, #0d1821)', color: disabled ? 'var(--wb-text-muted, #4a5a6a)' : 'var(--wb-text-primary, #e2eaf2)', fontSize: 14, fontFamily: MONO, outline: 'none', boxSizing: 'border-box', appearance: 'none', MozAppearance: 'textfield' }} />
+    </div>
+  )
+}
+
+export function MockDatePicker({ value }) {
+  return (
+    <button type="button" style={{ width: '100%', padding: '10px 14px', borderRadius: 6, border: '1px solid var(--wb-border, #2a3a4a)', background: 'var(--wb-bg-elevated, #0d1821)', color: 'var(--wb-text-primary, #e2eaf2)', fontSize: 14, fontFamily: MONO, textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, boxSizing: 'border-box' }}>
+      <span>{value}</span>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.45 }}>
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+        <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+      </svg>
+    </button>
+  )
+}
+
+export function NetPreview({ costToClose, newPremium, contracts }) {
+  const net = parseFloat(newPremium) - parseFloat(costToClose)
+  const isCredit = net >= 0
+  const total = Math.abs(net) * contracts * 100
+  const color = isCredit ? 'var(--wb-green, #3fb950)' : 'var(--wb-gold, #e6a817)'
+  const bg = isCredit ? 'rgba(63,185,80,0.07)' : 'rgba(230,168,23,0.07)'
+  const border = isCredit ? 'rgba(63,185,80,0.22)' : 'rgba(230,168,23,0.22)'
+  const sign = isCredit ? '+' : '-'
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 6, background: bg, border: '1px solid ' + border }}>
+      <span style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)', fontFamily: MONO }}>{isCredit ? 'Net Credit' : 'Net Debit'}</span>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <span style={{ fontSize: 17, fontWeight: 700, color, fontFamily: MONO }}>{sign}${Math.abs(net).toFixed(2)}/contract</span>
+        <span style={{ fontSize: 11, color, opacity: 0.7, fontFamily: MONO }}>(${total.toFixed(2)} total)</span>
+      </div>
+    </div>
+  )
+}
+
+export const panelStyle = {
+  position: 'absolute', top: 0, right: 0, bottom: 0, width: 420,
+  background: 'var(--wb-bg-surface, #070a0e)', borderLeft: '1px solid var(--wb-border, #1e2a38)',
+  display: 'flex', flexDirection: 'column', fontFamily: MONO,
+  boxShadow: '-12px 0 48px rgba(0,0,0,0.55)', color: 'var(--wb-text-primary, #e2eaf2)',
+}
+
+export function Mockup() {
+  const [state, setState] = useState('up-and-out')
+  const pos = MOCK_POSITION
+  const allStates = ['up-and-out', 'below-basis-warning', 'roll-out', 'success']
+  const isSuccess = state === 'success'
+  const isBelowBasis = state === 'below-basis-warning'
+  const isRollOut = state === 'roll-out'
+
+  const newStrike = isBelowBasis ? '175.00' : isRollOut ? pos.strike : '190.00'
+  const costToClose = isBelowBasis ? '2.00' : isRollOut ? '1.80' : '3.50'
+  const newPremium = isBelowBasis ? '2.30' : isRollOut ? '3.10' : '4.20'
+
+  const sameStrike = newStrike === pos.strike
+  const rollType = sameStrike ? 'Roll Out' : parseFloat(newStrike) > parseFloat(pos.strike) ? 'Roll Up & Out' : 'Roll Down & Out'
+
+  const belowBasis = parseFloat(newStrike) < parseFloat(pos.basisPerShare)
+  const lossPerShare = belowBasis ? (parseFloat(pos.basisPerShare) - parseFloat(newStrike)).toFixed(2) : null
+
+  return (
+    <div style={{ fontFamily: MONO, background: '#040608', minHeight: 520 }}>
+      <div style={{ display: 'flex', gap: 6, padding: '10px 14px', background: '#0d1117', borderBottom: '1px solid #1e2a38', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 9, color: '#4a5a6a', letterSpacing: '0.12em', textTransform: 'uppercase', alignSelf: 'center', marginRight: 4 }}>State:</span>
+        {allStates.map(s => (
+          <button key={s} onClick={() => setState(s)} style={{ fontSize: 10, fontFamily: MONO, padding: '3px 10px', borderRadius: 4, border: '1px solid', borderColor: s === state ? 'var(--wb-gold, #e6a817)' : '#1e2a38', background: s === state ? 'rgba(230,168,23,0.12)' : 'transparent', color: s === state ? 'var(--wb-gold, #e6a817)' : '#6a7a8a', cursor: 'pointer' }}>{s}</button>
+        ))}
+      </div>
+
+      <div style={{ position: 'relative', height: 720, overflow: 'hidden', background: '#040608' }}>
+        <div style={{ padding: '24px 28px', opacity: 0.25, pointerEvents: 'none', userSelect: 'none' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
+            <span style={{ fontSize: 22, fontWeight: 700, color: '#e2eaf2' }}>AAPL</span>
+            <MockPhaseBadge phase="CC_OPEN" />
+            <span style={{ fontSize: 11, color: '#8899aa' }}>CALL $185.00 · Apr 18, 2026 · 1 contract</span>
+          </div>
+        </div>
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(4,6,8,0.45)' }} />
+
+        <div style={panelStyle}>
+          <div style={{ padding: '20px 24px 18px', borderBottom: '1px solid ' + (isSuccess ? 'rgba(63,185,80,0.2)' : 'var(--wb-border, #1e2a38)'), display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexShrink: 0 }}>
+            <div>
+              <div style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 6, color: isSuccess ? 'var(--wb-green, #3fb950)' : 'var(--wb-text-secondary, #8899aa)', fontFamily: MONO }}>
+                {isSuccess ? 'Roll Complete' : rollType}
+              </div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--wb-text-primary, #e2eaf2)', marginBottom: 4 }}>
+                {isSuccess ? 'CC Rolled Successfully' : 'Roll Covered Call'}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)' }}>
+                {isSuccess ? 'CALL $185 \u2192 CALL $190 · May 16, 2026' : pos.ticker + ' CALL $' + pos.strike + ' · exp Apr 18, 2026'}
+              </div>
+            </div>
+            <button style={{ background: 'var(--wb-bg-elevated, #0d1821)', border: '1px solid var(--wb-border, #1e2a38)', color: 'var(--wb-text-muted, #4a5a6a)', fontSize: 14, width: 28, height: 28, borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{'\u00d7'}</button>
+          </div>
+
+          <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {isSuccess ? (
+              <>
+                <div style={{ background: 'linear-gradient(135deg, rgba(63,185,80,0.1), rgba(7,10,14,0.5))', border: '1px solid rgba(63,185,80,0.22)', borderRadius: 10, padding: '22px 20px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: 'var(--wb-green, #3fb950)', opacity: 0.75, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 8 }}>Roll Net Credit</div>
+                  <div style={{ fontSize: 40, fontWeight: 700, color: 'var(--wb-green, #3fb950)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>+$0.70</div>
+                  <div style={{ fontSize: 11, color: 'var(--wb-green, #3fb950)', opacity: 0.55 }}>$70.00 total · 1 contract</div>
+                </div>
+                <MockSectionCard>
+                  <MockSummaryRow label="Roll type" value={<MockBadge color="#3fb950">Roll Up &amp; Out</MockBadge>} />
+                  <MockSummaryRow label="Old leg" value="ROLL_FROM · BUY CALL $185 @ $3.50" />
+                  <MockSummaryRow label="New leg" value="ROLL_TO · SELL CALL $190 @ $4.20" />
+                  <MockSummaryRow label="New expiration" value="May 16, 2026 (42 DTE)" />
+                  <MockSummaryRow label="Phase" value={<span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><MockPhaseBadge phase="CC_OPEN" /><span style={{ fontSize: 9, color: 'var(--wb-text-muted, #4a5a6a)' }}>(unchanged)</span></span>} />
+                  <MockSummaryRow label="Cost basis" value={<span style={{ color: 'var(--wb-green, #3fb950)' }}>$176.50 {'\u2192'} $175.80/share</span>} noBorder highlight />
+                </MockSectionCard>
+              </>
+            ) : (
+              <>
+                <MockSectionCard header="Current Leg">
+                  <MockSummaryRow label="Type" value={<span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><MockPhaseBadge phase="CC_OPEN" />CALL</span>} />
+                  <MockSummaryRow label="Strike" value={'$' + pos.strike} />
+                  <MockSummaryRow label="Expiration" value={pos.expiration + ' (' + pos.dte + ' DTE)'} />
+                  <MockSummaryRow label="Premium collected" value={<span style={{ color: 'var(--wb-green, #3fb950)' }}>+${pos.premium}/contract</span>} />
+                  <MockSummaryRow label="Cost basis" value={'$' + pos.basisPerShare + '/share'} noBorder highlight />
+                </MockSectionCard>
+
+                <MockSectionCard header="New Leg">
+                  <div style={{ padding: '16px 14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <MockField label="New Strike" hint="Raise strike to avoid call-away, or keep same for roll out">
+                      <MockPriceInput value={newStrike} />
+                    </MockField>
+                    <MockField label="New Expiration" hint="Must be after current expiration">
+                      <MockDatePicker value="2026-05-16" />
+                    </MockField>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <MockField label="Cost to Close" hint="Buy-to-close">
+                        <MockPriceInput value={costToClose} />
+                      </MockField>
+                      <MockField label="New Premium" hint="Sell-to-open">
+                        <MockPriceInput value={newPremium} />
+                      </MockField>
+                    </div>
+                    <MockField label="Fill Date">
+                      <MockDatePicker value="2026-04-04" />
+                    </MockField>
+                  </div>
+                </MockSectionCard>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <MockBadge color={rollType.includes('Up') ? '#bc8cff' : rollType.includes('Down') ? '#f85149' : '#e6a817'}>{rollType}</MockBadge>
+                  <span style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)' }}>
+                    {sameStrike ? 'same $185 strike' : '$185 \u2192 $' + newStrike + ' strike'}, Apr {'\u2192'} May exp
+                  </span>
+                </div>
+
+                {/* Below-cost-basis warning */}
+                {isBelowBasis && (
+                  <MockAlertBox variant="error">
+                    <strong style={{ fontWeight: 700, display: 'block', marginBottom: 3 }}>Strike below cost basis</strong>
+                    New strike (${newStrike}) is below your cost basis (${pos.basisPerShare}). If called away at this strike, you lock in a loss of ${lossPerShare}/share.
+                  </MockAlertBox>
+                )}
+
+                <NetPreview costToClose={costToClose} newPremium={newPremium} contracts={pos.contracts} />
+
+                <MockAlertBox variant="warning">
+                  <strong style={{ fontWeight: 700, display: 'block', marginBottom: 3 }}>This cannot be undone.</strong>
+                  A ROLL_FROM leg (buy-to-close) and ROLL_TO leg (sell-to-open) will be recorded as a linked pair. The position remains in CC_OPEN phase.
+                </MockAlertBox>
+              </>
+            )}
+          </div>
+
+          {!isSuccess && (
+            <div style={{ padding: '16px 24px', borderTop: '1px solid var(--wb-border, #1e2a38)', display: 'flex', gap: 10, flexShrink: 0, background: 'var(--wb-bg-surface, #070a0e)' }}>
+              <MockOutlineButton style={{ flex: 1 }}>Cancel</MockOutlineButton>
+              <MockFormButton label="Confirm Roll" onClick={() => setState('success')} style={{ flex: 1, fontWeight: 700 }} />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+<Mockup />
