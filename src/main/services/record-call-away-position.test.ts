@@ -53,13 +53,13 @@ function makeCcOpenPosition(db: ReturnType<typeof makeTestDb>): {
 }
 
 describe('recordCallAwayPosition', () => {
-  it('records CC_CLOSE (EXERCISE) leg with fill_price=ccStrike, fill_date=ccExpiration on valid CC_OPEN position', () => {
+  it('records CALLED_AWAY (EXERCISE) leg with fill_price=ccStrike, fill_date=ccExpiration on valid CC_OPEN position', () => {
     const db = makeTestDb()
     const { positionId, ccExpiration } = makeCcOpenPosition(db)
 
     const result = recordCallAwayPosition(db, positionId, { positionId })
 
-    expect(result.leg.legRole).toBe('CC_CLOSE')
+    expect(result.leg.legRole).toBe('CALLED_AWAY')
     expect(result.leg.action).toBe('EXERCISE')
     expect(result.leg.fillPrice).toBe('182.0000')
     expect(result.leg.fillDate).toBe(ccExpiration)

@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { isoDate, makeTestDb } from '../test-utils'
 import { createPosition } from './positions'
+import { assignCspPosition } from './assign-csp-position'
+import { openCoveredCallPosition } from './open-covered-call-position'
 import { getPosition } from './get-position'
 
 describe('getPosition', () => {
@@ -109,5 +111,82 @@ describe('getPosition', () => {
     expect(detail).not.toBeNull()
     expect(detail!.activeLeg).toBeNull()
     expect(detail!.costBasisSnapshot).toBeNull()
+  })
+
+  it('getPosition returns allSnapshots as empty array when position has no snapshots', () => {
+    const db = makeTestDb()
+    const positionId = randomUUID()
+    const now = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO positions
+        (id, ticker, strategy_type, status, phase, opened_date, account_id, notes, thesis, tags, created_at, updated_at)
+       VALUES (?, 'TSLA', 'WHEEL', 'ACTIVE', 'CSP_OPEN', ?, NULL, NULL, NULL, '[]', ?, ?)`
+    ).run(positionId, isoDate(0), now, now)
+
+    const detail = getPosition(db, positionId)
+
+    expect(detail).not.toBeNull()
+    expect(detail!.allSnapshots).toEqual([])
+  })
+
+  it('getPosition returns allSnapshots ordered snapshot_at ASC for a CSP_OPEN position', () => {
+    const db = makeTestDb()
+    const result = createPosition(db, {
+      ticker: 'AAPL',
+      strike: 180,
+      expiration: isoDate(30),
+      contracts: 1,
+      premiumPerContract: 2.5,
+      fillDate: isoDate(0)
+    })
+    const positionId = result.position.id
+
+    const detail = getPosition(db, positionId)
+
+    expect(detail).not.toBeNull()
+    expect(detail!.allSnapshots).toHaveLength(1)
+    expect(detail!.allSnapshots[0].basisPerShare).toBe('177.5000')
+  })
+
+  it('getPosition returns allSnapshots with multiple snapshots after assign and CC open', () => {
+    const db = makeTestDb()
+    const created = createPosition(db, {
+      ticker: 'AAPL',
+      strike: 180,
+      expiration: isoDate(30),
+      contracts: 1,
+      premiumPerContract: 2.5,
+      fillDate: isoDate(0)
+    })
+    const positionId = created.position.id
+
+    assignCspPosition(db, positionId, { positionId, assignmentDate: isoDate(30) })
+    openCoveredCallPosition(db, positionId, {
+      positionId,
+      strike: 185,
+      expiration: isoDate(60),
+      contracts: 1,
+      premiumPerContract: 3.0,
+      fillDate: isoDate(31)
+    })
+
+    const detail = getPosition(db, positionId)
+
+    expect(detail).not.toBeNull()
+    expect(detail!.allSnapshots).toHaveLength(3)
+
+    // Snapshots should be in snapshot_at ASC order (first created first)
+    const snapshots = detail!.allSnapshots
+    expect(new Date(snapshots[0].snapshotAt).getTime()).toBeLessThanOrEqual(
+      new Date(snapshots[1].snapshotAt).getTime()
+    )
+    expect(new Date(snapshots[1].snapshotAt).getTime()).toBeLessThanOrEqual(
+      new Date(snapshots[2].snapshotAt).getTime()
+    )
+
+    // basisPerShare should decrease after CC_OPEN (CC premium reduces the basis)
+    const firstBasis = parseFloat(snapshots[0].basisPerShare)
+    const lastBasis = parseFloat(snapshots[2].basisPerShare)
+    expect(lastBasis).toBeLessThan(firstBasis)
   })
 })

@@ -49,7 +49,7 @@ describe('expireCcPosition', () => {
     expect(result.position.closedDate).toBeNull()
   })
 
-  it('happy path: returned leg has legRole=EXPIRE, action=EXPIRE, instrumentType=CALL, premiumPerContract=0.0000, fillPrice=null', () => {
+  it('happy path: returned leg has legRole=CC_EXPIRED, action=EXPIRE, instrumentType=CALL, premiumPerContract=0.0000, fillPrice=null', () => {
     const db = makeTestDb()
     const { position } = makeCcOpenPosition(db)
 
@@ -58,7 +58,7 @@ describe('expireCcPosition', () => {
       expirationDateOverride: CC_EXPIRATION
     })
 
-    expect(result.leg.legRole).toBe('EXPIRE')
+    expect(result.leg.legRole).toBe('CC_EXPIRED')
     expect(result.leg.action).toBe('EXPIRE')
     expect(result.leg.instrumentType).toBe('CALL')
     expect(result.leg.premiumPerContract).toBe('0.0000')

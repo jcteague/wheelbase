@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { InstrumentType, LegAction } from './types'
+import { InstrumentType, LegAction, LegRole } from './types'
 
 describe('InstrumentType', () => {
   it('accepts STOCK as a valid instrument type', () => {
@@ -28,5 +28,15 @@ describe('LegAction', () => {
 
   it('rejects invalid leg actions', () => {
     expect(() => LegAction.parse('INVALID')).toThrow()
+  })
+})
+
+describe('LegRole', () => {
+  it('accepts CC_EXPIRED as a valid leg role', () => {
+    expect(LegRole.parse('CC_EXPIRED')).toBe('CC_EXPIRED')
+  })
+
+  it('accepts CALLED_AWAY as a valid leg role', () => {
+    expect(LegRole.parse('CALLED_AWAY')).toBe('CALLED_AWAY')
   })
 })

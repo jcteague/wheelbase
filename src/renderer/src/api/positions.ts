@@ -76,12 +76,6 @@ export type ApiError = {
   body: unknown
 }
 
-type IpcFieldError = {
-  field: string
-  code: string
-  message: string
-}
-
 function apiError(status: number, body: unknown): ApiError {
   return { status, body }
 }
@@ -94,7 +88,7 @@ const IPC_TO_FORM_FIELD: Record<string, string> = {
   assignmentDate: 'assignment_date'
 }
 
-function mapIpcErrors(errors: IpcFieldError[]): ApiFieldError[] {
+function mapIpcErrors(errors: ApiFieldError[]): ApiFieldError[] {
   return errors.map((e) => ({
     field: IPC_TO_FORM_FIELD[e.field] ?? e.field,
     code: e.code,
@@ -102,7 +96,7 @@ function mapIpcErrors(errors: IpcFieldError[]): ApiFieldError[] {
   }))
 }
 
-function throwMappedIpcErrors(errors: IpcFieldError[]): never {
+function throwMappedIpcErrors(errors: ApiFieldError[]): never {
   throw apiError(400, { detail: mapIpcErrors(errors) })
 }
 
@@ -121,6 +115,31 @@ export async function listPositions(): Promise<PositionListItem[]> {
   }))
 }
 
+export type LegDetail = {
+  id: string
+  positionId: string
+  legRole: string
+  action: string
+  instrumentType: string
+  strike: string
+  expiration: string
+  contracts: number
+  premiumPerContract: string
+  fillDate: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type SnapshotDetail = {
+  id: string
+  positionId: string
+  basisPerShare: string
+  totalPremiumCollected: string
+  finalPnl: string | null
+  snapshotAt: string
+  createdAt: string
+}
+
 export type PositionDetail = {
   position: {
     id: string
@@ -137,43 +156,10 @@ export type PositionDetail = {
     createdAt: string
     updatedAt: string
   }
-  activeLeg: {
-    id: string
-    positionId: string
-    legRole: string
-    action: string
-    instrumentType: string
-    strike: string
-    expiration: string
-    contracts: number
-    premiumPerContract: string
-    fillDate: string
-    createdAt: string
-    updatedAt: string
-  } | null
-  costBasisSnapshot: {
-    id: string
-    positionId: string
-    basisPerShare: string
-    totalPremiumCollected: string
-    finalPnl: string | null
-    snapshotAt: string
-    createdAt: string
-  } | null
-  legs: Array<{
-    id: string
-    positionId: string
-    legRole: string
-    action: string
-    instrumentType: string
-    strike: string
-    expiration: string
-    contracts: number
-    premiumPerContract: string
-    fillDate: string
-    createdAt: string
-    updatedAt: string
-  }>
+  activeLeg: LegDetail | null
+  costBasisSnapshot: SnapshotDetail | null
+  legs: LegDetail[]
+  allSnapshots: SnapshotDetail[]
 }
 
 export type CloseCspPayload = {

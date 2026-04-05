@@ -21,9 +21,9 @@ export function pnlColor(value: string): string {
 
 export function computeDte(expiration: string): number {
   const [year, month, day] = expiration.split('-').map(Number)
-  const exp = new Date(year, month - 1, day)
+  const exp = Date.UTC(year, month - 1, day)
   const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
 
-  return Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+  return Math.ceil((exp - todayUtc) / (1000 * 60 * 60 * 24))
 }

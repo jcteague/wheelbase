@@ -403,7 +403,7 @@ describe('registerPositionsHandlers', () => {
         status: 'CLOSED',
         closedDate: '2026-02-21'
       },
-      leg: { legRole: 'CC_CLOSE', action: 'EXERCISE', instrumentType: 'CALL' },
+      leg: { legRole: 'CALLED_AWAY', action: 'EXERCISE', instrumentType: 'CALL' },
       costBasisSnapshot: {
         basisPerShare: '174.2000',
         totalPremiumCollected: '580.0000',
@@ -539,7 +539,7 @@ describe('registerPositionsHandlers', () => {
         status: 'ACTIVE',
         closedDate: null
       },
-      leg: { legRole: 'EXPIRE', action: 'EXPIRE', instrumentType: 'CALL' },
+      leg: { legRole: 'CC_EXPIRED', action: 'EXPIRE', instrumentType: 'CALL' },
       costBasisSnapshot: { basisPerShare: '174.2000', totalPremiumCollected: '580.0000' },
       sharesHeld: 100
     })
@@ -561,7 +561,7 @@ describe('registerPositionsHandlers', () => {
     expect(result).toMatchObject({
       ok: true,
       position: { phase: 'HOLDING_SHARES' },
-      leg: { legRole: 'EXPIRE' },
+      leg: { legRole: 'CC_EXPIRED' },
       sharesHeld: 100
     })
   })

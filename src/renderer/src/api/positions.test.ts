@@ -238,7 +238,7 @@ describe('expireCc', () => {
         status: 'ACTIVE',
         closedDate: null
       },
-      leg: { legRole: 'EXPIRE', action: 'EXPIRE', instrumentType: 'CALL' },
+      leg: { legRole: 'CC_EXPIRED', action: 'EXPIRE', instrumentType: 'CALL' },
       costBasisSnapshot: { basisPerShare: '174.2000', totalPremiumCollected: '580.0000' },
       sharesHeld: 100
     })
@@ -261,7 +261,7 @@ describe('expireCc', () => {
         status: 'ACTIVE',
         closedDate: null
       },
-      leg: { legRole: 'EXPIRE' },
+      leg: { legRole: 'CC_EXPIRED' },
       costBasisSnapshot: {},
       sharesHeld: 100
     })
@@ -310,7 +310,7 @@ describe('expireCc', () => {
         status: 'ACTIVE',
         closedDate: null
       },
-      leg: { legRole: 'EXPIRE', action: 'EXPIRE', instrumentType: 'CALL' },
+      leg: { legRole: 'CC_EXPIRED', action: 'EXPIRE', instrumentType: 'CALL' },
       costBasisSnapshot: { basisPerShare: '174.2000', totalPremiumCollected: '580.0000' },
       sharesHeld: 100
     }
@@ -320,7 +320,7 @@ describe('expireCc', () => {
 
     expect(result).toMatchObject({
       position: { phase: 'HOLDING_SHARES' },
-      leg: { legRole: 'EXPIRE' },
+      leg: { legRole: 'CC_EXPIRED' },
       sharesHeld: 100
     })
   })

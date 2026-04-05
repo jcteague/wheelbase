@@ -51,6 +51,74 @@ interface PositionRow {
   snapshot_created_at: string | null
 }
 
+function mapLegRow(r: LegRow): LegRecord {
+  return {
+    id: r.id,
+    positionId: r.position_id,
+    legRole: r.leg_role,
+    action: r.action,
+    instrumentType: r.instrument_type,
+    strike: r.strike,
+    expiration: r.expiration,
+    contracts: r.contracts,
+    premiumPerContract: r.premium_per_contract,
+    fillPrice: r.fill_price,
+    fillDate: r.fill_date,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  }
+}
+
+function mapSnapshotRow(r: SnapshotRow): CostBasisSnapshotRecord {
+  return {
+    id: r.id,
+    positionId: r.position_id,
+    basisPerShare: r.basis_per_share,
+    totalPremiumCollected: r.total_premium_collected,
+    finalPnl: r.final_pnl,
+    snapshotAt: r.snapshot_at,
+    createdAt: r.created_at
+  }
+}
+
+function mapActiveLeg(row: PositionRow): LegRecord | null {
+  if (!row.leg_id) {
+    return null
+  }
+
+  return {
+    id: row.leg_id,
+    positionId: row.id,
+    legRole: row.leg_role!,
+    action: row.action!,
+    instrumentType: row.instrument_type!,
+    strike: row.strike!,
+    expiration: row.expiration!,
+    contracts: row.contracts!,
+    premiumPerContract: row.premium_per_contract!,
+    fillPrice: row.fill_price,
+    fillDate: row.fill_date!,
+    createdAt: row.leg_created_at!,
+    updatedAt: row.leg_updated_at!
+  }
+}
+
+function mapLatestSnapshot(row: PositionRow): CostBasisSnapshotRecord | null {
+  if (!row.snapshot_id) {
+    return null
+  }
+
+  return {
+    id: row.snapshot_id,
+    positionId: row.id,
+    basisPerShare: row.basis_per_share!,
+    totalPremiumCollected: row.total_premium_collected!,
+    finalPnl: row.final_pnl ?? null,
+    snapshotAt: row.snapshot_at!,
+    createdAt: row.snapshot_created_at!
+  }
+}
+
 const GET_LEGS_QUERY = `
   SELECT
     id, position_id, leg_role, action, instrument_type, strike, expiration,
@@ -59,6 +127,24 @@ const GET_LEGS_QUERY = `
   WHERE position_id = ?
   ORDER BY fill_date ASC, created_at ASC
 `
+
+const GET_ALL_SNAPSHOTS_QUERY = `
+  SELECT
+    id, position_id, basis_per_share, total_premium_collected, final_pnl, snapshot_at, created_at
+  FROM cost_basis_snapshots
+  WHERE position_id = ?
+  ORDER BY snapshot_at ASC
+`
+
+interface SnapshotRow {
+  id: string
+  position_id: string
+  basis_per_share: string
+  total_premium_collected: string
+  final_pnl: string | null
+  snapshot_at: string
+  created_at: string
+}
 
 interface LegRow {
   id: string
@@ -128,6 +214,7 @@ export function getPosition(db: Database.Database, positionId: string): GetPosit
   if (!row) return null
 
   const legRows = db.prepare(GET_LEGS_QUERY).all(positionId) as LegRow[]
+  const snapshotRows = db.prepare(GET_ALL_SNAPSHOTS_QUERY).all(positionId) as SnapshotRow[]
 
   const position: PositionRecord = {
     id: row.id,
@@ -145,53 +232,13 @@ export function getPosition(db: Database.Database, positionId: string): GetPosit
     updatedAt: row.updated_at
   }
 
-  const activeLeg: LegRecord | null = row.leg_id
-    ? {
-        id: row.leg_id,
-        positionId: row.id,
-        legRole: row.leg_role!,
-        action: row.action!,
-        instrumentType: row.instrument_type!,
-        strike: row.strike!,
-        expiration: row.expiration!,
-        contracts: row.contracts!,
-        premiumPerContract: row.premium_per_contract!,
-        fillPrice: row.fill_price!,
-        fillDate: row.fill_date!,
-        createdAt: row.leg_created_at!,
-        updatedAt: row.leg_updated_at!
-      }
-    : null
+  const activeLeg = mapActiveLeg(row)
+  const costBasisSnapshot = mapLatestSnapshot(row)
 
-  const costBasisSnapshot: CostBasisSnapshotRecord | null = row.snapshot_id
-    ? {
-        id: row.snapshot_id,
-        positionId: row.id,
-        basisPerShare: row.basis_per_share!,
-        totalPremiumCollected: row.total_premium_collected!,
-        finalPnl: row.final_pnl ?? null,
-        snapshotAt: row.snapshot_at!,
-        createdAt: row.snapshot_created_at!
-      }
-    : null
-
-  const legs: LegRecord[] = legRows.map((r) => ({
-    id: r.id,
-    positionId: r.position_id,
-    legRole: r.leg_role,
-    action: r.action,
-    instrumentType: r.instrument_type,
-    strike: r.strike,
-    expiration: r.expiration,
-    contracts: r.contracts,
-    premiumPerContract: r.premium_per_contract,
-    fillPrice: r.fill_price,
-    fillDate: r.fill_date,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at
-  }))
+  const legs: LegRecord[] = legRows.map(mapLegRow)
+  const allSnapshots: CostBasisSnapshotRecord[] = snapshotRows.map(mapSnapshotRow)
 
   logger.info({ positionId }, 'position_fetched')
 
-  return { position, activeLeg, costBasisSnapshot, legs }
+  return { position, activeLeg, costBasisSnapshot, legs, allSnapshots }
 }

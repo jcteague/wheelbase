@@ -26,12 +26,23 @@ export const PHASE_LABEL: Record<WheelPhase, string> = {
   WHEEL_COMPLETE: 'Wheel Complete'
 }
 
+export const ROLE_COLOR: Record<string, string> = {
+  CSP_OPEN: '#e6a817',
+  ASSIGN: '#79c0ff',
+  CC_OPEN: '#d2a8ff',
+  CC_CLOSE: '#3fb950',
+  CC_EXPIRED: '#484f58',
+  CALLED_AWAY: '#3fb950'
+}
+
 export const LEG_ROLE_LABEL: Record<string, string> = {
-  CSP_OPEN: 'Sell Put',
-  CSP_CLOSE: 'Buy to Close Put',
-  ASSIGN: 'Assignment',
-  CC_OPEN: 'Sell Call',
-  CC_CLOSE: 'Buy to Close Call',
+  CSP_OPEN: 'CSP Open',
+  CSP_CLOSE: 'CSP Close',
+  ASSIGN: 'Assign',
+  CC_OPEN: 'CC Open',
+  CC_CLOSE: 'CC Close',
+  CC_EXPIRED: 'CC Expired',
+  CALLED_AWAY: 'Called Away',
   EXPIRE: 'Expired',
   ROLL_TO: 'Roll'
 }

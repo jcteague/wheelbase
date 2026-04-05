@@ -1,7 +1,7 @@
 ---
 title: "US-11: Wheel Leg Chain Display"
 story: "As a wheel trader reviewing an active or completed position, I want to see every leg in the wheel in chronological order alongside the running cost basis at each step, so that I can understand the complete history of the position and how each action contributed to my current or final cost basis."
-states: ["partial", "mid-cycle", "complete"]
+states: ["partial", "mid-cycle", "complete", "cc-expired"]
 ---
 
 import { useState } from 'react'
@@ -13,8 +13,9 @@ _As a wheel trader reviewing an active or completed position, I want to see ever
 ## Acceptance Criteria States
 
 - **partial**: Single CSP_OPEN row; running basis shows initial basis $176.50; no footer
-- **mid-cycle**: Three rows (CSP_OPEN → ASSIGN → CC_OPEN); ASSIGN row shows "— (assigned)" for premium; CC_OPEN running basis drops to $174.20
-- **complete**: Five rows through called-away; final P&L footer row "+$780.00" in green at bottom of chain
+- **mid-cycle**: Three rows (CSP_OPEN → ASSIGN → CC_OPEN); ASSIGN row shows "— (assigned)" + "100 shares received" annotation; CC_OPEN running basis drops to $174.20
+- **complete**: Five rows through called-away; CC_CLOSE premium shows "−$1.80" in amber (buyback debit); CC_CLOSE running basis carries forward at $174.20; CALLED_AWAY shows "100 shares called away"; final P&L footer row "+$780.00" in green
+- **cc-expired**: Four rows (CSP_OPEN → ASSIGN → CC_OPEN → CC_EXPIRED); CC_EXPIRED premium shows "expired worthless" in muted style; running basis carries forward $174.20
 
 ---
 
@@ -54,21 +55,33 @@ export const PHASE_LABEL = {
 
 
 export const LEGS_PARTIAL = [
-  { id: '1', legRole: 'CSP_OPEN', action: 'open',   instrumentType: 'PUT',  strike: '180.00', expiration: '2026-03-21', premiumPerContract: '3.50',  fillDate: '2026-01-03', runningCostBasis: '176.50' },
+  { id: '1', legRole: 'CSP_OPEN', action: 'open',   instrumentType: 'PUT',  strike: '180.00', expiration: '2026-03-21', premiumPerContract: '3.50',  contracts: 1, fillDate: '2026-01-03', runningCostBasis: '176.50' },
 ]
 
 export const LEGS_MID = [
-  { id: '1', legRole: 'CSP_OPEN', action: 'open',   instrumentType: 'PUT',  strike: '180.00', expiration: '2026-01-17', premiumPerContract: '3.50',  fillDate: '2026-01-03', runningCostBasis: '176.50' },
-  { id: '2', legRole: 'ASSIGN',   action: 'assign', instrumentType: 'PUT',  strike: '180.00', expiration: null,         premiumPerContract: null,     fillDate: '2026-01-17', runningCostBasis: '176.50' },
-  { id: '3', legRole: 'CC_OPEN',  action: 'open',   instrumentType: 'CALL', strike: '182.00', expiration: '2026-02-21', premiumPerContract: '2.30',  fillDate: '2026-01-20', runningCostBasis: '174.20' },
+  { id: '1', legRole: 'CSP_OPEN', action: 'open',   instrumentType: 'PUT',  strike: '180.00', expiration: '2026-01-17', premiumPerContract: '3.50',  contracts: 1, fillDate: '2026-01-03', runningCostBasis: '176.50' },
+  { id: '2', legRole: 'ASSIGN',   action: 'assign', instrumentType: 'PUT',  strike: '180.00', expiration: null,         premiumPerContract: null,     contracts: 1, fillDate: '2026-01-17', runningCostBasis: '176.50' },
+  { id: '3', legRole: 'CC_OPEN',  action: 'open',   instrumentType: 'CALL', strike: '182.00', expiration: '2026-02-21', premiumPerContract: '2.30',  contracts: 1, fillDate: '2026-01-20', runningCostBasis: '174.20' },
 ]
 
 export const LEGS_COMPLETE = [
-  { id: '1', legRole: 'CSP_OPEN',    action: 'open',   instrumentType: 'PUT',  strike: '180.00', expiration: '2026-01-17', premiumPerContract: '3.50',  fillDate: '2026-01-03', runningCostBasis: '176.50' },
-  { id: '2', legRole: 'ASSIGN',      action: 'assign', instrumentType: 'PUT',  strike: '180.00', expiration: null,         premiumPerContract: null,     fillDate: '2026-01-17', runningCostBasis: '176.50' },
-  { id: '3', legRole: 'CC_OPEN',     action: 'open',   instrumentType: 'CALL', strike: '182.00', expiration: '2026-02-21', premiumPerContract: '2.30',  fillDate: '2026-01-20', runningCostBasis: '174.20' },
-  { id: '4', legRole: 'CC_CLOSE',    action: 'close',  instrumentType: 'CALL', strike: '182.00', expiration: '2026-02-21', premiumPerContract: '1.80',  fillDate: '2026-02-14', runningCostBasis: '172.40' },
-  { id: '5', legRole: 'CALLED_AWAY', action: 'assign', instrumentType: 'CALL', strike: '182.00', expiration: null,         premiumPerContract: null,     fillDate: '2026-02-21', runningCostBasis: null      },
+  { id: '1', legRole: 'CSP_OPEN',    action: 'open',   instrumentType: 'PUT',  strike: '180.00', expiration: '2026-01-17', premiumPerContract: '3.50',  contracts: 1, fillDate: '2026-01-03', runningCostBasis: '176.50' },
+  { id: '2', legRole: 'ASSIGN',      action: 'assign', instrumentType: 'PUT',  strike: '180.00', expiration: null,         premiumPerContract: null,     contracts: 1, fillDate: '2026-01-17', runningCostBasis: '176.50' },
+  { id: '3', legRole: 'CC_OPEN',     action: 'open',   instrumentType: 'CALL', strike: '182.00', expiration: '2026-02-21', premiumPerContract: '2.30',  contracts: 1, fillDate: '2026-01-20', runningCostBasis: '174.20' },
+  // CC_CLOSE does not create a new snapshot; running basis carries forward from CC_OPEN ($174.20).
+  // premiumPerContract here is the buyback cost (debit) — rendered as "−$1.80" in amber, not green.
+  // Final P&L = ($182 − $174.20) × 100 = $780, consistent with the footer.
+  { id: '4', legRole: 'CC_CLOSE',    action: 'close',  instrumentType: 'CALL', strike: '182.00', expiration: '2026-02-21', premiumPerContract: '1.80',  contracts: 1, fillDate: '2026-02-14', runningCostBasis: '174.20' },
+  { id: '5', legRole: 'CALLED_AWAY', action: 'assign', instrumentType: 'CALL', strike: '182.00', expiration: null,         premiumPerContract: null,     contracts: 1, fillDate: '2026-02-21', runningCostBasis: null      },
+]
+
+// CC_EXPIRED state: CC expires worthless; trader will open another CC cycle.
+// Running basis carries forward from CC_OPEN snapshot.
+export const LEGS_CC_EXPIRED = [
+  { id: '1', legRole: 'CSP_OPEN',   action: 'open',   instrumentType: 'PUT',  strike: '180.00', expiration: '2026-01-17', premiumPerContract: '3.50', contracts: 1, fillDate: '2026-01-03', runningCostBasis: '176.50' },
+  { id: '2', legRole: 'ASSIGN',     action: 'assign', instrumentType: 'PUT',  strike: '180.00', expiration: null,         premiumPerContract: null,    contracts: 1, fillDate: '2026-01-17', runningCostBasis: '176.50' },
+  { id: '3', legRole: 'CC_OPEN',    action: 'open',   instrumentType: 'CALL', strike: '182.00', expiration: '2026-02-21', premiumPerContract: '2.30', contracts: 1, fillDate: '2026-01-20', runningCostBasis: '174.20' },
+  { id: '4', legRole: 'CC_EXPIRED', action: 'expire', instrumentType: 'CALL', strike: '182.00', expiration: '2026-02-21', premiumPerContract: null,    contracts: 1, fillDate: '2026-02-21', runningCostBasis: '174.20' },
 ]
 
 export function MockBadge({ children, color }) {
@@ -199,12 +212,34 @@ export function MockSectionCard({ header, children }) {
 }
 
 // Matches display logic described in US-11 technical notes:
+// - ASSIGN: "— (assigned)" + "{n} shares received" annotation
+// - CALLED_AWAY: "— (assigned)" + "{n} shares called away" annotation
+// - CC_EXPIRED: "expired worthless" in muted italic
+// - CC_CLOSE: "−$X.XX" in amber (buyback debit, not a credit — do not use green)
+// - All others: "+$X.XX" in green
 
 export function PremiumCell({ leg }) {
-  if (leg.legRole === 'ASSIGN' || leg.legRole === 'CALLED_AWAY') {
+  if (leg.legRole === 'ASSIGN') {
     return (
-      <span style={{ color: 'var(--wb-text-muted, #4a5a6a)', fontStyle: 'italic' }}>
-        — (assigned)
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span style={{ color: 'var(--wb-text-muted, #4a5a6a)', fontStyle: 'italic' }}>
+          — (assigned)
+        </span>
+        <span style={{ color: 'var(--wb-text-muted, #4a5a6a)', fontSize: '0.68rem' }}>
+          {leg.contracts * 100} shares received
+        </span>
+      </span>
+    )
+  }
+  if (leg.legRole === 'CALLED_AWAY') {
+    return (
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span style={{ color: 'var(--wb-text-muted, #4a5a6a)', fontStyle: 'italic' }}>
+          — (assigned)
+        </span>
+        <span style={{ color: 'var(--wb-text-muted, #4a5a6a)', fontSize: '0.68rem' }}>
+          {leg.contracts * 100} shares called away
+        </span>
       </span>
     )
   }
@@ -212,6 +247,13 @@ export function PremiumCell({ leg }) {
     return (
       <span style={{ color: 'var(--wb-text-muted, #4a5a6a)', fontStyle: 'italic' }}>
         expired worthless
+      </span>
+    )
+  }
+  if (leg.legRole === 'CC_CLOSE') {
+    return (
+      <span style={{ color: 'var(--wb-gold, #e6a817)' }}>
+        −${leg.premiumPerContract}
       </span>
     )
   }
@@ -236,7 +278,7 @@ export function BasisCell({ value }) {
 }
 
 // This is what LegHistoryTable.tsx becomes after US-11:
-//   columns: Role | Action | Strike | Expiration | Premium | Fill Date | Running Cost Basis
+//   columns: Role | Action | Strike | Expiration | Contracts | Premium | Fill Date | Running Cost Basis
 //   optional finalPnl prop renders the footer row
 
 export function MockLegHistoryTable({ legs, finalPnl }) {
@@ -255,6 +297,8 @@ export function MockLegHistoryTable({ legs, finalPnl }) {
           <MockTableHeader>Strike</MockTableHeader>
           {/* Real: <TableHeader>Expiration</TableHeader> */}
           <MockTableHeader>Expiration</MockTableHeader>
+          {/* Real: <TableHeader>Contracts</TableHeader> */}
+          <MockTableHeader>Contracts</MockTableHeader>
           {/* Real: <TableHeader>Premium</TableHeader> */}
           <MockTableHeader>Premium</MockTableHeader>
           {/* Real: <TableHeader>Fill Date</TableHeader> */}
@@ -299,7 +343,13 @@ export function MockLegHistoryTable({ legs, finalPnl }) {
               {leg.expiration ?? '—'}
             </MockTableCell>
 
-            {/* Premium — special rendering for ASSIGN and EXPIRE */}
+            {/* Contracts */}
+            {/* Real: <TableCell style={{ color: 'var(--wb-text-secondary)' }}>{leg.contracts}</TableCell> */}
+            <MockTableCell style={{ color: 'var(--wb-text-secondary, #8899aa)' }}>
+              {leg.contracts}
+            </MockTableCell>
+
+            {/* Premium — special rendering per leg role */}
             {/* Real: <TableCell><PremiumCell leg={leg} /></TableCell> */}
             <MockTableCell>
               <PremiumCell leg={leg} />
@@ -329,7 +379,7 @@ export function MockLegHistoryTable({ legs, finalPnl }) {
         <tfoot>
           <tr>
             <td
-              colSpan={7}
+              colSpan={8}
               style={{
                 padding: '12px 16px',
                 fontFamily: MONO,
@@ -383,7 +433,7 @@ export function MockPageChrome({ phase }) {
 export function Mockup() {
   const [state, setState] = useState('partial')
 
-  const states = ['partial', 'mid-cycle', 'complete']
+  const states = ['partial', 'mid-cycle', 'complete', 'cc-expired']
 
   const config = {
     partial: {
@@ -400,6 +450,11 @@ export function Mockup() {
       phase: 'WHEEL_COMPLETE',
       legs: LEGS_COMPLETE,
       finalPnl: '+$780.00',
+    },
+    'cc-expired': {
+      phase: 'HOLDING_SHARES',
+      legs: LEGS_CC_EXPIRED,
+      finalPnl: null,
     },
   }
 

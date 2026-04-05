@@ -24,16 +24,19 @@ Scenario: Leg chain displays all legs in chronological order
   Then the leg history table shows all three legs in fill_date order (oldest first)
   And each row shows: leg role, action, instrument type, strike, expiration, contracts, premium, fill date
 
-Scenario: Running cost basis column shows basis after each leg
+Scenario: Running cost basis column shows basis after each leg, including CC_CLOSE carry-forward
   Given the position has:
     | Leg      | Strike  | Premium | Running basis |
-    | CSP_OPEN | $180.00 | $3.50   | $176.50       |
+    | CSP_OPEN | $180.00 | +$3.50  | $176.50       |
     | ASSIGN   | $180.00 | —       | $176.50       |
-    | CC_OPEN  | $182.00 | $2.30   | $174.20       |
+    | CC_OPEN  | $182.00 | +$2.30  | $174.20       |
+    | CC_CLOSE | $182.00 | −$1.80  | $174.20       |
   When the trader views the leg history table
   Then each row shows the cost basis at that point in the chain
-  And the ASSIGN row shows "— " for premium (assignment has no premium)
+  And the ASSIGN row shows "— (assigned)" for premium (assignment has no premium)
   And the CC_OPEN row shows $174.20 as the running cost basis
+  And the CC_CLOSE row shows $174.20 as the running cost basis (carried forward — no new snapshot is created at early close)
+  And the CC_CLOSE premium column shows "−$1.80" in amber to indicate a buyback debit, not a credit
 
 Scenario: Completed wheel shows final P&L in the chain footer
   Given the position is in WHEEL_COMPLETE status
@@ -43,11 +46,24 @@ Scenario: Completed wheel shows final P&L in the chain footer
   And the P&L is shown in green for a profit or red for a loss
 
 Scenario: ASSIGN leg displays shares received, not premium
-  Given the position has an ASSIGN leg
+  Given the position has an ASSIGN leg with contracts = 1
   When the trader views that row in the leg history
   Then the premium column shows "— (assigned)"
+  And the premium column shows a "100 shares received" annotation below it (contracts × 100)
   And the strike column shows the assignment strike
-  And an indicator shows "100 shares received" (contracts × 100)
+
+Scenario: CALLED_AWAY leg shows call-away strike and inherits running basis
+  Given the position has a CALLED_AWAY leg at strike $182.00 with contracts = 1
+  When the trader views that row in the leg history
+  Then the premium column shows "— (assigned)" and a "100 shares called away" annotation
+  And the strike column shows $182.00
+  And the running cost basis column carries forward from the prior snapshot (the CC_OPEN basis)
+
+Scenario: CC_EXPIRED leg displays expired worthless in muted style
+  Given the position has a CC_EXPIRED leg
+  When the trader views that row in the leg history
+  Then the premium column shows "expired worthless" in muted text style
+  And the running cost basis carries forward from the CC_OPEN snapshot
 
 Scenario: Single-leg position (CSP still open) shows partial chain
   Given the position has only a CSP_OPEN leg
@@ -60,15 +76,19 @@ Scenario: Single-leg position (CSP still open) shows partial chain
 
 ## Technical Notes
 
-- This story is primarily a **frontend display change** — no new backend data is required
-- All needed data is already returned by `getPosition` (`legs: LegRecord[]` + `costBasisSnapshot[]`)
-- Running cost basis per leg: derive from the ordered array of `cost_basis_snapshots` matched to leg `fill_date`; if no snapshot for a leg, carry forward the previous value
-- CC_CLOSE leg contribution: the net CC premium = `open_premium − close_price`. This can be negative if the CC was closed at a loss (close price > open premium). The running basis should reflect this: a loss close effectively raises the running basis compared to what the CC_OPEN leg reduced it to. Ensure the display handles the negative-contribution case without showing a misleading basis reduction.
-- The existing `LegHistoryTable` component (`src/renderer/src/components/LegHistoryTable.tsx`) should be extended to add the running basis column
-- ASSIGN leg display: `premium_per_contract` is `'0.0000'` — render as "— (assigned)" rather than "$0.00"
-- EXPIRE leg display: render as "expired worthless" in a muted style
-- The table does not need to be interactive (no sorting, no pagination) in Phase 1
-- Sizing: 100px min-width per column is acceptable; use existing `StatGrid` or `LegHistoryTable` primitives
+- **Backend change required:** `getPosition` currently returns only the latest `cost_basis_snapshot`. This story requires `getPosition` to also return `allSnapshots: CostBasisSnapshotRecord[]` — all cost basis snapshots for the position ordered by `snapshot_at ASC`. The claim that "no new backend data is required" was incorrect; without historical snapshots the running basis per leg cannot be derived.
+- **Running cost basis per leg:** derive from the ordered `allSnapshots` array by matching each snapshot's `snapshot_at` to the nearest leg `fill_date`. For legs with no matching snapshot, carry forward the last known basis value.
+- **Snapshots are created at:** `CSP_OPEN`, `ASSIGN`, `CC_OPEN`, and terminal events (`CC_EXPIRED`, `CALLED_AWAY`, `WHEEL_COMPLETE`). `CC_CLOSE` does **not** create a new snapshot — its running basis always carries forward from the prior CC_OPEN snapshot. The final P&L is calculated from the terminal snapshot, not from the CC_CLOSE row data.
+- **CC_CLOSE premium display:** `premiumPerContract` stores the buyback price paid (a debit). Render as "−$X.XX" in amber (`var(--wb-gold)`) to distinguish it from premium credits. Do not render green or with a `+` sign.
+- **CC_CLOSE net contribution:** the net CC premium = `open_premium − close_price`. This can be negative if the CC was closed at a loss (close price > open premium). The running basis for the CC_CLOSE row carries forward; the net contribution is reflected in the terminal snapshot once the wheel completes.
+- The existing `LegHistoryTable` component (`src/renderer/src/components/LegHistoryTable.tsx`) should be extended to add: the running basis column, the contracts column, and special premium rendering for ASSIGN, CALLED_AWAY, CC_CLOSE, and CC_EXPIRED leg roles.
+- **ASSIGN leg display:** `premium_per_contract` is `'0.0000'` — render as "— (assigned)" with a small annotation on a second line: "{contracts × 100} shares received".
+- **CALLED_AWAY leg display:** same "— (assigned)" treatment as ASSIGN with annotation "{contracts × 100} shares called away".
+- **CC_EXPIRED leg display:** render premium as "expired worthless" in a muted italic style.
+- **Roll legs (ROLL_FROM / ROLL_TO):** may appear in the leg history. Render with their role badge and carry forward the previous running basis. Do not crash if these roles are present — full roll display is deferred to a future story.
+- Instrument type is conveyed implicitly through the role badge (CSP Open = PUT, CC Open/Close/Expired = CALL, Called Away = CALL) rather than a separate column, to keep the table width manageable.
+- The table does not need to be interactive (no sorting, no pagination) in Phase 1.
+- Sizing: 100px min-width per column is acceptable; use existing `StatGrid` or `LegHistoryTable` primitives.
 
 ---
 
@@ -79,6 +99,8 @@ Scenario: Single-leg position (CSP still open) shows partial chain
 - Sorting or filtering the leg table
 - Exporting leg history to CSV
 - PMCC leg chain display (Epic 09)
+- Full roll leg visualization (linked ROLL_FROM/ROLL_TO pair display)
+- Per-cycle P&L breakdown for multi-cycle wheels (future analytics epic)
 
 ---
 
@@ -89,7 +111,7 @@ Scenario: Single-leg position (CSP still open) shows partial chain
 
 ## Size
 
-3 points
+5 points
 
 ## Mockup
 

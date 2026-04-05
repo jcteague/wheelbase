@@ -21,7 +21,9 @@ export const LegRole = z.enum([
   'CSP_CLOSE',
   'CC_OPEN',
   'CC_CLOSE',
+  'CC_EXPIRED',
   'ASSIGN',
+  'CALLED_AWAY',
   'ROLL_FROM',
   'ROLL_TO',
   'EXPIRE'

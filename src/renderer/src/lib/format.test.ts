@@ -44,14 +44,14 @@ describe('pnlColor', () => {
 describe('computeDte', () => {
   it('returns a positive integer for a future expiration date', () => {
     vi.useFakeTimers()
-    vi.setSystemTime(new Date(2026, 3, 7, 12, 0, 0))
+    vi.setSystemTime(new Date(Date.UTC(2026, 3, 7, 12, 0, 0)))
 
     expect(computeDte('2026-04-17')).toBe(10)
   })
 
   it('returns a negative integer for a past expiration date', () => {
     vi.useFakeTimers()
-    vi.setSystemTime(new Date(2026, 3, 27, 12, 0, 0))
+    vi.setSystemTime(new Date(Date.UTC(2026, 3, 27, 12, 0, 0)))
 
     expect(computeDte('2026-04-17')).toBe(-10)
   })

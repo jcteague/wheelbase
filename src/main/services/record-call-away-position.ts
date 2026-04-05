@@ -74,7 +74,7 @@ export function recordCallAwayPosition(
       `INSERT INTO legs
         (id, position_id, leg_role, action, instrument_type, strike, expiration, contracts,
           premium_per_contract, fill_price, fill_date, created_at, updated_at)
-        VALUES (?, ?, 'CC_CLOSE', 'EXERCISE', 'CALL', ?, ?, ?, ?, ?, ?, ?, ?)`
+        VALUES (?, ?, 'CALLED_AWAY', 'EXERCISE', 'CALL', ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       legId,
       positionId,
@@ -112,7 +112,7 @@ export function recordCallAwayPosition(
     leg: {
       id: legId,
       positionId,
-      legRole: 'CC_CLOSE',
+      legRole: 'CALLED_AWAY',
       action: 'EXERCISE',
       instrumentType: 'CALL',
       strike: ccOpenLeg.strike,

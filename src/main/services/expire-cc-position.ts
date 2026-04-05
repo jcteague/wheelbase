@@ -47,7 +47,7 @@ export function expireCcPosition(
       `INSERT INTO legs
         (id, position_id, leg_role, action, instrument_type, strike, expiration, contracts,
          premium_per_contract, fill_price, fill_date, created_at, updated_at)
-       VALUES (?, ?, 'EXPIRE', 'EXPIRE', 'CALL', ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, 'CC_EXPIRED', 'EXPIRE', 'CALL', ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       expireLegId,
       positionId,
@@ -80,7 +80,7 @@ export function expireCcPosition(
     leg: {
       id: expireLegId,
       positionId,
-      legRole: 'EXPIRE',
+      legRole: 'CC_EXPIRED',
       action: 'EXPIRE',
       instrumentType: 'CALL',
       strike: openLeg.strike,

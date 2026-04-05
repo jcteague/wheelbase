@@ -5,6 +5,7 @@ import { Caption } from '../components/ui/Caption'
 import { SectionCard } from '../components/ui/SectionCard'
 import { StatGrid } from '../components/ui/Stat'
 import { computeDte, fmtMoney, pnlColor } from '../lib/format'
+import { deriveRunningBasis } from '../lib/deriveRunningBasis'
 import { MONO } from '../lib/tokens'
 
 const DETAIL_BASE_STYLE: React.CSSProperties = {
@@ -27,11 +28,25 @@ type PositionDetailContentProps = {
   overlayOpen: boolean
 }
 
+function NoteBlock({ label, text }: { label: string; text: string }): React.JSX.Element {
+  return (
+    <div>
+      <div style={{ marginBottom: 4 }}>
+        <Caption>{label}</Caption>
+      </div>
+      <div style={{ fontFamily: MONO, fontSize: '0.875rem', color: 'var(--wb-text-primary)' }}>
+        {text}
+      </div>
+    </div>
+  )
+}
+
 export function PositionDetailContent({
   detail,
   overlayOpen
 }: PositionDetailContentProps): React.JSX.Element {
-  const { position, activeLeg, costBasisSnapshot, legs } = detail
+  const { position, activeLeg, costBasisSnapshot, legs, allSnapshots } = detail
+  const enrichedLegs = deriveRunningBasis(legs, allSnapshots ?? [])
   const dte = activeLeg ? computeDte(activeLeg.expiration) : null
   const dteUrgent = dte !== null && dte <= 7
 
@@ -114,47 +129,17 @@ export function PositionDetailContent({
         </SectionCard>
       )}
 
-      {legs.length > 0 && (
+      {enrichedLegs.length > 0 && (
         <SectionCard header="Leg History">
-          <LegHistoryTable legs={legs} />
+          <LegHistoryTable legs={enrichedLegs} finalPnl={costBasisSnapshot?.finalPnl ?? null} />
         </SectionCard>
       )}
 
       {(position.thesis || position.notes) && (
         <SectionCard header="Notes">
           <div style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {position.thesis && (
-              <div>
-                <div style={{ marginBottom: 4 }}>
-                  <Caption>Thesis</Caption>
-                </div>
-                <div
-                  style={{
-                    fontFamily: MONO,
-                    fontSize: '0.875rem',
-                    color: 'var(--wb-text-primary)'
-                  }}
-                >
-                  {position.thesis}
-                </div>
-              </div>
-            )}
-            {position.notes && (
-              <div>
-                <div style={{ marginBottom: 4 }}>
-                  <Caption>Notes</Caption>
-                </div>
-                <div
-                  style={{
-                    fontFamily: MONO,
-                    fontSize: '0.875rem',
-                    color: 'var(--wb-text-primary)'
-                  }}
-                >
-                  {position.notes}
-                </div>
-              </div>
-            )}
+            {position.thesis && <NoteBlock label="Thesis" text={position.thesis} />}
+            {position.notes && <NoteBlock label="Notes" text={position.notes} />}
           </div>
         </SectionCard>
       )}

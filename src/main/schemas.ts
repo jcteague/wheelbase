@@ -109,6 +109,7 @@ export interface GetPositionResult {
   activeLeg: LegRecord | null
   costBasisSnapshot: CostBasisSnapshotRecord | null
   legs: LegRecord[]
+  allSnapshots: CostBasisSnapshotRecord[]
 }
 
 export interface PositionListItem {

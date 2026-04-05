@@ -91,7 +91,7 @@ describe('useRecordCallAway', () => {
         status: 'CLOSED',
         closedDate: '2026-03-21'
       },
-      leg: { id: 'leg-1', legRole: 'CC_CLOSE', action: 'EXERCISE' },
+      leg: { id: 'leg-1', legRole: 'CALLED_AWAY', action: 'EXERCISE' },
       costBasisSnapshot: {
         id: 'snap-1',
         positionId: 'pos-1',

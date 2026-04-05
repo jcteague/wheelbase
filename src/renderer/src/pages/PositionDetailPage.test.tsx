@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 import { usePosition } from '../hooks/usePosition'
+import { PositionDetail } from '../api/positions'
 import { PositionDetailPage } from './PositionDetailPage'
 
 vi.mock('../hooks/usePosition')
@@ -88,7 +89,30 @@ const CSP_OPEN_DETAIL = {
     snapshotAt: '2026-03-01T00:00:00.000Z',
     createdAt: '2026-03-01T00:00:00.000Z'
   },
-  legs: []
+  legs: [],
+  allSnapshots: []
+}
+
+// RED: TypeScript will error here until PositionDetail gains the allSnapshots field
+const _typecheckAllSnapshots: PositionDetail = {
+  ...CSP_OPEN_DETAIL,
+  allSnapshots: []
+}
+void _typecheckAllSnapshots
+
+const CSP_OPEN_WITH_SNAPSHOTS = {
+  ...CSP_OPEN_DETAIL,
+  allSnapshots: [
+    {
+      id: 's1',
+      positionId: 'pos-123',
+      basisPerShare: '177.5000',
+      totalPremiumCollected: '250.0000',
+      finalPnl: null,
+      snapshotAt: '2026-03-01T00:00:00.000Z',
+      createdAt: '2026-03-01T00:00:00.000Z'
+    }
+  ]
 }
 
 it('shows position details and CloseCspForm for a CSP_OPEN position', () => {
@@ -497,4 +521,118 @@ it('clicking "record-cc-expiration-btn" opens CcExpirationSheet (renders cc-expi
   render(<PositionDetailPage />)
   await user.click(screen.getByTestId('record-cc-expiration-btn'))
   expect(screen.getByTestId('cc-expiration-sheet')).toBeInTheDocument()
+})
+
+it('renders without errors when allSnapshots is populated', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: CSP_OPEN_WITH_SNAPSHOTS,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+  render(<PositionDetailPage />)
+  expect(screen.getByTestId('position-detail')).toBeInTheDocument()
+})
+
+// ---------------------------------------------------------------------------
+// Area 6 — deriveRunningBasis wiring (US-11)
+// ---------------------------------------------------------------------------
+
+const CSP_WITH_LEGS_AND_SNAPSHOTS = {
+  ...CSP_OPEN_DETAIL,
+  legs: [
+    {
+      id: 'leg-1',
+      positionId: 'pos-123',
+      legRole: 'CSP_OPEN',
+      action: 'SELL',
+      instrumentType: 'PUT',
+      strike: '180.0000',
+      expiration: '2026-04-17',
+      contracts: 1,
+      premiumPerContract: '2.5000',
+      fillDate: '2026-03-01',
+      createdAt: '2026-03-01T00:00:00.000Z',
+      updatedAt: '2026-03-01T00:00:00.000Z'
+    }
+  ],
+  // basisPerShare '176.5000' ($176.50) is distinct from costBasisSnapshot.basisPerShare
+  // ('177.5000' / $177.50) so it only appears in the leg table after deriveRunningBasis runs
+  allSnapshots: [
+    {
+      id: 's1',
+      positionId: 'pos-123',
+      basisPerShare: '176.5000',
+      totalPremiumCollected: '350.0000',
+      finalPnl: null,
+      snapshotAt: '2026-03-01T00:00:00.000Z',
+      createdAt: '2026-03-01T00:00:00.000Z'
+    }
+  ]
+}
+
+it('leg history table shows running cost basis column header', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: CSP_WITH_LEGS_AND_SNAPSHOTS,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+  render(<PositionDetailPage />)
+  expect(screen.getByText('Running Basis / Share')).toBeInTheDocument()
+})
+
+it('leg history table shows running basis value for CSP_OPEN leg', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: CSP_WITH_LEGS_AND_SNAPSHOTS,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+  render(<PositionDetailPage />)
+  // $176.50 only appears in the Running Basis column (distinct from costBasisSnapshot $177.50)
+  expect(screen.getByText('$176.50')).toBeInTheDocument()
+})
+
+it('leg history table renders final P&L footer for WHEEL_COMPLETE position', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: {
+      ...CSP_WITH_LEGS_AND_SNAPSHOTS,
+      position: {
+        ...CSP_OPEN_DETAIL.position,
+        phase: 'WHEEL_COMPLETE' as const,
+        status: 'CLOSED' as const,
+        closedDate: '2026-04-17'
+      },
+      costBasisSnapshot: {
+        id: 'cbs-1',
+        positionId: 'pos-123',
+        basisPerShare: '177.5000',
+        totalPremiumCollected: '250.0000',
+        finalPnl: '780.0000',
+        snapshotAt: '2026-03-01T00:00:00.000Z',
+        createdAt: '2026-03-01T00:00:00.000Z'
+      }
+    },
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+  render(<PositionDetailPage />)
+  // "Final P&L" appears in the Cost Basis stats AND the tfoot — both must be present
+  const pnlLabels = screen.getAllByText(/Final P&L/)
+  expect(pnlLabels.length).toBeGreaterThanOrEqual(2)
+  const amounts = screen.getAllByText('$780.00')
+  expect(amounts.length).toBeGreaterThanOrEqual(2)
+})
+
+it('leg history table has no P&L footer when finalPnl is null', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: CSP_WITH_LEGS_AND_SNAPSHOTS,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+  render(<PositionDetailPage />)
+  expect(screen.queryByText(/Final P&L/)).not.toBeInTheDocument()
 })
