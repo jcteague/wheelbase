@@ -1,7 +1,7 @@
 ---
 title: "US-12/13: Roll CSP Form"
 story: "As a wheel trader with an open CSP, I want to roll the put to a new strike and/or expiration and see the net credit or debit before confirming."
-states: ["credit", "debit-warning", "validation-error", "down-and-out", "success"]
+states: ["credit", "debit-warning", "validation-error", "down-and-out", "roll-count-warning", "success"]
 ---
 
 import { useState } from 'react'
@@ -13,10 +13,11 @@ _Roll an open CSP to a new expiration (roll out) or a different strike and expir
 ## Acceptance Criteria States
 
 - **credit**: Roll out with net credit — $180 strike unchanged, new May expiration, cost to close $1.20, new premium $2.80, net credit $1.60/contract
-- **debit-warning**: Roll with net debit — cost to close $3.00, new premium $2.50, net debit $0.50/contract shown in amber with warning
+- **debit-warning**: Roll with net debit — cost to close $5.20, new premium $4.80, net debit $0.40/contract shown in amber with warning that it increases cost basis
 - **validation-error**: New expiration before current expiration — red inline error
-- **down-and-out**: Roll down and out — strike changed from $180 to $175, label shows "Roll Down & Out"
-- **success**: Roll confirmed — linked ROLL_FROM/ROLL_TO pair created, position stays CSP_OPEN
+- **down-and-out**: Roll down and out — strike changed from $180 to $175, label shows "Roll Down & Out", roll count #1
+- **roll-count-warning**: Roll #3 with soft warning — informational note about multiple rolls on the same position
+- **success**: Roll confirmed — linked ROLL_FROM/ROLL_TO pair created, position stays CSP_OPEN, active strike updates to new strike
 
 ---
 
@@ -139,11 +140,14 @@ export function MockDatePicker({ value, hasError }) {
 
 export function getRollTypeLabel(currentStrike, newStrike, currentExp, newExp) {
   const sameStrike = currentStrike === newStrike
+  const sameExp = currentExp === newExp
   const strikeUp = parseFloat(newStrike) > parseFloat(currentStrike)
   const strikeDown = parseFloat(newStrike) < parseFloat(currentStrike)
-  if (sameStrike) return 'Roll Out'
-  if (strikeDown) return 'Roll Down & Out'
-  if (strikeUp) return 'Roll Up & Out'
+  if (sameStrike && !sameExp) return 'Roll Out'
+  if (strikeDown && !sameExp) return 'Roll Down & Out'
+  if (strikeUp && !sameExp) return 'Roll Up & Out'
+  if (strikeDown && sameExp) return 'Roll Down'
+  if (strikeUp && sameExp) return 'Roll Up'
   return 'Roll'
 }
 
@@ -170,7 +174,7 @@ export function NetCreditDebitPreview({ costToClose, newPremium, contracts }) {
       </div>
       {!isCredit && (
         <div style={{ padding: '8px 14px', borderTop: '1px solid ' + border, fontSize: 11, color, opacity: 0.85, fontFamily: MONO }}>
-          ⚠ This roll costs more to close than the new premium provides
+          ⚠ This roll produces a net debit, which increases your cost basis
         </div>
       )}
     </div>
@@ -187,19 +191,21 @@ export const panelStyle = {
 export function Mockup() {
   const [state, setState] = useState('credit')
   const pos = MOCK_POSITION
-  const allStates = ['credit', 'debit-warning', 'validation-error', 'down-and-out', 'success']
+  const allStates = ['credit', 'debit-warning', 'validation-error', 'down-and-out', 'roll-count-warning', 'success']
 
   const isSuccess = state === 'success'
   const isDebit = state === 'debit-warning'
   const isValidationErr = state === 'validation-error'
   const isDownOut = state === 'down-and-out'
+  const isRollCountWarn = state === 'roll-count-warning'
 
   /* state-driven form values */
-  const newStrike = isDownOut ? '175.00' : pos.strike
+  const newStrike = (isDownOut || isRollCountWarn) ? '175.00' : pos.strike
   const newExpiration = isValidationErr ? '2026-04-11' : '2026-05-16'
-  const costToClose = isDebit ? '3.00' : '1.20'
-  const newPremium = isDebit ? '2.50' : isDownOut ? '3.20' : '2.80'
+  const costToClose = isDebit ? '5.20' : isDownOut ? '2.80' : isRollCountWarn ? '2.80' : '1.20'
+  const newPremium = isDebit ? '4.80' : isDownOut ? '3.20' : isRollCountWarn ? '3.20' : '2.80'
   const fillDate = '2026-04-04'
+  const rollCount = isRollCountWarn ? 3 : isDownOut ? 1 : state === 'credit' ? 1 : isDebit ? 2 : 0
 
   const rollType = getRollTypeLabel(pos.strike, newStrike, pos.expiration, newExpiration)
   const expirationError = isValidationErr ? 'New expiration must be after the current expiration' : undefined
@@ -267,24 +273,25 @@ export function Mockup() {
                 {/* Success hero */}
                 <div style={{ background: 'linear-gradient(135deg, rgba(63,185,80,0.1), rgba(7,10,14,0.5))', border: '1px solid rgba(63,185,80,0.22)', borderRadius: 10, padding: '22px 20px', textAlign: 'center' }}>
                   <div style={{ fontSize: 9, color: 'var(--wb-green, #3fb950)', opacity: 0.75, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 8 }}>Roll Net Credit</div>
-                  <div style={{ fontSize: 40, fontWeight: 700, color: 'var(--wb-green, #3fb950)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>+$1.60</div>
-                  <div style={{ fontSize: 11, color: 'var(--wb-green, #3fb950)', opacity: 0.55 }}>$160.00 total · 1 contract</div>
+                  <div style={{ fontSize: 40, fontWeight: 700, color: 'var(--wb-green, #3fb950)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>+$0.40</div>
+                  <div style={{ fontSize: 11, color: 'var(--wb-green, #3fb950)', opacity: 0.55 }}>$40.00 total · 1 contract</div>
                 </div>
 
                 <MockSectionCard>
-                  <MockSummaryRow label="Roll type" value={<MockBadge color="#3fb950">Roll Out</MockBadge>} />
-                  <MockSummaryRow label="Old leg" value="ROLL_FROM · BUY PUT $180 @ $1.20" />
-                  <MockSummaryRow label="New leg" value="ROLL_TO · SELL PUT $180 @ $2.80" />
+                  <MockSummaryRow label="Roll type" value={<MockBadge color="#58a6ff">Roll Down & Out</MockBadge>} />
+                  <MockSummaryRow label="Old leg" value="ROLL_FROM · BUY PUT $180 @ $2.80" />
+                  <MockSummaryRow label="New leg" value="ROLL_TO · SELL PUT $175 @ $3.20" />
+                  <MockSummaryRow label="Active strike" value={<span style={{ color: 'var(--wb-gold, #e6a817)' }}>$180.00 {'\u2192'} $175.00</span>} />
                   <MockSummaryRow label="New expiration" value="May 16, 2026 (42 DTE)" />
                   <MockSummaryRow label="Roll chain ID" value={<span style={{ fontSize: 10, opacity: 0.6 }}>abc-1234</span>} />
                   <MockSummaryRow label="Phase" value={<span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><MockPhaseBadge phase="CSP_OPEN" /><span style={{ fontSize: 9, color: 'var(--wb-text-muted, #4a5a6a)' }}>(unchanged)</span></span>} />
-                  <MockSummaryRow label="Cost basis" value={<span style={{ color: 'var(--wb-green, #3fb950)' }}>$176.50 {'\u2192'} $174.90/share</span>} noBorder highlight />
+                  <MockSummaryRow label="Cost basis" value={<span style={{ color: 'var(--wb-green, #3fb950)' }}>$176.50 {'\u2192'} $176.10/share</span>} noBorder highlight />
                 </MockSectionCard>
 
                 <MockAlertBox variant="info">
                   <span style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                     <span style={{ fontSize: 13, flexShrink: 0 }}>{'\ud83d\udcc5'}</span>
-                    <span>New CSP expires <strong>May 16, 2026</strong> (42 DTE). Your cost basis improved by $1.60/share from this roll.</span>
+                    <span>Rolled down from $180 to <strong>$175 strike</strong>, new expiration <strong>May 16, 2026</strong> (42 DTE). Net credit of $0.40/contract reduced cost basis. If assigned, assignment will be at the new $175 strike.</span>
                   </span>
                 </MockAlertBox>
               </>
@@ -326,16 +333,29 @@ export function Mockup() {
                   </div>
                 </MockSectionCard>
 
-                {/* Roll type indicator */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 2px' }}>
-                  <MockBadge color={isDownOut ? '#58a6ff' : '#e6a817'}>{rollType}</MockBadge>
-                  {isDownOut && (
+                {/* Roll type indicator + roll count */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 2px', flexWrap: 'wrap' }}>
+                  <MockBadge color={(isDownOut || isRollCountWarn) ? '#58a6ff' : '#e6a817'}>{rollType}</MockBadge>
+                  {rollCount > 0 && (
+                    <MockBadge color={rollCount >= 3 ? '#f85149' : '#8899aa'}>Roll #{rollCount}</MockBadge>
+                  )}
+                  {(isDownOut || isRollCountWarn) && (
                     <span style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)' }}>$180 {'\u2192'} $175 strike, Apr {'\u2192'} May exp</span>
                   )}
-                  {!isDownOut && !isValidationErr && (
+                  {!isDownOut && !isRollCountWarn && !isValidationErr && (
                     <span style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)' }}>same $180 strike, Apr {'\u2192'} May exp</span>
                   )}
                 </div>
+
+                {/* Roll count warning at 3+ rolls */}
+                {rollCount >= 3 && (
+                  <MockAlertBox variant="warning">
+                    <span style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <span style={{ fontSize: 13, flexShrink: 0 }}>{'\u26a0\ufe0f'}</span>
+                      <span>This position has been rolled multiple times. Consider whether the capital is better deployed elsewhere.</span>
+                    </span>
+                  </MockAlertBox>
+                )}
 
                 {/* Net credit/debit preview */}
                 {!isValidationErr && (
