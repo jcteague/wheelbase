@@ -20,7 +20,9 @@
       "Bash(find /Users/johnteague/my-stuff/wheelbase -name *.mdx -o -name *mockup*)",
       "Bash(pnpm test:e2e)",
       "Read(//Users/johnteague/.local/bin/**)",
-      "Read(//Users/johnteague/.local/**)"
+      "Read(//Users/johnteague/.local/**)",
+      "Bash(find /Users/johnteague/my-stuff/wheelbase -type f -name *.sql -o -name schema*)",
+      "Bash(grep -r \"strike\" /Users/johnteague/my-stuff/wheelbase-us-12/src/renderer/src/components/*.tsx -A 3 -B 1)"
     ]
   },
   "enableAllProjectMcpServers": true,
