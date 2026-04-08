@@ -77,6 +77,7 @@ body {
   --wb-bg-hover: #1f2937;
   --wb-border: #21262d;
   --wb-border-subtle: #161b22;
+  --wb-shadow-sheet: -12px 0 48px rgba(0, 0, 0, 0.5);
 
   /* Text */
   --wb-text-primary: #e6edf3;
@@ -87,8 +88,11 @@ body {
   --wb-gold: #e6a817;
   --wb-gold-dim: rgba(230, 168, 23, 0.12);
   --wb-gold-border: rgba(230, 168, 23, 0.25);
+  --wb-gold-subtle: rgba(230, 168, 23, 0.04);
   --wb-green: #3fb950;
   --wb-green-dim: rgba(63, 185, 80, 0.12);
+  --wb-green-border: rgba(63, 185, 80, 0.22);
+  --wb-green-subtle: rgba(63, 185, 80, 0.1);
   --wb-red: #f85149;
   --wb-red-dim: rgba(248, 81, 73, 0.12);
   --wb-blue: #58a6ff;

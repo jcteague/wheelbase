@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { CreatePositionPayload } from '../schemas'
 import { makeTestDb, isoDate } from '../test-utils'
 import { createPosition, listPositions } from './positions'
+import { rollCspPosition } from './roll-csp-position'
 
 const EXPIRATION = isoDate(37)
 
@@ -110,6 +111,45 @@ describe('listPositions', () => {
     expect(spy.dte).toBeNull()
     expect(spy.strike).toBeNull()
     expect(spy.expiration).toBeNull()
+  })
+
+  // ---------------------------------------------------------------------------
+  // T005 — Rolled CSP position shows ROLL_TO leg data
+  // ---------------------------------------------------------------------------
+
+  it('returns correct strike and expiration for a rolled CSP position', () => {
+    const db = makeTestDb()
+    const { position } = createPosition(db, VALID_PAYLOAD)
+    const newExpiration = isoDate(60)
+    rollCspPosition(db, position.id, {
+      positionId: position.id,
+      costToClosePerContract: 1.0,
+      newPremiumPerContract: 2.5,
+      newExpiration,
+      newStrike: 185
+    })
+    const [item] = listPositions(db)
+    expect(item.strike).toBe('185.0000')
+    expect(item.expiration).toBe(newExpiration)
+  })
+
+  it('returns updated DTE after CSP roll', () => {
+    const db = makeTestDb()
+    const { position } = createPosition(db, VALID_PAYLOAD)
+    const newExpiration = isoDate(60)
+    rollCspPosition(db, position.id, {
+      positionId: position.id,
+      costToClosePerContract: 1.0,
+      newPremiumPerContract: 2.5,
+      newExpiration,
+      newStrike: 185
+    })
+    const [item] = listPositions(db)
+    const today = new Date()
+    const todayMs = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
+    const [ey, em, ed] = newExpiration.split('-').map(Number)
+    const expectedDte = Math.round((Date.UTC(ey, em - 1, ed) - todayMs) / 86_400_000)
+    expect(item.dte).toBe(expectedDte)
   })
 
   it('sorts null-DTE positions last', () => {

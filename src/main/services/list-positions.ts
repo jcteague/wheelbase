@@ -6,6 +6,7 @@ import Decimal from 'decimal.js'
 import type { WheelPhase, WheelStatus } from '../core/types'
 import { logger } from '../logger'
 import type { PositionListItem } from '../schemas'
+import { activeLegSubquery } from './active-leg-sql'
 
 // ---------------------------------------------------------------------------
 // Internal DB row type
@@ -33,10 +34,7 @@ const LIST_QUERY = `
     cbs.basis_per_share, cbs.total_premium_collected
   FROM positions p
   LEFT JOIN legs l ON l.id = (
-    SELECT id FROM legs
-    WHERE position_id = p.id AND leg_role IN ('CSP_OPEN', 'CC_OPEN')
-    ORDER BY fill_date DESC, created_at DESC
-    LIMIT 1
+    ${activeLegSubquery()}
   )
   LEFT JOIN cost_basis_snapshots cbs ON cbs.id = (
     SELECT id FROM cost_basis_snapshots

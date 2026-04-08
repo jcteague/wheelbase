@@ -90,7 +90,8 @@ Create `{story-dir}/tasks.md` with the following structure:
 - [ ] **[Green]** Implement — `{impl-file-path}` *(depends on: {Area Name 1} Red ✓)*
   - {key function signatures and logic from plan}
   - Run `pnpm test {test-file}` — all tests must pass
-- [ ] **[Refactor]** Clean up — `{impl-file-path}` *(depends on: {Area Name 1} Green ✓)*
+- [ ] **[Refactor]** `/refactor` — `{impl-file-path}` *(depends on: {Area Name 1} Green ✓)*
+  - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
 ### {Area Name 2}
@@ -101,7 +102,8 @@ Create `{story-dir}/tasks.md` with the following structure:
 - [ ] **[Green]** Implement — `{impl-file-path}` *(depends on: {Area Name 2} Red ✓)*
   - {key function signatures and logic from plan}
   - Run `pnpm test {test-file}` — all tests must pass
-- [ ] **[Refactor]** Clean up *(depends on: {Area Name 2} Green ✓)*
+- [ ] **[Refactor]** `/refactor` *(depends on: {Area Name 2} Green ✓)*
+  - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
 ---
@@ -120,7 +122,8 @@ Create `{story-dir}/tasks.md` with the following structure:
 - [ ] **[Green]** Implement — `{impl-file-path}` *(depends on: {Area Name 3} Red ✓)*
   - {key details}
   - Run `pnpm test {test-file}` — all tests must pass
-- [ ] **[Refactor]** Clean up *(depends on: {Area Name 3} Green ✓)*
+- [ ] **[Refactor]** `/refactor` *(depends on: {Area Name 3} Green ✓)*
+  - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
 ---
@@ -139,7 +142,8 @@ Create `{story-dir}/tasks.md` with the following structure:
   - Run `pnpm test:e2e` — all new tests must fail
 - [ ] **[Green]** Make e2e tests pass *(depends on: E2E Red ✓)*
   - Run `pnpm test:e2e` — all tests must pass
-- [ ] **[Refactor]** Clean up e2e tests *(depends on: E2E Green ✓)*
+- [ ] **[Refactor]** `/refactor` e2e tests *(depends on: E2E Green ✓)*
+  - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
 
 ---
 

@@ -85,7 +85,10 @@ const IPC_TO_FORM_FIELD: Record<string, string> = {
   premiumPerContract: 'premium_per_contract',
   fillDate: 'fill_date',
   closePricePerContract: 'close_price_per_contract',
-  assignmentDate: 'assignment_date'
+  assignmentDate: 'assignment_date',
+  costToClosePerContract: 'cost_to_close_per_contract',
+  newExpiration: 'new_expiration',
+  newPremiumPerContract: 'new_premium_per_contract'
 }
 
 function mapIpcErrors(errors: ApiFieldError[]): ApiFieldError[] {
@@ -449,6 +452,56 @@ export async function expireCc(payload: ExpireCcPayload): Promise<ExpireCcRespon
     throwMappedIpcErrors(result.errors)
   }
   return result as unknown as ExpireCcResponse
+}
+
+export type RollCspPayload = {
+  position_id: string
+  cost_to_close_per_contract: number
+  new_premium_per_contract: number
+  new_expiration: string
+  new_strike?: number
+  fill_date?: string
+}
+
+export type RollCspResponse = {
+  position: { id: string; ticker: string; phase: 'CSP_OPEN'; status: 'ACTIVE' }
+  rollFromLeg: LegData & {
+    legRole: 'ROLL_FROM'
+    action: 'BUY'
+    fillDate: string
+    premiumPerContract: string
+  }
+  rollToLeg: LegData & {
+    legRole: 'ROLL_TO'
+    action: 'SELL'
+    fillDate: string
+    premiumPerContract: string
+  }
+  rollChainId: string
+  costBasisSnapshot: {
+    id: string
+    positionId: string
+    basisPerShare: string
+    totalPremiumCollected: string
+    finalPnl: null
+    snapshotAt: string
+    createdAt: string
+  }
+}
+
+export async function rollCsp(payload: RollCspPayload): Promise<RollCspResponse> {
+  const result = await window.api.rollCsp({
+    positionId: payload.position_id,
+    costToClosePerContract: payload.cost_to_close_per_contract,
+    newPremiumPerContract: payload.new_premium_per_contract,
+    newExpiration: payload.new_expiration,
+    newStrike: payload.new_strike,
+    fillDate: payload.fill_date
+  })
+  if (!result.ok) {
+    throwMappedIpcErrors(result.errors)
+  }
+  return result as unknown as RollCspResponse
 }
 
 export async function createPosition(

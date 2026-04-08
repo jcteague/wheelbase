@@ -25,6 +25,7 @@ type PositionDetailActionsProps = {
   onCloseCcEarly: () => void
   onRecordCallAway: () => void
   onRecordCcExpiration: () => void
+  onRollCsp: () => void
 }
 
 type ActionButtonProps = {
@@ -55,7 +56,8 @@ export function PositionDetailActions({
   onRecordExpiration,
   onCloseCcEarly,
   onRecordCallAway,
-  onRecordCcExpiration
+  onRecordCcExpiration,
+  onRollCsp
 }: PositionDetailActionsProps): React.JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -93,6 +95,7 @@ export function PositionDetailActions({
       )}
       {phase === 'CSP_OPEN' && (
         <>
+          <ActionButton testId="roll-csp-btn" label="Roll CSP →" onClick={onRollCsp} />
           <ActionButton
             testId="record-assignment-btn"
             label="Record Assignment →"

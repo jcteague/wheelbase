@@ -126,7 +126,7 @@ it('shows position details and CloseCspForm for a CSP_OPEN position', () => {
   render(<PositionDetailPage />)
 
   expect(screen.getByText(/AAPL/)).toBeInTheDocument()
-  expect(screen.getByText(/CSP/i)).toBeInTheDocument()
+  expect(screen.getAllByText(/CSP/i).length).toBeGreaterThan(0)
   expect(screen.getByTestId('position-detail')).toBeInTheDocument()
   expect(screen.getByTestId('close-csp-form')).toBeInTheDocument()
 })

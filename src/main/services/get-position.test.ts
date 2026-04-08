@@ -5,6 +5,7 @@ import { createPosition } from './positions'
 import { assignCspPosition } from './assign-csp-position'
 import { openCoveredCallPosition } from './open-covered-call-position'
 import { getPosition } from './get-position'
+import { rollCspPosition } from './roll-csp-position'
 
 describe('getPosition', () => {
   it('returns position with activeLeg and costBasisSnapshot for a CSP_OPEN position', () => {
@@ -94,6 +95,34 @@ describe('getPosition', () => {
 
     expect(detail).not.toBeNull()
     expect(detail!.legs).toEqual([])
+  })
+
+  it('returns ROLL_TO leg as activeLeg after a CSP roll', () => {
+    const db = makeTestDb()
+    const created = createPosition(db, {
+      ticker: 'AAPL',
+      strike: 180,
+      expiration: isoDate(30),
+      contracts: 1,
+      premiumPerContract: 2.5,
+      fillDate: isoDate(0)
+    })
+
+    rollCspPosition(db, created.position.id, {
+      positionId: created.position.id,
+      costToClosePerContract: 1.2,
+      newPremiumPerContract: 2.8,
+      newExpiration: isoDate(60),
+      newStrike: 175
+    })
+
+    const detail = getPosition(db, created.position.id)
+
+    expect(detail).not.toBeNull()
+    expect(detail!.activeLeg).not.toBeNull()
+    expect(detail!.activeLeg!.legRole).toBe('ROLL_TO')
+    expect(detail!.activeLeg!.strike).toBe('175.0000')
+    expect(detail!.activeLeg!.expiration).toBe(isoDate(60))
   })
 
   it('returns activeLeg as null when no open leg exists', () => {

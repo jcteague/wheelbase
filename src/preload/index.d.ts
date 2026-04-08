@@ -169,6 +169,23 @@ type IpcExpireCcResult = IpcResult<{
   sharesHeld: number
 }>
 
+interface IpcRollCspPayload {
+  positionId: string
+  costToClosePerContract: number
+  newPremiumPerContract: number
+  newExpiration: string
+  newStrike?: number
+  fillDate?: string
+}
+
+type IpcRollCspResult = IpcResult<{
+  position: { id: string; ticker: string; phase: 'CSP_OPEN'; status: 'ACTIVE' }
+  rollFromLeg: IpcLegRecord
+  rollToLeg: IpcLegRecord
+  rollChainId: string
+  costBasisSnapshot: IpcCostBasisSnapshotRecord
+}>
+
 declare global {
   interface Window {
     electron: ElectronAPI
@@ -184,6 +201,7 @@ declare global {
       closeCoveredCallEarly: (payload: IpcCloseCcPayload) => Promise<IpcCloseCcResult>
       recordCallAway: (payload: IpcRecordCallAwayPayload) => Promise<IpcRecordCallAwayResult>
       expireCc: (payload: IpcExpireCcPayload) => Promise<IpcExpireCcResult>
+      rollCsp: (payload: IpcRollCspPayload) => Promise<IpcRollCspResult>
     }
   }
 }

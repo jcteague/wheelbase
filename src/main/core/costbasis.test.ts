@@ -6,9 +6,10 @@ import {
   calculateAssignmentBasis,
   calculateCcOpenBasis,
   calculateCcClose,
-  calculateCallAway
+  calculateCallAway,
+  calculateRollBasis
 } from './costbasis'
-import type { CostBasisResult, CspLegInput, CcOpenBasisInput } from './costbasis'
+import type { CostBasisResult, CspLegInput, CcOpenBasisInput, RollBasisInput } from './costbasis'
 
 describe('calculateInitialCspBasis', () => {
   it('calculates basis per share', () => {
@@ -402,5 +403,73 @@ describe('calculateCallAway', () => {
       fillDate: '2025-04-10'
     })
     expect(result.capitalDeployed).toBe('17420.0000')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// calculateRollBasis
+// ---------------------------------------------------------------------------
+
+describe('calculateRollBasis', () => {
+  it('net credit: basisPerShare decreases, totalPremiumCollected increases', () => {
+    // net = 2.80 - 1.20 = 1.60 credit
+    // basisPerShare = 48.5000 - 1.60 = 46.9000
+    // totalPremiumCollected = 350.0000 + (1.60 × 1 × 100) = 350 + 160 = 510.0000
+    const input: RollBasisInput = {
+      prevBasisPerShare: '48.5000',
+      prevTotalPremiumCollected: '350.0000',
+      costToClosePerContract: '1.20',
+      newPremiumPerContract: '2.80',
+      contracts: 1
+    }
+    const result = calculateRollBasis(input)
+    expect(result.basisPerShare).toBe('46.9000')
+    expect(result.totalPremiumCollected).toBe('510.0000')
+  })
+
+  it('net debit: basisPerShare increases, totalPremiumCollected decreases', () => {
+    // net = 2.50 - 3.00 = -0.50 debit
+    // basisPerShare = 48.5000 - (-0.50) = 49.0000
+    // totalPremiumCollected = 350.0000 + (-0.50 × 1 × 100) = 350 - 50 = 300.0000
+    const input: RollBasisInput = {
+      prevBasisPerShare: '48.5000',
+      prevTotalPremiumCollected: '350.0000',
+      costToClosePerContract: '3.00',
+      newPremiumPerContract: '2.50',
+      contracts: 1
+    }
+    const result = calculateRollBasis(input)
+    expect(result.basisPerShare).toBe('49.0000')
+    expect(result.totalPremiumCollected).toBe('300.0000')
+  })
+
+  it('zero net: basisPerShare and totalPremiumCollected unchanged', () => {
+    // net = 2.00 - 2.00 = 0
+    const input: RollBasisInput = {
+      prevBasisPerShare: '48.5000',
+      prevTotalPremiumCollected: '350.0000',
+      costToClosePerContract: '2.00',
+      newPremiumPerContract: '2.00',
+      contracts: 1
+    }
+    const result = calculateRollBasis(input)
+    expect(result.basisPerShare).toBe('48.5000')
+    expect(result.totalPremiumCollected).toBe('350.0000')
+  })
+
+  it('multi-contract: basisPerShare decreases by per-share net, totalPremiumCollected scales by total shares', () => {
+    // net = 2.80 - 1.20 = 1.60 credit per contract
+    // basisPerShare = 48.5000 - 1.60 = 46.9000 (per-share, same regardless of contracts)
+    // totalPremiumCollected = 350.0000 + (1.60 × 2 × 100) = 350 + 320 = 670.0000
+    const input: RollBasisInput = {
+      prevBasisPerShare: '48.5000',
+      prevTotalPremiumCollected: '350.0000',
+      costToClosePerContract: '1.20',
+      newPremiumPerContract: '2.80',
+      contracts: 2
+    }
+    const result = calculateRollBasis(input)
+    expect(result.basisPerShare).toBe('46.9000')
+    expect(result.totalPremiumCollected).toBe('670.0000')
   })
 })

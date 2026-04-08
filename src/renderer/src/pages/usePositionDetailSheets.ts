@@ -56,6 +56,9 @@ type PositionDetailSheetsResult = {
   handleCloseCallAway: () => void
   handleCloseCcExpiration: () => void
   handleOpenCoveredCallFromAssignment: (nextContext: OpenCoveredCallContext) => void
+  rollCspOpen: boolean
+  handleRollCsp: () => void
+  handleCloseRollCsp: () => void
 }
 
 function getActiveLegSheetContext(data: PositionDetail | undefined): ActiveLegSheetContext | null {
@@ -106,16 +109,13 @@ export function usePositionDetailSheets(
   const [closeCcCtx, setCloseCcCtx] = useState<CloseCoveredCallContext | null>(null)
   const [callAwayCtx, setCallAwayCtx] = useState<CallAwayContext | null>(null)
   const [ccExpirationCtx, setCcExpirationCtx] = useState<ActiveLegSheetContext | null>(null)
+  const [rollCspOpen, setRollCspOpen] = useState(false)
 
   const assignmentWaterfall = useMemo(() => getAssignmentWaterfall(data), [data])
-  const overlayOpen = [
-    expirationCtx,
-    assignmentCtx,
-    openCcCtx,
-    closeCcCtx,
-    callAwayCtx,
-    ccExpirationCtx
-  ].some((sheetCtx) => sheetCtx !== null)
+  const overlayOpen =
+    [expirationCtx, assignmentCtx, openCcCtx, closeCcCtx, callAwayCtx, ccExpirationCtx].some(
+      (sheetCtx) => sheetCtx !== null
+    ) || rollCspOpen
 
   const handleOpenCc = useCallback(() => {
     const assignLeg = data?.legs.find((leg) => leg.legRole === 'ASSIGN')
@@ -207,6 +207,9 @@ export function usePositionDetailSheets(
     handleOpenCoveredCallFromAssignment: (nextContext: OpenCoveredCallContext) => {
       setAssignmentCtx(null)
       setOpenCcCtx(nextContext)
-    }
+    },
+    rollCspOpen,
+    handleRollCsp: () => setRollCspOpen(true),
+    handleCloseRollCsp: () => setRollCspOpen(false)
   }
 }

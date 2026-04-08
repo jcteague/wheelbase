@@ -5,6 +5,7 @@ import { CcExpirationSheet } from '../components/CcExpirationSheet'
 import { CloseCcEarlySheet } from '../components/CloseCcEarlySheet'
 import { ExpirationSheet } from '../components/ExpirationSheet'
 import { OpenCoveredCallSheet } from '../components/OpenCoveredCallSheet'
+import { RollCspSheet } from '../components/RollCspSheet'
 import { PageHeader, PageLayout } from '../components/PageLayout'
 import { PositionDetailActions } from '../components/PositionDetailActions'
 import { Breadcrumb } from '../components/ui/Breadcrumb'
@@ -40,7 +41,10 @@ export function PositionDetailPage(): React.JSX.Element {
     handleCloseCloseCcEarly,
     handleCloseCallAway,
     handleCloseCcExpiration,
-    handleOpenCoveredCallFromAssignment
+    handleOpenCoveredCallFromAssignment,
+    rollCspOpen,
+    handleRollCsp,
+    handleCloseRollCsp
   } = usePositionDetailSheets(data)
 
   if (isLoading) {
@@ -76,6 +80,7 @@ export function PositionDetailPage(): React.JSX.Element {
               onCloseCcEarly={handleCloseCcEarly}
               onRecordCallAway={handleRecordCallAway}
               onRecordCcExpiration={handleRecordCcExpiration}
+              onRollCsp={handleRollCsp}
             />
           }
         />
@@ -160,6 +165,20 @@ export function PositionDetailPage(): React.JSX.Element {
           premiumPerContract={ccExpirationCtx.activeLeg.premiumPerContract}
           sharesHeld={assignLeg?.contracts ? assignLeg.contracts * 100 : 0}
           onClose={handleCloseCcExpiration}
+        />
+      )}
+      {rollCspOpen && activeLeg && costBasisSnapshot && (
+        <RollCspSheet
+          open
+          positionId={position.id}
+          ticker={position.ticker}
+          strike={activeLeg.strike}
+          expiration={activeLeg.expiration}
+          contracts={activeLeg.contracts}
+          premiumPerContract={activeLeg.premiumPerContract}
+          basisPerShare={costBasisSnapshot.basisPerShare}
+          totalPremiumCollected={costBasisSnapshot.totalPremiumCollected}
+          onClose={handleCloseRollCsp}
         />
       )}
     </PageLayout>

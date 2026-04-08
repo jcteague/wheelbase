@@ -11,7 +11,8 @@ const BASE_PROPS = {
   onRecordExpiration: vi.fn(),
   onCloseCcEarly: vi.fn(),
   onRecordCallAway: vi.fn(),
-  onRecordCcExpiration: vi.fn()
+  onRecordCcExpiration: vi.fn(),
+  onRollCsp: vi.fn()
 }
 
 beforeEach(() => {
@@ -21,6 +22,7 @@ beforeEach(() => {
   BASE_PROPS.onCloseCcEarly.mockReset()
   BASE_PROPS.onRecordCallAway.mockReset()
   BASE_PROPS.onRecordCcExpiration.mockReset()
+  BASE_PROPS.onRollCsp.mockReset()
 })
 
 it('renders "Close CC Early →" button when phase=CC_OPEN', () => {
@@ -55,4 +57,23 @@ it('calls onRecordCallAway when the "Record Call-Away →" button is clicked', a
   render(<PositionDetailActions {...BASE_PROPS} phase="CC_OPEN" />)
   await user.click(screen.getByTestId('record-call-away-btn'))
   expect(BASE_PROPS.onRecordCallAway).toHaveBeenCalledOnce()
+})
+
+it('renders "Roll CSP →" button with data-testid="roll-csp-btn" when phase=CSP_OPEN', () => {
+  render(<PositionDetailActions {...BASE_PROPS} phase="CSP_OPEN" />)
+  const btn = screen.getByTestId('roll-csp-btn')
+  expect(btn).toBeInTheDocument()
+  expect(btn).toHaveTextContent('Roll CSP →')
+})
+
+it('does not render "Roll CSP →" button when phase=HOLDING_SHARES', () => {
+  render(<PositionDetailActions {...BASE_PROPS} phase="HOLDING_SHARES" />)
+  expect(screen.queryByTestId('roll-csp-btn')).not.toBeInTheDocument()
+})
+
+it('calls onRollCsp when "Roll CSP →" button is clicked', async () => {
+  const user = userEvent.setup()
+  render(<PositionDetailActions {...BASE_PROPS} phase="CSP_OPEN" />)
+  await user.click(screen.getByTestId('roll-csp-btn'))
+  expect(BASE_PROPS.onRollCsp).toHaveBeenCalledOnce()
 })

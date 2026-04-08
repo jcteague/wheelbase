@@ -265,3 +265,31 @@ export interface CloseCcPositionResult {
   leg: LegRecord
   ccLegPnl: string
 }
+
+// ---------------------------------------------------------------------------
+// Roll CSP schemas
+// ---------------------------------------------------------------------------
+
+export const RollCspPayloadSchema = z.object({
+  positionId: PositionIdSchema,
+  costToClosePerContract: z.number().positive(),
+  newPremiumPerContract: z.number().positive(),
+  newExpiration: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be a valid date (YYYY-MM-DD)'),
+  newStrike: z.number().positive().optional(),
+  fillDate: z.string().optional()
+})
+
+export type RollCspPayload = z.infer<typeof RollCspPayloadSchema>
+
+export interface RollCspResult {
+  position: {
+    id: string
+    ticker: string
+    phase: 'CSP_OPEN'
+    status: 'ACTIVE'
+  }
+  rollFromLeg: LegRecord
+  rollToLeg: LegRecord
+  rollChainId: string
+  costBasisSnapshot: CostBasisSnapshotRecord
+}

@@ -104,6 +104,7 @@ Library: `pino`. Configured in `src/main/logger.ts`.
 - Rolls are **always** stored as linked leg pairs, never in-place updates
 - SQLite is the source of truth; Alpaca is the execution layer only
 - Wouter **must** use hash-based routing (`useHashLocation`) — browser-history routing breaks in packaged Electron
+- All renderer forms **must** use React Hook Form + Zod resolver — no hand-managed `useState` form state; use `useForm({ resolver: zodResolver(...) })`, `register`, `Controller` for custom inputs, and `useWatch` for reactive derived values
 
 ---
 

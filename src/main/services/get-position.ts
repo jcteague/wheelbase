@@ -13,6 +13,7 @@ import type {
   WheelPhase,
   WheelStatus
 } from '../core/types'
+import { activeLegSubquery } from './active-leg-sql'
 import { logger } from '../logger'
 
 interface PositionRow {
@@ -188,14 +189,7 @@ const GET_QUERY = `
     cbs.created_at AS snapshot_created_at
   FROM positions p
   LEFT JOIN legs l ON l.id = (
-    SELECT id FROM legs
-    WHERE position_id = p.id
-      AND (
-        (p.phase = 'CSP_OPEN' AND leg_role = 'CSP_OPEN')
-        OR (p.phase = 'CC_OPEN' AND leg_role = 'CC_OPEN')
-      )
-    ORDER BY fill_date DESC, created_at DESC
-    LIMIT 1
+    ${activeLegSubquery()}
   )
   LEFT JOIN cost_basis_snapshots cbs ON cbs.id = (
     SELECT id FROM cost_basis_snapshots

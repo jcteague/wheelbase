@@ -10,6 +10,18 @@ export default defineConfig({
     }
   },
   test: {
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: [
+        'src/**/*.test.{ts,tsx}',
+        'src/**/*.d.ts',
+        'src/preload/**',
+        'src/main/index.ts',
+        'src/renderer/src/main.tsx',
+        'src/renderer/src/test-setup.ts'
+      ]
+    },
     projects: [
       {
         test: {

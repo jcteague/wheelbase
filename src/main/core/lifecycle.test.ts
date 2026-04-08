@@ -15,7 +15,8 @@ import type {
   ExpireCcInput,
   ExpireCspInput,
   OpenWheelInput,
-  OpenCoveredCallInput
+  OpenCoveredCallInput,
+  RollCspInput
 } from './lifecycle'
 
 // ---------------------------------------------------------------------------
@@ -725,6 +726,66 @@ describe('expireCc', () => {
 
   it('does NOT throw when referenceDate equals expirationDate exactly (boundary passing)', () => {
     expect(() => expireCc(validExpireCcInput({ referenceDate: '2026-02-21' }))).not.toThrow()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// rollCsp
+// ---------------------------------------------------------------------------
+
+describe('rollCsp', () => {
+  const { rollCsp } = lifecycle as typeof lifecycle & {
+    rollCsp: (input: RollCspInput) => { phase: string }
+  }
+
+  function validRollCspInput(overrides: Partial<RollCspInput> = {}): RollCspInput {
+    return {
+      currentPhase: 'CSP_OPEN',
+      currentExpiration: NEXT_MONTH,
+      newExpiration: isoDate(60),
+      costToClosePerContract: '1.20',
+      newPremiumPerContract: '2.80',
+      ...overrides
+    }
+  }
+
+  it('returns { phase: CSP_OPEN } for valid input', () => {
+    const result = rollCsp(validRollCspInput())
+    expect(result.phase).toBe('CSP_OPEN')
+  })
+
+  it('throws ValidationError with field=__phase__, code=invalid_phase when currentPhase is not CSP_OPEN', () => {
+    const e = catchValidation(() => rollCsp(validRollCspInput({ currentPhase: 'HOLDING_SHARES' })))
+    expect(e.field).toBe('__phase__')
+    expect(e.code).toBe('invalid_phase')
+  })
+
+  it('throws ValidationError with field=newExpiration, code=must_be_after_current when newExpiration equals currentExpiration', () => {
+    const e = catchValidation(() =>
+      rollCsp(validRollCspInput({ currentExpiration: NEXT_MONTH, newExpiration: NEXT_MONTH }))
+    )
+    expect(e.field).toBe('newExpiration')
+    expect(e.code).toBe('must_be_after_current')
+  })
+
+  it('throws ValidationError with field=newExpiration, code=must_be_after_current when newExpiration is before currentExpiration', () => {
+    const e = catchValidation(() =>
+      rollCsp(validRollCspInput({ currentExpiration: NEXT_MONTH, newExpiration: YESTERDAY }))
+    )
+    expect(e.field).toBe('newExpiration')
+    expect(e.code).toBe('must_be_after_current')
+  })
+
+  it('throws ValidationError with field=costToClosePerContract, code=must_be_positive when value is 0', () => {
+    const e = catchValidation(() => rollCsp(validRollCspInput({ costToClosePerContract: '0' })))
+    expect(e.field).toBe('costToClosePerContract')
+    expect(e.code).toBe('must_be_positive')
+  })
+
+  it('throws ValidationError with field=newPremiumPerContract, code=must_be_positive when value is 0', () => {
+    const e = catchValidation(() => rollCsp(validRollCspInput({ newPremiumPerContract: '0' })))
+    expect(e.field).toBe('newPremiumPerContract')
+    expect(e.code).toBe('must_be_positive')
   })
 })
 

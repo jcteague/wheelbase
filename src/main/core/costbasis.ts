@@ -213,6 +213,31 @@ export interface CallAwayResult {
   annualizedReturn: string
 }
 
+export interface RollBasisInput {
+  prevBasisPerShare: string
+  prevTotalPremiumCollected: string
+  costToClosePerContract: string
+  newPremiumPerContract: string
+  contracts: number
+}
+
+export interface RollBasisResult {
+  basisPerShare: string
+  totalPremiumCollected: string
+}
+
+export function calculateRollBasis(input: RollBasisInput): RollBasisResult {
+  const net = new Decimal(input.newPremiumPerContract).minus(input.costToClosePerContract)
+  const basisPerShare = round4(new Decimal(input.prevBasisPerShare).minus(net))
+  const netTotal = net.times(sharesFromContracts(input.contracts))
+  const totalPremiumCollected = round4(new Decimal(input.prevTotalPremiumCollected).plus(netTotal))
+
+  return {
+    basisPerShare: basisPerShare.toFixed(4),
+    totalPremiumCollected: totalPremiumCollected.toFixed(4)
+  }
+}
+
 export function calculateCallAway(input: CallAwayInput): CallAwayResult {
   const ccStrike = new Decimal(input.ccStrike)
   const basisPerShare = new Decimal(input.basisPerShare)

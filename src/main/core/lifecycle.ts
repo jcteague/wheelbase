@@ -38,24 +38,18 @@ function requirePositiveStrike(strike: string): void {
   }
 }
 
-function requirePositivePremium(premiumPerContract: string): void {
-  if (new Decimal(premiumPerContract).lte(0)) {
-    throw new ValidationError(
-      'premiumPerContract',
-      'must_be_positive',
-      'Premium per contract must be positive'
-    )
+function requirePositiveDecimal(value: string, field: string, label: string): void {
+  if (new Decimal(value).lte(0)) {
+    throw new ValidationError(field, 'must_be_positive', `${label} must be greater than zero`)
   }
 }
 
+function requirePositivePremium(premiumPerContract: string): void {
+  requirePositiveDecimal(premiumPerContract, 'premiumPerContract', 'Premium per contract')
+}
+
 function requirePositiveClosePrice(closePricePerContract: string): void {
-  if (new Decimal(closePricePerContract).lte(0)) {
-    throw new ValidationError(
-      'closePricePerContract',
-      'must_be_positive',
-      'Close price must be greater than zero'
-    )
-  }
+  requirePositiveDecimal(closePricePerContract, 'closePricePerContract', 'Close price')
 }
 
 function requireCcOpenPhase(currentPhase: WheelPhase): void {
@@ -354,4 +348,35 @@ export function closeCoveredCall(input: CloseCoveredCallInput): CloseCoveredCall
   }
 
   return { phase: 'HOLDING_SHARES' }
+}
+
+export interface RollCspInput {
+  currentPhase: WheelPhase
+  currentExpiration: string
+  newExpiration: string
+  costToClosePerContract: string
+  newPremiumPerContract: string
+}
+
+export interface RollCspResult {
+  phase: 'CSP_OPEN'
+}
+
+export function rollCsp(input: RollCspInput): RollCspResult {
+  if (input.currentPhase !== 'CSP_OPEN') {
+    throw new ValidationError('__phase__', 'invalid_phase', 'Position is not in CSP_OPEN phase')
+  }
+
+  if (input.newExpiration <= input.currentExpiration) {
+    throw new ValidationError(
+      'newExpiration',
+      'must_be_after_current',
+      'New expiration must be after the current expiration'
+    )
+  }
+
+  requirePositiveDecimal(input.costToClosePerContract, 'costToClosePerContract', 'Cost to close')
+  requirePositiveDecimal(input.newPremiumPerContract, 'newPremiumPerContract', 'New premium')
+
+  return { phase: 'CSP_OPEN' }
 }
