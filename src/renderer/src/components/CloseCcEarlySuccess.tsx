@@ -5,6 +5,7 @@ import { Caption } from './ui/Caption'
 import { FormButton } from './ui/FormButton'
 import { SectionCard } from './ui/SectionCard'
 import { PhaseBadge } from './PhaseBadge'
+import { SheetHeader, SheetBody, SheetFooter } from './ui/Sheet'
 
 type CloseCcEarlySuccessProps = {
   ticker: string
@@ -33,24 +34,14 @@ export function CloseCcEarlySuccess({
 
   return (
     <div style={{ display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--wb-border)' }}>
-        <Caption>Complete</Caption>
-        <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>{ticker} CC Closed</div>
-        <div style={{ fontSize: '0.75rem', color: 'var(--wb-text-muted)' }}>
-          CALL {fmtMoney(strike)} · filled {fmtMoney(closePrice)}
-        </div>
-      </div>
+      <SheetHeader
+        eyebrow="Complete"
+        title={`${ticker} CC Closed`}
+        subtitle={`CALL ${fmtMoney(strike)} · filled ${fmtMoney(closePrice)}`}
+        onClose={onClose}
+      />
 
-      <div
-        style={{
-          padding: '20px 24px',
-          overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 16,
-          flex: 1
-        }}
-      >
+      <SheetBody>
         <div
           style={{
             textAlign: 'center',
@@ -106,35 +97,29 @@ export function CloseCcEarlySuccess({
         </AlertBox>
 
         <Caption>What&apos;s next?</Caption>
-      </div>
+      </SheetBody>
 
-      <div
-        style={{
-          padding: '16px 24px',
-          borderTop: '1px solid var(--wb-border)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 8
-        }}
-      >
-        <FormButton
-          label={`Sell New Covered Call on ${ticker} →`}
-          onClick={onClose}
-          style={{ width: '100%' }}
-        />
-        <button
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--wb-text-muted)',
-            cursor: 'pointer',
-            fontSize: '0.8rem'
-          }}
-          onClick={onClose}
-        >
-          View full position history
-        </button>
-      </div>
+      <SheetFooter>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+          <FormButton
+            label={`Sell New Covered Call on ${ticker} →`}
+            onClick={onClose}
+            style={{ width: '100%' }}
+          />
+          <button
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--wb-text-muted)',
+              cursor: 'pointer',
+              fontSize: '0.8rem'
+            }}
+            onClick={onClose}
+          >
+            View full position history
+          </button>
+        </div>
+      </SheetFooter>
     </div>
   )
 }

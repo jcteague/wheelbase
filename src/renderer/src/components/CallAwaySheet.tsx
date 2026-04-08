@@ -3,11 +3,9 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { RecordCallAwayResponse } from '../api/positions'
 import { useRecordCallAway } from '../hooks/useRecordCallAway'
-import { MONO } from '../lib/tokens'
 import { CallAwayForm } from './CallAwayForm'
 import { CallAwaySuccess } from './CallAwaySuccess'
-
-const SIDEBAR_WIDTH = 200
+import { SheetOverlay, SheetPanel } from './ui/Sheet'
 
 export interface CallAwaySheetProps {
   open: boolean
@@ -41,24 +39,8 @@ export function CallAwaySheet(props: CallAwaySheetProps): React.JSX.Element | nu
   }
 
   return createPortal(
-    <div style={{ position: 'fixed', inset: 0, left: SIDEBAR_WIDTH, zIndex: 50 }}>
-      <div style={{ position: 'absolute', inset: 0 }} onClick={props.onClose} />
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          right: 0,
-          bottom: 0,
-          width: 400,
-          background: 'var(--wb-bg-surface)',
-          borderLeft: '1px solid var(--wb-border)',
-          display: 'flex',
-          flexDirection: 'column',
-          fontFamily: MONO,
-          color: 'var(--wb-text-primary)',
-          boxShadow: '-12px 0 48px rgba(0,0,0,0.5)'
-        }}
-      >
+    <SheetOverlay onClose={props.onClose}>
+      <SheetPanel>
         {successState ? (
           <CallAwaySuccess
             ticker={props.ticker}
@@ -88,8 +70,8 @@ export function CallAwaySheet(props: CallAwaySheetProps): React.JSX.Element | nu
             onClose={props.onClose}
           />
         )}
-      </div>
-    </div>,
+      </SheetPanel>
+    </SheetOverlay>,
     document.body
   )
 }

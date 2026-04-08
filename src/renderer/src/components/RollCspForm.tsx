@@ -6,11 +6,11 @@ import { computeNetCreditDebit, getRollTypeLabel, rollCreditDebitColors } from '
 import { MONO } from '../lib/tokens'
 import type { RollCspFormValues } from './RollCspSheet'
 import { AlertBox } from './ui/AlertBox'
-import { Caption } from './ui/Caption'
 import { Field } from './ui/FormField'
 import { FormButton } from './ui/FormButton'
 import { NumberInput } from './ui/NumberInput'
 import { SectionCard } from './ui/SectionCard'
+import { SheetBody, SheetFooter, SheetHeader } from './ui/Sheet'
 
 type RollCspFormProps = {
   ticker: string
@@ -138,54 +138,15 @@ export function RollCspForm({
   const rollType = getRollTypeLabel(strike, newStrike)
 
   return (
-    <div style={{ display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
-      {/* Header */}
-      <div
-        style={{
-          padding: '20px 24px 16px',
-          borderBottom: '1px solid var(--wb-border)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          gap: 12
-        }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <Caption>{rollType}</Caption>
-          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--wb-text-primary)' }}>
-            Roll Cash-Secured Put
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--wb-text-muted)' }}>
-            {ticker} PUT {fmtMoney(strike)} · exp {expiration}
-          </div>
-        </div>
-        <button
-          type="button"
-          aria-label="Close"
-          onClick={onClose}
-          style={{
-            border: 'none',
-            background: 'transparent',
-            color: 'var(--wb-text-muted)',
-            cursor: 'pointer',
-            fontSize: '1.2rem',
-            lineHeight: 1
-          }}
-        >
-          ×
-        </button>
-      </div>
+    <>
+      <SheetHeader
+        eyebrow={rollType}
+        title="Roll Cash-Secured Put"
+        subtitle={`${ticker} PUT ${fmtMoney(strike)} · exp ${expiration}`}
+        onClose={onClose}
+      />
 
-      {/* Body */}
-      <div
-        style={{
-          padding: '20px 24px',
-          overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 16,
-          flex: 1
-        }}
-      >
+      <SheetBody>
         {/* Current Leg */}
         <SectionCard header="Current Leg">
           <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -304,17 +265,9 @@ export function RollCspForm({
           <strong>This cannot be undone.</strong> A ROLL_FROM leg (buy-to-close) and ROLL_TO leg
           (sell-to-open) will be recorded as a linked pair. The position remains in CSP_OPEN phase.
         </AlertBox>
-      </div>
+      </SheetBody>
 
-      {/* Footer */}
-      <div
-        style={{
-          padding: '16px 24px',
-          borderTop: '1px solid var(--wb-border)',
-          display: 'flex',
-          gap: 10
-        }}
-      >
+      <SheetFooter>
         <FormButton label="Cancel" variant="secondary" onClick={onClose} style={{ flex: 1 }} />
         <FormButton
           label="Confirm Roll"
@@ -323,7 +276,7 @@ export function RollCspForm({
           onClick={onSubmit}
           style={{ flex: 1 }}
         />
-      </div>
-    </div>
+      </SheetFooter>
+    </>
   )
 }

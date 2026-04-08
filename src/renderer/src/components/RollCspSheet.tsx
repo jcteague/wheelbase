@@ -4,12 +4,10 @@ import { useForm, useWatch } from 'react-hook-form'
 import { z } from 'zod'
 import { createPortal } from 'react-dom'
 import type { RollCspResponse } from '../api/positions'
-import { MONO } from '../lib/tokens'
 import { useRollCsp } from '../hooks/useRollCsp'
 import { RollCspForm } from './RollCspForm'
 import { RollCspSuccess } from './RollCspSuccess'
-
-const SIDEBAR_WIDTH = 200
+import { SheetOverlay, SheetPanel } from './ui/Sheet'
 
 function makeRollCspSchema(currentExpiration: string): z.ZodObject<{
   cost_to_close: z.ZodString
@@ -109,24 +107,8 @@ export function RollCspSheet(props: RollCspSheetProps): React.JSX.Element | null
   }
 
   return createPortal(
-    <div style={{ position: 'fixed', inset: 0, left: SIDEBAR_WIDTH, zIndex: 50 }}>
-      <div style={{ position: 'absolute', inset: 0 }} onClick={props.onClose} />
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          right: 0,
-          bottom: 0,
-          width: 420,
-          background: 'var(--wb-bg-surface)',
-          borderLeft: '1px solid var(--wb-border)',
-          display: 'flex',
-          flexDirection: 'column',
-          fontFamily: MONO,
-          color: 'var(--wb-text-primary)',
-          boxShadow: 'var(--wb-shadow-sheet)'
-        }}
-      >
+    <SheetOverlay onClose={props.onClose}>
+      <SheetPanel width={420}>
         {successState ? (
           <RollCspSuccess
             response={successState}
@@ -153,8 +135,8 @@ export function RollCspSheet(props: RollCspSheetProps): React.JSX.Element | null
             onClose={props.onClose}
           />
         )}
-      </div>
-    </div>,
+      </SheetPanel>
+    </SheetOverlay>,
     document.body
   )
 }

@@ -3,6 +3,7 @@ import { pnlColor } from '../lib/format'
 import { MONO } from '../lib/tokens'
 import { FormButton } from './ui/FormButton'
 import { SectionCard } from './ui/SectionCard'
+import { SheetBody, SheetHeader } from './ui/Sheet'
 import { PhaseBadge } from './PhaseBadge'
 
 type CallAwaySuccessProps = {
@@ -36,75 +37,16 @@ export function CallAwaySuccess({
 
   return (
     <div style={{ display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
-      <div
-        style={{
-          padding: '20px 24px 18px',
-          borderBottom: '1px solid rgba(63,185,80,0.2)',
-          display: 'flex',
-          alignItems: 'flex-start',
-          justifyContent: 'space-between',
-          flexShrink: 0
-        }}
-      >
-        <div>
-          <span
-            style={{
-              fontSize: '0.65rem',
-              fontWeight: 600,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              color: 'var(--wb-green)',
-              fontFamily: 'monospace'
-            }}
-          >
-            Wheel Complete
-          </span>
-          <div
-            style={{
-              fontSize: 17,
-              fontWeight: 700,
-              color: 'var(--wb-text-primary)',
-              marginBottom: 4
-            }}
-          >
-            {ticker} Cycle Closed
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--wb-text-secondary)' }}>
-            CALL ${parseFloat(ccStrike).toFixed(2)} · {ccExpiration}
-          </div>
-        </div>
-        <button
-          type="button"
-          aria-label="Close"
-          onClick={onClose}
-          style={{
-            background: 'var(--wb-bg-elevated)',
-            border: '1px solid var(--wb-border)',
-            color: 'var(--wb-text-muted)',
-            fontSize: 14,
-            width: 28,
-            height: 28,
-            borderRadius: 6,
-            cursor: 'pointer',
-            flexShrink: 0,
-            marginLeft: 12,
-            marginTop: 2
-          }}
-        >
-          ×
-        </button>
-      </div>
+      <SheetHeader
+        eyebrow="Shares Called Away"
+        eyebrowColor="var(--wb-green)"
+        borderBottomColor="rgba(63,185,80,0.2)"
+        title={`${ticker} Cycle Closed`}
+        subtitle={`CALL $${parseFloat(ccStrike).toFixed(2)} · ${ccExpiration}`}
+        onClose={onClose}
+      />
 
-      <div
-        style={{
-          padding: '20px 24px',
-          overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 16,
-          flex: 1
-        }}
-      >
+      <SheetBody>
         {/* Hero card */}
         <div
           style={{
@@ -306,7 +248,7 @@ export function CallAwaySuccess({
         >
           View full position history
         </button>
-      </div>
+      </SheetBody>
     </div>
   )
 }

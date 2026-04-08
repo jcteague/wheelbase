@@ -12,9 +12,8 @@ import { ErrorAlert } from './ui/ErrorAlert'
 import { Field } from './ui/FormField'
 import { FormButton } from './ui/FormButton'
 import { SectionCard } from './ui/SectionCard'
+import { SheetOverlay, SheetPanel, SheetHeader, SheetBody, SheetFooter } from './ui/Sheet'
 import { DatePicker } from '@/components/ui/date-picker'
-
-const SIDEBAR_WIDTH = 200
 
 export interface AssignmentSheetProps {
   open: boolean
@@ -64,26 +63,6 @@ export function AssignmentSheet(props: AssignmentSheetProps): React.JSX.Element 
     mutate({ position_id: props.positionId, assignment_date: assignmentDate })
   }
 
-  const overlayStyle: React.CSSProperties = {
-    position: 'fixed',
-    inset: 0,
-    left: SIDEBAR_WIDTH,
-    zIndex: 50
-  }
-  const panelStyle: React.CSSProperties = {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    width: 400,
-    background: 'var(--wb-bg-surface)',
-    borderLeft: '1px solid var(--wb-border)',
-    display: 'flex',
-    flexDirection: 'column',
-    fontFamily: MONO,
-    boxShadow: '-12px 0 48px rgba(0,0,0,0.5)'
-  }
-
   const content = successState ? (
     <AssignmentSuccess
       ticker={props.ticker}
@@ -104,22 +83,13 @@ export function AssignmentSheet(props: AssignmentSheetProps): React.JSX.Element 
     />
   ) : (
     <div style={{ display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
-      <AssignmentHeader
+      <SheetHeader
         eyebrow="Record Assignment"
         title="Assign CSP to Shares"
         subtitle={`PUT ${fmtMoney(props.strike)} · ${props.expiration}`}
         onClose={props.onClose}
       />
-      <div
-        style={{
-          padding: '20px 24px',
-          overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 16,
-          flex: 1
-        }}
-      >
+      <SheetBody>
         <AssignmentSummary
           ticker={props.ticker}
           contracts={props.contracts}
@@ -161,15 +131,8 @@ export function AssignmentSheet(props: AssignmentSheetProps): React.JSX.Element 
             )}
           </ErrorAlert>
         )}
-      </div>
-      <div
-        style={{
-          padding: '16px 24px',
-          borderTop: '1px solid var(--wb-border)',
-          display: 'flex',
-          gap: 10
-        }}
-      >
+      </SheetBody>
+      <SheetFooter>
         <FormButton
           label="Cancel"
           variant="secondary"
@@ -183,72 +146,15 @@ export function AssignmentSheet(props: AssignmentSheetProps): React.JSX.Element 
           onClick={handleSubmit}
           style={{ flex: 1 }}
         />
-      </div>
+      </SheetFooter>
     </div>
   )
 
   return createPortal(
-    <div style={overlayStyle}>
-      <div style={{ position: 'absolute', inset: 0 }} onClick={props.onClose} />
-      <div style={panelStyle}>{content}</div>
-    </div>,
+    <SheetOverlay onClose={props.onClose}>
+      <SheetPanel>{content}</SheetPanel>
+    </SheetOverlay>,
     document.body
-  )
-}
-
-function AssignmentHeader({
-  eyebrow,
-  title,
-  subtitle,
-  onClose,
-  eyebrowColor
-}: {
-  eyebrow: string
-  title: string
-  subtitle?: string
-  onClose: () => void
-  eyebrowColor?: string
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        padding: '20px 24px 18px',
-        borderBottom: '1px solid var(--wb-border)',
-        display: 'flex',
-        justifyContent: 'space-between',
-        gap: 12
-      }}
-    >
-      <div>
-        <Caption>{eyebrow}</Caption>
-        <div
-          style={{ fontSize: 17, fontWeight: 700, color: 'var(--wb-text-primary)', marginTop: 6 }}
-        >
-          {title}
-        </div>
-        {subtitle ? (
-          <div style={{ fontSize: 11, color: 'var(--wb-text-secondary)', marginTop: 4 }}>
-            {subtitle}
-          </div>
-        ) : null}
-      </div>
-      <button
-        type="button"
-        aria-label="Close assignment sheet"
-        onClick={onClose}
-        style={{
-          width: 28,
-          height: 28,
-          borderRadius: 6,
-          border: '1px solid var(--wb-border)',
-          background: 'var(--wb-bg-elevated)',
-          color: eyebrowColor ?? 'var(--wb-text-muted)',
-          cursor: 'pointer'
-        }}
-      >
-        ×
-      </button>
-    </div>
   )
 }
 
@@ -373,22 +279,14 @@ function AssignmentSuccess({
 }): React.JSX.Element {
   return (
     <div style={{ display: 'flex', flex: 1, flexDirection: 'column' }}>
-      <AssignmentHeader
+      <SheetHeader
         eyebrow="Complete"
         title={`${ticker} Assigned`}
         onClose={onClose}
         eyebrowColor="var(--wb-gold)"
+        borderBottomColor="rgba(230,168,23,0.2)"
       />
-      <div
-        style={{
-          padding: '20px 24px',
-          overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 16,
-          flex: 1
-        }}
-      >
+      <SheetBody>
         <div
           style={{
             background: 'linear-gradient(135deg, var(--wb-gold-dim), rgba(7,10,14,0.4))',
@@ -469,7 +367,7 @@ function AssignmentSuccess({
         >
           View full position history
         </button>
-      </div>
+      </SheetBody>
     </div>
   )
 }

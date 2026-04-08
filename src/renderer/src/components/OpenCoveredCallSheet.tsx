@@ -2,12 +2,10 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ApiError, ApiFieldError, OpenCcResponse } from '../api/positions'
 import { useOpenCoveredCall } from '../hooks/useOpenCoveredCall'
-import { MONO } from '../lib/tokens'
 import { CcForm } from './OpenCcForm'
 import { computeGuardrail } from './openCcGuardrail'
 import { CcSuccess } from './OpenCcSuccess'
-
-const SIDEBAR_WIDTH = 200
+import { SheetOverlay, SheetPanel } from './ui/Sheet'
 
 export interface OpenCoveredCallSheetProps {
   open: boolean
@@ -79,26 +77,6 @@ export function OpenCoveredCallSheet(props: OpenCoveredCallSheetProps): React.JS
     )
   }
 
-  const overlayStyle: React.CSSProperties = {
-    position: 'fixed',
-    inset: 0,
-    left: SIDEBAR_WIDTH,
-    zIndex: 50
-  }
-  const panelStyle: React.CSSProperties = {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    width: 400,
-    background: 'var(--wb-bg-surface)',
-    borderLeft: '1px solid var(--wb-border)',
-    display: 'flex',
-    flexDirection: 'column',
-    fontFamily: MONO,
-    boxShadow: '-12px 0 48px rgba(0,0,0,0.5)'
-  }
-
   const content = successState ? (
     <CcSuccess
       ticker={props.ticker}
@@ -135,10 +113,9 @@ export function OpenCoveredCallSheet(props: OpenCoveredCallSheetProps): React.JS
   )
 
   return createPortal(
-    <div style={overlayStyle}>
-      <div style={{ position: 'absolute', inset: 0 }} onClick={props.onClose} />
-      <div style={panelStyle}>{content}</div>
-    </div>,
+    <SheetOverlay onClose={props.onClose}>
+      <SheetPanel>{content}</SheetPanel>
+    </SheetOverlay>,
     document.body
   )
 }

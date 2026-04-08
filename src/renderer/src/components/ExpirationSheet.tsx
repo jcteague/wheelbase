@@ -6,9 +6,7 @@ import { fmtDate, fmtMoney } from '../lib/format'
 import { MONO } from '../lib/tokens'
 import { Button } from './ui/button'
 import { ErrorAlert } from './ui/ErrorAlert'
-
-// Sidebar is 200px wide — overlay covers only the content area to the right of it
-const SIDEBAR_WIDTH = 200
+import { SheetOverlay, SheetPanel, SheetHeader, SheetBody, SheetFooter } from './ui/Sheet'
 
 export interface ExpirationSheetProps {
   open: boolean
@@ -60,96 +58,6 @@ export function ExpirationSheet({
   }
   const premiumSummary = `+${fmtMoney(totalPremiumCollected).replace(/\.00$/, '')}`
 
-  const overlayStyle: React.CSSProperties = {
-    position: 'fixed',
-    top: 0,
-    left: SIDEBAR_WIDTH,
-    right: 0,
-    bottom: 0,
-    zIndex: 50
-  }
-
-  const scrimStyle: React.CSSProperties = {
-    position: 'absolute',
-    inset: 0
-  }
-
-  const panelStyle: React.CSSProperties = {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    width: 400,
-    background: 'var(--wb-bg-surface)',
-    borderLeft: '1px solid var(--wb-border)',
-    display: 'flex',
-    flexDirection: 'column',
-    fontFamily: MONO,
-    boxShadow: '-12px 0 48px rgba(0,0,0,0.5)'
-  }
-
-  const headerStyle: React.CSSProperties = {
-    padding: '20px 24px 18px',
-    borderBottom: '1px solid var(--wb-border)',
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    flexShrink: 0
-  }
-
-  const eyebrowStyle: React.CSSProperties = {
-    fontSize: 9,
-    fontWeight: 700,
-    letterSpacing: '0.18em',
-    textTransform: 'uppercase',
-    marginBottom: 6
-  }
-
-  const titleStyle: React.CSSProperties = {
-    fontSize: 17,
-    fontWeight: 700,
-    color: 'var(--wb-text-primary)',
-    marginBottom: 4
-  }
-
-  const subtitleStyle: React.CSSProperties = {
-    fontSize: 11,
-    color: 'var(--wb-text-secondary)',
-    lineHeight: 1.6
-  }
-
-  const closeButtonStyle: React.CSSProperties = {
-    background: 'var(--wb-bg-elevated)',
-    border: '1px solid var(--wb-border)',
-    color: 'var(--wb-text-muted)',
-    fontSize: 14,
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    marginLeft: 12,
-    marginTop: 2
-  }
-
-  const bodyStyle: React.CSSProperties = {
-    padding: '20px 24px',
-    overflowY: 'auto',
-    flex: 1
-  }
-
-  const footerStyle: React.CSSProperties = {
-    padding: '16px 24px',
-    borderTop: '1px solid var(--wb-border)',
-    display: 'flex',
-    gap: 10,
-    flexShrink: 0,
-    background: 'var(--wb-bg-surface)'
-  }
-
   const summaryCardStyle: React.CSSProperties = {
     background: 'var(--wb-bg-elevated)',
     border: '1px solid var(--wb-border)',
@@ -178,33 +86,25 @@ export function ExpirationSheet({
     textAlign: 'right'
   }
 
-  const panelAnimClass = isClosing
-    ? 'animate-out slide-out-to-right duration-300'
-    : 'animate-in slide-in-from-right duration-300'
+  // Suppress unused-variable lint for isClosing (kept for handleClose logic)
+  void isClosing
 
   if (successState) {
     const pnl = parseFloat(successState.costBasisSnapshot.finalPnl)
 
     return createPortal(
-      <div style={overlayStyle}>
-        <div style={scrimStyle} onClick={handleClose} />
-        <div style={panelStyle} className={panelAnimClass}>
-          {/* Header */}
-          <div style={{ ...headerStyle, borderBottomColor: 'rgba(63,185,80,0.2)' }}>
-            <div>
-              <div style={{ ...eyebrowStyle, color: 'var(--wb-green)' }}>Complete</div>
-              <div style={titleStyle}>{ticker} Expired Worthless</div>
-              <div style={subtitleStyle}>
-                PUT ${strike} · {expiration}
-              </div>
-            </div>
-            <button style={closeButtonStyle} onClick={handleClose}>
-              ×
-            </button>
-          </div>
+      <SheetOverlay onClose={handleClose}>
+        <SheetPanel>
+          <SheetHeader
+            eyebrow="Complete"
+            title={`${ticker} Expired Worthless`}
+            subtitle={`PUT $${strike} · ${expiration}`}
+            onClose={handleClose}
+            eyebrowColor="var(--wb-green)"
+            borderBottomColor="rgba(63,185,80,0.2)"
+          />
 
-          {/* Body */}
-          <div style={bodyStyle}>
+          <SheetBody>
             {/* P&L display */}
             <div
               style={{
@@ -306,36 +206,25 @@ export function ExpirationSheet({
             >
               View full position history
             </button>
-          </div>
-        </div>
-      </div>,
+          </SheetBody>
+        </SheetPanel>
+      </SheetOverlay>,
       document.body
     )
   }
 
   // Confirmation state
   return createPortal(
-    <div style={overlayStyle}>
-      <div style={scrimStyle} onClick={handleClose} />
-      <div style={panelStyle} className={panelAnimClass}>
-        {/* Header */}
-        <div style={headerStyle}>
-          <div>
-            <div style={{ ...eyebrowStyle, color: 'var(--wb-text-secondary)' }}>
-              Record Expiration
-            </div>
-            <div style={titleStyle}>Expire CSP Worthless</div>
-            <div style={subtitleStyle}>
-              {ticker} PUT ${strike} · {expiration}
-            </div>
-          </div>
-          <button style={closeButtonStyle} onClick={handleClose}>
-            ×
-          </button>
-        </div>
+    <SheetOverlay onClose={handleClose}>
+      <SheetPanel>
+        <SheetHeader
+          eyebrow="Record Expiration"
+          title="Expire CSP Worthless"
+          subtitle={`${ticker} PUT $${strike} · ${expiration}`}
+          onClose={handleClose}
+        />
 
-        {/* Body */}
-        <div style={bodyStyle}>
+        <SheetBody>
           {/* Summary card */}
           <div style={summaryCardStyle}>
             <div style={summaryRowStyle}>
@@ -403,10 +292,9 @@ export function ExpirationSheet({
               />
             </div>
           )}
-        </div>
+        </SheetBody>
 
-        {/* Footer */}
-        <div style={footerStyle}>
+        <SheetFooter>
           <Button variant="outline" onClick={handleClose} style={{ flex: 1 }}>
             Cancel
           </Button>
@@ -417,9 +305,9 @@ export function ExpirationSheet({
           >
             {isPending ? 'Confirming...' : 'Confirm Expiration'}
           </Button>
-        </div>
-      </div>
-    </div>,
+        </SheetFooter>
+      </SheetPanel>
+    </SheetOverlay>,
     document.body
   )
 }

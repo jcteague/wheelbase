@@ -3,8 +3,8 @@ import { computeDte, fmtMoney } from '../lib/format'
 import { getRollTypeLabel, rollCreditDebitColors } from '../lib/rolls'
 import { MONO } from '../lib/tokens'
 import { AlertBox } from './ui/AlertBox'
-import { Caption } from './ui/Caption'
 import { SectionCard } from './ui/SectionCard'
+import { SheetBody, SheetHeader } from './ui/Sheet'
 
 function SummaryRow({
   label,
@@ -61,55 +61,17 @@ export function RollCspSuccess({
   const dte = computeDte(response.rollToLeg.expiration)
 
   return (
-    <div style={{ display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
-      <div
-        style={{
-          padding: '20px 24px 16px',
-          borderBottom: `1px solid ${heroBorder}`,
-          display: 'flex',
-          justifyContent: 'space-between',
-          gap: 12
-        }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <Caption>
-            <span style={{ color: heroColor }}>Roll Complete</span>
-          </Caption>
-          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--wb-text-primary)' }}>
-            CSP Rolled Successfully
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--wb-text-muted)' }}>
-            {ticker} PUT {fmtMoney(response.rollFromLeg.strike)} → PUT{' '}
-            {fmtMoney(response.rollToLeg.strike)} · {response.rollToLeg.expiration}
-          </div>
-        </div>
-        <button
-          type="button"
-          aria-label="Close"
-          onClick={onClose}
-          style={{
-            border: 'none',
-            background: 'transparent',
-            color: 'var(--wb-text-muted)',
-            cursor: 'pointer',
-            fontSize: '1.2rem',
-            lineHeight: 1
-          }}
-        >
-          ×
-        </button>
-      </div>
+    <>
+      <SheetHeader
+        eyebrow="Roll Complete"
+        title="CSP Rolled Successfully"
+        subtitle={`${ticker} PUT ${fmtMoney(response.rollFromLeg.strike)} → PUT ${fmtMoney(response.rollToLeg.strike)} · ${response.rollToLeg.expiration}`}
+        onClose={onClose}
+        eyebrowColor={heroColor}
+        borderBottomColor={heroBorder}
+      />
 
-      <div
-        style={{
-          padding: '20px 24px',
-          overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 16,
-          flex: 1
-        }}
-      >
+      <SheetBody>
         <div
           style={{
             background: heroBg,
@@ -179,7 +141,7 @@ export function RollCspSuccess({
           basis {isCredit ? 'improved' : 'changed'} by ${Math.abs(net).toFixed(2)}/share from this
           roll.
         </AlertBox>
-      </div>
-    </div>
+      </SheetBody>
+    </>
   )
 }

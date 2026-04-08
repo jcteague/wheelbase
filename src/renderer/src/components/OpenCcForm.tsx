@@ -5,7 +5,7 @@ import { FormButton } from './ui/FormButton'
 import { NumberInput } from './ui/NumberInput'
 import { SectionCard } from './ui/SectionCard'
 import { DatePicker } from '@/components/ui/date-picker'
-import { OpenCcSheetHeader } from './OpenCcSheetHeader'
+import { SheetHeader, SheetBody, SheetFooter } from './ui/Sheet'
 import type { GuardrailResult } from './openCcGuardrail'
 
 export function CcForm({
@@ -52,23 +52,14 @@ export function CcForm({
   onClose: () => void
 }): React.JSX.Element {
   return (
-    <div style={{ display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
-      <OpenCcSheetHeader
+    <>
+      <SheetHeader
         eyebrow="Open Covered Call"
         title="Sell Covered Call"
         subtitle={`Holding ${sharesHeld} shares · cost basis ${fmtMoney(basisPerShare)}/share`}
         onClose={onClose}
       />
-      <div
-        style={{
-          padding: '20px 24px',
-          overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 16,
-          flex: 1
-        }}
-      >
+      <SheetBody>
         <SectionCard header="Position">
           <div style={{ padding: 16, display: 'grid', gap: 8, fontSize: 12 }}>
             {[
@@ -176,15 +167,8 @@ export function CcForm({
           <strong>This cannot be undone.</strong> The position will transition to CC Open. Full leg
           history is preserved.
         </AlertBox>
-      </div>
-      <div
-        style={{
-          padding: '16px 24px',
-          borderTop: '1px solid var(--wb-border)',
-          display: 'flex',
-          gap: 10
-        }}
-      >
+      </SheetBody>
+      <SheetFooter>
         <FormButton label="Cancel" variant="secondary" onClick={onClose} style={{ flex: 1 }} />
         <FormButton
           label="Open Covered Call"
@@ -194,7 +178,7 @@ export function CcForm({
           data-testid="cc-submit"
           style={{ flex: 1 }}
         />
-      </div>
-    </div>
+      </SheetFooter>
+    </>
   )
 }

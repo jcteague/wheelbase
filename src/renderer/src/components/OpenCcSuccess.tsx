@@ -4,7 +4,7 @@ import { AlertBox } from './ui/AlertBox'
 import { Badge } from './ui/Badge'
 import { Caption } from './ui/Caption'
 import { SectionCard } from './ui/SectionCard'
-import { OpenCcSheetHeader } from './OpenCcSheetHeader'
+import { SheetHeader, SheetBody } from './ui/Sheet'
 
 function StatBox({
   label,
@@ -59,24 +59,16 @@ export function CcSuccess({
   const profitPerShare = new Decimal(strike).minus(basisPerShare)
 
   return (
-    <div style={{ display: 'flex', flex: 1, flexDirection: 'column' }}>
-      <OpenCcSheetHeader
+    <>
+      <SheetHeader
         eyebrow="Complete"
         title={`${ticker} CC Opened`}
         subtitle={`CALL ${fmtMoney(strike)} · ${fmtDate(expiration)}`}
         onClose={onClose}
         eyebrowColor="var(--wb-violet)"
+        borderBottomColor="rgba(188,140,255,0.2)"
       />
-      <div
-        style={{
-          padding: '20px 24px',
-          overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 16,
-          flex: 1
-        }}
-      >
+      <SheetBody>
         <div
           style={{
             background: 'linear-gradient(135deg, rgba(188,140,255,0.1), rgba(7,10,14,0.5))',
@@ -185,7 +177,7 @@ export function CcSuccess({
         >
           View full position history
         </button>
-      </div>
-    </div>
+      </SheetBody>
+    </>
   )
 }

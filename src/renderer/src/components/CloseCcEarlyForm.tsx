@@ -5,9 +5,9 @@ import { Field } from './ui/FormField'
 import { FormButton } from './ui/FormButton'
 import { NumberInput } from './ui/NumberInput'
 import { SectionCard } from './ui/SectionCard'
-import { Caption } from './ui/Caption'
 import { CcPnlPreview } from './ui/CcPnlPreview'
 import { PhaseBadge } from './PhaseBadge'
+import { SheetHeader, SheetBody, SheetFooter } from './ui/Sheet'
 
 type CloseCcEarlyFormProps = {
   ticker: string
@@ -52,51 +52,14 @@ export function CloseCcEarlyForm({
 
   return (
     <div style={{ display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
-      <div
-        style={{
-          padding: '20px 24px 16px',
-          borderBottom: '1px solid var(--wb-border)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          gap: 12
-        }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <Caption>Buy to Close</Caption>
-          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--wb-text-primary)' }}>
-            Close Covered Call Early
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--wb-text-muted)' }}>
-            CALL {fmtMoney(strike)} · {ccExpiration}
-          </div>
-        </div>
-        <button
-          type="button"
-          aria-label="Close"
-          onClick={onClose}
-          style={{
-            border: 'none',
-            background: 'transparent',
-            color: 'var(--wb-text-muted)',
-            cursor: 'pointer',
-            fontSize: '1.2rem',
-            lineHeight: 1
-          }}
-        >
-          ×
-        </button>
-      </div>
+      <SheetHeader
+        eyebrow="Buy to Close"
+        title="Close Covered Call Early"
+        subtitle={`CALL ${fmtMoney(strike)} · ${ccExpiration}`}
+        onClose={onClose}
+      />
 
-      <div
-        style={{
-          padding: '20px 24px',
-          overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 16,
-          flex: 1
-        }}
-      >
+      <SheetBody>
         <SectionCard>
           <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
@@ -185,16 +148,9 @@ export function CloseCcEarlyForm({
             )}
           </div>
         )}
-      </div>
+      </SheetBody>
 
-      <div
-        style={{
-          padding: '16px 24px',
-          borderTop: '1px solid var(--wb-border)',
-          display: 'flex',
-          gap: 10
-        }}
-      >
+      <SheetFooter>
         <FormButton label="Cancel" variant="secondary" onClick={onClose} style={{ flex: 1 }} />
         <FormButton
           label="Confirm Close"
@@ -204,7 +160,7 @@ export function CloseCcEarlyForm({
           data-testid="cc-close-submit"
           style={{ flex: 1 }}
         />
-      </div>
+      </SheetFooter>
     </div>
   )
 }

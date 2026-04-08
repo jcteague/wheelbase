@@ -5,6 +5,7 @@ import { AlertBox } from './ui/AlertBox'
 import { Caption } from './ui/Caption'
 import { FormButton } from './ui/FormButton'
 import { SectionCard } from './ui/SectionCard'
+import { SheetBody, SheetFooter, SheetHeader } from './ui/Sheet'
 import { PhaseBadge } from './PhaseBadge'
 
 type CallAwayFormProps = {
@@ -46,64 +47,14 @@ export function CallAwayForm({
 
   return (
     <div style={{ display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
-      <div
-        style={{
-          padding: '20px 24px 18px',
-          borderBottom: '1px solid var(--wb-border)',
-          display: 'flex',
-          alignItems: 'flex-start',
-          justifyContent: 'space-between',
-          flexShrink: 0
-        }}
-      >
-        <div>
-          <Caption>Record Call-Away</Caption>
-          <div
-            style={{
-              fontSize: 17,
-              fontWeight: 700,
-              color: 'var(--wb-text-primary)',
-              marginBottom: 4
-            }}
-          >
-            Shares Called Away
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--wb-text-secondary)' }}>
-            {ticker} CALL ${parseFloat(ccStrike).toFixed(2)} · {ccExpiration}
-          </div>
-        </div>
-        <button
-          type="button"
-          aria-label="Close"
-          onClick={onClose}
-          style={{
-            background: 'var(--wb-bg-elevated)',
-            border: '1px solid var(--wb-border)',
-            color: 'var(--wb-text-muted)',
-            fontSize: 14,
-            width: 28,
-            height: 28,
-            borderRadius: 6,
-            cursor: 'pointer',
-            flexShrink: 0,
-            marginLeft: 12,
-            marginTop: 2
-          }}
-        >
-          ×
-        </button>
-      </div>
+      <SheetHeader
+        eyebrow="Record Call-Away"
+        title="Shares Called Away"
+        subtitle={`${ticker} CALL $${parseFloat(ccStrike).toFixed(2)} · ${ccExpiration}`}
+        onClose={onClose}
+      />
 
-      <div
-        style={{
-          padding: '20px 24px',
-          overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 16,
-          flex: 1
-        }}
-      >
+      <SheetBody>
         <SectionCard>
           <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column' }}>
             <div
@@ -342,17 +293,9 @@ export function CallAwayForm({
           <strong>This cannot be undone.</strong> The position will close as WHEEL_COMPLETE. Full
           leg history is preserved.
         </AlertBox>
-      </div>
+      </SheetBody>
 
-      <div
-        style={{
-          padding: '16px 24px',
-          borderTop: '1px solid var(--wb-border)',
-          display: 'flex',
-          gap: 10,
-          flexShrink: 0
-        }}
-      >
+      <SheetFooter>
         <button
           type="button"
           onClick={onClose}
@@ -379,7 +322,7 @@ export function CallAwayForm({
           data-testid="call-away-submit"
           style={{ flex: 1 }}
         />
-      </div>
+      </SheetFooter>
     </div>
   )
 }
