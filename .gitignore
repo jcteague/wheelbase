@@ -36,3 +36,4 @@ out
 # bd worktree
 
 coverage/
+.playwright-mcp/
