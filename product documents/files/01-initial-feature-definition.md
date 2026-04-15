@@ -1,12 +1,12 @@
 # Option Wheel Manager — Initial Feature Definition
 
-*Based on research into CoveredWheel, WingmanTracker, TrackTheta, and the gaps they leave.*
+_Based on research into CoveredWheel, WingmanTracker, TrackTheta, and the gaps they leave._
 
 ---
 
 ## What the Existing Tools Taught Us
 
-The landscape splits into two camps. **CoveredWheel** is free, simple, and wheel-specific — but limited in analytics. **WingmanTracker** is the most polished paid option, with automatic trade grouping and roll tracking. **TrackTheta** sits in between. The consistent pain points users report across all of them are: cost basis tracking through multiple rolls/assignments, understanding *cumulative* P&L per wheel (not just per leg), and lack of actionable management signals. That's where your app has room to be genuinely better.
+The landscape splits into two camps. **CoveredWheel** is free, simple, and wheel-specific — but limited in analytics. **WingmanTracker** is the most polished paid option, with automatic trade grouping and roll tracking. **TrackTheta** sits in between. The consistent pain points users report across all of them are: cost basis tracking through multiple rolls/assignments, understanding _cumulative_ P&L per wheel (not just per leg), and lack of actionable management signals. That's where your app has room to be genuinely better.
 
 ---
 
@@ -92,7 +92,7 @@ Integration with a market data source (Alpaca, Tradier, or Yahoo Finance as a fa
 
 CSV import from major brokers (Schwab, TD/Ameritrade, Tastytrade, Robinhood, IBKR) so trades don't need to be re-entered manually. The import should be smart enough to recognize legs that belong to the same wheel and group them automatically.
 
-**Broker API Sync** *(Advanced)*
+**Broker API Sync** _(Advanced)_
 
 Direct API connection (Alpaca first, as it's the most accessible) to auto-populate positions and trades without any manual entry.
 
@@ -112,7 +112,7 @@ A separate list of tickers you're considering for future wheels, with IV rank, c
 
 For open options positions: current IV, delta, theta, and days of theta decay collected to date. Useful for deciding whether to roll or hold.
 
-**Trade Idea Generator** *(AI-assisted)*
+**Trade Idea Generator** _(AI-assisted)_
 
 Given a ticker you're considering, suggest an appropriate CSP strike and expiration based on current IV, delta target (e.g., 0.30 delta), and your preferred return target. This goes beyond what any current free tool offers.
 
@@ -128,14 +128,14 @@ Track positions across multiple brokerage accounts, with portfolio view filterab
 
 ## Gaps vs. Existing Tools — Your Differentiation Opportunities
 
-| Gap in existing tools | How your app addresses it |
-|---|---|
-| Cost basis resets on assignment, losing wheel history | Continuous cost basis across the full wheel lifecycle |
-| No signal for *when* to manage | Configurable alerts at 21 DTE, 50% profit, etc. |
-| Trade journal is disconnected from P&L | Notes live inside the wheel, tied to performance |
-| No candidate / watchlist pipeline | Integrated watchlist with IV rank |
-| Hard to see capital efficiency | Annualized return per wheel, deployed vs. idle capital |
-| No scenario modeling for rolls | What-if calculator built in |
+| Gap in existing tools                                 | How your app addresses it                              |
+| ----------------------------------------------------- | ------------------------------------------------------ |
+| Cost basis resets on assignment, losing wheel history | Continuous cost basis across the full wheel lifecycle  |
+| No signal for _when_ to manage                        | Configurable alerts at 21 DTE, 50% profit, etc.        |
+| Trade journal is disconnected from P&L                | Notes live inside the wheel, tied to performance       |
+| No candidate / watchlist pipeline                     | Integrated watchlist with IV rank                      |
+| Hard to see capital efficiency                        | Annualized return per wheel, deployed vs. idle capital |
+| No scenario modeling for rolls                        | What-if calculator built in                            |
 
 ---
 

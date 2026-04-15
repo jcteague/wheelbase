@@ -19,10 +19,10 @@ A trader can record their thesis, management decisions, and retrospective notes 
 
 ## Vertical Slice
 
-| Layer | What ships |
-|---|---|
-| Database | PositionNote model (position_id, note_type, content, created_at) |
-| API | POST /api/positions/:id/notes, GET /api/positions/:id/notes |
+| Layer    | What ships                                                                                   |
+| -------- | -------------------------------------------------------------------------------------------- |
+| Database | PositionNote model (position_id, note_type, content, created_at)                             |
+| API      | POST /api/positions/:id/notes, GET /api/positions/:id/notes                                  |
 | Frontend | Thesis field on new wheel form, add-note panel on position detail, interleaved timeline view |
 
 ## Stories

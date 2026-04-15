@@ -60,7 +60,7 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
    - Do not refactor existing code — save that for the refactor phase
    - Let the tests drive every decision
 
-5. **Follow Architecture Rules (non-negotiable)**
+6. **Follow Architecture Rules (non-negotiable)**
    - `src/main/core/` engines import ONLY `decimal.js` and other pure utilities — no `better-sqlite3`, no Alpaca SDK, no IPC
    - All Alpaca API calls stay in `src/main/integrations/alpaca.ts`
    - IPC handlers never throw to the renderer — always return `{ ok: true, ...result } | { ok: false, errors: [...] }`
@@ -68,13 +68,13 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
    - Cost basis formula: `assignment_strike − CSP_premiums − CC_premiums + roll_debits − roll_credits`
    - Use Zod v4 for all IPC payload validation — infer TypeScript types from schemas
 
-6. **Follow Code Conventions**
+7. **Follow Code Conventions**
    - TypeScript strict mode throughout
    - `decimal.js` with `ROUND_HALF_UP` for all monetary values — never `number` for money
    - Functional style: pure functions over classes, `map`/`filter`/`reduce` over loops
    - No mutation — prefer returning new objects/values
 
-7. **Enforce Single Responsibility — one file, one concern**
+8. **Enforce Single Responsibility — one file, one concern**
    - `core/` — pure domain logic only; no DB, no IPC, no Alpaca
    - `services/` — DB access + core logic composition; no IPC concerns
    - `ipc/` — thin wrappers only; validate input, call service, return result; no business logic
@@ -82,15 +82,15 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
    - Hooks — data fetching/mutation only; no business logic
    - **Hard stop: if a file exceeds ~200 lines, split it before proceeding**
 
-8. **Enforce Open/Closed**
+9. **Enforce Open/Closed**
    - Add new behaviour by creating new functions/modules, not editing existing engine files
    - Core engines must not grow to accommodate new callers — callers adapt, engines stay stable
 
-9. **No Backwards Compatibility Cruft**
-   - When a requirement changes, delete the old logic — do not preserve it alongside the new
-   - No deprecated wrappers, `_old` suffixes, commented-out blocks, or dead code paths
-   - If a function or module is no longer called after a change, delete it
-   - Exception only if explicitly told to keep it
+10. **No Backwards Compatibility Cruft**
+    - When a requirement changes, delete the old logic — do not preserve it alongside the new
+    - No deprecated wrappers, `_old` suffixes, commented-out blocks, or dead code paths
+    - If a function or module is no longer called after a change, delete it
+    - Exception only if explicitly told to keep it
 
 ### Phase 3: Iterative Test Execution
 
@@ -276,6 +276,7 @@ PASS src/main/ipc/positions.test.ts (3 tests)
 ## Handoff to Refactor Phase
 
 To resume: run `/refactor [feature-name]`. Refactor phase should:
+
 1. Read this file to find implementation files and known tech debt
 2. Run `make test` to confirm baseline is green before touching anything
 3. Focus refactoring on files listed above and issues in "Known Limitations / Tech Debt"

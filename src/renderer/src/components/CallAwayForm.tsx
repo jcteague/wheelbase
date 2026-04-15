@@ -1,6 +1,5 @@
 import Decimal from 'decimal.js'
 import { pnlColor } from '../lib/format'
-import { MONO } from '../lib/tokens'
 import { AlertBox } from './ui/AlertBox'
 import { Caption } from './ui/Caption'
 import { FormButton } from './ui/FormButton'
@@ -45,246 +44,110 @@ export function CallAwayForm({
   const finalPnlColor = pnlColor(finalPnl)
   const appPerShare = new Decimal(appreciationPerShare)
 
+  const formattedStrike = parseFloat(ccStrike).toFixed(2)
+  const formattedBasis = parseFloat(basisPerShare).toFixed(2)
+  const formattedCapital = parseFloat(capitalDeployed).toFixed(2)
+
   return (
-    <div style={{ display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
+    <div className="flex flex-1 flex-col overflow-hidden">
       <SheetHeader
         eyebrow="Record Call-Away"
         title="Shares Called Away"
-        subtitle={`${ticker} CALL $${parseFloat(ccStrike).toFixed(2)} · ${ccExpiration}`}
+        subtitle={`${ticker} CALL $${formattedStrike} · ${ccExpiration}`}
         onClose={onClose}
       />
 
       <SheetBody>
         <SectionCard>
-          <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column' }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '8px 0',
-                borderBottom: '1px solid rgba(30,42,56,0.6)',
-                fontSize: 11
-              }}
-            >
-              <span style={{ color: 'var(--wb-text-secondary)' }}>Position</span>
+          <div className="px-3.5 py-2.5 flex flex-col">
+            <div className="flex items-center justify-between py-2 border-b border-[rgba(30,42,56,0.6)] text-[11px]">
+              <span className="text-wb-text-secondary">Position</span>
               <span>
-                {ticker} CALL ${parseFloat(ccStrike).toFixed(2)} · {ccExpiration}
+                {ticker} CALL ${formattedStrike} · {ccExpiration}
               </span>
             </div>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '8px 0',
-                borderBottom: '1px solid rgba(30,42,56,0.6)',
-                fontSize: 11
-              }}
-            >
-              <span style={{ color: 'var(--wb-text-secondary)' }}>Contracts</span>
+            <div className="flex items-center justify-between py-2 border-b border-[rgba(30,42,56,0.6)] text-[11px]">
+              <span className="text-wb-text-secondary">Contracts</span>
               <span>{contracts}</span>
             </div>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '8px 0',
-                borderBottom: '1px solid rgba(30,42,56,0.6)',
-                fontSize: 11
-              }}
-            >
-              <span style={{ color: 'var(--wb-text-secondary)' }}>Shares to deliver</span>
-              <span style={{ color: 'var(--wb-text-primary)' }}>{sharesHeld} shares</span>
+            <div className="flex items-center justify-between py-2 border-b border-[rgba(30,42,56,0.6)] text-[11px]">
+              <span className="text-wb-text-secondary">Shares to deliver</span>
+              <span className="text-wb-text-primary">{sharesHeld} shares</span>
             </div>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '8px 0',
-                borderBottom: '1px solid rgba(30,42,56,0.6)',
-                fontSize: 11
-              }}
-            >
-              <span style={{ color: 'var(--wb-text-secondary)' }}>Phase transition</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div className="flex items-center justify-between py-2 border-b border-[rgba(30,42,56,0.6)] text-[11px]">
+              <span className="text-wb-text-secondary">Phase transition</span>
+              <span className="flex items-center gap-1.5">
                 <PhaseBadge phase="CC_OPEN" />
-                <span style={{ fontSize: 9, color: 'var(--wb-text-muted)' }}>→</span>
+                <span className="text-[9px] text-wb-text-muted">→</span>
                 <PhaseBadge phase="WHEEL_COMPLETE" />
               </span>
             </div>
 
             {/* P&L Breakdown waterfall */}
-            <div
-              style={{
-                padding: '10px 0',
-                borderBottom: '1px solid rgba(30,42,56,0.6)',
-                background: 'rgba(14,24,36,0.3)'
-              }}
-            >
+            <div className="bg-wb-bg-elevated border border-wb-border py-2.5 border-b border-b-[rgba(30,42,56,0.6)] bg-[rgba(14,24,36,0.3)]">
               <Caption>P&amp;L Breakdown</Caption>
 
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  marginBottom: 6,
-                  marginTop: 8
-                }}
-              >
-                <span style={{ fontSize: 11, color: 'var(--wb-text-secondary)' }}>
+              <div className="flex justify-between mb-1.5 mt-2">
+                <span className="text-[11px] text-wb-text-secondary">
                   CC strike (shares delivered)
                 </span>
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: 'var(--wb-text-primary)',
-                    fontFamily: MONO
-                  }}
-                >
-                  ${parseFloat(ccStrike).toFixed(2)}
+                <span className="text-[11px] font-semibold text-wb-text-primary font-wb-mono">
+                  ${formattedStrike}
                 </span>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ fontSize: 11, color: 'var(--wb-text-secondary)' }}>
-                  − Effective cost basis
-                </span>
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: 'var(--wb-red)',
-                    fontFamily: MONO
-                  }}
-                >
-                  ${parseFloat(basisPerShare).toFixed(2)}
+              <div className="flex justify-between mb-1.5">
+                <span className="text-[11px] text-wb-text-secondary">− Effective cost basis</span>
+                <span className="text-[11px] font-semibold text-wb-red font-wb-mono">
+                  ${formattedBasis}
                 </span>
               </div>
 
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  marginBottom: 2,
-                  paddingLeft: 12
-                }}
-              >
-                <span style={{ fontSize: 10, color: 'var(--wb-text-muted)' }}>
-                  = Appreciation per share
-                </span>
-                <span style={{ fontSize: 10, color: 'var(--wb-text-secondary)', fontFamily: MONO }}>
+              <div className="flex justify-between mb-0.5 pl-3">
+                <span className="text-[10px] text-wb-text-muted">= Appreciation per share</span>
+                <span className="text-[10px] text-wb-text-secondary font-wb-mono">
                   {appPerShare.gte(0) ? '' : '−'}${appPerShare.abs().toFixed(2)}
                 </span>
               </div>
 
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  marginBottom: 8,
-                  paddingLeft: 12
-                }}
-              >
-                <span style={{ fontSize: 10, color: 'var(--wb-text-muted)' }}>
-                  × {sharesHeld} shares
-                </span>
+              <div className="flex justify-between mb-2 pl-3">
+                <span className="text-[10px] text-wb-text-muted">× {sharesHeld} shares</span>
                 <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: pnlColor(appreciationTotal),
-                    fontFamily: MONO
-                  }}
+                  className="text-[11px] font-semibold font-wb-mono"
+                  style={{ color: pnlColor(appreciationTotal) }}
                 >
                   ${Math.abs(parseFloat(appreciationTotal)).toFixed(2)}
                 </span>
               </div>
 
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  paddingTop: 8,
-                  borderTop: '1px solid rgba(30,42,56,0.8)'
-                }}
-              >
-                <span style={{ fontSize: 12, fontWeight: 700, color: finalPnlColor }}>
+              <div className="flex justify-between pt-2 border-t border-[rgba(30,42,56,0.8)]">
+                <span className="text-xs font-bold" style={{ color: finalPnlColor }}>
                   = Final cycle P&amp;L
                 </span>
-                <span
-                  style={{ fontSize: 16, fontWeight: 700, color: finalPnlColor, fontFamily: MONO }}
-                >
+                <span className="text-base font-bold font-wb-mono" style={{ color: finalPnlColor }}>
                   {pnlValue}
                 </span>
               </div>
             </div>
 
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '8px 0',
-                fontSize: 10
-              }}
-            >
-              <span style={{ color: 'var(--wb-text-muted)' }}>
-                effective cost basis · {sharesHeld} shares
-              </span>
+            <div className="flex items-center justify-between py-2 text-[10px]">
+              <span className="text-wb-text-muted">effective cost basis · {sharesHeld} shares</span>
               <span>
-                ${parseFloat(basisPerShare).toFixed(2)}/share · $
-                {parseFloat(capitalDeployed).toFixed(2)} total
+                ${formattedBasis}/share · ${formattedCapital} total
               </span>
             </div>
           </div>
         </SectionCard>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <label
-            style={{
-              fontSize: '0.7rem',
-              fontWeight: 600,
-              letterSpacing: '0.07em',
-              textTransform: 'uppercase',
-              color: 'var(--wb-text-muted)',
-              fontFamily: MONO
-            }}
-          >
+        <div className="flex flex-col gap-1">
+          <label className="text-wb-text-secondary text-[0.7rem] font-semibold tracking-[0.07em] uppercase font-wb-mono">
             Fill Date
           </label>
-          <div
-            style={{
-              width: '100%',
-              padding: '10px 14px',
-              borderRadius: 6,
-              border: '1px solid var(--wb-border)',
-              background: 'rgba(14,24,36,0.6)',
-              color: 'var(--wb-text-secondary)',
-              fontSize: 14,
-              fontFamily: MONO,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              boxSizing: 'border-box'
-            }}
-          >
+          <div className="w-full px-3.5 py-2.5 rounded-md border border-wb-border text-wb-text-secondary text-sm font-wb-mono flex items-center justify-between bg-[rgba(14,24,36,0.6)]">
             <span>{ccExpiration}</span>
-            <span
-              style={{
-                fontSize: 9,
-                letterSpacing: '0.1em',
-                textTransform: 'uppercase',
-                color: 'var(--wb-text-muted)'
-              }}
-            >
-              auto
-            </span>
+            <span className="text-[9px] tracking-[0.1em] uppercase text-wb-text-muted">auto</span>
           </div>
-          <span style={{ fontSize: '0.7rem', color: 'var(--wb-text-muted)' }}>
+          <span className="text-[0.7rem] text-wb-text-muted">
             Derived from your CC — the day shares are delivered to the buyer
           </span>
         </div>
@@ -296,24 +159,7 @@ export function CallAwayForm({
       </SheetBody>
 
       <SheetFooter>
-        <button
-          type="button"
-          onClick={onClose}
-          style={{
-            flex: 1,
-            padding: '11px 24px',
-            borderRadius: 6,
-            border: '1px solid var(--wb-border)',
-            background: 'transparent',
-            color: 'var(--wb-text-secondary)',
-            fontSize: '0.9375rem',
-            fontWeight: 500,
-            fontFamily: MONO,
-            cursor: 'pointer'
-          }}
-        >
-          Cancel
-        </button>
+        <FormButton label="Cancel" variant="secondary" onClick={onClose} style={{ flex: 1 }} />
         <FormButton
           label="Confirm Call-Away"
           pendingLabel="Confirming…"

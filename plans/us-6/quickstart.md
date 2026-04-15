@@ -47,6 +47,7 @@ pnpm test
 ```
 
 Tests to look for during development:
+
 - `src/main/core/lifecycle.test.ts` — `recordAssignment` engine tests
 - `src/main/core/costbasis.test.ts` — `calculateAssignmentBasis` engine tests
 - `src/main/services/assign-csp-position.test.ts` — service integration tests

@@ -194,7 +194,7 @@ const GET_QUERY = `
   LEFT JOIN cost_basis_snapshots cbs ON cbs.id = (
     SELECT id FROM cost_basis_snapshots
     WHERE position_id = p.id
-    ORDER BY snapshot_at DESC
+    ORDER BY snapshot_at DESC, rowid DESC
     LIMIT 1
   )
   WHERE p.id = ?

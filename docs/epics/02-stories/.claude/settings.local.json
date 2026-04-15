@@ -1,10 +1,4 @@
 {
-  "enabledMcpjsonServers": [
-    "playwright",
-    "electron"
-  ],
-  "disabledMcpjsonServers": [
-    "alpaca",
-    "postgres"
-  ]
+  "enabledMcpjsonServers": ["playwright", "electron"],
+  "disabledMcpjsonServers": ["alpaca", "postgres"]
 }

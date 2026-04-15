@@ -26,10 +26,12 @@ Add the ability to sell a covered call against shares held after CSP assignment.
 ### 1. Lifecycle Engine — `openCoveredCall()` function
 
 **Files to create or modify:**
+
 - `src/main/core/lifecycle.ts` — add `OpenCoveredCallInput`, `OpenCoveredCallResult`, `openCoveredCall()` function
 - `src/main/core/lifecycle.test.ts` — add test cases for the new function
 
 **Red — tests to write:**
+
 - `src/main/core/lifecycle.test.ts`: `describe('openCoveredCall')`:
   - `it('returns CC_OPEN when current phase is HOLDING_SHARES')` — input with valid phase, strike, contracts, dates → returns `{ phase: 'CC_OPEN' }`
   - `it('throws ValidationError when phase is CC_OPEN')` — currentPhase `CC_OPEN` → field `__phase__`, message "A covered call is already open on this position"
@@ -41,6 +43,7 @@ Add the ability to sell a covered call against shares held after CSP assignment.
   - `it('throws ValidationError when premium is not positive')` — premiumPerContract `0` → field `premiumPerContract`, code `must_be_positive`
 
 **Green — implementation:**
+
 - Add `OpenCoveredCallInput` interface to `src/main/core/lifecycle.ts`: `{ currentPhase: WheelPhase, strike: string, contracts: number, positionContracts: number, premiumPerContract: string, fillDate: string, assignmentDate: string, referenceDate: string, expiration: string }`
 - Add `OpenCoveredCallResult` interface: `{ phase: 'CC_OPEN' }`
 - Add `openCoveredCall(input: OpenCoveredCallInput): OpenCoveredCallResult` function:
@@ -54,9 +57,11 @@ Add the ability to sell a covered call against shares held after CSP assignment.
   8. Return `{ phase: 'CC_OPEN' }`
 
 **Refactor — cleanup to consider:**
+
 - Check for duplication with `openWheel()` validation (strike/premium checks). Extract shared validators if patterns are identical.
 
 **Acceptance criteria covered:**
+
 - "Reject open CC when not in HOLDING_SHARES phase" (phase guard)
 - "Reject CC with contracts exceeding shares held" (contracts validation)
 - "Reject fill date before assignment date" (date validation)
@@ -66,10 +71,12 @@ Add the ability to sell a covered call against shares held after CSP assignment.
 ### 2. Cost Basis Engine — `calculateCcOpenBasis()` function
 
 **Files to create or modify:**
+
 - `src/main/core/costbasis.ts` — add `CcOpenBasisInput`, `CcOpenBasisResult`, `calculateCcOpenBasis()` function
 - `src/main/core/costbasis.test.ts` — add test cases
 
 **Red — tests to write:**
+
 - `src/main/core/costbasis.test.ts`: `describe('calculateCcOpenBasis')`:
   - `it('reduces basis per share by CC premium')` — prevBasisPerShare `176.5000`, ccPremiumPerContract `2.3000`, contracts 1 → basisPerShare `174.2000`
   - `it('adds CC premium to total premium collected')` — prevTotalPremium `350.0000`, ccPremium `2.3000`, contracts 1 → totalPremiumCollected `580.0000` (350 + 2.30 × 1 × 100)
@@ -77,6 +84,7 @@ Add the ability to sell a covered call against shares held after CSP assignment.
   - `it('returns 4dp precision')` — ccPremium `1.1111` → result has 4 decimal places
 
 **Green — implementation:**
+
 - Add `CcOpenBasisInput` to `src/main/core/costbasis.ts`: `{ prevBasisPerShare: string, prevTotalPremiumCollected: string, ccPremiumPerContract: string, contracts: number }`
 - Add `CcOpenBasisResult`: `{ basisPerShare: string, totalPremiumCollected: string }`
 - Add `calculateCcOpenBasis(input: CcOpenBasisInput): CcOpenBasisResult`:
@@ -85,9 +93,11 @@ Add the ability to sell a covered call against shares held after CSP assignment.
   3. Return both
 
 **Refactor — cleanup to consider:**
+
 - Check for duplication and naming consistency with existing cost basis functions.
 
 **Acceptance criteria covered:**
+
 - "The effective cost basis updates to $174.20 per share ($176.50 − $2.30)"
 - "The total premium collected increases by $230.00"
 
@@ -96,9 +106,11 @@ Add the ability to sell a covered call against shares held after CSP assignment.
 ### 3. Schema & IPC Contract — `OpenCcPayloadSchema`
 
 **Files to create or modify:**
+
 - `src/main/schemas.ts` — add `OpenCcPayloadSchema`, `OpenCcPayload` type, `OpenCcPositionResult` interface
 
 **Red — tests to write:**
+
 - `src/main/schemas.test.ts` (create if needed): `describe('OpenCcPayloadSchema')`:
   - `it('parses valid payload')` — `{ positionId: uuid, strike: 182, expiration: '2026-02-21', contracts: 1, premiumPerContract: 2.3 }` → success
   - `it('rejects missing positionId')` — omit positionId → ZodError
@@ -107,6 +119,7 @@ Add the ability to sell a covered call against shares held after CSP assignment.
   - `it('accepts optional fillDate')` — with and without fillDate both parse
 
 **Green — implementation:**
+
 - Add to `src/main/schemas.ts`:
   ```typescript
   export const OpenCcPayloadSchema = z.object({
@@ -126,9 +139,11 @@ Add the ability to sell a covered call against shares held after CSP assignment.
   ```
 
 **Refactor — cleanup to consider:**
+
 - Ensure consistent naming with other schemas (e.g., `OpenCcPayloadSchema` parallels `AssignCspPayloadSchema`).
 
 **Acceptance criteria covered:**
+
 - "Reject open CC with missing required fields" (Zod validation)
 
 ---
@@ -136,11 +151,13 @@ Add the ability to sell a covered call against shares held after CSP assignment.
 ### 4. Service Layer — `openCoveredCallPosition()` function
 
 **Files to create or modify:**
+
 - `src/main/services/open-covered-call-position.ts` — new file
 - `src/main/services/positions.ts` — re-export the new function
 - `src/main/services/open-covered-call-position.test.ts` — new test file
 
 **Red — tests to write:**
+
 - `src/main/services/open-covered-call-position.test.ts`: `describe('openCoveredCallPosition')`:
   - `it('creates CC_OPEN leg, updates phase, creates cost basis snapshot')` — set up DB with CSP_OPEN → assign → call `openCoveredCallPosition()` with valid payload → verify: position.phase is `CC_OPEN`, new leg with role `CC_OPEN`/action `SELL`/instrumentType `CALL`, new snapshot with reduced basis
   - `it('returns correct cost basis after CC open')` — CSP strike 180, CSP premium 3.50, CC premium 2.30 → basisPerShare `174.2000`, totalPremiumCollected `580.0000`
@@ -152,6 +169,7 @@ Add the ability to sell a covered call against shares held after CSP assignment.
   - `it('defaults fill date to today when not provided')` — omit fillDate → leg.fillDate is today's ISO date
 
 **Green — implementation:**
+
 - Create `src/main/services/open-covered-call-position.ts` following `assign-csp-position.ts` pattern:
   1. `getPosition(db, positionId)` — get current position detail
   2. Find assignment leg: `positionDetail.legs.find(l => l.legRole === 'ASSIGN')` — needed for assignment date and contracts
@@ -163,9 +181,11 @@ Add the ability to sell a covered call against shares held after CSP assignment.
 - Add re-export to `src/main/services/positions.ts`: `export { openCoveredCallPosition } from './open-covered-call-position'`
 
 **Refactor — cleanup to consider:**
+
 - Check for duplication with `assignCspPosition()` transaction pattern. Consider extracting shared helpers if the pattern is identical in 3+ services.
 
 **Acceptance criteria covered:**
+
 - "A CC_OPEN leg is recorded with strike $182.00 and premium $2.30"
 - "The position phase changes to CC_OPEN"
 - "The effective cost basis updates to $174.20 per share"
@@ -175,15 +195,18 @@ Add the ability to sell a covered call against shares held after CSP assignment.
 ### 5. IPC Handler — `positions:open-cc`
 
 **Files to create or modify:**
+
 - `src/main/ipc/positions.ts` — add `positions:open-cc` handler, import `OpenCcPayloadSchema` and `openCoveredCallPosition`
 
 **Red — tests to write:**
+
 - `src/main/ipc/positions.test.ts` (create or extend): `describe('positions:open-cc')`:
   - `it('returns ok: true with position, leg, and snapshot on success')` — integration test calling the handler through the IPC layer
   - `it('returns ok: false with validation errors on invalid payload')` — missing required fields → Zod errors mapped correctly
   - `it('returns ok: false when phase is wrong')` — CSP_OPEN position → lifecycle ValidationError mapped to error response
 
 **Green — implementation:**
+
 - Add to `registerPositionsHandlers()` in `src/main/ipc/positions.ts`:
   ```typescript
   ipcMain.handle('positions:open-cc', (_, payload: unknown) =>
@@ -195,9 +218,11 @@ Add the ability to sell a covered call against shares held after CSP assignment.
   ```
 
 **Refactor — cleanup to consider:**
+
 - Check for duplication and naming consistency with other handlers.
 
 **Acceptance criteria covered:**
+
 - Enables all IPC communication for the CC form (indirect — required by frontend).
 
 ---
@@ -205,15 +230,18 @@ Add the ability to sell a covered call against shares held after CSP assignment.
 ### 6. Preload & Renderer API — Wire up `openCoveredCall`
 
 **Files to create or modify:**
+
 - `src/preload/index.ts` — add `openCoveredCall` to the `api` object
 - `src/preload/index.d.ts` — add type declaration (if it exists)
 - `src/renderer/src/api/positions.ts` — add `OpenCcPayload`, `OpenCcResponse` types, `openCoveredCall()` function, update `IPC_TO_FORM_FIELD` map
 
 **Red — tests to write:**
+
 - No unit tests for the preload binding (thin pass-through, covered by e2e).
 - `src/renderer/src/api/positions.test.ts` (if exists): Test that `openCoveredCall()` maps snake_case payload to camelCase IPC call. If no renderer API tests exist, skip — covered by e2e.
 
 **Green — implementation:**
+
 - `src/preload/index.ts`: add `openCoveredCall: (payload: unknown) => ipcRenderer.invoke('positions:open-cc', payload)` to the `api` object
 - `src/renderer/src/api/positions.ts`:
   - Add types `OpenCcPayload` and `OpenCcResponse` per `plans/us-7/contracts/open-cc.md`
@@ -221,9 +249,11 @@ Add the ability to sell a covered call against shares held after CSP assignment.
   - Add `openCoveredCall(payload: OpenCcPayload): Promise<OpenCcResponse>` function following `assignPosition()` pattern: map snake_case fields to camelCase, call `window.api.openCoveredCall()`, map errors
 
 **Refactor — cleanup to consider:**
+
 - Naming consistency with other API functions.
 
 **Acceptance criteria covered:**
+
 - Enables frontend communication (indirect — required by the sheet component).
 
 ---
@@ -231,17 +261,18 @@ Add the ability to sell a covered call against shares held after CSP assignment.
 ### 7. Mutation Hook — `useOpenCoveredCall()`
 
 **Files to create or modify:**
+
 - `src/renderer/src/hooks/useOpenCoveredCall.ts` — new file
 
 **Red — tests to write:**
+
 - No unit tests for hooks (thin TanStack Query wrapper). Covered by e2e tests.
 
 **Green — implementation:**
+
 - Create `src/renderer/src/hooks/useOpenCoveredCall.ts` following `useAssignPosition.ts` pattern:
   ```typescript
-  export function useOpenCoveredCall(options?: {
-    onSuccess?: (data: OpenCcResponse) => void
-  }) {
+  export function useOpenCoveredCall(options?: { onSuccess?: (data: OpenCcResponse) => void }) {
     const queryClient = useQueryClient()
     return useMutation<OpenCcResponse, ApiError, OpenCcPayload>({
       mutationFn: openCoveredCall,
@@ -254,9 +285,11 @@ Add the ability to sell a covered call against shares held after CSP assignment.
   ```
 
 **Refactor — cleanup to consider:**
+
 - Check consistency with other mutation hooks.
 
 **Acceptance criteria covered:**
+
 - Enables the sheet component to submit (indirect).
 
 ---
@@ -264,12 +297,15 @@ Add the ability to sell a covered call against shares held after CSP assignment.
 ### 8. OpenCoveredCallSheet Component
 
 **Files to create or modify:**
+
 - `src/renderer/src/components/OpenCoveredCallSheet.tsx` — new file
 
 **Red — tests to write:**
+
 - No isolated component unit tests (the mockup-matching UI is validated by e2e tests). If component tests exist for AssignmentSheet, mirror them. Otherwise, e2e covers this.
 
 **Green — implementation:**
+
 - Create `src/renderer/src/components/OpenCoveredCallSheet.tsx` following `AssignmentSheet.tsx` pattern and the mockup in `mockups/us-7-open-covered-call.mdx`:
   - **Props:** `{ open, positionId, ticker, basisPerShare, totalPremiumCollected, contracts (position contracts), assignmentDate, onClose }`
   - **State:** `strike`, `premium`, `contracts`, `expiration`, `fillDate`, field errors, `successState`
@@ -292,14 +328,19 @@ Add the ability to sell a covered call against shares held after CSP assignment.
     - "What's next?" caption + "View full position history" link
   - **Guardrail pure function** (inline in component):
     ```typescript
-    function computeGuardrail(strike: string, basis: string): { type: 'below'|'at'|'above', message: string } | null
+    function computeGuardrail(
+      strike: string,
+      basis: string
+    ): { type: 'below' | 'at' | 'above'; message: string } | null
     ```
     Same logic as mockup's `computeGuardrail()`.
 
 **Refactor — cleanup to consider:**
+
 - Extract shared sheet chrome (header, panel styles) into a `SheetLayout` component if AssignmentSheet and OpenCoveredCallSheet have identical wrappers. Only if duplication is clear.
 
 **Acceptance criteria covered:**
+
 - "Strike above cost basis shows no warning" (info note with profit preview)
 - "Strike at or below cost basis shows guardrail warning" (gold warning, button enabled)
 - "Strike exactly at cost basis shows guardrail warning" (break-even message)
@@ -310,12 +351,15 @@ Add the ability to sell a covered call against shares held after CSP assignment.
 ### 9. Position Detail Page — "Open Covered Call →" button + sheet integration
 
 **Files to create or modify:**
+
 - `src/renderer/src/pages/PositionDetailPage.tsx` — add HOLDING_SHARES button, openCcCtx state, render `OpenCoveredCallSheet`
 
 **Red — tests to write:**
+
 - Covered by e2e tests. No isolated page tests unless existing pattern includes them.
 
 **Green — implementation:**
+
 - Import `OpenCoveredCallSheet` in `PositionDetailPage.tsx`
 - Add state: `const [openCcCtx, setOpenCcCtx] = useState<{ ... } | null>(null)` with basisPerShare, totalPremiumCollected, contracts, assignmentDate from the position detail data
 - Add conditional button in the header `right` area:
@@ -339,24 +383,28 @@ Add the ability to sell a covered call against shares held after CSP assignment.
 - Add blur effect: include `openCcCtx` in the blur condition alongside `expirationCtx` and `assignmentCtx`
 - Render `OpenCoveredCallSheet` at the bottom of the component:
   ```tsx
-  {openCcCtx && (
-    <OpenCoveredCallSheet
-      open
-      positionId={position.id}
-      ticker={position.ticker}
-      basisPerShare={openCcCtx.basisPerShare}
-      totalPremiumCollected={openCcCtx.totalPremiumCollected}
-      contracts={openCcCtx.contracts}
-      assignmentDate={openCcCtx.assignmentDate}
-      onClose={() => setOpenCcCtx(null)}
-    />
-  )}
+  {
+    openCcCtx && (
+      <OpenCoveredCallSheet
+        open
+        positionId={position.id}
+        ticker={position.ticker}
+        basisPerShare={openCcCtx.basisPerShare}
+        totalPremiumCollected={openCcCtx.totalPremiumCollected}
+        contracts={openCcCtx.contracts}
+        assignmentDate={openCcCtx.assignmentDate}
+        onClose={() => setOpenCcCtx(null)}
+      />
+    )
+  }
   ```
 
 **Refactor — cleanup to consider:**
+
 - The blur condition is getting long with three context states. Consider a computed `isSheetOpen` variable.
 
 **Acceptance criteria covered:**
+
 - "CC form appears in position detail header when phase = HOLDING_SHARES" (Technical Notes)
 
 ---
@@ -364,6 +412,7 @@ Add the ability to sell a covered call against shares held after CSP assignment.
 ### 10. E2E Tests
 
 **Files to create or modify:**
+
 - `e2e/open-covered-call.spec.ts` — new file
 
 **Red — tests to write (one per AC):**
@@ -387,6 +436,7 @@ Each test sets up a position via the UI: open CSP (AAPL, strike $180, premium $3
 - `it('AC8: rejects fill date before assignment date')` — open CC sheet, enter fill date before the assignment date → verify validation error "Fill date cannot be before the assignment date". Maps to AC: "Reject fill date before assignment date".
 
 **Green — implementation:**
+
 - Create `e2e/open-covered-call.spec.ts` following `e2e/csp-assignment.spec.ts` pattern:
   - Reuse `launchFreshApp()`, `openPosition()`, `selectDate()`, `openDetailFor()` helpers
   - Add `assignPosition()` helper that opens assignment sheet and confirms
@@ -394,9 +444,11 @@ Each test sets up a position via the UI: open CSP (AAPL, strike $180, premium $3
   - Each test: launch app → create CSP → assign → exercise the specific AC
 
 **Refactor — cleanup to consider:**
+
 - Extract shared e2e helpers (openPosition, selectDate, openDetailFor, assignPosition) into a shared utils file if duplication across e2e files is growing.
 
 **Acceptance criteria covered:**
+
 - AC1: Successfully open a covered call above cost basis
 - AC2: Strike above cost basis shows no warning
 - AC3: Strike at or below cost basis shows guardrail warning

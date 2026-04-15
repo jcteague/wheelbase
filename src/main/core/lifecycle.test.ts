@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { localDate } from '../dates'
 import * as lifecycle from './lifecycle'
 import {
   ValidationError,
@@ -7,7 +8,8 @@ import {
   expireCsp,
   openCoveredCall,
   closeCoveredCall,
-  expireCc
+  expireCc,
+  rollCc
 } from './lifecycle'
 import type {
   CloseCspInput,
@@ -16,7 +18,8 @@ import type {
   ExpireCspInput,
   OpenWheelInput,
   OpenCoveredCallInput,
-  RollCspInput
+  RollCspInput,
+  RollCcInput
 } from './lifecycle'
 
 // ---------------------------------------------------------------------------
@@ -24,9 +27,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 function isoDate(offsetDays: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() + offsetDays)
-  return d.toISOString().slice(0, 10)
+  return localDate(offsetDays)
 }
 
 const TODAY = isoDate(0)
@@ -786,6 +787,133 @@ describe('rollCsp', () => {
     const e = catchValidation(() => rollCsp(validRollCspInput({ newPremiumPerContract: '0' })))
     expect(e.field).toBe('newPremiumPerContract')
     expect(e.code).toBe('must_be_positive')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// rollCc
+// ---------------------------------------------------------------------------
+
+describe('rollCc', () => {
+  function validRollCcInput(overrides: Partial<RollCcInput> = {}): RollCcInput {
+    return {
+      currentPhase: 'CC_OPEN',
+      currentStrike: '185.00',
+      currentExpiration: '2026-04-18',
+      newStrike: '190.00',
+      newExpiration: '2026-05-16',
+      costToClosePerContract: '2.50',
+      newPremiumPerContract: '3.00',
+      ...overrides
+    }
+  }
+
+  it('throws invalid_phase when position is not CC_OPEN', () => {
+    const e = catchValidation(() => rollCc(validRollCcInput({ currentPhase: 'CSP_OPEN' as never })))
+    expect(e.field).toBe('__phase__')
+    expect(e.code).toBe('invalid_phase')
+  })
+
+  it('throws must_be_on_or_after_current when newExpiration is before currentExpiration', () => {
+    const e = catchValidation(() =>
+      rollCc(
+        validRollCcInput({
+          currentExpiration: '2026-04-18',
+          newExpiration: '2026-03-01'
+        })
+      )
+    )
+    expect(e.field).toBe('newExpiration')
+    expect(e.code).toBe('must_be_on_or_after_current')
+  })
+
+  it('accepts same expiration (>= not >)', () => {
+    const result = rollCc(
+      validRollCcInput({
+        currentExpiration: '2026-04-18',
+        newExpiration: '2026-04-18',
+        currentStrike: '185.00',
+        newStrike: '190.00'
+      })
+    )
+    expect(result.phase).toBe('CC_OPEN')
+  })
+
+  it('throws no_change when strike and expiration are both unchanged', () => {
+    const e = catchValidation(() =>
+      rollCc(
+        validRollCcInput({
+          currentStrike: '185.00',
+          newStrike: '185.00',
+          currentExpiration: '2026-04-18',
+          newExpiration: '2026-04-18'
+        })
+      )
+    )
+    expect(e.field).toBe('__roll__')
+    expect(e.code).toBe('no_change')
+  })
+
+  it('throws must_be_positive when costToClosePerContract is 0', () => {
+    const e = catchValidation(() => rollCc(validRollCcInput({ costToClosePerContract: '0' })))
+    expect(e.field).toBe('costToClosePerContract')
+    expect(e.code).toBe('must_be_positive')
+  })
+
+  it('throws must_be_positive when newPremiumPerContract is 0', () => {
+    const e = catchValidation(() => rollCc(validRollCcInput({ newPremiumPerContract: '0' })))
+    expect(e.field).toBe('newPremiumPerContract')
+    expect(e.code).toBe('must_be_positive')
+  })
+
+  it('returns { phase: CC_OPEN } on valid roll up and out', () => {
+    const result = rollCc(
+      validRollCcInput({
+        currentStrike: '185.00',
+        newStrike: '190.00',
+        currentExpiration: '2026-04-18',
+        newExpiration: '2026-05-16',
+        costToClosePerContract: '2.50',
+        newPremiumPerContract: '3.00'
+      })
+    )
+    expect(result.phase).toBe('CC_OPEN')
+  })
+
+  it('returns { phase: CC_OPEN } on roll up (same expiration, higher strike)', () => {
+    const result = rollCc(
+      validRollCcInput({
+        currentStrike: '185.00',
+        newStrike: '190.00',
+        currentExpiration: '2026-04-18',
+        newExpiration: '2026-04-18'
+      })
+    )
+    expect(result.phase).toBe('CC_OPEN')
+  })
+
+  it('returns { phase: CC_OPEN } on roll down (same expiration, lower strike)', () => {
+    const result = rollCc(
+      validRollCcInput({
+        currentStrike: '185.00',
+        newStrike: '180.00',
+        currentExpiration: '2026-04-18',
+        newExpiration: '2026-04-18'
+      })
+    )
+    expect(result.phase).toBe('CC_OPEN')
+  })
+
+  it('returns { phase: CC_OPEN } on roll out (same strike, later expiration)', () => {
+    const result = rollCc(
+      validRollCcInput({
+        currentStrike: '185.00',
+        newStrike: '185.00',
+        currentExpiration: '2026-04-18',
+        newExpiration: '2026-05-16'
+      })
+    )
+    expect(result.phase).toBe('CC_OPEN')
   })
 })
 

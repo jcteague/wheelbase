@@ -17,7 +17,7 @@ describe('TableHeader', () => {
     expect(th).toHaveTextContent('Strike')
   })
 
-  it('applies uppercase mono muted styles', () => {
+  it('applies uppercase mono muted styles via Tailwind classes', () => {
     const { container } = render(
       <table>
         <thead>
@@ -28,9 +28,9 @@ describe('TableHeader', () => {
       </table>
     )
     const th = container.querySelector('th') as HTMLElement
-    const style = th.getAttribute('style') ?? ''
-    expect(style).toContain('text-transform: uppercase')
-    expect(style).toContain('var(--wb-text-muted)')
+    expect(th).toHaveClass('uppercase')
+    expect(th).toHaveClass('font-wb-mono')
+    expect(th).toHaveClass('text-wb-text-muted')
   })
 })
 
@@ -50,7 +50,7 @@ describe('TableCell', () => {
     expect(td).toHaveTextContent('245.00')
   })
 
-  it('applies mono font and padding', () => {
+  it('applies mono font and padding via Tailwind classes', () => {
     const { container } = render(
       <table>
         <tbody>
@@ -61,8 +61,8 @@ describe('TableCell', () => {
       </table>
     )
     const td = container.querySelector('td') as HTMLElement
-    const style = td.getAttribute('style') ?? ''
-    expect(style).toContain('padding')
-    expect(style).toContain('font-family')
+    expect(td).toHaveClass('font-wb-mono')
+    expect(td).toHaveClass('px-[12px]')
+    expect(td).toHaveClass('py-[8px]')
   })
 })

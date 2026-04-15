@@ -5,7 +5,6 @@ import { z } from 'zod'
 import type { ApiError, ApiFieldError } from '../api/positions'
 import { useClosePosition } from '../hooks/useClosePosition'
 import { fmtMoney, fmtPct } from '../lib/format'
-import { MONO } from '../lib/tokens'
 import { Field } from './ui/FormField'
 import { FormButton } from './ui/FormButton'
 import { NumberInput } from './ui/NumberInput'
@@ -114,10 +113,7 @@ export function CloseCspForm({
 
   return (
     <SectionCard header="Buy to Close">
-      <form
-        onSubmit={handleSubmit(onSubmit)}
-        style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 16 }}
-      >
+      <form onSubmit={handleSubmit(onSubmit)} className="p-5 flex flex-col gap-4">
         <Field
           label="Close price per contract"
           htmlFor="close_price_per_contract"
@@ -153,22 +149,16 @@ export function CloseCspForm({
 
         {preview && (
           <div
-            style={{
-              background: isProfit ? 'var(--wb-green-dim)' : 'var(--wb-red-dim)',
-              border: `1px solid ${isProfit ? 'rgba(63,185,80,0.2)' : 'rgba(248,81,73,0.2)'}`,
-              borderRadius: 6,
-              padding: '12px 16px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 6,
-              fontFamily: MONO,
-              fontSize: '0.8125rem',
-              color: isProfit ? 'var(--wb-green)' : 'var(--wb-red)'
-            }}
+            className={[
+              'rounded-md px-4 py-3 flex flex-col gap-1.5 font-wb-mono text-[0.8125rem]',
+              isProfit
+                ? 'bg-wb-green-dim border border-[rgba(63,185,80,0.2)] text-wb-green'
+                : 'bg-wb-red-dim border border-[rgba(248,81,73,0.2)] text-wb-red'
+            ].join(' ')}
           >
             <div>Net P&L: {fmtMoney(preview.netPnl.toString())}</div>
             <div>Total P&L: {fmtMoney(preview.totalPnl.toString())}</div>
-            <div style={{ fontWeight: 600 }}>{fmtPct(preview.pct)}</div>
+            <div className="font-semibold">{fmtPct(preview.pct)}</div>
           </div>
         )}
 

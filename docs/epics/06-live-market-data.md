@@ -20,12 +20,12 @@ Position cards update with real-time prices, Greeks, and unrealized P&L from Alp
 
 ## Vertical Slice
 
-| Layer | What ships |
-|---|---|
-| Integration | alpaca.py: get_positions(), get_option_snapshots(), get_activities(type=OPASN) |
-| Backend | APScheduler job for position polling and assignment detection |
-| API | GET /api/positions enriched with live data, WebSocket or polling endpoint for price updates |
-| Frontend | Live price display on position cards, Greeks panel on detail page, assignment notification, environment switcher |
+| Layer       | What ships                                                                                                       |
+| ----------- | ---------------------------------------------------------------------------------------------------------------- |
+| Integration | alpaca.py: get_positions(), get_option_snapshots(), get_activities(type=OPASN)                                   |
+| Backend     | APScheduler job for position polling and assignment detection                                                    |
+| API         | GET /api/positions enriched with live data, WebSocket or polling endpoint for price updates                      |
+| Frontend    | Live price display on position cards, Greeks panel on detail page, assignment notification, environment switcher |
 
 ## Stories
 

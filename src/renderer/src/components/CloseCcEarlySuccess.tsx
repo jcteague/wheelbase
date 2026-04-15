@@ -30,10 +30,9 @@ export function CloseCcEarlySuccess({
 }: CloseCcEarlySuccessProps): React.JSX.Element {
   const pnl = new Decimal(ccLegPnl)
   const heroSign = pnl.gte(0) ? '+' : '−'
-  const heroColor = pnl.gte(0) ? 'var(--wb-green)' : 'var(--wb-red)'
 
   return (
-    <div style={{ display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
+    <div className="flex flex-1 flex-col overflow-hidden">
       <SheetHeader
         eyebrow="Complete"
         title={`${ticker} CC Closed`}
@@ -42,51 +41,41 @@ export function CloseCcEarlySuccess({
       />
 
       <SheetBody>
-        <div
-          style={{
-            textAlign: 'center',
-            padding: '20px',
-            borderRadius: 8,
-            background: 'var(--wb-bg-elevated)',
-            border: '1px solid var(--wb-border)'
-          }}
-        >
-          <div style={{ fontSize: '2rem', fontWeight: 800, color: heroColor }}>
+        <div className="text-center p-5 rounded-lg bg-wb-bg-elevated border border-wb-border">
+          <div
+            className={`text-[2rem] font-extrabold ${pnl.gte(0) ? 'text-wb-green' : 'text-wb-red'}`}
+          >
             {heroSign}${pnl.abs().toFixed(2)}
           </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--wb-text-muted)', marginTop: 4 }}>
-            CC Leg P&amp;L
-          </div>
+          <div className="text-[0.75rem] text-wb-text-muted mt-1">CC Leg P&amp;L</div>
         </div>
 
         <SectionCard>
-          <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-              <span style={{ color: 'var(--wb-text-muted)' }}>Leg recorded</span>
+          <div className="flex flex-col gap-2 px-4 py-3">
+            <div className="flex justify-between text-[0.8rem]">
+              <span className="text-wb-text-muted">Leg recorded</span>
               <span>CC_CLOSE · {fillDate}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-              <span style={{ color: 'var(--wb-text-muted)' }}>Fill price</span>
+            <div className="flex justify-between text-[0.8rem]">
+              <span className="text-wb-text-muted">Fill price</span>
               <span>{fmtMoney(closePrice)}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-              <span style={{ color: 'var(--wb-text-muted)' }}>Open premium</span>
+            <div className="flex justify-between text-[0.8rem]">
+              <span className="text-wb-text-muted">Open premium</span>
               <span>{fmtMoney(openPremium)}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-              <span style={{ color: 'var(--wb-text-muted)' }}>Phase transition</span>
-              <div
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}
-              >
-                <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <div className="flex justify-between text-[0.8rem]">
+              <span className="text-wb-text-muted">Phase transition</span>
+              <div className="flex flex-col items-end gap-1.5">
+                <span className="flex gap-1 items-center">
                   <PhaseBadge phase="CC_OPEN" />
                   <span>→</span>
                   <PhaseBadge phase="HOLDING_SHARES" />
                 </span>
               </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-              <span style={{ color: 'var(--wb-text-muted)' }}>Cost basis</span>
+            <div className="flex justify-between text-[0.8rem]">
+              <span className="text-wb-text-muted">Cost basis</span>
               <span>${basisPerShare} / share (unchanged)</span>
             </div>
           </div>
@@ -100,20 +89,14 @@ export function CloseCcEarlySuccess({
       </SheetBody>
 
       <SheetFooter>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+        <div className="flex flex-col gap-2 w-full">
           <FormButton
             label={`Sell New Covered Call on ${ticker} →`}
             onClick={onClose}
             style={{ width: '100%' }}
           />
           <button
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--wb-text-muted)',
-              cursor: 'pointer',
-              fontSize: '0.8rem'
-            }}
+            className="bg-transparent border-none text-wb-text-muted cursor-pointer text-[0.8rem]"
             onClick={onClose}
           >
             View full position history

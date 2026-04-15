@@ -21,11 +21,11 @@ A trader who has been assigned on a CSP can record the assignment, transition to
 
 ## Vertical Slice
 
-| Layer | What ships |
-|---|---|
-| Core engines | lifecycle transitions for assignment/CC/call-away, costbasis updates through full cycle |
-| API | POST /api/positions/:id/legs (assignment, CC open, CC close, call-away) |
-| Frontend | Assignment form, CC entry form (with strike-vs-basis indicator), call-away action, updated position detail with multi-leg timeline |
+| Layer        | What ships                                                                                                                         |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Core engines | lifecycle transitions for assignment/CC/call-away, costbasis updates through full cycle                                            |
+| API          | POST /api/positions/:id/legs (assignment, CC open, CC close, call-away)                                                            |
+| Frontend     | Assignment form, CC entry form (with strike-vs-basis indicator), call-away action, updated position detail with multi-leg timeline |
 
 ## Stories
 

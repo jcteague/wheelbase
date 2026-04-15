@@ -13,6 +13,7 @@ Following TDD (Red → Green → Refactor), implemented bottom-up by dependency:
 ### Step 1: Shared Enums — `backend/app/core/types.py` (NEW)
 
 Define all six `str, Enum` classes used across engines, models, and API:
+
 - `StrategyType`: WHEEL
 - `WheelStatus`: active, paused, closed
 - `WheelPhase`: CSP_OPEN, CSP_EXPIRED, CSP_CLOSED_PROFIT, CSP_CLOSED_LOSS, HOLDING_SHARES, CC_OPEN, CC_EXPIRED, CC_CLOSED_PROFIT, CC_CLOSED_LOSS, WHEEL_COMPLETE
@@ -27,11 +28,13 @@ Lives in `core/` (not `models/`) so pure engines can import without touching SQL
 **Tests first** → `backend/tests/core/test_lifecycle.py` (NEW)
 
 Dataclasses:
+
 - `OpenWheelInput` (frozen): ticker, strike (Decimal), expiration (date), contracts (int), premium_per_contract (Decimal), fill_date (date)
 - `OpenWheelResult` (frozen): phase (WheelPhase)
 - `ValidationError(ValueError)`: field, code, message attributes
 
 Function: `open_wheel(input) -> OpenWheelResult`
+
 - Validates (fail-fast, first error raises):
   - ticker matches `^[A-Z]{1,5}$` → `invalid_format`
   - strike > 0 → `must_be_positive`
@@ -48,10 +51,12 @@ Tests: happy path + one test per validation rule (~13 tests).
 **Tests first** → `backend/tests/core/test_costbasis.py` (NEW)
 
 Dataclasses:
+
 - `CspLegInput` (frozen): strike (Decimal), premium_per_contract (Decimal), contracts (int)
 - `CostBasisResult` (frozen): basis_per_share (Decimal), total_premium_collected (Decimal)
 
 Function: `calculate_initial_csp_basis(leg) -> CostBasisResult`
+
 - `basis_per_share = strike - premium_per_contract`
 - `total_premium_collected = premium_per_contract * contracts * 100`
 - All math uses `decimal.Decimal`, rounded `ROUND_HALF_UP` to 4 places
@@ -82,6 +87,7 @@ Indexes: `positions(status, phase)`, `positions(ticker)`, `legs(position_id, fil
 ### Step 6: API Schemas — `backend/app/api/schemas.py` (NEW)
 
 Pydantic v2 models:
+
 - `CreatePositionRequest`: ticker, strike (Decimal), expiration (date), contracts (int), premium_per_contract (Decimal), fill_date (optional date), account_id/thesis/notes (optional)
 - `PositionResponse`, `LegResponse`, `CostBasisSnapshotResponse`: with `from_attributes=True`
 - `CreatePositionResponse`: position + leg + cost_basis_snapshot
@@ -94,12 +100,14 @@ Decimal fields serialize as strings in JSON (Pydantic v2 default) to preserve pr
 **Tests first** → `backend/tests/api/test_positions.py` (NEW)
 
 `POST /positions` (201):
+
 1. Call `open_wheel()` — catch `ValidationError` → 400 with field-level errors
 2. Call `calculate_initial_csp_basis()`
 3. In `async with session.begin()`: create Position, flush (get id), create Leg, create CostBasisSnapshot
 4. Return `CreatePositionResponse`
 
 Also modify:
+
 - `backend/app/api/routes/__init__.py` — export router
 - `backend/app/main.py` — include router at `/api`, add global 500 exception handler
 - `backend/tests/conftest.py` — add `client` fixture (httpx AsyncClient + ASGITransport) with mocked session
@@ -111,6 +119,7 @@ Test fixture approach: mock `get_session` dependency (PostgreSQL-specific types 
 Install dev deps: `pnpm add -D vitest @testing-library/preact @testing-library/user-event jsdom`
 
 Modify:
+
 - `frontend/vite.config.ts` — add `test: { environment: 'jsdom', globals: true, setupFiles: './src/test-setup.ts' }`
 - `frontend/package.json` — add `"test": "vitest run"` script
 
@@ -121,6 +130,7 @@ Create: `frontend/src/test-setup.ts`
 Install: `pnpm add wouter` (React-compatible, works with preact/compat)
 
 Modify `frontend/src/app.tsx`:
+
 - Add `Router` with routes: `/` → NewWheelPage, `/positions/:id` → PositionDetailPage (stub)
 
 ### Step 10: Frontend API + Hook
@@ -133,6 +143,7 @@ Modify `frontend/src/app.tsx`:
 **Tests first** → `frontend/src/components/NewWheelForm.test.tsx` (NEW)
 
 `frontend/src/components/NewWheelForm.tsx` (NEW):
+
 - React Hook Form + Zod resolver (`newWheelSchema` already exists in `schemas/new-wheel.ts`)
 - `mode: 'onBlur'` for validation on blur
 - Required fields: ticker, strike, expiration, contracts, premium per contract
@@ -147,6 +158,7 @@ Modify `frontend/src/app.tsx`:
 Add shadcn/ui components: `pnpm dlx shadcn@latest add input button label form`
 
 Pages:
+
 - `frontend/src/pages/NewWheelPage.tsx` (NEW) — renders heading + NewWheelForm
 - `frontend/src/pages/PositionDetailPage.tsx` (NEW) — stub showing position ID from URL params
 
@@ -154,33 +166,33 @@ Pages:
 
 ## File Summary
 
-| Action | File |
-|--------|------|
-| NEW | `backend/app/core/types.py` |
-| MODIFY | `backend/app/core/lifecycle.py` |
-| MODIFY | `backend/app/core/costbasis.py` |
-| MODIFY | `backend/app/models/__init__.py` |
-| MODIFY | `backend/app/db/migrations/env.py` |
-| NEW | `backend/app/db/migrations/versions/<hash>_create_initial_schema.py` |
-| NEW | `backend/app/api/schemas.py` |
-| NEW | `backend/app/api/routes/positions.py` |
-| MODIFY | `backend/app/api/routes/__init__.py` |
-| MODIFY | `backend/app/main.py` |
-| NEW | `backend/tests/core/test_lifecycle.py` |
-| NEW | `backend/tests/core/test_costbasis.py` |
-| NEW | `backend/tests/api/__init__.py` |
-| NEW | `backend/tests/api/test_positions.py` |
-| MODIFY | `backend/tests/conftest.py` |
-| NEW | `frontend/src/api/positions.ts` |
-| NEW | `frontend/src/hooks/useCreatePosition.ts` |
-| NEW | `frontend/src/components/NewWheelForm.tsx` |
-| NEW | `frontend/src/components/NewWheelForm.test.tsx` |
-| NEW | `frontend/src/pages/NewWheelPage.tsx` |
-| NEW | `frontend/src/pages/PositionDetailPage.tsx` |
-| NEW | `frontend/src/test-setup.ts` |
-| MODIFY | `frontend/src/app.tsx` |
-| MODIFY | `frontend/vite.config.ts` |
-| MODIFY | `frontend/package.json` |
+| Action | File                                                                 |
+| ------ | -------------------------------------------------------------------- |
+| NEW    | `backend/app/core/types.py`                                          |
+| MODIFY | `backend/app/core/lifecycle.py`                                      |
+| MODIFY | `backend/app/core/costbasis.py`                                      |
+| MODIFY | `backend/app/models/__init__.py`                                     |
+| MODIFY | `backend/app/db/migrations/env.py`                                   |
+| NEW    | `backend/app/db/migrations/versions/<hash>_create_initial_schema.py` |
+| NEW    | `backend/app/api/schemas.py`                                         |
+| NEW    | `backend/app/api/routes/positions.py`                                |
+| MODIFY | `backend/app/api/routes/__init__.py`                                 |
+| MODIFY | `backend/app/main.py`                                                |
+| NEW    | `backend/tests/core/test_lifecycle.py`                               |
+| NEW    | `backend/tests/core/test_costbasis.py`                               |
+| NEW    | `backend/tests/api/__init__.py`                                      |
+| NEW    | `backend/tests/api/test_positions.py`                                |
+| MODIFY | `backend/tests/conftest.py`                                          |
+| NEW    | `frontend/src/api/positions.ts`                                      |
+| NEW    | `frontend/src/hooks/useCreatePosition.ts`                            |
+| NEW    | `frontend/src/components/NewWheelForm.tsx`                           |
+| NEW    | `frontend/src/components/NewWheelForm.test.tsx`                      |
+| NEW    | `frontend/src/pages/NewWheelPage.tsx`                                |
+| NEW    | `frontend/src/pages/PositionDetailPage.tsx`                          |
+| NEW    | `frontend/src/test-setup.ts`                                         |
+| MODIFY | `frontend/src/app.tsx`                                               |
+| MODIFY | `frontend/vite.config.ts`                                            |
+| MODIFY | `frontend/package.json`                                              |
 
 Reuse existing: `frontend/src/schemas/new-wheel.ts` (Zod schema), `frontend/src/schemas/common.ts` (shared validators), `frontend/src/lib/utils.ts` (cn helper).
 
@@ -188,18 +200,18 @@ Reuse existing: `frontend/src/schemas/new-wheel.ts` (Zod schema), `frontend/src/
 
 ## Tasks
 
-| # | Task | Status | Blocked By |
-|---|------|--------|------------|
-| 1 | Create shared enums in `backend/app/core/types.py` | pending | — |
-| 2 | Implement lifecycle engine with tests (Red → Green) | pending | #1 |
-| 3 | Implement cost basis engine with tests (Red → Green) | pending | #1 |
-| 4 | Create ORM models and Alembic migration | pending | #1 |
-| 5 | Implement API schemas and POST /positions route with tests | pending | #2, #3, #4 |
-| 6 | Set up frontend test infrastructure | pending | — |
-| 7 | Set up frontend routing and install shadcn/ui components | pending | #6 |
-| 8 | Implement frontend API client and mutation hook | pending | #5 |
-| 9 | Implement New Wheel form, pages, and frontend tests | pending | #6, #7, #8 |
-| 10 | Run full verification (tests, lint, typecheck, smoke test) | pending | #5, #9 |
+| #   | Task                                                       | Status  | Blocked By |
+| --- | ---------------------------------------------------------- | ------- | ---------- |
+| 1   | Create shared enums in `backend/app/core/types.py`         | pending | —          |
+| 2   | Implement lifecycle engine with tests (Red → Green)        | pending | #1         |
+| 3   | Implement cost basis engine with tests (Red → Green)       | pending | #1         |
+| 4   | Create ORM models and Alembic migration                    | pending | #1         |
+| 5   | Implement API schemas and POST /positions route with tests | pending | #2, #3, #4 |
+| 6   | Set up frontend test infrastructure                        | pending | —          |
+| 7   | Set up frontend routing and install shadcn/ui components   | pending | #6         |
+| 8   | Implement frontend API client and mutation hook            | pending | #5         |
+| 9   | Implement New Wheel form, pages, and frontend tests        | pending | #6, #7, #8 |
+| 10  | Run full verification (tests, lint, typecheck, smoke test) | pending | #5, #9     |
 
 Parallel tracks: **Backend** (#1→#2/#3/#4→#5) and **Frontend infra** (#6→#7) can run concurrently. They converge at #8→#9.
 

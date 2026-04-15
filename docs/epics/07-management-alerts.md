@@ -21,12 +21,12 @@ The app proactively tells the trader what needs attention. A prioritized managem
 
 ## Vertical Slice
 
-| Layer | What ships |
-|---|---|
-| Core engine | alerts.py: evaluate rules against position + market state, return alert items |
-| Backend | APScheduler job running alert engine on polling interval, alert persistence |
-| API | GET /api/alerts (management queue), PATCH /api/alerts/:id (dismiss/act), GET /api/alerts/calendar |
-| Frontend | Management queue component on dashboard, alert configuration panel, expiration calendar page, per-position alert overrides |
+| Layer       | What ships                                                                                                                 |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Core engine | alerts.py: evaluate rules against position + market state, return alert items                                              |
+| Backend     | APScheduler job running alert engine on polling interval, alert persistence                                                |
+| API         | GET /api/alerts (management queue), PATCH /api/alerts/:id (dismiss/act), GET /api/alerts/calendar                          |
+| Frontend    | Management queue component on dashboard, alert configuration panel, expiration calendar page, per-position alert overrides |
 
 ## Stories
 

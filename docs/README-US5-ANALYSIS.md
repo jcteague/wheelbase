@@ -14,14 +14,18 @@ This directory contains a complete codebase analysis for US-5 (CSP Expiration fe
 ## Document Guide
 
 ### Quick Start (First Time)
+
 **Start here:** [`US5-ANALYSIS-INDEX.md`](./US5-ANALYSIS-INDEX.md)
+
 - Navigation guide to all documents
 - Role-based reading paths (manager, backend dev, frontend dev)
 - Quick reference for all 7 analysis areas
 - Time estimate: 5 minutes
 
 ### For Planning & Decision Making
+
 **Read:** [`US5-QUICK-REFERENCE.md`](./US5-QUICK-REFERENCE.md)
+
 - User story summary
 - Acceptance criteria
 - Architecture overview diagram
@@ -32,7 +36,9 @@ This directory contains a complete codebase analysis for US-5 (CSP Expiration fe
 - Time estimate: 5-7 minutes
 
 ### For Complete Detailed Analysis
+
 **Read:** [`FINAL_SUMMARY.txt`](./FINAL_SUMMARY.txt)
+
 - 7-point detailed analysis of each component
 - Current state vs gaps for each area
 - Complete implementation checklist with 5 phases
@@ -43,7 +49,9 @@ This directory contains a complete codebase analysis for US-5 (CSP Expiration fe
 - Time estimate: 10-12 minutes
 
 ### For Implementation (Code Patterns)
+
 **Reference:** [`wheelbase-code-patterns.md`](./wheelbase-code-patterns.md)
+
 - 6 exact code patterns extracted from US-1
 - Pattern 1: Pure lifecycle engine functions
 - Pattern 2: Pure cost basis calculations
@@ -55,7 +63,9 @@ This directory contains a complete codebase analysis for US-5 (CSP Expiration fe
 - Time estimate: 15-20 minutes
 
 ### For Component Status Reference
+
 **Reference:** [`wheelbase-gaps-summary.md`](./wheelbase-gaps-summary.md)
+
 - Status for each of 7 areas (✅ complete vs ❌ missing)
 - Specific gaps identified with line counts
 - Actions needed per component
@@ -69,42 +79,49 @@ This directory contains a complete codebase analysis for US-5 (CSP Expiration fe
 ## 7-Part Analysis Summary
 
 ### 1. Position Models & Types
+
 **Status:** ✅ 70% Ready  
 **Files:** `src/main/core/types.ts`, `src/main/schemas.ts`  
 **Gap:** CostBasisSnapshotRecord missing `finalPnl` and `annualizedReturn` fields  
 **Action:** Add ~5 LOC to update TypeScript schema (fields exist in DB)
 
-### 2. Leg Models & Types  
+### 2. Leg Models & Types
+
 **Status:** ✅ 100% Complete  
 **Files:** `src/main/core/types.ts`  
 **Gap:** None — `LegRole 'EXPIRE'` already defined  
 **Action:** No changes needed
 
 ### 3. Lifecycle Engine
+
 **Status:** ❌ 30% Done  
 **Files:** `src/main/core/lifecycle.ts`  
 **Gap:** Need `expireCSP()` function (~20 LOC)  
 **Action:** Replicate `openWheel()` pattern for expiration validation
 
 ### 4. Cost Basis Engine
+
 **Status:** ❌ 50% Done  
 **Files:** `src/main/core/costbasis.ts`  
 **Gap:** Need expiration P&L calculation (~15 LOC)  
 **Action:** Add function that returns `finalPnl = totalPremiumCollected`
 
 ### 5. IPC Handlers
+
 **Status:** ❌ 0% Done  
 **Files:** `src/main/ipc/positions.ts`  
 **Gap:** Need `positions:expire` handler (~30 LOC)  
 **Action:** Replicate `positions:create` handler pattern
 
 ### 6. Frontend Integration
+
 **Status:** ❌ 50% Done  
 **Files:** `src/renderer/src/`, PositionDetailPage  
 **Gap:** Need PositionDetailPage (~150 LOC) + ConfirmDialog (~50 LOC)  
 **Action:** Implement detail page with "Mark Expired" action and confirm dialog
 
 ### 7. Database Schema
+
 **Status:** ✅ 100% Ready  
 **Files:** `migrations/001_initial_schema.sql`  
 **Gap:** None  
@@ -115,27 +132,32 @@ This directory contains a complete codebase analysis for US-5 (CSP Expiration fe
 ## Implementation Roadmap
 
 ### Phase 1: Backend Core (Pure Functions) — 1-2 hours
+
 - Add `expireCSP()` to lifecycle.ts
 - Add expiration P&L to costbasis.ts
 - Update types in schemas.ts
 - Write tests
 
 ### Phase 2: Backend Service & IPC — 1-2 hours
+
 - Add `expirePosition()` service
 - Register `positions:expire` handler
 - Implement error handling
 
 ### Phase 3: Frontend API — 30 minutes
+
 - Add `expirePosition()` function
 - Handle response transformation
 
 ### Phase 4: Frontend UI — 2-3 hours
+
 - Implement PositionDetailPage
 - Add "Mark Expired" button
 - Create ConfirmExpireDialog
 - Add post-action navigation
 
 ### Phase 5: Testing — 1-2 hours
+
 - Unit tests for engines
 - Service tests
 - Component tests
@@ -145,6 +167,7 @@ This directory contains a complete codebase analysis for US-5 (CSP Expiration fe
 ## Files to Modify
 
 ### Backend (7 files)
+
 1. `src/main/core/lifecycle.ts` — Add `expireCSP()`
 2. `src/main/core/lifecycle.test.ts` — Add tests
 3. `src/main/core/costbasis.ts` — Add calculation
@@ -154,11 +177,13 @@ This directory contains a complete codebase analysis for US-5 (CSP Expiration fe
 7. `src/main/ipc/positions.ts` — Register `positions:expire` handler
 
 ### Frontend (3+ files)
+
 8. `src/renderer/src/api/positions.ts` — Add `expirePosition()` API call
 9. `src/renderer/src/pages/PositionDetailPage.tsx` — Implement detail view
 10. `src/renderer/src/components/ConfirmExpireDialog.tsx` — New component (optional)
 
 ### No Changes Needed
+
 - Database schema
 - Leg types
 - Pattern infrastructure
@@ -167,37 +192,40 @@ This directory contains a complete codebase analysis for US-5 (CSP Expiration fe
 
 ## Key Metrics
 
-| Metric | Value |
-|--------|-------|
-| Backend functions to implement | 3 |
-| Service methods to implement | 1 |
-| IPC handlers to register | 1 |
-| Frontend API functions | 1 |
-| Frontend pages to build | 1 |
-| Frontend components to build | 1 |
-| Database migrations | 0 |
-| Total files to modify | 10 |
-| Total new lines of code | ~375 |
-| Estimated implementation time | 4-5 hours |
-| Complexity level | Low-Medium |
-| Risk level | Low |
+| Metric                         | Value      |
+| ------------------------------ | ---------- |
+| Backend functions to implement | 3          |
+| Service methods to implement   | 1          |
+| IPC handlers to register       | 1          |
+| Frontend API functions         | 1          |
+| Frontend pages to build        | 1          |
+| Frontend components to build   | 1          |
+| Database migrations            | 0          |
+| Total files to modify          | 10         |
+| Total new lines of code        | ~375       |
+| Estimated implementation time  | 4-5 hours  |
+| Complexity level               | Low-Medium |
+| Risk level                     | Low        |
 
 ---
 
 ## How to Use These Documents
 
 ### For Project Managers
+
 1. Read: US5-QUICK-REFERENCE.md (5 min)
 2. Review: FINAL_SUMMARY.txt "ESTIMATED EFFORT" section (2 min)
 3. Share: FINAL_SUMMARY.txt with team for estimates
 
 ### For Backend Developers
+
 1. Read: US5-QUICK-REFERENCE.md (5 min)
 2. Study: wheelbase-code-patterns.md Patterns 1-4 (10 min)
 3. Reference: wheelbase-gaps-summary.md section 3-5 while coding
 4. Implement: Phase 1, Phase 2 (using code patterns as templates)
 
 ### For Frontend Developers
+
 1. Read: US5-QUICK-REFERENCE.md (5 min)
 2. Study: wheelbase-code-patterns.md Pattern 5 (3 min)
 3. Reference: wheelbase-gaps-summary.md section 6 while coding
@@ -223,10 +251,12 @@ This directory contains a complete codebase analysis for US-5 (CSP Expiration fe
 ## Dependencies
 
 **Within Project:**
+
 - US-1 (Open wheel) — creates positions to expire
 - US-3 (Position detail page) — provides UI context
 
 **External Libraries (already in use):**
+
 - better-sqlite3 — database access
 - Zod — schema validation
 - Decimal.js — precision math
@@ -282,13 +312,13 @@ This directory contains a complete codebase analysis for US-5 (CSP Expiration fe
 
 ## Document Size & Read Time
 
-| Document | Size | Read Time | Purpose |
-|----------|------|-----------|---------|
-| US5-ANALYSIS-INDEX.md | 9.2K | 5 min | Navigation |
-| US5-QUICK-REFERENCE.md | 12K | 5-7 min | Planning |
-| FINAL_SUMMARY.txt | 11K | 10-12 min | Details |
-| wheelbase-code-patterns.md | 15K | 15-20 min | Implementation |
-| wheelbase-gaps-summary.md | 5.9K | 8-10 min | Gaps |
+| Document                   | Size | Read Time | Purpose        |
+| -------------------------- | ---- | --------- | -------------- |
+| US5-ANALYSIS-INDEX.md      | 9.2K | 5 min     | Navigation     |
+| US5-QUICK-REFERENCE.md     | 12K  | 5-7 min   | Planning       |
+| FINAL_SUMMARY.txt          | 11K  | 10-12 min | Details        |
+| wheelbase-code-patterns.md | 15K  | 15-20 min | Implementation |
+| wheelbase-gaps-summary.md  | 5.9K | 8-10 min  | Gaps           |
 
 **Total:** 53K of documentation  
 **Total read time:** 43-54 minutes for complete understanding
@@ -305,7 +335,7 @@ A: Replicate US-1 patterns. See wheelbase-code-patterns.md for templates.
 
 **Q: Where do I start?**  
 A: Backend: Start with `expireCSP()` in lifecycle.ts  
-   Frontend: Wait for backend, then implement PositionDetailPage
+ Frontend: Wait for backend, then implement PositionDetailPage
 
 **Q: How much is this really?**  
 A: ~375 LOC total, 4-5 hours. Most is adaptation of existing patterns.
@@ -318,6 +348,7 @@ A: Yes. Pure functions can be tested immediately with Vitest.
 ## Contact & Support
 
 If you have questions:
+
 1. Check the relevant document section
 2. Review wheelbase-code-patterns.md for examples
 3. Refer to wheelbase-gaps-summary.md for component status
@@ -330,10 +361,9 @@ If you have questions:
 **Analysis Version:** 1.0  
 **Generated:** March 12, 2025  
 **Wheelbase Branch:** usp-5  
-**Feature:** US-5 CSP Expiration  
+**Feature:** US-5 CSP Expiration
 
 ---
 
 **Status: ✅ READY TO BUILD**  
 All analysis complete. Patterns identified. Gaps quantified. Go forth and implement! 🚀
-

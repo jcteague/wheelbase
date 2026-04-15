@@ -20,12 +20,12 @@ A trader can maintain a watchlist of tickers they're evaluating, screen them aga
 
 ## Vertical Slice
 
-| Layer | What ships |
-|---|---|
-| Integration | alpaca.py: get_option_chain(), get_iv_rank(), get_earnings_calendar() |
-| Core engine | screener.py: score and rank candidates against criteria |
-| API | GET /api/watchlist, POST /api/watchlist, GET /api/screener/results |
-| Frontend | Watchlist manager, screener results table with ranking, filter controls, promote-to-trade button |
+| Layer       | What ships                                                                                       |
+| ----------- | ------------------------------------------------------------------------------------------------ |
+| Integration | alpaca.py: get_option_chain(), get_iv_rank(), get_earnings_calendar()                            |
+| Core engine | screener.py: score and rank candidates against criteria                                          |
+| API         | GET /api/watchlist, POST /api/watchlist, GET /api/screener/results                               |
+| Frontend    | Watchlist manager, screener results table with ranking, filter controls, promote-to-trade button |
 
 ## Stories
 

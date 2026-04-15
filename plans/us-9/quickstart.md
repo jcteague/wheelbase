@@ -25,13 +25,13 @@ pnpm test
 
 Tests specific to this story:
 
-| File | What it covers |
-|------|----------------|
-| `src/main/core/lifecycle.test.ts` | `expireCc` lifecycle engine (phase guard, date guard) |
-| `src/main/services/expire-cc-position.test.ts` | Service DB interactions (leg insert, position update) |
-| `src/main/ipc/positions.test.ts` | `positions:expire-cc` IPC handler (payload parsing, error mapping) |
-| `src/renderer/src/api/positions.test.ts` | `expireCc` API adapter (snake_case ↔ camelCase, error shape) |
-| `src/renderer/src/components/CcExpirationSheet.test.tsx` | Confirmation state, success state, strategic nudge, CTA |
+| File                                                     | What it covers                                                     |
+| -------------------------------------------------------- | ------------------------------------------------------------------ |
+| `src/main/core/lifecycle.test.ts`                        | `expireCc` lifecycle engine (phase guard, date guard)              |
+| `src/main/services/expire-cc-position.test.ts`           | Service DB interactions (leg insert, position update)              |
+| `src/main/ipc/positions.test.ts`                         | `positions:expire-cc` IPC handler (payload parsing, error mapping) |
+| `src/renderer/src/api/positions.test.ts`                 | `expireCc` API adapter (snake_case ↔ camelCase, error shape)       |
+| `src/renderer/src/components/CcExpirationSheet.test.tsx` | Confirmation state, success state, strategic nudge, CTA            |
 
 ---
 

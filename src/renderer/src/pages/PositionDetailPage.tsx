@@ -5,6 +5,7 @@ import { CcExpirationSheet } from '../components/CcExpirationSheet'
 import { CloseCcEarlySheet } from '../components/CloseCcEarlySheet'
 import { ExpirationSheet } from '../components/ExpirationSheet'
 import { OpenCoveredCallSheet } from '../components/OpenCoveredCallSheet'
+import { RollCcSheet } from '../components/RollCcSheet'
 import { RollCspSheet } from '../components/RollCspSheet'
 import { PageHeader, PageLayout } from '../components/PageLayout'
 import { PositionDetailActions } from '../components/PositionDetailActions'
@@ -44,7 +45,10 @@ export function PositionDetailPage(): React.JSX.Element {
     handleOpenCoveredCallFromAssignment,
     rollCspOpen,
     handleRollCsp,
-    handleCloseRollCsp
+    handleCloseRollCsp,
+    rollCcOpen,
+    handleRollCc,
+    handleCloseRollCc
   } = usePositionDetailSheets(data)
 
   if (isLoading) {
@@ -81,6 +85,7 @@ export function PositionDetailPage(): React.JSX.Element {
               onRecordCallAway={handleRecordCallAway}
               onRecordCcExpiration={handleRecordCcExpiration}
               onRollCsp={handleRollCsp}
+              onRollCc={handleRollCc}
             />
           }
         />
@@ -179,6 +184,20 @@ export function PositionDetailPage(): React.JSX.Element {
           basisPerShare={costBasisSnapshot.basisPerShare}
           totalPremiumCollected={costBasisSnapshot.totalPremiumCollected}
           onClose={handleCloseRollCsp}
+        />
+      )}
+      {rollCcOpen && activeLeg && costBasisSnapshot && (
+        <RollCcSheet
+          open
+          positionId={position.id}
+          ticker={position.ticker}
+          strike={activeLeg.strike}
+          expiration={activeLeg.expiration}
+          contracts={activeLeg.contracts}
+          premiumPerContract={activeLeg.premiumPerContract}
+          basisPerShare={costBasisSnapshot.basisPerShare}
+          totalPremiumCollected={costBasisSnapshot.totalPremiumCollected}
+          onClose={handleCloseRollCc}
         />
       )}
     </PageLayout>

@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { ValidationError, expireCc } from '../core/lifecycle'
+import { localToday } from '../dates'
 import { logger } from '../logger'
 import type { ExpireCcPayload, ExpireCcPositionResult } from '../schemas'
 import { getPosition } from './get-position'
@@ -10,7 +11,7 @@ export function expireCcPosition(
   positionId: string,
   payload: ExpireCcPayload
 ): ExpireCcPositionResult {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   const now = new Date().toISOString()
 
   logger.debug({ positionId }, 'expire_cc_position_inputs')

@@ -11,6 +11,7 @@ How wheel and PMCC traders actually behave, think, and struggle. Load this file 
 The single biggest risk in the wheel strategy is not assignment itself — it is the trader's psychological response to holding shares that have dropped well below their cost basis.
 
 **What happens:**
+
 1. Trader sells a CSP on a stock at $50 with a $48 effective basis
 2. Stock drops to $35 on bad earnings
 3. Trader is assigned: owns shares at $48 effective cost, stock now at $35
@@ -37,6 +38,7 @@ Experienced traders know that rolling is a management tool, not a rescue operati
 ### Anchoring to Strike Price
 
 Traders anchor to their original strike selection even when market conditions have changed:
+
 - Selling CCs at the same strike repeatedly even though volatility has shifted
 - Refusing to lower CC strikes because "I should be able to get that price"
 - Fixating on a specific DTE window even when term structure favors a different expiration
@@ -44,6 +46,7 @@ Traders anchor to their original strike selection even when market conditions ha
 ### Overconfidence After a Winning Streak
 
 After 5-10 successful wheel cycles, traders often:
+
 - Increase position size too aggressively
 - Move to higher-delta (more aggressive) strikes
 - Wheel stocks they haven't properly researched because "the strategy works"
@@ -68,6 +71,7 @@ The dominant tool for wheel tracking is a personal spreadsheet. Common patterns:
 - History is fragile: rows get deleted, formulas break, sheets get messy over time
 
 **Pain points traders report:**
+
 - "I can never remember my exact cost basis after 3 rolls"
 - "I have to check my broker for current prices, then update my sheet"
 - "I forgot to update my spreadsheet and now I can't reconstruct what happened"
@@ -76,6 +80,7 @@ The dominant tool for wheel tracking is a personal spreadsheet. Common patterns:
 ### Broker Platforms (ThinkOrSwim, Tastyworks, Schwab)
 
 Broker platforms show current positions but are poor wheel management tools:
+
 - No concept of a "wheel" as a multi-leg lifecycle
 - Cost basis shown is tax cost basis, not the trader's effective premium-adjusted basis
 - Roll history is buried in transaction logs, not linked to the position
@@ -83,6 +88,7 @@ Broker platforms show current positions but are poor wheel management tools:
 - Closed positions disappear from the active view
 
 **Pain points traders report:**
+
 - "My broker shows my cost basis but it doesn't include the put premium I collected"
 - "I can't see my full wheel history in one place"
 - "When I roll, the old position just disappears — I lose the context"
@@ -91,6 +97,7 @@ Broker platforms show current positions but are poor wheel management tools:
 ### Trading Journals (TraderVue, Edgewonk)
 
 Some traders use journaling tools, but these are designed for directional trading, not income strategies:
+
 - Focus on entry/exit P&L, not ongoing premium collection
 - No lifecycle concept for multi-leg strategies
 - Don't model rolls as linked pairs
@@ -99,6 +106,7 @@ Some traders use journaling tools, but these are designed for directional tradin
 ### TradingView and Options Analytics Tools
 
 Used for chart analysis and screening but not position management:
+
 - Good for finding wheel candidates (high IV, liquid options)
 - No tracking of open positions
 - No cost basis or premium tracking
@@ -111,6 +119,7 @@ Used for chart analysis and screening but not position management:
 ### Before Opening a New Wheel
 
 **What experts check (in rough order):**
+
 1. Thesis: Would I own this stock for 3-6 months?
 2. IV rank: Is premium rich enough to make the wheel worthwhile?
 3. Earnings: Am I selling into an earnings event?
@@ -124,6 +133,7 @@ Used for chart analysis and screening but not position management:
 ### At the 50% Profit Mark
 
 This is the most debated management point in the wheel community:
+
 - **Close at 50%:** Lock in profit, free capital, redeploy. Mathematically optimal for premium sellers because the last 50% of premium decays the slowest.
 - **Let it run:** Keep the remaining premium. Risk is that the underlying reverses.
 - **Personal preference:** Some traders use 25% on high-IV names (take profit quickly), 65-75% on low-IV names (need the extra premium).
@@ -133,6 +143,7 @@ This is the most debated management point in the wheel community:
 ### At the 21-DTE Mark
 
 Standard management window for rolling:
+
 - Theta decay accelerates inside 21 DTE but so does gamma risk
 - Most traders either close profitable positions or roll if the position is challenged
 - Some traders use 14 DTE instead
@@ -140,6 +151,7 @@ Standard management window for rolling:
 ### Assignment Day
 
 **Emotional reactions traders report:**
+
 - Relief ("finally, now I can sell calls")
 - Anxiety ("the stock is below my cost basis, am I trapped?")
 - Confusion ("how do I calculate my new cost basis?")
@@ -161,6 +173,7 @@ Standard management window for rolling:
 ### Correlation Risk
 
 Running multiple wheels on correlated underlyings creates concentrated risk:
+
 - 3 tech stock wheels = essentially one large tech sector bet
 - A sector rotation or market-wide event hits all positions simultaneously
 - Traders should diversify across sectors but rarely track this formally
@@ -170,6 +183,7 @@ Running multiple wheels on correlated underlyings creates concentrated risk:
 ### Opportunity Cost
 
 Capital locked in a wheel is unavailable for other strategies. Traders must weigh:
+
 - Is this wheel generating enough return to justify the capital lock-up?
 - Would the capital produce more in a different ticker or strategy?
 - How long has this capital been deployed vs. the annualized return?
@@ -183,16 +197,19 @@ These vary by jurisdiction and individual tax situation. The persona should flag
 ### Key Concepts the Persona Should Know
 
 **Wash sale rules (US):**
+
 - Selling a stock at a loss and repurchasing within 30 days before or after triggers wash sale rules
 - Wheeling the same ticker can inadvertently create wash sales if a losing CC leads to call-away and the trader immediately opens a new CSP
 - The disallowed loss is added to the cost basis of the replacement position
 
 **Premium classification:**
+
 - Short option premiums are short-term capital gains regardless of holding period
 - Assignment changes the tax treatment: put premium adjusts the stock cost basis
 - Call premium received is added to the sale proceeds when shares are called away
 
 **Holding period implications:**
+
 - Shares acquired through put assignment: holding period starts the day after assignment
 - Selling a CC does not reset the holding period on the underlying shares
 - Long-term vs short-term classification depends on how long shares are held post-assignment

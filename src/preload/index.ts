@@ -16,7 +16,8 @@ const api = {
   closeCoveredCallEarly: (payload: unknown) => invoke('positions:close-cc-early', payload),
   recordCallAway: (payload: unknown) => invoke('positions:record-call-away', payload),
   expireCc: (payload: unknown) => invoke('positions:expire-cc', payload),
-  rollCsp: (payload: unknown) => invoke('positions:roll-csp', payload)
+  rollCsp: (payload: unknown) => invoke('positions:roll-csp', payload),
+  rollCc: (payload: unknown) => invoke('positions:roll-cc', payload)
 }
 
 if (process.contextIsolated) {

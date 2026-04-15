@@ -18,20 +18,24 @@ Type-only fix in `src/preload/index.d.ts` — change `phase: string` to `phase: 
 ## Failing Tests (8 total, all due to missing fixes)
 
 ### #1 — getPosition active leg after roll
+
 - `getPosition > returns ROLL_TO leg as activeLeg after a CSP roll`
   - Fails: `expected 'CSP_OPEN' to be 'ROLL_TO'` — query only matches `leg_role = 'CSP_OPEN'`
 
 ### #5 — Roll-after-roll coverage
+
 - `rollCspPosition > second roll uses ROLL_TO strike/expiration from first roll as ROLL_FROM`
   - Fails: `expected '180.0000' to be '175.0000'` — second roll reads stale original leg
 - `rollCspPosition > getPosition.activeLeg points to latest ROLL_TO after two rolls`
   - Fails: `expected 'CSP_OPEN' to be 'ROLL_TO'`
 
 ### #2 — RollCspSuccess debit color
+
 - `renders success state for net-debit roll with gold/amber hero colors, not green`
   - Fails: hero amount uses `var(--wb-green)` instead of gold
 
 ### #3 — newExpiration date validation
+
 - `RollCspPayloadSchema > rejects newExpiration that is not YYYY-MM-DD format`
   - Fails: schema accepts `'May 16, 2026'`
 - `RollCspPayloadSchema > rejects newExpiration with slashes instead of dashes`
@@ -40,6 +44,7 @@ Type-only fix in `src/preload/index.d.ts` — change `phase: string` to `phase: 
   - Fails: schema accepts `''`
 
 ### #6 — NaN on cleared strike
+
 - `shows validation error when strike field is cleared and submitted`
   - Fails: no validation error shown, NaN submitted
 

@@ -9,16 +9,13 @@ describe('ErrorAlert', () => {
     expect(screen.getByText('Something went wrong.')).toBeInTheDocument()
   })
 
-  it('applies error styling', () => {
+  it('applies error styling via Tailwind classes', () => {
     render(<ErrorAlert message="Styled error" />)
 
-    expect(screen.getByRole('alert')).toHaveStyle({
-      background: 'var(--wb-red-dim)',
-      color: 'var(--wb-red)',
-      borderColor: 'rgba(248, 81, 73, 0.25)',
-      borderStyle: 'solid',
-      borderWidth: '1px'
-    })
+    const el = screen.getByRole('alert')
+    expect(el).toHaveClass('bg-wb-red-dim')
+    expect(el).toHaveClass('text-wb-red')
+    expect(el).toHaveClass('font-wb-mono')
   })
 
   it('renders children when passed instead of a message prop', () => {

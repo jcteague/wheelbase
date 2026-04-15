@@ -1,6 +1,5 @@
 import { format, parse, isValid } from 'date-fns'
 import { useState } from 'react'
-import { MONO } from '../../lib/tokens'
 
 import { Calendar } from './calendar'
 import { Popover, PopoverContent, PopoverTrigger } from './popover'
@@ -46,6 +45,7 @@ export function DatePicker({
           aria-label={ariaLabel ?? 'Pick a date'}
           aria-haspopup="dialog"
           onBlur={onBlur}
+          className="font-wb-mono"
           style={{
             width: '100%',
             padding: '10px 14px',
@@ -54,7 +54,6 @@ export function DatePicker({
             background: 'var(--wb-bg-elevated)',
             color: selected ? 'var(--wb-text-primary)' : 'var(--wb-text-muted)',
             fontSize: '0.9375rem',
-            fontFamily: MONO,
             textAlign: 'left',
             cursor: 'pointer',
             display: 'flex',
@@ -90,7 +89,7 @@ function CalendarIcon(): React.JSX.Element {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      style={{ opacity: 0.5, flexShrink: 0 }}
+      className="opacity-50 shrink-0"
     >
       <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
       <line x1="16" y1="2" x2="16" y2="6" />

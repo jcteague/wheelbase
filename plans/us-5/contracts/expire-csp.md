@@ -29,7 +29,7 @@ Zod schema name: `ExpireCspPayloadSchema` in `src/main/schemas.ts`
     ticker: string
     phase: 'WHEEL_COMPLETE'
     status: 'CLOSED'
-    closedDate: string             // YYYY-MM-DD
+    closedDate: string // YYYY-MM-DD
   }
   leg: {
     id: string
@@ -41,7 +41,7 @@ Zod schema name: `ExpireCspPayloadSchema` in `src/main/schemas.ts`
     expiration: string
     contracts: number
     premiumPerContract: '0.0000'
-    fillDate: string               // YYYY-MM-DD (expiration date)
+    fillDate: string // YYYY-MM-DD (expiration date)
     createdAt: string
     updatedAt: string
   }
@@ -50,7 +50,7 @@ Zod schema name: `ExpireCspPayloadSchema` in `src/main/schemas.ts`
     positionId: string
     basisPerShare: string
     totalPremiumCollected: string
-    finalPnl: string               // equals totalPremiumCollected
+    finalPnl: string // equals totalPremiumCollected
     snapshotAt: string
     createdAt: string
   }

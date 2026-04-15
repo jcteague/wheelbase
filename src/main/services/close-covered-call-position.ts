@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import Decimal from 'decimal.js'
 import { calculateCcClose } from '../core/costbasis'
 import { ValidationError, closeCoveredCall } from '../core/lifecycle'
+import { localToday } from '../dates'
 import { logger } from '../logger'
 import type { CloseCcPayload, CloseCcPositionResult } from '../schemas'
 import { getPosition } from './get-position'
@@ -12,7 +13,7 @@ export function closeCoveredCallPosition(
   positionId: string,
   payload: Omit<CloseCcPayload, 'positionId'> & { positionId: string }
 ): CloseCcPositionResult {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   const fillDate = payload.fillDate ?? today
   const now = new Date().toISOString()
 

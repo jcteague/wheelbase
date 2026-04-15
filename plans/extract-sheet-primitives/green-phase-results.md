@@ -51,6 +51,7 @@ PASS src/renderer/src/components/ui/Sheet.test.tsx (13 tests)
 ## Handoff to Refactor Phase
 
 To resume: run `/refactor`. Refactor phase should:
+
 1. Run prettier to fix trailing comma warnings
 2. Check naming consistency with existing `ui/` components
 3. Confirm no duplication with other component patterns

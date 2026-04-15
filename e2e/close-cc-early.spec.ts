@@ -4,6 +4,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { localDate, localToday } from './dates'
 import { openPosition, openDetailFor, reachCcOpenState, selectDate } from './helpers'
 
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
@@ -18,7 +19,7 @@ describe('close covered call early', () => {
   let dbPath: string
 
   // CC expiration must be in the future for the date picker to work
-  const CC_EXPIRATION = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const CC_EXPIRATION = localDate(60)
 
   afterEach(async () => {
     await app?.close()
@@ -114,7 +115,7 @@ describe('close covered call early', () => {
     })
 
     await openDetailFor(page, 'AAPL')
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localToday()
     await page.click('[data-testid="record-assignment-btn"]')
     await page.waitForSelector('text=Assign CSP to Shares')
     await selectDate(page, '#assignment-date', today)
@@ -152,7 +153,7 @@ describe('close covered call early', () => {
     await page.fill('[data-testid="cc-close-price"]', '1.10')
 
     // Try to set a fill date before the CC open date (today - 30 days)
-    const pastDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const pastDate = localDate(-30)
     await selectDate(page, '[data-testid="cc-close-fill-date"]', pastDate)
     await page.click('[data-testid="cc-close-submit"]')
 

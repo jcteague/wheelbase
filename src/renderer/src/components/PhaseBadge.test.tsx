@@ -30,9 +30,6 @@ describe('PhaseBadge', () => {
     const dot = badge?.querySelector('span')
 
     expect(dot).not.toBeNull()
-    expect(dot).toHaveStyle({
-      background: PHASE_COLOR.CSP_OPEN,
-      borderRadius: '50%'
-    })
+    expect(dot).toHaveStyle({ background: PHASE_COLOR.CSP_OPEN })
   })
 })

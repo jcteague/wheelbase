@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { calculateCspExpiration } from '../core/costbasis'
 import { ValidationError, expireCsp } from '../core/lifecycle'
+import { localToday, makeSnapshotAt } from '../dates'
 import { logger } from '../logger'
 import type { ExpireCspPayload, ExpireCspPositionResult } from '../schemas'
 import { getPosition } from './get-position'
@@ -11,7 +12,7 @@ export function expireCspPosition(
   positionId: string,
   payload: ExpireCspPayload
 ): ExpireCspPositionResult {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   const now = new Date().toISOString()
 
   logger.debug({ positionId }, 'expire_csp_position_inputs')
@@ -51,7 +52,7 @@ export function expireCspPosition(
   const expireLegId = randomUUID()
   const snapshotId = randomUUID()
   const openSnapshot = positionDetail.costBasisSnapshot
-  const snapshotAt = new Date(Date.now() + 1).toISOString() // +1ms to sort after the opening snapshot
+  const snapshotAt = makeSnapshotAt(recordedDate)
 
   db.transaction(() => {
     db.prepare(

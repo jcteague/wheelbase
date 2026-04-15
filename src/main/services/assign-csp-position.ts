@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { calculateAssignmentBasis } from '../core/costbasis'
 import { ValidationError, recordAssignment } from '../core/lifecycle'
+import { makeSnapshotAt } from '../dates'
 import { logger } from '../logger'
 import type { AssignCspPayload, AssignCspPositionResult } from '../schemas'
 import { getPosition } from './get-position'
@@ -45,7 +46,7 @@ export function assignCspPosition(
 
   const assignLegId = randomUUID()
   const snapshotId = randomUUID()
-  const snapshotAt = now
+  const snapshotAt = makeSnapshotAt(payload.assignmentDate)
 
   db.transaction(() => {
     db.prepare(

@@ -21,7 +21,7 @@ Defined in `src/main/schemas.ts` as `ExpireCcPayloadSchema`.
 ```typescript
 export const ExpireCcPayloadSchema = z.object({
   positionId: z.string().uuid(),
-  expirationDateOverride: z.string().optional()   // YYYY-MM-DD; used in tests to bypass today's date
+  expirationDateOverride: z.string().optional() // YYYY-MM-DD; used in tests to bypass today's date
 })
 
 export type ExpireCcPayload = z.infer<typeof ExpireCcPayloadSchema>
@@ -63,14 +63,14 @@ export interface ExpireCcPositionResult {
 
 ### Known error cases
 
-| Scenario | `field` | `code` | `message` |
-|----------|---------|--------|-----------|
-| Position not found | `__root__` | `not_found` | `"Position not found"` |
-| Phase is not CC_OPEN | `__phase__` | `invalid_phase` | `"No open covered call on this position"` |
-| No active CC leg | `__root__` | `no_active_leg` | `"Position has no active leg"` |
-| referenceDate < expirationDate | `expiration` | `too_early` | `"Cannot record expiration before the expiration date (YYYY-MM-DD)"` |
-| Zod validation failure | field name | zod code | zod message |
-| Unexpected error | `__root__` | `internal_error` | `"An unexpected error occurred"` |
+| Scenario                       | `field`      | `code`           | `message`                                                            |
+| ------------------------------ | ------------ | ---------------- | -------------------------------------------------------------------- |
+| Position not found             | `__root__`   | `not_found`      | `"Position not found"`                                               |
+| Phase is not CC_OPEN           | `__phase__`  | `invalid_phase`  | `"No open covered call on this position"`                            |
+| No active CC leg               | `__root__`   | `no_active_leg`  | `"Position has no active leg"`                                       |
+| referenceDate < expirationDate | `expiration` | `too_early`      | `"Cannot record expiration before the expiration date (YYYY-MM-DD)"` |
+| Zod validation failure         | field name   | zod code         | zod message                                                          |
+| Unexpected error               | `__root__`   | `internal_error` | `"An unexpected error occurred"`                                     |
 
 ---
 
@@ -101,9 +101,31 @@ export type ExpireCcPayload = {
 }
 
 export type ExpireCcResponse = {
-  position: { id: string; ticker: string; phase: 'HOLDING_SHARES'; status: 'ACTIVE'; closedDate: null }
-  leg: LegData & { legRole: string; action: string; instrumentType: string; premiumPerContract: string; fillDate: string; createdAt: string; updatedAt: string }
-  costBasisSnapshot: { id: string; positionId: string; basisPerShare: string; totalPremiumCollected: string; finalPnl: string | null; snapshotAt: string; createdAt: string }
+  position: {
+    id: string
+    ticker: string
+    phase: 'HOLDING_SHARES'
+    status: 'ACTIVE'
+    closedDate: null
+  }
+  leg: LegData & {
+    legRole: string
+    action: string
+    instrumentType: string
+    premiumPerContract: string
+    fillDate: string
+    createdAt: string
+    updatedAt: string
+  }
+  costBasisSnapshot: {
+    id: string
+    positionId: string
+    basisPerShare: string
+    totalPremiumCollected: string
+    finalPnl: string | null
+    snapshotAt: string
+    createdAt: string
+  }
   sharesHeld: number
 }
 

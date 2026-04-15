@@ -26,33 +26,36 @@ Group by **functional area**, not by TDD phase. This keeps related Red/Green/Ref
 
 ## Field Mapping
 
-| Plan source | Beads field | Notes |
-|---|---|---|
-| Story title + ID | `--title` on epic | e.g., "US-3 — List Positions" |
-| Plan `## Context` section | `--description` on epic | Brief story summary |
-| Plan file path | `--spec-id` on all tasks | Primary link to full spec |
-| `research.md` | `--design` on features and Green tasks | The *why* — architectural decisions |
-| `data-model.md` + `contracts/` | `--description` on tasks | Key file paths, function sigs, field types |
-| `quickstart.md` | `--acceptance` on tasks | Exact test command and expected result |
-| TDD phase | `--labels` + title prefix | `red`, `green`, or `refactor` label |
+| Plan source                    | Beads field                            | Notes                                      |
+| ------------------------------ | -------------------------------------- | ------------------------------------------ |
+| Story title + ID               | `--title` on epic                      | e.g., "US-3 — List Positions"              |
+| Plan `## Context` section      | `--description` on epic                | Brief story summary                        |
+| Plan file path                 | `--spec-id` on all tasks               | Primary link to full spec                  |
+| `research.md`                  | `--design` on features and Green tasks | The _why_ — architectural decisions        |
+| `data-model.md` + `contracts/` | `--description` on tasks               | Key file paths, function sigs, field types |
+| `quickstart.md`                | `--acceptance` on tasks                | Exact test command and expected result     |
+| TDD phase                      | `--labels` + title prefix              | `red`, `green`, or `refactor` label        |
 
 ## Task Descriptions — What to Include
 
 Each task description must be **sufficient to start work cold** but not a spec dump:
 
 **Red task** — always starts: `"Use the /red skill."`
+
 - Test file path
 - Specific test cases (function/input/expected output level)
 - Key validation rules being tested
 - How to confirm tests fail: `Run: pnpm test <file>`
 
 **Green task** — always starts: `"Use the /green skill."`
+
 - Implementation file path
 - Paired test file (acceptance bar)
 - 3–5 critical implementation details (function signature, field types, validation logic)
 - Minimum code only — no extra logic
 
 **Refactor task** — always starts: `"Use the /refactor skill."`
+
 - Files to review
 - Specific things to look for: naming, duplication, function length (>20 lines), log levels
 - Constraint: behaviour unchanged, tests stay green
@@ -60,6 +63,7 @@ Each task description must be **sufficient to start work cold** but not a spec d
 ## Dependency Wiring
 
 **Within each feature area (always):**
+
 ```bash
 bd dep add <green-id> <red-id>       # Green depends on Red
 bd dep add <refactor-id> <green-id>  # Refactor depends on Green
@@ -84,6 +88,7 @@ bd graph <epic-id> --json
 ```
 
 Check `layout.Layers`:
+
 - Layer 0: first Red task(s) — nothing blocking them
 - Each subsequent layer depends on the previous
 - Parallel tasks appear in the same layer

@@ -5,17 +5,7 @@ type PageHeaderProps = {
 
 export function PageHeader({ left, right }: PageHeaderProps): React.JSX.Element {
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '12px 24px',
-        borderBottom: '1px solid var(--wb-border)',
-        background: 'var(--wb-bg-surface)',
-        flexShrink: 0
-      }}
-    >
+    <div className="flex items-center justify-between px-[24px] py-[12px] border-b border-wb-border bg-wb-bg-surface shrink-0">
       {left}
       {right}
     </div>
@@ -30,9 +20,11 @@ type PageLayoutProps = {
 
 export function PageLayout({ header, contentStyle, children }: PageLayoutProps): React.JSX.Element {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div className="flex flex-col h-full overflow-hidden">
       {header}
-      <div style={{ flex: 1, overflow: 'auto', ...contentStyle }}>{children}</div>
+      <div className="flex-1 overflow-auto" style={contentStyle}>
+        {children}
+      </div>
     </div>
   )
 }

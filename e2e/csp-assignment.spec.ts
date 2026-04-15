@@ -4,6 +4,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { localDate, localToday } from './dates'
 
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
 const APP_CWD = path.join(__dirname, '..')
@@ -96,20 +97,20 @@ describe('US-6: CSP assignment flow', () => {
 
   it('records an assignment: position transitions to HOLDING_SHARES, 100 shares, correct cost basis, leg recorded', async () => {
     const page = await launchFreshApp()
-    const today = new Date()
+    const todayIso = localToday()
     await openPosition(page, {
       ticker: 'AAPL',
       strike: '180',
       contracts: '1',
       premium: '3.50',
-      year: today.getUTCFullYear() + 1,
+      year: new Date().getFullYear() + 1,
       month: 1,
       day: 17
     })
     await openDetailFor(page, 'AAPL')
     await page.click('[data-testid="record-assignment-btn"]')
     await page.waitForSelector('text=Assign CSP to Shares')
-    await selectDate(page, '#assignment-date', today.toISOString().slice(0, 10))
+    await selectDate(page, '#assignment-date', todayIso)
     await page.click('button:has-text("Confirm Assignment")')
     await page.waitForSelector('text=HOLDING 100 SHARES')
     const bodyText = await page.textContent('body')
@@ -155,9 +156,7 @@ describe('US-6: CSP assignment flow', () => {
     })
     await openDetailFor(page, 'AAPL')
     await page.click('[data-testid="record-assignment-btn"]')
-    const future = new Date()
-    future.setUTCFullYear(future.getUTCFullYear() + 1)
-    await selectDate(page, '#assignment-date', future.toISOString().slice(0, 10))
+    await selectDate(page, '#assignment-date', localDate(365))
     await page.waitForSelector('text=This date is in the future — are you sure?')
     const isEnabled = await page.locator('button:has-text("Confirm Assignment")').isEnabled()
     expect(isEnabled).toBe(true)
@@ -194,16 +193,14 @@ describe('US-6: CSP assignment flow', () => {
     })
     await openDetailFor(page, 'AAPL')
     await page.click('[data-testid="record-assignment-btn"]')
-    const past = new Date()
-    past.setUTCFullYear(past.getUTCFullYear() - 1)
-    await selectDate(page, '#assignment-date', past.toISOString().slice(0, 10))
+    await selectDate(page, '#assignment-date', localDate(-365))
     await page.click('button:has-text("Confirm Assignment")')
     await page.waitForSelector('text=Assignment date cannot be before the CSP open date')
   })
 
   it('success state shows strategic nudge and Open Covered Call CTA', async () => {
     const page = await launchFreshApp()
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localToday()
     await openPosition(page, {
       ticker: 'AAPL',
       strike: '180',
@@ -223,7 +220,7 @@ describe('US-6: CSP assignment flow', () => {
 
   it('Record Assignment button is not visible when position is in HOLDING_SHARES phase', async () => {
     const page = await launchFreshApp()
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localToday()
     await openPosition(page, {
       ticker: 'AAPL',
       strike: '180',

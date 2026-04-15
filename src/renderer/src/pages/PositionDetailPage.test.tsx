@@ -42,6 +42,18 @@ vi.mock('../components/CcExpirationSheet', () => ({
     open ? <div data-testid="cc-expiration-sheet">Expire CC Worthless</div> : null
 }))
 
+// Mock RollCcSheet to avoid testing it in isolation here
+vi.mock('../components/RollCcSheet', () => ({
+  RollCcSheet: ({ open, onClose }: { open: boolean; onClose: () => void }) =>
+    open ? (
+      <div data-testid="roll-cc-sheet">
+        <button data-testid="roll-cc-sheet-close" onClick={onClose}>
+          Close
+        </button>
+      </div>
+    ) : null
+}))
+
 // Mock wouter so useParams works
 vi.mock('wouter', () => ({
   useParams: () => ({ id: 'pos-123' }),
@@ -635,4 +647,67 @@ it('leg history table has no P&L footer when finalPnl is null', () => {
   } as unknown as ReturnType<typeof usePosition>)
   render(<PositionDetailPage />)
   expect(screen.queryByText(/Final P&L/)).not.toBeInTheDocument()
+})
+
+// ---------------------------------------------------------------------------
+// Area 13 — RollCcSheet wiring (US-14)
+// ---------------------------------------------------------------------------
+
+it('PositionDetailPage: shows "Roll CC →" button when position is in CC_OPEN phase', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: CC_OPEN_DETAIL,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  expect(screen.getByTestId('roll-cc-btn')).toBeInTheDocument()
+})
+
+it('PositionDetailPage: opens RollCcSheet when "Roll CC →" is clicked', async () => {
+  const user = userEvent.setup()
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: CC_OPEN_DETAIL,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  await user.click(screen.getByTestId('roll-cc-btn'))
+  expect(screen.getByTestId('roll-cc-sheet')).toBeInTheDocument()
+})
+
+it('PositionDetailPage: closes RollCcSheet when cancelled', async () => {
+  const user = userEvent.setup()
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: CC_OPEN_DETAIL,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  await user.click(screen.getByTestId('roll-cc-btn'))
+  expect(screen.getByTestId('roll-cc-sheet')).toBeInTheDocument()
+  await user.click(screen.getByTestId('roll-cc-sheet-close'))
+  expect(screen.queryByTestId('roll-cc-sheet')).not.toBeInTheDocument()
+})
+
+it('PositionDetailPage: blurs content when RollCcSheet is open (overlayOpen=true)', async () => {
+  const user = userEvent.setup()
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: CC_OPEN_DETAIL,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  const detail = screen.getByTestId('position-detail')
+
+  await user.click(screen.getByTestId('roll-cc-btn'))
+
+  expect(detail).toHaveStyle({ filter: 'blur(1.5px)', opacity: '0.35', pointerEvents: 'none' })
 })

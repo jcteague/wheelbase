@@ -186,6 +186,23 @@ type IpcRollCspResult = IpcResult<{
   costBasisSnapshot: IpcCostBasisSnapshotRecord
 }>
 
+interface IpcRollCcPayload {
+  positionId: string
+  costToClosePerContract: number
+  newPremiumPerContract: number
+  newExpiration: string
+  newStrike?: number
+  fillDate?: string
+}
+
+type IpcRollCcResult = IpcResult<{
+  position: { id: string; ticker: string; phase: 'CC_OPEN'; status: 'ACTIVE' }
+  rollFromLeg: IpcLegRecord
+  rollToLeg: IpcLegRecord
+  rollChainId: string
+  costBasisSnapshot: IpcCostBasisSnapshotRecord
+}>
+
 declare global {
   interface Window {
     electron: ElectronAPI
@@ -202,6 +219,7 @@ declare global {
       recordCallAway: (payload: IpcRecordCallAwayPayload) => Promise<IpcRecordCallAwayResult>
       expireCc: (payload: IpcExpireCcPayload) => Promise<IpcExpireCcResult>
       rollCsp: (payload: IpcRollCspPayload) => Promise<IpcRollCspResult>
+      rollCc: (payload: IpcRollCcPayload) => Promise<IpcRollCcResult>
     }
   }
 }

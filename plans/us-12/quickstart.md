@@ -11,6 +11,7 @@ pnpm test
 ```
 
 Tests for US-12 live in:
+
 - `src/main/core/lifecycle.test.ts` — `rollCsp` lifecycle function
 - `src/main/core/costbasis.test.ts` — `calculateRollBasis` function
 - `src/main/services/roll-csp-position.test.ts` — service integration (uses in-memory SQLite)

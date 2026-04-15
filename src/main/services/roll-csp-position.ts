@@ -3,6 +3,7 @@ import Decimal from 'decimal.js'
 import { randomUUID } from 'node:crypto'
 import { calculateRollBasis } from '../core/costbasis'
 import { ValidationError, rollCsp } from '../core/lifecycle'
+import { localToday, makeSnapshotAt } from '../dates'
 import { logger } from '../logger'
 import type { RollCspPayload, RollCspResult } from '../schemas'
 import { getPosition } from './get-position'
@@ -12,7 +13,7 @@ export function rollCspPosition(
   positionId: string,
   payload: RollCspPayload
 ): RollCspResult {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   const fillDate = payload.fillDate ?? today
   const now = new Date().toISOString()
 
@@ -55,7 +56,7 @@ export function rollCspPosition(
   const rollFromLegId = randomUUID()
   const rollToLegId = randomUUID()
   const snapshotId = randomUUID()
-  const snapshotAt = new Date(Date.now() + 1).toISOString()
+  const snapshotAt = makeSnapshotAt(fillDate)
 
   db.transaction(() => {
     // ROLL_FROM leg: BUY to close the current CSP

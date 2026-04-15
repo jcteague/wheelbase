@@ -11,6 +11,7 @@ import {
   ExpireCspPayloadSchema,
   OpenCcPayloadSchema,
   RecordCallAwayPayloadSchema,
+  RollCcPayloadSchema,
   RollCspPayloadSchema
 } from '../schemas'
 import {
@@ -26,6 +27,7 @@ import {
 import { closeCoveredCallPosition } from '../services/close-covered-call-position'
 import { recordCallAwayPosition } from '../services/record-call-away-position'
 import { rollCspPosition } from '../services/roll-csp-position'
+import { rollCcPosition } from '../services/roll-cc-position'
 import type { CreatePositionPayload } from '../schemas'
 
 function handleIpcCall(
@@ -154,5 +156,13 @@ export function registerPositionsHandlers(db: Database.Database): void {
     'positions_roll_csp_unhandled_error',
     RollCspPayloadSchema,
     rollCspPosition
+  )
+
+  registerParsedPositionHandler(
+    db,
+    'positions:roll-cc',
+    'positions_roll_cc_unhandled_error',
+    RollCcPayloadSchema,
+    rollCcPosition
   )
 }

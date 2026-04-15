@@ -1,14 +1,14 @@
 ---
-title: "US-15: Roll Pair Display in Leg Timeline"
-story: "As a wheel trader reviewing a position with rolls, I want to see each roll as a visually linked pair in the leg timeline with net credit/debit and roll numbering."
-states: ["single-roll", "multiple-rolls", "debit-roll"]
+title: 'US-15: Roll Pair Display in Leg Timeline'
+story: 'As a wheel trader reviewing a position with rolls, I want to see each roll as a visually linked pair in the leg timeline with net credit/debit and roll numbering.'
+states: ['single-roll', 'multiple-rolls', 'debit-roll']
 ---
 
 import { useState } from 'react'
 
 # US-15: Roll Pair Display in Leg Timeline
 
-_Display linked roll pairs (ROLL\_FROM + ROLL\_TO) as visually grouped sections in the position leg timeline with net credit/debit and sequential numbering._
+_Display linked roll pairs (ROLL_FROM + ROLL_TO) as visually grouped sections in the position leg timeline with net credit/debit and sequential numbering._
 
 ## Acceptance Criteria States
 
@@ -23,30 +23,69 @@ export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
 export function MockBadge({ children, color }) {
   const fg = color ?? 'var(--wb-gold, #e6a817)'
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: '0.6rem', fontWeight: 500, padding: '1px 6px', borderRadius: 10, background: fg + '18', color: fg, border: '1px solid ' + fg + '30', fontFamily: MONO }}>{children}</span>
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        fontSize: '0.6rem',
+        fontWeight: 500,
+        padding: '1px 6px',
+        borderRadius: 10,
+        background: fg + '18',
+        color: fg,
+        border: '1px solid ' + fg + '30',
+        fontFamily: MONO
+      }}
+    >
+      {children}
+    </span>
   )
 }
 
 export function LegRow({ role, action, type, strike, exp, premium, basis, isRoll }) {
   const roleColors = {
-    CSP_OPEN: '#e6a817', ROLL_FROM: '#8899aa', ROLL_TO: '#58a6ff',
-    ASSIGN: '#bc8cff', CC_OPEN: '#bc8cff', CC_CLOSE: '#8899aa', EXPIRE: '#4a5a6a',
+    CSP_OPEN: '#e6a817',
+    ROLL_FROM: '#8899aa',
+    ROLL_TO: '#58a6ff',
+    ASSIGN: '#bc8cff',
+    CC_OPEN: '#bc8cff',
+    CC_CLOSE: '#8899aa',
+    EXPIRE: '#4a5a6a'
   }
   const color = roleColors[role] ?? '#8899aa'
   return (
-    <div style={{
-      display: 'grid', gridTemplateColumns: '110px 60px 80px 80px 90px 90px',
-      padding: isRoll ? '8px 14px 8px 28px' : '10px 14px',
-      borderBottom: '1px solid rgba(30,42,56,0.4)',
-      background: isRoll ? 'rgba(88,166,255,0.02)' : undefined,
-      fontFamily: MONO, fontSize: 11, color: 'var(--wb-text-primary, #e2eaf2)',
-      alignItems: 'center',
-    }}>
-      <span><MockBadge color={color}>{role}</MockBadge></span>
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '110px 60px 80px 80px 90px 90px',
+        padding: isRoll ? '8px 14px 8px 28px' : '10px 14px',
+        borderBottom: '1px solid rgba(30,42,56,0.4)',
+        background: isRoll ? 'rgba(88,166,255,0.02)' : undefined,
+        fontFamily: MONO,
+        fontSize: 11,
+        color: 'var(--wb-text-primary, #e2eaf2)',
+        alignItems: 'center'
+      }}
+    >
+      <span>
+        <MockBadge color={color}>{role}</MockBadge>
+      </span>
       <span style={{ color: '#8899aa' }}>{action}</span>
-      <span>{type} ${strike}</span>
+      <span>
+        {type} ${strike}
+      </span>
       <span style={{ color: '#8899aa' }}>{exp}</span>
-      <span style={{ color: premium.startsWith('+') ? 'var(--wb-green, #3fb950)' : premium.startsWith('-') ? 'var(--wb-red, #f85149)' : '#8899aa' }}>{premium}</span>
+      <span
+        style={{
+          color: premium.startsWith('+')
+            ? 'var(--wb-green, #3fb950)'
+            : premium.startsWith('-')
+              ? 'var(--wb-red, #f85149)'
+              : '#8899aa'
+        }}
+      >
+        {premium}
+      </span>
       <span style={{ textAlign: 'right', fontWeight: 600 }}>{basis}</span>
     </div>
   )
@@ -57,12 +96,18 @@ export function RollGroupHeader({ number, rollType, fillDate, netCredit, isCredi
   const bg = isCredit ? 'rgba(63,185,80,0.04)' : 'rgba(230,168,23,0.04)'
   const border = isCredit ? 'rgba(63,185,80,0.15)' : 'rgba(230,168,23,0.15)'
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '8px 14px', background: bg,
-      borderTop: '2px solid ' + border, borderBottom: '1px solid rgba(30,42,56,0.4)',
-      fontFamily: MONO,
-    }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '8px 14px',
+        background: bg,
+        borderTop: '2px solid ' + border,
+        borderBottom: '1px solid rgba(30,42,56,0.4)',
+        fontFamily: MONO
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ fontSize: 11, fontWeight: 700, color }}>Roll #{number}</span>
         <MockBadge color={color}>{rollType}</MockBadge>
@@ -77,14 +122,20 @@ export function RollGroupHeader({ number, rollType, fillDate, netCredit, isCredi
 
 export function TableHeader() {
   return (
-    <div style={{
-      display: 'grid', gridTemplateColumns: '110px 60px 80px 80px 90px 90px',
-      padding: '8px 14px',
-      borderBottom: '1px solid var(--wb-border, #1e2a38)',
-      fontFamily: MONO, fontSize: 9, fontWeight: 600,
-      letterSpacing: '0.08em', textTransform: 'uppercase',
-      color: 'var(--wb-text-muted, #4a5a6a)',
-    }}>
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '110px 60px 80px 80px 90px 90px',
+        padding: '8px 14px',
+        borderBottom: '1px solid var(--wb-border, #1e2a38)',
+        fontFamily: MONO,
+        fontSize: 9,
+        fontWeight: 600,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        color: 'var(--wb-text-muted, #4a5a6a)'
+      }}
+    >
       <span>Leg</span>
       <span>Action</span>
       <span>Contract</span>
@@ -100,17 +151,34 @@ export function CumulativeSummary({ totalCredits, totalDebits }) {
   const isNet = net >= 0
   const color = isNet ? 'var(--wb-green, #3fb950)' : 'var(--wb-red, #f85149)'
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '10px 14px', background: 'rgba(88,166,255,0.03)',
-      borderTop: '1px solid rgba(88,166,255,0.12)', borderBottom: '1px solid var(--wb-border, #1e2a38)',
-      fontFamily: MONO, fontSize: 11,
-    }}>
-      <span style={{ color: 'var(--wb-text-muted, #4a5a6a)' }}>Roll Summary ({totalCredits > 0 && totalDebits > 0 ? '3 rolls' : '1 roll'})</span>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '10px 14px',
+        background: 'rgba(88,166,255,0.03)',
+        borderTop: '1px solid rgba(88,166,255,0.12)',
+        borderBottom: '1px solid var(--wb-border, #1e2a38)',
+        fontFamily: MONO,
+        fontSize: 11
+      }}
+    >
+      <span style={{ color: 'var(--wb-text-muted, #4a5a6a)' }}>
+        Roll Summary ({totalCredits > 0 && totalDebits > 0 ? '3 rolls' : '1 roll'})
+      </span>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-        <span style={{ color: 'var(--wb-green, #3fb950)' }}>Credits: +${totalCredits.toFixed(2)}</span>
-        {totalDebits > 0 && <span style={{ color: 'var(--wb-gold, #e6a817)' }}>Debits: -${totalDebits.toFixed(2)}</span>}
-        <span style={{ fontWeight: 700, color }}>Net: {isNet ? '+' : '-'}${Math.abs(net).toFixed(2)}</span>
+        <span style={{ color: 'var(--wb-green, #3fb950)' }}>
+          Credits: +${totalCredits.toFixed(2)}
+        </span>
+        {totalDebits > 0 && (
+          <span style={{ color: 'var(--wb-gold, #e6a817)' }}>
+            Debits: -${totalDebits.toFixed(2)}
+          </span>
+        )}
+        <span style={{ fontWeight: 700, color }}>
+          Net: {isNet ? '+' : '-'}${Math.abs(net).toFixed(2)}
+        </span>
       </div>
     </div>
   )
@@ -120,8 +188,9 @@ export function Mockup() {
   const [state, setState] = useState('single-roll')
   const allStates = ['single-roll', 'multiple-rolls', 'debit-roll']
 
-  return (
-    <div style={{ fontFamily: MONO, background: '#040608', color: 'var(--wb-text-primary, #e2eaf2)' }}>
+return (
+
+<div style={{ fontFamily: MONO, background: '#040608', color: 'var(--wb-text-primary, #e2eaf2)' }}>
 
       <div style={{ display: 'flex', gap: 6, padding: '10px 14px', background: '#0d1117', borderBottom: '1px solid #1e2a38', flexWrap: 'wrap' }}>
         <span style={{ fontSize: 9, color: '#4a5a6a', letterSpacing: '0.12em', textTransform: 'uppercase', alignSelf: 'center', marginRight: 4 }}>State:</span>
@@ -194,7 +263,8 @@ export function Mockup() {
         </section>
       </div>
     </div>
-  )
+
+)
 }
 
 <Mockup />

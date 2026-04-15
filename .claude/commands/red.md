@@ -257,6 +257,7 @@ FAIL src/main/core/lifecycle.test.ts
 ## Handoff to Green Phase
 
 To resume: run `/green [feature-name]`. Green phase should:
+
 1. Read this file to find all test files and the exact interfaces to implement
 2. Read `plans/<feature-dir>/plan.md` for architecture decisions
 3. Implement only the interfaces listed under "Interfaces Under Test"

@@ -12,18 +12,19 @@ The trader selects an underlying they are willing to own at the strike price. "W
 
 **Contract selection trade-offs:**
 
-| Variable | Conservative | Moderate | Aggressive |
-|---|---|---|---|
-| Delta | 0.15-0.20 | 0.20-0.30 | 0.30-0.40 |
-| DTE | 30-45 | 30-45 | 20-30 |
-| Premium yield | Lower (~0.8-1.2%/mo) | Mid (~1.2-2.0%/mo) | Higher (~2.0-3.5%/mo) |
-| Assignment probability | ~15-20% | ~20-30% | ~30-40% |
+| Variable               | Conservative         | Moderate           | Aggressive            |
+| ---------------------- | -------------------- | ------------------ | --------------------- |
+| Delta                  | 0.15-0.20            | 0.20-0.30          | 0.30-0.40             |
+| DTE                    | 30-45                | 30-45              | 20-30                 |
+| Premium yield          | Lower (~0.8-1.2%/mo) | Mid (~1.2-2.0%/mo) | Higher (~2.0-3.5%/mo) |
+| Assignment probability | ~15-20%              | ~20-30%            | ~30-40%               |
 
 Delta is a rough proxy for assignment probability but not exact. Actual probability depends on the underlying's realized volatility and drift.
 
 **Capital requirement:** Strike x 100 x contracts. A $50 strike put on 1 contract locks up $5,000 in buying power. This capital is unavailable for other trades until the put expires or is closed.
 
 **Expiration outcomes:**
+
 - Expires OTM: Full premium kept, capital freed, cycle restarts
 - Approaches ITM: Decision point — roll or accept assignment
 - Assigned: Shares delivered at strike price, cost basis adjusted by premium received
@@ -33,6 +34,7 @@ Delta is a rough proxy for assignment probability but not exact. Actual probabil
 Assignment changes the trader's mental frame. They now own stock and must manage equity risk, not just option premium risk.
 
 **Immediate decisions after assignment:**
+
 1. Is the thesis still valid? Has anything changed about the underlying?
 2. Where is the stock relative to the effective cost basis?
 3. When to sell the first covered call?
@@ -46,12 +48,14 @@ Assignment changes the trader's mental frame. They now own stock and must manage
 The trader sells calls against held shares. The primary constraint: the CC strike should be at or above the effective cost basis to avoid locking in a guaranteed loss if called away.
 
 **Strike selection logic:**
+
 - **Above cost basis (required):** Ensures any call-away produces a profit or breakeven
 - **Near resistance levels:** Technical traders pick strikes at prior resistance
 - **Target yield:** Many wheel traders target a specific monthly premium yield (1-2% of stock value)
 - **Delta 0.20-0.35:** Similar probability range as the CSP phase
 
 **Expiration outcomes:**
+
 - Expires OTM: Premium kept, shares retained, sell another CC
 - Called away: Shares sold at strike, profit = (strike - cost basis) + all premiums collected
 - Approaches ITM: Decision point — roll, close, or accept call-away
@@ -59,6 +63,7 @@ The trader sells calls against held shares. The primary constraint: the CC strik
 ### Phase 4: Repeat or Exit
 
 After call-away, the trader has completed one full wheel cycle. They assess:
+
 - Was the annualized return acceptable?
 - Is the underlying still a good wheel candidate?
 - Has IV changed enough to make the wheel less attractive?
@@ -77,30 +82,35 @@ The net of these two is either a credit (desirable) or a debit (sometimes necess
 ### Roll Types
 
 **Roll out (same strike, later expiration):**
+
 - Most common roll type
 - Almost always produces a net credit because the new expiration has more time value
 - Used when the trader wants to keep the same strike but needs more time
 - Example: Roll the $50 put from March to April expiration
 
 **Roll down and out (lower strike, later expiration):**
+
 - Used when the underlying has moved against the CSP
 - Lower strike reduces assignment risk but also reduces premium
 - The "out" component (more DTE) helps offset the reduced premium from the lower strike
 - Example: Roll from the $50 March put to the $47 April put
 
 **Roll up and out (higher strike, later expiration):**
+
 - Used for covered calls when the stock has risen
 - Higher strike gives more room before call-away
 - Common when the trader wants to keep shares longer
 - Example: Roll the $55 March call to the $58 April call
 
 **Roll down (same expiration, lower strike) / Roll up (same expiration, higher strike):**
+
 - Less common because same-expiration rolls often produce a debit
 - Used only in specific tactical situations
 
 ### Roll Decision Framework
 
 Traders evaluate rolls on these criteria:
+
 1. **Net credit or debit?** Strongly prefer rolls that produce a net credit
 2. **Does the new position improve the probability of profit?** Lower delta = higher probability
 3. **Is the underlying still a good wheel candidate?** Rolling a deteriorating position just delays a loss
@@ -121,6 +131,7 @@ Traders evaluate rolls on these criteria:
 ### Structure
 
 A PMCC is a diagonal spread used as a capital-efficient substitute for a covered call position:
+
 - **Long leg:** Buy a deep ITM LEAPS call (delta 0.70-0.85, 180-500 DTE)
 - **Short leg:** Sell an OTM near-term call (delta 0.25-0.35, 20-45 DTE)
 
@@ -142,10 +153,12 @@ This is the primary appeal — similar income generation with 50-70% less capita
 ### PMCC-Specific Roll Scenarios
 
 **Rolling the short call (routine, every 20-45 days):**
+
 - Same as a CC roll — buy to close, sell to open a new short call
 - Always verify the new short call expires before the LEAPS
 
 **Rolling the LEAPS (periodic, when DTE drops below 60-90):**
+
 - Buy to close current LEAPS, sell to open a new LEAPS further out
 - This is the more expensive roll — LEAPS have significant time value
 - Traders may also roll up in strike if the stock has appreciated
@@ -164,15 +177,15 @@ Goal: Reduce leaps_cost_basis to zero or negative (free position)
 
 ### Where PMCC and Wheel Diverge in the App
 
-| Concern | Classic Wheel | PMCC |
-|---|---|---|
-| Entry capital | Strike x 100 x contracts | Net debit of diagonal |
-| Phase model | CSP -> Holding -> CC | Long LEAPS + Short Call (no holding phase) |
-| Assignment risk | On CSP or CC | Only on short call (creates naked risk) |
-| Cost basis formula | Based on assignment strike | Based on LEAPS debit |
-| Roll frequency | Short leg every 20-45 days | Short leg every 20-45 days + LEAPS every 6-12 months |
-| Max loss | Stock to zero | Net debit paid |
-| Dividend income | Yes, during holding phase | No (no shares owned) |
+| Concern            | Classic Wheel              | PMCC                                                 |
+| ------------------ | -------------------------- | ---------------------------------------------------- |
+| Entry capital      | Strike x 100 x contracts   | Net debit of diagonal                                |
+| Phase model        | CSP -> Holding -> CC       | Long LEAPS + Short Call (no holding phase)           |
+| Assignment risk    | On CSP or CC               | Only on short call (creates naked risk)              |
+| Cost basis formula | Based on assignment strike | Based on LEAPS debit                                 |
+| Roll frequency     | Short leg every 20-45 days | Short leg every 20-45 days + LEAPS every 6-12 months |
+| Max loss           | Stock to zero              | Net debit paid                                       |
+| Dividend income    | Yes, during holding phase  | No (no shares owned)                                 |
 
 ---
 

@@ -120,14 +120,14 @@ bd dep add $COMPONENT_RED_ID $HOOK_GREEN_ID
 
 ## Labels Convention
 
-| Label | When used |
-|---|---|
-| `red` | Red (failing test) tasks |
-| `green` | Green (implementation) tasks |
-| `refactor` | Refactor (cleanup) tasks |
-| `us-N` | Story identifier |
-| `service` | Service layer tasks |
-| `ipc` | IPC handler tasks |
-| `renderer` | Renderer-side tasks (hooks, components, pages) |
-| `migration` | Database migration tasks |
-| `core` | Core engine tasks (lifecycle, costbasis) |
+| Label       | When used                                      |
+| ----------- | ---------------------------------------------- |
+| `red`       | Red (failing test) tasks                       |
+| `green`     | Green (implementation) tasks                   |
+| `refactor`  | Refactor (cleanup) tasks                       |
+| `us-N`      | Story identifier                               |
+| `service`   | Service layer tasks                            |
+| `ipc`       | IPC handler tasks                              |
+| `renderer`  | Renderer-side tasks (hooks, components, pages) |
+| `migration` | Database migration tasks                       |
+| `core`      | Core engine tasks (lifecycle, costbasis)       |

@@ -14,7 +14,7 @@
 - **Rationale:** `getRollTypeLabel` is copy-pasted identically in `RollCspForm.tsx` and `RollCspSuccess.tsx`. Net credit/debit color selection (`isCredit ? green : gold`) is duplicated with slight variations. These are pure functions with no component dependencies — ideal for extraction.
 - **Alternatives considered:**
   - Putting helpers in `src/renderer/src/lib/format.ts` — rejected because roll-specific logic is a separate concern from generic formatting.
-  - A shared component for net credit display — rejected because the Form and Success screens use different visual treatments (inline preview vs. hero card), so extracting the *data* is the right level of abstraction.
+  - A shared component for net credit display — rejected because the Form and Success screens use different visual treatments (inline preview vs. hero card), so extracting the _data_ is the right level of abstraction.
 
 ## 3. RHF + Zod Migration for RollCspSheet
 

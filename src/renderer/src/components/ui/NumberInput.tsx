@@ -1,5 +1,4 @@
 import { forwardRef } from 'react'
-import { MONO } from '../../lib/tokens'
 
 type NumberInputProps = React.ComponentProps<'input'> & {
   hasError?: boolean
@@ -7,7 +6,7 @@ type NumberInputProps = React.ComponentProps<'input'> & {
 }
 
 export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(function NumberInput(
-  { hasError, prefix, style, ...props },
+  { hasError, prefix, style, className, ...props },
   ref
 ) {
   const borderColor = hasError ? 'var(--wb-red)' : 'var(--wb-border)'
@@ -15,6 +14,7 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(functi
   const inputEl = (
     <input
       ref={ref}
+      className={['wb-input font-wb-mono', className].filter(Boolean).join(' ')}
       style={{
         ...(prefix
           ? { flex: 1, background: 'transparent', border: 'none' }
@@ -28,7 +28,6 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(functi
         padding: '10px 14px',
         color: 'var(--wb-text-primary)',
         fontSize: '0.9375rem',
-        fontFamily: MONO,
         outline: 'none',
         transition: 'border-color 0.15s',
         ...style
@@ -51,11 +50,11 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(functi
       }}
     >
       <span
+        className="font-wb-mono"
         style={{
           padding: '0 10px',
           fontSize: 13,
           color: 'var(--wb-text-muted)',
-          fontFamily: MONO,
           borderRight: '1px solid var(--wb-border)',
           alignSelf: 'stretch',
           display: 'flex',

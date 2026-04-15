@@ -6,15 +6,6 @@ import { SectionCard } from '../components/ui/SectionCard'
 import { StatGrid } from '../components/ui/Stat'
 import { computeDte, fmtMoney, pnlColor } from '../lib/format'
 import { deriveRunningBasis } from '../lib/deriveRunningBasis'
-import { MONO } from '../lib/tokens'
-
-const DETAIL_BASE_STYLE: React.CSSProperties = {
-  padding: '24px',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 16,
-  transition: 'filter 0.2s, opacity 0.2s'
-}
 
 const DETAIL_OVERLAY_STYLE: React.CSSProperties = {
   filter: 'blur(1.5px)',
@@ -31,12 +22,10 @@ type PositionDetailContentProps = {
 function NoteBlock({ label, text }: { label: string; text: string }): React.JSX.Element {
   return (
     <div>
-      <div style={{ marginBottom: 4 }}>
+      <div className="mb-1">
         <Caption>{label}</Caption>
       </div>
-      <div style={{ fontFamily: MONO, fontSize: '0.875rem', color: 'var(--wb-text-primary)' }}>
-        {text}
-      </div>
+      <div className="font-wb-mono text-sm text-wb-text-primary">{text}</div>
     </div>
   )
 }
@@ -53,10 +42,8 @@ export function PositionDetailContent({
   return (
     <main
       data-testid="position-detail"
-      style={{
-        ...DETAIL_BASE_STYLE,
-        ...(overlayOpen ? DETAIL_OVERLAY_STYLE : {})
-      }}
+      className="flex-1 overflow-y-auto flex flex-col gap-4 p-6"
+      style={overlayOpen ? DETAIL_OVERLAY_STYLE : undefined}
     >
       {activeLeg && (
         <SectionCard header="Open Leg">
@@ -65,13 +52,13 @@ export function PositionDetailContent({
             items={[
               {
                 label: 'Strike',
-                value: <span style={{ color: 'var(--wb-gold)' }}>{fmtMoney(activeLeg.strike)}</span>
+                value: <span className="text-wb-gold">{fmtMoney(activeLeg.strike)}</span>
               },
               { label: 'Expiration', value: activeLeg.expiration },
               {
                 label: 'DTE',
                 value: (
-                  <span style={{ color: dteUrgent ? 'var(--wb-gold)' : 'inherit' }}>
+                  <span className={dteUrgent ? 'text-wb-gold' : ''}>
                     {dte !== null ? `${dte}d` : '—'}
                   </span>
                 )
@@ -80,9 +67,7 @@ export function PositionDetailContent({
               {
                 label: 'Premium / Contract',
                 value: (
-                  <span style={{ color: 'var(--wb-green)' }}>
-                    {fmtMoney(activeLeg.premiumPerContract)}
-                  </span>
+                  <span className="text-wb-green">{fmtMoney(activeLeg.premiumPerContract)}</span>
                 )
               },
               { label: 'Fill Date', value: activeLeg.fillDate }
@@ -99,15 +84,13 @@ export function PositionDetailContent({
               {
                 label: 'Effective Basis / Share',
                 value: (
-                  <span style={{ color: 'var(--wb-sky)' }}>
-                    {fmtMoney(costBasisSnapshot.basisPerShare)}
-                  </span>
+                  <span className="text-wb-sky">{fmtMoney(costBasisSnapshot.basisPerShare)}</span>
                 )
               },
               {
                 label: 'Premium Collected',
                 value: (
-                  <span style={{ color: 'var(--wb-green)' }}>
+                  <span className="text-wb-green">
                     {fmtMoney(costBasisSnapshot.totalPremiumCollected)}
                   </span>
                 )
@@ -137,11 +120,17 @@ export function PositionDetailContent({
 
       {(position.thesis || position.notes) && (
         <SectionCard header="Notes">
-          <div style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div className="py-3.5 px-5 flex flex-col gap-2.5">
             {position.thesis && <NoteBlock label="Thesis" text={position.thesis} />}
             {position.notes && <NoteBlock label="Notes" text={position.notes} />}
           </div>
         </SectionCard>
+      )}
+
+      {position.phase !== 'CSP_OPEN' && position.closedDate && (
+        <div className="py-2.5 px-4 rounded-md bg-wb-green-dim border border-wb-green-border text-wb-text-secondary text-sm font-wb-mono">
+          Closed on {position.closedDate}
+        </div>
       )}
 
       {position.phase === 'CSP_OPEN' && activeLeg && (
@@ -152,22 +141,6 @@ export function PositionDetailContent({
           openFillDate={activeLeg.fillDate}
           expiration={activeLeg.expiration}
         />
-      )}
-
-      {position.phase !== 'CSP_OPEN' && position.closedDate && (
-        <div
-          style={{
-            padding: '10px 16px',
-            borderRadius: 6,
-            background: 'var(--wb-green-dim)',
-            border: '1px solid rgba(63,185,80,0.2)',
-            color: 'var(--wb-text-secondary)',
-            fontSize: '0.8125rem',
-            fontFamily: MONO
-          }}
-        >
-          Closed on {position.closedDate}
-        </div>
       )}
     </main>
   )

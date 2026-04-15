@@ -38,6 +38,7 @@ Wheelbase is a single-user trading journal and management tool for the options w
 - **Repo:** `jcteague/wheelbase` on GitHub
 
 For detailed product behavior, consult:
+
 - `CLAUDE.md`
 - `product documents/files/03-final-feature-specification.md`
 
@@ -57,6 +58,7 @@ When a feature involves options trading mechanics, risk management, trader workf
 3. Incorporate the expert response into the story's context, acceptance criteria, and edge cases
 
 Examples of when to consult the options expert:
+
 - "What data does a trader need to see before deciding to roll?"
 - "What are the failure modes when a PMCC short call gets assigned?"
 - "How do traders decide between closing at 50% profit versus letting it run?"
@@ -66,6 +68,7 @@ Examples of when to consult the options expert:
 ### Step 1: Understand the Feature
 
 Before writing any stories, clarify:
+
 - What user problem does this solve?
 - Which build phase does it belong to?
 - Which strategy type(s) does it apply to? (wheel, PMCC, or both)
@@ -76,6 +79,7 @@ Ask clarifying questions if the request is ambiguous. Do not write stories from 
 ### Step 2: Identify the Epic Boundary
 
 Determine if this is:
+
 - A single story (one user action, one outcome)
 - Part of an existing epic (find it in the backlog)
 - A new epic that needs decomposition into multiple stories
@@ -83,6 +87,7 @@ Determine if this is:
 ### Step 3: Write the Stories
 
 For each story, produce all sections:
+
 - **User Story** block (As a / I want / So that)
 - **Context** explaining the "why" in domain terms
 - **Acceptance Criteria** in Gherkin format (minimum: 1 happy path + 1 error/edge case)
@@ -93,6 +98,7 @@ For each story, produce all sections:
 ### Step 4: Size and Prioritize
 
 Assign a point estimate using the sizing guidelines:
+
 - 1-2 points: Single form, display change, or validation
 - 3-5 points: Full CRUD, lifecycle transition, or new alert rule
 - 8 points: Multi-step workflow spanning renderer and main process
@@ -118,6 +124,7 @@ Apply any corrections to both the story file and the mockup before proceeding. T
 **Default behavior:** Present the story and mockup in chat for review. Wait for approval before saving to disk. The story and mockup presented here are the post-review versions — options-expert corrections are already applied.
 
 **When asked to "save it", "write it", or "create it":** Save the story as a markdown file:
+
 - Path: `docs/epics/02-stories/US-{N}-{story-slug}.md`
 - Check existing files in that directory to find the next US-{N} number
 
@@ -130,6 +137,7 @@ Stories are plain markdown files saved to `docs/epics/02-stories/`. No external 
 `US-{N}-{kebab-case-story-title}.md`
 
 Check the directory for the highest existing US-{N} to get the next number:
+
 ```bash
 ls docs/epics/02-stories/
 ```
@@ -142,21 +150,27 @@ ls docs/epics/02-stories/
 **Story:** As a {role}, I want {action} so that {outcome}.
 
 ## Context
+
 {Why this story exists in domain terms}
 
 ## Acceptance Criteria
+
 {Gherkin scenarios}
 
 ## Technical Notes
+
 {Implementation guidance if relevant}
 
 ## Out of Scope
+
 {Explicit exclusions}
 
 ## Dependencies
+
 {Links to prerequisite stories, e.g. "Depends on US-5"}
 
 ## Estimate
+
 {N} points
 ```
 
@@ -172,6 +186,7 @@ Scenario: {descriptive name}
 ```
 
 Key rules:
+
 - **Given** uses past tense or present state (not actions)
 - **When** describes one action (split multi-step actions into separate scenarios)
 - **Then** describes what the user observes (not database operations or internal state)

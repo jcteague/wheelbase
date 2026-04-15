@@ -1,6 +1,5 @@
 import Decimal from 'decimal.js'
 import { pnlColor } from '../lib/format'
-import { MONO } from '../lib/tokens'
 import { FormButton } from './ui/FormButton'
 import { SectionCard } from './ui/SectionCard'
 import { SheetBody, SheetHeader } from './ui/Sheet'
@@ -35,191 +34,90 @@ export function CallAwaySuccess({
   const finalPnlColor = pnlColor(finalPnl)
   const heroValue = `${pnlSign}$${pnl.abs().toFixed(2)}`
 
+  const formattedStrike = parseFloat(ccStrike).toFixed(2)
+
   return (
-    <div style={{ display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
+    <div className="flex flex-1 flex-col overflow-hidden">
       <SheetHeader
         eyebrow="Shares Called Away"
         eyebrowColor="var(--wb-green)"
         borderBottomColor="rgba(63,185,80,0.2)"
         title={`${ticker} Cycle Closed`}
-        subtitle={`CALL $${parseFloat(ccStrike).toFixed(2)} · ${ccExpiration}`}
+        subtitle={`CALL $${formattedStrike} · ${ccExpiration}`}
         onClose={onClose}
       />
 
       <SheetBody>
         {/* Hero card */}
         <div
+          className="bg-wb-green-dim border border-wb-green-border rounded-xl px-5 py-[22px] text-center"
           style={{
-            background: 'linear-gradient(135deg, rgba(63,185,80,0.1), rgba(7,10,14,0.5))',
-            border: '1px solid rgba(63,185,80,0.25)',
-            borderRadius: 10,
-            padding: '22px 20px',
-            textAlign: 'center'
+            background: 'linear-gradient(135deg, rgba(63,185,80,0.1), rgba(7,10,14,0.5))'
           }}
         >
-          <div
-            style={{
-              fontSize: 9,
-              color: 'var(--wb-green)',
-              opacity: 0.8,
-              letterSpacing: '0.2em',
-              textTransform: 'uppercase',
-              marginBottom: 10
-            }}
-          >
+          <div className="text-[9px] text-wb-green opacity-80 tracking-[0.2em] uppercase mb-2.5">
             Wheel Complete
           </div>
-          <div
-            style={{
-              fontSize: 26,
-              fontWeight: 700,
-              color: 'var(--wb-text-primary)',
-              letterSpacing: '-0.02em',
-              lineHeight: 1.1,
-              marginBottom: 6
-            }}
-          >
+          <div className="text-[26px] font-bold text-wb-text-primary tracking-tight leading-[1.1] mb-1.5">
             WHEEL COMPLETE
           </div>
-          <div style={{ fontSize: 11, color: 'var(--wb-text-secondary)', marginBottom: 16 }}>
-            {ticker} · {sharesHeld} shares called away at ${parseFloat(ccStrike).toFixed(2)}
+          <div className="text-[11px] text-wb-text-secondary mb-4">
+            {ticker} · {sharesHeld} shares called away at ${formattedStrike}
           </div>
-          <div
-            style={{
-              display: 'inline-flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              background: 'rgba(63,185,80,0.1)',
-              border: '1px solid rgba(63,185,80,0.28)',
-              borderRadius: 8,
-              padding: '12px 28px'
-            }}
-          >
-            <span
-              style={{
-                fontSize: 9,
-                color: 'var(--wb-green)',
-                opacity: 0.75,
-                letterSpacing: '0.14em',
-                textTransform: 'uppercase',
-                marginBottom: 5
-              }}
-            >
+          <div className="inline-flex flex-col items-center rounded-lg px-7 py-3 bg-wb-green-dim border border-wb-green-border">
+            <span className="text-[9px] text-wb-green opacity-75 tracking-[0.14em] uppercase mb-1">
               Final Cycle P&amp;L
             </span>
             <span
-              style={{
-                fontSize: 30,
-                fontWeight: 700,
-                color: finalPnlColor,
-                letterSpacing: '-0.02em',
-                fontFamily: MONO
-              }}
+              className="text-[30px] font-bold tracking-tight font-wb-mono"
+              style={{ color: finalPnlColor }}
             >
               {heroValue}
             </span>
-            <span style={{ fontSize: 9, color: 'var(--wb-green)', opacity: 0.55, marginTop: 2 }}>
-              total realized gain
-            </span>
+            <span className="text-[9px] text-wb-green opacity-55 mt-0.5">total realized gain</span>
           </div>
         </div>
 
         {/* Cycle summary */}
-        <SectionCard header="Cycle Summary">
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              padding: '10px 14px',
-              borderBottom: '1px solid rgba(30,42,56,0.6)',
-              fontSize: 11
-            }}
-          >
-            <span style={{ color: 'var(--wb-text-secondary)' }}>Leg recorded</span>
-            <span style={{ color: 'var(--wb-green)' }}>cc_close · {fillDate}</span>
+        <SectionCard header="Cycle Summary" className="bg-wb-bg-elevated border-wb-border">
+          <div className="flex justify-between px-3.5 py-2.5 border-b border-[rgba(30,42,56,0.6)] text-[11px]">
+            <span className="text-wb-text-secondary">Leg recorded</span>
+            <span className="text-wb-green">cc_close · {fillDate}</span>
           </div>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '10px 14px',
-              borderBottom: '1px solid rgba(30,42,56,0.6)',
-              fontSize: 11
-            }}
-          >
-            <span style={{ color: 'var(--wb-text-secondary)' }}>Phase</span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <div className="flex justify-between items-center px-3.5 py-2.5 border-b border-[rgba(30,42,56,0.6)] text-[11px]">
+            <span className="text-wb-text-secondary">Phase</span>
+            <span className="flex items-center gap-1.5">
               <PhaseBadge phase="CC_OPEN" />
-              <span style={{ fontSize: 9, color: 'var(--wb-text-muted)' }}>→</span>
+              <span className="text-[9px] text-wb-text-muted">→</span>
               <PhaseBadge phase="WHEEL_COMPLETE" />
             </span>
           </div>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              padding: '10px 14px',
-              borderBottom: '1px solid rgba(30,42,56,0.6)',
-              fontSize: 11
-            }}
-          >
-            <span style={{ color: 'var(--wb-text-secondary)' }}>Shares delivered</span>
-            <span style={{ color: 'var(--wb-text-primary)' }}>
-              {sharesHeld} @ ${parseFloat(ccStrike).toFixed(2)}
+          <div className="flex justify-between px-3.5 py-2.5 border-b border-[rgba(30,42,56,0.6)] text-[11px]">
+            <span className="text-wb-text-secondary">Shares delivered</span>
+            <span className="text-wb-text-primary">
+              {sharesHeld} @ ${formattedStrike}
             </span>
           </div>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              padding: '10px 14px',
-              borderBottom: '1px solid rgba(30,42,56,0.6)',
-              fontSize: 11
-            }}
-          >
-            <span style={{ color: 'var(--wb-text-secondary)' }}>Cycle duration</span>
-            <span style={{ color: 'var(--wb-text-primary)' }}>{cycleDays} days</span>
+          <div className="flex justify-between px-3.5 py-2.5 border-b border-[rgba(30,42,56,0.6)] text-[11px]">
+            <span className="text-wb-text-secondary">Cycle duration</span>
+            <span className="text-wb-text-primary">{cycleDays} days</span>
+          </div>
+          <div className="flex justify-between px-3.5 py-2.5 border-b border-[rgba(30,42,56,0.6)] text-[11px]">
+            <span className="text-wb-text-secondary">Annualized return</span>
+            <span className="text-wb-green">~{parseFloat(annualizedReturn).toFixed(1)}%</span>
           </div>
           <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              padding: '10px 14px',
-              borderBottom: '1px solid rgba(30,42,56,0.6)',
-              fontSize: 11
-            }}
+            className="flex justify-between px-3.5 py-2.5 text-[11px]"
+            style={{ background: 'linear-gradient(90deg, rgba(63,185,80,0.04), transparent)' }}
           >
-            <span style={{ color: 'var(--wb-text-secondary)' }}>Annualized return</span>
-            <span style={{ color: 'var(--wb-green)' }}>
-              ~{parseFloat(annualizedReturn).toFixed(1)}%
+            <span className="font-bold text-wb-text-primary text-[11px]">Final cycle P&amp;L</span>
+            <span className="text-sm font-bold" style={{ color: finalPnlColor }}>
+              {heroValue}
             </span>
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              padding: '10px 14px',
-              background: 'linear-gradient(90deg, rgba(63,185,80,0.04), transparent)',
-              fontSize: 11
-            }}
-          >
-            <span style={{ fontWeight: 700, color: 'var(--wb-text-primary)', fontSize: 11 }}>
-              Final cycle P&amp;L
-            </span>
-            <span style={{ fontSize: 14, fontWeight: 700, color: finalPnlColor }}>{heroValue}</span>
           </div>
         </SectionCard>
 
-        <div
-          style={{
-            fontSize: 9,
-            fontWeight: 700,
-            letterSpacing: '0.15em',
-            textTransform: 'uppercase',
-            color: 'var(--wb-text-muted)'
-          }}
-        >
+        <div className="text-[9px] font-bold tracking-[0.15em] uppercase text-wb-text-muted">
           What&apos;s next?
         </div>
 
@@ -235,16 +133,7 @@ export function CallAwaySuccess({
         <button
           type="button"
           onClick={onClose}
-          style={{
-            width: '100%',
-            fontSize: 11,
-            color: 'var(--wb-text-secondary)',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            textDecoration: 'underline',
-            fontFamily: MONO
-          }}
+          className="w-full text-[11px] text-wb-text-secondary bg-transparent border-none cursor-pointer underline font-wb-mono"
         >
           View full position history
         </button>

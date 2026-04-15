@@ -11,6 +11,7 @@ const listPositions = vi.fn()
 const openCoveredCallPosition = vi.fn()
 const recordCallAwayPosition = vi.fn()
 const rollCspPosition = vi.fn()
+const rollCcPosition = vi.fn()
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -47,6 +48,10 @@ vi.mock('../services/roll-csp-position', () => ({
   rollCspPosition
 }))
 
+vi.mock('../services/roll-cc-position', () => ({
+  rollCcPosition
+}))
+
 function getRegisteredHandler(
   calls: Array<[string, (...args: unknown[]) => unknown]>,
   channel: string
@@ -68,6 +73,7 @@ describe('registerPositionsHandlers', () => {
     openCoveredCallPosition.mockReset()
     recordCallAwayPosition.mockReset()
     rollCspPosition.mockReset()
+    rollCcPosition.mockReset()
   })
 
   it('registers a positions:assign-csp handler', async () => {
@@ -756,6 +762,158 @@ describe('registerPositionsHandlers', () => {
     const result = await handler?.(null, {
       costToClosePerContract: 1.2,
       newPremiumPerContract: 2.8,
+      newExpiration: '2026-05-16'
+    })
+
+    expect(result).toMatchObject({ ok: false })
+    expect((result as { errors: unknown[] }).errors).toBeDefined()
+    expect((result as { errors: Array<{ field: string }> }).errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: 'positionId' })])
+    )
+  })
+
+  it('registers a positions:roll-cc handler', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+
+    registerPositionsHandlers({} as never)
+
+    expect(vi.mocked(ipcMain.handle)).toHaveBeenCalledWith(
+      'positions:roll-cc',
+      expect.any(Function)
+    )
+  })
+
+  it('positions:roll-cc returns ok:true with position, rollFromLeg, rollToLeg, rollChainId, costBasisSnapshot on success', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+    const db = {} as never
+
+    rollCcPosition.mockReturnValue({
+      position: {
+        id: '11111111-1111-4111-8111-111111111111',
+        ticker: 'AAPL',
+        phase: 'CC_OPEN',
+        status: 'ACTIVE'
+      },
+      rollFromLeg: {
+        id: 'leg-from-1',
+        legRole: 'ROLL_FROM',
+        action: 'BUY',
+        instrumentType: 'CALL',
+        strike: '185.0000',
+        expiration: '2026-04-18',
+        contracts: 1,
+        premiumPerContract: '1.5000'
+      },
+      rollToLeg: {
+        id: 'leg-to-1',
+        legRole: 'ROLL_TO',
+        action: 'SELL',
+        instrumentType: 'CALL',
+        strike: '190.0000',
+        expiration: '2026-05-16',
+        contracts: 1,
+        premiumPerContract: '2.2000'
+      },
+      rollChainId: 'chain-uuid-1',
+      costBasisSnapshot: {
+        id: 'snap-1',
+        positionId: '11111111-1111-4111-8111-111111111111',
+        basisPerShare: '175.8000',
+        totalPremiumCollected: '440.0000',
+        finalPnl: null,
+        snapshotAt: '2026-04-13T00:00:00.000Z',
+        createdAt: '2026-04-13T00:00:00.000Z'
+      }
+    })
+
+    registerPositionsHandlers(db)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:roll-cc'
+    )
+
+    const result = await handler?.(null, {
+      positionId: '11111111-1111-4111-8111-111111111111',
+      costToClosePerContract: 1.5,
+      newPremiumPerContract: 2.2,
+      newExpiration: '2026-05-16',
+      newStrike: 190
+    })
+
+    expect(rollCcPosition).toHaveBeenCalledWith(db, '11111111-1111-4111-8111-111111111111', {
+      positionId: '11111111-1111-4111-8111-111111111111',
+      costToClosePerContract: 1.5,
+      newPremiumPerContract: 2.2,
+      newExpiration: '2026-05-16',
+      newStrike: 190
+    })
+    expect(result).toMatchObject({
+      ok: true,
+      position: { phase: 'CC_OPEN' },
+      rollFromLeg: { legRole: 'ROLL_FROM', action: 'BUY', instrumentType: 'CALL' },
+      rollToLeg: { legRole: 'ROLL_TO', action: 'SELL', instrumentType: 'CALL' },
+      rollChainId: 'chain-uuid-1',
+      costBasisSnapshot: { basisPerShare: '175.8000' }
+    })
+  })
+
+  it('positions:roll-cc returns ok:false when service throws ValidationError', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+    const db = {} as never
+    const { ValidationError } = await import('../core/lifecycle')
+
+    rollCcPosition.mockImplementation(() => {
+      throw new ValidationError(
+        'newExpiration',
+        'must_be_on_or_after_current',
+        'New expiration must be on or after current expiration'
+      )
+    })
+
+    registerPositionsHandlers(db)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:roll-cc'
+    )
+
+    const result = await handler?.(null, {
+      positionId: '11111111-1111-4111-8111-111111111111',
+      costToClosePerContract: 1.5,
+      newPremiumPerContract: 2.2,
+      newExpiration: '2026-03-01'
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      errors: [
+        {
+          field: 'newExpiration',
+          code: 'must_be_on_or_after_current',
+          message: 'New expiration must be on or after current expiration'
+        }
+      ]
+    })
+  })
+
+  it('positions:roll-cc returns ok:false when Zod rejects malformed payload (missing positionId)', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+
+    registerPositionsHandlers({} as never)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:roll-cc'
+    )
+
+    const result = await handler?.(null, {
+      costToClosePerContract: 1.5,
+      newPremiumPerContract: 2.2,
       newExpiration: '2026-05-16'
     })
 

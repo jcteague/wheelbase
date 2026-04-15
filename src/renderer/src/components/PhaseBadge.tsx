@@ -14,22 +14,12 @@ export function PhaseBadge({ phase, variant = 'default' }: Props): React.JSX.Ele
   return (
     <Badge
       color={color}
-      style={{
-        gap: 5,
-        padding: variant === 'short' ? '2px 8px' : '2px 9px',
-        borderRadius: 4,
-        fontSize: '0.7rem'
-      }}
+      className={[
+        'gap-[5px] rounded text-[0.7rem]',
+        variant === 'short' ? 'px-2 py-0.5' : 'px-[9px] py-0.5'
+      ].join(' ')}
     >
-      <span
-        style={{
-          width: 5,
-          height: 5,
-          borderRadius: '50%',
-          background: color,
-          flexShrink: 0
-        }}
-      />
+      <span className="w-[5px] h-[5px] shrink-0 rounded-full" style={{ background: color }} />
       {label}
     </Badge>
   )

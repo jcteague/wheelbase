@@ -37,6 +37,7 @@ pnpm test
 ```
 
 Expected: all tests in:
+
 - `frontend/src/components/PositionCard.test.tsx`
 - `frontend/src/pages/PositionsListPage.test.tsx`
 
@@ -61,6 +62,7 @@ Both must be clean before the story is considered done.
 ## Acceptance Check for DTE Scenario
 
 Given today is 2026-03-06 and expiration is 2026-04-17:
+
 ```
 (date(2026, 4, 17) - date(2026, 3, 6)).days == 42  ✓
 ```

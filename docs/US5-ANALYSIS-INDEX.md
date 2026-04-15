@@ -8,7 +8,9 @@ Scope: Complete codebase analysis for CSP expiration feature implementation
 ## Documents Overview
 
 ### 📋 START HERE
+
 **[US5-QUICK-REFERENCE.md](./US5-QUICK-REFERENCE.md)** (5 min read)
+
 - What is US-5? (user story summary)
 - High-level architecture diagram
 - Implementation checklist
@@ -18,7 +20,9 @@ Scope: Complete codebase analysis for CSP expiration feature implementation
 - **Best for**: Understanding what to build and getting started
 
 ### 📊 DETAILED ANALYSIS
+
 **[FINAL_SUMMARY.txt](./FINAL_SUMMARY.txt)** (10 min read)
+
 - 7-point detailed analysis of each component
 - Current state vs gaps for each area
 - Complete implementation checklist with task breakdown
@@ -27,7 +31,9 @@ Scope: Complete codebase analysis for CSP expiration feature implementation
 - Effort estimates
 
 ### 🔧 CODE PATTERNS
+
 **[wheelbase-code-patterns.md](./wheelbase-code-patterns.md)** (15 min read)
+
 - Exact code patterns from US-1 to replicate
 - Pattern 1: Pure lifecycle engine functions
 - Pattern 2: Pure cost basis calculations
@@ -38,7 +44,9 @@ Scope: Complete codebase analysis for CSP expiration feature implementation
 - **Best for**: Implementing code with correct patterns
 
 ### 📝 GAPS SUMMARY
+
 **[wheelbase-gaps-summary.md](./wheelbase-gaps-summary.md)** (10 min read)
+
 - Status for each of the 7 areas (✅ Complete vs ❌ Missing)
 - Specific gaps identified
 - "Why" behind each gap
@@ -51,6 +59,7 @@ Scope: Complete codebase analysis for CSP expiration feature implementation
 ## Quick Navigation by Role
 
 ### 🎯 Project Manager / Planning
+
 1. Read: [US5-QUICK-REFERENCE.md](./US5-QUICK-REFERENCE.md) — 5 min
 2. Read: [FINAL_SUMMARY.txt](./FINAL_SUMMARY.txt) section "ESTIMATED EFFORT" — 2 min
 3. Review: "Implementation Checklist" in FINAL_SUMMARY.txt — 5 min
@@ -60,12 +69,14 @@ Scope: Complete codebase analysis for CSP expiration feature implementation
 ---
 
 ### 💻 Backend Developer
+
 1. Read: [US5-QUICK-REFERENCE.md](./US5-QUICK-REFERENCE.md) — 5 min
 2. Read: [wheelbase-code-patterns.md](./wheelbase-code-patterns.md) Patterns 1-4 — 10 min
 3. Reference: [wheelbase-gaps-summary.md](./wheelbase-gaps-summary.md) section "3. Lifecycle Engine" — 2 min
 4. Reference: [wheelbase-gaps-summary.md](./wheelbase-gaps-summary.md) section "4. Cost Basis Engine" — 2 min
 
 **Implementation order:**
+
 1. Add `expireCSP()` to `src/main/core/lifecycle.ts` (Pattern 1)
 2. Add expiration calculation to `src/main/core/costbasis.ts` (Pattern 2)
 3. Add `expirePosition()` to `src/main/services/positions.ts` (Pattern 3)
@@ -76,11 +87,13 @@ Scope: Complete codebase analysis for CSP expiration feature implementation
 ---
 
 ### 🎨 Frontend Developer
+
 1. Read: [US5-QUICK-REFERENCE.md](./US5-QUICK-REFERENCE.md) — 5 min
 2. Read: [wheelbase-code-patterns.md](./wheelbase-code-patterns.md) Pattern 5 — 3 min
 3. Reference: [wheelbase-gaps-summary.md](./wheelbase-gaps-summary.md) section "6. Frontend Integration" — 2 min
 
 **Implementation order:**
+
 1. Add `expirePosition()` to `src/renderer/src/api/positions.ts` (Pattern 5)
 2. Implement `PositionDetailPage` (show position + action button)
 3. Add confirm dialog component
@@ -93,42 +106,49 @@ Scope: Complete codebase analysis for CSP expiration feature implementation
 ## 7-Part Analysis Structure
 
 ### Part 1: Position Models and Types ✅ ~70% Ready
+
 **Status:** Types defined, but `CostBasisSnapshotRecord` missing finalPnl/annualizedReturn  
 **Files:** `src/main/core/types.ts`, `src/main/schemas.ts`  
 **Gap:** Type mismatch with database schema  
 **Details:** See FINAL_SUMMARY.txt section 1
 
 ### Part 2: Leg Models and Types ✅ 100% Complete
+
 **Status:** LegRole 'EXPIRE' already defined  
 **Files:** `src/main/core/types.ts`  
 **Gap:** None  
 **Details:** See FINAL_SUMMARY.txt section 2
 
 ### Part 3: Lifecycle Engine ❌ 30% Done
+
 **Status:** `openWheel()` exists, `expireCSP()` missing  
 **Files:** `src/main/core/lifecycle.ts`  
 **Gap:** Need ~20 LOC for expireCSP() function  
 **Details:** See wheelbase-gaps-summary.md or FINAL_SUMMARY.txt section 3
 
 ### Part 4: Cost Basis Engine ❌ 50% Done
+
 **Status:** Initial basis calculation exists, expiration P&L missing  
 **Files:** `src/main/core/costbasis.ts`  
 **Gap:** Need ~15 LOC for expiration calculation  
 **Details:** See wheelbase-gaps-summary.md or FINAL_SUMMARY.txt section 4
 
 ### Part 5: IPC Handlers ❌ 0% Done
+
 **Status:** Handler pattern exists, positions:expire missing  
 **Files:** `src/main/ipc/positions.ts`  
 **Gap:** Need ~30 LOC for new handler  
 **Details:** See FINAL_SUMMARY.txt section 5
 
 ### Part 6: Frontend Integration ❌ 50% Done
+
 **Status:** PositionCard ready, PositionDetailPage stub exists  
 **Files:** `src/renderer/src/`, PositionDetailPage  
 **Gap:** Need detail page implementation + "Mark Expired" flow  
 **Details:** See wheelbase-gaps-summary.md or FINAL_SUMMARY.txt section 6
 
 ### Part 7: Database Schema ✅ 100% Ready
+
 **Status:** All tables and fields exist  
 **Files:** `migrations/001_initial_schema.sql`  
 **Gap:** None  
@@ -138,19 +158,19 @@ Scope: Complete codebase analysis for CSP expiration feature implementation
 
 ## Key Figures at a Glance
 
-| Metric | Value |
-|--------|-------|
-| Backend functions to implement | 3 |
-| Service methods to implement | 1 |
-| IPC handlers to register | 1 |
-| Frontend API functions to implement | 1 |
-| Frontend pages to build | 1 (PositionDetailPage) |
-| Frontend components to build | 1 (ConfirmDialog) |
-| Database migrations needed | 0 |
-| Pure functions to test | 2 |
-| Total files to modify | 10 |
-| Total new lines of code | ~375 |
-| Estimated implementation time | 4-5 hours |
+| Metric                              | Value                  |
+| ----------------------------------- | ---------------------- |
+| Backend functions to implement      | 3                      |
+| Service methods to implement        | 1                      |
+| IPC handlers to register            | 1                      |
+| Frontend API functions to implement | 1                      |
+| Frontend pages to build             | 1 (PositionDetailPage) |
+| Frontend components to build        | 1 (ConfirmDialog)      |
+| Database migrations needed          | 0                      |
+| Pure functions to test              | 2                      |
+| Total files to modify               | 10                     |
+| Total new lines of code             | ~375                   |
+| Estimated implementation time       | 4-5 hours              |
 
 ---
 
@@ -219,38 +239,38 @@ A: Replicate US-1 patterns. See wheelbase-code-patterns.md for templates.
 
 **Q: Where do I start?**  
 A: Backend developers: Start with `expireCSP()` in lifecycle.ts  
-   Frontend developers: Wait for backend, then implement PositionDetailPage
+ Frontend developers: Wait for backend, then implement PositionDetailPage
 
 **Q: How much code is this really?**  
 A: ~375 LOC total, mostly straightforward. See time estimate in FINAL_SUMMARY.txt
 
 **Q: Can I test locally?**  
 A: Yes. Pure engine functions can be tested with Vitest immediately.  
-   Service layer needs mocked DB. Frontend needs backend running.
+ Service layer needs mocked DB. Frontend needs backend running.
 
 **Q: What if I get stuck?**  
 A: Refer to wheelbase-code-patterns.md for exact examples from US-1.  
-   Use the issue/error pattern shown in that doc.
+ Use the issue/error pattern shown in that doc.
 
 ---
 
 ## Document File Sizes
 
-| File | Size | Read Time |
-|------|------|-----------|
-| US5-QUICK-REFERENCE.md | ~10KB | 5-7 min |
-| FINAL_SUMMARY.txt | ~11KB | 10-12 min |
-| wheelbase-gaps-summary.md | ~6KB | 8-10 min |
+| File                       | Size  | Read Time |
+| -------------------------- | ----- | --------- |
+| US5-QUICK-REFERENCE.md     | ~10KB | 5-7 min   |
+| FINAL_SUMMARY.txt          | ~11KB | 10-12 min |
+| wheelbase-gaps-summary.md  | ~6KB  | 8-10 min  |
 | wheelbase-code-patterns.md | ~13KB | 15-20 min |
-| wheelbase-analysis.md | ~13KB | 15-20 min |
+| wheelbase-analysis.md      | ~13KB | 15-20 min |
 
 ---
 
 ## Version History
 
-| Date | Version | Changes |
-|------|---------|---------|
-| 2025-03-12 | 1.0 | Initial comprehensive analysis created |
+| Date       | Version | Changes                                |
+| ---------- | ------- | -------------------------------------- |
+| 2025-03-12 | 1.0     | Initial comprehensive analysis created |
 
 ---
 

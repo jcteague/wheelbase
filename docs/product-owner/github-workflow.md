@@ -115,7 +115,7 @@ After creating child stories, update the epic body with their issue numbers usin
 
 ### Story Issue Template
 
-```bash
+````bash
 gh issue create \
   --title "US-{N}: {title}" \
   --label "story,phase:{N},{strategy_label},{priority_label}" \
@@ -142,7 +142,7 @@ Scenario: {error/edge case}
   Given {precondition}
   When {invalid action}
   Then {rejection outcome}
-```
+````
 
 ## Technical Notes
 
@@ -160,7 +160,8 @@ Scenario: {error/edge case}
 **Points:** {estimate}
 EOF
 )"
-```
+
+````
 
 ### Adding Story to Project Board
 
@@ -179,7 +180,7 @@ gh project item-edit --project-id {PROJECT_ID} --id {ITEM_ID} \
 
 gh project item-edit --project-id {PROJECT_ID} --id {ITEM_ID} \
   --field-id {TYPE_FIELD_ID} --single-select-option-id {STORY_OPTION_ID}
-```
+````
 
 ---
 
@@ -239,13 +240,13 @@ gh issue edit {EPIC_NUMBER} --body "{updated body with checked item}"
 
 Use project board status columns to track progress:
 
-| Status | Meaning |
-|---|---|
-| Backlog | Story written but not started |
-| Ready | Story refined, dependencies met, ready to implement |
+| Status      | Meaning                                               |
+| ----------- | ----------------------------------------------------- |
+| Backlog     | Story written but not started                         |
+| Ready       | Story refined, dependencies met, ready to implement   |
 | In Progress | Currently being built (TDD: Red/Green/Refactor cycle) |
-| Review | Implementation complete, awaiting review |
-| Done | Merged, tests pass, acceptance criteria verified |
+| Review      | Implementation complete, awaiting review              |
+| Done        | Merged, tests pass, acceptance criteria verified      |
 
 ---
 

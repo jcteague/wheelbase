@@ -22,15 +22,15 @@ Each new sheet copies ~40 lines of identical style objects from an existing shee
 
 ### Current duplication count
 
-| Pattern | Files | Identical lines per file |
-|---|---|---|
-| Panel container style | 7 | ~12 lines |
-| Scrim + portal wrapper | 7 | ~3 lines |
-| Header layout | 7 | ~10 lines |
-| Close button (×) | 7+ (form + success variants) | ~8 lines |
-| Footer layout | 7 | ~6 lines |
-| `SIDEBAR_WIDTH = 200` constant | 7 | 1 line |
-| `boxShadow: var(--wb-shadow-sheet)` / raw rgba | 7 | 1 line |
+| Pattern                                        | Files                        | Identical lines per file |
+| ---------------------------------------------- | ---------------------------- | ------------------------ |
+| Panel container style                          | 7                            | ~12 lines                |
+| Scrim + portal wrapper                         | 7                            | ~3 lines                 |
+| Header layout                                  | 7                            | ~10 lines                |
+| Close button (×)                               | 7+ (form + success variants) | ~8 lines                 |
+| Footer layout                                  | 7                            | ~6 lines                 |
+| `SIDEBAR_WIDTH = 200` constant                 | 7                            | 1 line                   |
+| `boxShadow: var(--wb-shadow-sheet)` / raw rgba | 7                            | 1 line                   |
 
 ## Proposed Solution
 
@@ -38,11 +38,11 @@ Extract shared sheet primitives into `src/renderer/src/components/ui/Sheet.tsx`:
 
 ```typescript
 // Composable sheet primitives — no business logic, just layout
-export function SheetPortal({ open, onClose, children })    // scrim + portal + panel container
-export function SheetHeader({ eyebrow, title, subtitle, variant, onClose })  // header with close button
-export function SheetBody({ children })                      // scrollable content area
-export function SheetFooter({ children })                    // sticky bottom bar
-export function SheetCloseButton({ onClick })                // × button (extracted from header for success states)
+export function SheetPortal({ open, onClose, children }) // scrim + portal + panel container
+export function SheetHeader({ eyebrow, title, subtitle, variant, onClose }) // header with close button
+export function SheetBody({ children }) // scrollable content area
+export function SheetFooter({ children }) // sticky bottom bar
+export function SheetCloseButton({ onClick }) // × button (extracted from header for success states)
 ```
 
 Each existing sheet would become ~50% shorter, containing only its unique content:

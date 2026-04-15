@@ -15,15 +15,15 @@ The renderer calls `window.api.*` (exposed via `contextBridge`).
 
 ```ts
 interface PositionListItem {
-  id:                  string
-  ticker:              string
-  phase:               WheelPhase
-  status:              WheelStatus
-  strike:              string   // decimal string e.g. "185.0000"
-  expiration:          string   // ISO date string
-  dte:                 number | null
-  premiumCollected:    string   // decimal string
-  effectiveCostBasis:  string   // decimal string
+  id: string
+  ticker: string
+  phase: WheelPhase
+  status: WheelStatus
+  strike: string // decimal string e.g. "185.0000"
+  expiration: string // ISO date string
+  dte: number | null
+  premiumCollected: string // decimal string
+  effectiveCostBasis: string // decimal string
 }
 ```
 
@@ -34,47 +34,51 @@ interface PositionListItem {
 **Channel:** `positions:create`
 
 **Input:**
+
 ```ts
 interface CreatePositionPayload {
-  ticker:               string
-  strike:               number
-  expiration:           string   // ISO date
-  contracts:            number
-  premiumPerContract:   number
-  fillDate?:            string   // ISO date, optional
-  accountId?:           string
-  thesis?:              string
-  notes?:               string
+  ticker: string
+  strike: number
+  expiration: string // ISO date
+  contracts: number
+  premiumPerContract: number
+  fillDate?: string // ISO date, optional
+  accountId?: string
+  thesis?: string
+  notes?: string
 }
 ```
 
 **Returns on success:** `CreatePositionResult`
+
 ```ts
 interface CreatePositionResult {
   ok: true
-  position:           PositionRecord
-  leg:                LegRecord
-  costBasisSnapshot:  CostBasisSnapshotRecord
+  position: PositionRecord
+  leg: LegRecord
+  costBasisSnapshot: CostBasisSnapshotRecord
 }
 ```
 
 **Returns on validation error:**
+
 ```ts
 interface CreatePositionError {
   ok: false
   errors: Array<{
-    field:    string
-    code:     string
-    message:  string
+    field: string
+    code: string
+    message: string
   }>
 }
 ```
 
 **Returns on unexpected error:**
+
 ```ts
 interface CreatePositionError {
   ok: false
-  errors: [{ field: '__root__', code: 'internal_error', message: string }]
+  errors: [{ field: '__root__'; code: 'internal_error'; message: string }]
 }
 ```
 
@@ -95,7 +99,12 @@ ipcMain.handle('positions:create', async (_, payload) => {
       return { ok: false, errors: formatZodErrors(err) }
     }
     logger.error({ err }, 'unhandled_error')
-    return { ok: false, errors: [{ field: '__root__', code: 'internal_error', message: 'An unexpected error occurred' }] }
+    return {
+      ok: false,
+      errors: [
+        { field: '__root__', code: 'internal_error', message: 'An unexpected error occurred' }
+      ]
+    }
   }
 })
 ```
@@ -111,7 +120,9 @@ Expose types in `src/preload/index.ts` and declare `window.api` in `src/renderer
 interface Window {
   api: {
     listPositions: () => Promise<PositionListItem[]>
-    createPosition: (payload: CreatePositionPayload) => Promise<CreatePositionResult | CreatePositionError>
+    createPosition: (
+      payload: CreatePositionPayload
+    ) => Promise<CreatePositionResult | CreatePositionError>
   }
 }
 ```

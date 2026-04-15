@@ -9,6 +9,7 @@ The backend has zero logging infrastructure. Unhandled exceptions are silently s
 ## Library: `structlog`
 
 Chosen over stdlib+JSON-formatter and loguru because:
+
 - Processor pipeline is functional (plain functions transforming a dict) — fits the project style
 - `structlog.contextvars` is async-safe: per-request fields bound once in middleware appear on all downstream log records automatically, with no argument threading
 - `structlog.stdlib.ProcessorFormatter` bridges uvicorn and SQLAlchemy's stdlib log records into the same JSON pipeline with no custom handler code
@@ -18,15 +19,15 @@ Chosen over stdlib+JSON-formatter and loguru because:
 
 ## Files Changed
 
-| Action | File |
-|--------|------|
-| MODIFY | `backend/pyproject.toml` |
-| MODIFY | `backend/app/config.py` |
-| NEW    | `backend/app/logging_config.py` |
-| NEW    | `backend/app/middleware.py` |
-| MODIFY | `backend/app/main.py` |
+| Action | File                                  |
+| ------ | ------------------------------------- |
+| MODIFY | `backend/pyproject.toml`              |
+| MODIFY | `backend/app/config.py`               |
+| NEW    | `backend/app/logging_config.py`       |
+| NEW    | `backend/app/middleware.py`           |
+| MODIFY | `backend/app/main.py`                 |
 | MODIFY | `backend/app/api/routes/positions.py` |
-| NEW    | `backend/tests/test_logging.py` |
+| NEW    | `backend/tests/test_logging.py`       |
 
 **Do NOT add logging to `app/core/` engines** — they are pure functions with no I/O imports.
 
@@ -55,6 +56,7 @@ log_level: str = "INFO"   # overridable via LOG_LEVEL env var
 ### Step 3 — Create `app/logging_config.py`
 
 Single `configure_logging()` function called once at startup. Responsibilities:
+
 - Build the shared structlog processor chain:
   1. `merge_contextvars` — injects per-request bound fields (request_id, method, path)
   2. `add_logger_name` — adds `"logger": "app.api.routes.positions"`
@@ -119,11 +121,13 @@ configure_logging()   # ← must be FIRST, before any other app imports that emi
 ```
 
 Then:
+
 ```python
 app.add_middleware(LoggingMiddleware)
 ```
 
 Fix `global_exception_handler` to actually log:
+
 ```python
 async def global_exception_handler(request, exc):
     logger.error("unhandled_exception", exc_type=type(exc).__name__, exc_info=exc)
@@ -137,16 +141,19 @@ Note: pass `exc_info=exc` explicitly (not `exc_info=True`) — inside a FastAPI 
 ### Step 6 — Modify `app/api/routes/positions.py`
 
 Add module-level logger:
+
 ```python
 logger = logging.getLogger(__name__)
 ```
 
 Log validation failure (after catching `ValidationError`, before returning 400):
+
 ```python
 logger.info("position_validation_failed", field=exc.field, code=exc.code, ticker=body.ticker)
 ```
 
 Log position created (after `session.begin()` block exits — after commit, not before):
+
 ```python
 logger.info(
     "position_created",
@@ -167,6 +174,7 @@ logger.info(
 Use `structlog.testing.capture_logs()` (no extra deps — ships with structlog). Tests are async, following the existing `pytest-asyncio` pattern.
 
 Five tests:
+
 1. `test_position_created_log_emitted` — 201 response produces `position_created` record with ticker, position_id, basis_per_share
 2. `test_validation_failure_log_emitted` — 400 response produces `position_validation_failed` at `log_level="info"` (not error)
 3. `test_http_request_and_response_logged` — both `http_request_received` and `http_response` present, response has `http_status` and `duration_ms`

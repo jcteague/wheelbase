@@ -20,9 +20,9 @@ A trader opens the app and immediately sees all active positions, key portfolio 
 
 ## Vertical Slice
 
-| Layer | What ships |
-|---|---|
-| API | GET /api/positions (list with filters/sort), GET /api/dashboard/summary (aggregates) |
+| Layer    | What ships                                                                             |
+| -------- | -------------------------------------------------------------------------------------- |
+| API      | GET /api/positions (list with filters/sort), GET /api/dashboard/summary (aggregates)   |
 | Frontend | Dashboard page with summary bar, position card grid, filter/sort controls, empty state |
 
 ## Stories

@@ -61,6 +61,7 @@ FAIL src/main/services/list-positions.test.ts (10 tests | 2 failed)
 ## Handoff to Green Phase
 
 Green phase should:
+
 1. Create `src/main/services/active-leg-sql.ts` exporting `activeLegSubquery()` with the phase-aware subquery
 2. Modify `src/main/services/list-positions.ts` to use `activeLegSubquery()` in LIST_QUERY
 3. Modify `src/main/services/get-position.ts` to use `activeLegSubquery()` in GET_QUERY (replacing the inline version at lines 105–112)
@@ -158,6 +159,7 @@ Error: Failed to resolve import "./rolls" from "src/renderer/src/lib/rolls.test.
 ## Handoff to Green Phase (Area 2)
 
 Green phase should:
+
 1. Create `src/renderer/src/lib/rolls.ts` with the exact interfaces listed above
 2. Modify `src/renderer/src/components/RollCspForm.tsx` to import and use the helpers
 3. Modify `src/renderer/src/components/RollCspSuccess.tsx` to import and use the helpers

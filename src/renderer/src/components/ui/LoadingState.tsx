@@ -1,5 +1,3 @@
-import { MONO } from '../../lib/tokens'
-
 type LoadingStateProps = {
   message?: string
 }
@@ -8,15 +6,7 @@ export function LoadingState({ message = 'Loading…' }: LoadingStateProps): Rea
   return (
     <div
       role="status"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        padding: '32px 24px',
-        color: 'var(--wb-text-muted)',
-        fontSize: '0.8125rem',
-        fontFamily: MONO
-      }}
+      className="flex items-center gap-2.5 py-8 px-6 text-wb-text-muted text-[0.8125rem] font-wb-mono"
     >
       <span
         style={{

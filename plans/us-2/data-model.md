@@ -3,6 +3,7 @@
 ## No New DB Entities
 
 All required data lives in the existing Phase 1 schema:
+
 - `positions` table — ticker, phase, status, opened_date
 - `legs` table — strike, expiration, contracts, premium_per_contract, action, fill_date
 - `cost_basis_snapshots` table — basis_per_share, total_premium_collected
@@ -13,17 +14,17 @@ All required data lives in the existing Phase 1 schema:
 
 Lives in `backend/app/api/schemas.py`.
 
-| Field | Type | Source | Notes |
-|---|---|---|---|
-| `id` | `uuid.UUID` | `positions.id` | |
-| `ticker` | `str` | `positions.ticker` | |
-| `phase` | `WheelPhase` | `positions.phase` | Used for badge display |
-| `status` | `WheelStatus` | `positions.status` | |
-| `strike` | `Decimal \| None` | active `Leg.strike` | None when no active option leg |
-| `expiration` | `datetime.date \| None` | active `Leg.expiration` | None when no active option leg |
-| `dte` | `int \| None` | computed: `(expiration − today).days` | None when `expiration` is None |
-| `premium_collected` | `Decimal` | latest `CostBasisSnapshot.total_premium_collected` | |
-| `effective_cost_basis` | `Decimal` | latest `CostBasisSnapshot.basis_per_share` | |
+| Field                  | Type                    | Source                                             | Notes                          |
+| ---------------------- | ----------------------- | -------------------------------------------------- | ------------------------------ |
+| `id`                   | `uuid.UUID`             | `positions.id`                                     |                                |
+| `ticker`               | `str`                   | `positions.ticker`                                 |                                |
+| `phase`                | `WheelPhase`            | `positions.phase`                                  | Used for badge display         |
+| `status`               | `WheelStatus`           | `positions.status`                                 |                                |
+| `strike`               | `Decimal \| None`       | active `Leg.strike`                                | None when no active option leg |
+| `expiration`           | `datetime.date \| None` | active `Leg.expiration`                            | None when no active option leg |
+| `dte`                  | `int \| None`           | computed: `(expiration − today).days`              | None when `expiration` is None |
+| `premium_collected`    | `Decimal`               | latest `CostBasisSnapshot.total_premium_collected` |                                |
+| `effective_cost_basis` | `Decimal`               | latest `CostBasisSnapshot.basis_per_share`         |                                |
 
 ### Validation Rules (from Acceptance Criteria)
 

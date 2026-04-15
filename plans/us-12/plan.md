@@ -27,10 +27,12 @@ Implements the ability to roll an open CSP to a new expiration (same strike). Th
 ### 1. Lifecycle Engine: `rollCsp`
 
 **Files to create or modify:**
+
 - `src/main/core/lifecycle.ts` — add `RollCspInput`, `RollCspResult`, `rollCsp` function
 - `src/main/core/lifecycle.test.ts` — add test suite for `rollCsp`
 
 **Red — tests to write:**
+
 - `rollCsp` returns `{ phase: 'CSP_OPEN' }` when given a valid input (CSP_OPEN phase, new expiration later, positive amounts)
 - `rollCsp` throws `ValidationError` with field `__phase__` / code `invalid_phase` when `currentPhase` is not `CSP_OPEN`
 - `rollCsp` throws `ValidationError` with field `newExpiration` / code `must_be_after_current` when `newExpiration <= currentExpiration` (same date rejected, earlier date rejected)
@@ -38,15 +40,18 @@ Implements the ability to roll an open CSP to a new expiration (same strike). Th
 - `rollCsp` throws `ValidationError` with field `newPremiumPerContract` / code `must_be_positive` when value is `0`
 
 **Green — implementation:**
+
 - Add `RollCspInput` interface: `{ currentPhase, currentExpiration, newExpiration, costToClosePerContract, newPremiumPerContract }`
 - Add `RollCspResult` interface: `{ phase: 'CSP_OPEN' }`
 - Add `rollCsp(input: RollCspInput): RollCspResult` — validates phase, expiration ordering, and positive amounts using existing `requirePositiveClosePrice` (renamed internal helper) and `requirePositivePremium` helpers
 - For expiration: `if (input.newExpiration <= input.currentExpiration)` throw ValidationError
 
 **Refactor — cleanup to consider:**
+
 - Check if `requirePositiveClosePrice` should be renamed `requirePositiveAmount` to be reused; only refactor if it removes duplication cleanly
 
 **Acceptance criteria covered:**
+
 - "Roll form validates new expiration is later than current" (validation-error AC)
 - "Roll form validates positive cost to close" (validation AC)
 - "Roll form validates positive new premium" (validation AC)
@@ -56,16 +61,19 @@ Implements the ability to roll an open CSP to a new expiration (same strike). Th
 ### 2. Cost Basis Engine: `calculateRollBasis`
 
 **Files to create or modify:**
+
 - `src/main/core/costbasis.ts` — add `RollBasisInput`, `RollBasisResult`, `calculateRollBasis` function
 - `src/main/core/costbasis.test.ts` — add test suite for `calculateRollBasis`
 
 **Red — tests to write:**
+
 - Net credit ($2.80 premium - $1.20 cost = $1.60): `basisPerShare` decreases by $1.60 from prev basis; `totalPremiumCollected` increases by $160.00 (1 contract)
 - Net debit ($2.50 premium - $3.00 cost = -$0.50): `basisPerShare` increases by $0.50 from prev basis; `totalPremiumCollected` decreases by $50.00 (1 contract)
 - Exact-match (premium equals cost, net zero): `basisPerShare` unchanged, `totalPremiumCollected` unchanged
 - Multi-contract (2 contracts, $1.60 net credit): `basisPerShare` decreases by $1.60 (net is per-contract = per-share), `totalPremiumCollected` increases by $320.00
 
 **Green — implementation:**
+
 - Add `RollBasisInput`: `{ prevBasisPerShare: string; prevTotalPremiumCollected: string; costToClosePerContract: string; newPremiumPerContract: string; contracts: number }`
 - Add `RollBasisResult`: `{ basisPerShare: string; totalPremiumCollected: string }`
 - Add `calculateRollBasis(input: RollBasisInput): RollBasisResult`
@@ -76,9 +84,11 @@ Implements the ability to roll an open CSP to a new expiration (same strike). Th
   - Return both values `.toFixed(4)`
 
 **Refactor — cleanup to consider:**
+
 - Check for duplication with `calculateCcOpenBasis` — both reduce basis by a premium; extract shared pattern only if it produces genuinely cleaner code
 
 **Acceptance criteria covered:**
+
 - "Net credit/debit preview" — formula is validated here
 - "New cost basis snapshot is created reflecting the roll's net credit"
 
@@ -87,12 +97,15 @@ Implements the ability to roll an open CSP to a new expiration (same strike). Th
 ### 3. Schema: `RollCspPayloadSchema`
 
 **Files to create or modify:**
+
 - `src/main/schemas.ts` — add `RollCspPayloadSchema`, `RollCspPayload` type, `RollCspResult` interface
 
 **Red — tests to write:**
+
 - (Schema validation is covered by service tests in area 4; no dedicated schema test file is needed)
 
 **Green — implementation:**
+
 - Add `RollCspPayloadSchema`:
   ```typescript
   z.object({
@@ -108,9 +121,11 @@ Implements the ability to roll an open CSP to a new expiration (same strike). Th
 - Add `RollCspResult` interface with `position`, `rollFromLeg`, `rollToLeg`, `rollChainId`, `costBasisSnapshot` fields (see `plans/us-12/contracts/roll-csp.md`)
 
 **Refactor — cleanup to consider:**
+
 - Ensure field naming is consistent with existing payload schemas (camelCase throughout)
 
 **Acceptance criteria covered:**
+
 - All roll validation ACs (schema enforces positive numbers)
 
 ---
@@ -118,10 +133,12 @@ Implements the ability to roll an open CSP to a new expiration (same strike). Th
 ### 4. Service: `rollCspPosition`
 
 **Files to create or modify:**
+
 - `src/main/services/roll-csp-position.ts` — new file, standalone service
 - `src/main/services/roll-csp-position.test.ts` — new test file, integration tests with in-memory SQLite
 
 **Red — tests to write:**
+
 - Happy path (net credit): creates ROLL_FROM leg (action=BUY, role=ROLL_FROM, same strike/expiration as current), creates ROLL_TO leg (action=SELL, role=ROLL_TO, new expiration, new premium), both share the same `roll_chain_id` UUID, new cost basis snapshot has lower `basisPerShare`, position phase stays `CSP_OPEN`
 - Happy path (net debit): cost basis snapshot has higher `basisPerShare` than prev
 - `rollCspPosition` throws `ValidationError` when position is not found
@@ -131,6 +148,7 @@ Implements the ability to roll an open CSP to a new expiration (same strike). Th
 - Returned `rollToLeg` has: `legRole='ROLL_TO'`, `action='SELL'`, `strike` = newStrike (or current if omitted), `expiration` = newExpiration, `premiumPerContract` = newPremiumPerContract formatted to 4dp
 
 **Green — implementation:**
+
 - New file `src/main/services/roll-csp-position.ts`:
   1. `getPosition(db, positionId)` — throws if null or no active leg
   2. `rollCsp(...)` lifecycle call — throws on validation failure
@@ -144,9 +162,11 @@ Implements the ability to roll an open CSP to a new expiration (same strike). Th
 - `newStrike` defaults to current strike if omitted: `payload.newStrike ?? parseFloat(activeLeg.strike)`
 
 **Refactor — cleanup to consider:**
+
 - Compare INSERT statement structure to `close-csp-position.ts` — ensure consistent column ordering and formatting helpers
 
 **Acceptance criteria covered:**
+
 - "Successful CSP roll out creates linked leg pair" (linked ROLL_FROM/ROLL_TO, shared roll_chain_id, new snapshot, phase stays CSP_OPEN)
 
 ---
@@ -154,16 +174,19 @@ Implements the ability to roll an open CSP to a new expiration (same strike). Th
 ### 5. IPC Handler and Preload
 
 **Files to create or modify:**
+
 - `src/main/ipc/positions.ts` — register `positions:roll-csp` using `registerParsedPositionHandler`
 - `src/preload/index.ts` — expose `rollCsp` method on `window.api`
 - `src/main/ipc/positions.test.ts` — add test for `positions:roll-csp` handler
 
 **Red — tests to write:**
+
 - IPC handler returns `{ ok: true, position, rollFromLeg, rollToLeg, rollChainId, costBasisSnapshot }` on success
 - IPC handler returns `{ ok: false, errors }` when service throws `ValidationError`
 - IPC handler returns `{ ok: false, errors }` when Zod rejects malformed payload (e.g., missing `positionId`)
 
 **Green — implementation:**
+
 - In `positions.ts`, import `RollCspPayloadSchema` and `rollCspPosition`, then add:
   ```typescript
   registerParsedPositionHandler(
@@ -180,9 +203,11 @@ Implements the ability to roll an open CSP to a new expiration (same strike). Th
   ```
 
 **Refactor — cleanup to consider:**
+
 - Naming consistency with log label — follow `positions_{verb}_{noun}_unhandled_error` pattern
 
 **Acceptance criteria covered:**
+
 - All ACs (IPC is the transport for all backend ACs)
 
 ---
@@ -190,22 +215,27 @@ Implements the ability to roll an open CSP to a new expiration (same strike). Th
 ### 6. Renderer API Adapter
 
 **Files to create or modify:**
+
 - `src/renderer/src/api/positions.ts` — add `RollCspPayload`, `RollCspResponse` types, `rollCsp` adapter function
 - Update `IPC_TO_FORM_FIELD` map with new field names
 
 **Red — tests to write:**
+
 - (Covered by RollCspSheet component tests in area 8 — no dedicated api.ts test needed)
 
 **Green — implementation:**
+
 - Add `RollCspPayload` type (snake_case fields: `position_id`, `cost_to_close_per_contract`, `new_premium_per_contract`, `new_expiration`, `new_strike?`, `fill_date?`)
 - Add `RollCspResponse` type matching the IPC success response shape (see `plans/us-12/contracts/roll-csp.md`)
 - Add `rollCsp(payload: RollCspPayload): Promise<RollCspResponse>` — maps snake_case to camelCase for IPC call, throws `apiError(400, ...)` on `ok: false`
 - Extend `IPC_TO_FORM_FIELD` with: `costToClosePerContract: 'cost_to_close_per_contract'`, `newPremiumPerContract: 'new_premium_per_contract'`, `newExpiration: 'new_expiration'`
 
 **Refactor — cleanup to consider:**
+
 - Check for naming duplication with similar close/open payload adapters
 
 **Acceptance criteria covered:**
+
 - All ACs (adapter is the renderer↔IPC boundary)
 
 ---
@@ -213,14 +243,18 @@ Implements the ability to roll an open CSP to a new expiration (same strike). Th
 ### 7. React Hook: `useRollCsp`
 
 **Files to create or modify:**
+
 - `src/renderer/src/hooks/useRollCsp.ts` — new hook
 - `src/renderer/src/hooks/useRollCsp.test.ts` — optional; pattern is identical to other hooks
 
 **Red — tests to write:**
+
 - (Pattern is covered by `useCloseCoveredCallEarly.test.ts` and similar; write a test only if the hook deviates from `usePositionMutation` pattern)
 
 **Green — implementation:**
+
 - New file `src/renderer/src/hooks/useRollCsp.ts`:
+
   ```typescript
   import type { RollCspPayload, RollCspResponse } from '../api/positions'
   import { rollCsp } from '../api/positions'
@@ -234,9 +268,11 @@ Implements the ability to roll an open CSP to a new expiration (same strike). Th
   ```
 
 **Refactor — cleanup to consider:**
+
 - None expected; pattern is identical to existing hooks
 
 **Acceptance criteria covered:**
+
 - Enables the sheet to mutate and handle success/error
 
 ---
@@ -244,10 +280,12 @@ Implements the ability to roll an open CSP to a new expiration (same strike). Th
 ### 8. `RollCspSheet` Component
 
 **Files to create or modify:**
+
 - `src/renderer/src/components/RollCspSheet.tsx` — new component
 - `src/renderer/src/components/RollCspSheet.test.tsx` — new test file
 
 **Red — tests to write:**
+
 - When `open=false`, renders nothing
 - When `open=true`, renders "Roll Cash-Secured Put" title and "Roll Out" eyebrow label
 - Current Leg section shows: ticker, strike, expiration, DTE, premium collected ($350.00 total), cost basis
@@ -286,10 +324,12 @@ Build `RollCspSheet.tsx` following the `ExpirationSheet` portal pattern (width 4
   - No footer buttons in success state (user closes via × button or clicking scrim)
 
 **Refactor — cleanup to consider:**
+
 - Extract `NetCreditDebitPreview` as a separate component if over ~30 lines
 - Check naming of sub-components against mockup conventions
 
 **Acceptance criteria covered:**
+
 - "Roll form shows current leg summary and new leg inputs" (form rendering AC)
 - "Net credit/debit preview updates as trader enters values" (live preview AC)
 - "Net debit preview shown with warning" (debit AC)
@@ -302,15 +342,18 @@ Build `RollCspSheet.tsx` following the `ExpirationSheet` portal pattern (width 4
 ### 9. Wire Up to Position Detail
 
 **Files to create or modify:**
+
 - `src/renderer/src/components/PositionDetailActions.tsx` — add "Roll CSP →" button for `CSP_OPEN` phase; add `onRollCsp` prop
 - `src/renderer/src/components/PositionDetailActions.test.tsx` — add test for Roll CSP button
 - `src/renderer/src/pages/PositionDetailPage.tsx` — add `rollCspOpen` state, import `RollCspSheet`, pass position data as props
 
 **Red — tests to write:**
+
 - `PositionDetailActions`: when `phase='CSP_OPEN'`, renders a button with `data-testid="roll-csp-btn"` and label "Roll CSP →"; clicking it calls `onRollCsp`
 - `PositionDetailActions`: when `phase='HOLDING_SHARES'`, "Roll CSP →" button is not rendered
 
 **Green — implementation:**
+
 - In `PositionDetailActions.tsx`:
   - Add `onRollCsp: () => void` to `PositionDetailActionsProps`
   - Inside the `phase === 'CSP_OPEN'` block, add:
@@ -323,9 +366,11 @@ Build `RollCspSheet.tsx` following the `ExpirationSheet` portal pattern (width 4
   - Render `<RollCspSheet>` with all required props from `detail.activeLeg` and `detail.costBasisSnapshot`, `open={rollCspOpen}`, `onClose={() => setRollCspOpen(false)}`
 
 **Refactor — cleanup to consider:**
+
 - Check that the `overlayOpen` prop passed to `PositionDetailContent` includes `rollCspOpen` (to blur the background when the sheet is open)
 
 **Acceptance criteria covered:**
+
 - "When the trader opens the roll form for this position" (sheet accessible from position detail)
 - "The trader is returned to the position detail page" (sheet closes on cancel/after success)
 
@@ -334,6 +379,7 @@ Build `RollCspSheet.tsx` following the `ExpirationSheet` portal pattern (width 4
 ### 10. E2E Tests
 
 **Files to create or modify:**
+
 - `e2e/csp-roll.spec.ts` — new E2E spec
 
 **Red — tests to write (one test per AC):**
@@ -360,10 +406,13 @@ Build `RollCspSheet.tsx` following the `ExpirationSheet` portal pattern (width 4
   Leave new premium at $0.00, click Confirm Roll, assert validation error "New premium must be greater than zero"
 
 **Green — implementation:**
+
 - Follow the pattern from `e2e/csp-flow.spec.ts` — launch Electron with a temp DB, create a CSP_OPEN position, navigate to position detail, interact with the roll sheet
 
 **Refactor — cleanup to consider:**
+
 - Extract shared "create a CSP_OPEN position" helper into `e2e/helpers.ts` if not already there
 
 **Acceptance criteria covered:**
+
 - All 7 Gherkin scenarios from US-12

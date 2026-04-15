@@ -15,18 +15,18 @@ Use the app's actual date picker for all dates. All math is decimal; verify with
 
 ### Inputs
 
-| Step | Screen | Field | Value |
-|------|--------|-------|-------|
-| 1 | New Wheel | Ticker | AAPL |
-| 1 | New Wheel | CSP Strike | 100.00 |
-| 1 | New Wheel | Contracts | 1 |
-| 1 | New Wheel | Premium / Contract | 5.00 |
-| 1 | New Wheel | Expiration | Day +30 |
-| 2 | Record Assignment | Assignment Date | Day 0 |
-| 3 | Open Covered Call | CC Strike | 100.00 |
-| 3 | Open Covered Call | CC Premium / Contract | 3.00 |
-| 3 | Open Covered Call | CC Fill Date | Day 0 |
-| 3 | Open Covered Call | CC Expiration | Day +30 |
+| Step | Screen            | Field                 | Value   |
+| ---- | ----------------- | --------------------- | ------- |
+| 1    | New Wheel         | Ticker                | AAPL    |
+| 1    | New Wheel         | CSP Strike            | 100.00  |
+| 1    | New Wheel         | Contracts             | 1       |
+| 1    | New Wheel         | Premium / Contract    | 5.00    |
+| 1    | New Wheel         | Expiration            | Day +30 |
+| 2    | Record Assignment | Assignment Date       | Day 0   |
+| 3    | Open Covered Call | CC Strike             | 100.00  |
+| 3    | Open Covered Call | CC Premium / Contract | 3.00    |
+| 3    | Open Covered Call | CC Fill Date          | Day 0   |
+| 3    | Open Covered Call | CC Expiration         | Day +30 |
 
 ### Math — verify each line before clicking Confirm
 
@@ -54,37 +54,37 @@ annualizedReturn  =  (800 / 9200) × (365 / 30) × 100
 
 ### Confirmation Form — what to see
 
-| Row | Label | Expected |
-|-----|-------|----------|
-| Waterfall | CC strike (shares delivered) | $100.00 |
-| Waterfall | − Effective cost basis | $92.00 |
-| Waterfall | = Appreciation per share | $8.00 |
-| Waterfall | × 100 shares | $800.00 |
-| Waterfall | = Final cycle P&L | **+$800.00** (green) |
-| Fill Date field | Derived, read-only | Day +30 |
-| Fill Date label | | "auto" |
-| Warning | | "This cannot be undone." |
+| Row             | Label                        | Expected                 |
+| --------------- | ---------------------------- | ------------------------ |
+| Waterfall       | CC strike (shares delivered) | $100.00                  |
+| Waterfall       | − Effective cost basis       | $92.00                   |
+| Waterfall       | = Appreciation per share     | $8.00                    |
+| Waterfall       | × 100 shares                 | $800.00                  |
+| Waterfall       | = Final cycle P&L            | **+$800.00** (green)     |
+| Fill Date field | Derived, read-only           | Day +30                  |
+| Fill Date label |                              | "auto"                   |
+| Warning         |                              | "This cannot be undone." |
 
 ### Success Screen — what to see
 
-| Field | Expected |
-|-------|----------|
-| Header caption | "Wheel Complete" |
-| Hero title | "WHEEL COMPLETE" |
-| Hero P&L | **+$800.00** (green) |
-| Leg recorded | "cc_close · Day +30" |
-| Shares delivered | "100 @ $100.00" |
-| Cycle duration | "30 days" |
-| Annualized return | **~105.8%** |
-| CTA button | "Start New Wheel on AAPL →" |
+| Field             | Expected                    |
+| ----------------- | --------------------------- |
+| Header caption    | "Wheel Complete"            |
+| Hero title        | "WHEEL COMPLETE"            |
+| Hero P&L          | **+$800.00** (green)        |
+| Leg recorded      | "cc_close · Day +30"        |
+| Shares delivered  | "100 @ $100.00"             |
+| Cycle duration    | "30 days"                   |
+| Annualized return | **~105.8%**                 |
+| CTA button        | "Start New Wheel on AAPL →" |
 
 ### Position detail (behind the sheet)
 
-| Field | Expected |
-|-------|----------|
-| Phase | WHEEL_COMPLETE |
-| Leg history action | EXERCISE |
-| Final P&L in cost basis section | $800.00 |
+| Field                           | Expected       |
+| ------------------------------- | -------------- |
+| Phase                           | WHEEL_COMPLETE |
+| Leg history action              | EXERCISE       |
+| Final P&L in cost basis section | $800.00        |
 
 ---
 
@@ -94,18 +94,18 @@ annualizedReturn  =  (800 / 9200) × (365 / 30) × 100
 
 ### Inputs
 
-| Step | Screen | Field | Value |
-|------|--------|-------|-------|
-| 1 | New Wheel | Ticker | AAPL |
-| 1 | New Wheel | CSP Strike | 100.00 |
-| 1 | New Wheel | Contracts | 1 |
-| 1 | New Wheel | Premium / Contract | 2.00 |
-| 1 | New Wheel | Expiration | Day +30 |
-| 2 | Record Assignment | Assignment Date | Day 0 |
-| 3 | Open Covered Call | CC Strike | 95.00 |
-| 3 | Open Covered Call | CC Premium / Contract | 1.00 |
-| 3 | Open Covered Call | CC Fill Date | Day 0 |
-| 3 | Open Covered Call | CC Expiration | Day +30 |
+| Step | Screen            | Field                 | Value   |
+| ---- | ----------------- | --------------------- | ------- |
+| 1    | New Wheel         | Ticker                | AAPL    |
+| 1    | New Wheel         | CSP Strike            | 100.00  |
+| 1    | New Wheel         | Contracts             | 1       |
+| 1    | New Wheel         | Premium / Contract    | 2.00    |
+| 1    | New Wheel         | Expiration            | Day +30 |
+| 2    | Record Assignment | Assignment Date       | Day 0   |
+| 3    | Open Covered Call | CC Strike             | 95.00   |
+| 3    | Open Covered Call | CC Premium / Contract | 1.00    |
+| 3    | Open Covered Call | CC Fill Date          | Day 0   |
+| 3    | Open Covered Call | CC Expiration         | Day +30 |
 
 ### Math
 
@@ -127,20 +127,20 @@ annualizedReturn  =  (−200 / 9700) × (365 / 30) × 100
 
 ### Confirmation Form — what to see
 
-| Row | Label | Expected |
-|-----|-------|----------|
-| Waterfall | CC strike (shares delivered) | $95.00 |
-| Waterfall | − Effective cost basis | $97.00 |
-| Waterfall | = Appreciation per share | **−$2.00** |
-| Waterfall | × 100 shares | $200.00 |
-| Waterfall | = Final cycle P&L | **−$200.00 (red)** |
+| Row       | Label                        | Expected           |
+| --------- | ---------------------------- | ------------------ |
+| Waterfall | CC strike (shares delivered) | $95.00             |
+| Waterfall | − Effective cost basis       | $97.00             |
+| Waterfall | = Appreciation per share     | **−$2.00**         |
+| Waterfall | × 100 shares                 | $200.00            |
+| Waterfall | = Final cycle P&L            | **−$200.00 (red)** |
 
 ### Success Screen — what to see
 
-| Field | Expected |
-|-------|----------|
-| Hero P&L | **−$200.00 (red)** |
-| Annualized return | **~−25.1%** |
+| Field             | Expected           |
+| ----------------- | ------------------ |
+| Hero P&L          | **−$200.00 (red)** |
+| Annualized return | **~−25.1%**        |
 
 > **Key check:** The P&L display uses a unicode minus **−** (not a hyphen) and the color is `var(--wb-red)`. Confirm the number is visually distinct from the green profit case.
 
@@ -154,18 +154,18 @@ This scenario specifically tests that 0DTE is supported — the app previously r
 
 ### Inputs
 
-| Step | Screen | Field | Value |
-|------|--------|-------|-------|
-| 1 | New Wheel | Ticker | AAPL |
-| 1 | New Wheel | CSP Strike | 100.00 |
-| 1 | New Wheel | Contracts | 1 |
-| 1 | New Wheel | Premium / Contract | 4.00 |
-| 1 | New Wheel | Expiration | Day +30 |
-| 2 | Record Assignment | Assignment Date | Day 0 |
-| 3 | Open Covered Call | CC Strike | 102.00 |
-| 3 | Open Covered Call | CC Premium / Contract | 2.00 |
-| 3 | Open Covered Call | CC Fill Date | **Day 0** |
-| 3 | Open Covered Call | CC Expiration | **Day 0** ← same day |
+| Step | Screen            | Field                 | Value                |
+| ---- | ----------------- | --------------------- | -------------------- |
+| 1    | New Wheel         | Ticker                | AAPL                 |
+| 1    | New Wheel         | CSP Strike            | 100.00               |
+| 1    | New Wheel         | Contracts             | 1                    |
+| 1    | New Wheel         | Premium / Contract    | 4.00                 |
+| 1    | New Wheel         | Expiration            | Day +30              |
+| 2    | Record Assignment | Assignment Date       | Day 0                |
+| 3    | Open Covered Call | CC Strike             | 102.00               |
+| 3    | Open Covered Call | CC Premium / Contract | 2.00                 |
+| 3    | Open Covered Call | CC Fill Date          | **Day 0**            |
+| 3    | Open Covered Call | CC Expiration         | **Day 0** ← same day |
 
 ### Math
 
@@ -184,17 +184,17 @@ annualizedReturn  =  "0.0000"  ← division-by-zero guard
 
 ### Confirmation Form — what to see
 
-| Row | Expected |
-|-----|----------|
-| Fill Date | **Day 0** (today) |
+| Row             | Expected             |
+| --------------- | -------------------- |
+| Fill Date       | **Day 0** (today)    |
 | Final cycle P&L | **+$800.00** (green) |
 
 ### Success Screen — what to see
 
-| Field | Expected |
-|-------|----------|
-| Cycle duration | **0 days** |
-| Annualized return | **~0.0%** |
+| Field             | Expected   |
+| ----------------- | ---------- |
+| Cycle duration    | **0 days** |
+| Annualized return | **~0.0%**  |
 
 > **Key check:** The app must not crash or show `NaN%` when cycleDays is zero. `~0.0%` is the correct display.
 

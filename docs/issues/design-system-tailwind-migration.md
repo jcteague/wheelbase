@@ -2,7 +2,7 @@
 
 **Priority:** P3
 **Type:** Tech debt / Infrastructure
-**Status:** Open
+**Status:** Phase 2 complete (different design than planned). Phases 1, 3, 4 open.
 
 ---
 
@@ -18,7 +18,7 @@ The renderer has no centralized design system. Styles are scattered across 202 i
 ## Goal
 
 **As a** developer building new sheets and components,
-**I want** a centralized Tailwind-based design system with wb-* tokens mapped as utilities,
+**I want** a centralized Tailwind-based design system with wb-\* tokens mapped as utilities,
 **So that** style changes propagate across all components from one place and new components are easy to build consistently.
 
 ## Acceptance Criteria
@@ -41,29 +41,31 @@ Scenario: MONO font available as Tailwind utility
   And the MONO constant in lib/tokens.ts is no longer needed at call sites
 ```
 
-### Phase 2 — SheetPortal primitive
+### Phase 2 — Sheet primitives ✅ Complete (different design than planned)
+
+The implementation diverged from the `SheetPortal` single-wrapper design. Instead, five separate primitives were extracted into `components/ui/Sheet.tsx`: `SheetOverlay`, `SheetPanel`, `SheetHeader`, `SheetBody`, `SheetFooter`. All seven sheets (`ExpirationSheet`, `AssignmentSheet`, `OpenCoveredCallSheet`, `RollCspSheet`, `CloseCcEarlySheet`, `CcExpirationSheet`, `CallAwaySheet`) use these primitives. `SIDEBAR_WIDTH` is centralized in `Sheet.tsx`. Note: `createPortal(content, document.body)` is still called in each sheet consumer, not inside the primitives.
 
 ```gherkin
-Scenario: All sheets use a shared portal wrapper
-  Given SheetPortal exists in components/ui/
-  When ExpirationSheet, AssignmentSheet, and OpenCoveredCallSheet render
-  Then each uses <SheetPortal> for the overlay, scrim, and panel chrome
-  And no sheet file contains its own overlayStyle or panelStyle objects
-  And SIDEBAR_WIDTH is defined once inside SheetPortal
+Scenario: All sheets use shared layout primitives
+  Given Sheet.tsx exports SheetOverlay, SheetPanel, SheetHeader, SheetBody, SheetFooter
+  When any sheet component renders
+  Then it uses these primitives for overlay, panel chrome, header, body, and footer
+  And no sheet file contains its own overlay or panel style objects
+  And SIDEBAR_WIDTH is defined once in Sheet.tsx
 ```
 
 ```gherkin
 Scenario: Style change propagates to all sheets
-  Given the panel width or box-shadow is changed in SheetPortal
-  When all three sheets are rendered
-  Then all three reflect the updated style without any per-sheet changes
+  Given the panel width or box-shadow is changed in SheetPanel
+  When all sheets are rendered
+  Then all reflect the updated style without any per-sheet changes
 ```
 
 ### Phase 3 — High-impact component migration
 
 ```gherkin
 Scenario: Sheet content components use Tailwind classes
-  Given AssignmentSheet, OpenCoveredCallSheet, and ExpirationSheet content
+  Given all seven sheet components and their associated form/success components
   When a developer inspects the JSX
   Then layout, spacing, color, and typography use className with Tailwind utilities
   And inline style={} is absent except for truly dynamic values (e.g. calculated widths)
@@ -114,47 +116,59 @@ colors: {
 
 Note: Tailwind v4 uses `@theme` in CSS rather than `tailwind.config.ts`. Confirm approach before implementing.
 
-### SheetPortal API
+### Sheet.tsx primitive API (as implemented)
 
 ```tsx
-<SheetPortal onClose={onClose} isClosing={isClosing}>
-  {content}
-</SheetPortal>
+// consumers still call createPortal themselves
+createPortal(
+  <SheetOverlay onClose={onClose}>
+    <SheetPanel>
+      <SheetHeader eyebrow="..." title="..." subtitle="..." onClose={onClose} />
+      <SheetBody>{content}</SheetBody>
+      <SheetFooter>{actions}</SheetFooter>
+    </SheetPanel>
+  </SheetOverlay>,
+  document.body
+)
 ```
 
-Owns: `SIDEBAR_WIDTH` constant, `overlayStyle`, `panelStyle`, scrim click-to-close, `createPortal` call.
+`Sheet.tsx` owns: `SIDEBAR_WIDTH`, overlay positioning, panel chrome (background, border, shadow, flex layout), header layout (eyebrow/title/subtitle/close button), body scroll, footer border. All implemented with inline styles. Consumers own: the `createPortal` call, and content-level inline styles (summary cards, P&L displays, warning callouts).
 
 ### Migration order (by impact)
 
 1. `tailwind.config` / `@theme` — token integration (unlocks everything else)
-2. `components/ui/SheetPortal.tsx` — new primitive
-3. `ExpirationSheet.tsx`, `AssignmentSheet.tsx`, `OpenCoveredCallSheet.tsx` — adopt SheetPortal, migrate to Tailwind
-4. `NewWheelForm.tsx`, `CloseCspForm.tsx`, `OpenCcForm.tsx`, `FormField.tsx` — form components
-5. `pages/PositionDetailPage.tsx`, `pages/PositionsListPage.tsx` — page layouts
-6. Remaining components (PositionCard, Stat, Badge, etc.)
+2. ~~`components/ui/Sheet.tsx` — Sheet primitives~~ ✅ Done (inline styles; Tailwind migration deferred to Phase 3)
+3. All seven sheets + associated form/success components — migrate content styles to Tailwind (highest inline style concentration: `AssignmentSheet` 41, `CallAwayForm` 38, `CallAwaySuccess` 31, `CcExpirationSheet` 22, `CloseCcEarlyForm` 21, `CloseCcEarlySuccess` 20, `ExpirationSheet` 19)
+4. `NewWheelForm.tsx`, `CloseCspForm.tsx`, `OpenCcForm.tsx`, `RollCspForm.tsx`, `FormField.tsx` — form components
+5. `pages/PositionDetailContent.tsx`, `pages/PositionsListPage.tsx` — page layouts
+6. Remaining components (`PositionCard`, `LegHistoryTable`, `Stat`, `App.tsx`, etc.)
 
 ### Inline styles that should remain
 
 Dynamic values that cannot be expressed as Tailwind utilities are acceptable:
+
 - `style={{ width: calculatedPixelValue }}`
 - `style={{ left: SIDEBAR_WIDTH }}` (if not expressible as a utility)
 - Truly runtime-computed values
 
 ## Out of Scope
 
-- Dark/light theme toggle (the wb-* tokens are dark-only today; theme switching is a separate feature)
+- Dark/light theme toggle (the wb-\* tokens are dark-only today; theme switching is a separate feature)
 - Replacing shadcn/ui base primitives (button, input, form) — they already use Tailwind correctly
 - Changing the visual design — this migration should be visually transparent
 
-## Audit Summary (as of 2026-03-20)
+## Audit Summary (as of 2026-04-08)
 
-| Category | Files | Inline style instances |
-|---|---|---|
-| Fully inline (sheets, forms, pages) | 9 | 124 |
-| Mixed (inline + some Tailwind) | 7 | 78 |
-| Minimal inline (≤3 instances) | 13 | 23 |
-| Already Tailwind (shadcn primitives) | 7 | 0 |
-| **Total** | **36** | **202** |
+Counts grew since March because additional sheets and success components were implemented (RollCspSheet, CloseCcEarlySheet, CcExpirationSheet, CallAwaySheet, and associated form/success components).
+
+| Category                                                                                                              | Files                               | Inline style instances |
+| --------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ---------------------- |
+| Heavy inline (≥6 instances — sheets, forms, success states, pages, Sheet.tsx)                                         | 18                                  | ~315                   |
+| Mixed (3–5 instances)                                                                                                 | 5                                   | ~18                    |
+| Minimal inline (1–2 instances)                                                                                        | 15                                  | ~26                    |
+| Single instance (AlertBox, Badge, Caption, CcPnlPreview, ErrorAlert, FormButton, NewWheelPage, PositionDetailActions) | 8                                   | 8                      |
+| Already clean (shadcn primitives + zero-instance files)                                                               | ~10                                 | 0                      |
+| **Total**                                                                                                             | **38 files with styles, ~48 total** | **367**                |
 
 ## Related
 

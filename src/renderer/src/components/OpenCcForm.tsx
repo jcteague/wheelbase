@@ -61,31 +61,16 @@ export function CcForm({
       />
       <SheetBody>
         <SectionCard header="Position">
-          <div style={{ padding: 16, display: 'grid', gap: 8, fontSize: 12 }}>
+          <div className="p-4 grid gap-2 text-xs">
             {[
-              ['Ticker', ticker],
-              ['Shares held', String(sharesHeld)],
-              ['Effective cost basis', `${fmtMoney(basisPerShare)}/share`],
-              ['Total premium collected', fmtMoney(totalPremiumCollected)]
-            ].map(([label, value]) => (
-              <div
-                key={label}
-                style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}
-              >
-                <span style={{ color: 'var(--wb-text-secondary)' }}>{label}</span>
-                <span
-                  style={{
-                    fontWeight: 600,
-                    color:
-                      label === 'Effective cost basis'
-                        ? 'var(--wb-gold)'
-                        : label === 'Shares held'
-                          ? 'var(--wb-sky)'
-                          : 'var(--wb-text-primary)'
-                  }}
-                >
-                  {value}
-                </span>
+              ['Ticker', ticker, 'text-wb-text-primary'],
+              ['Shares held', String(sharesHeld), 'text-wb-sky'],
+              ['Effective cost basis', `${fmtMoney(basisPerShare)}/share`, 'text-wb-gold'],
+              ['Total premium collected', fmtMoney(totalPremiumCollected), 'text-wb-text-primary']
+            ].map(([label, value, colorClass]) => (
+              <div key={label} className="flex justify-between text-xs">
+                <span className="text-wb-text-secondary">{label}</span>
+                <span className={`font-semibold ${colorClass}`}>{value}</span>
               </div>
             ))}
           </div>
@@ -113,7 +98,7 @@ export function CcForm({
           <AlertBox variant="info">{guardrail.message}</AlertBox>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div className="grid grid-cols-2 gap-3">
           <Field label="Premium / Share" htmlFor="cc-premium" error={fieldErrors.premium}>
             <NumberInput
               id="cc-premium"

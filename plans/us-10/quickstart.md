@@ -17,13 +17,13 @@ pnpm test
 
 All unit and service-layer tests run via Vitest. New tests for US-10 are:
 
-| File | What it covers |
-|------|---------------|
-| `src/main/core/lifecycle.test.ts` | `recordCallAway()` engine (phase guard, date validation, multi-contract guard) |
-| `src/main/core/costbasis.test.ts` | `calculateCallAway()` (P&L formula, annualized return, loss scenario) |
+| File                                                  | What it covers                                                                  |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `src/main/core/lifecycle.test.ts`                     | `recordCallAway()` engine (phase guard, date validation, multi-contract guard)  |
+| `src/main/core/costbasis.test.ts`                     | `calculateCallAway()` (P&L formula, annualized return, loss scenario)           |
 | `src/main/services/record-call-away-position.test.ts` | Service integration (full DB round-trip: leg insert, position update, snapshot) |
-| `src/main/ipc/positions.test.ts` | IPC handler registration + success/error shapes |
-| `src/renderer/src/components/CallAwaySheet.test.tsx` | Sheet component (renders confirmation, transitions to success state) |
+| `src/main/ipc/positions.test.ts`                      | IPC handler registration + success/error shapes                                 |
+| `src/renderer/src/components/CallAwaySheet.test.tsx`  | Sheet component (renders confirmation, transitions to success state)            |
 
 Expected: all tests pass with `pnpm test`.
 
@@ -41,6 +41,7 @@ The E2E spec file is `e2e/call-away.spec.ts`. Each test launches a fresh Electro
 ## Seed State Required
 
 E2E tests set up their own state. The `reachCcOpenState()` helper (shared with `close-cc-early.spec.ts`) seeds:
+
 1. A CSP_OPEN position
 2. Assignment → HOLDING_SHARES
 3. Open CC → CC_OPEN

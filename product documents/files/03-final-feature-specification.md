@@ -1,6 +1,6 @@
 # Option Wheel Manager — Final Feature Specification
 
-*Tailored to: Alpaca API · Developer build · Tracking + active management · Classic Wheel + PMCC*
+_Tailored to: Alpaca API · Developer build · Tracking + active management · Classic Wheel + PMCC_
 
 ---
 
@@ -76,6 +76,7 @@ Leg {
 **Cost Basis Engine** — runs every time a leg is added or modified, stores a snapshot:
 
 For the **Classic Wheel**:
+
 ```
 effective_cost_basis = assignment_strike
                      - all_CSP_premiums_collected
@@ -85,6 +86,7 @@ effective_cost_basis = assignment_strike
 ```
 
 For the **PMCC**:
+
 ```
 leaps_cost_basis     = initial_leaps_debit
                      - all_short_call_premiums_collected
@@ -99,22 +101,22 @@ net_cost_to_make_whole = leaps_cost_basis (goal: reduce to zero or negative)
 
 ## Module 2: Candidate Screener
 
-This module answers: *"What should I wheel next?"* and *"What would make a good PMCC?"* It runs against the Alpaca options data API and returns a ranked list of opportunities.
+This module answers: _"What should I wheel next?"_ and _"What would make a good PMCC?"_ It runs against the Alpaca options data API and returns a ranked list of opportunities.
 
 ### Screening Criteria for Classic Wheel Candidates
 
 The screener needs to evaluate each candidate on a composite score derived from:
 
-| Criterion | Target Range | Why |
-|---|---|---|
-| **IV Rank** | 30–65% | Rich premiums without binary event risk; above 70% usually means earnings/FDA/crisis |
-| **Market Cap** | > $5B | Tighter spreads, more liquid options chains |
-| **Volume (shares)** | > 1M/day | Ensures you can exit the stock if assigned |
-| **Open Interest at target strike** | > 1,000 | Fills without market impact |
-| **Delta at 30–45 DTE strike** | 0.20–0.35 | Standard income range; conservative to moderate |
-| **Premium yield** | > 1.5% / month on capital | Annualized return floor |
-| **Earnings proximity** | > 2 weeks away | Avoids IV crush traps and gap risk |
-| **Price** | User-configurable based on account size | Ensures assignment capital is manageable |
+| Criterion                          | Target Range                            | Why                                                                                  |
+| ---------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------ |
+| **IV Rank**                        | 30–65%                                  | Rich premiums without binary event risk; above 70% usually means earnings/FDA/crisis |
+| **Market Cap**                     | > $5B                                   | Tighter spreads, more liquid options chains                                          |
+| **Volume (shares)**                | > 1M/day                                | Ensures you can exit the stock if assigned                                           |
+| **Open Interest at target strike** | > 1,000                                 | Fills without market impact                                                          |
+| **Delta at 30–45 DTE strike**      | 0.20–0.35                               | Standard income range; conservative to moderate                                      |
+| **Premium yield**                  | > 1.5% / month on capital               | Annualized return floor                                                              |
+| **Earnings proximity**             | > 2 weeks away                          | Avoids IV crush traps and gap risk                                                   |
+| **Price**                          | User-configurable based on account size | Ensures assignment capital is manageable                                             |
 
 The screener should pull the option chain from Alpaca for each watchlist ticker, find the contracts matching the delta/DTE target, and present ranked results sorted by risk-adjusted premium yield. The user sets their delta and DTE targets once as defaults and the screener applies them.
 
@@ -122,16 +124,16 @@ The screener should pull the option chain from Alpaca for each watchlist ticker,
 
 PMCC requires different conditions because you're buying a LEAPS contract and holding it for months:
 
-| Criterion | Target | Why |
-|---|---|---|
-| **IV environment** | Moderate to low at LEAPS entry | You're buying time — high IV makes the long leg expensive |
-| **Short call IV** | Higher than long call IV | Normal term structure; you want to sell relatively expensive short-dated premium |
-| **Long call delta** | 0.70–0.85 (deep ITM) | Behaves like stock ownership; high intrinsic value, low extrinsic decay |
-| **Long call DTE** | 180–500 days (LEAPS) | Enough time to sell 4–8 rounds of short calls |
-| **Short call delta** | 0.25–0.35 | Standard OTM, probability of expiring worthless ~70% |
-| **Short call DTE** | 20–45 days | Theta decay sweet spot |
-| **Net debit vs. spread width** | < 75% of strike width | Standard efficiency check: debit of $8 on a $10-wide spread is acceptable |
-| **Trend** | Neutral to bullish | PMCC loses badly in downtrends |
+| Criterion                      | Target                         | Why                                                                              |
+| ------------------------------ | ------------------------------ | -------------------------------------------------------------------------------- |
+| **IV environment**             | Moderate to low at LEAPS entry | You're buying time — high IV makes the long leg expensive                        |
+| **Short call IV**              | Higher than long call IV       | Normal term structure; you want to sell relatively expensive short-dated premium |
+| **Long call delta**            | 0.70–0.85 (deep ITM)           | Behaves like stock ownership; high intrinsic value, low extrinsic decay          |
+| **Long call DTE**              | 180–500 days (LEAPS)           | Enough time to sell 4–8 rounds of short calls                                    |
+| **Short call delta**           | 0.25–0.35                      | Standard OTM, probability of expiring worthless ~70%                             |
+| **Short call DTE**             | 20–45 days                     | Theta decay sweet spot                                                           |
+| **Net debit vs. spread width** | < 75% of strike width          | Standard efficiency check: debit of $8 on a $10-wide spread is acceptable        |
+| **Trend**                      | Neutral to bullish             | PMCC loses badly in downtrends                                                   |
 
 **Important safety check** the screener must enforce: the long call's expiration must always be later than the short call's expiration. If at any point a short call would expire after the long call, this is a naked call — the screener must flag this and prevent it.
 
@@ -155,9 +157,9 @@ The command center. A single screen that gives you a complete real-time picture 
 
 **Position Cards** — below the queue, one card per active position. The card adapts its display based on strategy type:
 
-*Classic Wheel card shows:* Ticker + current price, current phase badge (CSP / Holding / CC), strike vs. current price with visual distance bar, DTE countdown, total premium collected this wheel, effective cost basis, unrealized P&L if holding shares, and quick-action buttons (Roll, Close, Assign, Open CC).
+_Classic Wheel card shows:_ Ticker + current price, current phase badge (CSP / Holding / CC), strike vs. current price with visual distance bar, DTE countdown, total premium collected this wheel, effective cost basis, unrealized P&L if holding shares, and quick-action buttons (Roll, Close, Assign, Open CC).
 
-*PMCC card shows:* Ticker + current price, LEAPS leg details (strike, DTE, current value, delta), short call details (strike, DTE, current premium, delta), net debit paid, net credits collected to date, current position value, net P&L, and quick-action buttons (Roll Short Call, Close Entire Position).
+_PMCC card shows:_ Ticker + current price, LEAPS leg details (strike, DTE, current value, delta), short call details (strike, DTE, current premium, delta), net debit paid, net credits collected to date, current position value, net P&L, and quick-action buttons (Roll Short Call, Close Entire Position).
 
 **Portfolio Summary Bar** at the very top: total capital deployed, total premium collected MTD, total premium collected YTD, number of active wheels, number of active PMCCs, overall net delta exposure.
 
@@ -166,6 +168,7 @@ The command center. A single screen that gives you a complete real-time picture 
 ## Module 4: Trade Entry & Lifecycle Management
 
 **Opening a Classic Wheel (CSP):**
+
 1. Select ticker from watchlist or type any valid symbol
 2. App pulls the option chain from Alpaca, filters for puts at 30–45 DTE, displays candidates sorted by delta
 3. User selects a contract or types in strike/expiration manually
@@ -182,6 +185,7 @@ Same flow as CSP but filtered for calls. App shows the user which strikes would 
 Roll is modeled as a two-step atomic operation: close the existing leg at market/limit, open the replacement leg. The app records both as a linked pair (via `roll_chain_id`), nets the premium difference, and updates the cost basis snapshot. The user sees the net credit/debit of the roll upfront before confirming.
 
 **Opening a PMCC:**
+
 1. Select ticker
 2. App shows two separate chain selectors: one filtered for deep ITM calls (delta 0.70–0.85) at 180+ DTE, one filtered for OTM calls (delta 0.25–0.35) at 20–45 DTE
 3. App validates the safety constraint: long DTE > short DTE
@@ -202,15 +206,15 @@ Alerts are the feature that turns this from a tracker into a genuine management 
 
 ### Built-in Rules (always active)
 
-| Rule | Trigger | Action |
-|---|---|---|
-| Expiration imminent | DTE ≤ 5 and position still open | High-urgency queue item |
-| Standard management window | DTE ≤ 21 | Queue item: consider rolling |
-| Profit target hit | Current premium ≤ 50% of open premium | Queue item: consider closing early |
-| Assignment risk | Underlying within 1% of CSP strike | Queue item: monitor closely |
-| PMCC assignment risk | Underlying within 2% of short call strike | Queue item: roll or close short call |
-| PMCC anchor expiring | LEAPS DTE ≤ 60 | Queue item: roll LEAPS forward |
-| Earnings proximity | Earnings date within 10 calendar days for any active ticker | Warning banner on position card |
+| Rule                       | Trigger                                                     | Action                               |
+| -------------------------- | ----------------------------------------------------------- | ------------------------------------ |
+| Expiration imminent        | DTE ≤ 5 and position still open                             | High-urgency queue item              |
+| Standard management window | DTE ≤ 21                                                    | Queue item: consider rolling         |
+| Profit target hit          | Current premium ≤ 50% of open premium                       | Queue item: consider closing early   |
+| Assignment risk            | Underlying within 1% of CSP strike                          | Queue item: monitor closely          |
+| PMCC assignment risk       | Underlying within 2% of short call strike                   | Queue item: roll or close short call |
+| PMCC anchor expiring       | LEAPS DTE ≤ 60                                              | Queue item: roll LEAPS forward       |
+| Earnings proximity         | Earnings date within 10 calendar days for any active ticker | Warning banner on position card      |
 
 ### User-Configurable Rules (per position or globally)
 
@@ -333,7 +337,7 @@ Income dashboard, capital efficiency report, win/loss analysis. These are high-v
 
 **Decision 1: Where is the app's source of truth?**
 
-Option A is *Alpaca is the source of truth* — the app syncs from Alpaca on startup and after every operation, and your local database is just a cache plus the metadata Alpaca doesn't store (notes, roll history, cost basis calculations). This is simpler but means historical data disappears if a position is closed in Alpaca without going through your app. Option B is *local DB is the source of truth* — every position is created and managed through your app, with Alpaca as the execution layer only. This gives you richer historical data and the ability to model positions before placing them, but requires discipline to always go through your app.
+Option A is _Alpaca is the source of truth_ — the app syncs from Alpaca on startup and after every operation, and your local database is just a cache plus the metadata Alpaca doesn't store (notes, roll history, cost basis calculations). This is simpler but means historical data disappears if a position is closed in Alpaca without going through your app. Option B is _local DB is the source of truth_ — every position is created and managed through your app, with Alpaca as the execution layer only. This gives you richer historical data and the ability to model positions before placing them, but requires discipline to always go through your app.
 
 **Recommendation: Option B with a reconciliation layer.** Your app owns the position records. A daily reconciliation job compares Alpaca positions against your DB and flags discrepancies so you can investigate.
 

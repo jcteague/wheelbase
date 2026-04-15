@@ -1,0 +1,7 @@
+{
+  "enabledMcpjsonServers": ["playwright", "electron"],
+  "disabledMcpjsonServers": ["alpaca", "postgres"],
+  "permissions": {
+    "allow": ["Read(//Users/johnteague/my-stuff/wheelbase/**)", "Bash(pnpm test:*)"]
+  }
+}

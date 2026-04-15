@@ -1,10 +1,9 @@
-import { MONO } from '../../lib/tokens'
-
 type FormButtonProps = {
   label: string
   variant?: 'primary' | 'secondary'
   pendingLabel?: string
   isPending?: boolean
+  disabled?: boolean
   onClick?: () => void
   'data-testid'?: string
   'aria-label'?: string
@@ -30,6 +29,7 @@ export function FormButton({
   variant = 'primary',
   pendingLabel,
   isPending = false,
+  disabled = false,
   onClick,
   'data-testid': dataTestId,
   'aria-label': ariaLabel,
@@ -38,22 +38,15 @@ export function FormButton({
   return (
     <button
       type={variant === 'primary' ? 'submit' : 'button'}
-      disabled={isPending}
+      disabled={isPending || disabled}
       onClick={onClick}
       data-testid={dataTestId}
       aria-label={ariaLabel}
-      style={{
-        padding: '11px 24px',
-        borderRadius: 6,
-        fontSize: '0.9375rem',
-        fontWeight: 600,
-        fontFamily: MONO,
-        cursor: isPending ? 'not-allowed' : 'pointer',
-        letterSpacing: '0.04em',
-        transition: 'opacity 0.15s',
-        ...variantStyles[variant](isPending),
-        ...style
-      }}
+      className={[
+        'font-wb-mono py-[11px] px-6 rounded-[6px] text-[0.9375rem] font-semibold tracking-[0.04em] transition-opacity duration-150',
+        isPending ? 'cursor-not-allowed' : 'cursor-pointer'
+      ].join(' ')}
+      style={{ ...variantStyles[variant](isPending), ...style }}
     >
       {isPending && pendingLabel ? pendingLabel : label}
     </button>

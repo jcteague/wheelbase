@@ -12,7 +12,8 @@ const BASE_PROPS = {
   onCloseCcEarly: vi.fn(),
   onRecordCallAway: vi.fn(),
   onRecordCcExpiration: vi.fn(),
-  onRollCsp: vi.fn()
+  onRollCsp: vi.fn(),
+  onRollCc: vi.fn()
 }
 
 beforeEach(() => {
@@ -23,6 +24,7 @@ beforeEach(() => {
   BASE_PROPS.onRecordCallAway.mockReset()
   BASE_PROPS.onRecordCcExpiration.mockReset()
   BASE_PROPS.onRollCsp.mockReset()
+  BASE_PROPS.onRollCc.mockReset()
 })
 
 it('renders "Close CC Early →" button when phase=CC_OPEN', () => {
@@ -76,4 +78,16 @@ it('calls onRollCsp when "Roll CSP →" button is clicked', async () => {
   render(<PositionDetailActions {...BASE_PROPS} phase="CSP_OPEN" />)
   await user.click(screen.getByTestId('roll-csp-btn'))
   expect(BASE_PROPS.onRollCsp).toHaveBeenCalledOnce()
+})
+
+it('PositionDetailActions: shows "Roll CC →" button when phase is CC_OPEN', () => {
+  const onRollCc = vi.fn()
+  render(<PositionDetailActions {...BASE_PROPS} phase="CC_OPEN" onRollCc={onRollCc} />)
+  expect(screen.getByTestId('roll-cc-btn')).toBeInTheDocument()
+})
+
+it('PositionDetailActions: does not show "Roll CC →" button when phase is CSP_OPEN', () => {
+  const onRollCc = vi.fn()
+  render(<PositionDetailActions {...BASE_PROPS} phase="CSP_OPEN" onRollCc={onRollCc} />)
+  expect(screen.queryByTestId('roll-cc-btn')).not.toBeInTheDocument()
 })

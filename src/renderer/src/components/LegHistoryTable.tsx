@@ -22,15 +22,6 @@ type LegHistoryTableProps = {
   finalPnl?: string | null
 }
 
-const cellStyle: React.CSSProperties = { whiteSpace: 'nowrap', padding: '8px 12px' }
-const mutedCellTextStyle: React.CSSProperties = {
-  color: 'var(--wb-text-secondary)',
-  fontStyle: 'italic'
-}
-const runningBasisAccentStyle: React.CSSProperties = {
-  background: 'rgba(121,192,255,0.05)',
-  borderLeft: '1px solid rgba(121,192,255,0.12)'
-}
 const assignmentAnnotationByRole = {
   ASSIGN: 'shares received',
   CALLED_AWAY: 'shares called away'
@@ -42,10 +33,10 @@ function formatDollarAmount(value: string): string {
 
 function renderAssignedPremiumCell(annotation: string, contracts: number): React.JSX.Element {
   return (
-    <td style={cellStyle}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <span style={mutedCellTextStyle}>— (assigned)</span>
-        <span style={{ ...mutedCellTextStyle, fontSize: '0.68rem' }}>
+    <td className="whitespace-nowrap px-3 py-2">
+      <div className="flex flex-col gap-0.5">
+        <span className="text-wb-text-secondary italic">— (assigned)</span>
+        <span className="text-wb-text-secondary italic text-[0.68rem]">
           {contracts * 100} {annotation}
         </span>
       </div>
@@ -63,16 +54,16 @@ function PremiumCell({ leg }: { leg: LegHistoryEntry }): React.JSX.Element {
 
   if (leg.legRole === 'CC_EXPIRED') {
     return (
-      <td style={cellStyle}>
-        <span style={mutedCellTextStyle}>expired worthless</span>
+      <td className="whitespace-nowrap px-3 py-2">
+        <span className="text-wb-text-secondary italic">expired worthless</span>
       </td>
     )
   }
 
   if (leg.premiumPerContract == null) {
     return (
-      <td style={cellStyle}>
-        <span style={mutedCellTextStyle}>—</span>
+      <td className="whitespace-nowrap px-3 py-2">
+        <span className="text-wb-text-secondary italic">—</span>
       </td>
     )
   }
@@ -81,48 +72,46 @@ function PremiumCell({ leg }: { leg: LegHistoryEntry }): React.JSX.Element {
 
   if (leg.legRole === 'CC_CLOSE') {
     return (
-      <td style={cellStyle}>
-        <span style={{ color: 'var(--wb-gold)', whiteSpace: 'nowrap' }}>−${amount}</span>
+      <td className="whitespace-nowrap px-3 py-2">
+        <span className="text-wb-gold whitespace-nowrap">−${amount}</span>
       </td>
     )
   }
 
   if (parseFloat(leg.premiumPerContract) !== 0) {
     return (
-      <td style={cellStyle}>
-        <span style={{ color: 'var(--wb-green)', whiteSpace: 'nowrap' }}>+${amount}</span>
+      <td className="whitespace-nowrap px-3 py-2">
+        <span className="text-wb-green whitespace-nowrap">+${amount}</span>
       </td>
     )
   }
 
   return (
-    <td style={cellStyle}>
-      <span style={mutedCellTextStyle}>—</span>
+    <td className="whitespace-nowrap px-3 py-2">
+      <span className="text-wb-text-secondary italic">—</span>
     </td>
   )
 }
 
 function BasisCell({ value }: { value: string | null }): React.JSX.Element {
-  const basisCellStyle = { ...cellStyle, ...runningBasisAccentStyle }
-
   if (value == null) {
     return (
-      <td style={basisCellStyle}>
-        <span style={{ color: 'var(--wb-text-secondary)' }}>—</span>
+      <td className="px-3 py-2 bg-[rgba(121,192,255,0.05)] border-l border-[rgba(121,192,255,0.12)]">
+        <span className="text-wb-text-secondary">—</span>
       </td>
     )
   }
 
   return (
-    <td style={basisCellStyle}>
-      <span style={{ color: '#79c0ff', fontWeight: 600 }}>${formatDollarAmount(value)}</span>
+    <td className="px-3 py-2 bg-[rgba(121,192,255,0.05)] border-l border-[rgba(121,192,255,0.12)]">
+      <span className="text-[#79c0ff] font-semibold">${formatDollarAmount(value)}</span>
     </td>
   )
 }
 
 export function LegHistoryTable({ legs, finalPnl }: LegHistoryTableProps): React.JSX.Element {
   return (
-    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <table className="w-full border-collapse">
       <thead>
         <tr>
           <TableHeader>Role</TableHeader>
@@ -132,34 +121,32 @@ export function LegHistoryTable({ legs, finalPnl }: LegHistoryTableProps): React
           <TableHeader>Contracts</TableHeader>
           <TableHeader>Premium</TableHeader>
           <TableHeader>Fill Date</TableHeader>
-          <TableHeader style={{ ...runningBasisAccentStyle, color: '#79c0ff' }}>
+          <TableHeader className="bg-[rgba(121,192,255,0.05)] border-l border-[rgba(121,192,255,0.12)] text-[#79c0ff]">
             Running Basis / Share
           </TableHeader>
         </tr>
       </thead>
       <tbody>
         {legs.map((leg) => (
-          <tr key={leg.id}>
+          <tr key={leg.id} className="border-b border-wb-border">
             <TableCell>
               <Badge color={ROLE_COLOR[leg.legRole] ?? '#8899aa'}>
                 {LEG_ROLE_LABEL[leg.legRole] ?? leg.legRole}
               </Badge>
             </TableCell>
             <TableCell>
-              <span style={{ color: 'var(--wb-text-secondary)', whiteSpace: 'nowrap' }}>
-                {leg.action}
-              </span>
+              <span className="text-wb-text-secondary whitespace-nowrap">{leg.action}</span>
             </TableCell>
             <TableCell>
-              <span style={{ color: 'var(--wb-gold)', whiteSpace: 'nowrap' }}>
+              <span className="text-wb-gold whitespace-nowrap">
                 ${formatDollarAmount(leg.strike)}
               </span>
             </TableCell>
             <TableCell>
-              <span style={{ color: 'var(--wb-text-secondary)' }}>{leg.expiration ?? '—'}</span>
+              <span className="text-wb-text-secondary">{leg.expiration ?? '—'}</span>
             </TableCell>
             <TableCell>
-              <span style={{ color: 'var(--wb-text-secondary)' }}>{leg.contracts}</span>
+              <span className="text-wb-text-secondary">{leg.contracts}</span>
             </TableCell>
             <PremiumCell leg={leg} />
             <TableCell>{leg.fillDate}</TableCell>
@@ -172,15 +159,10 @@ export function LegHistoryTable({ legs, finalPnl }: LegHistoryTableProps): React
           <tr>
             <td
               colSpan={8}
-              style={{
-                padding: '10px 12px',
-                borderTop: '1px solid rgba(63,185,80,0.3)',
-                background: 'rgba(63,185,80,0.04)',
-                whiteSpace: 'nowrap'
-              }}
+              className="px-3 py-2.5 border-t border-[rgba(63,185,80,0.3)] bg-[rgba(63,185,80,0.04)] whitespace-nowrap"
             >
-              <span style={{ color: 'var(--wb-text-secondary)', marginRight: 8 }}>Final P&L</span>
-              <span style={{ color: pnlColor(finalPnl), fontWeight: 600 }}>
+              <span className="text-wb-text-secondary mr-2">Final P&L</span>
+              <span className="font-semibold" style={{ color: pnlColor(finalPnl) }}>
                 {fmtMoney(finalPnl)}
               </span>
             </td>

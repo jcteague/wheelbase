@@ -6,45 +6,22 @@ import { ErrorAlert } from '../components/ui/ErrorAlert'
 import { LoadingState } from '../components/ui/LoadingState'
 import { TableHeader } from '../components/ui/TablePrimitives'
 import { usePositions } from '../hooks/usePositions'
-import { MONO } from '../lib/tokens'
+
 const TABLE_COLUMNS = ['Ticker', 'Phase', 'Strike', 'Expiration', 'DTE', 'Premium', 'Cost Basis']
 
 function PositionsHeader({ count }: { count?: number }): React.JSX.Element {
   return (
     <PageHeader
       left={
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <h1
-            style={{
-              fontSize: '0.875rem',
-              fontWeight: 600,
-              color: 'var(--wb-text-primary)',
-              margin: 0
-            }}
-          >
-            Active Positions
-          </h1>
+        <div className="flex items-center gap-[10px]">
+          <h1 className="text-sm font-semibold text-wb-text-primary m-0">Active Positions</h1>
           {count != null && count > 0 && <Badge>{count}</Badge>}
         </div>
       }
       right={
         <a
           href="#/new"
-          className="wb-hover-opacity"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '5px 14px',
-            borderRadius: 6,
-            fontSize: '0.75rem',
-            fontWeight: 500,
-            color: 'var(--wb-bg-base)',
-            background: 'var(--wb-gold)',
-            textDecoration: 'none',
-            letterSpacing: '0.02em',
-            transition: 'opacity 0.15s'
-          }}
+          className="wb-hover-opacity flex items-center gap-[6px] px-[14px] py-[5px] rounded-md text-xs font-medium text-wb-bg-base bg-wb-gold no-underline tracking-[0.02em]"
         >
           + New Wheel
         </a>
@@ -55,17 +32,7 @@ function PositionsHeader({ count }: { count?: number }): React.JSX.Element {
 
 function SectionHeader({ title }: { title: string }): React.JSX.Element {
   return (
-    <div
-      style={{
-        padding: '16px 24px 8px',
-        fontSize: '0.65rem',
-        fontWeight: 500,
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
-        color: 'var(--wb-text-muted)',
-        fontFamily: MONO
-      }}
-    >
+    <div className="px-[24px] pt-[16px] pb-[8px] text-xs font-medium tracking-[0.08em] uppercase text-wb-text-muted font-wb-mono">
       {title}
     </div>
   )
@@ -74,18 +41,19 @@ function SectionHeader({ title }: { title: string }): React.JSX.Element {
 type PositionTableProps = {
   items: PositionListItem[]
   isClosed?: boolean
-  style?: React.CSSProperties
 }
 
-function PositionTable({ items, isClosed, style }: PositionTableProps): React.JSX.Element {
+function PositionTable({ items, isClosed }: PositionTableProps): React.JSX.Element {
   return (
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem', ...style }}>
+    <table
+      className={['w-full border-collapse text-[0.8125rem]', isClosed ? 'opacity-[0.55]' : '']
+        .filter(Boolean)
+        .join(' ')}
+    >
       <thead>
-        <tr
-          style={{ background: 'var(--wb-bg-surface)', borderBottom: '1px solid var(--wb-border)' }}
-        >
+        <tr className="bg-wb-bg-surface border-b border-wb-border">
           {TABLE_COLUMNS.map((col) => (
-            <TableHeader key={col} style={{ padding: '8px 16px' }}>
+            <TableHeader key={col} className="px-[16px] py-[8px]">
               {col}
             </TableHeader>
           ))}
@@ -111,36 +79,17 @@ export function PositionsListPage(): React.JSX.Element {
       {isLoading && <LoadingState message="Loading positions…" />}
 
       {isError && (
-        <div style={{ margin: '16px 24px' }}>
+        <div className="mx-[24px] my-[16px]">
           <ErrorAlert message="Failed to load positions — check that the database is accessible." />
         </div>
       )}
 
       {!isLoading && !isError && (!data || data.length === 0) && (
-        <div
-          style={{
-            padding: '64px 24px',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'flex-start',
-            gap: 16
-          }}
-        >
-          <p style={{ color: 'var(--wb-text-muted)', fontSize: '0.875rem', margin: 0 }}>
-            No positions yet
-          </p>
+        <div className="px-[24px] py-[64px] flex flex-col items-start gap-[16px]">
+          <p className="text-wb-text-muted text-sm m-0">No positions yet</p>
           <a
             href="#/new"
-            style={{
-              padding: '6px 16px',
-              borderRadius: 6,
-              fontSize: '0.75rem',
-              fontWeight: 500,
-              color: 'var(--wb-gold)',
-              background: 'var(--wb-gold-dim)',
-              border: '1px solid var(--wb-gold-border)',
-              textDecoration: 'none'
-            }}
+            className="px-[16px] py-[6px] rounded-md text-xs font-medium text-wb-gold bg-wb-gold-dim border border-wb-gold-border no-underline"
           >
             Open your first wheel →
           </a>
@@ -155,7 +104,7 @@ export function PositionsListPage(): React.JSX.Element {
           {closedPositions.length > 0 && (
             <>
               <SectionHeader title="Closed" />
-              <PositionTable items={closedPositions} isClosed style={{ opacity: 0.55 }} />
+              <PositionTable items={closedPositions} isClosed />
             </>
           )}
         </>

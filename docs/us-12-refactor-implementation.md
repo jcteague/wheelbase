@@ -10,16 +10,16 @@ Three independent refactoring improvements to the Roll CSP feature:
 
 ## Key Files Changed
 
-| File | Change |
-|---|---|
-| `src/main/services/active-leg-sql.ts` | **New** — shared SQL subquery for current active leg |
-| `src/main/services/list-positions.ts` | Bug fix — uses `activeLegSubquery()` to include `ROLL_TO` legs |
-| `src/main/services/get-position.ts` | Deduplication — replaced inline subquery with shared helper |
-| `src/renderer/src/lib/rolls.ts` | **New** — `getRollTypeLabel`, `computeNetCreditDebit`, `rollCreditDebitColors` |
-| `src/renderer/src/lib/rolls.test.ts` | **New** — 7 unit tests for roll helpers |
-| `src/renderer/src/components/RollCspSheet.tsx` | RHF + Zod migration; `makeRollCspSchema` factory |
-| `src/renderer/src/components/RollCspForm.tsx` | Updated props — RHF `register`/`errors`/`control` |
-| `src/renderer/src/components/RollCspSuccess.tsx` | Uses `rollCreditDebitColors` from `lib/rolls` |
+| File                                             | Change                                                                         |
+| ------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `src/main/services/active-leg-sql.ts`            | **New** — shared SQL subquery for current active leg                           |
+| `src/main/services/list-positions.ts`            | Bug fix — uses `activeLegSubquery()` to include `ROLL_TO` legs                 |
+| `src/main/services/get-position.ts`              | Deduplication — replaced inline subquery with shared helper                    |
+| `src/renderer/src/lib/rolls.ts`                  | **New** — `getRollTypeLabel`, `computeNetCreditDebit`, `rollCreditDebitColors` |
+| `src/renderer/src/lib/rolls.test.ts`             | **New** — 7 unit tests for roll helpers                                        |
+| `src/renderer/src/components/RollCspSheet.tsx`   | RHF + Zod migration; `makeRollCspSchema` factory                               |
+| `src/renderer/src/components/RollCspForm.tsx`    | Updated props — RHF `register`/`errors`/`control`                              |
+| `src/renderer/src/components/RollCspSuccess.tsx` | Uses `rollCreditDebitColors` from `lib/rolls`                                  |
 
 ## Architecture
 

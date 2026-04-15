@@ -68,7 +68,7 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
    - No backwards-compatibility wrappers unless explicitly required
    - `make typecheck` / `tsc --noEmit` will surface unused exports; treat them as errors
 
-6. **Prioritise Refactorings**
+9. **Prioritise Refactorings**
    - High priority: duplication, type safety (`Any`/`any`), architectural violations
    - Medium priority: long functions, poor naming, deep nesting
    - Low priority: minor style, comment cleanup
@@ -115,6 +115,12 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
    **Remove Duplication**
    - Extract shared logic into `src/main/core/` utilities (if pure) or `src/main/services/` helpers
    - Renderer: extract repeated JSX patterns into sub-components under `src/renderer/src/components/`
+
+   **Object Parameters Over Long Parameter Lists**
+   - Functions with 3+ parameters should take a single options/input object instead
+   - Define a named interface for the object (e.g. `RollCcInput`, `CcRollTypeLabelInput`)
+   - Benefits: call sites are self-documenting, parameter order doesn't matter, easy to extend
+   - Exception: simple utilities where positional meaning is universally obvious (e.g. `clamp(value, min, max)`)
 
    **Improve Types**
    - TypeScript: replace `any` with specific types; use union/literal types for constrained values; prefer enums or const objects for phases and statuses

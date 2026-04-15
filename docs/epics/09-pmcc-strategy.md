@@ -22,12 +22,12 @@ A trader can open, manage, and close Poor Man's Covered Call positions with the 
 
 ## Vertical Slice
 
-| Layer | What ships |
-|---|---|
-| Core engines | PMCC lifecycle transitions, PMCC cost basis formula, PMCC-specific alert rules, PMCC screening criteria |
-| Database | strategy_type=PMCC on Position; multi-leg creation (two Legs simultaneously) |
-| API | POST /api/positions (PMCC variant), PMCC roll endpoints, PMCC alert rules |
-| Frontend | PMCC entry form with dual chain selector, PMCC position card variant, PMCC roll forms, PMCC alert configuration, PMCC screener criteria |
+| Layer        | What ships                                                                                                                              |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Core engines | PMCC lifecycle transitions, PMCC cost basis formula, PMCC-specific alert rules, PMCC screening criteria                                 |
+| Database     | strategy_type=PMCC on Position; multi-leg creation (two Legs simultaneously)                                                            |
+| API          | POST /api/positions (PMCC variant), PMCC roll endpoints, PMCC alert rules                                                               |
+| Frontend     | PMCC entry form with dual chain selector, PMCC position card variant, PMCC roll forms, PMCC alert configuration, PMCC screener criteria |
 
 ## Stories
 

@@ -34,10 +34,10 @@ US-12 establishes this channel. US-13 changes the lifecycle validation but the I
 
 New error cases added by US-13:
 
-| Field | Code | Message | When |
-|---|---|---|---|
-| `__root__` | `no_change` | Roll must change the expiration, strike, or both | `newStrike == currentStrike AND newExpiration == currentExpiration` |
-| `newExpiration` | `must_not_be_earlier` | New expiration must be after the current expiration | `newExpiration < currentExpiration` |
+| Field           | Code                  | Message                                             | When                                                                |
+| --------------- | --------------------- | --------------------------------------------------- | ------------------------------------------------------------------- |
+| `__root__`      | `no_change`           | Roll must change the expiration, strike, or both    | `newStrike == currentStrike AND newExpiration == currentExpiration` |
+| `newExpiration` | `must_not_be_earlier` | New expiration must be after the current expiration | `newExpiration < currentExpiration`                                 |
 
 US-12 error cases (unchanged):
 | Field | Code | Message |

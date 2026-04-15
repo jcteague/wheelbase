@@ -14,6 +14,9 @@ import type {
 
 const PositionIdSchema = z.string().uuid()
 
+const IsoDateRegex = /^\d{4}-\d{2}-\d{2}$/
+const IsoDateMessage = 'Must be a valid date (YYYY-MM-DD)'
+
 export const CreatePositionPayloadSchema = z.object({
   ticker: z.string(),
   strike: z.number().positive(),
@@ -153,7 +156,7 @@ export interface ExpireCspPositionResult {
 
 export const AssignCspPayloadSchema = z.object({
   positionId: PositionIdSchema,
-  assignmentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be a valid date (YYYY-MM-DD)')
+  assignmentDate: z.string().regex(IsoDateRegex, IsoDateMessage)
 })
 
 export type AssignCspPayload = z.infer<typeof AssignCspPayloadSchema>
@@ -267,29 +270,55 @@ export interface CloseCcPositionResult {
 }
 
 // ---------------------------------------------------------------------------
-// Roll CSP schemas
+// Roll schemas (shared base)
 // ---------------------------------------------------------------------------
 
-export const RollCspPayloadSchema = z.object({
+const RollPayloadBaseSchema = z.object({
   positionId: PositionIdSchema,
   costToClosePerContract: z.number().positive(),
   newPremiumPerContract: z.number().positive(),
-  newExpiration: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be a valid date (YYYY-MM-DD)'),
+  newExpiration: z.string().regex(IsoDateRegex, IsoDateMessage),
   newStrike: z.number().positive().optional(),
   fillDate: z.string().optional()
 })
 
+interface RollResultBase {
+  rollFromLeg: LegRecord
+  rollToLeg: LegRecord
+  rollChainId: string
+  costBasisSnapshot: CostBasisSnapshotRecord
+}
+
+// ---------------------------------------------------------------------------
+// Roll CSP schemas
+// ---------------------------------------------------------------------------
+
+export const RollCspPayloadSchema = RollPayloadBaseSchema
+
 export type RollCspPayload = z.infer<typeof RollCspPayloadSchema>
 
-export interface RollCspResult {
+export interface RollCspResult extends RollResultBase {
   position: {
     id: string
     ticker: string
     phase: 'CSP_OPEN'
     status: 'ACTIVE'
   }
-  rollFromLeg: LegRecord
-  rollToLeg: LegRecord
-  rollChainId: string
-  costBasisSnapshot: CostBasisSnapshotRecord
+}
+
+// ---------------------------------------------------------------------------
+// Roll CC schemas
+// ---------------------------------------------------------------------------
+
+export const RollCcPayloadSchema = RollPayloadBaseSchema
+
+export type RollCcPayload = z.infer<typeof RollCcPayloadSchema>
+
+export interface RollCcResult extends RollResultBase {
+  position: {
+    id: string
+    ticker: string
+    phase: 'CC_OPEN'
+    status: 'ACTIVE'
+  }
 }

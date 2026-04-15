@@ -5,6 +5,7 @@
 A single-user trading journal and management tool for the **options wheel strategy**. Traders sell cash-secured puts (CSPs), accept assignment into shares, then sell covered calls (CCs) until the shares are called away — repeating the cycle. The app tracks every leg, maintains accurate cost basis through rolls and premiums, and fires management alerts.
 
 Two-layer architecture (Electron desktop app):
+
 - **Renderer** — React 19 SPA (electron-vite, TypeScript, TanStack Query, React Hook Form, Zod, wouter)
 - **Main process** — TypeScript, better-sqlite3 + custom SQL migrations, IPC handlers, pure core engines
 
@@ -24,39 +25,39 @@ Alpaca is the broker integration (read-only through Phase 3, order execution in 
 
 ## Tech Stack
 
-| Concern | Choice |
-|---|---|
-| App shell | Electron + electron-vite |
-| Renderer framework | React 19 + TypeScript |
-| Routing | wouter (hash-based — required for Electron `file://` URLs) |
-| Server state / polling | TanStack Query |
-| Forms | React Hook Form + Zod resolver |
-| Schema validation | **Zod v4** (IPC payload validation + inferred TS types) |
-| UI components | shadcn/ui |
-| Main process | TypeScript (Node) |
-| Database | SQLite via `better-sqlite3`; custom migration runner in `src/main/db/migrate.ts` |
-| Money math | `decimal.js` with `ROUND_HALF_UP`, stored as TEXT (4 dp) |
-| Logging | `pino` (`silent` in Vitest, `info` in production) |
-| Broker | `@alpacahq/typescript-sdk`, all calls isolated in `src/main/integrations/alpaca.ts` |
-| Testing | Vitest (unit + integration), Playwright `_electron` (E2E) |
+| Concern                | Choice                                                                              |
+| ---------------------- | ----------------------------------------------------------------------------------- |
+| App shell              | Electron + electron-vite                                                            |
+| Renderer framework     | React 19 + TypeScript                                                               |
+| Routing                | wouter (hash-based — required for Electron `file://` URLs)                          |
+| Server state / polling | TanStack Query                                                                      |
+| Forms                  | React Hook Form + Zod resolver                                                      |
+| Schema validation      | **Zod v4** (IPC payload validation + inferred TS types)                             |
+| UI components          | shadcn/ui                                                                           |
+| Main process           | TypeScript (Node)                                                                   |
+| Database               | SQLite via `better-sqlite3`; custom migration runner in `src/main/db/migrate.ts`    |
+| Money math             | `decimal.js` with `ROUND_HALF_UP`, stored as TEXT (4 dp)                            |
+| Logging                | `pino` (`silent` in Vitest, `info` in production)                                   |
+| Broker                 | `@alpacahq/typescript-sdk`, all calls isolated in `src/main/integrations/alpaca.ts` |
+| Testing                | Vitest (unit + integration), Playwright `_electron` (E2E)                           |
 
 ---
 
 ## Key File Locations
 
-| Purpose | Path |
-|---|---|
-| Electron main entry | `src/main/index.ts` |
-| IPC handlers | `src/main/ipc/` |
-| Service layer (DB + core) | `src/main/services/` |
-| Core engines (pure) | `src/main/core/` |
-| Alpaca integration | `src/main/integrations/alpaca.ts` |
-| DB init + migrations | `src/main/db/` |
-| Preload / contextBridge | `src/preload/index.ts` |
-| Renderer entry | `src/renderer/src/main.tsx` |
+| Purpose                   | Path                                |
+| ------------------------- | ----------------------------------- |
+| Electron main entry       | `src/main/index.ts`                 |
+| IPC handlers              | `src/main/ipc/`                     |
+| Service layer (DB + core) | `src/main/services/`                |
+| Core engines (pure)       | `src/main/core/`                    |
+| Alpaca integration        | `src/main/integrations/alpaca.ts`   |
+| DB init + migrations      | `src/main/db/`                      |
+| Preload / contextBridge   | `src/preload/index.ts`              |
+| Renderer entry            | `src/renderer/src/main.tsx`         |
 | API adapter (IPC → hooks) | `src/renderer/src/api/positions.ts` |
-| SQL migrations | `migrations/` |
-| E2E tests | `e2e/` |
+| SQL migrations            | `migrations/`                       |
+| E2E tests                 | `e2e/`                              |
 
 ---
 
@@ -65,6 +66,7 @@ Alpaca is the broker integration (read-only through Phase 3, order execution in 
 ### Test-Driven Development (required)
 
 Every task follows the **Red → Green → Refactor** cycle:
+
 1. **Red** — write a failing test that defines the expected behaviour
 2. **Green** — write the minimum code to make it pass
 3. **Refactor** — clean up without breaking the test
@@ -74,10 +76,12 @@ All tests must pass before a task is considered done.
 ### Post-Change Checklist
 
 After every code change, run in order:
+
 1. `pnpm test` — all must pass
 2. `pnpm lint` — fix any lint errors
 3. `pnpm typecheck` — no TypeScript errors permitted
-4. **Logging** — INFO for business events, DEBUG for inputs/checkpoints
+4. `pnpm format` — run prettier to format code
+5. **Logging** — INFO for business events, DEBUG for inputs/checkpoints
 
 ### Functional Programming Style
 
@@ -120,6 +124,7 @@ pnpm build        # production build
 ```
 
 > **Note:** `better-sqlite3` must be built twice — once for each Node ABI:
+>
 > - After `pnpm install`, run `npx electron-rebuild -f -w better-sqlite3` to build for Electron (required for `pnpm dev` / `pnpm build`)
 > - Then run `pnpm rebuild better-sqlite3` to rebuild for system Node (required for `pnpm test` via Vitest)
 > - Order matters: run electron-rebuild first, then the system rebuild, so tests work in the same shell session.
@@ -128,10 +133,10 @@ pnpm build        # production build
 
 ## Build Phases (summary)
 
-| Phase | Focus |
-|---|---|
-| 1 | Core engines + manual trade entry. No broker connection. Full unit test coverage. ✅ Complete |
-| 2 | Alpaca read integration — live prices, Greeks, assignment detection via polling |
-| 3 | Alert engine + candidate screener |
-| 4 | Order execution via Alpaca write API |
-| 5 | Analytics dashboard |
+| Phase | Focus                                                                                         |
+| ----- | --------------------------------------------------------------------------------------------- |
+| 1     | Core engines + manual trade entry. No broker connection. Full unit test coverage. ✅ Complete |
+| 2     | Alpaca read integration — live prices, Greeks, assignment detection via polling               |
+| 3     | Alert engine + candidate screener                                                             |
+| 4     | Order execution via Alpaca write API                                                          |
+| 5     | Analytics dashboard                                                                           |

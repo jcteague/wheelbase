@@ -138,7 +138,7 @@ describe('closeCoveredCallPosition', () => {
   it('defaults leg fillDate to today when not provided', () => {
     const db = makeTestDb()
     const { position } = makeCcOpenPosition(db)
-    const today = new Date().toISOString().slice(0, 10)
+    const today = isoDate(0)
 
     const result = closeCoveredCallPosition(db, position.id, {
       positionId: position.id,

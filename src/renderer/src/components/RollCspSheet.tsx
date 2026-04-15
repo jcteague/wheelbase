@@ -7,6 +7,7 @@ import type { RollCspResponse } from '../api/positions'
 import { useRollCsp } from '../hooks/useRollCsp'
 import { RollCspForm } from './RollCspForm'
 import { RollCspSuccess } from './RollCspSuccess'
+import { getSheetPortal } from '../lib/portal'
 import { SheetOverlay, SheetPanel } from './ui/Sheet'
 
 function makeRollCspSchema(currentExpiration: string): z.ZodObject<{
@@ -137,6 +138,6 @@ export function RollCspSheet(props: RollCspSheetProps): React.JSX.Element | null
         )}
       </SheetPanel>
     </SheetOverlay>,
-    document.body
+    getSheetPortal()
   )
 }

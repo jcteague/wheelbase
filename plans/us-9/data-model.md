@@ -10,21 +10,21 @@ US-9 uses only existing database tables. No migration is required.
 
 A single EXPIRE leg is inserted into the `legs` table.
 
-| Column                | Value                                        |
-|-----------------------|----------------------------------------------|
-| `id`                  | new UUID                                     |
-| `position_id`         | the CC_OPEN position's ID                   |
-| `leg_role`            | `'EXPIRE'`                                   |
-| `action`              | `'EXPIRE'`                                   |
-| `instrument_type`     | `'CALL'`                                     |
-| `strike`              | copied from the active CC_OPEN leg           |
-| `expiration`          | copied from the active CC_OPEN leg           |
-| `contracts`           | copied from the active CC_OPEN leg           |
-| `premium_per_contract`| `'0.0000'` — expiration collects no premium  |
-| `fill_price`          | `NULL` — no market fill on expiry            |
-| `fill_date`           | the CC's expiration date string (YYYY-MM-DD) |
-| `created_at`          | ISO timestamp now                            |
-| `updated_at`          | ISO timestamp now                            |
+| Column                 | Value                                        |
+| ---------------------- | -------------------------------------------- |
+| `id`                   | new UUID                                     |
+| `position_id`          | the CC_OPEN position's ID                    |
+| `leg_role`             | `'EXPIRE'`                                   |
+| `action`               | `'EXPIRE'`                                   |
+| `instrument_type`      | `'CALL'`                                     |
+| `strike`               | copied from the active CC_OPEN leg           |
+| `expiration`           | copied from the active CC_OPEN leg           |
+| `contracts`            | copied from the active CC_OPEN leg           |
+| `premium_per_contract` | `'0.0000'` — expiration collects no premium  |
+| `fill_price`           | `NULL` — no market fill on expiry            |
+| `fill_date`            | the CC's expiration date string (YYYY-MM-DD) |
+| `created_at`           | ISO timestamp now                            |
+| `updated_at`           | ISO timestamp now                            |
 
 ---
 
@@ -32,12 +32,12 @@ A single EXPIRE leg is inserted into the `legs` table.
 
 The `positions` row is updated (not closed).
 
-| Column        | Before         | After              |
-|---------------|----------------|--------------------|
-| `phase`       | `CC_OPEN`      | `HOLDING_SHARES`   |
-| `status`      | `ACTIVE`       | `ACTIVE` (no change) |
-| `closed_date` | `NULL`         | `NULL` (no change) |
-| `updated_at`  | prior value    | ISO timestamp now  |
+| Column        | Before      | After                |
+| ------------- | ----------- | -------------------- |
+| `phase`       | `CC_OPEN`   | `HOLDING_SHARES`     |
+| `status`      | `ACTIVE`    | `ACTIVE` (no change) |
+| `closed_date` | `NULL`      | `NULL` (no change)   |
+| `updated_at`  | prior value | ISO timestamp now    |
 
 ---
 
@@ -59,19 +59,21 @@ This is the only valid lifecycle transition for CC expiry. The position stays `A
 
 ## Validation Rules
 
-| Rule | Error field | Error code | Message |
-|------|-------------|------------|---------|
-| `currentPhase === 'CC_OPEN'` | `__phase__` | `invalid_phase` | `"No open covered call on this position"` |
-| `referenceDate >= expirationDate` | `expiration` | `too_early` | `"Cannot record expiration before the expiration date (YYYY-MM-DD)"` where the date is the actual `expirationDate` value |
+| Rule                              | Error field  | Error code      | Message                                                                                                                  |
+| --------------------------------- | ------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `currentPhase === 'CC_OPEN'`      | `__phase__`  | `invalid_phase` | `"No open covered call on this position"`                                                                                |
+| `referenceDate >= expirationDate` | `expiration` | `too_early`     | `"Cannot record expiration before the expiration date (YYYY-MM-DD)"` where the date is the actual `expirationDate` value |
 
 ---
 
 ## Active Leg Lookup
 
 `getPosition` returns `activeLeg` using the query:
+
 ```sql
 WHERE (p.phase = 'CC_OPEN' AND leg_role = 'CC_OPEN')
 ```
+
 This is already implemented in `src/main/services/get-position.ts`. No changes needed.
 
 ---

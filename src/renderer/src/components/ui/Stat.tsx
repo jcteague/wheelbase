@@ -1,37 +1,12 @@
-import { MONO } from '../../lib/tokens'
-
-const statCellStyle: React.CSSProperties = {
-  padding: '14px 20px',
-  background: 'var(--wb-bg-surface)'
-}
-
 export type StatProps = { label: string; value: React.ReactNode }
 
 export function Stat({ label, value }: StatProps): React.JSX.Element {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-      <span
-        style={{
-          fontFamily: MONO,
-          fontSize: '0.6rem',
-          fontWeight: 600,
-          letterSpacing: '0.1em',
-          textTransform: 'uppercase',
-          color: 'var(--wb-text-muted)'
-        }}
-      >
+    <div className="flex flex-col gap-[5px]">
+      <span className="font-wb-mono text-[0.6rem] font-semibold tracking-[0.1em] uppercase text-wb-text-muted">
         {label}
       </span>
-      <span
-        style={{
-          fontFamily: MONO,
-          fontSize: '0.875rem',
-          fontWeight: 500,
-          color: 'var(--wb-text-primary)'
-        }}
-      >
-        {value}
-      </span>
+      <span className="font-wb-mono text-sm font-medium text-wb-text-primary">{value}</span>
     </div>
   )
 }
@@ -41,15 +16,11 @@ type StatGridProps = { minWidth: number; items: StatProps[] }
 export function StatGrid({ minWidth, items }: StatGridProps): React.JSX.Element {
   return (
     <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: `repeat(auto-fit, minmax(${minWidth}px, 1fr))`,
-        gap: '1px',
-        background: 'var(--wb-border)'
-      }}
+      className="grid gap-px bg-wb-border"
+      style={{ gridTemplateColumns: `repeat(auto-fit, minmax(${minWidth}px, 1fr))` }}
     >
       {items.map(({ label, value }) => (
-        <div key={label} style={statCellStyle}>
+        <div key={label} className="py-3.5 px-5 bg-wb-bg-surface">
           <Stat label={label} value={value} />
         </div>
       ))}

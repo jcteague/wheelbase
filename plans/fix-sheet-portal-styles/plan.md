@@ -39,11 +39,13 @@ Verify `src/renderer/src/components/ui/sheet.tsx` is created with exports: `Shee
 Add a portal mount point inside `#root` so portal content stays within Tailwind's `@layer` scope.
 
 **In the app layout (e.g., `App.tsx`):**
+
 ```tsx
 <div id="sheet-portal" />
 ```
 
 **In `sheet.tsx`, modify `SheetPortal`:**
+
 ```tsx
 const SheetPortal = ({ ...props }: DialogPrimitive.DialogPortalProps) => (
   <DialogPrimitive.Portal container={document.getElementById('sheet-portal')} {...props} />

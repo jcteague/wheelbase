@@ -21,12 +21,12 @@ A trader can place single-leg and multi-leg orders directly through the app via 
 
 ## Vertical Slice
 
-| Layer | What ships |
-|---|---|
-| Integration | alpaca.py: place_order(), place_multi_leg_order(), subscribe_order_updates() |
-| Backend | Order status tracking, websocket listener for fill events, auto-create Leg on fill |
-| API | POST /api/orders, GET /api/orders/:id/status |
-| Frontend | Order placement buttons on trade forms, order confirmation dialog, order status indicator, environment badge on confirmation |
+| Layer       | What ships                                                                                                                   |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Integration | alpaca.py: place_order(), place_multi_leg_order(), subscribe_order_updates()                                                 |
+| Backend     | Order status tracking, websocket listener for fill events, auto-create Leg on fill                                           |
+| API         | POST /api/orders, GET /api/orders/:id/status                                                                                 |
+| Frontend    | Order placement buttons on trade forms, order confirmation dialog, order status indicator, environment badge on confirmation |
 
 ## Stories
 

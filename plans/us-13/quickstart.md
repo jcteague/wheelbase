@@ -46,6 +46,7 @@ pnpm test:e2e
 ## Seed Data for Manual Testing
 
 No seed script exists. To test manually:
+
 1. `pnpm dev` to launch the app
 2. Create a new wheel (AAPL, $180 strike, 2026-04-18 expiration, $3.50 premium)
 3. Open the roll form from the position detail page

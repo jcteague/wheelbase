@@ -10,40 +10,40 @@ US-7 uses existing tables only. No migration required.
 
 A new row is inserted with these values:
 
-| Field | Value | Notes |
-|---|---|---|
-| `id` | UUID | Generated |
-| `position_id` | FK → positions | The HOLDING_SHARES position |
-| `leg_role` | `'CC_OPEN'` | Existing enum value |
-| `action` | `'SELL'` | Selling a call |
-| `instrument_type` | `'CALL'` | Existing enum value |
-| `strike` | Decimal TEXT | The CC strike price |
-| `expiration` | ISO date string | CC expiration date |
-| `contracts` | Integer | Must be ≤ position contracts from ASSIGN leg |
-| `premium_per_contract` | Decimal TEXT (4dp) | Credit received per share |
-| `fill_price` | `null` | Not applicable for manual entry |
-| `fill_date` | ISO date string | Date the CC was sold |
+| Field                  | Value              | Notes                                        |
+| ---------------------- | ------------------ | -------------------------------------------- |
+| `id`                   | UUID               | Generated                                    |
+| `position_id`          | FK → positions     | The HOLDING_SHARES position                  |
+| `leg_role`             | `'CC_OPEN'`        | Existing enum value                          |
+| `action`               | `'SELL'`           | Selling a call                               |
+| `instrument_type`      | `'CALL'`           | Existing enum value                          |
+| `strike`               | Decimal TEXT       | The CC strike price                          |
+| `expiration`           | ISO date string    | CC expiration date                           |
+| `contracts`            | Integer            | Must be ≤ position contracts from ASSIGN leg |
+| `premium_per_contract` | Decimal TEXT (4dp) | Credit received per share                    |
+| `fill_price`           | `null`             | Not applicable for manual entry              |
+| `fill_date`            | ISO date string    | Date the CC was sold                         |
 
 ### Cost Basis Snapshot (existing table: `cost_basis_snapshots`)
 
 A new row is inserted:
 
-| Field | Value | Notes |
-|---|---|---|
-| `id` | UUID | Generated |
-| `position_id` | FK → positions | Same position |
-| `basis_per_share` | Decimal TEXT (4dp) | `prevBasisPerShare − ccPremiumPerContract` |
+| Field                     | Value              | Notes                                       |
+| ------------------------- | ------------------ | ------------------------------------------- |
+| `id`                      | UUID               | Generated                                   |
+| `position_id`             | FK → positions     | Same position                               |
+| `basis_per_share`         | Decimal TEXT (4dp) | `prevBasisPerShare − ccPremiumPerContract`  |
 | `total_premium_collected` | Decimal TEXT (4dp) | `prevTotal + (ccPremium × contracts × 100)` |
-| `final_pnl` | `null` | Position still open |
-| `snapshot_at` | ISO timestamp | When snapshot was taken |
+| `final_pnl`               | `null`             | Position still open                         |
+| `snapshot_at`             | ISO timestamp      | When snapshot was taken                     |
 
 ### Position (existing table: `positions`)
 
 Updated in-place:
 
-| Field | New Value |
-|---|---|
-| `phase` | `'CC_OPEN'` |
+| Field        | New Value         |
+| ------------ | ----------------- |
+| `phase`      | `'CC_OPEN'`       |
 | `updated_at` | Current timestamp |
 
 ## Validation Rules
@@ -79,6 +79,7 @@ newTotalPremium  = prevTotalPremium + (ccPremiumPerContract × contracts × 100)
 ```
 
 Where:
+
 - `prevBasisPerShare` = latest cost_basis_snapshot.basis_per_share
 - `prevTotalPremium` = latest cost_basis_snapshot.total_premium_collected
 - `ccPremiumPerContract` = premium received per share for the CC

@@ -25,9 +25,11 @@ Implements the covered call expiry flow: when a CC_OPEN position's option expire
 ### 1. `expireCc` Lifecycle Engine Function
 
 **Files to create or modify:**
+
 - `src/main/core/lifecycle.ts` — add `ExpireCcInput`, `ExpireCcResult`, and `expireCc`
 
 **Red — tests to write** (`src/main/core/lifecycle.test.ts`):
+
 - Returns `{ phase: 'HOLDING_SHARES' }` when `currentPhase === 'CC_OPEN'` and `referenceDate >= expirationDate`
 - Throws `ValidationError` with `field='__phase__'`, `code='invalid_phase'`, `message='No open covered call on this position'` when `currentPhase !== 'CC_OPEN'` (e.g. `HOLDING_SHARES`)
 - Throws `ValidationError` with `field='expiration'`, `code='too_early'`, `message='Cannot record expiration before the expiration date (2026-02-21)'` when `referenceDate < expirationDate` (message must include the actual date string)
@@ -35,15 +37,18 @@ Implements the covered call expiry flow: when a CC_OPEN position's option expire
 - Does NOT throw when `referenceDate === expirationDate` exactly (boundary passing case)
 
 **Green — implementation:**
+
 - Add `ExpireCcInput` interface: `{ currentPhase: WheelPhase; expirationDate: string; referenceDate: string }`
 - Add `ExpireCcResult` interface: `{ phase: 'HOLDING_SHARES' }`
 - Add `expireCc(input: ExpireCcInput): ExpireCcResult` — validates phase (`!== 'CC_OPEN'`), validates date (`referenceDate < expirationDate`), returns `{ phase: 'HOLDING_SHARES' }`
 - Error message format: `` `Cannot record expiration before the expiration date (${input.expirationDate})` ``
 
 **Refactor — cleanup to consider:**
+
 - Extract a `requirePhase` helper if the pattern repeats across `expireCsp` and `expireCc` — but only if it genuinely reduces duplication without adding abstraction for one case.
 
 **Acceptance criteria covered:**
+
 - AC 3: Reject expiration before the expiration date
 - AC 4: Reject expiration when not in CC_OPEN phase
 
@@ -52,22 +57,27 @@ Implements the covered call expiry flow: when a CC_OPEN position's option expire
 ### 2. Schemas: `ExpireCcPayloadSchema` and `ExpireCcPositionResult`
 
 **Files to create or modify:**
+
 - `src/main/schemas.ts` — add schema, payload type, and result interface
 
 **Red — tests to write** (`src/main/schemas.test.ts`):
+
 - `ExpireCcPayloadSchema.parse({ positionId: validUUID })` succeeds
 - `ExpireCcPayloadSchema.parse({ positionId: 'not-a-uuid' })` throws ZodError
 - `ExpireCcPayloadSchema.parse({ positionId: validUUID, expirationDateOverride: '2026-02-21' })` succeeds
 
 **Green — implementation:**
+
 - Add `ExpireCcPayloadSchema = z.object({ positionId: z.string().uuid(), expirationDateOverride: z.string().optional() })`
 - Add `export type ExpireCcPayload = z.infer<typeof ExpireCcPayloadSchema>`
 - Add `ExpireCcPositionResult` interface (see `plans/us-9/contracts/expire-cc.md` for exact shape): position with `phase: 'HOLDING_SHARES'`, `status: 'ACTIVE'`, `closedDate: null`; `leg: LegRecord`; `costBasisSnapshot: CostBasisSnapshotRecord`; `sharesHeld: number`
 
 **Refactor — cleanup to consider:**
+
 - Check for naming consistency with `ExpireCspPayload` / `ExpireCspPositionResult`.
 
 **Acceptance criteria covered:**
+
 - Foundational for all other areas.
 
 ---
@@ -75,10 +85,12 @@ Implements the covered call expiry flow: when a CC_OPEN position's option expire
 ### 3. `expire-cc-position` Service
 
 **Files to create or modify:**
+
 - `src/main/services/expire-cc-position.ts` — new file
 - `src/main/services/positions.ts` — add `export { expireCcPosition } from './expire-cc-position'`
 
 **Red — tests to write** (`src/main/services/expire-cc-position.test.ts`):
+
 - Happy path: given a CC_OPEN position with `expirationDateOverride = expirationDate`, returns result with `position.phase = 'HOLDING_SHARES'`, `position.status = 'ACTIVE'`, `position.closedDate = null`
 - Happy path: the returned `leg` has `legRole = 'EXPIRE'`, `action = 'EXPIRE'`, `instrumentType = 'CALL'`, `premiumPerContract = '0.0000'`, `fillPrice = null`, `fillDate = expirationDate`
 - Happy path: returns `sharesHeld = 100` for 1-contract position (ASSIGN leg contracts × 100)
@@ -90,6 +102,7 @@ Implements the covered call expiry flow: when a CC_OPEN position's option expire
 - Error: throws `ValidationError` with `code = 'no_active_leg'` when there is no CC_OPEN leg (edge case)
 
 **Green — implementation:**
+
 - `expireCcPosition(db, positionId, payload: ExpireCcPayload): ExpireCcPositionResult`
 - Load `positionDetail` via `getPosition(db, positionId)` — throw `not_found` if null
 - Set `referenceDate = payload.expirationDateOverride ?? today`
@@ -102,9 +115,11 @@ Implements the covered call expiry flow: when a CC_OPEN position's option expire
 - Log: `logger.debug` inputs; `logger.info` completion with `{ positionId, phase: 'HOLDING_SHARES', sharesHeld }`
 
 **Refactor — cleanup to consider:**
+
 - Check for duplication with `expire-csp-position.ts` in the date handling pattern — extract a helper only if ≥3 uses emerge.
 
 **Acceptance criteria covered:**
+
 - AC 1: EXPIRE leg recorded, phase changes to HOLDING_SHARES
 - AC 3: Reject before expiration date
 - AC 4: Reject when not in CC_OPEN
@@ -114,14 +129,17 @@ Implements the covered call expiry flow: when a CC_OPEN position's option expire
 ### 4. IPC Handler `positions:expire-cc`
 
 **Files to create or modify:**
+
 - `src/main/ipc/positions.ts` — register new handler inside `registerPositionsHandlers`
 
 **Red — tests to write** (`src/main/ipc/positions.test.ts`):
+
 - `positions:expire-cc` with valid UUID payload → calls `expireCcPosition` and returns `{ ok: true, position, leg, costBasisSnapshot, sharesHeld }`
 - `positions:expire-cc` with non-UUID `positionId` → returns `{ ok: false, errors: [{ code: 'invalid_string' }] }` (Zod parse failure)
 - `positions:expire-cc` where service throws `ValidationError` → returns `{ ok: false, errors: [{field, code, message}] }`
 
 **Green — implementation:**
+
 - Import `ExpireCcPayloadSchema` and `expireCcPosition` (once exported from `services/positions.ts`)
 - Add to `registerPositionsHandlers`:
   ```typescript
@@ -134,9 +152,11 @@ Implements the covered call expiry flow: when a CC_OPEN position's option expire
   ```
 
 **Refactor — cleanup to consider:**
+
 - Naming consistency with existing handler labels (`positions_expire_csp_unhandled_error` pattern).
 
 **Acceptance criteria covered:**
+
 - Enables all AC scenarios at the IPC boundary.
 
 ---
@@ -144,13 +164,16 @@ Implements the covered call expiry flow: when a CC_OPEN position's option expire
 ### 5. Preload Wiring
 
 **Files to create or modify:**
+
 - `src/preload/index.ts` — add `expireCc` method
 - `src/preload/index.d.ts` — add type declaration
 
 **Red — tests to write:**
+
 - No unit tests for preload wiring (integration tested via IPC handler tests + E2e).
 
 **Green — implementation:**
+
 - In `src/preload/index.ts`, add to the `api` object:
   ```typescript
   expireCc: (payload: unknown) => ipcRenderer.invoke('positions:expire-cc', payload)
@@ -161,9 +184,11 @@ Implements the covered call expiry flow: when a CC_OPEN position's option expire
   ```
 
 **Refactor — cleanup to consider:**
+
 - Check naming consistency with `expirePosition` (CSP) and `openCoveredCall` (US-7).
 
 **Acceptance criteria covered:**
+
 - Bridges IPC to renderer for all AC scenarios.
 
 ---
@@ -171,23 +196,28 @@ Implements the covered call expiry flow: when a CC_OPEN position's option expire
 ### 6. API Adapter: `expireCc` Function and Types
 
 **Files to create or modify:**
+
 - `src/renderer/src/api/positions.ts` — add `ExpireCcPayload`, `ExpireCcResponse`, and `expireCc`
 
 **Red — tests to write** (`src/renderer/src/api/positions.test.ts`):
+
 - `expireCc({ position_id: uuid })` calls `window.api.expireCc` with `{ positionId: uuid, expirationDateOverride: undefined }`
 - `expireCc({ position_id: uuid, expiration_date_override: '2026-02-21' })` maps the snake_case field to `expirationDateOverride`
 - When `window.api.expireCc` returns `{ ok: false, errors: [{field: '__phase__', ...}] }`, `expireCc` throws an `ApiError` with `status: 400` and `body.detail` containing the mapped error
 - When `window.api.expireCc` returns `{ ok: true, position, leg, costBasisSnapshot, sharesHeld }`, `expireCc` resolves with the result
 
 **Green — implementation:**
+
 - Add `ExpireCcPayload = { position_id: string; expiration_date_override?: string }`
 - Add `ExpireCcResponse` type (see `plans/us-9/contracts/expire-cc.md`)
 - Add `expireCc(payload: ExpireCcPayload): Promise<ExpireCcResponse>` following the same error-mapping pattern as `expirePosition`
 
 **Refactor — cleanup to consider:**
+
 - Check for duplication with `expirePosition` (CSP) — the two functions are structurally identical except for the method name and types.
 
 **Acceptance criteria covered:**
+
 - Enables renderer-layer integration tests and E2e.
 
 ---
@@ -195,12 +225,15 @@ Implements the covered call expiry flow: when a CC_OPEN position's option expire
 ### 7. `useExpireCoveredCall` Hook
 
 **Files to create or modify:**
+
 - `src/renderer/src/hooks/useExpireCoveredCall.ts` — new file
 
 **Red — tests to write:**
+
 - No isolated unit test needed — the hook is a thin wrapper over TanStack Query `useMutation`. Behaviour is covered by component tests in Area 8 and E2e.
 
 **Green — implementation:**
+
 - Following `src/renderer/src/hooks/useExpirePosition.ts` exactly:
   ```typescript
   export function useExpireCoveredCall(options?: {
@@ -218,9 +251,11 @@ Implements the covered call expiry flow: when a CC_OPEN position's option expire
   ```
 
 **Refactor — cleanup to consider:**
+
 - None expected — hook is intentionally minimal.
 
 **Acceptance criteria covered:**
+
 - Wires the mutation for areas 8 and 9.
 
 ---
@@ -228,10 +263,12 @@ Implements the covered call expiry flow: when a CC_OPEN position's option expire
 ### 8. `CcExpirationSheet` Component
 
 **Files to create or modify:**
+
 - `src/renderer/src/components/CcExpirationSheet.tsx` — new file
 - `src/renderer/src/components/CcExpirationSheet.test.tsx` — new file
 
 **Red — tests to write** (`src/renderer/src/components/CcExpirationSheet.test.tsx`):
+
 - Confirmation state renders with position summary: "AAPL CALL $182.00 · Feb 21, 2026", contracts, expiration date, phase transition "Call Open → Holding" (PhaseBadge values), "Premium captured: +$230.00 (100%)" highlighted row
 - Confirmation state renders irrevocable warning: "This cannot be undone."
 - Confirmation state renders Cancel and "Confirm Expiration" footer buttons
@@ -248,17 +285,18 @@ Implements the covered call expiry flow: when a CC_OPEN position's option expire
 Implement `CcExpirationSheet` as a right-side 400px sheet rendered via `createPortal` into `document.body`, following the exact structure of `ExpirationSheet.tsx` with these differences:
 
 Props:
+
 ```typescript
 interface CcExpirationSheetProps {
   open: boolean
   positionId: string
   ticker: string
   strike: string
-  expiration: string          // YYYY-MM-DD
-  expirationDisplay: string   // e.g. "Feb 21, 2026"
+  expiration: string // YYYY-MM-DD
+  expirationDisplay: string // e.g. "Feb 21, 2026"
   contracts: number
-  premiumPerContract: string  // e.g. "2.3000"
-  sharesHeld: number          // passed from PositionDetailPage
+  premiumPerContract: string // e.g. "2.3000"
+  sharesHeld: number // passed from PositionDetailPage
   onClose: () => void
 }
 ```
@@ -266,6 +304,7 @@ interface CcExpirationSheetProps {
 State: `successState: boolean` (true after mutation succeeds — all display data comes from props).
 
 **Confirmation state** (matches mockup `confirmation` screen):
+
 - Header eyebrow: `"Record Expiration"` (color: `var(--wb-text-secondary)`)
 - Header title: `"Expire Covered Call Worthless"`
 - Header subtitle: `"CALL $${strike} · ${expirationDisplay}"`
@@ -274,6 +313,7 @@ State: `successState: boolean` (true after mutation succeeds — all display dat
 - Footer: `Button variant="outline"` Cancel + `FormButton` "Confirm Expiration" (disabled while `isPending`)
 
 **Success state** (matches mockup `success` screen):
+
 - Header eyebrow: `"Complete"` (color: `var(--wb-green)`)
 - Header title: `"AAPL CC Expired Worthless"` (use `ticker` prop)
 - Header subtitle: `"CALL $${strike} · ${expirationDisplay}"`
@@ -289,9 +329,11 @@ Helpers: compute `totalPremium = (parseFloat(premiumPerContract) * contracts * 1
 Use `fmtDate(expiration)` from `../lib/format` when `expirationDisplay` is not passed and format fallback is needed.
 
 **Refactor — cleanup to consider:**
+
 - Extract shared sheet-chrome JSX (header, footer, overlay, scrim) into a local helper if ExpirationSheet duplication exceeds ~30 lines.
 
 **Acceptance criteria covered:**
+
 - AC 1: success screen shows "+$230.00 premium captured (100%)" and "Sell New Covered Call" CTA
 - AC 2: success screen shows full premium collected
 - AC 5: strategic nudge text and "Sell New Covered Call on AAPL →" CTA visible
@@ -301,10 +343,12 @@ Use `fmtDate(expiration)` from `../lib/format` when `expirationDisplay` is not p
 ### 9. `PositionDetailPage` and `PositionDetailActions` Wiring
 
 **Files to create or modify:**
+
 - `src/renderer/src/components/PositionDetailActions.tsx` — add `onRecordCcExpiration` prop and CC_OPEN button
 - `src/renderer/src/pages/PositionDetailPage.tsx` — add CC expiry context state and `CcExpirationSheet`
 
 **Red — tests to write** (`src/renderer/src/pages/PositionDetailPage.test.tsx`):
+
 - When `position.phase === 'CC_OPEN'` and `computeDte(activeLeg.expiration) <= 0`, renders a button with `data-testid="record-cc-expiration-btn"` containing text "Record Expiration →"
 - When `position.phase === 'CC_OPEN'` and `computeDte(activeLeg.expiration) > 0` (not yet expired), does NOT render `data-testid="record-cc-expiration-btn"`
 - When `position.phase === 'HOLDING_SHARES'`, does NOT render `data-testid="record-cc-expiration-btn"`
@@ -313,6 +357,7 @@ Use `fmtDate(expiration)` from `../lib/format` when `expirationDisplay` is not p
 **Green — implementation:**
 
 `PositionDetailActions`:
+
 - Add `onRecordCcExpiration: () => void` and `ccExpired: boolean` props
 - When `phase === 'CC_OPEN'` and `ccExpired`, render:
   ```tsx
@@ -327,6 +372,7 @@ Use `fmtDate(expiration)` from `../lib/format` when `expirationDisplay` is not p
   ```
 
 `PositionDetailPage`:
+
 - Add `ccExpCtx` state: `{ activeLeg, snapshot } | null`
 - Compute `ccExpired = activeLeg ? computeDte(activeLeg.expiration) <= 0 : false`
 - Pass `onRecordCcExpiration` and `ccExpired` to `PositionDetailActions`
@@ -334,27 +380,31 @@ Use `fmtDate(expiration)` from `../lib/format` when `expirationDisplay` is not p
 - Include `ccExpCtx` in the blur condition alongside `expirationCtx`, `assignmentCtx`, `openCcCtx`
 - After all existing sheets, render:
   ```tsx
-  {ccExpCtx?.activeLeg && (
-    <CcExpirationSheet
-      open
-      positionId={position.id}
-      ticker={position.ticker}
-      strike={ccExpCtx.activeLeg.strike}
-      expiration={ccExpCtx.activeLeg.expiration}
-      expirationDisplay={fmtDate(ccExpCtx.activeLeg.expiration)}
-      contracts={ccExpCtx.activeLeg.contracts}
-      premiumPerContract={ccExpCtx.activeLeg.premiumPerContract}
-      sharesHeld={assignLeg?.contracts ? assignLeg.contracts * 100 : 0}
-      onClose={() => setCcExpCtx(null)}
-    />
-  )}
+  {
+    ccExpCtx?.activeLeg && (
+      <CcExpirationSheet
+        open
+        positionId={position.id}
+        ticker={position.ticker}
+        strike={ccExpCtx.activeLeg.strike}
+        expiration={ccExpCtx.activeLeg.expiration}
+        expirationDisplay={fmtDate(ccExpCtx.activeLeg.expiration)}
+        contracts={ccExpCtx.activeLeg.contracts}
+        premiumPerContract={ccExpCtx.activeLeg.premiumPerContract}
+        sharesHeld={assignLeg?.contracts ? assignLeg.contracts * 100 : 0}
+        onClose={() => setCcExpCtx(null)}
+      />
+    )
+  }
   ```
 - Derive `assignLeg = legs.find(l => l.legRole === 'ASSIGN')` from position legs
 
 **Refactor — cleanup to consider:**
+
 - If `PositionDetailActions` grows beyond ~60 lines, extract per-phase action groups into sub-components.
 
 **Acceptance criteria covered:**
+
 - AC 1: "Record Expiration →" button is visible in position detail header when phase = CC_OPEN and today ≥ CC expiration
 
 ---
@@ -362,6 +412,7 @@ Use `fmtDate(expiration)` from `../lib/format` when `expirationDisplay` is not p
 ### 10. E2e Tests
 
 **Files to create or modify:**
+
 - `e2e/cc-expiration.spec.ts` — new file
 
 **Red — tests to write** (one test per AC, AC language in test name):
@@ -387,12 +438,15 @@ Use `fmtDate(expiration)` from `../lib/format` when `expirationDisplay` is not p
   - Covers AC 5: "Success state shows strategic nudge before sell-next-CC CTA"
 
 **Green — implementation:**
+
 - Use `_electron` Playwright API to launch the app (follow `e2e/csp-flow.spec.ts` or `e2e/csp-assignment.spec.ts` for setup pattern)
 - IPC calls for fixture setup go through `electronApp.evaluate` or the `window.api` bridge
 - Use `page.getByTestId` for button selectors; use `page.getByText` for asserting sheet content
 
 **Refactor — cleanup to consider:**
+
 - Extract CC fixture setup (create → assign → open-CC) into a shared helper if it's used across multiple e2e files.
 
 **Acceptance criteria covered:**
+
 - AC 1, 2, 3, 4, 5 — one dedicated test per AC scenario

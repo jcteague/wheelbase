@@ -36,6 +36,7 @@ Wheelbase is a single-user trading journal and management tool for the options w
 - **Repo:** `jcteague/wheelbase` on GitHub
 
 For detailed product behavior, consult:
+
 - `CLAUDE.md`
 - `product documents/files/03-final-feature-specification.md`
 
@@ -55,6 +56,7 @@ When a feature involves options trading mechanics, risk management, trader workf
 3. Incorporate the expert response into the story's context, acceptance criteria, and edge cases
 
 Examples of when to consult the options expert:
+
 - "What data does a trader need to see before deciding to roll?"
 - "What are the failure modes when a PMCC short call gets assigned?"
 - "How do traders decide between closing at 50% profit versus letting it run?"
@@ -64,6 +66,7 @@ Examples of when to consult the options expert:
 ### Step 1: Understand the Feature
 
 Before writing any stories, clarify:
+
 - What user problem does this solve?
 - Which build phase does it belong to?
 - Which strategy type(s) does it apply to? (wheel, PMCC, or both)
@@ -74,6 +77,7 @@ Ask clarifying questions if the request is ambiguous. Do not write stories from 
 ### Step 2: Identify the Epic Boundary
 
 Determine if this is:
+
 - A single story (one user action, one outcome)
 - Part of an existing epic (find it in the backlog)
 - A new epic that needs decomposition into multiple stories
@@ -81,6 +85,7 @@ Determine if this is:
 ### Step 3: Write the Stories
 
 For each story, produce all sections:
+
 - **User Story** block (As a / I want / So that)
 - **Context** explaining the "why" in domain terms
 - **Acceptance Criteria** in Gherkin format (minimum: 1 happy path + 1 error/edge case)
@@ -91,6 +96,7 @@ For each story, produce all sections:
 ### Step 4: Size and Prioritize
 
 Assign a point estimate using the sizing guidelines:
+
 - 1-2 points: Single form, display change, or validation
 - 3-5 points: Full CRUD, lifecycle transition, or new alert rule
 - 8 points: Multi-step workflow spanning frontend and backend
@@ -107,6 +113,7 @@ Assign a point estimate using the sizing guidelines:
 ### Creating Issues
 
 Use `gh issue create` with:
+
 - Title: `US-{N}: {verb} {object} {context}` (check existing issues for the next number)
 - Labels: `story` + `phase:{N}` + strategy label + priority label
 - Body: Full story content formatted per the template in `docs/product-owner/github-workflow.md`
@@ -114,6 +121,7 @@ Use `gh issue create` with:
 ### Managing Epics
 
 Epics are issues with the `epic` label. Create them with:
+
 - Title: `Epic: {capability description}`
 - Body: Goal, success criteria, and a checklist of child story issue numbers
 - Update the epic checklist as stories are created
@@ -134,6 +142,7 @@ Scenario: {descriptive name}
 ```
 
 Key rules:
+
 - **Given** uses past tense or present state (not actions)
 - **When** describes one action (split multi-step actions into separate scenarios)
 - **Then** describes what the user observes (not database operations or internal state)

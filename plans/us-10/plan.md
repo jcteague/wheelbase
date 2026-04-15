@@ -27,19 +27,24 @@ Implements the "shares called away" action that completes the wheel cycle. When 
 ### 1. `LegAction` Enum Extension
 
 **Files to create or modify:**
+
 - `src/main/core/types.ts` — add `'EXERCISE'` to the `LegAction` z.enum
 
 **Red — tests to write:**
+
 - In `src/main/core/types.test.ts` (create if not present): assert `LegAction.parse('EXERCISE')` succeeds without throwing.
 - Assert `LegAction.parse('INVALID')` throws a ZodError.
 
 **Green — implementation:**
+
 - In `src/main/core/types.ts`, extend `LegAction` from `z.enum(['SELL', 'BUY', 'EXPIRE', 'ASSIGN'])` to `z.enum(['SELL', 'BUY', 'EXPIRE', 'ASSIGN', 'EXERCISE'])`.
 
 **Refactor — cleanup to consider:**
+
 - Check for duplication and naming consistency.
 
 **Acceptance criteria covered:**
+
 - Supports the `LegAction: EXERCISE` requirement from Technical Notes ("LegRole: CC_CLOSE, LegAction: EXERCISE").
 
 ---
@@ -47,40 +52,49 @@ Implements the "shares called away" action that completes the wheel cycle. When 
 ### 2. Core Lifecycle Engine — `recordCallAway()`
 
 **Files to create or modify:**
+
 - `src/main/core/lifecycle.ts` — add `RecordCallAwayInput`, `RecordCallAwayResult` interfaces and `recordCallAway()` function
 - `src/main/core/lifecycle.test.ts` — new describe block
 
 **Red — tests to write:**
+
 - In `src/main/core/lifecycle.test.ts`, `describe('recordCallAway')`:
   - `returns { phase: 'WHEEL_COMPLETE' } when currentPhase is CC_OPEN and fillDate equals ccOpenFillDate` — assert result.phase === 'WHEEL_COMPLETE'
-  - `throws ValidationError (invalid_phase) when currentPhase is HOLDING_SHARES` — assert ValidationError with field='__phase__', code='invalid_phase', message='No open covered call on this position'
+  - `throws ValidationError (invalid_phase) when currentPhase is HOLDING_SHARES` — assert ValidationError with field='**phase**', code='invalid_phase', message='No open covered call on this position'
   - `throws ValidationError (invalid_phase) when currentPhase is CSP_OPEN` — same shape
   - `throws ValidationError (multi_contract_unsupported) when contracts > 1` — assert field='contracts', code='multi_contract_unsupported', message='Multi-contract call-away is not yet supported'
   - `throws ValidationError (close_date_before_open) when fillDate is before ccOpenFillDate` — assert field='fillDate', code='close_date_before_open', message='Fill date cannot be before the CC open date'
   - `returns WHEEL_COMPLETE when fillDate is after ccOpenFillDate` — happy path with future fill date
 
 **Green — implementation:**
+
 - In `src/main/core/lifecycle.ts`, add:
+
   ```ts
   export interface RecordCallAwayInput {
     currentPhase: WheelPhase
     contracts: number
-    fillDate: string         // CC_OPEN leg expiration (derived by service)
-    ccOpenFillDate: string   // CC_OPEN leg fill_date
+    fillDate: string // CC_OPEN leg expiration (derived by service)
+    ccOpenFillDate: string // CC_OPEN leg fill_date
   }
-  export interface RecordCallAwayResult { phase: 'WHEEL_COMPLETE' }
+  export interface RecordCallAwayResult {
+    phase: 'WHEEL_COMPLETE'
+  }
 
   export function recordCallAway(input: RecordCallAwayInput): RecordCallAwayResult
   ```
+
 - Validate `currentPhase === 'CC_OPEN'` → throw `ValidationError('__phase__', 'invalid_phase', 'No open covered call on this position')`
 - Validate `input.contracts <= 1` → throw `ValidationError('contracts', 'multi_contract_unsupported', 'Multi-contract call-away is not yet supported')`
 - Validate `input.fillDate >= input.ccOpenFillDate` → throw `ValidationError('fillDate', 'close_date_before_open', 'Fill date cannot be before the CC open date')`
 - Return `{ phase: 'WHEEL_COMPLETE' }`
 
 **Refactor — cleanup to consider:**
+
 - Ensure error messages exactly match strings in acceptance criteria and technical notes.
 
 **Acceptance criteria covered:**
+
 - "Reject call-away when not in CC_OPEN phase" → `invalid_phase` error
 - "Reject fill date before CC open date" → `close_date_before_open` error
 - Multi-contract guard from Technical Notes
@@ -90,10 +104,12 @@ Implements the "shares called away" action that completes the wheel cycle. When 
 ### 3. Core Costbasis Engine — `calculateCallAway()`
 
 **Files to create or modify:**
+
 - `src/main/core/costbasis.ts` — add `CallAwayInput`, `CallAwayResult` interfaces and `calculateCallAway()` function
 - `src/main/core/costbasis.test.ts` — new describe block
 
 **Red — tests to write:**
+
 - In `src/main/core/costbasis.test.ts`, `describe('calculateCallAway')`:
   - `returns +$780.00 when ccStrike=182, basisPerShare=174.20, contracts=1` — assert finalPnl === '780.0000'
   - `returns −$250.00 when ccStrike=174.00, basisPerShare=176.50, contracts=1` — assert finalPnl === '-250.0000'
@@ -102,25 +118,28 @@ Implements the "shares called away" action that completes the wheel cycle. When 
   - `sets capitalDeployed correctly as basisPerShare × sharesHeld` — assert capitalDeployed === '17420.0000'
 
 **Green — implementation:**
+
 - In `src/main/core/costbasis.ts`, add:
+
   ```ts
   export interface CallAwayInput {
-    ccStrike: string         // from CC_OPEN leg
-    basisPerShare: string    // from latest cost_basis_snapshot
-    contracts: number        // from CC_OPEN leg
-    positionOpenedDate: string  // position.openedDate
-    fillDate: string            // CC expiration date
+    ccStrike: string // from CC_OPEN leg
+    basisPerShare: string // from latest cost_basis_snapshot
+    contracts: number // from CC_OPEN leg
+    positionOpenedDate: string // position.openedDate
+    fillDate: string // CC expiration date
   }
   export interface CallAwayResult {
-    finalPnl: string          // 4 dp, signed
-    sharesHeld: number        // contracts × 100
-    capitalDeployed: string   // basisPerShare × sharesHeld, 4 dp
+    finalPnl: string // 4 dp, signed
+    sharesHeld: number // contracts × 100
+    capitalDeployed: string // basisPerShare × sharesHeld, 4 dp
     cycleDays: number
-    annualizedReturn: string  // 4 dp; "0.0000" if cycleDays <= 0
+    annualizedReturn: string // 4 dp; "0.0000" if cycleDays <= 0
   }
 
   export function calculateCallAway(input: CallAwayInput): CallAwayResult
   ```
+
 - `sharesHeld = contracts × 100`
 - `finalPnl = round4((ccStrike − basisPerShare) × sharesHeld)`
 - `capitalDeployed = round4(basisPerShare × sharesHeld)`
@@ -129,9 +148,11 @@ Implements the "shares called away" action that completes the wheel cycle. When 
 - All math via `decimal.js` with `ROUND_HALF_UP`.
 
 **Refactor — cleanup to consider:**
+
 - Extract `cycleDays` calculation into a small helper if repeated elsewhere. Check for duplication.
 
 **Acceptance criteria covered:**
+
 - "final P&L shows +$780.00" (AC 1)
 - "final P&L shows −$250.00" (AC 2)
 - "annualized return percentage is displayed" (AC 6)
@@ -142,15 +163,19 @@ Implements the "shares called away" action that completes the wheel cycle. When 
 ### 4. Schemas + Response Types
 
 **Files to create or modify:**
+
 - `src/main/schemas.ts` — add `RecordCallAwayPayloadSchema`, `RecordCallAwayPayload` type, `RecordCallAwayResult` interface
 
 **Red — tests to write:**
+
 - In `src/main/schemas.test.ts` (or at top of IPC handler test): `RecordCallAwayPayloadSchema.parse({ positionId: 'valid-uuid' })` succeeds.
 - `RecordCallAwayPayloadSchema.parse({ positionId: 'not-a-uuid' })` throws ZodError with field `positionId`.
 - `RecordCallAwayPayloadSchema.parse({})` throws ZodError with field `positionId`.
 
 **Green — implementation:**
+
 - In `src/main/schemas.ts`, add after the `CloseCcPayloadSchema` section:
+
   ```ts
   export const RecordCallAwayPayloadSchema = z.object({
     positionId: z.string().uuid()
@@ -175,9 +200,11 @@ Implements the "shares called away" action that completes the wheel cycle. When 
   ```
 
 **Refactor — cleanup to consider:**
+
 - Check for duplication and naming consistency with existing schemas.
 
 **Acceptance criteria covered:**
+
 - Enables IPC payload validation for all call-away requests.
 
 ---
@@ -185,10 +212,12 @@ Implements the "shares called away" action that completes the wheel cycle. When 
 ### 5. Service Layer — `recordCallAwayPosition()`
 
 **Files to create or modify:**
+
 - `src/main/services/record-call-away-position.ts` — new file
 - `src/main/services/record-call-away-position.test.ts` — new test file
 
 **Red — tests to write:**
+
 - In `src/main/services/record-call-away-position.test.ts` (uses a real in-memory SQLite DB, following the pattern of `close-covered-call-position.test.ts`):
   - `records CC_CLOSE (EXERCISE) leg with fill_price=ccStrike, fill_date=ccExpiration on valid CC_OPEN position` — assert leg in DB has legRole='CC_CLOSE', action='EXERCISE', fillPrice=ccStrike, fillDate=ccExpiration
   - `sets position phase=WHEEL_COMPLETE, status=CLOSED, closed_date=fill_date` — assert position row updated
@@ -200,6 +229,7 @@ Implements the "shares called away" action that completes the wheel cycle. When 
   - `throws ValidationError (no_cc_open_leg) when position is CC_OPEN but no CC_OPEN leg exists` — edge case guard
 
 **Green — implementation:**
+
 - `src/main/services/record-call-away-position.ts`:
   - Import: `Database`, `randomUUID`, `Decimal`, `calculateCallAway` (costbasis), `recordCallAway` (lifecycle), `ValidationError`, `logger`, `RecordCallAwayPayload`, `RecordCallAwayResult`, `getPosition`
   - Derive `fillDate = ccOpenLeg.expiration`
@@ -213,9 +243,11 @@ Implements the "shares called away" action that completes the wheel cycle. When 
   - Return `RecordCallAwayResult` with position, leg, costBasisSnapshot, finalPnl, cycleDays, annualizedReturn, basisPerShare
 
 **Refactor — cleanup to consider:**
+
 - Ensure `db.transaction()` is the exclusive DB-write boundary. Check for duplication with `closeCoveredCallPosition`.
 
 **Acceptance criteria covered:**
+
 - AC 1: "position phase changes to WHEEL_COMPLETE, status changes to CLOSED, CC_CLOSE leg recorded, final P&L shows +$780.00"
 - AC 2: "called-away below cost basis shows a loss"
 - AC 4: "reject call-away when not in CC_OPEN phase"
@@ -226,10 +258,12 @@ Implements the "shares called away" action that completes the wheel cycle. When 
 ### 6. IPC Handler
 
 **Files to create or modify:**
+
 - `src/main/ipc/positions.ts` — add `positions:record-call-away` handler registration; import `recordCallAwayPosition` and `RecordCallAwayPayloadSchema`
 - `src/main/ipc/positions.test.ts` — add test cases for the new channel
 
 **Red — tests to write:**
+
 - In `src/main/ipc/positions.test.ts`, following the `close-cc-early` test pattern:
   - `registers a positions:record-call-away handler` — assert `ipcMain.handle` called with channel name
   - `positions:record-call-away returns ok:true with WHEEL_COMPLETE position and finalPnl for valid positionId` — mock `recordCallAwayPosition` to return fixture; assert result has `ok: true`, `position.phase === 'WHEEL_COMPLETE'`, `finalPnl`
@@ -238,6 +272,7 @@ Implements the "shares called away" action that completes the wheel cycle. When 
   - `positions:record-call-away returns ok:false for multi_contract_unsupported` — mock throws `ValidationError('contracts', 'multi_contract_unsupported', ...)`
 
 **Green — implementation:**
+
 - In `src/main/ipc/positions.ts`:
   - Import `RecordCallAwayPayloadSchema` from `'../schemas'`
   - Import `recordCallAwayPosition` from `'../services/record-call-away-position'`
@@ -252,9 +287,11 @@ Implements the "shares called away" action that completes the wheel cycle. When 
     ```
 
 **Refactor — cleanup to consider:**
+
 - Check for duplication and naming consistency.
 
 **Acceptance criteria covered:**
+
 - IPC surface is the gateway for all call-away AC validation.
 
 ---
@@ -262,19 +299,22 @@ Implements the "shares called away" action that completes the wheel cycle. When 
 ### 7. Preload + API Adapter
 
 **Files to create or modify:**
+
 - `src/preload/index.ts` — add `recordCallAway` to the `api` object
 - `src/renderer/src/api/positions.ts` — add `RecordCallAwayPayload`, `RecordCallAwayResponse` types and `recordCallAway()` async function
 
 **Red — tests to write:**
+
 - No dedicated unit test for the API adapter (consistent with existing adapters like `openCoveredCall`, `closeCoveredCallEarly`). IPC round-trip is covered by service tests and E2E.
 
 **Green — implementation:**
+
 - In `src/preload/index.ts`, add to `api`:
   ```ts
-  recordCallAway: (payload: unknown) =>
-    ipcRenderer.invoke('positions:record-call-away', payload)
+  recordCallAway: (payload: unknown) => ipcRenderer.invoke('positions:record-call-away', payload)
   ```
 - In `src/renderer/src/api/positions.ts`, add:
+
   ```ts
   export type RecordCallAwayPayload = {
     position_id: string
@@ -306,7 +346,9 @@ Implements the "shares called away" action that completes the wheel cycle. When 
     basisPerShare: string
   }
 
-  export async function recordCallAway(payload: RecordCallAwayPayload): Promise<RecordCallAwayResponse> {
+  export async function recordCallAway(
+    payload: RecordCallAwayPayload
+  ): Promise<RecordCallAwayResponse> {
     const result = await window.api.recordCallAway({
       positionId: payload.position_id
     })
@@ -316,12 +358,15 @@ Implements the "shares called away" action that completes the wheel cycle. When 
     return result as unknown as RecordCallAwayResponse
   }
   ```
+
 - Add `'__phase__' | 'contracts'` to `IPC_TO_FORM_FIELD` mapping if needed (or leave as-is since those map to themselves).
 
 **Refactor — cleanup to consider:**
+
 - Check for duplication and naming consistency with existing adapters.
 
 **Acceptance criteria covered:**
+
 - Bridges all renderer AC scenarios to the IPC layer.
 
 ---
@@ -329,16 +374,20 @@ Implements the "shares called away" action that completes the wheel cycle. When 
 ### 8. React Hook — `useRecordCallAway`
 
 **Files to create or modify:**
+
 - `src/renderer/src/hooks/useRecordCallAway.ts` — new file
 - `src/renderer/src/hooks/useRecordCallAway.test.ts` — new test file
 
 **Red — tests to write:**
+
 - In `src/renderer/src/hooks/useRecordCallAway.test.ts`, following the `useCloseCoveredCallEarly.test.ts` pattern:
   - `calls recordCallAway with positionId and invokes onSuccess with response data` — mock `recordCallAway` API function; render hook; call mutate; assert onSuccess called with response
   - `invalidates positionQueryKeys.all on success` — assert `queryClient.invalidateQueries` called with `{ queryKey: positionQueryKeys.all }`
 
 **Green — implementation:**
+
 - `src/renderer/src/hooks/useRecordCallAway.ts`:
+
   ```ts
   import { useMutation, useQueryClient } from '@tanstack/react-query'
   import type { ApiError, RecordCallAwayPayload, RecordCallAwayResponse } from '../api/positions'
@@ -360,9 +409,11 @@ Implements the "shares called away" action that completes the wheel cycle. When 
   ```
 
 **Refactor — cleanup to consider:**
+
 - Check for duplication with `useCloseCoveredCallEarly`.
 
 **Acceptance criteria covered:**
+
 - Provides the mutation hook used by the sheet component.
 
 ---
@@ -370,12 +421,14 @@ Implements the "shares called away" action that completes the wheel cycle. When 
 ### 9. Frontend — `CallAwaySheet`, `CallAwayForm`, `CallAwaySuccess`
 
 **Files to create or modify:**
+
 - `src/renderer/src/components/CallAwaySheet.tsx` — new file: sheet container (createPortal, state machine: confirmation → success)
 - `src/renderer/src/components/CallAwayForm.tsx` — new file: confirmation screen with P&L waterfall
 - `src/renderer/src/components/CallAwaySuccess.tsx` — new file: success "WHEEL COMPLETE" screen
 - `src/renderer/src/components/CallAwaySheet.test.tsx` — new test file
 
 **Red — tests to write:**
+
 - In `src/renderer/src/components/CallAwaySheet.test.tsx`:
   - `renders null when open=false` — assert container not in DOM
   - `renders "Record Call-Away" header and P&L waterfall when open=true` — assert text "Record Call-Away", "Shares Called Away", "P&L Breakdown", CC strike value, cost basis value, final P&L value
@@ -388,6 +441,7 @@ Implements the "shares called away" action that completes the wheel cycle. When 
 **Green — implementation:**
 
 **`CallAwayForm.tsx`** (Confirmation screen):
+
 - Sheet header: `<Caption>Record Call-Away</Caption>`, title "Shares Called Away", subtitle `CALL $${strike} · ${expiration}`
 - Close (×) button in header
 - `<SectionCard>` with:
@@ -405,6 +459,7 @@ Implements the "shares called away" action that completes the wheel cycle. When 
 - Footer: `<Button variant="outline" onClick={onClose} style={{ flex: 1 }}>Cancel</Button>` + `<FormButton label="Confirm Call-Away" pendingLabel="Confirming…" isPending={isPending} style={{ flex: 1 }} />`
 
 **`CallAwaySuccess.tsx`** (Success screen):
+
 - Header: Caption "Wheel Complete" (green), title "AAPL Cycle Closed", subtitle `CALL $${strike} · ${expiration}`, close (×) button
 - **Hero card** (gradient green background):
   - Caption "Wheel Complete" (green, small)
@@ -423,6 +478,7 @@ Implements the "shares called away" action that completes the wheel cycle. When 
   - "View full position history" text link (onClick → onClose)
 
 **`CallAwaySheet.tsx`** (Container):
+
 - Follows `CloseCcEarlySheet` pattern exactly: `createPortal`, scrim div, 400px right-side panel
 - Props: `open`, `positionId`, `ticker`, `ccStrike`, `ccExpiration`, `contracts`, `basisPerShare`, `positionOpenedDate`, `onClose`
 - Derive: `sharesHeld = contracts × 100`, `appreciationPerShare = ccStrike − basisPerShare`, `appreciationTotal = appreciationPerShare × sharesHeld`, `finalPnl = appreciationTotal`, `capitalDeployed = basisPerShare × sharesHeld`
@@ -433,10 +489,12 @@ Implements the "shares called away" action that completes the wheel cycle. When 
 - Renders `<CallAwaySuccess>` when `successState` is set, else `<CallAwayForm>`
 
 **Refactor — cleanup to consider:**
+
 - Verify P&L sign rendering: negative finalPnl (loss scenario) should show red color. Ensure `pnlColor` utility from `lib/format` is used consistently.
 - Ensure `appreciationPerShare` can be negative and is styled correctly.
 
 **Acceptance criteria covered:**
+
 - AC 2: "P&L is displayed in red" when loss
 - AC 3: "P&L breakdown shown on the form before submission" (waterfall)
 - AC 6: "success screen shows WHEEL COMPLETE, total cycle P&L, cycle duration, annualized return, Start New Wheel CTA"
@@ -446,17 +504,20 @@ Implements the "shares called away" action that completes the wheel cycle. When 
 ### 10. Wire-Up: `PositionDetailActions` + `PositionDetailPage`
 
 **Files to create or modify:**
+
 - `src/renderer/src/components/PositionDetailActions.tsx` — add `onRecordCallAway` prop and "Record Call-Away →" button for `CC_OPEN` phase
 - `src/renderer/src/components/PositionDetailActions.test.tsx` — add test case for call-away button visibility
 - `src/renderer/src/pages/PositionDetailPage.tsx` — add `callAwayCtx` state, `handleRecordCallAway` callback, `<CallAwaySheet>` render
 
 **Red — tests to write:**
+
 - In `src/renderer/src/components/PositionDetailActions.test.tsx`:
   - `renders "Record Call-Away →" button when phase is CC_OPEN` — assert `data-testid="record-call-away-btn"` visible
   - `does not render "Record Call-Away →" button when phase is HOLDING_SHARES` — assert button absent
   - `calls onRecordCallAway when the button is clicked` — assert callback called
 
 **Green — implementation:**
+
 - In `PositionDetailActions.tsx`:
   - Add `onRecordCallAway: () => void` to `PositionDetailActionsProps`
   - In the `phase === 'CC_OPEN'` block, add alongside the existing "Close CC Early →" button:
@@ -481,10 +542,12 @@ Implements the "shares called away" action that completes the wheel cycle. When 
   - Render `<CallAwaySheet open={Boolean(callAwayCtx)} ... onClose={handleCloseCallAway} />` after the existing sheets
 
 **Refactor — cleanup to consider:**
+
 - Verify blur/overlay conditions include `callAwayCtx`.
 - Check for duplication and naming consistency.
 
 **Acceptance criteria covered:**
+
 - AC 4: "reject call-away when not in CC_OPEN phase" — button only visible in CC_OPEN phase
 - All AC scenarios are accessible from the position detail
 
@@ -493,6 +556,7 @@ Implements the "shares called away" action that completes the wheel cycle. When 
 ### 11. E2E Tests
 
 **Files to create or modify:**
+
 - `e2e/call-away.spec.ts` — new file
 
 The `reachCcOpenState()` helper from `close-cc-early.spec.ts` should be extracted to a shared helper file (e.g., `e2e/helpers.ts`) or duplicated inline. Each E2E test launches a fresh Electron app with a temp SQLite DB.
@@ -535,12 +599,15 @@ The `reachCcOpenState()` helper from `close-cc-early.spec.ts` should be extracte
   - Click "Start New Wheel on AAPL →"; assert URL hash changes to `#/new` (or `#/new?ticker=AAPL`)
 
 **Green — implementation:**
+
 - Write `e2e/call-away.spec.ts` with `reachCcOpenState()` helper (inline or imported from shared helper).
 - Use `createPortal`-compatible selectors: `[data-testid="record-call-away-btn"]`, `text=Record Call-Away`, `[data-testid="call-away-submit"]`, `text=WHEEL COMPLETE`.
 - Add `data-testid` attributes in `CallAwayForm.tsx` and `CallAwaySuccess.tsx` as needed for selectors.
 
 **Refactor — cleanup to consider:**
+
 - Extract shared `reachCcOpenState()` and `selectDate()` helpers to `e2e/helpers.ts` if not already done.
 
 **Acceptance criteria covered:**
+
 - AC 1, AC 2, AC 3, AC 4, AC 5, AC 6 — one E2E test per scenario.

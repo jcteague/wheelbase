@@ -61,6 +61,7 @@ CREATE TABLE cost_basis_snapshots (
 ```
 
 **Changes from PostgreSQL:**
+
 - `UUID` → `TEXT` (generate with `crypto.randomUUID()`)
 - `ARRAY(String)` for tags → `TEXT` (JSON serialized: `JSON.stringify(tags)`)
 - PostgreSQL ENUM types → `TEXT` (validated by Zod at the service layer)
@@ -105,12 +106,21 @@ const rows = stmt.all() as PositionRow[]
 
 ```ts
 // src/main/core/types.ts
-export const StrategyType  = z.enum(['WHEEL', 'PMCC'])
-export const WheelStatus   = z.enum(['ACTIVE', 'CLOSED'])
-export const WheelPhase    = z.enum(['CSP_OPEN', 'HOLDING_SHARES', 'CC_OPEN', 'WHEEL_COMPLETE'])
-export const LegRole       = z.enum(['CSP_OPEN', 'CSP_CLOSE', 'CC_OPEN', 'CC_CLOSE', 'ASSIGN', 'ROLL_FROM', 'ROLL_TO', 'EXPIRE'])
-export const LegAction     = z.enum(['SELL', 'BUY'])
-export const OptionType    = z.enum(['PUT', 'CALL'])
+export const StrategyType = z.enum(['WHEEL', 'PMCC'])
+export const WheelStatus = z.enum(['ACTIVE', 'CLOSED'])
+export const WheelPhase = z.enum(['CSP_OPEN', 'HOLDING_SHARES', 'CC_OPEN', 'WHEEL_COMPLETE'])
+export const LegRole = z.enum([
+  'CSP_OPEN',
+  'CSP_CLOSE',
+  'CC_OPEN',
+  'CC_CLOSE',
+  'ASSIGN',
+  'ROLL_FROM',
+  'ROLL_TO',
+  'EXPIRE'
+])
+export const LegAction = z.enum(['SELL', 'BUY'])
+export const OptionType = z.enum(['PUT', 'CALL'])
 ```
 
 ---
@@ -166,13 +176,13 @@ import Decimal from 'decimal.js'
 Decimal.set({ rounding: Decimal.ROUND_HALF_UP })
 
 export function calculateInitialCspBasis(input: CspLegInput): CostBasisResult {
-  const strike  = new Decimal(input.strike)
+  const strike = new Decimal(input.strike)
   const premium = new Decimal(input.premiumPerContract)
-  const basisPerShare        = strike.minus(premium).toDecimalPlaces(4)
+  const basisPerShare = strike.minus(premium).toDecimalPlaces(4)
   const totalPremiumCollected = premium.times(input.contracts).times(100).toDecimalPlaces(4)
   return {
-    basisPerShare:          basisPerShare.toString(),
-    totalPremiumCollected:  totalPremiumCollected.toString(),
+    basisPerShare: basisPerShare.toString(),
+    totalPremiumCollected: totalPremiumCollected.toString()
   }
 }
 ```

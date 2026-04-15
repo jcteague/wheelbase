@@ -4,6 +4,7 @@ import type { ElectronApplication, Locator, Page } from 'playwright'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { localDate, localToday } from './dates'
 import { openDetailFor, openPosition, reachCcOpenState, selectDate } from './helpers'
 
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
@@ -53,7 +54,7 @@ async function assignPosition(page: Page, assignmentDate: string): Promise<void>
 }
 
 async function reachCcOpenStateWithExpiredCc(page: Page): Promise<string> {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
 
   await openSingleLegPosition(page)
   await assignPosition(page, today)
@@ -114,7 +115,7 @@ describe('US-11: wheel leg chain display', () => {
     app = launched.app
     dbPath = launched.dbPath
 
-    const ccExpiration = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const ccExpiration = localDate(60)
     await reachCcOpenState(launched.page, '182', '2.30', ccExpiration)
 
     const table = await getLegHistoryTable(launched.page)
@@ -131,7 +132,7 @@ describe('US-11: wheel leg chain display', () => {
     app = launched.app
     dbPath = launched.dbPath
 
-    const ccExpiration = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const ccExpiration = localDate(60)
     const today = await reachCcOpenState(launched.page, '182', '2.30', ccExpiration)
 
     await launched.page.click('[data-testid="close-cc-early-btn"]')
@@ -163,7 +164,7 @@ describe('US-11: wheel leg chain display', () => {
     app = launched.app
     dbPath = launched.dbPath
 
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localToday()
     await reachCcOpenState(launched.page, '182', '2.30', today)
 
     await launched.page.click('[data-testid="record-call-away-btn"]')
@@ -187,7 +188,7 @@ describe('US-11: wheel leg chain display', () => {
     app = launched.app
     dbPath = launched.dbPath
 
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localToday()
     await openSingleLegPosition(launched.page)
     await assignPosition(launched.page, today)
 
@@ -203,7 +204,7 @@ describe('US-11: wheel leg chain display', () => {
     app = launched.app
     dbPath = launched.dbPath
 
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localToday()
     await reachCcOpenState(launched.page, '182', '2.30', today)
 
     await launched.page.click('[data-testid="record-call-away-btn"]')

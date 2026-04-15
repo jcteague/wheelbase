@@ -25,9 +25,11 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 ### 1. Lifecycle Engine: `closeCoveredCall`
 
 **Files to create or modify:**
+
 - `src/main/core/lifecycle.ts` — add `CloseCoveredCallInput`, `CloseCoveredCallResult`, and `closeCoveredCall` function
 
 **Red — tests to write** (`src/main/core/lifecycle.test.ts`):
+
 - `closeCoveredCall: throws ValidationError(field='__phase__', code='invalid_phase') when currentPhase is HOLDING_SHARES`
 - `closeCoveredCall: throws ValidationError(field='__phase__', code='invalid_phase') when currentPhase is CSP_OPEN`
 - `closeCoveredCall: throws ValidationError(field='closePricePerContract', code='must_be_positive') when closePricePerContract is 0`
@@ -40,6 +42,7 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 - `closeCoveredCall: returns { phase: HOLDING_SHARES } when fillDate equals expiration (boundary)`
 
 **Green — implementation:**
+
 - Add `CloseCoveredCallInput` interface: `{ currentPhase: WheelPhase, closePricePerContract: string, openFillDate: string, fillDate: string, expiration: string }`
 - Add `CloseCoveredCallResult` interface: `{ phase: 'HOLDING_SHARES' }`
 - Add `closeCoveredCall(input: CloseCoveredCallInput): CloseCoveredCallResult`:
@@ -50,9 +53,11 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
   - Return `{ phase: 'HOLDING_SHARES' }`
 
 **Refactor — cleanup to consider:**
+
 - The close-price guard is identical to `closeCsp`. Consider extracting a shared `requirePositiveClosePrice` helper, or note the duplication and leave it — check consistency with existing guards.
 
 **Acceptance criteria covered:**
+
 - "Reject close when not in CC_OPEN phase"
 - "Reject close price of zero or negative"
 - "Reject fill date before CC open date"
@@ -63,9 +68,11 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 ### 2. Cost Basis Engine: `calculateCcClose`
 
 **Files to create or modify:**
+
 - `src/main/core/costbasis.ts` — add `CcCloseInput`, `CcCloseResult`, and `calculateCcClose` function
 
 **Red — tests to write** (`src/main/core/costbasis.test.ts`):
+
 - `calculateCcClose: returns ccLegPnl="+120.0000" for openPremium=2.30, closePrice=1.10, contracts=1`
 - `calculateCcClose: returns ccLegPnl="-120.0000" for openPremium=2.30, closePrice=3.50, contracts=1`
 - `calculateCcClose: returns ccLegPnl="0.0000" for openPremium=2.30, closePrice=2.30, contracts=1 (break-even)`
@@ -73,6 +80,7 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 - `calculateCcClose: applies ROUND_HALF_UP to fractional result`
 
 **Green — implementation:**
+
 - Add `CcCloseInput` interface: `{ openPremiumPerContract: string, closePricePerContract: string, contracts: number }`
 - Add `CcCloseResult` interface: `{ ccLegPnl: string }`
 - Add `calculateCcClose(input: CcCloseInput): CcCloseResult`:
@@ -80,9 +88,11 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
   - Return `{ ccLegPnl: pnl.toFixed(4) }`
 
 **Refactor — cleanup to consider:**
+
 - `calculateCcClose` and `calculateCspClose` have nearly identical formulas. Check whether a shared helper is appropriate or whether the semantic difference (CC vs CSP) justifies separate functions.
 
 **Acceptance criteria covered:**
+
 - "CC leg P&L shows +$120.00 (($2.30 − $1.10) × 1 × 100)" (profit scenario)
 - "CC leg P&L shows −$120.00 (($2.30 − $3.50) × 1 × 100)" (loss scenario)
 
@@ -91,27 +101,38 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 ### 3. IPC Schemas: `CloseCcPayloadSchema` and `CloseCcPositionResult`
 
 **Files to create or modify:**
+
 - `src/main/schemas.ts` — add schema, payload type, and result interface per `plans/us-8/contracts/positions-close-cc.md`
 
 **Red — tests to write** (no dedicated schema test file; schema is exercised via IPC and service tests):
+
 - Covered by Area 4 (service tests) and Area 5 (IPC handler tests). No additional schema-only tests required.
 
 **Green — implementation:**
+
 - Add `CloseCcPayloadSchema` Zod object: `{ positionId: z.string().uuid(), closePricePerContract: z.number().positive(), fillDate: z.string().optional() }`
 - Add `export type CloseCcPayload = z.infer<typeof CloseCcPayloadSchema>`
 - Add `CloseCcPositionResult` interface:
   ```ts
   export interface CloseCcPositionResult {
-    position: { id: string; ticker: string; phase: 'HOLDING_SHARES'; status: 'ACTIVE'; closedDate: null }
+    position: {
+      id: string
+      ticker: string
+      phase: 'HOLDING_SHARES'
+      status: 'ACTIVE'
+      closedDate: null
+    }
     leg: LegRecord
     ccLegPnl: string
   }
   ```
 
 **Refactor — cleanup to consider:**
+
 - Verify naming consistency with existing schemas (e.g. `CloseCspPayloadSchema` → `CloseCcPayloadSchema`).
 
 **Acceptance criteria covered:**
+
 - Prerequisite for all other areas.
 
 ---
@@ -119,10 +140,12 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 ### 4. Service Layer: `closeCoveredCallPosition`
 
 **Files to create or modify:**
+
 - `src/main/services/close-covered-call-position.ts` — new file
 - `src/main/services/positions.ts` — export the new function
 
 **Red — tests to write** (`src/main/services/close-covered-call-position.test.ts`):
+
 - Setup helper: reach `CC_OPEN` state (createPosition → assignCsp → openCoveredCall)
 - `closeCoveredCallPosition: returns { position.phase: HOLDING_SHARES, leg.legRole: CC_CLOSE, ccLegPnl: "120.0000" } for profit close`
 - `closeCoveredCallPosition: returns { position.phase: HOLDING_SHARES, leg.legRole: CC_CLOSE, ccLegPnl: "-120.0000" } for loss close (closePrice > openPremium)`
@@ -138,6 +161,7 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 - `closeCoveredCallPosition: throws ValidationError(close_date_after_expiration) when fillDate is after CC expiration`
 
 **Green — implementation:**
+
 - Create `close-covered-call-position.ts` following the pattern of `open-covered-call-position.ts`:
   - `import { getPosition }` from `./get-position`
   - `import { closeCoveredCall }` from `../core/lifecycle`
@@ -152,9 +176,11 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 - Export from `positions.ts` barrel
 
 **Refactor — cleanup to consider:**
+
 - Check duplication with `close-csp-position.ts` patterns; extract any shared DB helpers if warranted.
 
 **Acceptance criteria covered:**
+
 - "Successfully close a covered call early at a profit" (phase transition, leg recorded, P&L)
 - "Close at a loss shows negative P&L"
 - "Reject close when not in CC_OPEN phase"
@@ -165,15 +191,18 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 ### 5. IPC Handler: `positions:close-cc-early`
 
 **Files to create or modify:**
+
 - `src/main/ipc/positions.ts` — add `positions:close-cc-early` handler inside `registerPositionsHandlers`
 
 **Red — tests to write** (`src/main/ipc/positions.test.ts`):
+
 - `positions:close-cc-early: returns { ok: true, position.phase: HOLDING_SHARES, ccLegPnl } for valid profit payload`
 - `positions:close-cc-early: returns { ok: false, errors } for invalid phase`
 - `positions:close-cc-early: returns { ok: false, errors } for zero closePrice (Zod validation)`
 - `positions:close-cc-early: returns { ok: false, errors } for invalid UUID positionId (Zod validation)`
 
 **Green — implementation:**
+
 - Inside `registerPositionsHandlers`, add:
   ```ts
   ipcMain.handle('positions:close-cc-early', (_, payload: unknown) =>
@@ -186,9 +215,11 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 - Import `CloseCcPayloadSchema` from `../schemas` and `closeCoveredCallPosition` from `../services/positions`
 
 **Refactor — cleanup to consider:**
+
 - Check naming consistency of all handler labels.
 
 **Acceptance criteria covered:**
+
 - Prerequisite for renderer integration.
 
 ---
@@ -196,21 +227,27 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 ### 6. Preload Bridge
 
 **Files to create or modify:**
+
 - `src/preload/index.ts` — add `closeCoveredCallEarly` method to the `api` object
 
 **Red — tests to write:**
+
 - No unit test for preload (tested via E2E).
 
 **Green — implementation:**
+
 - Add to `api`:
   ```ts
-  closeCoveredCallEarly: (payload: unknown) => ipcRenderer.invoke('positions:close-cc-early', payload)
+  closeCoveredCallEarly: (payload: unknown) =>
+    ipcRenderer.invoke('positions:close-cc-early', payload)
   ```
 
 **Refactor — cleanup to consider:**
+
 - Verify method name follows camelCase convention consistent with `openCoveredCall`.
 
 **Acceptance criteria covered:**
+
 - Enables renderer to invoke the IPC channel.
 
 ---
@@ -218,12 +255,15 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 ### 7. API Adapter: `closeCoveredCallEarly`
 
 **Files to create or modify:**
+
 - `src/renderer/src/api/positions.ts` — add types and `closeCoveredCallEarly` function
 
 **Red — tests to write:**
+
 - No dedicated adapter test (tested via hook tests and E2E).
 
 **Green — implementation:**
+
 - Add `IPC_TO_FORM_FIELD` entries: `closePricePerContract: 'close_price_per_contract'` (already mapped per existing `fillDate`)
 - Add payload type:
   ```ts
@@ -236,8 +276,24 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 - Add response type:
   ```ts
   export type CloseCcResponse = {
-    position: { id: string; ticker: string; phase: 'HOLDING_SHARES'; status: 'ACTIVE'; closedDate: null }
-    leg: LegData & { positionId: string; legRole: string; action: string; instrumentType: string; premiumPerContract: string; fillPrice: string; fillDate: string; createdAt: string; updatedAt: string }
+    position: {
+      id: string
+      ticker: string
+      phase: 'HOLDING_SHARES'
+      status: 'ACTIVE'
+      closedDate: null
+    }
+    leg: LegData & {
+      positionId: string
+      legRole: string
+      action: string
+      instrumentType: string
+      premiumPerContract: string
+      fillPrice: string
+      fillDate: string
+      createdAt: string
+      updatedAt: string
+    }
     ccLegPnl: string
   }
   ```
@@ -255,9 +311,11 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
   ```
 
 **Refactor — cleanup to consider:**
+
 - Consistent naming with `openCoveredCall`.
 
 **Acceptance criteria covered:**
+
 - Bridge layer for renderer.
 
 ---
@@ -265,21 +323,33 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 ### 8. TanStack Mutation Hook: `useCloseCoveredCallEarly`
 
 **Files to create or modify:**
+
 - `src/renderer/src/hooks/useCloseCoveredCallEarly.ts` — new file
 
 **Red — tests to write** (`src/renderer/src/hooks/useCloseCoveredCallEarly.test.ts`):
+
 - `useCloseCoveredCallEarly: calls closeCoveredCallEarly API and invokes onSuccess with response on success`
 - `useCloseCoveredCallEarly: invalidates positions query key on success`
 - `useCloseCoveredCallEarly: propagates error when API returns { ok: false }`
 
 **Green — implementation:**
+
 - Follow the pattern of `useOpenCoveredCall.ts`:
+
   ```ts
   import { useMutation, useQueryClient } from '@tanstack/react-query'
-  import { closeCoveredCallEarly, type CloseCcPayload, type CloseCcResponse } from '../api/positions'
+  import {
+    closeCoveredCallEarly,
+    type CloseCcPayload,
+    type CloseCcResponse
+  } from '../api/positions'
   import { positionQueryKeys } from './positionQueryKeys'
 
-  export function useCloseCoveredCallEarly({ onSuccess }: { onSuccess: (data: CloseCcResponse) => void }) {
+  export function useCloseCoveredCallEarly({
+    onSuccess
+  }: {
+    onSuccess: (data: CloseCcResponse) => void
+  }) {
     const queryClient = useQueryClient()
     return useMutation({
       mutationFn: (payload: CloseCcPayload) => closeCoveredCallEarly(payload),
@@ -292,9 +362,11 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
   ```
 
 **Refactor — cleanup to consider:**
+
 - Check for duplication with other mutation hooks; consider a generic factory if warranted.
 
 **Acceptance criteria covered:**
+
 - Prerequisite for `CloseCcEarlySheet`.
 
 ---
@@ -302,9 +374,11 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 ### 9. P&L Preview Component: `CcPnlPreview`
 
 **Files to create or modify:**
+
 - `src/renderer/src/components/ui/CcPnlPreview.tsx` — new file
 
 **Red — tests to write** (`src/renderer/src/components/ui/CcPnlPreview.test.tsx` or snapshot test):
+
 - `CcPnlPreview: renders "+$120.00 profit · 47.8% of max" for openPremium=2.30, closePrice=1.10, contracts=1`
 - `CcPnlPreview: renders "−$120.00 loss · 52.2% above open" for openPremium=2.30, closePrice=3.50, contracts=1`
 - `CcPnlPreview: renders break-even text for openPremium=2.30, closePrice=2.30`
@@ -312,6 +386,7 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 - `CcPnlPreview: updates when closePrice prop changes`
 
 **Green — implementation:**
+
 - Props: `{ openPremium: string, closePrice: string, contracts: number }`
 - Compute P&L using `decimal.js`: `pnl = (open - close) × contracts × 100`; `pct = (open - close) / open × 100`
 - Profit (`pnl > 0`): green, show `+$X.XX profit · Y.Y% of max`
@@ -321,9 +396,11 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 - Visual style: follows `MockPnlPreview` in the mockup — colored banner with `P&L preview` label on left and dollar/percent on right
 
 **Refactor — cleanup to consider:**
+
 - Check duplication with any existing P&L display helpers in `src/renderer/src/lib/format.ts`.
 
 **Acceptance criteria covered:**
+
 - "P&L preview shown on the form before submission — profit close"
 - "P&L preview shown on the form before submission — loss close"
 
@@ -332,11 +409,13 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 ### 10. Sheet Components: `CloseCcEarlySheet`, `CloseCcEarlyForm`, `CloseCcEarlySuccess`
 
 **Files to create or modify:**
+
 - `src/renderer/src/components/CloseCcEarlySheet.tsx` — orchestrator portal (new)
 - `src/renderer/src/components/CloseCcEarlyForm.tsx` — form body (new)
 - `src/renderer/src/components/CloseCcEarlySuccess.tsx` — success state (new)
 
 **Red — tests to write** (`src/renderer/src/components/CloseCcEarlySheet.test.tsx`):
+
 - `CloseCcEarlySheet: does not render when open=false`
 - `CloseCcEarlySheet: renders form header "Close Covered Call Early" when open=true`
 - `CloseCcEarlySheet: renders position summary card with ticker, contracts, open premium, phase transition CC_OPEN→HOLDING_SHARES, and cost basis (unchanged)`
@@ -358,6 +437,7 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 **Green — implementation:**
 
 `CloseCcEarlySheet` (follows `OpenCoveredCallSheet` pattern):
+
 - Props: `{ open, positionId, ticker, contracts, openPremium, ccOpenFillDate, ccExpiration, strike, basisPerShare, onClose }`
 - Uses `createPortal` with fixed right-panel overlay (400px, `SIDEBAR_WIDTH=200` left offset, scrim backdrop)
 - Manages state: `closePrice`, `fillDate`, `fieldErrors`, `successState: CloseCcResponse | null`
@@ -365,6 +445,7 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 - Renders `CloseCcEarlyForm` or `CloseCcEarlySuccess` based on `successState`
 
 `CloseCcEarlyForm` (references mockup form state):
+
 - Header: `Caption` "Buy to Close" (secondary color) + title "Close Covered Call Early" + subtitle "CALL $strike · {expiration formatted}"
 - Close button (×) in header top-right
 - `SectionCard` position summary:
@@ -381,6 +462,7 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 - Footer: `Button variant="outline"` Cancel + `FormButton` "Confirm Close" / "Closing…" (pending)
 
 `CloseCcEarlySuccess` (references mockup success states):
+
 - Header: `Caption` "Complete" (green if profit, red if loss) + title "AAPL CC Closed" + subtitle "CALL $strike · filled $closePrice"
 - Hero card: large `+$X.XX` / `−$X.XX`, "CC Leg P&L" caption, "X% of max captured" / "X% above open premium" subtext
 - `SectionCard` result summary: Leg recorded (CC_CLOSE · fill date), Fill price, Open premium, Phase transition, Cost basis (unchanged)
@@ -390,10 +472,12 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 - "View full position history" link button — calls `onClose`
 
 **Refactor — cleanup to consider:**
+
 - Check naming, prop shape consistency with `OpenCoveredCallSheet`/`OpenCcSuccess`.
 - Verify `CcPnlPreview` is not duplicating logic already in the form component.
 
 **Acceptance criteria covered:**
+
 - "P&L preview shown on the form before submission — profit close" and "— loss close"
 - "Reject close price of zero or negative" (front-end validation)
 - "Reject fill date before CC open date" (front-end validation)
@@ -404,34 +488,41 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 ### 11. Position Detail Actions: "Close CC Early" Button
 
 **Files to create or modify:**
+
 - `src/renderer/src/components/PositionDetailActions.tsx` — add `onCloseCcEarly` prop and button for `phase === 'CC_OPEN'`
 
 **Red — tests to write** (`src/renderer/src/components/PositionDetailActions.test.tsx` if exists, or add cases to existing component tests):
+
 - `PositionDetailActions: renders "Close CC Early →" button when phase=CC_OPEN`
 - `PositionDetailActions: does not render "Close CC Early →" button when phase=HOLDING_SHARES`
 - `PositionDetailActions: calls onCloseCcEarly when "Close CC Early →" is clicked`
 
 **Green — implementation:**
+
 - Add `onCloseCcEarly: () => void` to `PositionDetailActionsProps`
 - Add button for `phase === 'CC_OPEN'`:
   ```tsx
-  {phase === 'CC_OPEN' && (
-    <button
-      data-testid="close-cc-early-btn"
-      className="wb-teal-button"
-      onClick={onCloseCcEarly}
-      style={actionButtonStyle}
-    >
-      Close CC Early →
-    </button>
-  )}
+  {
+    phase === 'CC_OPEN' && (
+      <button
+        data-testid="close-cc-early-btn"
+        className="wb-teal-button"
+        onClick={onCloseCcEarly}
+        style={actionButtonStyle}
+      >
+        Close CC Early →
+      </button>
+    )
+  }
   ```
 - Pass `onCloseCcEarly` from all existing call sites (will be wired in Area 12)
 
 **Refactor — cleanup to consider:**
+
 - Check that `actionButtonStyle` is still consistent; no visual change needed.
 
 **Acceptance criteria covered:**
+
 - "Close button appears in position detail header when phase = CC_OPEN"
 
 ---
@@ -439,14 +530,17 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 ### 12. Position Detail Page: Wire Up `CloseCcEarlySheet`
 
 **Files to create or modify:**
+
 - `src/renderer/src/pages/PositionDetailPage.tsx` — add `closeCcCtx` state, `handleCloseCcEarly`, and `CloseCcEarlySheet`
 
 **Red — tests to write** (`src/renderer/src/pages/PositionDetailPage.test.tsx`):
+
 - `PositionDetailPage: shows "Close CC Early →" button when position phase is CC_OPEN`
 - `PositionDetailPage: opens CloseCcEarlySheet when "Close CC Early →" is clicked`
 - `PositionDetailPage: does not show "Close CC Early →" button when phase is HOLDING_SHARES`
 
 **Green — implementation:**
+
 - Add state: `const [closeCcCtx, setCloseCcCtx] = useState<{ contracts, openPremium, ccOpenFillDate, ccExpiration, strike, basisPerShare } | null>(null)`
 - Add handler `handleCloseCcEarly`: finds the `CC_OPEN` leg from `data?.legs`, builds context from leg (strike, expiration, contracts, premiumPerContract, fillDate) and snapshot (basisPerShare); calls `setCloseCcCtx(...)`
 - Add close handler: `const handleCloseCloseCcEarly = useCallback(() => setCloseCcCtx(null), [])`
@@ -468,9 +562,11 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
   ```
 
 **Refactor — cleanup to consider:**
+
 - Check whether the sheet context type should be extracted to a named type for clarity.
 
 **Acceptance criteria covered:**
+
 - Provides the UI entry point for all CC close scenarios.
 
 ---
@@ -478,9 +574,11 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 ### 13. E2E Tests
 
 **Files to create or modify:**
+
 - `e2e/close-cc-early.spec.ts` — new E2E spec file
 
 **Red — tests to write** (one test per AC, test names mirror AC language):
+
 - `successfully close a covered call early at a profit — position phase changes to HOLDING_SHARES, CC_CLOSE leg recorded with fill price $1.10, P&L shows +$120.00`
 - `close at a loss shows negative P&L — CC_CLOSE leg recorded with $3.50, P&L shows −$120.00, position remains in HOLDING_SHARES`
 - `P&L preview shown on the form before submission — profit close — preview shows "+$115.00 profit (50% of max)" for closePrice $1.15`
@@ -491,6 +589,7 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 - `reject fill date after CC expiration date — validation error "Fill date cannot be after the CC expiration date — use Record Expiry instead" appears, no leg created`
 
 **Green — implementation:**
+
 - Use Playwright `_electron` to launch the app
 - Seed a position at `CC_OPEN` state by programmatically going through the UI flow (or by direct DB seeding via a test helper if available)
 - Click "Close CC Early →" button (`data-testid="close-cc-early-btn"`) to open the sheet
@@ -501,4 +600,5 @@ Adds buy-to-close functionality for open covered calls. When a trader closes the
 - For rejection scenarios: assert inline error text appears and no new leg is recorded
 
 **Acceptance criteria covered:**
+
 - All 8 ACs from the user story are covered one-to-one.

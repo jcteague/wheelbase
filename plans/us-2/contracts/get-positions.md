@@ -43,17 +43,17 @@ Returns a JSON array of position list items, sorted by `dte` ascending (nulls la
 
 ### Field Notes
 
-| Field | Type | Nullable | Description |
-|---|---|---|---|
-| `id` | string (UUID) | No | Position UUID |
-| `ticker` | string | No | Equity symbol, uppercase |
-| `phase` | string (enum) | No | Current `WheelPhase` value |
-| `status` | string (enum) | No | `active`, `paused`, or `closed` |
-| `strike` | string (Decimal) | Yes | Strike price from latest open leg; null if no active option |
-| `expiration` | string (date, ISO 8601) | Yes | Expiration date from latest open leg; null if no active option |
-| `dte` | integer | Yes | Days to expiration computed as `(expiration − today).days`; null if `expiration` is null |
-| `premium_collected` | string (Decimal) | No | `total_premium_collected` from latest cost basis snapshot |
-| `effective_cost_basis` | string (Decimal) | No | `basis_per_share` from latest cost basis snapshot |
+| Field                  | Type                    | Nullable | Description                                                                              |
+| ---------------------- | ----------------------- | -------- | ---------------------------------------------------------------------------------------- |
+| `id`                   | string (UUID)           | No       | Position UUID                                                                            |
+| `ticker`               | string                  | No       | Equity symbol, uppercase                                                                 |
+| `phase`                | string (enum)           | No       | Current `WheelPhase` value                                                               |
+| `status`               | string (enum)           | No       | `active`, `paused`, or `closed`                                                          |
+| `strike`               | string (Decimal)        | Yes      | Strike price from latest open leg; null if no active option                              |
+| `expiration`           | string (date, ISO 8601) | Yes      | Expiration date from latest open leg; null if no active option                           |
+| `dte`                  | integer                 | Yes      | Days to expiration computed as `(expiration − today).days`; null if `expiration` is null |
+| `premium_collected`    | string (Decimal)        | No       | `total_premium_collected` from latest cost basis snapshot                                |
+| `effective_cost_basis` | string (Decimal)        | No       | `basis_per_share` from latest cost basis snapshot                                        |
 
 ---
 

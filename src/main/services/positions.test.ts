@@ -71,7 +71,7 @@ describe('createPosition', () => {
 
   it('fillDate defaults to today when omitted', () => {
     const db = makeTestDb()
-    const today = new Date().toISOString().slice(0, 10)
+    const today = isoDate(0)
     const { leg } = createPosition(db, VALID_PAYLOAD)
     expect(leg.fillDate).toBe(today)
   })

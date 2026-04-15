@@ -6,19 +6,19 @@ Adds the ability to buy-to-close a cash-secured put (CSP) position before expira
 
 ## Key Files
 
-| File | Purpose |
-|---|---|
-| `src/main/services/get-position.ts` | Fetches a single position with active leg + latest snapshot |
-| `src/main/services/close-csp-position.ts` | Orchestrates close: validates → calculates → writes DB transaction |
-| `src/main/services/positions.ts` | Re-exports `getPosition` and `closeCspPosition` |
-| `src/main/ipc/positions.ts` | IPC handlers: `positions:get`, `positions:close-csp` |
-| `src/preload/index.ts` | Exposes `getPosition` / `closePosition` on `window.api` |
-| `src/preload/index.d.ts` | TypeScript declarations for the new IPC methods |
-| `src/renderer/src/api/positions.ts` | Renderer API adapter: `getPosition()`, `closePosition()` |
-| `src/renderer/src/hooks/usePosition.ts` | TanStack Query hook wrapping `getPosition` |
-| `src/renderer/src/hooks/useClosePosition.ts` | TanStack Mutation hook wrapping `closePosition` |
-| `src/renderer/src/components/CloseCspForm.tsx` | Form with real-time P&L preview and server error mapping |
-| `src/renderer/src/pages/PositionDetailPage.tsx` | Detail page: loading / error / data states + CloseCspForm |
+| File                                            | Purpose                                                            |
+| ----------------------------------------------- | ------------------------------------------------------------------ |
+| `src/main/services/get-position.ts`             | Fetches a single position with active leg + latest snapshot        |
+| `src/main/services/close-csp-position.ts`       | Orchestrates close: validates → calculates → writes DB transaction |
+| `src/main/services/positions.ts`                | Re-exports `getPosition` and `closeCspPosition`                    |
+| `src/main/ipc/positions.ts`                     | IPC handlers: `positions:get`, `positions:close-csp`               |
+| `src/preload/index.ts`                          | Exposes `getPosition` / `closePosition` on `window.api`            |
+| `src/preload/index.d.ts`                        | TypeScript declarations for the new IPC methods                    |
+| `src/renderer/src/api/positions.ts`             | Renderer API adapter: `getPosition()`, `closePosition()`           |
+| `src/renderer/src/hooks/usePosition.ts`         | TanStack Query hook wrapping `getPosition`                         |
+| `src/renderer/src/hooks/useClosePosition.ts`    | TanStack Mutation hook wrapping `closePosition`                    |
+| `src/renderer/src/components/CloseCspForm.tsx`  | Form with real-time P&L preview and server error mapping           |
+| `src/renderer/src/pages/PositionDetailPage.tsx` | Detail page: loading / error / data states + CloseCspForm          |
 
 ## Data Flow
 

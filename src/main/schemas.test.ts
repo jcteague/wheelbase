@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { AssignCspPayloadSchema, OpenCcPayloadSchema, RollCspPayloadSchema } from './schemas'
+import {
+  AssignCspPayloadSchema,
+  OpenCcPayloadSchema,
+  RollCcPayloadSchema,
+  RollCspPayloadSchema
+} from './schemas'
 
 const VALID_POSITION_ID = '11111111-1111-4111-8111-111111111111'
 
@@ -109,5 +114,50 @@ describe('RollCspPayloadSchema', () => {
     expect(() =>
       RollCspPayloadSchema.parse({ ...VALID_ROLL_CSP_PAYLOAD, newExpiration: '' })
     ).toThrow()
+  })
+})
+
+const VALID_ROLL_CC_PAYLOAD = {
+  positionId: '11111111-1111-4111-8111-111111111111',
+  costToClosePerContract: 2.5,
+  newPremiumPerContract: 3.0,
+  newExpiration: '2026-05-16',
+  newStrike: 190,
+  fillDate: '2026-04-13'
+}
+
+describe('RollCcPayloadSchema', () => {
+  it('parses valid payload with all fields', () => {
+    const result = RollCcPayloadSchema.parse(VALID_ROLL_CC_PAYLOAD)
+    expect(result).toEqual(VALID_ROLL_CC_PAYLOAD)
+  })
+
+  it('parses valid payload without optional newStrike and fillDate', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { newStrike, fillDate, ...rest } = VALID_ROLL_CC_PAYLOAD
+    const result = RollCcPayloadSchema.parse(rest)
+    expect(result.positionId).toBe(VALID_ROLL_CC_PAYLOAD.positionId)
+    expect(result.newStrike).toBeUndefined()
+    expect(result.fillDate).toBeUndefined()
+  })
+
+  it('rejects non-UUID positionId', () => {
+    expect(
+      RollCcPayloadSchema.safeParse({ ...VALID_ROLL_CC_PAYLOAD, positionId: 'not-a-uuid' }).success
+    ).toBe(false)
+  })
+
+  it('rejects non-positive costToClosePerContract', () => {
+    expect(
+      RollCcPayloadSchema.safeParse({ ...VALID_ROLL_CC_PAYLOAD, costToClosePerContract: -1 })
+        .success
+    ).toBe(false)
+  })
+
+  it('rejects invalid date format for newExpiration', () => {
+    expect(
+      RollCcPayloadSchema.safeParse({ ...VALID_ROLL_CC_PAYLOAD, newExpiration: '04/13/2026' })
+        .success
+    ).toBe(false)
   })
 })

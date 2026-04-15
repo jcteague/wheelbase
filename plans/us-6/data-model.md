@@ -45,7 +45,7 @@ export type LegAction = z.infer<typeof LegAction>
 ```typescript
 z.object({
   positionId: z.string().uuid(),
-  assignmentDate: z.string()   // ISO date string YYYY-MM-DD
+  assignmentDate: z.string() // ISO date string YYYY-MM-DD
 })
 ```
 
@@ -78,8 +78,8 @@ Rename `optionType: OptionType` → `instrumentType: InstrumentType`
 ```typescript
 interface RecordAssignmentInput {
   currentPhase: WheelPhase
-  assignmentDate: string    // YYYY-MM-DD
-  openFillDate: string      // YYYY-MM-DD — assignment must not precede this
+  assignmentDate: string // YYYY-MM-DD
+  openFillDate: string // YYYY-MM-DD — assignment must not precede this
 }
 ```
 
@@ -95,7 +95,7 @@ interface RecordAssignmentResult {
 
 ```typescript
 interface AssignmentBasisLeg {
-  legRole: LegRole          // 'CSP_OPEN' | 'ROLL_TO'
+  legRole: LegRole // 'CSP_OPEN' | 'ROLL_TO'
   premiumPerContract: string
   contracts: number
 }
@@ -122,25 +122,25 @@ interface AssignmentBasisResult {
 
 ## Assignment Leg Record (written by service)
 
-| Field                 | Value                                        |
-|-----------------------|----------------------------------------------|
-| `leg_role`            | `'ASSIGN'`                                   |
-| `action`              | `'ASSIGN'`                                   |
-| `instrument_type`     | `'STOCK'`                                    |
-| `strike`              | CSP open leg's strike (the assignment price) |
-| `expiration`          | CSP open leg's expiration (for reference)    |
-| `contracts`           | CSP open leg's contracts                     |
-| `premium_per_contract`| `'0.0000'` (no premium on assignment itself) |
-| `fill_price`          | `NULL`                                       |
-| `fill_date`           | `assignmentDate` from payload                |
+| Field                  | Value                                        |
+| ---------------------- | -------------------------------------------- |
+| `leg_role`             | `'ASSIGN'`                                   |
+| `action`               | `'ASSIGN'`                                   |
+| `instrument_type`      | `'STOCK'`                                    |
+| `strike`               | CSP open leg's strike (the assignment price) |
+| `expiration`           | CSP open leg's expiration (for reference)    |
+| `contracts`            | CSP open leg's contracts                     |
+| `premium_per_contract` | `'0.0000'` (no premium on assignment itself) |
+| `fill_price`           | `NULL`                                       |
+| `fill_date`            | `assignmentDate` from payload                |
 
 ---
 
 ## Phase Transition
 
-| Before          | After             | Status change |
-|-----------------|-------------------|---------------|
-| `CSP_OPEN`      | `HOLDING_SHARES`  | remains ACTIVE |
+| Before     | After            | Status change  |
+| ---------- | ---------------- | -------------- |
+| `CSP_OPEN` | `HOLDING_SHARES` | remains ACTIVE |
 
 - `positions.closed_date` remains NULL
 - `positions.status` remains `'ACTIVE'`
@@ -149,21 +149,21 @@ interface AssignmentBasisResult {
 
 ## Cost Basis Snapshot (written by service)
 
-| Field                    | Value                                                                |
-|--------------------------|----------------------------------------------------------------------|
-| `basis_per_share`        | `strike − Σ(premiumPerContract for each CSP/roll credit leg)`        |
-| `total_premium_collected`| `Σ(premiumPerContract × contracts × 100)` for all CSP/roll legs      |
-| `final_pnl`              | `NULL` — position still open                                         |
+| Field                     | Value                                                           |
+| ------------------------- | --------------------------------------------------------------- |
+| `basis_per_share`         | `strike − Σ(premiumPerContract for each CSP/roll credit leg)`   |
+| `total_premium_collected` | `Σ(premiumPerContract × contracts × 100)` for all CSP/roll legs |
+| `final_pnl`               | `NULL` — position still open                                    |
 
 ---
 
 ## Validation Rules
 
-| Rule                                     | Error field       | Code                      | Message                                                        |
-|------------------------------------------|-------------------|---------------------------|----------------------------------------------------------------|
-| `currentPhase !== 'CSP_OPEN'`            | `__phase__`       | `invalid_phase`           | Assignment can only be recorded on a CSP_OPEN position         |
-| `assignmentDate` missing (client-side)   | `assignmentDate`  | `required`                | Assignment date is required                                    |
-| `assignmentDate < openFillDate`          | `assignmentDate`  | `date_before_open`        | Assignment date cannot be before the CSP open date             |
-| `assignmentDate > today` (client-side)   | n/a (warning)     | n/a                       | This date is in the future — are you sure? (soft warning only) |
+| Rule                                   | Error field      | Code               | Message                                                        |
+| -------------------------------------- | ---------------- | ------------------ | -------------------------------------------------------------- |
+| `currentPhase !== 'CSP_OPEN'`          | `__phase__`      | `invalid_phase`    | Assignment can only be recorded on a CSP_OPEN position         |
+| `assignmentDate` missing (client-side) | `assignmentDate` | `required`         | Assignment date is required                                    |
+| `assignmentDate < openFillDate`        | `assignmentDate` | `date_before_open` | Assignment date cannot be before the CSP open date             |
+| `assignmentDate > today` (client-side) | n/a (warning)    | n/a                | This date is in the future — are you sure? (soft warning only) |
 
 Note: future-date is a client-side warning only. The backend does not reject future dates.

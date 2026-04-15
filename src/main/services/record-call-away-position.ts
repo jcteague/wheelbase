@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import Decimal from 'decimal.js'
 import { calculateCallAway } from '../core/costbasis'
 import { recordCallAway, ValidationError } from '../core/lifecycle'
+import { makeSnapshotAt } from '../dates'
 import { logger } from '../logger'
 import type { RecordCallAwayPayload, RecordCallAwayResult } from '../schemas'
 import { getPosition } from './get-position'
@@ -67,7 +68,7 @@ export function recordCallAwayPosition(
 
   const legId = randomUUID()
   const snapshotId = randomUUID()
-  const snapshotAt = new Date(Date.now() + 1).toISOString()
+  const snapshotAt = makeSnapshotAt(fillDate)
 
   db.transaction(() => {
     db.prepare(

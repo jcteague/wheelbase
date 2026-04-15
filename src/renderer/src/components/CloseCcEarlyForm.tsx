@@ -51,7 +51,7 @@ export function CloseCcEarlyForm({
   const maxProfit = (Number(openPremium || '0') * contracts * 100).toFixed(2)
 
   return (
-    <div style={{ display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
+    <div className="flex flex-1 flex-col overflow-hidden">
       <SheetHeader
         eyebrow="Buy to Close"
         title="Close Covered Call Early"
@@ -61,39 +61,37 @@ export function CloseCcEarlyForm({
 
       <SheetBody>
         <SectionCard>
-          <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-              <span style={{ color: 'var(--wb-text-muted)' }}>Position</span>
+          <div className="bg-wb-bg-elevated border-wb-border flex flex-col gap-2 px-4 py-3">
+            <div className="flex justify-between text-[0.8rem]">
+              <span className="text-wb-text-muted">Position</span>
               <span>
                 {ticker} CALL {fmtMoney(strike)}
               </span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-              <span style={{ color: 'var(--wb-text-muted)' }}>Contracts</span>
+            <div className="flex justify-between text-[0.8rem]">
+              <span className="text-wb-text-muted">Contracts</span>
               <span>{contracts}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-              <span style={{ color: 'var(--wb-text-muted)' }}>Open premium</span>
-              <span style={{ color: 'var(--wb-green)' }}>+{fmtMoney(openPremium)} / contract</span>
+            <div className="flex justify-between text-[0.8rem]">
+              <span className="text-wb-text-muted">Open premium</span>
+              <span className="text-wb-green">+{fmtMoney(openPremium)} / contract</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-              <span style={{ color: 'var(--wb-text-muted)' }}>Max profit</span>
-              <span style={{ color: 'var(--wb-green)' }}>+${maxProfit}</span>
+            <div className="flex justify-between text-[0.8rem]">
+              <span className="text-wb-text-muted">Max profit</span>
+              <span className="text-wb-green">+${maxProfit}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-              <span style={{ color: 'var(--wb-text-muted)' }}>Phase transition</span>
-              <div
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}
-              >
-                <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <div className="flex justify-between text-[0.8rem]">
+              <span className="text-wb-text-muted">Phase transition</span>
+              <div className="flex flex-col items-end gap-1.5">
+                <span className="flex gap-1 items-center">
                   <PhaseBadge phase="CC_OPEN" />
                   <span>→</span>
                   <PhaseBadge phase="HOLDING_SHARES" />
                 </span>
               </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-              <span style={{ color: 'var(--wb-text-muted)' }}>Cost basis after close</span>
+            <div className="flex justify-between text-[0.8rem]">
+              <span className="text-wb-text-muted">Cost basis after close</span>
               <span>${basisPerShare} / share (unchanged)</span>
             </div>
           </div>
@@ -141,7 +139,7 @@ export function CloseCcEarlyForm({
         </AlertBox>
 
         {isError && (
-          <div style={{ color: 'var(--wb-red)', fontSize: '0.8rem' }}>
+          <div className="text-wb-red text-[0.8rem]">
             {String(
               (error as { body?: { detail?: Array<{ message: string }> } })?.body?.detail?.[0]
                 ?.message ?? 'An unexpected error occurred'

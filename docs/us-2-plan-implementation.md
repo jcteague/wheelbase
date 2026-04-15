@@ -6,15 +6,15 @@ Implements a positions list view end-to-end: a `GET /api/positions` endpoint tha
 
 ## Scope
 
-| Layer | What was added |
-|---|---|
-| Backend schema | `PositionListItemResponse` Pydantic model |
-| Backend route | `GET /positions` handler with `selectinload`, DTE computation, sort, structured logging |
-| Frontend API | `PositionListItem` type + `listPositions()` function |
-| Frontend hook | `usePositions()` TanStack Query hook |
-| Frontend component | `PositionCard` component |
-| Frontend page | `PositionsListPage` + `/positions` route in `app.tsx` |
-| Test infra | Per-test DB truncation fixture (`truncate_tables` autouse) added to `conftest.py` |
+| Layer              | What was added                                                                          |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| Backend schema     | `PositionListItemResponse` Pydantic model                                               |
+| Backend route      | `GET /positions` handler with `selectinload`, DTE computation, sort, structured logging |
+| Frontend API       | `PositionListItem` type + `listPositions()` function                                    |
+| Frontend hook      | `usePositions()` TanStack Query hook                                                    |
+| Frontend component | `PositionCard` component                                                                |
+| Frontend page      | `PositionsListPage` + `/positions` route in `app.tsx`                                   |
+| Test infra         | Per-test DB truncation fixture (`truncate_tables` autouse) added to `conftest.py`       |
 
 ## Key Files Changed
 

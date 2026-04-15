@@ -7,7 +7,6 @@ import { DatePicker } from '@/components/ui/date-picker'
 import { newWheelSchema, type NewWheelFormValues } from '@/schemas/new-wheel'
 import type { ApiError, ApiFieldError } from '../api/positions'
 import { useCreatePosition } from '../hooks/useCreatePosition'
-import { MONO } from '../lib/tokens'
 import { ErrorAlert } from './ui/ErrorAlert'
 import { Field } from './ui/FormField'
 import { FormButton } from './ui/FormButton'
@@ -95,61 +94,27 @@ export function NewWheelForm({
     const cb = mutation.data.cost_basis_snapshot
     return (
       <div
-        style={{
-          padding: '20px 24px',
-          borderRadius: 8,
-          background: 'var(--wb-green-dim)',
-          border: '1px solid rgba(63,185,80,0.25)'
-        }}
+        className="px-6 py-5 rounded-lg bg-wb-green-dim border border-[rgba(63,185,80,0.25)]"
         role="status"
         aria-live="polite"
       >
-        <div
-          style={{
-            fontSize: '0.75rem',
-            fontWeight: 600,
-            color: 'var(--wb-green)',
-            marginBottom: 12,
-            fontFamily: MONO,
-            letterSpacing: '0.05em'
-          }}
-        >
+        <div className="text-xs font-semibold text-wb-green mb-3 font-wb-mono tracking-[0.05em]">
           ✓ WHEEL OPENED — {pos.ticker}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div className="flex flex-col gap-1.5">
           {[
             ['Premium collected', cb.total_premium_collected],
             ['Cost basis / share', cb.basis_per_share]
           ].map(([k, v]) => (
-            <div key={k} style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span
-                style={{ fontSize: '0.75rem', color: 'var(--wb-text-muted)', fontFamily: MONO }}
-              >
-                {k}
-              </span>
-              <span
-                style={{ fontSize: '0.75rem', color: 'var(--wb-text-primary)', fontFamily: MONO }}
-              >
-                {v}
-              </span>
+            <div key={k} className="flex justify-between">
+              <span className="text-xs text-wb-text-muted font-wb-mono">{k}</span>
+              <span className="text-xs text-wb-text-primary font-wb-mono">{v}</span>
             </div>
           ))}
         </div>
         <button
           onClick={() => navigate(`/positions/${mutation.data!.position.id}`)}
-          style={{
-            marginTop: 16,
-            width: '100%',
-            padding: '7px',
-            borderRadius: 6,
-            border: '1px solid rgba(63,185,80,0.4)',
-            background: 'transparent',
-            color: 'var(--wb-green)',
-            fontSize: '0.75rem',
-            fontFamily: MONO,
-            cursor: 'pointer',
-            letterSpacing: '0.05em'
-          }}
+          className="mt-4 w-full py-[7px] rounded-md border border-[rgba(63,185,80,0.4)] bg-transparent text-wb-green text-xs font-wb-mono cursor-pointer tracking-[0.05em]"
         >
           View position →
         </button>
@@ -158,15 +123,11 @@ export function NewWheelForm({
   }
 
   return (
-    <form
-      onSubmit={handleSubmit(onSubmit)}
-      noValidate
-      style={{ display: 'flex', flexDirection: 'column', gap: 24 }}
-    >
+    <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-6">
       {isServerError && <ErrorAlert message="Something went wrong. Please try again." />}
 
       {/* Primary fields — 2 column grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+      <div className="grid grid-cols-2 gap-5">
         <Field label="Ticker" error={errors.ticker?.message}>
           <NumberInput
             {...register('ticker')}
@@ -236,20 +197,7 @@ export function NewWheelForm({
           type="button"
           aria-expanded={advancedOpen}
           onClick={() => setAdvancedOpen((v) => !v)}
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: '4px 0',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            color: 'var(--wb-text-muted)',
-            fontSize: '0.75rem',
-            fontFamily: MONO,
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase'
-          }}
+          className="bg-transparent border-none py-1 px-0 cursor-pointer flex items-center gap-[8px] text-wb-text-muted text-xs font-wb-mono tracking-[0.06em] uppercase focus:outline-none"
         >
           <span
             style={{
@@ -264,7 +212,7 @@ export function NewWheelForm({
         </button>
 
         {advancedOpen && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginTop: 16 }}>
+          <div className="flex flex-col gap-5 mt-4">
             <Field label="Fill Date" error={errors.fillDate?.message}>
               <Controller
                 control={control}
@@ -306,7 +254,7 @@ export function NewWheelForm({
       </div>
 
       {/* Divider */}
-      <div style={{ borderTop: '1px solid var(--wb-border)' }} />
+      <div className="border-t border-wb-border" />
 
       <FormButton
         label="Open Wheel"

@@ -12,7 +12,7 @@
 - **Rationale:** Two different `PHASE_LABEL` records exist:
   - `PositionDetailPage.tsx`: `'CSP_OPEN': 'Sell Put'`, `'HOLDING_SHARES': 'Holding Shares'`, etc. — more descriptive
   - `PositionCard.tsx`: `'CSP_OPEN': 'CSP Open'`, `'HOLDING_SHARES': 'Shares'`, etc. — shorter for table cells
-  Both are valid for their contexts. A single canonical export with a short variant preserves intent while eliminating duplication.
+    Both are valid for their contexts. A single canonical export with a short variant preserves intent while eliminating duplication.
 - **Alternatives considered:** Single label set (loses context-appropriate sizing); label function with `short` parameter (over-engineered for a simple Record)
 
 ## Effect → mutation callback migration

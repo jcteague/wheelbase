@@ -1,9 +1,10 @@
 # Option Wheel Manager — Phase 1 User Stories
+
 ### Core Engine + Manual Trade Entry
 
-*Covers the foundational data model, Wheel Lifecycle Engine, Cost Basis Engine, and manual trade entry UI. No broker connection required in this phase — all data is entered manually. The goal of Phase 1 is to prove the core math is correct before adding complexity.*
+_Covers the foundational data model, Wheel Lifecycle Engine, Cost Basis Engine, and manual trade entry UI. No broker connection required in this phase — all data is entered manually. The goal of Phase 1 is to prove the core math is correct before adding complexity._
 
-*Each story is a **vertical slice**: it touches the database, backend engine, API, and frontend together. Infrastructure (schema, engine logic) is introduced in the first story that needs it, not as separate standalone stories.*
+_Each story is a **vertical slice**: it touches the database, backend engine, API, and frontend together. Infrastructure (schema, engine logic) is introduced in the first story that needs it, not as separate standalone stories._
 
 ---
 
@@ -37,29 +38,13 @@ This is the "hello world" story. It establishes the foundational schema and engi
      *Database (introduced here, reused by all subsequent stories):*
      - Alembic migrations create:
        - `positions` table with columns: `id`, `ticker`, `strategy_type`, `status`, `phase`, `opened_date`, `closed_date`, `account_id`,
-  `notes`, `thesis`, `tags`, `created_at`, `updated_at`
-       - `legs` table with columns: `id`, `position_id` (FK), `leg_role`, `action`, `option_type`, `strike`, `expiration`, `contracts`,
-  `premium_per_contract`, `fill_price`, `fill_date`, `order_id`, `roll_chain_id`, `created_at`, `updated_at`
-       - `cost_basis_snapshots` table with columns: `id`, `position_id` (FK), `basis_per_share`, `total_premium_collected`, `final_pnl`
-  (nullable), `annualized_return` (nullable), `snapshot_at`, `created_at`
-     - DB enums are enforced for:
-       - `strategy_type`: `WHEEL`
-       - `status`: `active`, `paused`, `closed`
-       - `phase`: `CSP_OPEN`, `CSP_EXPIRED`, `CSP_CLOSED_PROFIT`, `CSP_CLOSED_LOSS`, `HOLDING_SHARES`, `CC_OPEN`, `CC_EXPIRED`,
-  `CC_CLOSED_PROFIT`, `CC_CLOSED_LOSS`, `WHEEL_COMPLETE`
-       - `leg_role`: `csp`, `short_cc`, `stock_assignment`
-       - `action`: `open`, `close`, `expire`, `assign`, `exercise`, `roll_from`, `roll_to`
-       - `option_type`: `put`, `call`, `stock`
-     - Defaults: `status = active`, `phase = CSP_OPEN`, `opened_date = current_date` when omitted.
-     - `premium_per_contract` stores the **per-share quoted price** (e.g., $2.00 for a contract worth $200). The ×100 multiplier is
-  applied by the engine, not the caller. Positive = credit received; negative = debit paid.
-     - Monetary fields (`strike`, `premium_per_contract`, `fill_price`, `basis_per_share`, `total_premium_collected`, `final_pnl`) use
-  `NUMERIC(12, 4)` — no float storage.
-     - `tags` is stored as a Postgres `text[]` array, serialized as a JSON string array in the API.
-     - `roll_chain_id` is a UUID, nullable, generated at roll time and shared between the `roll_from` and `roll_to` legs of the same roll.
-     - `account_id` is a free-text label in Phase 1; no accounts table and no referential constraint.
-     - `final_pnl` and `annualized_return` on `cost_basis_snapshots` are `NULL` until wheel completion (populated by US-6).
-     - Indexes exist for `positions(status, phase)`, `positions(ticker)`, and `legs(position_id, fill_date)`.
+
+`notes`, `thesis`, `tags`, `created_at`, `updated_at` - `legs` table with columns: `id`, `position_id` (FK), `leg_role`, `action`, `option_type`, `strike`, `expiration`, `contracts`,
+`premium_per_contract`, `fill_price`, `fill_date`, `order_id`, `roll_chain_id`, `created_at`, `updated_at` - `cost_basis_snapshots` table with columns: `id`, `position_id` (FK), `basis_per_share`, `total_premium_collected`, `final_pnl`
+(nullable), `annualized_return` (nullable), `snapshot_at`, `created_at` - DB enums are enforced for: - `strategy_type`: `WHEEL` - `status`: `active`, `paused`, `closed` - `phase`: `CSP_OPEN`, `CSP_EXPIRED`, `CSP_CLOSED_PROFIT`, `CSP_CLOSED_LOSS`, `HOLDING_SHARES`, `CC_OPEN`, `CC_EXPIRED`,
+`CC_CLOSED_PROFIT`, `CC_CLOSED_LOSS`, `WHEEL_COMPLETE` - `leg_role`: `csp`, `short_cc`, `stock_assignment` - `action`: `open`, `close`, `expire`, `assign`, `exercise`, `roll_from`, `roll_to` - `option_type`: `put`, `call`, `stock` - Defaults: `status = active`, `phase = CSP_OPEN`, `opened_date = current_date` when omitted. - `premium_per_contract` stores the **per-share quoted price** (e.g., $2.00 for a contract worth $200). The ×100 multiplier is
+applied by the engine, not the caller. Positive = credit received; negative = debit paid. - Monetary fields (`strike`, `premium_per_contract`, `fill_price`, `basis_per_share`, `total_premium_collected`, `final_pnl`) use
+`NUMERIC(12, 4)` — no float storage. - `tags` is stored as a Postgres `text[]` array, serialized as a JSON string array in the API. - `roll_chain_id` is a UUID, nullable, generated at roll time and shared between the `roll_from` and `roll_to` legs of the same roll. - `account_id` is a free-text label in Phase 1; no accounts table and no referential constraint. - `final_pnl` and `annualized_return` on `cost_basis_snapshots` are `NULL` until wheel completion (populated by US-6). - Indexes exist for `positions(status, phase)`, `positions(ticker)`, and `legs(position_id, fill_date)`.
 
      *Backend — Lifecycle Engine (introduced here):*
      - Creating a `WHEEL` position with a `csp / open` leg returns phase `CSP_OPEN`.
@@ -83,20 +68,8 @@ This is the "hello world" story. It establishes the foundational schema and engi
 
      *Backend — API:*
      - `POST /positions` creates position + opening leg + first cost-basis snapshot in **one DB transaction**. If any step fails, the
-  transaction is rolled back and nothing is persisted.
-     - Request body:
-       - `ticker` (required, uppercase 1–5 chars)
-       - `strike` (required, decimal > 0)
-       - `expiration` (required, ISO date, must be after fill_date)
-       - `contracts` (required, integer > 0)
-       - `premium_per_contract` (required, decimal > 0, per-share quoted price)
-       - `fill_date` (optional, ISO date, defaults to today; past dates allowed, future dates rejected)
-       - optional: `account_id`, `thesis`, `notes`
-     - Success response: `201 Created` with full created resource including `position`, opening `leg`, and first `cost_basis_snapshot`.
-     - Validation failure response: `400` with field-level errors:
-       - `{ "detail": [ { "field": "ticker", "code": "invalid_format", "message": "..." } ] }`
-     - Server error response: `500` with `{ "detail": "Internal server error" }`.
-     - Duplicate submissions are allowed in Phase 1. No idempotency key is required. A second identical POST creates a second position.
+
+transaction is rolled back and nothing is persisted. - Request body: - `ticker` (required, uppercase 1–5 chars) - `strike` (required, decimal > 0) - `expiration` (required, ISO date, must be after fill_date) - `contracts` (required, integer > 0) - `premium_per_contract` (required, decimal > 0, per-share quoted price) - `fill_date` (optional, ISO date, defaults to today; past dates allowed, future dates rejected) - optional: `account_id`, `thesis`, `notes` - Success response: `201 Created` with full created resource including `position`, opening `leg`, and first `cost_basis_snapshot`. - Validation failure response: `400` with field-level errors: - `{ "detail": [ { "field": "ticker", "code": "invalid_format", "message": "..." } ] }` - Server error response: `500` with `{ "detail": "Internal server error" }`. - Duplicate submissions are allowed in Phase 1. No idempotency key is required. A second identical POST creates a second position.
 
      *Frontend:*
      - "New Wheel" form fields (required): ticker, strike, expiration, contracts, premium per contract.
@@ -114,6 +87,7 @@ This is the "hello world" story. It establishes the foundational schema and engi
      - On server or network error, an inline error message is shown above the submit button and the button is re-enabled.
      - Form is keyboard navigable (tab order, Enter submit, focus moves to first invalid field on submit failure).
      - Basic accessibility checks pass for labels, error announcements, and button semantics.
+
 ---
 
 ## US-2 — Mark a CSP expired worthless
@@ -124,19 +98,23 @@ This is the "hello world" story. It establishes the foundational schema and engi
 
 **Acceptance Criteria:**
 
-*Backend — Lifecycle Engine:*
+_Backend — Lifecycle Engine:_
+
 - Adding a `csp / expire` Leg to a `CSP_OPEN` position transitions phase to `CSP_EXPIRED`
 - The engine rejects this action on any other phase
 - Unit test covers the transition and the rejection
 
-*Backend — Cost Basis Engine:*
+_Backend — Cost Basis Engine:_
+
 - A new snapshot is written; `total_premium_collected` reflects the full original premium
 - The `basis_per_share` drops to zero (full premium offsets the notional basis) if premiums exceed the strike
 
-*Backend — API:*
+_Backend — API:_
+
 - `POST /positions/{id}/expire` accepts no body (all data is already on record), writes the expire Leg, and returns the updated position with the new snapshot
 
-*Frontend:*
+_Frontend:_
+
 - From a position card or detail view in `CSP_OPEN` phase, a "Mark Expired" button is shown
 - A confirmation dialog displays: ticker, strike, expiration, and the dollar profit being captured
 - On confirm, the position card updates immediately to reflect the new phase and a prompt to open another CSP or close the wheel
@@ -151,20 +129,24 @@ This is the "hello world" story. It establishes the foundational schema and engi
 
 **Acceptance Criteria:**
 
-*Backend — Lifecycle Engine:*
+_Backend — Lifecycle Engine:_
+
 - Adding an `assign` action Leg to a `CSP_OPEN` position transitions phase to `HOLDING_SHARES`
 - The engine blocks any further `csp / open` Legs while in `HOLDING_SHARES`
 - Unit tests cover the transition and the blocking
 
-*Backend — Cost Basis Engine:*
+_Backend — Cost Basis Engine:_
+
 - On assignment, cost basis is recalculated as: `csp_strike − all_csp_premiums_collected`
 - A new snapshot is written with this adjusted basis and the running premium total
 - Unit test validates the formula against a hand-computed example (e.g., sold CSP at $50 strike for $1.50 premium → basis = $48.50)
 
-*Backend — API:*
+_Backend — API:_
+
 - `POST /positions/{id}/assign` writes the assignment Leg and returns the updated position with the new cost basis snapshot
 
-*Frontend:*
+_Frontend:_
+
 - A "Record Assignment" button appears on any `CSP_OPEN` position
 - A confirmation dialog shows: ticker, number of shares incoming (contracts × 100), and the effective cost basis per share that will result
 - No manual data entry required — the strike is pre-filled from the open CSP leg
@@ -180,19 +162,23 @@ This is the "hello world" story. It establishes the foundational schema and engi
 
 **Acceptance Criteria:**
 
-*Backend — Lifecycle Engine:*
+_Backend — Lifecycle Engine:_
+
 - Adding a `short_cc / open` Leg to a `HOLDING_SHARES` position transitions phase to `CC_OPEN`
 - The engine rejects a CC leg on any position not in `HOLDING_SHARES` (or `CC_CLOSED_PROFIT` for follow-on CCs)
 - Unit tests cover the happy path and the rejection
 
-*Backend — Cost Basis Engine:*
+_Backend — Cost Basis Engine:_
+
 - A new snapshot is written; `basis_per_share` decreases by the CC premium per share
 - Unit test confirms cumulative reduction across multiple CCs
 
-*Backend — API:*
+_Backend — API:_
+
 - `POST /positions/{id}/legs` with `leg_role = short_cc` and `action = open` creates the leg and returns the updated position with the new snapshot
 
-*Frontend:*
+_Frontend:_
+
 - "Sell Covered Call" is only shown on positions in `HOLDING_SHARES` phase
 - Form fields: strike price, expiration date, contracts (pre-filled from share count), premium received per contract
 - The current effective cost basis is displayed alongside the form
@@ -209,23 +195,27 @@ This is the "hello world" story. It establishes the foundational schema and engi
 
 **Acceptance Criteria:**
 
-*Backend — Lifecycle Engine:*
+_Backend — Lifecycle Engine:_
+
 - `short_cc / expire` on a `CC_OPEN` position → `CC_EXPIRED`
 - `short_cc / close` on a `CC_OPEN` position → `CC_CLOSED_PROFIT`
 - Both transitions return the position to a state where a new CC can be opened
 - The engine rejects either action if the position is not `CC_OPEN`
 - Unit tests cover both paths and the rejection
 
-*Backend — Cost Basis Engine:*
+_Backend — Cost Basis Engine:_
+
 - For expiration: the full CC premium is added to `total_premium_collected`
 - For early close: the net gain (`original_premium − close_fill_price`) is added to `total_premium_collected`; a negative net is possible and is recorded accurately
 - New snapshot written after either event
 
-*Backend — API:*
+_Backend — API:_
+
 - `POST /positions/{id}/expire` handles CC expiration (same endpoint as CSP, resolves correct leg from current phase)
 - `POST /positions/{id}/close` accepts `{ fill_price, fill_date }` for an early close
 
-*Frontend:*
+_Frontend:_
+
 - "Mark Expired" and "Close Early" buttons are shown on `CC_OPEN` positions
 - "Mark Expired" uses the same confirmation-only dialog as the CSP expiration flow
 - "Close Early" form shows a single buy-to-close price field; the app computes and displays the estimated net gain before the user confirms
@@ -241,21 +231,25 @@ This is the "hello world" story. It establishes the foundational schema and engi
 
 **Acceptance Criteria:**
 
-*Backend — Lifecycle Engine:*
+_Backend — Lifecycle Engine:_
+
 - `short_cc / assign` on a `CC_OPEN` position → `WHEEL_COMPLETE`; position `status` is set to `closed` automatically
 - The engine rejects this action if the position is not `CC_OPEN`
 - Unit test covers the transition, the auto-close, and the rejection
 
-*Backend — Cost Basis Engine:*
+_Backend — Cost Basis Engine:_
+
 - Final P&L: `(call_strike × contracts × 100) + total_premiums_collected − initial_capital_deployed`
 - `initial_capital_deployed` = `csp_strike × contracts × 100`
 - The final snapshot stores this P&L and an `annualized_return` value: `(total_premiums / capital_deployed) × (365 / days_active)`, rounded to two decimal places
 - Unit tests validate both formulas against hand-computed full-wheel examples
 
-*Backend — API:*
+_Backend — API:_
+
 - `POST /positions/{id}/assign` (same endpoint as CSP assignment; resolves context from current phase) writes the leg, finalizes the position, and returns the closed position with the final P&L snapshot
 
-*Frontend:*
+_Frontend:_
+
 - "Record Assignment" on a `CC_OPEN` position triggers a confirmation showing the final P&L and annualized return
 - On confirm, the position moves to the closed view with a summary card and a "Start New Wheel on [ticker]" shortcut that pre-fills the ticker on the new CSP form
 
@@ -269,20 +263,24 @@ This is the "hello world" story. It establishes the foundational schema and engi
 
 **Acceptance Criteria:**
 
-*Backend — Lifecycle Engine:*
+_Backend — Lifecycle Engine:_
+
 - A roll is two linked Legs: `roll_from` (closing the existing leg) and `roll_to` (opening the new leg), sharing a `roll_chain_id`
 - The position phase does not change on a roll (a rolled CSP stays `CSP_OPEN`; a rolled CC stays `CC_OPEN`)
 - The engine enforces the new expiration is strictly after the closed expiration
 - Unit tests cover: roll-for-credit CSP, roll-for-debit CC, roll to a different strike, and rejection when new expiration is not later
 
-*Backend — Cost Basis Engine:*
+_Backend — Cost Basis Engine:_
+
 - Net roll credit (positive) reduces `basis_per_share`; net roll debit (negative) increases it
 - A new snapshot is written after both legs are saved
 
-*Backend — API:*
+_Backend — API:_
+
 - `POST /positions/{id}/roll` accepts `{ close_fill_price, close_fill_date, new_strike, new_expiration, new_premium }` and writes both legs in a single DB transaction — if either write fails, neither is committed
 
-*Frontend:*
+_Frontend:_
+
 - A "Roll" button is shown on any `CSP_OPEN` or `CC_OPEN` position
 - The roll form shows two sections: "Close existing leg" (pre-filled, read-only) and "Open new leg" (trader fills in)
 - The app computes and displays the net roll credit or debit in real time as the trader fills in the new leg
@@ -299,20 +297,24 @@ This is the "hello world" story. It establishes the foundational schema and engi
 
 **Acceptance Criteria:**
 
-*Backend — Lifecycle Engine:*
+_Backend — Lifecycle Engine:_
+
 - `csp / close` on `CSP_OPEN` → `CSP_CLOSED_PROFIT` (or `CSP_CLOSED_LOSS` if fill_price > original premium)
 - `short_cc / close` on `CC_OPEN` → `CC_CLOSED_PROFIT` (or `CC_CLOSED_LOSS`)
 - The engine rejects a close action if the position is not in an open-option phase
 - Unit tests cover both legs and both profit/loss outcomes
 
-*Backend — Cost Basis Engine:*
+_Backend — Cost Basis Engine:_
+
 - Net gain/loss for the closed leg = `original_premium − fill_price` per contract × contracts × 100
 - Added (or subtracted) from `total_premium_collected`; new snapshot written
 
-*Backend — API:*
+_Backend — API:_
+
 - `POST /positions/{id}/close` accepts `{ fill_price, fill_date }` and returns the updated position
 
-*Frontend:*
+_Frontend:_
+
 - "Close Early" button is shown on any `CSP_OPEN` or `CC_OPEN` position
 - Form has a single fill-price field; the app displays the resulting P&L on this leg before the trader confirms
 - After a close, the trader is offered: "Open new CSP/CC" or "Rest this position"
@@ -327,11 +329,13 @@ This is the "hello world" story. It establishes the foundational schema and engi
 
 **Acceptance Criteria:**
 
-*Backend — API:*
+_Backend — API:_
+
 - `GET /positions?status=active` returns all active positions with computed fields: `dte` (days to expiration from today), `total_premium_collected`, `basis_per_share`, and `annualized_return`
 - Response is sortable by `ticker`, `dte`, and `total_premium_collected` via query params
 
-*Frontend:*
+_Frontend:_
+
 - The dashboard lists each active position showing: ticker, phase badge, contracts, current strike, expiration date, DTE, total premium collected, and effective cost basis per share
 - The list is sortable by ticker, DTE, and total premium by clicking column headers
 - Each row has contextual action buttons matching the position's current phase (e.g., "Mark Expired", "Record Assignment", "Sell CC", "Roll")
@@ -348,10 +352,12 @@ This is the "hello world" story. It establishes the foundational schema and engi
 
 **Acceptance Criteria:**
 
-*Backend — API:*
+_Backend — API:_
+
 - `GET /positions/{id}` returns the position with all legs in chronological order and all cost basis snapshots
 
-*Frontend:*
+_Frontend:_
+
 - The detail view shows: current effective cost basis and total premium collected prominently at the top, followed by the full leg history
 - Each leg row shows: action, leg role, strike, expiration, contracts, premium, fill date, and the net P&L contribution of that leg
 - Rolls are visually grouped as a pair (close + open) with the net credit or debit for the roll shown
@@ -368,10 +374,12 @@ This is the "hello world" story. It establishes the foundational schema and engi
 
 **Acceptance Criteria:**
 
-*Backend — API:*
+_Backend — API:_
+
 - `GET /positions?status=closed` returns closed positions sorted by `closed_date` descending; includes `total_premium_collected`, `final_pnl`, `annualized_return`, and `days_active`
 
-*Frontend:*
+_Frontend:_
+
 - A "Closed" tab or filter on the dashboard shows the closed positions list
 - Each row shows: ticker, opened date, closed date, days active, total premium collected, final P&L, and outcome label (e.g., "Wheel Complete", "Closed Early")
 - Closed positions are read-only — no action buttons are shown
@@ -387,11 +395,13 @@ This is the "hello world" story. It establishes the foundational schema and engi
 
 **Acceptance Criteria:**
 
-*Backend — API:*
+_Backend — API:_
+
 - `PATCH /positions/{id}` accepts `{ thesis, notes }` and updates those fields without touching any Leg or triggering the Cost Basis Engine
 - Returns the updated position
 
-*Frontend:*
+_Frontend:_
+
 - The position detail view (US-10) has a notes section below the leg history
 - `thesis` is a short-form field for the original entry rationale; `notes` is a multi-line field for ongoing observations
 - Both fields are editable inline — clicking the field activates an edit mode; a Save button commits the change
@@ -402,19 +412,19 @@ This is the "hello world" story. It establishes the foundational schema and engi
 
 ## Story Summary
 
-| ID | Title | Priority |
-|---|---|---|
-| US-1 | Open a new wheel (sell a CSP) | Must Have |
-| US-2 | Mark a CSP expired worthless | Must Have |
-| US-3 | Record CSP assignment | Must Have |
-| US-4 | Open a covered call | Must Have |
-| US-5 | Record a CC outcome | Must Have |
-| US-6 | Record shares called away | Must Have |
-| US-7 | Roll a position | Must Have |
-| US-8 | Close a position early (buy-to-close) | Must Have |
-| US-9 | View active positions dashboard | Must Have |
-| US-10 | View position detail and leg history | Must Have |
-| US-11 | View and review closed positions | Should Have |
-| US-12 | Add and edit trade notes | Should Have |
+| ID    | Title                                 | Priority    |
+| ----- | ------------------------------------- | ----------- |
+| US-1  | Open a new wheel (sell a CSP)         | Must Have   |
+| US-2  | Mark a CSP expired worthless          | Must Have   |
+| US-3  | Record CSP assignment                 | Must Have   |
+| US-4  | Open a covered call                   | Must Have   |
+| US-5  | Record a CC outcome                   | Must Have   |
+| US-6  | Record shares called away             | Must Have   |
+| US-7  | Roll a position                       | Must Have   |
+| US-8  | Close a position early (buy-to-close) | Must Have   |
+| US-9  | View active positions dashboard       | Must Have   |
+| US-10 | View position detail and leg history  | Must Have   |
+| US-11 | View and review closed positions      | Should Have |
+| US-12 | Add and edit trade notes              | Should Have |
 
-*12 stories. Each is a complete user action, end to end.*
+_12 stories. Each is a complete user action, end to end._

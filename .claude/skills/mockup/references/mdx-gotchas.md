@@ -6,19 +6,21 @@ MDX is parsed as a mix of Markdown and JSX. The parser switches between modes de
 
 ## Rule 1: `//` Comments Between Exports Are Parsed as Markdown
 
-**Problem:** Any `//` line comment that appears *outside* a function body or expression block is parsed as **Markdown text**, not JavaScript. If that comment contains JSX-like syntax (`<Badge>`, `<Input>`, etc.), MDX will attempt to parse the angle brackets as JSX tags and fail.
+**Problem:** Any `//` line comment that appears _outside_ a function body or expression block is parsed as **Markdown text**, not JavaScript. If that comment contains JSX-like syntax (`<Badge>`, `<Input>`, etc.), MDX will attempt to parse the angle brackets as JSX tags and fail.
 
 **Broken (comment between exports, contains `<Badge>`):**
+
 ```mdx
 export const FOO = 1
 
 // Matches: Badge.tsx
-// Real usage: <Badge color="green">Label</Badge>   ← MDX tries to parse <Badge> as JSX!
+// Real usage: <Badge color="green">Label</Badge> ← MDX tries to parse <Badge> as JSX!
 
 export function Bar() { ... }
 ```
 
 **Fixed option A — move comments inside the function:**
+
 ```mdx
 export function MockBadge({ children, color }) {
   // Matches: Badge.tsx — <Badge color="green">Label</Badge>
@@ -28,16 +30,18 @@ export function MockBadge({ children, color }) {
 ```
 
 **Fixed option B — use an MDX `{/* */}` comment at the top of an expression block:**
+
 ```mdx
-{/*
-  Matches: Badge.tsx
-  Real usage: <Badge color="green">Label</Badge>
-*/}
+{/_
+Matches: Badge.tsx
+Real usage: <Badge color="green">Label</Badge>
+_/}
 
 export function MockBadge({ children, color }) { ... }
 ```
 
 **Fixed option C — avoid JSX-like syntax in free-standing comments entirely:**
+
 ```mdx
 // Matches: Badge.tsx — color prop accepts any CSS color string
 
@@ -51,6 +55,7 @@ export function MockBadge({ children, color }) { ... }
 All `import` statements must appear **before any markdown text or export statements**. Placing an import after markdown prose will cause a parse error.
 
 **Broken:**
+
 ```mdx
 # My Mockup
 
@@ -58,6 +63,7 @@ import { useState } from 'react'   ← error: import after markdown
 ```
 
 **Fixed:**
+
 ```mdx
 import { useState } from 'react'
 
@@ -71,20 +77,19 @@ import { useState } from 'react'
 An `export` block that spans multiple lines must be a single, uninterrupted JS expression. Do not insert blank lines inside an object or array literal that would cause MDX to exit JS mode.
 
 **Broken:**
+
 ```mdx
 export const DATA = [
   { id: 1 },
 
-  { id: 2 },   ← blank line causes MDX to exit the export block
+{ id: 2 }, ← blank line causes MDX to exit the export block
 ]
 ```
 
 **Fixed:**
+
 ```mdx
-export const DATA = [
-  { id: 1 },
-  { id: 2 },
-]
+export const DATA = [{ id: 1 }, { id: 2 }]
 ```
 
 ---
@@ -114,9 +119,9 @@ In JSX, void elements must be self-closed: `<br />`, `<hr />`, `<img />`. An unc
 
 ## Summary: Safe Comment Patterns
 
-| Location | Safe syntax |
-|---|---|
-| Inside a function body | `// any comment — including <JSX> syntax` |
-| Between exports at file root | `// comment with NO angle brackets` |
-| Between exports at file root | `{/* MDX block comment — JSX-safe */}` |
-| Inline in JSX | `{/* inline JSX comment */}` |
+| Location                     | Safe syntax                               |
+| ---------------------------- | ----------------------------------------- |
+| Inside a function body       | `// any comment — including <JSX> syntax` |
+| Between exports at file root | `// comment with NO angle brackets`       |
+| Between exports at file root | `{/* MDX block comment — JSX-safe */}`    |
+| Inline in JSX                | `{/* inline JSX comment */}`              |

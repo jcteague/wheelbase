@@ -6,6 +6,7 @@ import Decimal from 'decimal.js'
 import { randomUUID } from 'node:crypto'
 import { calculateInitialCspBasis } from '../core/costbasis'
 import { openWheel } from '../core/lifecycle'
+import { localToday, makeSnapshotAt } from '../dates'
 import { logger } from '../logger'
 import type { CreatePositionPayload, CreatePositionResult } from '../schemas'
 
@@ -26,7 +27,7 @@ export function createPosition(
   db: Database.Database,
   payload: CreatePositionPayload
 ): CreatePositionResult {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   const fillDate = payload.fillDate ?? today
   const now = new Date().toISOString()
 
@@ -103,7 +104,14 @@ export function createPosition(
       `INSERT INTO cost_basis_snapshots
         (id, position_id, basis_per_share, total_premium_collected, snapshot_at, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`
-    ).run(snapshotId, positionId, basisFormatted, totalPremiumFormatted, now, now)
+    ).run(
+      snapshotId,
+      positionId,
+      basisFormatted,
+      totalPremiumFormatted,
+      makeSnapshotAt(fillDate),
+      now
+    )
   })()
 
   logger.info(

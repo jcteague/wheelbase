@@ -17,6 +17,7 @@
 
 **Before**: 649 lines — far exceeding the 200-line file size limit; contained `SheetHeader`, `CcForm`, `CcSuccess`, `StatBox`, `computeGuardrail`, and `GuardrailResult` all in one file
 **After**: Split into 4 files:
+
 - `OpenCoveredCallSheet.tsx` — 104 lines — orchestrator only (state, submit handler, portal render)
 - `OpenCcSheetHeader.tsx` — 65 lines — reusable panel header with eyebrow/title/close button
 - `OpenCcForm.tsx` — 205 lines — form component (imports from guardrail module)

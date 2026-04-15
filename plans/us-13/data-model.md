@@ -5,6 +5,7 @@
 ### RollCspInput (lifecycle engine)
 
 US-12 defines:
+
 ```typescript
 interface RollCspInput {
   currentPhase: WheelPhase
@@ -16,11 +17,12 @@ interface RollCspInput {
 ```
 
 US-13 extends to:
+
 ```typescript
 interface RollCspInput {
   currentPhase: WheelPhase
-  currentStrike: string        // NEW
-  newStrike: string             // NEW
+  currentStrike: string // NEW
+  newStrike: string // NEW
   currentExpiration: string
   newExpiration: string
   costToClosePerContract: string
@@ -31,11 +33,13 @@ interface RollCspInput {
 ### Validation Rules (lifecycle engine)
 
 US-12 rules (unchanged):
+
 - `currentPhase` must be `CSP_OPEN`
 - `costToClosePerContract` must be positive
 - `newPremiumPerContract` must be positive
 
 US-13 changes:
+
 - **Remove:** `newExpiration > currentExpiration` (unconditional)
 - **Add:** If `newStrike === currentStrike` AND `newExpiration === currentExpiration` → reject ("Roll must change the expiration, strike, or both")
 - **Add:** If `newExpiration < currentExpiration` → reject ("New expiration must be after the current expiration") — same-expiration is allowed, earlier is not
@@ -48,6 +52,7 @@ US-12 already defines `newStrike: z.number().positive().optional()`. No schema c
 ### Roll Count Query (new)
 
 No new table or column. Count derived from existing `legs` table:
+
 ```sql
 SELECT COUNT(*) AS roll_count
 FROM legs
@@ -62,12 +67,12 @@ No new state transitions. Position remains in `CSP_OPEN` after any roll type.
 
 ## Roll Type Derivation (pure function, renderer-side)
 
-| currentStrike vs newStrike | currentExpiration vs newExpiration | Label |
-|---|---|---|
-| same | later | Roll Out |
-| lower | later | Roll Down & Out |
-| higher | later | Roll Up & Out |
-| lower | same | Roll Down |
-| higher | same | Roll Up |
-| same | same | REJECTED (validation error) |
-| any | earlier | REJECTED (validation error) |
+| currentStrike vs newStrike | currentExpiration vs newExpiration | Label                       |
+| -------------------------- | ---------------------------------- | --------------------------- |
+| same                       | later                              | Roll Out                    |
+| lower                      | later                              | Roll Down & Out             |
+| higher                     | later                              | Roll Up & Out               |
+| lower                      | same                               | Roll Down                   |
+| higher                     | same                               | Roll Up                     |
+| same                       | same                               | REJECTED (validation error) |
+| any                        | earlier                            | REJECTED (validation error) |

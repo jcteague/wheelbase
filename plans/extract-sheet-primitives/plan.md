@@ -20,6 +20,7 @@ All 7 sheet components are fully implemented and covered by existing unit tests 
 ### 1. Sheet Primitives — Create `Sheet.tsx` + `Sheet.test.tsx`
 
 **Files to create:**
+
 - `src/renderer/src/components/ui/Sheet.tsx` — 6 primitives + `SIDEBAR_WIDTH` export
 - `src/renderer/src/components/ui/Sheet.test.tsx` — unit tests for each primitive
 
@@ -54,9 +55,11 @@ In `src/renderer/src/components/ui/Sheet.tsx`:
 - `SheetCloseButton({ onClick })` — 28×28 button with `aria-label="Close sheet"`, border, elevated background, `×` content.
 
 **Refactor — cleanup to consider:**
+
 - Check for duplication and naming consistency with existing `ui/` components.
 
 **Acceptance criteria covered:**
+
 - "Create `src/renderer/src/components/ui/Sheet.tsx` with the 5 primitives"
 - "Add tests for Sheet primitives"
 
@@ -65,6 +68,7 @@ In `src/renderer/src/components/ui/Sheet.tsx`:
 ### 2. Migrate `CloseCcEarlySheet` (simplest sheet)
 
 **Files to modify:**
+
 - `src/renderer/src/components/CloseCcEarlySheet.tsx` — replace overlay/panel structure with `SheetOverlay` + `SheetPanel`
 - `src/renderer/src/components/CloseCcEarlyForm.tsx` — replace inline header/body/footer styles with `SheetHeader` + `SheetBody` + `SheetFooter`
 - `src/renderer/src/components/CloseCcEarlySuccess.tsx` — replace inline header/body with `SheetHeader` + `SheetBody` + `SheetCloseButton`
@@ -76,12 +80,14 @@ No new tests. Existing tests in `src/renderer/src/components/CloseCcEarlySheet.t
 **Green — implementation:**
 
 In `CloseCcEarlySheet.tsx`:
+
 - Remove local `SIDEBAR_WIDTH` constant
 - Import `SheetOverlay`, `SheetPanel` from `./ui/Sheet`
 - Replace the inline overlay div + scrim div + panel div with `<SheetOverlay onClose={props.onClose}><SheetPanel>…</SheetPanel></SheetOverlay>`
 - Keep `createPortal(…, document.body)` wrapping the entire structure
 
 In `CloseCcEarlyForm.tsx`:
+
 - Import `SheetHeader`, `SheetBody`, `SheetFooter` from `./ui/Sheet`
 - Replace the inline header div (padding, border-bottom, flex layout, close button) with `<SheetHeader eyebrow="Close CC Early" title={…} subtitle={…} onClose={onClose} />`
 - Replace the inline body div (scrollable flex column) with `<SheetBody>…</SheetBody>`
@@ -89,14 +95,17 @@ In `CloseCcEarlyForm.tsx`:
 - Remove now-unused inline style objects
 
 In `CloseCcEarlySuccess.tsx`:
+
 - Import `SheetHeader`, `SheetBody` from `./ui/Sheet`
 - Replace inline success header with `<SheetHeader eyebrow="Trade Closed" title={…} onClose={onClose} />`
 - Replace inline body wrapper with `<SheetBody>…</SheetBody>`
 
 **Refactor — cleanup to consider:**
+
 - Remove any unused style constants or imports from all three files.
 
 **Acceptance criteria covered:**
+
 - "Refactor all 7 sheet components to use them" (1 of 7)
 
 ---
@@ -104,6 +113,7 @@ In `CloseCcEarlySuccess.tsx`:
 ### 3. Migrate `ExpirationSheet`
 
 **Files to modify:**
+
 - `src/renderer/src/components/ExpirationSheet.tsx` — replace overlay/panel/header/body/footer with primitives
 
 **Red — tests to write:**
@@ -113,6 +123,7 @@ No new tests. Existing tests in `src/renderer/src/components/ExpirationSheet.tes
 **Green — implementation:**
 
 In `ExpirationSheet.tsx`:
+
 - Remove local `SIDEBAR_WIDTH`, `overlayStyle`, `scrimStyle`, `panelStyle`, `headerStyle`, `bodyStyle`, `footerStyle` constants
 - Import `SheetOverlay`, `SheetPanel`, `SheetHeader`, `SheetBody`, `SheetFooter`, `SheetCloseButton` from `./ui/Sheet`
 - Replace overlay + scrim + panel with `<SheetOverlay><SheetPanel>…</SheetPanel></SheetOverlay>`
@@ -122,9 +133,11 @@ In `ExpirationSheet.tsx`:
 - Replace footer div with `<SheetFooter>…</SheetFooter>`
 
 **Refactor — cleanup to consider:**
+
 - Check that the form state vs. success state branching still reads cleanly after migration.
 
 **Acceptance criteria covered:**
+
 - "Refactor all 7 sheet components to use them" (2 of 7)
 
 ---
@@ -132,6 +145,7 @@ In `ExpirationSheet.tsx`:
 ### 4. Migrate `CcExpirationSheet`
 
 **Files to modify:**
+
 - `src/renderer/src/components/CcExpirationSheet.tsx` — replace overlay/panel/header/body/footer with primitives
 
 **Red — tests to write:**
@@ -141,6 +155,7 @@ No new tests. Existing tests in `src/renderer/src/components/CcExpirationSheet.t
 **Green — implementation:**
 
 In `CcExpirationSheet.tsx`:
+
 - Remove local `SIDEBAR_WIDTH`, `overlayStyle`, `scrimStyle`, `panelStyle`, `headerStyle`, `bodyStyle`, `footerStyle` constants
 - Import primitives from `./ui/Sheet`
 - Replace overlay structure with `<SheetOverlay><SheetPanel>…</SheetPanel></SheetOverlay>`
@@ -149,9 +164,11 @@ In `CcExpirationSheet.tsx`:
 - Replace body/footer wrappers with `<SheetBody>` / `<SheetFooter>`
 
 **Refactor — cleanup to consider:**
+
 - Check for duplication and naming consistency.
 
 **Acceptance criteria covered:**
+
 - "Refactor all 7 sheet components to use them" (3 of 7)
 
 ---
@@ -159,6 +176,7 @@ In `CcExpirationSheet.tsx`:
 ### 5. Migrate `AssignmentSheet`
 
 **Files to modify:**
+
 - `src/renderer/src/components/AssignmentSheet.tsx` — replace overlay/panel structure and inline header/body/footer with primitives
 
 **Red — tests to write:**
@@ -168,6 +186,7 @@ No new tests. Existing tests in `src/renderer/src/components/AssignmentSheet.tes
 **Green — implementation:**
 
 In `AssignmentSheet.tsx`:
+
 - Remove local `SIDEBAR_WIDTH` and panel/overlay style constants
 - Import primitives from `./ui/Sheet`
 - Replace overlay structure with `<SheetOverlay><SheetPanel>…</SheetPanel></SheetOverlay>`
@@ -176,9 +195,11 @@ In `AssignmentSheet.tsx`:
 - Replace body wrapper with `<SheetBody>`, footer with `<SheetFooter>`
 
 **Refactor — cleanup to consider:**
+
 - Remove the local `AssignmentHeader` function after replacing it with `SheetHeader`.
 
 **Acceptance criteria covered:**
+
 - "Refactor all 7 sheet components to use them" (4 of 7)
 
 ---
@@ -186,6 +207,7 @@ In `AssignmentSheet.tsx`:
 ### 6. Migrate `CallAwaySheet`
 
 **Files to modify:**
+
 - `src/renderer/src/components/CallAwaySheet.tsx` — replace overlay/panel with primitives
 - `src/renderer/src/components/CallAwayForm.tsx` — replace inline header/body/footer with primitives
 - `src/renderer/src/components/CallAwaySuccess.tsx` — replace inline header/body with primitives
@@ -197,23 +219,28 @@ No new tests. Existing tests in `src/renderer/src/components/CallAwaySheet.test.
 **Green — implementation:**
 
 In `CallAwaySheet.tsx`:
+
 - Remove local `SIDEBAR_WIDTH`, import `SheetOverlay`, `SheetPanel`
 - Replace overlay/panel structure
 
 In `CallAwayForm.tsx`:
+
 - Import `SheetHeader`, `SheetBody`, `SheetFooter`
 - Replace inline header (padding, border, flex layout, close button) with `<SheetHeader eyebrow="Record Call-Away" title={…} onClose={onClose} />`
 - Replace body/footer wrappers
 
 In `CallAwaySuccess.tsx`:
+
 - Import `SheetHeader`, `SheetBody`
 - Replace success header with `<SheetHeader eyebrowColor="var(--wb-green)" borderBottomColor="rgba(63,185,80,0.2)" eyebrow="Shares Called Away" title={…} onClose={onClose} />`
 - Replace body wrapper
 
 **Refactor — cleanup to consider:**
+
 - Remove unused style objects from all three files.
 
 **Acceptance criteria covered:**
+
 - "Refactor all 7 sheet components to use them" (5 of 7)
 
 ---
@@ -221,6 +248,7 @@ In `CallAwaySuccess.tsx`:
 ### 7. Migrate `OpenCoveredCallSheet` + Delete `OpenCcSheetHeader`
 
 **Files to modify:**
+
 - `src/renderer/src/components/OpenCoveredCallSheet.tsx` — replace overlay/panel with primitives
 - `src/renderer/src/components/OpenCcForm.tsx` — replace `OpenCcSheetHeader` usage with `SheetHeader`, replace body/footer
 - `src/renderer/src/components/OpenCcSuccess.tsx` — replace `OpenCcSheetHeader` usage with `SheetHeader`, replace body
@@ -233,27 +261,33 @@ No new tests. Existing tests (including E2E `e2e/open-covered-call.spec.ts`) ser
 **Green — implementation:**
 
 In `OpenCoveredCallSheet.tsx`:
+
 - Remove local `SIDEBAR_WIDTH`, import `SheetOverlay`, `SheetPanel`
 - Replace overlay/panel structure
 
 In `OpenCcForm.tsx`:
+
 - Replace `import { OpenCcSheetHeader }` with `import { SheetHeader, SheetBody, SheetFooter }`
 - Replace `<OpenCcSheetHeader eyebrow={…} title={…} subtitle={…} onClose={…} />` with `<SheetHeader eyebrow={…} title={…} subtitle={…} onClose={…} />`
 - Replace body/footer wrappers
 
 In `OpenCcSuccess.tsx`:
+
 - Replace `OpenCcSheetHeader` import with `SheetHeader, SheetBody`
 - Replace header and body usage
 - Use `eyebrowColor="var(--wb-violet)"` and `borderBottomColor="rgba(188,140,255,0.2)"` for the success state
 
 Delete `OpenCcSheetHeader.tsx`:
+
 - Verify no remaining imports reference it (`grep -r "OpenCcSheetHeader"`)
 - Remove the file
 
 **Refactor — cleanup to consider:**
+
 - Verify no remaining references to `OpenCcSheetHeader` anywhere in the codebase.
 
 **Acceptance criteria covered:**
+
 - "Refactor all 7 sheet components to use them" (6 of 7)
 - "Refactor form + success sub-components that duplicate the header/close button"
 - "Delete any now-unused style objects"
@@ -263,6 +297,7 @@ Delete `OpenCcSheetHeader.tsx`:
 ### 8. Migrate `RollCspSheet` (420px width)
 
 **Files to modify:**
+
 - `src/renderer/src/components/RollCspSheet.tsx` — replace overlay/panel with primitives, pass `width={420}`
 - `src/renderer/src/components/RollCspForm.tsx` — replace inline header/body/footer with primitives
 - `src/renderer/src/components/RollCspSuccess.tsx` — replace inline header/body with primitives
@@ -274,23 +309,28 @@ No new tests. Existing tests in `src/renderer/src/components/RollCspSheet.test.t
 **Green — implementation:**
 
 In `RollCspSheet.tsx`:
+
 - Remove local `SIDEBAR_WIDTH`, import `SheetOverlay`, `SheetPanel`
 - Replace overlay/panel with `<SheetOverlay><SheetPanel width={420}>…</SheetPanel></SheetOverlay>`
 
 In `RollCspForm.tsx`:
+
 - Import `SheetHeader`, `SheetBody`, `SheetFooter`
 - Replace inline header with `<SheetHeader eyebrow={rollTypeLabel} title="Roll Cash-Secured Put" subtitle={…} onClose={onClose} />`
 - Replace body/footer wrappers
 
 In `RollCspSuccess.tsx`:
+
 - Import `SheetHeader`, `SheetBody`
 - Replace success header with `<SheetHeader eyebrowColor={heroColor} borderBottomColor={heroBorder} eyebrow={rollType} title="Roll Confirmed" onClose={onClose} />`
 - Replace body wrapper
 
 **Refactor — cleanup to consider:**
+
 - Check that the `width={420}` override is the only non-default prop needed.
 
 **Acceptance criteria covered:**
+
 - "Refactor all 7 sheet components to use them" (7 of 7)
 - "Move `SIDEBAR_WIDTH` into the Sheet primitive"
 
@@ -299,6 +339,7 @@ In `RollCspSuccess.tsx`:
 ### 9. Final Cleanup
 
 **Files to modify:**
+
 - All 7 sheet files and their sub-components — verify no remaining inline overlay/panel/header/body/footer styles
 
 **Red — tests to write:**
@@ -314,9 +355,11 @@ No new tests. This area runs the full test suite as a final gate.
 - Run `pnpm build && pnpm test:e2e` — all E2E tests must pass
 
 **Refactor — cleanup to consider:**
+
 - If any inline style objects remain in sheet files that duplicate what the primitives provide, remove them.
 
 **Acceptance criteria covered:**
+
 - All acceptance criteria verified via full regression suite.
 
 ---
@@ -338,6 +381,7 @@ No new E2E tests are needed. This is a zero-behavior-change refactor. The existi
 Each test exercises the full sheet lifecycle (open sheet, fill form, submit, verify success state, navigate away). If any structural regression is introduced by the migration, these tests will catch it.
 
 **Verification command:**
+
 ```bash
 pnpm build && pnpm test:e2e
 ```

@@ -100,7 +100,7 @@ Scenario Outline: Roll type label reflects strike and expiration changes
 - **Net debit warning:** Consistent with US-12 pattern — amber/yellow styling with warning icon when `costToClose > newPremium`.
 - **Roll count:** Query the number of existing roll chain entries for this position. Display on the roll form. Show a soft warning at 3+ rolls — informational only, does not block the roll.
 - **Position card strike update:** After a roll with a strike change, the position card must display the ROLL_TO leg's strike as the active strike, not the original.
-- **Cost basis impact:** Same formula as US-12 — net credit reduces basis, net debit increases it. The strike change affects the *assignment strike* used in cost basis if the trader is later assigned. Worked example:
+- **Cost basis impact:** Same formula as US-12 — net credit reduces basis, net debit increases it. The strike change affects the _assignment strike_ used in cost basis if the trader is later assigned. Worked example:
 
   ```
   Original CSP: strike $180, premium $3.50
@@ -112,7 +112,7 @@ Scenario Outline: Roll type label reflects strike and expiration changes
     Cost basis = $175.00 − $3.90 = $171.10/share
   ```
 
-  Note: assignment uses the *current* (rolled-to) strike, not the original.
+  Note: assignment uses the _current_ (rolled-to) strike, not the original.
 
 ---
 

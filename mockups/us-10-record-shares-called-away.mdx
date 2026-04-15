@@ -1,7 +1,7 @@
 ---
-title: "US-10: Record Shares Called Away"
-story: "As a wheel trader whose covered call has been exercised, I want to record that my shares were called away at the CC strike, so that the wheel cycle completes with an accurate final P&L."
-states: ["confirmation", "success"]
+title: 'US-10: Record Shares Called Away'
+story: 'As a wheel trader whose covered call has been exercised, I want to record that my shares were called away at the CC strike, so that the wheel cycle completes with an accurate final P&L.'
+states: ['confirmation', 'success']
 ---
 
 import { useState } from 'react'
@@ -31,53 +31,71 @@ export const MOCK_POSITION = {
   appreciationTotal: '780.00',
   finalPnl: '780.00',
   cycleDays: 99,
-  annualizedReturn: '16.7',
+  annualizedReturn: '16.7'
 }
 
 export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
-
 
 // Matches: Badge.tsx
 
 export function MockBadge({ children, color }) {
   const fg = color ?? 'var(--wb-gold, #e6a817)'
   return (
-    <span style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      fontSize: '0.65rem',
-      fontWeight: 500,
-      padding: '1px 7px',
-      borderRadius: 10,
-      background: fg + '18',
-      color: fg,
-      border: '1px solid ' + fg + '30',
-      fontFamily: MONO,
-    }}>
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        fontSize: '0.65rem',
+        fontWeight: 500,
+        padding: '1px 7px',
+        borderRadius: 10,
+        background: fg + '18',
+        color: fg,
+        border: '1px solid ' + fg + '30',
+        fontFamily: MONO
+      }}
+    >
       {children}
     </span>
   )
 }
 
-
 export function MockAlertBox({ variant, children }) {
   const styles = {
-    warning: { bg: 'rgba(230,168,23,0.06)', border: 'rgba(230,168,23,0.25)', color: 'var(--wb-gold, #e6a817)' },
-    info: { bg: 'rgba(88,166,255,0.06)', border: 'rgba(88,166,255,0.25)', color: 'var(--wb-sky, #58a6ff)' },
-    error: { bg: 'rgba(248,81,73,0.06)', border: 'rgba(248,81,73,0.25)', color: 'var(--wb-red, #f85149)' },
-    success: { bg: 'rgba(63,185,80,0.06)', border: 'rgba(63,185,80,0.25)', color: 'var(--wb-green, #3fb950)' },
+    warning: {
+      bg: 'rgba(230,168,23,0.06)',
+      border: 'rgba(230,168,23,0.25)',
+      color: 'var(--wb-gold, #e6a817)'
+    },
+    info: {
+      bg: 'rgba(88,166,255,0.06)',
+      border: 'rgba(88,166,255,0.25)',
+      color: 'var(--wb-sky, #58a6ff)'
+    },
+    error: {
+      bg: 'rgba(248,81,73,0.06)',
+      border: 'rgba(248,81,73,0.25)',
+      color: 'var(--wb-red, #f85149)'
+    },
+    success: {
+      bg: 'rgba(63,185,80,0.06)',
+      border: 'rgba(63,185,80,0.25)',
+      color: 'var(--wb-green, #3fb950)'
+    }
   }
   const { bg, border, color } = styles[variant] ?? styles.warning
   return (
-    <div style={{
-      padding: '12px 16px',
-      borderRadius: 6,
-      background: bg,
-      border: '1px solid ' + border,
-      color,
-      fontFamily: MONO,
-      fontSize: '0.8125rem',
-    }}>
+    <div
+      style={{
+        padding: '12px 16px',
+        borderRadius: 6,
+        background: bg,
+        border: '1px solid ' + border,
+        color,
+        fontFamily: MONO,
+        fontSize: '0.8125rem'
+      }}
+    >
       {children}
     </div>
   )
@@ -87,23 +105,27 @@ export function MockAlertBox({ variant, children }) {
 
 export function MockSectionCard({ header, children }) {
   return (
-    <section style={{
-      background: 'var(--wb-bg-surface, #070a0e)',
-      border: '1px solid var(--wb-border, #1e2a38)',
-      borderRadius: 8,
-      overflow: 'hidden',
-    }}>
+    <section
+      style={{
+        background: 'var(--wb-bg-surface, #070a0e)',
+        border: '1px solid var(--wb-border, #1e2a38)',
+        borderRadius: 8,
+        overflow: 'hidden'
+      }}
+    >
       {header && (
-        <div style={{
-          padding: '10px 20px',
-          borderBottom: '1px solid var(--wb-border, #1e2a38)',
-          fontSize: '0.65rem',
-          fontWeight: 600,
-          letterSpacing: '0.1em',
-          textTransform: 'uppercase',
-          color: 'var(--wb-text-muted, #4a5a6a)',
-          fontFamily: MONO,
-        }}>
+        <div
+          style={{
+            padding: '10px 20px',
+            borderBottom: '1px solid var(--wb-border, #1e2a38)',
+            fontSize: '0.65rem',
+            fontWeight: 600,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            color: 'var(--wb-text-muted, #4a5a6a)',
+            fontFamily: MONO
+          }}
+        >
           {header}
         </div>
       )}
@@ -131,7 +153,7 @@ export function MockFormButton({ label, isPending, onClick, style = {} }) {
         cursor: isPending ? 'not-allowed' : 'pointer',
         letterSpacing: '0.04em',
         transition: 'opacity 0.15s',
-        ...style,
+        ...style
       }}
     >
       {label}
@@ -156,7 +178,7 @@ export function MockOutlineButton({ children, onClick, style = {} }) {
         fontFamily: MONO,
         cursor: 'pointer',
         letterSpacing: '0.04em',
-        ...style,
+        ...style
       }}
     >
       {children}
@@ -172,7 +194,7 @@ export function MockPhaseBadge({ phase }) {
     HOLDING_SHARES: { label: 'Holding', color: '#58a6ff' },
     CC_OPEN: { label: 'Call Open', color: '#bc8cff' },
     WHEEL_COMPLETE: { label: 'Wheel Complete', color: '#3fb950' },
-    CLOSED: { label: 'Closed', color: '#8899aa' },
+    CLOSED: { label: 'Closed', color: '#8899aa' }
   }
   const { label, color } = map[phase] ?? { label: phase, color: '#8899aa' }
   return <MockBadge color={color}>{label}</MockBadge>
@@ -182,16 +204,27 @@ export function MockPhaseBadge({ phase }) {
 
 export function MockSummaryRow({ label, value, noBorder, highlight }) {
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: '10px 14px',
-      borderBottom: noBorder ? 'none' : '1px solid rgba(30,42,56,0.6)',
-      background: highlight ? 'linear-gradient(90deg, rgba(63,185,80,0.04), transparent)' : undefined,
-    }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '10px 14px',
+        borderBottom: noBorder ? 'none' : '1px solid rgba(30,42,56,0.6)',
+        background: highlight
+          ? 'linear-gradient(90deg, rgba(63,185,80,0.04), transparent)'
+          : undefined
+      }}
+    >
       <span style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)' }}>{label}</span>
-      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--wb-text-primary, #e2eaf2)', textAlign: 'right' }}>
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: 'var(--wb-text-primary, #e2eaf2)',
+          textAlign: 'right'
+        }}
+      >
         {value}
       </span>
     </div>
@@ -203,34 +236,46 @@ export function MockSummaryRow({ label, value, noBorder, highlight }) {
 export function MockReadOnlyField({ label, value, hint }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      <label style={{
-        display: 'block',
-        fontSize: '0.7rem',
-        fontWeight: 600,
-        letterSpacing: '0.07em',
-        textTransform: 'uppercase',
-        color: 'var(--wb-text-muted, #4a5a6a)',
-        fontFamily: MONO,
-        marginBottom: 6,
-      }}>
+      <label
+        style={{
+          display: 'block',
+          fontSize: '0.7rem',
+          fontWeight: 600,
+          letterSpacing: '0.07em',
+          textTransform: 'uppercase',
+          color: 'var(--wb-text-muted, #4a5a6a)',
+          fontFamily: MONO,
+          marginBottom: 6
+        }}
+      >
         {label}
       </label>
-      <div style={{
-        width: '100%',
-        padding: '10px 14px',
-        borderRadius: 6,
-        border: '1px solid var(--wb-border, #2a3a4a)',
-        background: 'rgba(14,24,36,0.6)',
-        color: 'var(--wb-text-secondary, #8899aa)',
-        fontSize: 14,
-        fontFamily: MONO,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        boxSizing: 'border-box',
-      }}>
+      <div
+        style={{
+          width: '100%',
+          padding: '10px 14px',
+          borderRadius: 6,
+          border: '1px solid var(--wb-border, #2a3a4a)',
+          background: 'rgba(14,24,36,0.6)',
+          color: 'var(--wb-text-secondary, #8899aa)',
+          fontSize: 14,
+          fontFamily: MONO,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          boxSizing: 'border-box'
+        }}
+      >
         <span>{value}</span>
-        <span style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--wb-text-muted, #4a5a6a)', marginLeft: 8 }}>
+        <span
+          style={{
+            fontSize: 9,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            color: 'var(--wb-text-muted, #4a5a6a)',
+            marginLeft: 8
+          }}
+        >
           auto
         </span>
       </div>
@@ -242,7 +287,6 @@ export function MockReadOnlyField({ label, value, hint }) {
     </div>
   )
 }
-
 
 export const panelStyle = {
   position: 'absolute',
@@ -256,19 +300,19 @@ export const panelStyle = {
   flexDirection: 'column',
   fontFamily: MONO,
   boxShadow: '-12px 0 48px rgba(0,0,0,0.55)',
-  color: 'var(--wb-text-primary, #e2eaf2)',
+  color: 'var(--wb-text-primary, #e2eaf2)'
 }
-
 
 export function Mockup() {
   const [state, setState] = useState('confirmation')
   const pos = MOCK_POSITION
 
-  const states = ['confirmation', 'success']
-  const isSuccess = state === 'success'
+const states = ['confirmation', 'success']
+const isSuccess = state === 'success'
 
-  return (
-    <div style={{ fontFamily: MONO, background: '#040608', minHeight: 520 }}>
+return (
+
+<div style={{ fontFamily: MONO, background: '#040608', minHeight: 520 }}>
 
       {/* Dev state toggle */}
       <div style={{
@@ -601,7 +645,8 @@ export function Mockup() {
         </div>
       </div>
     </div>
-  )
+
+)
 }
 
 <Mockup />

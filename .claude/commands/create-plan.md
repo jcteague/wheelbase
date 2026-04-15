@@ -1,6 +1,5 @@
 ---
 description: Create a detailed plan from a user story
-
 ---
 
 ## User Input
@@ -22,7 +21,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Annotated callouts (the `annotation` elements in the HTML)
    - Error states and their visual treatment (red vs amber)
    - Post-success UX (shortcuts, navigation, badge changes)
-   Keep these notes in memory — they will directly inform the frontend implementation areas in Phase 2.
+     Keep these notes in memory — they will directly inform the frontend implementation areas in Phase 2.
 
 3. **Understand context**: Read `CLAUDE.md` and relevant existing source files to understand what is already implemented. Identify gaps between the current codebase and what the story requires.
 
@@ -31,7 +30,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Phase 1: Generate `data-model.md`, `contracts/`, `quickstart.md`
    - Phase 2: Generate `plan.md` (ordered TDD implementation plan)
 
-4. **Stop and report**: Command ends after Phase 2. Report the output directory and all generated artifacts.
+5. **Stop and report**: Command ends after Phase 2. Report the output directory and all generated artifacts.
 
 ## Output Directory
 
@@ -53,6 +52,7 @@ Write all artifacts to `plans/{story-id}/` where `{story-id}` is derived from th
 
    ```markdown
    ## {Topic}
+
    - **Decision:** [what was chosen]
    - **Rationale:** [why chosen]
    - **Alternatives considered:** [what else was evaluated]
@@ -127,21 +127,26 @@ Read these before starting implementation — they contain the decisions, data m
 ### {N}. {Area Name}
 
 **Files to create or modify:**
+
 - `path/to/file.py` — [what changes]
 
 **Red — tests to write:**
+
 - [Specific test case: what scenario, what assertion, what file it goes in]
 - [Each bullet is one distinct test case or test group]
 
 **Green — implementation:**
+
 - [Specific thing to build: class, function, endpoint handler, component, etc.]
 - [Reference the exact schema fields, logic rules, or API shape from data-model.md / contracts/ — name the file, not just "the spec"]
 
 **Refactor — cleanup to consider:**
+
 - [Naming, duplication, structure concerns to check after Green passes]
 - [If nothing is expected, write "Check for duplication and naming consistency."]
 
 **Acceptance criteria covered:**
+
 - [Quote or paraphrase the Gherkin scenario(s) this area satisfies]
 ```
 

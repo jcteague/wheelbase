@@ -29,15 +29,15 @@ pnpm build && pnpm test:e2e
 
 ## Key Files
 
-| File | Role |
-|---|---|
-| `src/renderer/src/components/ui/Sheet.tsx` | New shared primitives |
-| `src/renderer/src/components/ui/Sheet.test.tsx` | New primitive tests |
-| `src/renderer/src/components/CloseCcEarlySheet.tsx` | First migration target (simplest) |
-| `src/renderer/src/components/ExpirationSheet.tsx` | Second migration target |
-| `src/renderer/src/components/CcExpirationSheet.tsx` | Third migration target |
-| `src/renderer/src/components/AssignmentSheet.tsx` | Fourth migration target |
-| `src/renderer/src/components/CallAwaySheet.tsx` | Fifth migration target |
+| File                                                   | Role                                                      |
+| ------------------------------------------------------ | --------------------------------------------------------- |
+| `src/renderer/src/components/ui/Sheet.tsx`             | New shared primitives                                     |
+| `src/renderer/src/components/ui/Sheet.test.tsx`        | New primitive tests                                       |
+| `src/renderer/src/components/CloseCcEarlySheet.tsx`    | First migration target (simplest)                         |
+| `src/renderer/src/components/ExpirationSheet.tsx`      | Second migration target                                   |
+| `src/renderer/src/components/CcExpirationSheet.tsx`    | Third migration target                                    |
+| `src/renderer/src/components/AssignmentSheet.tsx`      | Fourth migration target                                   |
+| `src/renderer/src/components/CallAwaySheet.tsx`        | Fifth migration target                                    |
 | `src/renderer/src/components/OpenCoveredCallSheet.tsx` | Sixth migration target (has OpenCcSheetHeader to replace) |
-| `src/renderer/src/components/RollCspSheet.tsx` | Seventh migration target (420px width) |
-| `src/renderer/src/components/OpenCcSheetHeader.tsx` | Delete after OpenCoveredCallSheet migration |
+| `src/renderer/src/components/RollCspSheet.tsx`         | Seventh migration target (420px width)                    |
+| `src/renderer/src/components/OpenCcSheetHeader.tsx`    | Delete after OpenCoveredCallSheet migration               |

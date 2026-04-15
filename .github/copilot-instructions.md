@@ -5,6 +5,7 @@
 A single-user trading journal and management tool for the **options wheel strategy**. Traders sell cash-secured puts (CSPs), accept assignment into shares, then sell covered calls (CCs) until the shares are called away — repeating the cycle. The app tracks every leg, maintains accurate cost basis through rolls and premiums, and fires management alerts.
 
 Three-layer architecture:
+
 - **Frontend** — Preact 10 SPA (Vite, TypeScript)
 - **Backend** — Python FastAPI with APScheduler background jobs
 - **Database** — PostgreSQL 16 via SQLAlchemy 2 / Alembic
@@ -25,19 +26,19 @@ Alpaca is the broker integration (read-only through Phase 3, order execution in 
 
 ## Tech Stack (brief)
 
-| Concern | Choice |
-|---|---|
-| Frontend framework | Preact 10 + Vite + TypeScript |
-| Component/page state | **Preact Signals** (`@preact/signals`) — preferred |
-| Global UI state | **Zustand** (cross-view state only) |
-| Server state / polling | TanStack Query (React Query) |
-| Forms | React Hook Form (via preact/compat) |
-| Schema validation | **Zod** (frontend runtime validation + inferred TS types) |
-| UI components | **shadcn/ui** (adopted incrementally for shared primitives) |
-| Backend | Python FastAPI + Pydantic v2 |
-| Scheduling | APScheduler (in-process) |
-| Database | PostgreSQL 16, SQLAlchemy 2, Alembic |
-| Broker | alpaca-py SDK, all calls isolated in `integrations/alpaca.py` |
+| Concern                | Choice                                                        |
+| ---------------------- | ------------------------------------------------------------- |
+| Frontend framework     | Preact 10 + Vite + TypeScript                                 |
+| Component/page state   | **Preact Signals** (`@preact/signals`) — preferred            |
+| Global UI state        | **Zustand** (cross-view state only)                           |
+| Server state / polling | TanStack Query (React Query)                                  |
+| Forms                  | React Hook Form (via preact/compat)                           |
+| Schema validation      | **Zod** (frontend runtime validation + inferred TS types)     |
+| UI components          | **shadcn/ui** (adopted incrementally for shared primitives)   |
+| Backend                | Python FastAPI + Pydantic v2                                  |
+| Scheduling             | APScheduler (in-process)                                      |
+| Database               | PostgreSQL 16, SQLAlchemy 2, Alembic                          |
+| Broker                 | alpaca-py SDK, all calls isolated in `integrations/alpaca.py` |
 
 ---
 
@@ -46,6 +47,7 @@ Alpaca is the broker integration (read-only through Phase 3, order execution in 
 ### Test-Driven Development (required)
 
 Every task follows the **Red → Green → Refactor** cycle:
+
 1. **Red** — write a failing test that defines the expected behaviour
 2. **Green** — write the minimum code to make it pass
 3. **Refactor** — clean up without breaking the test
@@ -66,6 +68,7 @@ Prefer **clean, readable, maintainable** code. Optimise only when there is a mea
 ### Post-Change Checklist
 
 After every code change, run in order:
+
 1. **Tests** — all must pass
 2. **Lint** — fix any lint errors before committing
 3. **Type-check** — no TypeScript errors permitted
@@ -85,10 +88,10 @@ Do not consider a task done until all three are clean.
 
 ## Build Phases (summary)
 
-| Phase | Focus |
-|---|---|
-| 1 | Core engines + manual trade entry. No broker connection. Full unit test coverage of cost basis math. |
-| 2 | Alpaca read integration — live prices, Greeks, assignment detection via polling |
-| 3 | Alert engine + candidate screener |
-| 4 | Order execution via Alpaca write API |
-| 5 | Analytics dashboard |
+| Phase | Focus                                                                                                |
+| ----- | ---------------------------------------------------------------------------------------------------- |
+| 1     | Core engines + manual trade entry. No broker connection. Full unit test coverage of cost basis math. |
+| 2     | Alpaca read integration — live prices, Greeks, assignment detection via polling                      |
+| 3     | Alert engine + candidate screener                                                                    |
+| 4     | Order execution via Alpaca write API                                                                 |
+| 5     | Analytics dashboard                                                                                  |

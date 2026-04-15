@@ -3,7 +3,6 @@ import { Controller } from 'react-hook-form'
 import { DatePicker } from '@/components/ui/date-picker'
 import { computeDte, fmtMoney } from '../lib/format'
 import { computeNetCreditDebit, getRollTypeLabel, rollCreditDebitColors } from '../lib/rolls'
-import { MONO } from '../lib/tokens'
 import type { RollCspFormValues } from './RollCspSheet'
 import { AlertBox } from './ui/AlertBox'
 import { Field } from './ui/FormField'
@@ -11,6 +10,7 @@ import { FormButton } from './ui/FormButton'
 import { NumberInput } from './ui/NumberInput'
 import { SectionCard } from './ui/SectionCard'
 import { SheetBody, SheetFooter, SheetHeader } from './ui/Sheet'
+import { SummaryRow } from './ui/SummaryRow'
 
 type RollCspFormProps = {
   ticker: string
@@ -52,66 +52,35 @@ function NetCreditDebitPreview({
     <div
       style={{ borderRadius: 6, background: bg, border: `1px solid ${border}`, overflow: 'hidden' }}
     >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '12px 14px'
-        }}
-      >
-        <span style={{ fontSize: 11, color: 'var(--wb-text-secondary)', fontFamily: MONO }}>
+      <div className="flex items-center justify-between px-[14px] py-3">
+        <span className="font-wb-mono" style={{ fontSize: 11, color: 'var(--wb-text-secondary)' }}>
           {label}
         </span>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-          <span style={{ fontSize: 17, fontWeight: 700, color, fontFamily: MONO }}>
+        <div className="flex items-baseline gap-2">
+          <span
+            className={`font-wb-mono ${isCredit ? 'text-wb-green' : 'text-wb-gold'}`}
+            style={{ fontSize: 17, fontWeight: 700 }}
+          >
             {sign}${Math.abs(net).toFixed(2)}/contract
           </span>
-          <span style={{ fontSize: 11, color, opacity: 0.7, fontFamily: MONO }}>
+          <span className="font-wb-mono" style={{ fontSize: 11, color, opacity: 0.7 }}>
             (${total.toFixed(2)} total)
           </span>
         </div>
       </div>
       {!isCredit && (
         <div
+          className="font-wb-mono"
           style={{
             padding: '8px 14px',
             borderTop: `1px solid ${border}`,
             fontSize: 11,
-            color,
-            fontFamily: MONO
+            color
           }}
         >
           ⚠ This roll costs more to close than the new premium provides
         </div>
       )}
-    </div>
-  )
-}
-
-function SummaryRow({
-  label,
-  value,
-  highlight
-}: {
-  label: string
-  value: string
-  highlight?: boolean
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        fontSize: '0.8rem',
-        background: highlight
-          ? 'linear-gradient(90deg, var(--wb-gold-subtle), transparent)'
-          : undefined,
-        padding: highlight ? '4px 0' : undefined
-      }}
-    >
-      <span style={{ color: 'var(--wb-text-muted)' }}>{label}</span>
-      <span style={{ textAlign: 'right' }}>{value}</span>
     </div>
   )
 }
@@ -149,7 +118,7 @@ export function RollCspForm({
       <SheetBody>
         {/* Current Leg */}
         <SectionCard header="Current Leg">
-          <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="px-4 py-3 flex flex-col gap-2">
             <SummaryRow label="Strike" value={fmtMoney(strike)} />
             <SummaryRow label="Expiration" value={`${expiration} (${dte} DTE)`} />
             <SummaryRow
@@ -161,15 +130,8 @@ export function RollCspForm({
         </SectionCard>
 
         {/* New Leg */}
-        <SectionCard header="New Leg">
-          <div
-            style={{
-              padding: '16px 14px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 14
-            }}
-          >
+        <SectionCard header="New Leg" className="border-wb-border">
+          <div className="px-[14px] py-4 flex flex-col gap-[14px]">
             <Field label="New Strike" htmlFor="roll-new-strike" error={errors.new_strike?.message}>
               <NumberInput
                 id="roll-new-strike"
@@ -203,7 +165,7 @@ export function RollCspForm({
               />
             </Field>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="grid grid-cols-2 gap-3">
               <Field
                 label="Cost to Close"
                 htmlFor="roll-cost-to-close"

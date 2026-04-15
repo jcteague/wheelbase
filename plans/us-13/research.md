@@ -5,15 +5,18 @@
 US-12 is being built in a separate worktree (`~/my-stuff/wheelbase-us-12/`). US-13 assumes US-12 is merged. Key infrastructure US-12 provides:
 
 ### Lifecycle Engine (`src/main/core/lifecycle.ts`)
+
 - `rollCsp(input: RollCspInput): RollCspResult` — validates `currentPhase === 'CSP_OPEN'`, `newExpiration > currentExpiration`, positive amounts
 - **No `newStrike` parameter** — lifecycle is unaware of strike changes
 - Returns `{ phase: 'CSP_OPEN' }` (no phase transition)
 
 ### Schema (`src/main/schemas.ts`)
+
 - `RollCspPayloadSchema` already includes `newStrike: z.number().positive().optional()`
 - Service defaults `newStrike` to current strike when omitted
 
 ### Service (`src/main/services/roll-csp-position.ts`)
+
 - `rollCspPosition(db, positionId, payload)` — atomic transaction
 - Creates ROLL_FROM (BUY at current strike) + ROLL_TO (SELL at newStrike) legs
 - Links with shared `roll_chain_id` UUID
@@ -21,10 +24,12 @@ US-12 is being built in a separate worktree (`~/my-stuff/wheelbase-us-12/`). US-
 - `newStrike` defaults to current strike if omitted
 
 ### Cost Basis (`src/main/core/costbasis.ts`)
+
 - `calculateRollBasis({ prevBasisPerShare, prevTotalPremiumCollected, costToClosePerContract, newPremiumPerContract, contracts })`
 - Net = newPremium - costToClose; credit reduces basis, debit increases it
 
 ### Renderer (`src/renderer/src/components/RollCspSheet.tsx`)
+
 - Strike field is editable, pre-filled with current strike
 - `getRollTypeLabel(currentStrike, newStrike)` — only 3 types (no expiration comparison)
 - `NetCreditDebitPreview` — debit warning says "costs more to close than new premium provides"
@@ -32,6 +37,7 @@ US-12 is being built in a separate worktree (`~/my-stuff/wheelbase-us-12/`). US-
 - Success state does not highlight strike changes
 
 ### Position Queries
+
 - `list-positions.ts` and `get-position.ts` already select the latest active leg (by `fill_date DESC, created_at DESC`) for display
 - After a roll with strike change, the new ROLL_TO leg's strike will naturally be displayed — **no query changes needed**
 

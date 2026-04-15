@@ -1,37 +1,10 @@
 import type { RollCspResponse } from '../api/positions'
 import { computeDte, fmtMoney } from '../lib/format'
 import { getRollTypeLabel, rollCreditDebitColors } from '../lib/rolls'
-import { MONO } from '../lib/tokens'
 import { AlertBox } from './ui/AlertBox'
 import { SectionCard } from './ui/SectionCard'
 import { SheetBody, SheetHeader } from './ui/Sheet'
-
-function SummaryRow({
-  label,
-  value,
-  highlight
-}: {
-  label: string
-  value: string
-  highlight?: boolean
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        fontSize: '0.8rem',
-        background: highlight
-          ? 'linear-gradient(90deg, var(--wb-gold-subtle), transparent)'
-          : undefined,
-        padding: highlight ? '4px 0' : undefined
-      }}
-    >
-      <span style={{ color: 'var(--wb-text-muted)' }}>{label}</span>
-      <span style={{ textAlign: 'right' }}>{value}</span>
-    </div>
-  )
-}
+import { SummaryRow } from './ui/SummaryRow'
 
 type RollCspSuccessProps = {
   response: RollCspResponse
@@ -73,6 +46,7 @@ export function RollCspSuccess({
 
       <SheetBody>
         <div
+          className={isCredit ? 'bg-wb-green-dim' : 'bg-wb-gold-dim'}
           style={{
             background: heroBg,
             border: `1px solid ${heroBorder}`,
@@ -89,7 +63,7 @@ export function RollCspSuccess({
               letterSpacing: '0.18em',
               textTransform: 'uppercase',
               marginBottom: 8,
-              fontFamily: MONO
+              fontFamily: 'var(--font-wb-mono)'
             }}
           >
             {isCredit ? 'Roll Net Credit' : 'Roll Net Debit'}
@@ -112,7 +86,7 @@ export function RollCspSuccess({
         </div>
 
         <SectionCard>
-          <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="px-4 py-3 flex flex-col gap-2">
             <SummaryRow label="Roll type" value={rollType} />
             <SummaryRow
               label="Old leg"

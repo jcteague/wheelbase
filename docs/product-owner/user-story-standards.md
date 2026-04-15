@@ -15,6 +15,7 @@ US-{N}: {verb} {object} {context}
 ```
 
 Examples:
+
 - US-12: Roll an open CSP to a later expiration
 - US-25: View portfolio-level premium income summary
 - US-31: Receive alert when position reaches 50% profit target
@@ -28,6 +29,7 @@ Examples:
 ```
 
 Rules:
+
 - The persona should be specific. Prefer "wheel trader managing 5+ active positions" over "user."
 - The goal describes the problem at a high level, not the UI solution.
 - The "so that" clause must state a real benefit. If the benefit is unclear, the story may not be valuable.
@@ -192,23 +194,27 @@ Scenario: Cost basis after {event}
 ## Story Sizing Guidelines
 
 ### Small (1-2 points)
+
 - Single form or display change
 - One API endpoint
 - Pure validation logic
 - Example: "Add DTE countdown to position card"
 
 ### Medium (3-5 points)
+
 - Full CRUD for an entity
 - Lifecycle transition with cost basis update
 - New alert rule with configuration
 - Example: "Roll an open CSP with net credit/debit tracking"
 
 ### Large (8 points)
+
 - Multi-step workflow spanning frontend and backend
 - New engine or major engine extension
 - Example: "PMCC entry flow with dual chain selector and safety validation"
 
 ### Too Large (13+ points — decompose)
+
 - Spans multiple phases or modules
 - Has more than 8 acceptance criteria scenarios
 - Contains the word "and" connecting two distinct features in the title
@@ -226,26 +232,32 @@ An epic groups related stories that together deliver a coherent capability. For 
 ## {Epic Title}
 
 ### Goal
+
 {1-2 sentences: what user capability does this epic deliver?}
 
 ### Success Criteria
+
 {How do we know this epic is complete? Observable outcomes.}
 
 ### Stories
+
 - [ ] US-{N}: {title}
 - [ ] US-{N}: {title}
 - ...
 
 ### Phase
+
 {Which build phase does this epic belong to?}
 
 ### Dependencies
+
 {Other epics or external dependencies}
 ```
 
 ### Decomposition Heuristic
 
 Start with the feature spec module. For each module:
+
 1. Identify the distinct user-facing capabilities
 2. For each capability, identify the happy path story
 3. Then add stories for: validation/error cases, edge cases, configuration, and display/reporting
@@ -256,21 +268,26 @@ Start with the feature spec module. For each module:
 ## Common Anti-Patterns to Avoid
 
 ### Vague Acceptance Criteria
+
 - Bad: "The user can see their positions"
 - Good: Specific Gherkin scenario with concrete data
 
 ### Implementation Stories
+
 - Bad: "Create the positions database table"
 - Good: "Open a new wheel by selling a CSP" (the table is an implementation detail)
 
 ### Missing Negative Cases
+
 - Every story should have at least one "rejection" or "error" scenario
 - What happens with invalid input? Insufficient capital? Duplicate entry?
 
 ### Scope Creep in Acceptance Criteria
+
 - If a scenario introduces a feature not in the story title, it belongs in a separate story
 - Use "Out of Scope" section to explicitly capture these for later
 
 ### Stories Without Business Value
+
 - If the "So that" clause is hard to write, the story may be a task, not a story
 - Tasks (migrations, refactors, infrastructure) are tracked separately, not as user stories

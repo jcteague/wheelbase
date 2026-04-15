@@ -5,6 +5,7 @@
 Implement the full assignment flow that transitions a `CSP_OPEN` position to `HOLDING_SHARES` when the trader records a broker assignment. Work spans a DB migration (rename `option_type` → `instrument_type`, add `STOCK` value), two core engine additions, a new service, IPC handler, preload binding, renderer API/hook, and a right-side `AssignmentSheet` component. Done state: a trader can open the assignment sheet from the position detail page, confirm a date, and see the position transition to HOLDING_SHARES with the correct cost basis and the strategic nudge.
 
 ## Beads Reference
+
 The beads identifier for this epic is `wheelbase-2gx`
 
 ## Supporting Documents
@@ -27,22 +28,27 @@ US-1 through US-5 complete. All existing tests passing. The `ASSIGN` leg role an
 ### 1. DB Migration — rename `option_type` → `instrument_type`
 
 **Files to create or modify:**
+
 - `migrations/003_rename_option_type_to_instrument_type.sql` — new migration
 
 **Red — tests to write:**
+
 - In `src/main/db/migrate.test.ts` (or the existing migration integration test): assert that after running all migrations, a row inserted into `legs` with `instrument_type = 'STOCK'` is accepted, and that `instrument_type = 'BOND'` is rejected by the CHECK constraint.
 - Assert that the `option_type` column no longer exists after migration.
 
 **Green — implementation:**
+
 - Write `migrations/003_rename_option_type_to_instrument_type.sql`:
   - If SQLite ≥ 3.25.0: `ALTER TABLE legs RENAME COLUMN option_type TO instrument_type;` followed by a CHECK constraint update via table rebuild.
   - The table rebuild approach (always safe): create `legs_new` with the new column name and constraint `instrument_type IN ('PUT','CALL','STOCK')`, copy data, drop old table, rename new.
 - No application code changes in this area — just the SQL file.
 
 **Refactor — cleanup to consider:**
+
 - Confirm the migration runner picks up `003_` correctly by checking naming conventions of existing files.
 
 **Acceptance criteria covered:**
+
 - Foundational: enables the `STOCK` instrument type required by the assignment leg.
 
 ---
@@ -50,6 +56,7 @@ US-1 through US-5 complete. All existing tests passing. The `ASSIGN` leg role an
 ### 2. Core type extensions (`src/main/core/types.ts` + downstream references)
 
 **Files to create or modify:**
+
 - `src/main/core/types.ts` — rename `OptionType` → `InstrumentType`, add `'STOCK'`; add `'ASSIGN'` to `LegAction`
 - `src/main/schemas.ts` — rename `optionType: OptionType` → `instrumentType: InstrumentType` in `LegRecord`
 - `src/main/services/expire-csp-position.ts` — update `'PUT'` → still `'PUT'` but column reference `option_type` → `instrument_type` in SQL
@@ -59,11 +66,13 @@ US-1 through US-5 complete. All existing tests passing. The `ASSIGN` leg role an
 - `src/renderer/src/api/positions.ts` — rename `optionType` → `instrumentType` in `PositionDetail.activeLeg`, `PositionDetail.legs`, and `LegData`
 
 **Red — tests to write:**
+
 - In `src/main/core/types.test.ts` (new or existing): assert `InstrumentType.parse('STOCK')` succeeds; assert `InstrumentType.parse('BOND')` throws; assert `LegAction.parse('ASSIGN')` succeeds.
 - In existing `createPosition` integration tests: assert the returned leg has `instrumentType: 'PUT'` (not `optionType`).
 - In existing `expireCspPosition` integration tests: assert the returned expire leg has `instrumentType: 'PUT'`.
 
 **Green — implementation:**
+
 - In `src/main/core/types.ts`:
   - Rename `OptionType` to `InstrumentType`, add `'STOCK'` to the enum values.
   - Export `InstrumentType` type alias.
@@ -74,9 +83,11 @@ US-1 through US-5 complete. All existing tests passing. The `ASSIGN` leg role an
 - In `src/main/schemas.ts` `LegRecord`, rename the field `optionType: OptionType` → `instrumentType: InstrumentType`.
 
 **Refactor — cleanup to consider:**
+
 - Search for any remaining `optionType` / `option_type` / `OptionType` references via grep and confirm all are updated.
 
 **Acceptance criteria covered:**
+
 - Foundational: type system correctness required by all subsequent areas.
 
 ---
@@ -84,9 +95,11 @@ US-1 through US-5 complete. All existing tests passing. The `ASSIGN` leg role an
 ### 3. Lifecycle engine — `recordAssignment()`
 
 **Files to create or modify:**
+
 - `src/main/core/lifecycle.ts` — add `RecordAssignmentInput`, `RecordAssignmentResult`, `recordAssignment()`
 
 **Red — tests to write:**
+
 - In `src/main/core/lifecycle.test.ts`:
   - `recordAssignment returns HOLDING_SHARES for valid CSP_OPEN input`
   - `recordAssignment throws invalid_phase when currentPhase is HOLDING_SHARES`
@@ -96,6 +109,7 @@ US-1 through US-5 complete. All existing tests passing. The `ASSIGN` leg role an
   - `recordAssignment succeeds when assignmentDate equals openFillDate (boundary — valid)`
 
 **Green — implementation:**
+
 - Add `RecordAssignmentInput` interface: `{ currentPhase: WheelPhase, assignmentDate: string, openFillDate: string }`
 - Add `RecordAssignmentResult` interface: `{ phase: 'HOLDING_SHARES' }`
 - Add `recordAssignment(input: RecordAssignmentInput): RecordAssignmentResult`:
@@ -104,9 +118,11 @@ US-1 through US-5 complete. All existing tests passing. The `ASSIGN` leg role an
   - Return `{ phase: 'HOLDING_SHARES' }`
 
 **Refactor — cleanup to consider:**
+
 - Confirm date comparison uses string ISO comparison (consistent with `closeCsp` and `expireCsp`).
 
 **Acceptance criteria covered:**
+
 - AC: "Reject assignment if position is not in CSP_OPEN phase"
 - AC: "Reject assignment date before the CSP open date"
 
@@ -115,9 +131,11 @@ US-1 through US-5 complete. All existing tests passing. The `ASSIGN` leg role an
 ### 4. Cost basis engine — `calculateAssignmentBasis()`
 
 **Files to create or modify:**
+
 - `src/main/core/costbasis.ts` — add `AssignmentBasisLeg`, `AssignmentBasisInput`, `AssignmentBasisResult`, `calculateAssignmentBasis()`
 
 **Red — tests to write:**
+
 - In `src/main/core/costbasis.test.ts`:
   - `calculateAssignmentBasis: single CSP leg, $180 strike, $3.50 premium → basisPerShare=$176.50, sharesHeld=100`
   - `calculateAssignmentBasis: CSP + roll, $175 strike, $2.00 + $1.50 → basisPerShare=$171.50, sharesHeld=100`
@@ -126,6 +144,7 @@ US-1 through US-5 complete. All existing tests passing. The `ASSIGN` leg role an
   - `calculateAssignmentBasis: totalPremiumCollected = sum(premiumPerContract × contracts × 100) across all premium legs`
 
 **Green — implementation:**
+
 - Add interfaces per `plans/us-6/data-model.md`.
 - `calculateAssignmentBasis(input: AssignmentBasisInput): AssignmentBasisResult`:
   - `sharesHeld = input.contracts * 100`
@@ -135,9 +154,11 @@ US-1 through US-5 complete. All existing tests passing. The `ASSIGN` leg role an
   - `premiumWaterfall = premiumLegs.map(leg => ({ label, amount: leg.premiumPerContract }))`
 
 **Refactor — cleanup to consider:**
+
 - All arithmetic via `decimal.js`; no native float operations.
 
 **Acceptance criteria covered:**
+
 - AC: "Effective cost basis displays as $176.50 per share"
 - AC: "Cost basis accounts for all CSP premiums including rolls"
 - AC: "Summary card shows the full premium waterfall"
@@ -147,22 +168,27 @@ US-1 through US-5 complete. All existing tests passing. The `ASSIGN` leg role an
 ### 5. IPC schemas — `AssignCspPayloadSchema` and `AssignCspPositionResult`
 
 **Files to create or modify:**
+
 - `src/main/schemas.ts` — add `AssignCspPayloadSchema`, `AssignCspPositionResult`
 
 **Red — tests to write:**
+
 - In a schema unit test (or inline in service tests):
   - `AssignCspPayloadSchema.parse({ positionId: validUuid, assignmentDate: '2026-01-17' })` succeeds
   - `AssignCspPayloadSchema.parse({ positionId: 'not-a-uuid', assignmentDate: '2026-01-17' })` throws
   - `AssignCspPayloadSchema.parse({ positionId: validUuid })` (missing date) throws
 
 **Green — implementation:**
+
 - `AssignCspPayloadSchema`: per `plans/us-6/contracts/assign-csp.md`.
 - `AssignCspPositionResult` interface: per `plans/us-6/data-model.md`.
 
 **Refactor — cleanup to consider:**
+
 - Check for duplication and naming consistency with `CloseCspPositionResult` and `ExpireCspPositionResult`.
 
 **Acceptance criteria covered:**
+
 - Foundational: schema validation is the first line of defence for all IPC calls.
 
 ---
@@ -170,10 +196,12 @@ US-1 through US-5 complete. All existing tests passing. The `ASSIGN` leg role an
 ### 6. Service — `assignCspPosition()`
 
 **Files to create or modify:**
+
 - `src/main/services/assign-csp-position.ts` — new file
 - `src/main/services/positions.ts` (barrel) — add `assignCspPosition` export if using barrel pattern; otherwise import directly in IPC handler
 
 **Red — tests to write:**
+
 - In `src/main/services/assign-csp-position.test.ts`:
   - `successfully assigns a CSP_OPEN position: inserts ASSIGN leg, updates phase to HOLDING_SHARES, inserts snapshot, returns correct result`
   - `returns correct premiumWaterfall from all CSP and roll legs`
@@ -183,6 +211,7 @@ US-1 through US-5 complete. All existing tests passing. The `ASSIGN` leg role an
   - `activeLeg is null in getPosition after assignment (ASSIGN leg not surfaced as activeLeg)`
 
 **Green — implementation:**
+
 - `assignCspPosition(db, positionId, payload)`:
   1. Call `getPosition(db, positionId)` — throw `not_found` if null.
   2. Collect `premiumLegs` from all legs where `leg_role IN ('CSP_OPEN', 'ROLL_TO')`.
@@ -196,9 +225,11 @@ US-1 through US-5 complete. All existing tests passing. The `ASSIGN` leg role an
   7. Return `AssignCspPositionResult` per `plans/us-6/data-model.md`.
 
 **Refactor — cleanup to consider:**
+
 - Confirm the transaction follows the same `db.transaction(() => { ... })()` invocation pattern as `expireCspPosition`.
 
 **Acceptance criteria covered:**
+
 - AC: "Successfully record an assignment — position transitions to HOLDING_SHARES"
 - AC: "A stock_assignment leg is recorded with fill_date '2026-01-17'"
 - AC: "100 shares held at assignment strike $180.00"
@@ -208,15 +239,18 @@ US-1 through US-5 complete. All existing tests passing. The `ASSIGN` leg role an
 ### 7. IPC handler — `positions:assign-csp`
 
 **Files to create or modify:**
+
 - `src/main/ipc/positions.ts` — add handler registration
 
 **Red — tests to write:**
+
 - IPC integration test (or service-level test already covers most paths; add an IPC-level test if the project has an IPC test harness):
   - `positions:assign-csp with valid payload returns ok:true and phase HOLDING_SHARES`
   - `positions:assign-csp with missing assignmentDate returns ok:false with Zod parse error`
   - `positions:assign-csp with non-UUID positionId returns ok:false`
 
 **Green — implementation:**
+
 - Register in `registerPositionsHandlers`:
   ```typescript
   ipcMain.handle('positions:assign-csp', (_, payload: unknown) =>
@@ -229,9 +263,11 @@ US-1 through US-5 complete. All existing tests passing. The `ASSIGN` leg role an
 - Import `AssignCspPayloadSchema` from `'../schemas'` and `assignCspPosition` from `'../services/assign-csp-position'`.
 
 **Refactor — cleanup to consider:**
+
 - Check for duplication and naming consistency with `positions:expire-csp` handler.
 
 **Acceptance criteria covered:**
+
 - Foundational: exposes the backend capability to the renderer.
 
 ---
@@ -239,21 +275,26 @@ US-1 through US-5 complete. All existing tests passing. The `ASSIGN` leg role an
 ### 8. Preload — `assignPosition`
 
 **Files to create or modify:**
+
 - `src/preload/index.ts` — add `assignPosition`
 
 **Red — tests to write:**
+
 - No dedicated unit test needed; covered by E2E. Verify via TypeScript: `window.api.assignPosition` must be callable with `{ positionId, assignmentDate }`.
 
 **Green — implementation:**
+
 - Add to the `api` object:
   ```typescript
   assignPosition: (payload: unknown) => ipcRenderer.invoke('positions:assign-csp', payload)
   ```
 
 **Refactor — cleanup to consider:**
+
 - Confirm `preload/index.d.ts` (or equivalent type declaration) is updated so the renderer's `window.api` type includes `assignPosition`.
 
 **Acceptance criteria covered:**
+
 - Foundational: bridges preload to IPC channel.
 
 ---
@@ -261,21 +302,26 @@ US-1 through US-5 complete. All existing tests passing. The `ASSIGN` leg role an
 ### 9. Renderer API adapter — `assignPosition()`
 
 **Files to create or modify:**
+
 - `src/renderer/src/api/positions.ts` — add `AssignCspPayload`, `AssignCspResponse` types and `assignPosition()` function; add `assignmentDate` to `IPC_TO_FORM_FIELD`
 
 **Red — tests to write:**
+
 - No dedicated unit test; covered by hook and E2E tests. TypeScript typecheck confirms shape correctness.
 
 **Green — implementation:**
+
 - Add `AssignCspPayload = { position_id: string; assignment_date: string }` type.
 - Add `AssignCspResponse` type per `plans/us-6/contracts/assign-csp.md`.
 - Add `assignmentDate: 'assignment_date'` to `IPC_TO_FORM_FIELD`.
 - Add `async function assignPosition(payload: AssignCspPayload): Promise<AssignCspResponse>` — follows the same pattern as `expirePosition`.
 
 **Refactor — cleanup to consider:**
+
 - Check for duplication and naming consistency with `expirePosition`.
 
 **Acceptance criteria covered:**
+
 - Foundational: renderer-side API contract.
 
 ---
@@ -283,20 +329,25 @@ US-1 through US-5 complete. All existing tests passing. The `ASSIGN` leg role an
 ### 10. Hook — `useAssignPosition()`
 
 **Files to create or modify:**
+
 - `src/renderer/src/hooks/useAssignPosition.ts` — new file
 
 **Red — tests to write:**
+
 - No dedicated unit test needed; the hook follows the same pattern as `useExpirePosition`. TypeScript typecheck + E2E cover correctness.
 
 **Green — implementation:**
+
 - Mirror `src/renderer/src/hooks/useExpirePosition.ts` exactly, substituting `assignPosition` for `expirePosition` and the corresponding types.
 - On success, call `queryClient.invalidateQueries({ queryKey: positionQueryKeys.all })`.
 - Accept optional `onSuccess` callback that receives `AssignCspResponse`.
 
 **Refactor — cleanup to consider:**
+
 - Check for duplication and naming consistency with `useExpirePosition`.
 
 **Acceptance criteria covered:**
+
 - Foundational: mutation hook consumed by the AssignmentSheet component.
 
 ---
@@ -304,11 +355,13 @@ US-1 through US-5 complete. All existing tests passing. The `ASSIGN` leg role an
 ### 11. AssignmentSheet component
 
 **Files to create or modify:**
+
 - `src/renderer/src/components/AssignmentSheet.tsx` — new file
 
 The component is a 400px right-side sheet rendered via `createPortal` to `document.body` (identical to `ExpirationSheet`). It has two internal states: the form state and the success state.
 
 **Red — tests to write:**
+
 - In `src/renderer/src/components/AssignmentSheet.test.tsx` (Vitest + React Testing Library):
   - `renders the summary card with premium waterfall lines when open`
   - `shows phase transition badges: CSP_OPEN → HOLDING_SHARES`
@@ -325,6 +378,7 @@ The component is a 400px right-side sheet rendered via `createPortal` to `docume
 **Green — implementation:**
 
 Component props:
+
 ```typescript
 interface AssignmentSheetProps {
   open: boolean
@@ -333,7 +387,7 @@ interface AssignmentSheetProps {
   strike: string
   expiration: string
   contracts: number
-  openFillDate: string       // for date_before_open validation
+  openFillDate: string // for date_before_open validation
   premiumWaterfall: Array<{ label: string; amount: string }>
   projectedBasisPerShare: string
   onClose: () => void
@@ -342,20 +396,21 @@ interface AssignmentSheetProps {
 
 **Primitive components to use** (all from `src/renderer/src/components/ui/`):
 
-| Need | Component | Import |
-|---|---|---|
-| Phase badges | `Badge` | `import { Badge } from './ui/Badge'` |
-| Summary card wrapper | `SectionCard` | `import { SectionCard } from './ui/SectionCard'` |
-| Date field label + error/hint | `Field` | `import { Field } from './ui/FormField'` |
-| Irrevocable warning (gold) | `AlertBox variant="warning"` | `import { AlertBox } from './ui/AlertBox'` |
-| Future date warning (gold) | `AlertBox variant="warning"` | same |
-| Strategic nudge (blue) | `AlertBox variant="info"` | same |
-| Server-side errors | `ErrorAlert` | `import { ErrorAlert } from './ui/ErrorAlert'` |
-| Confirm Assignment button | `FormButton` | `import { FormButton } from './ui/FormButton'` |
-| Cancel button | `Button variant="outline"` | `import { Button } from './ui/button'` |
-| Section eyebrow labels | `Caption` | `import { Caption } from './ui/Caption'` |
+| Need                          | Component                    | Import                                           |
+| ----------------------------- | ---------------------------- | ------------------------------------------------ |
+| Phase badges                  | `Badge`                      | `import { Badge } from './ui/Badge'`             |
+| Summary card wrapper          | `SectionCard`                | `import { SectionCard } from './ui/SectionCard'` |
+| Date field label + error/hint | `Field`                      | `import { Field } from './ui/FormField'`         |
+| Irrevocable warning (gold)    | `AlertBox variant="warning"` | `import { AlertBox } from './ui/AlertBox'`       |
+| Future date warning (gold)    | `AlertBox variant="warning"` | same                                             |
+| Strategic nudge (blue)        | `AlertBox variant="info"`    | same                                             |
+| Server-side errors            | `ErrorAlert`                 | `import { ErrorAlert } from './ui/ErrorAlert'`   |
+| Confirm Assignment button     | `FormButton`                 | `import { FormButton } from './ui/FormButton'`   |
+| Cancel button                 | `Button variant="outline"`   | `import { Button } from './ui/button'`           |
+| Section eyebrow labels        | `Caption`                    | `import { Caption } from './ui/Caption'`         |
 
 **Form state** (mirrors mockup `form`, `validation-error`, `date-before-open`, `future-date-warning` states):
+
 - Sheet header: `<Caption>` eyebrow "Record Assignment", title "Assign CSP to Shares", subtitle "PUT $[strike] · [expiration]", close (×) button.
 - Summary card: `<SectionCard>` with rows for Position, Contracts, Shares to receive (`contracts × 100`, gold), Phase transition (`<Badge>` CSP_OPEN → `<Badge>` HOLDING_SHARES).
 - Cost Basis Calculation waterfall subsection (dark background nested inside `SectionCard`): "Assignment strike" row, one "− [label]" row per `premiumWaterfall` entry (amounts in green), separator line, "= Effective cost basis" row (gold, larger text).
@@ -368,6 +423,7 @@ interface AssignmentSheetProps {
 - Footer: `<Button variant="outline" style={{ flex: 1 }}>Cancel</Button>` and `<FormButton label="Confirm Assignment" pendingLabel="Confirming…" isPending={isPending} style={{ flex: 1 }} />`.
 
 **Success state** (mirrors mockup `success` state):
+
 - Sheet header: `<Caption>` eyebrow "Complete" (gold color override), title "[ticker] Assigned".
 - Hero card (gold gradient, hand-crafted inline styles): "HOLDING [sharesHeld] SHARES" headline; "[ticker] · [contracts] contract assigned at $[strike]" subtitle; "Effective Cost Basis $[basisPerShare] per share" inline badge (gold on dark).
 - Result summary card: `<SectionCard>` with rows — "Leg recorded" → "assign · [fmtDate(assignmentDate)]" (gold), "Phase" → `<Badge>` HOLDING_SHARES, "Shares held" → sharesHeld (gold), "Effective cost basis" → "$[basisPerShare] / share".
@@ -378,9 +434,11 @@ interface AssignmentSheetProps {
 - No footer buttons in success state.
 
 **Refactor — cleanup to consider:**
+
 - Extract shared inline styles (panel chrome, summary row) into shared constants consistent with `ExpirationSheet` — only if extraction avoids meaningful duplication.
 
 **Acceptance criteria covered:**
+
 - AC: "Summary card shows the full premium waterfall"
 - AC: "Future assignment date shows a soft warning but remains submittable"
 - AC: "Reject submission when assignment date is missing"
@@ -391,9 +449,11 @@ interface AssignmentSheetProps {
 ### 12. PositionDetailPage — add "Record Assignment →" button
 
 **Files to create or modify:**
+
 - `src/renderer/src/pages/PositionDetailPage.tsx` — add `showAssignment` state, "Record Assignment →" button, `AssignmentSheet` mount
 
 **Red — tests to write:**
+
 - In `src/renderer/src/pages/PositionDetailPage.test.tsx` (or relevant component test):
   - `shows "Record Assignment →" button when phase is CSP_OPEN`
   - `does not show "Record Assignment →" button when phase is HOLDING_SHARES`
@@ -401,6 +461,7 @@ interface AssignmentSheetProps {
   - `blurs and disables the detail page content when AssignmentSheet is open (same pattern as ExpirationSheet)`
 
 **Green — implementation:**
+
 - Add `const [showAssignment, setShowAssignment] = useState(false)` alongside `showExpiration`.
 - In the `right` slot of `PageHeader`, add a second button when `position.phase === 'CSP_OPEN'`:
   ```tsx
@@ -420,9 +481,11 @@ interface AssignmentSheetProps {
 > **Note on waterfall data source:** The `AssignmentSheet` needs the premium waterfall to render the form state before the assignment is submitted. The `getPosition` service already returns `legs: LegRecord[]`. The page can filter `legs` for `CSP_OPEN` and `ROLL_TO` roles and build the `premiumWaterfall` prop inline (a pure map — acceptable in the page layer since it's a display transform, not business logic). Alternatively, the `getPosition` service can return a pre-computed waterfall. Either approach is acceptable; document the choice in code comments.
 
 **Refactor — cleanup to consider:**
+
 - Check whether the `showExpiration` and `showAssignment` blur conditions can be combined cleanly.
 
 **Acceptance criteria covered:**
+
 - AC: "Reject assignment if position is not in CSP_OPEN phase" (button only visible when CSP_OPEN)
 - AC: "Successfully record an assignment — position transitions to HOLDING_SHARES"
 
@@ -431,6 +494,7 @@ interface AssignmentSheetProps {
 ### 13. E2E Tests
 
 **Files to create or modify:**
+
 - `e2e/csp-assignment.spec.ts` — new file
 
 **Red — tests to write (one test per AC):**
@@ -493,4 +557,5 @@ Each test creates a fresh in-memory DB via a temp file and opens the Electron ap
   - Assert "Open Covered Call on AAPL" button is visible below the nudge.
 
 **Acceptance criteria covered:**
+
 - All 8 ACs from `docs/epics/02-stories/US-6-record-csp-assignment.md`

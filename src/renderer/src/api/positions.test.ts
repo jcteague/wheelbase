@@ -20,16 +20,27 @@ type ExpireCcFn = (payload: {
   expiration_date_override?: string
 }) => Promise<unknown>
 
+type RollCcFn = (payload: {
+  position_id: string
+  cost_to_close_per_contract: number
+  new_premium_per_contract: number
+  new_expiration: string
+  new_strike: number
+  fill_date: string
+}) => Promise<unknown>
+
 type PositionsModuleWithAssign = typeof positionsApi & {
   assignPosition?: AssignPositionFn
   openCoveredCall?: OpenCoveredCallFn
   expireCc?: ExpireCcFn
+  rollCc?: RollCcFn
 }
 
 const apiModule = positionsApi as PositionsModuleWithAssign
 const mockAssignPosition = vi.fn()
 const mockOpenCoveredCall = vi.fn()
 const mockExpireCc = vi.fn()
+const mockRollCc = vi.fn()
 
 const SUCCESS_RESPONSE = {
   ok: true,
@@ -323,5 +334,75 @@ describe('expireCc', () => {
       leg: { legRole: 'CC_EXPIRED' },
       sharesHeld: 100
     })
+  })
+})
+
+describe('rollCc', () => {
+  beforeEach(() => {
+    mockRollCc.mockReset()
+    Object.assign(window, {
+      api: {
+        ...(window.api ?? {}),
+        rollCc: mockRollCc
+      }
+    })
+  })
+
+  it('calls window.api.rollCc with mapped camelCase payload and returns RollCcResponse', async () => {
+    const mockResponse = {
+      ok: true,
+      position: { id: 'pos-1', ticker: 'AAPL', phase: 'CC_OPEN', status: 'ACTIVE' },
+      rollFromLeg: {
+        id: 'leg-from',
+        legRole: 'ROLL_FROM',
+        action: 'BUY',
+        strike: '182.0000',
+        expiration: '2026-04-18',
+        contracts: 1,
+        premiumPerContract: '1.5000',
+        fillDate: '2026-04-13'
+      },
+      rollToLeg: {
+        id: 'leg-to',
+        legRole: 'ROLL_TO',
+        action: 'SELL',
+        strike: '185.0000',
+        expiration: '2026-05-16',
+        contracts: 1,
+        premiumPerContract: '2.0000',
+        fillDate: '2026-04-13'
+      },
+      rollChainId: 'chain-abc123',
+      costBasisSnapshot: {
+        id: 'cbs-1',
+        positionId: 'pos-1',
+        basisPerShare: '175.8000',
+        totalPremiumCollected: '350.0000',
+        finalPnl: null,
+        snapshotAt: '2026-04-13T00:00:00.000Z',
+        createdAt: '2026-04-13T00:00:00.000Z'
+      }
+    }
+    mockRollCc.mockResolvedValue(mockResponse)
+
+    const result = await apiModule.rollCc?.({
+      position_id: 'pos-1',
+      cost_to_close_per_contract: 1.5,
+      new_premium_per_contract: 2.0,
+      new_expiration: '2026-05-16',
+      new_strike: 185,
+      fill_date: '2026-04-13'
+    })
+
+    expect(mockRollCc).toHaveBeenCalledWith({
+      positionId: 'pos-1',
+      costToClosePerContract: 1.5,
+      newPremiumPerContract: 2.0,
+      newExpiration: '2026-05-16',
+      newStrike: 185,
+      fillDate: '2026-04-13'
+    })
+
+    expect(result).toMatchObject(mockResponse)
   })
 })

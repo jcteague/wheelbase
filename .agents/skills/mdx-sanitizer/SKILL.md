@@ -2,35 +2,35 @@
 name: mdx-sanitizer
 description: Sanitize MDX content for Docusaurus builds. Fixes unescaped angle brackets (<, >, &lt;=, &gt;=), Liquid/Nunjucks template syntax ({{ }}), TypeScript generics (Promise&lt;T&gt;), and inline code backtick edge cases. Use when pre-commit hooks fail on bracket or Liquid validation, or when MDX/JSX build errors reference unexpected tokens. NOT for general markdown linting or prose editing.
 allowed-tools:
-- Read
-- Write
-- Edit
-- Bash
-- Glob
-- Grep
+  - Read
+  - Write
+  - Edit
+  - Bash
+  - Glob
+  - Grep
 version: 1.0.0
 triggers:
-- mdx error
-- angle bracket
-- jsx parsing
-- build failure mdx
-- escape angle brackets
-- sanitize markdown
+  - mdx error
+  - angle bracket
+  - jsx parsing
+  - build failure mdx
+  - escape angle brackets
+  - sanitize markdown
 metadata:
   category: DevOps & Automation
   tags:
-  - mdx
-  - docusaurus
-  - markdown
-  - build-tools
-  - sanitization
+    - mdx
+    - docusaurus
+    - markdown
+    - build-tools
+    - sanitization
   pairs-with:
-  - skill: site-reliability-engineer
-    reason: MDX build failures are a primary Docusaurus deployment blocker that SRE validates
-  - skill: technical-writer
-    reason: Technical writers produce the MDX content that needs sanitization for safe rendering
-  - skill: skill-documentarian
-    reason: Skill documentation in MDX format requires sanitization before website deployment
+    - skill: site-reliability-engineer
+      reason: MDX build failures are a primary Docusaurus deployment blocker that SRE validates
+    - skill: technical-writer
+      reason: Technical writers produce the MDX content that needs sanitization for safe rendering
+    - skill: skill-documentarian
+      reason: Skill documentation in MDX format requires sanitization before website deployment
 ---
 
 # MDX Sanitizer
@@ -52,20 +52,25 @@ MDX 2.x treats unescaped `<` and `{` as JSX syntax. This causes build failures w
 This skill implements a three-layer defense:
 
 ### 1. Sync-Time Sanitization (Proactive)
+
 Content is sanitized when syncing from `.claude/skills/` to `website/docs/`:
+
 - `syncSkillDocs.ts` - Main skill files
 - `syncSkillSubpages.ts` - Reference files
 - `doc-generator.ts` - Generated docs
 
 ### 2. Pre-Commit Validation (Reactive)
+
 The git pre-commit hook validates files before commit using `validate-brackets.js`.
 
 ### 3. Build-Time Validation (Final Check)
+
 `npm run validate:all` runs as part of `prebuild` to catch any issues.
 
 ## Usage
 
 ### Check for Issues (Dry Run)
+
 ```bash
 cd website
 npm run sanitize:mdx
@@ -74,6 +79,7 @@ npm run sanitize:mdx -- --verbose
 ```
 
 ### Fix All Issues
+
 ```bash
 cd website
 npm run sanitize:mdx -- --fix
@@ -82,18 +88,19 @@ npm run fix:mdx
 ```
 
 ### Programmatic API
+
 ```typescript
-import { sanitizeForMdx, validateMdxSafety, isMdxSafe } from './lib/mdx-sanitizer';
+import { sanitizeForMdx, validateMdxSafety, isMdxSafe } from './lib/mdx-sanitizer'
 
 // Sanitize content
-const result = sanitizeForMdx(content, { useHtmlEntities: true });
+const result = sanitizeForMdx(content, { useHtmlEntities: true })
 if (result.modified) {
-  console.log(`Fixed ${result.issues.length} issues`);
-  fs.writeFileSync(path, result.content);
+  console.log(`Fixed ${result.issues.length} issues`)
+  fs.writeFileSync(path, result.content)
 }
 
 // Validate without modifying
-const issues = validateMdxSafety(content, 'path/to/file.md');
+const issues = validateMdxSafety(content, 'path/to/file.md')
 
 // Quick check
 if (!isMdxSafe(content)) {
@@ -105,14 +112,14 @@ if (!isMdxSafe(content)) {
 
 The sanitizer uses HTML entities for maximum compatibility:
 
-| Pattern | Original | Escaped |
-|---------|----------|---------|
-| Less-than | `<` | `&lt;` |
-| Greater-than | `>` | `&gt;` |
-| Generics | `&lt;T&gt;` | `&amp;lt;T&amp;gt;` |
-| Comparison | `&lt;=` | `&amp;lt;=` |
+| Pattern      | Original    | Escaped             |
+| ------------ | ----------- | ------------------- |
+| Less-than    | `<`         | `&lt;`              |
+| Greater-than | `>`         | `&gt;`              |
+| Generics     | `&lt;T&gt;` | `&amp;lt;T&amp;gt;` |
+| Comparison   | `&lt;=`     | `&amp;lt;=`         |
 
-Content inside code blocks (`` ``` `` or `` ` ``) is automatically protected and never escaped.
+Content inside code blocks (` ``` ` or `` ` ``) is automatically protected and never escaped.
 
 ## Files Modified
 
@@ -144,12 +151,14 @@ Content inside code blocks (`` ``` `` or `` ` ``) is automatically protected and
 ### False Positives
 
 If valid JSX components are being escaped:
+
 - Ensure they use PascalCase (e.g., `&lt;MyComponent&gt;`)
 - Check they're valid HTML5 elements
 
 ### Manual Escaping
 
 For edge cases, manually escape in source:
+
 - Use backticks for inline code: `` `&lt;T&gt;` ``
 - Use fenced code blocks for multi-line
 - Use HTML entities: `&lt;` and `&gt;`

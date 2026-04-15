@@ -59,6 +59,7 @@ None for Area 1 — implementation is minimal and clean.
 ## Handoff to Refactor Phase
 
 Refactor phase should:
+
 1. Verify naming: `activeLegSubquery` clearly expresses "current open leg for a position"
 2. Verify no inline SQL duplication remains in either consumer
 3. Verify the function in `active-leg-sql.ts` is simple enough to not need a comment

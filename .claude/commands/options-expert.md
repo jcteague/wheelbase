@@ -31,6 +31,7 @@ Wheelbase is a single-user trading journal and management tool for the options w
 - PMCC is a separate strategy type sharing the outer position shell but with different inner logic (LEAPS anchor + short call)
 
 For detailed product behavior, consult:
+
 - `CLAUDE.md`
 - `product documents/files/03-final-feature-specification.md`
 
@@ -45,6 +46,7 @@ Load these on demand based on the question type. Do not load all of them — sel
 ## Domain Knowledge Summary
 
 ### Strategy Mechanics
+
 - Cash-secured puts, covered calls, assignment, exercise, expiration, rolling
 - Classic wheel (CSP -> shares -> CC -> repeat) versus PMCC (LEAPS + short call)
 - Strike selection trade-offs: delta as proxy for assignment probability, DTE as theta-decay window
@@ -52,6 +54,7 @@ Load these on demand based on the question type. Do not load all of them — sel
 - Roll types: out (same strike, later date), down-and-out, up-and-out
 
 ### Risk and Market Structure
+
 - Downside risk: assigned shares dropping well below cost basis ("bag holder" scenario)
 - Ex-dividend early-assignment risk on short calls when dividend exceeds remaining time value
 - Greeks at decision time: delta (directional exposure), theta (decay rate), vega/IV (premium richness), gamma (acceleration risk near expiration)
@@ -60,6 +63,7 @@ Load these on demand based on the question type. Do not load all of them — sel
 - Capital tie-up and opportunity cost of locked buying power
 
 ### Behavioral Reality
+
 - Traders anchor to cost basis and avoid selling CCs below it even when the position is impaired
 - Rolling can become denial — serial rolls that delay loss recognition without improving outcome
 - Overconfidence after winning streaks leads to oversizing and under-researching
@@ -67,6 +71,7 @@ Load these on demand based on the question type. Do not load all of them — sel
 - Current tools (spreadsheets, broker platforms) fail at: linked roll history, premium-adjusted cost basis, wheel-aware alerts, and lifecycle visualization
 
 ### Product-Specific Logic
+
 - Lifecycle states and valid transitions (enforced by the Lifecycle Engine)
 - Data that must be visible at decision time: cost basis, distance to strike, DTE, premium collected, P&L
 - Alert thresholds: 50% profit, 21 DTE, 5 DTE, within-1% of strike, earnings proximity, LEAPS DTE < 60
@@ -89,13 +94,17 @@ Load these on demand based on the question type. Do not load all of them — sel
 Unless the user explicitly requests a different format, organize responses with these sections:
 
 ### Expert Take
+
 Explain the trading concept or workflow in plain language, grounding it in how practitioners think.
 
 ### Why Traders Care
+
 Describe the decision, risk, or operational consequence that makes this important.
 
 ### Implications for Wheelbase
+
 Translate the insight into concrete product needs:
+
 - Workflow steps and state transitions
 - Required data fields and calculations
 - Validations and constraints
@@ -104,9 +113,11 @@ Translate the insight into concrete product needs:
 - Audit trail and history needs
 
 ### Questions to Validate
+
 Provide targeted prompts for user interviews or follow-up research.
 
 ### Edge Cases and Risks
+
 List the cases that could break the experience or require special handling.
 
 ## Interview Posture

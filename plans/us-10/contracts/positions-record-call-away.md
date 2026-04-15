@@ -54,14 +54,14 @@ export interface RecordCallAwayResult {
     ticker: string
     phase: 'WHEEL_COMPLETE'
     status: 'CLOSED'
-    closedDate: string          // ISO date: CC expiration
+    closedDate: string // ISO date: CC expiration
   }
-  leg: LegRecord                // CC_CLOSE leg (action: EXERCISE)
+  leg: LegRecord // CC_CLOSE leg (action: EXERCISE)
   costBasisSnapshot: CostBasisSnapshotRecord & { finalPnl: string }
-  finalPnl: string              // e.g. "780.0000"
-  cycleDays: number             // calendar days, position.openedDate → fill_date
-  annualizedReturn: string      // e.g. "16.7500", or "0.0000" if cycleDays <= 0
-  basisPerShare: string         // effective cost basis used in the calculation
+  finalPnl: string // e.g. "780.0000"
+  cycleDays: number // calendar days, position.openedDate → fill_date
+  annualizedReturn: string // e.g. "16.7500", or "0.0000" if cycleDays <= 0
+  basisPerShare: string // effective cost basis used in the calculation
 }
 ```
 
@@ -85,8 +85,7 @@ export interface RecordCallAwayResult {
 ## Preload API (`src/preload/index.ts`)
 
 ```ts
-recordCallAway: (payload: unknown) =>
-  ipcRenderer.invoke('positions:record-call-away', payload)
+recordCallAway: (payload: unknown) => ipcRenderer.invoke('positions:record-call-away', payload)
 ```
 
 ---
@@ -124,16 +123,18 @@ export type RecordCallAwayResponse = {
   basisPerShare: string
 }
 
-export async function recordCallAway(payload: RecordCallAwayPayload): Promise<RecordCallAwayResponse>
+export async function recordCallAway(
+  payload: RecordCallAwayPayload
+): Promise<RecordCallAwayResponse>
 ```
 
 ---
 
 ## Validation Error Mapping
 
-| IPC field            | Renderer field          |
-|----------------------|-------------------------|
-| `__phase__`          | `__phase__`             |
-| `contracts`          | `contracts`             |
-| `fillDate`           | `fill_date`             |
-| `__root__`           | `__root__`              |
+| IPC field   | Renderer field |
+| ----------- | -------------- |
+| `__phase__` | `__phase__`    |
+| `contracts` | `contracts`    |
+| `fillDate`  | `fill_date`    |
+| `__root__`  | `__root__`     |

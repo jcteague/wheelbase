@@ -17,23 +17,17 @@ function StatBox({
 }): React.JSX.Element {
   return (
     <div
+      className="inline-flex flex-col items-center rounded-lg gap-1"
       style={{
-        display: 'inline-flex',
-        flexDirection: 'column',
-        alignItems: 'center',
         background: `${color}14`,
         border: `1px solid ${color}33`,
-        borderRadius: 8,
-        padding: '10px 16px',
-        gap: 4
+        padding: '10px 16px'
       }}
     >
-      <span style={{ fontSize: 9, color, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+      <span className="text-[9px] tracking-[0.1em] uppercase" style={{ color }}>
         {label}
       </span>
-      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--wb-text-primary)' }}>
-        {value}
-      </span>
+      <span className="text-sm font-bold text-wb-text-primary">{value}</span>
     </div>
   )
 }
@@ -70,42 +64,23 @@ export function CcSuccess({
       />
       <SheetBody>
         <div
+          className="bg-wb-green-dim border border-wb-green-border rounded-[10px] text-center"
           style={{
             background: 'linear-gradient(135deg, rgba(188,140,255,0.1), rgba(7,10,14,0.5))',
             border: '1px solid rgba(188,140,255,0.22)',
-            borderRadius: 10,
-            padding: '22px 20px',
-            textAlign: 'center'
+            padding: '22px 20px'
           }}
         >
-          <div
-            style={{
-              fontSize: 9,
-              color: 'var(--wb-violet)',
-              opacity: 0.75,
-              letterSpacing: '0.18em',
-              textTransform: 'uppercase',
-              marginBottom: 8
-            }}
-          >
+          <div className="text-[9px] text-wb-violet opacity-75 tracking-[0.18em] uppercase mb-2">
             Call Open
           </div>
-          <div
-            style={{
-              fontSize: 22,
-              fontWeight: 700,
-              color: 'var(--wb-text-primary)',
-              marginBottom: 6
-            }}
-          >
+          <div className="text-[22px] font-bold text-wb-text-primary mb-1.5">
             HOLDING {sharesHeld} SHARES
           </div>
-          <div
-            style={{ fontSize: 11, color: 'var(--wb-violet)', fontWeight: 600, marginBottom: 12 }}
-          >
+          <div className="text-[11px] text-wb-violet font-semibold mb-3">
             CC OPEN · CALL {fmtMoney(strike)} · {fmtDate(expiration)}
           </div>
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+          <div className="flex gap-2.5 justify-center">
             <StatBox
               label="Updated Cost Basis"
               value={`${fmtMoney(basisPerShare)}/share`}
@@ -119,35 +94,24 @@ export function CcSuccess({
           </div>
         </div>
 
-        <SectionCard>
-          <div style={{ padding: 16, display: 'grid', gap: 10, fontSize: 12 }}>
+        <SectionCard className="bg-wb-bg-elevated border-wb-border">
+          <div className="p-4 grid gap-2.5 text-xs">
             {[
-              ['Leg recorded', `CC_OPEN · ${fmtDate(expiration)}`],
-              ['Strike', fmtMoney(strike)],
-              ['Expiration', fmtDate(expiration)],
-              ['Updated cost basis', `${fmtMoney(basisPerShare)}/share`]
-            ].map(([label, value]) => (
-              <div
-                key={label}
-                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-              >
-                <span style={{ color: 'var(--wb-text-secondary)' }}>{label}</span>
-                <span
-                  style={{
-                    fontWeight: 600,
-                    color:
-                      label === 'Updated cost basis' ? 'var(--wb-gold)' : 'var(--wb-text-primary)'
-                  }}
-                >
-                  {value}
-                </span>
+              ['Leg recorded', `CC_OPEN · ${fmtDate(expiration)}`, 'text-wb-text-primary'],
+              ['Strike', fmtMoney(strike), 'text-wb-text-primary'],
+              ['Expiration', fmtDate(expiration), 'text-wb-text-primary'],
+              ['Updated cost basis', `${fmtMoney(basisPerShare)}/share`, 'text-wb-gold']
+            ].map(([label, value, colorClass]) => (
+              <div key={label} className="flex justify-between items-center">
+                <span className="text-wb-text-secondary">{label}</span>
+                <span className={`font-semibold ${colorClass}`}>{value}</span>
               </div>
             ))}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: 'var(--wb-text-secondary)' }}>Phase transition</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div className="flex justify-between items-center">
+              <span className="text-wb-text-secondary">Phase transition</span>
+              <div className="flex items-center gap-1.5">
                 <Badge>HOLDING_SHARES</Badge>
-                <span style={{ color: 'var(--wb-text-muted)' }}>→</span>
+                <span className="text-wb-text-muted">→</span>
                 <Badge color="var(--wb-violet)">CC_OPEN</Badge>
               </div>
             </div>
@@ -166,14 +130,7 @@ export function CcSuccess({
         <button
           type="button"
           onClick={onClose}
-          style={{
-            border: 'none',
-            background: 'none',
-            color: 'var(--wb-text-secondary)',
-            cursor: 'pointer',
-            textDecoration: 'underline',
-            fontFamily: 'var(--wb-font-mono)'
-          }}
+          className="border-none bg-transparent text-wb-text-secondary cursor-pointer underline font-wb-mono"
         >
           View full position history
         </button>

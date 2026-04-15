@@ -44,6 +44,7 @@ export const LEG_ROLE_LABEL: Record<string, string> = {
   CC_EXPIRED: 'CC Expired',
   CALLED_AWAY: 'Called Away',
   EXPIRE: 'Expired',
+  ROLL_FROM: 'Roll From',
   ROLL_TO: 'Roll'
 }
 

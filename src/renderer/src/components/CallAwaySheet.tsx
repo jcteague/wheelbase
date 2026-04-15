@@ -5,6 +5,7 @@ import type { RecordCallAwayResponse } from '../api/positions'
 import { useRecordCallAway } from '../hooks/useRecordCallAway'
 import { CallAwayForm } from './CallAwayForm'
 import { CallAwaySuccess } from './CallAwaySuccess'
+import { getSheetPortal } from '../lib/portal'
 import { SheetOverlay, SheetPanel } from './ui/Sheet'
 
 export interface CallAwaySheetProps {
@@ -72,6 +73,6 @@ export function CallAwaySheet(props: CallAwaySheetProps): React.JSX.Element | nu
         )}
       </SheetPanel>
     </SheetOverlay>,
-    document.body
+    getSheetPortal()
   )
 }

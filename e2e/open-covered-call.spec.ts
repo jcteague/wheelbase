@@ -4,6 +4,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { localDate, localToday } from './dates'
 
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
 const APP_CWD = path.join(__dirname, '..')
@@ -90,7 +91,7 @@ describe('US-7: Open a Covered Call', () => {
   let app: ElectronApplication
   let dbPath: string
 
-  const EXPIRATION = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const EXPIRATION = localDate(60)
 
   afterEach(async () => {
     await app?.close()
@@ -111,7 +112,7 @@ describe('US-7: Open a Covered Call', () => {
 
   it('AC1: successfully opens a covered call — phase transitions to CC_OPEN, leg recorded, cost basis updated, total premium increased', async () => {
     const page = await launchFreshApp()
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localToday()
 
     await openPosition(page, {
       ticker: 'AAPL',
@@ -146,7 +147,7 @@ describe('US-7: Open a Covered Call', () => {
 
   it('AC2: strike above cost basis shows profit preview and no warning', async () => {
     const page = await launchFreshApp()
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localToday()
 
     await openPosition(page, {
       ticker: 'AAPL',
@@ -180,7 +181,7 @@ describe('US-7: Open a Covered Call', () => {
 
   it('AC3: strike below cost basis shows gold guardrail warning with loss amount', async () => {
     const page = await launchFreshApp()
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localToday()
 
     await openPosition(page, {
       ticker: 'AAPL',
@@ -215,7 +216,7 @@ describe('US-7: Open a Covered Call', () => {
 
   it('AC4: strike exactly at cost basis shows gold guardrail warning with break-even message', async () => {
     const page = await launchFreshApp()
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localToday()
 
     await openPosition(page, {
       ticker: 'AAPL',
@@ -245,7 +246,7 @@ describe('US-7: Open a Covered Call', () => {
 
   it('AC5: Open Covered Call button is not visible when position is in CC_OPEN phase', async () => {
     const page = await launchFreshApp()
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localToday()
 
     await openPosition(page, {
       ticker: 'AAPL',
@@ -284,7 +285,7 @@ describe('US-7: Open a Covered Call', () => {
 
   it('AC6: rejects open CC with missing strike field', async () => {
     const page = await launchFreshApp()
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localToday()
 
     await openPosition(page, {
       ticker: 'AAPL',
@@ -314,7 +315,7 @@ describe('US-7: Open a Covered Call', () => {
 
   it('AC7: rejects CC with contracts exceeding shares held', async () => {
     const page = await launchFreshApp()
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localToday()
 
     await openPosition(page, {
       ticker: 'AAPL',
@@ -347,8 +348,8 @@ describe('US-7: Open a Covered Call', () => {
 
   it('AC8: rejects fill date before assignment date', async () => {
     const page = await launchFreshApp()
-    const today = new Date().toISOString().slice(0, 10)
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+    const today = localToday()
+    const yesterday = localDate(-1)
 
     await openPosition(page, {
       ticker: 'AAPL',

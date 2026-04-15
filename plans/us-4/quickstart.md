@@ -14,6 +14,7 @@ pnpm test
 ```
 
 Expected output after US-4 is complete: all tests pass, including new tests in:
+
 - `src/main/core/lifecycle.test.ts` — `closeCsp()` test cases
 - `src/main/core/costbasis.test.ts` — `calculateCspClose()` test cases
 - `src/main/services/get-position.test.ts` — `getPosition()` integration tests
@@ -30,6 +31,7 @@ pnpm dev
 ```
 
 Manual verification steps:
+
 1. Open the app — positions list should load as before
 2. Click an existing CSP_OPEN position — the detail page should display its data
 3. Enter a close price and observe the P&L preview updating instantly (no API call)
@@ -66,4 +68,5 @@ pnpm test:e2e
 ```
 
 New E2E scenarios to add to `e2e/electron.spec.ts`:
+
 - Navigate to a CSP_OPEN position, submit close form, verify redirect and phase change

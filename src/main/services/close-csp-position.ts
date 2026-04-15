@@ -3,6 +3,7 @@ import Decimal from 'decimal.js'
 import { randomUUID } from 'node:crypto'
 import { calculateCspClose } from '../core/costbasis'
 import { ValidationError, closeCsp } from '../core/lifecycle'
+import { localToday, makeSnapshotAt } from '../dates'
 import { logger } from '../logger'
 import type { CloseCspPayload, CloseCspPositionResult } from '../schemas'
 import { getPosition } from './get-position'
@@ -12,7 +13,7 @@ export function closeCspPosition(
   positionId: string,
   payload: CloseCspPayload
 ): CloseCspPositionResult {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   const fillDate = payload.fillDate ?? today
   const now = new Date().toISOString()
 
@@ -50,7 +51,7 @@ export function closeCspPosition(
   const closeLegId = randomUUID()
   const snapshotId = randomUUID()
   const openSnapshot = positionDetail.costBasisSnapshot
-  const snapshotAt = new Date(Date.now() + 1).toISOString() // +1ms to sort after the opening snapshot
+  const snapshotAt = makeSnapshotAt(fillDate)
 
   db.transaction(() => {
     db.prepare(

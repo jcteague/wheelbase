@@ -23,7 +23,7 @@ export function SheetOverlay(props: {
 
 export function SheetPanel(props: {
   children: React.ReactNode
-  width?: number  // default 400
+  width?: number // default 400
 }): React.ReactElement
 
 export function SheetHeader(props: {
@@ -31,34 +31,31 @@ export function SheetHeader(props: {
   title: string
   subtitle?: string
   onClose: () => void
-  eyebrowColor?: string    // default 'var(--wb-text-muted)'
+  eyebrowColor?: string // default 'var(--wb-text-muted)'
   borderBottomColor?: string // default 'var(--wb-border)'
 }): React.ReactElement
 
-export function SheetBody(props: {
-  children: React.ReactNode
-}): React.ReactElement
+export function SheetBody(props: { children: React.ReactNode }): React.ReactElement
 
-export function SheetFooter(props: {
-  children: React.ReactNode
-}): React.ReactElement
+export function SheetFooter(props: { children: React.ReactNode }): React.ReactElement
 
-export function SheetCloseButton(props: {
-  onClick: () => void
-}): React.ReactElement
+export function SheetCloseButton(props: { onClick: () => void }): React.ReactElement
 ```
 
 ## Test Coverage Summary
 
 ### SheetOverlay (2 tests)
+
 - [x] Renders children and scrim with onClick handler; asserts `left: SIDEBAR_WIDTH` on overlay
 - [x] Calls onClose when scrim is clicked
 
 ### SheetPanel (2 tests)
+
 - [x] Renders children in right-anchored container with default width 400
 - [x] Accepts custom width (420)
 
 ### SheetHeader (5 tests)
+
 - [x] Renders eyebrow, title, and close button
 - [x] Renders subtitle when provided
 - [x] Omits subtitle when not provided (no data-testid="sheet-subtitle" element)
@@ -66,12 +63,15 @@ export function SheetCloseButton(props: {
 - [x] Close button calls onClose
 
 ### SheetBody (1 test)
+
 - [x] Renders scrollable children with `overflow-y: auto`
 
 ### SheetFooter (1 test)
+
 - [x] Renders children with `border-top` style
 
 ### SheetCloseButton (2 tests)
+
 - [x] Renders × button with `aria-label="Close sheet"`
 - [x] Calls onClick when clicked
 
@@ -101,6 +101,7 @@ Tests       no tests
 ## Handoff to Green Phase
 
 To resume: run `/green`. Green phase should:
+
 1. Read this file for all interfaces to implement
 2. Read `plans/extract-sheet-primitives/data-model.md` for exact render structure
 3. Create `src/renderer/src/components/ui/Sheet.tsx` with the 6 exports + `SIDEBAR_WIDTH`

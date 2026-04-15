@@ -18,6 +18,7 @@ US-8 is fully implemented. All tests pass on the `us-8-close-cc_early` branch. T
 ### 1. Fix Percentage Formula in CcPnlPreview
 
 **Files to create or modify:**
+
 - `src/renderer/src/components/ui/CcPnlPreview.tsx` — correct profit-branch percentage formula
 - `src/renderer/src/components/ui/CcPnlPreview.test.tsx` — update expected percentage value
 
@@ -44,23 +45,27 @@ After the test expectation is updated and before the component is fixed, the tes
 - Check naming consistency: `pct` is used in both branches; no renaming needed.
 
 **Acceptance criteria covered:**
+
 - AC3: "P&L preview shown on the form before submission — profit close: shows '+$115.00 profit (50% of max)'"
 - The corrected formula produces `(openPremium − closePrice) / openPremium × 100` as specified in the AC technical requirements.
 
 ### 2. E2E Test — Update Profit-Preview Scenario
 
 **Files to create or modify:**
+
 - `e2e/close-cc-early.spec.ts` — update close price and assertions in the profit-preview test
 
 **Red — tests to write:**
 
 The existing profit-preview e2e test used `closePrice = $1.15`, which yields 50.0% under both the old and corrected formula — making the test unable to catch a regression. Change the close price to `$1.10`:
+
 - Corrected formula: `(2.30 − 1.10) / 2.30 × 100 = 52.2%`
 - Old formula: `1.10 / 2.30 × 100 = 47.8%`
 
 After the test is updated (close price `$1.10`, assertion `toContain('52.2% of max')`) but before the component formula is fixed, the test must fail because the component still produces `47.8%`.
 
 Updated assertions:
+
 - `expect(bodyText).toContain('120')` (pnl = (2.30−1.10)×1×100 = $120.00)
 - `expect(bodyText).toMatch(/profit/i)`
 - `expect(bodyText).toContain('52.2% of max')` (replaces the loose `/50|% of max/i` regex)
@@ -74,4 +79,5 @@ Fix `CcPnlPreview.tsx` profit-branch formula (see Area 1). No further e2e change
 The assertion is now a `toContain` string match rather than a regex, which is both readable and unambiguous. No further cleanup needed.
 
 **Acceptance criteria covered:**
+
 - AC3 (e2e): the form displays the correct percentage label before submission.

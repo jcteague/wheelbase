@@ -4,16 +4,14 @@ import type { ElectronApplication, Page } from 'playwright'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { localToday } from './dates'
 
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
 const APP_CWD = path.join(__dirname, '..')
 
-// Near expiration: today in UTC — must match the service's fillDate default (toISOString().slice(0,10))
-const _near = new Date()
-const NEAR_YEAR = _near.getUTCFullYear()
-const NEAR_MONTH = _near.getUTCMonth() + 1
-const NEAR_DAY = _near.getUTCDate()
-const NEAR_ISO = `${NEAR_YEAR}-${String(NEAR_MONTH).padStart(2, '0')}-${String(NEAR_DAY).padStart(2, '0')}`
+// Near expiration: today in local time — must match the service's fillDate default (localToday())
+const NEAR_ISO = localToday()
+const [NEAR_YEAR, NEAR_MONTH, NEAR_DAY] = NEAR_ISO.split('-').map(Number)
 
 // Far expiration: June 2026
 const FAR_YEAR = 2026

@@ -26,7 +26,7 @@ Scenario: Roll form shows current CC details and cost basis context
   When the trader opens the roll form for this CC
   Then the form displays: current strike $185.00, expiration 2026-04-18, DTE remaining, premium collected
   And the form shows the effective cost basis: $176.50/share
-  And the form has inputs for: new strike, new expiration, cost to close (per contract), new premium (per contract)
+  And the form has inputs for: new strike, new expiration, cost to close (per contract), new premium (per contract), fill date
 
 Scenario: Net credit preview for CC roll up and out
   Given the trader enters: new strike $190.00, new expiration 2026-05-16, cost to close $3.50/contract, new premium $4.20/contract
@@ -48,6 +48,7 @@ Scenario: Successful CC roll creates linked leg pair
   And both legs share the same roll_chain_id
   And the position remains in phase CC_OPEN
   And the cost basis snapshot is updated with the roll's net credit ($0.70/contract)
+  And the cost basis snapshot shows $175.80/share ($176.50 − $0.70 net credit per share)
 
 Scenario: CC roll out (same strike, later expiration)
   Given the trader enters: new strike $185.00 (same), new expiration 2026-05-16, cost to close $1.80, new premium $3.10
@@ -60,6 +61,25 @@ Scenario: CC roll down and out (lower strike — defensive)
   When the trader confirms the roll
   Then the roll is accepted
   And the label shows "Roll Down & Out: $185 → $182 strike"
+
+Scenario: CC roll up — same expiration, higher strike
+  Given the trader enters: new strike $190.00, new expiration 2026-04-18 (unchanged), cost to close $2.00, new premium $3.50
+  When the trader confirms the roll
+  Then the roll is accepted
+  And the label shows "Roll Up: $185 → $190 strike, same Apr expiration"
+
+Scenario: Net debit roll — cost to close exceeds new premium
+  Given the CC is deep ITM after a gap-up event
+  And the trader enters: new strike $190.00, new expiration 2026-05-16, cost to close $5.00/contract, new premium $3.50/contract
+  When the net credit/debit preview updates
+  Then it shows "Net Debit: $1.50/contract ($150.00 total)"
+  And the confirm button remains enabled (debit rolls are valid — traders may pay to move a deep ITM call)
+
+Scenario: Validation — new expiration must not be before current expiration
+  Given the current expiration is 2026-04-18
+  When the trader enters new expiration 2026-03-21
+  Then a validation error appears: "New expiration must be on or after the current expiration (Apr 18, 2026)"
+  And the confirm button is disabled
 
 Scenario: Validation — new expiration or strike must differ
   Given the trader enters strike $185.00 and expiration 2026-04-18 (both unchanged)
@@ -80,7 +100,7 @@ Scenario: Validation — cost to close and new premium must be positive
 - **Service layer:** Add `rollCcPosition(db, positionId, payload)` to services. Same atomic transaction pattern as CSP roll: ROLL_FROM (BUY CALL) + ROLL_TO (SELL CALL) + cost basis snapshot.
 - **IPC:** Register `positions:roll-cc` channel.
 - **Schema:** Create `RollCcPayloadSchema` — same fields as `RollCspPayloadSchema` but `instrumentType` is CALL.
-- **Cost basis warning:** The below-cost-basis warning is a renderer-side calculation: compare `newStrike` against latest `costBasisSnapshot.basisPerShare`. This is a warning, not a validation error — experienced traders may intentionally sell below basis in specific scenarios.
+- **Cost basis warning:** The below-cost-basis warning is a renderer-side calculation: compare `newStrike` against the _post-roll_ basis (`costBasisSnapshot.basisPerShare − netCreditPerShare`). The form should display both current basis and projected post-roll basis. This is a warning, not a validation error — experienced traders may intentionally sell below basis in specific scenarios.
 - **Roll_chain_id:** Use the same UUID linking mechanism as CSP rolls. If a position has been rolled before (e.g., CSP was rolled, then assigned, now CC is being rolled), the CC roll gets its own new `roll_chain_id` — chains are per-roll-event, not per-position.
 
 ---

@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ApiError, ApiFieldError, CloseCcEarlyResponse } from '../api/positions'
+import { localToday } from '../lib/dates'
 import { useCloseCoveredCallEarly } from '../hooks/useCloseCoveredCallEarly'
 import { CloseCcEarlyForm } from './CloseCcEarlyForm'
 import { CloseCcEarlySuccess } from './CloseCcEarlySuccess'
+import { getSheetPortal } from '../lib/portal'
 import { SheetOverlay, SheetPanel } from './ui/Sheet'
 
 export interface CloseCcEarlySheetProps {
@@ -35,7 +37,7 @@ export function CloseCcEarlySheet(props: CloseCcEarlySheetProps): React.JSX.Elem
   const validate = (): boolean => {
     let valid = true
     const parsedPrice = Number.parseFloat(closePrice)
-    const effectiveFillDate = fillDate || new Date().toISOString().slice(0, 10)
+    const effectiveFillDate = fillDate || localToday()
 
     if (!closePrice || Number.isNaN(parsedPrice) || parsedPrice <= 0) {
       setPriceError('Close price must be greater than zero')
@@ -64,7 +66,7 @@ export function CloseCcEarlySheet(props: CloseCcEarlySheetProps): React.JSX.Elem
       {
         position_id: props.positionId,
         close_price_per_contract: Number.parseFloat(closePrice),
-        fill_date: fillDate || new Date().toISOString().slice(0, 10)
+        fill_date: fillDate || localToday()
       },
       {
         onError: (mutationError) => {
@@ -126,6 +128,6 @@ export function CloseCcEarlySheet(props: CloseCcEarlySheetProps): React.JSX.Elem
         )}
       </SheetPanel>
     </SheetOverlay>,
-    document.body
+    getSheetPortal()
   )
 }

@@ -25,14 +25,14 @@ How requests travel from the UI to the database and back.
 
 ## IPC channels
 
-| Channel | Method | Service | Core engines used |
-|---|---|---|---|
-| `ping` | `window.api.ping()` | — | — |
-| `positions:list` | `window.api.listPositions()` | `list-positions.ts` | — |
-| `positions:create` | `window.api.createPosition(p)` | `positions.ts` | `openWheel`, `calculateInitialCspBasis` |
-| `positions:get` | `window.api.getPosition(id)` | `get-position.ts` | — |
-| `positions:close-csp` | `window.api.closePosition(p)` | `close-csp-position.ts` | `closeCsp`, `calculateCspClose` |
-| `positions:expire-csp` | `window.api.expirePosition(p)` | `expire-csp-position.ts` | `expireCsp`, `calculateCspExpiration` |
+| Channel                | Method                         | Service                  | Core engines used                       |
+| ---------------------- | ------------------------------ | ------------------------ | --------------------------------------- |
+| `ping`                 | `window.api.ping()`            | —                        | —                                       |
+| `positions:list`       | `window.api.listPositions()`   | `list-positions.ts`      | —                                       |
+| `positions:create`     | `window.api.createPosition(p)` | `positions.ts`           | `openWheel`, `calculateInitialCspBasis` |
+| `positions:get`        | `window.api.getPosition(id)`   | `get-position.ts`        | —                                       |
+| `positions:close-csp`  | `window.api.closePosition(p)`  | `close-csp-position.ts`  | `closeCsp`, `calculateCspClose`         |
+| `positions:expire-csp` | `window.api.expirePosition(p)` | `expire-csp-position.ts` | `expireCsp`, `calculateCspExpiration`   |
 
 ## IPC result contract
 

@@ -4,6 +4,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { localToday } from './dates'
 import { openPosition, openDetailFor, reachCcOpenState, selectDate } from './helpers'
 
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
@@ -18,7 +19,7 @@ describe('record shares called away', () => {
   let dbPath: string
 
   // Call-away uses CC expiration as fill date; today is valid (>= CC open date = today)
-  const CC_EXPIRATION = new Date().toISOString().slice(0, 10)
+  const CC_EXPIRATION = localToday()
 
   afterEach(async () => {
     await app?.close()
@@ -111,7 +112,7 @@ describe('record shares called away', () => {
       day: 17
     })
     await openDetailFor(page, 'AAPL')
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localToday()
     await page.click('[data-testid="record-assignment-btn"]')
     await page.waitForSelector('text=Assign CSP to Shares')
     await selectDate(page, '#assignment-date', today)

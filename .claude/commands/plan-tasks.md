@@ -20,10 +20,10 @@ If not found, stop: "File not found: `$ARGUMENTS`"
 
 Derive the story directory from the plan path (e.g., `plans/us-3/plan.md` → `plans/us-3/`). Read each supporting document that exists:
 
-| File | Read for |
-|---|---|
-| `{story-dir}/research.md` | Design decisions, architectural notes |
-| `{story-dir}/data-model.md` | Field types, nullability, validation |
+| File                         | Read for                                  |
+| ---------------------------- | ----------------------------------------- |
+| `{story-dir}/research.md`    | Design decisions, architectural notes     |
+| `{story-dir}/data-model.md`  | Field types, nullability, validation      |
 | `{story-dir}/contracts/*.md` | API shapes, response formats, error codes |
 
 ---
@@ -87,10 +87,10 @@ Create `{story-dir}/tasks.md` with the following structure:
 - [ ] **[Red]** Write failing tests — `{test-file-path}`
   - Test cases: {specific cases from plan}
   - Run `pnpm test {test-file}` — all new tests must fail
-- [ ] **[Green]** Implement — `{impl-file-path}` *(depends on: {Area Name 1} Red ✓)*
+- [ ] **[Green]** Implement — `{impl-file-path}` _(depends on: {Area Name 1} Red ✓)_
   - {key function signatures and logic from plan}
   - Run `pnpm test {test-file}` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — `{impl-file-path}` *(depends on: {Area Name 1} Green ✓)*
+- [ ] **[Refactor]** `/refactor` — `{impl-file-path}` _(depends on: {Area Name 1} Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
@@ -99,10 +99,10 @@ Create `{story-dir}/tasks.md` with the following structure:
 - [ ] **[Red]** Write failing tests — `{test-file-path}`
   - Test cases: {specific cases from plan}
   - Run `pnpm test {test-file}` — all new tests must fail
-- [ ] **[Green]** Implement — `{impl-file-path}` *(depends on: {Area Name 2} Red ✓)*
+- [ ] **[Green]** Implement — `{impl-file-path}` _(depends on: {Area Name 2} Red ✓)_
   - {key function signatures and logic from plan}
   - Run `pnpm test {test-file}` — all tests must pass
-- [ ] **[Refactor]** `/refactor` *(depends on: {Area Name 2} Green ✓)*
+- [ ] **[Refactor]** `/refactor` _(depends on: {Area Name 2} Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
@@ -116,13 +116,13 @@ Create `{story-dir}/tasks.md` with the following structure:
 
 **Requires:** {Area Name 1} Green ✓
 
-- [ ] **[Red]** Write failing tests — `{test-file-path}` *(depends on: {Area Name 1} Green ✓)*
+- [ ] **[Red]** Write failing tests — `{test-file-path}` _(depends on: {Area Name 1} Green ✓)_
   - Test cases: {specific cases}
   - Run `pnpm test {test-file}` — all new tests must fail
-- [ ] **[Green]** Implement — `{impl-file-path}` *(depends on: {Area Name 3} Red ✓)*
+- [ ] **[Green]** Implement — `{impl-file-path}` _(depends on: {Area Name 3} Red ✓)_
   - {key details}
   - Run `pnpm test {test-file}` — all tests must pass
-- [ ] **[Refactor]** `/refactor` *(depends on: {Area Name 3} Green ✓)*
+- [ ] **[Refactor]** `/refactor` _(depends on: {Area Name 3} Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
@@ -134,15 +134,15 @@ Create `{story-dir}/tasks.md` with the following structure:
 
 ### E2E Tests
 
-- [ ] **[Red]** Write failing e2e tests — `e2e/{story-slug}.spec.ts` *(depends on: all Green tasks ✓)*
+- [ ] **[Red]** Write failing e2e tests — `e2e/{story-slug}.spec.ts` _(depends on: all Green tasks ✓)_
   - One `it()` per AC bullet from the user story — test names must mirror AC language
   - AC coverage:
     - AC-1: {ac text} → `it('{test name}')`
     - AC-2: {ac text} → `it('{test name}')`
   - Run `pnpm test:e2e` — all new tests must fail
-- [ ] **[Green]** Make e2e tests pass *(depends on: E2E Red ✓)*
+- [ ] **[Green]** Make e2e tests pass _(depends on: E2E Red ✓)_
   - Run `pnpm test:e2e` — all tests must pass
-- [ ] **[Refactor]** `/refactor` e2e tests *(depends on: E2E Green ✓)*
+- [ ] **[Refactor]** `/refactor` e2e tests _(depends on: E2E Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
 
 ---

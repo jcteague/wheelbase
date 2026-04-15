@@ -93,11 +93,11 @@ describe('AssignmentSheet', () => {
     expect(screen.getByText(/Effective cost basis/i)).toBeInTheDocument()
   })
 
-  it('shows phase transition badges: CSP_OPEN → HOLDING_SHARES', async () => {
+  it('shows phase transition badges: Sell Put → Holding Shares', async () => {
     await renderAssignmentSheet()
 
-    expect(screen.getByText('CSP_OPEN')).toBeInTheDocument()
-    expect(screen.getByText('HOLDING_SHARES')).toBeInTheDocument()
+    expect(screen.getByText('Sell Put')).toBeInTheDocument()
+    expect(screen.getAllByText('Holding Shares').length).toBeGreaterThan(0)
   })
 
   it('shows shares to receive as contracts × 100', async () => {

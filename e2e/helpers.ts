@@ -1,4 +1,5 @@
 import type { Page } from 'playwright'
+import { localToday } from './dates'
 
 export async function selectDate(page: Page, triggerSelector: string, iso: string): Promise<void> {
   const [year, month, day] = iso.split('-').map(Number)
@@ -21,6 +22,7 @@ export async function selectDate(page: Page, triggerSelector: string, iso: strin
 
   await page.click(`.rdp-day:not(.rdp-outside) .rdp-day_button:has-text("${day}")`)
   await page.waitForSelector(`${triggerSelector}:has-text("${iso}")`)
+  await page.waitForSelector('.rdp-month_caption', { state: 'detached' })
 }
 
 export async function openPosition(
@@ -72,7 +74,7 @@ export async function reachCcOpenState(
   ccPremium: string,
   ccExpiration: string
 ): Promise<string> {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
 
   await openPosition(page, {
     ticker: 'AAPL',

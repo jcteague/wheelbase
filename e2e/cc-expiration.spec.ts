@@ -4,6 +4,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { localToday } from './dates'
 
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
 const APP_CWD = path.join(__dirname, '..')
@@ -84,7 +85,7 @@ async function openDetailFor(page: Page, ticker: string): Promise<void> {
 async function reachCcOpenStateWithExpiredCc(
   page: Page
 ): Promise<{ today: string; ccExpiration: string }> {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
 
   await openPosition(page, {
     ticker: 'AAPL',
@@ -194,7 +195,7 @@ describe('US-9: Record CC expiring worthless', () => {
 
   it('rejects expiration attempt before the expiration date: "Record Expiration →" is NOT visible when DTE > 0', async () => {
     const page = await launchFreshApp()
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localToday()
     // Use a future CC expiration — DTE > 0 → button should not appear
     const futureExpiration = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)
       .toISOString()
@@ -237,7 +238,7 @@ describe('US-9: Record CC expiring worthless', () => {
 
   it('rejects CC expiration when position is not in CC_OPEN phase: button is NOT visible in HOLDING_SHARES', async () => {
     const page = await launchFreshApp()
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localToday()
 
     await openPosition(page, {
       ticker: 'AAPL',

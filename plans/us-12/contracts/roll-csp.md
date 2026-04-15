@@ -11,9 +11,9 @@ z.object({
   positionId: z.string().uuid(),
   costToClosePerContract: z.number().positive(),
   newPremiumPerContract: z.number().positive(),
-  newExpiration: z.string(),              // YYYY-MM-DD
+  newExpiration: z.string(), // YYYY-MM-DD
   newStrike: z.number().positive().optional(), // defaults to current strike if omitted
-  fillDate: z.string().optional()         // YYYY-MM-DD; defaults to today
+  fillDate: z.string().optional() // YYYY-MM-DD; defaults to today
 })
 ```
 
@@ -48,14 +48,14 @@ z.object({
 
 ### Known error codes
 
-| field | code | message |
-|---|---|---|
-| `__phase__` | `invalid_phase` | `Position is not in CSP_OPEN phase` |
-| `newExpiration` | `must_be_after_current` | `New expiration must be after the current expiration` |
-| `costToClosePerContract` | `must_be_positive` | `Cost to close must be greater than zero` |
-| `newPremiumPerContract` | `must_be_positive` | `New premium must be greater than zero` |
-| `__root__` | `not_found` | `Position not found` |
-| `__root__` | `no_active_leg` | `Position has no active leg` |
+| field                    | code                    | message                                               |
+| ------------------------ | ----------------------- | ----------------------------------------------------- |
+| `__phase__`              | `invalid_phase`         | `Position is not in CSP_OPEN phase`                   |
+| `newExpiration`          | `must_be_after_current` | `New expiration must be after the current expiration` |
+| `costToClosePerContract` | `must_be_positive`      | `Cost to close must be greater than zero`             |
+| `newPremiumPerContract`  | `must_be_positive`      | `New premium must be greater than zero`               |
+| `__root__`               | `not_found`             | `Position not found`                                  |
+| `__root__`               | `no_active_leg`         | `Position has no active leg`                          |
 
 ## Renderer API Adapter
 
@@ -76,7 +76,15 @@ export type RollCspResponse = {
   rollFromLeg: LegData & { legRole: 'ROLL_FROM'; action: 'BUY'; fillDate: string }
   rollToLeg: LegData & { legRole: 'ROLL_TO'; action: 'SELL'; fillDate: string }
   rollChainId: string
-  costBasisSnapshot: { id: string; positionId: string; basisPerShare: string; totalPremiumCollected: string; finalPnl: null; snapshotAt: string; createdAt: string }
+  costBasisSnapshot: {
+    id: string
+    positionId: string
+    basisPerShare: string
+    totalPremiumCollected: string
+    finalPnl: null
+    snapshotAt: string
+    createdAt: string
+  }
 }
 ```
 
@@ -85,6 +93,7 @@ Adapter function maps snake_case payload fields to camelCase IPC fields, using t
 ## Preload binding
 
 `src/preload/index.ts` — add:
+
 ```typescript
 rollCsp: (payload: unknown) => invoke('positions:roll-csp', payload)
 ```

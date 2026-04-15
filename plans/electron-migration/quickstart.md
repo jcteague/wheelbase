@@ -48,11 +48,13 @@ pnpm dev
 ```
 
 This starts:
+
 - Electron main process with Hono on `localhost:9001`
 - Vite dev server for renderer on `localhost:5173`
 - Hot reload for both
 
 The DB file is created at:
+
 - macOS: `~/Library/Application Support/wheelbase-electron/wheelbase.db`
 
 ---
@@ -60,6 +62,7 @@ The DB file is created at:
 ## Running Tests
 
 ### Unit tests (core engines, API routes)
+
 ```bash
 pnpm test
 # or watch mode:
@@ -71,6 +74,7 @@ Tests use `better-sqlite3` with `:memory:` — no running Electron instance need
 Expected output: all lifecycle, costbasis, and API route tests passing.
 
 ### E2E tests (requires dev server running)
+
 ```bash
 # In one terminal:
 pnpm dev
@@ -99,16 +103,16 @@ npx @electron/rebuild -f -w better-sqlite3
 
 The migration is executed in this order. Each phase ends with all tests passing.
 
-| Phase | Work | Tests |
-|---|---|---|
-| 1 | Electron scaffold + IPC ping/pong | App opens, IPC verified |
-| 2 | React renderer migration | All frontend Vitest tests pass |
-| 3 | SQLite schema + ley migrations | Schema created in SQLite |
-| 4 | Core engines (TypeScript) | lifecycle + costbasis Vitest tests pass |
-| 5 | Service functions + IPC handlers | Service integration tests pass |
-| 6 | Connect renderer to IPC | Full create/list flow works |
-| 7 | Playwright E2E | E2E smoke test passes |
-| 8 | Alpaca integration stub | Integration module in place |
+| Phase | Work                              | Tests                                   |
+| ----- | --------------------------------- | --------------------------------------- |
+| 1     | Electron scaffold + IPC ping/pong | App opens, IPC verified                 |
+| 2     | React renderer migration          | All frontend Vitest tests pass          |
+| 3     | SQLite schema + ley migrations    | Schema created in SQLite                |
+| 4     | Core engines (TypeScript)         | lifecycle + costbasis Vitest tests pass |
+| 5     | Service functions + IPC handlers  | Service integration tests pass          |
+| 6     | Connect renderer to IPC           | Full create/list flow works             |
+| 7     | Playwright E2E                    | E2E smoke test passes                   |
+| 8     | Alpaca integration stub           | Integration module in place             |
 
 ---
 

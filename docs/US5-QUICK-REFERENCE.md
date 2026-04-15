@@ -1,9 +1,11 @@
 # US-5: CSP Expiration — Quick Reference Guide
 
 ## What is US-5?
+
 Mark a CSP (Covered Secured Put) as expired worthless when the option expires with no value. The wheel is complete, trader keeps 100% premium, position marked closed.
 
 ## User Story
+
 **As a** wheel trader whose CSP has expired out of the money,  
 **I want to** record the expiration so the wheel is marked complete with 100% premium captured,  
 **So that** I can see the final P&L and free up my attention for active positions.
@@ -22,6 +24,7 @@ Validation:        Position phase must be CSP_OPEN
 ```
 
 ## Example
+
 ```
 Input:   Position AAPL CSP_OPEN, strike $180, expiration 2026-04-17
          Today: 2026-04-17 or later
@@ -97,6 +100,7 @@ Result:  Position updated to WHEEL_COMPLETE, CLOSED
 ## Implementation Checklist
 
 ### ✅ Already Done (US-1 Foundation)
+
 - [x] Database schema (all tables and fields exist)
 - [x] Basic types and enums
 - [x] IPC handler registration pattern
@@ -105,6 +109,7 @@ Result:  Position updated to WHEEL_COMPLETE, CLOSED
 - [x] PositionCard component with phase rendering
 
 ### 🔨 Must Implement for US-5
+
 - [ ] **Backend Core (Pure Functions)**
   - [ ] `expireCSP(position, currentDate)` in `lifecycle.ts`
   - [ ] Expiration P&L calc in `costbasis.ts`
@@ -126,6 +131,7 @@ Result:  Position updated to WHEEL_COMPLETE, CLOSED
 ## Data Model
 
 ### Position Fields Changed
+
 ```typescript
 phase:      CSP_OPEN → WHEEL_COMPLETE
 status:     ACTIVE → CLOSED
@@ -134,6 +140,7 @@ updated_at:  NOW
 ```
 
 ### New Leg Created
+
 ```typescript
 legRole:              'EXPIRE'
 action:               'EXPIRE'
@@ -147,6 +154,7 @@ fill_date:            (expiration date)
 ```
 
 ### New Cost Basis Snapshot
+
 ```typescript
 basisPerShare:         (unchanged from last snapshot)
 totalPremiumCollected: (unchanged)
@@ -160,6 +168,7 @@ snapshotAt:            NOW
 ## Testing Strategy
 
 ### Unit Tests (Pure Functions)
+
 ```
 expireCSP():
   ✓ Happy path: CSP_OPEN + valid date → WHEEL_COMPLETE
@@ -175,6 +184,7 @@ calculateCspExpiration():
 ```
 
 ### Service Tests
+
 ```
 expirePosition():
   ✓ Happy path: valid position expires successfully
@@ -186,6 +196,7 @@ expirePosition():
 ```
 
 ### Frontend Tests
+
 ```
 PositionDetailPage:
   ✓ Renders position summary
@@ -231,6 +242,7 @@ ConfirmExpireDialog:
 ## API Endpoint
 
 ### Request
+
 ```
 PATCH /api/positions/:positionId/expire
 Content-Type: application/json
@@ -242,6 +254,7 @@ Body (optional):
 ```
 
 ### Success Response (200)
+
 ```json
 {
   "ok": true,
@@ -271,6 +284,7 @@ Body (optional):
 ```
 
 ### Error Response (400)
+
 ```json
 {
   "ok": false,
@@ -289,6 +303,7 @@ Body (optional):
 ## Files to Modify
 
 ### Backend (7 files)
+
 1. `src/main/core/lifecycle.ts` — Add `expireCSP()`
 2. `src/main/core/lifecycle.test.ts` — Add tests
 3. `src/main/core/costbasis.ts` — Add expiration calculation
@@ -298,6 +313,7 @@ Body (optional):
 7. `src/main/ipc/positions.ts` — Register handler
 
 ### Frontend (3+ files)
+
 1. `src/renderer/src/api/positions.ts` — Add `expirePosition()`
 2. `src/renderer/src/pages/PositionDetailPage.tsx` — Implement page
 3. `src/renderer/src/components/ConfirmExpireDialog.tsx` — New dialog (optional)
@@ -333,22 +349,23 @@ expirePosition(service)
 
 ## Time Estimate
 
-| Component | LOC | Time |
-|-----------|-----|------|
-| Lifecycle engine | 20 | 30 min |
-| Cost basis calculation | 15 | 20 min |
-| Service function | 40 | 30 min |
-| IPC handler | 30 | 20 min |
-| Frontend API | 20 | 20 min |
-| PositionDetailPage | 150 | 90 min |
-| Tests | 100 | 60 min |
-| **Total** | **375** | **4.5 hours** |
+| Component              | LOC     | Time          |
+| ---------------------- | ------- | ------------- |
+| Lifecycle engine       | 20      | 30 min        |
+| Cost basis calculation | 15      | 20 min        |
+| Service function       | 40      | 30 min        |
+| IPC handler            | 30      | 20 min        |
+| Frontend API           | 20      | 20 min        |
+| PositionDetailPage     | 150     | 90 min        |
+| Tests                  | 100     | 60 min        |
+| **Total**              | **375** | **4.5 hours** |
 
 ---
 
 ## Progress Tracking
 
 Use these identifiers when asking for help:
+
 - `T-LC`: Lifecycle engine work
 - `T-CB`: Cost basis work
 - `T-SVC`: Service layer work
@@ -370,7 +387,7 @@ Example: "Stuck on T-LC, expireCSP validation" or "Implement T-SVC service funct
 ✅ "Open new wheel on TICKER" shortcut shown after success  
 ✅ No database migrations needed  
 ✅ All tests pass  
-✅ Pure functions have no side effects  
+✅ Pure functions have no side effects
 
 ---
 

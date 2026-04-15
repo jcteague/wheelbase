@@ -4,6 +4,7 @@ import { MONO } from '../../lib/tokens'
 type SectionCardProps = {
   header?: string
   children: ReactNode
+  className?: string
 }
 
 const cardStyle: CSSProperties = {
@@ -16,7 +17,7 @@ const cardStyle: CSSProperties = {
 const headerStyle: CSSProperties = {
   padding: '10px 20px',
   borderBottom: '1px solid var(--wb-border)',
-  fontSize: '0.65rem',
+  fontSize: '0.7rem',
   fontWeight: 600,
   letterSpacing: '0.1em',
   textTransform: 'uppercase',
@@ -24,9 +25,9 @@ const headerStyle: CSSProperties = {
   fontFamily: MONO
 }
 
-export function SectionCard({ header, children }: SectionCardProps): React.JSX.Element {
+export function SectionCard({ header, children, className }: SectionCardProps): React.JSX.Element {
   return (
-    <section style={cardStyle}>
+    <section style={cardStyle} className={className}>
       {header ? <div style={headerStyle}>{header}</div> : null}
       {children}
     </section>

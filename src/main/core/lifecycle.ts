@@ -380,3 +380,42 @@ export function rollCsp(input: RollCspInput): RollCspResult {
 
   return { phase: 'CSP_OPEN' }
 }
+
+export interface RollCcInput {
+  currentPhase: WheelPhase
+  currentStrike: string
+  currentExpiration: string
+  newStrike: string
+  newExpiration: string
+  costToClosePerContract: string
+  newPremiumPerContract: string
+}
+
+export interface RollCcResult {
+  phase: 'CC_OPEN'
+}
+
+export function rollCc(input: RollCcInput): RollCcResult {
+  requireCcOpenPhase(input.currentPhase)
+
+  if (input.newExpiration < input.currentExpiration) {
+    throw new ValidationError(
+      'newExpiration',
+      'must_be_on_or_after_current',
+      'New expiration must be on or after the current expiration'
+    )
+  }
+
+  if (input.newStrike === input.currentStrike && input.newExpiration === input.currentExpiration) {
+    throw new ValidationError(
+      '__roll__',
+      'no_change',
+      'Roll must change at least one of strike or expiration'
+    )
+  }
+
+  requirePositiveDecimal(input.costToClosePerContract, 'costToClosePerContract', 'Cost to close')
+  requirePositiveDecimal(input.newPremiumPerContract, 'newPremiumPerContract', 'New premium')
+
+  return { phase: 'CC_OPEN' }
+}

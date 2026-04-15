@@ -16,6 +16,7 @@ Run immediately after `product-owner` produces a user story — no explicit user
 A single `.mdx` file saved to `mockups/{story-slug}.mdx`.
 
 The file contains:
+
 - YAML frontmatter with story metadata
 - Markdown sections for story context and acceptance criteria states
 - Inline JSX component that renders the mockup with hardcoded mock data
@@ -48,19 +49,19 @@ Glob `src/renderer/src/components/**/*.tsx` and read relevant files to understan
 
 ### Common shadcn/ui fallbacks
 
-| UI element | shadcn/ui import |
-|---|---|
-| Form label | `<Label>` |
-| Text input | `<Input>` |
-| Button | `<Button>` |
-| Select / dropdown | `<Select>`, `<SelectTrigger>`, `<SelectContent>`, `<SelectItem>` |
-| Card container | `<Card>`, `<CardHeader>`, `<CardTitle>`, `<CardContent>` |
-| Data table | `<Table>`, `<TableHeader>`, `<TableRow>`, `<TableHead>`, `<TableBody>`, `<TableCell>` |
-| Modal / dialog | `<Dialog>`, `<DialogContent>`, `<DialogHeader>`, `<DialogTitle>` |
-| Tabs | `<Tabs>`, `<TabsList>`, `<TabsTrigger>`, `<TabsContent>` |
-| Badge | `<Badge>` |
-| Alert | `<Alert>`, `<AlertDescription>` |
-| Form wrapper | `<Form>`, `<FormField>`, `<FormItem>`, `<FormLabel>`, `<FormControl>`, `<FormMessage>` |
+| UI element        | shadcn/ui import                                                                       |
+| ----------------- | -------------------------------------------------------------------------------------- |
+| Form label        | `<Label>`                                                                              |
+| Text input        | `<Input>`                                                                              |
+| Button            | `<Button>`                                                                             |
+| Select / dropdown | `<Select>`, `<SelectTrigger>`, `<SelectContent>`, `<SelectItem>`                       |
+| Card container    | `<Card>`, `<CardHeader>`, `<CardTitle>`, `<CardContent>`                               |
+| Data table        | `<Table>`, `<TableHeader>`, `<TableRow>`, `<TableHead>`, `<TableBody>`, `<TableCell>`  |
+| Modal / dialog    | `<Dialog>`, `<DialogContent>`, `<DialogHeader>`, `<DialogTitle>`                       |
+| Tabs              | `<Tabs>`, `<TabsList>`, `<TabsTrigger>`, `<TabsContent>`                               |
+| Badge             | `<Badge>`                                                                              |
+| Alert             | `<Alert>`, `<AlertDescription>`                                                        |
+| Form wrapper      | `<Form>`, `<FormField>`, `<FormItem>`, `<FormLabel>`, `<FormControl>`, `<FormMessage>` |
 
 Consult the `shadcn` skill for component-specific props and composition patterns when needed.
 
@@ -78,17 +79,17 @@ The `frontend-design` skill owns all visual design decisions. Let it make bold c
 ## Step 4: Write the MDX File
 
 > **MDX parse rules — read `references/mdx-gotchas.md` before writing.** The most common failure:
-> `//` comments that appear *between* `export` blocks are parsed as Markdown, not JavaScript.
+> `//` comments that appear _between_ `export` blocks are parsed as Markdown, not JavaScript.
 > If those comments contain JSX-like syntax (`<Badge>`, `<Input>`, etc.) MDX will throw a parse error.
-> **Rule:** only put `//` comments *inside* function bodies, or use `{/* */}` block comments at the file root.
+> **Rule:** only put `//` comments _inside_ function bodies, or use `{/* */}` block comments at the file root.
 
 Use this structure:
 
 ```mdx
 ---
-title: "{US-N}: {Story Title}"
-story: "{one-line story summary}"
-states: ["{state1}", "{state2}"]
+title: '{US-N}: {Story Title}'
+story: '{one-line story summary}'
+states: ['{state1}', '{state2}']
 ---
 
 # {US-N}: {Story Title}
@@ -107,19 +108,21 @@ export const MOCK_DATA = [ ... ]
 export function Mockup() {
   const [state, setState] = useState('{state1}')
 
-  return (
-    <div>
-      {/* Dev state toggle — remove before using as spec */}
-      <div style={{ ... }}>
-        {['{state1}', '{state2}'].map(s => (
-          <button key={s} onClick={() => setState(s)}>{s}</button>
-        ))}
-      </div>
+return (
+
+<div>
+{/* Dev state toggle — remove before using as spec */}
+<div style={{ ... }}>
+{['{state1}', '{state2}'].map(s => (
+<button key={s} onClick={() => setState(s)}>{s}</button>
+))}
+</div>
 
       {state === '{state1}' && ( ... )}
       {state === '{state2}' && ( ... )}
     </div>
-  )
+
+)
 }
 
 <Mockup />
@@ -132,10 +135,12 @@ Include a state toggle bar only when the story has multiple `Then` states — so
 Write the file to `mockups/{story-slug}.mdx`.
 
 Naming convention:
+
 - `US-12: View open positions list` → `mockups/us-12-view-open-positions-list.mdx`
 - `US-7: Enter a new CSP leg` → `mockups/us-7-enter-new-csp-leg.mdx`
 
 Report back:
+
 - File path written
 - Acceptance criteria states shown in the toggle
 - Project components reused (if any)

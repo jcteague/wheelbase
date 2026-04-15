@@ -18,26 +18,26 @@ The options wheel strategy: sell puts → accept assignment → sell calls → r
 
 ### All phases
 
-| Phase | Meaning | Status |
-|---|---|---|
-| `CSP_OPEN` | Cash-secured put sold, waiting for expiration/close | ACTIVE |
-| `CSP_EXPIRED` | Put expired worthless | CLOSED |
-| `CSP_CLOSED_PROFIT` | Put bought back for less than sold | CLOSED |
-| `CSP_CLOSED_LOSS` | Put bought back for more than sold | CLOSED |
-| `HOLDING_SHARES` | Assigned, holding 100 shares per contract | ACTIVE |
-| `CC_OPEN` | Covered call sold against shares | ACTIVE |
-| `CC_EXPIRED` | Call expired worthless | ACTIVE (still holding shares) |
-| `CC_CLOSED_PROFIT` | Call bought back for less | ACTIVE |
-| `CC_CLOSED_LOSS` | Call bought back for more | ACTIVE |
-| `WHEEL_COMPLETE` | Shares called away or position fully exited | CLOSED |
+| Phase               | Meaning                                             | Status                        |
+| ------------------- | --------------------------------------------------- | ----------------------------- |
+| `CSP_OPEN`          | Cash-secured put sold, waiting for expiration/close | ACTIVE                        |
+| `CSP_EXPIRED`       | Put expired worthless                               | CLOSED                        |
+| `CSP_CLOSED_PROFIT` | Put bought back for less than sold                  | CLOSED                        |
+| `CSP_CLOSED_LOSS`   | Put bought back for more than sold                  | CLOSED                        |
+| `HOLDING_SHARES`    | Assigned, holding 100 shares per contract           | ACTIVE                        |
+| `CC_OPEN`           | Covered call sold against shares                    | ACTIVE                        |
+| `CC_EXPIRED`        | Call expired worthless                              | ACTIVE (still holding shares) |
+| `CC_CLOSED_PROFIT`  | Call bought back for less                           | ACTIVE                        |
+| `CC_CLOSED_LOSS`    | Call bought back for more                           | ACTIVE                        |
+| `WHEEL_COMPLETE`    | Shares called away or position fully exited         | CLOSED                        |
 
 ### Implemented transitions (Phase 1)
 
-| From | Action | To | Service |
-|---|---|---|---|
-| (new) | Sell CSP | `CSP_OPEN` | `createPosition` |
-| `CSP_OPEN` | Buy to close | `CSP_CLOSED_PROFIT` or `CSP_CLOSED_LOSS` | `closeCspPosition` |
-| `CSP_OPEN` | Expire worthless | `WHEEL_COMPLETE` | `expireCspPosition` |
+| From       | Action           | To                                       | Service             |
+| ---------- | ---------------- | ---------------------------------------- | ------------------- |
+| (new)      | Sell CSP         | `CSP_OPEN`                               | `createPosition`    |
+| `CSP_OPEN` | Buy to close     | `CSP_CLOSED_PROFIT` or `CSP_CLOSED_LOSS` | `closeCspPosition`  |
+| `CSP_OPEN` | Expire worthless | `WHEEL_COMPLETE`                         | `expireCspPosition` |
 
 Future phases will add: assignment, covered call open/close/expire, roll operations.
 
@@ -45,16 +45,16 @@ Future phases will add: assignment, covered call open/close/expire, roll operati
 
 Each transaction on a position is a "leg":
 
-| Role | Action | When |
-|---|---|---|
-| `CSP_OPEN` | SELL | Open a cash-secured put |
-| `CSP_CLOSE` | BUY | Buy back the put |
-| `CC_OPEN` | SELL | Sell a covered call |
-| `CC_CLOSE` | BUY | Buy back the call |
-| `ASSIGN` | — | Assignment (shares received) |
-| `ROLL_FROM` | BUY | Close existing leg (part of roll) |
-| `ROLL_TO` | SELL | Open new leg (part of roll) |
-| `EXPIRE` | EXPIRE | Option expired worthless |
+| Role        | Action | When                              |
+| ----------- | ------ | --------------------------------- |
+| `CSP_OPEN`  | SELL   | Open a cash-secured put           |
+| `CSP_CLOSE` | BUY    | Buy back the put                  |
+| `CC_OPEN`   | SELL   | Sell a covered call               |
+| `CC_CLOSE`  | BUY    | Buy back the call                 |
+| `ASSIGN`    | —      | Assignment (shares received)      |
+| `ROLL_FROM` | BUY    | Close existing leg (part of roll) |
+| `ROLL_TO`   | SELL   | Open new leg (part of roll)       |
+| `EXPIRE`    | EXPIRE | Option expired worthless          |
 
 Legs are **immutable** — never updated after insert. Rolls are stored as linked pairs via `roll_chain_id`.
 
@@ -97,28 +97,28 @@ effective_basis = assignment_strike
 
 ### openWheel (create position)
 
-| Field | Rule |
-|---|---|
-| ticker | 1-5 uppercase letters |
-| strike | Positive decimal |
-| contracts | Positive integer |
-| premium_per_contract | Positive decimal |
-| fill_date | Not in future |
-| expiration | Strictly after fill_date |
+| Field                | Rule                     |
+| -------------------- | ------------------------ |
+| ticker               | 1-5 uppercase letters    |
+| strike               | Positive decimal         |
+| contracts            | Positive integer         |
+| premium_per_contract | Positive decimal         |
+| fill_date            | Not in future            |
+| expiration           | Strictly after fill_date |
 
 ### closeCsp (buy to close)
 
-| Field | Rule |
-|---|---|
-| phase | Must be `CSP_OPEN` |
-| close_price | Positive decimal |
-| close_date | >= open fill_date, <= expiration |
+| Field       | Rule                             |
+| ----------- | -------------------------------- |
+| phase       | Must be `CSP_OPEN`               |
+| close_price | Positive decimal                 |
+| close_date  | >= open fill_date, <= expiration |
 
 ### expireCsp (expire worthless)
 
-| Field | Rule |
-|---|---|
-| phase | Must be `CSP_OPEN` |
+| Field          | Rule               |
+| -------------- | ------------------ |
+| phase          | Must be `CSP_OPEN` |
 | reference_date | >= expiration date |
 
 All validation happens in core engines (`src/main/core/lifecycle.ts`) which throw `ValidationError(field, code, message)`. Core engines are pure functions — no DB or I/O imports.

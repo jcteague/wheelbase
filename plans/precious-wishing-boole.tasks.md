@@ -4,8 +4,6 @@ Generated from: `plans/precious-wishing-boole.md`
 Generated: 2026-03-01
 Total tasks: 26
 
-
-
 ## Red — Write Failing Tests
 
 - [x] [Red] Write failing tests for lifecycle engine open_wheel validation
@@ -18,9 +16,9 @@ Total tasks: 26
 - [x] [Green] Implement shared enums in backend/app/core/types.py
 - [x] [Green] Implement lifecycle engine open_wheel function in backend/app/core/lifecycle.py
 - [x] [Green] Implement cost basis engine calculate_initial_csp_basis in backend/app/core/costbasis.py
-- [x] [Green] Implement Position ORM model in backend/app/models/__init__.py
-- [x] [Green] Implement Leg ORM model in backend/app/models/__init__.py
-- [x] [Green] Implement CostBasisSnapshot ORM model in backend/app/models/__init__.py
+- [x] [Green] Implement Position ORM model in backend/app/models/**init**.py
+- [x] [Green] Implement Leg ORM model in backend/app/models/**init**.py
+- [x] [Green] Implement CostBasisSnapshot ORM model in backend/app/models/**init**.py
 - [x] [Green] Create Alembic migration for initial schema
 - [x] [Green] Implement API Pydantic schemas in backend/app/api/schemas.py
 - [x] [Green] Implement POST /positions route in backend/app/api/routes/positions.py
@@ -37,6 +35,6 @@ Total tasks: 26
 
 - [x] [Refactor] Clean up lifecycle engine and tests
 - [x] [Refactor] Clean up cost basis engine and tests
-- [x] [Refactor] Clean up ORM models in backend/app/models/__init__.py
+- [x] [Refactor] Clean up ORM models in backend/app/models/**init**.py
 - [x] [Refactor] Clean up API route, schemas, and test fixtures
 - [x] [Refactor] Clean up NewWheelForm, pages, and frontend tests

@@ -24,8 +24,7 @@
 ### 3. Extract Constant — animation stagger delay in `PositionsListPage.tsx`
 
 **File**: `src/renderer/src/pages/PositionsListPage.tsx`
-**Before**: `animationDelay: \`${i * 60}ms\`` with magic `60`
-**After**: `const STAGGER_DELAY_MS = 60` used in the expression
+**Before**: `animationDelay: \`${i \* 60}ms\``with magic`60`**After**:`const STAGGER_DELAY_MS = 60` used in the expression
 **Reason**: Named constant documents the visual intent
 
 ### 4. Remove Duplication — ISO date regex in `new-wheel.ts`
@@ -96,6 +95,7 @@ All refactorings were performed by the code-simplifier agent in a single pass wi
 **Before**: `services/positions.ts` was 234 lines, over the ~200 line limit.
 
 **After**:
+
 - `services/list-positions.ts` (96 lines) — `listPositions()`, `PositionRow`, `LIST_QUERY`, `computeDte`, `dteSortKey`
 - `services/positions.ts` (146 lines) — `createPosition()` only; re-exports `listPositions` for backward compat
 

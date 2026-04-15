@@ -12,11 +12,8 @@ describe('NavItem', () => {
   it('renders with active styling when active is true', () => {
     render(<NavItem href="/" label="Positions" icon="◈" active />)
 
-    expect(screen.getByRole('link', { name: /positions/i })).toHaveStyle({
-      color: 'var(--wb-gold)',
-      background: 'var(--wb-gold-dim)'
-    })
-    expect(screen.getByRole('link', { name: /positions/i })).toHaveClass('wb-nav-link')
+    const link = screen.getByRole('link', { name: /positions/i })
+    expect(link).toHaveStyle({ color: 'var(--wb-gold)', background: 'var(--wb-gold-dim)' })
   })
 
   it('renders as a link with the correct href', () => {

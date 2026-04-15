@@ -14,7 +14,7 @@ Fetch full detail for a single position (needed to hydrate the detail page and c
 ```typescript
 // Passed as second argument to ipcRenderer.invoke('positions:get', payload)
 {
-  positionId: string   // UUID
+  positionId: string // UUID
 }
 ```
 
@@ -137,28 +137,28 @@ Close a CSP position early (buy to close).
 
 ### `getPosition(positionId: string)`
 
-| IPC field (camelCase)              | Renderer field (snake_case)               |
-|------------------------------------|-------------------------------------------|
-| `activeLeg.premiumPerContract`     | `active_leg.premium_per_contract`         |
-| `activeLeg.fillDate`               | `active_leg.fill_date`                    |
-| `activeLeg.legRole`                | `active_leg.leg_role`                     |
-| `activeLeg.optionType`             | `active_leg.option_type`                  |
-| `costBasisSnapshot.basisPerShare`  | `cost_basis_snapshot.basis_per_share`     |
+| IPC field (camelCase)                     | Renderer field (snake_case)                   |
+| ----------------------------------------- | --------------------------------------------- |
+| `activeLeg.premiumPerContract`            | `active_leg.premium_per_contract`             |
+| `activeLeg.fillDate`                      | `active_leg.fill_date`                        |
+| `activeLeg.legRole`                       | `active_leg.leg_role`                         |
+| `activeLeg.optionType`                    | `active_leg.option_type`                      |
+| `costBasisSnapshot.basisPerShare`         | `cost_basis_snapshot.basis_per_share`         |
 | `costBasisSnapshot.totalPremiumCollected` | `cost_basis_snapshot.total_premium_collected` |
-| `costBasisSnapshot.finalPnl`       | `cost_basis_snapshot.final_pnl`           |
-| `position.openedDate`              | `position.opened_date`                    |
-| `position.closedDate`              | `position.closed_date`                    |
+| `costBasisSnapshot.finalPnl`              | `cost_basis_snapshot.final_pnl`               |
+| `position.openedDate`                     | `position.opened_date`                        |
+| `position.closedDate`                     | `position.closed_date`                        |
 
 ### `closePosition(payload: CloseCspPayload)`
 
-| Renderer field (snake_case)         | IPC field (camelCase)            |
-|-------------------------------------|----------------------------------|
-| `position_id`                       | `positionId`                     |
-| `close_price_per_contract`          | `closePricePerContract`          |
-| `fill_date`                         | `fillDate`                       |
+| Renderer field (snake_case) | IPC field (camelCase)   |
+| --------------------------- | ----------------------- |
+| `position_id`               | `positionId`            |
+| `close_price_per_contract`  | `closePricePerContract` |
+| `fill_date`                 | `fillDate`              |
 
 Error field mapping (IPC → form):
-| IPC field              | Form field                      |
+| IPC field | Form field |
 |------------------------|---------------------------------|
-| `closePricePerContract`| `close_price_per_contract`      |
-| `fillDate`             | `fill_date`                     |
+| `closePricePerContract`| `close_price_per_contract` |
+| `fillDate` | `fill_date` |

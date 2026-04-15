@@ -4,6 +4,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { localDate } from './dates'
 import { openPosition, openDetailFor, selectDate } from './helpers'
 
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
@@ -18,9 +19,9 @@ describe('roll open CSP out', () => {
   let dbPath: string
 
   // CSP expiration must be in the future for the form to work
-  const CSP_EXPIRATION = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-  const NEW_EXPIRATION = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-  const PAST_EXPIRATION = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const CSP_EXPIRATION = localDate(30)
+  const NEW_EXPIRATION = localDate(60)
+  const PAST_EXPIRATION = localDate(-7)
 
   afterEach(async () => {
     await app?.close()

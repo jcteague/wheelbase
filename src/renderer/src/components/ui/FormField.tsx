@@ -1,21 +1,10 @@
-import { MONO } from '../../lib/tokens'
-
 type FieldLabelProps = { children: React.ReactNode; htmlFor?: string }
 
 export function FieldLabel({ children, htmlFor }: FieldLabelProps): React.JSX.Element {
   return (
     <label
       htmlFor={htmlFor}
-      style={{
-        display: 'block',
-        fontSize: '0.7rem',
-        fontWeight: 600,
-        letterSpacing: '0.07em',
-        textTransform: 'uppercase',
-        color: 'var(--wb-text-muted)',
-        fontFamily: MONO,
-        marginBottom: 6
-      }}
+      className="block text-xs font-semibold tracking-widest uppercase text-wb-text-secondary font-wb-mono mb-1.5"
     >
       {children}
     </label>
@@ -32,19 +21,12 @@ type FieldProps = {
 
 export function Field({ label, htmlFor, error, hint, children }: FieldProps): React.JSX.Element {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+    <div className="flex flex-col gap-0">
       <FieldLabel htmlFor={htmlFor}>{label}</FieldLabel>
       {children}
-      {hint && !error && (
-        <span style={{ fontSize: '0.7rem', color: 'var(--wb-text-muted)', marginTop: 4 }}>
-          {hint}
-        </span>
-      )}
+      {hint && !error && <span className="text-xs text-wb-text-muted mt-1">{hint}</span>}
       {error && (
-        <span
-          style={{ fontSize: '0.7rem', color: 'var(--wb-red)', marginTop: 4, fontFamily: MONO }}
-          role="alert"
-        >
+        <span className="text-xs text-wb-red mt-1 font-wb-mono" role="alert">
           {error}
         </span>
       )}

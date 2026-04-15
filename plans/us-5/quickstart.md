@@ -33,6 +33,7 @@ pnpm test src/main/services/expire-csp-position.test.ts
 ## Verification Criteria
 
 All tests pass with:
+
 ```
 ✓ src/main/core/lifecycle.test.ts
 ✓ src/main/core/costbasis.test.ts
@@ -42,6 +43,7 @@ All tests pass with:
 ```
 
 And the overall post-change checklist:
+
 ```bash
 pnpm test       # all pass
 pnpm lint       # zero errors

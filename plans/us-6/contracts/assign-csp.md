@@ -16,7 +16,7 @@ Exposed in `src/preload/index.ts` as `window.api.assignPosition(payload)`.
 ```typescript
 // Schema: AssignCspPayloadSchema in src/main/schemas.ts
 {
-  positionId: string    // UUID — the position to assign
+  positionId: string // UUID — the position to assign
   assignmentDate: string // ISO date string YYYY-MM-DD
 }
 ```
@@ -47,7 +47,7 @@ The IPC handler calls `AssignCspPayloadSchema.parse(payload)` before dispatching
     contracts: number
     premiumPerContract: '0.0000'
     fillPrice: null
-    fillDate: string        // the assignmentDate from payload
+    fillDate: string // the assignmentDate from payload
     createdAt: string
     updatedAt: string
   }
@@ -61,8 +61,8 @@ The IPC handler calls `AssignCspPayloadSchema.parse(payload)` before dispatching
     createdAt: string
   }
   premiumWaterfall: Array<{
-    label: string    // e.g. "CSP premium", "Roll credit"
-    amount: string   // premiumPerContract for that leg (per-share, 4dp)
+    label: string // e.g. "CSP premium", "Roll credit"
+    amount: string // premiumPerContract for that leg (per-share, 4dp)
   }>
 }
 ```
@@ -84,13 +84,13 @@ The IPC handler calls `AssignCspPayloadSchema.parse(payload)` before dispatching
 
 ### Error cases
 
-| `field`         | `code`           | Trigger                                               |
-|-----------------|------------------|-------------------------------------------------------|
-| `__root__`      | `not_found`      | Position does not exist                               |
-| `__root__`      | `no_active_leg`  | Position has no active CSP leg                        |
-| `__phase__`     | `invalid_phase`  | Position is not in `CSP_OPEN` phase                   |
-| `assignmentDate`| `date_before_open` | assignmentDate is before the CSP open fill date     |
-| `__root__`      | `internal_error` | Unexpected error (logged server-side)                 |
+| `field`          | `code`             | Trigger                                         |
+| ---------------- | ------------------ | ----------------------------------------------- |
+| `__root__`       | `not_found`        | Position does not exist                         |
+| `__root__`       | `no_active_leg`    | Position has no active CSP leg                  |
+| `__phase__`      | `invalid_phase`    | Position is not in `CSP_OPEN` phase             |
+| `assignmentDate` | `date_before_open` | assignmentDate is before the CSP open fill date |
+| `__root__`       | `internal_error`   | Unexpected error (logged server-side)           |
 
 Note: future `assignmentDate` is NOT an error — the backend accepts it without complaint.
 
@@ -127,6 +127,7 @@ async function assignPosition(payload: AssignCspPayload): Promise<AssignCspRespo
 ```
 
 IPC field → form field mapping to add to `IPC_TO_FORM_FIELD`:
+
 ```typescript
 assignmentDate: 'assignment_date'
 ```

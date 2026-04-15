@@ -3,6 +3,7 @@
 ## Existing Entities (unchanged schema)
 
 ### `LegRecord` (from `src/main/schemas.ts`)
+
 Used as-is. Key fields for this story:
 | Field | Type | Notes |
 |---|---|---|
@@ -17,6 +18,7 @@ Used as-is. Key fields for this story:
 | `fillDate` | `string` | YYYY-MM-DD |
 
 ### `CostBasisSnapshotRecord` (from `src/main/schemas.ts`)
+
 Used as-is. Key fields:
 | Field | Type | Notes |
 |---|---|---|
@@ -41,7 +43,7 @@ export interface GetPositionResult {
   activeLeg: LegRecord | null
   costBasisSnapshot: CostBasisSnapshotRecord | null
   legs: LegRecord[]
-  allSnapshots: CostBasisSnapshotRecord[]   // NEW — ordered snapshot_at ASC
+  allSnapshots: CostBasisSnapshotRecord[] // NEW — ordered snapshot_at ASC
 }
 ```
 
@@ -90,11 +92,11 @@ type LegHistoryEntry = {
   action: string
   instrumentType: string
   strike: string
-  expiration: string | null   // null for ASSIGN, CALLED_AWAY
-  contracts: number           // NEW
-  premiumPerContract: string | null  // null for ASSIGN, CALLED_AWAY, CC_EXPIRED
+  expiration: string | null // null for ASSIGN, CALLED_AWAY
+  contracts: number // NEW
+  premiumPerContract: string | null // null for ASSIGN, CALLED_AWAY, CC_EXPIRED
   fillDate: string
-  runningCostBasis: string | null    // NEW — derived by deriveRunningBasis()
+  runningCostBasis: string | null // NEW — derived by deriveRunningBasis()
 }
 ```
 
@@ -102,16 +104,16 @@ type LegHistoryEntry = {
 
 ## Snapshot Creation Events (reference)
 
-| Leg Role | Creates Snapshot? | finalPnl set? |
-|---|---|---|
-| CSP_OPEN | Yes | No |
-| ASSIGN | Yes | No |
-| CC_OPEN | Yes | No |
-| CC_CLOSE | **No** | N/A |
-| CC_EXPIRED | Yes | Yes |
-| CALLED_AWAY | Yes | Yes |
-| ROLL_FROM | No | N/A |
-| ROLL_TO | No | N/A |
+| Leg Role    | Creates Snapshot? | finalPnl set? |
+| ----------- | ----------------- | ------------- |
+| CSP_OPEN    | Yes               | No            |
+| ASSIGN      | Yes               | No            |
+| CC_OPEN     | Yes               | No            |
+| CC_CLOSE    | **No**            | N/A           |
+| CC_EXPIRED  | Yes               | Yes           |
+| CALLED_AWAY | Yes               | Yes           |
+| ROLL_FROM   | No                | N/A           |
+| ROLL_TO     | No                | N/A           |
 
 CC_CLOSE running basis always carries forward from the prior CC_OPEN snapshot.
 
@@ -122,6 +124,7 @@ CC_CLOSE running basis always carries forward from the prior CC_OPEN snapshot.
 **Input:** `legs` sorted `fill_date ASC, created_at ASC` (guaranteed by DB query), `snapshots` sorted `snapshot_at ASC`.
 
 **Algorithm:**
+
 ```
 currentBasis = null
 si = 0
@@ -141,6 +144,7 @@ for each leg in legs:
 Source: `costBasisSnapshot.finalPnl` (the latest snapshot's `finalPnl` field, which is non-null only when `position.status === 'CLOSED'` / terminal event).
 
 Rendering:
+
 - Positive: green (`var(--wb-green)`) with `+$X.XX` format
 - Negative: red (`var(--wb-red)`) with `-$X.XX` format
 - Use existing `pnlColor()` from `src/renderer/src/lib/format.ts`

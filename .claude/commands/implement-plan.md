@@ -20,16 +20,19 @@ The user has invoked `/implement-plan` with arguments: `$ARGUMENTS`
 ## Step 0 — Parse Arguments
 
 Split `$ARGUMENTS` on the first space:
+
 - **First token** = story ID or plan file path (required)
 - **Filter** = the second token (optional, default: `all`)
 
 **Resolve the plan file path:**
+
 - If the first token looks like a story ID (e.g. `us-4`, `us-12`) → derive the path as `plans/<id>/plan.md`
 - Otherwise treat it as a literal file path
 
 **Derive tasks file path:** same directory as the plan, named `tasks.md` (e.g. `plans/us-4/tasks.md`)
 
 Valid filter values:
+
 - `all` — every open task
 - `red` — only `[Red]` tasks
 - `green` — only `[Green]` tasks
@@ -45,6 +48,7 @@ Valid filter values:
    > "No tasks file found. Run `/plan-tasks <plan-file>` first to generate it."
 
 Parse the tasks file to build the execution list:
+
 - Each unchecked `- [ ]` line with `[Red]`, `[Green]`, or `[Refactor]` is an open task
 - Each checked `- [x]` line is already complete — skip it
 - Note the area name (the `###` heading above each task group) and layer (the `##` heading)
@@ -53,6 +57,7 @@ Parse the tasks file to build the execution list:
 Apply the filter to select the working subset.
 
 Report the plan before starting:
+
 ```
 Plan: <plan-file-path>
 Tasks: <plan-file-path>
@@ -86,6 +91,7 @@ Dispatching parallel agents...
 ```
 
 Use the `superpowers:dispatching-parallel-agents` skill to dispatch these. Each agent receives:
+
 - The area name
 - The specific task description (file paths, function signatures, test cases from tasks.md)
 - The skill to invoke (`/red`, `/green`, or `/refactor`)
@@ -100,6 +106,7 @@ For tasks that cannot be parallelized (sequential within an area, or single-area
 ### 3a — Announce
 
 Print a clear header:
+
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [Phase] Area: <subject>
@@ -109,6 +116,7 @@ Print a clear header:
 ### 3b — Extract Context from tasks.md and plan.md
 
 From the tasks.md entry, extract:
+
 - Specific file paths to create or modify
 - Function signatures, schema shapes, test cases
 - Validation rules and business logic
@@ -118,24 +126,27 @@ From the plan, pull any additional architectural guidance for this area.
 ### 3c — Invoke the Correct Skill
 
 **For `[Red]` tasks** — use the `/red` skill:
+
 - Pass: test file path, specific test cases, plan path for reference
 - Goal: tests written and confirmed failing
 
 **For `[Green]` tasks** — use the `/green` skill:
+
 - Pass: implementation file path, paired test file, specific logic from plan
 - Goal: all paired tests passing; no extra logic
 
 **For `[Refactor]` tasks** — use the `/refactor` skill:
+
 - Pass: file(s) to clean up, test file to keep green
 - Goal: code quality improved; behaviour unchanged; tests still green
 
 ### 3d — Verify
 
-| Phase | Command | Expected outcome |
-|---|---|---|
-| Red | `pnpm test` | Tests **fail** (missing implementation) |
-| Green | `pnpm test` | Tests **pass** |
-| Refactor | `pnpm test && pnpm lint && pnpm typecheck` | All **pass** |
+| Phase    | Command                                    | Expected outcome                        |
+| -------- | ------------------------------------------ | --------------------------------------- |
+| Red      | `pnpm test`                                | Tests **fail** (missing implementation) |
+| Green    | `pnpm test`                                | Tests **pass**                          |
+| Refactor | `pnpm test && pnpm lint && pnpm typecheck` | All **pass**                            |
 
 If Red tests pass instead of fail: implementation may already exist — note this and continue.
 
@@ -173,6 +184,7 @@ Before reporting success, re-read the user story's acceptance criteria and verif
 4. If any AC has no corresponding checked task, do not mark the plan complete — run the missing test through the Red → Green cycle first
 
 Print the audit result:
+
 ```
 AC Audit:
   ✓ AC-1: <ac text> → it('<test name>')
@@ -187,11 +199,13 @@ Only proceed to Step 6 when every AC has a ✓.
 ## Step 6 — Final Report
 
 Run the full suite:
+
 ```bash
 pnpm test && pnpm lint && pnpm typecheck
 ```
 
 Print the final report:
+
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 implement-plan complete
@@ -201,6 +215,7 @@ Remaining: <M> open tasks
 ```
 
 If tasks remain, tell the user the command to continue:
+
 ```
 To continue: /implement-plan <plan-file> green
 ```

@@ -67,16 +67,19 @@ These can be worked in any order or simultaneously — do not wire deps between 
 Not every story touches all layers. Examples:
 
 **UI-only story** (no new backend logic):
+
 ```
 Renderer API Client → Hook → Component → Page
 ```
 
 **Engine-only story** (pure logic, no DB or UI):
+
 ```
 Types → Core Engine
 ```
 
 **Service + IPC only** (no new UI):
+
 ```
 Service → IPC Handler
 ```

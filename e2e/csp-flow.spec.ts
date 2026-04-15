@@ -4,6 +4,7 @@ import type { ElectronApplication } from 'playwright'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { localToday } from './dates'
 
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
 const APP_CWD = path.join(__dirname, '..')
@@ -14,12 +15,9 @@ const EXPIRATION_MONTH = 4 // April
 const EXPIRATION_DAY = 17
 const EXPIRATION_ISO = `${EXPIRATION_YEAR}-04-${String(EXPIRATION_DAY).padStart(2, '0')}`
 
-// Expire test: use today in UTC — must match the service's fillDate default (toISOString().slice(0,10))
-const _expireToday = new Date()
-const EXPIRE_YEAR = _expireToday.getUTCFullYear()
-const EXPIRE_MONTH = _expireToday.getUTCMonth() + 1
-const EXPIRE_DAY = _expireToday.getUTCDate()
-const EXPIRE_ISO = `${EXPIRE_YEAR}-${String(EXPIRE_MONTH).padStart(2, '0')}-${String(EXPIRE_DAY).padStart(2, '0')}`
+// Expire test: use today in local time — must match the service's fillDate default (localToday())
+const EXPIRE_ISO = localToday()
+const [EXPIRE_YEAR, EXPIRE_MONTH, EXPIRE_DAY] = EXPIRE_ISO.split('-').map(Number)
 
 describe('close CSP early flow', () => {
   let app: ElectronApplication

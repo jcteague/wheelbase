@@ -1,7 +1,8 @@
 ---
-title: "US-14: Roll Covered Call Form"
-story: "As a wheel trader with an open CC, I want to roll the call to a higher strike and/or later expiration and see the net credit or debit before confirming."
-states: ["up-and-out", "below-basis-warning", "roll-out", "success"]
+title: 'US-14: Roll Covered Call Form'
+story: 'As a wheel trader with an open CC, I want to roll the call to a higher strike and/or later expiration and see the net credit or debit before confirming.'
+states:
+  ['up-and-out', 'below-basis-warning', 'roll-out', 'net-debit', 'validation-error', 'success']
 ---
 
 import { useState } from 'react'
@@ -15,6 +16,8 @@ _Roll an open covered call to a new strike and/or expiration with cost basis con
 - **up-and-out**: Roll up and out — $185 to $190 strike, net credit $0.70/contract, cost basis shown
 - **below-basis-warning**: New strike $175 is below cost basis $176.50 — amber warning displayed, still submittable
 - **roll-out**: Roll out — same $185 strike, later expiration, net credit $1.30
+- **net-debit**: Deep ITM roll — cost to close $5.00 exceeds new premium $3.50, net debit $1.50/contract
+- **validation-error**: Neither strike nor expiration changed — inline error blocks submission
 - **success**: Roll confirmed — linked pair created, position stays CC_OPEN
 
 ---
@@ -27,7 +30,7 @@ export const MOCK_POSITION = {
   premium: '2.50',
   phase: 'CC_OPEN',
   basisPerShare: '176.50',
-  dte: 14,
+  dte: 14
 }
 
 export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
@@ -35,7 +38,22 @@ export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
 export function MockBadge({ children, color }) {
   const fg = color ?? 'var(--wb-gold, #e6a817)'
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: '0.65rem', fontWeight: 500, padding: '1px 7px', borderRadius: 10, background: fg + '18', color: fg, border: '1px solid ' + fg + '30', fontFamily: MONO }}>{children}</span>
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        fontSize: '0.65rem',
+        fontWeight: 500,
+        padding: '1px 7px',
+        borderRadius: 10,
+        background: fg + '18',
+        color: fg,
+        border: '1px solid ' + fg + '30',
+        fontFamily: MONO
+      }}
+    >
+      {children}
+    </span>
   )
 }
 
@@ -43,7 +61,7 @@ export function MockPhaseBadge({ phase }) {
   const map = {
     CSP_OPEN: { label: 'Put Open', color: '#e6a817' },
     CC_OPEN: { label: 'Call Open', color: '#bc8cff' },
-    HOLDING_SHARES: { label: 'Holding', color: '#58a6ff' },
+    HOLDING_SHARES: { label: 'Holding', color: '#58a6ff' }
   }
   const { label, color } = map[phase] ?? { label: phase, color: '#8899aa' }
   return <MockBadge color={color}>{label}</MockBadge>
@@ -51,32 +69,112 @@ export function MockPhaseBadge({ phase }) {
 
 export function MockAlertBox({ variant, children }) {
   const styles = {
-    warning: { bg: 'rgba(230,168,23,0.06)', border: 'rgba(230,168,23,0.25)', color: 'var(--wb-gold, #e6a817)' },
-    info: { bg: 'rgba(88,166,255,0.06)', border: 'rgba(88,166,255,0.25)', color: 'var(--wb-sky, #58a6ff)' },
-    error: { bg: 'rgba(248,81,73,0.06)', border: 'rgba(248,81,73,0.25)', color: 'var(--wb-red, #f85149)' },
-    success: { bg: 'rgba(63,185,80,0.06)', border: 'rgba(63,185,80,0.25)', color: 'var(--wb-green, #3fb950)' },
+    warning: {
+      bg: 'rgba(230,168,23,0.06)',
+      border: 'rgba(230,168,23,0.25)',
+      color: 'var(--wb-gold, #e6a817)'
+    },
+    info: {
+      bg: 'rgba(88,166,255,0.06)',
+      border: 'rgba(88,166,255,0.25)',
+      color: 'var(--wb-sky, #58a6ff)'
+    },
+    error: {
+      bg: 'rgba(248,81,73,0.06)',
+      border: 'rgba(248,81,73,0.25)',
+      color: 'var(--wb-red, #f85149)'
+    },
+    success: {
+      bg: 'rgba(63,185,80,0.06)',
+      border: 'rgba(63,185,80,0.25)',
+      color: 'var(--wb-green, #3fb950)'
+    }
   }
   const { bg, border, color } = styles[variant] ?? styles.warning
   return (
-    <div style={{ padding: '12px 16px', borderRadius: 6, background: bg, border: '1px solid ' + border, color, fontFamily: MONO, fontSize: '0.8125rem', lineHeight: 1.6 }}>{children}</div>
+    <div
+      style={{
+        padding: '12px 16px',
+        borderRadius: 6,
+        background: bg,
+        border: '1px solid ' + border,
+        color,
+        fontFamily: MONO,
+        fontSize: '0.8125rem',
+        lineHeight: 1.6
+      }}
+    >
+      {children}
+    </div>
   )
 }
 
 export function MockField({ label, error, hint, children }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--wb-text-muted, #4a5a6a)', fontFamily: MONO, marginBottom: 6 }}>{label}</label>
+      <label
+        style={{
+          display: 'block',
+          fontSize: '0.7rem',
+          fontWeight: 600,
+          letterSpacing: '0.07em',
+          textTransform: 'uppercase',
+          color: 'var(--wb-text-muted, #4a5a6a)',
+          fontFamily: MONO,
+          marginBottom: 6
+        }}
+      >
+        {label}
+      </label>
       {children}
-      {hint && !error && <span style={{ fontSize: '0.7rem', color: 'var(--wb-text-muted, #4a5a6a)', marginTop: 4 }}>{hint}</span>}
-      {error && <span role="alert" style={{ fontSize: '0.7rem', color: 'var(--wb-red, #f85149)', marginTop: 4, fontFamily: MONO }}>{error}</span>}
+      {hint && !error && (
+        <span style={{ fontSize: '0.7rem', color: 'var(--wb-text-muted, #4a5a6a)', marginTop: 4 }}>
+          {hint}
+        </span>
+      )}
+      {error && (
+        <span
+          role="alert"
+          style={{
+            fontSize: '0.7rem',
+            color: 'var(--wb-red, #f85149)',
+            marginTop: 4,
+            fontFamily: MONO
+          }}
+        >
+          {error}
+        </span>
+      )}
     </div>
   )
 }
 
 export function MockSectionCard({ header, children }) {
   return (
-    <section style={{ background: 'var(--wb-bg-surface, #070a0e)', border: '1px solid var(--wb-border, #1e2a38)', borderRadius: 8, overflow: 'hidden' }}>
-      {header && <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--wb-border, #1e2a38)', fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--wb-text-muted, #4a5a6a)', fontFamily: MONO }}>{header}</div>}
+    <section
+      style={{
+        background: 'var(--wb-bg-surface, #070a0e)',
+        border: '1px solid var(--wb-border, #1e2a38)',
+        borderRadius: 8,
+        overflow: 'hidden'
+      }}
+    >
+      {header && (
+        <div
+          style={{
+            padding: '10px 20px',
+            borderBottom: '1px solid var(--wb-border, #1e2a38)',
+            fontSize: '0.65rem',
+            fontWeight: 600,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            color: 'var(--wb-text-muted, #4a5a6a)',
+            fontFamily: MONO
+          }}
+        >
+          {header}
+        </div>
+      )}
       {children}
     </section>
   )
@@ -84,41 +182,155 @@ export function MockSectionCard({ header, children }) {
 
 export function MockSummaryRow({ label, value, noBorder, highlight }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: noBorder ? 'none' : '1px solid rgba(30,42,56,0.6)', background: highlight ? 'linear-gradient(90deg, rgba(230,168,23,0.04), transparent)' : undefined }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '10px 14px',
+        borderBottom: noBorder ? 'none' : '1px solid rgba(30,42,56,0.6)',
+        background: highlight
+          ? 'linear-gradient(90deg, rgba(230,168,23,0.04), transparent)'
+          : undefined
+      }}
+    >
       <span style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)' }}>{label}</span>
-      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--wb-text-primary, #e2eaf2)', textAlign: 'right' }}>{value}</span>
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: 'var(--wb-text-primary, #e2eaf2)',
+          textAlign: 'right'
+        }}
+      >
+        {value}
+      </span>
     </div>
   )
 }
 
-export function MockFormButton({ label, onClick, style = {} }) {
+export function MockFormButton({ label, onClick, style = {}, disabled }) {
   return (
-    <button onClick={onClick} style={{ padding: '11px 24px', borderRadius: 6, border: 'none', background: 'var(--wb-gold, #e6a817)', color: '#000', fontSize: '0.9375rem', fontWeight: 600, fontFamily: MONO, cursor: 'pointer', letterSpacing: '0.04em', ...style }}>{label}</button>
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        padding: '11px 24px',
+        borderRadius: 6,
+        border: 'none',
+        background: disabled ? '#2a3a4a' : 'var(--wb-gold, #e6a817)',
+        color: disabled ? '#4a5a6a' : '#000',
+        fontSize: '0.9375rem',
+        fontWeight: 600,
+        fontFamily: MONO,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        letterSpacing: '0.04em',
+        ...style
+      }}
+    >
+      {label}
+    </button>
   )
 }
 
 export function MockOutlineButton({ children, style = {} }) {
   return (
-    <button style={{ padding: '11px 24px', borderRadius: 6, border: '1px solid var(--wb-border, #2a3a4a)', background: 'transparent', color: 'var(--wb-text-secondary, #8899aa)', fontSize: '0.9375rem', fontWeight: 500, fontFamily: MONO, cursor: 'pointer', ...style }}>{children}</button>
+    <button
+      style={{
+        padding: '11px 24px',
+        borderRadius: 6,
+        border: '1px solid var(--wb-border, #2a3a4a)',
+        background: 'transparent',
+        color: 'var(--wb-text-secondary, #8899aa)',
+        fontSize: '0.9375rem',
+        fontWeight: 500,
+        fontFamily: MONO,
+        cursor: 'pointer',
+        ...style
+      }}
+    >
+      {children}
+    </button>
   )
 }
 
 export function MockPriceInput({ value, disabled }) {
   return (
     <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-      <span style={{ position: 'absolute', left: 12, fontSize: 13, color: 'var(--wb-text-secondary, #8899aa)', fontFamily: MONO, pointerEvents: 'none' }}>$</span>
-      <input type="number" value={value} disabled={disabled} readOnly style={{ width: '100%', padding: '10px 14px 10px 26px', borderRadius: 6, border: '1px solid var(--wb-border, #2a3a4a)', background: disabled ? 'var(--wb-bg-surface, #070a0e)' : 'var(--wb-bg-elevated, #0d1821)', color: disabled ? 'var(--wb-text-muted, #4a5a6a)' : 'var(--wb-text-primary, #e2eaf2)', fontSize: 14, fontFamily: MONO, outline: 'none', boxSizing: 'border-box', appearance: 'none', MozAppearance: 'textfield' }} />
+      <span
+        style={{
+          position: 'absolute',
+          left: 12,
+          fontSize: 13,
+          color: 'var(--wb-text-secondary, #8899aa)',
+          fontFamily: MONO,
+          pointerEvents: 'none'
+        }}
+      >
+        $
+      </span>
+      <input
+        type="number"
+        value={value}
+        disabled={disabled}
+        readOnly
+        style={{
+          width: '100%',
+          padding: '10px 14px 10px 26px',
+          borderRadius: 6,
+          border: '1px solid var(--wb-border, #2a3a4a)',
+          background: disabled ? 'var(--wb-bg-surface, #070a0e)' : 'var(--wb-bg-elevated, #0d1821)',
+          color: disabled ? 'var(--wb-text-muted, #4a5a6a)' : 'var(--wb-text-primary, #e2eaf2)',
+          fontSize: 14,
+          fontFamily: MONO,
+          outline: 'none',
+          boxSizing: 'border-box',
+          appearance: 'none',
+          MozAppearance: 'textfield'
+        }}
+      />
     </div>
   )
 }
 
-export function MockDatePicker({ value }) {
+export function MockDatePicker({ value, hint }) {
   return (
-    <button type="button" style={{ width: '100%', padding: '10px 14px', borderRadius: 6, border: '1px solid var(--wb-border, #2a3a4a)', background: 'var(--wb-bg-elevated, #0d1821)', color: 'var(--wb-text-primary, #e2eaf2)', fontSize: 14, fontFamily: MONO, textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, boxSizing: 'border-box' }}>
+    <button
+      type="button"
+      style={{
+        width: '100%',
+        padding: '10px 14px',
+        borderRadius: 6,
+        border: '1px solid var(--wb-border, #2a3a4a)',
+        background: 'var(--wb-bg-elevated, #0d1821)',
+        color: 'var(--wb-text-primary, #e2eaf2)',
+        fontSize: 14,
+        fontFamily: MONO,
+        textAlign: 'left',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 8,
+        boxSizing: 'border-box'
+      }}
+    >
       <span>{value}</span>
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.45 }}>
+      <svg
+        width="13"
+        height="13"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{ opacity: 0.45 }}
+      >
         <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-        <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+        <line x1="16" y1="2" x2="16" y2="6" />
+        <line x1="8" y1="2" x2="8" y2="6" />
+        <line x1="3" y1="10" x2="21" y2="10" />
       </svg>
     </button>
   )
@@ -128,56 +340,108 @@ export function NetPreview({ costToClose, newPremium, contracts }) {
   const net = parseFloat(newPremium) - parseFloat(costToClose)
   const isCredit = net >= 0
   const total = Math.abs(net) * contracts * 100
-  const color = isCredit ? 'var(--wb-green, #3fb950)' : 'var(--wb-gold, #e6a817)'
-  const bg = isCredit ? 'rgba(63,185,80,0.07)' : 'rgba(230,168,23,0.07)'
-  const border = isCredit ? 'rgba(63,185,80,0.22)' : 'rgba(230,168,23,0.22)'
+  const color = isCredit ? 'var(--wb-green, #3fb950)' : 'var(--wb-red, #f85149)'
+  const bg = isCredit ? 'rgba(63,185,80,0.07)' : 'rgba(248,81,73,0.07)'
+  const border = isCredit ? 'rgba(63,185,80,0.22)' : 'rgba(248,81,73,0.22)'
   const sign = isCredit ? '+' : '-'
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 6, background: bg, border: '1px solid ' + border }}>
-      <span style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)', fontFamily: MONO }}>{isCredit ? 'Net Credit' : 'Net Debit'}</span>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '12px 14px',
+        borderRadius: 6,
+        background: bg,
+        border: '1px solid ' + border
+      }}
+    >
+      <span style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)', fontFamily: MONO }}>
+        {isCredit ? 'Net Credit' : 'Net Debit'}
+      </span>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-        <span style={{ fontSize: 17, fontWeight: 700, color, fontFamily: MONO }}>{sign}${Math.abs(net).toFixed(2)}/contract</span>
-        <span style={{ fontSize: 11, color, opacity: 0.7, fontFamily: MONO }}>(${total.toFixed(2)} total)</span>
+        <span style={{ fontSize: 17, fontWeight: 700, color, fontFamily: MONO }}>
+          {sign}${Math.abs(net).toFixed(2)}/contract
+        </span>
+        <span style={{ fontSize: 11, color, opacity: 0.7, fontFamily: MONO }}>
+          (${total.toFixed(2)} total)
+        </span>
       </div>
     </div>
   )
 }
 
 export const panelStyle = {
-  position: 'absolute', top: 0, right: 0, bottom: 0, width: 420,
-  background: 'var(--wb-bg-surface, #070a0e)', borderLeft: '1px solid var(--wb-border, #1e2a38)',
-  display: 'flex', flexDirection: 'column', fontFamily: MONO,
-  boxShadow: '-12px 0 48px rgba(0,0,0,0.55)', color: 'var(--wb-text-primary, #e2eaf2)',
+  position: 'absolute',
+  top: 0,
+  right: 0,
+  bottom: 0,
+  width: 420,
+  background: 'var(--wb-bg-surface, #070a0e)',
+  borderLeft: '1px solid var(--wb-border, #1e2a38)',
+  display: 'flex',
+  flexDirection: 'column',
+  fontFamily: MONO,
+  boxShadow: '-12px 0 48px rgba(0,0,0,0.55)',
+  color: 'var(--wb-text-primary, #e2eaf2)'
+}
+
+export function getRollType(newStrike, newExpiration, posStrike, posExpiration) {
+  const sameStrike = newStrike === posStrike
+  const sameExpiration = newExpiration === posExpiration
+  const strikeDiff = parseFloat(newStrike) - parseFloat(posStrike)
+  if (sameStrike && sameExpiration) return 'No Change'
+  if (sameStrike) return 'Roll Out'
+  if (sameExpiration) return strikeDiff > 0 ? 'Roll Up' : 'Roll Down'
+  return strikeDiff > 0 ? 'Roll Up & Out' : 'Roll Down & Out'
+}
+
+export function getRollTypeColor(rollType) {
+  if (rollType.includes('Up')) return '#bc8cff'
+  if (rollType.includes('Down')) return '#f85149'
+  if (rollType === 'No Change') return '#f85149'
+  return '#e6a817'
 }
 
 export function Mockup() {
   const [state, setState] = useState('up-and-out')
   const pos = MOCK_POSITION
-  const allStates = ['up-and-out', 'below-basis-warning', 'roll-out', 'success']
+  const allStates = ['up-and-out', 'below-basis-warning', 'roll-out', 'net-debit', 'validation-error', 'success']
   const isSuccess = state === 'success'
   const isBelowBasis = state === 'below-basis-warning'
   const isRollOut = state === 'roll-out'
+  const isNetDebit = state === 'net-debit'
+  const isValidationError = state === 'validation-error'
 
-  const newStrike = isBelowBasis ? '175.00' : isRollOut ? pos.strike : '190.00'
-  const costToClose = isBelowBasis ? '2.00' : isRollOut ? '1.80' : '3.50'
-  const newPremium = isBelowBasis ? '2.30' : isRollOut ? '3.10' : '4.20'
+const newStrike = isBelowBasis ? '175.00' : (isRollOut || isValidationError) ? pos.strike : '190.00'
+const newExpiration = isValidationError ? pos.expiration : '2026-05-16'
+const costToClose = isBelowBasis ? '2.00' : isRollOut ? '1.80' : isNetDebit ? '5.00' : isValidationError ? '2.00' : '3.50'
+const newPremium = isBelowBasis ? '2.30' : isRollOut ? '3.10' : isNetDebit ? '3.50' : isValidationError ? '2.50' : '4.20'
 
-  const sameStrike = newStrike === pos.strike
-  const rollType = sameStrike ? 'Roll Out' : parseFloat(newStrike) > parseFloat(pos.strike) ? 'Roll Up & Out' : 'Roll Down & Out'
+const rollType = getRollType(newStrike, newExpiration, pos.strike, pos.expiration)
+const rollTypeColor = getRollTypeColor(rollType)
+const hasNoChange = rollType === 'No Change'
 
-  const belowBasis = parseFloat(newStrike) < parseFloat(pos.basisPerShare)
-  const lossPerShare = belowBasis ? (parseFloat(pos.basisPerShare) - parseFloat(newStrike)).toFixed(2) : null
+const belowBasis = parseFloat(newStrike) < parseFloat(pos.basisPerShare)
+const lossPerShare = belowBasis ? (parseFloat(pos.basisPerShare) - parseFloat(newStrike)).toFixed(2) : null
 
-  return (
-    <div style={{ fontFamily: MONO, background: '#040608', minHeight: 520 }}>
-      <div style={{ display: 'flex', gap: 6, padding: '10px 14px', background: '#0d1117', borderBottom: '1px solid #1e2a38', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 9, color: '#4a5a6a', letterSpacing: '0.12em', textTransform: 'uppercase', alignSelf: 'center', marginRight: 4 }}>State:</span>
-        {allStates.map(s => (
-          <button key={s} onClick={() => setState(s)} style={{ fontSize: 10, fontFamily: MONO, padding: '3px 10px', borderRadius: 4, border: '1px solid', borderColor: s === state ? 'var(--wb-gold, #e6a817)' : '#1e2a38', background: s === state ? 'rgba(230,168,23,0.12)' : 'transparent', color: s === state ? 'var(--wb-gold, #e6a817)' : '#6a7a8a', cursor: 'pointer' }}>{s}</button>
-        ))}
-      </div>
+const sameStrike = newStrike === pos.strike
+const sameExpiration = newExpiration === pos.expiration
 
-      <div style={{ position: 'relative', height: 720, overflow: 'hidden', background: '#040608' }}>
+const rollDescStrike = sameStrike ? 'same $' + pos.strike + ' strike' : '$' + pos.strike + ' \u2192 $' + newStrike + ' strike'
+const rollDescExp = sameExpiration ? 'same Apr expiration' : 'Apr \u2192 May expiration'
+
+return (
+
+<div style={{ fontFamily: MONO, background: '#040608', minHeight: 520 }}>
+<div style={{ display: 'flex', gap: 6, padding: '10px 14px', background: '#0d1117', borderBottom: '1px solid #1e2a38', flexWrap: 'wrap' }}>
+<span style={{ fontSize: 9, color: '#4a5a6a', letterSpacing: '0.12em', textTransform: 'uppercase', alignSelf: 'center', marginRight: 4 }}>State:</span>
+{allStates.map(s => (
+<button key={s} onClick={() => setState(s)} style={{ fontSize: 10, fontFamily: MONO, padding: '3px 10px', borderRadius: 4, border: '1px solid', borderColor: s === state ? 'var(--wb-gold, #e6a817)' : '#1e2a38', background: s === state ? 'rgba(230,168,23,0.12)' : 'transparent', color: s === state ? 'var(--wb-gold, #e6a817)' : '#6a7a8a', cursor: 'pointer' }}>{s}</button>
+))}
+</div>
+
+      <div style={{ position: 'relative', height: 780, overflow: 'hidden', background: '#040608' }}>
         <div style={{ padding: '24px 28px', opacity: 0.25, pointerEvents: 'none', userSelect: 'none' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
             <span style={{ fontSize: 22, fontWeight: 700, color: '#e2eaf2' }}>AAPL</span>
@@ -235,8 +499,8 @@ export function Mockup() {
                     <MockField label="New Strike" hint="Raise strike to avoid call-away, or keep same for roll out">
                       <MockPriceInput value={newStrike} />
                     </MockField>
-                    <MockField label="New Expiration" hint="Must be after current expiration">
-                      <MockDatePicker value="2026-05-16" />
+                    <MockField label="New Expiration" hint="Must be on or after current expiration" error={isValidationError && sameExpiration && sameStrike ? undefined : undefined}>
+                      <MockDatePicker value={newExpiration === pos.expiration ? pos.expiration : '2026-05-16'} />
                     </MockField>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                       <MockField label="Cost to Close" hint="Buy-to-close">
@@ -252,27 +516,39 @@ export function Mockup() {
                   </div>
                 </MockSectionCard>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <MockBadge color={rollType.includes('Up') ? '#bc8cff' : rollType.includes('Down') ? '#f85149' : '#e6a817'}>{rollType}</MockBadge>
-                  <span style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)' }}>
-                    {sameStrike ? 'same $185 strike' : '$185 \u2192 $' + newStrike + ' strike'}, Apr {'\u2192'} May exp
-                  </span>
-                </div>
+                {!hasNoChange && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <MockBadge color={rollTypeColor}>{rollType}</MockBadge>
+                    <span style={{ fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)' }}>
+                      {rollDescStrike}, {rollDescExp}
+                    </span>
+                  </div>
+                )}
 
-                {/* Below-cost-basis warning */}
+                {/* Below-cost-basis warning — amber, non-blocking */}
                 {isBelowBasis && (
-                  <MockAlertBox variant="error">
+                  <MockAlertBox variant="warning">
                     <strong style={{ fontWeight: 700, display: 'block', marginBottom: 3 }}>Strike below cost basis</strong>
                     New strike (${newStrike}) is below your cost basis (${pos.basisPerShare}). If called away at this strike, you lock in a loss of ${lossPerShare}/share.
                   </MockAlertBox>
                 )}
 
+                {/* Validation error — neither strike nor expiration changed */}
+                {isValidationError && (
+                  <MockAlertBox variant="error">
+                    <strong style={{ fontWeight: 700, display: 'block', marginBottom: 3 }}>No change detected</strong>
+                    Roll must change the expiration, strike, or both. Update at least one field to continue.
+                  </MockAlertBox>
+                )}
+
                 <NetPreview costToClose={costToClose} newPremium={newPremium} contracts={pos.contracts} />
 
-                <MockAlertBox variant="warning">
-                  <strong style={{ fontWeight: 700, display: 'block', marginBottom: 3 }}>This cannot be undone.</strong>
-                  A ROLL_FROM leg (buy-to-close) and ROLL_TO leg (sell-to-open) will be recorded as a linked pair. The position remains in CC_OPEN phase.
-                </MockAlertBox>
+                {!isValidationError && (
+                  <MockAlertBox variant="warning">
+                    <strong style={{ fontWeight: 700, display: 'block', marginBottom: 3 }}>This cannot be undone.</strong>
+                    A ROLL_FROM leg (buy-to-close) and ROLL_TO leg (sell-to-open) will be recorded as a linked pair. The position remains in CC_OPEN phase.
+                  </MockAlertBox>
+                )}
               </>
             )}
           </div>
@@ -280,13 +556,14 @@ export function Mockup() {
           {!isSuccess && (
             <div style={{ padding: '16px 24px', borderTop: '1px solid var(--wb-border, #1e2a38)', display: 'flex', gap: 10, flexShrink: 0, background: 'var(--wb-bg-surface, #070a0e)' }}>
               <MockOutlineButton style={{ flex: 1 }}>Cancel</MockOutlineButton>
-              <MockFormButton label="Confirm Roll" onClick={() => setState('success')} style={{ flex: 1, fontWeight: 700 }} />
+              <MockFormButton label="Confirm Roll" onClick={() => setState('success')} disabled={hasNoChange} style={{ flex: 1, fontWeight: 700 }} />
             </div>
           )}
         </div>
       </div>
     </div>
-  )
+
+)
 }
 
 <Mockup />

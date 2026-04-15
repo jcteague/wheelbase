@@ -73,14 +73,14 @@ export const OpenCcPayloadSchema = z.object({
 
 **Known error codes:**
 
-| field | code | message |
-|---|---|---|
-| `__phase__` | `invalid_phase` | "Position is not in HOLDING_SHARES phase" or "A covered call is already open on this position" |
-| `contracts` | `exceeds_shares` | "Contracts cannot exceed shares held ({n})" |
-| `fillDate` | `before_assignment` | "Fill date cannot be before the assignment date" |
-| `fillDate` | `cannot_be_future` | "Fill date cannot be in the future" |
-| `strike` | `must_be_positive` | "Strike must be positive" |
-| `premiumPerContract` | `must_be_positive` | "Premium per contract must be positive" |
+| field                | code                | message                                                                                        |
+| -------------------- | ------------------- | ---------------------------------------------------------------------------------------------- |
+| `__phase__`          | `invalid_phase`     | "Position is not in HOLDING_SHARES phase" or "A covered call is already open on this position" |
+| `contracts`          | `exceeds_shares`    | "Contracts cannot exceed shares held ({n})"                                                    |
+| `fillDate`           | `before_assignment` | "Fill date cannot be before the assignment date"                                               |
+| `fillDate`           | `cannot_be_future`  | "Fill date cannot be in the future"                                                            |
+| `strike`             | `must_be_positive`  | "Strike must be positive"                                                                      |
+| `premiumPerContract` | `must_be_positive`  | "Premium per contract must be positive"                                                        |
 
 ## Preload Binding
 

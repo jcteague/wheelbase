@@ -2,8 +2,10 @@ import Decimal from 'decimal.js'
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { AssignCspResponse } from '../api/positions'
+import { localToday } from '../lib/dates'
 import { fmtDate, fmtMoney } from '../lib/format'
-import { MONO } from '../lib/tokens'
+import { PHASE_LABEL } from '../lib/phase'
+import { getSheetPortal } from '../lib/portal'
 import { useAssignPosition } from '../hooks/useAssignPosition'
 import { AlertBox } from './ui/AlertBox'
 import { Badge } from './ui/Badge'
@@ -41,7 +43,7 @@ export function AssignmentSheet(props: AssignmentSheetProps): React.JSX.Element 
   const { mutate, isPending, isError, error } = useAssignPosition({ onSuccess: setSuccessState })
 
   const sharesHeld = props.contracts * 100
-  const todayIso = new Date().toISOString().slice(0, 10)
+  const todayIso = localToday()
   const isFutureDate = assignmentDate > todayIso
   const totalBasis = useMemo(
     () => new Decimal(props.projectedBasisPerShare).times(sharesHeld).toFixed(4),
@@ -82,7 +84,7 @@ export function AssignmentSheet(props: AssignmentSheetProps): React.JSX.Element 
       onClose={props.onClose}
     />
   ) : (
-    <div style={{ display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
+    <div className="flex flex-1 flex-col overflow-hidden">
       <SheetHeader
         eyebrow="Record Assignment"
         title="Assign CSP to Shares"
@@ -119,10 +121,10 @@ export function AssignmentSheet(props: AssignmentSheetProps): React.JSX.Element 
         {isFutureDate && (
           <AlertBox variant="warning">This date is in the future — are you sure?</AlertBox>
         )}
-        <AlertBox variant="warning">
-          <strong>This cannot be undone.</strong> The position will transition to Holding Shares.
-          Full leg history is preserved.
-        </AlertBox>
+        <div className="bg-wb-gold-dim border border-wb-gold-border rounded-md p-3 text-xs text-wb-gold leading-relaxed">
+          <strong>This cannot be undone.</strong> The position will transition to{' '}
+          {PHASE_LABEL.HOLDING_SHARES}. Full leg history is preserved.
+        </div>
         {isError && (
           <ErrorAlert>
             {String(
@@ -154,7 +156,7 @@ export function AssignmentSheet(props: AssignmentSheetProps): React.JSX.Element 
     <SheetOverlay onClose={props.onClose}>
       <SheetPanel>{content}</SheetPanel>
     </SheetOverlay>,
-    document.body
+    getSheetPortal()
   )
 }
 
@@ -175,81 +177,58 @@ function AssignmentSummary({
   projectedBasisPerShare: string
   totalBasis: string
 }): React.JSX.Element {
-  const rowStyle: React.CSSProperties = {
-    display: 'flex',
-    justifyContent: 'space-between',
-    padding: '10px 14px',
-    borderBottom: '1px solid rgba(30,42,56,0.5)'
-  }
   return (
     <SectionCard>
-      <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div style={{ display: 'grid', gap: 10 }}>
+      <div className="p-4 flex flex-col gap-3.5">
+        <div className="grid gap-2.5">
           {[
             ['Position', ticker],
             ['Contracts', String(contracts)],
             ['Shares to receive', String(sharesHeld)]
           ].map(([label, value]) => (
-            <div
-              key={label}
-              style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}
-            >
-              <span style={{ color: 'var(--wb-text-secondary)' }}>{label}</span>
+            <div key={label} className="flex justify-between text-xs">
+              <span className="text-wb-text-secondary">{label}</span>
               <span
-                style={{
-                  color:
-                    label === 'Shares to receive' ? 'var(--wb-gold)' : 'var(--wb-text-primary)',
-                  fontWeight: 600
-                }}
+                className={[
+                  'font-semibold',
+                  label === 'Shares to receive' ? 'text-wb-gold' : 'text-wb-text-primary'
+                ].join(' ')}
               >
                 {value}
               </span>
             </div>
           ))}
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              fontSize: 12
-            }}
-          >
-            <span style={{ color: 'var(--wb-text-secondary)' }}>Phase transition</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Badge>CSP_OPEN</Badge>
-              <span style={{ color: 'var(--wb-text-muted)' }}>→</span>
-              <Badge color="var(--wb-sky)">HOLDING_SHARES</Badge>
+          <div className="bg-wb-gold-dim rounded-md p-2 flex justify-between items-center text-xs">
+            <span className="text-wb-text-secondary">Phase transition</span>
+            <div className="flex items-center gap-2">
+              <Badge>{PHASE_LABEL.CSP_OPEN}</Badge>
+              <span className="text-wb-text-muted">→</span>
+              <Badge color="var(--wb-sky)">{PHASE_LABEL.HOLDING_SHARES}</Badge>
             </div>
           </div>
         </div>
-        <div
-          style={{
-            background: 'var(--wb-bg-elevated)',
-            border: '1px solid var(--wb-border)',
-            borderRadius: 8,
-            overflow: 'hidden'
-          }}
-        >
-          <div style={rowStyle}>
-            <span style={{ color: 'var(--wb-text-secondary)' }}>Assignment strike</span>
-            <span style={{ color: 'var(--wb-text-primary)' }}>{fmtMoney(strike)}</span>
+        <div className="bg-wb-bg-elevated border border-wb-border rounded-lg overflow-hidden">
+          <div className="flex justify-between px-3.5 py-2.5 border-b border-wb-border-subtle">
+            <span className="text-wb-text-secondary">Assignment strike</span>
+            <span className="text-wb-text-primary">{fmtMoney(strike)}</span>
           </div>
           {premiumWaterfall.map((line) => (
-            <div key={`${line.label}-${line.amount}`} style={rowStyle}>
-              <span style={{ color: 'var(--wb-text-secondary)' }}>− {line.label}</span>
-              <span style={{ color: 'var(--wb-green)' }}>{fmtMoney(line.amount)}</span>
+            <div
+              key={`${line.label}-${line.amount}`}
+              className="flex justify-between px-3.5 py-2.5 border-b border-wb-border-subtle"
+            >
+              <span className="text-wb-text-secondary">− {line.label}</span>
+              <span className="text-wb-green">{fmtMoney(line.amount)}</span>
             </div>
           ))}
-          <div style={{ ...rowStyle, borderBottom: 'none', fontWeight: 700 }}>
-            <span style={{ color: 'var(--wb-gold)' }}>= Effective cost basis</span>
-            <span style={{ color: 'var(--wb-gold)' }}>{fmtMoney(projectedBasisPerShare)}</span>
+          <div className="flex justify-between px-3.5 py-2.5 font-bold">
+            <span className="text-wb-gold">= Effective cost basis</span>
+            <span className="text-wb-gold">{fmtMoney(projectedBasisPerShare)}</span>
           </div>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-          <span style={{ color: 'var(--wb-text-secondary)' }}>
-            per share · {sharesHeld} shares total
-          </span>
-          <span style={{ color: 'var(--wb-text-primary)', fontWeight: 600 }}>
+        <div className="flex justify-between text-xs">
+          <span className="text-wb-text-secondary">per share · {sharesHeld} shares total</span>
+          <span className="text-wb-text-primary font-semibold">
             {fmtMoney(totalBasis)} total basis
           </span>
         </div>
@@ -278,7 +257,7 @@ function AssignmentSuccess({
   onClose: () => void
 }): React.JSX.Element {
   return (
-    <div style={{ display: 'flex', flex: 1, flexDirection: 'column' }}>
+    <div className="flex flex-1 flex-col overflow-hidden">
       <SheetHeader
         eyebrow="Complete"
         title={`${ticker} Assigned`}
@@ -295,28 +274,13 @@ function AssignmentSuccess({
             padding: 22
           }}
         >
-          <div
-            style={{
-              color: 'var(--wb-gold)',
-              fontSize: 10,
-              letterSpacing: '0.18em',
-              textTransform: 'uppercase',
-              marginBottom: 8
-            }}
-          >
-            Holding Shares
+          <div className="text-wb-gold text-[10px] tracking-[0.18em] uppercase mb-2">
+            {PHASE_LABEL.HOLDING_SHARES}
           </div>
-          <div
-            style={{
-              fontSize: 28,
-              fontWeight: 700,
-              color: 'var(--wb-text-primary)',
-              marginBottom: 8
-            }}
-          >
+          <div className="text-[28px] font-bold text-wb-text-primary mb-2">
             HOLDING {sharesHeld} SHARES
           </div>
-          <div style={{ color: 'var(--wb-text-secondary)', fontSize: 12, marginBottom: 12 }}>
+          <div className="text-wb-text-secondary text-xs mb-3">
             {ticker} · {contracts} contract assigned at {fmtMoney(strike)}
           </div>
           <Badge color="var(--wb-gold)">
@@ -324,21 +288,21 @@ function AssignmentSuccess({
           </Badge>
         </div>
         <SectionCard>
-          <div style={{ padding: 16, display: 'grid', gap: 10, fontSize: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--wb-text-secondary)' }}>Leg recorded</span>
-              <span style={{ color: 'var(--wb-gold)' }}>assign · {fmtDate(assignmentDate)}</span>
+          <div className="p-4 grid gap-2.5 text-xs">
+            <div className="flex justify-between">
+              <span className="text-wb-text-secondary">Leg recorded</span>
+              <span className="text-wb-gold">assign · {fmtDate(assignmentDate)}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: 'var(--wb-text-secondary)' }}>Phase</span>
-              <Badge color="var(--wb-sky)">HOLDING_SHARES</Badge>
+            <div className="flex justify-between items-center">
+              <span className="text-wb-text-secondary">Phase</span>
+              <Badge color="var(--wb-sky)">{PHASE_LABEL.HOLDING_SHARES}</Badge>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--wb-text-secondary)' }}>Shares held</span>
-              <span style={{ color: 'var(--wb-gold)' }}>{sharesHeld}</span>
+            <div className="flex justify-between">
+              <span className="text-wb-text-secondary">Shares held</span>
+              <span className="text-wb-gold">{sharesHeld}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--wb-text-secondary)' }}>Cost basis</span>
+            <div className="flex justify-between">
+              <span className="text-wb-text-secondary">Cost basis</span>
               <span>{fmtMoney(basisPerShare)} / share</span>
             </div>
           </div>
@@ -356,14 +320,7 @@ function AssignmentSuccess({
         <button
           type="button"
           onClick={onClose}
-          style={{
-            border: 'none',
-            background: 'none',
-            color: 'var(--wb-text-secondary)',
-            cursor: 'pointer',
-            textDecoration: 'underline',
-            fontFamily: MONO
-          }}
+          className="font-wb-mono text-wb-text-secondary underline cursor-pointer border-none bg-transparent"
         >
           View full position history
         </button>

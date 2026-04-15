@@ -1,6 +1,6 @@
 # Option Wheel Manager — Comprehensive Feature Specification
 
-*Informed by: research into CoveredWheel, WingmanTracker, TrackTheta, broker API capabilities (Alpaca & IBKR), and gaps in existing tools.*
+_Informed by: research into CoveredWheel, WingmanTracker, TrackTheta, broker API capabilities (Alpaca & IBKR), and gaps in existing tools._
 
 ---
 
@@ -8,16 +8,16 @@
 
 Before the features, understanding what each API offers shapes everything:
 
-| Capability | Alpaca | IBKR (TWS) |
-|---|---|---|
-| **Developer friendliness** | REST API, clean Python SDK, simple auth | Socket-based TCP protocol, more complex setup |
-| **Options support** | Level 1–3, single & multi-leg, CSPs & CCs natively | Full options suite, all strategies |
-| **Order placement via API** | Yes — market, limit, stop | Yes — full order types |
-| **Real-time market data** | Yes, up to 1,000 calls/min, Greeks included | Yes, streaming via TWS socket |
-| **Assignment events** | Poll REST API (no websocket push) | Available but requires TWS to be running |
-| **Paper trading** | Built-in, free, full API parity | Simulated accounts available |
-| **Commission** | Free for retail | $0.15–$0.65/contract |
-| **Practical consideration** | Best choice if you use or can move to Alpaca | More powerful but requires TWS running locally |
+| Capability                  | Alpaca                                             | IBKR (TWS)                                     |
+| --------------------------- | -------------------------------------------------- | ---------------------------------------------- |
+| **Developer friendliness**  | REST API, clean Python SDK, simple auth            | Socket-based TCP protocol, more complex setup  |
+| **Options support**         | Level 1–3, single & multi-leg, CSPs & CCs natively | Full options suite, all strategies             |
+| **Order placement via API** | Yes — market, limit, stop                          | Yes — full order types                         |
+| **Real-time market data**   | Yes, up to 1,000 calls/min, Greeks included        | Yes, streaming via TWS socket                  |
+| **Assignment events**       | Poll REST API (no websocket push)                  | Available but requires TWS to be running       |
+| **Paper trading**           | Built-in, free, full API parity                    | Simulated accounts available                   |
+| **Commission**              | Free for retail                                    | $0.15–$0.65/contract                           |
+| **Practical consideration** | Best choice if you use or can move to Alpaca       | More powerful but requires TWS running locally |
 
 **Recommendation for your build:** Design the app with Alpaca as the primary integration (cleaner API, free commissions, better DX), with IBKR as a secondary adapter pattern. The app's internal data model should be broker-agnostic so you can swap or add brokers without rebuilding the core.
 
@@ -51,9 +51,9 @@ The Wheel Lifecycle Engine is the heart of the app — it's what makes this diff
 
 ## Feature Modules
 
-### Module 1: Wheel Lifecycle Engine *(Core — build first)*
+### Module 1: Wheel Lifecycle Engine _(Core — build first)_
 
-This is the foundational concept that every other feature builds on. A **Wheel** is a named entity tied to a single underlying ticker. It persists across all legs, all rolls, all assignments, and all covered calls until it is deliberately closed. Every trade is a *leg* of a wheel, not a standalone event.
+This is the foundational concept that every other feature builds on. A **Wheel** is a named entity tied to a single underlying ticker. It persists across all legs, all rolls, all assignments, and all covered calls until it is deliberately closed. Every trade is a _leg_ of a wheel, not a standalone event.
 
 The engine needs to track and enforce these phase transitions:
 
@@ -82,7 +82,7 @@ At every stage the engine automatically calculates:
 
 ---
 
-### Module 2: Position Dashboard *(Core — build second)*
+### Module 2: Position Dashboard _(Core — build second)_
 
 A single-screen view of all active wheels with live data populated from the broker API. Each row shows the ticker, current phase badge, the current underlying price vs. strike price with a visual distance indicator (e.g., a progress bar showing how close the price is to the strike), DTE countdown, premium collected this cycle, effective cost basis, and a quick-action button for the most logical next step (Roll, Close, Assign, Open CC).
 
@@ -92,7 +92,7 @@ The dashboard needs two view modes: **Card view** (one card per wheel showing th
 
 ---
 
-### Module 3: Position Entry & Management *(Core — build third)*
+### Module 3: Position Entry & Management _(Core — build third)_
 
 **Opening a new CSP:** Enter ticker, strike, expiration, contracts, premium received, and the app pre-fills the rest from live data. If connected to Alpaca, it can pull the option chain directly and let you select the contract from a filtered list.
 
@@ -106,7 +106,7 @@ The dashboard needs two view modes: **Card view** (one card per wheel showing th
 
 ---
 
-### Module 4: Active Management & Alerts *(High value — build fourth)*
+### Module 4: Active Management & Alerts _(High value — build fourth)_
 
 This is what separates the app from a journal and makes it a management tool.
 
@@ -126,7 +126,7 @@ Each item in the queue has a one-click action button that opens a pre-filled ord
 
 ---
 
-### Module 5: Analytics & Reporting *(Important — build fifth)*
+### Module 5: Analytics & Reporting _(Important — build fifth)_
 
 **Per-Wheel P&L Drilldown:** A full timeline of every leg in a wheel's history — strike, premium, outcome, dates, cost basis at each stage — displayed as a waterfall chart showing how premium collection has progressively reduced the effective cost basis over time. This is the single most satisfying view for a wheel trader to see working.
 
@@ -138,7 +138,7 @@ Each item in the queue has a one-click action button that opens a pre-filled ord
 
 ---
 
-### Module 6: Order Execution *(Advanced — build last, requires broker connection)*
+### Module 6: Order Execution _(Advanced — build last, requires broker connection)_
 
 With Alpaca connected, the app should be able to place orders directly from the management queue or position detail screens — without the user needing to switch to the broker interface. This is the feature that transforms the app from a tracker into a command center.
 
@@ -150,9 +150,9 @@ For IBKR, this requires TWS or IB Gateway to be running locally and connected �
 
 ---
 
-### Module 7: Watchlist & Candidate Pipeline *(Enhancement)*
+### Module 7: Watchlist & Candidate Pipeline _(Enhancement)_
 
-A separate section for tickers you're *considering* but haven't wheeled yet. For each candidate, the app pulls: current price, 52-week range, IV rank (current IV relative to its historical range), upcoming earnings date, and dividend dates (relevant because early assignment risk increases around ex-dividend for CCs).
+A separate section for tickers you're _considering_ but haven't wheeled yet. For each candidate, the app pulls: current price, 52-week range, IV rank (current IV relative to its historical range), upcoming earnings date, and dividend dates (relevant because early assignment risk increases around ex-dividend for CCs).
 
 You can annotate each candidate with why it's interesting, your target entry price, and your preferred strike/expiration criteria. When you're ready to enter, one click converts the watchlist item into a new wheel and pre-populates the order form.
 

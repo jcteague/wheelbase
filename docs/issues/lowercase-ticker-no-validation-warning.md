@@ -14,6 +14,7 @@
 ## Expected
 
 Either:
+
 - Validation error: "Ticker must be 1-5 uppercase letters", OR
 - Auto-uppercase the input with visible feedback (e.g. the field visually transforms to `AAPL`)
 

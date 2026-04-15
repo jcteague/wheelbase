@@ -20,12 +20,12 @@ A trader can roll any open leg (CSP or CC) to a new strike and/or expiration, se
 
 ## Vertical Slice
 
-| Layer | What ships |
-|---|---|
-| Core engines | Roll validation in lifecycle engine, cost basis recalculation with roll credits/debits |
-| Database | roll_chain_id linking on Leg model |
-| API | POST /api/positions/:id/roll (atomic close + open) |
-| Frontend | Roll form with current leg summary, new leg inputs, net credit/debit preview, roll history in position detail |
+| Layer        | What ships                                                                                                    |
+| ------------ | ------------------------------------------------------------------------------------------------------------- |
+| Core engines | Roll validation in lifecycle engine, cost basis recalculation with roll credits/debits                        |
+| Database     | roll_chain_id linking on Leg model                                                                            |
+| API          | POST /api/positions/:id/roll (atomic close + open)                                                            |
+| Frontend     | Roll form with current leg summary, new leg inputs, net credit/debit preview, roll history in position detail |
 
 ## Stories
 

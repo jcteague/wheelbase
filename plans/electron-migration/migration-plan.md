@@ -44,6 +44,7 @@ See `research.md` for all decisions and rationale.
 7. Run all frontend tests — fix any React 19 compat issues
 
 **Files to migrate (direct copy + import swap):**
+
 - `pages/NewWheelPage.tsx`, `PositionsListPage.tsx`, `PositionDetailPage.tsx`
 - `components/PositionCard.tsx`, `NewWheelForm.tsx`, `ui/*.tsx`
 - `hooks/usePositions.ts`, `useCreatePosition.ts`
@@ -52,6 +53,7 @@ See `research.md` for all decisions and rationale.
 - `lib/utils.ts`, `index.css`
 
 **Tests to migrate:**
+
 - `PositionCard.test.tsx`, `NewWheelForm.test.tsx`, `PositionsListPage.test.tsx`
 
 **Done when:** All 3 test files pass under `@testing-library/react`; lint and typecheck clean.
@@ -192,10 +194,10 @@ See `research.md` for all decisions and rationale.
 
 ## Risk Register
 
-| Risk | Likelihood | Mitigation |
-|---|---|---|
-| `better-sqlite3` rebuild fails in CI | Medium | Pin Electron version; add `postinstall` rebuild script |
-| Migration files inaccessible in packaged asar | Medium | `asarUnpack: ["migrations/**"]` in electron-builder config |
-| React 19 breaking changes vs Preact compat | Low | Existing components use no Preact-specific APIs |
-| `decimal.js` ROUND_HALF_UP differs from Python | Low | Port the exact costbasis tests and verify output matches |
-| Hono port 9001 in use on user machine | Low | Increment port until free; expose active port via contextBridge |
+| Risk                                           | Likelihood | Mitigation                                                      |
+| ---------------------------------------------- | ---------- | --------------------------------------------------------------- |
+| `better-sqlite3` rebuild fails in CI           | Medium     | Pin Electron version; add `postinstall` rebuild script          |
+| Migration files inaccessible in packaged asar  | Medium     | `asarUnpack: ["migrations/**"]` in electron-builder config      |
+| React 19 breaking changes vs Preact compat     | Low        | Existing components use no Preact-specific APIs                 |
+| `decimal.js` ROUND_HALF_UP differs from Python | Low        | Port the exact costbasis tests and verify output matches        |
+| Hono port 9001 in use on user machine          | Low        | Increment port until free; expose active port via contextBridge |

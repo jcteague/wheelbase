@@ -5,6 +5,7 @@ import { useOpenCoveredCall } from '../hooks/useOpenCoveredCall'
 import { CcForm } from './OpenCcForm'
 import { computeGuardrail } from './openCcGuardrail'
 import { CcSuccess } from './OpenCcSuccess'
+import { getSheetPortal } from '../lib/portal'
 import { SheetOverlay, SheetPanel } from './ui/Sheet'
 
 export interface OpenCoveredCallSheetProps {
@@ -23,7 +24,7 @@ export function OpenCoveredCallSheet(props: OpenCoveredCallSheetProps): React.JS
   const [premium, setPremium] = useState('')
   const [ccContracts, setCcContracts] = useState(String(props.contracts))
   const [expiration, setExpiration] = useState('')
-  const [fillDate, setFillDate] = useState('')
+  const [fillDate, setFillDate] = useState(new Date().toISOString().slice(0, 10))
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [successState, setSuccessState] = useState<OpenCcResponse | null>(null)
 
@@ -116,6 +117,6 @@ export function OpenCoveredCallSheet(props: OpenCoveredCallSheetProps): React.JS
     <SheetOverlay onClose={props.onClose}>
       <SheetPanel>{content}</SheetPanel>
     </SheetOverlay>,
-    document.body
+    getSheetPortal()
   )
 }

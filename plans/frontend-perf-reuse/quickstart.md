@@ -32,15 +32,15 @@ pnpm typecheck   # No TypeScript errors
 
 ## Key Files to Watch
 
-| New file | Purpose |
-|---|---|
-| `src/renderer/src/lib/tokens.ts` | `MONO` font constant |
-| `src/renderer/src/lib/format.ts` | Shared formatters |
-| `src/renderer/src/lib/phase.ts` | `PHASE_LABEL` + `PHASE_LABEL_SHORT` (additions) |
-| `src/renderer/src/components/ui/LoadingState.tsx` | Pulsing dot + message |
-| `src/renderer/src/components/ui/ErrorAlert.tsx` | Red error box |
-| `src/renderer/src/components/PhaseBadge.tsx` | Phase dot + label badge |
-| `src/renderer/src/components/ui/SectionCard.tsx` | Bordered card with header |
+| New file                                          | Purpose                                         |
+| ------------------------------------------------- | ----------------------------------------------- |
+| `src/renderer/src/lib/tokens.ts`                  | `MONO` font constant                            |
+| `src/renderer/src/lib/format.ts`                  | Shared formatters                               |
+| `src/renderer/src/lib/phase.ts`                   | `PHASE_LABEL` + `PHASE_LABEL_SHORT` (additions) |
+| `src/renderer/src/components/ui/LoadingState.tsx` | Pulsing dot + message                           |
+| `src/renderer/src/components/ui/ErrorAlert.tsx`   | Red error box                                   |
+| `src/renderer/src/components/PhaseBadge.tsx`      | Phase dot + label badge                         |
+| `src/renderer/src/components/ui/SectionCard.tsx`  | Bordered card with header                       |
 
 ## No Migrations Required
 

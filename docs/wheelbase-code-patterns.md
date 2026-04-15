@@ -7,6 +7,7 @@ This document shows the exact patterns used in US-1 that should be replicated fo
 ## Pattern 1: Pure Lifecycle Engine Function
 
 ### Template (openWheel):
+
 ```typescript
 // Location: src/main/core/lifecycle.ts
 
@@ -29,39 +30,36 @@ export function openWheel(input: OpenWheelInput): OpenWheelResult {
   if (!TICKER_RE.test(input.ticker)) {
     throw new ValidationError('ticker', 'invalid_format', 'Ticker must be 1–5 uppercase letters')
   }
-  
+
   if (new Decimal(input.strike).lte(0)) {
     throw new ValidationError('strike', 'must_be_positive', 'Strike must be positive')
   }
-  
+
   // 2. Return result
   return { phase: 'CSP_OPEN' }
 }
 ```
 
 ### For US-5 (expireCSP):
+
 ```typescript
 // NEEDED: src/main/core/lifecycle.ts
 
 export interface ExpireCSPInput {
-  position: PositionRecord  // or just phase, strike, expiration fields
-  currentDate: string       // ISO date for testing
+  position: PositionRecord // or just phase, strike, expiration fields
+  currentDate: string // ISO date for testing
 }
 
 export interface ExpireCSPResult {
-  phase: WheelPhase         // Will be WHEEL_COMPLETE
+  phase: WheelPhase // Will be WHEEL_COMPLETE
 }
 
 export function expireCSP(input: ExpireCSPInput): ExpireCSPResult {
   // 1. Validate phase is CSP_OPEN
   if (input.position.phase !== 'CSP_OPEN') {
-    throw new ValidationError(
-      'phase',
-      'invalid_phase',
-      'Position is not in CSP_OPEN phase'
-    )
+    throw new ValidationError('phase', 'invalid_phase', 'Position is not in CSP_OPEN phase')
   }
-  
+
   // 2. Validate currentDate >= expirationDate
   if (input.currentDate < input.position.expirationDate) {
     throw new ValidationError(
@@ -70,7 +68,7 @@ export function expireCSP(input: ExpireCSPInput): ExpireCSPResult {
       'Cannot record expiration before the expiration date'
     )
   }
-  
+
   // 3. Return new phase
   return { phase: 'WHEEL_COMPLETE' }
 }
@@ -81,6 +79,7 @@ export function expireCSP(input: ExpireCSPInput): ExpireCSPResult {
 ## Pattern 2: Pure Cost Basis Calculation
 
 ### Template (calculateInitialCspBasis):
+
 ```typescript
 // Location: src/main/core/costbasis.ts
 
@@ -114,11 +113,12 @@ export function calculateInitialCspBasis(leg: CspLegInput): CostBasisResult {
 ```
 
 ### For US-5 (expiration calculation):
+
 ```typescript
 // NEEDED: src/main/core/costbasis.ts
 
 export interface CspExpirationInput {
-  totalPremiumCollected: string  // Already calculated at open
+  totalPremiumCollected: string // Already calculated at open
   contracts: number
 }
 
@@ -128,7 +128,7 @@ export function calculateCspExpiration(
   // At expiration, final P&L = total premium collected (100% profit)
   const total = new Decimal(input.totalPremiumCollected)
   const finalPnl = round4(total)
-  
+
   return {
     finalPnl: finalPnl.toString()
   }
@@ -140,6 +140,7 @@ export function calculateCspExpiration(
 ## Pattern 3: Service Layer Composition
 
 ### Template (createPosition):
+
 ```typescript
 // Location: src/main/services/positions.ts
 
@@ -203,6 +204,7 @@ export function createPosition(
 ```
 
 ### For US-5 (expirePosition):
+
 ```typescript
 // NEEDED: src/main/services/positions.ts
 
@@ -210,43 +212,46 @@ export function expirePosition(
   db: Database.Database,
   positionId: string,
   expirationDateOverride?: string
-): CreatePositionResult {  // or return type with updated position + leg
-  
+): CreatePositionResult {
+  // or return type with updated position + leg
+
   // 1. Query position from DB
-  const position = db.prepare(
-    `SELECT * FROM positions WHERE id = ?`
-  ).get(positionId) as PositionRecord | undefined
-  
+  const position = db.prepare(`SELECT * FROM positions WHERE id = ?`).get(positionId) as
+    | PositionRecord
+    | undefined
+
   if (!position) {
     throw new Error('Position not found')
   }
-  
+
   // 2. Get latest legs and cost basis to pass to engine
-  const latestLeg = db.prepare(
-    `SELECT * FROM legs WHERE position_id = ? ORDER BY fill_date DESC LIMIT 1`
-  ).get(positionId) as LegRecord | undefined
-  
-  const latestSnapshot = db.prepare(
-    `SELECT * FROM cost_basis_snapshots WHERE position_id = ? ORDER BY snapshot_at DESC LIMIT 1`
-  ).get(positionId) as CostBasisSnapshotRecord | undefined
-  
+  const latestLeg = db
+    .prepare(`SELECT * FROM legs WHERE position_id = ? ORDER BY fill_date DESC LIMIT 1`)
+    .get(positionId) as LegRecord | undefined
+
+  const latestSnapshot = db
+    .prepare(
+      `SELECT * FROM cost_basis_snapshots WHERE position_id = ? ORDER BY snapshot_at DESC LIMIT 1`
+    )
+    .get(positionId) as CostBasisSnapshotRecord | undefined
+
   // 3. Call lifecycle engine
   const lifecycleResult = expireCSP({
     position,
     currentDate: expirationDateOverride ?? new Date().toISOString().slice(0, 10)
   })
-  
+
   // 4. Call cost basis engine
   const expirationResult = calculateCspExpiration({
     totalPremiumCollected: latestSnapshot?.totalPremiumCollected ?? '0',
     contracts: latestLeg?.contracts ?? 0
   })
-  
+
   // 5. Generate IDs and timestamps
   const expireLegId = randomUUID()
   const snapshotId = randomUUID()
   const now = new Date().toISOString()
-  
+
   // 6. Transactional DB updates
   db.transaction(() => {
     // Create EXPIRE leg
@@ -263,7 +268,7 @@ export function expirePosition(
       now,
       now
     )
-    
+
     // Create final cost basis snapshot
     db.prepare(
       `INSERT INTO cost_basis_snapshots (id, position_id, basis_per_share, total_premium_collected, final_pnl, snapshot_at, created_at)
@@ -277,18 +282,13 @@ export function expirePosition(
       now,
       now
     )
-    
+
     // Update position to closed
     db.prepare(
       `UPDATE positions SET phase = ?, status = 'CLOSED', closed_date = ?, updated_at = ? WHERE id = ?`
-    ).run(
-      'WHEEL_COMPLETE',
-      now,
-      now,
-      positionId
-    )
+    ).run('WHEEL_COMPLETE', now, now, positionId)
   })()
-  
+
   // 7. Return constructed result
   return {
     position: {
@@ -308,7 +308,8 @@ export function expirePosition(
       expiration: latestLeg?.expiration ?? '',
       contracts: latestLeg?.contracts ?? 0,
       premiumPerContract: '0',
-      fillDate: latestLeg?.expiration ?? expirationDateOverride ?? new Date().toISOString().slice(0, 10),
+      fillDate:
+        latestLeg?.expiration ?? expirationDateOverride ?? new Date().toISOString().slice(0, 10),
       createdAt: now,
       updatedAt: now
     },
@@ -329,6 +330,7 @@ export function expirePosition(
 ## Pattern 4: IPC Handler Registration
 
 ### Template (positions handlers):
+
 ```typescript
 // Location: src/main/ipc/positions.ts
 
@@ -355,28 +357,31 @@ export function registerPositionsHandlers(db: Database.Database): void {
       }
     }
   })
-  
+
   // NEEDED for US-5:
-  ipcMain.handle('positions:expire', (_, payload: { positionId: string, expirationDateOverride?: string }) => {
-    try {
-      const result = expirePosition(db, payload.positionId, payload.expirationDateOverride)
-      return { ok: true, ...result }
-    } catch (err) {
-      if (err instanceof ValidationError) {
+  ipcMain.handle(
+    'positions:expire',
+    (_, payload: { positionId: string; expirationDateOverride?: string }) => {
+      try {
+        const result = expirePosition(db, payload.positionId, payload.expirationDateOverride)
+        return { ok: true, ...result }
+      } catch (err) {
+        if (err instanceof ValidationError) {
+          return {
+            ok: false,
+            errors: [{ field: err.field, code: err.code, message: err.message }]
+          }
+        }
+        logger.error({ err }, 'positions_expire_unhandled_error')
         return {
           ok: false,
-          errors: [{ field: err.field, code: err.code, message: err.message }]
+          errors: [
+            { field: '__root__', code: 'internal_error', message: 'An unexpected error occurred' }
+          ]
         }
       }
-      logger.error({ err }, 'positions_expire_unhandled_error')
-      return {
-        ok: false,
-        errors: [
-          { field: '__root__', code: 'internal_error', message: 'An unexpected error occurred' }
-        ]
-      }
     }
-  })
+  )
 }
 ```
 
@@ -385,6 +390,7 @@ export function registerPositionsHandlers(db: Database.Database): void {
 ## Pattern 5: Frontend API Layer Adapter
 
 ### Template (positions API):
+
 ```typescript
 // Location: src/renderer/src/api/positions.ts
 
@@ -463,6 +469,7 @@ export async function expirePosition(
 ## Pattern 6: Testing Pattern
 
 ### Lifecycle Engine Tests:
+
 ```typescript
 // Location: src/main/core/lifecycle.test.ts
 
@@ -498,6 +505,7 @@ describe('openWheel', () => {
 ```
 
 ### For US-5 Tests:
+
 ```typescript
 // NEEDED: Add to src/main/core/lifecycle.test.ts
 
@@ -505,7 +513,7 @@ describe('expireCSP', () => {
   it('returns WHEEL_COMPLETE for valid expiration', () => {
     const position = {
       phase: 'CSP_OPEN' as const,
-      expirationDate: isoDate(0)  // today
+      expirationDate: isoDate(0) // today
       // ... other fields
     }
     const result = expireCSP({
@@ -526,7 +534,7 @@ describe('expireCSP', () => {
   it('rejects when current date is before expiration', () => {
     const position = {
       phase: 'CSP_OPEN' as const,
-      expirationDate: isoDate(5)  // 5 days from now
+      expirationDate: isoDate(5) // 5 days from now
     }
     expect(() => expireCSP({ position, currentDate: isoDate(0) })).toThrow(ValidationError)
   })
@@ -543,7 +551,7 @@ describe('expireCSP', () => {
   it('allows expiration after the expiration date', () => {
     const position = {
       phase: 'CSP_OPEN' as const,
-      expirationDate: isoDate(-1)  // yesterday
+      expirationDate: isoDate(-1) // yesterday
     }
     const result = expireCSP({ position, currentDate: isoDate(0) })
     expect(result.phase).toBe('WHEEL_COMPLETE')
@@ -555,14 +563,13 @@ describe('expireCSP', () => {
 
 ## Summary Table
 
-| Component | Status | File | Pattern |
-|-----------|--------|------|---------|
-| Lifecycle Engine | ✅ Exists | `src/main/core/lifecycle.ts` | Pure function |
-| Cost Basis Engine | ✅ Exists | `src/main/core/costbasis.ts` | Pure function |
-| Service Layer | ✅ Pattern exists | `src/main/services/positions.ts` | Composition |
-| IPC Handlers | ✅ Pattern exists | `src/main/ipc/positions.ts` | Registration |
-| Frontend API | ✅ Pattern exists | `src/renderer/src/api/positions.ts` | Adapter |
-| Testing | ✅ Pattern exists | `src/main/core/*.test.ts` | Vitest |
+| Component         | Status            | File                                | Pattern       |
+| ----------------- | ----------------- | ----------------------------------- | ------------- |
+| Lifecycle Engine  | ✅ Exists         | `src/main/core/lifecycle.ts`        | Pure function |
+| Cost Basis Engine | ✅ Exists         | `src/main/core/costbasis.ts`        | Pure function |
+| Service Layer     | ✅ Pattern exists | `src/main/services/positions.ts`    | Composition   |
+| IPC Handlers      | ✅ Pattern exists | `src/main/ipc/positions.ts`         | Registration  |
+| Frontend API      | ✅ Pattern exists | `src/renderer/src/api/positions.ts` | Adapter       |
+| Testing           | ✅ Pattern exists | `src/main/core/*.test.ts`           | Vitest        |
 
 For US-5, replicate these patterns exactly — just add the missing functions and handlers.
-

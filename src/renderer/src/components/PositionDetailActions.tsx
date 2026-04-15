@@ -1,31 +1,18 @@
 import type { WheelPhase } from '../../../main/core/types'
 import { PhaseBadge } from './PhaseBadge'
-import { MONO } from '../lib/tokens'
-
-const actionButtonStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 4,
-  padding: '4px 12px',
-  borderRadius: 4,
-  fontSize: '0.7rem',
-  fontWeight: 500,
-  fontFamily: MONO,
-  color: 'var(--wb-teal)',
-  cursor: 'pointer'
-}
 
 type PositionDetailActionsProps = {
   phase: WheelPhase
   hasCostBasis: boolean
   ccExpired: boolean
   onOpenCc: () => void
-  onRecordAssignment: () => void
-  onRecordExpiration: () => void
+  onRollCc: () => void
   onCloseCcEarly: () => void
   onRecordCallAway: () => void
   onRecordCcExpiration: () => void
   onRollCsp: () => void
+  onRecordAssignment: () => void
+  onRecordExpiration: () => void
 }
 
 type ActionButtonProps = {
@@ -38,9 +25,8 @@ function ActionButton({ testId, label, onClick }: ActionButtonProps): React.JSX.
   return (
     <button
       data-testid={testId}
-      className="wb-teal-button"
+      className="wb-teal-button inline-flex items-center gap-1 px-3 py-1 rounded text-[0.7rem] font-medium font-wb-mono text-wb-teal cursor-pointer focus:outline-none focus-visible:outline-none"
       onClick={onClick}
-      style={actionButtonStyle}
     >
       {label}
     </button>
@@ -52,18 +38,21 @@ export function PositionDetailActions({
   hasCostBasis,
   ccExpired,
   onOpenCc,
-  onRecordAssignment,
-  onRecordExpiration,
+  onRollCc,
   onCloseCcEarly,
   onRecordCallAway,
   onRecordCcExpiration,
-  onRollCsp
+  onRollCsp,
+  onRecordAssignment,
+  onRecordExpiration
 }: PositionDetailActionsProps): React.JSX.Element {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+    <div className="flex items-center gap-2.5">
       <PhaseBadge phase={phase} />
+      <div className="w-px h-4 bg-wb-border mx-1" />
       {phase === 'CC_OPEN' && (
         <>
+          <ActionButton testId="roll-cc-btn" label="Roll CC →" onClick={onRollCc} />
           <ActionButton
             testId="close-cc-early-btn"
             label="Close CC Early →"
@@ -77,14 +66,11 @@ export function PositionDetailActions({
         </>
       )}
       {phase === 'CC_OPEN' && ccExpired && (
-        <button
-          data-testid="record-cc-expiration-btn"
-          className="wb-teal-button"
+        <ActionButton
+          testId="record-cc-expiration-btn"
+          label="Record Expiration →"
           onClick={onRecordCcExpiration}
-          style={actionButtonStyle}
-        >
-          Record Expiration →
-        </button>
+        />
       )}
       {phase === 'HOLDING_SHARES' && hasCostBasis && (
         <ActionButton

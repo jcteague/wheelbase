@@ -21,10 +21,10 @@ A trader can review their performance at the position level, portfolio level, an
 
 ## Vertical Slice
 
-| Layer | What ships |
-|---|---|
-| API | GET /api/analytics/income, GET /api/analytics/efficiency, GET /api/analytics/winloss, GET /api/analytics/comparison, GET /api/export/csv |
-| Frontend | Income dashboard with charts, capital efficiency table, win/loss summary, strategy comparison, per-position waterfall, export buttons |
+| Layer    | What ships                                                                                                                               |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| API      | GET /api/analytics/income, GET /api/analytics/efficiency, GET /api/analytics/winloss, GET /api/analytics/comparison, GET /api/export/csv |
+| Frontend | Income dashboard with charts, capital efficiency table, win/loss summary, strategy comparison, per-position waterfall, export buttons    |
 
 ## Stories
 

@@ -200,7 +200,7 @@ describe('closeCspPosition', () => {
   it('defaults fillDate to today when omitted', () => {
     const db = makeTestDb()
     const { position } = makeOpenPosition(db)
-    const today = new Date().toISOString().slice(0, 10)
+    const today = isoDate(0)
 
     const result = closeCspPosition(db, position.id, {
       positionId: position.id,

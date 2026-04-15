@@ -30,12 +30,12 @@ Sidebar and layout shell are defined in `App.tsx`. Pages use `PageLayout` + `Pag
 
 All server state managed via TanStack Query. One hook per operation:
 
-| Hook | Type | Query key | API function |
-|---|---|---|---|
-| `usePositions` | query | `['positions']` | `listPositions()` |
-| `usePosition(id)` | query | `['positions', id]` | `getPosition(id)` |
-| `useCreatePosition` | mutation | — | `createPosition(payload)` |
-| `useClosePosition` | mutation | invalidates `['positions']` | `closePosition(payload)` |
+| Hook                | Type     | Query key                   | API function              |
+| ------------------- | -------- | --------------------------- | ------------------------- |
+| `usePositions`      | query    | `['positions']`             | `listPositions()`         |
+| `usePosition(id)`   | query    | `['positions', id]`         | `getPosition(id)`         |
+| `useCreatePosition` | mutation | —                           | `createPosition(payload)` |
+| `useClosePosition`  | mutation | invalidates `['positions']` | `closePosition(payload)`  |
 | `useExpirePosition` | mutation | invalidates `['positions']` | `expirePosition(payload)` |
 
 Hooks live in `src/renderer/src/hooks/`. Each is a thin wrapper — no business logic.
@@ -55,32 +55,33 @@ Schema (schemas/*.ts)     — Zod schema defines shape + validation
 Field error mapping: API adapter converts IPC camelCase field names to form snake_case field names via `IPC_TO_FORM_FIELD` lookup.
 
 Schemas in `src/renderer/src/schemas/`:
+
 - `common.ts` — shared validators: `tickerSchema`, `positiveMoneySchema`, `positiveIntegerSchema`, `isoDateSchema`
 - `new-wheel.ts` — `newWheelSchema` for the new wheel form
 
 ## Component responsibilities
 
-| Component | Role |
-|---|---|
-| Pages (`pages/`) | Route-level containers. Fetch data via hooks, compose components. |
-| `PageLayout` / `PageHeader` | Shared layout shell — header + scrollable body. |
-| `NewWheelForm` | Form with validation, submission, error/success states. |
-| `CloseCspForm` | Inline form on detail page with live P&L preview. |
-| `ExpirationSheet` | Portal-based right-side panel (confirmation + success states). |
-| `PositionRow` | Single table row. Clickable, hover effect, phase badge. |
-| `ui/*` | shadcn primitives (Button, Calendar, DatePicker, Form, Input, Label, Popover). |
+| Component                   | Role                                                                           |
+| --------------------------- | ------------------------------------------------------------------------------ |
+| Pages (`pages/`)            | Route-level containers. Fetch data via hooks, compose components.              |
+| `PageLayout` / `PageHeader` | Shared layout shell — header + scrollable body.                                |
+| `NewWheelForm`              | Form with validation, submission, error/success states.                        |
+| `CloseCspForm`              | Inline form on detail page with live P&L preview.                              |
+| `ExpirationSheet`           | Portal-based right-side panel (confirmation + success states).                 |
+| `PositionRow`               | Single table row. Clickable, hover effect, phase badge.                        |
+| `ui/*`                      | shadcn primitives (Button, Calendar, DatePicker, Form, Input, Label, Popover). |
 
 ## Design system
 
 Tokens defined as CSS custom properties in `src/renderer/src/index.css` `:root` block:
 
-| Token pattern | Example | Usage |
-|---|---|---|
-| `--wb-bg-*` | `--wb-bg-surface`, `--wb-bg-elevated` | Background layers |
-| `--wb-text-*` | `--wb-text-primary`, `--wb-text-muted` | Text hierarchy |
-| `--wb-border` | `--wb-border`, `--wb-border-subtle` | Borders |
-| `--wb-{color}` | `--wb-gold`, `--wb-green`, `--wb-red` | Semantic accents |
-| `--wb-{color}-dim` | `--wb-gold-dim`, `--wb-green-dim` | Tinted backgrounds |
+| Token pattern      | Example                                | Usage              |
+| ------------------ | -------------------------------------- | ------------------ |
+| `--wb-bg-*`        | `--wb-bg-surface`, `--wb-bg-elevated`  | Background layers  |
+| `--wb-text-*`      | `--wb-text-primary`, `--wb-text-muted` | Text hierarchy     |
+| `--wb-border`      | `--wb-border`, `--wb-border-subtle`    | Borders            |
+| `--wb-{color}`     | `--wb-gold`, `--wb-green`, `--wb-red`  | Semantic accents   |
+| `--wb-{color}-dim` | `--wb-gold-dim`, `--wb-green-dim`      | Tinted backgrounds |
 
 Phase colors mapped in `lib/phase.ts` (`PHASE_COLOR` record).
 

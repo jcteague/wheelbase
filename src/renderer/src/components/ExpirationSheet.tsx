@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useLocation } from 'wouter'
 import { useExpirePosition } from '../hooks/useExpirePosition'
 import { fmtDate, fmtMoney } from '../lib/format'
-import { MONO } from '../lib/tokens'
+import { getSheetPortal } from '../lib/portal'
 import { Button } from './ui/button'
 import { ErrorAlert } from './ui/ErrorAlert'
 import { SheetOverlay, SheetPanel, SheetHeader, SheetBody, SheetFooter } from './ui/Sheet'
@@ -30,7 +30,6 @@ export function ExpirationSheet({
   onClose
 }: ExpirationSheetProps): React.JSX.Element | null {
   const [, navigate] = useLocation()
-  const [isClosing, setIsClosing] = useState(false)
   const [successState, setSuccessState] = useState<{
     position: { phase: string }
     costBasisSnapshot: { finalPnl: string }
@@ -45,7 +44,6 @@ export function ExpirationSheet({
   if (!open) return null
 
   const handleClose = (): void => {
-    setIsClosing(true)
     setTimeout(onClose, 300)
   }
 
@@ -57,37 +55,6 @@ export function ExpirationSheet({
     navigate(`/new?ticker=${ticker}`)
   }
   const premiumSummary = `+${fmtMoney(totalPremiumCollected).replace(/\.00$/, '')}`
-
-  const summaryCardStyle: React.CSSProperties = {
-    background: 'var(--wb-bg-elevated)',
-    border: '1px solid var(--wb-border)',
-    borderRadius: 8,
-    overflow: 'hidden',
-    marginBottom: 16
-  }
-
-  const summaryRowStyle: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '10px 14px',
-    borderBottom: '1px solid rgba(30,42,56,0.5)'
-  }
-
-  const summaryKeyStyle: React.CSSProperties = {
-    fontSize: 11,
-    color: 'var(--wb-text-secondary)'
-  }
-
-  const summaryValStyle: React.CSSProperties = {
-    fontSize: 11,
-    fontWeight: 600,
-    color: 'var(--wb-text-primary)',
-    textAlign: 'right'
-  }
-
-  // Suppress unused-variable lint for isClosing (kept for handleClose logic)
-  void isClosing
 
   if (successState) {
     const pnl = parseFloat(successState.costBasisSnapshot.finalPnl)
@@ -107,109 +74,67 @@ export function ExpirationSheet({
           <SheetBody>
             {/* P&L display */}
             <div
+              className="bg-wb-green-dim border border-wb-green-border rounded-xl p-5 text-center mb-4"
               style={{
-                background: 'linear-gradient(135deg, var(--wb-green-dim), rgba(7,10,14,0.4))',
-                border: '1px solid rgba(63,185,80,0.22)',
-                borderRadius: 10,
-                padding: 22,
-                textAlign: 'center',
-                marginBottom: 18
+                background: 'linear-gradient(135deg, var(--wb-green-dim), rgba(7,10,14,0.4))'
               }}
             >
-              <div
-                style={{
-                  fontSize: 9,
-                  color: 'var(--wb-green)',
-                  opacity: 0.7,
-                  letterSpacing: '0.18em',
-                  textTransform: 'uppercase',
-                  marginBottom: 8
-                }}
-              >
+              <div className="text-[9px] text-wb-green/70 tracking-[0.18em] uppercase mb-2">
                 Final P&amp;L
               </div>
-              <div
-                style={{
-                  fontSize: 40,
-                  fontWeight: 700,
-                  color: 'var(--wb-green)',
-                  letterSpacing: '-0.03em',
-                  lineHeight: 1,
-                  marginBottom: 6
-                }}
-              >
+              <div className="text-[40px] font-bold text-wb-green tracking-[-0.03em] leading-none mb-1.5">
                 {pnl >= 0 ? '+' : ''}${Math.abs(pnl).toFixed(0)}
               </div>
-              <div style={{ fontSize: 11, color: 'var(--wb-green)', opacity: 0.55 }}>
+              <div className="text-[11px] text-wb-green/55">
                 100% premium captured · {contracts} contract{contracts !== 1 ? 's' : ''}
               </div>
             </div>
 
             {/* Summary */}
-            <div style={summaryCardStyle}>
-              <div style={summaryRowStyle}>
-                <span style={summaryKeyStyle}>Leg recorded</span>
-                <span style={{ ...summaryValStyle, color: 'var(--wb-green)' }}>
+            <div className="bg-wb-bg-elevated border border-wb-border rounded-lg overflow-hidden mb-4">
+              <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-wb-border">
+                <span className="text-[11px] text-wb-text-secondary">Leg recorded</span>
+                <span className="text-[11px] font-semibold text-right text-wb-green">
                   expire · {fmtDate(expiration)}
                 </span>
               </div>
-              <div style={summaryRowStyle}>
-                <span style={summaryKeyStyle}>Phase</span>
-                <span style={summaryValStyle}>Complete</span>
+              <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-wb-border">
+                <span className="text-[11px] text-wb-text-secondary">Phase</span>
+                <span className="text-[11px] font-semibold text-wb-text-primary text-right">
+                  Complete
+                </span>
               </div>
-              <div style={{ ...summaryRowStyle, borderBottom: 'none' }}>
-                <span style={summaryKeyStyle}>Status</span>
-                <span style={summaryValStyle}>Closed</span>
+              <div className="flex items-center justify-between px-3.5 py-2.5">
+                <span className="text-[11px] text-wb-text-secondary">Status</span>
+                <span className="text-[11px] font-semibold text-wb-text-primary text-right">
+                  Closed
+                </span>
               </div>
             </div>
 
             {/* What's next */}
-            <div
-              style={{
-                fontSize: 9,
-                fontWeight: 700,
-                letterSpacing: '0.15em',
-                textTransform: 'uppercase',
-                color: 'var(--wb-text-muted)',
-                marginBottom: 12
-              }}
-            >
+            <div className="text-[9px] font-bold tracking-[0.15em] uppercase text-wb-text-muted mb-3">
               What&apos;s next?
             </div>
 
             <Button
               onClick={handleOpenNewWheel}
-              style={{
-                width: '100%',
-                marginBottom: 12,
-                background: 'var(--wb-green)',
-                color: '#000',
-                fontWeight: 700
-              }}
+              className="w-full mb-3 bg-wb-green text-black font-bold"
             >
               <span>Open new wheel on {ticker}</span>
-              <span style={{ marginLeft: 'auto', opacity: 0.7 }}>→</span>
+              <span className="ml-auto opacity-70">→</span>
             </Button>
 
             <button
               onClick={handleClose}
-              style={{
-                width: '100%',
-                fontSize: 11,
-                color: 'var(--wb-text-secondary)',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                textDecoration: 'underline',
-                fontFamily: MONO
-              }}
+              className="font-wb-mono w-full text-[11px] text-wb-text-secondary bg-transparent border-none cursor-pointer underline"
             >
               View full position history
             </button>
           </SheetBody>
         </SheetPanel>
       </SheetOverlay>,
-      document.body
+      getSheetPortal()
     )
   }
 
@@ -226,64 +151,53 @@ export function ExpirationSheet({
 
         <SheetBody>
           {/* Summary card */}
-          <div style={summaryCardStyle}>
-            <div style={summaryRowStyle}>
-              <span style={summaryKeyStyle}>Position</span>
-              <span style={summaryValStyle}>
+          <div className="bg-wb-bg-elevated border border-wb-border rounded-lg overflow-hidden mb-4">
+            <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-[rgba(30,42,56,0.6)]">
+              <span className="text-[11px] text-wb-text-secondary">Position</span>
+              <span className="text-[11px] font-semibold text-wb-text-primary text-right">
                 {ticker} PUT ${strike} · {fmtDate(expiration)}
               </span>
             </div>
-            <div style={summaryRowStyle}>
-              <span style={summaryKeyStyle}>Contracts</span>
-              <span style={summaryValStyle}>{contracts}</span>
+            <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-[rgba(30,42,56,0.6)]">
+              <span className="text-[11px] text-wb-text-secondary">Contracts</span>
+              <span className="text-[11px] font-semibold text-wb-text-primary text-right">
+                {contracts}
+              </span>
             </div>
-            <div style={summaryRowStyle}>
-              <span style={summaryKeyStyle}>Phase transition</span>
-              <span style={summaryValStyle}>Put Open → Complete</span>
+            <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-[rgba(30,42,56,0.6)]">
+              <span className="text-[11px] text-wb-text-secondary">Phase transition</span>
+              <span className="text-[11px] font-semibold text-wb-text-primary text-right">
+                Put Open → Complete
+              </span>
             </div>
-            <div style={summaryRowStyle}>
-              <span style={summaryKeyStyle}>Leg recorded</span>
-              <span style={summaryValStyle}>expire · no fill price</span>
+            <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-[rgba(30,42,56,0.6)]">
+              <span className="text-[11px] text-wb-text-secondary">Leg recorded</span>
+              <span className="text-[11px] font-semibold text-wb-text-primary text-right">
+                expire · no fill price
+              </span>
             </div>
             <div
+              className="flex items-center justify-between px-3.5 py-2.5"
               style={{
-                ...summaryRowStyle,
-                borderBottom: 'none',
                 background: 'linear-gradient(90deg, var(--wb-green-dim), rgba(14,51,32,0.4))'
               }}
             >
-              <span style={{ ...summaryKeyStyle, color: 'var(--wb-green)', opacity: 0.75 }}>
-                Final P&amp;L
-              </span>
-              <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--wb-green)' }}>
-                {premiumSummary}{' '}
-                <span style={{ fontSize: 10, opacity: 0.65 }}>(100% captured)</span>
+              <span className="text-[11px] text-wb-green/75">Final P&amp;L</span>
+              <span className="text-[15px] font-bold text-wb-green">
+                {premiumSummary} <span className="text-[10px] opacity-65">(100% captured)</span>
               </span>
             </div>
           </div>
 
           {/* Warning */}
-          <div
-            style={{
-              background: 'var(--wb-gold-dim)',
-              border: '1px solid rgba(230,168,23,0.2)',
-              borderRadius: 6,
-              padding: '11px 14px',
-              fontSize: 11,
-              color: 'var(--wb-gold)',
-              lineHeight: 1.65,
-              marginBottom: 16
-            }}
-          >
-            <strong style={{ fontWeight: 700, display: 'block', marginBottom: 3 }}>
-              This cannot be undone.
-            </strong>
+          <div className="bg-wb-gold-dim text-wb-gold border border-wb-gold-border rounded-md px-3.5 py-[11px] text-[11px] leading-[1.65] mb-4">
+            <strong className="font-bold block mb-[3px]">This cannot be undone.</strong>
             The position will be closed and marked complete. Full leg history is preserved.
           </div>
 
           {/* Error */}
           {isError && error && (
-            <div style={{ marginBottom: 16 }}>
+            <div className="mb-4">
               <ErrorAlert
                 message={
                   (error.body as { detail?: Array<{ message: string }> } | null)?.detail?.[0]
@@ -295,19 +209,19 @@ export function ExpirationSheet({
         </SheetBody>
 
         <SheetFooter>
-          <Button variant="outline" onClick={handleClose} style={{ flex: 1 }}>
+          <Button variant="outline" onClick={handleClose} className="flex-1">
             Cancel
           </Button>
           <Button
             onClick={handleConfirmExpiration}
             disabled={isPending}
-            style={{ flex: 1, background: 'var(--wb-gold)', color: '#000', fontWeight: 700 }}
+            className="flex-1 bg-wb-gold text-black font-bold"
           >
             {isPending ? 'Confirming...' : 'Confirm Expiration'}
           </Button>
         </SheetFooter>
       </SheetPanel>
     </SheetOverlay>,
-    document.body
+    getSheetPortal()
   )
 }

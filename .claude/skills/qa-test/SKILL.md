@@ -19,12 +19,12 @@ implementation details. You navigate and interact entirely through what is visib
 
 You interact with the app exclusively through the **Electron MCP tools**:
 
-| Tool | Purpose |
-|------|---------|
-| `mcp__electron__get_electron_window_info` | Confirm the app is running |
-| `mcp__electron__take_screenshot` | See what is currently on screen |
+| Tool                                      | Purpose                                        |
+| ----------------------------------------- | ---------------------------------------------- |
+| `mcp__electron__get_electron_window_info` | Confirm the app is running                     |
+| `mcp__electron__take_screenshot`          | See what is currently on screen                |
 | `mcp__electron__send_command_to_electron` | Navigate, read page content, click, fill forms |
-| `mcp__electron__read_electron_logs` | Read console output when investigating a bug |
+| `mcp__electron__read_electron_logs`       | Read console output when investigating a bug   |
 
 ---
 
@@ -105,6 +105,7 @@ If no argument is given, glob `docs/epics/02-stories/*-manual-test-plan.md` and 
 you find, one at a time.
 
 From the test plan, extract:
+
 - Each numbered **Scenario** (name and narrative)
 - The **Inputs** table — these are your navigational cues: which screen to be on, which field to
   fill, which action to take, and with what value
@@ -130,6 +131,7 @@ position. Prior scenario data is fine — each scenario creates its own position
 ### Running a scenario
 
 For each row in the Inputs table:
+
 1. Confirm you are on the specified screen (screenshot or `get_body_text`)
 2. Perform the specified action (fill field, click button, etc.) using the visible label from
    the test plan
@@ -138,6 +140,7 @@ For each row in the Inputs table:
 ### Verifying calculated values
 
 Check values shown in the UI against the **Math** block:
+
 - Dollar amounts match to 2 decimal places (e.g. `$92.00`)
 - Negative values use the unicode minus **−** (U+2212), not a plain hyphen `-`
 - Annualized return shown with `~` prefix and `%` suffix
@@ -158,6 +161,7 @@ gracefully (validation shown, no crash) or fails (wrong data accepted, JS error,
 ### 3a — Empty / missing fields
 
 On the new wheel entry form, try submitting with:
+
 - All fields empty
 - Only the ticker filled
 - Ticker and strike but no contracts or premium
@@ -168,6 +172,7 @@ Expected: inline validation errors, form does not submit.
 ### 3b — Numeric boundary inputs
 
 In every numeric field, try:
+
 - `0`
 - `-1`
 - `0.001`
@@ -180,6 +185,7 @@ Expected: invalid values are rejected; no crash or garbage stored.
 ### 3c — Special characters in the ticker field
 
 Try:
+
 - `'; DROP TABLE positions; --`
 - `<script>alert(1)</script>`
 - `AAPL MSFT` (space)
@@ -251,6 +257,7 @@ PASS / FAIL — <one-line summary>
 ```
 
 Severity guide:
+
 - **Critical** — crash, data loss, or corrupt state
 - **High** — wrong calculation displayed to the user
 - **Medium** — invalid input accepted silently

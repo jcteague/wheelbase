@@ -95,6 +95,7 @@ pnpm test
 ## Handoff to Refactor Phase
 
 If you proceed to refactor after the E2E run:
+
 1. Clean up the sheet success-state test warnings with explicit `act` wrapping.
 2. Revisit formatting warnings across the touched US-8 files.
 3. Consider extracting any repeated success-card layout shared with other sheet flows.

@@ -1,25 +1,20 @@
-import { MONO } from '../../lib/tokens'
+import { twMerge } from 'tailwind-merge'
 
 type TableHeaderProps = {
   children: React.ReactNode
+  className?: string
   style?: React.CSSProperties
 }
 
-export function TableHeader({ children, style }: TableHeaderProps): React.JSX.Element {
+export function TableHeader({ children, className, style }: TableHeaderProps): React.JSX.Element {
   return (
     <th
-      style={{
-        padding: '8px 12px',
-        fontFamily: MONO,
-        fontSize: '0.65rem',
-        fontWeight: 600,
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
-        color: 'var(--wb-text-muted)',
-        textAlign: 'left',
-        borderBottom: '1px solid var(--wb-border)',
-        ...style
-      }}
+      className={twMerge(
+        'text-wb-text-muted font-wb-mono text-xs font-semibold tracking-widest uppercase',
+        'text-left border-b border-wb-border px-[12px] py-[8px]',
+        className
+      )}
+      style={style}
     >
       {children}
     </th>
@@ -28,20 +23,19 @@ export function TableHeader({ children, style }: TableHeaderProps): React.JSX.El
 
 type TableCellProps = {
   children: React.ReactNode
+  className?: string
   style?: React.CSSProperties
 }
 
-export function TableCell({ children, style }: TableCellProps): React.JSX.Element {
+export function TableCell({ children, className, style }: TableCellProps): React.JSX.Element {
   return (
     <td
-      style={{
-        padding: '8px 12px',
-        fontFamily: MONO,
-        fontSize: '0.8125rem',
-        color: 'var(--wb-text-primary)',
-        borderBottom: '1px solid rgba(30,42,56,0.4)',
-        ...style
-      }}
+      className={twMerge(
+        'font-wb-mono text-wb-text-primary px-[12px] py-[8px]',
+        'border-b border-[rgba(30,42,56,0.4)]',
+        className
+      )}
+      style={style}
     >
       {children}
     </td>

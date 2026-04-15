@@ -3,7 +3,6 @@ import { Route, Router, Switch, useLocation } from 'wouter'
 import { useHashLocation } from 'wouter/use-hash-location'
 
 import { NavItem } from './components/NavItem'
-import { MONO } from './lib/tokens'
 import { NewWheelPage } from './pages/NewWheelPage'
 import { PositionDetailPage } from './pages/PositionDetailPage'
 import { PositionsListPage } from './pages/PositionsListPage'
@@ -14,55 +13,21 @@ function Sidebar(): React.JSX.Element {
   const [location] = useLocation()
 
   return (
-    <aside
-      className="flex flex-col"
-      style={{
-        width: 200,
-        minWidth: 200,
-        background: 'var(--wb-bg-surface)',
-        borderRight: '1px solid var(--wb-border)',
-        height: '100vh'
-      }}
-    >
+    <aside className="flex flex-col bg-wb-bg-surface border-r border-wb-border h-screen w-[200px] min-w-[200px]">
       {/* Logo */}
-      <div
-        className="flex items-center gap-2 px-4 py-4"
-        style={{ borderBottom: '1px solid var(--wb-border)' }}
-      >
+      <div className="flex items-center gap-[8px] px-[16px] py-[16px] border-b border-wb-border">
         <div
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: '50%',
-            background: 'var(--wb-gold)',
-            boxShadow: '0 0 6px var(--wb-gold)'
-          }}
+          className="bg-wb-gold rounded-full w-2 h-2"
+          style={{ boxShadow: '0 0 6px var(--wb-gold)' }}
         />
-        <span
-          className="font-bold tracking-widest uppercase text-xs"
-          style={{
-            color: 'var(--wb-text-primary)',
-            fontFamily: MONO,
-            letterSpacing: '0.15em'
-          }}
-        >
+        <span className="font-bold tracking-[0.15em] uppercase text-xs text-wb-text-primary font-wb-mono">
           Wheelbase
         </span>
       </div>
 
       {/* Nav */}
-      <nav className="flex flex-col gap-1 px-2 py-4" style={{ flex: 1 }}>
-        <div
-          className="px-3 py-1.5 mb-1"
-          style={{
-            fontSize: '0.65rem',
-            fontWeight: 600,
-            letterSpacing: '0.1em',
-            textTransform: 'uppercase',
-            color: 'var(--wb-text-muted)',
-            fontFamily: MONO
-          }}
-        >
+      <nav className="flex flex-col gap-[4px] px-[8px] py-[16px] flex-1">
+        <div className="px-[12px] py-[6px] mb-[4px] text-[0.65rem] font-semibold tracking-[0.1em] uppercase text-wb-text-muted font-wb-mono">
           Trading
         </div>
         <NavItem href="/" label="Positions" icon="◈" active={location === '/' || location === ''} />
@@ -70,15 +35,7 @@ function Sidebar(): React.JSX.Element {
       </nav>
 
       {/* Footer */}
-      <div
-        className="px-4 py-3"
-        style={{
-          borderTop: '1px solid var(--wb-border)',
-          fontSize: '0.65rem',
-          color: 'var(--wb-text-muted)',
-          fontFamily: MONO
-        }}
-      >
+      <div className="px-[16px] py-[12px] border-t border-wb-border text-[0.65rem] text-wb-text-muted font-wb-mono">
         Wheel Strategy
       </div>
     </aside>
@@ -87,18 +44,16 @@ function Sidebar(): React.JSX.Element {
 
 function AppShell(): React.JSX.Element {
   return (
-    <div
-      className="flex"
-      style={{ height: '100vh', background: 'var(--wb-bg-base)', color: 'var(--wb-text-primary)' }}
-    >
+    <div className="flex h-screen bg-wb-bg-base text-wb-text-primary">
       <Sidebar />
-      <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <main className="flex-1 overflow-hidden flex flex-col">
         <Switch>
           <Route path="/" component={PositionsListPage} />
           <Route path="/new" component={NewWheelPage} />
           <Route path="/positions/:id" component={PositionDetailPage} />
         </Switch>
       </main>
+      <div id="sheet-portal" />
     </div>
   )
 }

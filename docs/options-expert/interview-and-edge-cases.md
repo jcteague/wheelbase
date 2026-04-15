@@ -89,6 +89,7 @@ These questions establish the trader's experience level and actual workflow:
 ### Market Events
 
 **Gap down through CSP strike:**
+
 - Stock drops 15-20% overnight (bad earnings, sector event, macro shock)
 - Trader is assigned far below their expected entry
 - Cost basis is still at strike minus premium, but unrealized loss is severe
@@ -96,6 +97,7 @@ These questions establish the trader's experience level and actual workflow:
 - **Product need:** "Impaired position" status or flag. Separate management workflow for positions significantly underwater (>10% below cost basis).
 
 **Gap up through CC strike:**
+
 - Stock jumps above the CC strike on good news
 - Shares will be called away, capping profit
 - Trader may want to roll up and out to capture more upside
@@ -103,6 +105,7 @@ These questions establish the trader's experience level and actual workflow:
 - **Product need:** Alert when underlying moves above CC strike by more than X%. Quick-action to roll.
 
 **Flash crash / liquidity evaporation:**
+
 - Option spreads widen dramatically during market stress
 - Rolling becomes prohibitively expensive
 - Limit orders may not fill
@@ -111,22 +114,26 @@ These questions establish the trader's experience level and actual workflow:
 ### Assignment-Related Edge Cases
 
 **Early assignment on short call near ex-dividend:**
+
 - Short call holders are at risk of early assignment when the dividend exceeds the call's remaining time value
 - This can happen mid-cycle, not just at expiration
 - For PMCC: early assignment creates a very dangerous situation if the short call is assigned and the long LEAPS doesn't fully cover
 - **Product need:** Track ex-dividend dates for all underlying positions. Alert when a short call is near ITM approaching ex-dividend.
 
 **Partial assignment:**
+
 - On multi-contract positions, only some contracts may be assigned
 - Creates a mixed state: some shares held, some contracts still open
 - **Product need:** Handle partial assignment in the lifecycle engine. Allow a position to be partially in different phases.
 
 **Assignment on a Friday after hours:**
+
 - Options expiring ITM by $0.01 or more are automatically exercised
 - Trader may not realize their option was ITM at the close
 - **Product need:** Expiration-day monitoring that checks final prices and alerts if a position may be auto-exercised.
 
 **Pin risk at expiration:**
+
 - Stock closes very near the strike at expiration
 - Trader doesn't know if they will be assigned or not until the following week
 - **Product need:** Alert when a position is within 1% of strike on expiration day.
@@ -134,17 +141,20 @@ These questions establish the trader's experience level and actual workflow:
 ### PMCC-Specific Failures
 
 **Short call assignment on PMCC:**
+
 - If the short call is assigned, the trader must deliver 100 shares they don't own
 - The long LEAPS can be exercised to acquire shares, but this closes the entire position
 - If the LEAPS doesn't have enough intrinsic value, the trader takes a loss
 - **Product need:** PMCC positions need a specific assignment workflow that models exercising the long leg to cover. This is structurally different from wheel assignment.
 
 **LEAPS time decay acceleration:**
+
 - LEAPS lose time value slowly at first, then accelerate inside 90 DTE
 - A trader who doesn't roll the LEAPS in time loses significant extrinsic value
 - **Product need:** Escalating alerts at 90, 60, and 45 DTE on the LEAPS leg.
 
 **Stock drops below LEAPS strike:**
+
 - The long LEAPS loses its intrinsic value cushion
 - Delta drops, the synthetic stock coverage weakens
 - Short call premium also drops, reducing income potential
@@ -153,22 +163,26 @@ These questions establish the trader's experience level and actual workflow:
 ### Operational Edge Cases
 
 **Trader changes thesis mid-cycle:**
+
 - Trader no longer wants to own the stock but has an open CSP
 - Options: close the CSP (possibly at a loss), roll to a lower strike, or accept assignment and immediately sell shares
 - **Product need:** "Close position" action available at any phase, with P&L impact preview.
 
 **Liquidity deteriorates:**
+
 - A previously liquid option chain becomes illiquid (low volume, wide spreads)
 - Happens with smaller-cap stocks, or when a stock falls out of favor
 - Rolling becomes expensive; closing becomes expensive
 - **Product need:** Track open interest and volume trends. Warn if liquidity is declining on a position's option chain.
 
 **Earnings surprise during open position:**
+
 - Trader forgot to check earnings, or earnings date was moved
 - IV crush after earnings can help (short options lose value fast) or hurt (gap through strike)
 - **Product need:** Earnings calendar integration. Hard warning when earnings fall within the DTE window of any open position.
 
 **Broker-specific behaviors:**
+
 - Different brokers handle auto-exercise differently
 - Some brokers charge exercise/assignment fees
 - Paper trading may not simulate assignment realistically
@@ -177,17 +191,20 @@ These questions establish the trader's experience level and actual workflow:
 ### Portfolio-Level Failures
 
 **Correlated drawdown:**
+
 - 4 out of 5 wheels are in the same sector
 - Sector rotation hits all positions simultaneously
 - Capital is locked across multiple impaired positions
 - **Product need:** Portfolio correlation view. Warning when opening a new wheel that is highly correlated with existing positions.
 
 **Over-allocation:**
+
 - Trader opens too many wheels, leaving no reserve buying power
 - Cannot roll positions because there is no free capital for margin requirements
 - **Product need:** Buying power utilization display. Warning when allocation exceeds a configurable threshold (e.g., 80% of buying power deployed).
 
 **Roll cascade:**
+
 - Multiple positions need rolling in the same week
 - Trader becomes overwhelmed and makes hasty decisions
 - **Product need:** Management queue with prioritization. Calendar view of upcoming expirations to prevent clustering.

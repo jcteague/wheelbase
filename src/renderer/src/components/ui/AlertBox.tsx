@@ -1,5 +1,3 @@
-import { MONO } from '../../lib/tokens'
-
 type AlertBoxVariant = 'success' | 'error' | 'warning' | 'info'
 
 const VARIANT_STYLES: Record<AlertBoxVariant, { bg: string; border: string; color: string }> = {
@@ -34,15 +32,8 @@ export function AlertBox({ variant, children }: AlertBoxProps): React.JSX.Elemen
   const { bg, border, color } = VARIANT_STYLES[variant]
   return (
     <div
-      style={{
-        padding: '12px 16px',
-        borderRadius: 6,
-        background: bg,
-        border: `1px solid ${border}`,
-        color,
-        fontFamily: MONO,
-        fontSize: '0.8125rem'
-      }}
+      className="py-3 px-4 rounded-md text-[0.8125rem] font-wb-mono"
+      style={{ background: bg, border: `1px solid ${border}`, color }}
     >
       {children}
     </div>

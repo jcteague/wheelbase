@@ -23,7 +23,7 @@
 ### 3. Extract Function — `computePreview()`
 
 **File**: `src/renderer/src/components/CloseCspForm.tsx`
-**Before**: IIFE `(() => { const netPnl = ...; return { netPnl, totalPnl, pct } })()`  inline in render
+**Before**: IIFE `(() => { const netPnl = ...; return { netPnl, totalPnl, pct } })()` inline in render
 **After**: Named `computePreview(openPremium, closePrice, contracts): PnlPreview | null` above the component
 **Reason**: Named function is self-documenting; easier to test in isolation if needed
 

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import Decimal from 'decimal.js'
 import { calculateCcOpenBasis } from '../core/costbasis'
 import { ValidationError, openCoveredCall } from '../core/lifecycle'
+import { localToday, makeSnapshotAt } from '../dates'
 import { logger } from '../logger'
 import type { OpenCcPayload, OpenCcPositionResult } from '../schemas'
 import { getPosition } from './get-position'
@@ -12,7 +13,7 @@ export function openCoveredCallPosition(
   positionId: string,
   payload: OpenCcPayload
 ): OpenCcPositionResult {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   const fillDate = payload.fillDate ?? today
   const now = new Date().toISOString()
 
@@ -60,7 +61,7 @@ export function openCoveredCallPosition(
 
   const legId = randomUUID()
   const snapshotId = randomUUID()
-  const snapshotAt = new Date(Date.now() + 1).toISOString()
+  const snapshotAt = makeSnapshotAt(fillDate)
   const strikeFormatted = new Decimal(strikeStr).toFixed(4)
   const premiumFormatted = new Decimal(premiumStr).toFixed(4)
 

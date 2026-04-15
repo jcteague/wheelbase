@@ -20,12 +20,12 @@ A trader can sell a cash-secured put, see it on the dashboard, and close or let 
 
 ## Vertical Slice
 
-| Layer | What ships |
-|---|---|
-| Database | Position, Leg, CostBasisSnapshot tables and migrations |
-| Core engines | lifecycle.open_wheel(), costbasis.calculate_initial_csp_basis() |
-| API | POST /api/positions, GET /api/positions, GET /api/positions/:id, PATCH (close/expire) |
-| Frontend | New Wheel form, positions list page, position detail page, close/expire actions |
+| Layer        | What ships                                                                            |
+| ------------ | ------------------------------------------------------------------------------------- |
+| Database     | Position, Leg, CostBasisSnapshot tables and migrations                                |
+| Core engines | lifecycle.open_wheel(), costbasis.calculate_initial_csp_basis()                       |
+| API          | POST /api/positions, GET /api/positions, GET /api/positions/:id, PATCH (close/expire) |
+| Frontend     | New Wheel form, positions list page, position detail page, close/expire actions       |
 
 ## Stories
 

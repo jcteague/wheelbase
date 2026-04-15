@@ -1,12 +1,11 @@
-@tailwind base;
+@import 'tailwindcss';
 
 @plugin "tailwindcss-animate";
 
 @custom-variant dark (&:is(.dark *));
-@tailwind components;
-@tailwind utilities;
 
 @theme inline {
+  /* ── shadcn/ui tokens ── */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -45,6 +44,61 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* ── wb-* tokens ── */
+
+  /* Background */
+  --color-wb-bg-base: var(--wb-bg-base);
+  --color-wb-bg-surface: var(--wb-bg-surface);
+  --color-wb-bg-elevated: var(--wb-bg-elevated);
+  --color-wb-bg-hover: var(--wb-bg-hover);
+
+  /* Border */
+  --color-wb-border: var(--wb-border);
+  --color-wb-border-subtle: var(--wb-border-subtle);
+
+  /* Text */
+  --color-wb-text-primary: var(--wb-text-primary);
+  --color-wb-text-secondary: var(--wb-text-secondary);
+  --color-wb-text-muted: var(--wb-text-muted);
+
+  /* Gold */
+  --color-wb-gold: var(--wb-gold);
+  --color-wb-gold-dim: var(--wb-gold-dim);
+  --color-wb-gold-border: var(--wb-gold-border);
+  --color-wb-gold-subtle: var(--wb-gold-subtle);
+
+  /* Green */
+  --color-wb-green: var(--wb-green);
+  --color-wb-green-dim: var(--wb-green-dim);
+  --color-wb-green-border: var(--wb-green-border);
+  --color-wb-green-subtle: var(--wb-green-subtle);
+
+  /* Red */
+  --color-wb-red: var(--wb-red);
+  --color-wb-red-dim: var(--wb-red-dim);
+
+  /* Blue */
+  --color-wb-blue: var(--wb-blue);
+  --color-wb-blue-dim: var(--wb-blue-dim);
+
+  /* Teal */
+  --color-wb-teal: var(--wb-teal);
+  --color-wb-teal-dim: var(--wb-teal-dim);
+  --color-wb-teal-bright: var(--wb-teal-bright);
+
+  /* Violet */
+  --color-wb-violet: var(--wb-violet);
+  --color-wb-violet-dim: var(--wb-violet-dim);
+
+  /* Sky */
+  --color-wb-sky: var(--wb-sky);
+
+  /* Font */
+  --font-wb-mono: ui-monospace, 'SF Mono', Menlo, 'Cascadia Code', 'Fira Code', monospace;
+
+  /* Shadow */
+  --shadow-sheet: -12px 0 48px rgba(0, 0, 0, 0.5);
 }
 
 * {
