@@ -116,6 +116,7 @@ export function closeCspPosition(
       premiumPerContract: closePriceFormatted,
       fillPrice: closePriceFormatted,
       fillDate,
+      rollChainId: null,
       createdAt: now,
       updatedAt: now
     },

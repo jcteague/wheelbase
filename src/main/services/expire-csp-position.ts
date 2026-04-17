@@ -117,6 +117,7 @@ export function expireCspPosition(
       premiumPerContract: '0.0000', // expiration collects no premium
       fillPrice: null,
       fillDate: recordedDate,
+      rollChainId: null,
       createdAt: now,
       updatedAt: now
     },

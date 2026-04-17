@@ -97,10 +97,40 @@ describe('deriveRunningBasis', () => {
     ])
   })
 
-  it('ROLL_FROM leg carries forward without crashing', () => {
+  it('ROLL_FROM leg has null basis (roll pair is atomic; basis shown on ROLL_TO)', () => {
     const legs = [{ fillDate: '2026-01-20', legRole: 'ROLL_FROM' }]
     const snapshots = [{ snapshotAt: '2026-01-03T10:00:00Z', basisPerShare: '176.5000' }]
     const result = deriveRunningBasis(legs, snapshots)
-    expect(result[0].runningCostBasis).toBe('176.5000')
+    expect(result[0].runningCostBasis).toBeNull()
+  })
+
+  it('on a same-day roll pair, ROLL_FROM basis is null and ROLL_TO gets the post-roll snapshot', () => {
+    const legs = [
+      { fillDate: '2026-02-01', legRole: 'ROLL_FROM' },
+      { fillDate: '2026-02-01', legRole: 'ROLL_TO' }
+    ]
+    const snapshots = [
+      { snapshotAt: '2026-01-03T10:00:00Z', basisPerShare: '176.5000' },
+      { snapshotAt: '2026-02-01T14:00:00Z', basisPerShare: '174.9000' }
+    ]
+    const result = deriveRunningBasis(legs, snapshots)
+    expect(result[0].runningCostBasis).toBeNull() // ROLL_FROM has no basis (roll not complete)
+    expect(result[1].runningCostBasis).toBe('174.9000') // ROLL_TO gets post-roll snapshot
+  })
+
+  it('a leg after a ROLL_FROM on the same day still inherits the prior-day basis', () => {
+    // Regression: ROLL_FROM returning null must not wipe the running basis tracker
+    // for subsequent same-day legs (e.g. ROLL_TO).
+    const legs = [
+      { fillDate: '2026-02-01', legRole: 'ROLL_FROM' },
+      { fillDate: '2026-02-01', legRole: 'ROLL_TO' },
+      { fillDate: '2026-02-05', legRole: 'CC_OPEN' }
+    ]
+    const snapshots = [
+      { snapshotAt: '2026-01-03T10:00:00Z', basisPerShare: '176.5000' },
+      { snapshotAt: '2026-02-01T14:00:00Z', basisPerShare: '174.9000' }
+    ]
+    const result = deriveRunningBasis(legs, snapshots)
+    expect(result[2].runningCostBasis).toBe('174.9000') // later leg carries forward ROLL_TO basis
   })
 })

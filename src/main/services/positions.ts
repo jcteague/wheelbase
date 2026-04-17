@@ -147,6 +147,7 @@ export function createPosition(
       premiumPerContract: premiumFormatted,
       fillPrice: premiumFormatted,
       fillDate,
+      rollChainId: null,
       createdAt: now,
       updatedAt: now
     },

@@ -137,6 +137,7 @@ export function rollCspPosition(
       premiumPerContract: costToCloseFormatted,
       fillPrice: costToCloseFormatted,
       fillDate,
+      rollChainId,
       createdAt: now,
       updatedAt: now
     },
@@ -152,6 +153,7 @@ export function rollCspPosition(
       premiumPerContract: newPremiumFormatted,
       fillPrice: newPremiumFormatted,
       fillDate,
+      rollChainId,
       createdAt: now,
       updatedAt: now
     },

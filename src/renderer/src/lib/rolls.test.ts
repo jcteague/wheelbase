@@ -151,44 +151,54 @@ describe('getCcRollTypeLabel', () => {
 })
 
 describe('getCcRollTypeDetail', () => {
-  it('shows both strike and expiration change for Roll Up & Out', () => {
+  it('shows both strike and expiration change for Roll Up & Out with full dates', () => {
     const result = getCcRollTypeDetail({
       currentStrike: '185',
       newStrike: '190',
       currentExpiration: '2026-04-18',
       newExpiration: '2026-05-16'
     })
-    expect(result).toBe('$185 → $190 strike, Apr → May expiration')
+    expect(result).toBe('$185 → $190 strike, Apr 18 → May 16 expiration')
   })
 
-  it('shows same strike and expiration change for Roll Out', () => {
+  it('shows same strike and expiration change for Roll Out with full dates', () => {
     const result = getCcRollTypeDetail({
       currentStrike: '185',
       newStrike: '185',
       currentExpiration: '2026-04-18',
       newExpiration: '2026-05-16'
     })
-    expect(result).toBe('same $185 strike, Apr → May expiration')
+    expect(result).toBe('same $185 strike, Apr 18 → May 16 expiration')
   })
 
-  it('shows strike change and same expiration for Roll Up', () => {
+  it('shows strike change and same expiration for Roll Up with full date', () => {
     const result = getCcRollTypeDetail({
       currentStrike: '185',
       newStrike: '190',
       currentExpiration: '2026-04-18',
       newExpiration: '2026-04-18'
     })
-    expect(result).toBe('$185 → $190 strike, same Apr expiration')
+    expect(result).toBe('$185 → $190 strike, same Apr 18 expiration')
   })
 
-  it('shows downward strike change for Roll Down & Out', () => {
+  it('shows downward strike change for Roll Down & Out with full dates', () => {
     const result = getCcRollTypeDetail({
       currentStrike: '185',
       newStrike: '182',
       currentExpiration: '2026-04-18',
       newExpiration: '2026-05-16'
     })
-    expect(result).toBe('$185 → $182 strike, Apr → May expiration')
+    expect(result).toBe('$185 → $182 strike, Apr 18 → May 16 expiration')
+  })
+
+  it('disambiguates same-month weekly rolls (Apr 18 → Apr 25)', () => {
+    const result = getCcRollTypeDetail({
+      currentStrike: '185',
+      newStrike: '185',
+      currentExpiration: '2026-04-18',
+      newExpiration: '2026-04-25'
+    })
+    expect(result).toBe('same $185 strike, Apr 18 → Apr 25 expiration')
   })
 })
 

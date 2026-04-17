@@ -89,6 +89,7 @@ const CSP_OPEN_DETAIL = {
     contracts: 1,
     premiumPerContract: '2.5000',
     fillDate: '2026-03-01',
+    rollChainId: null,
     createdAt: '2026-03-01T00:00:00.000Z',
     updatedAt: '2026-03-01T00:00:00.000Z'
   },
@@ -405,6 +406,7 @@ const CC_OPEN_DETAIL = {
     contracts: 1,
     premiumPerContract: '2.3000',
     fillDate: '2026-01-20',
+    rollChainId: null,
     createdAt: '2026-01-20T00:00:00.000Z',
     updatedAt: '2026-01-20T00:00:00.000Z'
   }

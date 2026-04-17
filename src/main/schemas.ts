@@ -63,6 +63,7 @@ export interface LegRecord {
   premiumPerContract: string
   fillPrice: string | null
   fillDate: string
+  rollChainId: string | null
   createdAt: string
   updatedAt: string
 }

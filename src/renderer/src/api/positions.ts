@@ -130,6 +130,7 @@ export type LegDetail = {
   contracts: number
   premiumPerContract: string
   fillDate: string
+  rollChainId: string | null
   createdAt: string
   updatedAt: string
 }

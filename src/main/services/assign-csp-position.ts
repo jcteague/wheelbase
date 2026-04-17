@@ -109,6 +109,7 @@ export function assignCspPosition(
       premiumPerContract: '0.0000',
       fillPrice: null,
       fillDate: payload.assignmentDate,
+      rollChainId: null,
       createdAt: now,
       updatedAt: now
     },

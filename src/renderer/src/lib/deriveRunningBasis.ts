@@ -5,29 +5,44 @@ function snapshotDate(snapshot: SnapshotInput): string {
   return snapshot.snapshotAt.slice(0, 10)
 }
 
-function assignDaySnapshots<T extends { fillDate: string }>(
+function isRollFrom<T extends { legRole?: string }>(leg: T): boolean {
+  return leg.legRole === 'ROLL_FROM'
+}
+
+type DayResult<T> = {
+  enriched: Array<EnrichedLeg<T>>
+  finalBasis: string | null
+}
+
+function assignDaySnapshots<T extends { fillDate: string; legRole?: string }>(
   dayLegs: T[],
   daySnapshots: SnapshotInput[],
   lastBasis: string | null
-): Array<EnrichedLeg<T>> {
-  const assignedSnapshotIndexes = dayLegs.map((_, index) =>
-    index < daySnapshots.length ? index : null
-  )
-
-  if (daySnapshots.length > dayLegs.length && assignedSnapshotIndexes.length > 0) {
-    assignedSnapshotIndexes[assignedSnapshotIndexes.length - 1] = daySnapshots.length - 1
-  }
-
+): DayResult<T> {
+  const eligibleCount = dayLegs.filter((leg) => !isRollFrom(leg)).length
   let currentBasis = lastBasis
+  let eligibleIdx = 0
 
-  return dayLegs.map((leg, index) => {
-    const snapshotIndex = assignedSnapshotIndexes[index]
-    if (snapshotIndex != null) {
-      currentBasis = daySnapshots[snapshotIndex].basisPerShare
+  const enriched = dayLegs.map((leg) => {
+    // ROLL_FROM is the closing side of a roll — basis only changes after ROLL_TO
+    // completes the atomic pair. Render the basis cell empty for ROLL_FROM.
+    if (isRollFrom(leg)) {
+      return { ...leg, runningCostBasis: null }
     }
 
+    const isLastEligible = eligibleIdx === eligibleCount - 1
+    const snapshotIdx = isLastEligible
+      ? Math.max(eligibleIdx, daySnapshots.length - 1)
+      : eligibleIdx
+
+    if (snapshotIdx >= 0 && snapshotIdx < daySnapshots.length) {
+      currentBasis = daySnapshots[snapshotIdx].basisPerShare
+    }
+    eligibleIdx++
     return { ...leg, runningCostBasis: currentBasis }
   })
+
+  return { enriched, finalBasis: currentBasis }
 }
 
 export function deriveRunningBasis<T extends { fillDate: string }>(
@@ -61,9 +76,12 @@ export function deriveRunningBasis<T extends { fillDate: string }>(
       si++
     }
 
-    const dayEnriched = assignDaySnapshots(dayLegs, daySnapshots, lastBasis)
-    const dayLastBasis = dayEnriched[dayEnriched.length - 1]?.runningCostBasis ?? lastBasis
-    lastBasis = dayLastBasis
+    const { enriched: dayEnriched, finalBasis } = assignDaySnapshots(
+      dayLegs,
+      daySnapshots,
+      lastBasis
+    )
+    lastBasis = finalBasis
     enriched.push(...dayEnriched)
   }
 

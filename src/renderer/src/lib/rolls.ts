@@ -113,9 +113,11 @@ const MONTHS = [
   'Dec'
 ] as const
 
-function toMonthAbbr(dateStr: string): string {
-  const idx = parseInt(dateStr.split('-')[1] ?? '0', 10) - 1
-  return MONTHS[idx] ?? ''
+function toDateLabel(dateStr: string): string {
+  const parts = dateStr.split('-')
+  const monthIdx = parseInt(parts[1] ?? '0', 10) - 1
+  const day = parseInt(parts[2] ?? '0', 10)
+  return `${MONTHS[monthIdx] ?? ''} ${day}`
 }
 
 export function getCcRollTypeDetail(input: CcRollTypeLabelInput): string {
@@ -127,8 +129,8 @@ export function getCcRollTypeDetail(input: CcRollTypeLabelInput): string {
   const strikePart = strikeChanged ? `$${currentS} → $${newS} strike` : `same $${currentS} strike`
 
   const expirationPart = expirationChanged
-    ? `${toMonthAbbr(input.currentExpiration)} → ${toMonthAbbr(input.newExpiration)} expiration`
-    : `same ${toMonthAbbr(input.currentExpiration)} expiration`
+    ? `${toDateLabel(input.currentExpiration)} → ${toDateLabel(input.newExpiration)} expiration`
+    : `same ${toDateLabel(input.currentExpiration)} expiration`
 
   return `${strikePart}, ${expirationPart}`
 }

@@ -65,6 +65,7 @@ function mapLegRow(r: LegRow): LegRecord {
     premiumPerContract: r.premium_per_contract,
     fillPrice: r.fill_price,
     fillDate: r.fill_date,
+    rollChainId: r.roll_chain_id ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at
   }
@@ -99,6 +100,7 @@ function mapActiveLeg(row: PositionRow): LegRecord | null {
     premiumPerContract: row.premium_per_contract!,
     fillPrice: row.fill_price,
     fillDate: row.fill_date!,
+    rollChainId: null,
     createdAt: row.leg_created_at!,
     updatedAt: row.leg_updated_at!
   }
@@ -123,7 +125,7 @@ function mapLatestSnapshot(row: PositionRow): CostBasisSnapshotRecord | null {
 const GET_LEGS_QUERY = `
   SELECT
     id, position_id, leg_role, action, instrument_type, strike, expiration,
-    contracts, premium_per_contract, fill_price, fill_date, created_at, updated_at
+    contracts, premium_per_contract, fill_price, fill_date, roll_chain_id, created_at, updated_at
   FROM legs
   WHERE position_id = ?
   ORDER BY fill_date ASC, created_at ASC
@@ -159,6 +161,7 @@ interface LegRow {
   premium_per_contract: string
   fill_price: string | null
   fill_date: string
+  roll_chain_id: string | null
   created_at: string
   updated_at: string
 }

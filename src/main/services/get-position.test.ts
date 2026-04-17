@@ -218,4 +218,56 @@ describe('getPosition', () => {
     const lastBasis = parseFloat(snapshots[2].basisPerShare)
     expect(lastBasis).toBeLessThan(firstBasis)
   })
+
+  it('getPosition returns rollChainId on ROLL_FROM and ROLL_TO legs after a CSP roll', () => {
+    const db = makeTestDb()
+    const created = createPosition(db, {
+      ticker: 'AAPL',
+      strike: 180,
+      expiration: isoDate(30),
+      contracts: 1,
+      premiumPerContract: 2.5,
+      fillDate: isoDate(0)
+    })
+
+    rollCspPosition(db, created.position.id, {
+      positionId: created.position.id,
+      costToClosePerContract: 1.2,
+      newPremiumPerContract: 2.8,
+      newExpiration: isoDate(60)
+    })
+
+    const detail = getPosition(db, created.position.id)
+
+    expect(detail).not.toBeNull()
+    const rollFromLeg = detail!.legs.find((l) => l.legRole === 'ROLL_FROM')
+    const rollToLeg = detail!.legs.find((l) => l.legRole === 'ROLL_TO')
+
+    expect(rollFromLeg).toBeDefined()
+    expect(rollToLeg).toBeDefined()
+    expect(rollFromLeg!.rollChainId).toBeDefined()
+    expect(rollFromLeg!.rollChainId).not.toBeNull()
+    expect(rollToLeg!.rollChainId).toBeDefined()
+    expect(rollToLeg!.rollChainId).not.toBeNull()
+    expect(rollFromLeg!.rollChainId).toBe(rollToLeg!.rollChainId)
+  })
+
+  it('getPosition returns rollChainId as null for a non-roll leg (CSP_OPEN)', () => {
+    const db = makeTestDb()
+    const created = createPosition(db, {
+      ticker: 'AAPL',
+      strike: 180,
+      expiration: isoDate(30),
+      contracts: 1,
+      premiumPerContract: 2.5,
+      fillDate: isoDate(0)
+    })
+
+    const detail = getPosition(db, created.position.id)
+
+    expect(detail).not.toBeNull()
+    const cspOpenLeg = detail!.legs.find((l) => l.legRole === 'CSP_OPEN')
+    expect(cspOpenLeg).toBeDefined()
+    expect(cspOpenLeg!.rollChainId).toBeNull()
+  })
 })

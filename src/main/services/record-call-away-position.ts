@@ -122,6 +122,7 @@ export function recordCallAwayPosition(
       premiumPerContract: ZERO_PREMIUM,
       fillPrice: ccStrikeFormatted,
       fillDate,
+      rollChainId: null,
       createdAt: now,
       updatedAt: now
     },
