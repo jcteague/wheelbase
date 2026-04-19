@@ -151,14 +151,14 @@
 
 ### Area 6 — Full lifecycle snapshot chain integration tests
 
-- [ ] **[Red]** Write failing tests — `src/main/services/cost-basis-chain.test.ts` (new file) _(depends on: Areas 3, 4, 5 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/main/services/cost-basis-chain.test.ts` (new file) _(depends on: Areas 3, 4, 5 Green ✓)_
   - Create new file with a `describe('cost basis snapshot chain', ...)` block:
     - `full lifecycle produces 6 snapshots in chronological order`: sequence createPosition → rollCspPosition (same-strike) → rollCspPosition (roll-down) → assignCspPosition → openCoveredCallPosition → rollCcPosition. After each step, query `SELECT COUNT(*) FROM cost_basis_snapshots WHERE position_id = ?`; assert count equals step number 1–6. After all 6, assert all rows have non-null `basis_per_share` and `total_premium_collected`, ordered by `snapshot_at ASC`
     - `snapshot chain basis values match expected progression`: same lifecycle; read all 6 snapshots and assert each `basis_per_share` matches the Key Numbers table in `plans/us-16/quickstart.md`
   - Run `pnpm test src/main/services/cost-basis-chain.test.ts` — tests must fail or (if no production changes needed) already pass — verify correct basis values at each step
   - **Note:** No production code changes — this area is test-only. The Red step verifies the full chain is correct end-to-end.
 
-- [ ] **[Green]** Verify tests pass _(depends on: Area 6 Red ✓)_
+- [x] **[Green]** Verify tests pass _(depends on: Area 6 Red ✓)_
   - No production code to write — if tests fail, the failure indicates a regression in a previous area's implementation
   - Run `pnpm test src/main/services/cost-basis-chain.test.ts` — all tests must pass
 
