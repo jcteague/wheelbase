@@ -78,19 +78,19 @@
 
 **Requires:** Area 1 Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/main/services/roll-csp-position.test.ts` _(depends on: Area 1 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/main/services/roll-csp-position.test.ts` _(depends on: Area 1 Green ✓)_
   - Add to the existing `describe('rollCspPosition', ...)` block:
     - `roll-down to lower strike — basisPerShare reflects strike delta + net credit`: CSP at $180 / $3.50, roll to $175 (close $1.20, new premium $1.50, net credit $0.30). Expected basis: $176.50 + ($175−$180) − $0.30 = **$171.20**. Assert `result.costBasisSnapshot.basisPerShare === '171.2000'`
     - `roll-up to higher strike — basisPerShare reflects positive strike delta`: Starting basis from a prior position, roll from current strike to higher strike; assert basis = prevBasis + (newStrike − prevStrike) − netCredit
     - `same-strike roll — existing simple-formula behaviour preserved`: existing happy-path test values still hold after `legType` is added
   - Run `pnpm test src/main/services/roll-csp-position.test.ts` — new tests must fail
 
-- [ ] **[Green]** Implement — `src/main/services/roll-csp-position.ts` _(depends on: Area 3 Red ✓)_
+- [x] **[Green]** Implement — `src/main/services/roll-csp-position.ts` _(depends on: Area 3 Red ✓)_
   - Update `calculateRollBasis` call to add: `legType: 'CSP'`, `prevStrike: activeLeg.strike`, `newStrike: newStrikeFormatted`
   - (`newStrikeFormatted` is already computed as `payload.newStrike ?? activeLeg.strike`)
   - Run `pnpm test src/main/services/roll-csp-position.test.ts` — all tests must pass
 
-- [ ] **[Refactor]** `/refactor` — `src/main/services/roll-csp-position.ts` _(depends on: Area 3 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `src/main/services/roll-csp-position.ts` _(depends on: Area 3 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
@@ -100,17 +100,17 @@
 
 **Requires:** Area 1 Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/main/services/roll-cc-position.test.ts` _(depends on: Area 1 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/main/services/roll-cc-position.test.ts` _(depends on: Area 1 Green ✓)_
   - Add to the existing `describe('rollCcPosition', ...)` block:
     - `CC roll up to higher strike — basis decreases only by net credit, strike delta ignored`: CSP open → assign → CC open at $185, roll up to $190 (close $2.00, new premium $2.80, net credit $0.80). Assert `result.costBasisSnapshot.basisPerShare` = prevBasis − $0.80 (NO strike-delta adjustment)
     - `CC roll down to lower strike — strike change still does not affect basis`: Roll CC from $185 to $180, net credit $0.50. Assert basis decreases by exactly $0.50
   - Run `pnpm test src/main/services/roll-cc-position.test.ts` — new tests must fail
 
-- [ ] **[Green]** Implement — `src/main/services/roll-cc-position.ts` _(depends on: Area 4 Red ✓)_
+- [x] **[Green]** Implement — `src/main/services/roll-cc-position.ts` _(depends on: Area 4 Red ✓)_
   - Update `calculateRollBasis` call to add: `legType: 'CC'` (omit `prevStrike`/`newStrike` — intentionally not passed for CC)
   - Run `pnpm test src/main/services/roll-cc-position.test.ts` — all tests must pass
 
-- [ ] **[Refactor]** `/refactor` — `src/main/services/roll-cc-position.ts` _(depends on: Area 4 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `src/main/services/roll-cc-position.ts` _(depends on: Area 4 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
@@ -122,7 +122,7 @@
 
 ### Area 5 — Fix `assignCspPosition` to compute net roll credits per roll chain
 
-- [ ] **[Red]** Write failing tests — `src/main/services/assign-csp-position.test.ts` _(depends on: Area 2 Green ✓, Area 3 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/main/services/assign-csp-position.test.ts` _(depends on: Area 2 Green ✓, Area 3 Green ✓)_
   - Add a new `describe` block for rolled-position assignment:
     - `assignment after one same-strike CSP roll — basis uses net credit not gross ROLL_TO premium`: CSP $50/$2.00, roll (close $0.80, new $1.50, net $0.70), assign → assert `basisPerShare === '47.3000'` (current buggy value is $46.50)
     - `assignment after one CSP roll — waterfall shows Roll #1 credit label`: same setup → assert `premiumWaterfall` contains `{ label: 'Roll #1 credit', amount: '0.70' }`
@@ -131,14 +131,14 @@
     - `assignment after CSP roll-down to different strike — uses ROLL_TO strike $47 not original $50`: CSP $50, roll to $47, assign → assert `basisPerShare === '44.7000'`
   - Run `pnpm test src/main/services/assign-csp-position.test.ts` — new tests must fail
 
-- [ ] **[Green]** Implement — `src/main/services/assign-csp-position.ts` _(depends on: Area 5 Red ✓)_
+- [x] **[Green]** Implement — `src/main/services/assign-csp-position.ts` _(depends on: Area 5 Red ✓)_
   - Add private `groupRollsByChain(legs)` pure helper: filters to ROLL_TO/ROLL_FROM, groups by `roll_chain_id`, sorts each group by `fill_date ASC`, computes `netCredit = ROLL_TO.premiumPerContract − ROLL_FROM.premiumPerContract`
   - Replace the existing `premiumLegs` filter (which picked `CSP_OPEN | ROLL_TO`) with:
     1. One entry for `CSP_OPEN` leg
     2. One `ROLL_NET` entry per roll chain with `premiumPerContract: netCredit` and `label: 'Roll #N credit|debit'`
   - Run `pnpm test src/main/services/assign-csp-position.test.ts` — all tests must pass
 
-- [ ] **[Refactor]** `/refactor` — `src/main/services/assign-csp-position.ts` _(depends on: Area 5 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `src/main/services/assign-csp-position.ts` _(depends on: Area 5 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Verify existing tests (no-roll assignment) still pass; check `groupRollsByChain` for clarity and edge cases
   - Run `pnpm test && pnpm lint && pnpm typecheck`
