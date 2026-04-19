@@ -259,6 +259,59 @@ describe('rollCspPosition', () => {
     expect(detail!.activeLeg!.expiration).toBe(isoDate(90))
   })
 
+  it('roll-down to lower strike — basisPerShare reflects strike delta + net credit', () => {
+    // Initial: strike $180, premium $3.50 → basis $176.50
+    // Roll to $175: 176.50 + (175 - 180) - (1.50 - 1.20) = 176.50 - 5 - 0.30 = 171.20
+    const db = makeTestDb()
+    const { position } = makeOpenPosition(db)
+
+    const result = rollCspPosition(db, position.id, {
+      positionId: position.id,
+      costToClosePerContract: 1.2,
+      newPremiumPerContract: 1.5,
+      newExpiration: isoDate(60),
+      newStrike: 175
+    })
+
+    expect(result.costBasisSnapshot.basisPerShare).toBe('171.2000')
+    expect(result.rollToLeg.strike).toBe('175.0000')
+  })
+
+  it('roll-up to higher strike — basisPerShare reflects positive strike delta minus net credit', () => {
+    // Initial: strike $180, premium $3.50 → basis $176.50
+    // Roll to $185: 176.50 + (185 - 180) - (1.50 - 1.00) = 176.50 + 5 - 0.50 = 181.00
+    const db = makeTestDb()
+    const { position } = makeOpenPosition(db)
+
+    const result = rollCspPosition(db, position.id, {
+      positionId: position.id,
+      costToClosePerContract: 1.0,
+      newPremiumPerContract: 1.5,
+      newExpiration: isoDate(60),
+      newStrike: 185
+    })
+
+    expect(result.costBasisSnapshot.basisPerShare).toBe('181.0000')
+    expect(result.rollToLeg.strike).toBe('185.0000')
+  })
+
+  it('same-strike roll — basisPerShare uses simple formula (prevBasis minus net credit)', () => {
+    // Initial: strike $180, premium $3.50 → basis $176.50
+    // Same-strike roll: 176.50 - (1.50 - 0.80) = 176.50 - 0.70 = 175.80
+    const db = makeTestDb()
+    const { position } = makeOpenPosition(db)
+
+    const result = rollCspPosition(db, position.id, {
+      positionId: position.id,
+      costToClosePerContract: 0.8,
+      newPremiumPerContract: 1.5,
+      newExpiration: isoDate(60)
+    })
+
+    expect(result.costBasisSnapshot.basisPerShare).toBe('175.8000')
+    expect(result.rollToLeg.strike).toBe('180.0000')
+  })
+
   it('persists ROLL_FROM and ROLL_TO legs in DB with matching roll_chain_id', () => {
     const db = makeTestDb()
     const { position } = makeOpenPosition(db)

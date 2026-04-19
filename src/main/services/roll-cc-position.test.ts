@@ -225,6 +225,46 @@ describe('rollCcPosition', () => {
     expect(rollToRow?.roll_chain_id).toBe(result.rollChainId)
   })
 
+  it('CC roll up to higher strike — basis decreases only by net credit, strike delta ignored', () => {
+    // makeOpenCcPosition: CSP 180/-2.50 → assign → CC 185/-1.00
+    // Assignment basis: 180 - 2.50 = 177.50
+    // After CC open: 177.50 - 1.00 = 176.50
+    // Roll CC from 185 → 190: net credit = 2.80 - 2.00 = 0.80
+    // Expected: 176.50 - 0.80 = 175.70 (NOT 175.70 + 5 from strike delta)
+    const db = makeTestDb()
+    const { positionId } = makeOpenCcPosition(db)
+
+    const result = rollCcPosition(db, positionId, {
+      positionId,
+      costToClosePerContract: 2.0,
+      newPremiumPerContract: 2.8,
+      newExpiration: isoDate(60),
+      newStrike: 190
+    })
+
+    expect(result.costBasisSnapshot.basisPerShare).toBe('175.7000')
+    expect(result.rollToLeg.strike).toBe('190.0000')
+  })
+
+  it('CC roll down to lower strike — strike change still does not affect basis', () => {
+    // makeOpenCcPosition: basis after CC open = 176.50
+    // Roll CC from 185 → 180: net credit = 2.00 - 1.50 = 0.50
+    // Expected: 176.50 - 0.50 = 176.00 (NOT affected by -5 strike delta)
+    const db = makeTestDb()
+    const { positionId } = makeOpenCcPosition(db)
+
+    const result = rollCcPosition(db, positionId, {
+      positionId,
+      costToClosePerContract: 1.5,
+      newPremiumPerContract: 2.0,
+      newExpiration: isoDate(60),
+      newStrike: 180
+    })
+
+    expect(result.costBasisSnapshot.basisPerShare).toBe('176.0000')
+    expect(result.rollToLeg.strike).toBe('180.0000')
+  })
+
   it('cost basis snapshot is correct — $176.50 → $175.80 with net credit $0.70', () => {
     // CSP: strike 180, premium 2.50 → assignment basis = 180 - 2.50 = 177.50
     // Open CC: premium 1.00 → basis = 177.50 - 1.00 = 176.50
