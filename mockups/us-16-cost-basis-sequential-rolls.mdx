@@ -1,0 +1,469 @@
+---
+title: 'US-16: Cost Basis After Sequential Rolls'
+story: 'As a wheel trader who has rolled a position multiple times, I want the effective cost basis to accurately reflect the cumulative impact of all roll credits and debits.'
+states: ['Snapshot Chain', 'Formula Comparison']
+---
+
+import { useState, Fragment } from 'react'
+
+# US-16: Cost Basis After Sequential Rolls
+
+_The cost basis engine correctly computes basis after multiple sequential rolls — including strike-changing rolls where the delta is larger than just the net credit._
+
+## Acceptance Criteria States
+
+- **Snapshot Chain**: Full audit trail of 6 cost basis snapshots across the wheel lifecycle. Row 3 (down-roll) shows the basis drop of −$3.30, not just −$0.30, because the strike reduction is included in the formula.
+- **Formula Comparison**: Side-by-side comparison of the two calculation paths — same-strike roll (simple subtraction) vs. different-strike CSP roll (must include strike delta in the formula).
+
+---
+
+export const MONO = "'JetBrains Mono', 'Fira Mono', 'SF Mono', Menlo, monospace"
+
+export const SNAPSHOTS = [
+  {
+    seq: 1,
+    event: 'CSP Open',
+    eventSub: null,
+    action: 'Sold $50P Mar21 @ $2.00',
+    basis: '$48.00',
+    premium: '$200.00',
+    delta: null,
+    deltaVal: 0,
+    isRoll: false,
+    isAssignment: false,
+    deltaNote: null
+  },
+  {
+    seq: 2,
+    event: 'Roll #1',
+    eventSub: 'same strike',
+    action: 'Close $50P Mar21 → Open $50P Apr18 @ net +$0.70',
+    basis: '$47.30',
+    premium: '$270.00',
+    delta: '−$0.70',
+    deltaVal: -0.7,
+    isRoll: true,
+    isAssignment: false,
+    deltaNote: null
+  },
+  {
+    seq: 3,
+    event: 'Roll #2',
+    eventSub: 'down $50→$47',
+    action: 'Close $50P Apr18 → Open $47P May16 @ net +$0.30',
+    basis: '$44.70',
+    premium: '$300.00',
+    delta: '−$3.30',
+    deltaVal: -3.3,
+    isRoll: true,
+    isAssignment: false,
+    deltaNote: '−$3.00 strike reduction + −$0.30 net credit'
+  },
+  {
+    seq: 4,
+    event: 'Assignment',
+    eventSub: null,
+    action: 'Assigned 100 shares @ $47',
+    basis: '$44.70',
+    premium: '$300.00',
+    delta: null,
+    deltaVal: 0,
+    isRoll: false,
+    isAssignment: true,
+    deltaNote: null
+  },
+  {
+    seq: 5,
+    event: 'CC Open',
+    eventSub: null,
+    action: 'Sold $50C Jun20 @ $1.50',
+    basis: '$43.20',
+    premium: '$450.00',
+    delta: '−$1.50',
+    deltaVal: -1.5,
+    isRoll: false,
+    isAssignment: false,
+    deltaNote: null
+  },
+  {
+    seq: 6,
+    event: 'CC Roll #1',
+    eventSub: 'up $50→$52',
+    action: 'Close $50C Jun20 → Open $52C Jul18 @ net +$0.80',
+    basis: '$42.40',
+    premium: '$530.00',
+    delta: '−$0.80',
+    deltaVal: -0.8,
+    isRoll: true,
+    isAssignment: false,
+    deltaNote: null
+  }
+]
+
+export function Mockup() {
+  const [panel, setPanel] = useState('Snapshot Chain')
+
+const surface = { background: 'var(--wb-bg-surface, #161b22)', border: '1px solid var(--wb-border, #21262d)', borderRadius: 8, overflow: 'hidden' }
+const muted = { color: 'var(--wb-text-muted, #6e7681)' }
+const sectionHeader = {
+padding: '10px 20px',
+borderBottom: '1px solid var(--wb-border, #21262d)',
+fontSize: '0.68rem',
+fontWeight: 600,
+letterSpacing: '0.1em',
+textTransform: 'uppercase',
+color: 'var(--wb-text-muted, #6e7681)',
+fontFamily: MONO,
+}
+
+return (
+
+<div style={{ background: 'var(--wb-bg-base, #0d1117)', minHeight: '100vh', padding: '32px 24px', fontFamily: MONO }}>
+<div style={{ maxWidth: 920, margin: '0 auto' }}>
+
+        {/* Context strip */}
+        <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--wb-text-primary, #e6edf3)', letterSpacing: '0.05em' }}>AAPL</span>
+          <span style={{ ...muted, fontSize: '0.7rem' }}>·</span>
+          <span style={{ ...muted, fontSize: '0.7rem' }}>Wheel Position</span>
+          <span style={{ ...muted, fontSize: '0.7rem' }}>·</span>
+          <span style={{
+            fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase',
+            color: 'var(--wb-gold, #e6a817)', background: 'rgba(230,168,23,0.1)',
+            padding: '2px 8px', borderRadius: 4, border: '1px solid rgba(230,168,23,0.2)',
+          }}>CC_OPEN</span>
+        </div>
+
+        {/* Panel toggle */}
+        <div style={{
+          display: 'flex', gap: 4, marginBottom: 20,
+          background: 'var(--wb-bg-surface, #161b22)',
+          border: '1px solid var(--wb-border, #21262d)',
+          borderRadius: 8, padding: 4, width: 'fit-content',
+        }}>
+          {['Snapshot Chain', 'Formula Comparison'].map(p => (
+            <button key={p} onClick={() => setPanel(p)} style={{
+              padding: '6px 18px', borderRadius: 6, border: 'none', cursor: 'pointer',
+              fontSize: '0.7rem', fontFamily: MONO, fontWeight: 600,
+              letterSpacing: '0.06em', textTransform: 'uppercase',
+              background: panel === p ? 'var(--wb-gold, #e6a817)' : 'transparent',
+              color: panel === p ? '#0d1117' : 'var(--wb-text-muted, #6e7681)',
+              transition: 'all 0.12s ease',
+            }}>
+              {p}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Panel 1: Snapshot Chain ── */}
+        {panel === 'Snapshot Chain' && (
+          <div style={surface}>
+            <div style={sectionHeader}>Cost Basis Snapshots</div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    {[
+                      { label: '#', isBasis: false },
+                      { label: 'Event', isBasis: false },
+                      { label: 'Triggering Action', isBasis: false },
+                      { label: 'Basis / Share', isBasis: true },
+                      { label: 'Total Premium', isBasis: false },
+                      { label: 'Δ Basis', isBasis: false },
+                    ].map(({ label, isBasis }) => (
+                      <th key={label} style={{
+                        textAlign: 'left', padding: '8px 14px',
+                        fontSize: '0.62rem', fontWeight: 600, letterSpacing: '0.1em',
+                        textTransform: 'uppercase', fontFamily: MONO,
+                        color: isBasis ? '#79c0ff' : 'var(--wb-text-muted, #6e7681)',
+                        borderBottom: '1px solid var(--wb-border, #21262d)',
+                        background: isBasis ? 'rgba(121,192,255,0.05)' : 'transparent',
+                        borderLeft: isBasis ? '1px solid rgba(121,192,255,0.15)' : 'none',
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {SNAPSHOTS.map((row) => (
+                    <Fragment key={row.seq}>
+                      <tr style={{
+                        borderBottom: row.deltaNote ? 'none' : '1px solid var(--wb-border, #21262d)',
+                        borderLeft: row.isRoll
+                          ? '3px solid rgba(230,168,23,0.45)'
+                          : row.isAssignment
+                          ? '3px solid rgba(121,192,255,0.2)'
+                          : '3px solid transparent',
+                        background: row.isRoll
+                          ? 'rgba(230,168,23,0.025)'
+                          : row.isAssignment
+                          ? 'rgba(255,255,255,0.012)'
+                          : 'transparent',
+                        opacity: row.isAssignment ? 0.8 : 1,
+                      }}>
+                        {/* Seq */}
+                        <td style={{ padding: '10px 14px', fontSize: '0.68rem', ...muted, width: 28 }}>
+                          {row.seq}
+                        </td>
+
+                        {/* Event */}
+                        <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <span style={{
+                              fontSize: '0.78rem', fontWeight: 600,
+                              color: row.isRoll
+                                ? 'var(--wb-gold, #e6a817)'
+                                : row.isAssignment
+                                ? 'var(--wb-text-muted, #6e7681)'
+                                : 'var(--wb-text-primary, #e6edf3)',
+                            }}>
+                              {row.event}
+                            </span>
+                            {row.eventSub && (
+                              <span style={{ fontSize: '0.61rem', ...muted }}>
+                                {row.eventSub}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Triggering Action */}
+                        <td style={{ padding: '10px 14px', fontSize: '0.71rem', color: 'var(--wb-text-secondary, #8b949e)', maxWidth: 300 }}>
+                          {row.action}
+                        </td>
+
+                        {/* Basis / Share — highlighted column */}
+                        <td style={{
+                          padding: '10px 14px',
+                          background: 'rgba(121,192,255,0.06)',
+                          borderLeft: '1px solid rgba(121,192,255,0.15)',
+                          whiteSpace: 'nowrap',
+                        }}>
+                          <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#79c0ff' }}>
+                            {row.basis}
+                          </span>
+                          {row.isAssignment && (
+                            <span style={{ fontSize: '0.6rem', ...muted, marginLeft: 6 }}>unchanged</span>
+                          )}
+                        </td>
+
+                        {/* Total Premium */}
+                        <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontSize: '0.78rem', color: 'var(--wb-green, #3fb950)', fontWeight: 500 }}>
+                            {row.premium}
+                          </span>
+                        </td>
+
+                        {/* Δ Basis */}
+                        <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+                          {row.delta ? (
+                            <span style={{
+                              fontSize: '0.8rem', fontWeight: 700,
+                              color: row.deltaVal < 0 ? 'var(--wb-green, #3fb950)' : 'var(--wb-red, #f85149)',
+                            }}>
+                              {row.delta}
+                            </span>
+                          ) : (
+                            <span style={{ ...muted, fontSize: '0.78rem' }}>—</span>
+                          )}
+                        </td>
+                      </tr>
+
+                      {/* Inline callout for the down-roll row */}
+                      {row.deltaNote && (
+                        <tr style={{
+                          borderBottom: '1px solid var(--wb-border, #21262d)',
+                          borderLeft: '3px solid rgba(230,168,23,0.45)',
+                          background: 'rgba(230,168,23,0.025)',
+                        }}>
+                          <td colSpan={6} style={{ padding: '4px 14px 10px 54px' }}>
+                            <span style={{
+                              fontSize: '0.64rem', color: 'var(--wb-gold, #e6a817)',
+                              background: 'rgba(230,168,23,0.09)',
+                              border: '1px solid rgba(230,168,23,0.25)',
+                              borderRadius: 4, padding: '2px 10px',
+                              display: 'inline-block',
+                            }}>
+                              ⓘ Δ includes {row.deltaNote}
+                            </span>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Summary footer */}
+            <div style={{
+              padding: '12px 20px',
+              borderTop: '1px solid var(--wb-border, #21262d)',
+              display: 'flex', gap: 36,
+              background: 'rgba(63,185,80,0.025)',
+            }}>
+              {[
+                { label: 'Current Basis', value: '$42.40', valueColor: '#79c0ff' },
+                { label: 'Total Reduction', value: '−$5.60', valueColor: 'var(--wb-green, #3fb950)' },
+                { label: 'Total Premium', value: '$530.00', valueColor: 'var(--wb-green, #3fb950)' },
+                { label: 'Snapshots', value: '6', valueColor: 'var(--wb-text-primary, #e6edf3)' },
+              ].map(({ label, value, valueColor }) => (
+                <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ fontSize: '0.58rem', ...muted, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{label}</span>
+                  <span style={{ fontSize: '0.92rem', fontWeight: 700, color: valueColor }}>{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Panel 2: Formula Comparison ── */}
+        {panel === 'Formula Comparison' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={surface}>
+              <div style={sectionHeader}>How Roll Type Affects Basis Calculation</div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+
+                {/* Card A: Same-Strike */}
+                <div style={{ padding: 24, borderRight: '1px solid var(--wb-border, #21262d)' }}>
+                  <div style={{ marginBottom: 14 }}>
+                    <span style={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', ...muted }}>Case A</span>
+                    <div style={{ marginTop: 3, fontSize: '0.86rem', fontWeight: 700, color: 'var(--wb-text-primary, #e6edf3)' }}>
+                      Same-Strike Roll (Roll Out)
+                    </div>
+                  </div>
+
+                  <div style={{
+                    background: 'rgba(13,17,23,0.75)',
+                    border: '1px solid var(--wb-border, #21262d)',
+                    borderRadius: 6, padding: '14px 18px',
+                    fontSize: '0.76rem', lineHeight: 1.95,
+                  }}>
+                    {[
+                      { label: 'Starting basis:', value: '$48.00', color: 'var(--wb-text-primary, #e6edf3)' },
+                      { label: 'Cost to close:', value: '−$0.80', color: 'var(--wb-red, #f85149)' },
+                      { label: 'New premium:', value: '+$1.50', color: 'var(--wb-green, #3fb950)' },
+                      { label: 'Net credit:', value: '$0.70', color: 'var(--wb-green, #3fb950)', bold: true },
+                    ].map(({ label, value, color, bold }) => (
+                      <div key={label} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ ...muted }}>{label}</span>
+                        <span style={{ color, fontWeight: bold ? 700 : 400 }}>{value}</span>
+                      </div>
+                    ))}
+                    <div style={{ borderTop: '1px solid var(--wb-border, #21262d)', marginTop: 8, paddingTop: 8 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                        <span style={{ ...muted }}>New basis:</span>
+                        <span style={{ color: '#79c0ff', fontWeight: 700, fontSize: '0.92rem' }}>$47.30</span>
+                      </div>
+                      <div style={{ fontSize: '0.65rem', ...muted, marginTop: 4 }}>$48.00 − $0.70 = $47.30</div>
+                    </div>
+                  </div>
+
+                  <div style={{
+                    marginTop: 12, padding: '8px 12px',
+                    background: 'rgba(121,192,255,0.06)',
+                    border: '1px solid rgba(121,192,255,0.15)',
+                    borderRadius: 5, fontSize: '0.69rem', color: '#79c0ff',
+                  }}>
+                    <span style={{ ...muted }}>Formula: </span>
+                    prevBasis − netCredit
+                  </div>
+                </div>
+
+                {/* Card B: Different-Strike CSP */}
+                <div style={{
+                  padding: 24,
+                  borderLeft: '2px solid rgba(230,168,23,0.4)',
+                  background: 'rgba(230,168,23,0.018)',
+                }}>
+                  <div style={{ marginBottom: 14 }}>
+                    <span style={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--wb-gold, #e6a817)' }}>
+                      Case B — Important
+                    </span>
+                    <div style={{ marginTop: 3, fontSize: '0.86rem', fontWeight: 700, color: 'var(--wb-text-primary, #e6edf3)' }}>
+                      Different-Strike CSP Roll (Down and Out)
+                    </div>
+                  </div>
+
+                  <div style={{
+                    background: 'rgba(13,17,23,0.75)',
+                    border: '1px solid rgba(230,168,23,0.28)',
+                    borderRadius: 6, padding: '14px 18px',
+                    fontSize: '0.76rem', lineHeight: 1.95,
+                  }}>
+                    {[
+                      { label: 'Starting basis:', value: '$48.00', color: 'var(--wb-text-primary, #e6edf3)', bold: false },
+                      { label: 'Strike change:', value: '−$3.00  ($50 → $47)', color: 'var(--wb-gold, #e6a817)', bold: true },
+                      { label: 'Net credit:', value: '$0.30', color: 'var(--wb-green, #3fb950)', bold: true },
+                    ].map(({ label, value, color, bold }) => (
+                      <div key={label} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ ...muted }}>{label}</span>
+                        <span style={{ color, fontWeight: bold ? 700 : 400 }}>{value}</span>
+                      </div>
+                    ))}
+                    <div style={{ borderTop: '1px solid rgba(230,168,23,0.2)', marginTop: 8, paddingTop: 8 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                        <span style={{ ...muted }}>New basis:</span>
+                        <span style={{ color: '#79c0ff', fontWeight: 700, fontSize: '0.92rem' }}>$44.70</span>
+                      </div>
+                      <div style={{ fontSize: '0.65rem', ...muted, marginTop: 4 }}>
+                        $48.00 + ($47−$50) − $0.30 = $44.70
+                      </div>
+                    </div>
+                    <div style={{
+                      marginTop: 8, paddingTop: 8,
+                      borderTop: '1px dashed rgba(248,81,73,0.35)',
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.64rem', color: 'var(--wb-red, #f85149)' }}>⚠ If strike ignored:</span>
+                        <span style={{
+                          color: 'var(--wb-red, #f85149)', fontSize: '0.73rem',
+                          textDecoration: 'line-through', opacity: 0.85,
+                        }}>
+                          $47.70 ← WRONG
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{
+                    marginTop: 12, padding: '8px 12px',
+                    background: 'rgba(230,168,23,0.07)',
+                    border: '1px solid rgba(230,168,23,0.28)',
+                    borderRadius: 5, fontSize: '0.69rem',
+                    color: 'var(--wb-gold, #e6a817)',
+                  }}>
+                    <span style={{ ...muted }}>Formula: </span>
+                    prevBasis + (newStrike − prevStrike) − netCredit
+                  </div>
+                </div>
+              </div>
+
+              {/* CC note */}
+              <div style={{
+                padding: '12px 24px',
+                borderTop: '1px solid var(--wb-border, #21262d)',
+                background: 'rgba(255,255,255,0.01)',
+                fontSize: '0.7rem', color: 'var(--wb-text-muted, #6e7681)',
+              }}>
+                <span style={{ fontWeight: 600, color: 'var(--wb-text-secondary, #8b949e)' }}>CC rolls:</span>{' '}
+                Strike change does not affect share cost basis. Only net premium matters — formula is always{' '}
+                <code style={{ color: '#79c0ff', fontSize: '0.67rem', background: 'rgba(121,192,255,0.07)', padding: '1px 5px', borderRadius: 3 }}>
+                  prevBasis − netCredit
+                </code>{' '}
+                regardless of strike direction.
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+
+)
+}
+
+<Mockup />

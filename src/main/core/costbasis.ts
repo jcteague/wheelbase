@@ -86,6 +86,7 @@ export interface AssignmentBasisLeg {
   legRole: string
   premiumPerContract: string
   contracts: number
+  label?: string
 }
 
 export interface AssignmentBasisInput {
@@ -126,7 +127,7 @@ export function calculateAssignmentBasis(input: AssignmentBasisInput): Assignmen
   )
 
   const premiumWaterfall: WaterfallEntry[] = input.premiumLegs.map((leg) => ({
-    label: LEG_ROLE_LABEL[leg.legRole] ?? leg.legRole,
+    label: leg.label ?? LEG_ROLE_LABEL[leg.legRole] ?? leg.legRole,
     amount: leg.premiumPerContract
   }))
 
@@ -219,6 +220,9 @@ export interface RollBasisInput {
   costToClosePerContract: string
   newPremiumPerContract: string
   contracts: number
+  legType: 'CSP' | 'CC'
+  prevStrike?: string
+  newStrike?: string
 }
 
 export interface RollBasisResult {
@@ -227,8 +231,22 @@ export interface RollBasisResult {
 }
 
 export function calculateRollBasis(input: RollBasisInput): RollBasisResult {
+  if (
+    input.legType === 'CSP' &&
+    (input.prevStrike === undefined || input.newStrike === undefined)
+  ) {
+    throw new Error('calculateRollBasis: prevStrike and newStrike are required for CSP rolls')
+  }
+
   const net = new Decimal(input.newPremiumPerContract).minus(input.costToClosePerContract)
-  const basisPerShare = round4(new Decimal(input.prevBasisPerShare).minus(net))
+  const prev = new Decimal(input.prevBasisPerShare)
+
+  const isCspDifferentStrike = input.legType === 'CSP' && input.newStrike !== input.prevStrike
+
+  const basisPerShare = isCspDifferentStrike
+    ? round4(prev.plus(new Decimal(input.newStrike!).minus(input.prevStrike!)).minus(net))
+    : round4(prev.minus(net))
+
   const netTotal = net.times(sharesFromContracts(input.contracts))
   const totalPremiumCollected = round4(new Decimal(input.prevTotalPremiumCollected).plus(netTotal))
 

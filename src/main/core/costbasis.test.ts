@@ -212,6 +212,69 @@ describe('calculateAssignmentBasis', () => {
 
     expect(result.totalPremiumCollected).toBe('350.0000')
   })
+
+  // US-16: new tests for ROLL_NET label support
+
+  it('label override used in waterfall when provided', () => {
+    const result = calculateAssignmentBasis({
+      strike: '50.00',
+      contracts: 1,
+      premiumLegs: [
+        { legRole: 'CSP_OPEN', premiumPerContract: '2.00', contracts: 1 },
+        { legRole: 'ROLL_NET', premiumPerContract: '0.70', contracts: 1, label: 'Roll #1 credit' }
+      ]
+    })
+    expect(result.premiumWaterfall[1]).toEqual({ label: 'Roll #1 credit', amount: '0.70' })
+  })
+
+  it('basisPerShare uses net roll credit correctly', () => {
+    // 50 − 2.00 − 0.70 = 47.30 (not 46.50 which would be wrong)
+    const result = calculateAssignmentBasis({
+      strike: '50.00',
+      contracts: 1,
+      premiumLegs: [
+        { legRole: 'CSP_OPEN', premiumPerContract: '2.00', contracts: 1 },
+        { legRole: 'ROLL_NET', premiumPerContract: '0.70', contracts: 1, label: 'Roll #1 credit' }
+      ]
+    })
+    expect(result.basisPerShare).toBe('47.3000')
+  })
+
+  it('totalPremiumCollected sums all premiumPerContract values across legs', () => {
+    // 2.00×100 + 0.70×100 = 270
+    const result = calculateAssignmentBasis({
+      strike: '50.00',
+      contracts: 1,
+      premiumLegs: [
+        { legRole: 'CSP_OPEN', premiumPerContract: '2.00', contracts: 1 },
+        { legRole: 'ROLL_NET', premiumPerContract: '0.70', contracts: 1, label: 'Roll #1 credit' }
+      ]
+    })
+    expect(result.totalPremiumCollected).toBe('270.0000')
+  })
+
+  it('negative premiumPerContract (net debit roll) correctly increases basis', () => {
+    // 50 − 2.00 − (−0.50) = 48.50; total = 200 + (−50) = 150
+    const result = calculateAssignmentBasis({
+      strike: '50.00',
+      contracts: 1,
+      premiumLegs: [
+        { legRole: 'CSP_OPEN', premiumPerContract: '2.00', contracts: 1 },
+        { legRole: 'ROLL_NET', premiumPerContract: '-0.50', contracts: 1, label: 'Roll #1 debit' }
+      ]
+    })
+    expect(result.basisPerShare).toBe('48.5000')
+    expect(result.totalPremiumCollected).toBe('150.0000')
+  })
+
+  it('ROLL_NET legRole without label falls back to legRole string in waterfall', () => {
+    const result = calculateAssignmentBasis({
+      strike: '50.00',
+      contracts: 1,
+      premiumLegs: [{ legRole: 'ROLL_NET', premiumPerContract: '0.70', contracts: 1 }]
+    })
+    expect(result.premiumWaterfall[0].label).toBe('ROLL_NET')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -416,6 +479,9 @@ describe('calculateRollBasis', () => {
     // basisPerShare = 48.5000 - 1.60 = 46.9000
     // totalPremiumCollected = 350.0000 + (1.60 × 1 × 100) = 350 + 160 = 510.0000
     const input: RollBasisInput = {
+      legType: 'CSP',
+      prevStrike: '48.50',
+      newStrike: '48.50',
       prevBasisPerShare: '48.5000',
       prevTotalPremiumCollected: '350.0000',
       costToClosePerContract: '1.20',
@@ -432,6 +498,9 @@ describe('calculateRollBasis', () => {
     // basisPerShare = 48.5000 - (-0.50) = 49.0000
     // totalPremiumCollected = 350.0000 + (-0.50 × 1 × 100) = 350 - 50 = 300.0000
     const input: RollBasisInput = {
+      legType: 'CSP',
+      prevStrike: '48.50',
+      newStrike: '48.50',
       prevBasisPerShare: '48.5000',
       prevTotalPremiumCollected: '350.0000',
       costToClosePerContract: '3.00',
@@ -446,6 +515,9 @@ describe('calculateRollBasis', () => {
   it('zero net: basisPerShare and totalPremiumCollected unchanged', () => {
     // net = 2.00 - 2.00 = 0
     const input: RollBasisInput = {
+      legType: 'CSP',
+      prevStrike: '48.50',
+      newStrike: '48.50',
       prevBasisPerShare: '48.5000',
       prevTotalPremiumCollected: '350.0000',
       costToClosePerContract: '2.00',
@@ -462,6 +534,9 @@ describe('calculateRollBasis', () => {
     // basisPerShare = 48.5000 - 1.60 = 46.9000 (per-share, same regardless of contracts)
     // totalPremiumCollected = 350.0000 + (1.60 × 2 × 100) = 350 + 320 = 670.0000
     const input: RollBasisInput = {
+      legType: 'CSP',
+      prevStrike: '48.50',
+      newStrike: '48.50',
       prevBasisPerShare: '48.5000',
       prevTotalPremiumCollected: '350.0000',
       costToClosePerContract: '1.20',
@@ -471,5 +546,160 @@ describe('calculateRollBasis', () => {
     const result = calculateRollBasis(input)
     expect(result.basisPerShare).toBe('46.9000')
     expect(result.totalPremiumCollected).toBe('670.0000')
+  })
+
+  // US-16: new tests for legType-aware roll basis
+
+  it('CSP same-strike roll net credit — uses simple formula', () => {
+    // net = 1.50 - 0.80 = 0.70 credit
+    // basisPerShare = 48.00 - 0.70 = 47.30
+    // totalPremiumCollected = 200 + 0.70×100 = 270
+    const input: RollBasisInput = {
+      legType: 'CSP',
+      prevStrike: '50.00',
+      newStrike: '50.00',
+      prevBasisPerShare: '48.00',
+      prevTotalPremiumCollected: '200.0000',
+      costToClosePerContract: '0.80',
+      newPremiumPerContract: '1.50',
+      contracts: 1
+    }
+    const result = calculateRollBasis(input)
+    expect(result.basisPerShare).toBe('47.3000')
+    expect(result.totalPremiumCollected).toBe('270.0000')
+  })
+
+  it('CSP roll-down to lower strike — includes strike delta in basis', () => {
+    // net = 1.50 - 1.20 = 0.30 credit
+    // strikeDelta = 47 - 50 = -3
+    // basisPerShare = 48.00 + (-3) - 0.30 = 44.70 (NOT 47.70)
+    // totalPremiumCollected = 200 + 0.30×100 = 230
+    const input: RollBasisInput = {
+      legType: 'CSP',
+      prevStrike: '50.00',
+      newStrike: '47.00',
+      prevBasisPerShare: '48.00',
+      prevTotalPremiumCollected: '200.0000',
+      costToClosePerContract: '1.20',
+      newPremiumPerContract: '1.50',
+      contracts: 1
+    }
+    const result = calculateRollBasis(input)
+    expect(result.basisPerShare).toBe('44.7000')
+    expect(result.totalPremiumCollected).toBe('230.0000')
+  })
+
+  it('CSP roll-up to higher strike — adds strike delta, subtracts net credit', () => {
+    // net = 1.80 - 1.00 = 0.80 credit
+    // strikeDelta = 50 - 47 = +3
+    // basisPerShare = 44.70 + 3 - 0.80 = 46.90
+    const input: RollBasisInput = {
+      legType: 'CSP',
+      prevStrike: '47.00',
+      newStrike: '50.00',
+      prevBasisPerShare: '44.70',
+      prevTotalPremiumCollected: '230.0000',
+      costToClosePerContract: '1.00',
+      newPremiumPerContract: '1.80',
+      contracts: 1
+    }
+    const result = calculateRollBasis(input)
+    expect(result.basisPerShare).toBe('46.9000')
+  })
+
+  it('CSP roll net debit — basis increases, totalPremium decreases', () => {
+    // net = 1.40 - 1.60 = -0.20 debit
+    // basisPerShare = 47.30 - (-0.20) = 47.50
+    // totalPremiumCollected = 270 + (-0.20×100) = 250
+    const input: RollBasisInput = {
+      legType: 'CSP',
+      prevStrike: '50.00',
+      newStrike: '50.00',
+      prevBasisPerShare: '47.30',
+      prevTotalPremiumCollected: '270.0000',
+      costToClosePerContract: '1.60',
+      newPremiumPerContract: '1.40',
+      contracts: 1
+    }
+    const result = calculateRollBasis(input)
+    expect(result.basisPerShare).toBe('47.5000')
+    expect(result.totalPremiumCollected).toBe('250.0000')
+  })
+
+  it('CC roll — ignores strike change, uses simple formula', () => {
+    // net = 2.80 - 2.00 = 0.80 credit
+    // CC: strikeDelta NOT applied regardless of prevStrike/newStrike
+    // basisPerShare = 45.80 - 0.80 = 45.00
+    // totalPremiumCollected = 270 + 0.80×100 = 350
+    const input: RollBasisInput = {
+      legType: 'CC',
+      prevStrike: '52.00',
+      newStrike: '55.00',
+      prevBasisPerShare: '45.80',
+      prevTotalPremiumCollected: '270.0000',
+      costToClosePerContract: '2.00',
+      newPremiumPerContract: '2.80',
+      contracts: 1
+    }
+    const result = calculateRollBasis(input)
+    expect(result.basisPerShare).toBe('45.0000')
+    expect(result.totalPremiumCollected).toBe('350.0000')
+  })
+
+  it('multi-contract CSP roll — per-share basis unchanged, totalPremium scales by 3 contracts', () => {
+    // net = 1.50 - 0.80 = 0.70 credit per contract
+    // basisPerShare = 48.00 - 0.70 = 47.30 (per-share, same regardless of contracts)
+    // totalPremiumCollected = 200 + 0.70×3×100 = 200 + 210 = 410
+    const input: RollBasisInput = {
+      legType: 'CSP',
+      prevStrike: '50.00',
+      newStrike: '50.00',
+      prevBasisPerShare: '48.00',
+      prevTotalPremiumCollected: '200.0000',
+      costToClosePerContract: '0.80',
+      newPremiumPerContract: '1.50',
+      contracts: 3
+    }
+    const result = calculateRollBasis(input)
+    expect(result.basisPerShare).toBe('47.3000')
+    expect(result.totalPremiumCollected).toBe('410.0000')
+  })
+
+  it('three sequential CSP same-strike rolls — cumulative basis is correct', () => {
+    // Roll1: credit 0.70 → basis 47.30, total 270
+    // Roll2: credit 0.80 → basis 46.50, total 350
+    // Roll3: debit 0.20 → basis 46.70, total 330
+    const roll1 = calculateRollBasis({
+      legType: 'CSP',
+      prevStrike: '50.00',
+      newStrike: '50.00',
+      prevBasisPerShare: '48.00',
+      prevTotalPremiumCollected: '200.0000',
+      costToClosePerContract: '0.80',
+      newPremiumPerContract: '1.50',
+      contracts: 1
+    })
+    const roll2 = calculateRollBasis({
+      legType: 'CSP',
+      prevStrike: '50.00',
+      newStrike: '50.00',
+      prevBasisPerShare: roll1.basisPerShare,
+      prevTotalPremiumCollected: roll1.totalPremiumCollected,
+      costToClosePerContract: '0.70',
+      newPremiumPerContract: '1.50',
+      contracts: 1
+    })
+    const roll3 = calculateRollBasis({
+      legType: 'CSP',
+      prevStrike: '50.00',
+      newStrike: '50.00',
+      prevBasisPerShare: roll2.basisPerShare,
+      prevTotalPremiumCollected: roll2.totalPremiumCollected,
+      costToClosePerContract: '1.60',
+      newPremiumPerContract: '1.40',
+      contracts: 1
+    })
+    expect(roll3.basisPerShare).toBe('46.7000')
+    expect(roll3.totalPremiumCollected).toBe('330.0000')
   })
 })

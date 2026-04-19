@@ -51,7 +51,8 @@ export function rollCcPosition(
     prevTotalPremiumCollected: prevSnapshot?.totalPremiumCollected ?? '0.0000',
     costToClosePerContract: costToCloseFormatted,
     newPremiumPerContract: newPremiumFormatted,
-    contracts: activeLeg.contracts
+    contracts: activeLeg.contracts,
+    legType: 'CC'
   })
 
   const rollChainId = randomUUID()

@@ -49,7 +49,10 @@ export function rollCspPosition(
     prevTotalPremiumCollected: prevSnapshot?.totalPremiumCollected ?? '0.0000',
     costToClosePerContract: costToCloseFormatted,
     newPremiumPerContract: newPremiumFormatted,
-    contracts: activeLeg.contracts
+    contracts: activeLeg.contracts,
+    legType: 'CSP',
+    prevStrike: activeLeg.strike,
+    newStrike: newStrikeFormatted
   })
 
   const rollChainId = randomUUID()
