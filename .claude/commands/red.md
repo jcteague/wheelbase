@@ -17,7 +17,7 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
 ### Phase 1: Setup and Prerequisites
 
 1. **Locate Feature Artifacts**
-   - Find the relevant user story file(s) under `phase-1-stories/`
+   - Find the relevant user story file(s) — check `phase-1-stories/`, `docs/epics/`, or any path provided in the user input
    - Find the feature plan under `plans/<feature-dir>/` — look for `plan.md` or `tasks.md`
    - Read and internalise all available artifacts before writing any tests
 
@@ -65,7 +65,7 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
      - **TypeScript**: Vitest + `@testing-library/react` for components
      - Descriptive test names: `calculates cost basis after CSP premium collection`
 
-6. **Core Engine Test Guidelines** (most critical for Phase 1)
+6. **Core Engine Test Guidelines**
    - Import ONLY from `src/main/core/*` — never from `src/main/db`, `src/main/services`, or `src/main/integrations`
    - Pass plain typed objects and primitives; never connect to the database
    - Verify exact numeric results using `decimal.js` — compare with `.equals()` or `.toFixed(4)`
@@ -101,7 +101,7 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
       - Summary of what behaviours are tested
       - Key function/class signatures being tested (so green phase can create the right interfaces)
       - Any non-obvious test design decisions or assumptions
-      - Pytest output showing failures
+      - Vitest output showing failures
       - Explicit confirmation that every failure is due to missing implementation, not test bugs
 
 ### Phase 4: Review and Handoff
@@ -198,7 +198,7 @@ After completing the red phase, create `plans/<feature-dir>/red-phase-results.md
 
 ## Interfaces Under Test
 
-List every public function, class, or endpoint the tests import or call. Green phase must create exactly these:
+List every public function, class, or endpoint the tests import or call. Green phase must create exactly these (examples below are illustrative — replace with actual interfaces for your feature):
 
 ```typescript
 // src/main/core/costbasis.ts

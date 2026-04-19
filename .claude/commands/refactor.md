@@ -16,10 +16,10 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
 
 ### Phase 1: Setup and Prerequisites
 
-1. **Locate Feature Artifacts**
-   - Find the feature plan under `plans/<feature-dir>/`
-   - If `plans/<feature-dir>/green-phase-results.md` exists, read it and use "Known Limitations / Tech Debt" as the starting refactoring candidates
-   - If it doesn't exist, identify the implementation files directly from the plan or from context (e.g. files the user just mentioned), then proceed
+1. **Determine Scope**
+   - If a feature plan exists under `plans/<feature-dir>/` and `green-phase-results.md` is present, use its "Known Limitations / Tech Debt" as starting refactoring candidates
+   - Otherwise, determine scope from the user's input — this may be a specific set of files, a layer (e.g. "IPC handlers"), or a broad sweep
+   - If no scope is specified, default to recently changed files (`git diff --name-only main`)
 
 2. **Verify Tests Pass Before Starting**
    - Run full test suite: `pnpm test`
@@ -28,12 +28,21 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
    - Establish the passing baseline — you will return to it after every change
 
 3. **Review Implementation**
-   - Read all files listed in `green-phase-results.md`
+   - Read all files in scope
    - Note code smells, duplication, poor names, `Any` types, magic values
 
 ### Phase 2: Identify Refactoring Opportunities
 
-4. **Code Quality Analysis**
+4. **Cross-Codebase Duplication Check**
+   - Search the broader codebase for duplication — both between in-scope files and the rest of the codebase, and between existing files that already duplicate each other
+   - Scan `src/main/core/`, `src/main/services/`, `src/main/ipc/`, and `src/renderer/src/` for:
+     - Helper functions that perform the same or similar logic across different files
+     - Repeated validation patterns, data transformations, or formatting logic
+     - Type definitions that overlap or are near-identical
+     - Test utilities or factories that could be shared across test files
+   - If consolidation opportunities exist, prioritise extracting shared code into appropriate locations (core utilities, shared types, test helpers)
+
+5. **Code Quality Analysis**
    - Look for common code smells:
      - **Duplication**: Repeated logic blocks
      - **Long functions**: Functions > 20 lines
@@ -43,14 +52,14 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
      - **Poor naming**: Unclear variable or function names
      - **`Any` types**: Replace with specific Python or TypeScript types
 
-5. **Architecture Review**
+6. **Architecture Review**
    - Verify adherence to project principles:
-     - **Pure engines**: `lifecycle.ts`, `costbasis.ts`, `alerts.ts` contain zero db/broker imports
+     - **Pure engines**: all files in `src/main/core/` must contain zero db/broker imports — scan the directory to find all engine files
      - **Alpaca isolation**: Nothing outside `src/main/integrations/alpaca.ts` imports the Alpaca SDK
      - **Roll integrity**: No leg is mutated in place; rolls are always stored as linked pairs
      - **Decimal discipline**: All monetary values use `Decimal`/`decimal.js`, not `float`/`number`
 
-6. **Single Responsibility Check**
+7. **Single Responsibility Check**
    - Each file should have exactly one reason to change
    - `core/` — pure logic only; if it touches a DB handle or IPC event, it's in the wrong place
    - `services/` — DB + core composition; if it contains IPC/routing logic, extract it
@@ -58,25 +67,25 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
    - Components — if they contain fetch logic, move to a hook
    - **File size gate**: any file over ~200 lines must be split before refactor is considered complete
 
-7. **Open/Closed Check**
+8. **Open/Closed Check**
    - Would adding a new leg role, phase, or alert type require editing a core engine file?
    - If yes, refactor the engine to be extensible without modification (e.g., dispatch table, strategy pattern with plain functions)
 
-8. **Dead Code Removal**
+9. **Dead Code Removal**
    - After any refactoring, scan for functions, types, or modules that are no longer referenced
    - Delete them — do not leave them with a comment explaining they were removed
    - No backwards-compatibility wrappers unless explicitly required
-   - `make typecheck` / `tsc --noEmit` will surface unused exports; treat them as errors
+   - `pnpm typecheck` / `tsc --noEmit` will surface unused exports; treat them as errors
 
-9. **Prioritise Refactorings**
-   - High priority: duplication, type safety (`Any`/`any`), architectural violations
-   - Medium priority: long functions, poor naming, deep nesting
-   - Low priority: minor style, comment cleanup
+10. **Prioritise Refactorings**
+    - High priority: duplication, type safety (`Any`/`any`), architectural violations
+    - Medium priority: long functions, poor naming, deep nesting
+    - Low priority: minor style, comment cleanup
 
 ### Phase 3: Automated Simplification Pass
 
 7. **Delegate to the `code-simplifier` Agent**
-   - Collect the list of files modified during the green phase (from `green-phase-results.md`)
+   - Collect the list of files in scope (from `green-phase-results.md` if available, otherwise from the scope determined in Step 1)
    - Delegate to the `code-simplifier` agent using the Task tool:
      - `subagent_type`: `"code-simplifier:code-simplifier"`
      - Prompt: provide the list of modified files and instruct it to apply clarity, consistency, and maintainability improvements while preserving all functionality and keeping all tests green
@@ -105,7 +114,7 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
 
    **Rename**
    - Use domain language from CLAUDE.md: `wheel`, `leg`, `roll`, `cost_basis`, `phase`
-   - Be consistent across layers (Python model name = TypeScript type name = API field name)
+   - Be consistent across layers (TypeScript type name = IPC channel field name = renderer prop name)
 
    **Simplify Conditionals**
    - Extract complex conditions into named predicate functions
@@ -118,37 +127,35 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
 
    **Object Parameters Over Long Parameter Lists**
    - Functions with 3+ parameters should take a single options/input object instead
-   - Define a named interface for the object (e.g. `RollCcInput`, `CcRollTypeLabelInput`)
+   - Define a named interface for the object (e.g. `CreatePositionInput`, `RollOptionsInput`— use names appropriate to your feature)
    - Benefits: call sites are self-documenting, parameter order doesn't matter, easy to extend
    - Exception: simple utilities where positional meaning is universally obvious (e.g. `clamp(value, min, max)`)
 
    **Improve Types**
    - TypeScript: replace `any` with specific types; use union/literal types for constrained values; prefer enums or const objects for phases and statuses
 
-10. **Wheelbase-Specific Refactorings**
+10. **Layer-Specific Refactorings**
 
-    **Core Engine Layer**
+    **Core Engine Layer** (`src/main/core/`)
     - Keep engine functions thin; extract business sub-rules to named helper functions
     - Consolidate status/phase derivation into single, independently testable functions
-    - Ensure `costbasis.ts` has one clear entry point with a documented formula
 
-    **DB / Service Layer**
+    **DB / Service Layer** (`src/main/services/`)
     - Ensure monetary TEXT columns convert cleanly to `Decimal` via `decimal.js` with no implicit coercion
-    - Confirm `roll_from_id` / `roll_to_id` FK constraints are symmetric and enforced in migrations
     - Keep service functions focused — no business logic beyond DB access and core engine calls
 
-    **IPC Layer**
+    **IPC Layer** (`src/main/ipc/`)
     - Keep IPC handlers thin: validate input with Zod, call a service, return result
     - Extract repeated response-shaping logic into shared typed result types
     - Ensure all error cases return consistent `{ ok: false, errors: string[] }` shapes
 
-    **Renderer Layer**
+    **Renderer Layer** (`src/renderer/src/`)
     - Keep components presentational; push data logic into hooks
     - Ensure `useEffect` cleanups are explicit (cancel queries, remove IPC listeners)
     - Replace inline styles or magic pixel values with Tailwind classes or shadcn/ui tokens
 
     **Test Utilities**
-    - Extract shared test data factories (e.g., `makeLeg()`, `makeWheel()`) to a shared test helper file
+    - Extract shared test data factories to a shared test helper file
     - Reduce setup duplication with shared `beforeEach` helpers or Vitest fixtures
     - Ensure all `vi.mock()` mocks are reset between tests with `vi.clearAllMocks()` or `vi.restoreAllMocks()`
 
@@ -227,19 +234,19 @@ After completing the refactor phase, create `plans/<feature-dir>/refactor-phase-
 
 ## Manual Refactorings Performed
 
-### 1. Extract Function — `derive_cost_basis()`
+### 1. [Refactoring Type] — [What Changed]
 
-**File**: `src/main/core/costbasis.ts`
-**Before**: Inline arithmetic repeated across three call sites
-**After**: Single pure function `deriveCostBasis(legs: Leg[]): Decimal`
-**Reason**: Eliminated duplication; formula is now tested and documented in one place
+**File**: [path]
+**Before**: [Description of the problem]
+**After**: [Description of the improvement]
+**Reason**: [Why this change improves the code]
 
-### 2. Extract Constant — `WheelPhase` enum
+### 2. [Refactoring Type] — [What Changed]
 
-**File**: `src/main/core/lifecycle.ts`
-**Before**: Magic strings `"CSP_OPEN"`, `"HOLDING_SHARES"` scattered throughout
-**After**: `export enum WheelPhase` with named members
-**Reason**: Compile-time safety; TypeScript catches invalid phase comparisons
+**File**: [path]
+**Before**: [Description of the problem]
+**After**: [Description of the improvement]
+**Reason**: [Why this change improves the code]
 
 [Continue for all refactorings...]
 

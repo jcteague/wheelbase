@@ -17,7 +17,7 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
 ### Phase 1: Setup and Prerequisites
 
 1. **Locate Feature Artifacts**
-   - Find the relevant user story under `phase-1-stories/`
+   - Find the relevant user story — check `phase-1-stories/`, `docs/epics/`, or any path provided in the user input
    - Find the feature plan under `plans/<feature-dir>/`
    - Required: `plans/<feature-dir>/red-phase-results.md` — if missing, run `/red` first
    - If `red-phase-results.md` is missing, locate failing tests directly in the repo
@@ -151,14 +151,14 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
 
 4. **Core Engines (`src/main/core/`)**
    - Accept plain typed objects as input; return plain typed objects or primitives
-   - `lifecycle.ts`: pure state machine — given current phase + event, return new phase or throw `PhaseTransitionError`
-   - `costbasis.ts`: pure calculation — given a list of legs, return `Decimal`
-   - `alerts.ts`: pure rule evaluator — given position data, return list of alert objects
+   - Read existing engine files to understand current signatures and patterns before adding or modifying
+   - Examples of existing engines: `lifecycle.ts` (state machine), `costbasis.ts` (calculation), `alerts.ts` (rule evaluator)
+   - New features may require new engine files — follow the same pure-function pattern
 
 5. **Phase State Machine**
-   - Valid transitions: `CSP_OPEN → HOLDING_SHARES`, `HOLDING_SHARES → CC_OPEN`, `CC_OPEN → HOLDING_SHARES` (CC expired/closed), `CC_OPEN → EXITED` (shares called away)
+   - Read `src/main/core/lifecycle.ts` for the current set of valid transitions — do not hardcode assumptions
    - Roll transitions keep the same phase but create a new linked leg pair
-   - All other transitions must raise `PhaseTransitionError`
+   - Invalid transitions must raise `PhaseTransitionError`
 
 6. **Database Layer (`src/main/services/`)**
    - Use `better-sqlite3` synchronous API — no async needed
@@ -206,7 +206,7 @@ After completing the green phase, create `plans/<feature-dir>/green-phase-result
 ## Feature Context
 
 - **Feature directory**: `plans/<feature-dir>/`
-- **User story**: `phase-1-stories/<story-file>.md`
+- **User story**: `<path to user story file>`
 - **Plan file**: `plans/<feature-dir>/plan.md`
 - **Red phase results**: `plans/<feature-dir>/red-phase-results.md`
 
@@ -220,7 +220,7 @@ After completing the green phase, create `plans/<feature-dir>/green-phase-result
 
 ## Public Interfaces Implemented
 
-Exact signatures created — refactor phase should not change these without re-running tests:
+Exact signatures created — refactor phase should not change these without re-running tests (examples below are illustrative — replace with actual interfaces for your feature):
 
 ```typescript
 // src/main/core/costbasis.ts
@@ -278,7 +278,7 @@ PASS src/main/ipc/positions.test.ts (3 tests)
 To resume: run `/refactor [feature-name]`. Refactor phase should:
 
 1. Read this file to find implementation files and known tech debt
-2. Run `make test` to confirm baseline is green before touching anything
+2. Run `pnpm test` to confirm baseline is green before touching anything
 3. Focus refactoring on files listed above and issues in "Known Limitations / Tech Debt"
 
 ## Notes
