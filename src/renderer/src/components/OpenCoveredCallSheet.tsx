@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ApiError, ApiFieldError, OpenCcResponse } from '../api/positions'
 import { useOpenCoveredCall } from '../hooks/useOpenCoveredCall'
+import { localToday } from '../lib/dates'
 import { CcForm } from './OpenCcForm'
 import { computeGuardrail } from './openCcGuardrail'
 import { CcSuccess } from './OpenCcSuccess'
@@ -24,7 +25,7 @@ export function OpenCoveredCallSheet(props: OpenCoveredCallSheetProps): React.JS
   const [premium, setPremium] = useState('')
   const [ccContracts, setCcContracts] = useState(String(props.contracts))
   const [expiration, setExpiration] = useState('')
-  const [fillDate, setFillDate] = useState(new Date().toISOString().slice(0, 10))
+  const [fillDate, setFillDate] = useState(localToday())
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [successState, setSuccessState] = useState<OpenCcResponse | null>(null)
 

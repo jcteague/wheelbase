@@ -4,20 +4,17 @@ import type { ElectronApplication } from 'playwright'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { localToday } from './dates'
+import { localDate, localToday } from './dates'
+import { selectDate } from './helpers'
 
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
 const APP_CWD = path.join(__dirname, '..')
 
-// April 2026 — one month ahead so only one calendar nav click needed (used for close-early test)
-const EXPIRATION_YEAR = 2026
-const EXPIRATION_MONTH = 4 // April
-const EXPIRATION_DAY = 17
-const EXPIRATION_ISO = `${EXPIRATION_YEAR}-04-${String(EXPIRATION_DAY).padStart(2, '0')}`
+// Future expiration — dynamic so tests don't rot
+const EXPIRATION_ISO = localDate(30)
 
 // Expire test: use today in local time — must match the service's fillDate default (localToday())
 const EXPIRE_ISO = localToday()
-const [EXPIRE_YEAR, EXPIRE_MONTH, EXPIRE_DAY] = EXPIRE_ISO.split('-').map(Number)
 
 describe('close CSP early flow', () => {
   let app: ElectronApplication
@@ -51,19 +48,7 @@ describe('close CSP early flow', () => {
     await page.fill('#contracts', '1')
     await page.fill('#premiumPerContract', '5.00')
 
-    // Open expiration date picker and select April 17
-    await page.click('#expiration')
-    const targetHeading = new Date(EXPIRATION_YEAR, EXPIRATION_MONTH - 1, 1).toLocaleString(
-      'en-US',
-      { month: 'long', year: 'numeric' }
-    )
-    for (let i = 0; i < 12; i++) {
-      const heading = await page.textContent('.rdp-month_caption')
-      if (heading?.includes(targetHeading)) break
-      await page.click('.rdp-button_next')
-    }
-    await page.click(`.rdp-day_button:not(.rdp-outside):has-text("${EXPIRATION_DAY}")`)
-    await page.waitForSelector(`text=${EXPIRATION_ISO}`)
+    await selectDate(page, '#expiration', EXPIRATION_ISO)
 
     await page.click('button[type="submit"]')
     await page.waitForSelector('#ticker', { state: 'detached' })
@@ -123,18 +108,7 @@ describe('expire CSP worthless flow', () => {
     await page.fill('#contracts', '1')
     await page.fill('#premiumPerContract', '3.00')
 
-    await page.click('#expiration')
-    const targetHeading = new Date(EXPIRE_YEAR, EXPIRE_MONTH - 1, 1).toLocaleString('en-US', {
-      month: 'long',
-      year: 'numeric'
-    })
-    for (let i = 0; i < 12; i++) {
-      const heading = await page.textContent('.rdp-month_caption')
-      if (heading?.includes(targetHeading)) break
-      await page.click('.rdp-button_next')
-    }
-    await page.click(`.rdp-day_button:not(.rdp-outside):has-text("${EXPIRE_DAY}")`)
-    await page.waitForSelector(`text=${EXPIRE_ISO}`)
+    await selectDate(page, '#expiration', EXPIRE_ISO)
 
     await page.click('button[type="submit"]')
     await page.waitForSelector('#ticker', { state: 'detached' })
@@ -203,27 +177,7 @@ describe('create → list flow', () => {
     await page.fill('#contracts', '1')
     await page.fill('#premiumPerContract', '3.50')
 
-    // Open expiration date picker and select a date
-    await page.click('#expiration')
-
-    // Navigate calendar forward until we reach the target month/year
-    // The calendar opens on the current month; advance until we see the target month heading
-    const targetHeading = new Date(EXPIRATION_YEAR, EXPIRATION_MONTH - 1, 1).toLocaleString(
-      'en-US',
-      { month: 'long', year: 'numeric' }
-    ) // e.g. "April 2026"
-
-    for (let i = 0; i < 12; i++) {
-      const heading = await page.textContent('.rdp-month_caption')
-      if (heading?.includes(targetHeading)) break
-      await page.click('.rdp-button_next')
-    }
-
-    // Click the target day (exact match inside the calendar)
-    await page.click(`.rdp-day_button:not(.rdp-outside):has-text("${EXPIRATION_DAY}")`)
-
-    // Confirm picker closed and shows the selected date
-    await page.waitForSelector(`text=${EXPIRATION_ISO}`)
+    await selectDate(page, '#expiration', EXPIRATION_ISO)
 
     // Submit
     await page.click('button[type="submit"]')

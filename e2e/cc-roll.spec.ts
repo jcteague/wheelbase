@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { reachCcOpenState, selectDate } from './helpers'
+import { localDate } from './dates'
 
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
 const APP_CWD = path.join(__dirname, '..')
@@ -17,13 +18,13 @@ describe('roll open covered call', () => {
   let app: ElectronApplication
   let dbPath: string
 
-  // Background: CC strike $185, expiration 2026-04-18, premium $2.50
+  // Background: CC strike $185, premium $2.50
   // CSP: strike $180, premium $3.50 → cost basis = $176.50/share
   const CC_STRIKE = '185'
-  const CC_EXPIRATION = '2026-04-18'
+  const CC_EXPIRATION = localDate(30)
   const CC_PREMIUM = '2.50'
-  const NEW_EXPIRATION = '2026-05-16'
-  const BEFORE_CC_EXPIRATION = '2026-03-21'
+  const NEW_EXPIRATION = localDate(60)
+  const BEFORE_CC_EXPIRATION = localDate(-7)
 
   afterEach(async () => {
     await app?.close()
@@ -132,9 +133,9 @@ describe('roll open covered call', () => {
     const bodyText = await page.textContent('body')
     expect(bodyText).toContain('Roll Complete')
     expect(bodyText).toContain('CC Rolled Successfully')
-    expect(bodyText).toContain('ROLL_FROM')
-    expect(bodyText).toContain('ROLL_TO')
-    expect(bodyText).toContain('CC_OPEN (unchanged)')
+    expect(bodyText).toContain('Roll From')
+    expect(bodyText).toContain('Roll To')
+    expect(bodyText).toContain('CC Open (unchanged)')
     // Net credit: $4.20 − $3.50 = $0.70/contract
     expect(bodyText).toMatch(/\+\$0\.70/)
     // New cost basis: $174.00 − $0.70 = $173.30/share

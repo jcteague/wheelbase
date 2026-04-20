@@ -7,6 +7,8 @@ export default defineConfig({
     include: ['e2e/**/*.spec.ts'],
     testTimeout: 60_000,
     hookTimeout: 30_000,
-    fileParallelism: false
+    fileParallelism: false,
+    bail: 1,
+    reporters: ['verbose']
   }
 })
