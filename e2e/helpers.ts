@@ -3,26 +3,34 @@ import { localToday } from './dates'
 
 export async function selectDate(page: Page, triggerSelector: string, iso: string): Promise<void> {
   const [year, month, day] = iso.split('-').map(Number)
+
+  await page.locator(triggerSelector).scrollIntoViewIfNeeded()
   await page.click(triggerSelector)
+
+  // Radix Popover: trigger gets aria-controls pointing to the popover content id
+  const popoverId = await page.locator(triggerSelector).getAttribute('aria-controls')
+  const popover = page.locator(`#${popoverId}`)
+  await popover.waitFor({ state: 'visible' })
+
   const targetHeading = new Date(year, month - 1, 1).toLocaleString('en-US', {
     month: 'long',
     year: 'numeric'
   })
 
   for (let i = 0; i < 24; i++) {
-    const heading = await page.textContent('.rdp-month_caption')
+    const heading = await popover.locator('.rdp-month_caption').textContent()
     if (heading?.includes(targetHeading)) break
     const currentDate = heading ? new Date(`${heading} 1`) : new Date()
     const targetDate = new Date(year, month - 1, 1)
     const next = targetDate > currentDate
-    await page.click(
+    const btn = popover.locator(
       next ? 'button[aria-label*="next month" i]' : 'button[aria-label*="previous month" i]'
     )
+    await btn.click()
   }
 
-  await page.click(`.rdp-day:not(.rdp-outside) .rdp-day_button:has-text("${day}")`)
+  await popover.locator(`.rdp-day:not(.rdp-outside) .rdp-day_button:has-text("${day}")`).click()
   await page.waitForSelector(`${triggerSelector}:has-text("${iso}")`)
-  await page.waitForSelector('.rdp-month_caption', { state: 'detached' })
 }
 
 export async function openPosition(
