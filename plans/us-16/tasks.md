@@ -162,7 +162,7 @@
   - No production code to write — if tests fail, the failure indicates a regression in a previous area's implementation
   - Run `pnpm test src/main/services/cost-basis-chain.test.ts` — all tests must pass
 
-- [ ] **[Refactor]** `/refactor` — `src/main/services/cost-basis-chain.test.ts` _(depends on: Area 6 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `src/main/services/cost-basis-chain.test.ts` _(depends on: Area 6 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Deduplicate setup helpers with those in `assign-csp-position.test.ts` and `roll-cc-position.test.ts`
   - Run `pnpm test && pnpm lint && pnpm typecheck`
@@ -175,7 +175,7 @@
 
 ### Area 7 — E2E tests for all 9 ACs
 
-- [ ] **[Red]** Write failing e2e tests — `e2e/cost-basis-sequential-rolls.spec.ts` (new file) _(depends on: all Green tasks ✓)_
+- [x] **[Red]** Write failing e2e tests — `e2e/cost-basis-sequential-rolls.spec.ts` (new file) _(depends on: all Green tasks ✓)_
   - Follow the pattern from `e2e/csp-roll.spec.ts`: `launchFreshApp()`, `openPosition()`, `openDetailFor()` helpers; one `it()` per AC:
     - AC1: `cost basis after single CSP roll with net credit — basis shows $47.30, total premium $270`
     - AC2: `cost basis after single CSP roll with net debit — basis shows $48.50, total premium $150`
@@ -188,7 +188,7 @@
     - AC9: `cost basis after CC roll up to higher strike — strike change does not affect basis`
   - Run `pnpm test:e2e` (from a GUI terminal — not Claude Code's shell) — all new tests must fail
 
-- [ ] **[Green]** Make e2e tests pass _(depends on: Area 7 Red ✓)_
+- [x] **[Green]** Make e2e tests pass _(depends on: Area 7 Red ✓)_
   - If any E2E test fails due to missing UI display, check whether US-15 renders the required basis/premium fields; update assertions to match the available display
   - Run `pnpm test:e2e` — all 9 AC tests must pass
 

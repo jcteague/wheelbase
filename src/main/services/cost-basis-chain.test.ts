@@ -1,8 +1,3 @@
-// US-16: Full lifecycle snapshot chain integration tests
-// Verifies that cost_basis_snapshots are created correctly across all 6 lifecycle events:
-// createPosition → rollCspPosition (same-strike) → rollCspPosition (roll-down) →
-// assignCspPosition → openCoveredCallPosition → rollCcPosition
-
 import { describe, expect, it } from 'vitest'
 import { makeTestDb } from '../test-utils'
 import { assignCspPosition } from './assign-csp-position'
@@ -105,9 +100,8 @@ describe('cost basis snapshot chain', () => {
       expect(row.total_premium_collected).not.toBeNull()
     }
 
-    for (let i = 1; i < rows.length; i++) {
-      expect(rows[i].snapshot_at >= rows[i - 1].snapshot_at).toBe(true)
-    }
+    const timestamps = rows.map((r) => r.snapshot_at)
+    expect(timestamps).toEqual([...timestamps].sort())
   })
 
   it('snapshot chain basis values match expected progression', () => {
@@ -121,7 +115,7 @@ describe('cost basis snapshot chain', () => {
          WHERE position_id = ?
          ORDER BY snapshot_at ASC`
       )
-      .all(positionId) as Omit<SnapshotRow, 'snapshot_at'>[]
+      .all(positionId) as Pick<SnapshotRow, 'basis_per_share' | 'total_premium_collected'>[]
 
     expect(rows).toHaveLength(6)
 
