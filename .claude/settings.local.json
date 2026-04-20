@@ -29,12 +29,20 @@
       "mcp__plugin_playwright_playwright__browser_navigate",
       "Bash(pnpm test:e2e -- e2e/csp-assignment.spec.ts)",
       "Bash(npx vitest:*)",
-      "Bash(pnpm vitest:*)"
+      "Bash(pnpm vitest:*)",
+      "Bash(npx electron-rebuild:*)",
+      "Bash(pnpm build:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
-  "enabledMcpjsonServers": ["alpaca", "playwright", "electron"],
-  "disabledMcpjsonServers": ["postgres"],
+  "enabledMcpjsonServers": [
+    "alpaca",
+    "playwright",
+    "electron"
+  ],
+  "disabledMcpjsonServers": [
+    "postgres"
+  ],
   "enabledPlugins": {
     "code-simplifier@claude-plugins-official": true
   }

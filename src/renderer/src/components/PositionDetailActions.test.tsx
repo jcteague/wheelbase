@@ -91,3 +91,67 @@ it('PositionDetailActions: does not show "Roll CC →" button when phase is CSP_
   render(<PositionDetailActions {...BASE_PROPS} phase="CSP_OPEN" onRollCc={onRollCc} />)
   expect(screen.queryByTestId('roll-cc-btn')).not.toBeInTheDocument()
 })
+
+describe('roll button visibility across all phases', () => {
+  const ALL_PHASES = [
+    'CSP_OPEN',
+    'CSP_EXPIRED',
+    'CSP_CLOSED_PROFIT',
+    'CSP_CLOSED_LOSS',
+    'HOLDING_SHARES',
+    'CC_OPEN',
+    'CC_EXPIRED',
+    'CC_CLOSED_PROFIT',
+    'CC_CLOSED_LOSS',
+    'WHEEL_COMPLETE'
+  ] as const
+
+  it.each(ALL_PHASES)('phase=%s → roll-csp-btn visible only when CSP_OPEN', (phase) => {
+    render(<PositionDetailActions {...BASE_PROPS} phase={phase} />)
+    if (phase === 'CSP_OPEN') {
+      expect(screen.getByTestId('roll-csp-btn')).toBeInTheDocument()
+    } else {
+      expect(screen.queryByTestId('roll-csp-btn')).not.toBeInTheDocument()
+    }
+  })
+
+  it.each(ALL_PHASES)('phase=%s → roll-cc-btn visible only when CC_OPEN', (phase) => {
+    render(<PositionDetailActions {...BASE_PROPS} phase={phase} />)
+    if (phase === 'CC_OPEN') {
+      expect(screen.getByTestId('roll-cc-btn')).toBeInTheDocument()
+    } else {
+      expect(screen.queryByTestId('roll-cc-btn')).not.toBeInTheDocument()
+    }
+  })
+})
+
+it('HOLDING_SHARES shows only phase-appropriate actions', () => {
+  render(<PositionDetailActions {...BASE_PROPS} phase="HOLDING_SHARES" />)
+  expect(screen.queryByTestId('roll-csp-btn')).not.toBeInTheDocument()
+  expect(screen.queryByTestId('roll-cc-btn')).not.toBeInTheDocument()
+  expect(screen.getByTestId('open-covered-call-btn')).toBeInTheDocument()
+})
+
+describe('terminal phases show no action buttons', () => {
+  const TERMINAL_PHASES = [
+    'CSP_CLOSED_PROFIT',
+    'CSP_CLOSED_LOSS',
+    'CC_CLOSED_PROFIT',
+    'CC_CLOSED_LOSS',
+    'WHEEL_COMPLETE',
+    'CSP_EXPIRED',
+    'CC_EXPIRED'
+  ] as const
+
+  it.each(TERMINAL_PHASES)('phase=%s → no action buttons rendered', (phase) => {
+    render(<PositionDetailActions {...BASE_PROPS} phase={phase} />)
+    expect(screen.queryByTestId('roll-csp-btn')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('roll-cc-btn')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('open-covered-call-btn')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('record-assignment-btn')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('record-expiration-btn')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('close-cc-early-btn')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('record-call-away-btn')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('record-cc-expiration-btn')).not.toBeInTheDocument()
+  })
+})

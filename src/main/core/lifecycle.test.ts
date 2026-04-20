@@ -755,12 +755,6 @@ describe('rollCsp', () => {
     expect(result.phase).toBe('CSP_OPEN')
   })
 
-  it('throws ValidationError with field=__phase__, code=invalid_phase when currentPhase is not CSP_OPEN', () => {
-    const e = catchValidation(() => rollCsp(validRollCspInput({ currentPhase: 'HOLDING_SHARES' })))
-    expect(e.field).toBe('__phase__')
-    expect(e.code).toBe('invalid_phase')
-  })
-
   it('throws ValidationError with field=newExpiration, code=must_be_after_current when newExpiration equals currentExpiration', () => {
     const e = catchValidation(() =>
       rollCsp(validRollCspInput({ currentExpiration: NEXT_MONTH, newExpiration: NEXT_MONTH }))
@@ -788,6 +782,25 @@ describe('rollCsp', () => {
     expect(e.field).toBe('newPremiumPerContract')
     expect(e.code).toBe('must_be_positive')
   })
+
+  describe('phase rejection', () => {
+    it.each([
+      'HOLDING_SHARES',
+      'CC_OPEN',
+      'CSP_EXPIRED',
+      'CSP_CLOSED_PROFIT',
+      'CSP_CLOSED_LOSS',
+      'CC_EXPIRED',
+      'CC_CLOSED_PROFIT',
+      'CC_CLOSED_LOSS',
+      'WHEEL_COMPLETE'
+    ])('throws invalid_phase when currentPhase is %s', (phase) => {
+      const e = catchValidation(() => rollCsp(validRollCspInput({ currentPhase: phase as never })))
+      expect(e.field).toBe('__phase__')
+      expect(e.code).toBe('invalid_phase')
+      expect(e.message).toBe('Position is not in CSP_OPEN phase')
+    })
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -807,12 +820,6 @@ describe('rollCc', () => {
       ...overrides
     }
   }
-
-  it('throws invalid_phase when position is not CC_OPEN', () => {
-    const e = catchValidation(() => rollCc(validRollCcInput({ currentPhase: 'CSP_OPEN' as never })))
-    expect(e.field).toBe('__phase__')
-    expect(e.code).toBe('invalid_phase')
-  })
 
   it('throws must_be_on_or_after_current when newExpiration is before currentExpiration', () => {
     const e = catchValidation(() =>
@@ -914,6 +921,24 @@ describe('rollCc', () => {
       })
     )
     expect(result.phase).toBe('CC_OPEN')
+  })
+
+  describe('phase rejection', () => {
+    it.each([
+      'CSP_OPEN',
+      'HOLDING_SHARES',
+      'CSP_EXPIRED',
+      'CSP_CLOSED_PROFIT',
+      'CSP_CLOSED_LOSS',
+      'CC_EXPIRED',
+      'CC_CLOSED_PROFIT',
+      'CC_CLOSED_LOSS',
+      'WHEEL_COMPLETE'
+    ])('throws invalid_phase when currentPhase is %s', (phase) => {
+      const e = catchValidation(() => rollCc(validRollCcInput({ currentPhase: phase as never })))
+      expect(e.field).toBe('__phase__')
+      expect(e.code).toBe('invalid_phase')
+    })
   })
 })
 

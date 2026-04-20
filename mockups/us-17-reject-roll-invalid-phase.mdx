@@ -1,7 +1,7 @@
 ---
 title: 'US-17: Roll Button Visibility by Phase'
 story: 'As a wheel trader, I want the app to show the Roll button only when the position is in a rollable phase (CSP_OPEN or CC_OPEN).'
-states: ['csp-open', 'cc-open', 'holding-shares', 'wheel-complete']
+states: ['csp-open', 'cc-open', 'holding-shares', 'csp-closed', 'cc-expired', 'wheel-complete']
 ---
 
 import { useState } from 'react'
@@ -15,6 +15,8 @@ _The Roll button appears in the action bar only for CSP_OPEN and CC_OPEN phases.
 - **csp-open**: CSP_OPEN phase — "Roll CSP" button visible alongside Close/Expire/Assign actions
 - **cc-open**: CC_OPEN phase — "Roll CC" button visible alongside Close/Expire/Call Away actions
 - **holding-shares**: HOLDING_SHARES phase — no roll button, only "Sell Covered Call" shown
+- **csp-closed**: CSP_CLOSED_PROFIT phase — no actions, terminal CSP phase (represents all CSP terminal states)
+- **cc-expired**: CC_EXPIRED phase — no roll button, returns to HOLDING_SHARES (sell new CC)
 - **wheel-complete**: WHEEL_COMPLETE phase — no actions, position is closed
 
 ---
@@ -48,6 +50,8 @@ export function MockPhaseBadge({ phase }) {
     CSP_OPEN: { label: 'Put Open', color: '#e6a817' },
     HOLDING_SHARES: { label: 'Holding Shares', color: '#58a6ff' },
     CC_OPEN: { label: 'Call Open', color: '#bc8cff' },
+    CSP_CLOSED_PROFIT: { label: 'CSP Closed (Profit)', color: '#3fb950' },
+    CC_EXPIRED: { label: 'CC Expired', color: '#8899aa' },
     WHEEL_COMPLETE: { label: 'Complete', color: '#3fb950' }
   }
   const { label, color } = map[phase] ?? { label: phase, color: '#8899aa' }
@@ -92,12 +96,14 @@ export function ActionButton({ label, variant, highlight }) {
 
 export function Mockup() {
   const [state, setState] = useState('csp-open')
-  const allStates = ['csp-open', 'cc-open', 'holding-shares', 'wheel-complete']
+  const allStates = ['csp-open', 'cc-open', 'holding-shares', 'csp-closed', 'cc-expired', 'wheel-complete']
 
 const phaseMap = {
 'csp-open': 'CSP_OPEN',
 'cc-open': 'CC_OPEN',
 'holding-shares': 'HOLDING_SHARES',
+'csp-closed': 'CSP_CLOSED_PROFIT',
+'cc-expired': 'CC_EXPIRED',
 'wheel-complete': 'WHEEL_COMPLETE',
 }
 const phase = phaseMap[state]
@@ -118,6 +124,10 @@ CC_OPEN: [
 HOLDING_SHARES: [
 { label: 'Sell Covered Call \u2192', variant: 'primary' },
 ],
+CSP_CLOSED_PROFIT: [],
+CC_EXPIRED: [
+{ label: 'Sell Covered Call \u2192', variant: 'primary' },
+],
 WHEEL_COMPLETE: [],
 }
 
@@ -126,6 +136,8 @@ const detailMap = {
 CSP_OPEN: 'PUT $180.00 · Apr 18, 2026 · 1 contract',
 CC_OPEN: 'CALL $185.00 · Apr 18, 2026 · 1 contract',
 HOLDING_SHARES: '100 shares · Cost basis $176.50',
+CSP_CLOSED_PROFIT: 'CSP closed for profit · Premium kept: $250.00',
+CC_EXPIRED: '100 shares · CC expired worthless · Cost basis $174.00',
 WHEEL_COMPLETE: 'Closed · Final P&L: +$780.00',
 }
 
@@ -167,7 +179,7 @@ return (
             </div>
           ) : (
             <div style={{ fontSize: 12, color: 'var(--wb-text-muted, #4a5a6a)', padding: '8px 0' }}>
-              No actions available — this wheel cycle is complete.
+              {phase === 'WHEEL_COMPLETE' ? 'No actions available — this wheel cycle is complete.' : 'No actions available — this position is in a terminal state.'}
             </div>
           )}
 
@@ -178,9 +190,9 @@ return (
             </div>
           )}
 
-          {phase === 'HOLDING_SHARES' && (
+          {phase !== 'CSP_OPEN' && phase !== 'CC_OPEN' && phase !== 'WHEEL_COMPLETE' && (
             <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 6, background: 'rgba(88,166,255,0.04)', border: '1px solid rgba(88,166,255,0.12)', fontSize: 11, color: 'var(--wb-text-secondary, #8899aa)' }}>
-              Roll is not available during Holding Shares — only open options can be rolled
+              Roll is not available in {phase.replace(/_/g, ' ')} phase — only open options (CSP_OPEN or CC_OPEN) can be rolled
             </div>
           )}
         </div>

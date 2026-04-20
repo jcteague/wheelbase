@@ -75,26 +75,33 @@ export async function openDetailFor(page: Page, ticker: string): Promise<void> {
   await page.waitForSelector('[data-testid="position-detail"]')
 }
 
-/** Seed a position through to CC_OPEN state, return today's ISO date */
-export async function reachCcOpenState(
+/** Seed a position through to HOLDING_SHARES state, return today's ISO date */
+export async function reachHoldingSharesState(
   page: Page,
-  ccStrike: string,
-  ccPremium: string,
-  ccExpiration: string
+  opts: {
+    ticker?: string
+    strike?: string
+    contracts?: string
+    premium?: string
+    year?: number
+    month?: number
+    day?: number
+  } = {}
 ): Promise<string> {
   const today = localToday()
+  const {
+    ticker = 'AAPL',
+    strike = '180',
+    contracts = '1',
+    premium = '3.50',
+    year = 2027,
+    month = 1,
+    day = 17
+  } = opts
 
-  await openPosition(page, {
-    ticker: 'AAPL',
-    strike: '180',
-    contracts: '1',
-    premium: '3.50',
-    year: 2027,
-    month: 1,
-    day: 17
-  })
+  await openPosition(page, { ticker, strike, contracts, premium, year, month, day })
+  await openDetailFor(page, ticker)
 
-  await openDetailFor(page, 'AAPL')
   await page.click('[data-testid="record-assignment-btn"]')
   await page.waitForSelector('text=Assign CSP to Shares')
   await selectDate(page, '#assignment-date', today)
@@ -102,6 +109,18 @@ export async function reachCcOpenState(
   await page.waitForSelector('text=HOLDING 100 SHARES')
   await page.click('text=View full position history')
   await page.waitForSelector('[data-testid="position-detail"]')
+
+  return today
+}
+
+/** Seed a position through to CC_OPEN state, return today's ISO date */
+export async function reachCcOpenState(
+  page: Page,
+  ccStrike: string,
+  ccPremium: string,
+  ccExpiration: string
+): Promise<string> {
+  const today = await reachHoldingSharesState(page)
 
   await page.click('[data-testid="open-covered-call-btn"]')
   await page.waitForSelector('text=Open Covered Call')

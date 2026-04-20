@@ -5,6 +5,7 @@ import { assignCspPosition } from './assign-csp-position'
 import { openCoveredCallPosition } from './open-covered-call-position'
 import { createPosition } from './positions'
 import { rollCcPosition } from './roll-cc-position'
+import type { RollCcPayload } from '../schemas'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -260,6 +261,72 @@ describe('rollCcPosition', () => {
 
     expect(rollFromRow?.roll_chain_id).toBe(result.rollChainId)
     expect(rollToRow?.roll_chain_id).toBe(result.rollChainId)
+  })
+
+  describe('phase rejection', () => {
+    const rollPayload = (positionId: string): RollCcPayload => ({
+      positionId,
+      costToClosePerContract: 1.5,
+      newPremiumPerContract: 2.2,
+      newExpiration: isoDate(60),
+      newStrike: 188
+    })
+
+    // CSP_OPEN: the active-leg subquery finds the original CSP_OPEN leg,
+    // so the lifecycle engine rejects with invalid_phase.
+    it('rejects roll when phase is CSP_OPEN (lifecycle rejection)', () => {
+      const db = makeTestDb()
+      const { positionId } = makeOpenCcPosition(db)
+
+      db.prepare(`UPDATE positions SET phase = 'CSP_OPEN' WHERE id = ?`).run(positionId)
+
+      try {
+        rollCcPosition(db, positionId, rollPayload(positionId))
+        expect.fail('Expected ValidationError')
+      } catch (err) {
+        expect(err).toBeInstanceOf(ValidationError)
+        expect((err as ValidationError).field).toBe('__phase__')
+        expect((err as ValidationError).code).toBe('invalid_phase')
+      }
+
+      const detail = db.prepare(`SELECT phase FROM positions WHERE id = ?`).get(positionId) as {
+        phase: string
+      }
+      expect(detail.phase).toBe('CSP_OPEN')
+    })
+
+    // Non-CC_OPEN phases (other than CSP_OPEN) where the active-leg subquery
+    // returns null — rejected with no_active_leg before reaching the lifecycle engine.
+    it.each([
+      'HOLDING_SHARES',
+      'WHEEL_COMPLETE',
+      'CSP_EXPIRED',
+      'CSP_CLOSED_PROFIT',
+      'CSP_CLOSED_LOSS',
+      'CC_EXPIRED',
+      'CC_CLOSED_PROFIT',
+      'CC_CLOSED_LOSS'
+    ] as const)('rejects roll when phase is %s (no active leg)', (phase) => {
+      const db = makeTestDb()
+      const { positionId } = makeOpenCcPosition(db)
+
+      db.prepare(`UPDATE positions SET phase = ? WHERE id = ?`).run(phase, positionId)
+
+      try {
+        rollCcPosition(db, positionId, rollPayload(positionId))
+        expect.fail('Expected ValidationError')
+      } catch (err) {
+        expect(err).toBeInstanceOf(ValidationError)
+        expect((err as ValidationError).field).toBe('__root__')
+        expect((err as ValidationError).code).toBe('no_active_leg')
+      }
+
+      // Phase unchanged after rejection
+      const detail = db.prepare(`SELECT phase FROM positions WHERE id = ?`).get(positionId) as {
+        phase: string
+      }
+      expect(detail.phase).toBe(phase)
+    })
   })
 
   it('CC roll up to higher strike — basis decreases only by net credit, strike delta ignored', () => {

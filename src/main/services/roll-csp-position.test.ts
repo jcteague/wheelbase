@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { ValidationError } from '../core/lifecycle'
 import { isoDate, makeTestDb } from '../test-utils'
 import { rollCspPosition } from './roll-csp-position'
+import type { RollCspPayload } from '../schemas'
+import { closeCspPosition } from './close-csp-position'
 import { createPosition } from './positions'
 import { getPosition } from './get-position'
 
@@ -293,6 +295,99 @@ describe('rollCspPosition', () => {
     expect(detail!.activeLeg!.legRole).toBe('ROLL_TO')
     expect(detail!.activeLeg!.strike).toBe('170.0000')
     expect(detail!.activeLeg!.expiration).toBe(isoDate(90))
+  })
+
+  describe('phase rejection', () => {
+    const rollPayload = (positionId: string): RollCspPayload => ({
+      positionId,
+      costToClosePerContract: 1.2,
+      newPremiumPerContract: 2.8,
+      newExpiration: isoDate(60)
+    })
+
+    // Non-CSP_OPEN phases where the active-leg subquery returns null
+    // (only CSP_OPEN and CC_OPEN phases resolve an active leg).
+    // These are rejected with no_active_leg before reaching the lifecycle engine.
+    it.each([
+      'HOLDING_SHARES',
+      'WHEEL_COMPLETE',
+      'CSP_EXPIRED',
+      'CSP_CLOSED_PROFIT',
+      'CSP_CLOSED_LOSS',
+      'CC_EXPIRED',
+      'CC_CLOSED_PROFIT',
+      'CC_CLOSED_LOSS'
+    ] as const)('rejects roll when phase is %s (no active leg)', (phase) => {
+      const db = makeTestDb()
+      const { position } = makeOpenPosition(db)
+
+      db.prepare(`UPDATE positions SET phase = ? WHERE id = ?`).run(phase, position.id)
+
+      try {
+        rollCspPosition(db, position.id, rollPayload(position.id))
+        expect.fail('Expected ValidationError')
+      } catch (err) {
+        expect(err).toBeInstanceOf(ValidationError)
+        expect((err as ValidationError).field).toBe('__root__')
+        expect((err as ValidationError).code).toBe('no_active_leg')
+      }
+
+      // Phase unchanged after rejection
+      const detail = getPosition(db, position.id)
+      expect(detail!.position.phase).toBe(phase)
+    })
+
+    // CC_OPEN phase has an active leg (the CC_OPEN leg from the subquery would
+    // resolve a ROLL_TO or CC_OPEN leg if one existed, but our CSP position only
+    // has a CSP_OPEN leg). The active-leg subquery filters by phase, so CC_OPEN
+    // with only a CSP_OPEN leg also yields null.
+    it('rejects roll when phase is CC_OPEN (no active leg)', () => {
+      const db = makeTestDb()
+      const { position } = makeOpenPosition(db)
+
+      db.prepare(`UPDATE positions SET phase = 'CC_OPEN' WHERE id = ?`).run(position.id)
+
+      try {
+        rollCspPosition(db, position.id, rollPayload(position.id))
+        expect.fail('Expected ValidationError')
+      } catch (err) {
+        expect(err).toBeInstanceOf(ValidationError)
+        expect((err as ValidationError).field).toBe('__root__')
+        expect((err as ValidationError).code).toBe('no_active_leg')
+      }
+
+      const detail = getPosition(db, position.id)
+      expect(detail!.position.phase).toBe('CC_OPEN')
+    })
+
+    it('rejects roll after CSP closed early', () => {
+      const db = makeTestDb()
+      const { position } = makeOpenPosition(db)
+
+      // Close the CSP early (buy to close at a profit)
+      closeCspPosition(db, position.id, {
+        positionId: position.id,
+        closePricePerContract: 1.0,
+        fillDate: isoDate(0)
+      })
+
+      const detailBefore = getPosition(db, position.id)
+      const phaseBefore = detailBefore!.position.phase
+
+      try {
+        rollCspPosition(db, position.id, rollPayload(position.id))
+        expect.fail('Expected ValidationError')
+      } catch (err) {
+        expect(err).toBeInstanceOf(ValidationError)
+        // Closed position has no active leg resolvable by the subquery
+        expect((err as ValidationError).field).toBe('__root__')
+        expect((err as ValidationError).code).toBe('no_active_leg')
+      }
+
+      // Phase unchanged after rejection
+      const detailAfter = getPosition(db, position.id)
+      expect(detailAfter!.position.phase).toBe(phaseBefore)
+    })
   })
 
   it('roll-down to lower strike — basisPerShare reflects strike delta + net credit', () => {
