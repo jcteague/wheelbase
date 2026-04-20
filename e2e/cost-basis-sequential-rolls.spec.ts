@@ -446,6 +446,82 @@ describe('US-16: cost basis after sequential rolls', () => {
   })
 
   // -------------------------------------------------------------------------
+  // AC10: Multi-contract CC roll with partial coverage — basis prorated
+  // CSP $50 / $2.00 / 2 contracts → assign (200 shares, basis $48.00)
+  // → CC 1 contract $52 / $1.50 (income $150 / 200 shares = $0.75/sh → basis $47.25)
+  // → CC roll (close $2.00, new $2.80, net credit $0.80)
+  //   income $80 / 200 shares = $0.40/sh → basis $47.25 - $0.40 = $46.85
+  //
+  // Without proration the wrong answer would be:
+  //   $47.25 - $0.80 = $46.45 (applying full net credit per share)
+  // -------------------------------------------------------------------------
+  it(
+    'AC10: multi-contract CC roll with partial coverage — basis prorated across all held shares',
+    { timeout: 120_000 },
+    async () => {
+      const page = await launchFreshApp()
+
+      // Open CSP with 2 contracts
+      await openCsp(page, {
+        strike: '50',
+        premium: '2.00',
+        contracts: '2',
+        expiration: CSP_EXPIRATION
+      })
+      await openDetailFor(page, 'AAPL')
+
+      // Assign — 200 shares
+      const today = localToday()
+      await page.click('[data-testid="record-assignment-btn"]')
+      await page.waitForSelector('text=Assign CSP to Shares')
+      await selectDate(page, '#assignment-date', today)
+      await page.click('button:has-text("Confirm Assignment")')
+      await page.waitForSelector('text=HOLDING 200 SHARES')
+      await page.click('text=View full position history')
+      await page.waitForSelector('[data-testid="position-detail"]')
+
+      // Open CC with only 1 contract (partial coverage on 200 shares)
+      await page.click('[data-testid="open-covered-call-btn"]')
+      await page.waitForSelector('text=Open Covered Call')
+      await dismissStaleCalendar(page)
+      await page.fill('[data-testid="cc-strike"]', '52')
+      await page.fill('[data-testid="cc-premium"]', '1.50')
+      await page.fill('[data-testid="cc-contracts"]', '1')
+      await selectDate(page, '[data-testid="cc-expiration"]', CC_EXPIRATION)
+      await selectDate(page, '[data-testid="cc-fill-date"]', today)
+      await page.click('[data-testid="cc-submit"]')
+      await page.waitForSelector('text=CC OPEN')
+      await page.click('text=View full position history')
+      await page.waitForSelector('[data-testid="position-detail"]')
+
+      // Verify basis after partial CC open: $48.00 - ($150 / 200) = $48.00 - $0.75 = $47.25
+      let bodyText = await page.textContent('body')
+      expect(bodyText).toContain('$47.25')
+
+      // Roll CC: close $2.00, new $2.80, net credit $0.80
+      await doRollCc(page, {
+        costToClose: '2.00',
+        newPremium: '2.80',
+        newStrike: '55',
+        newExpiration: CC_ROLL_EXPIRATION
+      })
+
+      // CC roll success should show prorated basis
+      const successText = await page.textContent('body')
+      expect(successText).toContain('$47.25') // previous basis
+      expect(successText).toContain('$46.85') // new basis (prorated)
+
+      await dismissRollSuccess(page)
+
+      bodyText = await page.textContent('body')
+      // Correct prorated value
+      expect(bodyText).toContain('$46.85')
+      // Ensure the non-prorated wrong value is NOT shown
+      expect(bodyText).not.toContain('$46.45')
+    }
+  )
+
+  // -------------------------------------------------------------------------
   // AC8: Cost basis after CSP roll down to lower strike
   // CSP $50 / $2.00, roll down to $47 (close $1.20, new $1.50, net credit $0.30)
   // Expected: basis $44.70, NOT $47.70

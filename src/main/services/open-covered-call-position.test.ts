@@ -65,6 +65,7 @@ describe('openCoveredCallPosition', () => {
 
     expect(result.costBasisSnapshot.basisPerShare).toBe('174.2000')
     expect(result.costBasisSnapshot.totalPremiumCollected).toBe('580.0000')
+    expect(result.costBasisSnapshot.triggerEvent).toBe('CC_OPEN')
   })
 
   it('throws ValidationError when position not found', () => {

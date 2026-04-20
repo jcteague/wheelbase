@@ -44,9 +44,12 @@ export function rollCspPosition(
 
   // Cost basis calculation
   const prevSnapshot = positionDetail.costBasisSnapshot
+  if (!prevSnapshot) {
+    throw new ValidationError('__root__', 'no_snapshot', 'Position has no cost basis snapshot')
+  }
   const basisResult = calculateRollBasis({
-    prevBasisPerShare: prevSnapshot?.basisPerShare ?? '0.0000',
-    prevTotalPremiumCollected: prevSnapshot?.totalPremiumCollected ?? '0.0000',
+    prevBasisPerShare: prevSnapshot.basisPerShare,
+    prevTotalPremiumCollected: prevSnapshot.totalPremiumCollected,
     costToClosePerContract: costToCloseFormatted,
     newPremiumPerContract: newPremiumFormatted,
     contracts: activeLeg.contracts,
@@ -105,8 +108,8 @@ export function rollCspPosition(
     // Cost basis snapshot (no final PnL — position is still open)
     db.prepare(
       `INSERT INTO cost_basis_snapshots
-        (id, position_id, basis_per_share, total_premium_collected, final_pnl, snapshot_at, created_at)
-       VALUES (?, ?, ?, ?, NULL, ?, ?)`
+        (id, position_id, basis_per_share, total_premium_collected, final_pnl, trigger_event, snapshot_at, created_at)
+       VALUES (?, ?, ?, ?, NULL, 'CSP_ROLL', ?, ?)`
     ).run(
       snapshotId,
       positionId,
@@ -167,6 +170,7 @@ export function rollCspPosition(
       basisPerShare: basisResult.basisPerShare,
       totalPremiumCollected: basisResult.totalPremiumCollected,
       finalPnl: null,
+      triggerEvent: 'CSP_ROLL',
       snapshotAt,
       createdAt: now
     }

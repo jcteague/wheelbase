@@ -102,8 +102,8 @@ export function createPosition(
 
     db.prepare(
       `INSERT INTO cost_basis_snapshots
-        (id, position_id, basis_per_share, total_premium_collected, snapshot_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`
+        (id, position_id, basis_per_share, total_premium_collected, trigger_event, snapshot_at, created_at)
+       VALUES (?, ?, ?, ?, 'CSP_OPEN', ?, ?)`
     ).run(
       snapshotId,
       positionId,
@@ -157,6 +157,7 @@ export function createPosition(
       basisPerShare: basisFormatted,
       totalPremiumCollected: totalPremiumFormatted,
       finalPnl: null,
+      triggerEvent: 'CSP_OPEN',
       snapshotAt: now,
       createdAt: now
     }

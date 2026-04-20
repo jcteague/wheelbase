@@ -223,6 +223,8 @@ export interface RollBasisInput {
   legType: 'CSP' | 'CC'
   prevStrike?: string
   newStrike?: string
+  /** Required for CC rolls to prorate basis reduction across all held shares */
+  positionContracts?: number
 }
 
 export interface RollBasisResult {
@@ -238,16 +240,28 @@ export function calculateRollBasis(input: RollBasisInput): RollBasisResult {
     throw new Error('calculateRollBasis: prevStrike and newStrike are required for CSP rolls')
   }
 
+  if (input.legType === 'CC' && input.positionContracts === undefined) {
+    throw new Error('calculateRollBasis: positionContracts is required for CC rolls')
+  }
+
   const net = new Decimal(input.newPremiumPerContract).minus(input.costToClosePerContract)
   const prev = new Decimal(input.prevBasisPerShare)
-
-  const isCspDifferentStrike = input.legType === 'CSP' && input.newStrike !== input.prevStrike
-
-  const basisPerShare = isCspDifferentStrike
-    ? round4(prev.plus(new Decimal(input.newStrike!).minus(input.prevStrike!)).minus(net))
-    : round4(prev.minus(net))
-
   const netTotal = net.times(sharesFromContracts(input.contracts))
+
+  let basisPerShare: Decimal
+
+  if (input.legType === 'CC') {
+    // Prorate CC roll basis reduction across all held shares (like calculateCcOpenBasis)
+    const totalShares = sharesFromContracts(input.positionContracts!)
+    const basisReductionPerShare = netTotal.dividedBy(totalShares)
+    basisPerShare = round4(prev.minus(basisReductionPerShare))
+  } else {
+    const isCspDifferentStrike = input.newStrike !== input.prevStrike
+    basisPerShare = isCspDifferentStrike
+      ? round4(prev.plus(new Decimal(input.newStrike!).minus(input.prevStrike!)).minus(net))
+      : round4(prev.minus(net))
+  }
+
   const totalPremiumCollected = round4(new Decimal(input.prevTotalPremiumCollected).plus(netTotal))
 
   return {

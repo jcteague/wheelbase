@@ -167,6 +167,7 @@ describe('assignCspPosition — rolled positions', () => {
     // net credit = 1.50 - 0.80 = 0.70; correct basis = 50 - 2.00 - 0.70 = 47.30
     // buggy value: 50 - 2.00 - 1.50 (gross ROLL_TO) = 46.50
     expect(result.costBasisSnapshot.basisPerShare).toBe('47.3000')
+    expect(result.costBasisSnapshot.triggerEvent).toBe('CSP_ASSIGN')
   })
 
   it('assignment after one CSP roll — waterfall shows Roll #1 credit label', () => {

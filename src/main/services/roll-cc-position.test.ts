@@ -76,6 +76,21 @@ describe('rollCcPosition', () => {
     expect(parseFloat(result.costBasisSnapshot.basisPerShare)).toBeLessThan(prevBasis)
   })
 
+  it('snapshot has triggerEvent CC_ROLL', () => {
+    const db = makeTestDb()
+    const { positionId } = makeOpenCcPosition(db)
+
+    const result = rollCcPosition(db, positionId, {
+      positionId,
+      costToClosePerContract: 1.5,
+      newPremiumPerContract: 2.2,
+      newExpiration: isoDate(60),
+      newStrike: 188
+    })
+
+    expect(result.costBasisSnapshot.triggerEvent).toBe('CC_ROLL')
+  })
+
   it('happy path (net debit) — snapshot has higher basisPerShare', () => {
     const db = makeTestDb()
     const { positionId } = makeOpenCcPosition(db)
@@ -124,6 +139,28 @@ describe('rollCcPosition', () => {
       expect(err).toBeInstanceOf(ValidationError)
       expect((err as ValidationError).field).toBe('__root__')
       expect((err as ValidationError).code).toBe('not_found')
+    }
+  })
+
+  it('throws ValidationError(no_snapshot) when position has no cost basis snapshot', () => {
+    const db = makeTestDb()
+    const { positionId } = makeOpenCcPosition(db)
+
+    // Delete snapshots so costBasisSnapshot is null
+    db.prepare('DELETE FROM cost_basis_snapshots WHERE position_id = ?').run(positionId)
+
+    try {
+      rollCcPosition(db, positionId, {
+        positionId,
+        costToClosePerContract: 1.5,
+        newPremiumPerContract: 2.2,
+        newExpiration: isoDate(60)
+      })
+      expect.fail('Expected ValidationError')
+    } catch (err) {
+      expect(err).toBeInstanceOf(ValidationError)
+      expect((err as ValidationError).field).toBe('__root__')
+      expect((err as ValidationError).code).toBe('no_snapshot')
     }
   })
 

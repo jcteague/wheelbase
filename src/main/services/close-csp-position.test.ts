@@ -34,6 +34,7 @@ describe('closeCspPosition', () => {
     expect(result.leg.fillDate).toBe(isoDate(5))
     expect(result.leg.premiumPerContract).toBe('1.0000')
     expect(result.costBasisSnapshot.finalPnl).toBe('150.0000')
+    expect(result.costBasisSnapshot.triggerEvent).toBe('CSP_CLOSE')
   })
 
   it('closes at loss and returns CSP_CLOSED_LOSS result', () => {

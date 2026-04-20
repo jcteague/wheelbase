@@ -100,6 +100,7 @@ export function expireCcPosition(
       basisPerShare: '0.0000',
       totalPremiumCollected: '0.0000',
       finalPnl: null,
+      triggerEvent: 'CC_OPEN' as const,
       snapshotAt: now,
       createdAt: now
     },

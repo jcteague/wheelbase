@@ -52,6 +52,7 @@ describe('createPosition', () => {
     const { costBasisSnapshot } = createPosition(db, VALID_PAYLOAD)
     expect(costBasisSnapshot.basisPerShare).toBe('146.5000')
     expect(costBasisSnapshot.totalPremiumCollected).toBe('350.0000')
+    expect(costBasisSnapshot.triggerEvent).toBe('CSP_OPEN')
   })
 
   it('persists all three rows to the database', () => {

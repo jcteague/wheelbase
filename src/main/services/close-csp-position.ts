@@ -78,8 +78,8 @@ export function closeCspPosition(
 
     db.prepare(
       `INSERT INTO cost_basis_snapshots
-        (id, position_id, basis_per_share, total_premium_collected, final_pnl, snapshot_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+        (id, position_id, basis_per_share, total_premium_collected, final_pnl, trigger_event, snapshot_at, created_at)
+       VALUES (?, ?, ?, ?, ?, 'CSP_CLOSE', ?, ?)`
     ).run(
       snapshotId,
       positionId,
@@ -126,6 +126,7 @@ export function closeCspPosition(
       basisPerShare: openSnapshot?.basisPerShare ?? '0.0000',
       totalPremiumCollected: openSnapshot?.totalPremiumCollected ?? '0.0000',
       finalPnl: calcResult.finalPnl,
+      triggerEvent: 'CSP_CLOSE',
       snapshotAt,
       createdAt: now
     }

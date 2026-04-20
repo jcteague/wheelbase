@@ -68,12 +68,23 @@ export interface LegRecord {
   updatedAt: string
 }
 
+export type TriggerEvent =
+  | 'CSP_OPEN'
+  | 'CSP_CLOSE'
+  | 'CSP_EXPIRE'
+  | 'CSP_ASSIGN'
+  | 'CSP_ROLL'
+  | 'CC_OPEN'
+  | 'CC_ROLL'
+  | 'CALL_AWAY'
+
 export interface CostBasisSnapshotRecord {
   id: string
   positionId: string
   basisPerShare: string
   totalPremiumCollected: string
   finalPnl: string | null
+  triggerEvent: TriggerEvent
   snapshotAt: string
   createdAt: string
 }

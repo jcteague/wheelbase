@@ -48,6 +48,7 @@ interface PositionRow {
   basis_per_share: string | null
   total_premium_collected: string | null
   final_pnl: string | null
+  trigger_event: string | null
   snapshot_at: string | null
   snapshot_created_at: string | null
 }
@@ -78,6 +79,7 @@ function mapSnapshotRow(r: SnapshotRow): CostBasisSnapshotRecord {
     basisPerShare: r.basis_per_share,
     totalPremiumCollected: r.total_premium_collected,
     finalPnl: r.final_pnl,
+    triggerEvent: r.trigger_event as CostBasisSnapshotRecord['triggerEvent'],
     snapshotAt: r.snapshot_at,
     createdAt: r.created_at
   }
@@ -117,6 +119,7 @@ function mapLatestSnapshot(row: PositionRow): CostBasisSnapshotRecord | null {
     basisPerShare: row.basis_per_share!,
     totalPremiumCollected: row.total_premium_collected!,
     finalPnl: row.final_pnl ?? null,
+    triggerEvent: row.trigger_event as CostBasisSnapshotRecord['triggerEvent'],
     snapshotAt: row.snapshot_at!,
     createdAt: row.snapshot_created_at!
   }
@@ -133,7 +136,7 @@ const GET_LEGS_QUERY = `
 
 const GET_ALL_SNAPSHOTS_QUERY = `
   SELECT
-    id, position_id, basis_per_share, total_premium_collected, final_pnl, snapshot_at, created_at
+    id, position_id, basis_per_share, total_premium_collected, final_pnl, trigger_event, snapshot_at, created_at
   FROM cost_basis_snapshots
   WHERE position_id = ?
   ORDER BY snapshot_at ASC
@@ -145,6 +148,7 @@ interface SnapshotRow {
   basis_per_share: string
   total_premium_collected: string
   final_pnl: string | null
+  trigger_event: string
   snapshot_at: string
   created_at: string
 }
@@ -188,6 +192,7 @@ const GET_QUERY = `
     cbs.basis_per_share,
     cbs.total_premium_collected,
     cbs.final_pnl,
+    cbs.trigger_event,
     cbs.snapshot_at,
     cbs.created_at AS snapshot_created_at
   FROM positions p

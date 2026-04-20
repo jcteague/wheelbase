@@ -82,6 +82,7 @@ describe('expireCspPosition', () => {
 
     // 1 contract at $2.50 = $250 total premium
     expect(result.costBasisSnapshot.finalPnl).toBe('250.0000')
+    expect(result.costBasisSnapshot.triggerEvent).toBe('CSP_EXPIRE')
   })
 
   it('persists expire leg in the DB', () => {

@@ -639,7 +639,49 @@ describe('calculateRollBasis', () => {
       prevTotalPremiumCollected: '270.0000',
       costToClosePerContract: '2.00',
       newPremiumPerContract: '2.80',
-      contracts: 1
+      contracts: 1,
+      positionContracts: 1
+    }
+    const result = calculateRollBasis(input)
+    expect(result.basisPerShare).toBe('45.0000')
+    expect(result.totalPremiumCollected).toBe('350.0000')
+  })
+
+  it('CC roll prorates basis reduction across all held shares for partial coverage', () => {
+    // 200 shares held (positionContracts=2), rolling 1 CC contract
+    // net = 2.80 - 2.00 = 0.80 credit per contract
+    // totalCcIncome = 0.80 × 1 × 100 = $80
+    // basisReduction = 80 / 200 = 0.40 per share
+    // basisPerShare = 45.80 - 0.40 = 45.40 (NOT 45.80 - 0.80 = 45.00)
+    // totalPremiumCollected = 270 + 80 = 350
+    const input: RollBasisInput = {
+      legType: 'CC',
+      prevBasisPerShare: '45.80',
+      prevTotalPremiumCollected: '270.0000',
+      costToClosePerContract: '2.00',
+      newPremiumPerContract: '2.80',
+      contracts: 1,
+      positionContracts: 2
+    }
+    const result = calculateRollBasis(input)
+    expect(result.basisPerShare).toBe('45.4000')
+    expect(result.totalPremiumCollected).toBe('350.0000')
+  })
+
+  it('CC roll fully covered (positionContracts equals contracts) — full net credit applied per share', () => {
+    // 100 shares held (positionContracts=1), rolling 1 CC
+    // net = 2.80 - 2.00 = 0.80
+    // totalCcIncome = 0.80 × 1 × 100 = $80
+    // basisReduction = 80 / 100 = 0.80 per share
+    // basisPerShare = 45.80 - 0.80 = 45.00
+    const input: RollBasisInput = {
+      legType: 'CC',
+      prevBasisPerShare: '45.80',
+      prevTotalPremiumCollected: '270.0000',
+      costToClosePerContract: '2.00',
+      newPremiumPerContract: '2.80',
+      contracts: 1,
+      positionContracts: 1
     }
     const result = calculateRollBasis(input)
     expect(result.basisPerShare).toBe('45.0000')

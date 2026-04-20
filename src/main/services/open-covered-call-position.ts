@@ -91,8 +91,8 @@ export function openCoveredCallPosition(
 
     db.prepare(
       `INSERT INTO cost_basis_snapshots
-        (id, position_id, basis_per_share, total_premium_collected, final_pnl, snapshot_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+        (id, position_id, basis_per_share, total_premium_collected, final_pnl, trigger_event, snapshot_at, created_at)
+       VALUES (?, ?, ?, ?, ?, 'CC_OPEN', ?, ?)`
     ).run(
       snapshotId,
       positionId,
@@ -136,6 +136,7 @@ export function openCoveredCallPosition(
       basisPerShare: basisResult.basisPerShare,
       totalPremiumCollected: basisResult.totalPremiumCollected,
       finalPnl: null,
+      triggerEvent: 'CC_OPEN',
       snapshotAt,
       createdAt: now
     }

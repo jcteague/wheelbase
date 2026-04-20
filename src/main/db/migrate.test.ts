@@ -39,7 +39,8 @@ describe('runMigrations', () => {
     expect(applied).toEqual([
       '001_initial_schema.sql',
       '002_add_query_indexes.sql',
-      '003_rename_option_type_to_instrument_type.sql'
+      '003_rename_option_type_to_instrument_type.sql',
+      '004_add_trigger_event_to_snapshots.sql'
     ])
   })
 
@@ -128,6 +129,14 @@ describe('runMigrations', () => {
         )
         .run()
     ).toThrow(/CHECK constraint failed/i)
+  })
+
+  it('cost_basis_snapshots has trigger_event column after migration 004', () => {
+    const db = makeTestDb()
+    const cols = (
+      db.prepare(`PRAGMA table_info(cost_basis_snapshots)`).all() as { name: string }[]
+    ).map((r) => r.name)
+    expect(cols).toContain('trigger_event')
   })
 
   it('removes the option_type column from legs after all migrations', () => {

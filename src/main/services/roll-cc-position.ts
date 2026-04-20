@@ -46,13 +46,23 @@ export function rollCcPosition(
 
   // Cost basis calculation
   const prevSnapshot = positionDetail.costBasisSnapshot
+  if (!prevSnapshot) {
+    throw new ValidationError('__root__', 'no_snapshot', 'Position has no cost basis snapshot')
+  }
+
+  const assignLeg = positionDetail.legs.find((l) => l.legRole === 'ASSIGN')
+  if (!assignLeg) {
+    throw new ValidationError('__root__', 'no_assign_leg', 'Position has no assignment leg')
+  }
+
   const basisResult = calculateRollBasis({
-    prevBasisPerShare: prevSnapshot?.basisPerShare ?? '0.0000',
-    prevTotalPremiumCollected: prevSnapshot?.totalPremiumCollected ?? '0.0000',
+    prevBasisPerShare: prevSnapshot.basisPerShare,
+    prevTotalPremiumCollected: prevSnapshot.totalPremiumCollected,
     costToClosePerContract: costToCloseFormatted,
     newPremiumPerContract: newPremiumFormatted,
     contracts: activeLeg.contracts,
-    legType: 'CC'
+    legType: 'CC',
+    positionContracts: assignLeg.contracts
   })
 
   const rollChainId = randomUUID()
@@ -105,8 +115,8 @@ export function rollCcPosition(
     // Cost basis snapshot (no final PnL — position is still open)
     db.prepare(
       `INSERT INTO cost_basis_snapshots
-        (id, position_id, basis_per_share, total_premium_collected, final_pnl, snapshot_at, created_at)
-       VALUES (?, ?, ?, ?, NULL, ?, ?)`
+        (id, position_id, basis_per_share, total_premium_collected, final_pnl, trigger_event, snapshot_at, created_at)
+       VALUES (?, ?, ?, ?, NULL, 'CC_ROLL', ?, ?)`
     ).run(
       snapshotId,
       positionId,
@@ -167,6 +177,7 @@ export function rollCcPosition(
       basisPerShare: basisResult.basisPerShare,
       totalPremiumCollected: basisResult.totalPremiumCollected,
       finalPnl: null,
+      triggerEvent: 'CC_ROLL',
       snapshotAt,
       createdAt: now
     }

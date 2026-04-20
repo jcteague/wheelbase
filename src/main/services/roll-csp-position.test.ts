@@ -51,6 +51,20 @@ describe('rollCspPosition', () => {
     )
   })
 
+  it('snapshot has triggerEvent CSP_ROLL', () => {
+    const db = makeTestDb()
+    const { position } = makeOpenPosition(db)
+
+    const result = rollCspPosition(db, position.id, {
+      positionId: position.id,
+      costToClosePerContract: 1.2,
+      newPremiumPerContract: 2.8,
+      newExpiration: isoDate(60)
+    })
+
+    expect(result.costBasisSnapshot.triggerEvent).toBe('CSP_ROLL')
+  })
+
   it('happy path (net debit): snapshot has higher basisPerShare', () => {
     const db = makeTestDb()
     const { position, costBasisSnapshot: originalSnapshot } = makeOpenPosition(db)
@@ -106,6 +120,28 @@ describe('rollCspPosition', () => {
       expect(err).toBeInstanceOf(ValidationError)
       expect((err as ValidationError).field).toBe('__root__')
       expect((err as ValidationError).code).toBe('no_active_leg')
+    }
+  })
+
+  it('throws ValidationError(no_snapshot) when position has no cost basis snapshot', () => {
+    const db = makeTestDb()
+    const { position } = makeOpenPosition(db)
+
+    // Delete snapshots so costBasisSnapshot is null
+    db.prepare('DELETE FROM cost_basis_snapshots WHERE position_id = ?').run(position.id)
+
+    try {
+      rollCspPosition(db, position.id, {
+        positionId: position.id,
+        costToClosePerContract: 1.2,
+        newPremiumPerContract: 2.8,
+        newExpiration: isoDate(60)
+      })
+      expect.fail('Expected ValidationError')
+    } catch (err) {
+      expect(err).toBeInstanceOf(ValidationError)
+      expect((err as ValidationError).field).toBe('__root__')
+      expect((err as ValidationError).code).toBe('no_snapshot')
     }
   })
 

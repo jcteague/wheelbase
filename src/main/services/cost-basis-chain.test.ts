@@ -9,6 +9,7 @@ import { rollCspPosition } from './roll-csp-position'
 interface SnapshotRow {
   basis_per_share: string
   total_premium_collected: string
+  trigger_event: string
   snapshot_at: string
 }
 
@@ -102,6 +103,29 @@ describe('cost basis snapshot chain', () => {
 
     const timestamps = rows.map((r) => r.snapshot_at)
     expect(timestamps).toEqual([...timestamps].sort())
+  })
+
+  it('each snapshot records the correct trigger event', () => {
+    const db = makeTestDb()
+    const positionId = buildFullLifecycle(db)
+
+    const rows = db
+      .prepare(
+        `SELECT trigger_event
+         FROM cost_basis_snapshots
+         WHERE position_id = ?
+         ORDER BY snapshot_at ASC`
+      )
+      .all(positionId) as Pick<SnapshotRow, 'trigger_event'>[]
+
+    expect(rows.map((r) => r.trigger_event)).toEqual([
+      'CSP_OPEN',
+      'CSP_ROLL',
+      'CSP_ROLL',
+      'CSP_ASSIGN',
+      'CC_OPEN',
+      'CC_ROLL'
+    ])
   })
 
   it('snapshot chain basis values match expected progression', () => {

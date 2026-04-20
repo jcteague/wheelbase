@@ -95,8 +95,8 @@ export function recordCallAwayPosition(
 
     db.prepare(
       `INSERT INTO cost_basis_snapshots
-        (id, position_id, basis_per_share, total_premium_collected, final_pnl, snapshot_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+        (id, position_id, basis_per_share, total_premium_collected, final_pnl, trigger_event, snapshot_at, created_at)
+       VALUES (?, ?, ?, ?, ?, 'CALL_AWAY', ?, ?)`
     ).run(snapshotId, positionId, basisPerShare, totalPremiumCollected, finalPnl, snapshotAt, now)
   })()
 
@@ -132,6 +132,7 @@ export function recordCallAwayPosition(
       basisPerShare,
       totalPremiumCollected,
       finalPnl,
+      triggerEvent: 'CALL_AWAY',
       snapshotAt,
       createdAt: now
     },

@@ -124,6 +124,7 @@ describe('recordCallAwayPosition', () => {
     expect(typeof result.cycleDays).toBe('number')
     expect(typeof result.annualizedReturn).toBe('string')
     expect(result.basisPerShare).toBe('174.2000')
+    expect(result.costBasisSnapshot.triggerEvent).toBe('CALL_AWAY')
   })
 
   it('throws ValidationError (invalid_phase) when position is in HOLDING_SHARES', () => {
