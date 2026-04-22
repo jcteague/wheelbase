@@ -1,0 +1,215 @@
+---
+title: 'US-22: Distance-to-Strike Indicator'
+story: 'As a wheel trader, I want to see how close the underlying price is to each position strike, displayed as a percentage on the card.'
+states: ['otm-safe', 'approaching', 'itm-danger', 'no-price']
+---
+
+import { useState } from 'react'
+
+# US-22: Distance-to-Strike Indicator
+
+_Show a visual distance indicator on each position card representing how close the underlying price is to the strike as a percentage. Phase 2 story — requires live market data from Epic 06._
+
+## Acceptance Criteria States
+
+- **otm-safe**: Positions comfortably out-of-the-money (green) — CSP with price +5% above strike, CC with price -4% below strike
+- **approaching**: Price within 2% of strike — amber warning indicator
+- **itm-danger**: Price has crossed the strike (in-the-money) — red indicator
+- **no-price**: Live price unavailable — shows "—" in muted text
+
+---
+
+export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
+
+export const SCENARIOS = {
+  'otm-safe': [
+    { ticker: 'AAPL', type: 'PUT', strike: 180, price: 189.00, phase: 'CSP_OPEN' },
+    { ticker: 'MSFT', type: 'CALL', strike: 420, price: 403.20, phase: 'CC_OPEN' },
+  ],
+  'approaching': [
+    { ticker: 'AAPL', type: 'PUT', strike: 180, price: 181.08, phase: 'CSP_OPEN' },
+    { ticker: 'MSFT', type: 'CALL', strike: 420, price: 416.80, phase: 'CC_OPEN' },
+  ],
+  'itm-danger': [
+    { ticker: 'AAPL', type: 'PUT', strike: 180, price: 172.80, phase: 'CSP_OPEN' },
+    { ticker: 'MSFT', type: 'CALL', strike: 420, price: 431.60, phase: 'CC_OPEN' },
+  ],
+  'no-price': [
+    { ticker: 'AAPL', type: 'PUT', strike: 180, price: null, phase: 'CSP_OPEN' },
+    { ticker: 'MSFT', type: 'CALL', strike: 420, price: null, phase: 'CC_OPEN' },
+  ],
+}
+
+export function computeDistance(price, strike) {
+  if (price === null) return null
+  return ((price - strike) / strike) * 100
+}
+
+export function isOtm(type, distance) {
+  if (distance === null) return false
+  if (type === 'PUT') return distance > 0
+  return distance < 0
+}
+
+export function getDistanceColor(type, distance) {
+  if (distance === null) return '#4a5a6a'
+  const otm = isOtm(type, distance)
+  const abs = Math.abs(distance)
+  if (!otm) return 'var(--wb-red, #f85149)'
+  if (abs <= 2) return 'var(--wb-gold, #e6a817)'
+  return 'var(--wb-green, #3fb950)'
+}
+
+export function getDistanceLabel(type, distance) {
+  if (distance === null) return '—'
+  const sign = distance >= 0 ? '+' : ''
+  return `${sign}${distance.toFixed(1)}%`
+}
+
+export function getStatusLabel(type, distance) {
+  if (distance === null) return 'No data'
+  const otm = isOtm(type, distance)
+  const abs = Math.abs(distance)
+  if (!otm) return 'IN THE MONEY'
+  if (abs <= 2) return 'APPROACHING'
+  if (abs <= 5) return 'OUT OF MONEY'
+  return 'SAFE'
+}
+
+export function DistanceGauge({ type, strike, price }) {
+  const distance = computeDistance(price, strike)
+  const color = getDistanceColor(type, distance)
+  const label = getDistanceLabel(type, distance)
+  const status = getStatusLabel(type, distance)
+  const otm = isOtm(type, distance)
+  const abs = distance !== null ? Math.abs(distance) : 0
+
+  // Gauge bar width: capped at 100% for ±10%
+  const barWidth = distance !== null ? Math.min(abs / 10 * 100, 100) : 0
+
+  return (
+    <div style={{ fontFamily: MONO }}>
+      {/* Percentage + status */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+          <span style={{ fontSize: '1.1rem', fontWeight: 700, color, letterSpacing: '-0.02em' }}>{label}</span>
+          {price !== null && (
+            <span style={{ fontSize: '0.65rem', color: '#6a7a8a' }}>
+              ${price.toFixed(2)} vs ${type} ${strike.toFixed(2)}
+            </span>
+          )}
+        </div>
+        <span style={{
+          fontSize: '0.55rem', fontWeight: 600, letterSpacing: '0.1em',
+          padding: '2px 6px', borderRadius: 3,
+          background: color + '15', color, border: '1px solid ' + color + '30',
+        }}>{status}</span>
+      </div>
+
+      {/* Visual gauge bar */}
+      <div style={{
+        height: 4, borderRadius: 2,
+        background: 'rgba(30,42,56,0.6)',
+        overflow: 'hidden',
+      }}>
+        {distance !== null && (
+          <div style={{
+            height: '100%', borderRadius: 2,
+            width: barWidth + '%',
+            background: color,
+            transition: 'width 0.3s ease',
+          }} />
+        )}
+      </div>
+
+      {/* Tooltip line */}
+      {price !== null && (
+        <div style={{ fontSize: '0.6rem', color: '#4a5a6a', marginTop: 4 }}>
+          {distance > 0 ? `${Math.abs(distance).toFixed(1)}% above` : `${Math.abs(distance).toFixed(1)}% below`} {type.toLowerCase()} strike
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function PositionCardWithDistance({ pos }) {
+  const phaseColors = { CSP_OPEN: '#e6a817', CC_OPEN: '#d2a8ff' }
+  const phaseLabels = { CSP_OPEN: 'Sell Put', CC_OPEN: 'Sell Call' }
+  const color = phaseColors[pos.phase] ?? '#8899aa'
+
+  return (
+    <div style={{
+      background: 'var(--wb-bg-surface, #070a0e)',
+      border: '1px solid var(--wb-border, #1e2a38)',
+      borderRadius: 8, overflow: 'hidden', fontFamily: MONO,
+    }}>
+      {/* Header */}
+      <div style={{ padding: '12px 14px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(30,42,56,0.4)' }}>
+        <span style={{ fontSize: '1.05rem', fontWeight: 700 }}>{pos.ticker}</span>
+        <span style={{
+          fontSize: '0.6rem', fontWeight: 500, padding: '2px 7px', borderRadius: 4,
+          background: color + '18', color, border: '1px solid ' + color + '30',
+        }}>
+          {phaseLabels[pos.phase]}
+        </span>
+      </div>
+
+      {/* Strike info */}
+      <div style={{ padding: '10px 14px', borderBottom: '1px solid rgba(30,42,56,0.4)' }}>
+        <div style={{ fontSize: '0.6rem', color: '#4a5a6a', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>
+          {pos.type} Strike
+        </div>
+        <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#e6a817' }}>${pos.strike.toFixed(2)}</div>
+      </div>
+
+      {/* Distance indicator — THE FOCAL ELEMENT */}
+      <div style={{
+        padding: '12px 14px',
+        background: 'rgba(14,24,36,0.3)',
+      }}>
+        <div style={{ fontSize: '0.55rem', color: '#4a5a6a', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>
+          Distance to Strike
+        </div>
+        <DistanceGauge type={pos.type} strike={pos.strike} price={pos.price} />
+      </div>
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [state, setState] = useState('otm-safe')
+  const allStates = ['otm-safe', 'approaching', 'itm-danger', 'no-price']
+  const positions = SCENARIOS[state]
+
+  return (
+    <div style={{ fontFamily: MONO, background: '#040608', color: 'var(--wb-text-primary, #e2eaf2)', minHeight: 400 }}>
+
+      {/* State toggle */}
+      <div style={{ display: 'flex', gap: 6, padding: '10px 14px', background: '#0d1117', borderBottom: '1px solid #1e2a38', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 9, color: '#4a5a6a', letterSpacing: '0.12em', textTransform: 'uppercase', alignSelf: 'center', marginRight: 4 }}>State:</span>
+        {allStates.map(s => (
+          <button key={s} onClick={() => setState(s)} style={{
+            fontSize: 10, fontFamily: MONO, padding: '3px 10px', borderRadius: 4,
+            border: '1px solid', borderColor: s === state ? '#e6a817' : '#1e2a38',
+            background: s === state ? 'rgba(230,168,23,0.12)' : 'transparent',
+            color: s === state ? '#e6a817' : '#6a7a8a', cursor: 'pointer',
+          }}>{s}</button>
+        ))}
+      </div>
+
+      <div style={{ padding: '20px 24px' }}>
+        <div style={{ fontSize: '0.65rem', color: '#4a5a6a', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>Phase 2 — Live Data</div>
+        <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 16 }}>Distance to Strike Indicator</div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+          {positions.map(pos => (
+            <PositionCardWithDistance key={pos.ticker} pos={pos} />
+          ))}
+        </div>
+      </div>
+
+    </div>
+  )
+}
+
+<Mockup />

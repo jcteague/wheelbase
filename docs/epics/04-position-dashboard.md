@@ -2,7 +2,9 @@
 
 ## Phase
 
-Phase 1 (static data) / Phase 2 (live data enrichment)
+**Deferred** — ships after Epic 06 (live market data). The dashboard's key value — distance-to-strike, real-time urgency — depends on live prices. Building the card layout before that data exists means redesigning it once we see how the data actually feels. Stories and mockups are complete and ready to pick up once Epic 06 lands.
+
+Originally scoped as: Phase 1 (static data) / Phase 2 (live data enrichment)
 
 ## Goal
 
@@ -38,6 +40,7 @@ A trader opens the app and immediately sees all active positions, key portfolio 
 ## Dependencies
 
 - Epic 01: Open and Track a CSP (positions must exist to display)
+- **Epic 06: Live Market Data** (distance-to-strike indicator, real-time price on cards)
 
 ## Strategy
 

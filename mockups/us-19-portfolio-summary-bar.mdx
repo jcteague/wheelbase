@@ -1,0 +1,137 @@
+---
+title: 'US-19: Portfolio Summary Bar'
+story: 'As a wheel trader, I want to see aggregate metrics at the top of the dashboard — capital deployed, premium MTD/YTD, and active position count.'
+states: ['populated', 'zero-state']
+---
+
+import { useState } from 'react'
+
+# US-19: Portfolio Summary Bar
+
+_Display a portfolio summary bar at the top of the dashboard showing total capital deployed, premium collected MTD and YTD, and count of active positions._
+
+## Acceptance Criteria States
+
+- **populated**: Three active positions with real aggregate numbers — capital deployed $102,000, premium MTD $350, YTD $1,670, 3 active
+- **zero-state**: No positions exist — all metrics show $0.00 / 0
+
+---
+
+export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
+
+export const SUMMARIES = {
+  populated: {
+    capitalDeployed: '$102,000.00',
+    premiumMtd: '$350.00',
+    premiumYtd: '$1,670.00',
+    activeCount: 3,
+    breakdown: 'AAPL: 1×$180 = $18,000 · MSFT: 2×$420 = $84,000 · TSLA: holding (excluded)',
+  },
+  'zero-state': {
+    capitalDeployed: '$0.00',
+    premiumMtd: '$0.00',
+    premiumYtd: '$0.00',
+    activeCount: 0,
+    breakdown: 'No active positions',
+  },
+}
+
+export function SummaryStat({ label, value, valueColor, sublabel }) {
+  return (
+    <div style={{ padding: '14px 18px', background: 'var(--wb-bg-surface, #070a0e)', display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <div style={{ fontSize: '0.6rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--wb-text-muted, #4a5a6a)', fontFamily: MONO }}>{label}</div>
+      <div style={{ fontSize: '1.1rem', fontWeight: 700, color: valueColor ?? 'var(--wb-text-primary, #e2eaf2)', fontFamily: MONO, letterSpacing: '-0.02em' }}>{value}</div>
+      {sublabel && <div style={{ fontSize: '0.6rem', color: 'var(--wb-text-muted, #4a5a6a)', fontFamily: MONO }}>{sublabel}</div>}
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [state, setState] = useState('populated')
+  const allStates = ['populated', 'zero-state']
+  const data = SUMMARIES[state]
+
+  return (
+    <div style={{ fontFamily: MONO, background: '#040608', color: 'var(--wb-text-primary, #e2eaf2)', minHeight: 320 }}>
+
+      {/* State toggle */}
+      <div style={{ display: 'flex', gap: 6, padding: '10px 14px', background: '#0d1117', borderBottom: '1px solid #1e2a38', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 9, color: '#4a5a6a', letterSpacing: '0.12em', textTransform: 'uppercase', alignSelf: 'center', marginRight: 4 }}>State:</span>
+        {allStates.map(s => (
+          <button key={s} onClick={() => setState(s)} style={{
+            fontSize: 10, fontFamily: MONO, padding: '3px 10px', borderRadius: 4,
+            border: '1px solid', borderColor: s === state ? '#e6a817' : '#1e2a38',
+            background: s === state ? 'rgba(230,168,23,0.12)' : 'transparent',
+            color: s === state ? '#e6a817' : '#6a7a8a', cursor: 'pointer',
+          }}>{s}</button>
+        ))}
+      </div>
+
+      {/* Page header (dimmed context) */}
+      <div style={{ padding: '16px 24px 8px', opacity: 0.4, pointerEvents: 'none' }}>
+        <div style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4a5a6a', marginBottom: 4 }}>Dashboard</div>
+        <div style={{ fontSize: '1.2rem', fontWeight: 700 }}>Positions</div>
+      </div>
+
+      {/* THE FOCAL ELEMENT: Summary Bar */}
+      <div style={{ padding: '8px 24px 16px' }}>
+        <section style={{ background: 'var(--wb-bg-surface, #070a0e)', border: '1px solid var(--wb-border, #1e2a38)', borderRadius: 8, overflow: 'hidden' }}>
+
+          {/* Section header */}
+          <div style={{
+            padding: '8px 18px', borderBottom: '1px solid var(--wb-border, #1e2a38)',
+            fontSize: '0.6rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase',
+            color: 'var(--wb-text-muted, #4a5a6a)', fontFamily: MONO,
+          }}>
+            Portfolio Overview
+          </div>
+
+          {/* Stat grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, background: 'var(--wb-border, #1e2a38)' }}>
+            <SummaryStat
+              label="Capital Deployed"
+              value={data.capitalDeployed}
+              valueColor="var(--wb-text-primary, #e2eaf2)"
+              sublabel="collateral reserved"
+            />
+            <SummaryStat
+              label="Premium MTD"
+              value={data.premiumMtd}
+              valueColor="var(--wb-green, #3fb950)"
+              sublabel="April 2026"
+            />
+            <SummaryStat
+              label="Premium YTD"
+              value={data.premiumYtd}
+              valueColor="var(--wb-green, #3fb950)"
+              sublabel="2026"
+            />
+            <SummaryStat
+              label="Active Positions"
+              value={data.activeCount}
+              valueColor="var(--wb-gold, #e6a817)"
+            />
+          </div>
+
+        </section>
+
+        {/* Breakdown annotation */}
+        <div style={{ marginTop: 8, fontSize: '0.6rem', color: '#4a5a6a', fontFamily: MONO }}>
+          {data.breakdown}
+        </div>
+      </div>
+
+      {/* Card grid stub (dimmed — US-18) */}
+      <div style={{ padding: '0 24px', opacity: 0.15, pointerEvents: 'none', userSelect: 'none' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+          {[1, 2, 3].map(i => (
+            <div key={i} style={{ height: 120, borderRadius: 8, border: '1px solid #1e2a38', background: '#070a0e' }} />
+          ))}
+        </div>
+      </div>
+
+    </div>
+  )
+}
+
+<Mockup />

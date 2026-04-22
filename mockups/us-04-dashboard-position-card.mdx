@@ -1,0 +1,560 @@
+---
+title: 'Epic 04: Position Card — Final Layout'
+story: 'Unified position card representing the finished state after all Epic 04 stories (US-18 through US-24) ship, including the Phase 2 distance-to-strike indicator from US-22.'
+states: ['portfolio', 'otm-safe', 'approaching', 'itm-danger', 'holding-shares', 'no-live-price', 'closed']
+---
+
+import { useState } from 'react'
+
+# Epic 04: Position Card — Final Layout
+
+_This mockup shows the unified position card after all dashboard stories are complete. Each card has four zones: **header** (ticker + phase), **stats grid** (strike, DTE, premium, cost basis), **distance gauge** (Phase 2 — live price vs. strike), and **footer** (expiration + navigation). The distance gauge replaces the Phase 1 "EXPIRING SOON" badge as a richer urgency signal; in Phase 1 builds, the gauge zone is omitted and DTE handles urgency via gold coloring._
+
+## Story Contributions
+
+- **US-18**: Card structure — header, stats grid, footer. Responsive grid layout.
+- **US-22**: Distance-to-strike gauge zone between the stats and footer. Color thresholds for OTM/approaching/ITM.
+- **US-24**: Hover border brightening, pointer cursor, "View →" in footer, keyboard focusable.
+
+## Acceptance Criteria States
+
+- **portfolio**: Full dashboard — summary bar (US-19), filter pills (US-20), sort control (US-21), five cards in mixed phases
+- **otm-safe**: CSP comfortably OTM (+5.0%) — green gauge
+- **approaching**: CC within 2% of strike — amber gauge, DTE gold
+- **itm-danger**: CSP in-the-money (−4.0%) — red gauge, urgency
+- **holding-shares**: No active option leg — no strike, no DTE, no distance gauge
+- **no-live-price**: Phase 1 or price unavailable — distance zone hidden, DTE urgency badge inline
+- **closed**: Completed wheel — muted card, final P&L shown instead of distance
+
+---
+
+{/* ── Design Tokens ── */}
+{/* Matches: src/renderer/src/index.css :root variables */}
+
+export const T = {
+  bgBase:     '#0d1117',
+  bgSurface:  '#161b27',
+  bgElevated: '#1c2333',
+  bgHover:    '#1f2937',
+  border:     '#21262d',
+  borderSub:  '#161b22',
+  textPri:    '#e6edf3',
+  textSec:    '#8b949e',
+  textMut:    '#484f58',
+  gold:       '#e6a817',
+  goldDim:    'rgba(230,168,23,0.12)',
+  goldBorder: 'rgba(230,168,23,0.25)',
+  green:      '#3fb950',
+  greenDim:   'rgba(63,185,80,0.12)',
+  greenBord:  'rgba(63,185,80,0.22)',
+  red:        '#f85149',
+  redDim:     'rgba(248,81,73,0.12)',
+  sky:        '#79c0ff',
+  violet:     '#d2a8ff',
+  violetDim:  'rgba(210,168,255,0.12)',
+}
+
+{/* Matches: src/renderer/src/lib/tokens.ts */}
+export const MONO = "ui-monospace, 'SF Mono', Menlo, 'Cascadia Code', 'Fira Code', monospace"
+
+{/* Matches: PHASE_COLOR + PHASE_LABEL from src/renderer/src/lib/phase.ts */}
+export const PHASE = {
+  CSP_OPEN:        { color: T.gold,   label: 'Sell Put' },
+  HOLDING_SHARES:  { color: T.sky,    label: 'Holding Shares' },
+  CC_OPEN:         { color: T.violet, label: 'Sell Call' },
+  WHEEL_COMPLETE:  { color: T.green,  label: 'Wheel Complete' },
+  CSP_CLOSED_LOSS: { color: T.red,    label: 'Closed ✗' },
+}
+
+{/* ── Data ── */}
+{/* Shape matches PositionListItem from src/renderer/src/api/positions.ts
+    plus Phase 2 fields: currentPrice (from Epic 06 market data) */}
+
+export const CARDS = {
+  portfolio: [
+    { id:'1', ticker:'AAPL', phase:'CSP_OPEN',       inst:'PUT',  strike:'180.00', exp:'May 16', dte:25,   prem:'3.50',  basis:'176.50', price:189.00 },
+    { id:'2', ticker:'MSFT', phase:'CC_OPEN',         inst:'CALL', strike:'420.00', exp:'Apr 28', dte:7,    prem:'5.20',  basis:'412.80', price:416.80 },
+    { id:'3', ticker:'TSLA', phase:'HOLDING_SHARES',  inst:null,   strike:null,     exp:null,     dte:null, prem:'8.00',  basis:'242.00', price:null },
+    { id:'4', ticker:'GOOG', phase:'CSP_OPEN',        inst:'PUT',  strike:'165.00', exp:'Jun 20', dte:60,   prem:'2.10',  basis:'162.90', price:173.25 },
+    { id:'5', ticker:'AMD',  phase:'WHEEL_COMPLETE',  inst:null,   strike:null,     exp:null,     dte:null, prem:'12.40', basis:null,     price:null, finalPnl:'+$780.00' },
+  ],
+  'otm-safe': [
+    { id:'1', ticker:'AAPL', phase:'CSP_OPEN', inst:'PUT', strike:'180.00', exp:'May 16', dte:25, prem:'3.50', basis:'176.50', price:189.00 },
+  ],
+  approaching: [
+    { id:'1', ticker:'MSFT', phase:'CC_OPEN', inst:'CALL', strike:'420.00', exp:'Apr 28', dte:7, prem:'5.20', basis:'412.80', price:416.80 },
+  ],
+  'itm-danger': [
+    { id:'1', ticker:'TSLA', phase:'CSP_OPEN', inst:'PUT', strike:'250.00', exp:'May 02', dte:11, prem:'6.20', basis:'243.80', price:240.00 },
+  ],
+  'holding-shares': [
+    { id:'1', ticker:'TSLA', phase:'HOLDING_SHARES', inst:null, strike:null, exp:null, dte:null, prem:'8.00', basis:'242.00', price:null },
+  ],
+  'no-live-price': [
+    { id:'1', ticker:'AAPL', phase:'CSP_OPEN', inst:'PUT', strike:'180.00', exp:'Apr 25', dte:4, prem:'3.50', basis:'176.50', price:null },
+    { id:'2', ticker:'GOOG', phase:'CSP_OPEN', inst:'PUT', strike:'165.00', exp:'Jun 20', dte:60, prem:'2.10', basis:'162.90', price:null },
+  ],
+  closed: [
+    { id:'1', ticker:'AMD', phase:'WHEEL_COMPLETE', inst:null, strike:null, exp:null, dte:null, prem:'12.40', basis:null, price:null, finalPnl:'+$780.00' },
+  ],
+}
+
+{/* ── Distance Logic ── */}
+
+export function distCalc(inst, strike, price) {
+  if (!price || !strike) return null
+  return ((price - parseFloat(strike)) / parseFloat(strike)) * 100
+}
+
+export function distIsOtm(inst, dist) {
+  if (dist === null) return false
+  return inst === 'PUT' ? dist > 0 : dist < 0
+}
+
+export function distColor(inst, dist) {
+  if (dist === null) return T.textMut
+  const otm = distIsOtm(inst, dist)
+  const abs = Math.abs(dist)
+  if (!otm) return T.red        // ITM — danger
+  if (abs <= 2) return T.gold   // OTM but close — approaching
+  if (abs <= 5) return T.green  // OTM — safe
+  return T.textSec              // OTM by > 5% — comfortable, muted
+}
+
+export function distLabel(dist) {
+  if (dist === null) return '—'
+  const sign = dist >= 0 ? '+' : ''
+  return `${sign}${dist.toFixed(1)}%`
+}
+
+export function distStatus(inst, dist) {
+  if (dist === null) return null
+  const otm = distIsOtm(inst, dist)
+  if (!otm) return 'ITM'
+  if (Math.abs(dist) <= 2) return 'NEAR'
+  return 'OTM'
+}
+
+{/* ── Primitives ── */}
+
+{/* Matches: PhaseBadge.tsx → Badge with color dot + label */}
+export function MockPhaseBadge({ phase }) {
+  const cfg = PHASE[phase] ?? { color: T.textSec, label: phase }
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      fontSize: '0.7rem', fontWeight: 500, padding: '2px 9px', borderRadius: 4,
+      background: cfg.color + '18', color: cfg.color, border: '1px solid ' + cfg.color + '30',
+      fontFamily: MONO, whiteSpace: 'nowrap',
+    }}>
+      <span style={{ width: 5, height: 5, borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
+      {cfg.label}
+    </span>
+  )
+}
+
+{/* Matches: Stat from src/renderer/src/components/ui/Stat.tsx */}
+export function MockStat({ label, value, color }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+      <span style={{ fontFamily: MONO, fontSize: '0.6rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.textMut }}>{label}</span>
+      <span style={{ fontFamily: MONO, fontSize: '0.8125rem', fontWeight: 500, color: color ?? T.textPri }}>{value}</span>
+    </div>
+  )
+}
+
+{/* Matches: Caption from src/renderer/src/components/ui/Caption.tsx */}
+export function MockCaption({ children, color }) {
+  return (
+    <span style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: color ?? T.textMut, fontFamily: MONO }}>{children}</span>
+  )
+}
+
+{/* ── Position Card ── */}
+{/*
+  Layout zones:
+    1. Header  — ticker + PhaseBadge
+    2. Stats   — 2×2 StatGrid (strike, DTE, premium, cost basis)
+    3. Distance — gauge bar + percentage + status (Phase 2 only, when price available)
+    4. Footer  — expiration + navigation hint
+
+  Real:
+    <a href={`#/positions/${pos.id}`}>                          // US-24: semantic link
+      <SectionCard>                                             // card wrapper
+        <div>{ticker}<PhaseBadge phase={pos.phase} /></div>     // zone 1
+        <StatGrid minWidth={110} items={[...]} />               // zone 2
+        {pos.currentPrice && <DistanceGauge ... />}             // zone 3 (US-22)
+        <div>Exp: {exp} <span>View →</span></div>              // zone 4
+      </SectionCard>
+    </a>
+*/}
+export function PositionCard({ pos }) {
+  const isUrgent = pos.dte !== null && pos.dte <= 7
+  const isClosed = pos.phase === 'WHEEL_COMPLETE' || pos.phase === 'CSP_CLOSED_LOSS'
+  const dist = distCalc(pos.inst, pos.strike, pos.price)
+  const dColor = distColor(pos.inst, dist)
+  const dLabel = distLabel(dist)
+  const dStatus = distStatus(pos.inst, dist)
+  const hasDistance = pos.price !== null && pos.strike !== null
+  const phaseColor = (PHASE[pos.phase] ?? { color: T.textSec }).color
+
+  return (
+    <a
+      href="#"
+      onClick={e => e.preventDefault()}
+      style={{
+        display: 'block', textDecoration: 'none', color: 'inherit',
+        background: T.bgSurface,
+        border: '1px solid ' + T.border,
+        borderRadius: 8, overflow: 'hidden',
+        cursor: 'pointer', transition: 'border-color 0.15s, box-shadow 0.15s',
+        fontFamily: MONO,
+        opacity: isClosed ? 0.6 : 1,
+      }}
+      onMouseOver={e => {
+        e.currentTarget.style.borderColor = phaseColor + '50'
+        e.currentTarget.style.boxShadow = '0 0 0 1px ' + phaseColor + '15'
+      }}
+      onMouseOut={e => {
+        e.currentTarget.style.borderColor = T.border
+        e.currentTarget.style.boxShadow = 'none'
+      }}
+    >
+
+      {/* ── Zone 1: Header ── */}
+      {/* Real: <div><span>{ticker}</span><PhaseBadge phase={pos.phase} /></div> */}
+      <div style={{
+        padding: '14px 16px 10px', display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between',
+        borderBottom: '1px solid ' + T.border,
+      }}>
+        <span style={{ fontSize: '1.1rem', fontWeight: 700, color: T.textPri, letterSpacing: '0.04em' }}>
+          {pos.ticker}
+        </span>
+        <MockPhaseBadge phase={pos.phase} />
+      </div>
+
+      {/* ── Zone 2: Stats Grid ── */}
+      {/* Real: <StatGrid minWidth={110} items={[
+            { label: 'Strike', value: <span className="text-wb-gold">PUT $180.00</span> },
+            { label: 'DTE',    value: <span className={dteUrgent ? 'text-wb-gold' : ''}>25d</span> },
+            { label: 'Premium', value: <span className="text-wb-green">+$3.50</span> },
+            { label: 'Cost Basis', value: <span className="text-wb-sky">$176.50</span> },
+          ]} />
+      */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: T.border }}>
+        <div style={{ padding: '10px 16px', background: T.bgSurface }}>
+          <MockStat
+            label="Strike"
+            value={pos.strike ? `${pos.inst} $${pos.strike}` : '—'}
+            color={pos.strike ? T.gold : T.textMut}
+          />
+        </div>
+        <div style={{ padding: '10px 16px', background: T.bgSurface }}>
+          <MockStat
+            label="DTE"
+            value={pos.dte !== null ? `${pos.dte}d` : '—'}
+            color={pos.dte !== null ? (isUrgent ? T.gold : T.textPri) : T.textMut}
+          />
+        </div>
+        <div style={{ padding: '10px 16px', background: T.bgSurface }}>
+          <MockStat
+            label="Premium"
+            value={`+$${pos.prem}`}
+            color={T.green}
+          />
+        </div>
+        <div style={{ padding: '10px 16px', background: T.bgSurface }}>
+          {pos.finalPnl ? (
+            <MockStat
+              label="Final P&L"
+              value={pos.finalPnl}
+              color={pos.finalPnl.startsWith('+') ? T.green : T.red}
+            />
+          ) : (
+            <MockStat
+              label="Cost Basis"
+              value={pos.basis ? `$${pos.basis}` : '—'}
+              color={pos.basis ? T.sky : T.textMut}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* ── Zone 3: Distance-to-Strike Gauge (US-22, Phase 2) ── */}
+      {/* Only rendered when live price is available AND position has an active option leg.
+          Phase 1 builds omit this zone entirely — DTE gold coloring in Zone 2 handles urgency.
+
+          Real:
+            {currentPrice && strike && (
+              <DistanceGauge
+                instrumentType={pos.inst}
+                strike={pos.strike}
+                currentPrice={pos.currentPrice}
+              />
+            )}
+      */}
+      {hasDistance && (
+        <div style={{
+          padding: '8px 16px 10px',
+          borderTop: '1px solid ' + T.border,
+          background: dColor + '06',
+        }}>
+          {/* Gauge bar */}
+          <div style={{
+            height: 3, borderRadius: 2, background: T.border,
+            overflow: 'hidden', marginBottom: 6,
+          }}>
+            <div style={{
+              height: '100%', borderRadius: 2,
+              width: Math.min(Math.abs(dist) / 10 * 100, 100) + '%',
+              background: dColor,
+              transition: 'width 0.3s ease',
+            }} />
+          </div>
+
+          {/* Label row */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: 700, color: dColor, fontFamily: MONO }}>
+                {dLabel}
+              </span>
+              <span style={{ fontSize: '0.6rem', color: T.textSec, fontFamily: MONO }}>
+                ${pos.price.toFixed(2)} vs {pos.inst.toLowerCase()} strike
+              </span>
+            </div>
+            {dStatus && (
+              <span style={{
+                fontSize: '0.55rem', fontWeight: 600, letterSpacing: '0.1em',
+                padding: '1px 5px', borderRadius: 3,
+                background: dColor + '18', color: dColor, border: '1px solid ' + dColor + '30',
+                fontFamily: MONO,
+              }}>
+                {dStatus}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Zone 4: Footer ── */}
+      {/* Real: <div><span>Exp: {fmtDate(exp)}</span><span>View →</span></div> */}
+      <div style={{
+        padding: '7px 16px',
+        borderTop: '1px solid ' + T.border,
+        fontSize: '0.7rem', fontFamily: MONO,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        color: T.textSec,
+      }}>
+        <span style={{ color: pos.exp ? T.textSec : T.textMut }}>
+          {pos.exp ? `Exp: ${pos.exp}` : isClosed ? 'Completed' : 'No active leg'}
+        </span>
+        <span style={{ color: T.textMut, fontSize: '0.65rem' }}>View →</span>
+      </div>
+
+    </a>
+  )
+}
+
+{/* ── Filter Pills (US-20) ── */}
+{/* Real: phase filter pills with count badges */}
+export function FilterBar({ positions, active, onSelect }) {
+  const groups = [
+    { key: 'ALL',      label: 'All',      color: T.gold,   count: positions.filter(p => p.phase !== 'WHEEL_COMPLETE' && p.phase !== 'CSP_CLOSED_LOSS').length },
+    { key: 'CSP_OPEN', label: 'Sell Put',  color: T.gold,   count: positions.filter(p => p.phase === 'CSP_OPEN').length },
+    { key: 'HOLDING',  label: 'Holding',   color: T.sky,    count: positions.filter(p => p.phase === 'HOLDING_SHARES').length },
+    { key: 'CC_OPEN',  label: 'Sell Call',  color: T.violet, count: positions.filter(p => p.phase === 'CC_OPEN').length },
+    { key: 'CLOSED',   label: 'Closed',    color: T.textSec,count: positions.filter(p => p.phase === 'WHEEL_COMPLETE' || p.phase === 'CSP_CLOSED_LOSS').length },
+  ]
+  return (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+      {groups.map(g => {
+        const on = g.key === active
+        return (
+          <button key={g.key} onClick={() => onSelect(g.key)} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '5px 12px', borderRadius: 6, fontFamily: MONO, fontSize: '0.7rem',
+            border: '1px solid ' + (on ? g.color + '40' : T.border),
+            background: on ? g.color + '14' : 'transparent',
+            color: on ? g.color : T.textSec,
+            fontWeight: on ? 600 : 400, cursor: 'pointer', transition: 'all 0.15s',
+          }}>
+            {g.label}
+            <span style={{
+              fontSize: '0.6rem', fontWeight: 700, minWidth: 16, textAlign: 'center',
+              padding: '0 5px', borderRadius: 8,
+              background: on ? g.color + '25' : T.border + '80',
+              color: on ? g.color : T.textMut,
+            }}>{g.count}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+{/* ── Sort Control (US-21) ── */}
+export function SortControl({ active }) {
+  const opts = [
+    { key: 'dte', label: 'DTE' },
+    { key: 'ticker', label: 'Ticker' },
+    { key: 'premium', label: 'Premium' },
+  ]
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: MONO }}>
+      <span style={{ fontSize: '0.6rem', color: T.textMut, letterSpacing: '0.08em', textTransform: 'uppercase', marginRight: 4 }}>Sort:</span>
+      {opts.map(o => {
+        const on = o.key === active
+        return (
+          <span key={o.key} style={{
+            padding: '3px 8px', borderRadius: 4, fontSize: '0.65rem',
+            border: '1px solid ' + (on ? T.goldBorder : T.border),
+            background: on ? T.goldDim : 'transparent',
+            color: on ? T.gold : T.textMut,
+            fontFamily: MONO, fontWeight: on ? 600 : 400,
+          }}>{o.label}</span>
+        )
+      })}
+    </div>
+  )
+}
+
+{/* ── Summary Bar (US-19) ── */}
+{/* Real: <SectionCard header="Portfolio Overview"><StatGrid minWidth={140} items={[...]} /></SectionCard> */}
+export function SummaryBar() {
+  return (
+    <div style={{
+      background: T.bgSurface, border: '1px solid ' + T.border,
+      borderRadius: 8, overflow: 'hidden',
+    }}>
+      <div style={{
+        padding: '8px 18px', borderBottom: '1px solid ' + T.border,
+        fontFamily: MONO, fontSize: '0.6rem', fontWeight: 600,
+        letterSpacing: '0.1em', textTransform: 'uppercase', color: T.textMut,
+      }}>Portfolio Overview</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, background: T.border }}>
+        {[
+          { label: 'Capital Deployed', value: '$102,000', color: T.textPri },
+          { label: 'Premium MTD',      value: '$350',     color: T.green },
+          { label: 'Premium YTD',      value: '$1,670',   color: T.green },
+          { label: 'Active Positions', value: '4',        color: T.gold },
+        ].map(s => (
+          <div key={s.label} style={{ padding: '12px 18px', background: T.bgSurface }}>
+            <MockStat label={s.label} value={s.value} color={s.color} />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+{/* ── Empty State (US-23) ── */}
+export function EmptyState() {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      padding: '48px 24px', textAlign: 'center',
+      border: '1px dashed ' + T.border,
+      borderRadius: 12, background: T.bgSurface,
+    }}>
+      <svg width="48" height="48" viewBox="0 0 48 48" fill="none" style={{ opacity: 0.35, marginBottom: 16 }}>
+        <circle cx="24" cy="24" r="20" stroke={T.textMut} strokeWidth="1.5" />
+        <circle cx="24" cy="24" r="12" stroke={T.textMut} strokeWidth="1" strokeDasharray="3 2" />
+        <circle cx="24" cy="24" r="3" fill={T.gold} opacity="0.5" />
+      </svg>
+      <div style={{ fontSize: '1rem', fontWeight: 700, color: T.textPri, marginBottom: 6, fontFamily: MONO }}>No positions yet</div>
+      <div style={{ fontSize: '0.8rem', color: T.textSec, maxWidth: 320, lineHeight: 1.6, marginBottom: 20, fontFamily: MONO }}>
+        Start your first wheel by selling a cash-secured put.
+      </div>
+      <button style={{
+        padding: '10px 20px', borderRadius: 6, border: 'none',
+        background: T.gold, color: T.bgBase,
+        fontSize: '0.85rem', fontWeight: 600, fontFamily: MONO, cursor: 'pointer',
+      }}>Open Your First Wheel</button>
+    </div>
+  )
+}
+
+{/* ── Full Dashboard Mockup ── */}
+
+export function Mockup() {
+  const [state, setState] = useState('portfolio')
+  const allStates = ['portfolio', 'otm-safe', 'approaching', 'itm-danger', 'holding-shares', 'no-live-price', 'closed']
+  const cards = CARDS[state]
+  const showDashboardChrome = state === 'portfolio'
+
+  return (
+    <div style={{ fontFamily: MONO, background: T.bgBase, color: T.textPri, minHeight: 560 }}>
+
+      {/* Dev state toggle */}
+      <div style={{
+        display: 'flex', gap: 6, padding: '10px 14px',
+        background: T.bgElevated, borderBottom: '1px solid ' + T.border, flexWrap: 'wrap',
+      }}>
+        <span style={{ fontSize: 9, color: T.textMut, letterSpacing: '0.12em', textTransform: 'uppercase', alignSelf: 'center', marginRight: 4 }}>State:</span>
+        {allStates.map(s => (
+          <button key={s} onClick={() => setState(s)} style={{
+            fontSize: 10, fontFamily: MONO, padding: '3px 10px', borderRadius: 4,
+            border: '1px solid ' + (s === state ? T.gold : T.border),
+            background: s === state ? T.goldDim : 'transparent',
+            color: s === state ? T.gold : T.textMut, cursor: 'pointer',
+          }}>{s}</button>
+        ))}
+      </div>
+
+      {/* Page header — Real: <PageLayout header={<PageHeader left={…} right={…} />}> */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '12px 24px', borderBottom: '1px solid ' + T.border, background: T.bgSurface,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: T.textPri }}>Active Positions</span>
+          <span style={{
+            fontSize: '0.65rem', fontWeight: 500, padding: '1px 7px', borderRadius: 10,
+            background: T.goldDim, color: T.gold, border: '1px solid ' + T.goldBorder, fontFamily: MONO,
+          }}>{cards.filter(c => c.phase !== 'WHEEL_COMPLETE' && c.phase !== 'CSP_CLOSED_LOSS').length}</span>
+        </div>
+        <a href="#" onClick={e => e.preventDefault()} style={{
+          padding: '5px 14px', borderRadius: 6, fontSize: '0.75rem', fontWeight: 500,
+          background: T.gold, color: T.bgBase, textDecoration: 'none', fontFamily: MONO,
+          letterSpacing: '0.02em',
+        }}>+ New Wheel</a>
+      </div>
+
+      <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
+
+        {/* Summary bar (US-19) — dimmed on single-card states to keep focus on the card */}
+        <div style={showDashboardChrome ? {} : { opacity: 0.2, pointerEvents: 'none', userSelect: 'none' }}>
+          <SummaryBar />
+        </div>
+
+        {/* Toolbar: Filter (US-20) + Sort (US-21) */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          ...(showDashboardChrome ? {} : { opacity: 0.2, pointerEvents: 'none', userSelect: 'none' }),
+        }}>
+          <FilterBar positions={CARDS.portfolio} active="ALL" onSelect={() => {}} />
+          <SortControl active="dte" />
+        </div>
+
+        {/* Card Grid — THE FOCAL ELEMENT */}
+        {cards.length > 0 ? (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+            gap: 14,
+          }}>
+            {cards.map(pos => (
+              <PositionCard key={pos.id} pos={pos} />
+            ))}
+          </div>
+        ) : (
+          <EmptyState />
+        )}
+
+      </div>
+    </div>
+  )
+}
+
+<Mockup />

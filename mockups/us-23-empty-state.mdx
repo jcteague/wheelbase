@@ -1,0 +1,211 @@
+---
+title: 'US-23: Dashboard Empty State'
+story: 'As a new trader, I want to see a helpful empty state when I have no positions, so I know how to get started.'
+states: ['no-positions', 'all-closed', 'filtered-empty']
+---
+
+import { useState } from 'react'
+
+# US-23: Dashboard Empty State
+
+_Handle the zero-data state gracefully with onboarding copy and a CTA to create the first wheel. Also handles the "all wheels complete" variant and the filtered-empty-result inline message._
+
+## Acceptance Criteria States
+
+- **no-positions**: Zero positions exist — full empty state with illustration, heading "No positions yet", subheading, and "Open Your First Wheel" CTA
+- **all-closed**: Active positions = 0 but closed positions exist — "All wheels complete" message with "Start a New Wheel" CTA
+- **filtered-empty**: Positions exist but none match the selected phase filter — inline "No positions in this phase" message
+
+---
+
+export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
+
+export function MockFormButton({ label, onClick, style = {} }) {
+  return (
+    <button onClick={onClick} style={{
+      padding: '12px 24px', borderRadius: 6, border: 'none',
+      background: 'var(--wb-gold, #e6a817)', color: '#000',
+      fontSize: '0.9rem', fontWeight: 600, fontFamily: MONO,
+      cursor: 'pointer', letterSpacing: '0.04em', ...style,
+    }}>
+      {label}
+    </button>
+  )
+}
+
+export function SummaryBarZero() {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, background: 'var(--wb-border, #1e2a38)', borderRadius: 8, overflow: 'hidden' }}>
+      {[
+        ['Capital Deployed', '$0.00'],
+        ['Premium MTD', '$0.00'],
+        ['Premium YTD', '$0.00'],
+        ['Active Positions', '0'],
+      ].map(([label, value]) => (
+        <div key={label} style={{ padding: '14px 18px', background: 'var(--wb-bg-surface, #070a0e)' }}>
+          <div style={{ fontSize: '0.6rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4a5a6a', fontFamily: MONO, marginBottom: 3 }}>{label}</div>
+          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#4a5a6a', fontFamily: MONO }}>{value}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function WheelIcon() {
+  return (
+    <svg width="64" height="64" viewBox="0 0 64 64" fill="none" style={{ opacity: 0.5 }}>
+      <circle cx="32" cy="32" r="28" stroke="#1e2a38" strokeWidth="2" />
+      <circle cx="32" cy="32" r="18" stroke="#1e2a38" strokeWidth="1.5" strokeDasharray="4 3" />
+      <circle cx="32" cy="32" r="4" fill="#e6a817" opacity="0.4" />
+      <line x1="32" y1="4" x2="32" y2="14" stroke="#1e2a38" strokeWidth="1.5" />
+      <line x1="32" y1="50" x2="32" y2="60" stroke="#1e2a38" strokeWidth="1.5" />
+      <line x1="4" y1="32" x2="14" y2="32" stroke="#1e2a38" strokeWidth="1.5" />
+      <line x1="50" y1="32" x2="60" y2="32" stroke="#1e2a38" strokeWidth="1.5" />
+    </svg>
+  )
+}
+
+export function CheckIcon() {
+  return (
+    <svg width="48" height="48" viewBox="0 0 48 48" fill="none" style={{ opacity: 0.5 }}>
+      <circle cx="24" cy="24" r="20" stroke="#3fb950" strokeWidth="2" opacity="0.3" />
+      <path d="M15 24l6 6 12-12" stroke="#3fb950" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.5" />
+    </svg>
+  )
+}
+
+export function FilterPillsStub({ activeFilter }) {
+  const pills = [
+    { label: 'All', count: 3, active: activeFilter === 'all' },
+    { label: 'Sell Put', count: 0, active: false },
+    { label: 'Holding', count: 1, active: false },
+    { label: 'Sell Call', count: 2, active: activeFilter === 'cc' },
+    { label: 'Closed', count: 0, active: false },
+  ]
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {pills.map(p => (
+        <span key={p.label} style={{
+          padding: '5px 12px', borderRadius: 6, fontFamily: MONO, fontSize: '0.7rem',
+          border: '1px solid ' + (p.active ? 'rgba(230,168,23,0.4)' : '#1e2a38'),
+          background: p.active ? 'rgba(230,168,23,0.1)' : 'transparent',
+          color: p.active ? '#e6a817' : '#6a7a8a',
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+        }}>
+          {p.label}
+          <span style={{ fontSize: '0.6rem', fontWeight: 700, background: p.active ? 'rgba(230,168,23,0.25)' : 'rgba(30,42,56,0.6)', color: p.active ? '#e6a817' : '#6a7a8a', padding: '0 5px', borderRadius: 8 }}>{p.count}</span>
+        </span>
+      ))}
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [state, setState] = useState('no-positions')
+  const allStates = ['no-positions', 'all-closed', 'filtered-empty']
+
+  return (
+    <div style={{ fontFamily: MONO, background: '#040608', color: 'var(--wb-text-primary, #e2eaf2)', minHeight: 520 }}>
+
+      {/* State toggle */}
+      <div style={{ display: 'flex', gap: 6, padding: '10px 14px', background: '#0d1117', borderBottom: '1px solid #1e2a38', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 9, color: '#4a5a6a', letterSpacing: '0.12em', textTransform: 'uppercase', alignSelf: 'center', marginRight: 4 }}>State:</span>
+        {allStates.map(s => (
+          <button key={s} onClick={() => setState(s)} style={{
+            fontSize: 10, fontFamily: MONO, padding: '3px 10px', borderRadius: 4,
+            border: '1px solid', borderColor: s === state ? '#e6a817' : '#1e2a38',
+            background: s === state ? 'rgba(230,168,23,0.12)' : 'transparent',
+            color: s === state ? '#e6a817' : '#6a7a8a', cursor: 'pointer',
+          }}>{s}</button>
+        ))}
+      </div>
+
+      {/* Page header */}
+      <div style={{ padding: '16px 24px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4a5a6a', marginBottom: 4 }}>Dashboard</div>
+          <div style={{ fontSize: '1.2rem', fontWeight: 700 }}>Positions</div>
+        </div>
+        {state !== 'no-positions' && (
+          <button style={{
+            padding: '8px 16px', borderRadius: 6, border: 'none',
+            background: '#e6a817', color: '#000',
+            fontSize: '0.8rem', fontWeight: 600, fontFamily: MONO, cursor: 'pointer',
+          }}>+ New Wheel</button>
+        )}
+      </div>
+
+      {/* Summary bar */}
+      <div style={{ padding: '8px 24px 16px', opacity: state === 'filtered-empty' ? 1 : 0.6 }}>
+        <SummaryBarZero />
+      </div>
+
+      {/* Filter bar (only for filtered-empty) */}
+      {state === 'filtered-empty' && (
+        <div style={{ padding: '0 24px 12px' }}>
+          <FilterPillsStub activeFilter="cc" />
+        </div>
+      )}
+
+      {/* THE FOCAL ELEMENT: Empty State Content */}
+      <div style={{ padding: '0 24px 24px' }}>
+
+        {state === 'no-positions' && (
+          <div style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            padding: '48px 24px', textAlign: 'center',
+            border: '1px dashed var(--wb-border, #1e2a38)',
+            borderRadius: 12,
+            background: 'linear-gradient(180deg, rgba(7,10,14,0.5), rgba(4,6,8,0.9))',
+          }}>
+            <WheelIcon />
+            <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--wb-text-primary, #e2eaf2)', marginTop: 20, marginBottom: 8 }}>
+              No positions yet
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--wb-text-secondary, #8899aa)', maxWidth: 360, lineHeight: 1.6, marginBottom: 24 }}>
+              Start your first wheel by selling a cash-secured put. The app will track your position through assignment, covered calls, and exit.
+            </div>
+            <MockFormButton label="Open Your First Wheel" />
+          </div>
+        )}
+
+        {state === 'all-closed' && (
+          <div style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            padding: '40px 24px', textAlign: 'center',
+            border: '1px dashed rgba(63,185,80,0.25)',
+            borderRadius: 12,
+            background: 'linear-gradient(180deg, rgba(63,185,80,0.03), rgba(4,6,8,0.9))',
+          }}>
+            <CheckIcon />
+            <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--wb-green, #3fb950)', marginTop: 16, marginBottom: 8 }}>
+              All wheels complete — nice work
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--wb-text-secondary, #8899aa)', maxWidth: 360, lineHeight: 1.6, marginBottom: 24 }}>
+              All your positions have completed the full cycle. Ready to start another round?
+            </div>
+            <MockFormButton label="Start a New Wheel" />
+          </div>
+        )}
+
+        {state === 'filtered-empty' && (
+          <div style={{
+            padding: '40px 20px', textAlign: 'center',
+            border: '1px dashed var(--wb-border, #1e2a38)', borderRadius: 8,
+          }}>
+            <div style={{ fontSize: '0.85rem', color: 'var(--wb-text-muted, #4a5a6a)', marginBottom: 4 }}>
+              No positions in this phase
+            </div>
+            <div style={{ fontSize: '0.7rem', color: '#3a4a5a' }}>
+              Positions will appear here when they enter this lifecycle stage
+            </div>
+          </div>
+        )}
+
+      </div>
+
+    </div>
+  )
+}
+
+<Mockup />

@@ -1,0 +1,193 @@
+---
+title: 'US-20: Filter Positions by Phase'
+story: 'As a wheel trader with positions in different lifecycle phases, I want to filter the dashboard to show only positions in a specific phase.'
+states: ['all', 'csp-only', 'holding-only', 'cc-only', 'closed', 'empty-filter']
+---
+
+import { useState } from 'react'
+
+# US-20: Filter Positions by Phase
+
+_Filter the position card grid by lifecycle phase using pill buttons that show counts and highlight the active filter._
+
+## Acceptance Criteria States
+
+- **all**: Default — all 5 active positions shown, "All" pill highlighted
+- **csp-only**: "Sell Put" filter active — 2 CSP_OPEN positions visible
+- **holding-only**: "Holding" filter active — 1 HOLDING_SHARES position visible
+- **cc-only**: "Sell Call" filter active — 1 CC_OPEN position visible
+- **closed**: "Closed" filter active — 1 WHEEL_COMPLETE position visible
+- **empty-filter**: Filter selected with no matching positions — inline empty message
+
+---
+
+export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
+
+export const PHASE_CONFIG = {
+  CSP_OPEN: { label: 'Sell Put', color: '#e6a817' },
+  HOLDING_SHARES: { label: 'Holding', color: '#58a6ff' },
+  CC_OPEN: { label: 'Sell Call', color: '#d2a8ff' },
+  WHEEL_COMPLETE: { label: 'Complete', color: '#3fb950' },
+}
+
+export const ALL_POSITIONS = [
+  { id: '1', ticker: 'AAPL', phase: 'CSP_OPEN', status: 'ACTIVE', strike: 'PUT $180', dte: '25d', premium: '+$3.50' },
+  { id: '2', ticker: 'MSFT', phase: 'CC_OPEN', status: 'ACTIVE', strike: 'CALL $420', dte: '18d', premium: '+$5.20' },
+  { id: '3', ticker: 'TSLA', phase: 'HOLDING_SHARES', status: 'ACTIVE', strike: '—', dte: '—', premium: '+$8.00' },
+  { id: '4', ticker: 'GOOG', phase: 'CSP_OPEN', status: 'ACTIVE', strike: 'PUT $165', dte: '42d', premium: '+$2.10' },
+  { id: '5', ticker: 'AMD', phase: 'WHEEL_COMPLETE', status: 'CLOSED', strike: '—', dte: '—', premium: '+$12.40' },
+]
+
+export const FILTERS = [
+  { key: 'ALL', label: 'All', color: '#e6a817' },
+  { key: 'CSP_OPEN', label: 'Sell Put', color: '#e6a817' },
+  { key: 'HOLDING_SHARES', label: 'Holding', color: '#58a6ff' },
+  { key: 'CC_OPEN', label: 'Sell Call', color: '#d2a8ff' },
+  { key: 'CLOSED', label: 'Closed', color: '#8899aa' },
+]
+
+export function getFilteredPositions(filter) {
+  if (filter === 'ALL') return ALL_POSITIONS.filter(p => p.status === 'ACTIVE')
+  if (filter === 'CLOSED') return ALL_POSITIONS.filter(p => p.status === 'CLOSED')
+  return ALL_POSITIONS.filter(p => p.phase === filter)
+}
+
+export function getCount(filter) {
+  return getFilteredPositions(filter).length
+}
+
+export function MockPhaseBadge({ phase }) {
+  const cfg = PHASE_CONFIG[phase] ?? { label: phase, color: '#8899aa' }
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      fontSize: '0.6rem', fontWeight: 500, padding: '1px 7px', borderRadius: 4,
+      background: cfg.color + '18', color: cfg.color, border: '1px solid ' + cfg.color + '30',
+      fontFamily: MONO,
+    }}>
+      <span style={{ width: 4, height: 4, borderRadius: '50%', background: cfg.color }} />
+      {cfg.label}
+    </span>
+  )
+}
+
+export function FilterPill({ label, count, isActive, color, onClick }) {
+  const bg = isActive ? color + '18' : 'transparent'
+  const border = isActive ? color + '40' : 'var(--wb-border, #1e2a38)'
+  const fg = isActive ? color : 'var(--wb-text-secondary, #6a7a8a)'
+  return (
+    <button onClick={onClick} style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+      padding: '5px 12px', borderRadius: 6,
+      border: '1px solid ' + border, background: bg, color: fg,
+      fontSize: '0.75rem', fontWeight: isActive ? 600 : 400,
+      fontFamily: MONO, cursor: 'pointer', transition: 'all 0.15s',
+    }}>
+      {label}
+      <span style={{
+        fontSize: '0.6rem', fontWeight: 700,
+        background: isActive ? color + '25' : 'rgba(30,42,56,0.6)',
+        color: isActive ? color : '#6a7a8a',
+        padding: '0 5px', borderRadius: 8, minWidth: 16, textAlign: 'center',
+      }}>{count}</span>
+    </button>
+  )
+}
+
+export function MiniCard({ pos }) {
+  return (
+    <div style={{
+      background: 'var(--wb-bg-surface, #070a0e)', border: '1px solid var(--wb-border, #1e2a38)',
+      borderRadius: 8, padding: '12px 14px', fontFamily: MONO,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <span style={{ fontSize: '1rem', fontWeight: 700 }}>{pos.ticker}</span>
+        <MockPhaseBadge phase={pos.phase} />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: '0.75rem' }}>
+        <div><span style={{ color: '#4a5a6a' }}>Strike </span><span style={{ color: '#e6a817' }}>{pos.strike}</span></div>
+        <div><span style={{ color: '#4a5a6a' }}>DTE </span><span>{pos.dte}</span></div>
+        <div><span style={{ color: '#4a5a6a' }}>Premium </span><span style={{ color: '#3fb950' }}>{pos.premium}</span></div>
+      </div>
+    </div>
+  )
+}
+
+export function Mockup() {
+  const stateMap = {
+    'all': 'ALL',
+    'csp-only': 'CSP_OPEN',
+    'holding-only': 'HOLDING_SHARES',
+    'cc-only': 'CC_OPEN',
+    'closed': 'CLOSED',
+    'empty-filter': 'EMPTY',
+  }
+  const [state, setState] = useState('all')
+  const allStates = ['all', 'csp-only', 'holding-only', 'cc-only', 'closed', 'empty-filter']
+
+  const activeFilter = stateMap[state]
+  const filtered = activeFilter === 'EMPTY' ? [] : getFilteredPositions(activeFilter)
+
+  return (
+    <div style={{ fontFamily: MONO, background: '#040608', color: 'var(--wb-text-primary, #e2eaf2)', minHeight: 420 }}>
+
+      {/* State toggle */}
+      <div style={{ display: 'flex', gap: 6, padding: '10px 14px', background: '#0d1117', borderBottom: '1px solid #1e2a38', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 9, color: '#4a5a6a', letterSpacing: '0.12em', textTransform: 'uppercase', alignSelf: 'center', marginRight: 4 }}>State:</span>
+        {allStates.map(s => (
+          <button key={s} onClick={() => setState(s)} style={{
+            fontSize: 10, fontFamily: MONO, padding: '3px 10px', borderRadius: 4,
+            border: '1px solid', borderColor: s === state ? '#e6a817' : '#1e2a38',
+            background: s === state ? 'rgba(230,168,23,0.12)' : 'transparent',
+            color: s === state ? '#e6a817' : '#6a7a8a', cursor: 'pointer',
+          }}>{s}</button>
+        ))}
+      </div>
+
+      {/* Summary bar stub (dimmed) */}
+      <div style={{ padding: '16px 24px 8px', opacity: 0.2, pointerEvents: 'none', userSelect: 'none' }}>
+        <div style={{ height: 60, borderRadius: 8, border: '1px solid #1e2a38', background: '#070a0e' }} />
+      </div>
+
+      {/* THE FOCAL ELEMENT: Filter Bar */}
+      <div style={{ padding: '4px 24px 16px' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          {FILTERS.map(f => (
+            <FilterPill
+              key={f.key}
+              label={f.label}
+              count={getCount(f.key)}
+              isActive={activeFilter === f.key || (activeFilter === 'EMPTY' && f.key === 'CC_OPEN')}
+              color={f.color}
+              onClick={() => {}}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Card grid (filtered) */}
+      <div style={{ padding: '0 24px 24px' }}>
+        {filtered.length > 0 ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
+            {filtered.map(pos => <MiniCard key={pos.id} pos={pos} />)}
+          </div>
+        ) : (
+          <div style={{
+            padding: '40px 20px', textAlign: 'center',
+            border: '1px dashed var(--wb-border, #1e2a38)', borderRadius: 8,
+          }}>
+            <div style={{ fontSize: '0.85rem', color: 'var(--wb-text-muted, #4a5a6a)', marginBottom: 4 }}>
+              No positions in this phase
+            </div>
+            <div style={{ fontSize: '0.7rem', color: '#3a4a5a' }}>
+              Positions will appear here when they enter this lifecycle stage
+            </div>
+          </div>
+        )}
+      </div>
+
+    </div>
+  )
+}
+
+<Mockup />

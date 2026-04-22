@@ -1,0 +1,219 @@
+---
+title: 'US-18: Position Cards Dashboard'
+story: 'As a wheel trader managing multiple active positions, I want to see all my positions displayed as compact cards showing key data at a glance.'
+states: ['multi-position', 'dte-urgent', 'holding-no-leg']
+---
+
+import { useState } from 'react'
+
+# US-18: Position Cards Dashboard
+
+_Display active positions as a responsive card grid with phase badge, ticker, strike, DTE countdown, premium collected, and effective cost basis._
+
+## Acceptance Criteria States
+
+- **multi-position**: Three active positions in different phases — CSP_OPEN, CC_OPEN, HOLDING_SHARES
+- **dte-urgent**: Position with DTE ≤ 7 shown with gold urgency highlight
+- **holding-no-leg**: HOLDING_SHARES position with no active option leg — strike and DTE display as "—"
+
+---
+
+export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
+
+{/* Matches: PHASE_COLOR + PHASE_LABEL from src/renderer/src/lib/phase.ts */}
+export const PHASE_CONFIG = {
+  CSP_OPEN: { label: 'Sell Put', color: '#e6a817' },
+  HOLDING_SHARES: { label: 'Holding Shares', color: '#79c0ff' },
+  CC_OPEN: { label: 'Sell Call', color: '#d2a8ff' },
+  WHEEL_COMPLETE: { label: 'Wheel Complete', color: '#3fb950' },
+}
+
+{/* Data shape matches PositionListItem from src/renderer/src/api/positions.ts */}
+export const POSITIONS = {
+  'multi-position': [
+    { id: '1', ticker: 'AAPL', phase: 'CSP_OPEN', instrumentLabel: 'PUT', strike: '180.00', expiration: 'May 16', dte: 25, premiumCollected: '3.50', effectiveCostBasis: '176.50' },
+    { id: '2', ticker: 'MSFT', phase: 'CC_OPEN', instrumentLabel: 'CALL', strike: '420.00', expiration: 'May 09', dte: 18, premiumCollected: '5.20', effectiveCostBasis: '412.80' },
+    { id: '3', ticker: 'TSLA', phase: 'HOLDING_SHARES', instrumentLabel: null, strike: null, expiration: null, dte: null, premiumCollected: '8.00', effectiveCostBasis: '242.00' },
+  ],
+  'dte-urgent': [
+    { id: '1', ticker: 'AAPL', phase: 'CSP_OPEN', instrumentLabel: 'PUT', strike: '180.00', expiration: 'Apr 25', dte: 4, premiumCollected: '3.50', effectiveCostBasis: '176.50' },
+    { id: '2', ticker: 'MSFT', phase: 'CC_OPEN', instrumentLabel: 'CALL', strike: '420.00', expiration: 'Apr 28', dte: 7, premiumCollected: '5.20', effectiveCostBasis: '412.80' },
+    { id: '3', ticker: 'GOOG', phase: 'CSP_OPEN', instrumentLabel: 'PUT', strike: '165.00', expiration: 'Jun 20', dte: 60, premiumCollected: '2.10', effectiveCostBasis: '162.90' },
+  ],
+  'holding-no-leg': [
+    { id: '1', ticker: 'TSLA', phase: 'HOLDING_SHARES', instrumentLabel: null, strike: null, expiration: null, dte: null, premiumCollected: '8.00', effectiveCostBasis: '242.00' },
+    { id: '2', ticker: 'AAPL', phase: 'CSP_OPEN', instrumentLabel: 'PUT', strike: '180.00', expiration: 'May 16', dte: 25, premiumCollected: '3.50', effectiveCostBasis: '176.50' },
+  ],
+}
+
+{/* Matches: PhaseBadge.tsx — Badge with color dot + label */}
+export function MockPhaseBadge({ phase }) {
+  const cfg = PHASE_CONFIG[phase] ?? { label: phase, color: '#8899aa' }
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      fontSize: '0.7rem', fontWeight: 500, padding: '2px 9px', borderRadius: 4,
+      background: cfg.color + '18', color: cfg.color, border: '1px solid ' + cfg.color + '30',
+      fontFamily: MONO, whiteSpace: 'nowrap',
+    }}>
+      <span style={{ width: 5, height: 5, borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
+      {cfg.label}
+    </span>
+  )
+}
+
+{/* Matches: Stat from src/renderer/src/components/ui/Stat.tsx */}
+export function MockStat({ label, value, valueColor }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+      <span style={{ fontSize: '0.6rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--wb-text-muted, #4a5a6a)', fontFamily: MONO }}>{label}</span>
+      <span style={{ fontSize: '0.8125rem', fontWeight: 500, color: valueColor ?? 'var(--wb-text-primary, #e2eaf2)', fontFamily: MONO }}>{value}</span>
+    </div>
+  )
+}
+
+{/*
+  PositionCard layout — three zones:
+    1. Header: Ticker + PhaseBadge
+    2. Body: 2×2 StatGrid (Strike, DTE, Premium, Cost Basis)
+    3. Status Footer: Expiration + urgency badge (Phase 1)
+       → Phase 2 (US-22) adds distance-to-strike indicator here
+
+  Real:
+    <SectionCard> wrapper (border + radius + surface bg)
+    <StatGrid minWidth={110} items={[...]} /> for the body
+    <PhaseBadge phase={pos.phase} /> in the header
+*/}
+export function PositionCard({ pos }) {
+  const isUrgent = pos.dte !== null && pos.dte <= 7
+  const dteColor = isUrgent ? 'var(--wb-gold, #e6a817)' : 'var(--wb-text-primary, #e2eaf2)'
+  const dteDisplay = pos.dte !== null ? `${pos.dte}d` : '—'
+  const strikeDisplay = pos.strike ? `${pos.instrumentLabel} $${pos.strike}` : '—'
+  const expDisplay = pos.expiration ?? '—'
+  const borderHover = 'rgba(230,168,23,0.3)'
+
+  return (
+    <div style={{
+      background: 'var(--wb-bg-surface, #070a0e)',
+      border: '1px solid var(--wb-border, #1e2a38)',
+      borderRadius: 8, padding: 0, overflow: 'hidden',
+      cursor: 'pointer', transition: 'border-color 0.15s',
+      fontFamily: MONO,
+    }}
+    onMouseOver={e => e.currentTarget.style.borderColor = borderHover}
+    onMouseOut={e => e.currentTarget.style.borderColor = 'var(--wb-border, #1e2a38)'}
+    >
+      {/* ── Zone 1: Header — Ticker + Phase ── */}
+      {/* Real: <div><span>{ticker}</span><PhaseBadge phase={pos.phase} /></div> */}
+      <div style={{
+        padding: '14px 16px 10px', display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', borderBottom: '1px solid rgba(30,42,56,0.4)',
+      }}>
+        <span style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--wb-text-primary, #e2eaf2)', letterSpacing: '0.04em' }}>{pos.ticker}</span>
+        <MockPhaseBadge phase={pos.phase} />
+      </div>
+
+      {/* ── Zone 2: Body — StatGrid ── */}
+      {/* Real: <StatGrid minWidth={110} items={[{label:'Strike', value:…}, …]} /> */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: 'var(--wb-border, #1e2a38)' }}>
+        <div style={{ padding: '10px 16px', background: 'var(--wb-bg-surface, #070a0e)' }}>
+          <MockStat label="Strike" value={strikeDisplay} valueColor={pos.strike ? 'var(--wb-gold, #e6a817)' : '#4a5a6a'} />
+        </div>
+        <div style={{ padding: '10px 16px', background: 'var(--wb-bg-surface, #070a0e)' }}>
+          <MockStat label="DTE" value={dteDisplay} valueColor={pos.dte !== null ? dteColor : '#4a5a6a'} />
+        </div>
+        <div style={{ padding: '10px 16px', background: 'var(--wb-bg-surface, #070a0e)' }}>
+          <MockStat label="Premium" value={pos.premiumCollected !== '0.00' ? `+$${pos.premiumCollected}` : '$0.00'} valueColor="var(--wb-green, #3fb950)" />
+        </div>
+        <div style={{ padding: '10px 16px', background: 'var(--wb-bg-surface, #070a0e)' }}>
+          <MockStat label="Cost Basis" value={`$${pos.effectiveCostBasis}`} valueColor="var(--wb-sky, #79c0ff)" />
+        </div>
+      </div>
+
+      {/* ── Zone 3: Status Footer ── */}
+      {/* Phase 1: expiration + urgency badge
+         Phase 2 (US-22): distance-to-strike gauge replaces the urgency badge here.
+         The slot is the same — only the content changes once live prices are available. */}
+      <div style={{
+        padding: '8px 16px', borderTop: '1px solid rgba(30,42,56,0.4)',
+        fontSize: '0.7rem', color: pos.expiration ? 'var(--wb-text-secondary, #8899aa)' : '#4a5a6a',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        <span>Exp: {expDisplay}</span>
+        {isUrgent && (
+          <span style={{
+            fontSize: '0.6rem', fontWeight: 600, color: 'var(--wb-gold, #e6a817)',
+            background: 'rgba(230,168,23,0.1)', padding: '1px 6px', borderRadius: 3,
+            border: '1px solid rgba(230,168,23,0.25)',
+          }}>EXPIRING SOON</span>
+        )}
+        <span style={{ fontSize: '0.65rem', color: '#4a5a6a' }}>View →</span>
+      </div>
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [state, setState] = useState('multi-position')
+  const allStates = ['multi-position', 'dte-urgent', 'holding-no-leg']
+  const positions = POSITIONS[state]
+
+  return (
+    <div style={{ fontFamily: MONO, background: '#040608', color: 'var(--wb-text-primary, #e2eaf2)', minHeight: 500 }}>
+
+      {/* State toggle */}
+      <div style={{ display: 'flex', gap: 6, padding: '10px 14px', background: '#0d1117', borderBottom: '1px solid #1e2a38', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 9, color: '#4a5a6a', letterSpacing: '0.12em', textTransform: 'uppercase', alignSelf: 'center', marginRight: 4 }}>State:</span>
+        {allStates.map(s => (
+          <button key={s} onClick={() => setState(s)} style={{
+            fontSize: 10, fontFamily: MONO, padding: '3px 10px', borderRadius: 4,
+            border: '1px solid', borderColor: s === state ? '#e6a817' : '#1e2a38',
+            background: s === state ? 'rgba(230,168,23,0.12)' : 'transparent',
+            color: s === state ? '#e6a817' : '#6a7a8a', cursor: 'pointer',
+          }}>{s}</button>
+        ))}
+      </div>
+
+      {/* Page chrome — Real: <PageLayout header={<PageHeader left={…} right={…} />}> */}
+      <div style={{ padding: '16px 24px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4a5a6a', marginBottom: 4 }}>Dashboard</div>
+          <div style={{ fontSize: '1.2rem', fontWeight: 700 }}>Positions</div>
+        </div>
+        <button style={{
+          padding: '8px 16px', borderRadius: 6, border: 'none',
+          background: 'var(--wb-gold, #e6a817)', color: '#000',
+          fontSize: '0.8rem', fontWeight: 600, fontFamily: MONO, cursor: 'pointer',
+        }}>+ New Wheel</button>
+      </div>
+
+      {/* Summary bar stub (dimmed — US-19) */}
+      <div style={{ padding: '0 24px 16px', opacity: 0.25, pointerEvents: 'none', userSelect: 'none' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, background: '#1e2a38', borderRadius: 6, overflow: 'hidden' }}>
+          {[['Capital Deployed', '$102,000'], ['Premium MTD', '$350'], ['Premium YTD', '$1,670'], ['Active Positions', positions.length]].map(([l, v]) => (
+            <div key={l} style={{ padding: '12px 16px', background: '#070a0e' }}>
+              <div style={{ fontSize: 9, color: '#4a5a6a', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>{l}</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#e2eaf2' }}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Card Grid — THE FOCAL ELEMENT */}
+      <div style={{ padding: '0 24px 24px' }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+          gap: 14,
+        }}>
+          {positions.map(pos => (
+            <PositionCard key={pos.id} pos={pos} />
+          ))}
+        </div>
+      </div>
+
+    </div>
+  )
+}
+
+<Mockup />
