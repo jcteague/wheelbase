@@ -31,7 +31,8 @@
       "Bash(npx vitest:*)",
       "Bash(pnpm vitest:*)",
       "Bash(npx electron-rebuild:*)",
-      "Bash(pnpm build:*)"
+      "Bash(pnpm build:*)",
+      "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")"
     ]
   },
   "enableAllProjectMcpServers": true,
