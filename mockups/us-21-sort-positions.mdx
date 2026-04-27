@@ -24,7 +24,7 @@ export const POSITIONS = [
   { id: '1', ticker: 'AAPL', dte: 25, dteLabel: '25d', premium: '3.50', strike: 'PUT $180' },
   { id: '2', ticker: 'MSFT', dte: 7, dteLabel: '7d', premium: '5.20', strike: 'CALL $420' },
   { id: '3', ticker: 'TSLA', dte: null, dteLabel: '—', premium: '8.00', strike: '—' },
-  { id: '4', ticker: 'GOOG', dte: 42, dteLabel: '42d', premium: '2.10', strike: 'PUT $165' },
+  { id: '4', ticker: 'GOOG', dte: 42, dteLabel: '42d', premium: '2.10', strike: 'PUT $165' }
 ]
 
 export function sortPositions(positions, key) {
@@ -39,7 +39,9 @@ export function sortPositions(positions, key) {
   } else if (key === 'ticker') {
     sorted.sort((a, b) => a.ticker.localeCompare(b.ticker))
   } else if (key === 'premium') {
-    sorted.sort((a, b) => parseFloat(b.premium) - parseFloat(a.premium) || a.ticker.localeCompare(b.ticker))
+    sorted.sort(
+      (a, b) => parseFloat(b.premium) - parseFloat(a.premium) || a.ticker.localeCompare(b.ticker)
+    )
   }
   return sorted
 }
@@ -47,26 +49,47 @@ export function sortPositions(positions, key) {
 export const SORT_OPTIONS = [
   { key: 'dte', label: 'DTE', hint: 'soonest first' },
   { key: 'ticker', label: 'Ticker', hint: 'A → Z' },
-  { key: 'premium', label: 'Premium', hint: 'highest first' },
+  { key: 'premium', label: 'Premium', hint: 'highest first' }
 ]
 
 export function SortControl({ activeKey, onSelect }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: MONO }}>
-      <span style={{ fontSize: '0.6rem', color: '#4a5a6a', letterSpacing: '0.08em', textTransform: 'uppercase', marginRight: 4 }}>Sort:</span>
-      {SORT_OPTIONS.map(opt => {
+      <span
+        style={{
+          fontSize: '0.6rem',
+          color: '#4a5a6a',
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          marginRight: 4
+        }}
+      >
+        Sort:
+      </span>
+      {SORT_OPTIONS.map((opt) => {
         const active = opt.key === activeKey
         return (
-          <button key={opt.key} onClick={() => onSelect(opt.key)} style={{
-            padding: '4px 10px', borderRadius: 4, fontSize: '0.7rem',
-            border: '1px solid ' + (active ? 'rgba(230,168,23,0.4)' : 'var(--wb-border, #1e2a38)'),
-            background: active ? 'rgba(230,168,23,0.1)' : 'transparent',
-            color: active ? 'var(--wb-gold, #e6a817)' : '#6a7a8a',
-            fontFamily: MONO, fontWeight: active ? 600 : 400, cursor: 'pointer',
-            transition: 'all 0.15s',
-          }}>
+          <button
+            key={opt.key}
+            onClick={() => onSelect(opt.key)}
+            style={{
+              padding: '4px 10px',
+              borderRadius: 4,
+              fontSize: '0.7rem',
+              border:
+                '1px solid ' + (active ? 'rgba(230,168,23,0.4)' : 'var(--wb-border, #1e2a38)'),
+              background: active ? 'rgba(230,168,23,0.1)' : 'transparent',
+              color: active ? 'var(--wb-gold, #e6a817)' : '#6a7a8a',
+              fontFamily: MONO,
+              fontWeight: active ? 600 : 400,
+              cursor: 'pointer',
+              transition: 'all 0.15s'
+            }}
+          >
             {opt.label}
-            {active && <span style={{ fontSize: '0.55rem', marginLeft: 4, opacity: 0.7 }}>({opt.hint})</span>}
+            {active && (
+              <span style={{ fontSize: '0.55rem', marginLeft: 4, opacity: 0.7 }}>({opt.hint})</span>
+            )}
           </button>
         )
       })}
@@ -81,23 +104,24 @@ export function CompactCard({ pos, sortKey }) {
   const premiumColor = sortKey === 'premium' ? '#3fb950' : '#8899aa'
   const tickerWeight = sortKey === 'ticker' ? 800 : 700
 
-  return (
-    <div style={{
+return (
+
+<div style={{
       display: 'grid', gridTemplateColumns: '70px 100px 60px 80px',
       gap: 8, alignItems: 'center',
       padding: '10px 14px', fontFamily: MONO,
       background: 'var(--wb-bg-surface, #070a0e)',
       border: '1px solid var(--wb-border, #1e2a38)', borderRadius: 6,
     }}>
-      <span style={{ fontSize: '0.95rem', fontWeight: tickerWeight, color: sortKey === 'ticker' ? '#e2eaf2' : '#e2eaf2' }}>{pos.ticker}</span>
-      <span style={{ fontSize: '0.75rem', color: '#e6a817' }}>{pos.strike}</span>
-      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: dteColor }}>
-        {pos.dteLabel}
-        {isUrgent && sortKey === 'dte' && <span style={{ fontSize: '0.55rem', marginLeft: 3, color: '#e6a817' }}>!</span>}
-      </span>
-      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: premiumColor, textAlign: 'right' }}>+${pos.premium}</span>
-    </div>
-  )
+<span style={{ fontSize: '0.95rem', fontWeight: tickerWeight, color: sortKey === 'ticker' ? '#e2eaf2' : '#e2eaf2' }}>{pos.ticker}</span>
+<span style={{ fontSize: '0.75rem', color: '#e6a817' }}>{pos.strike}</span>
+<span style={{ fontSize: '0.8rem', fontWeight: 600, color: dteColor }}>
+{pos.dteLabel}
+{isUrgent && sortKey === 'dte' && <span style={{ fontSize: '0.55rem', marginLeft: 3, color: '#e6a817' }}>!</span>}
+</span>
+<span style={{ fontSize: '0.8rem', fontWeight: 600, color: premiumColor, textAlign: 'right' }}>+${pos.premium}</span>
+</div>
+)
 }
 
 export function Mockup() {
@@ -107,8 +131,9 @@ export function Mockup() {
   const sortKey = stateToKey[state]
   const sorted = sortPositions(POSITIONS, sortKey)
 
-  return (
-    <div style={{ fontFamily: MONO, background: '#040608', color: 'var(--wb-text-primary, #e2eaf2)', minHeight: 360 }}>
+return (
+
+<div style={{ fontFamily: MONO, background: '#040608', color: 'var(--wb-text-primary, #e2eaf2)', minHeight: 360 }}>
 
       {/* State toggle */}
       <div style={{ display: 'flex', gap: 6, padding: '10px 14px', background: '#0d1117', borderBottom: '1px solid #1e2a38', flexWrap: 'wrap' }}>
@@ -163,7 +188,8 @@ export function Mockup() {
       </div>
 
     </div>
-  )
+
+)
 }
 
 <Mockup />

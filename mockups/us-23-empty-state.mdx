@@ -22,12 +22,22 @@ export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
 
 export function MockFormButton({ label, onClick, style = {} }) {
   return (
-    <button onClick={onClick} style={{
-      padding: '12px 24px', borderRadius: 6, border: 'none',
-      background: 'var(--wb-gold, #e6a817)', color: '#000',
-      fontSize: '0.9rem', fontWeight: 600, fontFamily: MONO,
-      cursor: 'pointer', letterSpacing: '0.04em', ...style,
-    }}>
+    <button
+      onClick={onClick}
+      style={{
+        padding: '12px 24px',
+        borderRadius: 6,
+        border: 'none',
+        background: 'var(--wb-gold, #e6a817)',
+        color: '#000',
+        fontSize: '0.9rem',
+        fontWeight: 600,
+        fontFamily: MONO,
+        cursor: 'pointer',
+        letterSpacing: '0.04em',
+        ...style
+      }}
+    >
       {label}
     </button>
   )
@@ -35,16 +45,42 @@ export function MockFormButton({ label, onClick, style = {} }) {
 
 export function SummaryBarZero() {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, background: 'var(--wb-border, #1e2a38)', borderRadius: 8, overflow: 'hidden' }}>
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',
+        gap: 1,
+        background: 'var(--wb-border, #1e2a38)',
+        borderRadius: 8,
+        overflow: 'hidden'
+      }}
+    >
       {[
         ['Capital Deployed', '$0.00'],
         ['Premium MTD', '$0.00'],
         ['Premium YTD', '$0.00'],
-        ['Active Positions', '0'],
+        ['Active Positions', '0']
       ].map(([label, value]) => (
-        <div key={label} style={{ padding: '14px 18px', background: 'var(--wb-bg-surface, #070a0e)' }}>
-          <div style={{ fontSize: '0.6rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4a5a6a', fontFamily: MONO, marginBottom: 3 }}>{label}</div>
-          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#4a5a6a', fontFamily: MONO }}>{value}</div>
+        <div
+          key={label}
+          style={{ padding: '14px 18px', background: 'var(--wb-bg-surface, #070a0e)' }}
+        >
+          <div
+            style={{
+              fontSize: '0.6rem',
+              fontWeight: 600,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: '#4a5a6a',
+              fontFamily: MONO,
+              marginBottom: 3
+            }}
+          >
+            {label}
+          </div>
+          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#4a5a6a', fontFamily: MONO }}>
+            {value}
+          </div>
         </div>
       ))}
     </div>
@@ -69,7 +105,14 @@ export function CheckIcon() {
   return (
     <svg width="48" height="48" viewBox="0 0 48 48" fill="none" style={{ opacity: 0.5 }}>
       <circle cx="24" cy="24" r="20" stroke="#3fb950" strokeWidth="2" opacity="0.3" />
-      <path d="M15 24l6 6 12-12" stroke="#3fb950" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.5" />
+      <path
+        d="M15 24l6 6 12-12"
+        stroke="#3fb950"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.5"
+      />
     </svg>
   )
 }
@@ -80,20 +123,39 @@ export function FilterPillsStub({ activeFilter }) {
     { label: 'Sell Put', count: 0, active: false },
     { label: 'Holding', count: 1, active: false },
     { label: 'Sell Call', count: 2, active: activeFilter === 'cc' },
-    { label: 'Closed', count: 0, active: false },
+    { label: 'Closed', count: 0, active: false }
   ]
   return (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-      {pills.map(p => (
-        <span key={p.label} style={{
-          padding: '5px 12px', borderRadius: 6, fontFamily: MONO, fontSize: '0.7rem',
-          border: '1px solid ' + (p.active ? 'rgba(230,168,23,0.4)' : '#1e2a38'),
-          background: p.active ? 'rgba(230,168,23,0.1)' : 'transparent',
-          color: p.active ? '#e6a817' : '#6a7a8a',
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-        }}>
+      {pills.map((p) => (
+        <span
+          key={p.label}
+          style={{
+            padding: '5px 12px',
+            borderRadius: 6,
+            fontFamily: MONO,
+            fontSize: '0.7rem',
+            border: '1px solid ' + (p.active ? 'rgba(230,168,23,0.4)' : '#1e2a38'),
+            background: p.active ? 'rgba(230,168,23,0.1)' : 'transparent',
+            color: p.active ? '#e6a817' : '#6a7a8a',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6
+          }}
+        >
           {p.label}
-          <span style={{ fontSize: '0.6rem', fontWeight: 700, background: p.active ? 'rgba(230,168,23,0.25)' : 'rgba(30,42,56,0.6)', color: p.active ? '#e6a817' : '#6a7a8a', padding: '0 5px', borderRadius: 8 }}>{p.count}</span>
+          <span
+            style={{
+              fontSize: '0.6rem',
+              fontWeight: 700,
+              background: p.active ? 'rgba(230,168,23,0.25)' : 'rgba(30,42,56,0.6)',
+              color: p.active ? '#e6a817' : '#6a7a8a',
+              padding: '0 5px',
+              borderRadius: 8
+            }}
+          >
+            {p.count}
+          </span>
         </span>
       ))}
     </div>
@@ -104,8 +166,9 @@ export function Mockup() {
   const [state, setState] = useState('no-positions')
   const allStates = ['no-positions', 'all-closed', 'filtered-empty']
 
-  return (
-    <div style={{ fontFamily: MONO, background: '#040608', color: 'var(--wb-text-primary, #e2eaf2)', minHeight: 520 }}>
+return (
+
+<div style={{ fontFamily: MONO, background: '#040608', color: 'var(--wb-text-primary, #e2eaf2)', minHeight: 520 }}>
 
       {/* State toggle */}
       <div style={{ display: 'flex', gap: 6, padding: '10px 14px', background: '#0d1117', borderBottom: '1px solid #1e2a38', flexWrap: 'wrap' }}>
@@ -205,7 +268,8 @@ export function Mockup() {
       </div>
 
     </div>
-  )
+
+)
 }
 
 <Mockup />

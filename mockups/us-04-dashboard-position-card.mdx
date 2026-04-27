@@ -1,7 +1,16 @@
 ---
 title: 'Epic 04: Position Card — Final Layout'
 story: 'Unified position card representing the finished state after all Epic 04 stories (US-18 through US-24) ship, including the Phase 2 distance-to-strike indicator from US-22.'
-states: ['portfolio', 'otm-safe', 'approaching', 'itm-danger', 'holding-shares', 'no-live-price', 'closed']
+states:
+  [
+    'portfolio',
+    'otm-safe',
+    'approaching',
+    'itm-danger',
+    'holding-shares',
+    'no-live-price',
+    'closed'
+  ]
 ---
 
 import { useState } from 'react'
@@ -32,26 +41,26 @@ _This mockup shows the unified position card after all dashboard stories are com
 {/* Matches: src/renderer/src/index.css :root variables */}
 
 export const T = {
-  bgBase:     '#0d1117',
-  bgSurface:  '#161b27',
+  bgBase: '#0d1117',
+  bgSurface: '#161b27',
   bgElevated: '#1c2333',
-  bgHover:    '#1f2937',
-  border:     '#21262d',
-  borderSub:  '#161b22',
-  textPri:    '#e6edf3',
-  textSec:    '#8b949e',
-  textMut:    '#484f58',
-  gold:       '#e6a817',
-  goldDim:    'rgba(230,168,23,0.12)',
+  bgHover: '#1f2937',
+  border: '#21262d',
+  borderSub: '#161b22',
+  textPri: '#e6edf3',
+  textSec: '#8b949e',
+  textMut: '#484f58',
+  gold: '#e6a817',
+  goldDim: 'rgba(230,168,23,0.12)',
   goldBorder: 'rgba(230,168,23,0.25)',
-  green:      '#3fb950',
-  greenDim:   'rgba(63,185,80,0.12)',
-  greenBord:  'rgba(63,185,80,0.22)',
-  red:        '#f85149',
-  redDim:     'rgba(248,81,73,0.12)',
-  sky:        '#79c0ff',
-  violet:     '#d2a8ff',
-  violetDim:  'rgba(210,168,255,0.12)',
+  green: '#3fb950',
+  greenDim: 'rgba(63,185,80,0.12)',
+  greenBord: 'rgba(63,185,80,0.22)',
+  red: '#f85149',
+  redDim: 'rgba(248,81,73,0.12)',
+  sky: '#79c0ff',
+  violet: '#d2a8ff',
+  violetDim: 'rgba(210,168,255,0.12)'
 }
 
 {/* Matches: src/renderer/src/lib/tokens.ts */}
@@ -59,44 +68,178 @@ export const MONO = "ui-monospace, 'SF Mono', Menlo, 'Cascadia Code', 'Fira Code
 
 {/* Matches: PHASE_COLOR + PHASE_LABEL from src/renderer/src/lib/phase.ts */}
 export const PHASE = {
-  CSP_OPEN:        { color: T.gold,   label: 'Sell Put' },
-  HOLDING_SHARES:  { color: T.sky,    label: 'Holding Shares' },
-  CC_OPEN:         { color: T.violet, label: 'Sell Call' },
-  WHEEL_COMPLETE:  { color: T.green,  label: 'Wheel Complete' },
-  CSP_CLOSED_LOSS: { color: T.red,    label: 'Closed ✗' },
+CSP_OPEN: { color: T.gold, label: 'Sell Put' },
+HOLDING_SHARES: { color: T.sky, label: 'Holding Shares' },
+CC_OPEN: { color: T.violet, label: 'Sell Call' },
+WHEEL_COMPLETE: { color: T.green, label: 'Wheel Complete' },
+CSP_CLOSED_LOSS: { color: T.red, label: 'Closed ✗' },
 }
 
 {/* ── Data ── */}
-{/* Shape matches PositionListItem from src/renderer/src/api/positions.ts
-    plus Phase 2 fields: currentPrice (from Epic 06 market data) */}
+{/_ Shape matches PositionListItem from src/renderer/src/api/positions.ts
+plus Phase 2 fields: currentPrice (from Epic 06 market data) _/}
 
 export const CARDS = {
   portfolio: [
-    { id:'1', ticker:'AAPL', phase:'CSP_OPEN',       inst:'PUT',  strike:'180.00', exp:'May 16', dte:25,   prem:'3.50',  basis:'176.50', price:189.00 },
-    { id:'2', ticker:'MSFT', phase:'CC_OPEN',         inst:'CALL', strike:'420.00', exp:'Apr 28', dte:7,    prem:'5.20',  basis:'412.80', price:416.80 },
-    { id:'3', ticker:'TSLA', phase:'HOLDING_SHARES',  inst:null,   strike:null,     exp:null,     dte:null, prem:'8.00',  basis:'242.00', price:null },
-    { id:'4', ticker:'GOOG', phase:'CSP_OPEN',        inst:'PUT',  strike:'165.00', exp:'Jun 20', dte:60,   prem:'2.10',  basis:'162.90', price:173.25 },
-    { id:'5', ticker:'AMD',  phase:'WHEEL_COMPLETE',  inst:null,   strike:null,     exp:null,     dte:null, prem:'12.40', basis:null,     price:null, finalPnl:'+$780.00' },
+    {
+      id: '1',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      inst: 'PUT',
+      strike: '180.00',
+      exp: 'May 16',
+      dte: 25,
+      prem: '3.50',
+      basis: '176.50',
+      price: 189.0
+    },
+    {
+      id: '2',
+      ticker: 'MSFT',
+      phase: 'CC_OPEN',
+      inst: 'CALL',
+      strike: '420.00',
+      exp: 'Apr 28',
+      dte: 7,
+      prem: '5.20',
+      basis: '412.80',
+      price: 416.8
+    },
+    {
+      id: '3',
+      ticker: 'TSLA',
+      phase: 'HOLDING_SHARES',
+      inst: null,
+      strike: null,
+      exp: null,
+      dte: null,
+      prem: '8.00',
+      basis: '242.00',
+      price: null
+    },
+    {
+      id: '4',
+      ticker: 'GOOG',
+      phase: 'CSP_OPEN',
+      inst: 'PUT',
+      strike: '165.00',
+      exp: 'Jun 20',
+      dte: 60,
+      prem: '2.10',
+      basis: '162.90',
+      price: 173.25
+    },
+    {
+      id: '5',
+      ticker: 'AMD',
+      phase: 'WHEEL_COMPLETE',
+      inst: null,
+      strike: null,
+      exp: null,
+      dte: null,
+      prem: '12.40',
+      basis: null,
+      price: null,
+      finalPnl: '+$780.00'
+    }
   ],
   'otm-safe': [
-    { id:'1', ticker:'AAPL', phase:'CSP_OPEN', inst:'PUT', strike:'180.00', exp:'May 16', dte:25, prem:'3.50', basis:'176.50', price:189.00 },
+    {
+      id: '1',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      inst: 'PUT',
+      strike: '180.00',
+      exp: 'May 16',
+      dte: 25,
+      prem: '3.50',
+      basis: '176.50',
+      price: 189.0
+    }
   ],
   approaching: [
-    { id:'1', ticker:'MSFT', phase:'CC_OPEN', inst:'CALL', strike:'420.00', exp:'Apr 28', dte:7, prem:'5.20', basis:'412.80', price:416.80 },
+    {
+      id: '1',
+      ticker: 'MSFT',
+      phase: 'CC_OPEN',
+      inst: 'CALL',
+      strike: '420.00',
+      exp: 'Apr 28',
+      dte: 7,
+      prem: '5.20',
+      basis: '412.80',
+      price: 416.8
+    }
   ],
   'itm-danger': [
-    { id:'1', ticker:'TSLA', phase:'CSP_OPEN', inst:'PUT', strike:'250.00', exp:'May 02', dte:11, prem:'6.20', basis:'243.80', price:240.00 },
+    {
+      id: '1',
+      ticker: 'TSLA',
+      phase: 'CSP_OPEN',
+      inst: 'PUT',
+      strike: '250.00',
+      exp: 'May 02',
+      dte: 11,
+      prem: '6.20',
+      basis: '243.80',
+      price: 240.0
+    }
   ],
   'holding-shares': [
-    { id:'1', ticker:'TSLA', phase:'HOLDING_SHARES', inst:null, strike:null, exp:null, dte:null, prem:'8.00', basis:'242.00', price:null },
+    {
+      id: '1',
+      ticker: 'TSLA',
+      phase: 'HOLDING_SHARES',
+      inst: null,
+      strike: null,
+      exp: null,
+      dte: null,
+      prem: '8.00',
+      basis: '242.00',
+      price: null
+    }
   ],
   'no-live-price': [
-    { id:'1', ticker:'AAPL', phase:'CSP_OPEN', inst:'PUT', strike:'180.00', exp:'Apr 25', dte:4, prem:'3.50', basis:'176.50', price:null },
-    { id:'2', ticker:'GOOG', phase:'CSP_OPEN', inst:'PUT', strike:'165.00', exp:'Jun 20', dte:60, prem:'2.10', basis:'162.90', price:null },
+    {
+      id: '1',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      inst: 'PUT',
+      strike: '180.00',
+      exp: 'Apr 25',
+      dte: 4,
+      prem: '3.50',
+      basis: '176.50',
+      price: null
+    },
+    {
+      id: '2',
+      ticker: 'GOOG',
+      phase: 'CSP_OPEN',
+      inst: 'PUT',
+      strike: '165.00',
+      exp: 'Jun 20',
+      dte: 60,
+      prem: '2.10',
+      basis: '162.90',
+      price: null
+    }
   ],
   closed: [
-    { id:'1', ticker:'AMD', phase:'WHEEL_COMPLETE', inst:null, strike:null, exp:null, dte:null, prem:'12.40', basis:null, price:null, finalPnl:'+$780.00' },
-  ],
+    {
+      id: '1',
+      ticker: 'AMD',
+      phase: 'WHEEL_COMPLETE',
+      inst: null,
+      strike: null,
+      exp: null,
+      dte: null,
+      prem: '12.40',
+      basis: null,
+      price: null,
+      finalPnl: '+$780.00'
+    }
+  ]
 }
 
 {/* ── Distance Logic ── */}
@@ -115,10 +258,10 @@ export function distColor(inst, dist) {
   if (dist === null) return T.textMut
   const otm = distIsOtm(inst, dist)
   const abs = Math.abs(dist)
-  if (!otm) return T.red        // ITM — danger
-  if (abs <= 2) return T.gold   // OTM but close — approaching
-  if (abs <= 5) return T.green  // OTM — safe
-  return T.textSec              // OTM by > 5% — comfortable, muted
+  if (!otm) return T.red // ITM — danger
+  if (abs <= 2) return T.gold // OTM but close — approaching
+  if (abs <= 5) return T.green // OTM — safe
+  return T.textSec // OTM by > 5% — comfortable, muted
 }
 
 export function distLabel(dist) {
@@ -139,70 +282,71 @@ export function distStatus(inst, dist) {
 
 {/* Matches: PhaseBadge.tsx → Badge with color dot + label */}
 export function MockPhaseBadge({ phase }) {
-  const cfg = PHASE[phase] ?? { color: T.textSec, label: phase }
-  return (
-    <span style={{
+const cfg = PHASE[phase] ?? { color: T.textSec, label: phase }
+return (
+
+<span style={{
       display: 'inline-flex', alignItems: 'center', gap: 5,
       fontSize: '0.7rem', fontWeight: 500, padding: '2px 9px', borderRadius: 4,
       background: cfg.color + '18', color: cfg.color, border: '1px solid ' + cfg.color + '30',
       fontFamily: MONO, whiteSpace: 'nowrap',
     }}>
-      <span style={{ width: 5, height: 5, borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
-      {cfg.label}
-    </span>
-  )
+<span style={{ width: 5, height: 5, borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
+{cfg.label}
+</span>
+)
 }
 
 {/* Matches: Stat from src/renderer/src/components/ui/Stat.tsx */}
 export function MockStat({ label, value, color }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-      <span style={{ fontFamily: MONO, fontSize: '0.6rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.textMut }}>{label}</span>
-      <span style={{ fontFamily: MONO, fontSize: '0.8125rem', fontWeight: 500, color: color ?? T.textPri }}>{value}</span>
-    </div>
-  )
+return (
+
+<div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+<span style={{ fontFamily: MONO, fontSize: '0.6rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.textMut }}>{label}</span>
+<span style={{ fontFamily: MONO, fontSize: '0.8125rem', fontWeight: 500, color: color ?? T.textPri }}>{value}</span>
+</div>
+)
 }
 
 {/* Matches: Caption from src/renderer/src/components/ui/Caption.tsx */}
 export function MockCaption({ children, color }) {
-  return (
-    <span style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: color ?? T.textMut, fontFamily: MONO }}>{children}</span>
-  )
+return (
+
+<span style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: color ?? T.textMut, fontFamily: MONO }}>{children}</span>
+)
 }
 
 {/* ── Position Card ── */}
-{/*
-  Layout zones:
-    1. Header  — ticker + PhaseBadge
-    2. Stats   — 2×2 StatGrid (strike, DTE, premium, cost basis)
-    3. Distance — gauge bar + percentage + status (Phase 2 only, when price available)
-    4. Footer  — expiration + navigation hint
+{/\*
+Layout zones: 1. Header — ticker + PhaseBadge 2. Stats — 2×2 StatGrid (strike, DTE, premium, cost basis) 3. Distance — gauge bar + percentage + status (Phase 2 only, when price available) 4. Footer — expiration + navigation hint
 
-  Real:
-    <a href={`#/positions/${pos.id}`}>                          // US-24: semantic link
-      <SectionCard>                                             // card wrapper
-        <div>{ticker}<PhaseBadge phase={pos.phase} /></div>     // zone 1
-        <StatGrid minWidth={110} items={[...]} />               // zone 2
-        {pos.currentPrice && <DistanceGauge ... />}             // zone 3 (US-22)
-        <div>Exp: {exp} <span>View →</span></div>              // zone 4
-      </SectionCard>
-    </a>
-*/}
+Real:
+
+<a href={`#/positions/${pos.id}`}> // US-24: semantic link
+<SectionCard> // card wrapper
+<div>{ticker}<PhaseBadge phase={pos.phase} /></div> // zone 1
+<StatGrid minWidth={110} items={[...]} /> // zone 2
+{pos.currentPrice && <DistanceGauge ... />} // zone 3 (US-22)
+<div>Exp: {exp} <span>View →</span></div> // zone 4
+</SectionCard>
+</a>
+\*/}
 export function PositionCard({ pos }) {
-  const isUrgent = pos.dte !== null && pos.dte <= 7
-  const isClosed = pos.phase === 'WHEEL_COMPLETE' || pos.phase === 'CSP_CLOSED_LOSS'
-  const dist = distCalc(pos.inst, pos.strike, pos.price)
-  const dColor = distColor(pos.inst, dist)
-  const dLabel = distLabel(dist)
-  const dStatus = distStatus(pos.inst, dist)
-  const hasDistance = pos.price !== null && pos.strike !== null
-  const phaseColor = (PHASE[pos.phase] ?? { color: T.textSec }).color
+const isUrgent = pos.dte !== null && pos.dte <= 7
+const isClosed = pos.phase === 'WHEEL_COMPLETE' || pos.phase === 'CSP_CLOSED_LOSS'
+const dist = distCalc(pos.inst, pos.strike, pos.price)
+const dColor = distColor(pos.inst, dist)
+const dLabel = distLabel(dist)
+const dStatus = distStatus(pos.inst, dist)
+const hasDistance = pos.price !== null && pos.strike !== null
+const phaseColor = (PHASE[pos.phase] ?? { color: T.textSec }).color
 
-  return (
-    <a
-      href="#"
-      onClick={e => e.preventDefault()}
-      style={{
+return (
+
+<a
+href="#"
+onClick={e => e.preventDefault()}
+style={{
         display: 'block', textDecoration: 'none', color: 'inherit',
         background: T.bgSurface,
         border: '1px solid ' + T.border,
@@ -211,15 +355,14 @@ export function PositionCard({ pos }) {
         fontFamily: MONO,
         opacity: isClosed ? 0.6 : 1,
       }}
-      onMouseOver={e => {
-        e.currentTarget.style.borderColor = phaseColor + '50'
-        e.currentTarget.style.boxShadow = '0 0 0 1px ' + phaseColor + '15'
-      }}
-      onMouseOut={e => {
-        e.currentTarget.style.borderColor = T.border
-        e.currentTarget.style.boxShadow = 'none'
-      }}
-    >
+onMouseOver={e => {
+e.currentTarget.style.borderColor = phaseColor + '50'
+e.currentTarget.style.boxShadow = '0 0 0 1px ' + phaseColor + '15'
+}}
+onMouseOut={e => {
+e.currentTarget.style.borderColor = T.border
+e.currentTarget.style.boxShadow = 'none'
+}} >
 
       {/* ── Zone 1: Header ── */}
       {/* Real: <div><span>{ticker}</span><PhaseBadge phase={pos.phase} /></div> */}
@@ -353,25 +496,27 @@ export function PositionCard({ pos }) {
       </div>
 
     </a>
-  )
+
+)
 }
 
 {/* ── Filter Pills (US-20) ── */}
 {/* Real: phase filter pills with count badges */}
 export function FilterBar({ positions, active, onSelect }) {
-  const groups = [
-    { key: 'ALL',      label: 'All',      color: T.gold,   count: positions.filter(p => p.phase !== 'WHEEL_COMPLETE' && p.phase !== 'CSP_CLOSED_LOSS').length },
-    { key: 'CSP_OPEN', label: 'Sell Put',  color: T.gold,   count: positions.filter(p => p.phase === 'CSP_OPEN').length },
-    { key: 'HOLDING',  label: 'Holding',   color: T.sky,    count: positions.filter(p => p.phase === 'HOLDING_SHARES').length },
-    { key: 'CC_OPEN',  label: 'Sell Call',  color: T.violet, count: positions.filter(p => p.phase === 'CC_OPEN').length },
-    { key: 'CLOSED',   label: 'Closed',    color: T.textSec,count: positions.filter(p => p.phase === 'WHEEL_COMPLETE' || p.phase === 'CSP_CLOSED_LOSS').length },
-  ]
-  return (
-    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-      {groups.map(g => {
-        const on = g.key === active
-        return (
-          <button key={g.key} onClick={() => onSelect(g.key)} style={{
+const groups = [
+{ key: 'ALL', label: 'All', color: T.gold, count: positions.filter(p => p.phase !== 'WHEEL_COMPLETE' && p.phase !== 'CSP_CLOSED_LOSS').length },
+{ key: 'CSP_OPEN', label: 'Sell Put', color: T.gold, count: positions.filter(p => p.phase === 'CSP_OPEN').length },
+{ key: 'HOLDING', label: 'Holding', color: T.sky, count: positions.filter(p => p.phase === 'HOLDING_SHARES').length },
+{ key: 'CC_OPEN', label: 'Sell Call', color: T.violet, count: positions.filter(p => p.phase === 'CC_OPEN').length },
+{ key: 'CLOSED', label: 'Closed', color: T.textSec,count: positions.filter(p => p.phase === 'WHEEL_COMPLETE' || p.phase === 'CSP_CLOSED_LOSS').length },
+]
+return (
+
+<div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+{groups.map(g => {
+const on = g.key === active
+return (
+<button key={g.key} onClick={() => onSelect(g.key)} style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
             padding: '5px 12px', borderRadius: 6, fontFamily: MONO, fontSize: '0.7rem',
             border: '1px solid ' + (on ? g.color + '40' : T.border),
@@ -379,100 +524,103 @@ export function FilterBar({ positions, active, onSelect }) {
             color: on ? g.color : T.textSec,
             fontWeight: on ? 600 : 400, cursor: 'pointer', transition: 'all 0.15s',
           }}>
-            {g.label}
-            <span style={{
+{g.label}
+<span style={{
               fontSize: '0.6rem', fontWeight: 700, minWidth: 16, textAlign: 'center',
               padding: '0 5px', borderRadius: 8,
               background: on ? g.color + '25' : T.border + '80',
               color: on ? g.color : T.textMut,
             }}>{g.count}</span>
-          </button>
-        )
-      })}
-    </div>
-  )
+</button>
+)
+})}
+</div>
+)
 }
 
 {/* ── Sort Control (US-21) ── */}
 export function SortControl({ active }) {
-  const opts = [
-    { key: 'dte', label: 'DTE' },
-    { key: 'ticker', label: 'Ticker' },
-    { key: 'premium', label: 'Premium' },
-  ]
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: MONO }}>
-      <span style={{ fontSize: '0.6rem', color: T.textMut, letterSpacing: '0.08em', textTransform: 'uppercase', marginRight: 4 }}>Sort:</span>
-      {opts.map(o => {
-        const on = o.key === active
-        return (
-          <span key={o.key} style={{
+const opts = [
+{ key: 'dte', label: 'DTE' },
+{ key: 'ticker', label: 'Ticker' },
+{ key: 'premium', label: 'Premium' },
+]
+return (
+
+<div style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: MONO }}>
+<span style={{ fontSize: '0.6rem', color: T.textMut, letterSpacing: '0.08em', textTransform: 'uppercase', marginRight: 4 }}>Sort:</span>
+{opts.map(o => {
+const on = o.key === active
+return (
+<span key={o.key} style={{
             padding: '3px 8px', borderRadius: 4, fontSize: '0.65rem',
             border: '1px solid ' + (on ? T.goldBorder : T.border),
             background: on ? T.goldDim : 'transparent',
             color: on ? T.gold : T.textMut,
             fontFamily: MONO, fontWeight: on ? 600 : 400,
           }}>{o.label}</span>
-        )
-      })}
-    </div>
-  )
+)
+})}
+</div>
+)
 }
 
 {/* ── Summary Bar (US-19) ── */}
 {/* Real: <SectionCard header="Portfolio Overview"><StatGrid minWidth={140} items={[...]} /></SectionCard> */}
 export function SummaryBar() {
-  return (
-    <div style={{
+return (
+
+<div style={{
       background: T.bgSurface, border: '1px solid ' + T.border,
       borderRadius: 8, overflow: 'hidden',
     }}>
-      <div style={{
+<div style={{
         padding: '8px 18px', borderBottom: '1px solid ' + T.border,
         fontFamily: MONO, fontSize: '0.6rem', fontWeight: 600,
         letterSpacing: '0.1em', textTransform: 'uppercase', color: T.textMut,
       }}>Portfolio Overview</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, background: T.border }}>
-        {[
-          { label: 'Capital Deployed', value: '$102,000', color: T.textPri },
-          { label: 'Premium MTD',      value: '$350',     color: T.green },
-          { label: 'Premium YTD',      value: '$1,670',   color: T.green },
-          { label: 'Active Positions', value: '4',        color: T.gold },
-        ].map(s => (
-          <div key={s.label} style={{ padding: '12px 18px', background: T.bgSurface }}>
-            <MockStat label={s.label} value={s.value} color={s.color} />
-          </div>
-        ))}
-      </div>
-    </div>
-  )
+<div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, background: T.border }}>
+{[
+{ label: 'Capital Deployed', value: '$102,000', color: T.textPri },
+{ label: 'Premium MTD', value: '$350', color: T.green },
+{ label: 'Premium YTD', value: '$1,670', color: T.green },
+{ label: 'Active Positions', value: '4', color: T.gold },
+].map(s => (
+<div key={s.label} style={{ padding: '12px 18px', background: T.bgSurface }}>
+<MockStat label={s.label} value={s.value} color={s.color} />
+</div>
+))}
+</div>
+</div>
+)
 }
 
 {/* ── Empty State (US-23) ── */}
 export function EmptyState() {
-  return (
-    <div style={{
+return (
+
+<div style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center',
       padding: '48px 24px', textAlign: 'center',
       border: '1px dashed ' + T.border,
       borderRadius: 12, background: T.bgSurface,
     }}>
-      <svg width="48" height="48" viewBox="0 0 48 48" fill="none" style={{ opacity: 0.35, marginBottom: 16 }}>
-        <circle cx="24" cy="24" r="20" stroke={T.textMut} strokeWidth="1.5" />
-        <circle cx="24" cy="24" r="12" stroke={T.textMut} strokeWidth="1" strokeDasharray="3 2" />
-        <circle cx="24" cy="24" r="3" fill={T.gold} opacity="0.5" />
-      </svg>
-      <div style={{ fontSize: '1rem', fontWeight: 700, color: T.textPri, marginBottom: 6, fontFamily: MONO }}>No positions yet</div>
-      <div style={{ fontSize: '0.8rem', color: T.textSec, maxWidth: 320, lineHeight: 1.6, marginBottom: 20, fontFamily: MONO }}>
-        Start your first wheel by selling a cash-secured put.
-      </div>
-      <button style={{
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" style={{ opacity: 0.35, marginBottom: 16 }}>
+<circle cx="24" cy="24" r="20" stroke={T.textMut} strokeWidth="1.5" />
+<circle cx="24" cy="24" r="12" stroke={T.textMut} strokeWidth="1" strokeDasharray="3 2" />
+<circle cx="24" cy="24" r="3" fill={T.gold} opacity="0.5" />
+</svg>
+<div style={{ fontSize: '1rem', fontWeight: 700, color: T.textPri, marginBottom: 6, fontFamily: MONO }}>No positions yet</div>
+<div style={{ fontSize: '0.8rem', color: T.textSec, maxWidth: 320, lineHeight: 1.6, marginBottom: 20, fontFamily: MONO }}>
+Start your first wheel by selling a cash-secured put.
+</div>
+<button style={{
         padding: '10px 20px', borderRadius: 6, border: 'none',
         background: T.gold, color: T.bgBase,
         fontSize: '0.85rem', fontWeight: 600, fontFamily: MONO, cursor: 'pointer',
       }}>Open Your First Wheel</button>
-    </div>
-  )
+</div>
+)
 }
 
 {/* ── Full Dashboard Mockup ── */}
@@ -483,8 +631,9 @@ export function Mockup() {
   const cards = CARDS[state]
   const showDashboardChrome = state === 'portfolio'
 
-  return (
-    <div style={{ fontFamily: MONO, background: T.bgBase, color: T.textPri, minHeight: 560 }}>
+return (
+
+<div style={{ fontFamily: MONO, background: T.bgBase, color: T.textPri, minHeight: 560 }}>
 
       {/* Dev state toggle */}
       <div style={{
@@ -554,7 +703,8 @@ export function Mockup() {
 
       </div>
     </div>
-  )
+
+)
 }
 
 <Mockup />

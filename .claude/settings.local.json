@@ -32,7 +32,15 @@
       "Bash(pnpm vitest:*)",
       "Bash(npx electron-rebuild:*)",
       "Bash(pnpm build:*)",
-      "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")"
+      "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")",
+      "WebFetch(domain:docs.alpaca.markets)",
+      "WebFetch(domain:caniuse.com)",
+      "WebFetch(domain:electronjs.org)",
+      "WebFetch(domain:www.electronjs.org)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:github.com)",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_click"
     ]
   },
   "enableAllProjectMcpServers": true,

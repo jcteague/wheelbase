@@ -66,10 +66,10 @@ Scenario: Summary bar shows zero state when no active positions exist
 - **New IPC endpoint:** `dashboard:summary` returning `DashboardSummary`:
   ```typescript
   interface DashboardSummary {
-    capitalDeployed: string        // decimal — sum of (contracts × strike × 100) for positions with active option legs
-    premiumMtd: string             // decimal — sum of premium from legs opened in current month
-    premiumYtd: string             // decimal — sum of premium from legs opened in current year
-    activePositionCount: number    // count of positions where status = 'ACTIVE'
+    capitalDeployed: string // decimal — sum of (contracts × strike × 100) for positions with active option legs
+    premiumMtd: string // decimal — sum of premium from legs opened in current month
+    premiumYtd: string // decimal — sum of premium from legs opened in current year
+    activePositionCount: number // count of positions where status = 'ACTIVE'
   }
   ```
 - **New service:** `src/main/services/dashboard-summary.ts` — performs the aggregation queries against the legs and positions tables.

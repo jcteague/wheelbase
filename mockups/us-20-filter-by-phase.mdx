@@ -27,15 +27,55 @@ export const PHASE_CONFIG = {
   CSP_OPEN: { label: 'Sell Put', color: '#e6a817' },
   HOLDING_SHARES: { label: 'Holding', color: '#58a6ff' },
   CC_OPEN: { label: 'Sell Call', color: '#d2a8ff' },
-  WHEEL_COMPLETE: { label: 'Complete', color: '#3fb950' },
+  WHEEL_COMPLETE: { label: 'Complete', color: '#3fb950' }
 }
 
 export const ALL_POSITIONS = [
-  { id: '1', ticker: 'AAPL', phase: 'CSP_OPEN', status: 'ACTIVE', strike: 'PUT $180', dte: '25d', premium: '+$3.50' },
-  { id: '2', ticker: 'MSFT', phase: 'CC_OPEN', status: 'ACTIVE', strike: 'CALL $420', dte: '18d', premium: '+$5.20' },
-  { id: '3', ticker: 'TSLA', phase: 'HOLDING_SHARES', status: 'ACTIVE', strike: '—', dte: '—', premium: '+$8.00' },
-  { id: '4', ticker: 'GOOG', phase: 'CSP_OPEN', status: 'ACTIVE', strike: 'PUT $165', dte: '42d', premium: '+$2.10' },
-  { id: '5', ticker: 'AMD', phase: 'WHEEL_COMPLETE', status: 'CLOSED', strike: '—', dte: '—', premium: '+$12.40' },
+  {
+    id: '1',
+    ticker: 'AAPL',
+    phase: 'CSP_OPEN',
+    status: 'ACTIVE',
+    strike: 'PUT $180',
+    dte: '25d',
+    premium: '+$3.50'
+  },
+  {
+    id: '2',
+    ticker: 'MSFT',
+    phase: 'CC_OPEN',
+    status: 'ACTIVE',
+    strike: 'CALL $420',
+    dte: '18d',
+    premium: '+$5.20'
+  },
+  {
+    id: '3',
+    ticker: 'TSLA',
+    phase: 'HOLDING_SHARES',
+    status: 'ACTIVE',
+    strike: '—',
+    dte: '—',
+    premium: '+$8.00'
+  },
+  {
+    id: '4',
+    ticker: 'GOOG',
+    phase: 'CSP_OPEN',
+    status: 'ACTIVE',
+    strike: 'PUT $165',
+    dte: '42d',
+    premium: '+$2.10'
+  },
+  {
+    id: '5',
+    ticker: 'AMD',
+    phase: 'WHEEL_COMPLETE',
+    status: 'CLOSED',
+    strike: '—',
+    dte: '—',
+    premium: '+$12.40'
+  }
 ]
 
 export const FILTERS = [
@@ -43,13 +83,13 @@ export const FILTERS = [
   { key: 'CSP_OPEN', label: 'Sell Put', color: '#e6a817' },
   { key: 'HOLDING_SHARES', label: 'Holding', color: '#58a6ff' },
   { key: 'CC_OPEN', label: 'Sell Call', color: '#d2a8ff' },
-  { key: 'CLOSED', label: 'Closed', color: '#8899aa' },
+  { key: 'CLOSED', label: 'Closed', color: '#8899aa' }
 ]
 
 export function getFilteredPositions(filter) {
-  if (filter === 'ALL') return ALL_POSITIONS.filter(p => p.status === 'ACTIVE')
-  if (filter === 'CLOSED') return ALL_POSITIONS.filter(p => p.status === 'CLOSED')
-  return ALL_POSITIONS.filter(p => p.phase === filter)
+  if (filter === 'ALL') return ALL_POSITIONS.filter((p) => p.status === 'ACTIVE')
+  if (filter === 'CLOSED') return ALL_POSITIONS.filter((p) => p.status === 'CLOSED')
+  return ALL_POSITIONS.filter((p) => p.phase === filter)
 }
 
 export function getCount(filter) {
@@ -59,12 +99,21 @@ export function getCount(filter) {
 export function MockPhaseBadge({ phase }) {
   const cfg = PHASE_CONFIG[phase] ?? { label: phase, color: '#8899aa' }
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 4,
-      fontSize: '0.6rem', fontWeight: 500, padding: '1px 7px', borderRadius: 4,
-      background: cfg.color + '18', color: cfg.color, border: '1px solid ' + cfg.color + '30',
-      fontFamily: MONO,
-    }}>
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        fontSize: '0.6rem',
+        fontWeight: 500,
+        padding: '1px 7px',
+        borderRadius: 4,
+        background: cfg.color + '18',
+        color: cfg.color,
+        border: '1px solid ' + cfg.color + '30',
+        fontFamily: MONO
+      }}
+    >
       <span style={{ width: 4, height: 4, borderRadius: '50%', background: cfg.color }} />
       {cfg.label}
     </span>
@@ -76,38 +125,78 @@ export function FilterPill({ label, count, isActive, color, onClick }) {
   const border = isActive ? color + '40' : 'var(--wb-border, #1e2a38)'
   const fg = isActive ? color : 'var(--wb-text-secondary, #6a7a8a)'
   return (
-    <button onClick={onClick} style={{
-      display: 'inline-flex', alignItems: 'center', gap: 6,
-      padding: '5px 12px', borderRadius: 6,
-      border: '1px solid ' + border, background: bg, color: fg,
-      fontSize: '0.75rem', fontWeight: isActive ? 600 : 400,
-      fontFamily: MONO, cursor: 'pointer', transition: 'all 0.15s',
-    }}>
+    <button
+      onClick={onClick}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '5px 12px',
+        borderRadius: 6,
+        border: '1px solid ' + border,
+        background: bg,
+        color: fg,
+        fontSize: '0.75rem',
+        fontWeight: isActive ? 600 : 400,
+        fontFamily: MONO,
+        cursor: 'pointer',
+        transition: 'all 0.15s'
+      }}
+    >
       {label}
-      <span style={{
-        fontSize: '0.6rem', fontWeight: 700,
-        background: isActive ? color + '25' : 'rgba(30,42,56,0.6)',
-        color: isActive ? color : '#6a7a8a',
-        padding: '0 5px', borderRadius: 8, minWidth: 16, textAlign: 'center',
-      }}>{count}</span>
+      <span
+        style={{
+          fontSize: '0.6rem',
+          fontWeight: 700,
+          background: isActive ? color + '25' : 'rgba(30,42,56,0.6)',
+          color: isActive ? color : '#6a7a8a',
+          padding: '0 5px',
+          borderRadius: 8,
+          minWidth: 16,
+          textAlign: 'center'
+        }}
+      >
+        {count}
+      </span>
     </button>
   )
 }
 
 export function MiniCard({ pos }) {
   return (
-    <div style={{
-      background: 'var(--wb-bg-surface, #070a0e)', border: '1px solid var(--wb-border, #1e2a38)',
-      borderRadius: 8, padding: '12px 14px', fontFamily: MONO,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+    <div
+      style={{
+        background: 'var(--wb-bg-surface, #070a0e)',
+        border: '1px solid var(--wb-border, #1e2a38)',
+        borderRadius: 8,
+        padding: '12px 14px',
+        fontFamily: MONO
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 8
+        }}
+      >
         <span style={{ fontSize: '1rem', fontWeight: 700 }}>{pos.ticker}</span>
         <MockPhaseBadge phase={pos.phase} />
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: '0.75rem' }}>
-        <div><span style={{ color: '#4a5a6a' }}>Strike </span><span style={{ color: '#e6a817' }}>{pos.strike}</span></div>
-        <div><span style={{ color: '#4a5a6a' }}>DTE </span><span>{pos.dte}</span></div>
-        <div><span style={{ color: '#4a5a6a' }}>Premium </span><span style={{ color: '#3fb950' }}>{pos.premium}</span></div>
+        <div>
+          <span style={{ color: '#4a5a6a' }}>Strike </span>
+          <span style={{ color: '#e6a817' }}>{pos.strike}</span>
+        </div>
+        <div>
+          <span style={{ color: '#4a5a6a' }}>DTE </span>
+          <span>{pos.dte}</span>
+        </div>
+        <div>
+          <span style={{ color: '#4a5a6a' }}>Premium </span>
+          <span style={{ color: '#3fb950' }}>{pos.premium}</span>
+        </div>
       </div>
     </div>
   )
@@ -125,11 +214,12 @@ export function Mockup() {
   const [state, setState] = useState('all')
   const allStates = ['all', 'csp-only', 'holding-only', 'cc-only', 'closed', 'empty-filter']
 
-  const activeFilter = stateMap[state]
-  const filtered = activeFilter === 'EMPTY' ? [] : getFilteredPositions(activeFilter)
+const activeFilter = stateMap[state]
+const filtered = activeFilter === 'EMPTY' ? [] : getFilteredPositions(activeFilter)
 
-  return (
-    <div style={{ fontFamily: MONO, background: '#040608', color: 'var(--wb-text-primary, #e2eaf2)', minHeight: 420 }}>
+return (
+
+<div style={{ fontFamily: MONO, background: '#040608', color: 'var(--wb-text-primary, #e2eaf2)', minHeight: 420 }}>
 
       {/* State toggle */}
       <div style={{ display: 'flex', gap: 6, padding: '10px 14px', background: '#0d1117', borderBottom: '1px solid #1e2a38', flexWrap: 'wrap' }}>
@@ -187,7 +277,8 @@ export function Mockup() {
       </div>
 
     </div>
-  )
+
+)
 }
 
 <Mockup />

@@ -25,23 +25,58 @@ export const SUMMARIES = {
     premiumMtd: '$350.00',
     premiumYtd: '$1,670.00',
     activeCount: 3,
-    breakdown: 'AAPL: 1×$180 = $18,000 · MSFT: 2×$420 = $84,000 · TSLA: holding (excluded)',
+    breakdown: 'AAPL: 1×$180 = $18,000 · MSFT: 2×$420 = $84,000 · TSLA: holding (excluded)'
   },
   'zero-state': {
     capitalDeployed: '$0.00',
     premiumMtd: '$0.00',
     premiumYtd: '$0.00',
     activeCount: 0,
-    breakdown: 'No active positions',
-  },
+    breakdown: 'No active positions'
+  }
 }
 
 export function SummaryStat({ label, value, valueColor, sublabel }) {
   return (
-    <div style={{ padding: '14px 18px', background: 'var(--wb-bg-surface, #070a0e)', display: 'flex', flexDirection: 'column', gap: 3 }}>
-      <div style={{ fontSize: '0.6rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--wb-text-muted, #4a5a6a)', fontFamily: MONO }}>{label}</div>
-      <div style={{ fontSize: '1.1rem', fontWeight: 700, color: valueColor ?? 'var(--wb-text-primary, #e2eaf2)', fontFamily: MONO, letterSpacing: '-0.02em' }}>{value}</div>
-      {sublabel && <div style={{ fontSize: '0.6rem', color: 'var(--wb-text-muted, #4a5a6a)', fontFamily: MONO }}>{sublabel}</div>}
+    <div
+      style={{
+        padding: '14px 18px',
+        background: 'var(--wb-bg-surface, #070a0e)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 3
+      }}
+    >
+      <div
+        style={{
+          fontSize: '0.6rem',
+          fontWeight: 600,
+          letterSpacing: '0.1em',
+          textTransform: 'uppercase',
+          color: 'var(--wb-text-muted, #4a5a6a)',
+          fontFamily: MONO
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: '1.1rem',
+          fontWeight: 700,
+          color: valueColor ?? 'var(--wb-text-primary, #e2eaf2)',
+          fontFamily: MONO,
+          letterSpacing: '-0.02em'
+        }}
+      >
+        {value}
+      </div>
+      {sublabel && (
+        <div
+          style={{ fontSize: '0.6rem', color: 'var(--wb-text-muted, #4a5a6a)', fontFamily: MONO }}
+        >
+          {sublabel}
+        </div>
+      )}
     </div>
   )
 }
@@ -51,8 +86,9 @@ export function Mockup() {
   const allStates = ['populated', 'zero-state']
   const data = SUMMARIES[state]
 
-  return (
-    <div style={{ fontFamily: MONO, background: '#040608', color: 'var(--wb-text-primary, #e2eaf2)', minHeight: 320 }}>
+return (
+
+<div style={{ fontFamily: MONO, background: '#040608', color: 'var(--wb-text-primary, #e2eaf2)', minHeight: 320 }}>
 
       {/* State toggle */}
       <div style={{ display: 'flex', gap: 6, padding: '10px 14px', background: '#0d1117', borderBottom: '1px solid #1e2a38', flexWrap: 'wrap' }}>
@@ -131,7 +167,8 @@ export function Mockup() {
       </div>
 
     </div>
-  )
+
+)
 }
 
 <Mockup />

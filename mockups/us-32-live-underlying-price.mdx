@@ -1,0 +1,488 @@
+---
+title: 'US-32: Live Underlying Price on Position List'
+story: 'As a wheel trader scanning my active positions, I want to see the current underlying stock price on each row so I can instantly gauge whether each position is moving in my favor or against me.'
+states: ['market-open', 'extended-hours', 'market-closed', 'stale-data', 'unavailable']
+---
+
+import { useState } from 'react'
+
+# US-32: Live Underlying Price on Position List
+
+_Adds a live **Price** column to the positions table showing real-time underlying price, daily change, and a market session indicator. Powered by the `MarketDataProvider` from US-31 via a `useStockQuotes` TanStack Query hook polling every 60 s during regular hours._
+
+## Acceptance Criteria States
+
+- **market-open**: Regular session — green LIVE pulse dot, price + green/red change for all 3 positions
+- **extended-hours**: Pre/post market — amber EXT dot, extended-hours prices shown
+- **market-closed**: Weekend or after 8 PM ET — gray CLOSED dot, last closing prices
+- **stale-data**: Last successful poll > 5 min ago — amber warning banner above table, amber dot replaces LIVE
+- **unavailable**: TSLA returns no quote (API error) — price cell shows `—` with tooltip
+
+---
+
+export const MONO = "'JetBrains Mono', 'Fira Mono', 'Cascadia Code', monospace"
+
+export const POSITIONS = [
+  {
+    id: '1',
+    ticker: 'AAPL',
+    phase: 'CSP_OPEN',
+    strike: '$180.00',
+    expiration: '2026-05-16',
+    dte: 19,
+    premium: '$342.00',
+    basis: '$177.52'
+  },
+  {
+    id: '2',
+    ticker: 'MSFT',
+    phase: 'CC_OPEN',
+    strike: '$420.00',
+    expiration: '2026-05-02',
+    dte: 5,
+    premium: '$890.00',
+    basis: '$401.10'
+  },
+  {
+    id: '3',
+    ticker: 'TSLA',
+    phase: 'HOLDING_SHARES',
+    strike: null,
+    expiration: null,
+    dte: null,
+    premium: '$1,240.00',
+    basis: '$241.85'
+  }
+]
+
+export const QUOTES = {
+  'market-open': {
+    AAPL: { price: '$182.45', change: '+$1.45', up: true },
+    MSFT: { price: '$418.30', change: '-$1.70', up: false },
+    TSLA: { price: '$248.10', change: '+$2.10', up: true }
+  },
+  'extended-hours': {
+    AAPL: { price: '$183.50', change: '+$2.50', up: true },
+    MSFT: { price: '$417.00', change: '-$3.00', up: false },
+    TSLA: { price: '$249.80', change: '+$3.80', up: true }
+  },
+  'market-closed': {
+    AAPL: { price: '$182.00', change: '+$1.00', up: true },
+    MSFT: { price: '$418.30', change: '-$1.70', up: false },
+    TSLA: { price: '$248.10', change: '+$2.10', up: true }
+  },
+  'stale-data': {
+    AAPL: { price: '$182.45', change: '+$1.45', up: true },
+    MSFT: { price: '$418.30', change: '-$1.70', up: false },
+    TSLA: { price: '$248.10', change: '+$2.10', up: true }
+  },
+  unavailable: {
+    AAPL: { price: '$182.45', change: '+$1.45', up: true },
+    MSFT: { price: '$418.30', change: '-$1.70', up: false },
+    TSLA: null
+  }
+}
+
+export const PHASE_META = {
+  CSP_OPEN: { label: 'SELL PUT', color: '#e6a817' },
+  CC_OPEN: { label: 'SELL CALL', color: '#d2a8ff' },
+  HOLDING_SHARES: { label: 'SHARES', color: '#58a6ff' }
+}
+
+export const STATUS_META = {
+  'market-open': { dot: '#3fb950', label: 'LIVE', pulse: true },
+  'extended-hours': { dot: '#e6a817', label: 'EXT', pulse: false },
+  'market-closed': { dot: '#6e7681', label: 'CLOSED', pulse: false },
+  'stale-data': { dot: '#e6a817', label: 'DELAYED', pulse: false },
+  unavailable: { dot: '#3fb950', label: 'LIVE', pulse: true }
+}
+
+export function PhasePill({ phase }) {
+  const meta = PHASE_META[phase] ?? { label: phase, color: '#8899aa' }
+  return (
+    <span style={{
+      fontFamily: MONO,
+      fontSize: '0.65rem',
+      fontWeight: 600,
+      letterSpacing: '0.06em',
+      padding: '2px 7px',
+      borderRadius: 4,
+      background: meta.color + '18',
+      color: meta.color,
+      border: '1px solid ' + meta.color + '30',
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 4,
+      whiteSpace: 'nowrap'
+    }}>
+      <span style={{
+        width: 5,
+        height: 5,
+        borderRadius: '50%',
+        background: meta.color,
+        flexShrink: 0
+      }} />
+      {meta.label}
+    </span>
+  )
+}
+
+export function MarketStatusPill({ state }) {
+  const meta = STATUS_META[state]
+  return (
+    <span style={{
+      fontFamily: MONO,
+      fontSize: '0.6rem',
+      fontWeight: 700,
+      letterSpacing: '0.1em',
+      padding: '2px 8px 2px 6px',
+      borderRadius: 10,
+      background: meta.dot + '18',
+      color: meta.dot,
+      border: '1px solid ' + meta.dot + '30',
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 5,
+    }}>
+      <span style={{
+        width: 6,
+        height: 6,
+        borderRadius: '50%',
+        background: meta.dot,
+        flexShrink: 0,
+        animation: meta.pulse ? 'wb-pulse 1.8s ease-in-out infinite' : 'none',
+        boxShadow: meta.pulse ? '0 0 0 0 ' + meta.dot + '80' : 'none'
+      }} />
+      {meta.label}
+    </span>
+  )
+}
+
+export function PriceCell({ quote, unavailable }) {
+  if (unavailable || quote === null) {
+    return (
+      <td title="Price unavailable" style={{
+        fontFamily: MONO,
+        padding: '10px 16px',
+        borderBottom: '1px solid rgba(30,42,56,0.4)',
+        verticalAlign: 'middle',
+        cursor: 'help'
+      }}>
+        <span style={{ color: '#4a5a6a', fontSize: '0.8125rem' }}>—</span>
+        <div style={{ fontSize: '0.6rem', color: '#4a5a6a', marginTop: 2 }}>unavailable</div>
+      </td>
+    )
+  }
+  return (
+    <td style={{
+      fontFamily: MONO,
+      padding: '10px 16px',
+      borderBottom: '1px solid rgba(30,42,56,0.4)',
+      verticalAlign: 'middle'
+    }}>
+      <div style={{
+        fontSize: '0.8125rem',
+        fontWeight: 600,
+        color: 'var(--wb-text-primary, #e6edf3)',
+        letterSpacing: '0.02em'
+      }}>
+        {quote.price}
+      </div>
+      <div style={{
+        fontSize: '0.68rem',
+        fontWeight: 500,
+        color: quote.up ? 'var(--wb-green, #3fb950)' : 'var(--wb-red, #f85149)',
+        marginTop: 1
+      }}>
+        {quote.change}
+      </div>
+    </td>
+  )
+}
+
+export function Mockup() {
+  const [state, setState] = useState('market-open')
+  const quotes = QUOTES[state]
+  const isStale = state === 'stale-data'
+
+  const COL_HEADERS = ['Ticker', 'Phase', 'Price', 'Strike', 'Expiration', 'DTE', 'Premium', 'Cost Basis']
+
+  const thStyle = {
+    fontFamily: MONO,
+    fontSize: '0.7rem',
+    fontWeight: 600,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: 'var(--wb-text-muted, #6e7681)',
+    textAlign: 'left',
+    padding: '8px 16px',
+    borderBottom: '1px solid var(--wb-border, #1e2a38)',
+    whiteSpace: 'nowrap'
+  }
+
+  return (
+    <div style={{ fontFamily: MONO, maxWidth: 1100 }}>
+      <style>{`
+        @keyframes wb-pulse {
+          0%   { box-shadow: 0 0 0 0 rgba(63,185,80,0.7); }
+          60%  { box-shadow: 0 0 0 5px rgba(63,185,80,0); }
+          100% { box-shadow: 0 0 0 0 rgba(63,185,80,0); }
+        }
+        .wb-row-hover:hover { background: rgba(255,255,255,0.025) !important; cursor: pointer; }
+      `}</style>
+
+      {/* State toggle */}
+      <div style={{
+        display: 'flex',
+        gap: 6,
+        marginBottom: 16,
+        padding: '8px 10px',
+        background: 'rgba(13,17,23,0.6)',
+        borderRadius: 8,
+        border: '1px solid #1e2a38',
+        flexWrap: 'wrap'
+      }}>
+        {['market-open', 'extended-hours', 'market-closed', 'stale-data', 'unavailable'].map(s => (
+          <button
+            key={s}
+            onClick={() => setState(s)}
+            style={{
+              fontFamily: MONO,
+              fontSize: '0.65rem',
+              fontWeight: 600,
+              letterSpacing: '0.05em',
+              padding: '4px 10px',
+              borderRadius: 6,
+              border: state === s ? '1px solid #e6a81780' : '1px solid #1e2a38',
+              background: state === s ? '#e6a81715' : 'transparent',
+              color: state === s ? '#e6a817' : '#6e7681',
+              cursor: 'pointer',
+              transition: 'all 0.15s'
+            }}
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+
+      {/* Page header */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '10px 16px',
+        borderBottom: '1px solid var(--wb-border, #1e2a38)',
+        background: 'var(--wb-bg-surface, #0d1117)',
+        marginBottom: 0
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--wb-text-primary, #e6edf3)' }}>
+            Active Positions
+          </span>
+          <span style={{
+            fontFamily: MONO,
+            fontSize: '0.65rem',
+            fontWeight: 600,
+            padding: '1px 7px',
+            borderRadius: 10,
+            background: '#e6a81718',
+            color: '#e6a817',
+            border: '1px solid #e6a81730'
+          }}>3</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <MarketStatusPill state={state} />
+          <span style={{
+            fontSize: '0.7rem',
+            fontWeight: 500,
+            padding: '5px 14px',
+            borderRadius: 6,
+            background: '#e6a817',
+            color: '#070a0e',
+            cursor: 'pointer'
+          }}>
+            + New Wheel
+          </span>
+        </div>
+      </div>
+
+      {/* Stale data banner */}
+      {isStale && (
+        <div style={{
+          margin: '0',
+          padding: '8px 16px',
+          background: '#e6a81712',
+          borderBottom: '1px solid #e6a81730',
+          color: '#e6a817',
+          fontSize: '0.75rem',
+          fontFamily: MONO,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8
+        }}>
+          <span style={{ fontSize: '0.85rem' }}>⚠</span>
+          Prices may be delayed — last updated 6m ago
+        </div>
+      )}
+
+      {/* Section label */}
+      <div style={{
+        padding: '12px 16px 6px',
+        fontSize: '0.65rem',
+        fontWeight: 500,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        color: 'var(--wb-text-muted, #6e7681)',
+        fontFamily: MONO
+      }}>
+        Active
+      </div>
+
+      {/* Table */}
+      <div style={{
+        border: '1px solid var(--wb-border, #1e2a38)',
+        borderRadius: 8,
+        overflow: 'hidden',
+        background: 'var(--wb-bg-surface, #0d1117)'
+      }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
+          <thead>
+            <tr style={{ background: 'var(--wb-bg-surface, #0d1117)', borderBottom: '1px solid var(--wb-border, #1e2a38)' }}>
+              {COL_HEADERS.map(col => (
+                <th key={col} style={{
+                  ...thStyle,
+                  ...(col === 'Price' ? {
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '8px 16px'
+                  } : {})
+                }}>
+                  {col}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {POSITIONS.map((pos, i) => {
+              const quote = quotes[pos.ticker]
+              const isUnavailable = state === 'unavailable' && pos.ticker === 'TSLA'
+              const dteUrgent = pos.dte !== null && pos.dte <= 7
+
+              const tdBase = {
+                fontFamily: MONO,
+                padding: '10px 16px',
+                borderBottom: i < POSITIONS.length - 1 ? '1px solid rgba(30,42,56,0.4)' : 'none',
+                verticalAlign: 'middle'
+              }
+
+              return (
+                <tr
+                  key={pos.id}
+                  className="wb-row-hover"
+                  style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}
+                >
+                  {/* Ticker */}
+                  <td style={tdBase}>
+                    <div style={{ fontWeight: 700, fontSize: '0.8125rem', color: 'var(--wb-text-primary, #e6edf3)', letterSpacing: '0.02em' }}>
+                      {pos.ticker}
+                    </div>
+                    <div style={{ fontSize: '0.6rem', color: '#6e7681', marginTop: 1 }}>ACTIVE</div>
+                  </td>
+
+                  {/* Phase */}
+                  <td style={tdBase}>
+                    <PhasePill phase={pos.phase} />
+                  </td>
+
+                  {/* Price (new column) */}
+                  {isUnavailable || quote === null ? (
+                    <td title="Price unavailable" style={{ ...tdBase, cursor: 'help' }}>
+                      <div style={{ fontSize: '0.8125rem', color: '#4a5a6a' }}>—</div>
+                      <div style={{ fontSize: '0.6rem', color: '#4a5a6a', marginTop: 1 }}>unavailable</div>
+                    </td>
+                  ) : (
+                    <td style={tdBase}>
+                      <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--wb-text-primary, #e6edf3)', letterSpacing: '0.02em' }}>
+                        {quote.price}
+                      </div>
+                      <div style={{
+                        fontSize: '0.68rem',
+                        fontWeight: 500,
+                        color: quote.up ? 'var(--wb-green, #3fb950)' : 'var(--wb-red, #f85149)',
+                        marginTop: 1
+                      }}>
+                        {quote.change}
+                      </div>
+                    </td>
+                  )}
+
+                  {/* Strike */}
+                  <td style={tdBase}>
+                    <span style={{ fontSize: '0.8125rem', color: 'var(--wb-text-primary, #e6edf3)' }}>
+                      {pos.strike ?? '—'}
+                    </span>
+                  </td>
+
+                  {/* Expiration */}
+                  <td style={tdBase}>
+                    <span style={{ fontSize: '0.8125rem', color: 'var(--wb-text-secondary, #8b949e)', letterSpacing: '0.03em' }}>
+                      {pos.expiration ?? '—'}
+                    </span>
+                  </td>
+
+                  {/* DTE */}
+                  <td style={tdBase}>
+                    <span style={{
+                      fontSize: '0.8125rem',
+                      fontWeight: dteUrgent ? 600 : 400,
+                      color: dteUrgent ? '#e6a817' : 'var(--wb-text-secondary, #8b949e)'
+                    }}>
+                      {pos.dte !== null ? `${pos.dte}d` : '—'}
+                    </span>
+                  </td>
+
+                  {/* Premium */}
+                  <td style={tdBase}>
+                    <span style={{ fontSize: '0.8125rem', fontWeight: 500, color: 'var(--wb-green, #3fb950)' }}>
+                      {pos.premium}
+                    </span>
+                  </td>
+
+                  {/* Cost Basis */}
+                  <td style={tdBase}>
+                    <span style={{ fontSize: '0.8125rem', color: 'var(--wb-text-primary, #e6edf3)' }}>
+                      {pos.basis}
+                    </span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Legend */}
+      <div style={{
+        marginTop: 20,
+        padding: '12px 14px',
+        background: 'rgba(13,17,23,0.5)',
+        borderRadius: 8,
+        border: '1px solid #1e2a38',
+        fontSize: '0.68rem',
+        color: '#6e7681',
+        fontFamily: MONO,
+        lineHeight: 1.8
+      }}>
+        <div style={{ fontWeight: 600, color: '#8b949e', marginBottom: 6, letterSpacing: '0.05em' }}>IMPLEMENTATION NOTES</div>
+        <div><span style={{ color: '#e6a817' }}>useStockQuotes(tickers)</span> — TanStack Query hook; refetchInterval: 60 s (regular), 300 s (extended), disabled (closed)</div>
+        <div><span style={{ color: '#58a6ff' }}>IPC: market-data:stock-quotes</span> — returns Record&lt;ticker, StockQuote&gt; for all active position tickers</div>
+        <div><span style={{ color: '#58a6ff' }}>IPC: market-data:market-status</span> — returns MarketStatus to drive indicator dot state</div>
+        <div><span style={{ color: '#d2a8ff' }}>staleTime: 30_000</span> — prevents redundant fetches; stale banner triggers when last update &gt; 300 s</div>
+        <div><span style={{ color: '#3fb950' }}>LIVE dot</span> = CSS pulse animation; <span style={{ color: '#e6a817' }}>EXT dot</span> = amber solid; <span style={{ color: '#6e7681' }}>CLOSED dot</span> = gray solid</div>
+      </div>
+    </div>
+  )
+}
+
+<Mockup />

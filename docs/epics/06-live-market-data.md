@@ -21,11 +21,11 @@ Position list updates with real-time prices, Greeks, and unrealized P&L via a pr
 
 ## Vertical Slice
 
-| Layer       | What ships                                                                                                          |
-| ----------- | ------------------------------------------------------------------------------------------------------------------- |
+| Layer       | What ships                                                                                                           |
+| ----------- | -------------------------------------------------------------------------------------------------------------------- |
 | Integration | `MarketDataProvider` interface + `AlpacaMarketDataProvider`: getStockQuotes, getOptionSnapshots, getActivities       |
-| Main        | Polling scheduler, assignment detection service, environment/credentials management                                 |
-| IPC         | market-data:stock-quotes, market-data:option-snapshots, market-data:market-status, assignments:\*, settings:\*      |
+| Main        | Polling scheduler, assignment detection service, environment/credentials management                                  |
+| IPC         | market-data:stock-quotes, market-data:option-snapshots, market-data:market-status, assignments:\*, settings:\*       |
 | Renderer    | Live price + P&L on position rows, Greeks panel on detail page, assignment notification banner, environment switcher |
 
 ## Stories
@@ -60,17 +60,17 @@ US-31 (adapter) ──┬── US-32 (stock price) ── US-33 (option price +
 
 ### Story Files
 
-| Story | File                                                            | Points |
-| ----- | --------------------------------------------------------------- | ------ |
-| US-31 | `docs/epics/06-stories/US-31-market-data-provider-adapter.md`   | 5      |
-| US-32 | `docs/epics/06-stories/US-32-live-underlying-price.md`          | 5      |
-| US-33 | `docs/epics/06-stories/US-33-option-price-unrealized-pnl.md`    | 5      |
-| US-34 | `docs/epics/06-stories/US-34-greeks-display.md`                 | 3      |
-| US-35 | `docs/epics/06-stories/US-35-assignment-detection-polling.md`   | 5      |
-| US-36 | `docs/epics/06-stories/US-36-auto-transition-assignment-notification.md` | 5 |
-| US-37 | `docs/epics/06-stories/US-37-paper-live-environment-toggle.md`  | 5      |
-| US-38 | `docs/epics/06-stories/US-38-polling-frequency-configuration.md`| 5      |
-| **Total** |                                                             | **38** |
+| Story     | File                                                                     | Points |
+| --------- | ------------------------------------------------------------------------ | ------ |
+| US-31     | `docs/epics/06-stories/US-31-market-data-provider-adapter.md`            | 5      |
+| US-32     | `docs/epics/06-stories/US-32-live-underlying-price.md`                   | 5      |
+| US-33     | `docs/epics/06-stories/US-33-option-price-unrealized-pnl.md`             | 5      |
+| US-34     | `docs/epics/06-stories/US-34-greeks-display.md`                          | 3      |
+| US-35     | `docs/epics/06-stories/US-35-assignment-detection-polling.md`            | 5      |
+| US-36     | `docs/epics/06-stories/US-36-auto-transition-assignment-notification.md` | 5      |
+| US-37     | `docs/epics/06-stories/US-37-paper-live-environment-toggle.md`           | 5      |
+| US-38     | `docs/epics/06-stories/US-38-polling-frequency-configuration.md`         | 5      |
+| **Total** |                                                                          | **38** |
 
 ## Dependencies
 

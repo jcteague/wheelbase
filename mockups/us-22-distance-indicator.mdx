@@ -23,21 +23,21 @@ export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
 
 export const SCENARIOS = {
   'otm-safe': [
-    { ticker: 'AAPL', type: 'PUT', strike: 180, price: 189.00, phase: 'CSP_OPEN' },
-    { ticker: 'MSFT', type: 'CALL', strike: 420, price: 403.20, phase: 'CC_OPEN' },
+    { ticker: 'AAPL', type: 'PUT', strike: 180, price: 189.0, phase: 'CSP_OPEN' },
+    { ticker: 'MSFT', type: 'CALL', strike: 420, price: 403.2, phase: 'CC_OPEN' }
   ],
-  'approaching': [
+  approaching: [
     { ticker: 'AAPL', type: 'PUT', strike: 180, price: 181.08, phase: 'CSP_OPEN' },
-    { ticker: 'MSFT', type: 'CALL', strike: 420, price: 416.80, phase: 'CC_OPEN' },
+    { ticker: 'MSFT', type: 'CALL', strike: 420, price: 416.8, phase: 'CC_OPEN' }
   ],
   'itm-danger': [
-    { ticker: 'AAPL', type: 'PUT', strike: 180, price: 172.80, phase: 'CSP_OPEN' },
-    { ticker: 'MSFT', type: 'CALL', strike: 420, price: 431.60, phase: 'CC_OPEN' },
+    { ticker: 'AAPL', type: 'PUT', strike: 180, price: 172.8, phase: 'CSP_OPEN' },
+    { ticker: 'MSFT', type: 'CALL', strike: 420, price: 431.6, phase: 'CC_OPEN' }
   ],
   'no-price': [
     { ticker: 'AAPL', type: 'PUT', strike: 180, price: null, phase: 'CSP_OPEN' },
-    { ticker: 'MSFT', type: 'CALL', strike: 420, price: null, phase: 'CC_OPEN' },
-  ],
+    { ticker: 'MSFT', type: 'CALL', strike: 420, price: null, phase: 'CC_OPEN' }
+  ]
 }
 
 export function computeDistance(price, strike) {
@@ -84,27 +84,28 @@ export function DistanceGauge({ type, strike, price }) {
   const otm = isOtm(type, distance)
   const abs = distance !== null ? Math.abs(distance) : 0
 
-  // Gauge bar width: capped at 100% for ±10%
-  const barWidth = distance !== null ? Math.min(abs / 10 * 100, 100) : 0
+// Gauge bar width: capped at 100% for ±10%
+const barWidth = distance !== null ? Math.min(abs / 10 \* 100, 100) : 0
 
-  return (
-    <div style={{ fontFamily: MONO }}>
-      {/* Percentage + status */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-          <span style={{ fontSize: '1.1rem', fontWeight: 700, color, letterSpacing: '-0.02em' }}>{label}</span>
-          {price !== null && (
-            <span style={{ fontSize: '0.65rem', color: '#6a7a8a' }}>
-              ${price.toFixed(2)} vs ${type} ${strike.toFixed(2)}
-            </span>
-          )}
-        </div>
-        <span style={{
+return (
+
+<div style={{ fontFamily: MONO }}>
+{/* Percentage + status */}
+<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+<div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+<span style={{ fontSize: '1.1rem', fontWeight: 700, color, letterSpacing: '-0.02em' }}>{label}</span>
+{price !== null && (
+<span style={{ fontSize: '0.65rem', color: '#6a7a8a' }}>
+${price.toFixed(2)} vs ${type} ${strike.toFixed(2)}
+</span>
+)}
+</div>
+<span style={{
           fontSize: '0.55rem', fontWeight: 600, letterSpacing: '0.1em',
           padding: '2px 6px', borderRadius: 3,
           background: color + '15', color, border: '1px solid ' + color + '30',
         }}>{status}</span>
-      </div>
+</div>
 
       {/* Visual gauge bar */}
       <div style={{
@@ -129,7 +130,8 @@ export function DistanceGauge({ type, strike, price }) {
         </div>
       )}
     </div>
-  )
+
+)
 }
 
 export function PositionCardWithDistance({ pos }) {
@@ -137,22 +139,23 @@ export function PositionCardWithDistance({ pos }) {
   const phaseLabels = { CSP_OPEN: 'Sell Put', CC_OPEN: 'Sell Call' }
   const color = phaseColors[pos.phase] ?? '#8899aa'
 
-  return (
-    <div style={{
+return (
+
+<div style={{
       background: 'var(--wb-bg-surface, #070a0e)',
       border: '1px solid var(--wb-border, #1e2a38)',
       borderRadius: 8, overflow: 'hidden', fontFamily: MONO,
     }}>
-      {/* Header */}
-      <div style={{ padding: '12px 14px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(30,42,56,0.4)' }}>
-        <span style={{ fontSize: '1.05rem', fontWeight: 700 }}>{pos.ticker}</span>
-        <span style={{
+{/* Header */}
+<div style={{ padding: '12px 14px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(30,42,56,0.4)' }}>
+<span style={{ fontSize: '1.05rem', fontWeight: 700 }}>{pos.ticker}</span>
+<span style={{
           fontSize: '0.6rem', fontWeight: 500, padding: '2px 7px', borderRadius: 4,
           background: color + '18', color, border: '1px solid ' + color + '30',
         }}>
-          {phaseLabels[pos.phase]}
-        </span>
-      </div>
+{phaseLabels[pos.phase]}
+</span>
+</div>
 
       {/* Strike info */}
       <div style={{ padding: '10px 14px', borderBottom: '1px solid rgba(30,42,56,0.4)' }}>
@@ -173,7 +176,8 @@ export function PositionCardWithDistance({ pos }) {
         <DistanceGauge type={pos.type} strike={pos.strike} price={pos.price} />
       </div>
     </div>
-  )
+
+)
 }
 
 export function Mockup() {
@@ -181,8 +185,9 @@ export function Mockup() {
   const allStates = ['otm-safe', 'approaching', 'itm-danger', 'no-price']
   const positions = SCENARIOS[state]
 
-  return (
-    <div style={{ fontFamily: MONO, background: '#040608', color: 'var(--wb-text-primary, #e2eaf2)', minHeight: 400 }}>
+return (
+
+<div style={{ fontFamily: MONO, background: '#040608', color: 'var(--wb-text-primary, #e2eaf2)', minHeight: 400 }}>
 
       {/* State toggle */}
       <div style={{ display: 'flex', gap: 6, padding: '10px 14px', background: '#0d1117', borderBottom: '1px solid #1e2a38', flexWrap: 'wrap' }}>
@@ -209,7 +214,8 @@ export function Mockup() {
       </div>
 
     </div>
-  )
+
+)
 }
 
 <Mockup />
