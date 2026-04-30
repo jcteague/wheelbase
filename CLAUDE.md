@@ -109,6 +109,7 @@ Library: `pino`. Configured in `src/main/logger.ts`.
 - SQLite is the source of truth; Alpaca is the execution layer only
 - Wouter **must** use hash-based routing (`useHashLocation`) — browser-history routing breaks in packaged Electron
 - All renderer forms **must** use React Hook Form + Zod resolver — no hand-managed `useState` form state; use `useForm({ resolver: zodResolver(...) })`, `register`, `Controller` for custom inputs, and `useWatch` for reactive derived values
+- Renderer components **must** use Tailwind utility classes and `wb-*` design tokens (`text-wb-green`, `bg-wb-gold`, `animate-wb-pulse`, etc.) — never raw inline styles for color, spacing, or animation; inline `style` is only acceptable for values that cannot be expressed as a Tailwind class (e.g. a truly dynamic numeric value not in the scale)
 
 ---
 

@@ -9,6 +9,7 @@ import {
 } from './market-data-provider'
 
 const mockGetStocksQuotesLatest = vi.fn()
+const mockGetStocksSnapshots = vi.fn()
 const mockGetOptionsSnapshots = vi.fn()
 const mockGetActivity = vi.fn()
 const mockGetAccount = vi.fn()
@@ -49,6 +50,7 @@ const { mockSockets, mockDecode, MockWebSocket } = vi.hoisted(() => {
 vi.mock('@alpacahq/typescript-sdk', () => ({
   createClient: vi.fn(() => ({
     getStocksQuotesLatest: mockGetStocksQuotesLatest,
+    getStocksSnapshots: mockGetStocksSnapshots,
     getOptionsSnapshots: mockGetOptionsSnapshots,
     getActivity: mockGetActivity,
     getAccount: mockGetAccount,
@@ -88,30 +90,14 @@ describe('AlpacaMarketDataProvider — REST Methods', () => {
 
   describe('getStockQuotes', () => {
     it('returns map of ticker to StockQuote for valid tickers', async () => {
-      mockGetStocksQuotesLatest.mockResolvedValue({
-        quotes: {
-          AAPL: {
-            t: '2026-04-25T20:00:00Z',
-            bp: 172.6,
-            ap: 172.7,
-            bs: 3,
-            as: 1,
-            bx: 'V',
-            ax: 'V',
-            c: ['R'],
-            z: 'A'
-          },
-          MSFT: {
-            t: '2026-04-25T20:00:00Z',
-            bp: 420.5,
-            ap: 420.6,
-            bs: 2,
-            as: 1,
-            bx: 'Q',
-            ax: 'Q',
-            c: ['R'],
-            z: 'A'
-          }
+      mockGetStocksSnapshots.mockResolvedValue({
+        AAPL: {
+          latest_quote: { bp: 172.6, ap: 172.7, t: '2026-04-25T20:00:00Z' },
+          prev_daily_bar: { c: 170.0 }
+        },
+        MSFT: {
+          latest_quote: { bp: 420.5, ap: 420.6, t: '2026-04-25T20:00:00Z' },
+          prev_daily_bar: { c: 415.0 }
         }
       })
 
@@ -125,24 +111,16 @@ describe('AlpacaMarketDataProvider — REST Methods', () => {
       expect(aapl.bid).toBe('172.60')
       expect(aapl.ask).toBe('172.70')
       expect(aapl.price).toMatch(/^\d+\.\d{2}$/)
+      expect(typeof aapl.prevClose).toBe('string')
       expect(typeof aapl.volume).toBe('number')
       expect(typeof aapl.timestamp).toBe('string')
     })
 
     it('omits unknown tickers from result', async () => {
-      mockGetStocksQuotesLatest.mockResolvedValue({
-        quotes: {
-          AAPL: {
-            t: '2026-04-25T20:00:00Z',
-            bp: 172.6,
-            ap: 172.7,
-            bs: 3,
-            as: 1,
-            bx: 'V',
-            ax: 'V',
-            c: ['R'],
-            z: 'A'
-          }
+      mockGetStocksSnapshots.mockResolvedValue({
+        AAPL: {
+          latest_quote: { bp: 172.6, ap: 172.7, t: '2026-04-25T20:00:00Z' },
+          prev_daily_bar: { c: 170.0 }
         }
       })
 
@@ -154,19 +132,10 @@ describe('AlpacaMarketDataProvider — REST Methods', () => {
     })
 
     it('returns price as string with 2 decimal places', async () => {
-      mockGetStocksQuotesLatest.mockResolvedValue({
-        quotes: {
-          AAPL: {
-            t: '2026-04-25T20:00:00Z',
-            bp: 172.5,
-            ap: 172.5,
-            bs: 3,
-            as: 1,
-            bx: 'V',
-            ax: 'V',
-            c: ['R'],
-            z: 'A'
-          }
+      mockGetStocksSnapshots.mockResolvedValue({
+        AAPL: {
+          latest_quote: { bp: 172.5, ap: 172.5, t: '2026-04-25T20:00:00Z' },
+          prev_daily_bar: { c: 170.0 }
         }
       })
 
@@ -174,6 +143,113 @@ describe('AlpacaMarketDataProvider — REST Methods', () => {
       const result = await provider.getStockQuotes(['AAPL'])
 
       expect(result.get('AAPL')!.price).toBe('172.50')
+    })
+  })
+
+  // === Stock Quotes — snapshot API ===
+
+  describe('getStockQuotes — snapshot API', () => {
+    it('returns prevClose from prev_daily_bar.c', async () => {
+      mockGetStocksSnapshots.mockResolvedValue({
+        AAPL: {
+          latest_quote: { bp: 182.44, ap: 182.46, t: '2026-04-27T14:00:00Z' },
+          prev_daily_bar: { c: 181.0 }
+        }
+      })
+
+      const provider = createProvider()
+      const result = await provider.getStockQuotes(['AAPL'])
+
+      expect(result.get('AAPL')!.prevClose).toBe('181.00')
+    })
+
+    it('computes change as (mid − prevClose)', async () => {
+      mockGetStocksSnapshots.mockResolvedValue({
+        AAPL: {
+          latest_quote: { bp: 182.44, ap: 182.46, t: '2026-04-27T14:00:00Z' },
+          prev_daily_bar: { c: 181.0 }
+        }
+      })
+
+      const provider = createProvider()
+      const result = await provider.getStockQuotes(['AAPL'])
+
+      // mid = (182.44 + 182.46) / 2 = 182.45, prevClose = 181.00, change = 1.45
+      expect(result.get('AAPL')!.change).toBe('1.45')
+    })
+
+    it('computes changePercent as (change / prevClose)', async () => {
+      mockGetStocksSnapshots.mockResolvedValue({
+        AAPL: {
+          latest_quote: { bp: 182.44, ap: 182.46, t: '2026-04-27T14:00:00Z' },
+          prev_daily_bar: { c: 181.0 }
+        }
+      })
+
+      const provider = createProvider()
+      const result = await provider.getStockQuotes(['AAPL'])
+
+      // change / prevClose = 1.45 / 181.00 ≈ 0.0080 (4dp)
+      expect(result.get('AAPL')!.changePercent).toBe('0.0080')
+    })
+
+    it('returns negative change when price is below prevClose', async () => {
+      mockGetStocksSnapshots.mockResolvedValue({
+        TSLA: {
+          latest_quote: { bp: 418.28, ap: 418.32, t: '2026-04-27T14:00:00Z' },
+          prev_daily_bar: { c: 420.0 }
+        }
+      })
+
+      const provider = createProvider()
+      const result = await provider.getStockQuotes(['TSLA'])
+
+      // mid = (418.28 + 418.32) / 2 = 418.30, prevClose = 420.00, change = -1.70
+      // changePercent = -1.70 / 420.00 ≈ -0.0040 (4dp)
+      expect(result.get('TSLA')!.change).toBe('-1.70')
+      expect(result.get('TSLA')!.changePercent).toBe('-0.0040')
+    })
+
+    it('omits unknown tickers from result (using getStocksSnapshots)', async () => {
+      // Reset the old API mock so it cannot accidentally provide data
+      mockGetStocksQuotesLatest.mockResolvedValue(undefined)
+      mockGetStocksSnapshots.mockResolvedValue({
+        AAPL: {
+          latest_quote: { bp: 182.44, ap: 182.46, t: '2026-04-27T14:00:00Z' },
+          prev_daily_bar: { c: 181.0 }
+        }
+      })
+
+      const provider = createProvider()
+      const result = await provider.getStockQuotes(['AAPL', 'ZZZZZ'])
+
+      expect(mockGetStocksSnapshots).toHaveBeenCalled()
+      expect(result.has('AAPL')).toBe(true)
+      expect(result.has('ZZZZZ')).toBe(false)
+    })
+
+    it('throws MarketDataError(auth_failed) on 401', async () => {
+      mockGetStocksSnapshots.mockRejectedValue(
+        Object.assign(new Error('Unauthorized'), { status: 401 })
+      )
+
+      const provider = createProvider()
+      const thrown = await provider.getStockQuotes(['AAPL']).catch((e: unknown) => e)
+
+      expect(thrown).toBeInstanceOf(MarketDataError)
+      expect((thrown as MarketDataError).code).toBe('auth_failed')
+    })
+
+    it('throws MarketDataError(network_error) on ECONNREFUSED', async () => {
+      mockGetStocksSnapshots.mockRejectedValue(
+        Object.assign(new Error('fetch failed'), { cause: { code: 'ECONNREFUSED' } })
+      )
+
+      const provider = createProvider()
+      const thrown = await provider.getStockQuotes(['AAPL']).catch((e: unknown) => e)
+
+      expect(thrown).toBeInstanceOf(MarketDataError)
+      expect((thrown as MarketDataError).code).toBe('network_error')
     })
   })
 
@@ -478,7 +554,7 @@ describe('AlpacaMarketDataProvider — REST Methods', () => {
       const error = Object.assign(new Error('fetch failed'), {
         cause: { code: 'ECONNREFUSED' }
       })
-      mockGetStocksQuotesLatest.mockRejectedValue(error)
+      mockGetStocksSnapshots.mockRejectedValue(error)
 
       const provider = createProvider()
       const thrown = await provider.getStockQuotes(['AAPL']).catch((e: unknown) => e)
@@ -489,19 +565,10 @@ describe('AlpacaMarketDataProvider — REST Methods', () => {
     })
 
     it('handles unknown ticker gracefully (no error)', async () => {
-      mockGetStocksQuotesLatest.mockResolvedValue({
-        quotes: {
-          AAPL: {
-            t: '2026-04-25T20:00:00Z',
-            bp: 172.6,
-            ap: 172.7,
-            bs: 3,
-            as: 1,
-            bx: 'V',
-            ax: 'V',
-            c: ['R'],
-            z: 'A'
-          }
+      mockGetStocksSnapshots.mockResolvedValue({
+        AAPL: {
+          latest_quote: { bp: 172.6, ap: 172.7, t: '2026-04-25T20:00:00Z' },
+          prev_daily_bar: { c: 170.0 }
         }
       })
 
@@ -627,6 +694,26 @@ describe('AlpacaMarketDataProvider — WebSocket Streaming', () => {
         JSON.stringify([{ T: 'success', msg: 'authenticated' }])
       )
 
+      await connectPromise
+    })
+
+    it('opens only the stock socket when feeds=["stockQuotes"]', async () => {
+      const provider = createProvider({ dataFeed: 'sip', optionFeed: 'opra' })
+      const connectPromise = provider.connect(['stockQuotes'])
+
+      expect(mockSockets).toHaveLength(1)
+      expect(mockSockets[0].url).toContain('v2/sip')
+      simulateAuth(mockSockets[0])
+      await connectPromise
+    })
+
+    it('opens only the option socket when feeds=["optionQuotes"]', async () => {
+      const provider = createProvider({ dataFeed: 'sip', optionFeed: 'opra' })
+      const connectPromise = provider.connect(['optionQuotes'])
+
+      expect(mockSockets).toHaveLength(1)
+      expect(mockSockets[0].url).toContain('v1beta1/opra')
+      simulateAuth(mockSockets[0])
       await connectPromise
     })
 

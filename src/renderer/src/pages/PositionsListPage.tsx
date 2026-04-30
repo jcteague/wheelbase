@@ -1,15 +1,36 @@
+import { useMemo } from 'react'
 import type { PositionListItem } from '../api/positions'
+import type { StockQuote, StockQuotesByTicker } from '../api/market-data'
 import { PositionRow } from '../components/PositionCard'
+import { MarketStatusPill, type MarketStatusDisplay } from '../components/MarketStatusPill'
 import { PageHeader, PageLayout } from '../components/PageLayout'
+import { StaleDataBanner } from '../components/StaleDataBanner'
 import { Badge } from '../components/ui/Badge'
 import { ErrorAlert } from '../components/ui/ErrorAlert'
 import { LoadingState } from '../components/ui/LoadingState'
 import { TableHeader } from '../components/ui/TablePrimitives'
+import { useMarketStatus } from '../hooks/useMarketStatus'
 import { usePositions } from '../hooks/usePositions'
+import { useStockQuotes } from '../hooks/useStockQuotes'
+import { deriveMarketStatusDisplay } from '../lib/market-status'
 
-const TABLE_COLUMNS = ['Ticker', 'Phase', 'Strike', 'Expiration', 'DTE', 'Premium', 'Cost Basis']
+const TABLE_COLUMNS = [
+  'Ticker',
+  'Phase',
+  'Price',
+  'Strike',
+  'Expiration',
+  'DTE',
+  'Premium',
+  'Cost Basis'
+]
 
-function PositionsHeader({ count }: { count?: number }): React.JSX.Element {
+type PositionsHeaderProps = {
+  count?: number
+  marketStatusDisplay: MarketStatusDisplay
+}
+
+function PositionsHeader({ count, marketStatusDisplay }: PositionsHeaderProps): React.JSX.Element {
   return (
     <PageHeader
       left={
@@ -19,12 +40,15 @@ function PositionsHeader({ count }: { count?: number }): React.JSX.Element {
         </div>
       }
       right={
-        <a
-          href="#/new"
-          className="wb-hover-opacity flex items-center gap-[6px] px-[14px] py-[5px] rounded-md text-xs font-medium text-wb-bg-base bg-wb-gold no-underline tracking-[0.02em]"
-        >
-          + New Wheel
-        </a>
+        <div className="flex items-center gap-[10px]">
+          <MarketStatusPill state={marketStatusDisplay} />
+          <a
+            href="#/new"
+            className="wb-hover-opacity flex items-center gap-[6px] px-[14px] py-[5px] rounded-md text-xs font-medium text-wb-bg-base bg-wb-gold no-underline tracking-[0.02em]"
+          >
+            + New Wheel
+          </a>
+        </div>
       }
     />
   )
@@ -41,9 +65,16 @@ function SectionHeader({ title }: { title: string }): React.JSX.Element {
 type PositionTableProps = {
   items: PositionListItem[]
   isClosed?: boolean
+  quotes?: StockQuotesByTicker
+  session?: string
 }
 
-function PositionTable({ items, isClosed }: PositionTableProps): React.JSX.Element {
+function PositionTable({
+  items,
+  isClosed,
+  quotes = {},
+  session
+}: PositionTableProps): React.JSX.Element {
   return (
     <table
       className={['w-full border-collapse text-[0.8125rem]', isClosed ? 'opacity-[0.55]' : '']
@@ -61,7 +92,14 @@ function PositionTable({ items, isClosed }: PositionTableProps): React.JSX.Eleme
       </thead>
       <tbody>
         {items.map((item, i) => (
-          <PositionRow key={item.id} item={item} index={i} isClosed={isClosed} />
+          <PositionRow
+            key={item.id}
+            item={item}
+            index={i}
+            isClosed={isClosed}
+            quote={quotes[item.ticker] as StockQuote | undefined}
+            session={session}
+          />
         ))}
       </tbody>
     </table>
@@ -71,11 +109,28 @@ function PositionTable({ items, isClosed }: PositionTableProps): React.JSX.Eleme
 export function PositionsListPage(): React.JSX.Element {
   const { data, isLoading, isError } = usePositions()
 
-  const activePositions = data?.filter((p) => p.status === 'ACTIVE') ?? []
-  const closedPositions = data?.filter((p) => p.status === 'CLOSED') ?? []
+  const activePositions = useMemo(() => data?.filter((p) => p.status === 'ACTIVE') ?? [], [data])
+  const closedPositions = useMemo(() => data?.filter((p) => p.status === 'CLOSED') ?? [], [data])
+
+  const tickers = useMemo(
+    () => Array.from(new Set(activePositions.map((p) => p.ticker))).sort(),
+    [activePositions]
+  )
+
+  const quotesQuery = useStockQuotes(tickers)
+  const statusQuery = useMarketStatus()
+
+  const { stale, minutesAgo } = quotesQuery
+  const display = deriveMarketStatusDisplay(
+    statusQuery.data?.session,
+    stale,
+    quotesQuery.streamError
+  )
 
   return (
-    <PageLayout header={<PositionsHeader count={activePositions.length} />}>
+    <PageLayout
+      header={<PositionsHeader count={activePositions.length} marketStatusDisplay={display} />}
+    >
       {isLoading && <LoadingState message="Loading positions…" />}
 
       {isError && (
@@ -98,8 +153,16 @@ export function PositionsListPage(): React.JSX.Element {
 
       {data && data.length > 0 && (
         <>
+          <StaleDataBanner
+            stale={stale || quotesQuery.streamError !== null}
+            minutesAgo={minutesAgo}
+          />
           <SectionHeader title="Active" />
-          <PositionTable items={activePositions} />
+          <PositionTable
+            items={activePositions}
+            quotes={quotesQuery.data}
+            session={statusQuery.data?.session}
+          />
 
           {closedPositions.length > 0 && (
             <>

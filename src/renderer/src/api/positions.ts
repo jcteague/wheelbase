@@ -1,5 +1,9 @@
 // Adapter between the renderer and the IPC preload layer.
 
+import { type ApiError, apiError } from './error'
+
+export type { ApiError }
+
 export type WheelPhase =
   | 'CSP_OPEN'
   | 'CSP_EXPIRED'
@@ -69,15 +73,6 @@ export type ApiFieldError = {
   field: string
   code: string
   message: string
-}
-
-export type ApiError = {
-  status: number
-  body: unknown
-}
-
-function apiError(status: number, body: unknown): ApiError {
-  return { status, body }
 }
 
 // IPC camelCase field names → renderer snake_case form field names

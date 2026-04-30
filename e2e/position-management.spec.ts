@@ -57,7 +57,7 @@ async function openPosition(
     if (heading?.includes(targetHeading)) break
     await page.click('.rdp-button_next')
   }
-  await page.click(`.rdp-day_button:not(.rdp-outside):has-text("${opts.day}")`)
+  await page.click(`.rdp-day:not(.rdp-outside) .rdp-day_button:has-text("${opts.day}")`)
   const iso = `${opts.year}-${String(opts.month).padStart(2, '0')}-${String(opts.day).padStart(2, '0')}`
   await page.waitForSelector(`text=${iso}`)
 

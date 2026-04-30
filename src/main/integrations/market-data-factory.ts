@@ -1,5 +1,6 @@
 import type { MarketDataProvider } from './market-data-provider'
 import { AlpacaMarketDataProvider } from './alpaca-market-data'
+import { FakeMarketDataProvider } from './fake-market-data'
 
 export type MarketDataConfig = {
   provider: 'alpaca'
@@ -11,6 +12,12 @@ export type MarketDataConfig = {
 }
 
 export function createMarketDataProvider(config: MarketDataConfig): MarketDataProvider {
+  // In e2e tests (WHEELBASE_MARKET_MOCK=true) use the in-process fake provider so
+  // tests never attempt a real Alpaca WebSocket connection.
+  if (process.env.WHEELBASE_MARKET_MOCK === 'true') {
+    return new FakeMarketDataProvider()
+  }
+
   switch (config.provider) {
     case 'alpaca':
       return new AlpacaMarketDataProvider({

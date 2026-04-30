@@ -100,28 +100,32 @@ export const STATUS_META = {
 export function PhasePill({ phase }) {
   const meta = PHASE_META[phase] ?? { label: phase, color: '#8899aa' }
   return (
-    <span style={{
-      fontFamily: MONO,
-      fontSize: '0.65rem',
-      fontWeight: 600,
-      letterSpacing: '0.06em',
-      padding: '2px 7px',
-      borderRadius: 4,
-      background: meta.color + '18',
-      color: meta.color,
-      border: '1px solid ' + meta.color + '30',
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: 4,
-      whiteSpace: 'nowrap'
-    }}>
-      <span style={{
-        width: 5,
-        height: 5,
-        borderRadius: '50%',
-        background: meta.color,
-        flexShrink: 0
-      }} />
+    <span
+      style={{
+        fontFamily: MONO,
+        fontSize: '0.65rem',
+        fontWeight: 600,
+        letterSpacing: '0.06em',
+        padding: '2px 7px',
+        borderRadius: 4,
+        background: meta.color + '18',
+        color: meta.color,
+        border: '1px solid ' + meta.color + '30',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        whiteSpace: 'nowrap'
+      }}
+    >
+      <span
+        style={{
+          width: 5,
+          height: 5,
+          borderRadius: '50%',
+          background: meta.color,
+          flexShrink: 0
+        }}
+      />
       {meta.label}
     </span>
   )
@@ -130,29 +134,33 @@ export function PhasePill({ phase }) {
 export function MarketStatusPill({ state }) {
   const meta = STATUS_META[state]
   return (
-    <span style={{
-      fontFamily: MONO,
-      fontSize: '0.6rem',
-      fontWeight: 700,
-      letterSpacing: '0.1em',
-      padding: '2px 8px 2px 6px',
-      borderRadius: 10,
-      background: meta.dot + '18',
-      color: meta.dot,
-      border: '1px solid ' + meta.dot + '30',
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: 5,
-    }}>
-      <span style={{
-        width: 6,
-        height: 6,
-        borderRadius: '50%',
-        background: meta.dot,
-        flexShrink: 0,
-        animation: meta.pulse ? 'wb-pulse 1.8s ease-in-out infinite' : 'none',
-        boxShadow: meta.pulse ? '0 0 0 0 ' + meta.dot + '80' : 'none'
-      }} />
+    <span
+      style={{
+        fontFamily: MONO,
+        fontSize: '0.6rem',
+        fontWeight: 700,
+        letterSpacing: '0.1em',
+        padding: '2px 8px 2px 6px',
+        borderRadius: 10,
+        background: meta.dot + '18',
+        color: meta.dot,
+        border: '1px solid ' + meta.dot + '30',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5
+      }}
+    >
+      <span
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          background: meta.dot,
+          flexShrink: 0,
+          animation: meta.pulse ? 'wb-pulse 1.8s ease-in-out infinite' : 'none',
+          boxShadow: meta.pulse ? '0 0 0 0 ' + meta.dot + '80' : 'none'
+        }}
+      />
       {meta.label}
     </span>
   )
@@ -161,39 +169,48 @@ export function MarketStatusPill({ state }) {
 export function PriceCell({ quote, unavailable }) {
   if (unavailable || quote === null) {
     return (
-      <td title="Price unavailable" style={{
-        fontFamily: MONO,
-        padding: '10px 16px',
-        borderBottom: '1px solid rgba(30,42,56,0.4)',
-        verticalAlign: 'middle',
-        cursor: 'help'
-      }}>
+      <td
+        title="Price unavailable"
+        style={{
+          fontFamily: MONO,
+          padding: '10px 16px',
+          borderBottom: '1px solid rgba(30,42,56,0.4)',
+          verticalAlign: 'middle',
+          cursor: 'help'
+        }}
+      >
         <span style={{ color: '#4a5a6a', fontSize: '0.8125rem' }}>—</span>
         <div style={{ fontSize: '0.6rem', color: '#4a5a6a', marginTop: 2 }}>unavailable</div>
       </td>
     )
   }
   return (
-    <td style={{
-      fontFamily: MONO,
-      padding: '10px 16px',
-      borderBottom: '1px solid rgba(30,42,56,0.4)',
-      verticalAlign: 'middle'
-    }}>
-      <div style={{
-        fontSize: '0.8125rem',
-        fontWeight: 600,
-        color: 'var(--wb-text-primary, #e6edf3)',
-        letterSpacing: '0.02em'
-      }}>
+    <td
+      style={{
+        fontFamily: MONO,
+        padding: '10px 16px',
+        borderBottom: '1px solid rgba(30,42,56,0.4)',
+        verticalAlign: 'middle'
+      }}
+    >
+      <div
+        style={{
+          fontSize: '0.8125rem',
+          fontWeight: 600,
+          color: 'var(--wb-text-primary, #e6edf3)',
+          letterSpacing: '0.02em'
+        }}
+      >
         {quote.price}
       </div>
-      <div style={{
-        fontSize: '0.68rem',
-        fontWeight: 500,
-        color: quote.up ? 'var(--wb-green, #3fb950)' : 'var(--wb-red, #f85149)',
-        marginTop: 1
-      }}>
+      <div
+        style={{
+          fontSize: '0.68rem',
+          fontWeight: 500,
+          color: quote.up ? 'var(--wb-green, #3fb950)' : 'var(--wb-red, #f85149)',
+          marginTop: 1
+        }}
+      >
         {quote.change}
       </div>
     </td>
@@ -205,25 +222,25 @@ export function Mockup() {
   const quotes = QUOTES[state]
   const isStale = state === 'stale-data'
 
-  const COL_HEADERS = ['Ticker', 'Phase', 'Price', 'Strike', 'Expiration', 'DTE', 'Premium', 'Cost Basis']
+const COL_HEADERS = ['Ticker', 'Phase', 'Price', 'Strike', 'Expiration', 'DTE', 'Premium', 'Cost Basis']
 
-  const thStyle = {
-    fontFamily: MONO,
-    fontSize: '0.7rem',
-    fontWeight: 600,
-    letterSpacing: '0.08em',
-    textTransform: 'uppercase',
-    color: 'var(--wb-text-muted, #6e7681)',
-    textAlign: 'left',
-    padding: '8px 16px',
-    borderBottom: '1px solid var(--wb-border, #1e2a38)',
-    whiteSpace: 'nowrap'
-  }
+const thStyle = {
+fontFamily: MONO,
+fontSize: '0.7rem',
+fontWeight: 600,
+letterSpacing: '0.08em',
+textTransform: 'uppercase',
+color: 'var(--wb-text-muted, #6e7681)',
+textAlign: 'left',
+padding: '8px 16px',
+borderBottom: '1px solid var(--wb-border, #1e2a38)',
+whiteSpace: 'nowrap'
+}
 
-  return (
-    <div style={{ fontFamily: MONO, maxWidth: 1100 }}>
-      <style>{`
-        @keyframes wb-pulse {
+return (
+
+<div style={{ fontFamily: MONO, maxWidth: 1100 }}>
+<style>{`         @keyframes wb-pulse {
           0%   { box-shadow: 0 0 0 0 rgba(63,185,80,0.7); }
           60%  { box-shadow: 0 0 0 5px rgba(63,185,80,0); }
           100% { box-shadow: 0 0 0 0 rgba(63,185,80,0); }
@@ -482,7 +499,8 @@ export function Mockup() {
         <div><span style={{ color: '#3fb950' }}>LIVE dot</span> = CSS pulse animation; <span style={{ color: '#e6a817' }}>EXT dot</span> = amber solid; <span style={{ color: '#6e7681' }}>CLOSED dot</span> = gray solid</div>
       </div>
     </div>
-  )
+
+)
 }
 
 <Mockup />

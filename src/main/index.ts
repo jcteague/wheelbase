@@ -5,9 +5,13 @@ import icon from '../../resources/icon.png?asset'
 import { initDb } from './db/index'
 import { registerPingHandler } from './ipc/ping'
 import { registerPositionsHandlers } from './ipc/positions'
+import { createMarketDataProvider, type MarketDataConfig } from './integrations/market-data-factory'
+import { registerMarketDataHandlers } from './ipc/market-data'
+
+let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
-  const mainWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 1280,
     height: 960,
     show: false,
@@ -19,19 +23,32 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+  win.on('ready-to-show', () => {
+    win.show()
   })
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  win.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    win.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+
+  mainWindow = win
+}
+
+function marketDataConfigFromEnv(): MarketDataConfig {
+  return {
+    provider: 'alpaca',
+    keyId: process.env.ALPACA_KEY_ID ?? '',
+    secretKey: process.env.ALPACA_SECRET_KEY ?? '',
+    paper: process.env.ALPACA_PAPER !== 'false',
+    dataFeed: process.env.ALPACA_DATA_FEED,
+    optionFeed: process.env.ALPACA_OPTION_FEED
   }
 }
 
@@ -50,9 +67,15 @@ app.whenReady().then(() => {
   registerPingHandler()
   registerPositionsHandlers(db)
 
+  const marketDataProvider = createMarketDataProvider(marketDataConfigFromEnv())
+  registerMarketDataHandlers(marketDataProvider, () => mainWindow)
+  app.on('before-quit', () => {
+    void marketDataProvider.disconnect()
+  })
+
   createWindow()
 
-  app.on('activate', function () {
+  app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })

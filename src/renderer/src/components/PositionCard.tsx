@@ -2,14 +2,31 @@ import type { PositionListItem } from '../api/positions'
 import { fmtMoney } from '../lib/format'
 import { PHASE_COLOR } from '../lib/phase'
 import { PhaseBadge } from './PhaseBadge'
+import { PriceCell, type StockQuote } from './PriceCell'
 import { TableCell } from './ui/TablePrimitives'
 
-type Props = { item: PositionListItem; index: number; isClosed?: boolean }
+type Props = {
+  item: PositionListItem
+  index: number
+  isClosed?: boolean
+  quote?: StockQuote
+  session?: string
+}
 
-export function PositionRow({ item, index, isClosed }: Props): React.JSX.Element {
-  const color = PHASE_COLOR[item.phase]
-  const dteUrgent = item.dte !== null && item.dte <= 7
+const CELL_CLASS = 'py-[10px] px-[16px] border-b-0'
+const VALUE_CLASS = 'font-wb-mono text-[0.8125rem]'
+
+export function PositionRow({ item, index, isClosed, quote, session }: Props): React.JSX.Element {
   const closed = isClosed ?? item.status === 'CLOSED'
+  const dteUrgent = item.dte !== null && item.dte <= 7
+  const dteClass = dteUrgent
+    ? `${VALUE_CLASS} font-semibold text-wb-gold`
+    : `${VALUE_CLASS} font-normal text-wb-text-secondary`
+
+  const rowStyle = {
+    '--wb-row-bg': index % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)',
+    '--wb-row-phase-color': PHASE_COLOR[item.phase]
+  } as React.CSSProperties
 
   return (
     <tr
@@ -18,13 +35,9 @@ export function PositionRow({ item, index, isClosed }: Props): React.JSX.Element
       onClick={() => {
         window.location.hash = `/positions/${item.id}`
       }}
-      style={{
-        ['--wb-row-bg' as string]: index % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)',
-        ['--wb-row-phase-color' as string]: color
-      }}
+      style={rowStyle}
     >
-      {/* Ticker */}
-      <TableCell className="py-[10px] px-[16px] border-b-0">
+      <TableCell className={CELL_CLASS}>
         <div className="flex flex-col gap-[1px]">
           <span className="font-wb-mono font-bold text-sm text-wb-text-primary tracking-[0.02em]">
             {item.ticker}
@@ -33,47 +46,36 @@ export function PositionRow({ item, index, isClosed }: Props): React.JSX.Element
         </div>
       </TableCell>
 
-      {/* Phase */}
-      <TableCell className="py-[10px] px-[16px] border-b-0">
+      <TableCell className={CELL_CLASS}>
         <PhaseBadge phase={item.phase} variant="short" />
       </TableCell>
 
-      {/* Strike */}
-      <TableCell className="py-[10px] px-[16px] border-b-0">
-        <span className="font-wb-mono text-[0.8125rem] text-wb-text-primary">
+      <PriceCell quote={quote} session={session} testId={`position-card-${item.ticker}-price`} />
+
+      <TableCell className={CELL_CLASS}>
+        <span className={`${VALUE_CLASS} text-wb-text-primary`}>
           {item.strike ? fmtMoney(item.strike) : '—'}
         </span>
       </TableCell>
 
-      {/* Expiration */}
-      <TableCell className="py-[10px] px-[16px] border-b-0">
-        <span className="font-wb-mono text-[0.8125rem] text-wb-text-secondary tracking-[0.03em]">
+      <TableCell className={CELL_CLASS}>
+        <span className={`${VALUE_CLASS} text-wb-text-secondary tracking-[0.03em]`}>
           {item.expiration ?? '—'}
         </span>
       </TableCell>
 
-      {/* DTE */}
-      <TableCell className="py-[10px] px-[16px] border-b-0">
-        <span
-          className={[
-            'font-wb-mono text-[0.8125rem]',
-            dteUrgent ? 'font-semibold text-wb-gold' : 'font-normal text-wb-text-secondary'
-          ].join(' ')}
-        >
-          {item.dte !== null ? `${item.dte}d` : '—'}
-        </span>
+      <TableCell className={CELL_CLASS}>
+        <span className={dteClass}>{item.dte !== null ? `${item.dte}d` : '—'}</span>
       </TableCell>
 
-      {/* Premium */}
-      <TableCell className="py-[10px] px-[16px] border-b-0">
-        <span className="font-wb-mono text-[0.8125rem] text-wb-green font-medium">
+      <TableCell className={CELL_CLASS}>
+        <span className={`${VALUE_CLASS} text-wb-green font-medium`}>
           {fmtMoney(item.premium_collected)}
         </span>
       </TableCell>
 
-      {/* Cost Basis */}
-      <TableCell className="py-[10px] px-[16px] border-b-0">
-        <span className="font-wb-mono text-[0.8125rem] text-wb-text-primary">
+      <TableCell className={CELL_CLASS}>
+        <span className={`${VALUE_CLASS} text-wb-text-primary`}>
           {fmtMoney(item.effective_cost_basis)}
         </span>
       </TableCell>

@@ -17,7 +17,7 @@ import {
 } from './market-data-provider'
 
 // --- Mock infrastructure (hoisted for vi.mock access) ---
-const mockGetStocksQuotesLatest = vi.fn()
+const mockGetStocksSnapshots = vi.fn()
 const mockGetOptionsSnapshots = vi.fn()
 const mockGetActivity = vi.fn()
 const mockGetAccount = vi.fn()
@@ -56,7 +56,7 @@ const { mockSockets, mockDecode, MockWebSocket } = vi.hoisted(() => {
 
 vi.mock('@alpacahq/typescript-sdk', () => ({
   createClient: vi.fn(() => ({
-    getStocksQuotesLatest: mockGetStocksQuotesLatest,
+    getStocksSnapshots: mockGetStocksSnapshots,
     getOptionsSnapshots: mockGetOptionsSnapshots,
     getActivity: mockGetActivity,
     getAccount: mockGetAccount,
@@ -106,39 +106,18 @@ async function connectAndAuth(overrides: Record<string, unknown> = {}): Promise<
   }
 }
 
-// --- Stock quote mock data ---
-const aaplQuote = {
-  t: '2026-04-25T20:00:00Z',
-  bp: 172.6,
-  ap: 172.7,
-  bs: 3,
-  as: 1,
-  bx: 'V',
-  ax: 'V',
-  c: ['R'],
-  z: 'A'
+// --- Stock quote mock data (snapshot format) ---
+const aaplSnapshot = {
+  latest_quote: { bp: 172.6, ap: 172.7, t: '2026-04-25T20:00:00Z' },
+  prev_daily_bar: { c: 170.0 }
 }
-const msftQuote = {
-  t: '2026-04-25T20:00:00Z',
-  bp: 420.5,
-  ap: 420.6,
-  bs: 2,
-  as: 1,
-  bx: 'Q',
-  ax: 'Q',
-  c: ['R'],
-  z: 'A'
+const msftSnapshot = {
+  latest_quote: { bp: 420.5, ap: 420.6, t: '2026-04-25T20:00:00Z' },
+  prev_daily_bar: { c: 415.0 }
 }
-const tslaQuote = {
-  t: '2026-04-25T20:00:00Z',
-  bp: 250.0,
-  ap: 250.1,
-  bs: 5,
-  as: 3,
-  bx: 'C',
-  ax: 'C',
-  c: ['R'],
-  z: 'A'
+const tslaSnapshot = {
+  latest_quote: { bp: 250.0, ap: 250.1, t: '2026-04-25T20:00:00Z' },
+  prev_daily_bar: { c: 248.0 }
 }
 
 // --- Option snapshot mock data ---
@@ -169,8 +148,10 @@ describe('AlpacaMarketDataProvider — E2E Integration (via factory)', () => {
 
   // AC-1: Interface exposes stock quote retrieval
   it('returns stock quotes as map with 2dp prices', async () => {
-    mockGetStocksQuotesLatest.mockResolvedValue({
-      quotes: { AAPL: aaplQuote, MSFT: msftQuote, TSLA: tslaQuote }
+    mockGetStocksSnapshots.mockResolvedValue({
+      AAPL: aaplSnapshot,
+      MSFT: msftSnapshot,
+      TSLA: tslaSnapshot
     })
 
     const provider = createMarketDataProvider({
@@ -533,7 +514,7 @@ describe('AlpacaMarketDataProvider — E2E Integration (via factory)', () => {
     const error = Object.assign(new Error('fetch failed'), {
       cause: { code: 'ECONNREFUSED' }
     })
-    mockGetStocksQuotesLatest.mockRejectedValue(error)
+    mockGetStocksSnapshots.mockRejectedValue(error)
 
     const provider = createMarketDataProvider({
       provider: 'alpaca',
@@ -571,8 +552,8 @@ describe('AlpacaMarketDataProvider — E2E Integration (via factory)', () => {
 
   // AC-15: Provider handles unknown ticker gracefully
   it('omits unknown tickers without error', async () => {
-    mockGetStocksQuotesLatest.mockResolvedValue({
-      quotes: { AAPL: aaplQuote }
+    mockGetStocksSnapshots.mockResolvedValue({
+      AAPL: aaplSnapshot
     })
 
     const provider = createMarketDataProvider({

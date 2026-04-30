@@ -1,8 +1,7 @@
 import { ipcMain } from 'electron'
 import type Database from 'better-sqlite3'
-import { ZodError, type ZodType } from 'zod'
-import { ValidationError } from '../core/lifecycle'
-import { logger } from '../logger'
+import { type ZodType } from 'zod'
+import { handleIpcCall } from './utils'
 import {
   AssignCspPayloadSchema,
   CloseCcPayloadSchema,
@@ -29,38 +28,6 @@ import { recordCallAwayPosition } from '../services/record-call-away-position'
 import { rollCspPosition } from '../services/roll-csp-position'
 import { rollCcPosition } from '../services/roll-cc-position'
 import type { CreatePositionPayload } from '../schemas'
-
-function handleIpcCall(
-  logLabel: string,
-  fn: () => object
-):
-  | ({ ok: true } & object)
-  | { ok: false; errors: { field: string; code: string; message: string }[] } {
-  try {
-    return { ok: true, ...fn() }
-  } catch (err) {
-    if (err instanceof ValidationError) {
-      return { ok: false, errors: [{ field: err.field, code: err.code, message: err.message }] }
-    }
-    if (err instanceof ZodError) {
-      return {
-        ok: false,
-        errors: err.issues.map((issue) => ({
-          field: String(issue.path[0] ?? '__root__'),
-          code: issue.code,
-          message: issue.message
-        }))
-      }
-    }
-    logger.error({ err }, logLabel)
-    return {
-      ok: false,
-      errors: [
-        { field: '__root__', code: 'internal_error', message: 'An unexpected error occurred' }
-      ]
-    }
-  }
-}
 
 function registerParsedPositionHandler<Payload extends { positionId: string }>(
   db: Database.Database,

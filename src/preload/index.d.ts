@@ -203,7 +203,49 @@ type IpcRollCcResult = IpcResult<{
   costBasisSnapshot: IpcCostBasisSnapshotRecord
 }>
 
+interface IpcStockQuote {
+  price: string
+  bid: string
+  ask: string
+  prevClose: string | null
+  volume: number
+  timestamp: string
+}
+
+interface IpcMarketStatus {
+  isOpen: boolean
+  nextOpen: string
+  nextClose: string
+  session: 'regular' | 'pre' | 'post' | 'closed'
+}
+
+interface IpcGetStockQuotesPayload {
+  tickers: string[]
+}
+
+type IpcGetStockQuotesResult = IpcResult<{ quotes: Record<string, IpcStockQuote> }>
+
+interface IpcSetStockQuoteTickersPayload {
+  tickers: string[]
+}
+
+type IpcSetStockQuoteTickersResult = IpcResult<{ subscribedTickers: string[] }>
+
+type IpcGetMarketStatusResult = IpcResult<{ status: IpcMarketStatus }>
+
 declare global {
+  interface IpcStockQuoteEvent {
+    ticker: string
+    quote: IpcStockQuote
+  }
+
+  interface IpcStreamErrorEvent {
+    feed: 'stockQuotes' | 'optionQuotes' | 'optionTrades'
+    code: string
+    message: string
+    reconnectable: boolean
+  }
+
   interface Window {
     electron: ElectronAPI
     api: {
@@ -220,6 +262,15 @@ declare global {
       expireCc: (payload: IpcExpireCcPayload) => Promise<IpcExpireCcResult>
       rollCsp: (payload: IpcRollCspPayload) => Promise<IpcRollCspResult>
       rollCc: (payload: IpcRollCcPayload) => Promise<IpcRollCcResult>
+      getStockQuotes: (payload: IpcGetStockQuotesPayload) => Promise<IpcGetStockQuotesResult>
+      setStockQuoteTickers: (
+        payload: IpcSetStockQuoteTickersPayload
+      ) => Promise<IpcSetStockQuoteTickersResult>
+      getMarketStatus: () => Promise<IpcGetMarketStatusResult>
+      onStockQuote: (cb: (event: IpcStockQuoteEvent) => void) => () => void
+      onStreamError: (cb: (event: IpcStreamErrorEvent) => void) => () => void
+      triggerTestTick: (payload: { ticker: string; quote: IpcStockQuote }) => Promise<{ ok: true }>
+      triggerStreamError: (payload: IpcStreamErrorEvent) => Promise<{ ok: true }>
     }
   }
 }

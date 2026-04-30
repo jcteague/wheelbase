@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   AssignCspPayloadSchema,
+  GetStockQuotesPayloadSchema,
   OpenCcPayloadSchema,
   RollCcPayloadSchema,
-  RollCspPayloadSchema
+  RollCspPayloadSchema,
+  SetStockQuoteTickersPayloadSchema
 } from './schemas'
 
 const VALID_POSITION_ID = '11111111-1111-4111-8111-111111111111'
@@ -159,5 +161,73 @@ describe('RollCcPayloadSchema', () => {
       RollCcPayloadSchema.safeParse({ ...VALID_ROLL_CC_PAYLOAD, newExpiration: '04/13/2026' })
         .success
     ).toBe(false)
+  })
+})
+
+describe('GetStockQuotesPayloadSchema', () => {
+  it('accepts a non-empty ticker array', () => {
+    expect(() => GetStockQuotesPayloadSchema.parse({ tickers: ['AAPL', 'MSFT'] })).not.toThrow()
+  })
+
+  it('accepts an empty ticker array', () => {
+    expect(() => GetStockQuotesPayloadSchema.parse({ tickers: [] })).not.toThrow()
+  })
+
+  it('rejects a string for tickers', () => {
+    const result = GetStockQuotesPayloadSchema.safeParse({ tickers: 'AAPL' })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path.includes('tickers'))).toBe(true)
+    }
+  })
+
+  it('rejects empty-string ticker entry', () => {
+    const result = GetStockQuotesPayloadSchema.safeParse({ tickers: [''] })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects ticker longer than 10 chars', () => {
+    const result = GetStockQuotesPayloadSchema.safeParse({ tickers: ['ABCDEFGHIJK'] })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects array longer than 50', () => {
+    const result = GetStockQuotesPayloadSchema.safeParse({ tickers: Array(51).fill('A') })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('SetStockQuoteTickersPayloadSchema', () => {
+  it('accepts a non-empty ticker array', () => {
+    expect(() =>
+      SetStockQuoteTickersPayloadSchema.parse({ tickers: ['AAPL', 'MSFT'] })
+    ).not.toThrow()
+  })
+
+  it('accepts an empty ticker array', () => {
+    expect(() => SetStockQuoteTickersPayloadSchema.parse({ tickers: [] })).not.toThrow()
+  })
+
+  it('rejects a string for tickers', () => {
+    const result = SetStockQuoteTickersPayloadSchema.safeParse({ tickers: 'AAPL' })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path.includes('tickers'))).toBe(true)
+    }
+  })
+
+  it('rejects empty-string ticker entry', () => {
+    const result = SetStockQuoteTickersPayloadSchema.safeParse({ tickers: [''] })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects ticker longer than 10 chars', () => {
+    const result = SetStockQuoteTickersPayloadSchema.safeParse({ tickers: ['ABCDEFGHIJK'] })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects array longer than 50', () => {
+    const result = SetStockQuoteTickersPayloadSchema.safeParse({ tickers: Array(51).fill('A') })
+    expect(result.success).toBe(false)
   })
 })

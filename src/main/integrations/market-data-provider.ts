@@ -29,6 +29,7 @@ export type StockQuote = {
   ask: string
   change: string
   changePercent: string
+  prevClose: string // 2dp; '' on stream ticks, set on REST snapshot
   volume: number
   timestamp: string
 }
@@ -105,7 +106,7 @@ export type MarketDataProvider = {
   getAccountInfo(): Promise<AccountInfo>
   getMarketStatus(): Promise<MarketStatus>
   supportsStreaming(feed: DataFeed): boolean
-  connect(): Promise<void>
+  connect(feeds?: DataFeed[]): Promise<void>
   disconnect(): Promise<void>
   stream(feed: DataFeed, symbols: string[]): Observable<StreamEvent<StockQuote | OptionSnapshot>>
 }

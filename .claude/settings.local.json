@@ -40,7 +40,9 @@
       "WebFetch(domain:www.npmjs.com)",
       "WebFetch(domain:github.com)",
       "mcp__playwright__browser_take_screenshot",
-      "mcp__playwright__browser_click"
+      "mcp__playwright__browser_click",
+      "Bash(pnpm format *)",
+      "Bash(pnpm test:e2e e2e/live-underlying-price.spec.ts)"
     ]
   },
   "enableAllProjectMcpServers": true,

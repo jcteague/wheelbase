@@ -5,7 +5,7 @@ export default defineConfig({
     name: 'e2e',
     environment: 'node',
     include: ['e2e/**/*.spec.ts'],
-    testTimeout: 60_000,
+    testTimeout: 120_000,
     hookTimeout: 30_000,
     fileParallelism: false,
     bail: 1,

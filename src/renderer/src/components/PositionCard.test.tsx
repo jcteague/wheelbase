@@ -1,12 +1,13 @@
 import { render, screen } from '@testing-library/react'
 import type { PositionListItem } from '../api/positions'
 import { PositionRow } from './PositionCard'
+import type { StockQuote } from './PriceCell'
 
-function renderRow(item: PositionListItem): ReturnType<typeof render> {
+function renderRow(item: PositionListItem, quote?: StockQuote): ReturnType<typeof render> {
   return render(
     <table>
       <tbody>
-        <PositionRow item={item} index={0} />
+        <PositionRow item={item} index={0} quote={quote} />
       </tbody>
     </table>
   )
@@ -85,4 +86,41 @@ it('renders data-testid position-card-closed for a CLOSED position', () => {
   }
   renderRow(item)
   expect(screen.getByTestId('position-card-closed')).toBeInTheDocument()
+})
+
+it('renders PriceCell in the third column when quote is provided', () => {
+  const quote: StockQuote = {
+    price: '182.45',
+    bid: '182.44',
+    ask: '182.46',
+    prevClose: '181.00',
+    volume: 0,
+    timestamp: '2026-01-01T10:00:00Z'
+  }
+  renderRow(BASE_ITEM, quote)
+  expect(screen.getByText('$182.45')).toBeInTheDocument()
+})
+
+it('renders PriceCell with quote=undefined when quote prop is missing', () => {
+  renderRow(BASE_ITEM)
+  // PriceCell renders — when quote is undefined
+  const dashes = screen.getAllByText('—')
+  expect(dashes.length).toBeGreaterThan(0)
+})
+
+it('column order is Ticker, Phase, Price, Strike, Expiration, DTE, Premium, Cost Basis', () => {
+  const quote: StockQuote = {
+    price: '182.45',
+    bid: '182.44',
+    ask: '182.46',
+    prevClose: '181.00',
+    volume: 0,
+    timestamp: '2026-01-01T10:00:00Z'
+  }
+  renderRow(BASE_ITEM, quote)
+  const cells = screen.getAllByRole('cell')
+  // 8 columns: Ticker(0), Phase(1), Price(2), Strike(3), Expiration(4), DTE(5), Premium(6), CostBasis(7)
+  expect(cells).toHaveLength(8)
+  expect(cells[2]).toHaveTextContent('$182.45')
+  expect(cells[3]).toHaveTextContent('$180.00')
 })

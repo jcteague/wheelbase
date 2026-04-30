@@ -99,6 +99,9 @@
 
   /* Shadow */
   --shadow-sheet: -12px 0 48px rgba(0, 0, 0, 0.5);
+
+  /* Animation */
+  --animate-wb-pulse: wb-pulse 1.8s ease-in-out infinite;
 }
 
 * {
@@ -291,6 +294,18 @@ body {
   color: var(--wb-text-primary) !important;
   font-size: 0.875rem !important;
   font-weight: 600 !important;
+}
+
+@keyframes wb-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.7);
+  }
+  60% {
+    box-shadow: 0 0 0 5px rgba(63, 185, 80, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(63, 185, 80, 0);
+  }
 }
 
 /* Always use dark — no light mode for a desktop trading tool */

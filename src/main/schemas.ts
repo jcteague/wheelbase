@@ -334,3 +334,22 @@ export interface RollCcResult extends RollResultBase {
     status: 'ACTIVE'
   }
 }
+
+// ---------------------------------------------------------------------------
+// Market data schemas
+// ---------------------------------------------------------------------------
+
+const MAX_TICKER_LENGTH = 10
+const MAX_TICKERS_PER_REQUEST = 50
+
+const TickerListSchema = z
+  .array(z.string().min(1).max(MAX_TICKER_LENGTH))
+  .max(MAX_TICKERS_PER_REQUEST)
+
+export const GetStockQuotesPayloadSchema = z.object({
+  tickers: TickerListSchema
+})
+export type GetStockQuotesPayload = z.infer<typeof GetStockQuotesPayloadSchema>
+
+export const SetStockQuoteTickersPayloadSchema = GetStockQuotesPayloadSchema
+export type SetStockQuoteTickersPayload = z.infer<typeof SetStockQuoteTickersPayloadSchema>
