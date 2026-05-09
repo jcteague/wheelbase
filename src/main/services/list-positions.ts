@@ -3,7 +3,8 @@
 
 import Database from 'better-sqlite3'
 import Decimal from 'decimal.js'
-import type { WheelPhase, WheelStatus } from '../core/types'
+import { isOptionInstrument } from '../core/types'
+import type { InstrumentType, WheelPhase, WheelStatus } from '../core/types'
 import { logger } from '../logger'
 import type { PositionListItem } from '../schemas'
 import { activeLegSubquery } from './active-leg-sql'
@@ -19,8 +20,12 @@ interface PositionRow {
   status: WheelStatus
   strike: string | null
   expiration: string | null
+  instrument_type: InstrumentType | null
+  contracts: number | null
+  premium_per_contract: string | null
   basis_per_share: string | null
   total_premium_collected: string | null
+  profit_target_percent: number | null
 }
 
 // ---------------------------------------------------------------------------
@@ -30,7 +35,9 @@ interface PositionRow {
 const LIST_QUERY = `
   SELECT
     p.id, p.ticker, p.phase, p.status,
+    p.profit_target_percent,
     l.strike, l.expiration,
+    l.instrument_type, l.contracts, l.premium_per_contract,
     cbs.basis_per_share, cbs.total_premium_collected
   FROM positions p
   LEFT JOIN legs l ON l.id = (
@@ -77,8 +84,14 @@ export function listPositions(db: Database.Database): PositionListItem[] {
       strike: row.strike ? new Decimal(row.strike).toFixed(4) : null,
       expiration: row.expiration ?? null,
       dte: computeDte(row.expiration ?? null),
+      instrumentType: isOptionInstrument(row.instrument_type) ? row.instrument_type : null,
+      contracts: row.contracts ?? null,
+      entryPremiumPerContract: row.premium_per_contract
+        ? new Decimal(row.premium_per_contract).toFixed(4)
+        : null,
       premiumCollected: new Decimal(row.total_premium_collected ?? '0').toFixed(4),
-      effectiveCostBasis: new Decimal(row.basis_per_share ?? '0').toFixed(4)
+      effectiveCostBasis: new Decimal(row.basis_per_share ?? '0').toFixed(4),
+      profitTargetPercent: row.profit_target_percent
     })
   )
 

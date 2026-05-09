@@ -1,11 +1,14 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { vi } from 'vitest'
+import { beforeEach, vi } from 'vitest'
 import { usePosition } from '../hooks/usePosition'
+import { useOptionSnapshots } from '../hooks/useOptionSnapshots'
 import { PositionDetail } from '../api/positions'
+import type { OptionSnapshotsBySymbol } from '../api/market-data'
 import { PositionDetailPage } from './PositionDetailPage'
 
 vi.mock('../hooks/usePosition')
+vi.mock('../hooks/useOptionSnapshots')
 
 // Mock CloseCspForm to avoid testing it in isolation here
 vi.mock('../components/CloseCspForm', () => ({
@@ -61,6 +64,22 @@ vi.mock('wouter', () => ({
 }))
 
 const mockUsePosition = vi.mocked(usePosition)
+const mockUseOptionSnapshots = vi.mocked(useOptionSnapshots)
+
+function mockSnapshots(snapshots: OptionSnapshotsBySymbol | undefined): void {
+  mockUseOptionSnapshots.mockReturnValue({
+    data: snapshots,
+    isLoading: false,
+    isError: false,
+    error: null,
+    fetchStatus: snapshots === undefined ? 'idle' : 'idle'
+  } as unknown as ReturnType<typeof useOptionSnapshots>)
+}
+
+// Default mock so existing tests keep working — no snapshots returned.
+beforeEach(() => {
+  mockSnapshots(undefined)
+})
 
 const CSP_OPEN_DETAIL = {
   position: {
@@ -712,4 +731,136 @@ it('PositionDetailPage: blurs content when RollCcSheet is open (overlayOpen=true
   await user.click(screen.getByTestId('roll-cc-btn'))
 
   expect(detail).toHaveStyle({ filter: 'blur(1.5px)', opacity: '0.35', pointerEvents: 'none' })
+})
+
+// ---------------------------------------------------------------------------
+// Area 15 — Open Leg snapshot stats (US-33)
+// ---------------------------------------------------------------------------
+//
+// CSP_OPEN_DETAIL has activeLeg with ticker=AAPL, strike=180, expiration=2026-04-17,
+// PUT, contracts=1. The OCC symbol is AAPL260417P00180000.
+const AAPL_OCC = 'AAPL260417P00180000'
+
+const PROFIT_SNAPSHOT = {
+  bid: '1.20',
+  ask: '1.40',
+  mid: '1.30',
+  lastTrade: '1.30',
+  openInterest: 100,
+  volume: 50,
+  greeks: { delta: '-0.30', gamma: '0.01', theta: '-0.05', vega: '0.10', iv: '0.25' },
+  timestamp: '2026-04-01T15:00:00.000Z'
+}
+
+const LOSS_SNAPSHOT = {
+  ...PROFIT_SNAPSHOT,
+  bid: '5.10',
+  ask: '5.30',
+  mid: '5.20'
+}
+
+// Override premium to 3.50 so it matches the spec's example numbers
+// (entryPremium=3.50, contracts=1 → maxProfit=$350.00)
+const OPEN_LEG_DETAIL_3_50 = {
+  ...CSP_OPEN_DETAIL,
+  activeLeg: {
+    ...CSP_OPEN_DETAIL.activeLeg,
+    premiumPerContract: '3.5000'
+  }
+}
+
+it('Open Leg section renders Current Mid stat with $1.30 when snapshot is present', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: OPEN_LEG_DETAIL_3_50,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+  mockSnapshots({ [AAPL_OCC]: PROFIT_SNAPSHOT })
+
+  render(<PositionDetailPage />)
+
+  expect(screen.getByText('Current Mid')).toBeInTheDocument()
+  expect(screen.getByText('$1.30')).toBeInTheDocument()
+})
+
+it('Open Leg section renders Unrealized P&L stat +$220.00 with green class for profit', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: OPEN_LEG_DETAIL_3_50,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+  mockSnapshots({ [AAPL_OCC]: PROFIT_SNAPSHOT })
+
+  render(<PositionDetailPage />)
+
+  expect(screen.getByText('Unrealized P&L')).toBeInTheDocument()
+  const pnlEl = screen.getByText('+$220.00')
+  expect(pnlEl).toBeInTheDocument()
+  expect(pnlEl).toHaveClass('text-wb-green')
+})
+
+it('Open Leg section renders Unrealized P&L stat -$170.00 with red class for loss', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: OPEN_LEG_DETAIL_3_50,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+  mockSnapshots({ [AAPL_OCC]: LOSS_SNAPSHOT })
+
+  render(<PositionDetailPage />)
+
+  expect(screen.getByText('Unrealized P&L')).toBeInTheDocument()
+  const pnlEl = screen.getByText('-$170.00')
+  expect(pnlEl).toBeInTheDocument()
+  expect(pnlEl).toHaveClass('text-wb-red')
+})
+
+it('Open Leg section renders % of Max Profit stat as 62.9%', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: OPEN_LEG_DETAIL_3_50,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+  mockSnapshots({ [AAPL_OCC]: PROFIT_SNAPSHOT })
+
+  render(<PositionDetailPage />)
+
+  expect(screen.getByText('% of Max Profit')).toBeInTheDocument()
+  expect(screen.getByText('62.9%')).toBeInTheDocument()
+})
+
+it('Open Leg section omits the three snapshot stats when activeLeg is null', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: { ...OPEN_LEG_DETAIL_3_50, activeLeg: null },
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+  mockSnapshots({ [AAPL_OCC]: PROFIT_SNAPSHOT })
+
+  render(<PositionDetailPage />)
+
+  expect(screen.queryByText('Current Mid')).not.toBeInTheDocument()
+  expect(screen.queryByText('Unrealized P&L')).not.toBeInTheDocument()
+  expect(screen.queryByText('% of Max Profit')).not.toBeInTheDocument()
+})
+
+it('Open Leg section omits the three snapshot stats when snapshot is undefined', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: OPEN_LEG_DETAIL_3_50,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+  mockSnapshots(undefined)
+
+  render(<PositionDetailPage />)
+
+  expect(screen.queryByText('Current Mid')).not.toBeInTheDocument()
+  expect(screen.queryByText('Unrealized P&L')).not.toBeInTheDocument()
+  expect(screen.queryByText('% of Max Profit')).not.toBeInTheDocument()
 })

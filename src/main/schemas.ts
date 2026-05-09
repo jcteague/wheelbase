@@ -135,8 +135,12 @@ export interface PositionListItem {
   strike: string | null
   expiration: string | null
   dte: number | null
+  instrumentType: 'PUT' | 'CALL' | null
+  contracts: number | null
+  entryPremiumPerContract: string | null
   premiumCollected: string
   effectiveCostBasis: string
+  profitTargetPercent: number | null
 }
 
 // ---------------------------------------------------------------------------
@@ -353,3 +357,8 @@ export type GetStockQuotesPayload = z.infer<typeof GetStockQuotesPayloadSchema>
 
 export const SetStockQuoteTickersPayloadSchema = GetStockQuotesPayloadSchema
 export type SetStockQuoteTickersPayload = z.infer<typeof SetStockQuoteTickersPayloadSchema>
+
+export const GetOptionSnapshotsPayloadSchema = z.object({
+  symbols: z.array(z.string().min(1).max(25)).max(50)
+})
+export type GetOptionSnapshotsPayload = z.infer<typeof GetOptionSnapshotsPayloadSchema>

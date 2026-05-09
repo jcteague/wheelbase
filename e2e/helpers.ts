@@ -29,7 +29,7 @@ export async function selectDate(page: Page, triggerSelector: string, iso: strin
     await btn.click()
   }
 
-  await popover.locator(`.rdp-day:not(.rdp-outside) .rdp-day_button:has-text("${day}")`).click()
+  await popover.locator(`.rdp-day:not(.rdp-outside) .rdp-day_button:text-is("${day}")`).click()
   await page.waitForSelector(`${triggerSelector}:has-text("${iso}")`)
 }
 

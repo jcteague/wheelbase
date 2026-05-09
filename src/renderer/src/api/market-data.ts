@@ -18,6 +18,32 @@ export type MarketStatus = {
   session: 'regular' | 'pre' | 'post' | 'closed'
 }
 
+export type OptionGreeks = {
+  delta: string
+  gamma: string
+  theta: string
+  vega: string
+  iv: string
+}
+
+export type OptionSnapshot = {
+  bid: string
+  ask: string
+  mid: string
+  lastTrade: string
+  openInterest: number | null
+  volume: number | null
+  greeks: OptionGreeks
+  timestamp: string
+}
+
+export type OptionSnapshotsBySymbol = Record<string, OptionSnapshot>
+
+export type OptionSnapshotsResult = {
+  snapshots: OptionSnapshotsBySymbol
+  unavailable: boolean
+}
+
 export async function getStockQuotes(tickers: string[]): Promise<StockQuotesByTicker> {
   const result = await window.api.getStockQuotes({ tickers })
   if (!result.ok) {
@@ -32,4 +58,15 @@ export async function getMarketStatus(): Promise<MarketStatus> {
     throw apiError(502, { detail: result.errors })
   }
   return result.status as MarketStatus
+}
+
+export async function getOptionSnapshots(symbols: string[]): Promise<OptionSnapshotsResult> {
+  const result = await window.api.getOptionSnapshots({ symbols })
+  if (!result.ok) {
+    throw apiError(502, { detail: result.errors })
+  }
+  return {
+    snapshots: result.snapshots as OptionSnapshotsBySymbol,
+    unavailable: result.unavailable ?? false
+  }
 }

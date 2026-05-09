@@ -1,6 +1,13 @@
+import Decimal from 'decimal.js'
+
 export function fmtMoney(value: string): string {
   const amount = parseFloat(value)
   return amount < 0 ? `-$${Math.abs(amount).toFixed(2)}` : `$${amount.toFixed(2)}`
+}
+
+export function formatSignedMoney(value: string): string {
+  const formatted = fmtMoney(value)
+  return new Decimal(value).gte(0) ? `+${formatted}` : formatted
 }
 
 export function fmtPct(value: number): string {
@@ -17,6 +24,10 @@ export function fmtDate(value: string): string {
 
 export function pnlColor(value: string): string {
   return parseFloat(value) >= 0 ? 'var(--wb-green)' : 'var(--wb-red)'
+}
+
+export function pnlClass(value: string): string {
+  return parseFloat(value) >= 0 ? 'text-wb-green' : 'text-wb-red'
 }
 
 export function computeDte(expiration: string): number {

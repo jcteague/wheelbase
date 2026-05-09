@@ -41,6 +41,7 @@ A trader can maintain a watchlist of tickers they're evaluating, screen them aga
 ## Dependencies
 
 - Epic 06: Live Market Data (Alpaca integration for option chains)
+- Epic 12: Volatility Analytics (IVR/IVP data feed — Alpaca does not provide historical IV; the screener's IV rank column and filter consume the volatility service rather than computing rank inline)
 - Epic 01: Open and Track a CSP (trade entry form to promote into)
 
 ## Strategy

@@ -25,9 +25,17 @@ type TableCellProps = {
   children: React.ReactNode
   className?: string
   style?: React.CSSProperties
+  title?: string
+  'data-testid'?: string
 }
 
-export function TableCell({ children, className, style }: TableCellProps): React.JSX.Element {
+export function TableCell({
+  children,
+  className,
+  style,
+  title,
+  'data-testid': dataTestId
+}: TableCellProps): React.JSX.Element {
   return (
     <td
       className={twMerge(
@@ -36,6 +44,8 @@ export function TableCell({ children, className, style }: TableCellProps): React
         className
       )}
       style={style}
+      title={title}
+      data-testid={dataTestId}
     >
       {children}
     </td>

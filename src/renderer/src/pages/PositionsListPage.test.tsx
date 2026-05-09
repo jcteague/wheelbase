@@ -1,28 +1,33 @@
 import { render, screen } from '@testing-library/react'
 import { beforeEach, vi } from 'vitest'
 import type { PositionListItem } from '../api/positions'
-import type { StockQuote } from '../api/market-data'
+import type { OptionSnapshot, StockQuote } from '../api/market-data'
 import { usePositions } from '../hooks/usePositions'
 import { useMarketStatus } from '../hooks/useMarketStatus'
 import { useStockQuotes } from '../hooks/useStockQuotes'
+import { useOptionSnapshots } from '../hooks/useOptionSnapshots'
 import { PositionsListPage } from './PositionsListPage'
 
 vi.mock('../hooks/usePositions')
 vi.mock('../hooks/useStockQuotes')
 vi.mock('../hooks/useMarketStatus')
+vi.mock('../hooks/useOptionSnapshots')
 vi.mock('../components/PositionCard', () => ({
   PositionRow: ({
     item,
     isClosed,
-    quote
+    quote,
+    snapshot
   }: {
     item: PositionListItem
     isClosed?: boolean
     quote?: StockQuote
+    snapshot?: OptionSnapshot
   }) => (
     <tr data-testid={isClosed ? 'position-card-closed' : 'position-card'}>
       <td>{item.ticker}</td>
       <td data-testid={`mock-quote-${item.ticker}`}>{quote?.price ?? 'NO_QUOTE'}</td>
+      <td data-testid={`mock-snapshot-${item.ticker}`}>{snapshot?.mid ?? 'NO_SNAPSHOT'}</td>
     </tr>
   )
 }))
@@ -30,6 +35,7 @@ vi.mock('../components/PositionCard', () => ({
 const mockUsePositions = vi.mocked(usePositions)
 const mockUseStockQuotes = vi.mocked(useStockQuotes)
 const mockUseMarketStatus = vi.mocked(useMarketStatus)
+const mockUseOptionSnapshots = vi.mocked(useOptionSnapshots)
 
 const AAPL_QUOTE: StockQuote = {
   price: '182.45',
@@ -57,8 +63,12 @@ const ITEM_1: PositionListItem = {
   strike: '180.0000',
   expiration: '2026-04-17',
   dte: 40,
+  instrumentType: 'PUT',
+  contracts: 1,
+  entryPremiumPerContract: '3.5000',
   premium_collected: '250.0000',
-  effective_cost_basis: '177.5000'
+  effective_cost_basis: '177.5000',
+  profitTargetPercent: null
 }
 
 const ITEM_2: PositionListItem = {
@@ -69,8 +79,12 @@ const ITEM_2: PositionListItem = {
   strike: '400.0000',
   expiration: '2026-04-04',
   dte: 27,
+  instrumentType: 'PUT',
+  contracts: 1,
+  entryPremiumPerContract: '5.0000',
   premium_collected: '300.0000',
-  effective_cost_basis: '397.0000'
+  effective_cost_basis: '397.0000',
+  profitTargetPercent: null
 }
 
 const CLOSED_ITEM: PositionListItem = {
@@ -81,8 +95,12 @@ const CLOSED_ITEM: PositionListItem = {
   strike: null,
   expiration: null,
   dte: null,
+  instrumentType: null,
+  contracts: null,
+  entryPremiumPerContract: null,
   premium_collected: '250.0000',
-  effective_cost_basis: '177.5000'
+  effective_cost_basis: '177.5000',
+  profitTargetPercent: null
 }
 
 const TSLA_ITEM: PositionListItem = {
@@ -93,8 +111,41 @@ const TSLA_ITEM: PositionListItem = {
   strike: '200.0000',
   expiration: '2026-04-17',
   dte: 40,
+  instrumentType: 'PUT',
+  contracts: 1,
+  entryPremiumPerContract: '4.0000',
   premium_collected: '100.0000',
-  effective_cost_basis: '198.0000'
+  effective_cost_basis: '198.0000',
+  profitTargetPercent: null
+}
+
+const HOLDING_ITEM: PositionListItem = {
+  id: 'hhh',
+  ticker: 'NVDA',
+  phase: 'HOLDING_SHARES',
+  status: 'ACTIVE',
+  strike: null,
+  expiration: null,
+  dte: null,
+  instrumentType: null,
+  contracts: null,
+  entryPremiumPerContract: null,
+  premium_collected: '500.0000',
+  effective_cost_basis: '450.0000',
+  profitTargetPercent: null
+}
+
+function makeOptionSnapshot(mid: string): OptionSnapshot {
+  return {
+    bid: mid,
+    ask: mid,
+    mid,
+    lastTrade: mid,
+    openInterest: 100,
+    volume: 50,
+    greeks: { delta: '-0.30', gamma: '0.02', theta: '-0.05', vega: '0.10', iv: '0.25' },
+    timestamp: '2026-04-28T10:00:00Z'
+  }
 }
 
 function makePositionsResult(items: PositionListItem[]): ReturnType<typeof usePositions> {
@@ -144,9 +195,23 @@ function makeMarketStatusResult(
   } as unknown as ReturnType<typeof useMarketStatus>
 }
 
+function makeOptionSnapshotsResult(
+  data: Record<string, OptionSnapshot> = {},
+  { unavailable = false }: { unavailable?: boolean } = {}
+): ReturnType<typeof useOptionSnapshots> {
+  return {
+    data,
+    unavailable,
+    isLoading: false,
+    isError: false,
+    error: null
+  } as unknown as ReturnType<typeof useOptionSnapshots>
+}
+
 beforeEach(() => {
   mockUseStockQuotes.mockReturnValue(makeStockQuotesResult())
   mockUseMarketStatus.mockReturnValue(makeMarketStatusResult())
+  mockUseOptionSnapshots.mockReturnValue(makeOptionSnapshotsResult())
 })
 
 it('renders a new wheel button in the header', () => {
@@ -305,7 +370,7 @@ it('shows MarketStatusPill with state DELAYED when stale flag is true', () => {
   expect(screen.getByTestId('market-status-pill')).toHaveTextContent('DELAYED')
 })
 
-it('shows MarketStatusPill with state DELAYED when streamError is set', () => {
+it('shows MarketStatusPill with state LIVE when streamError is set but data is fresh', () => {
   mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1]))
   mockUseStockQuotes.mockReturnValue(
     makeStockQuotesResult({
@@ -320,7 +385,7 @@ it('shows MarketStatusPill with state DELAYED when streamError is set', () => {
   mockUseMarketStatus.mockReturnValue(makeMarketStatusResult('regular'))
 
   render(<PositionsListPage />)
-  expect(screen.getByTestId('market-status-pill')).toHaveTextContent('DELAYED')
+  expect(screen.getByTestId('market-status-pill')).toHaveTextContent('LIVE')
 })
 
 // ── Area 13: stale data banner ───────────────────────────────────────────────
@@ -372,9 +437,9 @@ it('derives ticker list from active positions only', () => {
   expect(mockUseStockQuotes).toHaveBeenCalledWith(['AAPL'])
 })
 
-// ── Area 13: column order ────────────────────────────────────────────────────
+// ── Area 14: column order with Opt Mid + P&L ────────────────────────────────
 
-it('Price column header renders between Phase and Strike', () => {
+it('header row contains Ticker, Phase, Price, Opt Mid, P&L, Strike, Expiration, DTE, Premium, Cost Basis', () => {
   mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1]))
 
   render(<PositionsListPage />)
@@ -383,10 +448,88 @@ it('Price column header renders between Phase and Strike', () => {
     'Ticker',
     'Phase',
     'Price',
+    'Opt Mid',
+    'P&L',
     'Strike',
     'Expiration',
     'DTE',
     'Premium',
     'Cost Basis'
   ])
+})
+
+// ── Area 14: derive ActiveLegSummary[] from active positions ────────────────
+
+it('derives ActiveLegSummary[] from active positions and passes to useOptionSnapshots', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1, ITEM_2, CLOSED_ITEM]))
+
+  render(<PositionsListPage />)
+  // Last call should have received exactly the two active legs
+  const calls = mockUseOptionSnapshots.mock.calls
+  const lastCall = calls[calls.length - 1]
+  const legsArg = lastCall[0]
+  expect(legsArg).toEqual([
+    { ticker: 'AAPL', expiration: '2026-04-17', strike: '180.0000', instrumentType: 'PUT' },
+    { ticker: 'MSFT', expiration: '2026-04-04', strike: '400.0000', instrumentType: 'PUT' }
+  ])
+})
+
+it('passes session to useOptionSnapshots so polling stops when market is closed', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1]))
+  mockUseMarketStatus.mockReturnValue(makeMarketStatusResult('closed'))
+
+  render(<PositionsListPage />)
+  const calls = mockUseOptionSnapshots.mock.calls
+  const lastCall = calls[calls.length - 1]
+  expect(lastCall[1]).toEqual({ session: 'closed' })
+})
+
+// ── Area 14: snapshots route to matching rows ───────────────────────────────
+
+it('passes the matching snapshot to each row keyed by OCC symbol', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1, ITEM_2]))
+  // AAPL OCC symbol for 2026-04-17 / $180 / PUT: AAPL260417P00180000
+  mockUseOptionSnapshots.mockReturnValue(
+    makeOptionSnapshotsResult({ AAPL260417P00180000: makeOptionSnapshot('1.30') })
+  )
+
+  render(<PositionsListPage />)
+  expect(screen.getByTestId('mock-snapshot-AAPL')).toHaveTextContent('1.30')
+  expect(screen.getByTestId('mock-snapshot-MSFT')).toHaveTextContent('NO_SNAPSHOT')
+})
+
+it('passes undefined snapshot to closed positions', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1, CLOSED_ITEM]))
+  mockUseOptionSnapshots.mockReturnValue(
+    makeOptionSnapshotsResult({ AAPL260417P00180000: makeOptionSnapshot('1.30') })
+  )
+
+  render(<PositionsListPage />)
+  expect(screen.getByTestId('mock-snapshot-BBB')).toHaveTextContent('NO_SNAPSHOT')
+})
+
+it('passes undefined snapshot for HOLDING_SHARES row', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([HOLDING_ITEM]))
+  mockUseOptionSnapshots.mockReturnValue(makeOptionSnapshotsResult({}))
+
+  render(<PositionsListPage />)
+  expect(screen.getByTestId('mock-snapshot-NVDA')).toHaveTextContent('NO_SNAPSHOT')
+})
+
+// ── Area 15: options unavailable notice ─────────────────────────────────────
+
+it('shows options unavailable notice when snapshotsQuery.unavailable is true', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1]))
+  mockUseOptionSnapshots.mockReturnValue(makeOptionSnapshotsResult({}, { unavailable: true }))
+
+  render(<PositionsListPage />)
+  expect(screen.getByText(/Options data unavailable/)).toBeInTheDocument()
+})
+
+it('does not show options unavailable notice when snapshotsQuery.unavailable is false', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1]))
+  mockUseOptionSnapshots.mockReturnValue(makeOptionSnapshotsResult({}, { unavailable: false }))
+
+  render(<PositionsListPage />)
+  expect(screen.queryByText(/Options data unavailable/)).not.toBeInTheDocument()
 })

@@ -65,8 +65,12 @@ export type PositionListItem = {
   strike: string | null
   expiration: string | null
   dte: number | null
+  instrumentType: 'PUT' | 'CALL' | null
+  contracts: number | null
+  entryPremiumPerContract: string | null
   premium_collected: string
   effective_cost_basis: string
+  profitTargetPercent: number | null
 }
 
 export type ApiFieldError = {
@@ -109,8 +113,12 @@ export async function listPositions(): Promise<PositionListItem[]> {
     strike: item.strike,
     expiration: item.expiration,
     dte: item.dte,
+    instrumentType: item.instrumentType,
+    contracts: item.contracts,
+    entryPremiumPerContract: item.entryPremiumPerContract,
     premium_collected: item.premiumCollected,
-    effective_cost_basis: item.effectiveCostBasis
+    effective_cost_basis: item.effectiveCostBasis,
+    profitTargetPercent: item.profitTargetPercent
   }))
 }
 

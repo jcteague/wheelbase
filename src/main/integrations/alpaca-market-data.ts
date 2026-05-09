@@ -3,6 +3,7 @@ import { decode } from '@msgpack/msgpack'
 import Decimal from 'decimal.js'
 import { Observable, Subject } from 'rxjs'
 import WebSocket from 'ws'
+import { logger } from '../logger'
 
 import {
   MarketDataError,
@@ -19,9 +20,10 @@ import {
 } from './market-data-provider'
 
 // Raw Alpaca response shapes (SDK types are incomplete)
+// /v2/stocks/snapshots returns camelCase, tickers as top-level keys (no "snapshots" wrapper)
 type AlpacaStockSnapshot = {
-  latest_quote: { bp: number; ap: number; t: string }
-  prev_daily_bar: { c: number }
+  latestQuote: { bp: number; ap: number; t: string }
+  prevDailyBar: { c: number }
 }
 
 type AlpacaOptionSnapshot = {
@@ -134,10 +136,10 @@ function midPrice(bid: Decimal, ask: Decimal): Decimal {
 }
 
 function mapAlpacaSnapshotToStockQuote(snap: AlpacaStockSnapshot): StockQuote {
-  const bid = new Decimal(snap.latest_quote.bp)
-  const ask = new Decimal(snap.latest_quote.ap)
+  const bid = new Decimal(snap.latestQuote.bp)
+  const ask = new Decimal(snap.latestQuote.ap)
   const mid = midPrice(bid, ask)
-  const prevClose = new Decimal(snap.prev_daily_bar.c)
+  const prevClose = new Decimal(snap.prevDailyBar.c)
   const change = mid.minus(prevClose)
 
   return {
@@ -148,7 +150,7 @@ function mapAlpacaSnapshotToStockQuote(snap: AlpacaStockSnapshot): StockQuote {
     changePercent: change.dividedBy(prevClose).toFixed(4),
     prevClose: prevClose.toFixed(2),
     volume: 0,
-    timestamp: snap.latest_quote.t
+    timestamp: snap.latestQuote.t
   }
 }
 
@@ -213,6 +215,27 @@ export class AlpacaMarketDataProvider implements MarketDataProvider {
     }
   }
 
+  // The SDK's createClient.request() ignores the baseURL field that individual
+  // data API methods pass, always routing to the trading API instead of
+  // data.alpaca.markets. Bypass it entirely for data API calls.
+  private async dataApiFetch(path: string, params: Record<string, string>): Promise<unknown> {
+    const url = new URL(path, 'https://data.alpaca.markets')
+    url.search = new URLSearchParams(params).toString()
+    const response = await fetch(url.toString(), {
+      headers: {
+        'APCA-API-KEY-ID': this.config.keyId,
+        'APCA-API-SECRET-KEY': this.config.secretKey
+      }
+    })
+    if (!response.ok) {
+      const body = await response.text()
+      const err: Error & { status?: number } = new Error(`${path}: ${body}`)
+      err.status = response.status
+      throw err
+    }
+    return response.json()
+  }
+
   // Deferred so the app can start without credentials (e.g., in e2e tests that
   // stub window.api before the provider is ever called).
   private get client(): ReturnType<typeof createClient> {
@@ -229,9 +252,18 @@ export class AlpacaMarketDataProvider implements MarketDataProvider {
   async getStockQuotes(tickers: string[]): Promise<Map<string, StockQuote>> {
     this.requireCredentials()
     try {
-      const response = await this.client.getStocksSnapshots({ symbols: tickers.join(',') })
+      const feed = this.config.dataFeed ?? 'iex'
+      const response = await this.dataApiFetch('/v2/stocks/snapshots', {
+        symbols: tickers.join(','),
+        feed
+      })
+      logger.debug(
+        { sample: JSON.stringify(response).slice(0, 500) },
+        'getStockQuotes raw response'
+      )
       const result = new Map<string, StockQuote>()
-      const snapshots = response as unknown as Record<string, AlpacaStockSnapshot>
+      // /v2/stocks/snapshots returns tickers as top-level keys (no "snapshots" wrapper)
+      const snapshots = response as Record<string, AlpacaStockSnapshot>
 
       for (const [symbol, snap] of Object.entries(snapshots)) {
         result.set(symbol, mapAlpacaSnapshotToStockQuote(snap))
@@ -245,9 +277,15 @@ export class AlpacaMarketDataProvider implements MarketDataProvider {
 
   async getOptionSnapshots(contractIds: string[]): Promise<Map<string, OptionSnapshot>> {
     try {
-      const response = await this.client.getOptionsSnapshots({
-        symbols: contractIds.join(',')
+      const feed = this.config.optionFeed ?? 'opra'
+      const response = await this.dataApiFetch('/v1beta1/options/snapshots', {
+        symbols: contractIds.join(','),
+        feed
       })
+      logger.debug(
+        { sample: JSON.stringify(response).slice(0, 500) },
+        'getOptionSnapshots raw response'
+      )
 
       const result = new Map<string, OptionSnapshot>()
       const snapshots = (response as { snapshots: Record<string, AlpacaOptionSnapshot> }).snapshots
@@ -277,6 +315,9 @@ export class AlpacaMarketDataProvider implements MarketDataProvider {
 
       return result
     } catch (err) {
+      if (isAuthError(err)) {
+        throw new MarketDataError('options_no_subscription', 'OPRA agreement is not signed')
+      }
       throw wrapError(err, 'getOptionSnapshots')
     }
   }
@@ -421,11 +462,19 @@ export class AlpacaMarketDataProvider implements MarketDataProvider {
       let authenticated = false
 
       socket.on('message', (rawData: WebSocket.RawData) => {
-        const data: unknown = rawData
-        const msgs: AlpacaStreamMessage[] =
-          typeof data === 'string'
-            ? (JSON.parse(data) as AlpacaStreamMessage[])
-            : (decode(data as Uint8Array) as AlpacaStreamMessage[])
+        let msgs: AlpacaStreamMessage[]
+        if (typeof rawData === 'string') {
+          msgs = JSON.parse(rawData) as AlpacaStreamMessage[]
+        } else {
+          const buf = Buffer.isBuffer(rawData) ? rawData : Buffer.from(rawData as ArrayBuffer)
+          // Alpaca sends the initial handshake frames as binary but with JSON content.
+          // Detect by checking for '[' (0x5b) or '{' (0x7b); msgpack never starts with either.
+          if (buf[0] === 0x5b || buf[0] === 0x7b) {
+            msgs = JSON.parse(buf.toString('utf8')) as AlpacaStreamMessage[]
+          } else {
+            msgs = decode(buf) as AlpacaStreamMessage[]
+          }
+        }
 
         for (const msg of msgs) {
           if (msg.T === 'success' && msg.msg === 'connected') {

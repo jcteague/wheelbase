@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   AssignCspPayloadSchema,
+  GetOptionSnapshotsPayloadSchema,
   GetStockQuotesPayloadSchema,
   OpenCcPayloadSchema,
   RollCcPayloadSchema,
@@ -228,6 +229,43 @@ describe('SetStockQuoteTickersPayloadSchema', () => {
 
   it('rejects array longer than 50', () => {
     const result = SetStockQuoteTickersPayloadSchema.safeParse({ tickers: Array(51).fill('A') })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('GetOptionSnapshotsPayloadSchema', () => {
+  it('accepts a non-empty symbol array', () => {
+    expect(GetOptionSnapshotsPayloadSchema.parse({ symbols: ['AAPL260516P00180000'] })).toEqual({
+      symbols: ['AAPL260516P00180000']
+    })
+  })
+
+  it('accepts an empty symbol array', () => {
+    expect(() => GetOptionSnapshotsPayloadSchema.parse({ symbols: [] })).not.toThrow()
+  })
+
+  it('rejects a string for symbols', () => {
+    const result = GetOptionSnapshotsPayloadSchema.safeParse({ symbols: 'AAPL260516P00180000' })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path.includes('symbols'))).toBe(true)
+    }
+  })
+
+  it('rejects empty-string symbol entry', () => {
+    const result = GetOptionSnapshotsPayloadSchema.safeParse({ symbols: [''] })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects symbol entry longer than 25 chars', () => {
+    const result = GetOptionSnapshotsPayloadSchema.safeParse({ symbols: ['A'.repeat(26)] })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects array longer than 50', () => {
+    const result = GetOptionSnapshotsPayloadSchema.safeParse({
+      symbols: Array(51).fill('AAPL260516P00180000')
+    })
     expect(result.success).toBe(false)
   })
 })

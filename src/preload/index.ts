@@ -31,12 +31,14 @@ const api = {
   setStockQuoteTickers: (payload: unknown) =>
     invoke('market-data:set-stock-quote-tickers', payload),
   getMarketStatus: () => invoke('market-data:market-status'),
+  getOptionSnapshots: (payload: unknown) => invoke('market-data:option-snapshots', payload),
   onStockQuote: onIpcEvent('market-data:stock-quote'),
   onStreamError: onIpcEvent('market-data:stream-error'),
   // Test-only helpers — backed by IPC channels that are only meaningful when
   // WHEELBASE_MARKET_MOCK=true; safe to expose unconditionally (no-op in prod)
   triggerTestTick: (payload: unknown) => invoke('test:trigger-stock-tick', payload),
-  triggerStreamError: (payload: unknown) => invoke('test:trigger-stream-error', payload)
+  triggerStreamError: (payload: unknown) => invoke('test:trigger-stream-error', payload),
+  setPositionProfitTarget: (payload: unknown) => invoke('test:set-position-profit-target', payload)
 }
 
 if (process.contextIsolated) {

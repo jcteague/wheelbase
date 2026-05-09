@@ -132,4 +132,17 @@ export function registerPositionsHandlers(db: Database.Database): void {
     RollCcPayloadSchema,
     rollCcPosition
   )
+
+  // Test-only: sets profit_target_percent directly so e2e tests can verify the
+  // per-position override without a UI for the field.
+  ipcMain.handle(
+    'test:set-position-profit-target',
+    (_, payload: { positionId: string; targetPercent: number | null }) => {
+      db.prepare('UPDATE positions SET profit_target_percent = ? WHERE id = ?').run(
+        payload.targetPercent,
+        payload.positionId
+      )
+      return { ok: true }
+    }
+  )
 }

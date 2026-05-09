@@ -8,8 +8,12 @@ interface IpcPositionListItem {
   strike: string | null
   expiration: string | null
   dte: number | null
+  instrumentType: 'PUT' | 'CALL' | null
+  contracts: number | null
+  entryPremiumPerContract: string | null
   premiumCollected: string
   effectiveCostBasis: string
+  profitTargetPercent: number | null
 }
 
 interface IpcCreatePositionPayload {
@@ -233,6 +237,32 @@ type IpcSetStockQuoteTickersResult = IpcResult<{ subscribedTickers: string[] }>
 
 type IpcGetMarketStatusResult = IpcResult<{ status: IpcMarketStatus }>
 
+interface IpcOptionSnapshot {
+  bid: string
+  ask: string
+  mid: string
+  lastTrade: string
+  openInterest: number | null
+  volume: number | null
+  greeks: {
+    delta: string
+    gamma: string
+    theta: string
+    vega: string
+    iv: string
+  }
+  timestamp: string
+}
+
+interface IpcGetOptionSnapshotsPayload {
+  symbols: string[]
+}
+
+type IpcGetOptionSnapshotsResult = IpcResult<{
+  snapshots: Record<string, IpcOptionSnapshot>
+  unavailable: boolean
+}>
+
 declare global {
   interface IpcStockQuoteEvent {
     ticker: string
@@ -267,10 +297,17 @@ declare global {
         payload: IpcSetStockQuoteTickersPayload
       ) => Promise<IpcSetStockQuoteTickersResult>
       getMarketStatus: () => Promise<IpcGetMarketStatusResult>
+      getOptionSnapshots: (
+        payload: IpcGetOptionSnapshotsPayload
+      ) => Promise<IpcGetOptionSnapshotsResult>
       onStockQuote: (cb: (event: IpcStockQuoteEvent) => void) => () => void
       onStreamError: (cb: (event: IpcStreamErrorEvent) => void) => () => void
       triggerTestTick: (payload: { ticker: string; quote: IpcStockQuote }) => Promise<{ ok: true }>
       triggerStreamError: (payload: IpcStreamErrorEvent) => Promise<{ ok: true }>
+      setPositionProfitTarget: (payload: {
+        positionId: string
+        targetPercent: number | null
+      }) => Promise<{ ok: boolean }>
     }
   }
 }

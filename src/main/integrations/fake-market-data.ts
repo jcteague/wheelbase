@@ -17,23 +17,26 @@ import {
 export const fakeStockTickSubject = new Subject<StreamEvent<StockQuote>>()
 export const fakeStreamErrorSubject = new Subject<StreamError>()
 
+function buildMockMap<T>(envVar: string, keys: string[]): Map<string, T> {
+  const raw = process.env[envVar]
+  const all: Record<string, T> = raw ? (JSON.parse(raw) as Record<string, T>) : {}
+  const result = new Map<string, T>()
+  for (const key of keys) {
+    if (all[key]) result.set(key, all[key])
+  }
+  return result
+}
+
 /**
  * In-process fake provider for e2e tests (enabled via WHEELBASE_MARKET_MOCK=true).
  * Reads fixture data from environment variables:
- *   WHEELBASE_MOCK_MARKET_STATUS   JSON string matching MarketStatus shape
- *   WHEELBASE_MOCK_STOCK_QUOTES    JSON string: Record<ticker, StockQuote>
+ *   WHEELBASE_MOCK_MARKET_STATUS      JSON string matching MarketStatus shape
+ *   WHEELBASE_MOCK_STOCK_QUOTES       JSON string: Record<ticker, StockQuote>
+ *   WHEELBASE_MOCK_OPTION_SNAPSHOTS   JSON string: Record<symbol, OptionSnapshot>
  */
 export class FakeMarketDataProvider implements MarketDataProvider {
   async getStockQuotes(tickers: string[]): Promise<Map<string, StockQuote>> {
-    const raw = process.env.WHEELBASE_MOCK_STOCK_QUOTES
-    const all: Record<string, StockQuote> = raw
-      ? (JSON.parse(raw) as Record<string, StockQuote>)
-      : {}
-    const result = new Map<string, StockQuote>()
-    for (const ticker of tickers) {
-      if (all[ticker]) result.set(ticker, all[ticker])
-    }
-    return result
+    return buildMockMap<StockQuote>('WHEELBASE_MOCK_STOCK_QUOTES', tickers)
   }
 
   async getMarketStatus(): Promise<MarketStatus> {
@@ -67,8 +70,8 @@ export class FakeMarketDataProvider implements MarketDataProvider {
     ) as Observable<StreamEvent<StockQuote | OptionSnapshot>>
   }
 
-  async getOptionSnapshots(): Promise<Map<string, OptionSnapshot>> {
-    return new Map()
+  async getOptionSnapshots(symbols: string[]): Promise<Map<string, OptionSnapshot>> {
+    return buildMockMap<OptionSnapshot>('WHEELBASE_MOCK_OPTION_SNAPSHOTS', symbols)
   }
 
   async getActivities(): Promise<BrokerActivity[]> {

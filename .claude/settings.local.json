@@ -42,7 +42,8 @@
       "mcp__playwright__browser_take_screenshot",
       "mcp__playwright__browser_click",
       "Bash(pnpm format *)",
-      "Bash(pnpm test:e2e e2e/live-underlying-price.spec.ts)"
+      "Bash(pnpm test:e2e e2e/live-underlying-price.spec.ts)",
+      "Bash(pnpm test:e2e *)"
     ]
   },
   "enableAllProjectMcpServers": true,

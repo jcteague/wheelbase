@@ -1,6 +1,12 @@
 import { useMemo } from 'react'
 import type { PositionListItem } from '../api/positions'
-import type { StockQuote, StockQuotesByTicker } from '../api/market-data'
+import type {
+  OptionSnapshot,
+  OptionSnapshotsBySymbol,
+  StockQuote,
+  StockQuotesByTicker
+} from '../api/market-data'
+import { buildOccSymbol } from '../../../shared/option-symbol'
 import { PositionRow } from '../components/PositionCard'
 import { MarketStatusPill, type MarketStatusDisplay } from '../components/MarketStatusPill'
 import { PageHeader, PageLayout } from '../components/PageLayout'
@@ -10,6 +16,7 @@ import { ErrorAlert } from '../components/ui/ErrorAlert'
 import { LoadingState } from '../components/ui/LoadingState'
 import { TableHeader } from '../components/ui/TablePrimitives'
 import { useMarketStatus } from '../hooks/useMarketStatus'
+import { useOptionSnapshots, type ActiveLegSummary } from '../hooks/useOptionSnapshots'
 import { usePositions } from '../hooks/usePositions'
 import { useStockQuotes } from '../hooks/useStockQuotes'
 import { deriveMarketStatusDisplay } from '../lib/market-status'
@@ -18,6 +25,8 @@ const TABLE_COLUMNS = [
   'Ticker',
   'Phase',
   'Price',
+  'Opt Mid',
+  'P&L',
   'Strike',
   'Expiration',
   'DTE',
@@ -62,18 +71,40 @@ function SectionHeader({ title }: { title: string }): React.JSX.Element {
   )
 }
 
+function snapshotForItem(
+  item: PositionListItem,
+  snapshots: OptionSnapshotsBySymbol | undefined
+): OptionSnapshot | undefined {
+  if (!snapshots) return undefined
+  if (item.instrumentType !== 'PUT' && item.instrumentType !== 'CALL') return undefined
+  if (!item.expiration || !item.strike) return undefined
+  try {
+    const symbol = buildOccSymbol({
+      ticker: item.ticker,
+      expiration: item.expiration,
+      strike: item.strike,
+      instrumentType: item.instrumentType
+    })
+    return snapshots[symbol]
+  } catch {
+    return undefined
+  }
+}
+
 type PositionTableProps = {
   items: PositionListItem[]
   isClosed?: boolean
   quotes?: StockQuotesByTicker
   session?: string
+  snapshots?: OptionSnapshotsBySymbol
 }
 
 function PositionTable({
   items,
   isClosed,
   quotes = {},
-  session
+  session,
+  snapshots
 }: PositionTableProps): React.JSX.Element {
   return (
     <table
@@ -99,6 +130,7 @@ function PositionTable({
             isClosed={isClosed}
             quote={quotes[item.ticker] as StockQuote | undefined}
             session={session}
+            snapshot={isClosed ? undefined : snapshotForItem(item, snapshots)}
           />
         ))}
       </tbody>
@@ -117,15 +149,23 @@ export function PositionsListPage(): React.JSX.Element {
     [activePositions]
   )
 
+  const legs = useMemo<ActiveLegSummary[]>(
+    () =>
+      activePositions.map((p) => ({
+        ticker: p.ticker,
+        expiration: p.expiration,
+        strike: p.strike,
+        instrumentType: p.instrumentType
+      })),
+    [activePositions]
+  )
+
   const quotesQuery = useStockQuotes(tickers)
   const statusQuery = useMarketStatus()
+  const snapshotsQuery = useOptionSnapshots(legs, { session: statusQuery.data?.session })
 
   const { stale, minutesAgo } = quotesQuery
-  const display = deriveMarketStatusDisplay(
-    statusQuery.data?.session,
-    stale,
-    quotesQuery.streamError
-  )
+  const display = deriveMarketStatusDisplay(statusQuery.data?.session, stale)
 
   return (
     <PageLayout
@@ -153,15 +193,19 @@ export function PositionsListPage(): React.JSX.Element {
 
       {data && data.length > 0 && (
         <>
-          <StaleDataBanner
-            stale={stale || quotesQuery.streamError !== null}
-            minutesAgo={minutesAgo}
-          />
+          <StaleDataBanner stale={stale} minutesAgo={minutesAgo} />
+          {snapshotsQuery.unavailable && (
+            <div className="flex items-center gap-2 border-b border-wb-gold/30 bg-wb-gold/10 px-4 py-2 font-wb-mono text-[0.75rem] text-wb-gold">
+              <span className="text-[0.85rem]">⚠</span>
+              Options data unavailable — OPRA market data subscription required
+            </div>
+          )}
           <SectionHeader title="Active" />
           <PositionTable
             items={activePositions}
             quotes={quotesQuery.data}
             session={statusQuery.data?.session}
+            snapshots={snapshotsQuery.data}
           />
 
           {closedPositions.length > 0 && (

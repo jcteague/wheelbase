@@ -1,8 +1,16 @@
+import type { OptionSnapshot } from '../api/market-data'
 import type { PositionListItem } from '../api/positions'
+import { computeUnrealizedPnl } from '../../../main/core/costbasis'
+import { resolveProfitTarget } from '../../../main/core/profit-target'
+import { isOptionInstrument } from '../../../main/core/types'
+import Decimal from 'decimal.js'
 import { fmtMoney } from '../lib/format'
 import { PHASE_COLOR } from '../lib/phase'
+import { OptMidCell } from './OptMidCell'
 import { PhaseBadge } from './PhaseBadge'
 import { PriceCell, type StockQuote } from './PriceCell'
+import { TargetBadge } from './TargetBadge'
+import { UnrealizedPnlCell } from './UnrealizedPnlCell'
 import { TableCell } from './ui/TablePrimitives'
 
 type Props = {
@@ -11,12 +19,44 @@ type Props = {
   isClosed?: boolean
   quote?: StockQuote
   session?: string
+  snapshot?: OptionSnapshot
 }
 
 const CELL_CLASS = 'py-[10px] px-[16px] border-b-0'
 const VALUE_CLASS = 'font-wb-mono text-[0.8125rem]'
 
-export function PositionRow({ item, index, isClosed, quote, session }: Props): React.JSX.Element {
+type RowDisplay = {
+  targetReached: boolean
+  pnlPercent: string
+  maxProfit: string
+  targetPercent: number
+}
+
+function deriveRowDisplay(
+  item: PositionListItem,
+  snapshot: OptionSnapshot | undefined
+): RowDisplay {
+  const targetPercent = resolveProfitTarget(item.profitTargetPercent ?? null)
+  if (!snapshot || !item.entryPremiumPerContract || !item.contracts) {
+    return { targetReached: false, pnlPercent: '0', maxProfit: '0', targetPercent }
+  }
+  const { pnlPercent, maxProfit } = computeUnrealizedPnl({
+    entryPremium: item.entryPremiumPerContract,
+    currentMid: snapshot.mid,
+    contracts: item.contracts
+  })
+  const targetReached = new Decimal(pnlPercent).gte(targetPercent)
+  return { targetReached, pnlPercent, maxProfit, targetPercent }
+}
+
+export function PositionRow({
+  item,
+  index,
+  isClosed,
+  quote,
+  session,
+  snapshot
+}: Props): React.JSX.Element {
   const closed = isClosed ?? item.status === 'CLOSED'
   const dteUrgent = item.dte !== null && item.dte <= 7
   const dteClass = dteUrgent
@@ -27,6 +67,18 @@ export function PositionRow({ item, index, isClosed, quote, session }: Props): R
     '--wb-row-bg': index % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)',
     '--wb-row-phase-color': PHASE_COLOR[item.phase]
   } as React.CSSProperties
+
+  const effectiveSnapshot = closed ? undefined : snapshot
+  const display = deriveRowDisplay(item, effectiveSnapshot)
+
+  const optMidLeg = isOptionInstrument(item.instrumentType)
+    ? { instrumentType: item.instrumentType }
+    : null
+
+  const pnlLeg =
+    item.entryPremiumPerContract && item.contracts !== null
+      ? { contracts: item.contracts, entryPremiumPerContract: item.entryPremiumPerContract }
+      : null
 
   return (
     <tr
@@ -39,9 +91,17 @@ export function PositionRow({ item, index, isClosed, quote, session }: Props): R
     >
       <TableCell className={CELL_CLASS}>
         <div className="flex flex-col gap-[1px]">
-          <span className="font-wb-mono font-bold text-sm text-wb-text-primary tracking-[0.02em]">
-            {item.ticker}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="font-wb-mono font-bold text-sm text-wb-text-primary tracking-[0.02em]">
+              {item.ticker}
+            </span>
+            <TargetBadge
+              targetReached={display.targetReached}
+              pnlPercent={display.pnlPercent}
+              maxProfit={display.maxProfit}
+              targetPercent={display.targetPercent}
+            />
+          </div>
           <span className="text-[0.65rem] text-wb-text-muted font-wb-mono">{item.status}</span>
         </div>
       </TableCell>
@@ -51,6 +111,10 @@ export function PositionRow({ item, index, isClosed, quote, session }: Props): R
       </TableCell>
 
       <PriceCell quote={quote} session={session} testId={`position-card-${item.ticker}-price`} />
+
+      <OptMidCell ticker={item.ticker} leg={optMidLeg} snapshot={effectiveSnapshot} />
+
+      <UnrealizedPnlCell ticker={item.ticker} leg={pnlLeg} snapshot={effectiveSnapshot} />
 
       <TableCell className={CELL_CLASS}>
         <span className={`${VALUE_CLASS} text-wb-text-primary`}>

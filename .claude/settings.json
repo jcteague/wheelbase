@@ -28,5 +28,8 @@
     "superpowers@claude-plugins-official": false,
     "code-simplifier@claude-plugins-official": true
   },
-  "plansDirectory": "plans"
+  "plansDirectory": "plans",
+  "permissions": {
+    "deny": ["Read(**/.env)", "Read(*.env)"]
+  }
 }

@@ -44,11 +44,11 @@ function createWindow(): void {
 function marketDataConfigFromEnv(): MarketDataConfig {
   return {
     provider: 'alpaca',
-    keyId: process.env.ALPACA_KEY_ID ?? '',
-    secretKey: process.env.ALPACA_SECRET_KEY ?? '',
-    paper: process.env.ALPACA_PAPER !== 'false',
-    dataFeed: process.env.ALPACA_DATA_FEED,
-    optionFeed: process.env.ALPACA_OPTION_FEED
+    keyId: import.meta.env.MAIN_VITE_ALPACA_KEY_ID ?? '',
+    secretKey: import.meta.env.MAIN_VITE_ALPACA_SECRET_KEY ?? '',
+    paper: import.meta.env.MAIN_VITE_ALPACA_PAPER !== 'false',
+    dataFeed: import.meta.env.MAIN_VITE_ALPACA_DATA_FEED,
+    optionFeed: import.meta.env.MAIN_VITE_ALPACA_OPTION_FEED
   }
 }
 

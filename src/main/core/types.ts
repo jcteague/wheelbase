@@ -37,3 +37,11 @@ export type WheelPhase = z.infer<typeof WheelPhase>
 export type LegRole = z.infer<typeof LegRole>
 export type LegAction = z.infer<typeof LegAction>
 export type InstrumentType = z.infer<typeof InstrumentType>
+
+export type OptionInstrumentType = Extract<InstrumentType, 'PUT' | 'CALL'>
+
+export function isOptionInstrument(
+  value: string | null | undefined
+): value is OptionInstrumentType {
+  return value === 'PUT' || value === 'CALL'
+}

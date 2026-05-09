@@ -270,6 +270,43 @@ export function calculateRollBasis(input: RollBasisInput): RollBasisResult {
   }
 }
 
+export interface UnrealizedPnlInput {
+  entryPremium: string
+  currentMid: string
+  contracts: number
+}
+
+export interface UnrealizedPnlResult {
+  pnl: string
+  pnlPercent: string
+  maxProfit: string
+}
+
+export function computeUnrealizedPnl(input: UnrealizedPnlInput): UnrealizedPnlResult {
+  const entry = new Decimal(input.entryPremium)
+  if (!entry.isFinite() || entry.lte(0)) {
+    throw new Error('entryPremium must be > 0')
+  }
+  const current = new Decimal(input.currentMid)
+  if (!current.isFinite() || current.lt(0)) {
+    throw new Error('currentMid must be >= 0')
+  }
+  if (!Number.isInteger(input.contracts) || input.contracts < 1) {
+    throw new Error('contracts must be a positive integer')
+  }
+
+  const shares = sharesFromContracts(input.contracts)
+  const maxProfitDec = entry.times(shares)
+  const pnlDec = entry.minus(current).times(shares)
+  const pnlPercentDec = pnlDec.dividedBy(maxProfitDec).times(100)
+
+  return {
+    pnl: round4(pnlDec).toFixed(4),
+    pnlPercent: round4(pnlPercentDec).toFixed(4),
+    maxProfit: round4(maxProfitDec).toFixed(4)
+  }
+}
+
 export function calculateCallAway(input: CallAwayInput): CallAwayResult {
   const ccStrike = new Decimal(input.ccStrike)
   const basisPerShare = new Decimal(input.basisPerShare)

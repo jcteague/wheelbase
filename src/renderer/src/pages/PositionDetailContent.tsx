@@ -1,11 +1,14 @@
+import type { OptionSnapshot } from '../api/market-data'
 import type { PositionDetail } from '../api/positions'
 import { CloseCspForm } from '../components/CloseCspForm'
 import { LegHistoryTable } from '../components/LegHistoryTable'
 import { Caption } from '../components/ui/Caption'
 import { SectionCard } from '../components/ui/SectionCard'
-import { StatGrid } from '../components/ui/Stat'
-import { computeDte, fmtMoney, pnlColor } from '../lib/format'
+import { StatGrid, type StatProps } from '../components/ui/Stat'
+import { computeDte, fmtMoney, formatSignedMoney, pnlClass } from '../lib/format'
 import { deriveRunningBasis } from '../lib/deriveRunningBasis'
+import { formatPnlPercentForDisplay } from '../lib/option-display'
+import { computeUnrealizedPnl } from '../../../main/core/costbasis'
 
 const DETAIL_OVERLAY_STYLE: React.CSSProperties = {
   filter: 'blur(1.5px)',
@@ -17,6 +20,7 @@ const DETAIL_OVERLAY_STYLE: React.CSSProperties = {
 type PositionDetailContentProps = {
   detail: PositionDetail
   overlayOpen: boolean
+  snapshot?: OptionSnapshot
 }
 
 function NoteBlock({ label, text }: { label: string; text: string }): React.JSX.Element {
@@ -32,12 +36,62 @@ function NoteBlock({ label, text }: { label: string; text: string }): React.JSX.
 
 export function PositionDetailContent({
   detail,
-  overlayOpen
+  overlayOpen,
+  snapshot
 }: PositionDetailContentProps): React.JSX.Element {
   const { position, activeLeg, costBasisSnapshot, legs, allSnapshots } = detail
   const enrichedLegs = deriveRunningBasis(legs, allSnapshots ?? [])
   const dte = activeLeg ? computeDte(activeLeg.expiration) : null
   const dteUrgent = dte !== null && dte <= 7
+
+  const openLegStats: StatProps[] = activeLeg
+    ? [
+        {
+          label: 'Strike',
+          value: <span className="text-wb-gold">{fmtMoney(activeLeg.strike)}</span>
+        },
+        { label: 'Expiration', value: activeLeg.expiration },
+        {
+          label: 'DTE',
+          value: (
+            <span className={dteUrgent ? 'text-wb-gold' : ''}>
+              {dte !== null ? `${dte}d` : '—'}
+            </span>
+          )
+        },
+        { label: 'Contracts', value: activeLeg.contracts },
+        {
+          label: 'Premium / Contract',
+          value: <span className="text-wb-green">{fmtMoney(activeLeg.premiumPerContract)}</span>
+        },
+        { label: 'Fill Date', value: activeLeg.fillDate }
+      ]
+    : []
+
+  if (activeLeg && snapshot) {
+    const pnlResult = computeUnrealizedPnl({
+      entryPremium: activeLeg.premiumPerContract,
+      currentMid: snapshot.mid,
+      contracts: activeLeg.contracts
+    })
+    const pnlCls = pnlClass(pnlResult.pnl)
+    openLegStats.push(
+      {
+        label: 'Current Mid',
+        value: <span className="text-wb-text-primary">{fmtMoney(snapshot.mid)}</span>
+      },
+      {
+        label: 'Unrealized P&L',
+        value: <span className={pnlCls}>{formatSignedMoney(pnlResult.pnl)}</span>
+      },
+      {
+        label: '% of Max Profit',
+        value: (
+          <span className={pnlCls}>{`${formatPnlPercentForDisplay(pnlResult.pnlPercent)}%`}</span>
+        )
+      }
+    )
+  }
 
   return (
     <main
@@ -47,32 +101,7 @@ export function PositionDetailContent({
     >
       {activeLeg && (
         <SectionCard header="Open Leg">
-          <StatGrid
-            minWidth={110}
-            items={[
-              {
-                label: 'Strike',
-                value: <span className="text-wb-gold">{fmtMoney(activeLeg.strike)}</span>
-              },
-              { label: 'Expiration', value: activeLeg.expiration },
-              {
-                label: 'DTE',
-                value: (
-                  <span className={dteUrgent ? 'text-wb-gold' : ''}>
-                    {dte !== null ? `${dte}d` : '—'}
-                  </span>
-                )
-              },
-              { label: 'Contracts', value: activeLeg.contracts },
-              {
-                label: 'Premium / Contract',
-                value: (
-                  <span className="text-wb-green">{fmtMoney(activeLeg.premiumPerContract)}</span>
-                )
-              },
-              { label: 'Fill Date', value: activeLeg.fillDate }
-            ]}
-          />
+          <StatGrid minWidth={110} items={openLegStats} />
         </SectionCard>
       )}
 
@@ -100,7 +129,7 @@ export function PositionDetailContent({
                     {
                       label: 'Final P&L',
                       value: (
-                        <span style={{ color: pnlColor(costBasisSnapshot.finalPnl) }}>
+                        <span className={pnlClass(costBasisSnapshot.finalPnl)}>
                           {fmtMoney(costBasisSnapshot.finalPnl)}
                         </span>
                       )

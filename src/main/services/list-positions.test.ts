@@ -2,6 +2,9 @@ import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import type { CreatePositionPayload } from '../schemas'
 import { makeTestDb, isoDate } from '../test-utils'
+import { assignCspPosition } from './assign-csp-position'
+import { closeCspPosition } from './close-csp-position'
+import { openCoveredCallPosition } from './open-covered-call-position'
 import { createPosition, listPositions } from './positions'
 import { rollCspPosition } from './roll-csp-position'
 
@@ -170,5 +173,133 @@ describe('listPositions', () => {
     const items = listPositions(db)
     expect(items[items.length - 1].dte).toBeNull()
     expect(items[0].dte).toBeTypeOf('number')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// US-33 Area 3 — profit_target_percent column
+// ---------------------------------------------------------------------------
+
+describe('listPositions — profit target column', () => {
+  it('returns profitTargetPercent: null when not set', () => {
+    const db = makeTestDb()
+    createPosition(db, VALID_PAYLOAD)
+    const items = listPositions(db)
+    expect(items).toHaveLength(1)
+    expect(items[0].profitTargetPercent).toBeNull()
+  })
+
+  it('returns profitTargetPercent: 25 when override is set', () => {
+    const db = makeTestDb()
+    const { position } = createPosition(db, VALID_PAYLOAD)
+
+    db.prepare('UPDATE positions SET profit_target_percent = ? WHERE id = ?').run(25, position.id)
+
+    const items = listPositions(db)
+    expect(items).toHaveLength(1)
+    expect(items[0].profitTargetPercent).toBe(25)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// US-33 Area 4 — instrumentType, contracts, entryPremiumPerContract
+// ---------------------------------------------------------------------------
+
+describe('listPositions — option leg fields (US-33 Area 4)', () => {
+  it('returns instrumentType "PUT" for an open CSP', () => {
+    const db = makeTestDb()
+    createPosition(db, VALID_PAYLOAD)
+    const items = listPositions(db)
+    expect(items).toHaveLength(1)
+    expect(items[0].instrumentType).toBe('PUT')
+  })
+
+  it('returns instrumentType "CALL" for an open CC', () => {
+    const db = makeTestDb()
+    const created = createPosition(db, {
+      ticker: 'AAPL',
+      strike: 180,
+      expiration: isoDate(30),
+      contracts: 1,
+      premiumPerContract: 3.5,
+      fillDate: '2026-01-03'
+    })
+    assignCspPosition(db, created.position.id, {
+      positionId: created.position.id,
+      assignmentDate: '2026-01-17'
+    })
+    openCoveredCallPosition(db, created.position.id, {
+      positionId: created.position.id,
+      strike: 182,
+      expiration: isoDate(45),
+      contracts: 1,
+      premiumPerContract: 2.3,
+      fillDate: isoDate(0)
+    })
+
+    const items = listPositions(db)
+    expect(items).toHaveLength(1)
+    expect(items[0].instrumentType).toBe('CALL')
+  })
+
+  it('returns instrumentType null for HOLDING_SHARES', () => {
+    const db = makeTestDb()
+    const created = createPosition(db, {
+      ticker: 'AAPL',
+      strike: 180,
+      expiration: isoDate(30),
+      contracts: 1,
+      premiumPerContract: 3.5,
+      fillDate: '2026-01-03'
+    })
+    assignCspPosition(db, created.position.id, {
+      positionId: created.position.id,
+      assignmentDate: '2026-01-17'
+    })
+
+    const items = listPositions(db)
+    expect(items).toHaveLength(1)
+    expect(items[0].phase).toBe('HOLDING_SHARES')
+    expect(items[0].instrumentType).toBeNull()
+    expect(items[0].contracts).toBeNull()
+    expect(items[0].entryPremiumPerContract).toBeNull()
+  })
+
+  it('returns instrumentType null for closed positions', () => {
+    const db = makeTestDb()
+    const { position } = createPosition(db, {
+      ticker: 'AAPL',
+      strike: 180,
+      expiration: isoDate(30),
+      contracts: 1,
+      premiumPerContract: 2.5,
+      fillDate: isoDate(0)
+    })
+    closeCspPosition(db, position.id, {
+      positionId: position.id,
+      closePricePerContract: 1.0,
+      fillDate: isoDate(5)
+    })
+
+    const items = listPositions(db)
+    expect(items).toHaveLength(1)
+    expect(items[0].instrumentType).toBeNull()
+    expect(items[0].contracts).toBeNull()
+    expect(items[0].entryPremiumPerContract).toBeNull()
+  })
+
+  it('returns contracts and entryPremiumPerContract from the active leg', () => {
+    const db = makeTestDb()
+    createPosition(db, {
+      ticker: 'AAPL',
+      strike: 180,
+      expiration: isoDate(30),
+      contracts: 1,
+      premiumPerContract: 3.5
+    })
+    const items = listPositions(db)
+    expect(items).toHaveLength(1)
+    expect(items[0].contracts).toBe(1)
+    expect(items[0].entryPremiumPerContract).toBe('3.5000')
   })
 })

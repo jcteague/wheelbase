@@ -42,6 +42,9 @@ A trader can open, manage, and close Poor Man's Covered Call positions with the 
 - [ ] US-66: Display PMCC-specific leg timeline on position detail
 - [ ] US-67: Add PMCC screening criteria to candidate screener
 - [ ] US-68: Handle PMCC short call assignment (exercise LEAPS to cover)
+- [ ] US-93: Display IVR on PMCC position card for both LEAPS underlying and short call context (consumes Epic 12 service)
+- [ ] US-94: Show IV term-structure context on PMCC entry form — favors low front-month IV when buying LEAPS, high front-month IV when selling the short call (diagonal efficiency signal)
+- [ ] US-95: Surface IVR context inside PMCC short-call roll dialog (parallels US-89 for the wheel CC roll)
 
 ## Dependencies
 
@@ -50,6 +53,7 @@ A trader can open, manage, and close Poor Man's Covered Call positions with the 
 - Epic 06: Live Market Data (option chains for dual selector)
 - Epic 07: Management Alerts (PMCC alert rules extend the engine)
 - Epic 08: Candidate Screener (PMCC criteria extend the screener)
+- Epic 12: Volatility Analytics (IVR/IVP data feed for PMCC card and roll dialog)
 
 ## Strategy
 

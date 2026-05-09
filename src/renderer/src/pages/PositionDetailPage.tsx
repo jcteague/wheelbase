@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useParams } from 'wouter'
 import { AssignmentSheet } from '../components/AssignmentSheet'
 import { CallAwaySheet } from '../components/CallAwaySheet'
@@ -13,13 +14,52 @@ import { Breadcrumb } from '../components/ui/Breadcrumb'
 import { ErrorAlert } from '../components/ui/ErrorAlert'
 import { LoadingState } from '../components/ui/LoadingState'
 import { usePosition } from '../hooks/usePosition'
+import { useOptionSnapshots, type ActiveLegSummary } from '../hooks/useOptionSnapshots'
+import { buildOccSymbol } from '../../../shared/option-symbol'
+import { isOptionInstrument } from '../../../main/core/types'
 import { computeDte, fmtDate } from '../lib/format'
 import { PositionDetailContent } from './PositionDetailContent'
 import { usePositionDetailSheets } from './usePositionDetailSheets'
 
+function activeLegToSummary(detail: ReturnType<typeof usePosition>['data']): ActiveLegSummary[] {
+  if (!detail?.activeLeg) return []
+  const leg = detail.activeLeg
+  if (!isOptionInstrument(leg.instrumentType)) return []
+  const instrumentType = leg.instrumentType
+  return [
+    {
+      ticker: detail.position.ticker,
+      expiration: leg.expiration,
+      strike: leg.strike,
+      instrumentType
+    }
+  ]
+}
+
 export function PositionDetailPage(): React.JSX.Element {
   const { id } = useParams<{ id: string }>()
   const { isLoading, isError, data } = usePosition(id)
+
+  const legSummaries = useMemo(() => activeLegToSummary(data), [data])
+  const optionSnapshotsQuery = useOptionSnapshots(legSummaries)
+
+  const activeSnapshot = useMemo(() => {
+    if (!data?.activeLeg) return undefined
+    const leg = data.activeLeg
+    if (leg.instrumentType !== 'PUT' && leg.instrumentType !== 'CALL') return undefined
+    if (!optionSnapshotsQuery.data) return undefined
+    try {
+      const occ = buildOccSymbol({
+        ticker: data.position.ticker,
+        expiration: leg.expiration,
+        strike: leg.strike,
+        instrumentType: leg.instrumentType
+      })
+      return optionSnapshotsQuery.data[occ]
+    } catch {
+      return undefined
+    }
+  }, [data, optionSnapshotsQuery.data])
 
   const {
     assignmentWaterfall,
@@ -91,7 +131,7 @@ export function PositionDetailPage(): React.JSX.Element {
         />
       }
     >
-      <PositionDetailContent detail={data} overlayOpen={overlayOpen} />
+      <PositionDetailContent detail={data} overlayOpen={overlayOpen} snapshot={activeSnapshot} />
       {expirationCtx?.activeLeg && expirationCtx.snapshot && (
         <ExpirationSheet
           open

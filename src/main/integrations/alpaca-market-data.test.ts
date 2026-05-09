@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   MarketDataError,
   type DataFeed,
@@ -8,12 +8,30 @@ import {
   type StreamEvent
 } from './market-data-provider'
 
-const mockGetStocksQuotesLatest = vi.fn()
-const mockGetStocksSnapshots = vi.fn()
-const mockGetOptionsSnapshots = vi.fn()
 const mockGetActivity = vi.fn()
 const mockGetAccount = vi.fn()
 const mockGetClock = vi.fn()
+
+// fetch mock for data API calls (getStockQuotes, getOptionSnapshots bypass the SDK)
+const mockFetch = vi.fn()
+
+function fetchOk(body: unknown): Response {
+  return {
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(body),
+    text: () => Promise.resolve(JSON.stringify(body))
+  } as unknown as Response
+}
+
+function fetchErr(status: number, body = ''): Response {
+  return {
+    ok: false,
+    status,
+    json: () => Promise.resolve({}),
+    text: () => Promise.resolve(body)
+  } as unknown as Response
+}
 
 // --- WebSocket & MessagePack mock infrastructure (hoisted for vi.mock access) ---
 const { mockSockets, mockDecode, MockWebSocket } = vi.hoisted(() => {
@@ -49,9 +67,6 @@ const { mockSockets, mockDecode, MockWebSocket } = vi.hoisted(() => {
 
 vi.mock('@alpacahq/typescript-sdk', () => ({
   createClient: vi.fn(() => ({
-    getStocksQuotesLatest: mockGetStocksQuotesLatest,
-    getStocksSnapshots: mockGetStocksSnapshots,
-    getOptionsSnapshots: mockGetOptionsSnapshots,
     getActivity: mockGetActivity,
     getAccount: mockGetAccount,
     getClock: mockGetClock
@@ -84,22 +99,37 @@ function createProvider(overrides: Record<string, unknown> = {}): AlpacaMarketDa
 describe('AlpacaMarketDataProvider — REST Methods', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubGlobal('fetch', mockFetch)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   // === Stock Quotes ===
 
+  function stockSnapshotResponse(
+    tickers: Record<string, { bp: number; ap: number; t: string; prevClose: number }>
+  ): Response {
+    const body: Record<string, unknown> = {}
+    for (const [symbol, q] of Object.entries(tickers)) {
+      body[symbol] = {
+        latestQuote: { bp: q.bp, ap: q.ap, t: q.t },
+        prevDailyBar: { c: q.prevClose }
+      }
+    }
+    // /v2/stocks/snapshots returns tickers as top-level keys (no "snapshots" wrapper)
+    return fetchOk(body)
+  }
+
   describe('getStockQuotes', () => {
     it('returns map of ticker to StockQuote for valid tickers', async () => {
-      mockGetStocksSnapshots.mockResolvedValue({
-        AAPL: {
-          latest_quote: { bp: 172.6, ap: 172.7, t: '2026-04-25T20:00:00Z' },
-          prev_daily_bar: { c: 170.0 }
-        },
-        MSFT: {
-          latest_quote: { bp: 420.5, ap: 420.6, t: '2026-04-25T20:00:00Z' },
-          prev_daily_bar: { c: 415.0 }
-        }
-      })
+      mockFetch.mockResolvedValue(
+        stockSnapshotResponse({
+          AAPL: { bp: 172.6, ap: 172.7, t: '2026-04-25T20:00:00Z', prevClose: 170.0 },
+          MSFT: { bp: 420.5, ap: 420.6, t: '2026-04-25T20:00:00Z', prevClose: 415.0 }
+        })
+      )
 
       const provider = createProvider()
       const result = await provider.getStockQuotes(['AAPL', 'MSFT'])
@@ -117,12 +147,11 @@ describe('AlpacaMarketDataProvider — REST Methods', () => {
     })
 
     it('omits unknown tickers from result', async () => {
-      mockGetStocksSnapshots.mockResolvedValue({
-        AAPL: {
-          latest_quote: { bp: 172.6, ap: 172.7, t: '2026-04-25T20:00:00Z' },
-          prev_daily_bar: { c: 170.0 }
-        }
-      })
+      mockFetch.mockResolvedValue(
+        stockSnapshotResponse({
+          AAPL: { bp: 172.6, ap: 172.7, t: '2026-04-25T20:00:00Z', prevClose: 170.0 }
+        })
+      )
 
       const provider = createProvider()
       const result = await provider.getStockQuotes(['AAPL', 'ZZZZZ'])
@@ -132,30 +161,24 @@ describe('AlpacaMarketDataProvider — REST Methods', () => {
     })
 
     it('returns price as string with 2 decimal places', async () => {
-      mockGetStocksSnapshots.mockResolvedValue({
-        AAPL: {
-          latest_quote: { bp: 172.5, ap: 172.5, t: '2026-04-25T20:00:00Z' },
-          prev_daily_bar: { c: 170.0 }
-        }
-      })
+      mockFetch.mockResolvedValue(
+        stockSnapshotResponse({
+          AAPL: { bp: 172.5, ap: 172.5, t: '2026-04-25T20:00:00Z', prevClose: 170.0 }
+        })
+      )
 
       const provider = createProvider()
       const result = await provider.getStockQuotes(['AAPL'])
 
       expect(result.get('AAPL')!.price).toBe('172.50')
     })
-  })
 
-  // === Stock Quotes — snapshot API ===
-
-  describe('getStockQuotes — snapshot API', () => {
     it('returns prevClose from prev_daily_bar.c', async () => {
-      mockGetStocksSnapshots.mockResolvedValue({
-        AAPL: {
-          latest_quote: { bp: 182.44, ap: 182.46, t: '2026-04-27T14:00:00Z' },
-          prev_daily_bar: { c: 181.0 }
-        }
-      })
+      mockFetch.mockResolvedValue(
+        stockSnapshotResponse({
+          AAPL: { bp: 182.44, ap: 182.46, t: '2026-04-27T14:00:00Z', prevClose: 181.0 }
+        })
+      )
 
       const provider = createProvider()
       const result = await provider.getStockQuotes(['AAPL'])
@@ -164,12 +187,11 @@ describe('AlpacaMarketDataProvider — REST Methods', () => {
     })
 
     it('computes change as (mid − prevClose)', async () => {
-      mockGetStocksSnapshots.mockResolvedValue({
-        AAPL: {
-          latest_quote: { bp: 182.44, ap: 182.46, t: '2026-04-27T14:00:00Z' },
-          prev_daily_bar: { c: 181.0 }
-        }
-      })
+      mockFetch.mockResolvedValue(
+        stockSnapshotResponse({
+          AAPL: { bp: 182.44, ap: 182.46, t: '2026-04-27T14:00:00Z', prevClose: 181.0 }
+        })
+      )
 
       const provider = createProvider()
       const result = await provider.getStockQuotes(['AAPL'])
@@ -179,12 +201,11 @@ describe('AlpacaMarketDataProvider — REST Methods', () => {
     })
 
     it('computes changePercent as (change / prevClose)', async () => {
-      mockGetStocksSnapshots.mockResolvedValue({
-        AAPL: {
-          latest_quote: { bp: 182.44, ap: 182.46, t: '2026-04-27T14:00:00Z' },
-          prev_daily_bar: { c: 181.0 }
-        }
-      })
+      mockFetch.mockResolvedValue(
+        stockSnapshotResponse({
+          AAPL: { bp: 182.44, ap: 182.46, t: '2026-04-27T14:00:00Z', prevClose: 181.0 }
+        })
+      )
 
       const provider = createProvider()
       const result = await provider.getStockQuotes(['AAPL'])
@@ -194,12 +215,11 @@ describe('AlpacaMarketDataProvider — REST Methods', () => {
     })
 
     it('returns negative change when price is below prevClose', async () => {
-      mockGetStocksSnapshots.mockResolvedValue({
-        TSLA: {
-          latest_quote: { bp: 418.28, ap: 418.32, t: '2026-04-27T14:00:00Z' },
-          prev_daily_bar: { c: 420.0 }
-        }
-      })
+      mockFetch.mockResolvedValue(
+        stockSnapshotResponse({
+          TSLA: { bp: 418.28, ap: 418.32, t: '2026-04-27T14:00:00Z', prevClose: 420.0 }
+        })
+      )
 
       const provider = createProvider()
       const result = await provider.getStockQuotes(['TSLA'])
@@ -210,28 +230,24 @@ describe('AlpacaMarketDataProvider — REST Methods', () => {
       expect(result.get('TSLA')!.changePercent).toBe('-0.0040')
     })
 
-    it('omits unknown tickers from result (using getStocksSnapshots)', async () => {
-      // Reset the old API mock so it cannot accidentally provide data
-      mockGetStocksQuotesLatest.mockResolvedValue(undefined)
-      mockGetStocksSnapshots.mockResolvedValue({
-        AAPL: {
-          latest_quote: { bp: 182.44, ap: 182.46, t: '2026-04-27T14:00:00Z' },
-          prev_daily_bar: { c: 181.0 }
-        }
-      })
+    it('calls /v2/stocks/snapshots with iex feed by default', async () => {
+      mockFetch.mockResolvedValue(
+        stockSnapshotResponse({
+          AAPL: { bp: 182.44, ap: 182.46, t: '2026-04-27T14:00:00Z', prevClose: 181.0 }
+        })
+      )
 
       const provider = createProvider()
-      const result = await provider.getStockQuotes(['AAPL', 'ZZZZZ'])
+      await provider.getStockQuotes(['AAPL'])
 
-      expect(mockGetStocksSnapshots).toHaveBeenCalled()
-      expect(result.has('AAPL')).toBe(true)
-      expect(result.has('ZZZZZ')).toBe(false)
+      const calledUrl = mockFetch.mock.calls[0][0] as string
+      expect(calledUrl).toContain('data.alpaca.markets')
+      expect(calledUrl).toContain('/v2/stocks/snapshots')
+      expect(calledUrl).toContain('feed=iex')
     })
 
     it('throws MarketDataError(auth_failed) on 401', async () => {
-      mockGetStocksSnapshots.mockRejectedValue(
-        Object.assign(new Error('Unauthorized'), { status: 401 })
-      )
+      mockFetch.mockResolvedValue(fetchErr(401, 'Unauthorized'))
 
       const provider = createProvider()
       const thrown = await provider.getStockQuotes(['AAPL']).catch((e: unknown) => e)
@@ -241,7 +257,7 @@ describe('AlpacaMarketDataProvider — REST Methods', () => {
     })
 
     it('throws MarketDataError(network_error) on ECONNREFUSED', async () => {
-      mockGetStocksSnapshots.mockRejectedValue(
+      mockFetch.mockRejectedValue(
         Object.assign(new Error('fetch failed'), { cause: { code: 'ECONNREFUSED' } })
       )
 
@@ -258,32 +274,36 @@ describe('AlpacaMarketDataProvider — REST Methods', () => {
   describe('getOptionSnapshots', () => {
     const contractId = 'AAPL260516P00180000'
 
-    it('returns map of contractId to OptionSnapshot', async () => {
-      mockGetOptionsSnapshots.mockResolvedValue({
-        snapshots: {
-          [contractId]: {
-            latest_trade: { t: '2026-04-25T19:30:00Z', p: 4.2, s: 10, x: 'A', c: '' },
-            latest_quote: {
-              t: '2026-04-25T19:30:00Z',
-              bp: 4.15,
-              ap: 4.35,
-              bs: 50,
-              as: 30,
-              bx: 'A',
-              ax: 'A',
-              c: ''
-            },
-            greeks: {
-              delta: -0.4532,
-              gamma: 0.0234,
-              theta: -0.0567,
-              vega: 0.2345,
-              rho: 0.0123
-            },
-            impliedVolatility: 0.3456
-          }
+    function optionSnapshotResponse(
+      snaps: Record<string, { bp: number; ap: number; p: number; delta?: number; iv?: number }>
+    ): Response {
+      const snapshots: Record<string, unknown> = {}
+      for (const [sym, s] of Object.entries(snaps)) {
+        snapshots[sym] = {
+          latest_trade: { t: '2026-04-25T19:30:00Z', p: s.p, s: 10, x: 'A', c: '' },
+          latest_quote: {
+            t: '2026-04-25T19:30:00Z',
+            bp: s.bp,
+            ap: s.ap,
+            bs: 50,
+            as: 30,
+            bx: 'A',
+            ax: 'A',
+            c: ''
+          },
+          greeks: { delta: s.delta ?? -0.45, gamma: 0.02, theta: -0.05, vega: 0.23, rho: 0.01 },
+          impliedVolatility: s.iv ?? 0.35
         }
-      })
+      }
+      return fetchOk({ snapshots })
+    }
+
+    it('returns map of contractId to OptionSnapshot', async () => {
+      mockFetch.mockResolvedValue(
+        optionSnapshotResponse({
+          [contractId]: { bp: 4.15, ap: 4.35, p: 4.2, delta: -0.4532, iv: 0.3456 }
+        })
+      )
 
       const provider = createProvider()
       const result = await provider.getOptionSnapshots([contractId])
@@ -300,31 +320,9 @@ describe('AlpacaMarketDataProvider — REST Methods', () => {
     })
 
     it('computes mid as (bid + ask) / 2', async () => {
-      mockGetOptionsSnapshots.mockResolvedValue({
-        snapshots: {
-          [contractId]: {
-            latest_trade: { t: '2026-04-25T19:30:00Z', p: 4.25, s: 10, x: 'A', c: '' },
-            latest_quote: {
-              t: '2026-04-25T19:30:00Z',
-              bp: 4.15,
-              ap: 4.35,
-              bs: 50,
-              as: 30,
-              bx: 'A',
-              ax: 'A',
-              c: ''
-            },
-            greeks: {
-              delta: -0.45,
-              gamma: 0.02,
-              theta: -0.05,
-              vega: 0.23,
-              rho: 0.01
-            },
-            impliedVolatility: 0.35
-          }
-        }
-      })
+      mockFetch.mockResolvedValue(
+        optionSnapshotResponse({ [contractId]: { bp: 4.15, ap: 4.35, p: 4.25 } })
+      )
 
       const provider = createProvider()
       const result = await provider.getOptionSnapshots([contractId])
@@ -333,31 +331,9 @@ describe('AlpacaMarketDataProvider — REST Methods', () => {
     })
 
     it('sets openInterest and volume to null', async () => {
-      mockGetOptionsSnapshots.mockResolvedValue({
-        snapshots: {
-          [contractId]: {
-            latest_trade: { t: '2026-04-25T19:30:00Z', p: 4.2, s: 10, x: 'A', c: '' },
-            latest_quote: {
-              t: '2026-04-25T19:30:00Z',
-              bp: 4.15,
-              ap: 4.35,
-              bs: 50,
-              as: 30,
-              bx: 'A',
-              ax: 'A',
-              c: ''
-            },
-            greeks: {
-              delta: -0.45,
-              gamma: 0.02,
-              theta: -0.05,
-              vega: 0.23,
-              rho: 0.01
-            },
-            impliedVolatility: 0.35
-          }
-        }
-      })
+      mockFetch.mockResolvedValue(
+        optionSnapshotResponse({ [contractId]: { bp: 4.15, ap: 4.35, p: 4.2 } })
+      )
 
       const provider = createProvider()
       const result = await provider.getOptionSnapshots([contractId])
@@ -551,10 +527,9 @@ describe('AlpacaMarketDataProvider — REST Methods', () => {
     })
 
     it('throws MarketDataError with code network_error on connection failure', async () => {
-      const error = Object.assign(new Error('fetch failed'), {
-        cause: { code: 'ECONNREFUSED' }
-      })
-      mockGetStocksSnapshots.mockRejectedValue(error)
+      mockFetch.mockRejectedValue(
+        Object.assign(new Error('fetch failed'), { cause: { code: 'ECONNREFUSED' } })
+      )
 
       const provider = createProvider()
       const thrown = await provider.getStockQuotes(['AAPL']).catch((e: unknown) => e)
@@ -565,12 +540,14 @@ describe('AlpacaMarketDataProvider — REST Methods', () => {
     })
 
     it('handles unknown ticker gracefully (no error)', async () => {
-      mockGetStocksSnapshots.mockResolvedValue({
-        AAPL: {
-          latest_quote: { bp: 172.6, ap: 172.7, t: '2026-04-25T20:00:00Z' },
-          prev_daily_bar: { c: 170.0 }
-        }
-      })
+      mockFetch.mockResolvedValue(
+        fetchOk({
+          AAPL: {
+            latestQuote: { bp: 172.6, ap: 172.7, t: '2026-04-25T20:00:00Z' },
+            prevDailyBar: { c: 170.0 }
+          }
+        })
+      )
 
       const provider = createProvider()
       await expect(provider.getStockQuotes(['AAPL', 'ZZZZZ'])).resolves.toBeDefined()

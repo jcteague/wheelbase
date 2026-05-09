@@ -16,6 +16,7 @@ export async function handleIpcCall<T extends object>(
       return { ok: false, errors: [{ field: err.field, code: err.code, message: err.message }] }
     }
     if (err instanceof MarketDataError) {
+      logger.error({ code: err.code, message: err.message }, logLabel)
       return { ok: false, errors: [{ field: '__root__', code: err.code, message: err.message }] }
     }
     if (err instanceof ZodError) {

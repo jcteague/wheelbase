@@ -40,7 +40,8 @@ describe('runMigrations', () => {
       '001_initial_schema.sql',
       '002_add_query_indexes.sql',
       '003_rename_option_type_to_instrument_type.sql',
-      '004_add_trigger_event_to_snapshots.sql'
+      '004_add_trigger_event_to_snapshots.sql',
+      '005_add_profit_target_percent.sql'
     ])
   })
 
@@ -145,5 +146,20 @@ describe('runMigrations', () => {
     expect(() => db.prepare('SELECT option_type FROM legs').get()).toThrow(
       /no such column: option_type/i
     )
+  })
+
+  it('migration 005 adds profit_target_percent column to positions table', () => {
+    const db = makeTestDb()
+
+    const cols = db.prepare(`PRAGMA table_info(positions)`).all() as {
+      name: string
+      type: string
+      notnull: number
+    }[]
+
+    const profitTargetCol = cols.find((c) => c.name === 'profit_target_percent')
+    expect(profitTargetCol).toBeDefined()
+    expect(profitTargetCol?.type).toBe('INTEGER')
+    expect(profitTargetCol?.notnull).toBe(0)
   })
 })

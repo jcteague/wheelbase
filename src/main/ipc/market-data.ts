@@ -1,5 +1,9 @@
 import { ipcMain, type BrowserWindow } from 'electron'
-import { GetStockQuotesPayloadSchema, SetStockQuoteTickersPayloadSchema } from '../schemas'
+import {
+  GetOptionSnapshotsPayloadSchema,
+  GetStockQuotesPayloadSchema,
+  SetStockQuoteTickersPayloadSchema
+} from '../schemas'
 import {
   type MarketDataProvider,
   type StockQuote,
@@ -9,6 +13,7 @@ import { fakeStockTickSubject } from '../integrations/fake-market-data'
 import {
   fetchStockQuotes,
   fetchMarketStatus,
+  fetchOptionSnapshots,
   subscribeToStockQuotes,
   newStreamState
 } from '../services/market-data'
@@ -47,6 +52,13 @@ export function registerMarketDataHandlers(
     handleIpcCall('market_data_market_status_unhandled_error', async () => {
       const status = await fetchMarketStatus(provider)
       return { status }
+    })
+  )
+
+  ipcMain.handle('market-data:option-snapshots', (_, payload: unknown) =>
+    handleIpcCall('market_data_option_snapshots_unhandled_error', async () => {
+      const { symbols } = GetOptionSnapshotsPayloadSchema.parse(payload)
+      return fetchOptionSnapshots(provider, symbols)
     })
   )
 

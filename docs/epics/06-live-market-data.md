@@ -88,5 +88,5 @@ Both
 - Option chain browsing for trade entry (Epic 10)
 - Candidate screening (Epic 08)
 - WebSocket streaming (polling is sufficient for Phase 2)
-- IV rank / IV percentile (requires historical IV data)
+- IV rank / IV percentile — see Epic 12 (Volatility Analytics and IV-Aware Management) for snapshot store, IVR/IVP computation, and consumption surfaces
 - Greeks-based alerts (Epic 08 — Alert Engine)
