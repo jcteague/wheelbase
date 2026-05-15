@@ -294,6 +294,30 @@ describe('useStockQuotes', () => {
     }
   })
 
+  it('flips stale=true immediately when a stream error occurs', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    mockGetStockQuotes.mockResolvedValue({ ok: true, quotes: { AAPL: AAPL_QUOTE } })
+
+    const { result } = renderHook(() => useStockQuotes(['AAPL']), {
+      wrapper: makeWrapper(queryClient)
+    })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.stale).toBe(false)
+
+    act(() => {
+      onStreamErrorCallback?.({
+        feed: 'stockQuotes',
+        code: 'stream_disconnected',
+        message: 'Connection lost',
+        reconnectable: true
+      })
+    })
+
+    await waitFor(() => expect(result.current.stale).toBe(true))
+    expect(result.current.streamError?.code).toBe('stream_disconnected')
+  })
+
   it('tick for a ticker not in cache adds the entry with prevClose: null', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     mockGetStockQuotes.mockResolvedValue({ ok: true, quotes: { AAPL: AAPL_QUOTE } })

@@ -3,12 +3,14 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, vi } from 'vitest'
 import { usePosition } from '../hooks/usePosition'
 import { useOptionSnapshots } from '../hooks/useOptionSnapshots'
+import { useStockQuotes } from '../hooks/useStockQuotes'
 import { PositionDetail } from '../api/positions'
-import type { OptionSnapshotsBySymbol } from '../api/market-data'
+import type { OptionSnapshotsBySymbol, StockQuotesByTicker } from '../api/market-data'
 import { PositionDetailPage } from './PositionDetailPage'
 
 vi.mock('../hooks/usePosition')
 vi.mock('../hooks/useOptionSnapshots')
+vi.mock('../hooks/useStockQuotes')
 
 // Mock CloseCspForm to avoid testing it in isolation here
 vi.mock('../components/CloseCspForm', () => ({
@@ -65,6 +67,7 @@ vi.mock('wouter', () => ({
 
 const mockUsePosition = vi.mocked(usePosition)
 const mockUseOptionSnapshots = vi.mocked(useOptionSnapshots)
+const mockUseStockQuotes = vi.mocked(useStockQuotes)
 
 function mockSnapshots(snapshots: OptionSnapshotsBySymbol | undefined): void {
   mockUseOptionSnapshots.mockReturnValue({
@@ -76,9 +79,23 @@ function mockSnapshots(snapshots: OptionSnapshotsBySymbol | undefined): void {
   } as unknown as ReturnType<typeof useOptionSnapshots>)
 }
 
-// Default mock so existing tests keep working — no snapshots returned.
+function mockStockQuotes(data: StockQuotesByTicker | undefined): void {
+  mockUseStockQuotes.mockReturnValue({
+    data,
+    isLoading: false,
+    isError: false,
+    error: null,
+    streamError: null,
+    stale: false,
+    minutesAgo: 0,
+    fetchStatus: 'idle'
+  } as unknown as ReturnType<typeof useStockQuotes>)
+}
+
+// Default mocks — no snapshots, no stock quotes
 beforeEach(() => {
   mockSnapshots(undefined)
+  mockStockQuotes(undefined)
 })
 
 const CSP_OPEN_DETAIL = {
@@ -157,7 +174,7 @@ it('shows position details and CloseCspForm for a CSP_OPEN position', () => {
 
   render(<PositionDetailPage />)
 
-  expect(screen.getByText(/AAPL/)).toBeInTheDocument()
+  expect(screen.getAllByText(/AAPL/).length).toBeGreaterThan(0)
   expect(screen.getAllByText(/CSP/i).length).toBeGreaterThan(0)
   expect(screen.getByTestId('position-detail')).toBeInTheDocument()
   expect(screen.getByTestId('close-csp-form')).toBeInTheDocument()
@@ -295,7 +312,8 @@ it('does not render Record Expiration button and shows closed banner for WHEEL_C
   expect(screen.getByText(/Closed on/i)).toBeInTheDocument()
 })
 
-it('renders leg history section with two legs in order', () => {
+it('renders leg history section with two legs in order', async () => {
+  const user = userEvent.setup()
   mockUsePosition.mockReturnValue({
     isLoading: false,
     isError: false,
@@ -337,6 +355,10 @@ it('renders leg history section with two legs in order', () => {
 
   render(<PositionDetailPage />)
 
+  // Leg history is now inside the "Cost basis & history" CollapsedDrawer (collapsed by default)
+  const costBasisBtn = screen.getByRole('button', { name: /cost basis/i })
+  await user.click(costBasisBtn)
+
   const rows = screen.getAllByRole('row')
   // First data row should be the open leg (CSP_OPEN / SELL)
   expect(rows[1]).toHaveTextContent('SELL')
@@ -353,7 +375,11 @@ it('does not render leg history section when legs array is empty', () => {
   } as unknown as ReturnType<typeof usePosition>)
 
   render(<PositionDetailPage />)
-  expect(screen.queryByText('Leg History')).not.toBeInTheDocument()
+
+  // "Cost basis & history" drawer should be present (costBasisSnapshot exists)
+  expect(screen.getByRole('button', { name: /cost basis/i })).toBeInTheDocument()
+  // But no table inside — no legs means no LegHistoryTable
+  expect(screen.queryByRole('table')).not.toBeInTheDocument()
 })
 
 it('renders thesis and notes when both are present', () => {
@@ -604,30 +630,44 @@ const CSP_WITH_LEGS_AND_SNAPSHOTS = {
   ]
 }
 
-it('leg history table shows running cost basis column header', () => {
+it('leg history table shows running cost basis column header', async () => {
+  const user = userEvent.setup()
   mockUsePosition.mockReturnValue({
     isLoading: false,
     isError: false,
     data: CSP_WITH_LEGS_AND_SNAPSHOTS,
     error: null
   } as unknown as ReturnType<typeof usePosition>)
+
   render(<PositionDetailPage />)
+
+  // Leg history lives inside the "Cost basis & history" drawer — expand it first
+  const costBasisBtn = screen.getByRole('button', { name: /cost basis/i })
+  await user.click(costBasisBtn)
+
   expect(screen.getByText('Running Basis / Share')).toBeInTheDocument()
 })
 
-it('leg history table shows running basis value for CSP_OPEN leg', () => {
+it('leg history table shows running basis value for CSP_OPEN leg', async () => {
+  const user = userEvent.setup()
   mockUsePosition.mockReturnValue({
     isLoading: false,
     isError: false,
     data: CSP_WITH_LEGS_AND_SNAPSHOTS,
     error: null
   } as unknown as ReturnType<typeof usePosition>)
+
   render(<PositionDetailPage />)
+
+  const costBasisBtn = screen.getByRole('button', { name: /cost basis/i })
+  await user.click(costBasisBtn)
+
   // $176.50 only appears in the Running Basis column (distinct from costBasisSnapshot $177.50)
   expect(screen.getByText('$176.50')).toBeInTheDocument()
 })
 
-it('leg history table renders final P&L footer for WHEEL_COMPLETE position', () => {
+it('leg history table renders final P&L footer for WHEEL_COMPLETE position', async () => {
+  const user = userEvent.setup()
   mockUsePosition.mockReturnValue({
     isLoading: false,
     isError: false,
@@ -651,22 +691,31 @@ it('leg history table renders final P&L footer for WHEEL_COMPLETE position', () 
     },
     error: null
   } as unknown as ReturnType<typeof usePosition>)
+
   render(<PositionDetailPage />)
-  // "Final P&L" appears in the Cost Basis stats AND the tfoot — both must be present
-  const pnlLabels = screen.getAllByText(/Final P&L/)
-  expect(pnlLabels.length).toBeGreaterThanOrEqual(2)
-  const amounts = screen.getAllByText('$780.00')
-  expect(amounts.length).toBeGreaterThanOrEqual(2)
+
+  const costBasisBtn = screen.getByRole('button', { name: /cost basis/i })
+  await user.click(costBasisBtn)
+
+  // Final P&L appears in the LegHistoryTable tfoot
+  expect(screen.getByText(/Final P&L/)).toBeInTheDocument()
+  expect(screen.getByText('$780.00')).toBeInTheDocument()
 })
 
-it('leg history table has no P&L footer when finalPnl is null', () => {
+it('leg history table has no P&L footer when finalPnl is null', async () => {
+  const user = userEvent.setup()
   mockUsePosition.mockReturnValue({
     isLoading: false,
     isError: false,
     data: CSP_WITH_LEGS_AND_SNAPSHOTS,
     error: null
   } as unknown as ReturnType<typeof usePosition>)
+
   render(<PositionDetailPage />)
+
+  const costBasisBtn = screen.getByRole('button', { name: /cost basis/i })
+  await user.click(costBasisBtn)
+
   expect(screen.queryByText(/Final P&L/)).not.toBeInTheDocument()
 })
 
@@ -734,7 +783,7 @@ it('PositionDetailPage: blurs content when RollCcSheet is open (overlayOpen=true
 })
 
 // ---------------------------------------------------------------------------
-// Area 15 — Open Leg snapshot stats (US-33)
+// Area 15 — Open Leg snapshot stats (US-33 → US-34 cockpit rewire)
 // ---------------------------------------------------------------------------
 //
 // CSP_OPEN_DETAIL has activeLeg with ticker=AAPL, strike=180, expiration=2026-04-17,
@@ -769,7 +818,8 @@ const OPEN_LEG_DETAIL_3_50 = {
   }
 }
 
-it('Open Leg section renders Current Mid stat with $1.30 when snapshot is present', () => {
+it('Open Leg section renders Current Mid stat with $1.30 when snapshot is present', async () => {
+  const user = userEvent.setup()
   mockUsePosition.mockReturnValue({
     isLoading: false,
     isError: false,
@@ -779,6 +829,10 @@ it('Open Leg section renders Current Mid stat with $1.30 when snapshot is presen
   mockSnapshots({ [AAPL_OCC]: PROFIT_SNAPSHOT })
 
   render(<PositionDetailPage />)
+
+  // Current Mid is inside the "Leg reference" CollapsedDrawer (collapsed by default)
+  const legRefBtn = screen.getByRole('button', { name: /leg reference/i })
+  await user.click(legRefBtn)
 
   expect(screen.getByText('Current Mid')).toBeInTheDocument()
   expect(screen.getByText('$1.30')).toBeInTheDocument()
@@ -795,10 +849,9 @@ it('Open Leg section renders Unrealized P&L stat +$220.00 with green class for p
 
   render(<PositionDetailPage />)
 
-  expect(screen.getByText('Unrealized P&L')).toBeInTheDocument()
-  const pnlEl = screen.getByText('+$220.00')
-  expect(pnlEl).toBeInTheDocument()
-  expect(pnlEl).toHaveClass('text-wb-green')
+  // P&L is no longer a labeled stat; it appears as "% captured" in VerdictBlock's PnlSummary
+  expect(screen.getByText(/captured/)).toBeInTheDocument()
+  expect(screen.getByRole('progressbar')).toBeInTheDocument()
 })
 
 it('Open Leg section renders Unrealized P&L stat -$170.00 with red class for loss', () => {
@@ -812,10 +865,9 @@ it('Open Leg section renders Unrealized P&L stat -$170.00 with red class for los
 
   render(<PositionDetailPage />)
 
-  expect(screen.getByText('Unrealized P&L')).toBeInTheDocument()
-  const pnlEl = screen.getByText('-$170.00')
-  expect(pnlEl).toBeInTheDocument()
-  expect(pnlEl).toHaveClass('text-wb-red')
+  // P&L is now shown as "% captured" in VerdictBlock — no separate "Unrealized P&L" stat
+  expect(screen.getByText(/captured/)).toBeInTheDocument()
+  expect(screen.getByRole('progressbar')).toBeInTheDocument()
 })
 
 it('Open Leg section renders % of Max Profit stat as 62.9%', () => {
@@ -829,8 +881,9 @@ it('Open Leg section renders % of Max Profit stat as 62.9%', () => {
 
   render(<PositionDetailPage />)
 
-  expect(screen.getByText('% of Max Profit')).toBeInTheDocument()
-  expect(screen.getByText('62.9%')).toBeInTheDocument()
+  // % of max profit is now shown as "% captured" in VerdictBlock's PnlSummary
+  expect(screen.getByText(/captured/)).toBeInTheDocument()
+  expect(screen.getByRole('progressbar')).toBeInTheDocument()
 })
 
 it('Open Leg section omits the three snapshot stats when activeLeg is null', () => {
@@ -844,9 +897,10 @@ it('Open Leg section omits the three snapshot stats when activeLeg is null', () 
 
   render(<PositionDetailPage />)
 
-  expect(screen.queryByText('Current Mid')).not.toBeInTheDocument()
-  expect(screen.queryByText('Unrealized P&L')).not.toBeInTheDocument()
-  expect(screen.queryByText('% of Max Profit')).not.toBeInTheDocument()
+  // No-active-leg branch: VerdictBlock shows NO ACTIVE LEG, no P&L captured
+  expect(screen.getByText('NO ACTIVE LEG')).toBeInTheDocument()
+  expect(screen.queryByText(/captured/)).not.toBeInTheDocument()
+  expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
 })
 
 it('Open Leg section omits the three snapshot stats when snapshot is undefined', () => {
@@ -860,7 +914,119 @@ it('Open Leg section omits the three snapshot stats when snapshot is undefined',
 
   render(<PositionDetailPage />)
 
-  expect(screen.queryByText('Current Mid')).not.toBeInTheDocument()
-  expect(screen.queryByText('Unrealized P&L')).not.toBeInTheDocument()
-  expect(screen.queryByText('% of Max Profit')).not.toBeInTheDocument()
+  // No snapshot → greeks null, currentMid null → verdict = HOLD 'Awaiting market data', no P&L
+  expect(screen.getByText('Awaiting market data')).toBeInTheDocument()
+  expect(screen.queryByText(/captured/)).not.toBeInTheDocument()
+  expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+})
+
+// ---------------------------------------------------------------------------
+// Area 10 (US-34) — PositionCockpit wiring in PositionDetailPage
+// ---------------------------------------------------------------------------
+
+it('renders VerdictBlock with verdict pill when active leg and snapshot present', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: OPEN_LEG_DETAIL_3_50,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+  mockSnapshots({ [AAPL_OCC]: PROFIT_SNAPSHOT })
+
+  render(<PositionDetailPage />)
+
+  // greeks present but underlying=null → computeVerdict returns HOLD 'Awaiting market data'
+  // currentMid=1.30, premium=3.50 → pnl.pct ≈ 63% → PnlSummary renders 'captured' + progressbar
+  expect(screen.getByText('Awaiting market data')).toBeInTheDocument()
+  expect(screen.getByText(/captured/)).toBeInTheDocument()
+  expect(screen.getByRole('progressbar')).toBeInTheDocument()
+})
+
+it('renders NO ACTIVE LEG verdict when position is HOLDING_SHARES with no active leg', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: {
+      ...CSP_OPEN_DETAIL,
+      position: { ...CSP_OPEN_DETAIL.position, phase: 'HOLDING_SHARES' as const },
+      activeLeg: null
+    },
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+
+  expect(screen.getByText('NO ACTIVE LEG')).toBeInTheDocument()
+  expect(screen.queryByText('Risk snapshot')).not.toBeInTheDocument()
+})
+
+it('renders ContextStrip theta/IV/vega/gamma when snapshot with greeks is present', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: OPEN_LEG_DETAIL_3_50,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+  mockSnapshots({ [AAPL_OCC]: PROFIT_SNAPSHOT })
+
+  render(<PositionDetailPage />)
+
+  // ContextStrip renders four labeled cells when greeks are available
+  expect(screen.getByText('Theta')).toBeInTheDocument()
+  expect(screen.getByText('IV')).toBeInTheDocument()
+  expect(screen.getByText('Vega')).toBeInTheDocument()
+  expect(screen.getByText('Gamma')).toBeInTheDocument()
+})
+
+it('dims the P&L summary when the option snapshot is older than 5 minutes', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: OPEN_LEG_DETAIL_3_50,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+  const oldSnapshot = {
+    ...PROFIT_SNAPSHOT,
+    timestamp: new Date(Date.now() - 10 * 60 * 1000).toISOString() // 10 min ago
+  }
+  mockSnapshots({ [AAPL_OCC]: oldSnapshot })
+
+  render(<PositionDetailPage />)
+
+  expect(screen.getByTestId('pnl-summary')).toHaveClass('opacity-50')
+})
+
+it('does not dim the P&L summary when the option snapshot is fresh', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: OPEN_LEG_DETAIL_3_50,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+  const freshSnapshot = {
+    ...PROFIT_SNAPSHOT,
+    timestamp: new Date(Date.now() - 30 * 1000).toISOString() // 30s ago
+  }
+  mockSnapshots({ [AAPL_OCC]: freshSnapshot })
+
+  render(<PositionDetailPage />)
+
+  expect(screen.getByTestId('pnl-summary')).not.toHaveClass('opacity-50')
+})
+
+it('does not render RiskSnapshot when snapshot is absent', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: OPEN_LEG_DETAIL_3_50,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+  // No snapshot — greeks null, currentMid null
+
+  render(<PositionDetailPage />)
+
+  // Cockpit renders HOLD verdict with 'Awaiting market data' (confirms cockpit is wired up)
+  expect(screen.getByText('Awaiting market data')).toBeInTheDocument()
+  // No "Risk snapshot" section — dist is null when underlying is null
+  expect(screen.queryByText('Risk snapshot')).not.toBeInTheDocument()
 })

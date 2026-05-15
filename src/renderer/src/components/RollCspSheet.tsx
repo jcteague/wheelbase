@@ -67,6 +67,7 @@ export interface RollCspSheetProps {
 
 export function RollCspSheet(props: RollCspSheetProps): React.JSX.Element | null {
   const [successState, setSuccessState] = useState<RollCspResponse | null>(null)
+  const [prevBasis, setPrevBasis] = useState<string>(props.basisPerShare)
   const { mutate, isPending } = useRollCsp({ onSuccess: setSuccessState })
 
   const {
@@ -93,6 +94,7 @@ export function RollCspSheet(props: RollCspSheetProps): React.JSX.Element | null
   if (!props.open) return null
 
   function onSubmit(values: RollCspFormValues): void {
+    setPrevBasis(props.basisPerShare)
     mutate({
       position_id: props.positionId,
       cost_to_close_per_contract: parseFloat(values.cost_to_close),
@@ -114,7 +116,7 @@ export function RollCspSheet(props: RollCspSheetProps): React.JSX.Element | null
           <RollCspSuccess
             response={successState}
             ticker={props.ticker}
-            prevBasisPerShare={props.basisPerShare}
+            prevBasisPerShare={prevBasis}
             onClose={props.onClose}
           />
         ) : (

@@ -86,10 +86,20 @@ describe('US-16: cost basis after sequential rolls', () => {
     await page.waitForSelector('text=CSP Rolled Successfully')
   }
 
-  /** Close the roll success sheet and return to position detail */
+  /** Expand the cost basis drawer if it is not already open */
+  async function expandCostBasisDrawer(page: Page): Promise<void> {
+    const btn = page.locator('button:has-text("Cost basis & history")')
+    const expanded = await btn.getAttribute('aria-expanded')
+    if (expanded !== 'true') {
+      await btn.click()
+    }
+  }
+
+  /** Close the roll success sheet, return to position detail, and ensure cost basis drawer is open */
   async function dismissRollSuccess(page: Page): Promise<void> {
     await page.click('[aria-label="Close sheet"]')
     await page.waitForSelector('[data-testid="position-detail"]')
+    await expandCostBasisDrawer(page)
   }
 
   /** Record assignment from the position detail page */
@@ -323,6 +333,9 @@ describe('US-16: cost basis after sequential rolls', () => {
     await doAssignment(page)
     await doOpenCc(page, { strike: '52', premium: '1.50', expiration: CC_EXPIRATION })
 
+    // Expand cost basis drawer (collapsed by default with an active leg)
+    await expandCostBasisDrawer(page)
+
     // Verify pre-roll basis
     let bodyText = await page.textContent('body')
     expect(bodyText).toContain('$46.50')
@@ -399,7 +412,6 @@ describe('US-16: cost basis after sequential rolls', () => {
       // The leg history table should show all events with Running Basis / Share column
       const bodyText = await page.textContent('body')
       expect(bodyText).toContain('Running Basis / Share')
-      expect(bodyText).toContain('Leg History')
 
       // Verify the table has rows for: CSP Open, Roll From, Roll To, Roll From, Roll To,
       // Assign, CC Open, Roll From, Roll To — at least 9 leg rows
@@ -493,6 +505,9 @@ describe('US-16: cost basis after sequential rolls', () => {
       await page.waitForSelector('text=CC OPEN')
       await page.click('text=View full position history')
       await page.waitForSelector('[data-testid="position-detail"]')
+
+      // Expand cost basis drawer (collapsed by default with an active leg)
+      await page.click('button:has-text("Cost basis & history")')
 
       // Verify basis after partial CC open: $48.00 - ($150 / 200) = $48.00 - $0.75 = $47.25
       let bodyText = await page.textContent('body')

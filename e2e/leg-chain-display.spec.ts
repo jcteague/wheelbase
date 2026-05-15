@@ -73,6 +73,12 @@ async function reachCcOpenStateWithExpiredCc(page: Page): Promise<string> {
 }
 
 async function getLegHistoryTable(page: Page): Promise<Locator> {
+  // Cost basis & history drawer is collapsed by default when an active leg is present
+  const drawerBtn = page.locator('button:has-text("Cost basis & history")')
+  const expanded = await drawerBtn.getAttribute('aria-expanded')
+  if (expanded !== 'true') {
+    await drawerBtn.click()
+  }
   await page.waitForSelector('text=Running Basis / Share')
   return page
     .locator('table')

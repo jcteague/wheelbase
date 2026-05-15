@@ -43,7 +43,9 @@
       "mcp__playwright__browser_click",
       "Bash(pnpm format *)",
       "Bash(pnpm test:e2e e2e/live-underlying-price.spec.ts)",
-      "Bash(pnpm test:e2e *)"
+      "Bash(pnpm test:e2e *)",
+      "Bash(pnpm typecheck:web)",
+      "WebFetch(domain:developer.tastytrade.com)"
     ]
   },
   "enableAllProjectMcpServers": true,

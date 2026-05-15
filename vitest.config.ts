@@ -41,7 +41,12 @@ export default defineConfig({
           name: 'renderer',
           environment: 'jsdom',
           globals: true,
-          include: ['src/renderer/**/*.test.tsx', 'src/renderer/**/*.test.ts'],
+          include: [
+            'src/renderer/**/*.test.tsx',
+            'src/renderer/**/*.test.ts',
+            'src/renderer/**/*.spec.tsx',
+            'src/renderer/**/*.spec.ts'
+          ],
           setupFiles: ['src/renderer/src/test-setup.ts']
         }
       }

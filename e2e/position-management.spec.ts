@@ -219,14 +219,18 @@ describe('US-3: position detail shows correct field values', () => {
     await page.click('text=AAPL')
     await page.waitForSelector('[data-testid="position-detail"]')
 
+    // Expand both cockpit drawers — content is not rendered when collapsed
+    await page.click('button:has-text("Leg reference")')
+    await page.click('button:has-text("Cost basis & history")')
+
     const bodyText = await page.textContent('[data-testid="position-detail"]')
 
-    // Open Leg fields
+    // Open Leg fields (strike visible in VerdictBlock; expiration & premium in "Leg reference" drawer)
     expect(bodyText).toContain('$180.00') // strike
     expect(bodyText).toContain(NEAR_ISO) // expiration
     expect(bodyText).toContain('$2.50') // premium per contract
 
-    // Cost Basis fields
+    // Cost Basis fields (in "Cost basis & history" drawer)
     expect(bodyText).toContain('$250.00') // premium collected = 2.50 × 1 × 100
     expect(bodyText).toContain('$177.50') // effective basis per share = 180 − 2.50
   })

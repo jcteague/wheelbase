@@ -283,7 +283,9 @@ describe('US-33: option mid-price and unrealized P&L for open legs', () => {
     expect(title).toContain('target is 25%')
   })
 
-  it('AC-6: Open Leg section on the detail page shows Current Mid, Unrealized P&L, and % of Max Profit stats', async () => {
+  it('AC-6: position detail cockpit shows captured P&L percentage, dollar amount, and current mid', async () => {
+    // SNAP_NORMAL: mid=1.30, premium=3.50, contracts=1
+    // captured = (3.50-1.30)*100 = $220, max = $350, pct = 62.86% → rounds to 63%
     dbPath = path.join(os.tmpdir(), `wb-e2e-us33-ac6-${Date.now()}.db`)
     app = await launchWithMocks(dbPath, { optionSnapshots: { [AAPL_OCC]: SNAP_NORMAL } })
     const page = await app.firstWindow()
@@ -292,14 +294,16 @@ describe('US-33: option mid-price and unrealized P&L for open legs', () => {
     const positionId = await seedPosition(page)
     await goToPositionDetail(page, positionId)
 
+    // VerdictBlock renders captured P&L as percentage + "captured" label
+    await page.waitForSelector('text=63%')
+    await page.waitForSelector('text=captured')
+    // Dollar summary: "$captured of $max max"
+    await page.waitForSelector('text=$220 of $350 max')
+
+    // Current Mid lives in the "Leg reference" collapsed drawer — expand it first
+    await page.click('button:has-text("Leg reference")')
     await page.waitForSelector('text=Current Mid')
     await page.waitForSelector('text=$1.30')
-
-    await page.waitForSelector('text=Unrealized P&L')
-    await page.waitForSelector('text=+$220.00')
-
-    await page.waitForSelector('text=% of Max Profit')
-    await page.waitForSelector('text=62.9%')
   })
 
   it('AC-7: shows amber spread-warning icon when bid-ask spread exceeds 10% of mid', async () => {

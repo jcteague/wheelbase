@@ -15,11 +15,20 @@ import { ErrorAlert } from '../components/ui/ErrorAlert'
 import { LoadingState } from '../components/ui/LoadingState'
 import { usePosition } from '../hooks/usePosition'
 import { useOptionSnapshots, type ActiveLegSummary } from '../hooks/useOptionSnapshots'
+import { useStockQuotes } from '../hooks/useStockQuotes'
 import { buildOccSymbol } from '../../../shared/option-symbol'
 import { isOptionInstrument } from '../../../main/core/types'
 import { computeDte, fmtDate } from '../lib/format'
 import { PositionDetailContent } from './PositionDetailContent'
 import { usePositionDetailSheets } from './usePositionDetailSheets'
+
+const SNAPSHOT_STALE_THRESHOLD_MS = 5 * 60 * 1000
+
+function isSnapshotStale(timestamp: string | undefined): boolean {
+  if (!timestamp) return false
+  const age = Date.now() - new Date(timestamp).getTime()
+  return Number.isFinite(age) && age > SNAPSHOT_STALE_THRESHOLD_MS
+}
 
 function activeLegToSummary(detail: ReturnType<typeof usePosition>['data']): ActiveLegSummary[] {
   if (!detail?.activeLeg) return []
@@ -42,6 +51,10 @@ export function PositionDetailPage(): React.JSX.Element {
 
   const legSummaries = useMemo(() => activeLegToSummary(data), [data])
   const optionSnapshotsQuery = useOptionSnapshots(legSummaries)
+  const stockQuotesQuery = useStockQuotes(data ? [data.position.ticker] : [])
+  const underlyingPrice = data
+    ? (stockQuotesQuery.data?.[data.position.ticker]?.price ?? null)
+    : null
 
   const activeSnapshot = useMemo(() => {
     if (!data?.activeLeg) return undefined
@@ -97,7 +110,7 @@ export function PositionDetailPage(): React.JSX.Element {
 
   if (isError || !data) {
     return (
-      <div style={{ margin: '16px 24px' }}>
+      <div className="my-4 mx-6">
         <ErrorAlert message="Failed to load position." />
       </div>
     )
@@ -131,7 +144,13 @@ export function PositionDetailPage(): React.JSX.Element {
         />
       }
     >
-      <PositionDetailContent detail={data} overlayOpen={overlayOpen} snapshot={activeSnapshot} />
+      <PositionDetailContent
+        detail={data}
+        overlayOpen={overlayOpen}
+        snapshot={activeSnapshot}
+        underlyingPrice={underlyingPrice}
+        pnlStale={isSnapshotStale(activeSnapshot?.timestamp)}
+      />
       {expirationCtx?.activeLeg && expirationCtx.snapshot && (
         <ExpirationSheet
           open

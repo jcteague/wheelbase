@@ -110,5 +110,11 @@ export function useStockQuotes(tickers: string[]): UseStockQuotesResult {
     return () => clearInterval(handle)
   }, [query.dataUpdatedAt])
 
-  return { ...query, streamError, stale: staleInfo.stale, minutesAgo: staleInfo.minutesAgo }
+  // A stream error means prices will not update regardless of age — treat as stale immediately.
+  return {
+    ...query,
+    streamError,
+    stale: staleInfo.stale || streamError !== null,
+    minutesAgo: staleInfo.minutesAgo
+  }
 }
