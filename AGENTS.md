@@ -1,1 +1,1 @@
-Read `CLAUDE.md` file
+CLAUDE.md

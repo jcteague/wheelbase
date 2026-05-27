@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Options Screener UI Inspiration</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      line-height: 1.6;
+    }
+
+    header {
+      padding: 48px 64px 32px;
+      border-bottom: 1px solid #1e2433;
+    }
+    header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: #f8fafc;
+      margin-bottom: 8px;
+    }
+    header p {
+      color: #94a3b8;
+      font-size: 15px;
+      max-width: 640px;
+    }
+
+    .toc {
+      padding: 24px 64px;
+      border-bottom: 1px solid #1e2433;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .toc a {
+      color: #7dd3fc;
+      font-size: 13px;
+      text-decoration: none;
+      background: #1e2d3d;
+      padding: 4px 12px;
+      border-radius: 4px;
+      border: 1px solid #2d4a6b;
+    }
+    .toc a:hover { background: #2d4a6b; }
+
+    main { padding: 48px 64px; display: flex; flex-direction: column; gap: 72px; }
+
+    .tool-section { display: flex; flex-direction: column; gap: 24px; }
+
+    .tool-header {
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #1e2433;
+    }
+    .tool-header h2 { font-size: 20px; font-weight: 700; color: #f1f5f9; }
+    .tool-header a {
+      font-size: 12px;
+      color: #7dd3fc;
+      text-decoration: none;
+    }
+    .tool-header a:hover { text-decoration: underline; }
+    .tool-tag {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .tag-wheel { background: #14532d; color: #86efac; }
+    .tag-power { background: #312e81; color: #a5b4fc; }
+    .tag-dark  { background: #1c1917; color: #a8a29e; border: 1px solid #44403c; }
+
+    .screenshots-grid {
+      display: grid;
+      gap: 20px;
+    }
+    .screenshots-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+    .screenshots-grid.cols-1 { grid-template-columns: 1fr; }
+
+    .shot {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .shot-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .shot img {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid #1e2433;
+      display: block;
+    }
+    .shot-notes {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .shot-notes p {
+      font-size: 13px;
+      color: #94a3b8;
+    }
+
+    .callouts {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .callout {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      font-size: 13px;
+    }
+    .callout-icon {
+      font-size: 14px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .callout-text { color: #cbd5e1; }
+    .callout-text strong { color: #f1f5f9; }
+
+    .highlight-box {
+      background: #1e2433;
+      border: 1px solid #2d3748;
+      border-left: 3px solid #3b82f6;
+      border-radius: 6px;
+      padding: 14px 18px;
+    }
+    .highlight-box h4 {
+      font-size: 13px;
+      font-weight: 700;
+      color: #7dd3fc;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .highlight-box ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .highlight-box li {
+      font-size: 13px;
+      color: #cbd5e1;
+      padding-left: 16px;
+      position: relative;
+    }
+    .highlight-box li::before {
+      content: "→";
+      position: absolute;
+      left: 0;
+      color: #3b82f6;
+    }
+
+    .divider { border: none; border-top: 1px solid #1e2433; }
+
+    footer {
+      padding: 32px 64px;
+      border-top: 1px solid #1e2433;
+      font-size: 12px;
+      color: #475569;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Options Screener UI Inspiration</h1>
+  <p>Reference screenshots collected for the Wheelbase screener feature. Focus on filter UX, strike grid visualizations, and result table design patterns.</p>
+</header>
+
+<nav class="toc">
+  <a href="#optionstrat">OptionStrat</a>
+  <a href="#wheelstrategy">WheelStrategyOptions</a>
+  <a href="#secureputcalls">SecurePutCalls</a>
+  <a href="#optionscafe">Options Cafe</a>
+  <a href="#quantwheel">QuantWheel</a>
+</nav>
+
+<main>
+
+  <!-- ─── OptionStrat ─────────────────────────────────────────────────── -->
+  <section class="tool-section" id="optionstrat">
+    <div class="tool-header">
+      <h2>OptionStrat</h2>
+      <span class="tool-tag tag-power">Power Tool</span>
+      <a href="https://optionstrat.com" target="_blank">optionstrat.com ↗</a>
+    </div>
+
+    <div class="screenshots-grid cols-1">
+      <div class="shot">
+        <div class="shot-label">Sentiment Dials + Expiration Timeline</div>
+        <img src="../optionstrat-dials.png" alt="OptionStrat sentiment dials" />
+        <div class="shot-notes">
+          <div class="callouts">
+            <div class="callout">
+              <span class="callout-icon">🎯</span>
+              <span class="callout-text"><strong>Circular sentiment selectors</strong> — 6-state toggle row (Very Bearish → Very Bullish) using circular icon buttons. Active state fills circle with directional color (red/green). Directional arrows encode the bias visually.</span>
+            </div>
+            <div class="callout">
+              <span class="callout-icon">📅</span>
+              <span class="callout-text"><strong>Expiration timeline scrubber</strong> — horizontal date strip grouped by month. Selected DTE highlighted with a filled pill. Intuitive for wheel traders targeting 30–45 DTE.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="screenshots-grid cols-2">
+      <div class="shot">
+        <div class="shot-label">CSP Strike Grid (Color-Coded Heatmap)</div>
+        <img src="../optionstrat-csp-builder.png" alt="OptionStrat CSP strike grid" />
+        <div class="callouts">
+          <div class="callout">
+            <span class="callout-icon">🟥🟩</span>
+            <span class="callout-text"><strong>Strikes × Expirations heatmap</strong> — rows = strike prices, columns = DTE. Red = risky/low yield, green = attractive. Current price row highlighted.</span>
+          </div>
+          <div class="callout">
+            <span class="callout-icon">⭐</span>
+            <span class="callout-text"><strong>"ZIP" badge</strong> marks the optimizer's recommended sweet spot in the grid.</span>
+          </div>
+          <div class="callout">
+            <span class="callout-icon">📊</span>
+            <span class="callout-text">Each cell shows: <strong>Net Credit / Collateral / Chance of Profit</strong>.</span>
+          </div>
+        </div>
+      </div>
+      <div class="shot">
+        <div class="shot-label">Trade Optimizer — Strategy Cards</div>
+        <img src="../optionstrat-optimize.png" alt="OptionStrat optimizer" />
+        <div class="callouts">
+          <div class="callout">
+            <span class="callout-icon">🃏</span>
+            <span class="callout-text"><strong>Strategy comparison cards</strong> — Long Call, Covered Call, Cash-Secured Put, Short Put, etc. Each card shows Return on Risk, Max Profit, Chance of Profit. P&amp;L chart embedded per card.</span>
+          </div>
+          <div class="callout">
+            <span class="callout-icon">💡</span>
+            <span class="callout-text">CSP and Short Put surface as top results for wheel-bias inputs — good model for how to surface relevant strategies.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="highlight-box">
+      <h4>Key takeaways for Wheelbase</h4>
+      <ul>
+        <li>Replace sentiment dials with a simpler "screening mode" toggle: CSP / CC / Both</li>
+        <li>Strike heatmap is the most powerful feature — adopt strikes × expiry grid colored by annualized yield</li>
+        <li>Mark the "best" cell (highest yield within target delta range) with a badge</li>
+        <li>Each cell should show: Premium · Ann. Yield · Delta · CoP</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ─── WheelStrategyOptions ───────────────────────────────────────── -->
+  <section class="tool-section" id="wheelstrategy">
+    <div class="tool-header">
+      <h2>WheelStrategyOptions</h2>
+      <span class="tool-tag tag-wheel">Wheel-Specific</span>
+      <a href="https://wheelstrategyoptions.com" target="_blank">wheelstrategyoptions.com ↗</a>
+    </div>
+
+    <div class="screenshots-grid cols-2">
+      <div class="shot">
+        <div class="shot-label">CSP Screener — Filters + Results Table</div>
+        <img src="../screener-wheelstrategy-csp.png" alt="WheelStrategyOptions CSP screener" />
+        <div class="callouts">
+          <div class="callout">
+            <span class="callout-icon">🎛️</span>
+            <span class="callout-text"><strong>Left sidebar</strong> with labeled range sliders: Strike Price, Delta, DTE, Annualized Yield, Premium Yield. Familiar, space-efficient filter layout.</span>
+          </div>
+          <div class="callout">
+            <span class="callout-icon">🏷️</span>
+            <span class="callout-text"><strong>Active filter chips</strong> displayed above the results table (e.g. "Annual Return &gt;2%", "Exclude earnings near ex…", "Expiration 7–30 days", "Volume &gt;200").</span>
+          </div>
+        </div>
+      </div>
+      <div class="shot">
+        <div class="shot-label">Covered Call Screener — Same Layout</div>
+        <img src="../screener-wheelstrategy-cc.png" alt="WheelStrategyOptions CC screener" />
+        <div class="callouts">
+          <div class="callout">
+            <span class="callout-icon">🔄</span>
+            <span class="callout-text"><strong>CSP/CC switch in nav bar</strong> — same filter sidebar, same results format, different underlying query. Clean way to handle dual-mode screening.</span>
+          </div>
+          <div class="callout">
+            <span class="callout-icon">💾</span>
+            <span class="callout-text">Saved Screeners dropdown — lets users save filter presets. Useful for traders who have a fixed criteria set.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="highlight-box">
+      <h4>Key takeaways for Wheelbase</h4>
+      <ul>
+        <li>Left sidebar + range sliders is the most common and learnable pattern for screener filters</li>
+        <li>Active filter chips above results provide at-a-glance filter state — copy this</li>
+        <li>Earnings exclusion filter is non-negotiable for wheel traders</li>
+        <li>CSP / CC mode switch should be prominent, not buried</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ─── SecurePutCalls ────────────────────────────────────────────── -->
+  <section class="tool-section" id="secureputcalls">
+    <div class="tool-header">
+      <h2>SecurePutCalls — Wheel Screener</h2>
+      <span class="tool-tag tag-wheel">Wheel-Specific</span>
+      <a href="https://secureputcalls.com/wheel-screener" target="_blank">secureputcalls.com ↗</a>
+    </div>
+
+    <div class="screenshots-grid cols-1">
+      <div class="shot">
+        <div class="shot-label">Results Table with Wheel Score</div>
+        <img src="../screener-secureputcalls.png" alt="SecurePutCalls wheel screener" />
+        <div class="callouts">
+          <div class="callout">
+            <span class="callout-icon">🏆</span>
+            <span class="callout-text"><strong>Wheel Score column</strong> — proprietary composite ranking badge (color-coded number). Immediately tells traders which candidates are best without reading across every column.</span>
+          </div>
+          <div class="callout">
+            <span class="callout-icon">🏷️</span>
+            <span class="callout-text"><strong>Type badge per row</strong> (CSP / CC pill) — single unified table showing both contract types, differentiated by badge color.</span>
+          </div>
+          <div class="callout">
+            <span class="callout-icon">📋</span>
+            <span class="callout-text"><strong>Column set</strong>: Symbol · Type · Wheel Score · Strike · Expiry · DTE · Premium · Est. Annual ROI · Capital Req · IV %ile · Sector. This is the most complete wheel-relevant column set found.</span>
+          </div>
+          <div class="callout">
+            <span class="callout-icon">🔝</span>
+            <span class="callout-text">Filters in a <strong>collapsible top bar</strong> rather than a persistent sidebar — keeps the table maximally wide.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="highlight-box">
+      <h4>Key takeaways for Wheelbase</h4>
+      <ul>
+        <li>This is the closest existing tool to what Wheelbase needs — steal the column set</li>
+        <li>A "Wheel Score" composite (IV Rank + yield + delta proximity) would be highly valuable</li>
+        <li>Capital Req column is critical — wheel traders are capital-constrained</li>
+        <li>Sector column helps with diversification discipline</li>
+        <li>Unified CSP+CC table with type badge beats separate pages</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ─── Options Cafe ──────────────────────────────────────────────── -->
+  <section class="tool-section" id="optionscafe">
+    <div class="tool-header">
+      <h2>Options Cafe</h2>
+      <span class="tool-tag tag-wheel">Wheel-Specific</span>
+      <a href="https://options.cafe/wheel-options-screener/" target="_blank">options.cafe ↗</a>
+    </div>
+
+    <div class="screenshots-grid cols-1">
+      <div class="shot">
+        <div class="shot-label">Minimal Top-Form Screener</div>
+        <img src="../screener-optionscafe.png" alt="Options Cafe screener" />
+        <div class="callouts">
+          <div class="callout">
+            <span class="callout-icon">✂️</span>
+            <span class="callout-text"><strong>Extreme minimalism</strong> — Symbol input, Put/Call toggle, Expiration date picker. Secondary row: Min/Max DTE, Min/Max Premium. Good reference for a "quick scan" mode with minimal friction.</span>
+          </div>
+          <div class="callout">
+            <span class="callout-icon">🎯</span>
+            <span class="callout-text">No sidebar — all filters inline at the top. Works better for a focused single-ticker scan than a broad market sweep.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="highlight-box">
+      <h4>Key takeaways for Wheelbase</h4>
+      <ul>
+        <li>Consider a "quick scan" mode (minimal form) vs "advanced" mode (full sidebar) — two entry points</li>
+        <li>For Wheelbase's single-user desktop context, the minimal form is good for targeted lookups</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ─── QuantWheel ────────────────────────────────────────────────── -->
+  <section class="tool-section" id="quantwheel">
+    <div class="tool-header">
+      <h2>QuantWheel</h2>
+      <span class="tool-tag tag-dark">Dark Theme</span>
+      <a href="https://quantwheel.com/products/options-screener-sellers" target="_blank">quantwheel.com ↗</a>
+    </div>
+
+    <div class="screenshots-grid cols-1">
+      <div class="shot">
+        <div class="shot-label">Full Page — Dark Theme Screener</div>
+        <img src="../screener-quantwheel-full.png" alt="QuantWheel screener full page" />
+        <div class="callouts">
+          <div class="callout">
+            <span class="callout-icon">🌑</span>
+            <span class="callout-text"><strong>Dark theme throughout</strong> — closest visual style to Wheelbase's design. Dense data table with top-bar filter controls.</span>
+          </div>
+          <div class="callout">
+            <span class="callout-icon">📊</span>
+            <span class="callout-text">Combines options data with <strong>fundamentals and technicals</strong> — IV, earnings, sector, market cap filters alongside options metrics.</span>
+          </div>
+          <div class="callout">
+            <span class="callout-icon">🔔</span>
+            <span class="callout-text">Highlights "Save your search → Get Alerts → 1-click trade" workflow — a good reminder that screener output should connect directly to trade entry.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="highlight-box">
+      <h4>Key takeaways for Wheelbase</h4>
+      <ul>
+        <li>Dark theme + dense table matches Wheelbase's design language — study the spacing and type size</li>
+        <li>Fundamentals filters (market cap, sector, earnings date) are table-stakes for wheel traders who care about underlying quality</li>
+        <li>Screener → trade entry flow matters: a "Start Wheel" CTA per row would be Wheelbase's killer feature</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Screenshots captured May 2026 for Wheelbase screener feature design research.
+</footer>
+
+</body>
+</html>

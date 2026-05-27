@@ -1,0 +1,30 @@
+personality = "friendly"
+
+[mcp_servers]
+
+[mcp_servers.alpaca]
+command = "uvx"
+args = ["alpaca-mcp-server", "serve"]
+
+[mcp_servers.alpaca.env]
+ALPACA_API_KEY = "PK3IOISL6URY2SPNBXHNNTTCCU"
+ALPACA_SECRET_KEY = "5NzDvGBEk2EehmQAHWyN4z6eaNQYc6dNgXK3cYPkonXh"
+
+[mcp_servers.postgres]
+enabled = false
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-postgres", "postgresql://wheel:wheel@localhost:5432/wheelbase"]
+
+[mcp_servers.playwright]
+command = "npx"
+args = ["@playwright/mcp@latest", "--headless"]
+
+[mcp_servers.electron]
+command = "npx"
+args = ["-y", "electron-mcp-server"]
+
+[mcp_servers.electron.env]
+SCREENSHOT_ENCRYPTION_KEY = "4cfa4fa53a00f673e08e2a1639abc1c1005f3b556bda7a844a0fed34849ba8c9"
+
+[features]
+codex_hooks = true

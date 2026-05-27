@@ -1,5 +1,7 @@
 # Option Wheel Manager — Claude Context
 
+Codex should also read and follow [CLAUDE.md](/Users/johnteague/my-stuff/wheelbase/CLAUDE.md) for this repo. If `AGENTS.md` and `CLAUDE.md` overlap, treat them as complementary; if they ever conflict, prefer the more specific instruction closest to the task.
+
 ## What This App Is
 
 A single-user trading journal and management tool for the **options wheel strategy**. Traders sell cash-secured puts (CSPs), accept assignment into shares, then sell covered calls (CCs) until the shares are called away — repeating the cycle. The app tracks every leg, maintains accurate cost basis through rolls and premiums, and fires management alerts.

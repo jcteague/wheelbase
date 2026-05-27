@@ -45,7 +45,10 @@
       "Bash(pnpm test:e2e e2e/live-underlying-price.spec.ts)",
       "Bash(pnpm test:e2e *)",
       "Bash(pnpm typecheck:web)",
-      "WebFetch(domain:developer.tastytrade.com)"
+      "WebFetch(domain:developer.tastytrade.com)",
+      "WebSearch",
+      "mcp__playwright__browser_resize",
+      "mcp__playwright__browser_navigate"
     ]
   },
   "enableAllProjectMcpServers": true,

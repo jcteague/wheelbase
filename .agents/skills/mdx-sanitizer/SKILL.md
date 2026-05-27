@@ -1,36 +1,6 @@
 ---
-name: mdx-sanitizer
-description: Sanitize MDX content for Docusaurus builds. Fixes unescaped angle brackets (<, >, &lt;=, &gt;=), Liquid/Nunjucks template syntax ({{ }}), TypeScript generics (Promise&lt;T&gt;), and inline code backtick edge cases. Use when pre-commit hooks fail on bracket or Liquid validation, or when MDX/JSX build errors reference unexpected tokens. NOT for general markdown linting or prose editing.
-allowed-tools:
-  - Read
-  - Write
-  - Edit
-  - Bash
-  - Glob
-  - Grep
-version: 1.0.0
-triggers:
-  - mdx error
-  - angle bracket
-  - jsx parsing
-  - build failure mdx
-  - escape angle brackets
-  - sanitize markdown
-metadata:
-  category: DevOps & Automation
-  tags:
-    - mdx
-    - docusaurus
-    - markdown
-    - build-tools
-    - sanitization
-  pairs-with:
-    - skill: site-reliability-engineer
-      reason: MDX build failures are a primary Docusaurus deployment blocker that SRE validates
-    - skill: technical-writer
-      reason: Technical writers produce the MDX content that needs sanitization for safe rendering
-    - skill: skill-documentarian
-      reason: Skill documentation in MDX format requires sanitization before website deployment
+name: "mdx-sanitizer"
+description: "Sanitize MDX content for Docusaurus builds. Fixes unescaped angle brackets (<, >, &lt;=, &gt;=), Liquid/Nunjucks template syntax ({{ }}), TypeScript generics (Promise&lt;T&gt;), and inline code backtick edge cases. Use when pre-commit hooks fail on bracket or Liquid validation, or when MDX/JSX build errors reference unexpected tokens. NOT for general markdown linting or prose editing."
 ---
 
 # MDX Sanitizer
@@ -167,3 +137,16 @@ For edge cases, manually escape in source:
 
 - [MDX Troubleshooting](https://mdxjs.com/docs/troubleshooting-mdx/)
 - [TypeDoc MDX Issues](https://github.com/tgreyuk/typedoc-plugin-markdown/issues/167)
+
+## Tool Guidance
+
+This skill assumes access to file reads and edits plus shell commands for validation and repair workflows.
+
+Preferred tools:
+
+- Read
+- Write
+- Edit
+- Bash
+- Glob
+- Grep

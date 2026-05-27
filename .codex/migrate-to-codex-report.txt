@@ -1,0 +1,75 @@
+Migration inventory:
+  active: instruction files - 2 found
+    - CLAUDE.md
+    - AGENTS.md
+  active: skills - 8 found
+    - beads-plan
+    - database-schema-design
+    - mdx-sanitizer
+    - mockup
+    - options-expert
+    - product-owner
+    - qa-test
+    - vercel-react-best-practices
+  active: command sources - 17 found
+    provider: source command (17)
+      - .agents/skills/shadcn/SKILL
+      - .agents/skills/shadcn/cli
+      - .agents/skills/shadcn/customization
+      - .agents/skills/shadcn/mcp
+      - .agents/skills/shadcn/rules/base-vs-radix
+      - .agents/skills/shadcn/rules/composition
+      - .agents/skills/shadcn/rules/forms
+      - .agents/skills/shadcn/rules/icons
+      - .agents/skills/shadcn/rules/styling
+      - create-plan
+      - green
+      - implement-plan
+      - options-expert
+      - plan-tasks
+      - product-owner
+      - red
+      - refactor
+  inactive: subagents - none found
+Migration surfaces:
+  active: AGENTS.md - 1 instruction file(s) found.
+  active: skills - 25 skill(s) converted.
+  active: MCP config - 4 MCP server(s) converted into config.toml.
+  inactive: subagents - No subagents found.
+Migration report:
+  symlinked: AGENTS.md - Linked to CLAUDE.md.
+  rewritten: .codex/hooks.json - Rewritten for Codex hooks; review behavior before relying on it. Codex hooks require `[features].codex_hooks = true`, only execute `command` handlers, skip `async` / `prompt` / `agent` handlers, ignore `matcher` for `UserPromptSubmit` and `Stop`, and `PreToolUse` / `PostToolUse` currently run for shell commands only.
+  manual_fix_required: .agents/skills/beads-plan/SKILL.md - Manual review required for Claude skill fields: `version`.
+  manual_fix_required: .agents/skills/database-schema-design/SKILL.md - Manual review required for Claude skill fields: `metadata`, `platforms`, `tags`.
+  manual_fix_required: .agents/skills/mdx-sanitizer/SKILL.md - Manual review required for Claude skill fields: `allowed-tools`, `- skill`, `category`, `metadata`, `pairs-with`, `reason`, `tags`, `triggers`, `version`.
+  rewritten: .agents/skills/mockup/SKILL.md - Converted Claude skill.
+  manual_fix_required: .agents/skills/options-expert/SKILL.md - Manual review required for Claude skill fields: `version`.
+  manual_fix_required: .agents/skills/product-owner/SKILL.md - Manual review required for Claude skill fields: `version`.
+  manual_fix_required: .agents/skills/qa-test/SKILL.md - Manual review required for Claude skill fields: `version`.
+  manual_fix_required: .agents/skills/vercel-react-best-practices/SKILL.md - Manual review required for Claude skill fields: `author`, `license`, `metadata`, `version`.
+  manual_fix_required: .agents/skills/source-command--agents-skills-shadcn-skill/SKILL.md - Converted source command `.agents-skills-shadcn-SKILL` to a single-file Codex skill; review invocation and template placeholder semantics.
+  manual_fix_required: .agents/skills/source-command--agents-skills-shadcn-cli/SKILL.md - Converted source command `.agents-skills-shadcn-cli` to a single-file Codex skill; review invocation and template placeholder semantics.
+  manual_fix_required: .agents/skills/source-command--agents-skills-shadcn-customization/SKILL.md - Converted source command `.agents-skills-shadcn-customization` to a single-file Codex skill; review invocation and template placeholder semantics.
+  manual_fix_required: .agents/skills/source-command--agents-skills-shadcn-mcp/SKILL.md - Converted source command `.agents-skills-shadcn-mcp` to a single-file Codex skill; review invocation and template placeholder semantics.
+  manual_fix_required: .agents/skills/source-command--agents-skills-shadcn-rules-base-vs-radix/SKILL.md - Converted source command `.agents-skills-shadcn-rules-base-vs-radix` to a single-file Codex skill; review invocation and template placeholder semantics.
+  manual_fix_required: .agents/skills/source-command--agents-skills-shadcn-rules-composition/SKILL.md - Converted source command `.agents-skills-shadcn-rules-composition` to a single-file Codex skill; review invocation and template placeholder semantics.
+  manual_fix_required: .agents/skills/source-command--agents-skills-shadcn-rules-forms/SKILL.md - Converted source command `.agents-skills-shadcn-rules-forms` to a single-file Codex skill; review invocation and template placeholder semantics.
+  manual_fix_required: .agents/skills/source-command--agents-skills-shadcn-rules-icons/SKILL.md - Converted source command `.agents-skills-shadcn-rules-icons` to a single-file Codex skill; review invocation and template placeholder semantics.
+  manual_fix_required: .agents/skills/source-command--agents-skills-shadcn-rules-styling/SKILL.md - Converted source command `.agents-skills-shadcn-rules-styling` to a single-file Codex skill; review invocation and template placeholder semantics.
+  manual_fix_required: .agents/skills/source-command-create-plan/SKILL.md - Converted source command `create-plan` to a single-file Codex skill; review invocation and template placeholder semantics.
+  manual_fix_required: .agents/skills/source-command-green/SKILL.md - Converted source command `green` to a single-file Codex skill; review invocation and template placeholder semantics.
+  manual_fix_required: .agents/skills/source-command-implement-plan/SKILL.md - Converted source command `implement-plan` to a single-file Codex skill; review invocation and template placeholder semantics.
+  manual_fix_required: .agents/skills/source-command-options-expert/SKILL.md - Converted source command `options-expert` to a single-file Codex skill; review invocation and template placeholder semantics.
+  manual_fix_required: .agents/skills/source-command-plan-tasks/SKILL.md - Converted source command `plan-tasks` to a single-file Codex skill; review invocation and template placeholder semantics.
+  manual_fix_required: .agents/skills/source-command-product-owner/SKILL.md - Converted source command `product-owner` to a single-file Codex skill; review invocation and template placeholder semantics.
+  manual_fix_required: .agents/skills/source-command-red/SKILL.md - Converted source command `red` to a single-file Codex skill; review invocation and template placeholder semantics.
+  manual_fix_required: .agents/skills/source-command-refactor/SKILL.md - Converted source command `refactor` to a single-file Codex skill; review invocation and template placeholder semantics.
+  rewritten: .codex/config.toml - Converted 4 MCP server entries.
+  overwritten: .agents/skills/options-expert - Existing Codex skill will be replaced.
+  overwritten: .agents/skills/product-owner - Existing Codex skill will be replaced.
+  overwritten: .agents/skills/database-schema-design - Existing Codex skill will be replaced.
+  overwritten: .agents/skills/mockup - Existing Codex skill will be replaced.
+  overwritten: .agents/skills/beads-plan - Existing Codex skill will be replaced.
+  overwritten: .agents/skills/mdx-sanitizer - Existing Codex skill will be replaced.
+  overwritten: .agents/skills/vercel-react-best-practices - Existing Codex skill will be replaced.
+  overwritten: .agents/skills/qa-test - Existing Codex skill will be replaced.
