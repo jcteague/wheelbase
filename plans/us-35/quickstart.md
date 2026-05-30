@@ -61,6 +61,58 @@ pnpm lint
 5. Refresh the position list. Confirm the assignment banner appears with the correct ticker, strike, and date.
 6. Click "Confirm". Verify the position transitions to `HOLDING_SHARES` and the success toast shows.
 
+## Adding a new scheduled job (US-44 and beyond)
+
+All periodic background jobs must use the shared `PollingScheduler` singleton — do not introduce another scheduling primitive.
+
+**Step 1 — Import the singleton**
+
+```typescript
+import { scheduler } from '../services/scheduler-instance'
+```
+
+**Step 2 — Register your job before `scheduler.start()` is called**
+
+Registration happens in `src/main/index.ts` alongside the existing `detect-assignments` registration. Add your `register()` call in the same bootstrap block, before `scheduler.start()`:
+
+```typescript
+// US-44: IVR collection — once per market day, 60 minutes after close (17:00 ET)
+scheduler.register({
+  name: 'ivr-collect',
+  cadence: { kind: 'afterClose', offsetMinutes: 60 },
+  handler: () => collectIVRSnapshots({ db, brokerProvider, logger })
+})
+```
+
+**Step 3 — Wire a manual-trigger IPC handler (if needed)**
+
+If your story needs a "run now" affordance (like US-44's "Refresh IVR now"):
+
+```typescript
+ipcMain.handle('ivr:collect-now', async () => {
+  await scheduler.runNow('ivr-collect')
+  return { ok: true }
+})
+```
+
+**Cadence reference**
+
+| Use case                                                         | Policy                                                                                       |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Poll broker data every 60s during market hours, parked overnight | `{ kind: 'interval', marketOpenMs: 60_000, marketClosedMs: null }`                           |
+| Poll every 60s regular hours, 5m extended hours                  | `{ kind: 'interval', marketOpenMs: 60_000, extendedHoursMs: 300_000, marketClosedMs: null }` |
+| Run once per trading day, 60 min after close (17:00 ET)          | `{ kind: 'afterClose', offsetMinutes: 60 }`                                                  |
+
+**What the scheduler guarantees you don't need to re-implement**
+
+- No missed-tick burst on OS wake-from-sleep
+- No overlapping runs (handler must settle before next tick is scheduled)
+- WARN log + reschedule on handler error (no crash, no pile-up)
+- Clean drain on app quit (5-second timeout, then force-exit)
+- Market-session awareness via `BrokerProvider.getMarketStatus()`
+
+---
+
 ## What "done" looks like
 
 - `pnpm test` green
