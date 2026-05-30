@@ -12,6 +12,8 @@ Assignment moves a position from CSP_OPEN to HOLDING_SHARES and changes what the
 
 Alpaca processes assignments overnight; they appear in the activities feed as OPASN events the morning after expiration. This story covers the full loop: polling the broker for OPASN events, matching them to open CSP legs, surfacing a notification banner for the trader to confirm or dismiss, and executing the phase transition on confirmation. The confirmation reuses the existing `assignCspPosition` service — no new lifecycle logic is needed.
 
+After the Epic 06 architectural split, broker activities live on `BrokerProvider` (US-31 rewrite, implemented by `AlpacaBrokerProvider` in US-40). Polling cadence is supplied by the shared `PollingScheduler` service (US-46).
+
 ---
 
 ## Acceptance Criteria
@@ -21,7 +23,7 @@ Background:
   Given the trader has an open CSP on AAPL:
     | strike | expiration | contracts | option_symbol       |
     | 180.00 | 2026-04-18 | 1         | AAPL260418P00180000 |
-  And the MarketDataProvider is configured and polling is active
+  And the BrokerProvider (Alpaca) is configured and polling is active
 
 Scenario: Detect assignment from OPASN activity and create pending record
   Given the broker activities API returns an OPASN event:
@@ -55,7 +57,7 @@ Scenario: Handle multiple assignments in a single poll
   Then 2 separate pending assignment records are created
 
 Scenario: API error during polling does not crash the app
-  Given the MarketDataProvider throws a MarketDataError with code "network_error"
+  Given the BrokerProvider throws a BrokerError with code "network_error"
   When the assignment detection job runs
   Then the error is logged at WARN level
   And the job reschedules for the next interval
@@ -100,7 +102,7 @@ Scenario: Assignment notification persists across app restarts
 **Detection service:** `src/main/services/detect-assignments.ts`
 
 1. Query DB for all positions in CSP_OPEN with active legs
-2. Call `provider.getActivities({ type: 'OPASN', since: lastPollTimestamp })`
+2. Call `brokerProvider.getActivities({ type: 'OPASN', since: lastPollTimestamp })`
 3. Parse each OCC symbol with `parseOccSymbol(symbol)` → `{ ticker, expiration, type, strike }`
 4. Match against open CSP legs by ticker, expiration, strike, and put type
 5. Insert into `pending_assignments` (UNIQUE on `activity_id` — deduplication at DB level)
@@ -140,9 +142,10 @@ Scenario: Assignment notification persists across app restarts
 
 ## Dependencies
 
-- US-31 (MarketDataProvider adapter — `getActivities` method)
-- US-38 (polling scheduler — invokes the detection job on interval)
-- Epic 01 `assignCspPosition` service (already exists)
+- US-31 (rewrite — `BrokerProvider` interface with `getActivities`)
+- US-40 (`AlpacaBrokerProvider` — concrete implementation that calls Alpaca activities API)
+- US-46 (polling scheduler — invokes the detection job on interval)
+- Epic 01 `assignCspPosition` service (already exists at `src/main/services/assign-csp-position.ts`)
 
 ---
 

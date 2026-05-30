@@ -1,6 +1,6 @@
 ---
-name: "source-command--agents-skills-shadcn-rules-forms"
-description: "Run the migrated source command `.agents-skills-shadcn-rules-forms`."
+name: 'source-command--agents-skills-shadcn-rules-forms'
+description: 'Run the migrated source command `.agents-skills-shadcn-rules-forms`.'
 ---
 
 # source-command--agents-skills-shadcn-rules-forms

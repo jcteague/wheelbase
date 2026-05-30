@@ -1,6 +1,6 @@
 ---
-name: "source-command--agents-skills-shadcn-rules-base-vs-radix"
-description: "Run the migrated source command `.agents-skills-shadcn-rules-base-vs-radix`."
+name: 'source-command--agents-skills-shadcn-rules-base-vs-radix'
+description: 'Run the migrated source command `.agents-skills-shadcn-rules-base-vs-radix`.'
 ---
 
 # source-command--agents-skills-shadcn-rules-base-vs-radix

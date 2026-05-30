@@ -1,70 +1,36 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
-const mockGetAccount = vi.fn()
+import { FakeMarketDataProvider } from './fake-market-data'
+import { marketDataFactory } from './market-data-factory'
+import { MassiveMarketDataProvider } from './massive-market-data'
 
-vi.mock('@alpacahq/typescript-sdk', () => ({
-  createClient: vi.fn(() => ({
-    getStocksQuotesLatest: vi.fn(),
-    getOptionsSnapshots: vi.fn(),
-    getActivity: vi.fn(),
-    getAccount: mockGetAccount,
-    getClock: vi.fn()
-  }))
-}))
-
-import { createMarketDataProvider } from './market-data-factory'
-
-describe('Market Data Factory', () => {
+describe('marketDataFactory', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    delete process.env.MASSIVE_API_KEY
+    delete process.env.FAKE_MARKET_DATA
+    marketDataFactory.recreate()
   })
 
-  it('createMarketDataProvider returns provider with all MarketDataProvider methods for "alpaca"', () => {
-    const provider = createMarketDataProvider({
-      provider: 'alpaca',
-      keyId: 'test-key',
-      secretKey: 'test-secret',
-      paper: true
-    })
-
-    expect(provider).toBeDefined()
-    expect(typeof provider.getStockQuotes).toBe('function')
-    expect(typeof provider.getOptionSnapshots).toBe('function')
-    expect(typeof provider.getActivities).toBe('function')
-    expect(typeof provider.getAccountInfo).toBe('function')
-    expect(typeof provider.getMarketStatus).toBe('function')
-    expect(typeof provider.supportsStreaming).toBe('function')
-    expect(typeof provider.connect).toBe('function')
-    expect(typeof provider.disconnect).toBe('function')
-    expect(typeof provider.stream).toBe('function')
+  it('returns MassiveMarketDataProvider when MASSIVE_API_KEY is configured', () => {
+    process.env.MASSIVE_API_KEY = 'test-key'
+    const provider = marketDataFactory.create()
+    expect(provider).toBeInstanceOf(MassiveMarketDataProvider)
   })
 
-  it('createMarketDataProvider throws for unknown provider', () => {
-    expect(() =>
-      createMarketDataProvider({
-        provider: 'unknown' as 'alpaca',
-        keyId: 'test-key',
-        secretKey: 'test-secret',
-        paper: true
-      })
-    ).toThrow()
+  it('returns FakeMarketDataProvider when FAKE_MARKET_DATA env var is set', () => {
+    process.env.FAKE_MARKET_DATA = 'true'
+    const provider = marketDataFactory.create()
+    expect(provider).toBeInstanceOf(FakeMarketDataProvider)
   })
 
-  it('factory passes config through to provider', async () => {
-    mockGetAccount.mockResolvedValue({
-      buying_power: '50000.00',
-      portfolio_value: '125000.00',
-      cash: '50000.00'
-    })
+  it('throws if neither Massive nor Fake is configured', () => {
+    expect(() => marketDataFactory.create()).toThrow()
+  })
 
-    const provider = createMarketDataProvider({
-      provider: 'alpaca',
-      keyId: 'test-key',
-      secretKey: 'test-secret',
-      paper: true
-    })
-
-    const accountInfo = await provider.getAccountInfo()
-    expect(accountInfo.environment).toBe('paper')
+  it('prefers FakeMarketDataProvider when both FAKE_MARKET_DATA and MASSIVE_API_KEY are set', () => {
+    process.env.FAKE_MARKET_DATA = 'true'
+    process.env.MASSIVE_API_KEY = 'test-key'
+    const provider = marketDataFactory.create()
+    expect(provider).toBeInstanceOf(FakeMarketDataProvider)
   })
 })

@@ -5,8 +5,11 @@ import icon from '../../resources/icon.png?asset'
 import { initDb } from './db/index'
 import { registerPingHandler } from './ipc/ping'
 import { registerPositionsHandlers } from './ipc/positions'
-import { createMarketDataProvider, type MarketDataConfig } from './integrations/market-data-factory'
+import { marketDataFactory } from './integrations/market-data-factory'
+import { brokerFactory } from './integrations/broker-factory'
 import { registerMarketDataHandlers } from './ipc/market-data'
+import { registerBrokerHandlers } from './ipc/broker'
+import { logger } from './logger'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -41,17 +44,6 @@ function createWindow(): void {
   mainWindow = win
 }
 
-function marketDataConfigFromEnv(): MarketDataConfig {
-  return {
-    provider: 'alpaca',
-    keyId: import.meta.env.MAIN_VITE_ALPACA_KEY_ID ?? '',
-    secretKey: import.meta.env.MAIN_VITE_ALPACA_SECRET_KEY ?? '',
-    paper: import.meta.env.MAIN_VITE_ALPACA_PAPER !== 'false',
-    dataFeed: import.meta.env.MAIN_VITE_ALPACA_DATA_FEED,
-    optionFeed: import.meta.env.MAIN_VITE_ALPACA_OPTION_FEED
-  }
-}
-
 if (is.dev) {
   app.commandLine.appendSwitch('remote-debugging-port', '9222')
 }
@@ -67,11 +59,18 @@ app.whenReady().then(() => {
   registerPingHandler()
   registerPositionsHandlers(db)
 
-  const marketDataProvider = createMarketDataProvider(marketDataConfigFromEnv())
+  const marketDataProvider = marketDataFactory.create()
   registerMarketDataHandlers(marketDataProvider, () => mainWindow)
   app.on('before-quit', () => {
     void marketDataProvider.disconnect()
   })
+
+  try {
+    const brokerProvider = brokerFactory.create()
+    registerBrokerHandlers(brokerProvider)
+  } catch (err) {
+    logger.warn({ err }, 'Broker provider not configured — broker IPC channels unavailable')
+  }
 
   createWindow()
 

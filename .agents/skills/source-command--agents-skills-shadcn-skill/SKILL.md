@@ -1,5 +1,5 @@
 ---
-name: "source-command--agents-skills-shadcn-skill"
+name: 'source-command--agents-skills-shadcn-skill'
 description: "Manages shadcn components and projects \u2014 adding, searching, fixing, debugging, styling, and composing UI. Provides project context, component docs, and usage examples. Applies when working with shadcn/ui, component registries, presets, --preset codes, or any project with a components.json file. Also triggers for \"shadcn init\", \"create an app with --preset\", or \"switch to --preset\"."
 ---
 

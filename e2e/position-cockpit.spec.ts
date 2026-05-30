@@ -114,10 +114,11 @@ function launchWithMocks(
     env: {
       ...process.env,
       WHEELBASE_DB_PATH: dbPath,
-      WHEELBASE_MARKET_MOCK: 'true',
+      FAKE_MARKET_DATA: 'true',
+      FAKE_BROKER: 'true',
       WHEELBASE_MOCK_STOCK_QUOTES: JSON.stringify(opts.quotes ?? { AAPL: AAPL_QUOTE }),
       WHEELBASE_MOCK_OPTION_SNAPSHOTS: JSON.stringify(opts.optionSnapshots ?? {}),
-      WHEELBASE_MOCK_MARKET_STATUS: JSON.stringify(opts.marketStatus ?? REGULAR_SESSION)
+      FAKE_MARKET_STATUS: JSON.stringify(opts.marketStatus ?? REGULAR_SESSION)
     }
   })
 }

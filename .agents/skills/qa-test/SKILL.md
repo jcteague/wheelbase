@@ -1,6 +1,6 @@
 ---
-name: "qa-test"
-description: ">"
+name: 'qa-test'
+description: '>'
 ---
 
 # Wheelbase QA Tester

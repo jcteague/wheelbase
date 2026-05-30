@@ -1,16 +1,27 @@
-# US-37: Toggle between paper and live broker environments with clear visual indicator
+# US-37 (revised): Configure separate Massive (market data) and Alpaca (broker) credentials with a broker paper/live toggle
 
-**As a** wheel trader who uses both paper and live trading accounts,
-**I want to** easily switch between paper and live environments and always know which one I'm connected to,
-**So that** I never accidentally confuse paper trading data with live portfolio values.
+**As a** wheel trader,
+**I want** to configure my Massive API key and my Alpaca paper + live credentials separately, and always see which broker environment I'm operating against,
+**So that** I never confuse paper trading data with live portfolio values, and I can use the app for market data even before I've connected a broker.
 
 ---
 
 ## Context
 
-Alpaca (and most brokers) maintain completely separate paper and live environments with different API endpoints and credentials. A trader developing their strategy might use paper trading for weeks before going live. The environment distinction is critical — confusing paper prices or positions with real money is a serious UX failure. The spec explicitly calls this out: "the app needs a clear environment switcher so you don't accidentally send orders to live from paper mode."
+Wheelbase now uses two vendors with different concerns and different environment models:
 
-This story provides a settings screen to configure credentials for each environment, a global environment indicator that's always visible, and a toggle to switch between them. Switching environments reinitializes the MarketDataProvider with the appropriate credentials.
+- **Massive** (market data) — single API key, no paper/live distinction. The same key serves quotes, Greeks, and option chains.
+- **Alpaca** (broker) — separate API key + secret per environment. `paper-api.alpaca.markets` and `api.alpaca.markets` are entirely different accounts.
+
+The original US-37 modelled a single environment toggle that reinitialised "the provider." That conflated two independent things. This revision treats credentials per vendor:
+
+1. Massive credential is a one-time setup. Without it, no live market data.
+2. Alpaca credentials are paired (paper + live); the environment toggle picks which set is active. Without either, market data still works — the app degrades gracefully on broker-only surfaces.
+3. The environment badge tracks **broker environment** (Alpaca paper vs live). It is not affected by Massive — Massive doesn't have one.
+
+**Why PAPER is louder than LIVE.** The PAPER badge is intentionally more prominent than the LIVE badge. Wheelbase's expected steady state is live wheel management; PAPER is a transient/exceptional state used for app testing or strategy experiments. A loud LIVE badge habituates within days and stops conveying meaning. A loud PAPER badge signals an unusual context every single time it appears — exactly when the trader needs the reminder that decisions here don't propagate to a real account. Do not "fix" this inversion without rereading this paragraph.
+
+**Position-broker mismatch is a known gap addressed via warnings, not data tagging.** Positions in Wheelbase are journaled manually and are not synchronised with any broker account. When the trader switches broker environments, position entries remain unchanged. The LIVE confirmation warns about reconciliation; a future story will tag legs with the env they were recorded under.
 
 ---
 
@@ -18,103 +29,174 @@ This story provides a settings screen to configure credentials for each environm
 
 ```gherkin
 Background:
-  Given the trader has configured both paper and live Alpaca credentials
+  Given the settings page lives at route #/settings
+  And it has two top-level sections: "Market Data (Massive)" and "Broker (Alpaca)"
 
-Scenario: Environment indicator is always visible in the app header
-  When the trader is using the paper environment
-  Then a prominent badge in the top navigation bar reads "PAPER" with an amber background
-  And the badge is visible on every page (position list, detail, new wheel form)
+Scenario: Settings page surfaces both vendors independently
+  When the trader opens settings
+  Then the Massive section shows one API key field (masked) and a "Test connection" button
+  And the Broker section shows two credential cards — "Paper" and "Live" — each with API Key ID, Secret Key (masked), and "Test connection"
+  And a global toggle "Active Broker Environment: Paper | Live" sits above the broker credential cards
 
-Scenario: Live environment indicator is visually distinct
-  When the trader is using the live environment
-  Then the badge reads "LIVE" with a green background
-  And the badge is more subtle than the paper badge (paper should scream, live is normal)
+Scenario: Saving Massive credentials enables market data
+  Given no Massive API key is configured
+  When the trader pastes a key and clicks "Save"
+  Then the key is encrypted via Electron safeStorage and stored
+  And a "Test connection" round-trip succeeds
+  And the position list begins fetching live prices on next refresh
 
-Scenario: Settings page allows configuring credentials for each environment
-  When the trader navigates to the settings page
-  Then there are two credential sections: "Paper Trading" and "Live Trading"
-  And each section has fields for API Key ID and Secret Key
-  And the secret key field is masked (password type)
-  And a "Test Connection" button validates the credentials
+Scenario: Test connection for Massive uses a fixed reference probe
+  Given a candidate API key
+  When the trader clicks "Test connection" in the Massive section
+  Then the app calls GET /v3/reference/tickers/AAPL with the candidate key
+  And shows green "Connected" on HTTP 200
+  And shows red "Authentication failed (401)" on HTTP 401
+  And shows red "Rate limited — please try again" on HTTP 429
+  And the probe ticker is hard-coded (not user-supplied) so the test is deterministic
 
-Scenario: Test connection verifies credentials against the broker
-  Given the trader enters paper credentials
-  When they click "Test Connection"
-  Then the app calls getAccountInfo() with those credentials
-  And shows a green checkmark and "Connected — Paper account" on success
-  And shows a red error message on failure: "Authentication failed — check your API key and secret"
+Scenario: Test connection for Alpaca surfaces the account identifier and environment
+  Given a candidate Alpaca key id + secret entered in the Paper credential card
+  When the trader clicks "Test connection"
+  Then the app calls GET /v2/account against paper-api.alpaca.markets
+  And on success shows green "✓ Verified — Account PA…ABC (paper)"
+  And accountNumberMasked is first 2 chars + "…" + last 3 chars of the account number
+  And the test does not import any activities
 
-Scenario: Switching environment reinitializes the provider
-  Given the trader is in the paper environment
-  When they select "Live" from the environment toggle
-  Then a confirmation dialog appears: "Switch to LIVE environment? All market data will refresh."
-  And on confirming, the MarketDataProvider reinitializes with live credentials
-  And the environment badge updates to "LIVE"
-  And all TanStack Query caches are invalidated (prices refresh)
+Scenario: Test connection detects environment mismatch
+  Given Alpaca live keys entered in the Paper credential card
+  When the trader clicks "Test connection"
+  Then the request to paper-api.alpaca.markets returns 401
+  And the UI shows red "Environment mismatch — these are LIVE keys, not paper keys"
+  And the keys are not saved
 
-Scenario: Switching to live requires confirmation, switching to paper does not
-  Given the trader is in the live environment
-  When they select "Paper" from the environment toggle
-  Then the switch happens immediately (no confirmation needed)
+Scenario: Switching broker environment to LIVE requires confirmation
+  Given the active broker environment is Paper
+  When the trader flips the toggle to Live
+  Then a confirmation dialog opens with the title "Switch to LIVE Alpaca account?"
+  And the body reads: "From now on, Wheelbase will read buying power, cash, and broker activities from your real money Alpaca account. Activity polling switches to live; existing paper-account activities will no longer be checked."
+  And the dialog lists, as bullets:
+    - "Header changes from amber PAPER to green LIVE"
+    - "Buying power, cash, activities — all switch to your live account"
+    - "Positions in Wheelbase are not synchronized — your journal entries remain exactly as you recorded them"
+    - "Phase 4 order execution will route to live when enabled"
+  And the footer reads: "Market data is unaffected — Massive continues to supply prices."
+  And the confirm button is the standard gold primary button (not destructive red)
+
+Scenario: LIVE confirmation includes position-reconciliation warning when positions exist
+  Given the trader has 1 or more open positions in Wheelbase
+  When the LIVE confirmation dialog opens
+  Then an amber warning line above the buttons reads: "You have {N} open positions in Wheelbase. Verify each one matches an actual contract in your live Alpaca account before acting on it."
+
+Scenario: Confirming the switch reinitialises only the BrokerProvider
+  Given the trader confirms the switch to Live
+  Then the BrokerProvider is reinitialised with live credentials
+  And the broker badge in the header changes from "PAPER" to "LIVE"
+  And TanStack Query keys prefixed "broker:*" are invalidated
+  And TanStack Query keys prefixed "market:*" are NOT invalidated
+  And in-flight market data requests continue uninterrupted
+
+Scenario: Switching back to Paper is immediate
+  Given the active broker environment is Live
+  When the trader flips the toggle to Paper
+  Then the switch happens immediately with no confirmation
   And the badge updates to "PAPER"
 
-Scenario: Credentials are stored securely
-  When the trader saves their credentials
-  Then API keys are stored in the OS keychain (via Electron safeStorage)
-  And credentials never appear in the SQLite database or log files
-  And the settings page shows "••••••••" for saved secret keys
+Scenario: Broker environment badge is always visible and clearly distinguished
+  When the active broker environment is Paper
+  Then the header shows a high-visibility amber badge "PAPER" on every page
+  When the active broker environment is Live
+  Then the header shows a more subtle green badge "LIVE" on every page
+  And no badge changes appearance based on Massive's connection state
 
-Scenario: App launches with no credentials configured
-  Given no Alpaca credentials have been saved
-  When the trader opens the app
-  Then a setup prompt appears: "Connect your Alpaca account to enable live market data"
-  And the prompt links to the settings page
-  And all live data columns show "—" (graceful degradation)
+Scenario: Market data is independent of broker configuration
+  Given Massive is configured and connected
+  And no Alpaca credentials are configured (neither paper nor live)
+  When the trader opens the position list
+  Then live prices, mids, and Greeks render normally from Massive
+  And surfaces that depend on the broker (buying power, activities) show "Connect Alpaca to enable" placeholder
+  And the broker badge in the header reads "NO BROKER" with neutral grey background and tooltip "Alpaca not configured. Click to set up."
 
-Scenario: App remembers the last active environment
-  Given the trader was using the paper environment
+Scenario: Credentials are stored securely per vendor
+  When the trader saves any credential
+  Then it is encrypted via safeStorage.encryptString before storage
+  And it never appears in SQLite or log files
+  And the UI shows "••••••••" for any saved secret on next page load
+  And the user can click "Replace" to enter a new value (no decryption-into-UI)
+  And whitespace is trimmed from pasted keys before storage
+
+Scenario: App remembers the last active broker environment between launches
+  Given the trader last used Paper
   When they close and reopen the app
-  Then the app starts in the paper environment
-  And the "PAPER" badge is visible immediately
+  Then the app starts in Paper
+  And the badge reads "PAPER" immediately
+
+Scenario: Empty-state on first launch
+  Given no Massive and no Alpaca credentials are configured
+  When the trader opens the app
+  Then a setup banner reads: "Connect Massive to enable live market prices, Greeks, and option chains. Connect Alpaca to track buying power and broker activities. Massive provides data; Alpaca provides your account. Both are optional — only Massive is required to view market data."
+  And both links route to the settings page
+  And the position list shows "—" for all live data columns
+
+Scenario: Removing Massive credentials disables market data with stale fallback
+  When the trader clicks "Remove" in the Massive section and confirms
+  Then the stored key is deleted from safeStorage
+  And open position cards continue to show the last cached price with a "stale" badge until next render, then "—" with an inline "Configure Massive" link
+  And subsequent quote / snapshot requests throw MarketDataAuthError
+
+Scenario: Expired Massive or Alpaca credentials surface a re-entry prompt
+  Given saved Massive or Alpaca credentials authenticate successfully at startup
+  When a subsequent request returns 401 mid-session
+  Then a toast appears: "{Vendor} authentication failed — check your key in Settings"
+  And the badge for that vendor degrades (Massive dot grey, broker badge "NO BROKER" until re-saved)
 ```
 
 ---
 
 ## Technical Notes
 
-- **New page:** `SettingsPage` at route `#/settings` — includes the credential management and environment toggle. Navigation link added to the sidebar/nav.
-- **Credential storage:** Use Electron's `safeStorage.encryptString()` / `decryptString()` for API secrets. Store encrypted blobs in a `settings` table or a separate `credentials.json` file. Never store plaintext secrets in SQLite.
-- **New IPC channels:**
-  - `settings:get-environment` — returns `"paper" | "live"`
-  - `settings:set-environment` — accepts `{ environment: "paper" | "live" }`, reinitializes the provider
-  - `settings:save-credentials` — accepts `{ environment, keyId, secret }`, encrypts and stores
-  - `settings:test-connection` — accepts `{ environment, keyId, secret }`, returns `{ ok: true, accountInfo } | { ok: false, error }`
-- **Provider reinitialization:** The `MarketDataFactory` needs a `switchEnvironment(env)` method that creates a new provider instance with the appropriate credentials and replaces the active one. In-flight requests should fail gracefully.
-- **Environment indicator component:** `EnvironmentBadge` — placed in `PageLayout`'s header area, visible on every page. Uses the `useEnvironment()` hook (TanStack Query, `staleTime: Infinity`).
-- **Query cache invalidation:** On environment switch, call `queryClient.invalidateQueries()` to force all market data hooks to refetch.
-- **Preload:** Add settings-related methods to the contextBridge API.
+- New page: `SettingsPage` at `#/settings` (already planned in original US-37; layout updates).
+- New IPC channels:
+  - `settings:get-credential-status` → `{ massive: "configured" | "missing", alpacaPaper: ..., alpacaLive: ..., activeBrokerEnv: "paper" | "live" | "none" }`
+  - `settings:save-massive-key` → `{ key }` (trim whitespace before storage)
+  - `settings:remove-massive-key`
+  - `settings:save-alpaca-credentials` → `{ environment: "paper" | "live", keyId, secret }`
+  - `settings:remove-alpaca-credentials` → `{ environment }`
+  - `settings:set-active-broker-environment` → `{ environment: "paper" | "live" }`, reinitialises `BrokerProvider`
+  - `settings:test-connection` → `{ vendor: "massive" | "alpaca", environment? }` returns `{ ok, errorCode?, accountNumberMasked? }`
+- Provider reinitialisation: factory functions for `MarketDataProvider` (one Massive instance, replaced on key change) and `BrokerProvider` (one Alpaca instance, replaced on environment switch). No cross-coupling.
+- Query invalidation: scope invalidation to vendor — broker env switch invalidates only queries whose `queryKey[0]` is `broker:*`; Massive replacement invalidates `market:*` keys.
+- Renderer: `EnvironmentBadge` reads only broker state; `MarketDataStatusDot` (small green/grey dot near the badge) reads Massive connection state.
+- Test connection for Massive tests REST only; WebSocket auth (auth-message-after-connect) is tested when streaming ships.
+- First-connect activities ingestion is bounded by the caller (test-connection does not import; scheduled collection bounds to "since today" or earliest position created_at).
+- Optional cheap mitigation: write the current broker environment to `legs.created_in_env` at insert time so a future position-tagging story has data from day one.
+- Trim whitespace on every pasted credential before validation; reject if validation fails.
 
 ---
 
 ## Out of Scope
 
-- Multiple broker support (future — only Alpaca for now, but credentials per provider)
-- Account balance display (could be a separate settings/account info story)
-- Automatic environment detection
-- Environment-specific position databases (same DB, live data differs)
+- Multiple market data providers active simultaneously (US-39 ships only Massive; switching back to Alpaca for market data is not supported).
+- Account balance dashboard (separate story).
+- Per-environment SQLite databases — a single DB serves both; only the live data differs.
+- Automatic broker environment detection from order history.
+- Tagging each Wheelbase position with the broker environment it was recorded under, plus a "Paper position" chip on cards when the active environment differs — separate story.
+- Settings opt-out: "I execute trades outside Wheelbase — hide the broker badge" — separate story.
+- Multi-account live Alpaca support.
 
 ---
 
 ## Dependencies
 
-- US-31 (MarketDataProvider adapter — the provider being configured)
+- US-31 (rewrite) — provider interface definitions
+- US-39 — `MassiveMarketDataProvider` (the thing being configured)
+- US-40 — `AlpacaBrokerProvider` (the thing being toggled)
 
 ---
 
 ## Estimate
 
-5 points
+8 points (up from 5 — two vendors, more IPC, scoped invalidation, reconciliation warnings)
 
 ## Mockup
 
-- `mockups/us-37-environment-toggle.mdx`
+- `mockups/us-37-credentials-and-broker-environment.mdx`

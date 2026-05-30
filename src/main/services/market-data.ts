@@ -1,7 +1,6 @@
 import type { Subscription } from 'rxjs'
 import {
   type MarketDataProvider,
-  type MarketStatus,
   type OptionSnapshot,
   type StockQuote,
   type StreamError
@@ -56,24 +55,13 @@ export async function fetchOptionSnapshots(
   symbols: string[]
 ): Promise<FetchOptionSnapshotsResult> {
   if (symbols.length === 0) return { snapshots: {}, unavailable: false }
-  try {
-    const map = await provider.getOptionSnapshots(symbols)
-    return { snapshots: Object.fromEntries(map), unavailable: false }
-  } catch (err) {
-    const code =
-      typeof err === 'object' && err !== null && 'code' in err
-        ? (err as { code: unknown }).code
-        : null
-    if (code === 'options_no_subscription') {
-      logger.warn('options data unavailable: OPRA subscription required')
-      return { snapshots: {}, unavailable: true }
-    }
-    throw err
-  }
-}
-
-export async function fetchMarketStatus(provider: MarketDataProvider): Promise<MarketStatus> {
-  return provider.getMarketStatus()
+  const entries = await Promise.all(
+    symbols.map(async (s) => {
+      const snap = await provider.getOptionSnapshot(s)
+      return [s, snap] as const
+    })
+  )
+  return { snapshots: Object.fromEntries(entries), unavailable: false }
 }
 
 export async function subscribeToStockQuotes(

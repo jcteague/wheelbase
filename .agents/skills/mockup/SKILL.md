@@ -1,6 +1,6 @@
 ---
-name: "mockup"
-description: "This skill should be used when the product-owner skill has just produced a user story, when the user asks to \"create a mockup\", \"generate a mockup for this story\", \"mockup this feature\", or \"visualize this user story\". Produces a self-contained MDX mockup file using project components first, shadcn/ui primitives second, delegating visual design to the frontend-design skill."
+name: 'mockup'
+description: 'This skill should be used when the product-owner skill has just produced a user story, when the user asks to "create a mockup", "generate a mockup for this story", "mockup this feature", or "visualize this user story". Produces a self-contained MDX mockup file using project components first, shadcn/ui primitives second, delegating visual design to the frontend-design skill.'
 ---
 
 # Mockup — UI Visualization from User Stories

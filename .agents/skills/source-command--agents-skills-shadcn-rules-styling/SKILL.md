@@ -1,6 +1,6 @@
 ---
-name: "source-command--agents-skills-shadcn-rules-styling"
-description: "Run the migrated source command `.agents-skills-shadcn-rules-styling`."
+name: 'source-command--agents-skills-shadcn-rules-styling'
+description: 'Run the migrated source command `.agents-skills-shadcn-rules-styling`.'
 ---
 
 # source-command--agents-skills-shadcn-rules-styling

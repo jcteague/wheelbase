@@ -1,6 +1,6 @@
 ---
-name: "source-command-create-plan"
-description: "Create a detailed plan from a user story"
+name: 'source-command-create-plan'
+description: 'Create a detailed plan from a user story'
 ---
 
 # source-command-create-plan

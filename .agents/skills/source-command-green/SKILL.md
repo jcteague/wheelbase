@@ -1,6 +1,6 @@
 ---
-name: "source-command-green"
-description: "Implement features to make failing tests pass (TDD green phase)"
+name: 'source-command-green'
+description: 'Implement features to make failing tests pass (TDD green phase)'
 ---
 
 # source-command-green

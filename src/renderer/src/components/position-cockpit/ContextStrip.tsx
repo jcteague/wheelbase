@@ -34,7 +34,9 @@ export function ContextStrip({ input, ivRank }: ContextStripProps): React.JSX.El
   const thetaValueClass =
     theta.yieldPct >= MANAGEMENT_RULES.targetCapturePct ? 'text-wb-green' : 'text-wb-text-primary'
 
-  const ivValue = `${(input.greeks.iv * 100).toFixed(1)}%`
+  const iv =
+    input.impliedVolatility !== undefined ? input.impliedVolatility : (input.greeks.iv ?? null)
+  const ivValue = iv != null ? `${(iv * 100).toFixed(1)}%` : '—'
   const ivSub = ivRank != null ? `rank ${ivRank}` : 'implied vol'
 
   const vegaValue = fmtMoney(String(input.greeks.vega * 100))

@@ -97,7 +97,7 @@ After every code change, run in order:
 Library: `pino`. Configured in `src/main/logger.ts`.
 
 - **INFO:** key business events — what was created, what failed validation, what phase transitioned
-- **DEBUG:** inputs before processing, results from pure-function calls, DB transaction checkpoints
+- **DEBUG:** There should be enough debug logging statements to track workflows and track down issues. api requests and responses, inputs before processing, results from pure-function calls, DB transaction checkpoints
 - Never add logging to `src/main/core/` engines — they are pure functions with no I/O imports
 
 ---
@@ -114,6 +114,67 @@ Library: `pino`. Configured in `src/main/logger.ts`.
 - Renderer components **must** use Tailwind utility classes and `wb-*` design tokens (`text-wb-green`, `bg-wb-gold`, `animate-wb-pulse`, etc.) — never raw inline styles for color, spacing, or animation; inline `style` is only acceptable for values that cannot be expressed as a Tailwind class (e.g. a truly dynamic numeric value not in the scale)
 
 ---
+
+## 1. Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before implementing:
+
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+## 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+## 3. Continually Improve the code
+
+When making checking for possible refactors (during refactor phase of TDD), look for improvements that can be made code that keeps the application
+
+- Adhere to Architecture Standards.
+- Reduces duplication acrorss the entire application.
+- Reduces complexity
+
+When editing existing code:
+
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+## 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+## Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
 ## Running the App
 

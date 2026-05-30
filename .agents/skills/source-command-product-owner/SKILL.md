@@ -1,6 +1,6 @@
 ---
-name: "source-command-product-owner"
-description: "This skill should be used when the user asks to \"write a user story\", \"create an epic\", \"define acceptance criteria\", \"break down a feature\", \"manage stories in GitHub\", \"refine a story\", \"add stories to the project board\", \"prioritize the backlog\", or needs product ownership guidance for Wheelbase feature development."
+name: 'source-command-product-owner'
+description: 'This skill should be used when the user asks to "write a user story", "create an epic", "define acceptance criteria", "break down a feature", "manage stories in GitHub", "refine a story", "add stories to the project board", "prioritize the backlog", or needs product ownership guidance for Wheelbase feature development.'
 ---
 
 # source-command-product-owner

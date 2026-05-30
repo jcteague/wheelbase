@@ -28,7 +28,9 @@ export type CockpitInput = {
   /** spot price for the underlying */
   underlying: number | null
   /** greeks from option snapshot */
-  greeks: { delta: number; theta: number; gamma: number; vega: number; iv: number } | null
+  greeks: { delta: number; theta: number; gamma: number; vega: number; iv?: number } | null
+  /** implied volatility as a decimal (e.g. 0.32 = 32%); separate from greeks to support providers that omit iv */
+  impliedVolatility?: number | null
 }
 
 // -------- Management rules (future: replace with user preferences) --------

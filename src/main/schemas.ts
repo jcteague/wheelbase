@@ -362,3 +362,27 @@ export const GetOptionSnapshotsPayloadSchema = z.object({
   symbols: z.array(z.string().min(1).max(25)).max(50)
 })
 export type GetOptionSnapshotsPayload = z.infer<typeof GetOptionSnapshotsPayloadSchema>
+
+export const GetOptionSnapshotPayloadSchema = z.object({
+  underlying: z.string().min(1),
+  contract: z.string().regex(/^[A-Z]{1,6}\d{6}[CP]\d{8}$/)
+})
+export type GetOptionSnapshotPayload = z.infer<typeof GetOptionSnapshotPayloadSchema>
+
+export const GetOptionChainPayloadSchema = z.object({
+  underlying: z.string().min(1),
+  expirationFrom: z.string().date().optional(),
+  expirationTo: z.string().date().optional(),
+  type: z.enum(['put', 'call']).optional(),
+  strikeFrom: z.string().optional(),
+  strikeTo: z.string().optional(),
+  limit: z.number().int().min(1).max(250).optional(),
+  cursor: z.string().optional()
+})
+export type GetOptionChainPayload = z.infer<typeof GetOptionChainPayloadSchema>
+
+export const GetBrokerActivitiesPayloadSchema = z.object({
+  type: z.string().min(1),
+  since: z.string().datetime().optional()
+})
+export type GetBrokerActivitiesPayload = z.infer<typeof GetBrokerActivitiesPayloadSchema>

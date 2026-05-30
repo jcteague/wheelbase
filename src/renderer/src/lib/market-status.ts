@@ -1,5 +1,5 @@
 import type { MarketStatusDisplay } from '../components/MarketStatusPill'
-import type { MarketStatus } from '../api/market-data'
+import type { MarketStatus } from '../api/broker'
 
 export function deriveMarketStatusDisplay(
   session: MarketStatus['session'] | undefined,

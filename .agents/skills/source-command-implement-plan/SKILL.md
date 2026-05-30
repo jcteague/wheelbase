@@ -1,5 +1,5 @@
 ---
-name: "source-command-implement-plan"
+name: 'source-command-implement-plan'
 description: "Implements tasks from a plan file in TDD order (Red \u2192 Green \u2192 Refactor \u2192 Documentation). Reads tasks.md, executes each task using the appropriate skill, verifies correctness, and checks off completed tasks. Optionally filter to a phase or layer."
 ---
 

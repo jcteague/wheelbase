@@ -1,5 +1,7 @@
 import { ipcMain, type BrowserWindow } from 'electron'
 import {
+  GetOptionChainPayloadSchema,
+  GetOptionSnapshotPayloadSchema,
   GetOptionSnapshotsPayloadSchema,
   GetStockQuotesPayloadSchema,
   SetStockQuoteTickersPayloadSchema
@@ -12,7 +14,6 @@ import {
 import { fakeStockTickSubject } from '../integrations/fake-market-data'
 import {
   fetchStockQuotes,
-  fetchMarketStatus,
   fetchOptionSnapshots,
   subscribeToStockQuotes,
   newStreamState
@@ -48,17 +49,26 @@ export function registerMarketDataHandlers(
     })
   )
 
-  ipcMain.handle('market-data:market-status', () =>
-    handleIpcCall('market_data_market_status_unhandled_error', async () => {
-      const status = await fetchMarketStatus(provider)
-      return { status }
-    })
-  )
-
   ipcMain.handle('market-data:option-snapshots', (_, payload: unknown) =>
     handleIpcCall('market_data_option_snapshots_unhandled_error', async () => {
       const { symbols } = GetOptionSnapshotsPayloadSchema.parse(payload)
       return fetchOptionSnapshots(provider, symbols)
+    })
+  )
+
+  ipcMain.handle('market-data:option-snapshot', (_, payload: unknown) =>
+    handleIpcCall('market_data_option_snapshot_unhandled_error', async () => {
+      const { contract } = GetOptionSnapshotPayloadSchema.parse(payload)
+      const snapshot = await provider.getOptionSnapshot(contract)
+      return { snapshot }
+    })
+  )
+
+  ipcMain.handle('market-data:option-chain', (_, payload: unknown) =>
+    handleIpcCall('market_data_option_chain_unhandled_error', async () => {
+      const filter = GetOptionChainPayloadSchema.parse(payload)
+      const snapshots = await provider.getOptionChainSnapshot(filter)
+      return { snapshots, nextCursor: null }
     })
   )
 

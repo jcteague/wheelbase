@@ -1,6 +1,6 @@
 ---
-name: "source-command-options-expert"
-description: "Act as an options trading subject-matter expert helping a UX analyst elicit requirements for Wheelbase. This skill should be used when the user asks about \"wheel strategy mechanics\", \"options trading workflows\", \"CSP or covered call requirements\", \"PMCC logic\", \"assignment handling\", \"roll decisions\", \"alert design for options\", \"trader interview questions\", or needs a proxy trader perspective for product feedback."
+name: 'source-command-options-expert'
+description: 'Act as an options trading subject-matter expert helping a UX analyst elicit requirements for Wheelbase. This skill should be used when the user asks about "wheel strategy mechanics", "options trading workflows", "CSP or covered call requirements", "PMCC logic", "assignment handling", "roll decisions", "alert design for options", "trader interview questions", or needs a proxy trader perspective for product feedback.'
 ---
 
 # source-command-options-expert

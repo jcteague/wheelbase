@@ -1,33 +1,28 @@
 import type { MarketDataProvider } from './market-data-provider'
-import { AlpacaMarketDataProvider } from './alpaca-market-data'
+import { MassiveMarketDataProvider } from './massive-market-data'
 import { FakeMarketDataProvider } from './fake-market-data'
 
-export type MarketDataConfig = {
-  provider: 'alpaca'
-  keyId: string
-  secretKey: string
-  paper: boolean
-  dataFeed?: string
-  optionFeed?: string
-}
-
-export function createMarketDataProvider(config: MarketDataConfig): MarketDataProvider {
-  // In e2e tests (WHEELBASE_MARKET_MOCK=true) use the in-process fake provider so
-  // tests never attempt a real Alpaca WebSocket connection.
-  if (process.env.WHEELBASE_MARKET_MOCK === 'true') {
+function buildProvider(): MarketDataProvider {
+  if (process.env.FAKE_MARKET_DATA === 'true') {
     return new FakeMarketDataProvider()
   }
+  const apiKey = process.env.MASSIVE_API_KEY
+  if (apiKey) {
+    return new MassiveMarketDataProvider({ apiKey })
+  }
+  throw new Error(
+    'Market data provider not configured. Set MASSIVE_API_KEY or FAKE_MARKET_DATA=true.'
+  )
+}
 
-  switch (config.provider) {
-    case 'alpaca':
-      return new AlpacaMarketDataProvider({
-        keyId: config.keyId,
-        secretKey: config.secretKey,
-        paper: config.paper,
-        dataFeed: config.dataFeed,
-        optionFeed: config.optionFeed
-      })
-    default:
-      throw new Error(`Unknown market data provider: ${config.provider as string}`)
+let cached: MarketDataProvider | null = null
+
+export const marketDataFactory = {
+  create(): MarketDataProvider {
+    if (!cached) cached = buildProvider()
+    return cached
+  },
+  recreate(): void {
+    cached = null
   }
 }

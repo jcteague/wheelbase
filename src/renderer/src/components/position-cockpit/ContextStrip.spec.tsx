@@ -151,4 +151,22 @@ describe('ContextStrip', () => {
     render(<ContextStrip input={input} />)
     expect(screen.getByText('$5.00/d')).toHaveClass('text-wb-green')
   })
+
+  it('renders — for IV when impliedVolatility is null', () => {
+    // After refactoring: iv moves out of greeks into CockpitInput.impliedVolatility (number | null)
+    // When impliedVolatility is null the IV cell must show "—" rather than "NaN%" or crashing.
+    const greeksWithoutIv = {
+      delta: baseGreeks.delta,
+      theta: baseGreeks.theta,
+      gamma: baseGreeks.gamma,
+      vega: baseGreeks.vega
+    }
+    const input = {
+      ...makeInput(),
+      greeks: greeksWithoutIv,
+      impliedVolatility: null
+    } as unknown as CockpitInput
+    render(<ContextStrip input={input} />)
+    expect(screen.getByText('—')).toBeInTheDocument()
+  })
 })

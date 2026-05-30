@@ -1,5 +1,5 @@
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
-import { getMarketStatus, type MarketStatus } from '../api/market-data'
+import { getMarketStatus, type MarketStatus } from '../api/broker'
 import type { ApiError } from '../api/error'
 import { marketDataQueryKeys } from './marketDataQueryKeys'
 

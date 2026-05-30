@@ -17,10 +17,8 @@ vi.mock('../logger', () => ({
 
 const provider = {
   getStockQuotes: vi.fn(),
-  getOptionSnapshots: vi.fn(),
-  getActivities: vi.fn(),
-  getAccountInfo: vi.fn(),
-  getMarketStatus: vi.fn(),
+  getOptionSnapshot: vi.fn(),
+  getOptionChainSnapshot: vi.fn(),
   supportsStreaming: vi.fn(),
   connect: vi.fn(),
   disconnect: vi.fn(),
@@ -80,7 +78,7 @@ describe('registerMarketDataHandlers', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([c]) => c as string)
     expect(channels).toContain('market-data:stock-quotes')
     expect(channels).toContain('market-data:set-stock-quote-tickers')
-    expect(channels).toContain('market-data:market-status')
+    expect(channels).toContain('market-data:option-snapshots')
   })
 
   it('market-data:stock-quotes returns ok:true with quotes record on success', async () => {
@@ -364,57 +362,9 @@ describe('registerMarketDataHandlers', () => {
     )
   })
 
-  it('market-data:market-status returns ok:true with status', async () => {
-    const { ipcMain } = await import('electron')
-    const { registerMarketDataHandlers } = await import('./market-data')
-
-    provider.getMarketStatus.mockResolvedValue({
-      isOpen: true,
-      session: 'regular',
-      nextOpen: '2026-01-02T09:30:00Z',
-      nextClose: '2026-01-01T16:00:00Z'
-    })
-
-    registerMarketDataHandlers(provider, getWindow)
-    const handler = getHandler(
-      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
-      'market-data:market-status'
-    )
-
-    const result = await handler(null, undefined)
-
-    expect(result).toMatchObject({
-      ok: true,
-      status: { isOpen: true, session: 'regular' }
-    })
-  })
-
-  it('market-data:market-status returns ok:false on MarketDataError', async () => {
-    const { ipcMain } = await import('electron')
-    const { registerMarketDataHandlers } = await import('./market-data')
-
-    provider.getMarketStatus.mockRejectedValue(
-      new MarketDataError('network_error', 'connection refused')
-    )
-
-    registerMarketDataHandlers(provider, getWindow)
-    const handler = getHandler(
-      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
-      'market-data:market-status'
-    )
-
-    const result = await handler(null, undefined)
-
-    expect(result).toMatchObject({
-      ok: false,
-      errors: [expect.objectContaining({ code: 'network_error' })]
-    })
-  })
-
   // --- market-data:option-snapshots ---
 
   const AAPL_OCC = 'AAPL260516P00180000'
-  const XYZ_OCC = 'XYZ260516P00050000'
 
   const AAPL_SNAPSHOT: OptionSnapshot = {
     bid: '1.20',
@@ -427,9 +377,9 @@ describe('registerMarketDataHandlers', () => {
       delta: '-0.30',
       gamma: '0.02',
       theta: '-0.05',
-      vega: '0.10',
-      iv: '0.25'
+      vega: '0.10'
     },
+    impliedVolatility: '0.25',
     timestamp: '2026-01-01T10:00:00Z'
   }
 
@@ -447,7 +397,7 @@ describe('registerMarketDataHandlers', () => {
     const { ipcMain } = await import('electron')
     const { registerMarketDataHandlers } = await import('./market-data')
 
-    provider.getOptionSnapshots.mockResolvedValue(new Map([[AAPL_OCC, AAPL_SNAPSHOT]]))
+    provider.getOptionSnapshot.mockResolvedValue(AAPL_SNAPSHOT)
 
     registerMarketDataHandlers(provider, getWindow)
     const handler = getHandler(
@@ -483,53 +433,14 @@ describe('registerMarketDataHandlers', () => {
     const result = await handler(null, { symbols: [] })
 
     expect(result).toEqual({ ok: true, snapshots: {}, unavailable: false })
-    expect(provider.getOptionSnapshots).not.toHaveBeenCalled()
-  })
-
-  it('market-data:option-snapshots returns ok:true with unavailable:true when provider throws options_no_subscription', async () => {
-    const { ipcMain } = await import('electron')
-    const { registerMarketDataHandlers } = await import('./market-data')
-
-    provider.getOptionSnapshots.mockRejectedValue(
-      new MarketDataError('options_no_subscription', 'OPRA agreement is not signed')
-    )
-
-    registerMarketDataHandlers(provider, getWindow)
-    const handler = getHandler(
-      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
-      'market-data:option-snapshots'
-    )
-
-    const result = await handler(null, { symbols: [AAPL_OCC] })
-
-    expect(result).toEqual({ ok: true, snapshots: {}, unavailable: true })
-  })
-
-  it('market-data:option-snapshots omits unknown symbols from result', async () => {
-    const { ipcMain } = await import('electron')
-    const { registerMarketDataHandlers } = await import('./market-data')
-
-    provider.getOptionSnapshots.mockResolvedValue(new Map([[AAPL_OCC, AAPL_SNAPSHOT]]))
-
-    registerMarketDataHandlers(provider, getWindow)
-    const handler = getHandler(
-      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
-      'market-data:option-snapshots'
-    )
-
-    const result = await handler(null, { symbols: [AAPL_OCC, XYZ_OCC] })
-
-    const typed = result as { ok: true; snapshots: Record<string, unknown> }
-    expect(typed.ok).toBe(true)
-    expect(Object.keys(typed.snapshots)).toEqual([AAPL_OCC])
-    expect(typed.snapshots).not.toHaveProperty(XYZ_OCC)
+    expect(provider.getOptionSnapshot).not.toHaveBeenCalled()
   })
 
   it('market-data:option-snapshots returns ok:false with auth_failed when provider throws MarketDataError(auth_failed)', async () => {
     const { ipcMain } = await import('electron')
     const { registerMarketDataHandlers } = await import('./market-data')
 
-    provider.getOptionSnapshots.mockRejectedValue(
+    provider.getOptionSnapshot.mockRejectedValue(
       new MarketDataError('auth_failed', 'authentication failed')
     )
 
@@ -551,7 +462,7 @@ describe('registerMarketDataHandlers', () => {
     const { ipcMain } = await import('electron')
     const { registerMarketDataHandlers } = await import('./market-data')
 
-    provider.getOptionSnapshots.mockRejectedValue(
+    provider.getOptionSnapshot.mockRejectedValue(
       new MarketDataError('network_error', 'connection refused')
     )
 
@@ -574,7 +485,7 @@ describe('registerMarketDataHandlers', () => {
     const { logger } = await import('../logger')
     const { registerMarketDataHandlers } = await import('./market-data')
 
-    provider.getOptionSnapshots.mockRejectedValue(new Error('unexpected'))
+    provider.getOptionSnapshot.mockRejectedValue(new Error('unexpected'))
 
     registerMarketDataHandlers(provider, getWindow)
     const handler = getHandler(
@@ -607,5 +518,78 @@ describe('registerMarketDataHandlers', () => {
       ok: false,
       errors: [expect.objectContaining({ field: 'symbols' })]
     })
+  })
+
+  // --- market-data:option-snapshot (single contract) ---
+
+  it('registers market-data:option-snapshot channel', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerMarketDataHandlers } = await import('./market-data')
+
+    registerMarketDataHandlers(provider, getWindow)
+
+    const channels = vi.mocked(ipcMain.handle).mock.calls.map(([c]) => c as string)
+    expect(channels).toContain('market-data:option-snapshot')
+  })
+
+  it('market-data:option-snapshot returns { ok: true, snapshot } for a single OCC contract', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerMarketDataHandlers } = await import('./market-data')
+
+    provider.getOptionSnapshot.mockResolvedValue(AAPL_SNAPSHOT)
+
+    registerMarketDataHandlers(provider, getWindow)
+    const handler = getHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'market-data:option-snapshot'
+    )
+
+    const result = await handler(null, { underlying: 'AAPL', contract: AAPL_OCC })
+
+    expect(result).toMatchObject({ ok: true, snapshot: AAPL_SNAPSHOT })
+    expect(provider.getOptionSnapshot).toHaveBeenCalledWith(AAPL_OCC)
+  })
+
+  // --- market-data:option-chain ---
+
+  it('registers market-data:option-chain channel', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerMarketDataHandlers } = await import('./market-data')
+
+    registerMarketDataHandlers(provider, getWindow)
+
+    const channels = vi.mocked(ipcMain.handle).mock.calls.map(([c]) => c as string)
+    expect(channels).toContain('market-data:option-chain')
+  })
+
+  it('market-data:option-chain returns { ok: true, snapshots, nextCursor }', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerMarketDataHandlers } = await import('./market-data')
+
+    provider.getOptionChainSnapshot.mockResolvedValue([AAPL_SNAPSHOT])
+
+    registerMarketDataHandlers(provider, getWindow)
+    const handler = getHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'market-data:option-chain'
+    )
+
+    const result = await handler(null, { underlying: 'AAPL' })
+
+    expect(result).toMatchObject({ ok: true, snapshots: [AAPL_SNAPSHOT], nextCursor: null })
+  })
+
+  // --- guard: broker channels must NOT be registered here ---
+
+  it('market-data namespace does not register :activities, :account, or :market-status handlers', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerMarketDataHandlers } = await import('./market-data')
+
+    registerMarketDataHandlers(provider, getWindow)
+
+    const channels = vi.mocked(ipcMain.handle).mock.calls.map(([c]) => c as string)
+    expect(channels).not.toContain('market-data:activities')
+    expect(channels).not.toContain('market-data:account')
+    expect(channels).not.toContain('market-data:market-status')
   })
 })

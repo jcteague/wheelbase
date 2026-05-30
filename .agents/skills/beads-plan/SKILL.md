@@ -1,5 +1,5 @@
 ---
-name: "Beads Plan Tracking"
+name: 'Beads Plan Tracking'
 description: "This skill should be used when the user asks to \"create beads tasks from a plan\", \"track plan tasks in beads\", \"create epics and stories in beads\", \"convert a plan to beads issues\", \"set up beads hierarchy for a plan\", \"create beads tasks with dependencies\", or \"store plan tasks using bd\". Guides creating a hierarchical beads issue structure (epic \u2192 feature \u2192 tasks) from a plan file, with TDD task structure, skill references, and verified dependency wiring."
 ---
 

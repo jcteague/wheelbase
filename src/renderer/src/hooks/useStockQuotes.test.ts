@@ -33,7 +33,10 @@ beforeEach(() => {
   Object.assign(window, {
     api: {
       ...(window.api ?? {}),
-      getStockQuotes: mockGetStockQuotes,
+      marketData: {
+        ...((window.api as { marketData?: unknown })?.marketData ?? {}),
+        stockQuotes: mockGetStockQuotes
+      },
       setStockQuoteTickers: mockSetStockQuoteTickers,
       onStockQuote: mockOnStockQuote,
       onStreamError: mockOnStreamError

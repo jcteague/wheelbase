@@ -1,6 +1,6 @@
 ---
-name: "source-command--agents-skills-shadcn-cli"
-description: "Run the migrated source command `.agents-skills-shadcn-cli`."
+name: 'source-command--agents-skills-shadcn-cli'
+description: 'Run the migrated source command `.agents-skills-shadcn-cli`.'
 ---
 
 # source-command--agents-skills-shadcn-cli

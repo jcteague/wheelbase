@@ -35,7 +35,7 @@ describe('US-16: cost basis after sequential rolls', () => {
     app = await electron.launch({
       args: [APP_PATH, '--no-sandbox'],
       cwd: APP_CWD,
-      env: { ...process.env, WHEELBASE_DB_PATH: dbPath }
+      env: { ...process.env, WHEELBASE_DB_PATH: dbPath, FAKE_MARKET_DATA: 'true', FAKE_BROKER: 'true' }
     })
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')

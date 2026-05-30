@@ -5,11 +5,8 @@ import type { Observable } from 'rxjs'
 export type MarketDataErrorCode =
   | 'auth_failed'
   | 'network_error'
-  | 'options_no_subscription'
   | 'rate_limited'
-  | 'stream_disconnected'
   | 'streaming_unsupported'
-  | 'subscription_failed'
   | 'unknown'
 
 export class MarketDataError extends Error {
@@ -30,7 +27,7 @@ export type StockQuote = {
   ask: string
   change: string
   changePercent: string
-  prevClose: string // 2dp; '' on stream ticks, set on REST snapshot
+  prevClose: string
   volume: number
   timestamp: string
 }
@@ -42,57 +39,40 @@ export type OptionSnapshot = {
   lastTrade: string
   openInterest: number | null
   volume: number | null
-  greeks: {
+  greeks?: {
     delta: string
     gamma: string
     theta: string
     vega: string
-    iv: string
   }
+  impliedVolatility?: string
   timestamp: string
 }
 
-export type BrokerActivity = {
-  activityId: string
-  activityType: string
-  symbol: string
-  qty: number
-  price: string
-  transactionTime: string
-}
-
-export type ActivityFilter = {
-  type: string
-  since?: string
-}
-
-export type AccountInfo = {
-  buyingPower: string
-  portfolioValue: string
-  cash: string
-  environment: 'paper' | 'live'
-}
-
-export type MarketStatus = {
-  isOpen: boolean
-  nextOpen: string
-  nextClose: string
-  session: 'regular' | 'pre' | 'post' | 'closed'
+export type OptionChainFilter = {
+  underlying: string
+  expirationFrom?: string
+  expirationTo?: string
+  type?: 'put' | 'call'
+  strikeFrom?: string
+  strikeTo?: string
+  limit?: number
+  cursor?: string
 }
 
 // --- Streaming types ---
 
-export type DataFeed = 'stockQuotes' | 'optionQuotes' | 'optionTrades'
+export type MarketDataFeed = 'stockQuotes' | 'optionQuotes' | 'optionTrades'
 
 export type StreamEvent<T> = {
-  feed: DataFeed
+  feed: MarketDataFeed
   symbol: string
   data: T
   timestamp: string
 }
 
 export type StreamError = {
-  feed: DataFeed
+  feed: MarketDataFeed
   code: string
   message: string
   reconnectable: boolean
@@ -102,12 +82,13 @@ export type StreamError = {
 
 export type MarketDataProvider = {
   getStockQuotes(tickers: string[]): Promise<Map<string, StockQuote>>
-  getOptionSnapshots(contractIds: string[]): Promise<Map<string, OptionSnapshot>>
-  getActivities(filter: ActivityFilter): Promise<BrokerActivity[]>
-  getAccountInfo(): Promise<AccountInfo>
-  getMarketStatus(): Promise<MarketStatus>
-  supportsStreaming(feed: DataFeed): boolean
-  connect(feeds?: DataFeed[]): Promise<void>
+  getOptionSnapshot(contractId: string): Promise<OptionSnapshot>
+  getOptionChainSnapshot(filter: OptionChainFilter): Promise<OptionSnapshot[]>
+  supportsStreaming(feed: MarketDataFeed): boolean
+  connect(feeds?: MarketDataFeed[]): Promise<void>
   disconnect(): Promise<void>
-  stream(feed: DataFeed, symbols: string[]): Observable<StreamEvent<StockQuote | OptionSnapshot>>
+  stream(
+    feed: MarketDataFeed,
+    symbols: string[]
+  ): Observable<StreamEvent<StockQuote | OptionSnapshot>>
 }

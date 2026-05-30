@@ -1,5 +1,6 @@
 import { ZodError } from 'zod'
 import { ValidationError } from '../core/lifecycle'
+import { BrokerError } from '../integrations/broker-provider'
 import { MarketDataError } from '../integrations/market-data-provider'
 import { logger } from '../logger'
 
@@ -15,7 +16,7 @@ export async function handleIpcCall<T extends object>(
     if (err instanceof ValidationError) {
       return { ok: false, errors: [{ field: err.field, code: err.code, message: err.message }] }
     }
-    if (err instanceof MarketDataError) {
+    if (err instanceof MarketDataError || err instanceof BrokerError) {
       logger.error({ code: err.code, message: err.message }, logLabel)
       return { ok: false, errors: [{ field: '__root__', code: err.code, message: err.message }] }
     }

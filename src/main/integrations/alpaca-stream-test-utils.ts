@@ -1,21 +1,23 @@
 /**
- * Shared WebSocket simulation helpers for AlpacaMarketDataProvider tests.
- * Used by both alpaca-market-data.test.ts and alpaca-market-data.e2e.test.ts.
+ * Shared WebSocket simulation helpers for Alpaca streaming tests.
+ * TODO: rename to generic streaming test utilities when streaming utilities generalize beyond Alpaca.
  */
+import type { Mock } from 'vitest'
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+type SocketHandler = (...args: unknown[]) => void
+
 export type MockSocket = {
   url: string
   readyState: number
-  _handlers: Record<string, Array<(...args: any[]) => void>>
-  on: ReturnType<typeof import('vitest').vi.fn>
-  send: ReturnType<typeof import('vitest').vi.fn>
-  close: ReturnType<typeof import('vitest').vi.fn>
+  _handlers: Record<string, SocketHandler[]>
+  on: Mock
+  send: Mock
+  close: Mock
 }
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
 export function emitSocketEvent(socket: MockSocket, event: string, ...args: unknown[]): void {
-  ;(socket._handlers[event] || []).forEach((h) => h(...args))
+  const handlers = socket._handlers[event] ?? []
+  handlers.forEach((handler) => handler(...args))
 }
 
 export function simulateAuth(socket: MockSocket): void {

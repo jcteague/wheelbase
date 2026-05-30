@@ -1,6 +1,6 @@
 ---
-name: "source-command--agents-skills-shadcn-rules-icons"
-description: "Run the migrated source command `.agents-skills-shadcn-rules-icons`."
+name: 'source-command--agents-skills-shadcn-rules-icons'
+description: 'Run the migrated source command `.agents-skills-shadcn-rules-icons`.'
 ---
 
 # source-command--agents-skills-shadcn-rules-icons

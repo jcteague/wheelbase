@@ -1,6 +1,6 @@
 ---
-name: "source-command-plan-tasks"
-description: "Reads a plan file and creates a tasks.md checklist with TDD Red/Green/Refactor tasks, dependency notes, and parallel execution groups."
+name: 'source-command-plan-tasks'
+description: 'Reads a plan file and creates a tasks.md checklist with TDD Red/Green/Refactor tasks, dependency notes, and parallel execution groups.'
 ---
 
 # source-command-plan-tasks

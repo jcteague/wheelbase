@@ -1,6 +1,6 @@
 ---
-name: "product-owner"
-description: "This skill should be used when the user asks to \"write a user story\", \"create an epic\", \"define acceptance criteria\", \"break down a feature\", \"refine a story\", \"track stories\", \"prioritize the backlog\", or needs product ownership guidance for Wheelbase feature development."
+name: 'product-owner'
+description: 'This skill should be used when the user asks to "write a user story", "create an epic", "define acceptance criteria", "break down a feature", "refine a story", "track stories", "prioritize the backlog", or needs product ownership guidance for Wheelbase feature development.'
 ---
 
 # Product Owner — Feature Elicitation and Story Management

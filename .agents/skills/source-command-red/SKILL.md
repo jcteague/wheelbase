@@ -1,6 +1,6 @@
 ---
-name: "source-command-red"
-description: "Write failing tests for TDD red phase (test-first development)"
+name: 'source-command-red'
+description: 'Write failing tests for TDD red phase (test-first development)'
 ---
 
 # source-command-red

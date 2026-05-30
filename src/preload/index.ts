@@ -27,13 +27,21 @@ const api = {
   expireCc: (payload: unknown) => invoke('positions:expire-cc', payload),
   rollCsp: (payload: unknown) => invoke('positions:roll-csp', payload),
   rollCc: (payload: unknown) => invoke('positions:roll-cc', payload),
-  getStockQuotes: (payload: unknown) => invoke('market-data:stock-quotes', payload),
   setStockQuoteTickers: (payload: unknown) =>
     invoke('market-data:set-stock-quote-tickers', payload),
-  getMarketStatus: () => invoke('market-data:market-status'),
   getOptionSnapshots: (payload: unknown) => invoke('market-data:option-snapshots', payload),
   onStockQuote: onIpcEvent('market-data:stock-quote'),
   onStreamError: onIpcEvent('market-data:stream-error'),
+  broker: {
+    account: () => invoke('broker:account'),
+    activities: (payload: unknown) => invoke('broker:activities', payload),
+    marketStatus: () => invoke('broker:market-status')
+  },
+  marketData: {
+    stockQuotes: (payload: unknown) => invoke('market-data:stock-quotes', payload),
+    optionSnapshot: (payload: unknown) => invoke('market-data:option-snapshot', payload),
+    optionChain: (payload: unknown) => invoke('market-data:option-chain', payload)
+  },
   // Test-only helpers — backed by IPC channels that are only meaningful when
   // WHEELBASE_MARKET_MOCK=true; safe to expose unconditionally (no-op in prod)
   triggerTestTick: (payload: unknown) => invoke('test:trigger-stock-tick', payload),

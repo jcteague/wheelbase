@@ -235,8 +235,6 @@ interface IpcSetStockQuoteTickersPayload {
 
 type IpcSetStockQuoteTickersResult = IpcResult<{ subscribedTickers: string[] }>
 
-type IpcGetMarketStatusResult = IpcResult<{ status: IpcMarketStatus }>
-
 interface IpcOptionSnapshot {
   bid: string
   ask: string
@@ -254,6 +252,42 @@ interface IpcOptionSnapshot {
   timestamp: string
 }
 
+interface IpcAccountInfo {
+  buyingPower: string
+  portfolioValue: string
+  cash: string
+  environment: 'paper' | 'live'
+  accountNumberMasked: string
+}
+
+interface IpcBrokerActivity {
+  activityId: string
+  activityType: string
+  symbol: string
+  qty: number
+  price: string
+  transactionTime: string
+}
+
+type IpcBrokerErrorCode =
+  | 'auth_failed'
+  | 'network_error'
+  | 'rate_limited'
+  | 'environment_mismatch'
+  | 'unknown'
+
+type IpcBrokerResult<T> =
+  | ({ ok: true } & T)
+  | {
+      ok: false
+      errors: Array<{ field: string; code: string; message: string }>
+      code?: IpcBrokerErrorCode
+    }
+
+type IpcGetBrokerAccountResult = IpcBrokerResult<{ account: IpcAccountInfo }>
+type IpcGetBrokerActivitiesResult = IpcBrokerResult<{ activities: IpcBrokerActivity[] }>
+type IpcGetBrokerMarketStatusResult = IpcBrokerResult<{ status: IpcMarketStatus }>
+
 interface IpcGetOptionSnapshotsPayload {
   symbols: string[]
 }
@@ -261,6 +295,29 @@ interface IpcGetOptionSnapshotsPayload {
 type IpcGetOptionSnapshotsResult = IpcResult<{
   snapshots: Record<string, IpcOptionSnapshot>
   unavailable: boolean
+}>
+
+interface IpcOptionSnapshotPayload {
+  underlying: string
+  contract: string
+}
+
+type IpcGetOptionSnapshotResult = IpcResult<{ snapshot: IpcOptionSnapshot }>
+
+interface IpcOptionChainPayload {
+  underlying: string
+  expirationFrom?: string
+  expirationTo?: string
+  type?: 'put' | 'call'
+  strikeFrom?: string
+  strikeTo?: string
+  limit?: number
+  cursor?: string
+}
+
+type IpcGetOptionChainResult = IpcResult<{
+  snapshots: IpcOptionSnapshot[]
+  nextCursor: string | null
 }>
 
 declare global {
@@ -292,16 +349,27 @@ declare global {
       expireCc: (payload: IpcExpireCcPayload) => Promise<IpcExpireCcResult>
       rollCsp: (payload: IpcRollCspPayload) => Promise<IpcRollCspResult>
       rollCc: (payload: IpcRollCcPayload) => Promise<IpcRollCcResult>
-      getStockQuotes: (payload: IpcGetStockQuotesPayload) => Promise<IpcGetStockQuotesResult>
       setStockQuoteTickers: (
         payload: IpcSetStockQuoteTickersPayload
       ) => Promise<IpcSetStockQuoteTickersResult>
-      getMarketStatus: () => Promise<IpcGetMarketStatusResult>
       getOptionSnapshots: (
         payload: IpcGetOptionSnapshotsPayload
       ) => Promise<IpcGetOptionSnapshotsResult>
       onStockQuote: (cb: (event: IpcStockQuoteEvent) => void) => () => void
       onStreamError: (cb: (event: IpcStreamErrorEvent) => void) => () => void
+      broker: {
+        account: () => Promise<IpcGetBrokerAccountResult>
+        activities: (payload: {
+          type: string
+          since?: string
+        }) => Promise<IpcGetBrokerActivitiesResult>
+        marketStatus: () => Promise<IpcGetBrokerMarketStatusResult>
+      }
+      marketData: {
+        stockQuotes: (payload: IpcGetStockQuotesPayload) => Promise<IpcGetStockQuotesResult>
+        optionSnapshot: (payload: IpcOptionSnapshotPayload) => Promise<IpcGetOptionSnapshotResult>
+        optionChain: (payload: IpcOptionChainPayload) => Promise<IpcGetOptionChainResult>
+      }
       triggerTestTick: (payload: { ticker: string; quote: IpcStockQuote }) => Promise<{ ok: true }>
       triggerStreamError: (payload: IpcStreamErrorEvent) => Promise<{ ok: true }>
       setPositionProfitTarget: (payload: {

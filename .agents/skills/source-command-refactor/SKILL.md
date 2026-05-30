@@ -1,6 +1,6 @@
 ---
-name: "source-command-refactor"
-description: "Refactor code to improve quality while keeping tests green (TDD refactor phase)"
+name: 'source-command-refactor'
+description: 'Refactor code to improve quality while keeping tests green (TDD refactor phase)'
 ---
 
 # source-command-refactor

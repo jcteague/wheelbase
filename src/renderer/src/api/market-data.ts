@@ -11,13 +11,6 @@ export type StockQuote = {
 
 export type StockQuotesByTicker = Record<string, StockQuote>
 
-export type MarketStatus = {
-  isOpen: boolean
-  nextOpen: string
-  nextClose: string
-  session: 'regular' | 'pre' | 'post' | 'closed'
-}
-
 export type OptionGreeks = {
   delta: string
   gamma: string
@@ -45,19 +38,11 @@ export type OptionSnapshotsResult = {
 }
 
 export async function getStockQuotes(tickers: string[]): Promise<StockQuotesByTicker> {
-  const result = await window.api.getStockQuotes({ tickers })
+  const result = await window.api.marketData.stockQuotes({ tickers })
   if (!result.ok) {
     throw apiError(502, { detail: result.errors })
   }
   return result.quotes as StockQuotesByTicker
-}
-
-export async function getMarketStatus(): Promise<MarketStatus> {
-  const result = await window.api.getMarketStatus()
-  if (!result.ok) {
-    throw apiError(502, { detail: result.errors })
-  }
-  return result.status as MarketStatus
 }
 
 export async function getOptionSnapshots(symbols: string[]): Promise<OptionSnapshotsResult> {
