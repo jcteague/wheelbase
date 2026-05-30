@@ -1,6 +1,6 @@
 ---
-name: 'qa-test'
-description: '>'
+name: qa-test
+description: Runs manual QA testing for the Wheelbase Electron app. Use this skill when the user asks to "run QA", "test the app", "verify the UI", "run the manual test plan", "test US-N", "check if the app works", or wants to validate that a user story's acceptance criteria pass in the live app. The skill reads structured test plans from docs/epics/02-stories/ and drives the running Electron app via the Electron MCP tools. It also performs adversarial testing to find edge cases the happy-path scenarios don't cover. Use it any time new functionality has been implemented and needs end-to-end validation.
 ---
 
 # Wheelbase QA Tester
