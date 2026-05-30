@@ -48,17 +48,27 @@ Write all artifacts to `plans/{story-id}/` where `{story-id}` is derived from th
    - "Research {unknown} for {feature context} in an Electron + better-sqlite3 + React 19 project"
    - "Find best practices for {tech} in {domain}"
 
-4. **Consolidate findings** in `plans/{story-id}/research.md` using this format:
+4. **Consolidate findings** in `plans/{story-id}/research.md`.
+
+   Group all architectural decisions under a single top-level `## Architecture
+   Decisions` heading. Use this exact format per decision — it matches the
+   downstream `plan-extractor` schema so the spec build copies sections
+   verbatim instead of restructuring them:
 
    ```markdown
-   ## {Topic}
+   ## Architecture Decisions
+
+   ### ADR: {short title}
 
    - **Decision:** [what was chosen]
-   - **Rationale:** [why chosen]
+   - **Why:** [why chosen]
    - **Alternatives considered:** [what else was evaluated]
    ```
 
-   Any open question that cannot be resolved through research should be flagged with `<!-- NEEDS CLARIFICATION: {question} -->` and surfaced to the user before proceeding to Phase 1.
+   Open questions go under a separate `## Open Questions` heading. Anything
+   that cannot be resolved through research should be flagged with
+   `<!-- NEEDS CLARIFICATION: {question} -->` and surfaced to the user before
+   proceeding to Phase 1.
 
 **Output**: `plans/{story-id}/research.md` with all unknowns resolved or flagged.
 
@@ -75,10 +85,46 @@ Write all artifacts to `plans/{story-id}/` where `{story-id}` is derived from th
    - Validation rules from acceptance criteria
    - State transitions if applicable
 
-2. **Define interface contracts** → `plans/{story-id}/contracts/`:
-   - Document the IPC channels, Zod payload schemas, and response shapes the story requires
-   - Use the existing IPC handler patterns in `src/main/ipc/` and `src/main/schemas.ts` as the reference format
-   - Skip if the story has no new IPC surface (pure engine or pure renderer work)
+2. **Define interface contracts** → `plans/{story-id}/contracts/{handler}.md`:
+
+   One file per IPC handler (or external contract). Use this exact structure —
+   it is the canonical contract reference downstream and feeds
+   `docs/spec/contracts/ipc-handlers.md`:
+
+   ```markdown
+   # Contract: {handler-name}
+
+   ## Purpose
+   One sentence on what the handler does.
+
+   ## Request
+   \`\`\`typescript
+   // Zod schema or TypeScript interface — exact field names and types
+   \`\`\`
+
+   ## Response (success)
+   \`\`\`typescript
+   // Shape returned on { ok: true }
+   \`\`\`
+
+   ## Error codes
+   | field | code | message |
+   |---|---|---|
+   | `__phase__` | `invalid_phase` | `Position is not in CSP_OPEN phase` |
+
+   This table is **mandatory**. Every story-specific validation error MUST be
+   listed here with its field, code, and exact message string. If only the
+   standard envelope errors apply (`__root__` / `not_found`, `__root__` /
+   `internal_error`), write a single row stating that.
+
+   ## Source
+   - Handler: `src/main/ipc/{file}.ts`
+   - Service: `src/main/services/{file}.ts`
+   ```
+
+   Skip if the story has no new IPC surface (pure engine or pure renderer
+   work). Use the existing IPC handler patterns in `src/main/ipc/` and
+   `src/main/schemas.ts` as reference when filling the shape blocks.
 
 3. **Write a quickstart** → `plans/{story-id}/quickstart.md`:
    - Step-by-step instructions to run the tests for this story locally
@@ -98,6 +144,14 @@ Write `plans/{story-id}/plan.md` — the primary artifact that `/plan-tasks` wil
 #### Structure of `plan.md`
 
 ```markdown
+---
+story: {story-id}      # e.g. us-12
+kind: feature          # feature | refactor | bugfix | infra
+parent: null           # for refactor/bugfix, the parent story id (e.g. us-12 for us-12-refactor)
+topics: []             # spec topic pages this contributes to (e.g. [cost-basis, wheel-lifecycle, market-data])
+status: planned        # planned | red | green | refactor | complete
+---
+
 # Implementation Plan: {Story ID} — {Story Title}
 
 ## Summary
