@@ -268,6 +268,21 @@ PASS src/main/ipc/positions.test.ts (3 tests)
 - ✅ `pnpm lint` passed
 - ✅ `pnpm typecheck` passed
 
+## Files touched (production)
+
+List every production file changed by this refactor. Test files are derivable
+from sibling naming (`foo.ts` → `foo.test.ts`) and should be omitted.
+
+- `src/main/core/lifecycle.ts`
+- `src/main/services/roll-csp-position.ts`
+- `src/renderer/src/components/RollCspSheet.tsx`
+
+## E2E coverage added or modified
+
+- `e2e/csp-roll.spec.ts` — N scenarios
+
+If no e2e tests were added or modified, write "None".
+
 ## Remaining Tech Debt
 
 - [ ] [Description of any known issues deferred for later]
