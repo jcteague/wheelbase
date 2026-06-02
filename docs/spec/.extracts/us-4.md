@@ -237,29 +237,29 @@ This story adds the ability to close a cash-secured put (CSP) position early by 
 - **Source:** `plans/us-4/plan.md`
 - **Implementation:** `src/main/schemas.ts`
 
-### Renderer API adapter snake_case ↔ camelCase mapping
+### Renderer API adapter snake_case <-> camelCase mapping
 - **Type:** other (renderer adapter mapping)
 - **Shape:**
   ```
-  getPosition response (IPC camelCase → renderer snake_case):
-    activeLeg.premiumPerContract            → active_leg.premium_per_contract
-    activeLeg.fillDate                      → active_leg.fill_date
-    activeLeg.legRole                       → active_leg.leg_role
-    activeLeg.optionType                    → active_leg.option_type
-    costBasisSnapshot.basisPerShare         → cost_basis_snapshot.basis_per_share
-    costBasisSnapshot.totalPremiumCollected → cost_basis_snapshot.total_premium_collected
-    costBasisSnapshot.finalPnl              → cost_basis_snapshot.final_pnl
-    position.openedDate                     → position.opened_date
-    position.closedDate                     → position.closed_date
+  getPosition response (IPC camelCase -> renderer snake_case):
+    activeLeg.premiumPerContract            -> active_leg.premium_per_contract
+    activeLeg.fillDate                      -> active_leg.fill_date
+    activeLeg.legRole                       -> active_leg.leg_role
+    activeLeg.optionType                    -> active_leg.option_type
+    costBasisSnapshot.basisPerShare         -> cost_basis_snapshot.basis_per_share
+    costBasisSnapshot.totalPremiumCollected -> cost_basis_snapshot.total_premium_collected
+    costBasisSnapshot.finalPnl              -> cost_basis_snapshot.final_pnl
+    position.openedDate                     -> position.opened_date
+    position.closedDate                     -> position.closed_date
 
-  closePosition payload (renderer snake_case → IPC camelCase):
-    position_id              → positionId
-    close_price_per_contract → closePricePerContract
-    fill_date                → fillDate
+  closePosition payload (renderer snake_case -> IPC camelCase):
+    position_id              -> positionId
+    close_price_per_contract -> closePricePerContract
+    fill_date                -> fillDate
 
-  Error field mapping (IPC → form):
-    closePricePerContract → close_price_per_contract
-    fillDate              → fill_date
+  Error field mapping (IPC -> form):
+    closePricePerContract -> close_price_per_contract
+    fillDate              -> fill_date
   ```
 - **Source:** `plans/us-4/contracts/close-csp.md`
 - **Implementation:** `src/renderer/src/api/positions.ts`
@@ -346,8 +346,8 @@ This story adds the ability to close a cash-secured put (CSP) position early by 
   - When the trader submits a close with fill date 2026-04-18 (after expiration)
   - Then a validation error appears: "Close date cannot be after expiration date"
 - Scenario Outline: Reject close with invalid price
-  - When the trader enters a close price of 0 → "Close price must be positive"
-  - When the trader enters a close price of -1.00 → "Close price must be positive"
+  - When the trader enters a close price of 0 -> "Close price must be positive"
+  - When the trader enters a close price of -1.00 -> "Close price must be positive"
 
 Background (applied to all scenarios): the trader has an open CSP on AAPL with strike $180.00, expiration 2026-04-17, contracts 1, premium_per_contract $2.50, phase CSP_OPEN.
 

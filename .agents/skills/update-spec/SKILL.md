@@ -34,7 +34,7 @@ Detect siblings:
 Then launch a `plan-extractor` for the input plan to refresh its own extract
 (overwriting `docs/spec/.extracts/<plan-name>.md`).
 
-## Step 2 — Diff the extract
+## Step 2 — Diff the extract  
 
 Compare the new extract to the previous one (if it exists). Identify which
 sections changed:

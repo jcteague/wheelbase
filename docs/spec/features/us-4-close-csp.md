@@ -1,6 +1,6 @@
 # US-4: Close a CSP early
 
-<!-- generated:from us-4 -->
+<!-- generated:from us-4,missing-ac -->
 ## Summary
 
 Adds the ability to close a cash-secured put before expiration by recording a buy-to-close transaction. The flow validates the position is in `CSP_OPEN`, computes final P&L, writes a close leg plus a new cost-basis snapshot, and transitions the position to `CSP_CLOSED_PROFIT` or `CSP_CLOSED_LOSS`. The detail page renders a live P&L preview as the trader types — no IPC round-trip until submission.
@@ -17,6 +17,11 @@ Adds the ability to close a cash-secured put before expiration by recording a bu
 ## What was built
 
 A new `positions:get` IPC handler hydrates the detail page with the position, active leg, and latest cost-basis snapshot — `positions:list` was kept lean. A second handler, `positions:close-csp`, drives the close transaction: the service reads position context via a `getPosition(db, ...)` helper, hands plain values to pure lifecycle and cost-basis engines, then writes the close leg, new snapshot, and position update inside one transaction. The lifecycle engine owns date validation (mirroring how `openWheel()` works) so the service layer stays a thin orchestrator. The renderer adds `usePosition` / `useClosePosition` hooks and a `CloseCspForm` (React Hook Form + Zod) with a locally computed P&L preview, hosted on a minimal build-out of `PositionDetailPage`.
+
+## Revisions
+
+- **us-4** (original): shipped the `closeCsp` lifecycle function with phase + date guards, the `cspClose` cost-basis function, the `positions:get` and `positions:close-csp` IPC handlers, the `getPosition` / `closeCspPosition` services orchestrating the close transaction, and the `CloseCspForm` + minimal `PositionDetailPage` build-out with a client-side P&L preview. Refactor extracted `mapIpcErrors` in the renderer adapter, the shared `handleIpcCall` wrapper for IPC handlers, and the `computePreview` helper above `CloseCspForm`.
+- **missing-ac**: closed the AC gap "trader can record fill date for the close" by adding the optional `fill_date` input to `CloseCspForm`. The backend pipeline already accepted `fillDate` and the lifecycle engine already enforced `closeFillDate >= openFillDate` and `closeFillDate <= expiration` — the form simply offered no way to send a non-default fill date, so the service defaulted to today and the date guards never tripped. Renderer-only change: extended `CloseCspFormProps` with `openFillDate` and `expiration` (sourced from `activeLeg` already in scope on `PositionDetailPage`), extended the Zod form schema with an optional `fill_date` matching `/^\d{4}-\d{2}-\d{2}$/`, mapped server `fillDate` errors back to the form's `fill_date` field via the existing `IPC_TO_FORM_FIELD` mapper, and left empty/blank values to continue defaulting to today server-side. No changes to the lifecycle engine, the service, the IPC handler, `CloseCspPayloadSchema`, or the database — the validation logic and error contracts were already in place.
 
 ## Architecture decisions
 
