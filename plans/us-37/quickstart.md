@@ -26,7 +26,7 @@ pnpm typecheck
 pnpm format
 ```
 
-E2E note: `pnpm test:e2e` must run from a GUI terminal for Electron.
+E2E note: `pnpm test:e2e` builds the Electron app first. If you invoke Vitest directly, run `pnpm build` first so `out/main/index.js` exists.
 
 ## Manual Checks
 

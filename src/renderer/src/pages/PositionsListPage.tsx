@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import type { ApiError } from '../api/error'
 import type { PositionListItem } from '../api/positions'
 import type {
   OptionSnapshot,
@@ -38,6 +39,12 @@ const TABLE_COLUMNS = [
 type PositionsHeaderProps = {
   count?: number
   marketStatusDisplay: MarketStatusDisplay
+}
+
+function getErrorCode(error: ApiError | Error | null): string | null {
+  if (!error || !('body' in error)) return null
+  const detail = (error.body as { detail?: Array<{ code?: string }> }).detail
+  return detail?.[0]?.code ?? null
 }
 
 function PositionsHeader({ count, marketStatusDisplay }: PositionsHeaderProps): React.JSX.Element {
@@ -171,6 +178,14 @@ export function PositionsListPage(): React.JSX.Element {
   const showMassiveSetupBanner =
     settingsQuery.data?.massive === 'missing' && settingsQuery.data?.activeBrokerEnv === 'none'
   const showNoBrokerBanner = settingsQuery.data?.activeBrokerEnv === 'none'
+  const marketAuthPrompt =
+    quotesQuery.streamError?.code === 'auth_failed'
+      ? 'Massive authentication failed — check your key in Settings'
+      : null
+  const brokerAuthPrompt =
+    getErrorCode(statusQuery.error) === 'auth_failed'
+      ? 'Alpaca authentication failed — check your key in Settings'
+      : null
 
   return (
     <PageLayout
@@ -210,6 +225,16 @@ export function PositionsListPage(): React.JSX.Element {
           {showNoBrokerBanner && (
             <div className="mx-[24px] mt-[16px] rounded-md border border-wb-blue/25 bg-wb-blue-dim px-4 py-3 font-wb-mono text-[0.74rem] text-wb-text-primary">
               Connect Alpaca to enable broker activity and buying power.
+            </div>
+          )}
+          {marketAuthPrompt && (
+            <div className="mx-[24px] mt-[16px] rounded-md border border-wb-red/25 bg-wb-red/10 px-4 py-3 font-wb-mono text-[0.74rem] text-wb-red">
+              {marketAuthPrompt}
+            </div>
+          )}
+          {brokerAuthPrompt && (
+            <div className="mx-[24px] mt-[16px] rounded-md border border-wb-red/25 bg-wb-red/10 px-4 py-3 font-wb-mono text-[0.74rem] text-wb-red">
+              {brokerAuthPrompt}
             </div>
           )}
           <StaleDataBanner stale={stale} minutesAgo={minutesAgo} />

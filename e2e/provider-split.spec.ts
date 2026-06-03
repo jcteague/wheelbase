@@ -10,8 +10,8 @@
 // vars; setting these makes the fake providers throw the specified error code on
 // every provider call, exercising the IPC error-response path end-to-end.
 //
-// NOTE: Requires a compiled app (pnpm build) and must be run from a GUI terminal
-// (iTerm/Terminal.app): pnpm test:e2e — NOT from Claude Code's shell.
+// NOTE: Requires a compiled app. `pnpm test:e2e` handles the build step for you;
+// if you invoke Vitest directly, run `pnpm build` first so `out/main/index.js` exists.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { _electron as electron } from 'playwright'
 import type { ElectronApplication, Page } from 'playwright'

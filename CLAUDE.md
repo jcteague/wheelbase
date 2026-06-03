@@ -181,7 +181,7 @@ For multi-step tasks, state a brief plan:
 ```bash
 pnpm dev          # development mode (hot reload)
 pnpm test         # unit + integration tests (Vitest)
-pnpm test:e2e     # E2E tests — must run from a GUI terminal (iTerm/Terminal.app), not from Claude Code's shell
+pnpm test:e2e     # E2E tests — builds the Electron app, then runs Playwright/Vitest against out/main/index.js
 pnpm typecheck    # tsc type-check
 pnpm lint         # ESLint
 pnpm build        # production build

@@ -13,10 +13,19 @@ import { registerBrokerHandlers } from './ipc/broker'
 import { registerSettingsHandlers } from './ipc/settings'
 import type { TestConnectionPayload } from './schemas'
 import { createSettingsService } from './services/settings'
-import { testAlpacaConnection, testMassiveConnection } from './services/settings-connections'
+import {
+  testAlpacaConnection,
+  testMassiveConnection,
+  type TestConnectionResult
+} from './services/settings-connections'
 import { logger } from './logger'
 
 let mainWindow: BrowserWindow | null = null
+
+type MockSettingsConnectionConfig = {
+  massive?: TestConnectionResult
+  alpaca?: Partial<Record<'paper' | 'live', TestConnectionResult>>
+}
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -56,6 +65,11 @@ if (is.dev) {
 function runSettingsConnectionTest(
   payload: TestConnectionPayload
 ): ReturnType<typeof testMassiveConnection> {
+  const mockConfig = process.env.WHEELBASE_MOCK_SETTINGS_CONNECTIONS
+  if (mockConfig) {
+    return Promise.resolve(runMockSettingsConnectionTest(payload, mockConfig))
+  }
+
   if (payload.vendor === 'massive') {
     return testMassiveConnection({ loadMassiveApiKey })
   }
@@ -65,6 +79,34 @@ function runSettingsConnectionTest(
     keyId: payload.keyId,
     secret: payload.secret
   })
+}
+
+function runMockSettingsConnectionTest(
+  payload: TestConnectionPayload,
+  rawConfig: string
+): TestConnectionResult {
+  const parsed = JSON.parse(rawConfig) as MockSettingsConnectionConfig
+
+  if (payload.vendor === 'massive') {
+    return parsed.massive ?? { ok: true, vendor: 'massive', status: 'connected' }
+  }
+
+  if (payload.environment === 'paper' && payload.keyId.trim().startsWith('AK')) {
+    return {
+      ok: false,
+      errorCode: 'environment_mismatch',
+      message: 'Environment mismatch — these are LIVE keys, not paper keys'
+    }
+  }
+
+  return (
+    parsed.alpaca?.[payload.environment] ?? {
+      ok: true,
+      vendor: 'alpaca',
+      environment: payload.environment,
+      accountNumberMasked: payload.environment === 'paper' ? 'PA…ABC' : 'AL…XYZ'
+    }
+  )
 }
 
 app.whenReady().then(() => {

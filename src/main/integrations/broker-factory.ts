@@ -22,10 +22,10 @@ let config: BrokerFactoryConfig = {
 }
 
 function buildProvider(): BrokerProvider {
-  if (process.env.FAKE_BROKER === 'true') {
-    return new FakeBrokerProvider()
-  }
   const credentials = config.loadActiveAlpacaCredentials()
+  if (process.env.FAKE_BROKER === 'true') {
+    return new FakeBrokerProvider({ environment: credentials?.environment })
+  }
   if (credentials) {
     return new AlpacaBrokerProvider({
       keyId: credentials.keyId,
