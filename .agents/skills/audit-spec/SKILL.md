@@ -38,16 +38,20 @@ Read all `.audits/*.audit.md` files. Build a single summary report at
 # Spec Audit Summary — <date>
 
 ## Drift detected (N pages)
+
 - [docs/spec/contracts/ipc-handlers.md](../contracts/ipc-handlers.md) — 3 drift findings
 - [docs/spec/domain/cost-basis.md](../domain/cost-basis.md) — 1 drift finding
 
 ## Clean (M pages)
+
 …
 
 ## Missing-link findings (K)
+
 - Page X links to feature us-99 which doesn't exist.
 
 ## Recommended next steps
+
 - Run `/update-spec <us-N>` for pages where the related plan has new content.
 - Manually fix drift in pages where code has changed but plans haven't.
 ```

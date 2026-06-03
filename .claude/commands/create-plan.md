@@ -51,7 +51,7 @@ Write all artifacts to `plans/{story-id}/` where `{story-id}` is derived from th
 4. **Consolidate findings** in `plans/{story-id}/research.md`.
 
    Group all architectural decisions under a single top-level `## Architecture
-   Decisions` heading. Use this exact format per decision — it matches the
+Decisions` heading. Use this exact format per decision — it matches the
    downstream `plan-extractor` schema so the spec build copies sections
    verbatim instead of restructuring them:
 
@@ -95,21 +95,25 @@ Write all artifacts to `plans/{story-id}/` where `{story-id}` is derived from th
    # Contract: {handler-name}
 
    ## Purpose
+
    One sentence on what the handler does.
 
    ## Request
+
    \`\`\`typescript
    // Zod schema or TypeScript interface — exact field names and types
    \`\`\`
 
    ## Response (success)
+
    \`\`\`typescript
    // Shape returned on { ok: true }
    \`\`\`
 
    ## Error codes
-   | field | code | message |
-   |---|---|---|
+
+   | field       | code            | message                             |
+   | ----------- | --------------- | ----------------------------------- |
    | `__phase__` | `invalid_phase` | `Position is not in CSP_OPEN phase` |
 
    This table is **mandatory**. Every story-specific validation error MUST be
@@ -118,6 +122,7 @@ Write all artifacts to `plans/{story-id}/` where `{story-id}` is derived from th
    `internal_error`), write a single row stating that.
 
    ## Source
+
    - Handler: `src/main/ipc/{file}.ts`
    - Service: `src/main/services/{file}.ts`
    ```
@@ -145,11 +150,11 @@ Write `plans/{story-id}/plan.md` — the primary artifact that `/plan-tasks` wil
 
 ```markdown
 ---
-story: {story-id}      # e.g. us-12
-kind: feature          # feature | refactor | bugfix | infra
-parent: null           # for refactor/bugfix, the parent story id (e.g. us-12 for us-12-refactor)
-topics: []             # spec topic pages this contributes to (e.g. [cost-basis, wheel-lifecycle, market-data])
-status: planned        # planned | red | green | refactor | complete
+story: { story-id } # e.g. us-12
+kind: feature # feature | refactor | bugfix | infra
+parent: null # for refactor/bugfix, the parent story id (e.g. us-12 for us-12-refactor)
+topics: [] # spec topic pages this contributes to (e.g. [cost-basis, wheel-lifecycle, market-data])
+status: planned # planned | red | green | refactor | complete
 ---
 
 # Implementation Plan: {Story ID} — {Story Title}
