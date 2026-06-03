@@ -134,7 +134,7 @@
 
 **Requires:** Area 3 Green ✓, Area 4 Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/main/ipc/assignments.test.ts` _(depends on: Areas 3 + 4 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/main/ipc/assignments.test.ts` _(depends on: Areas 3 + 4 Green ✓)_
   - Test cases:
     - `assignments:list-pending` returns `{ ok: true, assignments }` with display fields populated
     - `assignments:confirm` rejects invalid `pendingAssignmentId` via Zod with `{ ok: false, errors }`
@@ -143,7 +143,7 @@
     - `assignments:dismiss` returns `{ ok: true, dismissedAt }`
     - `assignments:run-detection-now` invokes `scheduler.runNow('detect-assignments')` and returns batch summary
   - Run `pnpm test src/main/ipc/assignments.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/ipc/assignments.ts` + extend `src/main/schemas.ts` _(depends on: Area 5 Red ✓)_
+- [x] **[Green]** Implement — `src/main/ipc/assignments.ts` + extend `src/main/schemas.ts` _(depends on: Area 5 Red ✓)_
   - Register handlers per `plans/us-35/contracts/ipc-channels.md`
   - Add Zod request schemas for `assignments:confirm` and `assignments:dismiss`
   - Validate payloads with Zod; return `{ ok: false, errors }` on failure

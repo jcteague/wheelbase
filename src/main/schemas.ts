@@ -386,3 +386,17 @@ export const GetBrokerActivitiesPayloadSchema = z.object({
   since: z.string().datetime().optional()
 })
 export type GetBrokerActivitiesPayload = z.infer<typeof GetBrokerActivitiesPayloadSchema>
+
+// ---------------------------------------------------------------------------
+// Assignments schemas
+// ---------------------------------------------------------------------------
+
+export const ConfirmAssignmentPayloadSchema = z.object({
+  pendingAssignmentId: z.number().int().positive()
+})
+export type ConfirmAssignmentPayload = z.infer<typeof ConfirmAssignmentPayloadSchema>
+
+export const DismissAssignmentPayloadSchema = z.object({
+  pendingAssignmentId: z.number().int().positive()
+})
+export type DismissAssignmentPayload = z.infer<typeof DismissAssignmentPayloadSchema>

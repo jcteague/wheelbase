@@ -85,8 +85,11 @@ const DISMISS_PENDING_QUERY = `
   UPDATE pending_assignments SET status = 'dismissed', dismissed_at = ? WHERE id = ?
 `
 
-export function confirmPending(db: Database.Database, id: number): void {
-  db.transaction(() => {
+export function confirmPending(
+  db: Database.Database,
+  id: number
+): { id: string; phase: 'HOLDING_SHARES'; assignedAt: string } {
+  return db.transaction(() => {
     const row = db.prepare(FETCH_PENDING_QUERY).get(id) as PendingAssignmentRow | undefined
 
     if (!row) {
@@ -107,6 +110,8 @@ export function confirmPending(db: Database.Database, id: number): void {
 
     const now = new Date().toISOString()
     db.prepare(CONFIRM_PENDING_QUERY).run(now, id)
+
+    return { id: row.position_id, phase: 'HOLDING_SHARES' as const, assignedAt: now }
   })()
 }
 
