@@ -288,6 +288,50 @@ type IpcGetBrokerAccountResult = IpcBrokerResult<{ account: IpcAccountInfo }>
 type IpcGetBrokerActivitiesResult = IpcBrokerResult<{ activities: IpcBrokerActivity[] }>
 type IpcGetBrokerMarketStatusResult = IpcBrokerResult<{ status: IpcMarketStatus }>
 
+type IpcCredentialState = 'configured' | 'missing'
+type IpcActiveBrokerEnvironment = 'paper' | 'live' | 'none'
+
+interface IpcCredentialStatus {
+  massive: IpcCredentialState
+  alpacaPaper: IpcCredentialState
+  alpacaLive: IpcCredentialState
+  activeBrokerEnv: IpcActiveBrokerEnvironment
+  massiveLastCheckedAt: string | null
+  alpacaPaperAccountNumberMasked: string | null
+  alpacaLiveAccountNumberMasked: string | null
+}
+
+interface IpcSaveAlpacaCredentialsPayload {
+  environment: 'paper' | 'live'
+  keyId: string
+  secret: string
+}
+
+interface IpcRemoveAlpacaCredentialsPayload {
+  environment: 'paper' | 'live'
+}
+
+interface IpcSetActiveBrokerEnvironmentPayload {
+  environment: 'paper' | 'live'
+}
+
+type IpcTestConnectionPayload =
+  | { vendor: 'massive' }
+  | { vendor: 'alpaca'; environment: 'paper' | 'live'; keyId: string; secret: string }
+
+type IpcTestConnectionResult =
+  | { ok: true; vendor: 'massive'; status: 'connected' }
+  | {
+      ok: true
+      vendor: 'alpaca'
+      environment: 'paper' | 'live'
+      accountNumberMasked: string
+    }
+  | { ok: false; errorCode: string; message: string }
+
+type IpcCredentialStatusResult = IpcResult<{ status: IpcCredentialStatus }>
+type IpcTestSettingsConnectionResult = IpcResult<{ test: IpcTestConnectionResult }>
+
 interface IpcGetOptionSnapshotsPayload {
   symbols: string[]
 }
@@ -364,6 +408,19 @@ declare global {
           since?: string
         }) => Promise<IpcGetBrokerActivitiesResult>
         marketStatus: () => Promise<IpcGetBrokerMarketStatusResult>
+      }
+      settings: {
+        status: () => Promise<IpcCredentialStatusResult>
+        saveAlpaca: (payload: IpcSaveAlpacaCredentialsPayload) => Promise<IpcCredentialStatusResult>
+        removeAlpaca: (
+          payload: IpcRemoveAlpacaCredentialsPayload
+        ) => Promise<IpcCredentialStatusResult>
+        setActiveBrokerEnvironment: (
+          payload: IpcSetActiveBrokerEnvironmentPayload
+        ) => Promise<IpcCredentialStatusResult>
+        testConnection: (
+          payload: IpcTestConnectionPayload
+        ) => Promise<IpcTestSettingsConnectionResult>
       }
       marketData: {
         stockQuotes: (payload: IpcGetStockQuotesPayload) => Promise<IpcGetStockQuotesResult>

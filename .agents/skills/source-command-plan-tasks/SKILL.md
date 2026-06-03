@@ -94,7 +94,7 @@ Create `{story-dir}/tasks.md` with the following structure:
   - {key function signatures and logic from plan}
   - Run `pnpm test {test-file}` — all tests must pass
 - [ ] **[Refactor]** `/refactor` — `{impl-file-path}` _(depends on: {Area Name 1} Green ✓)_
-  - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
+  - **Invoke `source-command-refactor` (the migrated `/refactor` command)** — do not substitute a manual cleanup or only the `code-simplifier` skill
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
 ### {Area Name 2}
@@ -106,7 +106,7 @@ Create `{story-dir}/tasks.md` with the following structure:
   - {key function signatures and logic from plan}
   - Run `pnpm test {test-file}` — all tests must pass
 - [ ] **[Refactor]** `/refactor` _(depends on: {Area Name 2} Green ✓)_
-  - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
+  - **Invoke `source-command-refactor` (the migrated `/refactor` command)** — do not substitute a manual cleanup or only the `code-simplifier` skill
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
 ---
@@ -126,7 +126,7 @@ Create `{story-dir}/tasks.md` with the following structure:
   - {key details}
   - Run `pnpm test {test-file}` — all tests must pass
 - [ ] **[Refactor]** `/refactor` _(depends on: {Area Name 3} Green ✓)_
-  - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
+  - **Invoke `source-command-refactor` (the migrated `/refactor` command)** — do not substitute a manual cleanup or only the `code-simplifier` skill
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
 ---
@@ -146,7 +146,7 @@ Create `{story-dir}/tasks.md` with the following structure:
 - [ ] **[Green]** Make e2e tests pass _(depends on: E2E Red ✓)_
   - Run `pnpm test:e2e` — all tests must pass
 - [ ] **[Refactor]** `/refactor` e2e tests _(depends on: E2E Green ✓)_
-  - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
+  - **Invoke `source-command-refactor` (the migrated `/refactor` command)** — do not substitute a manual cleanup or only the `code-simplifier` skill
 
 ---
 

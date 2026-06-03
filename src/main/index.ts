@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow } from 'electron'
+import { app, shell, BrowserWindow, safeStorage } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -7,8 +7,13 @@ import { registerPingHandler } from './ipc/ping'
 import { registerPositionsHandlers } from './ipc/positions'
 import { marketDataFactory } from './integrations/market-data-factory'
 import { brokerFactory } from './integrations/broker-factory'
+import { loadMassiveApiKey } from './integrations/massive-credentials'
 import { registerMarketDataHandlers } from './ipc/market-data'
 import { registerBrokerHandlers } from './ipc/broker'
+import { registerSettingsHandlers } from './ipc/settings'
+import type { TestConnectionPayload } from './schemas'
+import { createSettingsService } from './services/settings'
+import { testAlpacaConnection, testMassiveConnection } from './services/settings-connections'
 import { logger } from './logger'
 
 let mainWindow: BrowserWindow | null = null
@@ -48,6 +53,20 @@ if (is.dev) {
   app.commandLine.appendSwitch('remote-debugging-port', '9222')
 }
 
+function runSettingsConnectionTest(
+  payload: TestConnectionPayload
+): ReturnType<typeof testMassiveConnection> {
+  if (payload.vendor === 'massive') {
+    return testMassiveConnection({ loadMassiveApiKey })
+  }
+
+  return testAlpacaConnection({
+    environment: payload.environment,
+    keyId: payload.keyId,
+    secret: payload.secret
+  })
+}
+
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.electron')
 
@@ -56,6 +75,17 @@ app.whenReady().then(() => {
   })
 
   const db = initDb()
+  const settings = createSettingsService({
+    db,
+    safeStorage,
+    loadMassiveApiKey
+  })
+
+  marketDataFactory.configure({ loadMassiveApiKey })
+  brokerFactory.configure({
+    loadActiveAlpacaCredentials: () => settings.loadActiveAlpacaCredentials()
+  })
+
   registerPingHandler()
   registerPositionsHandlers(db)
 
@@ -65,12 +95,15 @@ app.whenReady().then(() => {
     void marketDataProvider.disconnect()
   })
 
-  try {
-    const brokerProvider = brokerFactory.create()
-    registerBrokerHandlers(brokerProvider)
-  } catch (err) {
-    logger.warn({ err }, 'Broker provider not configured — broker IPC channels unavailable')
-  }
+  registerBrokerHandlers(() => brokerFactory.create())
+  registerSettingsHandlers({
+    settings,
+    testConnection: runSettingsConnectionTest,
+    onBrokerProviderChanged: () => {
+      logger.info('Refreshing broker provider after settings change')
+      brokerFactory.recreate()
+    }
+  })
 
   createWindow()
 

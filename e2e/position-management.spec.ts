@@ -82,7 +82,12 @@ describe('US-2: positions sorted by DTE ascending', () => {
     app = await electron.launch({
       args: [APP_PATH, '--no-sandbox'],
       cwd: APP_CWD,
-      env: { ...process.env, WHEELBASE_DB_PATH: dbPath, FAKE_MARKET_DATA: 'true', FAKE_BROKER: 'true' }
+      env: {
+        ...process.env,
+        WHEELBASE_DB_PATH: dbPath,
+        FAKE_MARKET_DATA: 'true',
+        FAKE_BROKER: 'true'
+      }
     })
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
@@ -140,7 +145,12 @@ describe('US-2: closed position appears in closed section', () => {
     app = await electron.launch({
       args: [APP_PATH, '--no-sandbox'],
       cwd: APP_CWD,
-      env: { ...process.env, WHEELBASE_DB_PATH: dbPath, FAKE_MARKET_DATA: 'true', FAKE_BROKER: 'true' }
+      env: {
+        ...process.env,
+        WHEELBASE_DB_PATH: dbPath,
+        FAKE_MARKET_DATA: 'true',
+        FAKE_BROKER: 'true'
+      }
     })
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
@@ -196,7 +206,12 @@ describe('US-3: position detail shows correct field values', () => {
     app = await electron.launch({
       args: [APP_PATH, '--no-sandbox'],
       cwd: APP_CWD,
-      env: { ...process.env, WHEELBASE_DB_PATH: dbPath, FAKE_MARKET_DATA: 'true', FAKE_BROKER: 'true' }
+      env: {
+        ...process.env,
+        WHEELBASE_DB_PATH: dbPath,
+        FAKE_MARKET_DATA: 'true',
+        FAKE_BROKER: 'true'
+      }
     })
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
@@ -240,7 +255,12 @@ describe('US-3: position detail shows correct field values', () => {
     app = await electron.launch({
       args: [APP_PATH, '--no-sandbox'],
       cwd: APP_CWD,
-      env: { ...process.env, WHEELBASE_DB_PATH: dbPath, FAKE_MARKET_DATA: 'true', FAKE_BROKER: 'true' }
+      env: {
+        ...process.env,
+        WHEELBASE_DB_PATH: dbPath,
+        FAKE_MARKET_DATA: 'true',
+        FAKE_BROKER: 'true'
+      }
     })
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
@@ -270,7 +290,12 @@ describe('US-4: close CSP early — P&L preview', () => {
     app = await electron.launch({
       args: [APP_PATH, '--no-sandbox'],
       cwd: APP_CWD,
-      env: { ...process.env, WHEELBASE_DB_PATH: dbPath, FAKE_MARKET_DATA: 'true', FAKE_BROKER: 'true' }
+      env: {
+        ...process.env,
+        WHEELBASE_DB_PATH: dbPath,
+        FAKE_MARKET_DATA: 'true',
+        FAKE_BROKER: 'true'
+      }
     })
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
@@ -318,7 +343,12 @@ describe('US-4: close CSP at a loss', () => {
     app = await electron.launch({
       args: [APP_PATH, '--no-sandbox'],
       cwd: APP_CWD,
-      env: { ...process.env, WHEELBASE_DB_PATH: dbPath, FAKE_MARKET_DATA: 'true', FAKE_BROKER: 'true' }
+      env: {
+        ...process.env,
+        WHEELBASE_DB_PATH: dbPath,
+        FAKE_MARKET_DATA: 'true',
+        FAKE_BROKER: 'true'
+      }
     })
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
@@ -366,7 +396,12 @@ describe('US-4: close CSP — validation', () => {
     app = await electron.launch({
       args: [APP_PATH, '--no-sandbox'],
       cwd: APP_CWD,
-      env: { ...process.env, WHEELBASE_DB_PATH: dbPath, FAKE_MARKET_DATA: 'true', FAKE_BROKER: 'true' }
+      env: {
+        ...process.env,
+        WHEELBASE_DB_PATH: dbPath,
+        FAKE_MARKET_DATA: 'true',
+        FAKE_BROKER: 'true'
+      }
     })
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
@@ -413,7 +448,12 @@ describe('US-5: WHEEL_COMPLETE badge in positions list after expiration', () => 
     app = await electron.launch({
       args: [APP_PATH, '--no-sandbox'],
       cwd: APP_CWD,
-      env: { ...process.env, WHEELBASE_DB_PATH: dbPath, FAKE_MARKET_DATA: 'true', FAKE_BROKER: 'true' }
+      env: {
+        ...process.env,
+        WHEELBASE_DB_PATH: dbPath,
+        FAKE_MARKET_DATA: 'true',
+        FAKE_BROKER: 'true'
+      }
     })
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')

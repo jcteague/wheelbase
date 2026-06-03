@@ -16,31 +16,31 @@
 
 ### Alpaca Credential Persistence And Encryption
 
-- [ ] **[Red]** Write failing tests — `src/main/services/settings.test.ts`
+- [x] **[Red]** Write failing tests — `src/main/services/settings.test.ts`
   - Test cases: `saveAlpacaCredentials` stores paper/live rows independently in generic `credential_settings`; saved secrets expose only configured/missing metadata; plaintext never appears in SQLite; removing active env sets active broker env to `none`; active broker env persists; Massive status reads shared config and creates no `credential_settings` row.
   - Run `pnpm test -- src/main/services/settings.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `migrations/006_add_credential_settings.sql`, `src/main/services/settings.ts` _(depends on: Alpaca Credential Persistence And Encryption Red ✓)_
+- [x] **[Green]** Implement — `migrations/006_add_credential_settings.sql`, `src/main/services/settings.ts` _(depends on: Alpaca Credential Persistence And Encryption Red ✓)_
   - Create generic `credential_settings` keyed by `(vendor, environment)` plus `app_settings`.
   - Implement `getCredentialStatus`, `saveAlpacaCredentials`, `removeAlpacaCredentials`, `setActiveBrokerEnvironment`, and Alpaca credential loaders.
   - Use `safeStorage.encryptString` / `decryptString` only in the main-process service boundary.
   - Run `pnpm test -- src/main/services/settings.test.ts` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — `src/main/services/settings.ts` _(depends on: Alpaca Credential Persistence And Encryption Green ✓)_
-  - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
+- [x] **[Refactor]** `/refactor` — `src/main/services/settings.ts` _(depends on: Alpaca Credential Persistence And Encryption Green ✓)_
+  - **Invoke `source-command-refactor` (the migrated `/refactor` command)** — do not substitute a manual cleanup or only the `code-simplifier` skill
   - Check helpers for trim/encrypt/decrypt/account masking and confirm no plaintext logging.
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
 ### Connection Probe Helpers
 
-- [ ] **[Red]** Write failing tests — `src/main/services/settings-connections.test.ts`
+- [x] **[Red]** Write failing tests — `src/main/services/settings-connections.test.ts`
   - Test cases: Massive probe calls `/v3/reference/tickers/AAPL` using shared configured app key; Massive 200/401/429 map to exact statuses/messages; Alpaca probe uses paper/live account hosts; Alpaca success returns `PA…ABC`; Alpaca probe never imports activities; live keys submitted to paper return exact environment mismatch message.
   - Run `pnpm test -- src/main/services/settings-connections.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/services/settings-connections.ts`, `src/main/integrations/alpaca-broker.ts`, `src/main/integrations/massive-market-data.ts` _(depends on: Connection Probe Helpers Red ✓)_
+- [x] **[Green]** Implement — `src/main/services/settings-connections.ts`, `src/main/integrations/alpaca-broker.ts`, `src/main/integrations/massive-market-data.ts` _(depends on: Connection Probe Helpers Red ✓)_
   - Implement Massive fixed reference probe with no user-entered Massive key.
   - Implement Alpaca candidate credential probe for requested environment.
   - Return typed connection results from `plans/us-37/contracts/settings-ipc.md`.
   - Run `pnpm test -- src/main/services/settings-connections.test.ts` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — `src/main/services/settings-connections.ts` _(depends on: Connection Probe Helpers Green ✓)_
-  - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
+- [x] **[Refactor]** `/refactor` — `src/main/services/settings-connections.ts` _(depends on: Connection Probe Helpers Green ✓)_
+  - **Invoke `source-command-refactor` (the migrated `/refactor` command)** — do not substitute a manual cleanup or only the `code-simplifier` skill
   - Share error mapping only where it reduces duplication cleanly.
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
@@ -54,17 +54,17 @@
 
 **Requires:** Alpaca Credential Persistence And Encryption Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/main/integrations/market-data-factory.test.ts`, `src/main/integrations/broker-factory.test.ts` _(depends on: Alpaca Credential Persistence And Encryption Green ✓)_
+- [x] **[Red]** Write failing tests — `src/main/integrations/market-data-factory.test.ts`, `src/main/integrations/broker-factory.test.ts` _(depends on: Alpaca Credential Persistence And Encryption Green ✓)_
   - Test cases: market factory returns Massive from shared app config; missing Massive shared key does not consult user settings; broker factory returns Alpaca provider for persisted active paper credentials; active live recreates broker without touching market factory; no Alpaca credentials returns typed not-configured `BrokerError`.
   - Run `pnpm test -- src/main/integrations/market-data-factory.test.ts src/main/integrations/broker-factory.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/integrations/market-data-factory.ts`, `src/main/integrations/broker-factory.ts`, `src/main/index.ts` _(depends on: Runtime Provider Factories Red ✓)_
+- [x] **[Green]** Implement — `src/main/integrations/market-data-factory.ts`, `src/main/integrations/broker-factory.ts`, `src/main/index.ts` _(depends on: Runtime Provider Factories Red ✓)_
   - Keep Massive app-config driven.
   - Load active Alpaca credential pair from settings service.
   - Register handlers with current provider accessors or a small provider manager.
   - Recreate only `BrokerProvider` on broker switch or Alpaca credential replacement.
   - Run `pnpm test -- src/main/integrations/market-data-factory.test.ts src/main/integrations/broker-factory.test.ts` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — provider factory files _(depends on: Runtime Provider Factories Green ✓)_
-  - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
+- [x] **[Refactor]** `/refactor` — provider factory files _(depends on: Runtime Provider Factories Green ✓)_
+  - **Invoke `source-command-refactor` (the migrated `/refactor` command)** — do not substitute a manual cleanup or only the `code-simplifier` skill
   - Keep `@alpacahq/typescript-sdk` isolated to integration files and avoid a service-container abstraction.
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
@@ -72,16 +72,16 @@
 
 **Requires:** Alpaca Credential Persistence And Encryption Green ✓, Connection Probe Helpers Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/main/ipc/settings.test.ts` _(depends on: Alpaca Credential Persistence And Encryption Green ✓, Connection Probe Helpers Green ✓)_
+- [x] **[Red]** Write failing tests — `src/main/ipc/settings.test.ts` _(depends on: Alpaca Credential Persistence And Encryption Green ✓, Connection Probe Helpers Green ✓)_
   - Test cases: registers settings channels; `settings:get-credential-status` returns status; `settings:save-alpaca-credentials` validates env/keyId/secret; `settings:set-active-broker-environment` rejects missing live creds; `settings:test-connection` returns typed failure without throwing.
   - Run `pnpm test -- src/main/ipc/settings.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/ipc/settings.ts`, `src/main/schemas.ts`, `src/preload/index.ts`, `src/preload/index.d.ts`, `src/main/index.ts` _(depends on: Settings IPC And Preload API Red ✓)_
+- [x] **[Green]** Implement — `src/main/ipc/settings.ts`, `src/main/schemas.ts`, `src/preload/index.ts`, `src/preload/index.d.ts`, `src/main/index.ts` _(depends on: Settings IPC And Preload API Red ✓)_
   - Add schemas and handlers from `plans/us-37/contracts/settings-ipc.md`.
   - Expose `window.api.settings.status/saveAlpaca/removeAlpaca/setActiveBrokerEnvironment/testConnection`.
   - Do not add Massive save/remove channels.
   - Run `pnpm test -- src/main/ipc/settings.test.ts` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — settings IPC/preload files _(depends on: Settings IPC And Preload API Green ✓)_
-  - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
+- [x] **[Refactor]** `/refactor` — settings IPC/preload files _(depends on: Settings IPC And Preload API Green ✓)_
+  - **Invoke `source-command-refactor` (the migrated `/refactor` command)** — do not substitute a manual cleanup or only the `code-simplifier` skill
   - Keep handlers thin and ensure failures return `{ ok: false, errors: [...] }`.
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
@@ -104,7 +104,7 @@
   - Scope query invalidation by first key segment.
   - Run focused renderer hook/API tests — all tests must pass
 - [ ] **[Refactor]** `/refactor` — renderer API/hooks/query keys _(depends on: Renderer Settings API, Hooks, And Query Keys Green ✓)_
-  - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
+  - **Invoke `source-command-refactor` (the migrated `/refactor` command)** — do not substitute a manual cleanup or only the `code-simplifier` skill
   - Keep query key modules as simple object literals and avoid unnecessary positions invalidation.
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
@@ -127,7 +127,7 @@
   - Keep badge visible on every page.
   - Run focused component/route tests — all tests must pass
 - [ ] **[Refactor]** `/refactor` — app shell/status components _(depends on: Header Badge, Market Data Dot, And App Shell Route Green ✓)_
-  - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
+  - **Invoke `source-command-refactor` (the migrated `/refactor` command)** — do not substitute a manual cleanup or only the `code-simplifier` skill
   - Keep badge presentational and avoid inline colors.
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
@@ -145,7 +145,7 @@
   - Use Tailwind utility classes and `wb-*` tokens.
   - Run focused page/dialog tests — all tests must pass
 - [ ] **[Refactor]** `/refactor` — settings page/dialog components _(depends on: Settings Page Forms And Confirmation Dialog Green ✓)_
-  - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
+  - **Invoke `source-command-refactor` (the migrated `/refactor` command)** — do not substitute a manual cleanup or only the `code-simplifier` skill
   - Split components only where readability/tests benefit and keep form state inside React Hook Form.
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
@@ -163,7 +163,7 @@
   - Use vendor-specific auth copy from the plan.
   - Run focused page/hook/card tests — all tests must pass
 - [ ] **[Refactor]** `/refactor` — degraded-state files _(depends on: Market Data And Broker Degraded States Green ✓)_
-  - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
+  - **Invoke `source-command-refactor` (the migrated `/refactor` command)** — do not substitute a manual cleanup or only the `code-simplifier` skill
   - Centralize vendor auth messaging if it simplifies behavior.
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
@@ -200,7 +200,7 @@
   - Keep real network disabled.
   - Run `pnpm test:e2e` — all tests must pass
 - [ ] **[Refactor]** `/refactor` e2e tests _(depends on: E2E Tests Green ✓)_
-  - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
+  - **Invoke `source-command-refactor` (the migrated `/refactor` command)** — do not substitute a manual cleanup or only the `code-simplifier` skill
   - Reuse existing e2e bootstrapping from provider/position specs where practical.
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 

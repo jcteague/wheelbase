@@ -9,10 +9,15 @@ describe('marketDataFactory', () => {
     delete process.env.MASSIVE_API_KEY
     delete process.env.FAKE_MARKET_DATA
     marketDataFactory.recreate()
+    marketDataFactory.configure({
+      loadMassiveApiKey: () => process.env.MASSIVE_API_KEY ?? ''
+    })
   })
 
-  it('returns MassiveMarketDataProvider when MASSIVE_API_KEY is configured', () => {
-    process.env.MASSIVE_API_KEY = 'test-key'
+  it('returns MassiveMarketDataProvider when shared Massive app config is configured', () => {
+    marketDataFactory.configure({
+      loadMassiveApiKey: () => 'shared-massive-key'
+    })
     const provider = marketDataFactory.create()
     expect(provider).toBeInstanceOf(MassiveMarketDataProvider)
   })
@@ -32,5 +37,16 @@ describe('marketDataFactory', () => {
     process.env.MASSIVE_API_KEY = 'test-key'
     const provider = marketDataFactory.create()
     expect(provider).toBeInstanceOf(FakeMarketDataProvider)
+  })
+
+  it('does not consult user credential settings when Massive shared key is missing', () => {
+    marketDataFactory.configure({
+      loadMassiveApiKey: () => '',
+      loadSettingsStatus: () => {
+        throw new Error('should not consult user settings')
+      }
+    })
+
+    expect(() => marketDataFactory.create()).toThrow(/not configured/i)
   })
 })
