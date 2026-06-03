@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import type Database from 'better-sqlite3'
 import type { PollingScheduler } from '../services/polling-scheduler'
+import { DETECT_ASSIGNMENTS_JOB_NAME } from '../services/detect-assignments'
 import {
   confirmPending,
   dismissPending,
@@ -65,7 +66,7 @@ export function registerAssignmentsIpc({
 
   ipcMain.handle('assignments:run-detection-now', () =>
     handleIpcCall('assignments_run_detection_now_error', async () => {
-      await scheduler.runNow('detect-assignments')
+      await scheduler.runNow(DETECT_ASSIGNMENTS_JOB_NAME)
       return {}
     })
   )

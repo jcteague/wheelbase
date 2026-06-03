@@ -9,7 +9,11 @@ import { marketDataFactory } from './integrations/market-data-factory'
 import { brokerFactory } from './integrations/broker-factory'
 import { registerMarketDataHandlers } from './ipc/market-data'
 import { registerBrokerHandlers } from './ipc/broker'
+import { registerAssignmentsIpc } from './ipc/assignments'
+import { DETECT_ASSIGNMENTS_JOB_NAME, detectAssignments } from './services/detect-assignments'
+import { scheduler } from './services/scheduler-instance'
 import { logger } from './logger'
+import type { BrokerProvider } from './integrations/broker-provider'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -61,21 +65,46 @@ app.whenReady().then(() => {
 
   const marketDataProvider = marketDataFactory.create()
   registerMarketDataHandlers(marketDataProvider, () => mainWindow)
-  app.on('before-quit', () => {
-    void marketDataProvider.disconnect()
-  })
 
+  let brokerProvider: BrokerProvider | null = null
   try {
-    const brokerProvider = brokerFactory.create()
+    brokerProvider = brokerFactory.create()
     registerBrokerHandlers(brokerProvider)
   } catch (err) {
     logger.warn({ err }, 'Broker provider not configured — broker IPC channels unavailable')
   }
 
+  registerAssignmentsIpc({ db, scheduler })
+
+  if (brokerProvider !== null) {
+    const env: 'paper' | 'live' = process.env.ALPACA_PAPER === 'true' ? 'paper' : 'live'
+    const bp = brokerProvider
+    scheduler.register({
+      name: DETECT_ASSIGNMENTS_JOB_NAME,
+      cadence: {
+        kind: 'interval',
+        marketOpenMs: 60_000,
+        extendedHoursMs: 300_000,
+        marketClosedMs: null
+      },
+      handler: async () => {
+        await detectAssignments({ db, brokerProvider: bp, env })
+      }
+    })
+  }
+
+  scheduler.start()
+
   createWindow()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+
+  app.on('before-quit', async (e) => {
+    e.preventDefault()
+    await Promise.all([scheduler.stop(), marketDataProvider.disconnect()])
+    app.exit(0)
   })
 })
 

@@ -5,6 +5,8 @@ import { BrokerError as BrokerErrorClass } from '../integrations/broker-provider
 import { logger } from '../logger'
 import { appSettings } from './app-settings'
 
+export const DETECT_ASSIGNMENTS_JOB_NAME = 'detect-assignments'
+
 type DetectResult = { detected: number; skipped: number; brokerError?: BrokerError }
 
 interface OpenLegRow {

@@ -170,19 +170,19 @@
 > Do NOT call `scheduler.start()` until all jobs for the current story are registered — future stories add their `register()` calls before `start()` is moved later.
 > Export the scheduler instance from a dedicated module (e.g. `src/main/services/scheduler-instance.ts`) so other stories can import it without circular dependencies on `src/main/index.ts`.
 
-- [ ] **[Red]** Write failing tests — `src/main/index.test.ts` (modify if present) _(depends on: Areas 1 + 5 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/main/index.test.ts` (modify if present) _(depends on: Areas 1 + 5 Green ✓)_
   - Test cases:
     - Main process bootstrap registers `'detect-assignments'` job on the scheduler (assert via spy or registry inspection)
     - `before-quit` handler calls `scheduler.stop()` and awaits it before completing (spy)
     - Importing the scheduler instance module twice returns the same object (singleton guarantee)
   - Run `pnpm test src/main/index.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement wiring — `src/main/services/scheduler-instance.ts` + `src/main/index.ts` _(depends on: Area 6 Red ✓)_
+- [x] **[Green]** Implement wiring — `src/main/services/scheduler-instance.ts` + `src/main/index.ts` _(depends on: Area 6 Red ✓)_
   - Create `src/main/services/scheduler-instance.ts` that exports a lazily-created singleton `PollingScheduler`; this is the importable handle for all future job registrations
   - In `src/main/index.ts`: import the singleton, register `detect-assignments` with cadence `{ kind: 'interval', marketOpenMs: 60_000, extendedHoursMs: 300_000, marketClosedMs: null }` and handler `() => detectAssignments({ db, brokerProvider, env, logger })`
   - Call `scheduler.start()` after all IPC handlers register, after `app.whenReady()`
   - Wire `app.on('before-quit', ...)` to call `scheduler.stop()` and await before `app.exit(0)`
   - Run `pnpm test src/main/index.test.ts` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — `src/main/services/scheduler-instance.ts` + `src/main/index.ts` _(depends on: Area 6 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `src/main/services/scheduler-instance.ts` + `src/main/index.ts` _(depends on: Area 6 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
