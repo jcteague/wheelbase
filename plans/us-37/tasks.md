@@ -118,15 +118,15 @@
 
 **Requires:** Renderer Settings API, Hooks, And Query Keys Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/components/EnvironmentBadge.test.tsx`, `src/renderer/src/components/MarketDataStatusDot.test.tsx`, route coverage in `src/renderer/src/App.test.tsx` or existing app-shell test _(depends on: Renderer Settings API, Hooks, And Query Keys Green ✓)_
+- [x] **[Red]** Write failing tests — `src/renderer/src/components/EnvironmentBadge.test.tsx`, `src/renderer/src/components/MarketDataStatusDot.test.tsx`, route coverage in `src/renderer/src/App.test.tsx` or existing app-shell test _(depends on: Renderer Settings API, Hooks, And Query Keys Green ✓)_
   - Test cases: paper renders high-visibility amber `PAPER` with `animate-wb-pulse`; live renders subtle green `LIVE`; none renders `NO BROKER` with tooltip; badge ignores Massive status; `#/settings` renders `SettingsPage`.
   - Run focused component/route tests — all new tests must fail
-- [ ] **[Green]** Implement — `src/renderer/src/components/EnvironmentBadge.tsx`, `src/renderer/src/components/MarketDataStatusDot.tsx`, `src/renderer/src/App.tsx`, `src/renderer/src/pages/SettingsPage.tsx` _(depends on: Header Badge, Market Data Dot, And App Shell Route Red ✓)_
+- [x] **[Green]** Implement — `src/renderer/src/components/EnvironmentBadge.tsx`, `src/renderer/src/components/MarketDataStatusDot.tsx`, `src/renderer/src/App.tsx`, `src/renderer/src/pages/SettingsPage.tsx` _(depends on: Header Badge, Market Data Dot, And App Shell Route Red ✓)_
   - Translate mockup `BrokerBadge` and `MassiveDot` into Tailwind `wb-*` token classes.
   - Add Settings nav item and route at `/settings`.
   - Keep badge visible on every page.
   - Run focused component/route tests — all tests must pass
-- [ ] **[Refactor]** `/refactor` — app shell/status components _(depends on: Header Badge, Market Data Dot, And App Shell Route Green ✓)_
+- [x] **[Refactor]** `/refactor` — app shell/status components _(depends on: Header Badge, Market Data Dot, And App Shell Route Green ✓)_
   - **Invoke `source-command-refactor` (the migrated `/refactor` command)** — do not substitute a manual cleanup or only the `code-simplifier` skill
   - Keep badge presentational and avoid inline colors.
   - Run `pnpm test && pnpm lint && pnpm typecheck`
@@ -135,16 +135,16 @@
 
 **Requires:** Renderer Settings API, Hooks, And Query Keys Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/pages/SettingsPage.test.tsx`, `src/renderer/src/components/LiveBrokerConfirmDialog.test.tsx` _(depends on: Renderer Settings API, Hooks, And Query Keys Green ✓)_
+- [x] **[Red]** Write failing tests — `src/renderer/src/pages/SettingsPage.test.tsx`, `src/renderer/src/components/LiveBrokerConfirmDialog.test.tsx` _(depends on: Renderer Settings API, Hooks, And Query Keys Green ✓)_
   - Test cases: Massive section is shared app status with Test connection and no key input; Paper/Live cards each show API Key ID, Secret Key, Test connection; active environment segmented control is above cards; empty banner says Massive is app-provided and Alpaca optional; saved Alpaca secrets show bullets and Replace; Massive 401/429 render exact red messages; Alpaca verified result renders `✓ Verified — Account PA…ABC (paper)`; paper-card mismatch message does not save; LIVE dialog exact title/body/bullets/footer; confirm is gold not destructive red; open-position warning includes count; live-to-paper switch has no dialog.
   - Run `pnpm test -- src/renderer/src/pages/SettingsPage.test.tsx src/renderer/src/components/LiveBrokerConfirmDialog.test.tsx` — all new tests must fail
-- [ ] **[Green]** Implement — `src/renderer/src/pages/SettingsPage.tsx`, `src/renderer/src/components/LiveBrokerConfirmDialog.tsx`, optional `CredentialCard.tsx`, optional `MassiveStatusSection.tsx` _(depends on: Settings Page Forms And Confirmation Dialog Red ✓)_
+- [x] **[Green]** Implement — `src/renderer/src/pages/SettingsPage.tsx`, `src/renderer/src/components/LiveBrokerConfirmDialog.tsx`, optional `CredentialCard.tsx`, optional `MassiveStatusSection.tsx` _(depends on: Settings Page Forms And Confirmation Dialog Red ✓)_
   - Use React Hook Form + Zod resolver for Alpaca cards only.
   - Implement revised mockup sections: Massive status/test, broker credential cards, environment segmented control, onboarding banner, and LIVE confirm dialog.
   - Use existing positions data to compute open-position warning.
   - Use Tailwind utility classes and `wb-*` tokens.
   - Run focused page/dialog tests — all tests must pass
-- [ ] **[Refactor]** `/refactor` — settings page/dialog components _(depends on: Settings Page Forms And Confirmation Dialog Green ✓)_
+- [x] **[Refactor]** `/refactor` — settings page/dialog components _(depends on: Settings Page Forms And Confirmation Dialog Green ✓)_
   - **Invoke `source-command-refactor` (the migrated `/refactor` command)** — do not substitute a manual cleanup or only the `code-simplifier` skill
   - Split components only where readability/tests benefit and keep form state inside React Hook Form.
   - Run `pnpm test && pnpm lint && pnpm typecheck`
@@ -153,16 +153,16 @@
 
 **Requires:** Renderer Settings API, Hooks, And Query Keys Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/pages/PositionsListPage.test.tsx`, `src/renderer/src/hooks/useStockQuotes.test.ts`, `src/renderer/src/components/PositionCard.test.tsx` _(depends on: Renderer Settings API, Hooks, And Query Keys Green ✓)_
+- [x] **[Red]** Write failing tests — `src/renderer/src/pages/PositionsListPage.test.tsx`, `src/renderer/src/hooks/useStockQuotes.test.ts`, `src/renderer/src/components/PositionCard.test.tsx` _(depends on: Renderer Settings API, Hooks, And Query Keys Green ✓)_
   - Test cases: unavailable shared Massive + no Alpaca shows em dash live columns; setup banner links Alpaca setup and explains Massive is app-provided; Massive configured + no Alpaca still renders live prices/Greeks; broker-only surfaces show "Connect Alpaca to enable"; mid-session `auth_failed` routes vendor auth state/toast; cached price shows stale badge before unavailable dash after Massive auth failure.
   - Run focused page/hook/card tests — all new tests must fail
-- [ ] **[Green]** Implement — `src/renderer/src/pages/PositionsListPage.tsx`, `src/renderer/src/components/PositionCard.tsx`, `src/renderer/src/components/StaleDataBanner.tsx`, `src/renderer/src/hooks/useStockQuotes.ts`, `src/renderer/src/hooks/useOptionSnapshots.ts`, `src/main/ipc/market-data.ts`, `src/main/ipc/broker.ts` _(depends on: Market Data And Broker Degraded States Red ✓)_
+- [x] **[Green]** Implement — `src/renderer/src/pages/PositionsListPage.tsx`, `src/renderer/src/components/PositionCard.tsx`, `src/renderer/src/components/StaleDataBanner.tsx`, `src/renderer/src/hooks/useStockQuotes.ts`, `src/renderer/src/hooks/useOptionSnapshots.ts`, `src/main/ipc/market-data.ts`, `src/main/ipc/broker.ts` _(depends on: Market Data And Broker Degraded States Red ✓)_
   - Add credential status awareness without coupling market data to broker config.
   - Preserve cached quote data briefly on Massive auth/config failure, mark stale, then render `—`.
   - Show broker placeholders when active broker env is `none`.
   - Use vendor-specific auth copy from the plan.
   - Run focused page/hook/card tests — all tests must pass
-- [ ] **[Refactor]** `/refactor` — degraded-state files _(depends on: Market Data And Broker Degraded States Green ✓)_
+- [x] **[Refactor]** `/refactor` — degraded-state files _(depends on: Market Data And Broker Degraded States Green ✓)_
   - **Invoke `source-command-refactor` (the migrated `/refactor` command)** — do not substitute a manual cleanup or only the `code-simplifier` skill
   - Centralize vendor auth messaging if it simplifies behavior.
   - Run `pnpm test && pnpm lint && pnpm typecheck`
