@@ -1,4 +1,5 @@
 # ADR: Right-side sheet component pattern (portal, form-then-success)
+
 <!-- generated:from us-5, us-6, us-7, us-8, us-9, us-12 -->
 
 ## Decision

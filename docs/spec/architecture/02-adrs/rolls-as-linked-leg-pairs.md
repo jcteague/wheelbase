@@ -1,4 +1,5 @@
 # ADR: Rolls are stored as linked ROLL_FROM / ROLL_TO leg pairs
+
 <!-- generated:from us-12 -->
 
 ## Decision

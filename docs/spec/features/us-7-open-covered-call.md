@@ -1,6 +1,7 @@
 # US-7: Open a covered call
 
 <!-- generated:from us-7 -->
+
 ## Summary
 
 Adds the ability to sell a covered call against shares acquired through CSP assignment, introducing the lifecycle transition `HOLDING_SHARES → CC_OPEN`. A right-side sheet on the position detail page hosts a React Hook Form + Zod form with an inline cost-basis guardrail; on submit the backend writes a `CC_OPEN`/`SELL`/`CALL` leg, appends a fresh cost-basis snapshot reducing `basis_per_share` by the CC premium, and transitions the position to `CC_OPEN` — all in one transaction. No schema migration required.

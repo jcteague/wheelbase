@@ -1,6 +1,7 @@
 # US-9: Record CC expiring worthless
 
 <!-- generated:from us-9 -->
+
 ## Summary
 
 Adds the covered-call expiration-worthless path to the wheel lifecycle. On or after the option's expiration date a trader with a `CC_OPEN` position clicks "Record Expiration →" in the detail header, confirms in a right-side `CcExpirationSheet`, and the wheel transitions back to `HOLDING_SHARES` — the position stays `ACTIVE`, `closed_date` remains `NULL`, and the wheel continues. The expire leg is written with `action = 'EXPIRE'`, `instrument_type = 'CALL'`, `premium_per_contract = '0.0000'`, `fill_price = NULL`, and `fill_date` set to the CC's expiration date (not "today"). **Critically, no new `cost_basis_snapshots` row is written**: the CC premium was already captured into the snapshot when the CC was opened in [US-7](./us-7-open-covered-call.md), so expiration is not a financial event. The success state surfaces a "+$X.XX premium captured (100%)" hero, a "Still Holding: N shares" badge, a 1–3 day strategic-patience nudge, and a "Sell New Covered Call on {ticker} →" CTA that simply closes the sheet — once the query cache invalidates and the position refetches as `HOLDING_SHARES`, the existing US-7 entry-point button reappears in the detail header.

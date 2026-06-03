@@ -1,4 +1,5 @@
 # ADR: `decimal.js` with `ROUND_HALF_UP` at 4 dp, stored as TEXT
+
 <!-- generated:from us-4, us-5, us-6, us-7, us-8, us-12, us-32 -->
 
 ## Decision

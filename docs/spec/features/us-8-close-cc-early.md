@@ -1,6 +1,7 @@
 # US-8: Close a covered call early
 
 <!-- generated:from us-8,us-8-pct-fix -->
+
 ## Summary
 
 Adds buy-to-close functionality for an open covered call, introducing the lifecycle transition `CC_OPEN → HOLDING_SHARES`. A right-side sheet on the position detail page hosts a React Hook Form + Zod form with a live P&L preview ("X% of max" for profit, "X% above open" for loss, "$0.00 break-even" when equal); on submit the backend writes a single `CC_CLOSE`/`BUY`/`CALL` leg copying strike, expiration, and contracts from the active `CC_OPEN` leg, transitions the position back to `HOLDING_SHARES`, and **does not** create a new cost-basis snapshot — the CC_OPEN snapshot remains current. The wheel continues; only the CC leg closes, not the position. No schema migration required.

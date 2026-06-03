@@ -1,6 +1,7 @@
 # US-17: Reject roll attempts from invalid phases
 
 <!-- generated:from us-17 -->
+
 ## Summary
 
 Locks in comprehensive test coverage proving that a CSP or CC roll is rejected — at every layer — whenever the position is not in the corresponding rollable phase. The lifecycle engine, IPC services, and renderer action bar already enforced this behaviour as a side effect of US-12 and US-14; US-17 ships no new production code and instead adds parameterized (`it.each`) tests across all 9 non-rollable phases per roll type, plus AC-driven e2e specs, so the AC is provably covered rather than incidentally true.

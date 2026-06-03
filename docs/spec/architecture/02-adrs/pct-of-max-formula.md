@@ -1,4 +1,5 @@
 # ADR: "% of max profit captured" formula for CC close
+
 <!-- generated:from us-8-pct-fix -->
 
 ## Decision

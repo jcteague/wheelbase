@@ -63,10 +63,10 @@ Implementation: `src/main/db/migrate.ts`.
 - **Change scope:** the `legs` table only.
 - **Field-level diff:**
 
-  | Field           | Before                                       | After                                                                |
-  | --------------- | -------------------------------------------- | -------------------------------------------------------------------- |
-  | column name     | `option_type`                                | `instrument_type`                                                    |
-  | CHECK constraint | `option_type IN ('PUT', 'CALL')`            | `instrument_type IN ('PUT', 'CALL', 'STOCK')`                        |
+  | Field            | Before                           | After                                         |
+  | ---------------- | -------------------------------- | --------------------------------------------- |
+  | column name      | `option_type`                    | `instrument_type`                             |
+  | CHECK constraint | `option_type IN ('PUT', 'CALL')` | `instrument_type IN ('PUT', 'CALL', 'STOCK')` |
 
 - **Why:** `OptionType` was semantically wrong once the same `legs` table
   had to carry an `ASSIGN` event marker for stock holdings. `InstrumentType`
@@ -90,6 +90,7 @@ Implementation: `src/main/db/migrate.ts`.
 
   The rebuild path is required regardless of SQLite version because of the
   CHECK constraint change; the column rename is folded into step 1.
+
 - **Downstream code touches (no further schema change):** every service
   SQL `INSERT` and `SELECT` against `legs` must use the new column name.
   Specifically:
@@ -120,9 +121,9 @@ Implementation: `src/main/db/migrate.ts`.
 
 - **Field-level diff:**
 
-  | Field                   | Before          | After                                              |
-  | ----------------------- | --------------- | -------------------------------------------------- |
-  | `profit_target_percent` | (column absent) | `INTEGER`, nullable, no default                    |
+  | Field                   | Before          | After                           |
+  | ----------------------- | --------------- | ------------------------------- |
+  | `profit_target_percent` | (column absent) | `INTEGER`, nullable, no default |
 
 - **Semantics:** `NULL` means "use the global default constant"
   (`DEFAULT_PROFIT_TARGET_PERCENT = 50` from
@@ -132,7 +133,7 @@ Implementation: `src/main/db/migrate.ts`.
   For US-33 the column is read-only and seeded only via tests/dev; no
   edit UI exists yet.
 - **Approach inside the migration file:** plain `ALTER TABLE ... ADD
-  COLUMN`. No table rebuild required because there is no constraint
+COLUMN`. No table rebuild required because there is no constraint
   change.
 - **Downstream code touches (no further schema change):**
   - `src/main/services/list-positions.ts` (`LIST_QUERY` SELECT extended

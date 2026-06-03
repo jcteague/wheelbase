@@ -22,8 +22,8 @@ There are three ways to reach the terminal `WHEEL_COMPLETE` phase:
 - `expireCsp` — the CSP expired worthless before assignment (full premium kept).
 - `recordCallAway` — the shares were exercised against the trader at the CC
   strike (final cycle P&L is the share appreciation `(ccStrike − basisPerShare)
-  × sharesHeld`).
-- (`closeCsp` is *not* one of them — early buy-to-close lands in the distinct
+× sharesHeld`).
+- (`closeCsp` is _not_ one of them — early buy-to-close lands in the distinct
   terminal phases `CSP_CLOSED_PROFIT` / `CSP_CLOSED_LOSS`.)
 
 A wheel that has reached `HOLDING_SHARES` runs an inner **CC sub-loop**:
@@ -44,18 +44,18 @@ The complete `WheelPhase` Zod enum lives in `src/main/core/types.ts`. The table
 below lists every value and the broader `position.status` (`ACTIVE` /
 `CLOSED`) it implies.
 
-| Phase                | Meaning                                                                                                  | Status     |
-| -------------------- | -------------------------------------------------------------------------------------------------------- | ---------- |
-| `CSP_OPEN`           | A cash-secured put has been sold and is open. The wheel is collecting premium and waiting on expiration. | `ACTIVE`   |
-| `HOLDING_SHARES`     | The CSP was assigned; the trader now holds `contracts × 100` shares at the assignment strike.            | `ACTIVE`   |
-| `CC_OPEN`            | A covered call has been sold against the held shares.                                                    | `ACTIVE`   |
-| `CSP_EXPIRED`        | Reserved phase value (referenced for completeness, not the live terminal — `expireCsp` lands directly at `WHEEL_COMPLETE`). | `CLOSED` |
-| `CSP_CLOSED_PROFIT`  | Terminal — the CSP was bought to close at a net profit.                                                  | `CLOSED`   |
-| `CSP_CLOSED_LOSS`    | Terminal — the CSP was bought to close at a net loss (breakeven counts as loss).                         | `CLOSED`   |
-| `CC_EXPIRED`         | Reserved phase value (referenced for completeness, not the live terminal — `expireCc` returns to `HOLDING_SHARES`). | `CLOSED` |
-| `CC_CLOSED_PROFIT`   | Reserved phase value (referenced for completeness, not produced by any current transition).              | `CLOSED`   |
-| `CC_CLOSED_LOSS`     | Reserved phase value (referenced for completeness, not produced by any current transition).              | `CLOSED`   |
-| `WHEEL_COMPLETE`     | Terminal — the CSP expired worthless, or shares were called away.                                        | `CLOSED`   |
+| Phase               | Meaning                                                                                                                     | Status   |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------- | -------- |
+| `CSP_OPEN`          | A cash-secured put has been sold and is open. The wheel is collecting premium and waiting on expiration.                    | `ACTIVE` |
+| `HOLDING_SHARES`    | The CSP was assigned; the trader now holds `contracts × 100` shares at the assignment strike.                               | `ACTIVE` |
+| `CC_OPEN`           | A covered call has been sold against the held shares.                                                                       | `ACTIVE` |
+| `CSP_EXPIRED`       | Reserved phase value (referenced for completeness, not the live terminal — `expireCsp` lands directly at `WHEEL_COMPLETE`). | `CLOSED` |
+| `CSP_CLOSED_PROFIT` | Terminal — the CSP was bought to close at a net profit.                                                                     | `CLOSED` |
+| `CSP_CLOSED_LOSS`   | Terminal — the CSP was bought to close at a net loss (breakeven counts as loss).                                            | `CLOSED` |
+| `CC_EXPIRED`        | Reserved phase value (referenced for completeness, not the live terminal — `expireCc` returns to `HOLDING_SHARES`).         | `CLOSED` |
+| `CC_CLOSED_PROFIT`  | Reserved phase value (referenced for completeness, not produced by any current transition).                                 | `CLOSED` |
+| `CC_CLOSED_LOSS`    | Reserved phase value (referenced for completeness, not produced by any current transition).                                 | `CLOSED` |
+| `WHEEL_COMPLETE`    | Terminal — the CSP expired worthless, or shares were called away.                                                           | `CLOSED` |
 
 Terminal phases set `status = 'CLOSED'` and stamp `closed_date`; non-terminal
 phases leave `status = 'ACTIVE'` and `closed_date = NULL`. The lifecycle
@@ -122,6 +122,7 @@ interface CloseCspResult {
 ```
 
 Validations:
+
 - `currentPhase === 'CSP_OPEN'` else `__phase__` / `invalid_phase`
 - `closeFillDate >= openFillDate` else `fillDate` / `close_date_before_open`
 - `closeFillDate <= expiration` else `fillDate` / `close_date_after_expiration`
@@ -142,8 +143,8 @@ Records that the CSP expired worthless on or after the expiration date.
 ```typescript
 interface ExpireCspInput {
   currentPhase: WheelPhase
-  expirationDate: string   // YYYY-MM-DD
-  referenceDate: string    // YYYY-MM-DD (today or override)
+  expirationDate: string // YYYY-MM-DD
+  referenceDate: string // YYYY-MM-DD (today or override)
 }
 
 interface ExpireCspResult {
@@ -152,6 +153,7 @@ interface ExpireCspResult {
 ```
 
 Validations:
+
 - `currentPhase === 'CSP_OPEN'` else `__phase__` / `invalid_phase`
 - `referenceDate >= expirationDate` else `expiration` / `too_early`
 
@@ -168,8 +170,8 @@ The broker assigned the put; the trader now holds shares.
 ```typescript
 interface RecordAssignmentInput {
   currentPhase: WheelPhase
-  assignmentDate: string   // YYYY-MM-DD
-  openFillDate: string     // YYYY-MM-DD
+  assignmentDate: string // YYYY-MM-DD
+  openFillDate: string // YYYY-MM-DD
 }
 
 interface RecordAssignmentResult {
@@ -178,10 +180,12 @@ interface RecordAssignmentResult {
 ```
 
 Validations:
+
 - `currentPhase === 'CSP_OPEN'` else `__phase__` / `invalid_phase`
 - `assignmentDate >= openFillDate` else `assignmentDate` / `date_before_open`
 
 Notable behaviours:
+
 - **Future dates are NOT rejected.** The "this date is in the future — are
   you sure?" warning is client-side only and non-blocking. Some brokers post
   assignments over the weekend onto a future business day.
@@ -201,11 +205,11 @@ interface OpenCoveredCallInput {
   currentPhase: WheelPhase
   strike: string
   contracts: number
-  positionContracts: number   // contracts on the ASSIGN leg — caps CC contracts
+  positionContracts: number // contracts on the ASSIGN leg — caps CC contracts
   premiumPerContract: string
   fillDate: string
-  assignmentDate: string      // from the ASSIGN leg's fill_date
-  referenceDate: string       // today
+  assignmentDate: string // from the ASSIGN leg's fill_date
+  referenceDate: string // today
   expiration: string
 }
 
@@ -215,6 +219,7 @@ interface OpenCoveredCallResult {
 ```
 
 Validations (engine throws `ValidationError`):
+
 - `currentPhase === 'HOLDING_SHARES'` else `__phase__` / `invalid_phase`
   (message also covers "A covered call is already open on this position" when
   the caller hits `CC_OPEN`, and "This position is closed" for terminal phases)
@@ -239,9 +244,9 @@ Buys the CC back early. The wheel stays alive — phase returns to
 interface CloseCoveredCallInput {
   currentPhase: WheelPhase
   closePricePerContract: string
-  openFillDate: string      // CC_OPEN leg fillDate
-  fillDate: string          // payload (or today)
-  expiration: string        // CC_OPEN leg expiration
+  openFillDate: string // CC_OPEN leg fillDate
+  fillDate: string // payload (or today)
+  expiration: string // CC_OPEN leg expiration
 }
 
 interface CloseCoveredCallResult {
@@ -250,6 +255,7 @@ interface CloseCoveredCallResult {
 ```
 
 Validations:
+
 - `currentPhase === 'CC_OPEN'` else `__phase__` / `invalid_phase`
   ("No open covered call on this position")
 - `closePricePerContract > 0` else `closePricePerContract` / `must_be_positive`
@@ -261,6 +267,7 @@ Validations:
   instead")
 
 Notable behaviours:
+
 - **`status` stays `ACTIVE` and `closed_date` stays `NULL`.** This is a leg
   closing, not a position closing — the wheel keeps going.
 - **No new `cost_basis_snapshots` row is written.** The CC_OPEN snapshot
@@ -293,8 +300,8 @@ date. The wheel stays alive — phase returns to `HOLDING_SHARES`.
 ```typescript
 interface ExpireCcInput {
   currentPhase: WheelPhase
-  expirationDate: string   // YYYY-MM-DD
-  referenceDate: string    // YYYY-MM-DD (today or override)
+  expirationDate: string // YYYY-MM-DD
+  referenceDate: string // YYYY-MM-DD (today or override)
 }
 
 interface ExpireCcResult {
@@ -303,6 +310,7 @@ interface ExpireCcResult {
 ```
 
 Validations:
+
 - `currentPhase === 'CC_OPEN'` else `__phase__` / `invalid_phase`
   ("No open covered call on this position")
 - `referenceDate >= expirationDate` else `expiration` / `too_early`
@@ -311,6 +319,7 @@ Validations:
   as a string rather than a comparison value)
 
 Notable behaviours:
+
 - The boundary `referenceDate === expirationDate` is valid (matches
   `expireCsp`).
 - **`status` stays `ACTIVE` and `closed_date` stays `NULL`.** CC expiry is a
@@ -336,8 +345,8 @@ CC strike. This is the terminal exit from the CC sub-loop.
 interface RecordCallAwayInput {
   currentPhase: WheelPhase
   contracts: number
-  fillDate: string         // CC_OPEN leg expiration (derived by service)
-  ccOpenFillDate: string   // CC_OPEN leg fill_date
+  fillDate: string // CC_OPEN leg expiration (derived by service)
+  ccOpenFillDate: string // CC_OPEN leg fill_date
 }
 
 interface RecordCallAwayResult {
@@ -346,6 +355,7 @@ interface RecordCallAwayResult {
 ```
 
 Validations:
+
 - `currentPhase === 'CC_OPEN'` else `__phase__` / `invalid_phase`
   ("No open covered call on this position")
 - `contracts <= 1` else `contracts` / `multi_contract_unsupported`
@@ -354,6 +364,7 @@ Validations:
   ("Fill date cannot be before the CC open date")
 
 Notable behaviours:
+
 - **Fill date and fill price are derived, never user-entered.** The service
   uses `fillDate = ccOpenLeg.expiration` and `fillPrice = ccOpenLeg.strike`.
   The renderer renders the fill-date field read-only with the hint "Derived
@@ -370,30 +381,30 @@ Notable behaviours:
 - `position.phase = 'WHEEL_COMPLETE'`, `position.status = 'CLOSED'`,
   `position.closed_date = fillDate` (the CC expiration date).
 - Final cycle P&L formula (in `calculateCallAway`): `finalPnl = (ccStrike −
-  basisPerShare) × sharesHeld`. `basisPerShare` is the **effective** cost
+basisPerShare) × sharesHeld`. `basisPerShare` is the **effective** cost
   basis — already reduced by all premiums collected — so `totalPremiumCollected`
   is **not** re-added. `annualizedReturn = (finalPnl / capitalDeployed) × (365
-  / cycleDays) × 100`, returning `'0.0000'` when `cycleDays <= 0` to avoid
+/ cycleDays) × 100`, returning `'0.0000'` when `cycleDays <= 0` to avoid
   divide-by-zero. `cycleDays` is calendar days from `position.openedDate` to
   `fillDate`.
 - The IPC response carries `finalPnl`, `cycleDays`, `annualizedReturn`, and
   `basisPerShare` for the success-state hero ("WHEEL COMPLETE" card).
 
-### `rollCsp` — `CSP_OPEN → CSP_OPEN` (us-12, us-13 *planned*)
+### `rollCsp` — `CSP_OPEN → CSP_OPEN` (us-12, us-13 _planned_)
 
 Closes the current CSP and opens a new one in one atomic operation. **Phase
 does not change.** The us-12 baseline supported same-strike "roll out" (later
-expiration only); us-13 *(planned, not yet implemented — see note below)*
+expiration only); us-13 _(planned, not yet implemented — see note below)_
 extends this to allow strike-only or strike-plus-expiration rolls.
 
 ```typescript
 interface RollCspInput {
   currentPhase: WheelPhase
-  currentStrike: string             // us-13 (planned)
-  newStrike: string                 // us-13 (planned)
+  currentStrike: string // us-13 (planned)
+  newStrike: string // us-13 (planned)
   currentExpiration: string
   newExpiration: string
-  costToClosePerContract: number    // us-12 — number; us-13 keeps schema unchanged
+  costToClosePerContract: number // us-12 — number; us-13 keeps schema unchanged
   newPremiumPerContract: number
 }
 
@@ -403,6 +414,7 @@ interface RollCspResult {
 ```
 
 **As implemented (us-12)** the engine validates:
+
 - `currentPhase === 'CSP_OPEN'` else `__phase__` / `invalid_phase`
   ("Position is not in CSP_OPEN phase")
 - `newExpiration > currentExpiration` else `newExpiration` /
@@ -413,8 +425,9 @@ interface RollCspResult {
 **Planned us-13 changes (not yet implemented):** the strict `>` check on
 `newExpiration` is replaced by a two-part rule so same-expiration strike-only
 rolls become valid:
+
 - Reject only when `newStrike === currentStrike AND newExpiration ===
-  currentExpiration` → `__root__` / `no_change` / "Roll must change the
+currentExpiration` → `__root__` / `no_change` / "Roll must change the
   expiration, strike, or both"
 - Reject when `newExpiration < currentExpiration` → `newExpiration` /
   `must_not_be_earlier` / "New expiration must be after the current expiration"
@@ -447,7 +460,7 @@ centralised in `src/main/services/active-leg-sql.ts` (us-12-refactor).
 > only `plan.md`, `research.md`, `data-model.md`, `contracts/`, and
 > `quickstart.md` — no `tasks.md` and no `refactor-phase-results.md`. The
 > relaxed validation rules and 5-way roll-type label (`Roll Out`, `Roll Down
-> & Out`, `Roll Up & Out`, `Roll Down`, `Roll Up`) are design intent only.
+& Out`, `Roll Up & Out`, `Roll Down`, `Roll Up`) are design intent only.
 
 ### `rollCc` — `CC_OPEN → CC_OPEN` (us-14)
 
@@ -473,6 +486,7 @@ interface RollCcResult {
 ```
 
 Validations (in order):
+
 - `currentPhase === 'CC_OPEN'` else `__phase__` / `invalid_phase`
   ("No open covered call on this position") — via shared `requireCcOpenPhase`.
 - `newExpiration >= currentExpiration` else `newExpiration` /
@@ -599,18 +613,18 @@ a pair). The us-11 story added the explicit terminal roles `CALLED_AWAY` and
 Away", "CC Expired") and annotations — previously the call-away path emitted
 `CC_CLOSE` and the CC-expiry path emitted a generic `EXPIRE`.
 
-| Transition         | `legRole`               | `action`        | `instrumentType` |
-| ------------------ | ----------------------- | --------------- | ---------------- |
-| `openWheel`        | `CSP_OPEN`              | `SELL`          | `PUT`            |
-| `closeCsp`         | `CSP_CLOSE`             | `BUY`           | `PUT`            |
-| `expireCsp`        | `EXPIRE`                | `EXPIRE`        | `PUT`            |
-| `recordAssignment` | `ASSIGN`                | `ASSIGN`        | `STOCK`          |
-| `openCoveredCall`  | `CC_OPEN`               | `SELL`          | `CALL`           |
-| `closeCoveredCall` | `CC_CLOSE`              | `BUY`           | `CALL`           |
-| `expireCc`         | `CC_EXPIRED` (us-11)    | `EXPIRE`        | `CALL`           |
-| `recordCallAway`   | `CALLED_AWAY` (us-11)   | `EXERCISE`      | `CALL`           |
-| `rollCsp`          | `ROLL_FROM` + `ROLL_TO` | `BUY` + `SELL`  | `PUT` + `PUT`    |
-| `rollCc` (us-14)   | `ROLL_FROM` + `ROLL_TO` | `BUY` + `SELL`  | `CALL` + `CALL`  |
+| Transition         | `legRole`               | `action`       | `instrumentType` |
+| ------------------ | ----------------------- | -------------- | ---------------- |
+| `openWheel`        | `CSP_OPEN`              | `SELL`         | `PUT`            |
+| `closeCsp`         | `CSP_CLOSE`             | `BUY`          | `PUT`            |
+| `expireCsp`        | `EXPIRE`                | `EXPIRE`       | `PUT`            |
+| `recordAssignment` | `ASSIGN`                | `ASSIGN`       | `STOCK`          |
+| `openCoveredCall`  | `CC_OPEN`               | `SELL`         | `CALL`           |
+| `closeCoveredCall` | `CC_CLOSE`              | `BUY`          | `CALL`           |
+| `expireCc`         | `CC_EXPIRED` (us-11)    | `EXPIRE`       | `CALL`           |
+| `recordCallAway`   | `CALLED_AWAY` (us-11)   | `EXERCISE`     | `CALL`           |
+| `rollCsp`          | `ROLL_FROM` + `ROLL_TO` | `BUY` + `SELL` | `PUT` + `PUT`    |
+| `rollCc` (us-14)   | `ROLL_FROM` + `ROLL_TO` | `BUY` + `SELL` | `CALL` + `CALL`  |
 
 ### `rollChainId` exposure (us-15)
 

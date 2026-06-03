@@ -1,6 +1,7 @@
 # US-14: Roll an open covered call
 
 <!-- generated:from us-14 -->
+
 ## Summary
 
 Lets the trader roll an open covered call to a different strike, a later (or equal) expiration, or both, while the position stays in `CC_OPEN`. A right-side sheet hosts a React Hook Form + Zod form with a live, client-side net credit/debit preview and an amber "below cost basis" warning when the new strike falls under the current basis per share. On submit the backend writes a linked `ROLL_FROM` (BUY CALL) / `ROLL_TO` (SELL CALL) leg pair sharing a `roll_chain_id`, appends a new cost-basis snapshot, and never mutates the position row. The CC roll is the mirror image of the CSP roll (US-12), reusing `calculateRollBasis()` and the active-leg helper unchanged.

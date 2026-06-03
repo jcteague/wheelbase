@@ -1,4 +1,5 @@
 # ADR: TanStack Query mutation hooks invalidate positions on success
+
 <!-- generated:from us-2, us-4, us-5, us-6, us-7, us-8, us-9, us-12, us-32 -->
 
 ## Decision

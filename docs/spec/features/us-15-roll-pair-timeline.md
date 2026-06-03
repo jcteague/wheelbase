@@ -1,6 +1,7 @@
 # US-15: Roll pair timeline grouping
 
 <!-- generated:from us-15 -->
+
 ## Summary
 
 Extends the position-detail leg history table ([us-11-leg-history.md](./us-11-leg-history.md)) so that linked `ROLL_FROM` / `ROLL_TO` legs sharing a `roll_chain_id` render as a visually grouped section rather than two adjacent rows. Each group gets a spanning header row ("Roll #N — <Roll Type>" with date and net per contract), two indented blue-tinted leg rows, and — after the final group — a single cumulative summary spanning row totalling credits, debits, and net across all rolls. Non-roll legs continue to render normally and chronological ordering is preserved.

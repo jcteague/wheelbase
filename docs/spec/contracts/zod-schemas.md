@@ -1,6 +1,7 @@
 # Zod Schemas
 
 <!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33 -->
+
 ## Overview
 
 Every IPC payload that crosses the renderer → main boundary is validated by a Zod schema in `src/main/schemas.ts`. The matching `z.infer<typeof ...>` TypeScript type is exported alongside each schema so the handler, the service function, and the renderer adapter all bind to the same shape. The schema lives in main (it is the source of truth); the renderer learns the field names through the adapter's snake_case → camelCase mapping documented in [IPC handlers](./ipc-handlers.md), then re-parses nothing on its own — the main-process handler is the only place validation runs.
@@ -8,9 +9,11 @@ Every IPC payload that crosses the renderer → main boundary is validated by a 
 Validation discipline is centralised. Every mutating position handler is registered via `registerParsedPositionHandler(db, channel, errLabel, schema, service)` from `src/main/ipc/utils.ts`, which performs `schema.safeParse(raw)` → on failure, returns `{ ok: false, errors: [...zodIssue.path / zodIssue.code / zodIssue.message] }`; on success, calls the service with the parsed payload and wraps the result in `{ ok: true, ...result }`. The helper also catches `ValidationError` thrown by lifecycle engines (mapped to `{ field, code, message }` shape) and any uncaught error (returned as `__root__` / `internal_error`). This means handler files contain no Zod boilerplate — just `registerParsedPositionHandler(db, 'positions:close-csp', 'positions_close_csp_unhandled_error', CloseCspPayloadSchema, closeCspPosition)`.
 
 Three classes of types are catalogued below: **core enums** (the discriminator values used throughout the wheel lifecycle), **payload schemas** (one `z.object({...})` per mutating IPC handler), and **result interfaces** (the record shapes returned in IPC responses). Result interfaces are TypeScript `interface`s rather than Zod schemas — they are produced by services, not parsed from input — but they live in `src/main/schemas.ts` alongside the payload schemas because both halves of the IPC contract belong together. A small set of shared helper schemas — `PositionIdSchema = z.string().uuid()` (extracted during the us-10 refactor pass), `RollPayloadBaseSchema` and `RollResultBase` (extracted during the us-14 refactor pass when the CC roll proved field-for-field identical to the CSP roll), and the `IsoDateRegex` / `IsoDateMessage` constants — are reused across payload schemas rather than re-declared.
+
 <!-- /generated -->
 
 <!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33 -->
+
 ## Core enums
 
 The discriminators that drive the wheel lifecycle. All five live in `src/main/core/types.ts`; the schemas in `src/main/schemas.ts` import them rather than re-declaring.
@@ -45,9 +48,11 @@ export type InstrumentType = z.infer<typeof InstrumentType>
 ```
 
 **Rename history.** Originally `OptionType = z.enum(['PUT', 'CALL'])`. us-6 renamed the enum to `InstrumentType` and added `'STOCK'` so the same `legs` table could carry the stock-holding event marker emitted on assignment. The DB column was renamed `option_type → instrument_type` via `migrations/003_rename_option_type_to_instrument_type.sql`, and the CHECK constraint was expanded to `instrument_type IN ('PUT', 'CALL', 'STOCK')`. Every IPC handler that returns a leg now uses the field name `instrumentType`; older plan extracts that still reference `optionType` are stale (see the IPC handlers page for the canonical post-rename shapes).
+
 <!-- /generated -->
 
 <!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-12,us-13,us-14,us-32,us-33 -->
+
 ## Payload schemas
 
 One `z.object({...})` per mutating IPC handler. Each schema exports a matching `z.infer<>` type. All live in `src/main/schemas.ts`. The corresponding handler is documented in [IPC handlers](./ipc-handlers.md); only the schema shape is reproduced here.
@@ -100,7 +105,7 @@ export type ExpireCspPayload = z.infer<typeof ExpireCspPayloadSchema>
 ```typescript
 export const AssignCspPayloadSchema = z.object({
   positionId: z.string().uuid(),
-  assignmentDate: z.string()   // YYYY-MM-DD
+  assignmentDate: z.string() // YYYY-MM-DD
 })
 export type AssignCspPayload = z.infer<typeof AssignCspPayloadSchema>
 ```
@@ -129,7 +134,7 @@ export type OpenCcPayload = z.infer<typeof OpenCcPayloadSchema>
 export const CloseCcPayloadSchema = z.object({
   positionId: z.string().uuid(),
   closePricePerContract: z.number().positive(),
-  fillDate: z.string().optional()  // YYYY-MM-DD; defaults to today
+  fillDate: z.string().optional() // YYYY-MM-DD; defaults to today
 })
 export type CloseCcPayload = z.infer<typeof CloseCcPayloadSchema>
 ```
@@ -141,7 +146,7 @@ Same shape as `CloseCspPayloadSchema` (the CSP and CC close flows take identical
 ```typescript
 export const ExpireCcPayloadSchema = z.object({
   positionId: z.string().uuid(),
-  expirationDateOverride: z.string().optional()  // YYYY-MM-DD
+  expirationDateOverride: z.string().optional() // YYYY-MM-DD
 })
 export type ExpireCcPayload = z.infer<typeof ExpireCcPayloadSchema>
 ```
@@ -152,7 +157,7 @@ Identical in shape to `ExpireCspPayloadSchema`. `expirationDateOverride` plays d
 
 ```typescript
 export const RecordCallAwayPayloadSchema = z.object({
-  positionId: PositionIdSchema      // shared z.string().uuid()
+  positionId: PositionIdSchema // shared z.string().uuid()
 })
 export type RecordCallAwayPayload = z.infer<typeof RecordCallAwayPayloadSchema>
 ```
@@ -162,7 +167,7 @@ Single-field payload: the call-away service derives `fillDate = ccOpenLeg.expira
 ### `RollCspPayloadSchema`
 
 ```typescript
-export const RollCspPayloadSchema = RollPayloadBaseSchema   // post-us-14: assigned, not redeclared
+export const RollCspPayloadSchema = RollPayloadBaseSchema // post-us-14: assigned, not redeclared
 export type RollCspPayload = z.infer<typeof RollCspPayloadSchema>
 ```
 
@@ -173,7 +178,7 @@ The `newExpiration` regex was tightened from a bare `z.string()` during us-12 po
 ### `RollCcPayloadSchema`
 
 ```typescript
-export const RollCcPayloadSchema = RollPayloadBaseSchema   // identical shape to RollCsp
+export const RollCcPayloadSchema = RollPayloadBaseSchema // identical shape to RollCsp
 export type RollCcPayload = z.infer<typeof RollCcPayloadSchema>
 ```
 
@@ -209,9 +214,11 @@ export type GetOptionSnapshotsPayload = z.infer<typeof GetOptionSnapshotsPayload
 ```
 
 Up to 50 OCC symbols per call (matches the `stock-quotes` batch limit), each 1–25 characters — OCC symbols are at most 21 characters (e.g. `AAPL260516P00180000`), and 25 gives headroom for longer underlying roots. Empty array is valid (the service returns `{ ok: true, snapshots: {} }` without calling the provider). Bound to `market-data:option-snapshots`. Driven by [us-33 — Option mid + unrealized P&L](../features/us-33-option-mid-pnl.md).
+
 <!-- /generated -->
 
 <!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33 -->
+
 ## Result interfaces
 
 The TypeScript shapes returned inside `{ ok: true, ...result }` envelopes. These are `interface`s in `src/main/schemas.ts`, produced by services rather than parsed from input. Money values are TEXT-encoded `decimal.js` strings (4 dp) per the project's money-math discipline; date values are ISO-8601 strings.
@@ -226,8 +233,8 @@ interface PositionRecord {
   ticker: string
   phase: WheelPhase
   status: WheelStatus
-  openedDate: string                  // ISO date
-  closedDate: string | null           // ISO date; set when status transitions to CLOSED
+  openedDate: string // ISO date
+  closedDate: string | null // ISO date; set when status transitions to CLOSED
 }
 
 interface LegRecord {
@@ -235,14 +242,14 @@ interface LegRecord {
   positionId: string
   legRole: LegRole
   action: LegAction
-  instrumentType: InstrumentType      // 'PUT' | 'CALL' | 'STOCK'
-  strike: string                      // 4 dp TEXT
-  expiration: string                  // ISO date
+  instrumentType: InstrumentType // 'PUT' | 'CALL' | 'STOCK'
+  strike: string // 4 dp TEXT
+  expiration: string // ISO date
   contracts: number
-  premiumPerContract: string          // 4 dp TEXT; '0.0000' on EXPIRE/ASSIGN legs
-  fillPrice: string | null            // null on EXPIRE/ASSIGN legs
-  fillDate: string                    // ISO date
-  rollChainId: string | null          // us-15: shared UUID for ROLL_FROM + ROLL_TO pair; null on every other role
+  premiumPerContract: string // 4 dp TEXT; '0.0000' on EXPIRE/ASSIGN legs
+  fillPrice: string | null // null on EXPIRE/ASSIGN legs
+  fillDate: string // ISO date
+  rollChainId: string | null // us-15: shared UUID for ROLL_FROM + ROLL_TO pair; null on every other role
   createdAt: string
   updatedAt: string
 }
@@ -250,23 +257,24 @@ interface LegRecord {
 interface CostBasisSnapshotRecord {
   id: string
   positionId: string
-  basisPerShare: string               // 4 dp TEXT
-  totalPremiumCollected: string       // 4 dp TEXT
-  finalPnl: string | null             // 4 dp TEXT; set when wheel closes (CSP close or expire)
-  snapshotAt: string                  // ISO timestamp
-  createdAt: string                   // ISO timestamp
+  basisPerShare: string // 4 dp TEXT
+  totalPremiumCollected: string // 4 dp TEXT
+  finalPnl: string | null // 4 dp TEXT; set when wheel closes (CSP close or expire)
+  snapshotAt: string // ISO timestamp
+  createdAt: string // ISO timestamp
 }
 
-interface PositionListItem {          // summary projection for the list view
+interface PositionListItem {
+  // summary projection for the list view
   id: string
   ticker: string
   phase: WheelPhase
   status: WheelStatus
-  strike: string | null               // 4 dp TEXT; null when no active option
-  expiration: string | null           // ISO date; null when no active option
-  dte: number | null                  // (expiration − today).days; null when expiration is null
-  premiumCollected: string            // 4 dp TEXT (= latest snapshot's totalPremiumCollected)
-  effectiveCostBasis: string          // 4 dp TEXT (= latest snapshot's basisPerShare)
+  strike: string | null // 4 dp TEXT; null when no active option
+  expiration: string | null // ISO date; null when no active option
+  dte: number | null // (expiration − today).days; null when expiration is null
+  premiumCollected: string // 4 dp TEXT (= latest snapshot's totalPremiumCollected)
+  effectiveCostBasis: string // 4 dp TEXT (= latest snapshot's basisPerShare)
 }
 ```
 
@@ -280,7 +288,7 @@ interface GetPositionResult {
   activeLeg: LegRecord | null
   costBasisSnapshot: (CostBasisSnapshotRecord & { finalPnl: string | null }) | null
   legs: LegRecord[]
-  allSnapshots: CostBasisSnapshotRecord[]          // added by us-11; ordered snapshot_at ASC
+  allSnapshots: CostBasisSnapshotRecord[] // added by us-11; ordered snapshot_at ASC
   // rollCount: number                              // planned by us-13, not yet implemented
 }
 ```
@@ -304,7 +312,7 @@ interface CloseCspPositionResult {
     status: 'CLOSED'
     closedDate: string
   }
-  leg: LegRecord                                    // the new CSP_CLOSE / BUY / PUT leg
+  leg: LegRecord // the new CSP_CLOSE / BUY / PUT leg
   costBasisSnapshot: CostBasisSnapshotRecord & { finalPnl: string }
 }
 ```
@@ -320,9 +328,9 @@ interface ExpireCspPositionResult {
     ticker: string
     phase: 'WHEEL_COMPLETE'
     status: 'CLOSED'
-    closedDate: string                              // = open leg's expiration date
+    closedDate: string // = open leg's expiration date
   }
-  leg: LegRecord                                    // EXPIRE / EXPIRE / PUT, premiumPerContract='0.0000', fillPrice=null
+  leg: LegRecord // EXPIRE / EXPIRE / PUT, premiumPerContract='0.0000', fillPrice=null
   costBasisSnapshot: CostBasisSnapshotRecord & { finalPnl: string }
 }
 ```
@@ -337,13 +345,13 @@ interface AssignCspPositionResult {
     id: string
     ticker: string
     phase: 'HOLDING_SHARES'
-    status: 'ACTIVE'                                // unchanged — assignment is a transition, not a close
+    status: 'ACTIVE' // unchanged — assignment is a transition, not a close
   }
-  leg: LegRecord                                    // ASSIGN / ASSIGN / STOCK, premiumPerContract='0.0000', fillPrice=null
-  costBasisSnapshot: CostBasisSnapshotRecord       // finalPnl: null — position still open
+  leg: LegRecord // ASSIGN / ASSIGN / STOCK, premiumPerContract='0.0000', fillPrice=null
+  costBasisSnapshot: CostBasisSnapshotRecord // finalPnl: null — position still open
   premiumWaterfall: Array<{
-    label: string                                   // 'CSP premium' for CSP_OPEN, 'Roll credit' for ROLL_TO
-    amount: string                                  // premiumPerContract for that leg (per-share, 4 dp)
+    label: string // 'CSP premium' for CSP_OPEN, 'Roll credit' for ROLL_TO
+    amount: string // premiumPerContract for that leg (per-share, 4 dp)
   }>
 }
 ```
@@ -361,8 +369,8 @@ interface OpenCcPositionResult {
     status: 'ACTIVE'
     closedDate: null
   }
-  leg: LegRecord                                    // CC_OPEN / SELL / CALL
-  costBasisSnapshot: CostBasisSnapshotRecord       // finalPnl: null
+  leg: LegRecord // CC_OPEN / SELL / CALL
+  costBasisSnapshot: CostBasisSnapshotRecord // finalPnl: null
 }
 ```
 
@@ -379,8 +387,8 @@ interface CloseCcPositionResult {
     status: 'ACTIVE'
     closedDate: null
   }
-  leg: LegRecord                                    // the new CC_CLOSE / BUY / CALL leg
-  ccLegPnl: string                                  // 4 dp TEXT; positive = profit, negative = loss
+  leg: LegRecord // the new CC_CLOSE / BUY / CALL leg
+  ccLegPnl: string // 4 dp TEXT; positive = profit, negative = loss
 }
 ```
 
@@ -397,9 +405,9 @@ interface ExpireCcPositionResult {
     status: 'ACTIVE'
     closedDate: null
   }
-  leg: LegRecord                                    // EXPIRE / EXPIRE / CALL, premiumPerContract='0.0000', fillPrice=null
-  costBasisSnapshot: CostBasisSnapshotRecord       // unchanged — re-returned as-is from the CC_OPEN snapshot
-  sharesHeld: number                                // = ASSIGN leg.contracts × 100
+  leg: LegRecord // EXPIRE / EXPIRE / CALL, premiumPerContract='0.0000', fillPrice=null
+  costBasisSnapshot: CostBasisSnapshotRecord // unchanged — re-returned as-is from the CC_OPEN snapshot
+  sharesHeld: number // = ASSIGN leg.contracts × 100
 }
 ```
 
@@ -414,15 +422,15 @@ interface RecordCallAwayResult {
     ticker: string
     phase: 'WHEEL_COMPLETE'
     status: 'CLOSED'
-    closedDate: string                              // = fillDate = CC expiration
+    closedDate: string // = fillDate = CC expiration
   }
-  leg: LegRecord                                    // CC_CLOSE → CALLED_AWAY / EXERCISE / CALL,
-                                                    // premiumPerContract='0.0000', fillPrice=CC strike
+  leg: LegRecord // CC_CLOSE → CALLED_AWAY / EXERCISE / CALL,
+  // premiumPerContract='0.0000', fillPrice=CC strike
   costBasisSnapshot: CostBasisSnapshotRecord & { finalPnl: string }
-  finalPnl: string                                  // e.g. "780.0000" or "-250.0000" (4 dp, signed)
-  cycleDays: number                                 // calendar days, position.openedDate → fillDate
-  annualizedReturn: string                          // 4 dp; "0.0000" when cycleDays <= 0
-  basisPerShare: string                             // effective cost basis used in the calculation
+  finalPnl: string // e.g. "780.0000" or "-250.0000" (4 dp, signed)
+  cycleDays: number // calendar days, position.openedDate → fillDate
+  annualizedReturn: string // 4 dp; "0.0000" when cycleDays <= 0
+  basisPerShare: string // effective cost basis used in the calculation
 }
 ```
 
@@ -435,13 +443,13 @@ interface RollResultBase {
   position: {
     id: string
     ticker: string
-    phase: WheelPhase                               // narrowed by extenders to a literal
+    phase: WheelPhase // narrowed by extenders to a literal
     status: 'ACTIVE'
   }
   rollFromLeg: LegRecord
   rollToLeg: LegRecord
-  rollChainId: string                               // shared UUID — links the leg pair
-  costBasisSnapshot: CostBasisSnapshotRecord       // finalPnl: null
+  rollChainId: string // shared UUID — links the leg pair
+  costBasisSnapshot: CostBasisSnapshotRecord // finalPnl: null
 }
 ```
 
@@ -452,8 +460,8 @@ Extracted during the us-14 refactor pass after `RollCspResult` and `RollCcResult
 ```typescript
 interface RollCspResult extends RollResultBase {
   position: { id: string; ticker: string; phase: 'CSP_OPEN'; status: 'ACTIVE' }
-  rollFromLeg: LegRecord                            // ROLL_FROM / BUY / PUT
-  rollToLeg: LegRecord                              // ROLL_TO / SELL / PUT
+  rollFromLeg: LegRecord // ROLL_FROM / BUY / PUT
+  rollToLeg: LegRecord // ROLL_TO / SELL / PUT
 }
 ```
 
@@ -464,8 +472,8 @@ Rolls are **always** stored as linked leg pairs sharing a `rollChainId`, never a
 ```typescript
 interface RollCcResult extends RollResultBase {
   position: { id: string; ticker: string; phase: 'CC_OPEN'; status: 'ACTIVE' }
-  rollFromLeg: LegRecord                            // ROLL_FROM / BUY / CALL
-  rollToLeg: LegRecord                              // ROLL_TO / SELL / CALL
+  rollFromLeg: LegRecord // ROLL_FROM / BUY / CALL
+  rollToLeg: LegRecord // ROLL_TO / SELL / CALL
 }
 ```
 
@@ -483,12 +491,12 @@ interface IpcGetStockQuotesResult {
 }
 
 interface IpcStockQuote {
-  price: string                       // 2 dp
-  bid: string                         // 2 dp
-  ask: string                         // 2 dp
-  prevClose: string | null            // 2 dp; populated on REST seed, null on stream tick
+  price: string // 2 dp
+  bid: string // 2 dp
+  ask: string // 2 dp
+  prevClose: string | null // 2 dp; populated on REST seed, null on stream tick
   volume: number
-  timestamp: string                   // ISO-8601
+  timestamp: string // ISO-8601
 }
 
 // market-data:set-stock-quote-tickers success
@@ -505,30 +513,32 @@ interface IpcGetMarketStatusResult {
 
 interface IpcMarketStatus {
   isOpen: boolean
-  nextOpen: string                    // ISO-8601
-  nextClose: string                   // ISO-8601
+  nextOpen: string // ISO-8601
+  nextClose: string // ISO-8601
   session: 'regular' | 'pre' | 'post' | 'closed'
 }
 
 // market-data:stock-quote push event payload (main → renderer)
 interface IpcStockQuoteEvent {
   ticker: string
-  quote: IpcStockQuote                // prevClose is always null on a tick
+  quote: IpcStockQuote // prevClose is always null on a tick
 }
 
 // market-data:stream-error push event payload (main → renderer)
 interface IpcStreamErrorEvent {
   feed: 'stockQuotes' | 'optionQuotes' | 'optionTrades'
-  code: string                        // mirrors provider StreamError.code
+  code: string // mirrors provider StreamError.code
   message: string
   reconnectable: boolean
 }
 ```
 
 `change` and `changePercent` are intentionally **not** part of `IpcStockQuote` — the renderer derives both from `(price, prevClose)` so the math lives in one place. Driven by [us-32 — Live Position Prices](../features/us-32-live-position-prices.md).
+
 <!-- /generated -->
 
 <!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33 -->
+
 ## Driven by
 
 - [us-2 — Position list](../features/us-2-position-list.md) — `PositionListItem` shape

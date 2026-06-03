@@ -1,10 +1,13 @@
 # US-32: Live Position Prices
 
 <!-- generated:from us-32 -->
+
 ## Summary
+
 Adds a live `Price` column to the Positions list (between `Phase` and `Strike`) showing real-time underlying price and signed daily change, plus a session-aware market status pill in the page header. The renderer's TanStack Query cache is seeded once via REST and then continuously updated by WebSocket ticks bridged through push events from the US-31 `MarketDataProvider`. A stale-data banner surfaces when no quotes have arrived for >5 minutes or a stream error fires.
 
 ## Acceptance criteria
+
 - During regular hours, each active position row shows the underlying's current price with a green `LIVE` indicator.
 - Prices update from stream ticks with no full reload or spinner.
 - Signed daily change displays next to price (green for positive, red for negative).
@@ -13,11 +16,13 @@ Adds a live `Price` column to the Positions list (between `Phase` and `Strike`) 
 - When the last update is >5 min old, an amber banner appears and the pill switches to `DELAYED`.
 
 ## What was built
+
 A stream-first market-data pipeline for stock quotes. The main process owns a single `MarketDataProvider` instance (connected lazily on first subscription request), and `src/main/ipc/market-data.ts` exposes three request/response handlers (`stock-quotes`, `set-stock-quote-tickers`, `market-status`) plus two fire-and-forget push events (`stock-quote`, `stream-error`). On every active-ticker change the renderer calls `setStockQuoteTickers`, which tears down the prior Observable subscription, subscribes to `provider.stream('stockQuotes', tickers)`, and forwards each frame as a `market-data:stock-quote` event.
 
 The renderer's `useStockQuotes` hook uses TanStack Query as the single cache: a REST seed (via `queryFn`) populates `prevClose` once per ticker; subsequent stream ticks merge into the cache via `setQueryData`, carrying `prevClose` forward. `change` and `changePercent` are computed at render time from `(price, prevClose)`. Staleness is detected from `dataUpdatedAt` (>5 min → `DELAYED`), and `useMarketStatus` polls `market-data:market-status` every 60s for session boundaries. Three new presentational components — `MarketStatusPill`, `PriceCell`, `StaleDataBanner` — plus changes to `PositionCard` and `PositionsListPage` deliver the UI.
 
 ## Architecture decisions
+
 - Stream-first transport with REST seed for `prevClose`; provider lifecycle, push event channels, and stale-data detection → [domain/market-data.md](../domain/market-data.md)
 - IPC handler shape (`{ ok: true, ... } | { ok: false, errors }`) and `MarketDataError` → IPC error code mapping → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
 - Alpaca SDK switch from `getStocksQuotesLatest` to `getStocksSnapshots` so `prev_daily_bar.c` is available to compute `change`/`changePercent` in the adapter → [contracts/alpaca-integration.md](../contracts/alpaca-integration.md)
@@ -28,6 +33,7 @@ The renderer's `useStockQuotes` hook uses TanStack Query as the single cache: a 
   - **Type sharing** — IPC-flat types live in `src/preload/index.d.ts`; renderer re-exports aliases from `src/renderer/src/api/market-data.ts` so renderer code never imports from `src/main/`.
 
 ## Contracts touched
+
 - `market-data:stock-quotes` — REST snapshot handler returning `Record<string, IpcStockQuote>` keyed by ticker → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
 - `market-data:set-stock-quote-tickers` — subscription mutation; manages stream lifecycle and connects the provider on demand → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
 - `market-data:market-status` — request/response for session info, polled every 60 s → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
@@ -40,6 +46,7 @@ The renderer's `useStockQuotes` hook uses TanStack Query as the single cache: a 
 - `marketDataQueryKeys` — `['market-data', 'stock-quotes', sortedTickers.join(',')]`, `['market-data', 'market-status']`.
 
 ## Source files
+
 - `src/main/integrations/market-data-provider.ts` — extended `StockQuote` with `prevClose`
 - `src/main/integrations/market-data-factory.ts`
 - `src/main/schemas.ts` — added `GetStockQuotesPayloadSchema`, `SetStockQuoteTickersPayloadSchema`

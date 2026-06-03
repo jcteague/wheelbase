@@ -1,4 +1,5 @@
 # ADR: Event-marker legs — `EXPIRE`, `ASSIGN` have no fill price, no active-leg status
+
 <!-- generated:from us-5, us-6, us-9 -->
 
 ## Decision

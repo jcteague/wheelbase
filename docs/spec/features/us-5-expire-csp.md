@@ -1,6 +1,7 @@
 # US-5: Record CSP expiration
 
 <!-- generated:from us-5,missing-ac -->
+
 ## Summary
 
 Adds the expiration-worthless path to the wheel lifecycle. On or after the option's expiration date a trader with a `CSP_OPEN` position clicks "Record Expiration →" in the detail header, confirms in a right-side `Sheet`, and the wheel transitions directly to `WHEEL_COMPLETE` with 100% of the collected premium captured. The expire leg is written with `action = 'EXPIRE'`, `premium_per_contract = '0.0000'`, `fill_price = NULL`, and `fill_date` set to the option's expiration date (not "today"). The success state offers a one-click "Open new wheel on {ticker}" shortcut that navigates to the New Wheel form with the ticker pre-filled via the wouter query string. The positions list is updated to split active and closed positions into separate sections so completed wheels don't crowd live decisions.

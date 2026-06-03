@@ -8,11 +8,11 @@ Wheelbase is a single-user Electron desktop application for managing the options
 
 The application is split into a thin renderer (React) and a Node-based main process. They communicate exclusively via typed IPC channels exposed through a preload `contextBridge`. The renderer never imports anything from `src/main/`; the only shared surface lives in `src/preload/index.d.ts`.
 
-| Layer | Stack |
-| ----- | ----- |
+| Layer                      | Stack                                                                                                                                                                                                                                                                       |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Renderer (`src/renderer/`) | React 19 + TypeScript; TanStack Query for server state and caching; React Hook Form + Zod resolver for forms; wouter for routing (hash-based, required for Electron's `file://` URLs); Tailwind + `wb-*` design tokens for styling; shadcn/ui primitives used incrementally |
-| Main process (`src/main/`) | TypeScript on Node; better-sqlite3 with hand-rolled migrations; pure core engines; Alpaca SDK isolated in `integrations/`; pino for logging |
-| Preload (`src/preload/`) | `contextBridge` exposing typed `window.api.*` methods; IPC-flat types in `index.d.ts` |
+| Main process (`src/main/`) | TypeScript on Node; better-sqlite3 with hand-rolled migrations; pure core engines; Alpaca SDK isolated in `integrations/`; pino for logging                                                                                                                                 |
+| Preload (`src/preload/`)   | `contextBridge` exposing typed `window.api.*` methods; IPC-flat types in `index.d.ts`                                                                                                                                                                                       |
 
 The renderer's `api/positions.ts` adapter and `api/market-data.ts` adapter are the single boundary that translate between the renderer's snake_case form conventions and the IPC layer's camelCase payloads. TanStack Query hooks (`usePositions`, `usePosition`, `useStockQuotes`, `useMarketStatus`, the various `use{Action}Position` mutations) wrap those adapters so component code only sees React-idiomatic results.
 

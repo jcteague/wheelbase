@@ -1,6 +1,7 @@
 # US-12: Roll an open CSP out
 
 <!-- generated:from us-12,us-12-refactor -->
+
 ## Summary
 
 Lets the trader roll an open cash-secured put to a later expiration (and optionally a different strike) while the position stays in `CSP_OPEN`. A right-side sheet hosts a React Hook Form + Zod form with a live, client-side net credit/debit preview; on submit the backend writes a linked `ROLL_FROM` / `ROLL_TO` leg pair sharing a `roll_chain_id`, appends a new cost-basis snapshot, and never mutates the position row. Active-leg resolution is phase-aware and centralized so rolled positions render the new strike/expiration everywhere.

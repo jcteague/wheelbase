@@ -1,4 +1,5 @@
 # ADR: Market-status pill (LIVE / EXT / CLOSED / DELAYED) polled at 60 s
+
 <!-- generated:from us-32 -->
 
 ## Decision

@@ -1,4 +1,5 @@
 # ADR: Soft client-side warnings — non-blocking, never enforced server-side
+
 <!-- generated:from us-6, us-7 -->
 
 ## Decision

@@ -37,21 +37,21 @@ list view can render an "Active" / "Closed" split.
 
 ### Columns
 
-| Column                   | Type    | Nullable | Purpose                                                                   |
-| ------------------------ | ------- | -------- | ------------------------------------------------------------------------- |
-| `id`                     | TEXT    | No       | UUID primary key                                                          |
-| `ticker`                 | TEXT    | No       | Equity symbol, uppercase                                                  |
-| `strategy_type`          | TEXT    | No       | Strategy identifier (Phase 1: wheel)                                      |
-| `phase`                  | TEXT    | No       | Lifecycle phase (`CSP_OPEN`, `HOLDING_SHARES`, `CC_OPEN`, `WHEEL_COMPLETE`, `CSP_CLOSED_PROFIT`, `CSP_CLOSED_LOSS`) |
-| `status`                 | TEXT    | No       | `ACTIVE`, `PAUSED`, or `CLOSED`                                           |
-| `opened_date`            | TEXT    | No       | ISO date when the wheel was opened                                        |
-| `closed_date`            | TEXT    | Yes      | ISO date set when the position transitions to a terminal phase            |
-| `contracts`              | INTEGER | No       | Contracts on the original CSP (shares held after assignment = `× 100`)    |
-| `notes`                  | TEXT    | Yes      | Free-form trader notes                                                    |
-| `thesis`                 | TEXT    | Yes      | Free-form trade thesis                                                    |
-| `profit_target_percent`  | INTEGER | Yes      | Per-position profit-target override (1..100); `NULL` → use the global default constant `DEFAULT_PROFIT_TARGET_PERCENT = 50`. Added by migration `005`. No DB `CHECK` — validation is deferred to the service layer if/when an edit IPC ships. Read-only in US-33 (seeded only via tests/dev). See [us-33 — Option Mid & Unrealized P&L](../features/us-33-option-mid-pnl.md). |
-| `created_at`             | TEXT    | No       | ISO timestamp at row insert                                               |
-| `updated_at`             | TEXT    | No       | ISO timestamp, refreshed on every phase transition                        |
+| Column                  | Type    | Nullable | Purpose                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------- | ------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                    | TEXT    | No       | UUID primary key                                                                                                                                                                                                                                                                                                                                                              |
+| `ticker`                | TEXT    | No       | Equity symbol, uppercase                                                                                                                                                                                                                                                                                                                                                      |
+| `strategy_type`         | TEXT    | No       | Strategy identifier (Phase 1: wheel)                                                                                                                                                                                                                                                                                                                                          |
+| `phase`                 | TEXT    | No       | Lifecycle phase (`CSP_OPEN`, `HOLDING_SHARES`, `CC_OPEN`, `WHEEL_COMPLETE`, `CSP_CLOSED_PROFIT`, `CSP_CLOSED_LOSS`)                                                                                                                                                                                                                                                           |
+| `status`                | TEXT    | No       | `ACTIVE`, `PAUSED`, or `CLOSED`                                                                                                                                                                                                                                                                                                                                               |
+| `opened_date`           | TEXT    | No       | ISO date when the wheel was opened                                                                                                                                                                                                                                                                                                                                            |
+| `closed_date`           | TEXT    | Yes      | ISO date set when the position transitions to a terminal phase                                                                                                                                                                                                                                                                                                                |
+| `contracts`             | INTEGER | No       | Contracts on the original CSP (shares held after assignment = `× 100`)                                                                                                                                                                                                                                                                                                        |
+| `notes`                 | TEXT    | Yes      | Free-form trader notes                                                                                                                                                                                                                                                                                                                                                        |
+| `thesis`                | TEXT    | Yes      | Free-form trade thesis                                                                                                                                                                                                                                                                                                                                                        |
+| `profit_target_percent` | INTEGER | Yes      | Per-position profit-target override (1..100); `NULL` → use the global default constant `DEFAULT_PROFIT_TARGET_PERCENT = 50`. Added by migration `005`. No DB `CHECK` — validation is deferred to the service layer if/when an edit IPC ships. Read-only in US-33 (seeded only via tests/dev). See [us-33 — Option Mid & Unrealized P&L](../features/us-33-option-mid-pnl.md). |
+| `created_at`            | TEXT    | No       | ISO timestamp at row insert                                                                                                                                                                                                                                                                                                                                                   |
+| `updated_at`            | TEXT    | No       | ISO timestamp, refreshed on every phase transition                                                                                                                                                                                                                                                                                                                            |
 
 ### How rows change
 
@@ -87,24 +87,24 @@ immutability is what lets cost basis and P&L be re-derived from leg history.
 
 ### Columns
 
-| Column                 | Type    | Nullable | Purpose                                                                                 |
-| ---------------------- | ------- | -------- | --------------------------------------------------------------------------------------- |
-| `id`                   | TEXT    | No       | UUID primary key                                                                        |
-| `position_id`          | TEXT    | No       | FK → `positions.id`                                                                     |
+| Column                 | Type    | Nullable | Purpose                                                                                                                        |
+| ---------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                   | TEXT    | No       | UUID primary key                                                                                                               |
+| `position_id`          | TEXT    | No       | FK → `positions.id`                                                                                                            |
 | `leg_role`             | TEXT    | No       | One of `CSP_OPEN`, `CSP_CLOSE`, `CC_OPEN`, `CC_CLOSE`, `CC_EXPIRED`, `CALLED_AWAY`, `ROLL_FROM`, `ROLL_TO`, `ASSIGN`, `EXPIRE` |
-| `action`               | TEXT    | No       | `SELL`, `BUY`, `EXPIRE`, `ASSIGN`, or `EXERCISE` (see enum evolution below)             |
-| `instrument_type`      | TEXT    | No       | `PUT`, `CALL`, or `STOCK` (renamed from `option_type` in migration 003)                 |
-| `strike`               | TEXT    | No       | 4-dp Decimal string                                                                     |
-| `expiration`           | TEXT    | No       | ISO date                                                                                |
-| `contracts`            | INTEGER | No       | Contract count for this leg                                                             |
-| `premium_per_contract` | TEXT    | No       | 4-dp Decimal string; `'0.0000'` for `EXPIRE` and `ASSIGN` event markers                 |
-| `fill_price`           | TEXT    | Yes      | 4-dp Decimal string; `NULL` for `EXPIRE` and `ASSIGN` legs (no broker fill occurs)      |
-| `fill_date`            | TEXT    | No       | ISO date                                                                                |
-| `roll_from_leg_id`     | TEXT    | Yes      | FK → `legs.id`; set on the `ROLL_TO` leg, points back at its paired `ROLL_FROM`         |
-| `roll_to_leg_id`       | TEXT    | Yes      | FK → `legs.id`; set on the `ROLL_FROM` leg, points forward at its paired `ROLL_TO`      |
-| `roll_chain_id`        | TEXT    | Yes      | Shared UUID stamped on both legs of a roll pair; lets the chain be queried as a unit    |
-| `created_at`           | TEXT    | No       | ISO timestamp                                                                           |
-| `updated_at`           | TEXT    | No       | ISO timestamp                                                                           |
+| `action`               | TEXT    | No       | `SELL`, `BUY`, `EXPIRE`, `ASSIGN`, or `EXERCISE` (see enum evolution below)                                                    |
+| `instrument_type`      | TEXT    | No       | `PUT`, `CALL`, or `STOCK` (renamed from `option_type` in migration 003)                                                        |
+| `strike`               | TEXT    | No       | 4-dp Decimal string                                                                                                            |
+| `expiration`           | TEXT    | No       | ISO date                                                                                                                       |
+| `contracts`            | INTEGER | No       | Contract count for this leg                                                                                                    |
+| `premium_per_contract` | TEXT    | No       | 4-dp Decimal string; `'0.0000'` for `EXPIRE` and `ASSIGN` event markers                                                        |
+| `fill_price`           | TEXT    | Yes      | 4-dp Decimal string; `NULL` for `EXPIRE` and `ASSIGN` legs (no broker fill occurs)                                             |
+| `fill_date`            | TEXT    | No       | ISO date                                                                                                                       |
+| `roll_from_leg_id`     | TEXT    | Yes      | FK → `legs.id`; set on the `ROLL_TO` leg, points back at its paired `ROLL_FROM`                                                |
+| `roll_to_leg_id`       | TEXT    | Yes      | FK → `legs.id`; set on the `ROLL_FROM` leg, points forward at its paired `ROLL_TO`                                             |
+| `roll_chain_id`        | TEXT    | Yes      | Shared UUID stamped on both legs of a roll pair; lets the chain be queried as a unit                                           |
+| `created_at`           | TEXT    | No       | ISO timestamp                                                                                                                  |
+| `updated_at`           | TEXT    | No       | ISO timestamp                                                                                                                  |
 
 ### CHECK constraints
 
@@ -242,18 +242,18 @@ audit trail of how basis evolved over the life of the wheel.
 
 ### Which events write a snapshot
 
-| Event                              | Writes row? | `final_pnl`                          |
-| ---------------------------------- | ----------- | ------------------------------------ |
-| CSP open (US-1)                    | Yes         | `NULL`                               |
-| Roll CSP (US-12)                   | Yes         | `NULL`                               |
-| Close CSP early (US-4)             | Yes         | `(openPremium − closePrice) × contracts × 100` |
-| Expire CSP worthless (US-5)        | Yes         | equals `total_premium_collected` (100% captured) |
-| Record assignment (US-6)           | Yes         | `NULL` (position still active)       |
-| Open covered call (US-7)           | Yes         | `NULL`                               |
-| **Close CC early (US-8)**          | **No**      | n/a — CC_OPEN snapshot unchanged; `ccLegPnl` returned via IPC only |
-| **CC expires worthless (US-9)**    | **No**      | n/a — CC_OPEN snapshot unchanged     |
-| Shares called away (US-10)         | Yes         | `(ccStrike − basisPerShare) × contracts × 100` — terminal |
-| Roll CC (US-14)                    | Yes         | `NULL`                               |
+| Event                           | Writes row? | `final_pnl`                                                        |
+| ------------------------------- | ----------- | ------------------------------------------------------------------ |
+| CSP open (US-1)                 | Yes         | `NULL`                                                             |
+| Roll CSP (US-12)                | Yes         | `NULL`                                                             |
+| Close CSP early (US-4)          | Yes         | `(openPremium − closePrice) × contracts × 100`                     |
+| Expire CSP worthless (US-5)     | Yes         | equals `total_premium_collected` (100% captured)                   |
+| Record assignment (US-6)        | Yes         | `NULL` (position still active)                                     |
+| Open covered call (US-7)        | Yes         | `NULL`                                                             |
+| **Close CC early (US-8)**       | **No**      | n/a — CC_OPEN snapshot unchanged; `ccLegPnl` returned via IPC only |
+| **CC expires worthless (US-9)** | **No**      | n/a — CC_OPEN snapshot unchanged                                   |
+| Shares called away (US-10)      | Yes         | `(ccStrike − basisPerShare) × contracts × 100` — terminal          |
+| Roll CC (US-14)                 | Yes         | `NULL`                                                             |
 
 The two "no snapshot" cases are deliberate: at CC close / CC expiry the
 existing CC_OPEN snapshot already reflects the CC premium reduction, the
