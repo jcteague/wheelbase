@@ -106,7 +106,7 @@
 
 **Requires:** Area 2 Green ✓ (pending_assignments table exists)
 
-- [ ] **[Red]** Write failing tests — `src/main/services/pending-assignments.test.ts` _(depends on: Area 2 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/main/services/pending-assignments.test.ts` _(depends on: Area 2 Green ✓)_
   - Test cases:
     - `listPending()` returns rows where `status='pending'` joined with positions + legs for ticker/strike/expiration
     - `confirmPending(id)` sets `status='confirmed'`, `confirmed_at=now()`, and calls `assignCspPosition(db, positionId, { assignmentDate: transaction_time })`
@@ -115,14 +115,14 @@
     - `dismissPending(id)` sets `status='dismissed'`, `dismissed_at=now()`
     - `dismissPending(id)` on a row already dismissed is a no-op (returns ok, no state change)
   - Run `pnpm test src/main/services/pending-assignments.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/services/pending-assignments.ts` _(depends on: Area 4 Red ✓)_
+- [x] **[Green]** Implement — `src/main/services/pending-assignments.ts` _(depends on: Area 4 Red ✓)_
   - `listPending(db)` — join query returning `PendingAssignmentNotification[]` shaped per `contracts/ipc-channels.md`
   - `confirmPending(db, id)` — transaction: assert status, call `assignCspPosition`, update row
   - `dismissPending(db, id)` — simple UPDATE inside transaction
   - All SQL goes through prepared statements (project convention)
   - Export `PendingAssignmentError` with typed code
   - Run `pnpm test src/main/services/pending-assignments.test.ts` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — `src/main/services/pending-assignments.ts` _(depends on: Area 4 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `src/main/services/pending-assignments.ts` _(depends on: Area 4 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
