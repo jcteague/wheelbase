@@ -75,7 +75,7 @@
 
 **Requires:** Area 1 Green ✓ (scheduler interface), Area 2 Green ✓ (migrations applied)
 
-- [ ] **[Red]** Write failing tests — `src/main/services/detect-assignments.test.ts` _(depends on: Areas 1 + 2 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/main/services/detect-assignments.test.ts` _(depends on: Areas 1 + 2 Green ✓)_
   - Test cases:
     - Reads `assignments_last_poll_at:{env}` watermark; defaults to 24h ago if missing
     - Calls `brokerProvider.getActivities` with `type: 'OPASN'` and `since: watermark`
@@ -88,7 +88,7 @@
     - `BrokerError` with code `'network_error'` is logged at WARN; no rows inserted; watermark NOT updated; function returns gracefully
     - `BrokerError` with code `'auth_failed'` surfaces as a typed result for scheduler back-off decisions
   - Run `pnpm test src/main/services/detect-assignments.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/services/detect-assignments.ts` + `src/main/services/app-settings.ts` _(depends on: Area 3 Red ✓)_
+- [x] **[Green]** Implement — `src/main/services/detect-assignments.ts` + `src/main/services/app-settings.ts` _(depends on: Area 3 Red ✓)_
   - Implement `detectAssignments({ db, brokerProvider, env, logger })` returning `{ detected: number, skipped: number }`
   - Use `appSettings.get/set` for watermark key `assignments_last_poll_at:{env}`
   - Query open CSP legs once at start; build `Map<option_symbol, { positionId, legId }>` for O(1) match
@@ -96,7 +96,7 @@
   - Single transaction wraps `INSERT OR IGNORE` + watermark update
   - Catch `BrokerError`; log; return early without updating watermark
   - Run `pnpm test src/main/services/detect-assignments.test.ts` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — `src/main/services/detect-assignments.ts` _(depends on: Area 3 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `src/main/services/detect-assignments.ts` _(depends on: Area 3 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
