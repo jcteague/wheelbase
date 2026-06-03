@@ -150,7 +150,7 @@
   - Wrap service calls in try/catch; map service errors to IPC error codes (`NOT_FOUND`, `NOT_PENDING`, `TRANSITION_REJECTED`)
   - Export single `registerAssignmentsIpc(deps)` function for clean bootstrap
   - Run `pnpm test src/main/ipc/assignments.test.ts` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — `src/main/ipc/assignments.ts` _(depends on: Area 5 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `src/main/ipc/assignments.ts` _(depends on: Area 5 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
