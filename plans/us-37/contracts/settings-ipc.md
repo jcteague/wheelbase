@@ -48,7 +48,9 @@ Behavior:
 Result:
 
 ```ts
-{ status: CredentialStatus }
+{
+  status: CredentialStatus
+}
 ```
 
 ## `settings:remove-alpaca-credentials`
@@ -56,7 +58,9 @@ Result:
 Payload:
 
 ```ts
-{ environment: 'paper' | 'live' }
+{
+  environment: 'paper' | 'live'
+}
 ```
 
 Behavior:
@@ -67,7 +71,9 @@ Behavior:
 Result:
 
 ```ts
-{ status: CredentialStatus }
+{
+  status: CredentialStatus
+}
 ```
 
 ## `settings:set-active-broker-environment`
@@ -75,7 +81,9 @@ Result:
 Payload:
 
 ```ts
-{ environment: 'paper' | 'live' }
+{
+  environment: 'paper' | 'live'
+}
 ```
 
 Behavior:
@@ -88,7 +96,9 @@ Behavior:
 Result:
 
 ```ts
-{ status: CredentialStatus }
+{
+  status: CredentialStatus
+}
 ```
 
 Renderer side effects after success:

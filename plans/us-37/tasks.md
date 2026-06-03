@@ -95,15 +95,15 @@
 
 **Requires:** Settings IPC And Preload API Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/api/settings.test.ts`, `src/renderer/src/hooks/useSettings.test.ts`, `src/renderer/src/hooks/marketDataQueryKeys.test.ts`, `src/renderer/src/hooks/brokerQueryKeys.test.ts` _(depends on: Settings IPC And Preload API Green ✓)_
+- [x] **[Red]** Write failing tests — `src/renderer/src/api/settings.test.ts`, `src/renderer/src/hooks/useSettings.test.ts`, `src/renderer/src/hooks/marketDataQueryKeys.test.ts`, `src/renderer/src/hooks/brokerQueryKeys.test.ts` _(depends on: Settings IPC And Preload API Green ✓)_
   - Test cases: settings API unwraps status; broker environment mutation invalidates only `queryKey[0] === 'broker'`; Alpaca credential replacement invalidates only broker queries; settings mutations refresh status; market keys start with `market`; broker keys start with `broker`.
   - Run `pnpm test -- src/renderer/src/api/settings.test.ts src/renderer/src/hooks/useSettings.test.ts src/renderer/src/hooks/marketDataQueryKeys.test.ts src/renderer/src/hooks/brokerQueryKeys.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/renderer/src/api/settings.ts`, `src/renderer/src/hooks/settingsQueryKeys.ts`, `src/renderer/src/hooks/brokerQueryKeys.ts`, `src/renderer/src/hooks/marketDataQueryKeys.ts`, `src/renderer/src/hooks/useSettings.ts`, `src/renderer/src/hooks/useMarketStatus.ts` _(depends on: Renderer Settings API, Hooks, And Query Keys Red ✓)_
+- [x] **[Green]** Implement — `src/renderer/src/api/settings.ts`, `src/renderer/src/hooks/settingsQueryKeys.ts`, `src/renderer/src/hooks/brokerQueryKeys.ts`, `src/renderer/src/hooks/marketDataQueryKeys.ts`, `src/renderer/src/hooks/useSettings.ts`, `src/renderer/src/hooks/useMarketStatus.ts` _(depends on: Renderer Settings API, Hooks, And Query Keys Red ✓)_
   - Add settings API adapters and hooks for status, Alpaca save/remove, active broker env, and connection test.
   - Normalize market keys to `['market', ...]` and broker keys to `['broker', ...]`.
   - Scope query invalidation by first key segment.
   - Run focused renderer hook/API tests — all tests must pass
-- [ ] **[Refactor]** `/refactor` — renderer API/hooks/query keys _(depends on: Renderer Settings API, Hooks, And Query Keys Green ✓)_
+- [x] **[Refactor]** `/refactor` — renderer API/hooks/query keys _(depends on: Renderer Settings API, Hooks, And Query Keys Green ✓)_
   - **Invoke `source-command-refactor` (the migrated `/refactor` command)** — do not substitute a manual cleanup or only the `code-simplifier` skill
   - Keep query key modules as simple object literals and avoid unnecessary positions invalidation.
   - Run `pnpm test && pnpm lint && pnpm typecheck`

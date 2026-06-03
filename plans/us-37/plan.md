@@ -140,7 +140,7 @@ Build a settings workflow that stores Alpaca paper/live credentials, lets the tr
 
 **Red — tests to write:**
 
-- `settings.test.ts` "registers all settings:* channels from the contract".
+- `settings.test.ts` "registers all settings:\* channels from the contract".
 - `settings.test.ts` "settings:get-credential-status returns ok true with status".
 - `settings.test.ts` "settings:save-alpaca-credentials validates environment/keyId/secret and returns Zod errors on invalid payload".
 - `settings.test.ts` "settings:set-active-broker-environment rejects live when live credentials are missing".

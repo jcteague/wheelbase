@@ -10,16 +10,16 @@ Persist Alpaca credential metadata in a new generic credential table via migrati
 
 ### `credential_settings`
 
-| Field | Type | Notes |
-| ----- | ---- | ----- |
-| `vendor` | TEXT | `"alpaca"` for this story; future broker vendors can add their own values |
-| `environment` | TEXT NOT NULL | `"paper"` or `"live"` |
-| `key_id_encrypted` | BLOB NOT NULL | Alpaca key id encrypted with `safeStorage.encryptString` |
-| `secret_encrypted` | BLOB NOT NULL | Alpaca secret encrypted with `safeStorage.encryptString` |
-| `last_verified_at` | TEXT NULL | ISO timestamp after successful connection test |
-| `account_number_masked` | TEXT NULL | Alpaca only; first 2 chars + `…` + last 3 chars |
-| `created_at` | TEXT NOT NULL | ISO timestamp |
-| `updated_at` | TEXT NOT NULL | ISO timestamp |
+| Field                   | Type          | Notes                                                                     |
+| ----------------------- | ------------- | ------------------------------------------------------------------------- |
+| `vendor`                | TEXT          | `"alpaca"` for this story; future broker vendors can add their own values |
+| `environment`           | TEXT NOT NULL | `"paper"` or `"live"`                                                     |
+| `key_id_encrypted`      | BLOB NOT NULL | Alpaca key id encrypted with `safeStorage.encryptString`                  |
+| `secret_encrypted`      | BLOB NOT NULL | Alpaca secret encrypted with `safeStorage.encryptString`                  |
+| `last_verified_at`      | TEXT NULL     | ISO timestamp after successful connection test                            |
+| `account_number_masked` | TEXT NULL     | Alpaca only; first 2 chars + `…` + last 3 chars                           |
+| `created_at`            | TEXT NOT NULL | ISO timestamp                                                             |
+| `updated_at`            | TEXT NOT NULL | ISO timestamp                                                             |
 
 Unique key: `(vendor, environment)`.
 
@@ -36,11 +36,11 @@ Persist non-secret app settings in a new SQLite table.
 
 ### `app_settings`
 
-| Field | Type | Notes |
-| ----- | ---- | ----- |
-| `key` | TEXT PRIMARY KEY | e.g. `"active_broker_environment"` |
-| `value` | TEXT NOT NULL | `"paper"`, `"live"`, or `"none"` |
-| `updated_at` | TEXT NOT NULL | ISO timestamp |
+| Field        | Type             | Notes                              |
+| ------------ | ---------------- | ---------------------------------- |
+| `key`        | TEXT PRIMARY KEY | e.g. `"active_broker_environment"` |
+| `value`      | TEXT NOT NULL    | `"paper"`, `"live"`, or `"none"`   |
+| `updated_at` | TEXT NOT NULL    | ISO timestamp                      |
 
 Rules:
 
