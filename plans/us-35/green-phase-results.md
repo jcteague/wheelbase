@@ -18,7 +18,12 @@
 // src/main/services/polling-scheduler.ts
 
 export type CadencePolicy =
-  | { kind: 'interval'; marketOpenMs: number; extendedHoursMs?: number; marketClosedMs?: number | null }
+  | {
+      kind: 'interval'
+      marketOpenMs: number
+      extendedHoursMs?: number
+      marketClosedMs?: number | null
+    }
   | { kind: 'afterClose'; offsetMinutes: number }
 
 export type JobConfig = { name: string; cadence: CadencePolicy; handler: () => Promise<void> }
@@ -36,9 +41,16 @@ export class SchedulerError extends Error {
 
 // Pure helpers (also exported)
 export function decideNextCadenceMs(policy: CadencePolicy, status: MarketStatus): number | null
-export function decideAfterCloseFireAt(nextClose: string, offsetMinutes: number, nowMs: number): number | null
+export function decideAfterCloseFireAt(
+  nextClose: string,
+  offsetMinutes: number,
+  nowMs: number
+): number | null
 
-export function createPollingScheduler(brokerProvider: BrokerProvider, clock?: Clock): PollingScheduler
+export function createPollingScheduler(
+  brokerProvider: BrokerProvider,
+  clock?: Clock
+): PollingScheduler
 ```
 
 ## Implementation Summary

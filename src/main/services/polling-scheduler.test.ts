@@ -48,7 +48,8 @@ function makeStartedScheduler(
   handler: () => Promise<void>,
   options: { marketStatus?: MarketStatus; cadence?: CadencePolicy } = {}
 ): PollingScheduler {
-  const { marketStatus = MARKET_OPEN, cadence = { kind: 'interval', marketOpenMs: 60_000 } } = options
+  const { marketStatus = MARKET_OPEN, cadence = { kind: 'interval', marketOpenMs: 60_000 } } =
+    options
   const scheduler = createPollingScheduler(makeBroker(marketStatus))
   scheduler.register({ name: 'job', cadence, handler })
   scheduler.start()
@@ -219,7 +220,12 @@ describe('afterClose cadence', () => {
   it('fires once at nextClose + offsetMinutes', async () => {
     const handler = vi.fn().mockResolvedValue(undefined)
     const scheduler = makeStartedScheduler(handler, {
-      marketStatus: { isOpen: true, session: 'regular', nextOpen: '2026-01-02T14:30:00Z', nextClose: '2026-01-01T21:00:00Z' },
+      marketStatus: {
+        isOpen: true,
+        session: 'regular',
+        nextOpen: '2026-01-02T14:30:00Z',
+        nextClose: '2026-01-01T21:00:00Z'
+      },
       cadence: { kind: 'afterClose', offsetMinutes: 30 }
     })
 
@@ -243,7 +249,12 @@ describe('afterClose cadence', () => {
     // This is the "no backfill" behavior — only future close times are used
     const handler = vi.fn().mockResolvedValue(undefined)
     const scheduler = makeStartedScheduler(handler, {
-      marketStatus: { isOpen: true, session: 'regular', nextOpen: '2026-01-02T14:30:00Z', nextClose: '2026-01-01T21:00:00Z' },
+      marketStatus: {
+        isOpen: true,
+        session: 'regular',
+        nextOpen: '2026-01-02T14:30:00Z',
+        nextClose: '2026-01-01T21:00:00Z'
+      },
       cadence: { kind: 'afterClose', offsetMinutes: 30 }
     })
 

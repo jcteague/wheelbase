@@ -49,19 +49,19 @@
 
 ### Area 2: Migrations — pending_assignments + app_settings
 
-- [ ] **[Red]** Write failing tests — `src/main/db/migrate.test.ts` (extend existing)
+- [x] **[Red]** Write failing tests — `src/main/db/migrate.test.ts` (extend existing)
   - Test cases:
     - Migration 006 creates `pending_assignments` table with `UNIQUE(activity_id)` constraint — apply to fresh db, query `sqlite_master`
     - Migration 006 creates index on `status` and on `position_id`
     - Migration 007 creates `app_settings` table with `PRIMARY KEY(key)` (if not already present)
     - Migration runner is idempotent — running twice does not error
   - Run `pnpm test src/main/db/migrate.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement migrations _(depends on: Area 2 Red ✓)_
+- [x] **[Green]** Implement migrations _(depends on: Area 2 Red ✓)_
   - Create `migrations/006_create_pending_assignments.sql` per `plans/us-35/data-model.md`
   - Create `migrations/007_create_app_settings.sql` using `CREATE TABLE IF NOT EXISTS`
   - Verify migration numbering is contiguous; confirm migration-count assertions still pass
   - Run `pnpm test src/main/db/migrate.test.ts` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — migration files + test _(depends on: Area 2 Green ✓)_
+- [x] **[Refactor]** `/refactor` — migration files + test _(depends on: Area 2 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
