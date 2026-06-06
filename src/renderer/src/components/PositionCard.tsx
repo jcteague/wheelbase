@@ -20,6 +20,7 @@ type Props = {
   quote?: StockQuote
   session?: string
   snapshot?: OptionSnapshot
+  hasPendingAssignment?: boolean
 }
 
 const CELL_CLASS = 'py-[10px] px-[16px] border-b-0'
@@ -55,7 +56,8 @@ export function PositionRow({
   isClosed,
   quote,
   session,
-  snapshot
+  snapshot,
+  hasPendingAssignment = false
 }: Props): React.JSX.Element {
   const closed = isClosed ?? item.status === 'CLOSED'
   const dteUrgent = item.dte !== null && item.dte <= 7
@@ -95,6 +97,13 @@ export function PositionRow({
             <span className="font-wb-mono font-bold text-sm text-wb-text-primary tracking-[0.02em]">
               {item.ticker}
             </span>
+            {hasPendingAssignment && (
+              <span
+                data-testid={`pending-assignment-indicator-${item.id}`}
+                className="inline-block w-2 h-2 rounded-full bg-wb-gold animate-wb-pulse"
+                aria-label="Assignment pending"
+              />
+            )}
             <TargetBadge
               targetReached={display.targetReached}
               pnlPercent={display.pnlPercent}

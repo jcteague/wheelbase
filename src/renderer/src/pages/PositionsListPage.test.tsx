@@ -15,20 +15,39 @@ vi.mock('../hooks/useOptionSnapshots')
 vi.mock('../components/AssignmentNotificationBanner', () => ({
   AssignmentNotificationBanner: () => null
 }))
+
+const { mockUsePendingAssignments } = vi.hoisted(() => ({
+  mockUsePendingAssignments: vi.fn()
+}))
+vi.mock('../api/assignments', () => ({
+  usePendingAssignments: mockUsePendingAssignments
+}))
+
 vi.mock('../components/PositionCard', () => ({
   PositionRow: ({
     item,
     isClosed,
     quote,
-    snapshot
+    snapshot,
+    hasPendingAssignment
   }: {
     item: PositionListItem
     isClosed?: boolean
     quote?: StockQuote
     snapshot?: OptionSnapshot
+    hasPendingAssignment?: boolean
   }) => (
     <tr data-testid={isClosed ? 'position-card-closed' : 'position-card'}>
-      <td>{item.ticker}</td>
+      <td>
+        {item.ticker}
+        {hasPendingAssignment && (
+          <span
+            data-testid={`pending-assignment-indicator-${item.id}`}
+            className="inline-block w-2 h-2 rounded-full bg-wb-gold animate-wb-pulse"
+            aria-label="Assignment pending"
+          />
+        )}
+      </td>
       <td data-testid={`mock-quote-${item.ticker}`}>{quote?.price ?? 'NO_QUOTE'}</td>
       <td data-testid={`mock-snapshot-${item.ticker}`}>{snapshot?.mid ?? 'NO_SNAPSHOT'}</td>
     </tr>
@@ -215,6 +234,7 @@ beforeEach(() => {
   mockUseStockQuotes.mockReturnValue(makeStockQuotesResult())
   mockUseMarketStatus.mockReturnValue(makeMarketStatusResult())
   mockUseOptionSnapshots.mockReturnValue(makeOptionSnapshotsResult())
+  mockUsePendingAssignments.mockReturnValue({ data: [], isLoading: false, isError: false })
 })
 
 it('renders a new wheel button in the header', () => {
@@ -535,4 +555,46 @@ it('does not show options unavailable notice when snapshotsQuery.unavailable is 
 
   render(<PositionsListPage />)
   expect(screen.queryByText(/Options data unavailable/)).not.toBeInTheDocument()
+})
+
+// ── US-35: pulsing amber indicator on rows with a pending assignment ─────────
+
+it('renders a pulsing amber indicator on a position row that has a pending assignment', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1, ITEM_2]))
+  mockUsePendingAssignments.mockReturnValue({
+    data: [
+      {
+        id: 1,
+        ticker: 'AAPL',
+        strike: '180.00',
+        expiration: '2026-04-17',
+        contractType: 'put',
+        qty: 1,
+        transactionTime: '2026-04-17T16:00:00Z',
+        positionId: ITEM_1.id
+      }
+    ],
+    isLoading: false,
+    isError: false
+  })
+
+  render(<PositionsListPage />)
+
+  const indicator = screen.getByTestId(`pending-assignment-indicator-${ITEM_1.id}`)
+  expect(indicator).toBeInTheDocument()
+  expect(indicator.className).toMatch(/animate-wb-pulse/)
+  expect(indicator.className).toMatch(/bg-wb-gold/)
+
+  // Position rows without a pending assignment must NOT show the indicator.
+  expect(screen.queryByTestId(`pending-assignment-indicator-${ITEM_2.id}`)).not.toBeInTheDocument()
+})
+
+it('does not render a pulsing indicator on any row when there are no pending assignments', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1, ITEM_2]))
+  mockUsePendingAssignments.mockReturnValue({ data: [], isLoading: false, isError: false })
+
+  render(<PositionsListPage />)
+
+  expect(screen.queryByTestId(`pending-assignment-indicator-${ITEM_1.id}`)).not.toBeInTheDocument()
+  expect(screen.queryByTestId(`pending-assignment-indicator-${ITEM_2.id}`)).not.toBeInTheDocument()
 })

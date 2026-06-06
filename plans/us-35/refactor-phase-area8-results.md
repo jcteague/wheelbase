@@ -107,12 +107,12 @@ alongside the existing e2e suite.
 ## Remaining Tech Debt
 
 - [ ] `PendingAssignmentNotification.positionId` is typed as `number` in
-  `src/preload/index.d.ts` but the service returns a UUID string — pre-existing mismatch
-  unrelated to Layer 5.
+      `src/preload/index.d.ts` but the service returns a UUID string — pre-existing mismatch
+      unrelated to Layer 5.
 - [ ] System-wake simulation is a no-op (the setTimeout-chain scheduler inherently can't
-  accumulate missed ticks, so there's nothing to simulate). If the implementation ever
-  switches to absolute fire-at timestamps with catch-up, the IPC stub will need real
-  semantics.
+      accumulate missed ticks, so there's nothing to simulate). If the implementation ever
+      switches to absolute fire-at timestamps with catch-up, the IPC stub will need real
+      semantics.
 
 ## Notes
 

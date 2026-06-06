@@ -12,6 +12,7 @@
 **File**: `src/renderer/src/components/AssignmentNotificationBanner.tsx`
 
 **Before**:
+
 ```typescript
 if (!data || data.length === 0) return null
 const visible = data.filter((a) => !dismissedIds.has(a.id))
@@ -19,6 +20,7 @@ if (visible.length === 0) return null
 ```
 
 **After**:
+
 ```typescript
 const visible = (data ?? []).filter((a) => !dismissedIds.has(a.id))
 if (visible.length === 0) return null

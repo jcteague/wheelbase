@@ -5,7 +5,7 @@ import { usePendingAssignments } from '../api/assignments'
 import { AlertBox } from './ui/AlertBox'
 
 type ConfirmedState = {
-  positionId: number
+  positionId: string
   assignment: PendingAssignmentNotification
 }
 
@@ -26,14 +26,14 @@ export function AssignmentNotificationBanner(): React.JSX.Element | null {
 
   async function handleConfirm(
     id: number,
-    positionId: number,
+    positionId: string,
     assignment: PendingAssignmentNotification
   ): Promise<void> {
     const result = await window.api.assignments.confirm(id)
     if (result.ok) {
       setConfirmedMap((prev) => ({ ...prev, [id]: { positionId, assignment } }))
       queryClient.invalidateQueries({ queryKey: ['positions', 'list'] })
-      queryClient.invalidateQueries({ queryKey: ['positions', String(positionId)] })
+      queryClient.invalidateQueries({ queryKey: ['positions', positionId] })
       queryClient.invalidateQueries({ queryKey: ['assignments', 'pending'] })
     }
   }

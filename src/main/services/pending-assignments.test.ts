@@ -183,4 +183,51 @@ describe('dismissPending', () => {
     >
     expect(row.dismissed_at).toBe(originalDismissedAt)
   })
+
+  it('throws PendingAssignmentError(NOT_PENDING) when the row is already confirmed', () => {
+    // A confirmed row represents a completed phase transition. Allowing dismiss
+    // to silently overwrite status='confirmed' with status='dismissed' would
+    // produce inconsistent records — the position would be HOLDING_SHARES but
+    // the audit trail would say the assignment was dismissed.
+    const db = makeTestDb()
+    const { position, leg } = makeAaplPosition(db)
+    const id = seedPending(db, position.id, leg.id, { status: 'confirmed' })
+    const originalConfirmedAt = '2026-01-19T20:30:00.000Z'
+    db.prepare('UPDATE pending_assignments SET confirmed_at = ? WHERE id = ?').run(
+      originalConfirmedAt,
+      id
+    )
+
+    let thrown: unknown
+    try {
+      dismissPending(db, id)
+    } catch (err) {
+      thrown = err
+    }
+
+    expect(thrown).toBeInstanceOf(PendingAssignmentError)
+    expect((thrown as PendingAssignmentError).code).toBe('NOT_PENDING')
+
+    const row = db.prepare('SELECT * FROM pending_assignments WHERE id = ?').get(id) as Record<
+      string,
+      string | number
+    >
+    expect(row.status).toBe('confirmed')
+    expect(row.dismissed_at).toBeNull()
+    expect(row.confirmed_at).toBe(originalConfirmedAt)
+  })
+
+  it('throws PendingAssignmentError(NOT_FOUND) when the row does not exist', () => {
+    const db = makeTestDb()
+
+    let thrown: unknown
+    try {
+      dismissPending(db, 999_999)
+    } catch (err) {
+      thrown = err
+    }
+
+    expect(thrown).toBeInstanceOf(PendingAssignmentError)
+    expect((thrown as PendingAssignmentError).code).toBe('NOT_FOUND')
+  })
 })

@@ -25,6 +25,10 @@ interface OpenLegMatch {
   strike: string
 }
 
+// Returns the active CSP leg for every CSP_OPEN/ACTIVE position. Multiple
+// positions may share the same OCC symbol (ticker + expiration + strike + put),
+// so callers must treat the result as a one-symbol-to-many-legs relation; see
+// matchActivityToLegs and buildOpenLegMap below.
 const OPEN_CSP_LEGS_QUERY = `
   SELECT p.id AS position_id, p.ticker, l.id AS leg_id, l.strike, l.expiration, l.instrument_type
   FROM positions p
@@ -38,16 +42,16 @@ const OPEN_CSP_LEGS_QUERY = `
   WHERE p.phase = 'CSP_OPEN' AND p.status = 'ACTIVE'
 `
 
-export function matchActivityToLeg(
+export function matchActivityToLegs(
   symbol: string,
-  openLegMap: Map<string, OpenLegMatch>
-): OpenLegMatch | undefined {
-  return openLegMap.get(symbol)
+  openLegMap: Map<string, OpenLegMatch[]>
+): OpenLegMatch[] {
+  return openLegMap.get(symbol) ?? []
 }
 
-function buildOpenLegMap(db: Database.Database): Map<string, OpenLegMatch> {
+function buildOpenLegMap(db: Database.Database): Map<string, OpenLegMatch[]> {
   const rows = db.prepare(OPEN_CSP_LEGS_QUERY).all() as OpenLegRow[]
-  const map = new Map<string, OpenLegMatch>()
+  const map = new Map<string, OpenLegMatch[]>()
   for (const row of rows) {
     const symbol = buildOccSymbol({
       ticker: row.ticker,
@@ -55,12 +59,18 @@ function buildOpenLegMap(db: Database.Database): Map<string, OpenLegMatch> {
       strike: row.strike,
       instrumentType: row.instrument_type
     })
-    map.set(symbol, {
+    const match: OpenLegMatch = {
       positionId: row.position_id,
       legId: row.leg_id,
       ticker: row.ticker,
       strike: row.strike
-    })
+    }
+    const existing = map.get(symbol)
+    if (existing) {
+      existing.push(match)
+    } else {
+      map.set(symbol, [match])
+    }
   }
   return map
 }
@@ -77,6 +87,12 @@ export async function detectAssignments({
   const watermarkKey = `assignments_last_poll_at:${env}`
   const since =
     appSettings.get(db, watermarkKey) ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+
+  // Capture poll-start time BEFORE the broker call. Any OPASN whose
+  // transactionTime falls between this moment and the response landing must be
+  // visible on the next poll, so we stamp the watermark with the pre-await
+  // time rather than wall clock after the response.
+  const pollStartedAt = new Date().toISOString()
 
   let activities
   try {
@@ -105,32 +121,36 @@ export async function detectAssignments({
 
   db.transaction(() => {
     for (const activity of activities) {
-      const match = matchActivityToLeg(activity.symbol, openLegMap)
-      if (!match) {
+      const matches = matchActivityToLegs(activity.symbol, openLegMap)
+      if (matches.length === 0) {
         logger.debug({ symbol: activity.symbol }, 'no_matching_csp_leg')
         skipped++
         continue
       }
 
-      const result = insertStmt.run(
-        match.positionId,
-        match.legId,
-        activity.activityId,
-        activity.symbol,
-        activity.qty,
-        activity.transactionTime
-      )
-
-      if (result.changes > 0) {
-        logger.info(
-          { ticker: match.ticker, strike: match.strike },
-          `Assignment detected for ${match.ticker} CSP at $${match.strike} strike`
+      // One pending row per matching position: a trader holding duplicate CSP
+      // wheels on the same OCC symbol gets a banner for each affected wheel.
+      for (const match of matches) {
+        const result = insertStmt.run(
+          match.positionId,
+          match.legId,
+          activity.activityId,
+          activity.symbol,
+          activity.qty,
+          activity.transactionTime
         )
-        detected++
+
+        if (result.changes > 0) {
+          logger.info(
+            { ticker: match.ticker, strike: match.strike, positionId: match.positionId },
+            `Assignment detected for ${match.ticker} CSP at $${match.strike} strike`
+          )
+          detected++
+        }
       }
     }
 
-    appSettings.set(db, watermarkKey, new Date().toISOString())
+    appSettings.set(db, watermarkKey, pollStartedAt)
   })()
 
   return { detected, skipped }

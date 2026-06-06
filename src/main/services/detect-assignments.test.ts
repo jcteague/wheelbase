@@ -152,6 +152,34 @@ describe('detectAssignments', () => {
       expect(rows).toHaveLength(1)
     })
 
+    it('creates one pending row per matching position when two CSPs share the same OCC symbol', async () => {
+      // A trader may legitimately hold two CSP positions on the same
+      // ticker/strike/expiration (e.g. two sub-strategies, partial fills tracked
+      // separately). A single OPASN must produce a pending_assignments row for
+      // each matching open leg — losing the duplicate silently breaks the wheel.
+      const db = makeTestDb()
+      const first = makeAaplPosition(db)
+      const second = makeAaplPosition(db)
+      expect(first.position.id).not.toBe(second.position.id)
+
+      const broker = makeBroker([makeActivity(AAPL_SYMBOL, 'act-shared')])
+      const result = await detectAssignments({ db, brokerProvider: broker, env: 'paper' })
+
+      expect(result.detected).toBe(2)
+      expect(result.skipped).toBe(0)
+
+      const rows = db
+        .prepare(`SELECT position_id, leg_id FROM pending_assignments WHERE activity_id = ?`)
+        .all('act-shared') as Array<{ position_id: string; leg_id: string }>
+      expect(rows).toHaveLength(2)
+
+      const positionIds = rows.map((r) => r.position_id).sort()
+      expect(positionIds).toEqual([first.position.id, second.position.id].sort())
+
+      const legIds = rows.map((r) => r.leg_id).sort()
+      expect(legIds).toEqual([first.leg.id, second.leg.id].sort())
+    })
+
     it('creates multiple rows for multiple OPASN events in one batch', async () => {
       const db = makeTestDb()
       makeAaplPosition(db)
@@ -205,6 +233,44 @@ describe('detectAssignments', () => {
       const watermarkMs = new Date(row!.value).getTime()
       expect(watermarkMs).toBeGreaterThanOrEqual(before - 100)
       expect(watermarkMs).toBeLessThanOrEqual(after + 100)
+    })
+
+    it('uses poll-start time as the watermark — activities arriving during the await are not skipped on next poll', async () => {
+      // Race protection: an OPASN whose transactionTime falls between pollStart
+      // and the moment getActivities() returns must be visible to the NEXT
+      // poll. That requires the watermark to be the pre-await timestamp, not
+      // wall clock after the response lands.
+      const db = makeTestDb()
+      makeAaplPosition(db)
+
+      const BROKER_LATENCY_MS = 30
+      const broker = {
+        getAccountInfo: vi.fn(),
+        getActivities: vi.fn().mockImplementation(
+          () =>
+            new Promise<BrokerActivity[]>((resolve) => {
+              // Simulate broker latency: real wall clock advances during the await.
+              setTimeout(() => resolve([]), BROKER_LATENCY_MS)
+            })
+        ),
+        getMarketStatus: vi.fn()
+      } as unknown as BrokerProvider
+
+      const pollStartCeilingMs = Date.now()
+      await detectAssignments({ db, brokerProvider: broker, env: 'paper' })
+
+      const row = db
+        .prepare(`SELECT value FROM app_settings WHERE key = 'assignments_last_poll_at:paper'`)
+        .get() as { value: string } | undefined
+      expect(row).toBeTruthy()
+      const watermarkMs = new Date(row!.value).getTime()
+
+      // Bug exposure: if the watermark is captured AFTER the await, it would be
+      // pollStartCeilingMs + ~BROKER_LATENCY_MS. Any OPASN whose transactionTime
+      // landed during that window would be permanently skipped on the next poll.
+      // A small tolerance (5ms) absorbs scheduler jitter while still catching
+      // anything close to the 30ms latency we injected.
+      expect(watermarkMs).toBeLessThanOrEqual(pollStartCeilingMs + 5)
     })
   })
 

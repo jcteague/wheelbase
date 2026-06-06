@@ -118,8 +118,16 @@ export function confirmPending(
 export function dismissPending(db: Database.Database, id: number): void {
   const row = db.prepare(FETCH_STATUS_QUERY).get(id) as { status: string } | undefined
 
-  if (!row || row.status === 'dismissed') {
+  if (!row) {
+    throw new PendingAssignmentError('NOT_FOUND', `Pending assignment ${id} not found`)
+  }
+  if (row.status === 'dismissed') {
+    // Idempotent: re-dismissing a dismissed row preserves the original
+    // dismissed_at timestamp.
     return
+  }
+  if (row.status !== 'pending') {
+    throw new PendingAssignmentError('NOT_PENDING', `Pending assignment ${id} is not pending`)
   }
 
   const now = new Date().toISOString()

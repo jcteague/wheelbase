@@ -21,6 +21,7 @@ import { usePositions } from '../hooks/usePositions'
 import { useStockQuotes } from '../hooks/useStockQuotes'
 import { deriveMarketStatusDisplay } from '../lib/market-status'
 import { AssignmentNotificationBanner } from '../components/AssignmentNotificationBanner'
+import { usePendingAssignments } from '../api/assignments'
 
 const TABLE_COLUMNS = [
   'Ticker',
@@ -98,6 +99,7 @@ type PositionTableProps = {
   quotes?: StockQuotesByTicker
   session?: string
   snapshots?: OptionSnapshotsBySymbol
+  pendingPositionIds?: ReadonlySet<string>
 }
 
 function PositionTable({
@@ -105,7 +107,8 @@ function PositionTable({
   isClosed,
   quotes = {},
   session,
-  snapshots
+  snapshots,
+  pendingPositionIds
 }: PositionTableProps): React.JSX.Element {
   return (
     <table
@@ -132,6 +135,7 @@ function PositionTable({
             quote={quotes[item.ticker] as StockQuote | undefined}
             session={session}
             snapshot={isClosed ? undefined : snapshotForItem(item, snapshots)}
+            hasPendingAssignment={pendingPositionIds?.has(item.id) ?? false}
           />
         ))}
       </tbody>
@@ -164,6 +168,11 @@ export function PositionsListPage(): React.JSX.Element {
   const quotesQuery = useStockQuotes(tickers)
   const statusQuery = useMarketStatus()
   const snapshotsQuery = useOptionSnapshots(legs, { session: statusQuery.data?.session })
+  const pendingAssignmentsQuery = usePendingAssignments()
+  const pendingPositionIds = useMemo(
+    () => new Set((pendingAssignmentsQuery.data ?? []).map((a) => a.positionId)),
+    [pendingAssignmentsQuery.data]
+  )
 
   const { stale, minutesAgo } = quotesQuery
   const display = deriveMarketStatusDisplay(statusQuery.data?.session, stale)
@@ -209,6 +218,7 @@ export function PositionsListPage(): React.JSX.Element {
             quotes={quotesQuery.data}
             session={statusQuery.data?.session}
             snapshots={snapshotsQuery.data}
+            pendingPositionIds={pendingPositionIds}
           />
 
           {closedPositions.length > 0 && (

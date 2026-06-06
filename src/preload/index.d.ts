@@ -329,7 +329,7 @@ declare global {
     contractType: 'put' | 'call'
     qty: number
     transactionTime: string
-    positionId: number
+    positionId: string
   }
 
   interface IpcStockQuoteEvent {

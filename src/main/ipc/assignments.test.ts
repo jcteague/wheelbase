@@ -168,6 +168,26 @@ describe('registerAssignmentsIpc', () => {
     expect(result.dismissedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
   })
 
+  it('assignments:dismiss returns { ok: false, code: NOT_PENDING } when row is already confirmed', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerAssignmentsIpc } = await import('./assignments')
+
+    dismissPending.mockImplementation(() => {
+      throw new PendingAssignmentError('NOT_PENDING')
+    })
+
+    registerAssignmentsIpc({ db, scheduler })
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'assignments:dismiss'
+    )
+
+    const result = await handler?.(null, { pendingAssignmentId: 1 })
+
+    expect(result).toMatchObject({ ok: false, code: 'NOT_PENDING' })
+  })
+
   it('assignments:run-detection-now invokes scheduler.runNow and returns batch summary', async () => {
     const { ipcMain } = await import('electron')
     const { registerAssignmentsIpc } = await import('./assignments')
