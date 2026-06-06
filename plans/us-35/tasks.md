@@ -192,7 +192,7 @@
 
 **Requires:** Area 5 Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/components/AssignmentNotificationBanner.test.tsx` _(depends on: Area 5 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/renderer/src/components/AssignmentNotificationBanner.test.tsx` _(depends on: Area 5 Green ✓)_
   - Test cases:
     - `AssignmentNotificationBanner` renders ticker, strike, contract type, and transaction date (fixture render)
     - Shows `Confirm` and `Dismiss` buttons
@@ -201,7 +201,7 @@
     - Success toast includes an `'Open covered call →'` link that routes to the position detail's open-CC sheet (test the link target)
     - `usePendingAssignments` polls every 30s — query options assertion (`refetchInterval: 30_000`)
   - Run `pnpm test src/renderer/src/components/AssignmentNotificationBanner.test.tsx` — all new tests must fail
-- [ ] **[Green]** Implement renderer layer _(depends on: Area 7 Red ✓)_
+- [x] **[Green]** Implement renderer layer _(depends on: Area 7 Red ✓)_
   - Add `assignments` namespace to `src/preload/index.ts` per `contracts/ipc-channels.md`
   - Create `src/renderer/src/api/assignments.ts` with `usePendingAssignments` hook (`refetchInterval: 30_000`)
   - Create `src/renderer/src/components/AssignmentNotificationBanner.tsx` using existing `AlertBox` primitive; one banner per pending row, stacked
@@ -211,7 +211,7 @@
   - Mount banner in `src/renderer/src/components/PageLayout.tsx` (or positions list page)
   - Ensure banner is keyboard-accessible (Confirm = Enter, Dismiss = Esc when focused)
   - Run `pnpm test src/renderer/src/components/AssignmentNotificationBanner.test.tsx` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — renderer components _(depends on: Area 7 Green ✓)_
+- [x] **[Refactor]** `/refactor` — renderer components _(depends on: Area 7 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 

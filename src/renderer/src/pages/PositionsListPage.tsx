@@ -20,6 +20,7 @@ import { useOptionSnapshots, type ActiveLegSummary } from '../hooks/useOptionSna
 import { usePositions } from '../hooks/usePositions'
 import { useStockQuotes } from '../hooks/useStockQuotes'
 import { deriveMarketStatusDisplay } from '../lib/market-status'
+import { AssignmentNotificationBanner } from '../components/AssignmentNotificationBanner'
 
 const TABLE_COLUMNS = [
   'Ticker',
@@ -171,6 +172,8 @@ export function PositionsListPage(): React.JSX.Element {
     <PageLayout
       header={<PositionsHeader count={activePositions.length} marketStatusDisplay={display} />}
     >
+      <AssignmentNotificationBanner />
+
       {isLoading && <LoadingState message="Loading positions…" />}
 
       {isError && (

@@ -12,6 +12,9 @@ vi.mock('../hooks/usePositions')
 vi.mock('../hooks/useStockQuotes')
 vi.mock('../hooks/useMarketStatus')
 vi.mock('../hooks/useOptionSnapshots')
+vi.mock('../components/AssignmentNotificationBanner', () => ({
+  AssignmentNotificationBanner: () => null
+}))
 vi.mock('../components/PositionCard', () => ({
   PositionRow: ({
     item,

@@ -321,6 +321,17 @@ type IpcGetOptionChainResult = IpcResult<{
 }>
 
 declare global {
+  interface PendingAssignmentNotification {
+    id: number
+    ticker: string
+    strike: string
+    expiration: string
+    contractType: 'put' | 'call'
+    qty: number
+    transactionTime: string
+    positionId: number
+  }
+
   interface IpcStockQuoteEvent {
     ticker: string
     quote: IpcStockQuote
@@ -376,6 +387,27 @@ declare global {
         positionId: string
         targetPercent: number | null
       }) => Promise<{ ok: boolean }>
+      assignments: {
+        listPending: () => Promise<
+          | { ok: true; assignments: PendingAssignmentNotification[] }
+          | { ok: false; errors: string[] }
+        >
+        confirm: (
+          pendingAssignmentId: number
+        ) => Promise<
+          | { ok: true; position: { id: number; phase: string; assignedAt: string } }
+          | { ok: false; errors: string[]; code?: string }
+        >
+        dismiss: (
+          pendingAssignmentId: number
+        ) => Promise<
+          { ok: true; dismissedAt: string } | { ok: false; errors: string[]; code?: string }
+        >
+        runDetectionNow: () => Promise<
+          | { ok: true; detected: number; skipped: number; durationMs: number }
+          | { ok: false; errors: string[] }
+        >
+      }
     }
   }
 }

@@ -46,7 +46,15 @@ const api = {
   // WHEELBASE_MARKET_MOCK=true; safe to expose unconditionally (no-op in prod)
   triggerTestTick: (payload: unknown) => invoke('test:trigger-stock-tick', payload),
   triggerStreamError: (payload: unknown) => invoke('test:trigger-stream-error', payload),
-  setPositionProfitTarget: (payload: unknown) => invoke('test:set-position-profit-target', payload)
+  setPositionProfitTarget: (payload: unknown) => invoke('test:set-position-profit-target', payload),
+  assignments: {
+    listPending: () => invoke('assignments:list-pending'),
+    confirm: (pendingAssignmentId: number) =>
+      invoke('assignments:confirm', { pendingAssignmentId }),
+    dismiss: (pendingAssignmentId: number) =>
+      invoke('assignments:dismiss', { pendingAssignmentId }),
+    runDetectionNow: () => invoke('assignments:run-detection-now')
+  }
 }
 
 if (process.contextIsolated) {
