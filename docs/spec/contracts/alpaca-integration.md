@@ -318,4 +318,25 @@ Plan-cited paths that do not exist at their named location after the "market dat
 - [us-33 — Option Mid Price & Unrealized P&L](../features/us-33-option-mid-pnl.md)
 <!-- /generated -->
 
+<!-- generated:from us-37 -->
+
+## US-37 broker settings and environment selection
+
+US-37 extends the Alpaca boundary in a broker-specific direction without changing the shared market-data configuration model:
+
+- **Alpaca paper/live credentials move into encrypted settings persistence.** `src/main/services/settings.ts` is now the source of truth for saved Alpaca credentials, storing them in `credential_settings` with Electron `safeStorage`.
+- **Active broker environment is persisted separately from credentials.** `app_settings.active_broker_environment` stores `'paper' | 'live' | 'none'`, and broker factories resolve the effective active environment through that setting plus credential presence.
+- **Runtime broker refresh is scoped.** `broker-factory.ts` is recreated when Alpaca credentials change or the active environment changes; `market-data-factory.ts` remains tied to shared Massive configuration.
+- **Settings-specific Alpaca probes are intentionally separate from regular provider reads.** Candidate-key verification and stored-key re-verification use dedicated settings probe helpers so the app can test paper/live environments directly without depending on the currently active broker provider.
+
+### Probe flows
+
+- **Candidate credentials:** `settings:test-connection` with `{ vendor: 'alpaca', environment, keyId, secret }` calls `GET /v2/account` against paper or live and returns a masked account number on success.
+- **Stored credentials:** `settings:test-stored-alpaca-connection` loads encrypted credentials for the requested environment and runs the same verification probe without returning plaintext secrets.
+- **Environment mismatch handling:** entering live keys in the paper card returns `environment_mismatch` with the exact message `Environment mismatch — these are LIVE keys, not paper keys`.
+
+This story keeps all direct Alpaca HTTP/SDK interaction inside integration or settings-probe boundaries; the renderer and IPC layers still consume typed result objects only.
+
+<!-- /generated -->
+
 <!-- Hand-written sections below this line are preserved across regeneration. -->

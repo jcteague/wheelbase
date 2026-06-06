@@ -2,7 +2,7 @@
 
 Each ADR captures one architectural choice that emerged from a plan/story. Decisions are grouped below by theme; many ADRs are referenced by multiple feature pages.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,missing-ac -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-37,missing-ac -->
 
 ## Engine & architecture
 
@@ -11,6 +11,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [single-step-phase-transitions](./single-step-phase-transitions.md) — No synthetic `*_PENDING` / `*_EXPIRED` intermediate phases.
 - [standalone-service-per-operation](./standalone-service-per-operation.md) — One service file per mutation operation under `src/main/services/`.
 - [decimal-money-math](./decimal-money-math.md) — `decimal.js` with `ROUND_HALF_UP` at 4 dp; stored as TEXT.
+- [runtime-broker-provider-refresh](./runtime-broker-provider-refresh.md) — Broker settings changes recreate only broker state at runtime; market data stays untouched.
 - [occ-symbol-pure-leaf](./occ-symbol-pure-leaf.md) — Build OCC symbols in a pure `src/main/core/option-symbol.ts` leaf; no `contract_id` column.
 - [pnl-math-in-costbasis](./pnl-math-in-costbasis.md) — `computeUnrealizedPnl` lives in `costbasis.ts`; 4 dp decimal strings; pnlPercent on 0–100 scale.
 - [spread-no-bid-renderer-predicates](./spread-no-bid-renderer-predicates.md) — `isWideSpread` and `hasNoBid` as pure renderer predicates.
@@ -27,6 +28,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [active-leg-resolution](./active-leg-resolution.md) — Phase-aware `activeLegSubquery()` shared by list and detail queries.
 - [profit-target-nullable-column](./profit-target-nullable-column.md) — Nullable `profit_target_percent` column + hard-coded default constant.
 - [active-leg-metadata-via-positions-list](./active-leg-metadata-via-positions-list.md) — `PositionListItem` extended with active-leg metadata via the existing subquery.
+- [shared-massive-app-configuration](./shared-massive-app-configuration.md) — Massive credentials stay in shared app configuration; settings store Alpaca only.
 
 ## IPC contracts
 
@@ -41,6 +43,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [sheet-component-pattern](./sheet-component-pattern.md) — Right-side portal sheets with form→success states for every mutation.
 - [tanstack-query-mutation-hooks](./tanstack-query-mutation-hooks.md) — `useMutation` + invalidate `positionQueryKeys.all` on success.
 - [react-hook-form-zod](./react-hook-form-zod.md) — All renderer forms use RHF + `zodResolver(schema)`; no hand-managed form state.
+- [vendor-scoped-query-keys](./vendor-scoped-query-keys.md) — Broker and market queries use distinct prefixes so settings invalidation stays vendor-scoped.
 - [client-side-pnl-preview](./client-side-pnl-preview.md) — Form previews compute locally with `decimal.js`; no IPC round-trip.
 - [pct-of-max-formula](./pct-of-max-formula.md) — `(openPremium − closePrice) / openPremium × 100` ("% of max captured") for CC close.
 - [action-buttons-phase-gated](./action-buttons-phase-gated.md) — UI hides mutation buttons when phase (and DTE) don't permit the action.
