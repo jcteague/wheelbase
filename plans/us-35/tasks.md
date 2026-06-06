@@ -223,7 +223,7 @@
 
 ### Area 8: E2E Tests
 
-- [ ] **[Red]** Write failing e2e tests _(depends on: all Green tasks ✓)_
+- [x] **[Red]** Write failing e2e tests _(depends on: all Green tasks ✓)_
   - `e2e/polling-scheduler.spec.ts` — US-46 scenarios:
     - `it('registers an interval job')` — boot with test job, assert registry shape via dev-only IPC `_test:scheduler-registry`
     - `it('start invokes every registered job once and then on cadence')` — fake-timer e2e
@@ -246,7 +246,7 @@
     - `it('dismissing the assignment removes the notification')` — click Dismiss; assert banner gone; `runNow` again; assert no re-appearance
     - `it('assignment notification persists across app restarts')` — close + relaunch via `_electron.launch()`; assert banner present
   - Run `pnpm test:e2e` — all new tests must fail
-- [ ] **[Green]** Make e2e tests pass _(depends on: Area 8 Red ✓)_
+- [x] **[Green]** Make e2e tests pass _(depends on: Area 8 Red ✓)_
   - Reuse `FakeBrokerProvider` seeding utility from `plans/us-39/` e2e setup
   - Expose dev-only IPC `_test:scheduler-registry` guarded by `process.env.NODE_ENV === 'test'`
   - Shared `seedAssignmentFixture()` helper across both specs

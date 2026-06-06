@@ -10,6 +10,7 @@ import { brokerFactory } from './integrations/broker-factory'
 import { registerMarketDataHandlers } from './ipc/market-data'
 import { registerBrokerHandlers } from './ipc/broker'
 import { registerAssignmentsIpc } from './ipc/assignments'
+import { registerTestSchedulerIpc, seedTestJobsFromEnv } from './ipc/test-scheduler'
 import { DETECT_ASSIGNMENTS_JOB_NAME, detectAssignments } from './services/detect-assignments'
 import { scheduler } from './services/scheduler-instance'
 import { logger } from './logger'
@@ -91,6 +92,11 @@ app.whenReady().then(() => {
         await detectAssignments({ db, brokerProvider: bp, env })
       }
     })
+  }
+
+  if (process.env.NODE_ENV === 'test') {
+    seedTestJobsFromEnv(scheduler)
+    registerTestSchedulerIpc(scheduler)
   }
 
   scheduler.start()

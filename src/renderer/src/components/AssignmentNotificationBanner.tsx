@@ -6,6 +6,7 @@ import { AlertBox } from './ui/AlertBox'
 
 type ConfirmedState = {
   positionId: number
+  assignment: PendingAssignmentNotification
 }
 
 export function AssignmentNotificationBanner(): React.JSX.Element | null {
@@ -14,14 +15,23 @@ export function AssignmentNotificationBanner(): React.JSX.Element | null {
   const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set())
   const [confirmedMap, setConfirmedMap] = useState<Record<number, ConfirmedState>>({})
 
-  const visible = (data ?? []).filter((a) => !dismissedIds.has(a.id))
+  const fromQuery = (data ?? []).filter((a) => !dismissedIds.has(a.id))
+  const queryIds = new Set(fromQuery.map((a) => a.id))
+  const confirmedOnly = Object.values(confirmedMap)
+    .filter((c) => !queryIds.has(c.assignment.id))
+    .map((c) => c.assignment)
+  const visible = [...fromQuery, ...confirmedOnly]
 
   if (visible.length === 0) return null
 
-  async function handleConfirm(id: number, positionId: number): Promise<void> {
+  async function handleConfirm(
+    id: number,
+    positionId: number,
+    assignment: PendingAssignmentNotification
+  ): Promise<void> {
     const result = await window.api.assignments.confirm(id)
     if (result.ok) {
-      setConfirmedMap((prev) => ({ ...prev, [id]: { positionId } }))
+      setConfirmedMap((prev) => ({ ...prev, [id]: { positionId, assignment } }))
       queryClient.invalidateQueries({ queryKey: ['positions', 'list'] })
       queryClient.invalidateQueries({ queryKey: ['positions', String(positionId)] })
       queryClient.invalidateQueries({ queryKey: ['assignments', 'pending'] })
@@ -63,7 +73,7 @@ export function AssignmentNotificationBanner(): React.JSX.Element | null {
               <div className="flex gap-2 ml-auto">
                 <button
                   className="px-3 py-1 rounded text-xs font-medium bg-wb-gold text-wb-bg-base"
-                  onClick={() => handleConfirm(assignment.id, assignment.positionId)}
+                  onClick={() => handleConfirm(assignment.id, assignment.positionId, assignment)}
                 >
                   Confirm
                 </button>

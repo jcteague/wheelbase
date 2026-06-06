@@ -18,11 +18,18 @@ export type JobConfig = {
   handler: JobHandler
 }
 
+export type JobRegistryEntry = {
+  name: string
+  cadence: CadencePolicy
+  invocations: number
+}
+
 export interface PollingScheduler {
   register(config: JobConfig): void
   start(): void
   stop(): Promise<void>
   runNow(jobName: string): Promise<void>
+  getRegistry(): JobRegistryEntry[]
 }
 
 export class SchedulerError extends Error {
@@ -80,6 +87,7 @@ const realClock: Clock = {
 type JobState = {
   config: JobConfig
   timerId: TimerId | null
+  invocations: number
 }
 
 export function createPollingScheduler(
@@ -89,6 +97,7 @@ export function createPollingScheduler(
   const jobs = new Map<string, JobState>()
   const inFlight = new Set<Promise<void>>()
   let stopped = false
+  let started = false
 
   function scheduleTick(state: JobState, delayMs: number): void {
     if (stopped) return
@@ -96,6 +105,7 @@ export function createPollingScheduler(
   }
 
   async function runHandler(state: JobState): Promise<void> {
+    state.invocations++
     try {
       await state.config.handler()
     } catch (err) {
@@ -105,7 +115,19 @@ export function createPollingScheduler(
 
   async function reschedule(state: JobState): Promise<void> {
     if (stopped) return
-    const status = await brokerProvider.getMarketStatus()
+    let status: MarketStatus
+    try {
+      status = await brokerProvider.getMarketStatus()
+    } catch (err) {
+      logger.warn(
+        { err, job: state.config.name },
+        `Job '${state.config.name}' reschedule failed; falling back to default cadence`
+      )
+      if (state.config.cadence.kind === 'interval') {
+        scheduleTick(state, state.config.cadence.marketOpenMs)
+      }
+      return
+    }
     if (stopped) return
 
     const { cadence } = state.config
@@ -132,11 +154,29 @@ export function createPollingScheduler(
 
   async function startAfterClose(state: JobState, offsetMinutes: number): Promise<void> {
     if (stopped) return
-    const status = await brokerProvider.getMarketStatus()
+    let status: MarketStatus
+    try {
+      status = await brokerProvider.getMarketStatus()
+    } catch (err) {
+      logger.warn(
+        { err, job: state.config.name },
+        `Job '${state.config.name}' afterClose start failed`
+      )
+      return
+    }
     if (stopped) return
     const nowMs = clock.now()
     const fireAt = decideAfterCloseFireAt(status.nextClose, offsetMinutes, nowMs)
     if (fireAt !== null) scheduleTick(state, fireAt - nowMs)
+  }
+
+  function autoStart(state: JobState): void {
+    const { cadence } = state.config
+    if (cadence.kind === 'interval') {
+      scheduleTick(state, 0)
+    } else {
+      void startAfterClose(state, cadence.offsetMinutes)
+    }
   }
 
   return {
@@ -144,17 +184,15 @@ export function createPollingScheduler(
       if (jobs.has(config.name)) {
         throw new SchedulerError('already_registered', `Job already registered: ${config.name}`)
       }
-      jobs.set(config.name, { config, timerId: null })
+      const state: JobState = { config, timerId: null, invocations: 0 }
+      jobs.set(config.name, state)
+      if (started && !stopped) autoStart(state)
     },
 
     start(): void {
+      started = true
       for (const state of jobs.values()) {
-        const { cadence } = state.config
-        if (cadence.kind === 'interval') {
-          scheduleTick(state, 0)
-        } else {
-          void startAfterClose(state, cadence.offsetMinutes)
-        }
+        autoStart(state)
       }
     },
 
@@ -198,6 +236,14 @@ export function createPollingScheduler(
       }
 
       await reschedule(state)
+    },
+
+    getRegistry(): JobRegistryEntry[] {
+      return Array.from(jobs.values()).map((state) => ({
+        name: state.config.name,
+        cadence: state.config.cadence,
+        invocations: state.invocations
+      }))
     }
   }
 }
