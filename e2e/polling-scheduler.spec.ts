@@ -14,6 +14,7 @@ import {
   getSchedulerRegistry,
   launchApp,
   runNowTestJob,
+  simulateSchedulerWake,
   tmpDb,
   tryRegisterTestJob,
   CLOSED_SESSION,
@@ -214,12 +215,7 @@ describe('US-46: PollingScheduler — registry and lifecycle', () => {
     const beforeCount = before.find((j) => j.name === 'wake-job')?.invocations ?? 0
 
     // Simulate wake by advancing wall-clock significantly (no missed-tick backfill).
-    await page.evaluate(async () => {
-      const api = window.api as unknown as {
-        testSchedulerSimulateWake: (payload: { jumpMs: number }) => Promise<void>
-      }
-      await api.testSchedulerSimulateWake({ jumpMs: 60 * 60 * 1000 })
-    })
+    await simulateSchedulerWake(page, 60 * 60 * 1000)
 
     await new Promise((r) => setTimeout(r, 500))
     const after = await getSchedulerRegistry(page)

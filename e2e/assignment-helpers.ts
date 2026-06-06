@@ -72,14 +72,23 @@ export const POST_SESSION: MarketStatusFixture = {
   nextClose: '2026-05-29T20:00:00Z'
 }
 
-// Use a dynamic future expiration so create-position validation passes.
+export type CspFixture = {
+  ticker: string
+  strike: number
+  expiration: string
+  contracts: number
+  premiumPerContract: number
+  occSymbol: string
+}
+
+// Dynamic future expiration so create-position validation passes.
 // 30 days from today, formatted to the expiration's OCC encoding (YYMMDD).
 const FUTURE_EXPIRATION = localDate(30)
 const [Y, M, D] = FUTURE_EXPIRATION.split('-')
 const OCC_DATE = `${Y.slice(2)}${M}${D}`
 
 /** AAPL $180 PUT — used across the US-35 specs. */
-export const AAPL_PUT_180 = {
+export const AAPL_PUT_180: CspFixture = {
   ticker: 'AAPL',
   strike: 180,
   expiration: FUTURE_EXPIRATION,
@@ -89,7 +98,7 @@ export const AAPL_PUT_180 = {
 }
 
 /** MSFT $400 PUT — used for multi-assignment scenarios. */
-export const MSFT_PUT_400 = {
+export const MSFT_PUT_400: CspFixture = {
   ticker: 'MSFT',
   strike: 400,
   expiration: FUTURE_EXPIRATION,
@@ -139,22 +148,46 @@ export async function getPage(app: ElectronApplication): Promise<Page> {
 }
 
 /** Seed an open CSP via the createPosition IPC. */
-export async function seedCsp(
-  page: Page,
-  spec: {
-    ticker: string
-    strike: number
-    expiration: string
-    contracts: number
-    premiumPerContract: number
-  }
-): Promise<string> {
-  const positionId = await page.evaluate(async (s) => {
-    const result = await window.api.createPosition(s)
-    if (!result.ok) throw new Error(`createPosition failed: ${JSON.stringify(result)}`)
-    return result.position.id
-  }, spec)
+export async function seedCsp(page: Page, fixture: CspFixture): Promise<string> {
+  const { ticker, strike, expiration, contracts, premiumPerContract } = fixture
+  const positionId = await page.evaluate(
+    async (payload) => {
+      const result = await window.api.createPosition(payload)
+      if (!result.ok) throw new Error(`createPosition failed: ${JSON.stringify(result)}`)
+      return result.position.id
+    },
+    { ticker, strike, expiration, contracts, premiumPerContract }
+  )
   return positionId
+}
+
+/** Build an OPASN broker activity matched to a CSP fixture's OCC symbol. */
+export function makeOpasn(
+  fixture: CspFixture,
+  opts: { activityId?: string; transactionTime: string; qty?: number } = {
+    transactionTime: ''
+  }
+): ActivityFixture {
+  return {
+    activityId: opts.activityId ?? `act-${fixture.ticker.toLowerCase()}-1`,
+    activityType: 'OPASN',
+    symbol: fixture.occSymbol,
+    qty: opts.qty ?? fixture.contracts * 100,
+    price: fixture.strike.toFixed(2),
+    transactionTime: opts.transactionTime
+  }
+}
+
+/** Navigate to the positions list, forcing a remount so usePositions re-fetches. */
+export async function goToPositionsList(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    location.hash = '#/new'
+  })
+  await page.waitForSelector('label:has-text("Ticker")')
+  await page.evaluate(() => {
+    location.hash = '#/'
+  })
+  await page.waitForFunction(() => location.hash === '#/')
 }
 
 export async function runDetectionNow(page: Page): Promise<void> {
@@ -212,15 +245,16 @@ export async function tryRegisterTestJob(
   }, job)
 }
 
+export async function simulateSchedulerWake(page: Page, jumpMs: number): Promise<void> {
+  await page.evaluate(async (ms) => {
+    const api = window.api as unknown as TestSchedulerApi
+    await api.testSchedulerSimulateWake({ jumpMs: ms })
+  }, jumpMs)
+}
+
 /** Seed a CSP + drive detection so that exactly one pending row exists for AAPL. */
 export async function seedAssignmentFixture(page: Page): Promise<{ positionId: string }> {
-  const positionId = await seedCsp(page, {
-    ticker: AAPL_PUT_180.ticker,
-    strike: AAPL_PUT_180.strike,
-    expiration: AAPL_PUT_180.expiration,
-    contracts: AAPL_PUT_180.contracts,
-    premiumPerContract: AAPL_PUT_180.premiumPerContract
-  })
+  const positionId = await seedCsp(page, AAPL_PUT_180)
   await runDetectionNow(page)
   return { positionId }
 }

@@ -6,7 +6,7 @@
 // (confirm/dismiss) via the existing AssignmentNotificationBanner mounted on
 // the positions list.
 import { afterEach, describe, expect, it } from 'vitest'
-import type { ElectronApplication, Page } from 'playwright'
+import type { ElectronApplication } from 'playwright'
 import {
   AAPL_PUT_180,
   MSFT_PUT_400,
@@ -14,52 +14,24 @@ import {
   cleanupDb,
   getPage,
   getPendingAssignments,
+  goToPositionsList,
   launchApp,
+  makeOpasn,
   runDetectionNow,
   seedAssignmentFixture,
   seedCsp,
-  tmpDb,
-  type ActivityFixture
+  tmpDb
 } from './assignment-helpers'
 import { localToday } from './dates'
 
 // Transaction time must be >= the CSP fill date (today) for confirmPending → assignCspPosition.
 const TRANSACTION_TIME = `${localToday()}T08:00:00Z`
 
-function aaplOpasn(activityId = 'act-aapl-1'): ActivityFixture {
-  return {
-    activityId,
-    activityType: 'OPASN',
-    symbol: AAPL_PUT_180.occSymbol,
-    qty: 100,
-    price: '180.00',
-    transactionTime: TRANSACTION_TIME
-  }
-}
+const aaplOpasn = (activityId = 'act-aapl-1'): ReturnType<typeof makeOpasn> =>
+  makeOpasn(AAPL_PUT_180, { activityId, transactionTime: TRANSACTION_TIME })
 
-function msftOpasn(activityId = 'act-msft-1'): ActivityFixture {
-  return {
-    activityId,
-    activityType: 'OPASN',
-    symbol: MSFT_PUT_400.occSymbol,
-    qty: 200,
-    price: '400.00',
-    transactionTime: TRANSACTION_TIME
-  }
-}
-
-async function goToPositionsList(page: Page): Promise<void> {
-  // Bounce via /new so PositionsListPage remounts and usePositions re-fetches —
-  // otherwise the empty positions cache from initial boot persists.
-  await page.evaluate(() => {
-    location.hash = '#/new'
-  })
-  await page.waitForSelector('label:has-text("Ticker")')
-  await page.evaluate(() => {
-    location.hash = '#/'
-  })
-  await page.waitForFunction(() => location.hash === '#/')
-}
+const msftOpasn = (activityId = 'act-msft-1'): ReturnType<typeof makeOpasn> =>
+  makeOpasn(MSFT_PUT_400, { activityId, transactionTime: TRANSACTION_TIME })
 
 describe('US-35: detect-assignments service', () => {
   let app: ElectronApplication

@@ -251,15 +251,15 @@
   - Expose dev-only IPC `_test:scheduler-registry` guarded by `process.env.NODE_ENV === 'test'`
   - Shared `seedAssignmentFixture()` helper across both specs
   - Run `pnpm test:e2e` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — e2e test files _(depends on: Area 8 Green ✓)_
+- [x] **[Refactor]** `/refactor` — e2e test files _(depends on: Area 8 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
 
 ---
 
 ## Completion Checklist
 
-- [ ] All Red tasks complete (tests written and failing for right reason)
-- [ ] All Green tasks complete (all tests passing)
-- [ ] All Refactor tasks complete (lint + typecheck clean)
-- [ ] E2E tests cover every AC from US-46 and US-35
-- [ ] `pnpm test && pnpm lint && pnpm typecheck` — all clean
+- [x] All Red tasks complete (tests written and failing for right reason)
+- [x] All Green tasks complete (all tests passing)
+- [x] All Refactor tasks complete (lint + typecheck clean)
+- [x] E2E tests cover every AC from US-46 and US-35
+- [x] `pnpm test && pnpm lint && pnpm typecheck` — all clean
