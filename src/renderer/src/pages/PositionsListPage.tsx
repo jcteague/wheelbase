@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import type { ApiError } from '../api/error'
 import type { PositionListItem } from '../api/positions'
 import type {
   OptionSnapshot,
@@ -18,6 +19,7 @@ import { TableHeader } from '../components/ui/TablePrimitives'
 import { useMarketStatus } from '../hooks/useMarketStatus'
 import { useOptionSnapshots, type ActiveLegSummary } from '../hooks/useOptionSnapshots'
 import { usePositions } from '../hooks/usePositions'
+import { useSettingsStatus } from '../hooks/useSettings'
 import { useStockQuotes } from '../hooks/useStockQuotes'
 import { deriveMarketStatusDisplay } from '../lib/market-status'
 
@@ -37,6 +39,12 @@ const TABLE_COLUMNS = [
 type PositionsHeaderProps = {
   count?: number
   marketStatusDisplay: MarketStatusDisplay
+}
+
+function getErrorCode(error: ApiError | Error | null): string | null {
+  if (!error || !('body' in error)) return null
+  const detail = (error.body as { detail?: Array<{ code?: string }> }).detail
+  return detail?.[0]?.code ?? null
 }
 
 function PositionsHeader({ count, marketStatusDisplay }: PositionsHeaderProps): React.JSX.Element {
@@ -140,6 +148,7 @@ function PositionTable({
 
 export function PositionsListPage(): React.JSX.Element {
   const { data, isLoading, isError } = usePositions()
+  const settingsQuery = useSettingsStatus()
 
   const activePositions = useMemo(() => data?.filter((p) => p.status === 'ACTIVE') ?? [], [data])
   const closedPositions = useMemo(() => data?.filter((p) => p.status === 'CLOSED') ?? [], [data])
@@ -166,6 +175,17 @@ export function PositionsListPage(): React.JSX.Element {
 
   const { stale, minutesAgo } = quotesQuery
   const display = deriveMarketStatusDisplay(statusQuery.data?.session, stale)
+  const showMassiveSetupBanner =
+    settingsQuery.data?.massive === 'missing' && settingsQuery.data?.activeBrokerEnv === 'none'
+  const showNoBrokerBanner = settingsQuery.data?.activeBrokerEnv === 'none'
+  const marketAuthPrompt =
+    quotesQuery.streamError?.code === 'auth_failed'
+      ? 'Massive authentication failed — check your key in Settings'
+      : null
+  const brokerAuthPrompt =
+    getErrorCode(statusQuery.error) === 'auth_failed'
+      ? 'Alpaca authentication failed — check your key in Settings'
+      : null
 
   return (
     <PageLayout
@@ -188,6 +208,31 @@ export function PositionsListPage(): React.JSX.Element {
           >
             Open your first wheel →
           </a>
+        </div>
+      )}
+
+      {showMassiveSetupBanner && (
+        <div className="mx-[24px] mt-[16px] rounded-md border border-wb-gold-border bg-wb-gold-dim px-4 py-3 font-wb-mono text-[0.74rem] text-wb-text-primary">
+          Massive is app-provided, and this workspace has not configured it yet. Visit{' '}
+          <a href="#/settings" className="text-wb-gold">
+            Alpaca setup
+          </a>{' '}
+          to connect your broker once market data is available.
+        </div>
+      )}
+      {showNoBrokerBanner && (
+        <div className="mx-[24px] mt-[16px] rounded-md border border-wb-blue/25 bg-wb-blue-dim px-4 py-3 font-wb-mono text-[0.74rem] text-wb-text-primary">
+          Connect Alpaca to enable broker activity and buying power.
+        </div>
+      )}
+      {marketAuthPrompt && (
+        <div className="mx-[24px] mt-[16px] rounded-md border border-wb-red/25 bg-wb-red/10 px-4 py-3 font-wb-mono text-[0.74rem] text-wb-red">
+          {marketAuthPrompt}
+        </div>
+      )}
+      {brokerAuthPrompt && (
+        <div className="mx-[24px] mt-[16px] rounded-md border border-wb-red/25 bg-wb-red/10 px-4 py-3 font-wb-mono text-[0.74rem] text-wb-red">
+          {brokerAuthPrompt}
         </div>
       )}
 

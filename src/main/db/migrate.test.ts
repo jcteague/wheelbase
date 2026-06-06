@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { makeTestDb, MIGRATIONS_DIR } from '../test-utils'
 import { runMigrations } from './migrate'
 
-const insertPosition = (db: ReturnType<typeof makeTestDb>): void => {
+function insertPosition(db: ReturnType<typeof makeTestDb>): void {
   db.prepare(
     `INSERT INTO positions (
       id, ticker, strategy_type, status, phase, opened_date, created_at, updated_at
@@ -41,7 +41,8 @@ describe('runMigrations', () => {
       '002_add_query_indexes.sql',
       '003_rename_option_type_to_instrument_type.sql',
       '004_add_trigger_event_to_snapshots.sql',
-      '005_add_profit_target_percent.sql'
+      '005_add_profit_target_percent.sql',
+      '006_add_credential_settings.sql'
     ])
   })
 

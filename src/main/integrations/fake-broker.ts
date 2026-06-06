@@ -28,7 +28,17 @@ function parseEnv<T>(envVar: string): T | null {
   return raw ? (JSON.parse(raw) as T) : null
 }
 
+type FakeBrokerProviderOptions = {
+  environment?: 'paper' | 'live'
+}
+
 export class FakeBrokerProvider implements BrokerProvider {
+  private readonly environment: 'paper' | 'live'
+
+  constructor(options: FakeBrokerProviderOptions = {}) {
+    this.environment = options.environment ?? 'paper'
+  }
+
   private maybeThrow(): void {
     const code = process.env.FAKE_BROKER_ERROR
     if (code) throw new BrokerError(code as BrokerErrorCode, `Fake error: ${code}`)
@@ -36,7 +46,15 @@ export class FakeBrokerProvider implements BrokerProvider {
 
   async getAccountInfo(): Promise<AccountInfo> {
     this.maybeThrow()
-    return parseEnv<AccountInfo>('FAKE_BROKER_ACCOUNT') ?? DEFAULT_ACCOUNT
+    return (
+      parseEnv<AccountInfo>(
+        this.environment === 'live' ? 'FAKE_BROKER_ACCOUNT_LIVE' : 'FAKE_BROKER_ACCOUNT_PAPER'
+      ) ??
+      parseEnv<AccountInfo>('FAKE_BROKER_ACCOUNT') ?? {
+        ...DEFAULT_ACCOUNT,
+        environment: this.environment
+      }
+    )
   }
 
   async getActivities(filter: ActivityFilter): Promise<BrokerActivity[]> {

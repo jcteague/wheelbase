@@ -684,3 +684,25 @@ For the story-level acceptance criteria and the UI behaviour tables, see
 and [`features/us-34-position-cockpit.md`](../features/us-34-position-cockpit.md).
 
 <!-- /generated -->
+
+<!-- generated:from us-37 -->
+
+## Shared market data vs broker state
+
+US-37 makes an explicit product distinction that matters to the live-data domain:
+
+- **Market data is shared app infrastructure.** Massive status and market-data degraded states are tied to shared application configuration, not to user-managed broker credentials.
+- **Broker state is user-specific.** Alpaca paper/live credentials and the active broker environment are stored per user in settings and affect account/activity/buying-power surfaces only.
+- **Settings actions do not restart quote flows.** Switching broker environments or saving/removing Alpaca credentials refreshes broker-prefixed queries only; `['market', ...]` queries continue running.
+- **UI status indicators are intentionally split.**
+  - `EnvironmentBadge` reflects broker environment only: `PAPER`, `LIVE`, `NO BROKER`
+  - `MarketDataStatusDot` reflects Massive market-data state only
+
+### Degraded-state consequences
+
+- Massive auth/config failures keep cached quotes briefly, surface a stale-data banner, then fall back to unavailable quote cells.
+- Missing or failed Alpaca credentials do not prevent shared market data from rendering; instead broker-only surfaces prompt the user to connect Alpaca in Settings.
+
+This split is why US-37 belongs partly in the market-data spec even though the story is primarily a settings/broker workflow: the user-facing quote domain now stays healthy or degraded independently from the broker environment toggle.
+
+<!-- /generated -->

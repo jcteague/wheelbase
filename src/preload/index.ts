@@ -37,6 +37,16 @@ const api = {
     activities: (payload: unknown) => invoke('broker:activities', payload),
     marketStatus: () => invoke('broker:market-status')
   },
+  settings: {
+    status: () => invoke('settings:get-credential-status'),
+    saveAlpaca: (payload: unknown) => invoke('settings:save-alpaca-credentials', payload),
+    removeAlpaca: (payload: unknown) => invoke('settings:remove-alpaca-credentials', payload),
+    setActiveBrokerEnvironment: (payload: unknown) =>
+      invoke('settings:set-active-broker-environment', payload),
+    testConnection: (payload: unknown) => invoke('settings:test-connection', payload),
+    testStoredAlpacaConnection: (payload: unknown) =>
+      invoke('settings:test-stored-alpaca-connection', payload)
+  },
   marketData: {
     stockQuotes: (payload: unknown) => invoke('market-data:stock-quotes', payload),
     optionSnapshot: (payload: unknown) => invoke('market-data:option-snapshot', payload),

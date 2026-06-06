@@ -152,7 +152,7 @@ describe('useOptionSnapshots', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
     const expectedKey = marketDataQueryKeys.optionSnapshots([AAPL_PUT_OCC])
-    expect(expectedKey).toEqual(['market-data', 'option-snapshots', AAPL_PUT_OCC])
+    expect(expectedKey).toEqual(['market', 'option-snapshots', AAPL_PUT_OCC])
     expect(queryClient.getQueryData(expectedKey)).toBeDefined()
   })
 

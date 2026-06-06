@@ -6,12 +6,14 @@ import { usePositions } from '../hooks/usePositions'
 import { useMarketStatus } from '../hooks/useMarketStatus'
 import { useStockQuotes } from '../hooks/useStockQuotes'
 import { useOptionSnapshots } from '../hooks/useOptionSnapshots'
+import { useSettingsStatus } from '../hooks/useSettings'
 import { PositionsListPage } from './PositionsListPage'
 
 vi.mock('../hooks/usePositions')
 vi.mock('../hooks/useStockQuotes')
 vi.mock('../hooks/useMarketStatus')
 vi.mock('../hooks/useOptionSnapshots')
+vi.mock('../hooks/useSettings')
 vi.mock('../components/PositionCard', () => ({
   PositionRow: ({
     item,
@@ -36,6 +38,7 @@ const mockUsePositions = vi.mocked(usePositions)
 const mockUseStockQuotes = vi.mocked(useStockQuotes)
 const mockUseMarketStatus = vi.mocked(useMarketStatus)
 const mockUseOptionSnapshots = vi.mocked(useOptionSnapshots)
+const mockUseSettingsStatus = vi.mocked(useSettingsStatus)
 
 const AAPL_QUOTE: StockQuote = {
   price: '182.45',
@@ -212,6 +215,20 @@ beforeEach(() => {
   mockUseStockQuotes.mockReturnValue(makeStockQuotesResult())
   mockUseMarketStatus.mockReturnValue(makeMarketStatusResult())
   mockUseOptionSnapshots.mockReturnValue(makeOptionSnapshotsResult())
+  mockUseSettingsStatus.mockReturnValue({
+    data: {
+      massive: 'configured',
+      alpacaPaper: 'configured',
+      alpacaLive: 'missing',
+      activeBrokerEnv: 'paper',
+      massiveLastCheckedAt: null,
+      alpacaPaperAccountNumberMasked: 'PA…ABC',
+      alpacaLiveAccountNumberMasked: null
+    },
+    isLoading: false,
+    isError: false,
+    error: null
+  } as ReturnType<typeof useSettingsStatus>)
 })
 
 it('renders a new wheel button in the header', () => {
@@ -532,4 +549,105 @@ it('does not show options unavailable notice when snapshotsQuery.unavailable is 
 
   render(<PositionsListPage />)
   expect(screen.queryByText(/Options data unavailable/)).not.toBeInTheDocument()
+})
+
+it('shows the setup banner when Massive is app-provided and Alpaca is not configured', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1]))
+  mockUseSettingsStatus.mockReturnValue({
+    data: {
+      massive: 'missing',
+      alpacaPaper: 'missing',
+      alpacaLive: 'missing',
+      activeBrokerEnv: 'none',
+      massiveLastCheckedAt: null,
+      alpacaPaperAccountNumberMasked: null,
+      alpacaLiveAccountNumberMasked: null
+    },
+    isLoading: false,
+    isError: false,
+    error: null
+  } as ReturnType<typeof useSettingsStatus>)
+  mockUseStockQuotes.mockReturnValue(makeStockQuotesResult({ data: undefined }))
+
+  render(<PositionsListPage />)
+
+  expect(screen.getByText(/massive is app-provided/i)).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: /alpaca setup/i })).toHaveAttribute('href', '#/settings')
+})
+
+it('shows setup and broker banners even when there are no positions yet', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([]))
+  mockUseSettingsStatus.mockReturnValue({
+    data: {
+      massive: 'missing',
+      alpacaPaper: 'missing',
+      alpacaLive: 'missing',
+      activeBrokerEnv: 'none',
+      massiveLastCheckedAt: null,
+      alpacaPaperAccountNumberMasked: null,
+      alpacaLiveAccountNumberMasked: null
+    },
+    isLoading: false,
+    isError: false,
+    error: null
+  } as ReturnType<typeof useSettingsStatus>)
+
+  render(<PositionsListPage />)
+
+  expect(screen.getByText(/no positions yet/i)).toBeInTheDocument()
+  expect(screen.getByText(/massive is app-provided/i)).toBeInTheDocument()
+  expect(
+    screen.getByText(/connect alpaca to enable broker activity and buying power/i)
+  ).toBeInTheDocument()
+})
+
+it('shows auth prompts even when there are no positions yet', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([]))
+  mockUseStockQuotes.mockReturnValue(
+    makeStockQuotesResult({
+      data: undefined,
+      streamError: { code: 'auth_failed', message: 'nope' } as IpcStreamErrorEvent
+    })
+  )
+  mockUseMarketStatus.mockReturnValue({
+    data: undefined,
+    isLoading: false,
+    isError: true,
+    error: {
+      body: { detail: [{ code: 'auth_failed' }] }
+    } as unknown,
+    refetch: vi.fn()
+  } as unknown as ReturnType<typeof useMarketStatus>)
+
+  render(<PositionsListPage />)
+
+  expect(screen.getByText(/massive authentication failed/i)).toBeInTheDocument()
+  expect(screen.getByText(/alpaca authentication failed/i)).toBeInTheDocument()
+})
+
+it('continues to render live prices and mids from Massive when no Alpaca credentials are configured', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1]))
+  mockUseSettingsStatus.mockReturnValue({
+    data: {
+      massive: 'configured',
+      alpacaPaper: 'missing',
+      alpacaLive: 'missing',
+      activeBrokerEnv: 'none',
+      massiveLastCheckedAt: null,
+      alpacaPaperAccountNumberMasked: null,
+      alpacaLiveAccountNumberMasked: null
+    },
+    isLoading: false,
+    isError: false,
+    error: null
+  } as ReturnType<typeof useSettingsStatus>)
+  mockUseOptionSnapshots.mockReturnValue(
+    makeOptionSnapshotsResult({ AAPL260417P00180000: makeOptionSnapshot('1.30') })
+  )
+
+  render(<PositionsListPage />)
+
+  expect(screen.getByTestId('mock-quote-AAPL')).toHaveTextContent('182.45')
+  expect(screen.getByTestId('mock-snapshot-AAPL')).toHaveTextContent('1.30')
+  expect(screen.getByText(/connect alpaca to enable/i)).toBeInTheDocument()
 })

@@ -910,4 +910,149 @@ Renderer adapters in `src/renderer/src/api/*.ts` translate IPC camelCase field n
 (us-2 was authored as a FastAPI `GET /api/positions` HTTP endpoint; the surviving Electron equivalent is `src/main/services/list-positions.ts` and the IPC channel name `positions:list` documented above is derived rather than authoritative. us-12-refactor introduced no new IPC handlers; it centralised the active-leg SQL into `src/main/services/active-leg-sql.ts` which is consumed by both `positions:get` and `positions:list`. us-6 introduced the global `optionType` → `instrumentType` rename across all leg-returning handlers and the `instrument_type` DB migration; us-5, us-6, and us-10 added `'EXPIRE'`, `'ASSIGN'`, and `'EXERCISE'` respectively to the `LegAction` enum. us-8 and us-9 both deliberately omit a new `cost_basis_snapshots` insert — us-8 because the existing CC_OPEN snapshot already captures the CC premium and the wheel is still open, us-9 because CC expiration is not a financial event (the premium was captured at CC open in us-7). us-10 introduced the new `positions:record-call-away` channel, the `'CALLED_AWAY'` `legRole` value, and the `WHEEL_COMPLETE` terminal phase. us-11 widened the `positions:get` response with an `allSnapshots` array (used by the renderer's `deriveRunningBasis()` pure helper to attach a running cost basis to every row in `LegHistoryTable`) and split previously-overloaded role values into distinct terminal-event values: `'CALLED_AWAY'` (now written by `positions:record-call-away` instead of `'CC_CLOSE'`) and `'CC_EXPIRED'` (now written by `positions:expire-cc` instead of a generic `'EXPIRE'`). us-13 is **plan-only** — the plan directory has no `tasks.md` or `refactor-phase-results.md` yet; both its planned changes (adding `rollCount` to `positions:get` and relaxing `positions:roll-csp` validation to allow same-expiration strike-only rolls) are documented as planned above. us-14 introduced the new `positions:roll-cc` channel — a mirror of `positions:roll-csp` for the CC leg with two intentional behaviour differences (`>=` expiration instead of `>`, plus an explicit `no_change` lifecycle guard on the sentinel field `__roll__`); the refactor phase consolidated `RollCspPayloadSchema` / `RollCcPayloadSchema` into a shared `RollPayloadBaseSchema` and `RollCspResult` / `RollCcResult` onto a shared `RollResultBase` interface — `calculateRollBasis()` is reused unchanged. us-15 added the `rollChainId: string | null` field to every entry in `positions:get`'s `legs[]` payload (the underlying `legs.roll_chain_id` column already existed from migration 001; us-15 only exposed it through `GET_LEGS_QUERY` + `mapLegRow`) and added the same field to the `LegRecord` TypeScript interface — all non-roll write-paths set `rollChainId: null` explicitly while the two roll services pass the shared UUID. The `activeLeg` payload deliberately still surfaces `rollChainId: null`. us-33 introduced the new `market-data:option-snapshots` request/response channel (full provider `OptionSnapshot` shape including `greeks`, 1:1 with the provider — not flattened like `IpcStockQuote`) and extended `positions:list` with four nullable active-leg fields (`instrumentType`, `contracts`, `entryPremiumPerContract`, `profitTargetPercent`) sourced from the existing active-leg subquery plus the new `positions.profit_target_percent` column from migration `005`. us-31 (the market-data provider/foundation story) shipped **no** new IPC handlers — it landed the `MarketDataProvider` interface and `getOptionSnapshots(symbols)` adapter method that this channel consumes; us-34 (Greeks display) ships **no** new IPC handlers either, re-using the existing `market-data:option-snapshots` channel and reading `snapshots[symbol].greeks` directly. All are tracked here for regeneration completeness.)
 <!-- /generated -->
 
+<!-- generated:from us-37 -->
+
+## Settings handlers
+
+US-37 adds a dedicated `settings:*` namespace for credential status, Alpaca credential management, broker-environment switching, and connection probes. All six handlers live in `src/main/ipc/settings.ts`, validate with Zod schemas from `src/main/schemas.ts`, and use `handleIpcCall(...)` so failures stay inside the standard `{ ok: false, errors }` envelope.
+
+### `settings:get-credential-status`
+
+- **Purpose:** hydrate the settings page, the app-shell broker badge, and vendor-specific degraded-state UI with shared Massive status plus Alpaca paper/live status.
+- **Request:** none.
+- **Response (success):**
+  ```ts
+  {
+    ok: true,
+    status: {
+      massive: 'configured' | 'missing'
+      alpacaPaper: 'configured' | 'missing'
+      alpacaLive: 'configured' | 'missing'
+      activeBrokerEnv: 'paper' | 'live' | 'none'
+      massiveLastCheckedAt: string | null
+      alpacaPaperAccountNumberMasked: string | null
+      alpacaLiveAccountNumberMasked: string | null
+    }
+  }
+  ```
+- **Notes:** Massive status is derived from shared app configuration and does not create a `credential_settings` row. `massiveLastCheckedAt` is currently always `null`.
+
+### `settings:save-alpaca-credentials`
+
+- **Purpose:** validate, verify, encrypt, and upsert Alpaca credentials for `paper` or `live`.
+- **Request:**
+  ```ts
+  {
+    environment: 'paper' | 'live'
+    keyId: string
+    secret: string
+  }
+  ```
+- **Response (success):**
+  ```ts
+  {
+    ok: true,
+    status: CredentialStatus,
+    test: {
+      ok: true,
+      vendor: 'alpaca',
+      environment: 'paper' | 'live',
+      accountNumberMasked: string
+    }
+  }
+  ```
+- **Behavior:** trims `keyId` and `secret`, verifies the candidate credentials before save, encrypts with Electron `safeStorage`, and refreshes broker state only when the changed environment is active.
+
+### `settings:remove-alpaca-credentials`
+
+- **Purpose:** remove one saved Alpaca environment.
+- **Request:**
+  ```ts
+  {
+    environment: 'paper' | 'live'
+  }
+  ```
+- **Response (success):**
+  ```ts
+  {
+    ok: true,
+    status: CredentialStatus
+  }
+  ```
+- **Behavior:** deletes a single `credential_settings` row. If the removed environment was active, the effective active broker environment becomes `none` and broker state is refreshed.
+
+### `settings:set-active-broker-environment`
+
+- **Purpose:** switch the current broker environment between saved paper and live credentials.
+- **Request:**
+  ```ts
+  {
+    environment: 'paper' | 'live'
+  }
+  ```
+- **Response (success):**
+  ```ts
+  {
+    ok: true,
+    status: CredentialStatus
+  }
+  ```
+- **Error codes:**
+
+  | field | code | message |
+  | --- | --- | --- |
+  | `environment` | `missing_credentials` | `Alpaca paper credentials are not configured` / `Alpaca live credentials are not configured` |
+
+- **Behavior:** persists `active_broker_environment`, recreates only the broker provider, and leaves market-data providers untouched.
+
+### `settings:test-connection`
+
+- **Purpose:** run a vendor-specific probe without saving credentials.
+- **Request:**
+  ```ts
+  | { vendor: 'massive' }
+  | { vendor: 'alpaca', environment: 'paper' | 'live', keyId: string, secret: string }
+  ```
+- **Response (success):**
+  ```ts
+  {
+    ok: true,
+    test:
+      | { ok: true, vendor: 'massive', status: 'connected' }
+      | { ok: true, vendor: 'alpaca', environment: 'paper' | 'live', accountNumberMasked: string }
+      | { ok: false, errorCode: string, message: string }
+  }
+  ```
+- **Vendor specifics:**
+  - Massive probes `GET /v3/reference/tickers/AAPL` with the shared configured key.
+  - Alpaca probes `GET /v2/account` against paper or live and does not import activities.
+  - Paper-card live-key mismatch returns `environment_mismatch` with message `Environment mismatch — these are LIVE keys, not paper keys`.
+
+### `settings:test-stored-alpaca-connection`
+
+- **Purpose:** re-verify already-saved encrypted Alpaca credentials without exposing secrets back to the renderer.
+- **Request:**
+  ```ts
+  {
+    environment: 'paper' | 'live'
+  }
+  ```
+- **Response (success):**
+  ```ts
+  {
+    ok: true,
+    test: TestSettingsConnectionResult
+  }
+  ```
+- **Error codes:**
+
+  | field | code | message |
+  | --- | --- | --- |
+  | `environment` | `missing_credentials` | `Alpaca paper credentials are not configured` / `Alpaca live credentials are not configured` |
+
+- **Source:** `src/main/ipc/settings.ts`, `src/main/services/settings.ts`, `src/main/services/settings-connections.ts`
+- **Driven by:** [us-37 — Paper/Live Broker Environment Toggle](../features/us-37-paper-live-broker-environment-toggle.md)
+
+<!-- /generated -->
+
 <!-- Hand-written sections below this line are preserved across regeneration. -->

@@ -175,6 +175,29 @@ extracted into a dedicated entry here.
   the feature that introduced migration `003`
 - [us-33 — Option Mid & Unrealized P&L](../features/us-33-option-mid-pnl.md) —
   the feature that introduced migration `005`
+- [us-37 — Paper/Live Broker Environment Toggle](../features/us-37-paper-live-broker-environment-toggle.md) —
+  the feature that introduced migration `006`
+
+<!-- /generated -->
+
+<!-- generated:from us-37 -->
+
+### `migrations/006_add_credential_settings.sql` — add encrypted credential storage and app settings
+
+- **Driven by:** [us-37 — Paper/Live Broker Environment Toggle](../features/us-37-paper-live-broker-environment-toggle.md)
+- **Rationale:** Persist user-specific Alpaca paper/live credentials securely and remember the active broker environment across launches without storing Massive credentials in user settings.
+- **Change scope:** introduces two new tables, `credential_settings` and `app_settings`.
+- **Highlights:**
+  - `credential_settings` stores encrypted key/secret pairs, masked account number, and verification metadata keyed by `(vendor, environment)`.
+  - `app_settings` stores non-secret key/value state, used here for `active_broker_environment`.
+- **Why generic names?** The schema is intentionally vendor-agnostic so future broker vendors can reuse it, even though US-37 writes Alpaca rows only.
+- **Downstream code touches (no further schema change):**
+  - `src/main/services/settings.ts`
+  - `src/main/services/settings-connections.ts`
+  - `src/main/integrations/broker-factory.ts`
+  - `src/main/ipc/settings.ts`
+  - `src/renderer/src/api/settings.ts`
+- **Source:** `migrations/006_add_credential_settings.sql`
 
 <!-- /generated -->
 

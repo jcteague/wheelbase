@@ -348,4 +348,28 @@ describe('useStockQuotes', () => {
     await waitFor(() => expect(result.current.data?.NVDA).toBeDefined())
     expect(result.current.data?.NVDA.prevClose).toBeNull()
   })
+
+  it('keeps cached quotes while marking them stale when an auth_failed stream error arrives', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    mockGetStockQuotes.mockResolvedValue({ ok: true, quotes: { AAPL: AAPL_QUOTE } })
+
+    const { result } = renderHook(() => useStockQuotes(['AAPL']), {
+      wrapper: makeWrapper(queryClient)
+    })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data?.AAPL.price).toBe('182.45')
+
+    act(() => {
+      onStreamErrorCallback?.({
+        feed: 'stockQuotes',
+        code: 'auth_failed',
+        message: 'Massive authentication failed — check your key in Settings',
+        reconnectable: false
+      })
+    })
+
+    await waitFor(() => expect(result.current.stale).toBe(true))
+    expect(result.current.data?.AAPL.price).toBe('182.45')
+  })
 })

@@ -73,6 +73,7 @@ None — interface-only file, minimal scope.
 
 **File**: `e2e/provider-split.spec.ts`
 **Before**: Four error-injection tests each inlined the same close/cleanup/relaunch sequence (~10 lines per test):
+
 ```ts
 await app.close()
 cleanupDb(dbPath)
@@ -80,10 +81,13 @@ dbPath = tmpDb()
 app = await launchWithProviderError(dbPath, { marketDataError: 'auth_failed' })
 page = await getPage(app)
 ```
+
 **After**: Extracted `relaunchWithError(currentApp, currentDbPath, errorOpts)` helper that encapsulates the full close/cleanup/relaunch/getPage flow and returns `{ app, page, dbPath }`. Each error test becomes one line:
+
 ```ts
 ;({ app, page, dbPath } = await relaunchWithError(app, dbPath, { marketDataError: 'auth_failed' }))
 ```
+
 **Reason**: Removes ~40 lines of duplicated teardown/relaunch boilerplate.
 
 ### 2. Complete Error Coverage — `maybeThrow()` in `fake-market-data.ts`

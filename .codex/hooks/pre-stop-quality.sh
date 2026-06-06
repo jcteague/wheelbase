@@ -1,27 +1,27 @@
 #!/bin/bash
-# Stop hook: run full lint + typecheck before Claude is allowed to stop.
-# Exit 2 → prevents Claude from stopping, forces it to fix the errors.
+# Stop hook: require formatting, lint, typecheck, and tests before Codex stops.
+# Exit 2 → prevents Codex from stopping until quality checks are clean.
+
+set -u
 
 INPUT=$(cat)
 
-# Guard against infinite loops (Claude already tried once this stop cycle)
 STOP_HOOK_ACTIVE=$(python3 -c "
 import json, sys
 try:
-    d = json.load(sys.stdin)
-    print(str(d.get('stop_hook_active', False)).lower())
+    data = json.load(sys.stdin)
+    print(str(data.get('stop_hook_active', False)).lower())
 except Exception:
     print('false')
 " <<< "$INPUT" 2>/dev/null)
 
 [[ "$STOP_HOOK_ACTIVE" == "true" ]] && exit 0
 
-# ── Resolve project root (two levels up from .claude/hooks/) ───────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# ── Run quality checks ─────────────────────────────────────────────────────────
-FAILED=0
+FORMAT_OUTPUT=$(cd "$PROJECT_ROOT" && pnpm exec prettier --check . 2>&1)
+FORMAT_EXIT=$?
 
 LINT_OUTPUT=$(cd "$PROJECT_ROOT" && pnpm lint 2>&1)
 LINT_EXIT=$?
@@ -29,10 +29,18 @@ LINT_EXIT=$?
 TYPECHECK_OUTPUT=$(cd "$PROJECT_ROOT" && pnpm typecheck 2>&1)
 TYPECHECK_EXIT=$?
 
-# ── Report failures ────────────────────────────────────────────────────────────
-if [[ $LINT_EXIT -ne 0 || $TYPECHECK_EXIT -ne 0 ]]; then
-    echo "Quality checks failed — fix all errors before stopping." >&2
+TEST_OUTPUT=$(cd "$PROJECT_ROOT" && pnpm test 2>&1)
+TEST_EXIT=$?
+
+if [[ $FORMAT_EXIT -ne 0 || $LINT_EXIT -ne 0 || $TYPECHECK_EXIT -ne 0 || $TEST_EXIT -ne 0 ]]; then
+    echo "Quality checks failed — fix all formatting, lint, typecheck, and test issues before stopping." >&2
     echo "" >&2
+
+    if [[ $FORMAT_EXIT -ne 0 ]]; then
+        echo "=== prettier --check . ===" >&2
+        echo "$FORMAT_OUTPUT" >&2
+        echo "" >&2
+    fi
 
     if [[ $LINT_EXIT -ne 0 ]]; then
         echo "=== pnpm lint ===" >&2
@@ -43,6 +51,12 @@ if [[ $LINT_EXIT -ne 0 || $TYPECHECK_EXIT -ne 0 ]]; then
     if [[ $TYPECHECK_EXIT -ne 0 ]]; then
         echo "=== pnpm typecheck ===" >&2
         echo "$TYPECHECK_OUTPUT" >&2
+        echo "" >&2
+    fi
+
+    if [[ $TEST_EXIT -ne 0 ]]; then
+        echo "=== pnpm test ===" >&2
+        echo "$TEST_OUTPUT" >&2
     fi
 
     exit 2

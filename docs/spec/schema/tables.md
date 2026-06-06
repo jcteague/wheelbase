@@ -293,14 +293,66 @@ earlier), the new row's `snapshot_at` is bumped by 1 ms so the
 
 <!-- /generated -->
 
+<!-- generated:from us-37 -->
+
+## `credential_settings`
+
+Generic encrypted credential storage for external vendors. US-37 writes Alpaca rows only, one per environment (`paper`, `live`), but the table name stays vendor-agnostic so future brokerages can reuse the model.
+
+### Columns
+
+| Column | Type | Nullable | Purpose |
+| --- | --- | --- | --- |
+| `vendor` | TEXT | No | Vendor identifier; US-37 writes `'alpaca'` |
+| `environment` | TEXT | No | Environment key (`'paper'` or `'live'`) |
+| `key_id_encrypted` | BLOB | No | Encrypted Alpaca key ID |
+| `secret_encrypted` | BLOB | No | Encrypted Alpaca secret |
+| `last_verified_at` | TEXT | Yes | ISO timestamp of the last successful verification |
+| `account_number_masked` | TEXT | Yes | Masked account identity like `PA…ABC` |
+| `created_at` | TEXT | No | ISO timestamp at insert |
+| `updated_at` | TEXT | No | ISO timestamp at last update |
+
+### Constraints and semantics
+
+- Unique key on `(vendor, environment)` guarantees at most one Alpaca paper row and one Alpaca live row.
+- Plaintext secrets never persist in SQLite; encryption and decryption are confined to `src/main/services/settings.ts`.
+- Massive does not use this table; shared Massive configuration remains outside user settings.
+
+<!-- /generated -->
+
+<!-- generated:from us-37 -->
+
+## `app_settings`
+
+Lightweight key/value persistence for non-secret application settings. US-37 uses it to remember the active broker environment across launches.
+
+### Columns
+
+| Column | Type | Nullable | Purpose |
+| --- | --- | --- | --- |
+| `key` | TEXT | No | Setting key, e.g. `active_broker_environment` |
+| `value` | TEXT | No | Stored value, e.g. `'paper'`, `'live'`, or `'none'` |
+| `updated_at` | TEXT | No | ISO timestamp of the last write |
+
+### Semantics
+
+- The stored value may be `'paper'`, `'live'`, or `'none'`.
+- Effective active environment is derived through settings service logic: if the stored environment no longer has credentials, the effective value collapses to `'none'`.
+- The current implementation uses this table only for broker-environment state, but the shape is generic enough for future non-secret settings.
+
+<!-- /generated -->
+
 ## See also
 
 - [Migrations](./migrations.md) — chronological change log for the schema
-  including migration 003 (`option_type → instrument_type`) and migration
-  005 (`positions.profit_target_percent`).
+  including migration 003 (`option_type → instrument_type`), migration
+  005 (`positions.profit_target_percent`), and migration 006
+  (`credential_settings` / `app_settings`).
 - [Cost Basis](../domain/cost-basis.md) — how the append-only snapshot
   pattern is produced by each lifecycle event.
 - [Wheel Lifecycle](../domain/wheel-lifecycle.md) — phase transitions that
   drive INSERTs into `legs` and UPDATEs to `positions.phase`.
 - [us-33 — Option Mid & Unrealized P&L](../features/us-33-option-mid-pnl.md) —
   the feature that introduced `positions.profit_target_percent`.
+- [us-37 — Paper/Live Broker Environment Toggle](../features/us-37-paper-live-broker-environment-toggle.md) —
+  the feature that introduced `credential_settings` and `app_settings`.
