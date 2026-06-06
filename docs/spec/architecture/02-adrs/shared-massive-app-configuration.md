@@ -1,4 +1,5 @@
 # ADR: Shared Massive app configuration
+
 <!-- generated:from us-37 -->
 
 ## Decision

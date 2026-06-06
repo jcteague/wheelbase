@@ -1,6 +1,7 @@
 # US-34: Position Cockpit (Triage Cockpit)
 
 <!-- generated:from us-34 -->
+
 ## Summary
 
 US-34 began as "Display Greeks panel for active option legs"; the shipped scope ballooned into a full redesign of the position detail page — the **Position Cockpit** (a.k.a. Triage Cockpit). The flat Open-Leg / Cost-Basis / Leg-History / Notes stack on `PositionDetailContent` is replaced wholesale with a tight cockpit layout: a deterministic verdict block on top, a delta-gauge + distance-thermometer **Risk snapshot** card, a 4-column **Context** strip (Theta / IV / Vega / Gamma), and two collapsible reference drawers (Leg reference, Cost basis & history) below. The original story's nine greeks-display acceptance criteria are fully subsumed — there is no standalone `GreeksPanel`; delta lives in `RiskSnapshot.DeltaGauge` and theta/IV/vega/gamma live in `ContextStrip`. Notes, the closed-position banner, and `CloseCspForm` still render below the cockpit unchanged. No new IPC channels, no Zod schemas, no migrations: all data flows through existing hooks from [us-31](us-31-market-data-provider-adapter.md), [us-32](us-32-live-position-prices.md), and [us-33](us-33-option-mid-pnl.md).

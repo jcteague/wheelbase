@@ -1,6 +1,7 @@
 # Alpaca Integration
 
 <!-- generated:from us-31,us-32,us-33 -->
+
 ## Overview
 
 Alpaca is the upstream broker and market-data vendor for Wheelbase. The integration boundary is the **`MarketDataProvider` interface** — a provider-agnostic contract that downstream code consumes. The Alpaca-specific implementation (`AlpacaMarketDataProvider`) lives behind that interface and is constructed only by a factory; no service, IPC handler, or renderer module imports the concrete class or the `@alpacahq/typescript-sdk` package directly.
@@ -13,9 +14,11 @@ The provider exposes both transports the application needs:
 Adapter responses use the project's domain types (`StockQuote`, `OptionSnapshot`, `MarketStatus`, `AccountInfo`, `BrokerActivity`) — never the raw SDK shapes. Errors are normalised into the typed `MarketDataError` family before they cross the boundary, with discriminating `code` fields that IPC handlers map to error envelopes — see [contracts/ipc-handlers.md](./ipc-handlers.md#market-datastock-quotes).
 
 For the higher-level cache/lifecycle model (REST seed + stream tick bridge, market-status polling, stale-data detection), see [domain/market-data.md](../domain/market-data.md).
+
 <!-- /generated -->
 
 <!-- generated:from us-31,us-32,us-33 -->
+
 ## Abstraction layer
 
 US-31 introduced a provider-agnostic abstraction so the rest of the application never depends on Alpaca specifically. There are three pieces:
@@ -34,10 +37,7 @@ interface MarketDataProvider {
   supportsStreaming(feed: DataFeed): boolean
   connect(): Promise<void>
   disconnect(): Promise<void>
-  stream(
-    feed: DataFeed,
-    symbols: string[]
-  ): Observable<StreamEvent<StockQuote | OptionSnapshot>>
+  stream(feed: DataFeed, symbols: string[]): Observable<StreamEvent<StockQuote | OptionSnapshot>>
 }
 ```
 
@@ -56,7 +56,7 @@ interface MarketDataConfig {
   secretKey: string
   paper: boolean
   dataFeed?: 'sip' | 'iex' | 'delayed_sip' // stock feed, default 'sip'
-  optionFeed?: 'opra' | 'indicative'       // option feed, default 'opra'
+  optionFeed?: 'opra' | 'indicative' // option feed, default 'opra'
 }
 
 function createMarketDataProvider(config: MarketDataConfig): MarketDataProvider
@@ -65,9 +65,11 @@ function createMarketDataProvider(config: MarketDataConfig): MarketDataProvider
 The factory switches on `config.provider`, returns `AlpacaMarketDataProvider` for `'alpaca'`, and throws for unknown providers. Services and IPC handlers import this function and the interface — never the concrete class. `src/main/index.ts` constructs the provider once at app startup and threads it through to handler registration.
 
 A `FakeMarketDataProvider` sibling exists for e2e and dev (`src/main/integrations/fake-market-data.ts`) — same interface, env-driven canned responses (`WHEELBASE_MARKET_MOCK`, `WHEELBASE_MOCK_OPTION_SNAPSHOTS`).
+
 <!-- /generated -->
 
 <!-- generated:from us-31,us-32,us-33 -->
+
 ## Boundary rules
 
 - **Single import site for the SDK.** Only the Alpaca adapter file may `import { ... } from '@alpacahq/typescript-sdk'`. IPC handlers (`src/main/ipc/market-data.ts`), services, the renderer, and the pure-core engines never touch the SDK type or runtime.
@@ -79,36 +81,39 @@ A `FakeMarketDataProvider` sibling exists for e2e and dev (`src/main/integration
 <!-- /generated -->
 
 <!-- generated:from us-31,us-32,us-33 -->
+
 ## What the SDK is used for vs bypassed
 
 The provider uses `@alpacahq/typescript-sdk` (v0.0.32-preview) selectively — keeping SDK calls where they work, bypassing where they don't.
 
 **Use the SDK for these REST calls:**
 
-| SDK method | Used to implement |
-| --- | --- |
-| `client.getAccount` | `getAccountInfo()` |
-| `client.getClock` | `getMarketStatus()` (clock half) |
-| `client.getStocksQuotesLatest` | `getStockQuotes()` bid/ask (mid computed locally) |
-| `client.getActivity` | `getActivities()` (with manual query-param handling) |
+| SDK method                     | Used to implement                                    |
+| ------------------------------ | ---------------------------------------------------- |
+| `client.getAccount`            | `getAccountInfo()`                                   |
+| `client.getClock`              | `getMarketStatus()` (clock half)                     |
+| `client.getStocksQuotesLatest` | `getStockQuotes()` bid/ask (mid computed locally)    |
+| `client.getActivity`           | `getActivities()` (with manual query-param handling) |
 
 **Bypass the SDK for:**
 
-| What | Why bypassed | What replaces it |
-| --- | --- | --- |
-| Streaming entirely | SDK marks streaming "todo" — zero WebSocket support | Raw `ws` package, two dedicated sockets |
-| `client.getStocksSnapshots` | Hits the wrong API path | `getStocksQuotesLatest` (US-32 path) — `prevClose` carried via a separate request that returns `prev_daily_bar` |
-| `client.getOptionsSnapshots` | Response type omits `greeks` and `impliedVolatility` | Raw `fetch` against `/v1beta1/options/snapshots` with adapter-local types |
-| Option streaming MessagePack decoding | SDK doesn't decode option frames | `@msgpack/msgpack` `decodeMulti()` (handles Alpaca's batching) |
+| What                                  | Why bypassed                                         | What replaces it                                                                                                |
+| ------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Streaming entirely                    | SDK marks streaming "todo" — zero WebSocket support  | Raw `ws` package, two dedicated sockets                                                                         |
+| `client.getStocksSnapshots`           | Hits the wrong API path                              | `getStocksQuotesLatest` (US-32 path) — `prevClose` carried via a separate request that returns `prev_daily_bar` |
+| `client.getOptionsSnapshots`          | Response type omits `greeks` and `impliedVolatility` | Raw `fetch` against `/v1beta1/options/snapshots` with adapter-local types                                       |
+| Option streaming MessagePack decoding | SDK doesn't decode option frames                     | `@msgpack/msgpack` `decodeMulti()` (handles Alpaca's batching)                                                  |
 
 **Why not replace the SDK entirely?** It is a Deno-to-Node transpile (via `dnt`), marked no-longer-maintained, but the working REST endpoints work reliably. Rewriting them with raw `fetch` is unnecessary churn. **Why not `alpaca-trade-api-js`?** Older, callback-based, worse TypeScript support.
 
 ### Deprecated `src/main/integrations/alpaca.ts`
 
 The pre-existing `src/main/integrations/alpaca.ts` (`client`, `resetClient`) is marked `@deprecated` by US-31. It remains in the tree to avoid breaking any in-flight branch that imports it, but no new code uses it — new code goes through `createMarketDataProvider`. Removal happens once downstream callers have migrated.
+
 <!-- /generated -->
 
 <!-- generated:from us-31,us-32,us-33 -->
+
 ## REST surface
 
 Each REST method is wrapped in a `try` / `wrapError(err, opLabel)` block that normalises HTTP 401 → `auth_failed`, 429 → `rate_limited`, network failures → `network_error`, and unknown failures → `unknown` (IPC handlers default that to `internal_error`).
@@ -161,6 +166,7 @@ Each REST method is wrapped in a `try` / `wrapError(err, opLabel)` block that no
 <!-- /generated -->
 
 <!-- generated:from us-31,us-32,us-33 -->
+
 ## Streaming surface
 
 The provider exposes streaming as a typed Observable, never as raw SDK callbacks. Internally it owns two independent WebSocket lifecycles and multiplexes per-symbol subscriptions over each.
@@ -185,9 +191,9 @@ The renderer's `market-data:set-stock-quote-tickers` IPC handler holds one subsc
 
 ### Transport (raw `ws` + two sockets)
 
-| Feed | URL | Encoding |
-| --- | --- | --- |
-| Stocks | `wss://stream.data.alpaca.markets/v2/{dataFeed}` (default `sip`) | JSON text frames |
+| Feed    | URL                                                                      | Encoding                  |
+| ------- | ------------------------------------------------------------------------ | ------------------------- |
+| Stocks  | `wss://stream.data.alpaca.markets/v2/{dataFeed}` (default `sip`)         | JSON text frames          |
 | Options | `wss://stream.data.alpaca.markets/v1beta1/{optionFeed}` (default `opra`) | MessagePack binary frames |
 
 - **Connection limit:** Alpaca allows 1 concurrent connection per endpoint. The adapter therefore multiplexes all symbol subscriptions over each socket. Paper and live accounts share the same data-stream URLs — the paper/live distinction only affects the trading API base URL.
@@ -224,7 +230,7 @@ For the option socket, frames 5–7 are MessagePack-encoded; the auth frame (ste
 ```typescript
 interface StreamError {
   feed: DataFeed
-  code: string         // 'stream_disconnected' | 'auth_failed' | ...
+  code: string // 'stream_disconnected' | 'auth_failed' | ...
   message: string
   reconnectable: boolean
 }
@@ -233,9 +239,11 @@ interface StreamError {
 When the underlying WebSocket fails (auth loss, network drop, server-side disconnect), the adapter re-emits a `StreamError` through the Observable's `error` callback. The IPC handler catches it, forwards it to the renderer via the `market-data:stream-error` push event, and logs it. The renderer surfaces the `StaleDataBanner` immediately on receipt without waiting for the 5-minute freshness threshold (see [contracts/ipc-handlers.md](./ipc-handlers.md#market-datastream-error)).
 
 **Reconnection logic is intentionally NOT in the provider.** `StreamError.reconnectable: true` is a hint, not behaviour. Consumers compose `retry` / `retryWhen` operators on the Observable themselves — RxJS gives downstream stories (US-38) the operators they need without bolting them onto the integration layer.
+
 <!-- /generated -->
 
 <!-- generated:from us-31,us-32,us-33 -->
+
 ## Error model
 
 Every SDK error path and every socket failure funnels through a single helper inside the adapter:
@@ -262,22 +270,24 @@ class MarketDataError extends Error {
 }
 ```
 
-| Code | When |
-| --- | --- |
-| `auth_failed` | SDK rejects credentials (HTTP 401, `Missing credentials`, stream auth frame rejected) |
-| `network_error` | Upstream unreachable, socket dropped, DNS failure, timeout |
-| `rate_limited` | SDK returns HTTP 429 |
-| `stream_disconnected` | Unexpected WebSocket close during an active subscription |
-| `streaming_unsupported` | `provider.stream(feed, ...)` called for a feed `supportsStreaming(feed)` rejects |
-| `subscription_failed` | Subscribe frame acknowledged with error |
-| `unknown` | Catch-all for unclassified failures |
+| Code                    | When                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------- |
+| `auth_failed`           | SDK rejects credentials (HTTP 401, `Missing credentials`, stream auth frame rejected) |
+| `network_error`         | Upstream unreachable, socket dropped, DNS failure, timeout                            |
+| `rate_limited`          | SDK returns HTTP 429                                                                  |
+| `stream_disconnected`   | Unexpected WebSocket close during an active subscription                              |
+| `streaming_unsupported` | `provider.stream(feed, ...)` called for a feed `supportsStreaming(feed)` rejects      |
+| `subscription_failed`   | Subscribe frame acknowledged with error                                               |
+| `unknown`               | Catch-all for unclassified failures                                                   |
 
 **Errors are thrown, not returned** (no `Result<T, E>` tuples), consistent with the rest of the codebase. The IPC handler layer maps the codes directly to envelope error codes — see the [Standard error codes](./ipc-handlers.md#standard-error-codes) table. Unclassified exceptions propagate as generic `Error` and become `internal_error` at the handler.
 
 The adapter records **no explicit retry policy, no exponential backoff, and no per-call rate-limit tracker**. Recovery is the next user action (refresh, re-mount the positions page), the next 60 s `useMarketStatus` poll, or — for streams — whatever `retry` operator the consumer composes.
+
 <!-- /generated -->
 
 <!-- generated:from us-31,us-32,us-33 -->
+
 ## Data gaps and known limitations
 
 A handful of fields are typed in the domain shapes but cannot be sourced from Alpaca:
@@ -289,9 +299,11 @@ A handful of fields are typed in the domain shapes but cannot be sourced from Al
 - **`MarketStatus.session`** — Alpaca's `/v2/clock` carries no `session` field; the value is derived client-side inside the adapter.
 
 These gaps shape several decisions documented in [domain/market-data.md](../domain/market-data.md) — most notably the REST-seed + stream-bridge cache pattern (so previous-close survives across stream ticks) and the 60 s REST poll for option snapshots (so Greeks stay fresh without a separate transport).
+
 <!-- /generated -->
 
 <!-- generated:from us-31,us-32,us-33 -->
+
 ## Source files
 
 - `src/main/integrations/market-data-provider.ts` — the `MarketDataProvider` interface; `StockQuote`, `OptionSnapshot`, `MarketStatus`, `AccountInfo`, `BrokerActivity`, `ActivityFilter`, `DataFeed`, `StreamEvent`, `StreamError` types; `MarketDataError` class.
@@ -308,9 +320,11 @@ New dependencies introduced by US-31 (`package.json`):
 - `rxjs` — `Observable`, `Subject`, and a handful of utility functions for the streaming interface.
 
 Plan-cited paths that do not exist at their named location after the "market data / broker api separation" refactor — e.g. `alpaca-market-data.ts`, `alpaca-market-data.test.ts`, `alpaca-market-data.e2e.test.ts` — moved into `market-data-provider.ts` plus a sibling Alpaca file under the same directory. Treat path references as approximate; the boundary contract (single import site, typed errors out, factory-only construction) is the load-bearing piece.
+
 <!-- /generated -->
 
 <!-- generated:from us-31,us-32,us-33 -->
+
 ## Driven by
 
 - [us-31 — Market Data Provider Adapter](../features/us-31-market-data-provider-adapter.md)

@@ -1,6 +1,7 @@
 # US-4: Close a CSP early
 
 <!-- generated:from us-4,missing-ac -->
+
 ## Summary
 
 Adds the ability to close a cash-secured put before expiration by recording a buy-to-close transaction. The flow validates the position is in `CSP_OPEN`, computes final P&L, writes a close leg plus a new cost-basis snapshot, and transitions the position to `CSP_CLOSED_PROFIT` or `CSP_CLOSED_LOSS`. The detail page renders a live P&L preview as the trader types — no IPC round-trip until submission.

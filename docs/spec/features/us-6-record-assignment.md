@@ -1,6 +1,7 @@
 # US-6: Record a CSP assignment
 
 <!-- generated:from us-6 -->
+
 ## Summary
 
 Adds the assignment flow that transitions a `CSP_OPEN` position to `HOLDING_SHARES` when the broker assigns shares to the trader. A right-side `AssignmentSheet` reached from the position detail page collects the assignment date, renders a full premium waterfall (one line per CSP and roll credit), writes an `ASSIGN` event leg plus a new cost-basis snapshot, and ends on a success state that nudges the trader to wait 1–3 days before opening the first covered call. The position keeps `status='ACTIVE'` — only `phase` and `updated_at` change.

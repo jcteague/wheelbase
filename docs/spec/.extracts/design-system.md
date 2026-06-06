@@ -14,30 +14,35 @@ Migrate the renderer from 367 static inline `style={{}}` instances across 38 fil
 ## Architecture Decisions
 
 ### ADR: Tailwind v4 Token Integration via `@theme inline`
-- **Decision:** Extend the existing `@theme inline` block in `src/renderer/src/index.css` with `--color-wb-*` entries for every wb-* color token. Add `--font-wb-mono` for the monospace stack. Add `--shadow-sheet` for the panel drop shadow.
+
+- **Decision:** Extend the existing `@theme inline` block in `src/renderer/src/index.css` with `--color-wb-*` entries for every wb-\* color token. Add `--font-wb-mono` for the monospace stack. Add `--shadow-sheet` for the panel drop shadow.
 - **Why:** The project already uses `@theme inline` for shadcn token mapping (e.g. `--color-background: var(--background)`). Tailwind v4 resolves `@theme inline` entries directly into utility output, so `--color-wb-gold: var(--wb-gold)` generates `bg-wb-gold`, `text-wb-gold`, `border-wb-gold`, etc. with no additional configuration file.
 - **Alternatives considered:** `tailwind.config.ts` `theme.extend.colors` — not applicable for Tailwind v4 which has moved to CSS-based configuration. Adding tokens as arbitrary values at usage site (`bg-[var(--wb-gold)]`) — works today but requires brackets everywhere and provides no named utility; ruled out.
 - **Source:** `plans/design-system/research.md`
 
 ### ADR: Portal Mount Point inside `#root` for Tailwind Classes
+
 - **Decision:** Add `<div id="sheet-portal" />` as a sibling to `<main>` inside `AppShell` in `App.tsx`. All sheet consumers pass `document.getElementById('sheet-portal')` as the second argument to `createPortal` instead of `document.body`.
 - **Why:** The `fix-sheet-portal-styles` plan identified this pattern as the correct fix. Elements inside `#root` are within the same CSS context as the rest of the app; Tailwind's `@layer utilities` rules apply without being overridden by body-level reset rules. Sheets currently mount to `document.body` which places them outside `#root` and causes Tailwind's layered utilities to lose specificity to base rules.
 - **Alternatives considered:** Using `!important` on Tailwind utility classes — anti-pattern, not maintainable. Diagnosing as HMR artifact and doing a fresh restart — attempted approach suggested in the issue; did not resolve the underlying structural cause.
 - **Source:** `plans/design-system/research.md`
 
 ### ADR: TDD via Class-Name Assertions
+
 - **Decision:** For each component area, write tests that assert specific Tailwind class names on rendered elements (e.g., `expect(element).toHaveClass('border-t')`) before migrating. Existing behavior tests (text content, interactions) serve as regression guard. For `Sheet.tsx` specifically, update existing style-attribute assertions to class-name assertions as part of the Red phase.
 - **Why:** Without class-asserting tests, the migration has no clear Red → Green signal. Asserting class names directly confirms the migration is complete and catches regressions in the refactor phase.
 - **Alternatives considered:** Snapshot tests — brittle and verbose for class-heavy markup. No tests, verify visually only — no regression safety net.
 - **Source:** `plans/design-system/research.md`
 
 ### ADR: Dynamic Prop Values Must Stay Inline
+
 - **Decision:** Keep the following as inline `style` props even after migration: `SheetPanel.width` (runtime prop), `SheetHeader.eyebrowColor` and `SheetHeader.borderBottomColor` (runtime string props), per-row computed background gradients in success states where color is data-driven. Everything else (static structural styles) becomes Tailwind.
 - **Why:** Tailwind arbitrary values must be statically present in source at build time. Runtime-computed class names (e.g., `` `w-[${width}px]` ``) are not scanned by the JIT and will not emit CSS. Inline styles are the correct tool for truly dynamic values.
 - **Alternatives considered:** CSS custom properties on the element with a static utility class — viable but adds complexity; deferred as over-engineering for this migration.
 - **Source:** `plans/design-system/research.md`
 
 ### ADR: Gradual MONO Font Migration via `font-wb-mono`
+
 - **Decision:** Add `--font-wb-mono` to the `@theme inline` block, mapping to the same stack as the `MONO` constant in `src/renderer/src/lib/tokens.ts`. At call sites, replace `fontFamily: MONO` inline style with `className="font-wb-mono"`. Do not delete `tokens.ts` until all references are migrated.
 - **Why:** The MONO constant is imported in ~15+ files; deleting it before migration would cause type errors. Gradual replacement allows the migration to proceed area by area.
 - **Alternatives considered:** Rename/re-export from tokens.ts — unnecessary indirection; ruled out.
@@ -55,7 +60,7 @@ None recorded. `plans/design-system/quickstart.md` explicitly states: "No migrat
 
 From `docs/issues/design-system-tailwind-migration.md` (per the AC Audit table in `plans/design-system/plan.md`):
 
-- wb-* tokens available as Tailwind utilities
+- wb-\* tokens available as Tailwind utilities
 - MONO font available as Tailwind utility
 - All sheets use shared layout primitives
 - Style change propagates to all sheets
@@ -95,7 +100,7 @@ E2E coverage (Area 15) verifies each via `e2e/design-system.spec.ts`, including:
 
 Files introduced or modified by this plan (verified to exist):
 
-- `src/renderer/src/index.css` — `@theme inline` block extended with wb-* color, font, shadow tokens
+- `src/renderer/src/index.css` — `@theme inline` block extended with wb-\* color, font, shadow tokens
 - `src/renderer/src/lib/tokens.ts` — `MONO` constant (deletion deferred)
 - `src/renderer/src/App.tsx` — `#sheet-portal` div added; sidebar/AppShell static styles migrated
 - `src/renderer/src/components/ui/Sheet.tsx` — `SheetOverlay`, `SheetPanel`, `SheetBody`, `SheetFooter`, `SheetCloseButton`, `SheetHeader` migrated

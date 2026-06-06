@@ -14,46 +14,54 @@ This story adds the expiration-worthless path to the wheel lifecycle. A trader w
 ## Architecture Decisions
 
 ### ADR: Lifecycle validation lives in the pure core engine
+
 - **Decision:** Add `expireCsp(input)` to `src/main/core/lifecycle.ts` following the existing `closeCsp` pattern — it takes `currentPhase`, `expirationDate`, and `referenceDate`, validates phase is `CSP_OPEN` and `referenceDate >= expirationDate`, and returns `{ phase: 'WHEEL_COMPLETE' }`.
 - **Why:** All lifecycle validation lives in pure core engines; `closeCsp` validates phase and dates in the same file, and `expireCsp` follows the same signature style. Keeps the engine DB-free and testable.
 - **Alternatives considered:** Inline validation inside the service layer — rejected because it violates the core/service separation enforced by architecture rules.
 - **Source:** `plans/us-5/research.md`
 
 ### ADR: Cost basis calculation is its own function, not reusing `calculateCspClose` with closePrice=0
+
 - **Decision:** Add `calculateCspExpiration({ openPremiumPerContract, contracts })` to `src/main/core/costbasis.ts`. Returns `finalPnl = openPremiumPerContract × contracts × 100` and the constant `pnlPercentage = "100.0000"`.
 - **Why:** An expiration worthless returns 100% of collected premium. The calculation is simpler than `calculateCspClose` (no close price) and follows the established `Decimal.js` `ROUND_HALF_UP` pattern. `pnlPercentage` is kept explicit (not derived) to avoid future confusion.
 - **Alternatives considered:** Reusing `calculateCspClose` with `closePrice = 0` — rejected because zero is a special case that would distort the percentage math.
 - **Source:** `plans/us-5/research.md`, `plans/us-5/plan.md`
 
 ### ADR: Add `'EXPIRE'` to the `LegAction` enum
+
 - **Decision:** Extend `LegAction` in `src/main/core/types.ts` from `z.enum(['SELL', 'BUY'])` to `z.enum(['SELL', 'BUY', 'EXPIRE'])`. The expire leg uses `action: 'EXPIRE'` and `leg_role: 'EXPIRE'`.
 - **Why:** An expiration is neither a buy nor a sell. The story specifies `action: "expire"`. No DB CHECK constraint enforces action values, so this is a type-only change with no migration.
 - **Alternatives considered:** Using `'SELL'` to represent the original sell completing — rejected as semantically incorrect and confusing in leg history.
 - **Source:** `plans/us-5/research.md`, `plans/us-5/data-model.md`
 
 ### ADR: Phase transition skips `CSP_EXPIRED` intermediate state
+
 - **Decision:** Transition directly from `CSP_OPEN → WHEEL_COMPLETE` in one step.
 - **Why:** The user story technical notes specify single-step transition for simplicity; there is no business value in surfacing an intermediate `CSP_EXPIRED` state since the position is immediately closed.
 - **Source:** `plans/us-5/data-model.md`, `docs/epics/01-stories/US-5-record-csp-expiration.md`
 
 ### ADR: Use shadcn/ui `Sheet` for the right-side confirmation pattern
+
 - **Decision:** Use the shadcn `Sheet` component (`src/renderer/src/components/ui/sheet.tsx`) with `<SheetContent side="right">`. Install via `pnpm dlx shadcn@latest add sheet --yes`. `ExpirationSheet` wraps the shadcn primitives and manages two internal states: `'confirmation'` and `'success'`.
 - **Why:** Existing UI components (`popover.tsx`, `calendar.tsx`) use Radix UI primitives with `cn()`/Tailwind styling — Sheet follows the same pattern. shadcn's Sheet supplies scrim overlay (`Dialog.Overlay`), slide-in animation via `tailwindcss-animate`, keyboard dismissal (Escape), and focus management. This eliminates the custom CSS the mockup required.
 - **Alternatives considered:** Custom `position: fixed` div — rejected once the existing shadcn component pattern was confirmed; reinventing what Radix Dialog provides is unnecessary work.
 - **Source:** `plans/us-5/research.md`, `plans/us-5/plan.md`
 
 ### ADR: Pre-fill ticker via wouter query string, not global state
+
 - **Decision:** The shortcut button navigates to `/new?ticker=AAPL`. `NewWheelPage` reads the ticker via wouter's `useSearch()` and passes it as a `defaultTicker` prop to `NewWheelForm`, which sets it through `useForm` `defaultValues`.
 - **Why:** Wouter's `useSearch` hook returns the query string for the hash route. Query params are idiomatic for pre-filling forms from navigation and require no new state library.
 - **Alternatives considered:** Storing pre-fill state in a global Zustand store — rejected as over-engineered for a single string. Context API — same.
 - **Source:** `plans/us-5/research.md`
 
 ### ADR: Each expired wheel is a self-contained lifecycle
+
 - **Decision:** Re-opening a CSP on the same ticker creates a new, independent wheel — not a continuation of the expired one. The "Open new wheel on AAPL" shortcut therefore points at the New Wheel form, not at any "resume" action on the prior position.
 - **Why:** Keeps P&L tracking clean and history meaningful: each wheel's final P&L is whole, not split between phases of the same record.
 - **Source:** `docs/epics/01-stories/US-5-record-csp-expiration.md`
 
 ### ADR: Positions list splits into Active / Closed sections
+
 - **Decision:** Update `PositionsListPage` and `PositionCard` to separate positions into "Active" and "Closed" groups. Closed positions render at `opacity: 0.55`; the `WHEEL_COMPLETE` badge uses the project green token; for closed positions the card shows a "Final P&L" value with green styling in place of the live "Premium" label.
 - **Why:** Screen 5 of the mockup shows this grouping; the acceptance criterion requires the WHEEL_COMPLETE phase badge to be visible on the list after expiration. A flat list would bury closed wheels among active ones.
 - **Alternatives considered:** Separate route for closed positions — rejected as over-engineering for Phase 1 scope.
@@ -62,8 +70,10 @@ This story adds the expiration-worthless path to the wheel lifecycle. A trader w
 ## Contracts
 
 ### `positions:expire-csp`
+
 - **Type:** IPC handler
 - **Shape:**
+
   ```typescript
   // Request payload
   {
@@ -112,10 +122,12 @@ This story adds the expiration-worthless path to the wheel lifecycle. A trader w
   { ok: false, errors: [{ field: 'expiration', code: 'too_early',     message: 'Cannot record expiration before the expiration date' }] }
   { ok: false, errors: [{ field: '__root__', code: 'internal_error',  message: 'An unexpected error occurred' }] }
   ```
+
 - **Source:** `plans/us-5/contracts/expire-csp.md`
 - **Implementation:** `src/main/ipc/positions.ts`, `src/main/services/expire-csp-position.ts`
 
 ### `ExpireCspPayloadSchema`
+
 - **Type:** Zod schema
 - **Shape:**
   ```typescript
@@ -128,8 +140,10 @@ This story adds the expiration-worthless path to the wheel lifecycle. A trader w
 - **Implementation:** `src/main/schemas.ts`
 
 ### `ExpireCspInput` / `ExpireCspResult` (lifecycle engine)
+
 - **Type:** other (core lifecycle function signature)
 - **Shape:**
+
   ```typescript
   ExpireCspInput {
     currentPhase: WheelPhase
@@ -141,12 +155,15 @@ This story adds the expiration-worthless path to the wheel lifecycle. A trader w
     phase: 'WHEEL_COMPLETE'
   }
   ```
+
 - **Source:** `plans/us-5/plan.md`
 - **Implementation:** `src/main/core/lifecycle.ts`
 
 ### `CspExpirationInput` / `CspExpirationResult` (cost basis engine)
+
 - **Type:** other (core cost-basis function signature)
 - **Shape:**
+
   ```typescript
   CspExpirationInput {
     openPremiumPerContract: string
@@ -158,10 +175,12 @@ This story adds the expiration-worthless path to the wheel lifecycle. A trader w
     pnlPercentage: string    // constant '100.0000'
   }
   ```
+
 - **Source:** `plans/us-5/plan.md`, `plans/us-5/data-model.md`
 - **Implementation:** `src/main/core/costbasis.ts`
 
 ### `ExpireCspPositionResult` (service / IPC return type)
+
 - **Type:** other (TypeScript interface)
 - **Shape:**
   ```typescript
@@ -181,6 +200,7 @@ This story adds the expiration-worthless path to the wheel lifecycle. A trader w
 - **Implementation:** `src/main/schemas.ts`, `src/main/services/expire-csp-position.ts`
 
 ### Preload binding `expirePosition`
+
 - **Type:** other (preload IPC binding)
 - **Shape:**
   ```typescript
@@ -191,8 +211,10 @@ This story adds the expiration-worthless path to the wheel lifecycle. A trader w
 - **Implementation:** `src/preload/index.ts`, `src/preload/index.d.ts` (`IpcExpireCspPayload` type + `expirePosition` method on `Window.api`)
 
 ### Renderer API adapter `expirePosition` + `ExpireCspPayload` / `ExpireCspResponse`
+
 - **Type:** other (renderer adapter)
 - **Shape:**
+
   ```typescript
   export type ExpireCspPayload = {
     position_id: string
@@ -200,19 +222,27 @@ This story adds the expiration-worthless path to the wheel lifecycle. A trader w
   }
 
   export type ExpireCspResponse = {
-    position: { id: string; ticker: string; phase: WheelPhase; status: WheelStatus; closedDate: string }
-    leg: { id: string; legRole: string; action: string; fillDate: string; /* ... */ }
-    costBasisSnapshot: { finalPnl: string; totalPremiumCollected: string; /* ... */ }
+    position: {
+      id: string
+      ticker: string
+      phase: WheelPhase
+      status: WheelStatus
+      closedDate: string
+    }
+    leg: { id: string; legRole: string; action: string; fillDate: string /* ... */ }
+    costBasisSnapshot: { finalPnl: string; totalPremiumCollected: string /* ... */ }
   }
 
   // Payload mapping (renderer snake_case -> IPC camelCase):
   //   position_id              -> positionId
   //   expiration_date_override -> expirationDateOverride
   ```
+
 - **Source:** `plans/us-5/contracts/expire-csp.md`, `plans/us-5/plan.md`
 - **Implementation:** `src/renderer/src/api/positions.ts`
 
 ### `useExpirePosition` hook
+
 - **Type:** other (TanStack Query mutation hook)
 - **Shape:**
   ```typescript
@@ -225,10 +255,12 @@ This story adds the expiration-worthless path to the wheel lifecycle. A trader w
 ## Schema Changes
 
 ### No new migrations
+
 - **Change:** none — no DB schema changes. Adding `'EXPIRE'` to `LegAction` is a type-only update; `legs.action` has no CHECK constraint, so the new value is accepted by the existing column.
 - **Source:** `plans/us-5/data-model.md`, `plans/us-5/quickstart.md`
 
 ### `LegAction` type (TypeScript / Zod enum)
+
 - **Change:** type extended (no DB change)
 - **Before:** `LegAction = z.enum(['SELL', 'BUY'])`
 - **After:** `LegAction = z.enum(['SELL', 'BUY', 'EXPIRE'])`
@@ -236,48 +268,51 @@ This story adds the expiration-worthless path to the wheel lifecycle. A trader w
 - **Migration file:** none
 
 ### `legs` row INSERT — expire leg
+
 - **Change:** new row (no schema change)
 - **Columns / fields:**
-  | Field                  | Value                                  |
+  | Field | Value |
   | ---------------------- | -------------------------------------- |
-  | `id`                   | new UUID                               |
-  | `position_id`          | parent position ID                     |
-  | `leg_role`             | `'EXPIRE'`                             |
-  | `action`               | `'EXPIRE'`                             |
-  | `option_type`          | `'PUT'` (copied from open leg)         |
-  | `strike`               | copied from the CSP_OPEN leg           |
-  | `expiration`           | copied from the CSP_OPEN leg          |
-  | `contracts`            | copied from the CSP_OPEN leg          |
-  | `premium_per_contract` | `'0.0000'` (expires worthless)         |
-  | `fill_price`           | `NULL` (no fill at expiration)         |
-  | `fill_date`            | open leg's `expiration` date           |
+  | `id` | new UUID |
+  | `position_id` | parent position ID |
+  | `leg_role` | `'EXPIRE'` |
+  | `action` | `'EXPIRE'` |
+  | `option_type` | `'PUT'` (copied from open leg) |
+  | `strike` | copied from the CSP_OPEN leg |
+  | `expiration` | copied from the CSP_OPEN leg |
+  | `contracts` | copied from the CSP_OPEN leg |
+  | `premium_per_contract` | `'0.0000'` (expires worthless) |
+  | `fill_price` | `NULL` (no fill at expiration) |
+  | `fill_date` | open leg's `expiration` date |
 - **Source:** `plans/us-5/data-model.md`
 - **Migration file:** none
 
 ### `positions` row UPDATE on expiration
+
 - **Change:** altered row (no schema change)
 - **Columns / fields:**
-  | Field         | Before     | After                       |
+  | Field | Before | After |
   | ------------- | ---------- | --------------------------- |
-  | `phase`       | `CSP_OPEN` | `WHEEL_COMPLETE`            |
-  | `status`      | `ACTIVE`   | `CLOSED`                    |
-  | `closed_date` | `NULL`     | expiration date (ISO)       |
-  | `updated_at`  | open ts    | close ts (now)              |
+  | `phase` | `CSP_OPEN` | `WHEEL_COMPLETE` |
+  | `status` | `ACTIVE` | `CLOSED` |
+  | `closed_date` | `NULL` | expiration date (ISO) |
+  | `updated_at` | open ts | close ts (now) |
 - **Source:** `plans/us-5/data-model.md`
 - **Migration file:** none
 
 ### `cost_basis_snapshots` row INSERT — expiration snapshot
+
 - **Change:** new row (no schema change)
 - **Columns / fields:**
-  | Field                     | Value                                                      |
+  | Field | Value |
   | ------------------------- | ---------------------------------------------------------- |
-  | `id`                      | new UUID                                                   |
-  | `position_id`             | parent position ID                                         |
-  | `basis_per_share`         | copied from the most recent prior snapshot                 |
-  | `total_premium_collected` | copied from the most recent prior snapshot                 |
-  | `final_pnl`               | equals `total_premium_collected` (100% captured)           |
-  | `snapshot_at`             | now + 1ms (sorts after opening snapshot)                   |
-  | `created_at`              | now                                                        |
+  | `id` | new UUID |
+  | `position_id` | parent position ID |
+  | `basis_per_share` | copied from the most recent prior snapshot |
+  | `total_premium_collected` | copied from the most recent prior snapshot |
+  | `final_pnl` | equals `total_premium_collected` (100% captured) |
+  | `snapshot_at` | now + 1ms (sorts after opening snapshot) |
+  | `created_at` | now |
 - **Source:** `plans/us-5/data-model.md`
 - **Migration file:** none
 
@@ -347,6 +382,7 @@ Authoritative source: `plans/us-5/refactor-phase-results.md`. The code-simplifie
 - Lint hygiene fixes: removed an unused `userEvent.setup()` call, swapped a named `(payload: unknown)` mock param for `()`, and replaced `What's next?` with `What&apos;s next?` to satisfy `react/no-unescaped-entities`.
 
 Remaining tech debt called out by the refactor results:
+
 - `ExpirationSheet` state reset uses `useEffect` + `eslint-disable`; should migrate to a parent-supplied `key` prop.
 - `ClosedSnapshotData` mixes camelCase (`positionId`, `snapshotAt`) with the camelCase fields it inherits from `CostBasisSnapshotData` — `CostBasisSnapshotData` itself uses snake_case (`basis_per_share`), so the API types have inconsistent naming conventions (a manifestation of the broader `LegData` snake_case debt).
 - `ExpireCspResponse.leg` carries many fields the `ExpirationSheet` component never reads; the type could be narrowed.

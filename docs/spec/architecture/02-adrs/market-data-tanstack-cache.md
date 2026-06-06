@@ -1,4 +1,5 @@
 # ADR: TanStack Query as the single cache for live stock quotes
+
 <!-- generated:from us-32 -->
 
 ## Decision

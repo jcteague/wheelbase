@@ -2,7 +2,7 @@
 
 This directory is a generated source-of-truth wiki for the Wheelbase application. Pages are synthesized from the per-story plan dirs under `plans/` via the `/build-spec` (initial) and `/update-spec` (incremental) skills; each page's body sits between `<!-- generated:from <plan-list> -->` markers and is re-generated when any listed plan changes. Browse by topic (architecture, domain, contracts, schema) for cross-cutting concerns, or by feature (US-N) for story-level behaviour.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-16,us-17,us-31,us-32,us-33,us-34,us-37,missing-ac,design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-16,us-17,us-31,us-32,us-33,us-34,us-37,us-39,missing-ac,design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse -->
 
 ## Maintenance
 
@@ -69,6 +69,7 @@ Generated regions are bounded by `<!-- generated:from ... -->` / `<!-- /generate
 - [US-33 — Option Mid + Unrealized P&L](features/us-33-option-mid-pnl.md) — `Opt Mid` and `P&L` columns on the positions list, `market-data:option-snapshots` IPC channel, gold `TARGET` badge, profit-target override column
 - [US-34 — Position Cockpit](features/us-34-position-cockpit.md) — verdict-driven detail page (HOLD / WATCH / CONSIDER ROLL / ACT NOW / TARGET HIT / NO ACTIVE LEG) with delta gauge, distance thermometer, greeks strip, and collapsible drawers; subsumes original greeks-display ACs
 - [US-37 — Paper/Live Broker Environment Toggle](features/us-37-paper-live-broker-environment-toggle.md) — encrypted Alpaca paper/live credential storage, persisted active broker environment, scoped broker-only provider refresh, separate broker badge vs market-data status, and vendor-specific degraded-state UX
+- [US-39 — Massive Market Data Provider](features/us-39-massive-market-data-provider.md) — REST-based `MassiveMarketDataProvider` implementation; broker/market-data interface split; new `broker:*` IPC namespace; `market-data:option-snapshot` and `market-data:option-chain` channels replacing the old bulk snapshots endpoint
 
 ## Gaps / not yet built
 

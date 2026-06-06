@@ -90,6 +90,7 @@ migration `005`) and falls back to `DEFAULT_PROFIT_TARGET_PERCENT = 50` when
   where `net = newPremium − costToClose` (positive = credit, negative =
   debit). `totalPremiumCollected` always advances by
   `prevTotalPremiumCollected + net × contracts × 100` regardless of branch.
+
 - **Why:** Credit reduces basis, debit raises it. For a CSP, the assignment
   obligation IS the strike — when rolling down from $50 → $47, the future
   liability drops by $3/share and basis must reflect that **immediately**,
@@ -117,7 +118,7 @@ migration `005`) and falls back to `DEFAULT_PROFIT_TARGET_PERCENT = 50` when
 ### Expiration returns 100% of premium — not a `calculateCspClose` with `closePrice=0`
 
 - **Decision:** A dedicated `calculateCspExpiration({ openPremiumPerContract,
-  contracts })` returns `finalPnl = openPremium × contracts × 100` and a
+contracts })` returns `finalPnl = openPremium × contracts × 100` and a
   literal `pnlPercentage = "100.0000"`.
 - **Why:** Worthless expiration is the simplest possible terminal event —
   no close price. Reusing `calculateCspClose` with `closePrice=0` would
@@ -150,7 +151,7 @@ migration `005`) and falls back to `DEFAULT_PROFIT_TARGET_PERCENT = 50` when
   `"Roll #N credit: $X"` or `"Roll #N debit: $X"`, never two separate
   ROLL_FROM/ROLL_TO lines. `AssignmentBasisLeg` carries an optional
   `label?: string`; the engine uses `leg.label ?? LEG_ROLE_LABEL[leg.legRole]
-  ?? leg.legRole` so the service controls the per-roll display string while
+?? leg.legRole` so the service controls the per-roll display string while
   the engine stays string-format-free.
 - **Why:** The AC and assignment-summary mockup both show one line per
   roll. Storing roll-index labelling in the service avoids teaching the
@@ -170,7 +171,7 @@ migration `005`) and falls back to `DEFAULT_PROFIT_TARGET_PERCENT = 50` when
 ### CC close does NOT write a new snapshot
 
 - **Decision:** `calculateCcClose` returns `ccLegPnl = (openPremium −
-  closePrice) × contracts × 100` (4 dp), but the service does not insert a
+closePrice) × contracts × 100` (4 dp), but the service does not insert a
   new `cost_basis_snapshots` row. The existing CC_OPEN snapshot remains the
   current snapshot, and `ccLegPnl` is returned in the IPC envelope only.
 - **Why:** The CC_OPEN snapshot already reflects the CC premium reduction;
@@ -183,7 +184,7 @@ migration `005`) and falls back to `DEFAULT_PROFIT_TARGET_PERCENT = 50` when
 ### Call-away uses effective basis directly — premium is not re-added
 
 - **Decision:** `calculateCallAway({ ccStrike, basisPerShare, contracts,
-  positionOpenedDate, fillDate })` computes
+positionOpenedDate, fillDate })` computes
   `finalPnl = (ccStrike − basisPerShare) × sharesHeld`. The formula never
   re-adds `totalPremiumCollected` because every premium collected across
   the wheel — CSP open, every roll credit, the CC premium — is already
@@ -233,7 +234,7 @@ migration `005`) and falls back to `DEFAULT_PROFIT_TARGET_PERCENT = 50` when
 
 - **Decision:** `computeUnrealizedPnl({ entryPremium, currentMid, contracts })`
   is a pure function in `src/main/core/costbasis.ts` that returns `{ pnl,
-  pnlPercent, maxProfit }` as 4-dp decimal strings. The renderer imports
+pnlPercent, maxProfit }` as 4-dp decimal strings. The renderer imports
   the engine directly (allowed — `src/main/core/` is a leaf with no DB or
   Electron imports) so the live-quote loop can recompute on every snapshot
   without an IPC round-trip.
@@ -317,13 +318,13 @@ finalPnl = (openPremium − closePrice) × contracts × 100
 
 Snapshot row written:
 
-| Column                    | Value                                                   |
-| ------------------------- | ------------------------------------------------------- |
-| `basis_per_share`         | copied from the opening snapshot (unchanged)            |
-| `total_premium_collected` | copied from the opening snapshot (unchanged)            |
-| `final_pnl`               | `(openPremium − closePrice) × contracts × 100` (4 dp)   |
-| `annualized_return`       | `NULL` (future story)                                   |
-| `snapshot_at`             | now                                                     |
+| Column                    | Value                                                 |
+| ------------------------- | ----------------------------------------------------- |
+| `basis_per_share`         | copied from the opening snapshot (unchanged)          |
+| `total_premium_collected` | copied from the opening snapshot (unchanged)          |
+| `final_pnl`               | `(openPremium − closePrice) × contracts × 100` (4 dp) |
+| `annualized_return`       | `NULL` (future story)                                 |
+| `snapshot_at`             | now                                                   |
 
 Breakeven (`finalPnl = 0`) is classified as `CSP_CLOSED_LOSS`, not profit.
 `pnlPercentage` is per-contract: total P&L scales with contracts, percentage
@@ -388,12 +389,12 @@ basisPerShare     = $48.00 + (−$3.00) − $0.70 = $44.30
 
 Snapshot row written:
 
-| Column                    | Value                                            |
-| ------------------------- | ------------------------------------------------ |
-| `basis_per_share`         | per branch above (4 dp)                          |
+| Column                    | Value                                                      |
+| ------------------------- | ---------------------------------------------------------- |
+| `basis_per_share`         | per branch above (4 dp)                                    |
 | `total_premium_collected` | `prevTotalPremiumCollected + net × contracts × 100` (4 dp) |
-| `final_pnl`               | `NULL` (position remains open)                   |
-| `snapshot_at`             | now                                              |
+| `final_pnl`               | `NULL` (position remains open)                             |
+| `snapshot_at`             | now                                                        |
 
 The position row is **not** updated on a roll — phase stays `CSP_OPEN`,
 `status` stays `ACTIVE`. The new ROLL_TO leg becomes the effective open leg.
@@ -411,12 +412,12 @@ totalPremiumCollected = prevTotalPremiumCollected + net × contracts × 100
 
 Snapshot row written:
 
-| Column                    | Value                                            |
-| ------------------------- | ------------------------------------------------ |
-| `basis_per_share`         | `prevBasisPerShare − net` (4 dp)                 |
+| Column                    | Value                                                      |
+| ------------------------- | ---------------------------------------------------------- |
+| `basis_per_share`         | `prevBasisPerShare − net` (4 dp)                           |
 | `total_premium_collected` | `prevTotalPremiumCollected + net × contracts × 100` (4 dp) |
-| `final_pnl`               | `NULL` (position remains open)                   |
-| `snapshot_at`             | now                                              |
+| `final_pnl`               | `NULL` (position remains open)                             |
+| `snapshot_at`             | now                                                        |
 
 The position row is **not** updated on a CC roll — phase stays `CC_OPEN`,
 `status` stays `ACTIVE`. ROLL_FROM (BUY CALL) and ROLL_TO (SELL CALL) legs
@@ -463,13 +464,13 @@ basisPerShare     = $50 − $2.00 − $0.70 = $47.30
 
 Snapshot row written:
 
-| Column                    | Value                                                         |
-| ------------------------- | ------------------------------------------------------------- |
+| Column                    | Value                                                            |
+| ------------------------- | ---------------------------------------------------------------- |
 | `basis_per_share`         | `strike − Σ(premiumPerContract)` over CSP_OPEN + ROLL_NET (4 dp) |
-| `total_premium_collected` | `Σ(premiumPerContract × leg.contracts × 100)` (4 dp)          |
-| `final_pnl`               | `NULL` (position still open — phase changes, status `ACTIVE`) |
-| `annualized_return`       | `NULL` (future story)                                         |
-| `snapshot_at`             | now                                                           |
+| `total_premium_collected` | `Σ(premiumPerContract × leg.contracts × 100)` (4 dp)             |
+| `final_pnl`               | `NULL` (position still open — phase changes, status `ACTIVE`)    |
+| `annualized_return`       | `NULL` (future story)                                            |
+| `snapshot_at`             | now                                                              |
 
 The position keeps `status='ACTIVE'` and `closed_date=NULL`; only `phase`
 and `updated_at` change. The ASSIGN leg is an event marker (like EXPIRE) —
@@ -487,12 +488,12 @@ totalPremiumCollected = prevTotalPremiumCollected + (ccPremium × contracts × 1
 
 Snapshot row written:
 
-| Column                    | Value                                                       |
-| ------------------------- | ----------------------------------------------------------- |
-| `basis_per_share`         | `prevBasisPerShare − ccPremiumPerContract` (4 dp)           |
-| `total_premium_collected` | `prevTotal + (ccPremium × contracts × 100)` (4 dp)          |
-| `final_pnl`               | `NULL` (position still open)                                |
-| `snapshot_at`             | now                                                         |
+| Column                    | Value                                              |
+| ------------------------- | -------------------------------------------------- |
+| `basis_per_share`         | `prevBasisPerShare − ccPremiumPerContract` (4 dp)  |
+| `total_premium_collected` | `prevTotal + (ccPremium × contracts × 100)` (4 dp) |
+| `final_pnl`               | `NULL` (position still open)                       |
+| `snapshot_at`             | now                                                |
 
 The position row's `phase` flips to `CC_OPEN`; `status` stays `ACTIVE`. The
 strike-vs-basis guardrail (warn when CC strike ≤ basis) is a client-side
@@ -522,11 +523,11 @@ The renderer's `CcPnlPreview` computes the displayed percentage with the
 same `(openPremium − closePrice) × contracts × 100` total but applies a
 different label depending on direction:
 
-| Branch                                 | Formula                                              | Label             | Tone    |
-| -------------------------------------- | ---------------------------------------------------- | ----------------- | ------- |
-| `closePrice < openPremium` (profit)    | `(openPremium − closePrice) / openPremium × 100`     | `% of max`        | green   |
-| `closePrice > openPremium` (loss)      | `(closePrice − openPremium) / openPremium × 100`     | `% above open`    | red     |
-| `closePrice == openPremium`            | n/a                                                  | `$0.00 break-even`| neutral |
+| Branch                              | Formula                                          | Label              | Tone    |
+| ----------------------------------- | ------------------------------------------------ | ------------------ | ------- |
+| `closePrice < openPremium` (profit) | `(openPremium − closePrice) / openPremium × 100` | `% of max`         | green   |
+| `closePrice > openPremium` (loss)   | `(closePrice − openPremium) / openPremium × 100` | `% above open`     | red     |
+| `closePrice == openPremium`         | n/a                                              | `$0.00 break-even` | neutral |
 
 `% of max` is the tastytrade-style "% of max profit captured" — what wheel
 traders use to apply the 50%-of-max close rule. Worked example with
@@ -566,12 +567,12 @@ yields a negative `finalPnl`.
 
 Snapshot row written:
 
-| Column                    | Value                                                         |
-| ------------------------- | ------------------------------------------------------------- |
-| `basis_per_share`         | copied from the prior (CC_OPEN) snapshot                      |
-| `total_premium_collected` | copied from the prior (CC_OPEN) snapshot                      |
-| `final_pnl`               | `(ccStrike − basisPerShare) × sharesHeld` (4 dp, signed)      |
-| `snapshot_at`             | now                                                           |
+| Column                    | Value                                                    |
+| ------------------------- | -------------------------------------------------------- |
+| `basis_per_share`         | copied from the prior (CC_OPEN) snapshot                 |
+| `total_premium_collected` | copied from the prior (CC_OPEN) snapshot                 |
+| `final_pnl`               | `(ccStrike − basisPerShare) × sharesHeld` (4 dp, signed) |
+| `snapshot_at`             | now                                                      |
 
 The position row flips to `phase = 'WHEEL_COMPLETE'`,
 `status = 'CLOSED'`, and `closed_date = fillDate` (the CC expiration).
@@ -613,16 +614,16 @@ their own basis while later rows inherit the day's latest snapshot.
 
 The mapping from leg role to whether a snapshot exists at that row:
 
-| Leg Role    | Writes snapshot? | `final_pnl` set? |
-| ----------- | ---------------- | ---------------- |
-| CSP_OPEN    | Yes              | No               |
-| ASSIGN      | Yes              | No               |
-| CC_OPEN     | Yes              | No               |
-| CC_CLOSE    | **No**           | N/A              |
-| CC_EXPIRED  | Yes              | Yes (terminal)   |
-| CALLED_AWAY | Yes              | Yes (terminal)   |
-| ROLL_FROM   | No               | N/A              |
-| ROLL_TO     | Yes (one per roll pair) | No        |
+| Leg Role    | Writes snapshot?        | `final_pnl` set? |
+| ----------- | ----------------------- | ---------------- |
+| CSP_OPEN    | Yes                     | No               |
+| ASSIGN      | Yes                     | No               |
+| CC_OPEN     | Yes                     | No               |
+| CC_CLOSE    | **No**                  | N/A              |
+| CC_EXPIRED  | Yes                     | Yes (terminal)   |
+| CALLED_AWAY | Yes                     | Yes (terminal)   |
+| ROLL_FROM   | No                      | N/A              |
+| ROLL_TO     | Yes (one per roll pair) | No               |
 
 (ROLL_TO is the leg row that bears the new snapshot from
 `calculateRollBasis`; ROLL_FROM is a paired marker only.)
@@ -684,40 +685,40 @@ export function calculateInitialCspBasis(leg: CspLegInput): CostBasisResult
 // Close — early buy-to-close P&L
 export interface CspCloseInput {
   openPremiumPerContract: string
-  closePricePerContract:  string
-  contracts:              number
+  closePricePerContract: string
+  contracts: number
 }
 export interface CspCloseResult {
-  finalPnl:       string
-  pnlPercentage:  string
+  finalPnl: string
+  pnlPercentage: string
 }
 export function calculateCspClose(input: CspCloseInput): CspCloseResult
 
 // Expiration — worthless, 100% captured
 export interface CspExpirationInput {
   openPremiumPerContract: string
-  contracts:              number
+  contracts: number
 }
 export interface CspExpirationResult {
-  finalPnl:       string   // 4 dp TEXT
-  pnlPercentage:  string   // constant '100.0000'
+  finalPnl: string // 4 dp TEXT
+  pnlPercentage: string // constant '100.0000'
 }
 export function calculateCspExpiration(input: CspExpirationInput): CspExpirationResult
 
 // Roll — basis carry-forward, shared by CSP and CC services.
 // CSP callers MUST supply prevStrike + newStrike; CC callers OMIT them.
 export interface RollBasisInput {
-  prevBasisPerShare:         string
+  prevBasisPerShare: string
   prevTotalPremiumCollected: string
-  costToClosePerContract:    string
-  newPremiumPerContract:     string
-  contracts:                 number
-  legType:                   'CSP' | 'CC'
-  prevStrike?:               string   // required when legType === 'CSP'
-  newStrike?:                string   // required when legType === 'CSP'
+  costToClosePerContract: string
+  newPremiumPerContract: string
+  contracts: number
+  legType: 'CSP' | 'CC'
+  prevStrike?: string // required when legType === 'CSP'
+  newStrike?: string // required when legType === 'CSP'
 }
 export interface RollBasisResult {
-  basisPerShare:         string
+  basisPerShare: string
   totalPremiumCollected: string
 }
 export function calculateRollBasis(input: RollBasisInput): RollBasisResult
@@ -726,62 +727,62 @@ export function calculateRollBasis(input: RollBasisInput): RollBasisResult
 // The service pre-nets each roll chain into a synthetic 'ROLL_NET' entry
 // before calling this — raw ROLL_FROM/ROLL_TO premiums are never passed in.
 export interface AssignmentBasisLeg {
-  legRole:            string    // 'CSP_OPEN' | 'ROLL_NET' (post-US-16)
-  premiumPerContract: string    // signed: ROLL_NET can be negative on debit rolls
-  contracts:          number
-  label?:             string    // optional display override for waterfall line
+  legRole: string // 'CSP_OPEN' | 'ROLL_NET' (post-US-16)
+  premiumPerContract: string // signed: ROLL_NET can be negative on debit rolls
+  contracts: number
+  label?: string // optional display override for waterfall line
 }
 export interface AssignmentBasisInput {
-  strike:       string
-  contracts:    number
-  premiumLegs:  AssignmentBasisLeg[]
+  strike: string
+  contracts: number
+  premiumLegs: AssignmentBasisLeg[]
 }
 export interface AssignmentBasisResult {
-  basisPerShare:         string
+  basisPerShare: string
   totalPremiumCollected: string
-  sharesHeld:            number
-  premiumWaterfall:      Array<{ label: string; amount: string }>
+  sharesHeld: number
+  premiumWaterfall: Array<{ label: string; amount: string }>
 }
 export function calculateAssignmentBasis(input: AssignmentBasisInput): AssignmentBasisResult
 
 // CC open — credit reduces basis, accumulates into total premium
 export interface CcOpenBasisInput {
-  prevBasisPerShare:         string
+  prevBasisPerShare: string
   prevTotalPremiumCollected: string
-  ccPremiumPerContract:      string
-  contracts:                 number
+  ccPremiumPerContract: string
+  contracts: number
 }
 export interface CcOpenBasisResult {
-  basisPerShare:         string   // 4 dp
-  totalPremiumCollected: string   // 4 dp
+  basisPerShare: string // 4 dp
+  totalPremiumCollected: string // 4 dp
 }
 export function calculateCcOpenBasis(input: CcOpenBasisInput): CcOpenBasisResult
 
 // CC close — CC leg P&L, NOT a new snapshot
 export interface CcCloseInput {
   openPremiumPerContract: string
-  closePricePerContract:  string
-  contracts:              number
+  closePricePerContract: string
+  contracts: number
 }
 export interface CcCloseResult {
-  ccLegPnl: string   // 4 dp, e.g. "120.0000" or "-120.0000"
+  ccLegPnl: string // 4 dp, e.g. "120.0000" or "-120.0000"
 }
 export function calculateCcClose(input: CcCloseInput): CcCloseResult
 
 // Call-away — terminal: shares delivered at the CC strike
 export interface CallAwayInput {
-  ccStrike:           string   // from CC_OPEN leg
-  basisPerShare:      string   // from latest cost_basis_snapshot
-  contracts:          number   // from CC_OPEN leg
-  positionOpenedDate: string   // position.openedDate
-  fillDate:           string   // CC expiration date
+  ccStrike: string // from CC_OPEN leg
+  basisPerShare: string // from latest cost_basis_snapshot
+  contracts: number // from CC_OPEN leg
+  positionOpenedDate: string // position.openedDate
+  fillDate: string // CC expiration date
 }
 export interface CallAwayResult {
-  finalPnl:         string   // 4 dp, signed
-  sharesHeld:       number   // contracts × 100
-  capitalDeployed: string    // basisPerShare × sharesHeld, 4 dp
-  cycleDays:        number   // calendar days, openedDate → fillDate
-  annualizedReturn: string   // 4 dp; '0.0000' if cycleDays <= 0
+  finalPnl: string // 4 dp, signed
+  sharesHeld: number // contracts × 100
+  capitalDeployed: string // basisPerShare × sharesHeld, 4 dp
+  cycleDays: number // calendar days, openedDate → fillDate
+  annualizedReturn: string // 4 dp; '0.0000' if cycleDays <= 0
 }
 export function calculateCallAway(input: CallAwayInput): CallAwayResult
 ```
@@ -797,14 +798,14 @@ precedence.
 // Unrealized P&L — live mark-to-market for an open short option leg.
 // Pure; no snapshot is written. Imported directly by the renderer.
 export interface UnrealizedPnlInput {
-  entryPremium: string   // dollars-per-contract, e.g. '3.50'
-  currentMid:   string   // dollars-per-contract, e.g. '1.30'
-  contracts:    number   // positive integer
+  entryPremium: string // dollars-per-contract, e.g. '3.50'
+  currentMid: string // dollars-per-contract, e.g. '1.30'
+  contracts: number // positive integer
 }
 export interface UnrealizedPnlResult {
-  pnl:        string     // dollars total, 4 dp ('220.0000')
-  pnlPercent: string     // 0–100 scale, 4 dp ('62.8571')
-  maxProfit:  string     // dollars total, 4 dp ('350.0000')
+  pnl: string // dollars total, 4 dp ('220.0000')
+  pnlPercent: string // 0–100 scale, 4 dp ('62.8571')
+  maxProfit: string // dollars total, 4 dp ('350.0000')
 }
 export function computeUnrealizedPnl(input: UnrealizedPnlInput): UnrealizedPnlResult
 ```
@@ -838,7 +839,7 @@ the core engine — this is display logic.
 type SnapshotInput = { snapshotAt: string; basisPerShare: string }
 
 export function deriveRunningBasis<T extends { fillDate: string }>(
-  legs:      T[],
+  legs: T[],
   snapshots: SnapshotInput[]
 ): Array<T & { runningCostBasis: string | null }>
 ```
@@ -860,17 +861,17 @@ while later rows inherit the latest snapshot of the day.
 `cost_basis_snapshots` columns (from `migrations/001_initial_schema.sql`,
 extended by `migrations/004_add_trigger_event_to_snapshots.sql`):
 
-| Column                    | Type          | When set                                            | When null                       |
-| ------------------------- | ------------- | --------------------------------------------------- | ------------------------------- |
-| `id`                      | TEXT (UUID)   | always — new UUID per row                           | never                           |
-| `position_id`             | TEXT FK       | always — parent position                            | never                           |
-| `basis_per_share`         | TEXT (4 dp)   | always — effective basis after the event            | never                           |
-| `total_premium_collected` | TEXT (4 dp)   | always — running total across the chain             | never                           |
-| `final_pnl`               | TEXT (4 dp)   | set on terminal events (close, expiry, call-away)   | open snapshots, rolls, assignment, CC open |
-| `annualized_return`       | TEXT          | future story — reserved                             | always today                    |
-| `trigger_event`           | TEXT          | always — which lifecycle event produced this row    | never (defaults to `'UNKNOWN'`) |
-| `snapshot_at`             | TEXT (ISO)    | always — event timestamp; used for latest-row sort  | never                           |
-| `created_at`              | TEXT (ISO)    | always — insert timestamp                           | never                           |
+| Column                    | Type        | When set                                           | When null                                  |
+| ------------------------- | ----------- | -------------------------------------------------- | ------------------------------------------ |
+| `id`                      | TEXT (UUID) | always — new UUID per row                          | never                                      |
+| `position_id`             | TEXT FK     | always — parent position                           | never                                      |
+| `basis_per_share`         | TEXT (4 dp) | always — effective basis after the event           | never                                      |
+| `total_premium_collected` | TEXT (4 dp) | always — running total across the chain            | never                                      |
+| `final_pnl`               | TEXT (4 dp) | set on terminal events (close, expiry, call-away)  | open snapshots, rolls, assignment, CC open |
+| `annualized_return`       | TEXT        | future story — reserved                            | always today                               |
+| `trigger_event`           | TEXT        | always — which lifecycle event produced this row   | never (defaults to `'UNKNOWN'`)            |
+| `snapshot_at`             | TEXT (ISO)  | always — event timestamp; used for latest-row sort | never                                      |
+| `created_at`              | TEXT (ISO)  | always — insert timestamp                          | never                                      |
 
 Latest-row selector pattern used everywhere:
 

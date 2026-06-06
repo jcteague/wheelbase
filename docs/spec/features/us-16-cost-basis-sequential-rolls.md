@@ -1,6 +1,7 @@
 # US-16: Cost basis through sequential rolls and post-roll assignment
 
 <!-- generated:from us-16 -->
+
 ## Summary
 
 Fixes the cost-basis math for two scenarios that previously produced materially wrong numbers: a CSP roll that changes strike (e.g., roll-down from $50 to $47) and an assignment that follows one or more rolls. The pure cost-basis engine now branches on `legType` and applies a strike-delta term for CSP rolls; the assignment service groups roll-pair legs by `roll_chain_id`, computes a net credit/debit per chain, and feeds those as synthetic `ROLL_NET` entries into the assignment basis calculation so the gross `ROLL_TO` premium is no longer double-counted. CC rolls remain `prevBasis − netCredit` regardless of strike. No IPC, schema, or renderer changes — purely engine and service-layer corrections covered by unit, integration, and E2E tests.

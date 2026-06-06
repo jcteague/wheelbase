@@ -1,6 +1,7 @@
 # US-10: Record shares called away
 
 <!-- generated:from us-10 -->
+
 ## Summary
 
 Adds the terminal "shares called away" path that closes a wheel when a covered call is exercised at expiration. A right-side `CallAwaySheet` on the position detail page confirms the trade with a P&L waterfall (CC strike − effective basis → appreciation per share × 100 shares → final cycle P&L); on submit the backend writes a single `CC_CLOSE`/`EXERCISE`/`CALL` leg with `fill_price` set to the CC strike and `fill_date` set to the CC expiration date, transitions the position `CC_OPEN → WHEEL_COMPLETE` (terminal), flips `status` to `CLOSED`, sets `closed_date`, and appends a final `cost_basis_snapshots` row carrying the newly computed `final_pnl`. The success state surfaces a "WHEEL COMPLETE" hero with the signed final P&L, cycle days, annualized return, and a "Start New Wheel on {ticker} →" CTA. No schema migration is required — the only enum change (`LegAction` adding `'EXERCISE'`) is type-only and `WHEEL_COMPLETE` already exists as a `WheelPhase` value. The action is single-contract only; multi-contract call-away is explicitly rejected.

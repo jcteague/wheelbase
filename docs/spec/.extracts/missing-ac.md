@@ -14,48 +14,56 @@ This is a multi-story remediation plan that closes four acceptance-criteria gaps
 ## Architecture Decisions
 
 ### ADR: Surface the full legs list via the existing `getPosition` query, not a new IPC channel
+
 - **Decision:** Add a second SQL query to `getPosition` service (`SELECT * FROM legs WHERE position_id = ? ORDER BY fill_date ASC, created_at ASC`) and return it as a new `legs: LegRecord[]` field on `GetPositionResult`. Keep `activeLeg` and `costBasisSnapshot` exactly as they are.
 - **Why:** US-3's AC requires leg history "in chronological order"; `getPosition` already hydrates the detail page, and the renderer hook/API pass-through chain already exists. Adding a sibling field on the existing return shape is strictly additive and avoids a new IPC channel for what is essentially a fan-out of the same query.
 - **Alternatives considered:** A new `legs:list-by-position` IPC channel (extra surface area for no payoff; the detail page is the only consumer); eager-loading legs as a join inside the existing position query (mixes shapes and complicates `activeLeg` selection).
 - **Source:** `plans/missing-ac/plan.md` §Gap 1 / Area 1a
 
 ### ADR: Notes/thesis render is renderer-only — data already flows
+
 - **Decision:** Fix Gap 2 entirely inside `PositionDetailPage`; do not change `getPosition`, the renderer API adapter, or the IPC schema.
 - **Why:** `getPosition` already returns `position.notes` and `position.thesis`; the renderer API and hooks already pass them through. The only missing piece is the JSX that renders them. Touching anything below the component layer would be unnecessary churn.
 - **Alternatives considered:** None — the root cause is a rendering gap, not a data gap.
 - **Source:** `plans/missing-ac/plan.md` §Gap 2
 
 ### ADR: Gap 2 — render Notes section only when at least one of thesis/notes is non-null
+
 - **Decision:** Add a single "Notes" `SectionCard` to the bottom of `PositionDetailPage` that renders the `thesis` and `notes` strings when present, and is omitted from the DOM entirely when both fields are null.
 - **Why:** Avoids an empty card on the majority of positions (where neither field has data) while still satisfying the US-3 AC "the thesis and notes sections are visible" when the trader has entered them.
 - **Alternatives considered:** Always render the card with em-dashes for missing values (visual noise for the common case).
 - **Source:** `plans/missing-ac/plan.md` §Gap 2 / Green
 
 ### ADR: Gap 3 — `fill_date` validation already lives in the lifecycle engine; only the form needs to change
+
 - **Decision:** Add the optional `fill_date` input strictly in the renderer (`CloseCspForm`). Do not modify `closeCsp` (lifecycle), `closeCspPosition` (service), the `positions:close-csp` IPC handler, or `CloseCspPayloadSchema` — all of these already accept and validate `fillDate`.
 - **Why:** The backend pipeline already enforces `close_date_before_open` and `close_date_after_expiration`. The reason the AC was failing is that the form never offered a way to send a non-default fill date, so the service defaulted to today and never tripped the guards. Surfacing the input is the entire fix.
 - **Alternatives considered:** Re-validating fill-date bounds in a client-side Zod schema (duplicates server logic; loses the server's authoritative bounds derived from the actual open leg).
 - **Source:** `plans/missing-ac/plan.md` §Gap 3 / Root cause
 
 ### ADR: Gap 3 — pass open-leg context into `CloseCspForm` via props, not a new fetch
+
 - **Decision:** Add `openFillDate: string` and `expiration: string` to `CloseCspFormProps` and source them from `activeLeg` in `PositionDetailPage`, which already loads them.
 - **Why:** `PositionDetailPage` already has the open-leg fill date and expiration in scope from its `usePosition` call. Re-fetching inside the form would duplicate state and risk staleness; prop-drilling two strings is trivial.
 - **Alternatives considered:** Have the form call `usePosition` itself (redundant fetch); shove the values onto a context (over-engineered for one form).
 - **Source:** `plans/missing-ac/plan.md` §Gap 3 / Green
 
 ### ADR: Gap 3 — server-side `fillDate` field errors map back onto the form field
+
 - **Decision:** Extend the existing IPC error-to-form-field mapping so that a server error with `field: 'fillDate'` is surfaced on the form's `fill_date` input (using the snake_case form field name that the renderer uses).
 - **Why:** The `close_date_before_open` and `close_date_after_expiration` errors are emitted by the service with `field: 'fillDate'`. Without the mapping, the form would either swallow the message or render it on the wrong field.
 - **Alternatives considered:** Client-side date guards (duplicates business logic, see prior ADR).
 - **Source:** `plans/missing-ac/plan.md` §Gap 3 / Green
 
 ### ADR: Gap 4 — remove the override entirely instead of conditionally passing it
+
 - **Decision:** In `ExpirationSheet.handleConfirmExpiration`, change the mutation payload from `{ position_id: positionId, expiration_date_override: expiration }` to `{ position_id: positionId }`. Do not conditionally include the override based on user input or "today vs expiration" logic.
 - **Why:** The service uses the override as `referenceDate`; passing the option's own expiration date always satisfies `referenceDate >= expirationDate` and silently disables the `too_early` check. With the override removed, the service falls back to today's date and the existing guard fires correctly. The plan classifies this as "a one-line fix + test."
 - **Alternatives considered:** Conditional override (still defeats the date guard whenever the user invokes it before expiration); removing the override field from the IPC contract altogether (out of scope and unrelated to the AC).
 - **Source:** `plans/missing-ac/plan.md` §Gap 4 / Root cause + Green
 
 ### ADR: Gap 4 — surface server-side `too_early` error inline in the sheet body
+
 - **Decision:** The sheet displays the server error message ("Cannot record expiration before the expiration date") inline in the sheet body when the mutation rejects.
 - **Why:** Without this, the user gets no signal that the gated transition was refused. The error already comes back with the right message text from the service; only display wiring is required.
 - **Alternatives considered:** Toast/snackbar (project pattern is in-sheet errors for sheet-driven flows, per US-5 refactor decisions).
@@ -66,6 +74,7 @@ This is a multi-story remediation plan that closes four acceptance-criteria gaps
 No new contracts. All contract shapes referenced below are unchanged from their original story extracts; this plan only adjusts one field on one existing IPC response and removes one parameter from one renderer mutate call.
 
 ### `positions:get` (US-4 extract, additive change)
+
 - **Type:** IPC handler (modified return shape)
 - **Shape (change only):**
   ```typescript
@@ -82,8 +91,10 @@ No new contracts. All contract shapes referenced below are unchanged from their 
 - **Implementation:** `src/main/services/get-position.ts`, `src/main/schemas.ts`
 
 ### `CloseCspForm` props (renderer)
+
 - **Type:** other (React component props, extended)
 - **Shape (change only):**
+
   ```typescript
   // CloseCspFormProps additions
   {
@@ -98,12 +109,15 @@ No new contracts. All contract shapes referenced below are unchanged from their 
     fill_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()   // NEW
   })
   ```
+
 - **Source:** `plans/missing-ac/plan.md` §Gap 3 / Green
 - **Implementation:** `src/renderer/src/components/CloseCspForm.tsx`
 
 ### `ExpirationSheet` mutate payload (renderer)
+
 - **Type:** other (renderer mutation call, narrowed)
 - **Shape (change only):**
+
   ```typescript
   // Before (the bug):
   mutate({ position_id: positionId, expiration_date_override: expiration })
@@ -111,6 +125,7 @@ No new contracts. All contract shapes referenced below are unchanged from their 
   // After:
   mutate({ position_id: positionId })
   ```
+
 - **Source:** `plans/missing-ac/plan.md` §Gap 4 / Green
 - **Implementation:** `src/renderer/src/components/ExpirationSheet.tsx`
 
