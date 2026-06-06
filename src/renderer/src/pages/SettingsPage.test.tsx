@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, vi } from 'vitest'
 import { SettingsPage } from './SettingsPage'
+import { apiError } from '../api/error'
 import {
   useRemoveAlpacaCredentials,
   useSaveAlpacaCredentials,
@@ -92,7 +93,7 @@ it('renders Broker (Alpaca) with Paper and Live credential cards and the active 
   expect(within(brokerSection).getByRole('radio', { name: /paper/i })).toBeInTheDocument()
   expect(within(brokerSection).getByRole('radio', { name: /live/i })).toBeInTheDocument()
   expect(within(brokerSection).getByText(/paper credentials/i)).toBeInTheDocument()
-  expect(within(brokerSection).getByText(/live credentials/i)).toBeInTheDocument()
+  expect(within(brokerSection).getAllByText(/live credentials/i).length).toBeGreaterThan(0)
   expect(within(brokerSection).getAllByLabelText(/api key id/i)).toHaveLength(2)
   expect(within(brokerSection).getAllByLabelText(/secret key/i)).toHaveLength(2)
   expect(within(brokerSection).getAllByRole('button', { name: /test connection/i })).toHaveLength(2)
@@ -120,6 +121,28 @@ it('empty state banner explains Massive is app-provided and Alpaca setup is opti
     screen.getByText(/massive provides data; alpaca provides your account/i)
   ).toBeInTheDocument()
   expect(screen.getByText(/both are optional/i)).toBeInTheDocument()
+})
+
+it('leaves PAPER unchecked when no broker environment is active so first-time setup can promote paper', () => {
+  mockUseSettingsStatus.mockReturnValue({
+    data: {
+      massive: 'missing',
+      alpacaPaper: 'configured',
+      alpacaLive: 'missing',
+      activeBrokerEnv: 'none',
+      massiveLastCheckedAt: null,
+      alpacaPaperAccountNumberMasked: 'PA…ABC',
+      alpacaLiveAccountNumberMasked: null
+    },
+    isLoading: false,
+    isError: false,
+    error: null
+  } as ReturnType<typeof useSettingsStatus>)
+
+  render(<SettingsPage />)
+
+  expect(screen.getByRole('radio', { name: /paper/i })).not.toBeChecked()
+  expect(screen.getByRole('radio', { name: /live/i })).not.toBeChecked()
 })
 
 it('renders exact Massive auth and rate-limit messages in red', async () => {
@@ -264,4 +287,54 @@ it('post-save success message uses the freshly verified account number instead o
     await within(paperCard).findByText('✓ Verified — Account PA…FRESH (paper)')
   ).toBeInTheDocument()
   expect(within(paperCard).queryByText(/PA…ABC|AL…ZYX/)).not.toBeInTheDocument()
+})
+
+it('surfaces save failures from the Alpaca credential form', async () => {
+  const saveAlpaca = vi.fn().mockRejectedValue(
+    apiError(502, {
+      detail: [{ field: 'keyId', code: 'auth_failed', message: 'Authentication failed (401)' }]
+    })
+  )
+  mockUseSettingsStatus.mockReturnValue({
+    data: {
+      ...statusFixture,
+      alpacaPaper: 'missing',
+      alpacaPaperAccountNumberMasked: null
+    },
+    isLoading: false,
+    isError: false,
+    error: null
+  } as ReturnType<typeof useSettingsStatus>)
+  mockUseSaveAlpacaCredentials.mockReturnValue({
+    mutateAsync: saveAlpaca
+  } as unknown as ReturnType<typeof useSaveAlpacaCredentials>)
+
+  render(<SettingsPage />)
+
+  const paperCard = screen.getByTestId('alpaca-card-paper')
+  fireEvent.change(within(paperCard).getByLabelText(/api key id/i), {
+    target: { value: 'PK_BAD_KEY' }
+  })
+  fireEvent.change(within(paperCard).getByLabelText(/secret key/i), {
+    target: { value: 'bad-secret' }
+  })
+  fireEvent.submit(within(paperCard).getByRole('button', { name: /save/i }).closest('form')!)
+
+  expect(await within(paperCard).findByText('Authentication failed (401)')).toHaveClass(
+    'text-wb-red'
+  )
+})
+
+it('disables LIVE switching until live credentials are configured', () => {
+  render(<SettingsPage />)
+
+  const liveRadio = screen.getByRole('radio', { name: /live/i })
+  const setActiveBrokerEnvironment = mockUseSetActiveBrokerEnvironment.mock.results[0]?.value as {
+    mutate: ReturnType<typeof vi.fn>
+  }
+
+  expect(liveRadio).toBeDisabled()
+  expect(setActiveBrokerEnvironment.mutate).not.toHaveBeenCalled()
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(screen.getByText(/save live credentials before switching/i)).toBeInTheDocument()
 })

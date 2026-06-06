@@ -2,6 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
+import type { ApiError } from '../api/error'
 import type {
   CredentialState,
   SaveAlpacaCredentialsPayload,
@@ -32,6 +33,20 @@ type CredentialFormValues = z.infer<typeof credentialsSchema>
 type ConnectionMessage = {
   tone: 'success' | 'error' | 'muted'
   text: string
+}
+
+function getApiErrorMessage(error: unknown): string {
+  if (!error || typeof error !== 'object') {
+    return 'Unable to complete the request'
+  }
+
+  const detail = (error as ApiError).body
+  if (!detail || typeof detail !== 'object' || !('detail' in detail)) {
+    return 'Unable to complete the request'
+  }
+
+  const [firstError] = detail.detail as Array<{ message?: string }>
+  return firstError?.message ?? 'Unable to complete the request'
 }
 
 function Field({
@@ -137,13 +152,20 @@ function AlpacaCredentialCard({
   }
 
   async function handleSave(values: CredentialFormValues): Promise<void> {
-    const result = await onSave({ environment, ...values })
-    setMessage({
-      tone: 'success',
-      text: `✓ Verified — Account ${result.test.accountNumberMasked} (${result.test.environment})`
-    })
-    setIsEditing(false)
-    form.reset()
+    try {
+      const result = await onSave({ environment, ...values })
+      setMessage({
+        tone: 'success',
+        text: `✓ Verified — Account ${result.test.accountNumberMasked} (${result.test.environment})`
+      })
+      setIsEditing(false)
+      form.reset()
+    } catch (error) {
+      setMessage({
+        tone: 'error',
+        text: getApiErrorMessage(error)
+      })
+    }
   }
 
   async function handleStoredConnectionTest(): Promise<void> {
@@ -333,6 +355,7 @@ export function SettingsPage(): React.JSX.Element {
     activeStatus.massive === 'missing' &&
     activeStatus.alpacaPaper === 'missing' &&
     activeStatus.alpacaLive === 'missing'
+  const hasLiveCredentials = activeStatus.alpacaLive === 'configured'
 
   async function handleMassiveTestConnection(): Promise<void> {
     const result = await testConnection.mutateAsync({ vendor: 'massive' })
@@ -428,7 +451,7 @@ export function SettingsPage(): React.JSX.Element {
                       className="sr-only"
                       aria-label="Paper"
                       name="active-broker-environment"
-                      checked={activeStatus.activeBrokerEnv !== 'live'}
+                      checked={activeStatus.activeBrokerEnv === 'paper'}
                       onChange={() => setActiveBrokerEnvironment.mutate({ environment: 'paper' })}
                     />
                     <span
@@ -448,8 +471,13 @@ export function SettingsPage(): React.JSX.Element {
                       className="sr-only"
                       aria-label="Live"
                       name="active-broker-environment"
+                      disabled={!hasLiveCredentials}
                       checked={activeStatus.activeBrokerEnv === 'live'}
-                      onChange={() => setShowLiveDialog(true)}
+                      onChange={() => {
+                        if (hasLiveCredentials) {
+                          setShowLiveDialog(true)
+                        }
+                      }}
                     />
                     <span
                       className={[
@@ -464,6 +492,12 @@ export function SettingsPage(): React.JSX.Element {
                   </label>
                 </div>
               </div>
+
+              {!hasLiveCredentials && (
+                <p className="m-0 font-wb-mono text-[0.68rem] leading-5 text-wb-text-muted">
+                  Save LIVE credentials before switching the active broker environment to LIVE.
+                </p>
+              )}
 
               <div className="flex flex-wrap gap-4">
                 <AlpacaCredentialCard
