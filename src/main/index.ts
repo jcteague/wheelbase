@@ -120,7 +120,8 @@ app.whenReady().then(() => {
   const settings = createSettingsService({
     db,
     safeStorage,
-    loadMassiveApiKey
+    loadMassiveApiKey,
+    testAlpacaConnection
   })
 
   marketDataFactory.configure({ loadMassiveApiKey })

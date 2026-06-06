@@ -73,8 +73,8 @@ function tmpDb(): string {
 
 function cleanupDb(dbPath: string): void {
   if (dbPath && fs.existsSync(dbPath)) fs.unlinkSync(dbPath)
-  if (`${dbPath}-wal` && fs.existsSync(`${dbPath}-wal`)) fs.unlinkSync(`${dbPath}-wal`)
-  if (`${dbPath}-shm` && fs.existsSync(`${dbPath}-shm`)) fs.unlinkSync(`${dbPath}-shm`)
+  if (fs.existsSync(`${dbPath}-wal`)) fs.unlinkSync(`${dbPath}-wal`)
+  if (fs.existsSync(`${dbPath}-shm`)) fs.unlinkSync(`${dbPath}-shm`)
 }
 
 function buildEnv(dbPath: string, options: LaunchOptions): Record<string, string> {

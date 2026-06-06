@@ -21,11 +21,20 @@ export type SaveAlpacaCredentialsPayload = {
   secret: string
 }
 
+export type SaveAlpacaCredentialsResult = {
+  status: CredentialStatus
+  test: Extract<TestSettingsConnectionResult, { ok: true; vendor: 'alpaca' }>
+}
+
 export type RemoveAlpacaCredentialsPayload = {
   environment: 'paper' | 'live'
 }
 
 export type SetActiveBrokerEnvironmentPayload = {
+  environment: 'paper' | 'live'
+}
+
+export type TestStoredAlpacaConnectionPayload = {
   environment: 'paper' | 'live'
 }
 
@@ -66,10 +75,14 @@ export async function getCredentialStatus(): Promise<CredentialStatus> {
 
 export async function saveAlpacaCredentials(
   payload: SaveAlpacaCredentialsPayload
-): Promise<CredentialStatus> {
-  return unwrapStatus(
-    (await window.api.settings.saveAlpaca(payload)) as IpcResult<{ status: CredentialStatus }>
-  )
+): Promise<SaveAlpacaCredentialsResult> {
+  const result = (await window.api.settings.saveAlpaca(
+    payload
+  )) as IpcResult<SaveAlpacaCredentialsResult>
+  if (!result.ok) {
+    throw apiError(502, { detail: result.errors })
+  }
+  return { status: result.status, test: result.test }
 }
 
 export async function removeAlpacaCredentials(
@@ -94,6 +107,18 @@ export async function testSettingsConnection(
   payload: TestSettingsConnectionPayload
 ): Promise<TestSettingsConnectionResult> {
   const result = (await window.api.settings.testConnection(payload)) as IpcResult<{
+    test: TestSettingsConnectionResult
+  }>
+  if (!result.ok) {
+    throw apiError(502, { detail: result.errors })
+  }
+  return result.test
+}
+
+export async function testStoredAlpacaConnection(
+  payload: TestStoredAlpacaConnectionPayload
+): Promise<TestSettingsConnectionResult> {
+  const result = (await window.api.settings.testStoredAlpacaConnection(payload)) as IpcResult<{
     test: TestSettingsConnectionResult
   }>
   if (!result.ok) {

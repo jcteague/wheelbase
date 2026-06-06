@@ -25,6 +25,12 @@ function createService(options: { massiveApiKey?: string } = {}): {
     db,
     safeStorage,
     loadMassiveApiKey: () => options.massiveApiKey ?? 'shared-massive-key',
+    testAlpacaConnection: vi.fn().mockResolvedValue({
+      ok: true,
+      vendor: 'alpaca',
+      environment: 'paper',
+      accountNumberMasked: 'PA…ABC'
+    }),
     now: () => '2026-05-30T12:00:00.000Z'
   })
   return { db, safeStorage, service }
@@ -122,6 +128,12 @@ describe('settings service — Alpaca credential persistence', () => {
         db,
         safeStorage,
         loadMassiveApiKey: () => 'shared-massive-key',
+        testAlpacaConnection: vi.fn().mockResolvedValue({
+          ok: true,
+          vendor: 'alpaca',
+          environment: 'paper',
+          accountNumberMasked: 'PA…ABC'
+        }),
         now: () => '2026-05-30T12:00:00.000Z'
       })
 

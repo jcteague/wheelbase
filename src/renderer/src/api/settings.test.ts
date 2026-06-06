@@ -4,6 +4,7 @@ import {
   removeAlpacaCredentials,
   saveAlpacaCredentials,
   setActiveBrokerEnvironment,
+  testStoredAlpacaConnection,
   testSettingsConnection
 } from './settings'
 
@@ -12,6 +13,7 @@ const mockSettingsSaveAlpaca = vi.fn()
 const mockSettingsRemoveAlpaca = vi.fn()
 const mockSettingsSetActiveBrokerEnvironment = vi.fn()
 const mockSettingsTestConnection = vi.fn()
+const mockSettingsTestStoredAlpacaConnection = vi.fn()
 
 const STATUS_FIXTURE = {
   massive: 'configured' as const,
@@ -29,6 +31,7 @@ beforeEach(() => {
   mockSettingsRemoveAlpaca.mockReset()
   mockSettingsSetActiveBrokerEnvironment.mockReset()
   mockSettingsTestConnection.mockReset()
+  mockSettingsTestStoredAlpacaConnection.mockReset()
 
   Object.assign(window, {
     api: {
@@ -38,7 +41,8 @@ beforeEach(() => {
         saveAlpaca: mockSettingsSaveAlpaca,
         removeAlpaca: mockSettingsRemoveAlpaca,
         setActiveBrokerEnvironment: mockSettingsSetActiveBrokerEnvironment,
-        testConnection: mockSettingsTestConnection
+        testConnection: mockSettingsTestConnection,
+        testStoredAlpacaConnection: mockSettingsTestStoredAlpacaConnection
       }
     }
   })
@@ -54,8 +58,17 @@ describe('getCredentialStatus', () => {
 })
 
 describe('settings mutations', () => {
-  it('saveAlpacaCredentials returns the refreshed status', async () => {
-    mockSettingsSaveAlpaca.mockResolvedValue({ ok: true, status: STATUS_FIXTURE })
+  it('saveAlpacaCredentials returns the refreshed status and verified account', async () => {
+    mockSettingsSaveAlpaca.mockResolvedValue({
+      ok: true,
+      status: STATUS_FIXTURE,
+      test: {
+        ok: true,
+        vendor: 'alpaca',
+        environment: 'paper',
+        accountNumberMasked: 'PA…FRESH'
+      }
+    })
 
     await expect(
       saveAlpacaCredentials({
@@ -63,7 +76,15 @@ describe('settings mutations', () => {
         keyId: 'KEY123',
         secret: 'SECRET123'
       })
-    ).resolves.toEqual(STATUS_FIXTURE)
+    ).resolves.toEqual({
+      status: STATUS_FIXTURE,
+      test: {
+        ok: true,
+        vendor: 'alpaca',
+        environment: 'paper',
+        accountNumberMasked: 'PA…FRESH'
+      }
+    })
   })
 
   it('removeAlpacaCredentials returns the refreshed status', async () => {
@@ -99,5 +120,19 @@ describe('testSettingsConnection', () => {
         secret: 'SECRET123'
       })
     ).resolves.toEqual(testResult)
+  })
+})
+
+describe('testStoredAlpacaConnection', () => {
+  it('returns the typed stored-credential test result', async () => {
+    const testResult = {
+      ok: true as const,
+      vendor: 'alpaca' as const,
+      environment: 'paper' as const,
+      accountNumberMasked: 'PA…ABC'
+    }
+    mockSettingsTestStoredAlpacaConnection.mockResolvedValue({ ok: true, test: testResult })
+
+    await expect(testStoredAlpacaConnection({ environment: 'paper' })).resolves.toEqual(testResult)
   })
 })

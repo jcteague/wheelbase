@@ -22,7 +22,7 @@ const BADGE_STYLES = {
     className:
       'bg-wb-bg-elevated text-wb-text-secondary border border-wb-border font-medium text-[0.66rem]',
     dotClassName: 'bg-wb-text-muted',
-    title: 'Alpaca not configured. Click to set up.'
+    title: 'Alpaca not configured. Open Settings to set up.'
   }
 } as const
 

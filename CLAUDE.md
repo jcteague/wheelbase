@@ -107,6 +107,7 @@ Library: `pino`. Configured in `src/main/logger.ts`.
 - `src/main/core/` engines (`lifecycle.ts`, `costbasis.ts`) have **no DB or broker imports** — they take plain values and return results
 - All `@alpacahq/typescript-sdk` calls live exclusively in `src/main/integrations/alpaca.ts`
 - IPC handlers never throw to the renderer — always return `{ ok: true, ...result } | { ok: false, errors: [...] }`
+- IPC handlers must be thin: Zod parse + single service call, wrapped in `handleIpcCall` (from `src/main/ipc/utils.ts`). No business logic, orchestration, or branching in handler files — push it into the service layer. `handleIpcCall` is the only path that produces the `{ ok, errors }` envelope; bypassing it leaks `ZodError`/`ValidationError`/`BrokerError` to the renderer
 - Rolls are **always** stored as linked leg pairs, never in-place updates
 - SQLite is the source of truth; Alpaca is the execution layer only
 - Wouter **must** use hash-based routing (`useHashLocation`) — browser-history routing breaks in packaged Electron

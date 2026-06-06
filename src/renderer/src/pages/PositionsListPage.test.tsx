@@ -575,6 +575,56 @@ it('shows the setup banner when Massive is app-provided and Alpaca is not config
   expect(screen.getByRole('link', { name: /alpaca setup/i })).toHaveAttribute('href', '#/settings')
 })
 
+it('shows setup and broker banners even when there are no positions yet', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([]))
+  mockUseSettingsStatus.mockReturnValue({
+    data: {
+      massive: 'missing',
+      alpacaPaper: 'missing',
+      alpacaLive: 'missing',
+      activeBrokerEnv: 'none',
+      massiveLastCheckedAt: null,
+      alpacaPaperAccountNumberMasked: null,
+      alpacaLiveAccountNumberMasked: null
+    },
+    isLoading: false,
+    isError: false,
+    error: null
+  } as ReturnType<typeof useSettingsStatus>)
+
+  render(<PositionsListPage />)
+
+  expect(screen.getByText(/no positions yet/i)).toBeInTheDocument()
+  expect(screen.getByText(/massive is app-provided/i)).toBeInTheDocument()
+  expect(
+    screen.getByText(/connect alpaca to enable broker activity and buying power/i)
+  ).toBeInTheDocument()
+})
+
+it('shows auth prompts even when there are no positions yet', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([]))
+  mockUseStockQuotes.mockReturnValue(
+    makeStockQuotesResult({
+      data: undefined,
+      streamError: { code: 'auth_failed', message: 'nope' } as IpcStreamErrorEvent
+    })
+  )
+  mockUseMarketStatus.mockReturnValue({
+    data: undefined,
+    isLoading: false,
+    isError: true,
+    error: {
+      body: { detail: [{ code: 'auth_failed' }] }
+    } as unknown,
+    refetch: vi.fn()
+  } as unknown as ReturnType<typeof useMarketStatus>)
+
+  render(<PositionsListPage />)
+
+  expect(screen.getByText(/massive authentication failed/i)).toBeInTheDocument()
+  expect(screen.getByText(/alpaca authentication failed/i)).toBeInTheDocument()
+})
+
 it('continues to render live prices and mids from Massive when no Alpaca credentials are configured', () => {
   mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1]))
   mockUseSettingsStatus.mockReturnValue({

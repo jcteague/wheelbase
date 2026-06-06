@@ -5,6 +5,8 @@ import { z } from 'zod'
 import type {
   CredentialState,
   SaveAlpacaCredentialsPayload,
+  SaveAlpacaCredentialsResult,
+  TestStoredAlpacaConnectionPayload,
   TestSettingsConnectionResult
 } from '../api/settings'
 import { LiveBrokerConfirmDialog } from '../components/LiveBrokerConfirmDialog'
@@ -16,6 +18,7 @@ import {
   useSaveAlpacaCredentials,
   useSetActiveBrokerEnvironment,
   useSettingsStatus,
+  useTestStoredAlpacaConnection,
   useTestSettingsConnection
 } from '../hooks/useSettings'
 
@@ -71,10 +74,13 @@ type AlpacaCredentialCardProps = {
   environment: 'paper' | 'live'
   configured: boolean
   accountNumberMasked: string | null
-  onSave: (payload: SaveAlpacaCredentialsPayload) => Promise<unknown>
+  onSave: (payload: SaveAlpacaCredentialsPayload) => Promise<SaveAlpacaCredentialsResult>
   onRemove: (payload: { environment: 'paper' | 'live' }) => Promise<unknown>
   onTestConnection: (
     payload: SaveAlpacaCredentialsPayload
+  ) => Promise<TestSettingsConnectionResult | undefined>
+  onTestStoredConnection: (
+    payload: TestStoredAlpacaConnectionPayload
   ) => Promise<TestSettingsConnectionResult | undefined>
 }
 
@@ -84,7 +90,8 @@ function AlpacaCredentialCard({
   accountNumberMasked,
   onSave,
   onRemove,
-  onTestConnection
+  onTestConnection,
+  onTestStoredConnection
 }: AlpacaCredentialCardProps): React.JSX.Element {
   const isPaper = environment === 'paper'
   const [isEditing, setIsEditing] = useState(!configured)
@@ -130,13 +137,34 @@ function AlpacaCredentialCard({
   }
 
   async function handleSave(values: CredentialFormValues): Promise<void> {
-    await onSave({ environment, ...values })
+    const result = await onSave({ environment, ...values })
     setMessage({
       tone: 'success',
-      text: `✓ Verified — Account ${accountNumberMasked ?? (isPaper ? 'PA…ABC' : 'AL…ZYX')} (${environment})`
+      text: `✓ Verified — Account ${result.test.accountNumberMasked} (${result.test.environment})`
     })
     setIsEditing(false)
     form.reset()
+  }
+
+  async function handleStoredConnectionTest(): Promise<void> {
+    const result = await onTestStoredConnection({ environment })
+    if (!result) {
+      return
+    }
+    if (result.ok && result.vendor === 'alpaca') {
+      setMessage({
+        tone: 'success',
+        text: `✓ Verified — Account ${result.accountNumberMasked} (${result.environment})`
+      })
+      return
+    }
+    if (result.ok) {
+      return
+    }
+    setMessage({
+      tone: 'error',
+      text: result.message
+    })
   }
 
   return (
@@ -237,7 +265,11 @@ function AlpacaCredentialCard({
             <p
               className={[
                 'm-0 font-wb-mono text-[0.66rem] leading-5',
-                message.tone === 'success' ? 'text-wb-green' : 'text-wb-text-muted'
+                message.tone === 'success'
+                  ? 'text-wb-green'
+                  : message.tone === 'error'
+                    ? 'text-wb-red'
+                    : 'text-wb-text-muted'
               ].join(' ')}
             >
               {message.text}
@@ -246,12 +278,7 @@ function AlpacaCredentialCard({
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
-              onClick={() =>
-                setMessage({
-                  tone: 'success',
-                  text: `✓ Verified — Account ${accountNumberMasked ?? (isPaper ? 'PA…ABC' : 'AL…ZYX')} (${environment})`
-                })
-              }
+              onClick={() => void handleStoredConnectionTest()}
               className="rounded-md border border-wb-border px-3 py-2 font-wb-mono text-xs font-semibold tracking-[0.06em] text-wb-text-secondary"
             >
               Test connection
@@ -286,6 +313,7 @@ export function SettingsPage(): React.JSX.Element {
   const removeMutation = useRemoveAlpacaCredentials()
   const setActiveBrokerEnvironment = useSetActiveBrokerEnvironment()
   const testConnection = useTestSettingsConnection()
+  const testStoredAlpacaConnection = useTestStoredAlpacaConnection()
   const [massiveMessage, setMassiveMessage] = useState<ConnectionMessage | null>(null)
   const [showLiveDialog, setShowLiveDialog] = useState(false)
 
@@ -447,6 +475,9 @@ export function SettingsPage(): React.JSX.Element {
                   onTestConnection={(payload) =>
                     testConnection.mutateAsync({ vendor: 'alpaca', ...payload })
                   }
+                  onTestStoredConnection={(payload) =>
+                    testStoredAlpacaConnection.mutateAsync(payload)
+                  }
                 />
                 <AlpacaCredentialCard
                   environment="live"
@@ -456,6 +487,9 @@ export function SettingsPage(): React.JSX.Element {
                   onRemove={(payload) => removeMutation.mutateAsync(payload)}
                   onTestConnection={(payload) =>
                     testConnection.mutateAsync({ vendor: 'alpaca', ...payload })
+                  }
+                  onTestStoredConnection={(payload) =>
+                    testStoredAlpacaConnection.mutateAsync(payload)
                   }
                 />
               </div>

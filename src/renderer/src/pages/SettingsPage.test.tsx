@@ -6,6 +6,7 @@ import {
   useSaveAlpacaCredentials,
   useSetActiveBrokerEnvironment,
   useSettingsStatus,
+  useTestStoredAlpacaConnection,
   useTestSettingsConnection
 } from '../hooks/useSettings'
 import { usePositions } from '../hooks/usePositions'
@@ -15,6 +16,7 @@ vi.mock('../hooks/useSettings', () => ({
   useSaveAlpacaCredentials: vi.fn(),
   useRemoveAlpacaCredentials: vi.fn(),
   useSetActiveBrokerEnvironment: vi.fn(),
+  useTestStoredAlpacaConnection: vi.fn(),
   useTestSettingsConnection: vi.fn()
 }))
 
@@ -26,6 +28,7 @@ const mockUseSettingsStatus = vi.mocked(useSettingsStatus)
 const mockUseSaveAlpacaCredentials = vi.mocked(useSaveAlpacaCredentials)
 const mockUseRemoveAlpacaCredentials = vi.mocked(useRemoveAlpacaCredentials)
 const mockUseSetActiveBrokerEnvironment = vi.mocked(useSetActiveBrokerEnvironment)
+const mockUseTestStoredAlpacaConnection = vi.mocked(useTestStoredAlpacaConnection)
 const mockUseTestSettingsConnection = vi.mocked(useTestSettingsConnection)
 const mockUsePositions = vi.mocked(usePositions)
 
@@ -58,6 +61,9 @@ beforeEach(() => {
   mockUseTestSettingsConnection.mockReturnValue({
     mutateAsync: vi.fn()
   } as unknown as ReturnType<typeof useTestSettingsConnection>)
+  mockUseTestStoredAlpacaConnection.mockReturnValue({
+    mutateAsync: vi.fn()
+  } as unknown as ReturnType<typeof useTestStoredAlpacaConnection>)
   mockUsePositions.mockReturnValue({
     data: [],
     isLoading: false,
@@ -144,14 +150,14 @@ it('renders exact Massive auth and rate-limit messages in red', async () => {
 })
 
 it('renders the exact Alpaca verified result for paper credentials', async () => {
-  mockUseTestSettingsConnection.mockReturnValue({
+  mockUseTestStoredAlpacaConnection.mockReturnValue({
     mutateAsync: vi.fn().mockResolvedValue({
       ok: true,
       vendor: 'alpaca',
       environment: 'paper',
       accountNumberMasked: 'PA…ABC'
     })
-  } as unknown as ReturnType<typeof useTestSettingsConnection>)
+  } as unknown as ReturnType<typeof useTestStoredAlpacaConnection>)
 
   render(<SettingsPage />)
 
@@ -161,6 +167,27 @@ it('renders the exact Alpaca verified result for paper credentials', async () =>
   expect(
     await within(paperCard).findByText('✓ Verified — Account PA…ABC (paper)')
   ).toBeInTheDocument()
+})
+
+it('configured Alpaca cards re-test stored credentials instead of faking success', async () => {
+  const testStoredConnection = vi.fn().mockResolvedValue({
+    ok: false,
+    errorCode: 'auth_failed',
+    message: 'Authentication failed (401)'
+  })
+  mockUseTestStoredAlpacaConnection.mockReturnValue({
+    mutateAsync: testStoredConnection
+  } as unknown as ReturnType<typeof useTestStoredAlpacaConnection>)
+
+  render(<SettingsPage />)
+
+  const paperCard = screen.getByTestId('alpaca-card-paper')
+  fireEvent.click(within(paperCard).getByRole('button', { name: /test connection/i }))
+
+  expect(testStoredConnection).toHaveBeenCalledWith({ environment: 'paper' })
+  expect(await within(paperCard).findByText('Authentication failed (401)')).toHaveClass(
+    'text-wb-red'
+  )
 })
 
 it('paper-card mismatch message does not save credentials', async () => {
@@ -193,4 +220,48 @@ it('paper-card mismatch message does not save credentials', async () => {
     await within(paperCard).findByText('Environment mismatch — these are LIVE keys, not paper keys')
   ).toBeInTheDocument()
   expect(saveAlpaca).not.toHaveBeenCalled()
+})
+
+it('post-save success message uses the freshly verified account number instead of placeholders', async () => {
+  const saveAlpaca = vi.fn().mockResolvedValue({
+    status: {
+      ...statusFixture,
+      alpacaPaperAccountNumberMasked: null
+    },
+    test: {
+      ok: true,
+      vendor: 'alpaca',
+      environment: 'paper',
+      accountNumberMasked: 'PA…FRESH'
+    }
+  })
+  mockUseSettingsStatus.mockReturnValue({
+    data: {
+      ...statusFixture,
+      alpacaPaper: 'missing',
+      alpacaPaperAccountNumberMasked: null
+    },
+    isLoading: false,
+    isError: false,
+    error: null
+  } as ReturnType<typeof useSettingsStatus>)
+  mockUseSaveAlpacaCredentials.mockReturnValue({
+    mutateAsync: saveAlpaca
+  } as unknown as ReturnType<typeof useSaveAlpacaCredentials>)
+
+  render(<SettingsPage />)
+
+  const paperCard = screen.getByTestId('alpaca-card-paper')
+  fireEvent.change(within(paperCard).getByLabelText(/api key id/i), {
+    target: { value: 'PK_FRESH_KEY' }
+  })
+  fireEvent.change(within(paperCard).getByLabelText(/secret key/i), {
+    target: { value: 'fresh-secret' }
+  })
+  fireEvent.submit(within(paperCard).getByRole('button', { name: /save/i }).closest('form')!)
+
+  expect(
+    await within(paperCard).findByText('✓ Verified — Account PA…FRESH (paper)')
+  ).toBeInTheDocument()
+  expect(within(paperCard).queryByText(/PA…ABC|AL…ZYX/)).not.toBeInTheDocument()
 })

@@ -414,6 +414,13 @@ export type SetActiveBrokerEnvironmentPayload = z.infer<
   typeof SetActiveBrokerEnvironmentPayloadSchema
 >
 
+export const TestStoredAlpacaConnectionPayloadSchema = z.object({
+  environment: BrokerEnvironmentSchema
+})
+export type TestStoredAlpacaConnectionPayload = z.infer<
+  typeof TestStoredAlpacaConnectionPayloadSchema
+>
+
 export const TestConnectionPayloadSchema = z.discriminatedUnion('vendor', [
   z.object({
     vendor: z.literal('massive')

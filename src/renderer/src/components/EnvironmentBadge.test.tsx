@@ -22,6 +22,6 @@ it('none renders NO BROKER with neutral styling and tooltip text', () => {
   render(<EnvironmentBadge activeBrokerEnv="none" />)
 
   const badge = screen.getByText('NO BROKER')
-  expect(badge).toHaveAttribute('title', 'Alpaca not configured. Click to set up.')
+  expect(badge).toHaveAttribute('title', 'Alpaca not configured. Open Settings to set up.')
   expect(badge).toHaveClass('text-wb-text-secondary')
 })

@@ -223,6 +223,10 @@ interface IpcMarketStatus {
   session: 'regular' | 'pre' | 'post' | 'closed'
 }
 
+interface IpcTestStoredAlpacaConnectionPayload {
+  environment: 'paper' | 'live'
+}
+
 interface IpcGetStockQuotesPayload {
   tickers: string[]
 }
@@ -330,6 +334,10 @@ type IpcTestConnectionResult =
   | { ok: false; errorCode: string; message: string }
 
 type IpcCredentialStatusResult = IpcResult<{ status: IpcCredentialStatus }>
+type IpcSaveAlpacaCredentialsResult = IpcResult<{
+  status: IpcCredentialStatus
+  test: Extract<IpcTestConnectionResult, { ok: true; vendor: 'alpaca' }>
+}>
 type IpcTestSettingsConnectionResult = IpcResult<{ test: IpcTestConnectionResult }>
 
 interface IpcGetOptionSnapshotsPayload {
@@ -411,7 +419,9 @@ declare global {
       }
       settings: {
         status: () => Promise<IpcCredentialStatusResult>
-        saveAlpaca: (payload: IpcSaveAlpacaCredentialsPayload) => Promise<IpcCredentialStatusResult>
+        saveAlpaca: (
+          payload: IpcSaveAlpacaCredentialsPayload
+        ) => Promise<IpcSaveAlpacaCredentialsResult>
         removeAlpaca: (
           payload: IpcRemoveAlpacaCredentialsPayload
         ) => Promise<IpcCredentialStatusResult>
@@ -420,6 +430,9 @@ declare global {
         ) => Promise<IpcCredentialStatusResult>
         testConnection: (
           payload: IpcTestConnectionPayload
+        ) => Promise<IpcTestSettingsConnectionResult>
+        testStoredAlpacaConnection: (
+          payload: IpcTestStoredAlpacaConnectionPayload
         ) => Promise<IpcTestSettingsConnectionResult>
       }
       marketData: {

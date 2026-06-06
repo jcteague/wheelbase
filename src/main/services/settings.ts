@@ -1,5 +1,8 @@
 import type Database from 'better-sqlite3'
 import { ValidationError } from '../core/lifecycle'
+import { logger } from '../logger'
+import type { TestConnectionResult } from './settings-connections'
+import { saveVerifiedAlpacaCredentials as saveVerifiedAlpacaCredentialsService } from './save-verified-alpaca-credentials'
 
 export type BrokerEnvironment = 'paper' | 'live'
 export type ActiveBrokerEnvironment = BrokerEnvironment | 'none'
@@ -36,9 +39,23 @@ export type AlpacaCredentials = {
   secret: string
 }
 
+export type VerifiedAlpacaConnectionResult = Extract<
+  TestConnectionResult,
+  { ok: true; vendor: 'alpaca' }
+>
+
+export type SaveVerifiedAlpacaCredentialsResult = {
+  status: CredentialStatus
+  test: VerifiedAlpacaConnectionResult
+  refreshBroker: boolean
+}
+
 export type SettingsService = {
   getCredentialStatus: () => CredentialStatus
   saveAlpacaCredentials: (input: SaveAlpacaCredentialsInput) => CredentialStatus
+  saveVerifiedAlpacaCredentials: (
+    input: Omit<SaveAlpacaCredentialsInput, 'accountNumberMasked'>
+  ) => Promise<SaveVerifiedAlpacaCredentialsResult>
   removeAlpacaCredentials: (input: RemoveAlpacaCredentialsInput) => CredentialStatus
   setActiveBrokerEnvironment: (input: SetActiveBrokerEnvironmentInput) => CredentialStatus
   loadAlpacaCredentials: (environment: BrokerEnvironment) => AlpacaCredentials | null
@@ -54,6 +71,7 @@ type SettingsServiceOptions = {
   db: Database.Database
   safeStorage: SafeStorageLike
   loadMassiveApiKey: () => string
+  testAlpacaConnection: (input: AlpacaCredentials) => Promise<TestConnectionResult>
   now?: () => string
 }
 
@@ -133,6 +151,7 @@ export function createSettingsService({
   db,
   safeStorage,
   loadMassiveApiKey,
+  testAlpacaConnection,
   now = () => new Date().toISOString()
 }: SettingsServiceOptions): SettingsService {
   function getCredentialStatus(): CredentialStatus {
@@ -186,7 +205,29 @@ export function createSettingsService({
       savedAt
     )
 
-    return getCredentialStatus()
+    const status = getCredentialStatus()
+    logger.info(
+      {
+        environment: input.environment,
+        accountNumberMasked: input.accountNumberMasked ?? null,
+        activeBrokerEnv: status.activeBrokerEnv
+      },
+      'alpaca_credentials_saved'
+    )
+    return status
+  }
+
+  async function saveVerifiedAlpacaCredentials(
+    input: Omit<SaveAlpacaCredentialsInput, 'accountNumberMasked'>
+  ): Promise<SaveVerifiedAlpacaCredentialsResult> {
+    return saveVerifiedAlpacaCredentialsService(
+      {
+        getCredentialStatus,
+        saveAlpacaCredentials,
+        testAlpacaConnection
+      },
+      input
+    )
   }
 
   function removeAlpacaCredentials(input: RemoveAlpacaCredentialsInput): CredentialStatus {
@@ -199,7 +240,12 @@ export function createSettingsService({
       setStoredActiveEnvironment(db, 'none', now())
     }
 
-    return getCredentialStatus()
+    const status = getCredentialStatus()
+    logger.info(
+      { environment: input.environment, activeBrokerEnv: status.activeBrokerEnv },
+      'alpaca_credentials_removed'
+    )
+    return status
   }
 
   function setActiveBrokerEnvironment(input: SetActiveBrokerEnvironmentInput): CredentialStatus {
@@ -212,7 +258,9 @@ export function createSettingsService({
     }
 
     setStoredActiveEnvironment(db, input.environment, now())
-    return getCredentialStatus()
+    const status = getCredentialStatus()
+    logger.info({ environment: input.environment }, 'active_broker_environment_set')
+    return status
   }
 
   function loadAlpacaCredentials(environment: BrokerEnvironment): AlpacaCredentials | null {
@@ -235,6 +283,7 @@ export function createSettingsService({
   return {
     getCredentialStatus,
     saveAlpacaCredentials,
+    saveVerifiedAlpacaCredentials,
     removeAlpacaCredentials,
     setActiveBrokerEnvironment,
     loadAlpacaCredentials,

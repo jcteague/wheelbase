@@ -43,7 +43,9 @@ const api = {
     removeAlpaca: (payload: unknown) => invoke('settings:remove-alpaca-credentials', payload),
     setActiveBrokerEnvironment: (payload: unknown) =>
       invoke('settings:set-active-broker-environment', payload),
-    testConnection: (payload: unknown) => invoke('settings:test-connection', payload)
+    testConnection: (payload: unknown) => invoke('settings:test-connection', payload),
+    testStoredAlpacaConnection: (payload: unknown) =>
+      invoke('settings:test-stored-alpaca-connection', payload)
   },
   marketData: {
     stockQuotes: (payload: unknown) => invoke('market-data:stock-quotes', payload),

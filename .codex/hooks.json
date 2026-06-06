@@ -5,11 +5,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /Users/johnteague/my-stuff/wheelbase/.codex/hooks/post-edit-quality.sh",
-            "timeout": 30
+            "command": "bash /Users/johnteague/my-stuff/wb-37/.codex/hooks/post-edit-quality.sh",
+            "timeout": 60
           }
         ],
-        "matcher": "Edit|Write|MultiEdit"
+        "matcher": "Edit|Write|MultiEdit|ApplyPatch|apply_patch"
       }
     ],
     "Stop": [
@@ -17,8 +17,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /Users/johnteague/my-stuff/wheelbase/.codex/hooks/pre-stop-quality.sh",
-            "timeout": 60
+            "command": "bash /Users/johnteague/my-stuff/wb-37/.codex/hooks/pre-stop-quality.sh",
+            "timeout": 180
           }
         ]
       }

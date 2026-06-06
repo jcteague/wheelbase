@@ -211,32 +211,33 @@ export function PositionsListPage(): React.JSX.Element {
         </div>
       )}
 
+      {showMassiveSetupBanner && (
+        <div className="mx-[24px] mt-[16px] rounded-md border border-wb-gold-border bg-wb-gold-dim px-4 py-3 font-wb-mono text-[0.74rem] text-wb-text-primary">
+          Massive is app-provided, and this workspace has not configured it yet. Visit{' '}
+          <a href="#/settings" className="text-wb-gold">
+            Alpaca setup
+          </a>{' '}
+          to connect your broker once market data is available.
+        </div>
+      )}
+      {showNoBrokerBanner && (
+        <div className="mx-[24px] mt-[16px] rounded-md border border-wb-blue/25 bg-wb-blue-dim px-4 py-3 font-wb-mono text-[0.74rem] text-wb-text-primary">
+          Connect Alpaca to enable broker activity and buying power.
+        </div>
+      )}
+      {marketAuthPrompt && (
+        <div className="mx-[24px] mt-[16px] rounded-md border border-wb-red/25 bg-wb-red/10 px-4 py-3 font-wb-mono text-[0.74rem] text-wb-red">
+          {marketAuthPrompt}
+        </div>
+      )}
+      {brokerAuthPrompt && (
+        <div className="mx-[24px] mt-[16px] rounded-md border border-wb-red/25 bg-wb-red/10 px-4 py-3 font-wb-mono text-[0.74rem] text-wb-red">
+          {brokerAuthPrompt}
+        </div>
+      )}
+
       {data && data.length > 0 && (
         <>
-          {showMassiveSetupBanner && (
-            <div className="mx-[24px] mt-[16px] rounded-md border border-wb-gold-border bg-wb-gold-dim px-4 py-3 font-wb-mono text-[0.74rem] text-wb-text-primary">
-              Massive is app-provided, and this workspace has not configured it yet. Visit{' '}
-              <a href="#/settings" className="text-wb-gold">
-                Alpaca setup
-              </a>{' '}
-              to connect your broker once market data is available.
-            </div>
-          )}
-          {showNoBrokerBanner && (
-            <div className="mx-[24px] mt-[16px] rounded-md border border-wb-blue/25 bg-wb-blue-dim px-4 py-3 font-wb-mono text-[0.74rem] text-wb-text-primary">
-              Connect Alpaca to enable broker activity and buying power.
-            </div>
-          )}
-          {marketAuthPrompt && (
-            <div className="mx-[24px] mt-[16px] rounded-md border border-wb-red/25 bg-wb-red/10 px-4 py-3 font-wb-mono text-[0.74rem] text-wb-red">
-              {marketAuthPrompt}
-            </div>
-          )}
-          {brokerAuthPrompt && (
-            <div className="mx-[24px] mt-[16px] rounded-md border border-wb-red/25 bg-wb-red/10 px-4 py-3 font-wb-mono text-[0.74rem] text-wb-red">
-              {brokerAuthPrompt}
-            </div>
-          )}
           <StaleDataBanner stale={stale} minutesAgo={minutesAgo} />
           {snapshotsQuery.unavailable && (
             <div className="flex items-center gap-2 border-b border-wb-gold/30 bg-wb-gold/10 px-4 py-2 font-wb-mono text-[0.75rem] text-wb-gold">

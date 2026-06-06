@@ -11,12 +11,15 @@ import {
   removeAlpacaCredentials,
   saveAlpacaCredentials,
   setActiveBrokerEnvironment,
+  testStoredAlpacaConnection,
   testSettingsConnection,
   type ApiError,
   type CredentialStatus,
   type RemoveAlpacaCredentialsPayload,
   type SaveAlpacaCredentialsPayload,
+  type SaveAlpacaCredentialsResult,
   type SetActiveBrokerEnvironmentPayload,
+  type TestStoredAlpacaConnectionPayload,
   type TestSettingsConnectionPayload,
   type TestSettingsConnectionResult
 } from '../api/settings'
@@ -26,12 +29,12 @@ function hasBrokerQueryKey(query: Pick<Query, 'queryKey'>): boolean {
   return query.queryKey[0] === 'broker'
 }
 
-function useBrokerSettingsMutation<TPayload>(
-  mutationFn: (payload: TPayload) => Promise<CredentialStatus>
-): UseMutationResult<CredentialStatus, ApiError, TPayload> {
+function useBrokerSettingsMutation<TResult, TPayload>(
+  mutationFn: (payload: TPayload) => Promise<TResult>
+): UseMutationResult<TResult, ApiError, TPayload> {
   const queryClient = useQueryClient()
 
-  return useMutation<CredentialStatus, ApiError, TPayload>({
+  return useMutation<TResult, ApiError, TPayload>({
     mutationFn,
     onSuccess: () => {
       queryClient.invalidateQueries({ predicate: hasBrokerQueryKey })
@@ -48,7 +51,7 @@ export function useSettingsStatus(): UseQueryResult<CredentialStatus, ApiError> 
 }
 
 export function useSaveAlpacaCredentials(): UseMutationResult<
-  CredentialStatus,
+  SaveAlpacaCredentialsResult,
   ApiError,
   SaveAlpacaCredentialsPayload
 > {
@@ -60,7 +63,9 @@ export function useRemoveAlpacaCredentials(): UseMutationResult<
   ApiError,
   RemoveAlpacaCredentialsPayload
 > {
-  return useBrokerSettingsMutation(removeAlpacaCredentials)
+  return useBrokerSettingsMutation<CredentialStatus, RemoveAlpacaCredentialsPayload>(
+    removeAlpacaCredentials
+  )
 }
 
 export function useSetActiveBrokerEnvironment(): UseMutationResult<
@@ -68,7 +73,9 @@ export function useSetActiveBrokerEnvironment(): UseMutationResult<
   ApiError,
   SetActiveBrokerEnvironmentPayload
 > {
-  return useBrokerSettingsMutation(setActiveBrokerEnvironment)
+  return useBrokerSettingsMutation<CredentialStatus, SetActiveBrokerEnvironmentPayload>(
+    setActiveBrokerEnvironment
+  )
 }
 
 export function useTestSettingsConnection(): UseMutationResult<
@@ -78,5 +85,15 @@ export function useTestSettingsConnection(): UseMutationResult<
 > {
   return useMutation<TestSettingsConnectionResult, ApiError, TestSettingsConnectionPayload>({
     mutationFn: testSettingsConnection
+  })
+}
+
+export function useTestStoredAlpacaConnection(): UseMutationResult<
+  TestSettingsConnectionResult,
+  ApiError,
+  TestStoredAlpacaConnectionPayload
+> {
+  return useMutation<TestSettingsConnectionResult, ApiError, TestStoredAlpacaConnectionPayload>({
+    mutationFn: testStoredAlpacaConnection
   })
 }

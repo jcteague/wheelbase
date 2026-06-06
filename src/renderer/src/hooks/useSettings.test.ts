@@ -4,6 +4,7 @@ import {
   removeAlpacaCredentials,
   saveAlpacaCredentials,
   setActiveBrokerEnvironment,
+  testStoredAlpacaConnection,
   testSettingsConnection
 } from '../api/settings'
 import { brokerQueryKeys } from './brokerQueryKeys'
@@ -14,6 +15,7 @@ import {
   useSaveAlpacaCredentials,
   useSetActiveBrokerEnvironment,
   useSettingsStatus,
+  useTestStoredAlpacaConnection,
   useTestSettingsConnection
 } from './useSettings'
 
@@ -37,6 +39,7 @@ vi.mock('../api/settings', () => ({
   saveAlpacaCredentials: vi.fn(),
   removeAlpacaCredentials: vi.fn(),
   setActiveBrokerEnvironment: vi.fn(),
+  testStoredAlpacaConnection: vi.fn(),
   testSettingsConnection: vi.fn()
 }))
 
@@ -134,6 +137,18 @@ describe('useSettings hooks', () => {
     ]
 
     expect(options.mutationFn).toBe(testSettingsConnection)
+    options.onSuccess?.({})
+    expect(mockInvalidateQueries).not.toHaveBeenCalled()
+  })
+
+  it('useTestStoredAlpacaConnection uses the stored-credential API without invalidation', () => {
+    useTestStoredAlpacaConnection()
+
+    const [options] = mockUseMutation.mock.calls[0] as [
+      { mutationFn: typeof testStoredAlpacaConnection; onSuccess?: (data: unknown) => void }
+    ]
+
+    expect(options.mutationFn).toBe(testStoredAlpacaConnection)
     options.onSuccess?.({})
     expect(mockInvalidateQueries).not.toHaveBeenCalled()
   })
