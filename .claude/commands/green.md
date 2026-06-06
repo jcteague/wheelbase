@@ -210,13 +210,23 @@ After completing the green phase, create `plans/<feature-dir>/green-phase-result
 - **Plan file**: `plans/<feature-dir>/plan.md`
 - **Red phase results**: `plans/<feature-dir>/red-phase-results.md`
 
-## Implementation Files Created/Modified
+## Files touched (production)
+
+Every production file created or modified. Test files (`*.test.ts`,
+`*.test.tsx`) are derivable from sibling naming and should be omitted — list
+e2e tests separately below.
 
 - `src/main/core/costbasis.ts` — cost basis calculation engine
 - `src/main/core/lifecycle.ts` — phase state machine
 - `src/main/services/positions.ts` — position CRUD and cost basis persistence
 - `src/main/ipc/positions.ts` — IPC handler for position operations
 - `src/renderer/src/components/PositionCard.tsx` — position summary component
+
+## E2E coverage added or modified
+
+- `e2e/csp-entry.spec.ts` — N scenarios
+
+If no e2e tests were added or modified, write "None".
 
 ## Public Interfaces Implemented
 
