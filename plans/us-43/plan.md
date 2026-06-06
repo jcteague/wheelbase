@@ -6,11 +6,13 @@ topics: [market-data, iv-rank]
 status: planned
 ---
 
-# Implementation Plan: US-43 — Market Chameleon IVR Scraper
+# Implementation Plan: US-43 — IVR Scraper (Barchart)
 
 ## Summary
 
-Implements `fetchMarketChameleonIVR(ticker)` — a pure TypeScript module in `src/main/integrations/market-chameleon-scraper.ts` that fetches IV Rank (and optionally IV Percentile) from Market Chameleon's free public IV pages using `cheerio` for HTML parsing. The function returns a typed discriminated union (`MCIVRResult`) and never throws. No DB, no IPC, no UI — this is the foundational fetch primitive that US-44 (scheduled collection) and US-45 (UI display) will consume.
+Implements `fetchIVR(ticker)` — a pure TypeScript module in `src/main/integrations/barchart-ivr-scraper.ts` that fetches IV Rank and IV Percentile from Barchart's internal JSON API (`/proxies/core-api/v1/options/get`). Returns a typed discriminated union (`IVRResult`) and never throws. No DB, no IPC, no UI. This is the foundational fetch primitive that US-44 (scheduled collection) and US-45 (UI display) will consume.
+
+**Note:** The story originally specified Market Chameleon + cheerio. We pivoted to Barchart after discovering MC's IVR data requires JavaScript rendering and a custom XOR cipher — see `plans/us-43/research.md`. Barchart returns the same data as clean JSON via an unauthenticated API call.
 
 ## Supporting Documents
 
@@ -21,9 +23,8 @@ Implements `fetchMarketChameleonIVR(ticker)` — a pure TypeScript module in `sr
 
 ## Prerequisites
 
-- `cheerio` must be added as a production dependency (`pnpm add cheerio`)
-- Selector discovery: before Green phase, manually inspect `https://marketchameleon.com/Overview/SPY/IV/` in a browser to identify the CSS selectors for IV Rank and IV Percentile. Document them as constants in the scraper.
-- The lightweight fetch test script (`scripts/test-mc-fetch.ts`) should be run first to confirm plain HTTPS fetch + cheerio can retrieve IV data from the live page.
+- `cheerio` was added to `package.json` during research but is **not needed** for this module — do not import it.
+- No migrations required.
 
 ## Implementation Areas
 
@@ -33,28 +34,27 @@ Implements `fetchMarketChameleonIVR(ticker)` — a pure TypeScript module in `sr
 
 **Files to create or modify:**
 
-- `src/main/integrations/market-chameleon-scraper.ts` — create new file; define all Zod schemas and export TypeScript types
+- `src/main/integrations/barchart-ivr-scraper.ts` — create new file; define all Zod schemas and export TypeScript types
 
 **Red — tests to write:**
 
-In `src/main/integrations/market-chameleon-scraper.test.ts`:
+In `src/main/integrations/barchart-ivr-scraper.test.ts`:
 
-- Test: `MCIVRDataSchema rejects ivr below 0` — assert `MCIVRDataSchema.safeParse({ ticker: 'SPY', ivr: -1, observedAt: new Date().toISOString(), source: 'market-chameleon' }).success === false`
-- Test: `MCIVRDataSchema rejects ivr above 100` — same pattern with `ivr: 101`
-- Test: `MCIVRDataSchema rejects invalid ticker` — ticker `'sp y'` (contains space) fails
-- Test: `MCIVRDataSchema accepts valid ok result` — full valid payload passes
+- Test: `IVRDataSchema rejects ivr below 0` — `IVRDataSchema.safeParse({ ticker: 'SPY', ivr: -1, observedAt: new Date().toISOString(), source: 'barchart' }).success === false`
+- Test: `IVRDataSchema rejects ivr above 100` — same with `ivr: 101`
+- Test: `IVRDataSchema rejects invalid ticker` — ticker `'SP Y'` fails regex
+- Test: `IVRDataSchema accepts valid payload` — full valid object passes
 
 **Green — implementation:**
 
-- Define `MCIVRDataSchema` (Zod): `z.object({ ticker: z.string().regex(/^[A-Z0-9]{1,5}$/), ivr: z.number().min(0).max(100), ivp: z.number().min(0).max(100).optional(), iv30: z.number().positive().optional(), observedAt: z.string().datetime(), source: z.literal('market-chameleon') })`
-- Export `MCIVRData` type inferred from schema
-- Define `MCIVRResult` discriminated union as documented in `plans/us-43/data-model.md` — six variants: `ok | not_available | parse_error | network_error | rate_limited | invalid_input`
-- Export all variant types
+- `IVRDataSchema`: `z.object({ ticker: z.string().regex(/^[A-Z0-9]{1,5}$/), ivr: z.number().min(0).max(100), ivp: z.number().min(0).max(100).optional(), iv30: z.number().positive().optional(), observedAt: z.string().datetime(), source: z.literal('barchart') })`
+- Export `IVRData` type: `z.infer<typeof IVRDataSchema>`
+- Define `IVRResult` discriminated union — six variants as documented in `plans/us-43/data-model.md`: `ok | not_available | parse_error | network_error | rate_limited | invalid_input`
+- Export all six variant types
 
 **Refactor — cleanup to consider:**
 
-- Check that error variant types are co-located with the schema (no split across files)
-- Confirm type names follow existing integration naming conventions in `src/main/integrations/`
+- Confirm all exported type names follow the existing integration naming conventions in `src/main/integrations/`
 
 **Acceptance criteria covered:**
 
@@ -67,21 +67,21 @@ In `src/main/integrations/market-chameleon-scraper.test.ts`:
 
 **Files to create or modify:**
 
-- `src/main/integrations/market-chameleon-scraper.ts` — add `validateTicker(ticker: string): boolean`
+- `src/main/integrations/barchart-ivr-scraper.ts` — add `validateTicker(ticker: string): boolean`
 
 **Red — tests to write:**
 
-In `src/main/integrations/market-chameleon-scraper.test.ts`:
+In `src/main/integrations/barchart-ivr-scraper.test.ts`:
 
-- Test: `fetchMarketChameleonIVR — invalid ticker (empty string)` — assert `result.status === 'invalid_input'` and `result.error.code === 'INVALID_TICKER'`
-- Test: `fetchMarketChameleonIVR — invalid ticker (non-alphanumeric)` — ticker `'SP-Y'` → `invalid_input`
-- Test: `fetchMarketChameleonIVR — invalid ticker (too long, 6 chars)` — ticker `'TOOLNG'` → `invalid_input`
-- Test: `fetchMarketChameleonIVR — does not issue a network request for invalid ticker` — assert `mockFetch` not called after stubbing global fetch
+- Test: `fetchIVR — invalid ticker (empty string)` — assert `result.status === 'invalid_input'` and `result.error.code === 'INVALID_TICKER'`
+- Test: `fetchIVR — invalid ticker (non-alphanumeric, "SP-Y")` — `invalid_input`
+- Test: `fetchIVR — invalid ticker (too long, 6 chars)` — `invalid_input`
+- Test: `fetchIVR — does not issue network request for invalid ticker` — assert `mockFetch` not called
 
 **Green — implementation:**
 
-- `validateTicker(ticker: string): boolean` — normalizes to uppercase, tests against `/^[A-Z0-9]{1,5}$/`
-- In `fetchMarketChameleonIVR`, call `validateTicker` first; return `{ status: 'invalid_input', error: { code: 'INVALID_TICKER' } }` immediately if invalid
+- `validateTicker(ticker: string): boolean` — `ticker.toUpperCase()` then test `/^[A-Z0-9]{1,5}$/`
+- In `fetchIVR`, call `validateTicker(ticker.toUpperCase())` first; return `{ status: 'invalid_input', error: { code: 'INVALID_TICKER' } }` if false
 
 **Refactor — cleanup to consider:**
 
@@ -93,165 +93,212 @@ In `src/main/integrations/market-chameleon-scraper.test.ts`:
 
 ---
 
-### 3. RateLimiter and HTTP Fetch Helper
+### 3. Session Acquisition and Cache
 
 **Files to create or modify:**
 
-- `src/main/integrations/market-chameleon-scraper.ts` — add `RateLimiter` class and `fetchPageHtml` function (module-internal, not exported)
+- `src/main/integrations/barchart-ivr-scraper.ts` — add `getSession()`, module-level `sessionCache`, `USER_AGENT` constant
 
 **Red — tests to write:**
 
-In `src/main/integrations/market-chameleon-scraper.test.ts`:
+In `src/main/integrations/barchart-ivr-scraper.test.ts`:
 
-- Test: `fetchMarketChameleonIVR — User-Agent header matches Wheelbase/{version}` — stub global fetch to capture request init; assert `headers['User-Agent']` starts with `'Wheelbase/'`
-- Test: `fetchMarketChameleonIVR — network_error on 5xx after 2 retries` — stub fetch to return 503 three times; assert result `status === 'network_error'` and `error.code === 'NETWORK_FAILURE'` and message includes `'503'`; assert fetch was called 3 times total
-- Test: `fetchMarketChameleonIVR — network_error on timeout (fetch throws)` — stub fetch to throw `TypeError('fetch failed')`; assert `status === 'network_error'`; assert fetch called 3 times
-- Test: `fetchMarketChameleonIVR — retry uses exponential backoff (sleep called between retries)` — spy on `setTimeout`; stub fetch to fail twice then succeed; assert `setTimeout` called at least twice with increasing delays
-- Test: `fetchMarketChameleonIVR — rate_limited on 429` — stub fetch to return 429; assert `status === 'rate_limited'` and fetch called exactly once (no retry)
-- Test: `fetchMarketChameleonIVR — rate_limited message includes Retry-After when header present` — stub 429 response with `Retry-After: 60` header; assert message includes `'60'`
+> All tests stub global `fetch` with `vi.stubGlobal('fetch', mockFetch)`. Two sequential mock responses are needed per test: (1) session acquisition → mock Response with `Set-Cookie` headers; (2) API call → mock JSON response.
+
+- Test: `fetchIVR — acquires session by fetching a Barchart page on first call` — assert `mockFetch` called with a `barchart.com` URL before the API URL
+- Test: `fetchIVR — sends X-XSRF-TOKEN header derived from Set-Cookie` — stub session response with `Set-Cookie: XSRF-TOKEN=abc123; path=/`; assert second fetch call has `X-XSRF-TOKEN: abc123`
+- Test: `fetchIVR — sends Cookie header from session` — assert second fetch call has `Cookie` header containing the session cookies
+- Test: `fetchIVR — reuses cached session on second call` — call `fetchIVR` twice; assert session-acquisition fetch called exactly once total
+- Test: `fetchIVR — User-Agent header includes Wheelbase/{version}` — assert both fetch calls send `User-Agent` starting with `'Wheelbase/'`
 
 **Green — implementation:**
 
-- `RateLimiter` class: `private lastAt = 0`; `async throttle(minMs = 1000)` — computes `wait = minMs - (Date.now() - lastAt)`, sleeps if positive, updates `lastAt`. Module-level singleton `const rateLimiter = new RateLimiter()`.
-- `USER_AGENT` constant: read version from `../../../package.json` (using `createRequire`), produce `Wheelbase/${version} (+mailto:jcteague@gmail.com)`
-- `fetchPageHtml(url: string): Promise<string>` — calls `rateLimiter.throttle()`, then `fetch(url, { headers: { 'User-Agent': USER_AGENT } })`. On 429: return `rate_limited` result immediately. On 5xx or network throw: retry up to 2 times with `Math.random() * 1000 * 2^attempt` ms backoff. On other non-200: throw with status. On 200: return `response.text()`.
+- `USER_AGENT` constant: `import pkg from '../../../package.json'; export const USER_AGENT = \`Wheelbase/${pkg.version} (+mailto:jcteague@gmail.com)\``
+- `SessionCache` type: `{ cookies: string; xsrf: string; expiresAt: number }`
+- Module-level `let sessionCache: SessionCache | null = null`
+- `getSession(): Promise<{ cookies: string; xsrf: string }>`:
+  1. Return cache if `sessionCache && Date.now() < sessionCache.expiresAt`
+  2. `fetch('https://www.barchart.com/stocks/quotes/SPY/options', { headers: { 'User-Agent': USER_AGENT, Accept: 'text/html' } })`
+  3. Extract `Set-Cookie` headers: `r.headers.getSetCookie()`
+  4. Build `cookies` string: `headers.map(c => c.split(';')[0]).join('; ')`
+  5. Extract `xsrf`: find the `XSRF-TOKEN=...` cookie, URL-decode the value
+  6. Set `sessionCache = { cookies, xsrf, expiresAt: Date.now() + 30 * 60 * 1000 }`
+  7. Return `{ cookies, xsrf }`
 
 **Refactor — cleanup to consider:**
 
-- Extract `sleep(ms)` as a named function (not inline `new Promise(...)`) for readability
-- Confirm `isNetworkError` from `./integration-errors.ts` is used to classify thrown errors consistently with the rest of the integration layer
+- Extract the XSRF extraction logic into a named helper `extractXsrf(setCookieHeaders: string[]): string` for readability
+- Check: does `Response.headers.getSetCookie()` exist in the Node version used by Electron? If not, fall back to `r.headers.get('set-cookie')`
+
+**Acceptance criteria covered:**
+
+- Scenario: Request identifies a polite user agent
+
+---
+
+### 4. HTTP Fetch Helper with Retry and Rate Limiter
+
+**Files to create or modify:**
+
+- `src/main/integrations/barchart-ivr-scraper.ts` — add `RateLimiter` class, `sleep()`, `fetchApi()` (module-internal)
+
+**Red — tests to write:**
+
+In `src/main/integrations/barchart-ivr-scraper.test.ts`:
+
+- Test: `fetchIVR — network_error on 5xx after 2 retries` — stub API fetch to return 503 three times; assert `status === 'network_error'`, `error.code === 'NETWORK_FAILURE'`, message includes `'503'`; assert API fetch called 3 times total
+- Test: `fetchIVR — network_error when fetch throws (network failure)` — stub fetch to throw `TypeError('fetch failed')` on API call; assert `status === 'network_error'`; assert retried 3 times
+- Test: `fetchIVR — retries use exponential backoff (setTimeout called between retries)` — spy `setTimeout`; stub API fetch to fail twice then succeed; assert `setTimeout` called at least twice
+- Test: `fetchIVR — rate_limited on 429, fetch called exactly once for API` — stub API fetch to return 429; assert `status === 'rate_limited'`, `error.code === 'RATE_LIMITED'`; assert API fetch called 1 time (no retry)
+- Test: `fetchIVR — rate_limited message includes Retry-After when header present` — stub 429 with `Retry-After: 60` header; assert `error.message` includes `'60'`
+
+**Green — implementation:**
+
+- `sleep(ms: number): Promise<void>` — `new Promise(resolve => setTimeout(resolve, ms))`
+- `RateLimiter` class: `private lastAt = 0`; `async throttle(minMs = 1000)` — wait if `Date.now() - lastAt < minMs`, then update `lastAt`. Module-level singleton: `const rateLimiter = new RateLimiter()`
+- `fetchApi(url: string, session: { cookies: string; xsrf: string }, retryCount = 0): Promise<Response>`:
+  1. `await rateLimiter.throttle()`
+  2. `fetch(url, { headers: { 'User-Agent': USER_AGENT, 'Accept': 'application/json', 'X-XSRF-TOKEN': session.xsrf, 'Cookie': session.cookies } })`
+  3. On throw: if `retryCount < 2` → `await sleep(Math.random() * 1000 * 2 ** retryCount)` → recurse; else return `network_error` result
+  4. On 429: return `rate_limited` result immediately (include `Retry-After` header in message if present)
+  5. On 5xx: if `retryCount < 2` → backoff → recurse; else return `network_error`
+  6. Return response for caller to parse
+
+**Refactor — cleanup to consider:**
+
+- Use `isNetworkError` from `./integration-errors.ts` consistently with the rest of the integration layer when classifying thrown errors
+- Confirm `RateLimiter` is a class rather than a closure — matches the existing project style preference for named constructs
 
 **Acceptance criteria covered:**
 
 - Scenario: Network failure (retry up to 2 times with exponential backoff)
 - Scenario: Rate limit / HTTP 429
-- Scenario: Request identifies a polite user agent
+- Scenario: Request identifies a polite user agent (rate ≤ 1 req/sec)
 
 ---
 
-### 4. HTML Parser
+### 5. JSON Parser
 
 **Files to create or modify:**
 
-- `src/main/integrations/market-chameleon-scraper.ts` — add `parseIVRFromHtml(ticker: string, html: string): MCIVRResult`
+- `src/main/integrations/barchart-ivr-scraper.ts` — add `parseIVRResponse(ticker: string, body: unknown): IVRResult`
 
 **Red — tests to write:**
 
-In `src/main/integrations/market-chameleon-scraper.test.ts`:
+In `src/main/integrations/barchart-ivr-scraper.test.ts`:
 
-> Note: tests use fixture HTML strings (not live network). Load representative HTML captured from a real Market Chameleon IV page. Store fixtures as `const` strings inline or in `src/main/integrations/__fixtures__/mc-ivr-spy.html`.
+> Use inline fixture objects (not network calls) for the parser tests.
 
-- Test: `parseIVRFromHtml — returns ok with ivr rounded to 1 dp from fixture HTML` — pass fixture HTML with known IVR value `"45.678"`, assert `result.data.ivr === 45.7`
-- Test: `parseIVRFromHtml — returns ok with ivp when element present` — fixture with IVP element, assert `result.data.ivp` is a number
-- Test: `parseIVRFromHtml — returns ok without ivp when element absent` — fixture without IVP element, assert `result.data.ivp === undefined`
-- Test: `parseIVRFromHtml — returns not_available when IVR section absent and "not available" text found` — fixture with empty/absent IVR section, assert `status === 'not_available'` and `error.code === 'TICKER_NOT_COVERED'`
-- Test: `parseIVRFromHtml — returns parse_error when selector not found and no "not available" marker` — fixture with unexpected HTML structure, assert `status === 'parse_error'` and `error.code === 'PARSE_FAILED'` and `error.message` contains the selector attempted
-- Test: `parseIVRFromHtml — parse_error htmlSnippet is first 500 chars of html` — assert `error.htmlSnippet === html.slice(0, 500)`
-- Test: `parseIVRFromHtml — parse_error emits WARN-level log` — spy on logger; assert `logger.warn` called once
+- Test: `parseIVRResponse — returns ok with ivr from impliedVolatilityRank1y` — pass fixture `{ count: 1, data: [{ raw: { impliedVolatilityRank1y: 45.678, impliedVolatilityPercentile1y: 0.72, historicVolatility20d: 18.5 }, baseSymbol: 'SPY' } ] }`; assert `result.data.ivr === 45.7`
+- Test: `parseIVRResponse — ivr rounded to 1 decimal place` — input `impliedVolatilityRank1y: 67.333`; assert `result.data.ivr === 67.3`
+- Test: `parseIVRResponse — ivp is impliedVolatilityPercentile1y * 100, rounded to 1 dp` — input `0.81673`; assert `result.data.ivp === 81.7`
+- Test: `parseIVRResponse — iv30 is historicVolatility20d when present` — assert `result.data.iv30 === 18.5`
+- Test: `parseIVRResponse — ivp absent when impliedVolatilityPercentile1y is null` — input `impliedVolatilityPercentile1y: null`; assert `result.data.ivp === undefined`
+- Test: `parseIVRResponse — returns not_available when count is 0` — `{ count: 0, data: [] }`; assert `status === 'not_available'`, `error.code === 'TICKER_NOT_COVERED'`, message includes ticker
+- Test: `parseIVRResponse — returns parse_error when impliedVolatilityRank1y missing` — `{ count: 1, data: [{ raw: {} }] }`; assert `status === 'parse_error'`, `error.code === 'PARSE_FAILED'`, `error.message` contains `'impliedVolatilityRank1y'`
+- Test: `parseIVRResponse — parse_error rawSnippet is first 500 chars of serialised data[0]` — assert `error.rawSnippet.length <= 500`
+- Test: `parseIVRResponse — parse_error emits WARN log` — spy on `logger.warn`; assert called once
 
 **Green — implementation:**
 
-> **Prerequisite:** Identify the actual CSS selectors by inspecting the live page in a browser (see `plans/us-43/quickstart.md`). Define them as named constants at the top of the module:
-> ```typescript
-> const IVR_SELECTOR = '...'   // to be determined from live page inspection
-> const IVP_SELECTOR = '...'   // to be determined, optional
-> const NOT_AVAILABLE_MARKER = '...' // text or element that signals "not covered"
-> ```
-
-- `parseIVRFromHtml(ticker: string, html: string): MCIVRResult`:
-  1. `cheerio.load(html)` → `$`
-  2. Check for `NOT_AVAILABLE_MARKER` → return `not_available`
-  3. Extract IVR text via `$(IVR_SELECTOR).first().text().trim()` → parse float → round to 1 dp with `Math.round(v * 10) / 10`
-  4. If IVR element absent → emit `logger.warn(...)` → return `parse_error` with `message` containing `IVR_SELECTOR`, `htmlSnippet: html.slice(0, 500)`
-  5. Optionally extract IVP and IV30 from their selectors
-  6. Return `{ status: 'ok', data: { ticker, ivr, ivp?, iv30?, observedAt: new Date().toISOString(), source: 'market-chameleon' } }`
-- Import `logger` from `'../logger'` (pino instance) — use `logger.warn(...)` on parse failure
+- `roundTo1dp(n: number): number` — `Math.round(n * 10) / 10`
+- `parseIVRResponse(ticker: string, body: unknown): IVRResult`:
+  1. Cast `body` as `{ count: number; data: Array<{ raw: Record<string, unknown> }> }`
+  2. If `body.count === 0` → return `not_available`
+  3. Extract `raw = body.data[0]?.raw`
+  4. If `typeof raw?.impliedVolatilityRank1y !== 'number'` → emit `logger.warn(...)` → return `parse_error` with message `'Expected impliedVolatilityRank1y in Barchart response'` and `rawSnippet: JSON.stringify(body.data[0]).slice(0, 500)`
+  5. Build result: `ivr = roundTo1dp(raw.impliedVolatilityRank1y)`, `ivp = typeof raw.impliedVolatilityPercentile1y === 'number' ? roundTo1dp(raw.impliedVolatilityPercentile1y * 100) : undefined`, `iv30 = typeof raw.historicVolatility20d === 'number' ? raw.historicVolatility20d : undefined`
+  6. Return `{ status: 'ok', data: { ticker, ivr, ivp, iv30, observedAt: new Date().toISOString(), source: 'barchart' } }`
+- Import `logger` from `'../logger'` — `logger.warn(...)` on parse failure only
 
 **Refactor — cleanup to consider:**
 
-- Ensure the float→1dp rounding is a named helper (`roundTo1dp`) to keep the parser readable
-- Confirm `cheerio` import style matches project ESM conventions (`import * as cheerio from 'cheerio'`)
+- Confirm `roundTo1dp` is shared with Area 1 (Zod validation) rather than duplicated
 
 **Acceptance criteria covered:**
 
-- Scenario: Scrape IVR for a covered ticker (ivr rounded to 1 dp, ivp optional)
+- Scenario: Scrape IVR for a covered ticker (ivr rounded to 1 dp, ivp present)
 - Scenario: Ticker not covered on free tier
-- Scenario: Page structure changed and IVR could not be parsed
+- Scenario: Page structure changed / response fields missing (parse_error)
 
 ---
 
-### 5. Main Function: `fetchMarketChameleonIVR`
+### 6. Main Function: `fetchIVR`
 
 **Files to create or modify:**
 
-- `src/main/integrations/market-chameleon-scraper.ts` — add and export `fetchMarketChameleonIVR(ticker: string): Promise<MCIVRResult>`
+- `src/main/integrations/barchart-ivr-scraper.ts` — add and export `fetchIVR(ticker: string): Promise<IVRResult>`
 
 **Red — tests to write:**
 
-In `src/main/integrations/market-chameleon-scraper.test.ts`:
+In `src/main/integrations/barchart-ivr-scraper.test.ts`:
 
-- Test: `fetchMarketChameleonIVR — ok result for covered ticker (SPY)` — stub global fetch to return 200 with fixture HTML; assert `status === 'ok'` and `data.ticker === 'SPY'` and `data.source === 'market-chameleon'` and `data.ivr` is a number
-- Test: `fetchMarketChameleonIVR — passes uppercase ticker in URL even when caller passes lowercase` — stub fetch; call with `'spy'`; assert URL contains `/SPY/`
-- Test: `fetchMarketChameleonIVR — observedAt is a valid ISO-8601 string` — from ok result, assert `new Date(result.data.observedAt).toISOString() === result.data.observedAt`
-- Test: `fetchMarketChameleonIVR — not_available when page returns not-available fixture` — stub fetch with not-available HTML; assert `status === 'not_available'`
-- Test: `fetchMarketChameleonIVR — parse_error propagated from parser` — stub fetch with unexpected HTML; assert `status === 'parse_error'`
-- Test: `fetchMarketChameleonIVR — network_error propagated from fetch helper` — stub fetch to throw; assert `status === 'network_error'`
-- Test: `fetchMarketChameleonIVR — rate_limited propagated from fetch helper` — stub 429; assert `status === 'rate_limited'`
+- Test: `fetchIVR — ok result for SPY` — stub session fetch + API fetch with valid fixture; assert `status === 'ok'`, `data.ticker === 'SPY'`, `data.source === 'barchart'`, `data.ivr` is a number
+- Test: `fetchIVR — accepts lowercase ticker, upcases it in request URL and result` — call `fetchIVR('spy')`; assert URL contains `baseSymbol=SPY` and `result.data.ticker === 'SPY'`
+- Test: `fetchIVR — observedAt is valid ISO-8601` — assert `new Date(result.data.observedAt).toISOString() === result.data.observedAt`
+- Test: `fetchIVR — not_available propagated from parser` — stub API with `count: 0` fixture; assert `status === 'not_available'`
+- Test: `fetchIVR — parse_error propagated from parser` — stub API with missing-field fixture; assert `status === 'parse_error'`
+- Test: `fetchIVR — network_error propagated from fetch helper` — stub API fetch to throw; assert `status === 'network_error'`
+- Test: `fetchIVR — rate_limited propagated from fetch helper` — stub 429; assert `status === 'rate_limited'`
+- Test: `fetchIVR — logs INFO on ok result` — spy `logger.info`; assert called with `{ ticker, ivr }` context
 
 **Green — implementation:**
 
-- `fetchMarketChameleonIVR(ticker: string): Promise<MCIVRResult>`:
-  1. Normalize ticker: `const t = ticker.toUpperCase()`
-  2. Validate: if `!validateTicker(t)` → return `invalid_input`
-  3. Build URL: `` `https://marketchameleon.com/Overview/${t}/IV/` ``
-  4. Call `fetchPageHtml(url)` — catches propagated `rate_limited` / `network_error` from `fetchPageHtml`
-  5. Pass HTML to `parseIVRFromHtml(t, html)`
-  6. Return result
-- Wrap step 4–5 in try/catch to ensure any unexpected throw becomes `network_error`
-- Log INFO on `ok` result: `logger.info({ ticker: t, ivr: result.data.ivr }, 'MC IVR fetched')`
+- `fetchIVR(ticker: string): Promise<IVRResult>`:
+  1. `const t = ticker.toUpperCase()`
+  2. If `!validateTicker(t)` → return `invalid_input`
+  3. `const session = await getSession()` — catches throw, returns `network_error` if session fetch fails
+  4. Build API URL: `` `https://www.barchart.com/proxies/core-api/v1/options/get?baseSymbol=${t}&fields=baseSymbol,impliedVolatilityRank1y,impliedVolatilityPercentile1y,historicVolatility20d&limit=1&raw=1` ``
+  5. `const response = await fetchApi(url, session)` — already returns typed `IVRResult` on error paths; returns `Response` on 200
+  6. If response is already an `IVRResult` (rate_limited / network_error from fetchApi) → return it
+  7. `const body = await response.json()`
+  8. `const result = parseIVRResponse(t, body)`
+  9. If `result.status === 'ok'` → `logger.info({ ticker: t, ivr: result.data.ivr }, 'Barchart IVR fetched')`
+  10. Return `result`
+- Wrap steps 3–9 in try/catch — any unexpected throw → `{ status: 'network_error', error: { code: 'NETWORK_FAILURE', message: err.message } }`
 
 **Refactor — cleanup to consider:**
 
-- Check for duplication and naming consistency across validate → fetch → parse flow
-- Verify logger calls: INFO on ok, WARN on parse_error (in parser), no logging on other error paths (callers observe the typed result)
+- Review the flow for clarity: validate → session → fetch → parse — confirm no logic leaked into the orchestrator beyond sequencing
+- Verify no unused imports after all areas are complete
 
 **Acceptance criteria covered:**
 
-- All scenarios — this is the public API that wires every piece together
+- All scenarios — this is the public API wiring every piece together
 
 ---
 
-### 6. E2e Tests
+### 7. E2e Tests (AC-level)
 
 **Files to create or modify:**
 
-- `src/main/integrations/market-chameleon-scraper.test.ts` — AC-level describe block at the bottom: `describe('fetchMarketChameleonIVR — AC coverage')`
+- `src/main/integrations/barchart-ivr-scraper.test.ts` — AC-level `describe` block: `describe('fetchIVR — AC coverage')`
 
-> These tests treat `fetchMarketChameleonIVR` as a black box and map 1:1 to story ACs. All use stubbed fetch (no live network).
+> These tests treat `fetchIVR` as a black box and map 1:1 to story ACs. All use stubbed fetch — no live network.
 
 **Red — tests to write (one per AC):**
 
-- Test: `AC: Scrape IVR for a covered ticker — returns ok with ivr, ivp, observedAt, source` — stub fetch 200 with SPY fixture HTML; assert `status === 'ok'`, `data.ivr` is `number`, `data.ticker === 'SPY'`, `data.source === 'market-chameleon'`, `data.observedAt` matches ISO-8601
-- Test: `AC: ivr is rounded to one decimal place` — stub fixture with raw IVR value `"67.333"`; assert `result.data.ivr === 67.3`
-- Test: `AC: Ticker not covered on free tier — returns not_available` — stub fetch 200 with not-covered fixture; assert `status === 'not_available'`, `error.code === 'TICKER_NOT_COVERED'`, `error.message` includes `'ILLIQUID'`
-- Test: `AC: Page structure changed — returns parse_error with selector and htmlSnippet` — stub fetch 200 with empty-body HTML; assert `status === 'parse_error'`, `error.code === 'PARSE_FAILED'`, `error.message` contains selector name, `error.htmlSnippet.length <= 500`
-- Test: `AC: Page structure changed — emits WARN log` — spy logger; same fixture; assert `logger.warn` called
-- Test: `AC: Network failure — returns network_error after 2 retries` — stub fetch to throw `TypeError('fetch failed')` three times; assert `status === 'network_error'`, `error.code === 'NETWORK_FAILURE'`, fetch called 3 times
-- Test: `AC: Rate limit HTTP 429 — returns rate_limited, no retry` — stub fetch to return 429; assert `status === 'rate_limited'`, `error.code === 'RATE_LIMITED'`, fetch called exactly 1 time
+- Test: `AC: Scrape IVR for a covered ticker — returns ok with ivr, ivp, observedAt, source` — stub session + API with SPY fixture; assert `status === 'ok'`, `data.ivr` is number 0–100, `data.ticker === 'SPY'`, `data.source === 'barchart'`, `data.observedAt` parses as ISO-8601
+- Test: `AC: ivr is rounded to one decimal place` — stub API fixture with `impliedVolatilityRank1y: 67.333`; assert `result.data.ivr === 67.3`
+- Test: `AC: Ticker not covered — returns not_available with TICKER_NOT_COVERED` — stub API with `count: 0`; assert `status === 'not_available'`, `error.code === 'TICKER_NOT_COVERED'`; assert `error.message` includes ticker name
+- Test: `AC: Response fields missing — returns parse_error with PARSE_FAILED` — stub API with `{ count: 1, data: [{ raw: {} }] }`; assert `status === 'parse_error'`, `error.code === 'PARSE_FAILED'`, `error.message` contains `'impliedVolatilityRank1y'`, `error.rawSnippet.length <= 500`
+- Test: `AC: Response fields missing — emits WARN log` — same fixture; spy `logger.warn`; assert called
+- Test: `AC: Network failure — returns network_error after 2 retries` — stub API fetch to throw `TypeError('fetch failed')` three times; assert `status === 'network_error'`, `error.code === 'NETWORK_FAILURE'`; assert API fetch called 3 times
+- Test: `AC: Rate limit HTTP 429 — returns rate_limited, no retry` — stub API 429; assert `status === 'rate_limited'`, `error.code === 'RATE_LIMITED'`; API fetch called exactly 1 time
 - Test: `AC: Rate limit HTTP 429 — message includes Retry-After if present` — stub 429 with `Retry-After: 120` header; assert `error.message` includes `'120'`
-- Test: `AC: Request identifies a polite user agent` — stub fetch 200 with fixture; assert `User-Agent` header passed to fetch starts with `'Wheelbase/'`
-- Test: `AC: Invalid input — empty ticker returns invalid_input without network request` — call with `''`; assert `status === 'invalid_input'`, `error.code === 'INVALID_TICKER'`, fetch not called
-- Test: `AC: Invalid input — non-alphanumeric ticker returns invalid_input` — call with `'SP-Y'`; assert same
+- Test: `AC: Request identifies a polite user agent` — assert `User-Agent` header on API call starts with `'Wheelbase/'`
+- Test: `AC: Invalid input — empty ticker returns invalid_input without network request` — `fetchIVR('')`; assert `status === 'invalid_input'`, fetch not called
+- Test: `AC: Invalid input — non-alphanumeric ticker returns invalid_input` — `fetchIVR('SP-Y')`; assert same
 
 **Green — implementation:**
 
-No new implementation code — all behaviour is already wired in Areas 1–5. This area only requires writing the AC-level test describe block.
+No new production code — all behaviour is wired in Areas 1–6. This area only requires writing the AC-level test `describe` block.
 
 **Refactor — cleanup to consider:**
 
-- Extract fixture HTML strings into named constants or a `__fixtures__/` directory to avoid repetition across unit and AC tests
-- Confirm each AC test has a descriptive name that mirrors the Gherkin scenario title exactly
+- Extract shared mock helpers (`mockSession()`, `mockApiOk(ticker, ivr)`, `mockApi429()`) to reduce repetition across unit and AC tests
+- Confirm each AC test name mirrors the Gherkin scenario title exactly
 
 **Acceptance criteria covered:**
 
-- All 7 Gherkin scenarios from the user story
+- All 7 Gherkin scenarios from the user story (mapped to Barchart mechanics)

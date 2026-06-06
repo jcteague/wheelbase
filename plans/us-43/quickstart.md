@@ -1,4 +1,4 @@
-# Quickstart: US-43 — Market Chameleon IVR Scraper
+# Quickstart: US-43 — IVR Scraper (Barchart)
 
 ## Prerequisites
 
@@ -13,49 +13,65 @@ No migrations required — this story introduces no database changes.
 
 ```bash
 # Run only this story's tests
-pnpm test -- src/main/integrations/market-chameleon-scraper.test.ts
+pnpm test -- src/main/integrations/barchart-ivr-scraper.test.ts
 
 # Run with verbose output
-pnpm test -- --reporter verbose src/main/integrations/market-chameleon-scraper.test.ts
+pnpm test -- --reporter verbose src/main/integrations/barchart-ivr-scraper.test.ts
 
 # Run all tests (confirm no regressions)
 pnpm test
 ```
 
-## Selector Discovery (required before Green phase)
+## How to Verify Locally Against Live Barchart
 
-Before implementing the HTML parser, you must identify the actual CSS selectors for IV Rank on Market Chameleon's live page:
+Run the test probe script to confirm the API still returns IVR data:
 
-1. Open `https://marketchameleon.com/Overview/SPY/IV/` in a browser
-2. Open DevTools → Inspector
-3. Locate the IV Rank and IV Percentile values in the DOM
-4. Record the CSS selector (class name, data attribute, or element path)
-5. Confirm the same selector works for a second ticker (e.g., AAPL)
-6. Document the selector in a comment in the parser function
+```bash
+node scripts/test-bc-fetch.mjs SPY
+node scripts/test-bc-fetch.mjs AAPL
+node scripts/test-bc-fetch.mjs ZZZNOTREAL   # should show not_available
+```
 
-> **Note:** If the page content is loaded via JavaScript (i.e., `cheerio.load(html)` shows no IV data), Cloudflare or JS rendering is blocking the plain fetch approach. In that case, stop and discuss escalating to a Playwright-based fetch before proceeding.
+The script performs the same two-step flow the module uses: acquire session cookies, then call the API.
 
 ## Expected Passing Criteria
 
-All tests in `src/main/integrations/market-chameleon-scraper.test.ts` pass:
+All tests in `src/main/integrations/barchart-ivr-scraper.test.ts` pass:
 
 ```
-✓ fetchMarketChameleonIVR — invalid ticker (empty string)
-✓ fetchMarketChameleonIVR — invalid ticker (non-alphanumeric)
-✓ fetchMarketChameleonIVR — invalid ticker (too long)
-✓ fetchMarketChameleonIVR — ok result for covered ticker
-✓ fetchMarketChameleonIVR — ivr rounded to 1 decimal place
-✓ fetchMarketChameleonIVR — ivp present when available
-✓ fetchMarketChameleonIVR — not_available when IVR section absent
-✓ fetchMarketChameleonIVR — parse_error when selector not found
-✓ fetchMarketChameleonIVR — parse_error emits WARN log
-✓ fetchMarketChameleonIVR — network_error on 5xx after 2 retries
-✓ fetchMarketChameleonIVR — network_error on timeout after 2 retries
-✓ fetchMarketChameleonIVR — retry uses exponential backoff delay
-✓ fetchMarketChameleonIVR — rate_limited on 429, no retry
-✓ fetchMarketChameleonIVR — rate_limited message includes Retry-After
-✓ fetchMarketChameleonIVR — User-Agent header matches Wheelbase/{version}
-✓ fetchMarketChameleonIVR — does not issue network request for invalid ticker
+✓ IVRDataSchema — rejects ivr below 0
+✓ IVRDataSchema — rejects ivr above 100
+✓ IVRDataSchema — rejects invalid ticker
+✓ IVRDataSchema — accepts valid payload
+
+✓ fetchIVR — invalid ticker (empty string) → invalid_input, no network request
+✓ fetchIVR — invalid ticker (non-alphanumeric) → invalid_input
+✓ fetchIVR — invalid ticker (too long, 6 chars) → invalid_input
+
+✓ fetchIVR — acquires session cookies from Barchart on first call
+✓ fetchIVR — sends X-XSRF-TOKEN header from session
+✓ fetchIVR — sends Cookie header from session
+✓ fetchIVR — reuses cached session on second call (only 1 session fetch)
+✓ fetchIVR — User-Agent header matches Wheelbase/{version}
+
+✓ fetchIVR — ok result: ivr mapped from impliedVolatilityRank1y
+✓ fetchIVR — ok result: ivr rounded to 1 decimal place
+✓ fetchIVR — ok result: ivp mapped from impliedVolatilityPercentile1y * 100
+✓ fetchIVR — ok result: source is "barchart"
+✓ fetchIVR — ok result: observedAt is valid ISO-8601
+✓ fetchIVR — ok result: ticker uppercased in response
+
+✓ fetchIVR — not_available when count is 0
+✓ fetchIVR — parse_error when impliedVolatilityRank1y missing from response
+✓ fetchIVR — parse_error emits WARN log
+✓ fetchIVR — parse_error rawSnippet is first 500 chars of data[0]
+
+✓ fetchIVR — network_error on 5xx after 2 retries
+✓ fetchIVR — network_error on fetch throw after 2 retries
+✓ fetchIVR — retries use exponential backoff
+
+✓ fetchIVR — rate_limited on 429, fetch called exactly once
+✓ fetchIVR — rate_limited message includes Retry-After when header present
 ```
 
 `pnpm lint`, `pnpm typecheck`, and `pnpm format` must also pass cleanly.
