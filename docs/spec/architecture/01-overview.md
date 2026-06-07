@@ -1,6 +1,6 @@
 # Architecture Overview
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-32,missing-ac -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-32,missing-ac,us-35 -->
 
 Wheelbase is a single-user Electron desktop application for managing the options wheel strategy. This page summarises the cross-cutting architecture patterns that every shipped story has adhered to so far. Feature-specific details live on the per-story pages under `../features/`; deep dives on individual subsystems live on the topic pages cited inline.
 
@@ -84,7 +84,7 @@ Because better-sqlite3 ships native bindings, it must be rebuilt for each ABI: `
 
 ## Market-Data Subsystem
 
-US-31 introduced a `MarketDataProvider` interface in `src/main/integrations/market-data-provider.ts`; US-32 wired it into the renderer. The provider is constructed once at app startup, lazily connected on the first subscription request, and disconnected on `app.before-quit`. Two transport patterns coexist:
+US-31 introduced a `MarketDataProvider` interface in `src/main/integrations/market-data-provider.ts`; US-32 wired it into the renderer. The provider is constructed once at app startup, lazily connected on the first subscription request, and disconnected during the consolidated `before-quit` shutdown alongside the polling scheduler (see "Polling Scheduler" below). Two transport patterns coexist:
 
 - A REST seed via `market-data:stock-quotes` populates the renderer's TanStack Query cache with `price`, `bid`, `ask`, `prevClose`, and `volume` for each ticker; the renderer derives `change` and `changePercent` client-side from `(price, prevClose)` so the math lives in one place.
 - A WebSocket stream, multiplexed across all active position tickers, pushes per-tick updates over `market-data:stock-quote`. The renderer merges each tick into the TanStack Query cache via `setQueryData`, carrying `prevClose` forward from the seed because stream frames don't carry it.
@@ -92,6 +92,28 @@ US-31 introduced a `MarketDataProvider` interface in `src/main/integrations/mark
 A separate `useMarketStatus()` hook polls `market-data:market-status` every 60s. The pill (`<MarketStatusPill>`) derives `LIVE` / `EXT` / `CLOSED` / `DELAYED` from market session + `dataUpdatedAt` freshness + stream error state; the same pill is intended for reuse on list and detail headers (no "POLL" or timing copy — the pill is the status indicator). When no quotes have arrived for >5 minutes, `<StaleDataBanner>` renders above the table and the pill flips to `DELAYED`.
 
 The full price-column flow lives on `../features/us-32-live-position-prices.md`.
+
+## Polling Scheduler
+
+Background polling across the app is owned by a single shared `PollingScheduler` (`src/main/services/polling-scheduler.ts`, introduced by US-46 bundled with US-35). It is a generic, market-session-aware, setTimeout-chain-based job runner: each registered job — `{ name, cadence, handler }` — manages its own `setTimeout` chain, so async handlers naturally serialise (a tick never overlaps the previous tick) and cadence is recomputed per tick against the current market session. Cadence policies are either `{ kind: 'interval', marketOpenMs, extendedHoursMs?, marketClosedMs? }` (varies by session, with `null` parking the job until the next open) or `{ kind: 'afterClose', offsetMinutes }` (once per trading day at market-close + offset, skipping weekends/holidays, no backfill of missed runs).
+
+A module-level singleton in `src/main/services/scheduler-instance.ts` exports the shared scheduler — built with a safe-broker fallback (`getSafeBroker()` returns a stub `BrokerProvider` reporting `session: 'closed'` when credentials are missing, so the module never throws at import time). Consumers `register()` their job at module load; the first consumer is `detect-assignments` (US-35), and future polling stories (e.g. US-44 IVR collector) attach to the same instance.
+
+The scheduler integrates with the main-process bootstrap in `src/main/index.ts`:
+
+1. IPC handlers are registered first.
+2. `scheduler.start()` is called, which fires every registered job once and then on cadence.
+3. A consolidated `app.on('before-quit', ...)` handler awaits `Promise.all([scheduler.stop(), marketDataProvider.disconnect()])` and then calls `app.exit(0)`. `scheduler.stop()` cancels all pending invocations and drains in-flight handler promises with a 5-second timeout so neither subsystem is killed mid-tick.
+
+Exceptions in handlers are caught, WARN-logged, and the chain is rescheduled — a failing handler never stops the scheduler or piles up runs. Handler crashes also do not affect other registered jobs. A dev-only `_test:scheduler-*` IPC surface (guarded by `NODE_ENV === 'test'` in `src/main/ipc/test-scheduler.ts`) lets E2E specs introspect the registry and trigger out-of-band runs without polluting the production IPC.
+
+The first consumer, `detectAssignments`, is the canonical example of how a poll job uses the scheduler: see `../features/us-46-polling-scheduler.md` for the scheduler itself and `../features/us-35-assignment-detection.md` for the assignment-detection wiring.
+
+## Cross-Poll State (`app_settings`)
+
+Background jobs that need a watermark or other small piece of cross-poll state share a single key/value table, `app_settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)`, introduced by migration `007_create_app_settings.sql`. The scheduler itself is intentionally stateless — any handler that cares about "what did I see last time" owns its own watermark here. The convention is one row per concern, keyed with an environment suffix where paper/live separation matters (e.g. `assignments_last_poll_at:paper`, `assignments_last_poll_at:live`).
+
+Reads and writes go through the thin `appSettings.get(db, key)` / `appSettings.set(db, key, value)` helper in `src/main/services/app-settings.ts`. The current sole consumer is the assignment watermark (US-35), captured **at poll start, not poll end**, so any activity that arrives during the broker call is replayed on the next poll and deduped via `INSERT OR IGNORE` on the compound unique index. Future polling stories should reuse the same table rather than minting new one-row tables.
 
 ## Test Discipline
 

@@ -1,6 +1,6 @@
 # IPC Handlers
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35 -->
 
 ## Overview
 
@@ -16,9 +16,11 @@ Two transport patterns are in use. Most handlers are request/response (`ipcRende
 
 **`rollChainId` on legs (us-15).** Every leg in the `LegRecord` shape now carries a `rollChainId: string | null` field. The roll services (`roll-csp-position.ts` and `roll-cc-position.ts`) write a shared UUID onto both halves of a roll pair (ROLL_FROM + ROLL_TO); every other write-path sets `rollChainId: null` explicitly. The `roll_chain_id` column was already present on `legs` (migration 001) — us-15 only exposed it through `positions:get` so the renderer's `buildRollTimeline` can group the two halves of a roll into a single visual section in `LegHistoryTable`. The `activeLeg` returned by `positions:get` still surfaces `rollChainId: null` even when the underlying row has a real UUID (a deliberate scoping decision — `activeLeg` is consumed only by the position header, not the timeline).
 
+**`assignments:*` handlers (us-35) — tracked envelope deviation.** us-35 introduced four `assignments:*` IPC channels (`assignments:list-pending`, `assignments:confirm`, `assignments:dismiss`, `assignments:run-detection-now`) plus four dev-only `_test:scheduler-*` channels for E2E test introspection. The two mutation handlers (`assignments:confirm` and `assignments:dismiss`) **deviate from the standard `{ ok, errors }` envelope** by surfacing a top-level `code: 'NOT_FOUND' | 'NOT_PENDING' | 'TRANSITION_REJECTED'` field alongside `errors` on failure. This is a tracked deviation — `handleIpcCall` cannot express a top-level `code` alongside `errors`, so these handlers use a bespoke `pendingAssignmentErrorResponse` helper in `src/main/ipc/assignments.ts` that catches `PendingAssignmentError` (which carries a `.code`) and emits the augmented envelope. If more handlers need a top-level `code` field, the recommendation is to widen the shared envelope rather than duplicate the helper. All other handlers — including `assignments:list-pending` and `assignments:run-detection-now` — return the standard envelope.
+
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35 -->
 
 ## Handler reference
 
@@ -815,9 +817,155 @@ Handlers are grouped by namespace. Each subsection documents the request payload
 - **Logging:** `INFO market_data_option_snapshots_request { count: symbols.length }` at entry, `INFO market_data_option_snapshots_response { count: Object.keys(snapshots).length }` at success, `ERROR market_data_option_snapshots_unhandled_error` for the catch-all.
 - **Source:** `src/main/ipc/market-data.ts`, `src/main/services/market-data.ts` (`fetchOptionSnapshots(provider, symbols)`), `src/main/schemas.ts` (`GetOptionSnapshotsPayloadSchema`)
 - **Driven by:** [us-33 — Option Mid + Unrealized P&L](../features/us-33-option-mid-pnl.md)
+
+### `assignments:list-pending`
+
+- **Purpose:** return every `pending_assignments` row currently in `status='pending'` plus the display fields (`ticker`, `strike`, `expiration`, `contractType`, `qty`, `transactionTime`, `positionId`) sourced by joining to `positions` and the matched open `legs` row. Drives the `AssignmentNotificationBanner` stack and the `pendingPositionIds` set used by `PositionCard` to render the pulsing amber indicator.
+- **Request:** none (no payload).
+- **Response (success):**
+
+  ```typescript
+  {
+    ok: true,
+    assignments: PendingAssignmentNotification[]
+  }
+
+  type PendingAssignmentNotification = {
+    id: number
+    ticker: string
+    strike: string                 // 2 dp
+    expiration: string             // ISO date
+    contractType: 'put' | 'call'
+    qty: number
+    transactionTime: string        // ISO-8601
+    positionId: string             // UUID — corrected from the plan's original `number` type per code-review Area E1
+  }
+  ```
+
+- **Error codes:**
+
+  | field      | code             | message                        |
+  | ---------- | ---------------- | ------------------------------ |
+  | `__root__` | `internal_error` | `An unexpected error occurred` |
+
+- **Envelope:** standard `{ ok, errors }`. No top-level `code` field.
+- **Source:** `src/main/ipc/assignments.ts`, `src/main/services/pending-assignments.ts` (`listPending`)
+- **Driven by:** [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md)
+
+### `assignments:confirm`
+
+- **Purpose:** trader-confirmed assignment — atomically calls `assignCspPosition` (transitions the position to `HOLDING_SHARES`, writes the `ASSIGN` event-marker leg and cost-basis snapshot per `positions:assign-csp`) **and** updates the `pending_assignments` row to `status='confirmed'`, `confirmed_at=now()`. Wrapped in an outer `db.transaction()` so the position transition and the pending-row state change are atomic (better-sqlite3 savepoint composition with the inner `assignCspPosition` transaction).
+- **Request:**
+  ```typescript
+  // Zod schema: ConfirmAssignmentPayloadSchema
+  {
+    pendingAssignmentId: number // positive integer — the pending_assignments.id
+  }
+  ```
+- **Response (success):**
+  ```typescript
+  {
+    ok: true,
+    position: {
+      id: string
+      phase: 'HOLDING_SHARES'
+      assignedAt: string        // ISO-8601
+    }
+  }
+  ```
+- **Error codes:**
+
+  | code                  | meaning                                                              |
+  | --------------------- | -------------------------------------------------------------------- |
+  | `NOT_FOUND`           | `pendingAssignmentId` does not match an existing row                 |
+  | `NOT_PENDING`         | row exists but `status !== 'pending'` (already confirmed / dismissed) |
+  | `TRANSITION_REJECTED` | inner `assignCspPosition` lifecycle guard rejected the transition    |
+
+- **Envelope (deviation):** failure responses use a **bespoke envelope** that adds a top-level `code` field:
+  ```typescript
+  {
+    ok: false,
+    errors: string[],
+    code: 'NOT_FOUND' | 'NOT_PENDING' | 'TRANSITION_REJECTED'
+  }
+  ```
+  This is a tracked deviation from the standard `{ ok, errors }` envelope — see the Overview section. The mapping is done by the shared `pendingAssignmentErrorResponse` helper in `src/main/ipc/assignments.ts`, which catches `PendingAssignmentError` (a class carrying a `.code` of the same union) and emits the augmented shape. Zod payload validation failures still flow through `handleIpcCall` and produce the standard `{ ok: false, errors: [{ field, code, message }] }` envelope without a top-level `code`.
+- **Renderer cache invalidation:** on `ok: true`, the mutation hook invalidates the `['assignments', 'pending']`, `['positions', 'list']`, and `['positions', positionId]` query keys. The `AssignmentNotificationBanner` retains a local `dismissedIds` set so the banner can show the "Open covered call →" success view without waiting for the pending-list invalidation to refetch.
+- **Source:** `src/main/ipc/assignments.ts`, `src/main/services/pending-assignments.ts` (`confirmPending`), `src/main/services/assign-csp-position.ts` (`assignCspPosition`), `src/main/schemas.ts` (`ConfirmAssignmentPayloadSchema`)
+- **Driven by:** [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md)
+
+### `assignments:dismiss`
+
+- **Purpose:** mark a pending assignment as dismissed without transitioning the position — the trader's "I don't want to record this assignment right now" path. Updates `pending_assignments.status` to `'dismissed'` and stamps `dismissed_at`. Does not touch the underlying position or leg state. Idempotent for already-dismissed rows (silently no-ops); rejects confirmed rows and missing rows.
+- **Request:**
+  ```typescript
+  // Zod schema: DismissAssignmentPayloadSchema
+  {
+    pendingAssignmentId: number // positive integer
+  }
+  ```
+- **Response (success):**
+  ```typescript
+  {
+    ok: true,
+    dismissedAt: string // ISO-8601
+  }
+  ```
+- **Error codes:**
+
+  | code          | meaning                                                                          |
+  | ------------- | -------------------------------------------------------------------------------- |
+  | `NOT_FOUND`   | `pendingAssignmentId` does not match an existing row                             |
+  | `NOT_PENDING` | row exists but `status='confirmed'` (was previously silently accepted; per code-review Area B1 now rejects) |
+
+- **Envelope (deviation):** same bespoke `{ ok: false, errors, code }` shape as `assignments:confirm`, routed via the shared `pendingAssignmentErrorResponse` helper. See the Overview tracked-deviation note.
+- **Renderer cache invalidation:** on `ok: true`, invalidates `['assignments', 'pending']`. The banner component additionally tracks a local `dismissedIds` set so the row disappears immediately without waiting for the refetch.
+- **Notes:** per code-review Area B1, `dismissPending` now **rejects** non-pending states rather than silently accepting them — confirmed rows raise `PendingAssignmentError('NOT_PENDING')` and missing rows raise `PendingAssignmentError('NOT_FOUND')`. Already-dismissed rows still no-op (idempotent).
+- **Source:** `src/main/ipc/assignments.ts`, `src/main/services/pending-assignments.ts` (`dismissPending`), `src/main/schemas.ts` (`DismissAssignmentPayloadSchema`)
+- **Driven by:** [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md)
+
+### `assignments:run-detection-now`
+
+- **Purpose:** trigger an out-of-band invocation of the `detect-assignments` poll job — bypasses the scheduler's cadence and runs the handler immediately. Used by a "Refresh now" affordance in Settings and by dev/debug tooling. Delegates to `scheduler.runNow('detect-assignments')`.
+- **Request:** none (no payload).
+- **Response (success):**
+  ```typescript
+  {
+    ok: true,
+    detected: number      // pending_assignments rows inserted by this run
+    skipped: number       // OPASN activities matched an existing (activity_id, position_id) row and were INSERT OR IGNORE'd
+    durationMs: number    // wall-clock duration of the handler call
+  }
+  ```
+- **Error codes:**
+
+  | field      | code             | message                        |
+  | ---------- | ---------------- | ------------------------------ |
+  | `__root__` | `internal_error` | `An unexpected error occurred` |
+
+- **Envelope:** standard `{ ok, errors }`. No top-level `code` field.
+- **Notes:** **planned shape per code-review Area E2.** At the time the plan landed, `scheduler.runNow` returned `Promise<void>` and the handler returned only `{ ok: true }`; code-review Area E2 recommends piping the real `{ detected, skipped, durationMs }` triple through the scheduler so the handler returns honest values rather than dummy zeros. Treat the documented response shape as the target contract — verify against `src/main/ipc/assignments.ts` for the live wire shape.
+- **Source:** `src/main/ipc/assignments.ts`, `src/main/services/scheduler-instance.ts` (singleton), `src/main/services/polling-scheduler.ts` (`runNow`), `src/main/services/detect-assignments.ts` (`detectAssignments`, `DETECT_ASSIGNMENTS_JOB_NAME`)
+- **Driven by:** [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md)
+
+### Dev-only `_test:scheduler-*` channels
+
+us-35 ships four dev-only IPC channels under `src/main/ipc/test-scheduler.ts`, registered **only** when `NODE_ENV === 'test'`. They exist so E2E specs (`e2e/polling-scheduler.spec.ts`, `e2e/assignment-detection.spec.ts`) can introspect the in-memory scheduler registry and trigger out-of-band runs without polluting the production IPC surface or coupling tests to wall-clock cadence. Test jobs can additionally be seeded at startup from the `WHEELBASE_TEST_JOBS` env var via `seedTestJobsFromEnv`.
+
+| Channel                         | Purpose                                                                                                                                                                                                                  |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `_test:scheduler-registry`      | Return the `JobRegistryEntry[]` snapshot from `scheduler.getRegistry()` — job name, cadence policy, last-tick timestamps, per-state invocation counters.                                                                 |
+| `_test:scheduler-run-now`       | Take a `jobName` and call `scheduler.runNow(jobName)`. Mirrors `assignments:run-detection-now` for arbitrary registered jobs.                                                                                            |
+| `_test:scheduler-register`      | Register a synthetic job under the singleton scheduler at runtime for tests that want to assert registration semantics (e.g. duplicate-name rejection).                                                                  |
+| `_test:scheduler-simulate-wake` | Effectively a no-op against the current setTimeout-chain implementation — chained timers cannot accumulate missed ticks across sleep, so there is nothing to "fire". Retained as a placeholder if the scheduler ever switches to absolute fire-at semantics with catch-up. |
+
+These channels are intentionally **not** documented as a stable contract — they exist solely for test ergonomics and are subject to change without notice.
+
+- **Source:** `src/main/ipc/test-scheduler.ts`, `src/main/services/polling-scheduler.ts` (`getRegistry`, `runNow`), `src/main/services/scheduler-instance.ts`
+- **Driven by:** [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md)
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35 -->
 
 ## Push events
 
@@ -856,7 +1004,7 @@ Push events are one-way `main → renderer` messages sent via `webContents.send`
 - **Driven by:** [us-32 — Live Position Prices](../features/us-32-live-position-prices.md)
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35 -->
 
 ## Standard error codes
 
@@ -888,6 +1036,14 @@ Cross-handler catalogue of every error `code` value emitted, with the set of han
 | `internal_error`              | uncaught error in the handler                                                                               | all request/response handlers (including `positions:list`)                                                                                                                                                             |
 | `(zod path)`                  | Zod payload validation failure — `field` is the issue's `path.join('.')`, `code` is the Zod issue `code`    | all schema-parsed handlers                                                                                                                                                                                             |
 
+**`assignments:*` envelope-deviation codes (us-35).** `assignments:confirm` and `assignments:dismiss` surface their error code at the **top level** of the response envelope (`{ ok: false, errors, code: '…' }`) rather than inside an `errors[].code` slot. These are tracked separately from the table above because they are not interchangeable with the standard envelope.
+
+| code                  | meaning                                                                                                                              | used by                                              |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| `NOT_FOUND`           | `pendingAssignmentId` does not match an existing `pending_assignments` row                                                          | `assignments:confirm`, `assignments:dismiss`         |
+| `NOT_PENDING`         | row exists but `status !== 'pending'` (e.g. already confirmed; for `dismiss`, already-dismissed rows still no-op without this error) | `assignments:confirm`, `assignments:dismiss`         |
+| `TRANSITION_REJECTED` | inner `assignCspPosition` lifecycle guard rejected the auto-transition                                                              | `assignments:confirm`                                |
+
 Sentinel `field` values used across handlers:
 
 - `__phase__` — phase-mismatch errors (`positions:close-csp`, `positions:expire-csp`, `positions:assign-csp`, `positions:open-cc`, `positions:close-cc-early`, `positions:expire-cc`, `positions:record-call-away`, `positions:roll-csp`, `positions:roll-cc`).
@@ -898,7 +1054,7 @@ Renderer adapters in `src/renderer/src/api/*.ts` translate IPC camelCase field n
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35 -->
 
 ## Driven by
 
@@ -917,8 +1073,9 @@ Renderer adapters in `src/renderer/src/api/*.ts` translate IPC camelCase field n
 - [us-15 — Roll pair timeline](../features/us-15-roll-pair-timeline.md)
 - [us-32 — Live Position Prices](../features/us-32-live-position-prices.md)
 - [us-33 — Option Mid + Unrealized P&L](../features/us-33-option-mid-pnl.md)
+- [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md)
 
-(us-2 was authored as a FastAPI `GET /api/positions` HTTP endpoint; the surviving Electron equivalent is `src/main/services/list-positions.ts` and the IPC channel name `positions:list` documented above is derived rather than authoritative. us-12-refactor introduced no new IPC handlers; it centralised the active-leg SQL into `src/main/services/active-leg-sql.ts` which is consumed by both `positions:get` and `positions:list`. us-6 introduced the global `optionType` → `instrumentType` rename across all leg-returning handlers and the `instrument_type` DB migration; us-5, us-6, and us-10 added `'EXPIRE'`, `'ASSIGN'`, and `'EXERCISE'` respectively to the `LegAction` enum. us-8 and us-9 both deliberately omit a new `cost_basis_snapshots` insert — us-8 because the existing CC_OPEN snapshot already captures the CC premium and the wheel is still open, us-9 because CC expiration is not a financial event (the premium was captured at CC open in us-7). us-10 introduced the new `positions:record-call-away` channel, the `'CALLED_AWAY'` `legRole` value, and the `WHEEL_COMPLETE` terminal phase. us-11 widened the `positions:get` response with an `allSnapshots` array (used by the renderer's `deriveRunningBasis()` pure helper to attach a running cost basis to every row in `LegHistoryTable`) and split previously-overloaded role values into distinct terminal-event values: `'CALLED_AWAY'` (now written by `positions:record-call-away` instead of `'CC_CLOSE'`) and `'CC_EXPIRED'` (now written by `positions:expire-cc` instead of a generic `'EXPIRE'`). us-13 is **plan-only** — the plan directory has no `tasks.md` or `refactor-phase-results.md` yet; both its planned changes (adding `rollCount` to `positions:get` and relaxing `positions:roll-csp` validation to allow same-expiration strike-only rolls) are documented as planned above. us-14 introduced the new `positions:roll-cc` channel — a mirror of `positions:roll-csp` for the CC leg with two intentional behaviour differences (`>=` expiration instead of `>`, plus an explicit `no_change` lifecycle guard on the sentinel field `__roll__`); the refactor phase consolidated `RollCspPayloadSchema` / `RollCcPayloadSchema` into a shared `RollPayloadBaseSchema` and `RollCspResult` / `RollCcResult` onto a shared `RollResultBase` interface — `calculateRollBasis()` is reused unchanged. us-15 added the `rollChainId: string | null` field to every entry in `positions:get`'s `legs[]` payload (the underlying `legs.roll_chain_id` column already existed from migration 001; us-15 only exposed it through `GET_LEGS_QUERY` + `mapLegRow`) and added the same field to the `LegRecord` TypeScript interface — all non-roll write-paths set `rollChainId: null` explicitly while the two roll services pass the shared UUID. The `activeLeg` payload deliberately still surfaces `rollChainId: null`. us-33 introduced the new `market-data:option-snapshots` request/response channel (full provider `OptionSnapshot` shape including `greeks`, 1:1 with the provider — not flattened like `IpcStockQuote`) and extended `positions:list` with four nullable active-leg fields (`instrumentType`, `contracts`, `entryPremiumPerContract`, `profitTargetPercent`) sourced from the existing active-leg subquery plus the new `positions.profit_target_percent` column from migration `005`. us-31 (the market-data provider/foundation story) shipped **no** new IPC handlers — it landed the `MarketDataProvider` interface and `getOptionSnapshots(symbols)` adapter method that this channel consumes; us-34 (Greeks display) ships **no** new IPC handlers either, re-using the existing `market-data:option-snapshots` channel and reading `snapshots[symbol].greeks` directly. All are tracked here for regeneration completeness.)
+(us-2 was authored as a FastAPI `GET /api/positions` HTTP endpoint; the surviving Electron equivalent is `src/main/services/list-positions.ts` and the IPC channel name `positions:list` documented above is derived rather than authoritative. us-12-refactor introduced no new IPC handlers; it centralised the active-leg SQL into `src/main/services/active-leg-sql.ts` which is consumed by both `positions:get` and `positions:list`. us-6 introduced the global `optionType` → `instrumentType` rename across all leg-returning handlers and the `instrument_type` DB migration; us-5, us-6, and us-10 added `'EXPIRE'`, `'ASSIGN'`, and `'EXERCISE'` respectively to the `LegAction` enum. us-8 and us-9 both deliberately omit a new `cost_basis_snapshots` insert — us-8 because the existing CC_OPEN snapshot already captures the CC premium and the wheel is still open, us-9 because CC expiration is not a financial event (the premium was captured at CC open in us-7). us-10 introduced the new `positions:record-call-away` channel, the `'CALLED_AWAY'` `legRole` value, and the `WHEEL_COMPLETE` terminal phase. us-11 widened the `positions:get` response with an `allSnapshots` array (used by the renderer's `deriveRunningBasis()` pure helper to attach a running cost basis to every row in `LegHistoryTable`) and split previously-overloaded role values into distinct terminal-event values: `'CALLED_AWAY'` (now written by `positions:record-call-away` instead of `'CC_CLOSE'`) and `'CC_EXPIRED'` (now written by `positions:expire-cc` instead of a generic `'EXPIRE'`). us-13 is **plan-only** — the plan directory has no `tasks.md` or `refactor-phase-results.md` yet; both its planned changes (adding `rollCount` to `positions:get` and relaxing `positions:roll-csp` validation to allow same-expiration strike-only rolls) are documented as planned above. us-14 introduced the new `positions:roll-cc` channel — a mirror of `positions:roll-csp` for the CC leg with two intentional behaviour differences (`>=` expiration instead of `>`, plus an explicit `no_change` lifecycle guard on the sentinel field `__roll__`); the refactor phase consolidated `RollCspPayloadSchema` / `RollCcPayloadSchema` into a shared `RollPayloadBaseSchema` and `RollCspResult` / `RollCcResult` onto a shared `RollResultBase` interface — `calculateRollBasis()` is reused unchanged. us-15 added the `rollChainId: string | null` field to every entry in `positions:get`'s `legs[]` payload (the underlying `legs.roll_chain_id` column already existed from migration 001; us-15 only exposed it through `GET_LEGS_QUERY` + `mapLegRow`) and added the same field to the `LegRecord` TypeScript interface — all non-roll write-paths set `rollChainId: null` explicitly while the two roll services pass the shared UUID. The `activeLeg` payload deliberately still surfaces `rollChainId: null`. us-33 introduced the new `market-data:option-snapshots` request/response channel (full provider `OptionSnapshot` shape including `greeks`, 1:1 with the provider — not flattened like `IpcStockQuote`) and extended `positions:list` with four nullable active-leg fields (`instrumentType`, `contracts`, `entryPremiumPerContract`, `profitTargetPercent`) sourced from the existing active-leg subquery plus the new `positions.profit_target_percent` column from migration `005`. us-31 (the market-data provider/foundation story) shipped **no** new IPC handlers — it landed the `MarketDataProvider` interface and `getOptionSnapshots(symbols)` adapter method that this channel consumes; us-34 (Greeks display) ships **no** new IPC handlers either, re-using the existing `market-data:option-snapshots` channel and reading `snapshots[symbol].greeks` directly. us-35 introduced the four new `assignments:*` channels (`assignments:list-pending`, `assignments:confirm`, `assignments:dismiss`, `assignments:run-detection-now`) plus four dev-only `_test:scheduler-*` channels for E2E scheduler introspection, and is the first feature to ship the **`pendingAssignmentErrorResponse` envelope deviation** — `assignments:confirm` and `assignments:dismiss` add a top-level `code: 'NOT_FOUND' | 'NOT_PENDING' | 'TRANSITION_REJECTED'` alongside `errors` on failure because `handleIpcCall` cannot express a top-level code; the bespoke helper is tracked as future work if more handlers need the same shape. All are tracked here for regeneration completeness.)
 
 <!-- /generated -->
 

@@ -1,23 +1,30 @@
 # Database Tables
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-35 -->
 
 ## Overview
 
-Wheelbase persists every wheel position, every option/stock leg, and every
-basis-changing event in a single SQLite database. The schema is three tables
-deep — **`positions`** owns one row per wheel, **`legs`** owns one row per
-sold/bought/expired/assigned option (and one row per stock-assignment marker),
-and **`cost_basis_snapshots`** owns an append-only history of effective
-per-share basis and final P&L. SQLite is the source of truth; Alpaca (when
-wired in) is the execution layer only.
+Wheelbase persists every wheel position, every option/stock leg, every
+basis-changing event, every broker-detected pending assignment, and a small
+key/value store for cross-poll watermarks in a single SQLite database. Five
+tables are in play today — **`positions`** owns one row per wheel,
+**`legs`** owns one row per sold/bought/expired/assigned option (and one row
+per stock-assignment marker), **`cost_basis_snapshots`** owns an append-only
+history of effective per-share basis and final P&L, **`pending_assignments`**
+queues broker-detected OPASN events awaiting trader confirmation, and
+**`app_settings`** stores polling watermarks and other simple key/value state.
+SQLite is the source of truth; Alpaca (when wired in) is the execution layer
+only.
 
 Money values are stored as `TEXT` at 4 dp and converted to/from `decimal.js`
 at the boundary using `ROUND_HALF_UP` via the shared `round4` helper. Dates
 are ISO `YYYY-MM-DD` strings; timestamps are ISO 8601 strings. Foreign keys
 on `legs.position_id` and `cost_basis_snapshots.position_id` reference
-`positions.id`. CHECK constraints enforce enum membership on `legs.leg_role`,
-`legs.action`, and (post-migration 003) `legs.instrument_type`.
+`positions.id`; `pending_assignments.position_id` and
+`pending_assignments.leg_id` reference `positions.id` and `legs.id`
+respectively (both `TEXT` UUIDs). CHECK constraints enforce enum membership
+on `legs.leg_role`, `legs.action`, (post-migration 003) `legs.instrument_type`,
+and `pending_assignments.status`.
 
 Migrations are SQL files in `migrations/` discovered by filename order via
 `src/main/db/migrate.ts`. See [Migrations](./migrations.md) for the change
@@ -27,7 +34,7 @@ and [Cost Basis](../domain/cost-basis.md) for how snapshots are produced.
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-35 -->
 
 ## `positions`
 
@@ -62,7 +69,9 @@ list view can render an "Active" / "Closed" split.
 - **Expire CSP** (US-5): UPDATE `phase='WHEEL_COMPLETE'`, `status='CLOSED'`,
   `closed_date=expiration date`.
 - **Assignment** (US-6): UPDATE `phase='HOLDING_SHARES'` only; `status` and
-  `closed_date` stay unchanged (wheel still in flight).
+  `closed_date` stay unchanged (wheel still in flight). Also reached via
+  **trader confirmation of a broker-detected pending assignment** (US-35)
+  through the same `assignCspPosition` service.
 - **Open CC** (US-7): UPDATE `phase='CC_OPEN'`.
 - **Close CC early** (US-8) or **CC expires** (US-9): UPDATE
   `phase='HOLDING_SHARES'`; wheel stays `ACTIVE`.
@@ -76,7 +85,7 @@ list view can render an "Active" / "Closed" split.
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-35 -->
 
 ## `legs`
 
@@ -217,7 +226,7 @@ feature in [the feature pages](../features/); the common shape is:
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-35 -->
 
 ## `cost_basis_snapshots`
 
@@ -279,7 +288,135 @@ earlier), the new row's `snapshot_at` is bumped by 1 ms so the
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33 -->
+<!-- generated:from us-35 -->
+
+## `pending_assignments`
+
+Queue of broker-detected OPASN (option assignment) activities awaiting
+trader confirmation. Each row represents one matched activity-to-CSP-leg
+pair; confirming the row calls `assignCspPosition` and transitions the
+position to `HOLDING_SHARES`. Dismissing leaves the position as-is but
+records the dismissal so the same activity isn't re-surfaced. The table
+itself is the persistence layer for the in-app notification — a `pending`
+row IS the banner, which means notifications survive app restart by
+construction (US-35).
+
+Added by migration `006_create_pending_assignments.sql`.
+
+### Columns
+
+| Column             | Type    | Nullable | Purpose                                                                                                                                                  |
+| ------------------ | ------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`               | INTEGER | No       | `PRIMARY KEY AUTOINCREMENT`. The renderer references this id when confirming/dismissing. (The surrounding schema uses TEXT UUIDs; this table is the one exception, per US-35's data model.) |
+| `position_id`      | TEXT    | No       | FK → `positions.id` (`ON DELETE CASCADE`). TEXT UUID to match the existing `positions.id` type — the plan originally specified INTEGER but green phase corrected this for FK referential integrity. |
+| `leg_id`           | TEXT    | No       | FK → `legs.id` (`ON DELETE CASCADE`). Same TEXT UUID rationale as `position_id`. Points at the matched open CSP leg.                                     |
+| `activity_id`      | TEXT    | No       | Alpaca activity id (e.g. an OPASN activity id). Half of the compound UNIQUE that prevents reprocessing.                                                  |
+| `broker_symbol`    | TEXT    | No       | OCC option symbol from the OPASN activity (the put that was assigned).                                                                                   |
+| `qty`              | INTEGER | No       | Contract quantity from the activity.                                                                                                                     |
+| `transaction_time` | TEXT    | No       | ISO-8601 timestamp of the broker activity.                                                                                                               |
+| `status`           | TEXT    | No       | One of `'pending'`, `'confirmed'`, `'dismissed'` (enforced by CHECK).                                                                                    |
+| `detected_at`      | TEXT    | No       | `DEFAULT (datetime('now'))`. When the poll job first wrote this row.                                                                                     |
+| `confirmed_at`     | TEXT    | Yes      | Set when the trader confirms; `assignCspPosition` is invoked in the same transaction.                                                                    |
+| `dismissed_at`     | TEXT    | Yes      | Set when the trader dismisses.                                                                                                                           |
+
+### CHECK constraints
+
+- `status IN ('pending', 'confirmed', 'dismissed')`.
+
+### Indexes
+
+- Implicit primary-key index on `id`.
+- `idx_pending_assignments_status` on `(status)` — used by
+  `listPending` (`WHERE status='pending'`).
+- `idx_pending_assignments_position` on `(position_id)` — used by the
+  positions list when computing `pendingPositionIds` for the pulsing
+  amber row indicator.
+- `uq_pending_assignments_activity_position` **compound UNIQUE** on
+  `(activity_id, position_id)` — dedupe key. See below.
+
+### Dedupe — compound UNIQUE(activity_id, position_id)
+
+The detection service writes pending rows with `INSERT OR IGNORE`. The
+unique constraint is intentionally **compound** on `(activity_id, position_id)`
+rather than single-column on `activity_id`. Reason: a single OPASN activity
+can match multiple open CSP positions on the same OCC symbol (e.g. two
+separate CSP positions both on AAPL $180 2026-01-19 PUT). A single-column
+UNIQUE on `activity_id` would silently lose the second-position pending
+row. The compound key allows one pending row per matching position while
+still preventing duplicate processing of the same activity for the same
+position across re-polls.
+
+Migration 006 was edited in place to drop the original column-level
+`UNIQUE` on `activity_id` and add the compound `CREATE UNIQUE INDEX`
+instead. No shipped data needed preserving; devs with local sqlite files
+delete and recreate.
+
+### How rows change
+
+- **Detected** (US-35 poll job): `INSERT OR IGNORE` with
+  `status='pending'`, `detected_at` defaulted to `datetime('now')`,
+  `confirmed_at`/`dismissed_at` `NULL`. Inserts happen once per matched
+  position; the OCC-symbol match in `detect-assignments.ts` returns a
+  list (`OpenLegMatch[]`) so multi-CSP collisions write multiple rows
+  in one poll.
+- **Confirmed** (`assignments:confirm` IPC): wrapped in an outer
+  `db.transaction()` (savepoint-composed with the inner
+  `assignCspPosition` transaction). On success: `status='confirmed'`,
+  `confirmed_at` stamped; the position row moves to `HOLDING_SHARES`.
+  `PendingAssignmentError('NOT_FOUND')` or `'NOT_PENDING'` thrown for
+  missing or non-pending ids; `'TRANSITION_REJECTED'` thrown if the
+  lifecycle engine rejects the move.
+- **Dismissed** (`assignments:dismiss` IPC): `status='dismissed'`,
+  `dismissed_at` stamped. Idempotent for already-dismissed rows; rejects
+  non-pending states (confirmed rows throw `PendingAssignmentError('NOT_PENDING')`)
+  per Area B1 of the code-review fixes.
+
+<!-- /generated -->
+
+<!-- generated:from us-35 -->
+
+## `app_settings`
+
+Tiny key/value table for cross-process state that doesn't deserve its own
+column on `positions` or `legs`. Today's only consumer is US-35's
+assignment-detection watermark; future polling jobs that need a
+"last seen" timestamp will reuse the same table. Reads/writes go through
+the `appSettings` helper in `src/main/services/app-settings.ts`.
+
+Added by migration `007_create_app_settings.sql`.
+
+### Columns
+
+| Column  | Type | Nullable | Purpose                                          |
+| ------- | ---- | -------- | ------------------------------------------------ |
+| `key`   | TEXT | No       | `PRIMARY KEY`. Free-form string key.             |
+| `value` | TEXT | No       | Stringified value (callers parse on read).       |
+
+### Known keys
+
+- `assignments_last_poll_at:paper` — ISO timestamp captured at the
+  **start** of the most recent `detectAssignments` poll against the
+  Alpaca paper environment. Used as the `since` cursor on the next poll.
+- `assignments_last_poll_at:live` — same as above for the live
+  environment. Keys are environment-scoped because paper and live
+  activity streams are separate.
+
+### Watermark semantics (US-35)
+
+The watermark is captured **before** `await brokerProvider.getActivities(...)`,
+not after — so any activity that arrives during the broker call is replayed
+on the next poll rather than skipped. `INSERT OR IGNORE` on
+`pending_assignments` (via the compound UNIQUE) handles the resulting
+re-reads idempotently.
+
+Computing the watermark from `MAX(transaction_time)` over
+`pending_assignments` was considered and rejected: dismissed-and-cleared
+rows would lose the signal, so a dedicated key/value store is the simpler
+durable answer.
+
+<!-- /generated -->
+
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-35 -->
 
 ## Money math
 
@@ -296,11 +433,14 @@ earlier), the new row's `snapshot_at` is bumped by 1 ms so the
 ## See also
 
 - [Migrations](./migrations.md) — chronological change log for the schema
-  including migration 003 (`option_type → instrument_type`) and migration
-  005 (`positions.profit_target_percent`).
+  including migration 003 (`option_type → instrument_type`), migration
+  005 (`positions.profit_target_percent`), migration 006
+  (`pending_assignments`), and migration 007 (`app_settings`).
 - [Cost Basis](../domain/cost-basis.md) — how the append-only snapshot
   pattern is produced by each lifecycle event.
 - [Wheel Lifecycle](../domain/wheel-lifecycle.md) — phase transitions that
   drive INSERTs into `legs` and UPDATEs to `positions.phase`.
 - [us-33 — Option Mid & Unrealized P&L](../features/us-33-option-mid-pnl.md) —
   the feature that introduced `positions.profit_target_percent`.
+- [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md) —
+  the feature that introduced `pending_assignments` and `app_settings`.

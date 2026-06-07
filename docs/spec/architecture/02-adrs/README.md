@@ -2,7 +2,7 @@
 
 Each ADR captures one architectural choice that emerged from a plan/story. Decisions are grouped below by theme; many ADRs are referenced by multiple feature pages.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,missing-ac -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,missing-ac,us-35 -->
 
 ## Engine & architecture
 
@@ -74,5 +74,17 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [option-snapshots-rest-polling](./option-snapshots-rest-polling.md) — REST polling at 60 s, disabled when market closed; no stream bridge.
 - [renderer-builds-occ-symbols](./renderer-builds-occ-symbols.md) — Renderer builds OCC symbols from active legs; no server-side building.
 - [ipc-returns-full-option-snapshot](./ipc-returns-full-option-snapshot.md) — `market-data:option-snapshots` returns the full `OptionSnapshot` shape.
+
+## Background polling & assignment detection
+
+- [polling-scheduler-settimeout-chain](./polling-scheduler-settimeout-chain.md) — `PollingScheduler` uses a per-job `setTimeout` chain, not `setInterval`, so async handlers serialise naturally.
+- [polling-scheduler-stateless](./polling-scheduler-stateless.md) — Scheduler is purely in-memory; handlers own their own watermarks (no `last_run_at` column).
+- [assignment-watermark-poll-start](./assignment-watermark-poll-start.md) — Assignment-poll watermark is captured at the start of the poll to avoid losing activities that arrive mid-fetch.
+- [pending-assignments-compound-unique](./pending-assignments-compound-unique.md) — `pending_assignments` uniqueness is compound on `(activity_id, position_id)`; one Alpaca activity can match multiple open CSPs.
+- [pending-assignments-table-as-notification](./pending-assignments-table-as-notification.md) — The `pending_assignments` table IS the notification queue; no separate notification entity.
+- [assignment-polling-cadence](./assignment-polling-cadence.md) — Assignment detection runs every 60 s during regular hours, 5 min in extended hours, and is parked overnight.
+- [scheduler-singleton-safe-broker](./scheduler-singleton-safe-broker.md) — Scheduler is a module-level singleton wired with a safe-broker fallback when Alpaca credentials are missing.
+- [dev-only-test-scheduler-ipc](./dev-only-test-scheduler-ipc.md) — Dev-only IPC channels drive the `PollingScheduler` from e2e tests without exposing them in production builds.
+- [consolidated-before-quit](./consolidated-before-quit.md) — A single `before-quit` handler awaits scheduler and market-data shutdown in order.
 
 <!-- /generated -->
