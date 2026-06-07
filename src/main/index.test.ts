@@ -23,7 +23,12 @@ vi.mock('electron', () => {
     },
     shell: { openExternal: vi.fn() },
     BrowserWindow: BrowserWindowMock,
-    ipcMain: { handle: vi.fn() }
+    ipcMain: { handle: vi.fn() },
+    safeStorage: {
+      isEncryptionAvailable: vi.fn(() => true),
+      encryptString: vi.fn((s: string) => Buffer.from(s)),
+      decryptString: vi.fn((b: Buffer) => b.toString())
+    }
   }
 })
 
@@ -42,9 +47,13 @@ vi.mock('./ipc/positions', () => ({ registerPositionsHandlers: vi.fn() }))
 vi.mock('./ipc/market-data', () => ({ registerMarketDataHandlers: vi.fn() }))
 vi.mock('./ipc/broker', () => ({ registerBrokerHandlers: vi.fn() }))
 vi.mock('./ipc/assignments', () => ({ registerAssignmentsIpc: vi.fn() }))
+vi.mock('./ipc/settings', () => ({ registerSettingsHandlers: vi.fn() }))
 
 vi.mock('./integrations/market-data-factory', () => ({
-  marketDataFactory: { create: vi.fn().mockReturnValue({ disconnect: vi.fn() }) }
+  marketDataFactory: {
+    create: vi.fn().mockReturnValue({ disconnect: vi.fn() }),
+    configure: vi.fn()
+  }
 }))
 
 vi.mock('./integrations/broker-factory', () => ({
@@ -52,8 +61,26 @@ vi.mock('./integrations/broker-factory', () => ({
     create: vi.fn().mockReturnValue({
       getMarketStatus: vi.fn(),
       getActivities: vi.fn()
-    })
+    }),
+    configure: vi.fn(),
+    recreate: vi.fn()
   }
+}))
+
+vi.mock('./integrations/massive-credentials', () => ({
+  loadMassiveApiKey: vi.fn()
+}))
+
+vi.mock('./services/settings', () => ({
+  createSettingsService: vi.fn(() => ({
+    getCredentialStatus: vi.fn().mockReturnValue({ activeBrokerEnv: 'paper' }),
+    loadActiveAlpacaCredentials: vi.fn().mockReturnValue(null)
+  }))
+}))
+
+vi.mock('./services/settings-connections', () => ({
+  testAlpacaConnection: vi.fn(),
+  testMassiveConnection: vi.fn()
 }))
 
 vi.mock('./logger', () => ({

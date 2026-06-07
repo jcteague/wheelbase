@@ -9,6 +9,11 @@ export const appSettings = {
   },
 
   set(db: Database.Database, key: string, value: string): void {
-    db.prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)').run(key, value)
+    const now = new Date().toISOString()
+    db.prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)').run(
+      key,
+      value,
+      now
+    )
   }
 }

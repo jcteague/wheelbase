@@ -37,4 +37,4 @@ flowchart TD
 ## Notes
 
 - The close sheet reuses the shared renderer primitives (`DatePicker`, `FormButton`, `NumberInput`, `PhaseBadge`, `AlertBox`) to stay consistent with the existing covered-call flow.
-- The AC-driven E2E spec exists, but the final GUI-only execution step is still pending outside this shell.
+- The AC-driven E2E spec exists, but the final Electron execution step is still pending until the app is built and launched successfully in this environment.

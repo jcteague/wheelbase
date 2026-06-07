@@ -1,6 +1,6 @@
 # Zod Schemas
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37 -->
 
 ## Overview
 
@@ -12,7 +12,7 @@ Three classes of types are catalogued below: **core enums** (the discriminator v
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37 -->
 
 ## Core enums
 
@@ -51,7 +51,7 @@ export type InstrumentType = z.infer<typeof InstrumentType>
 
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-12,us-13,us-14,us-32,us-33,us-35 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-12,us-13,us-14,us-32,us-33 -->
 
 ## Payload schemas
 
@@ -215,31 +215,9 @@ export type GetOptionSnapshotsPayload = z.infer<typeof GetOptionSnapshotsPayload
 
 Up to 50 OCC symbols per call (matches the `stock-quotes` batch limit), each 1–25 characters — OCC symbols are at most 21 characters (e.g. `AAPL260516P00180000`), and 25 gives headroom for longer underlying roots. Empty array is valid (the service returns `{ ok: true, snapshots: {} }` without calling the provider). Bound to `market-data:option-snapshots`. Driven by [us-33 — Option mid + unrealized P&L](../features/us-33-option-mid-pnl.md).
 
-### `ConfirmAssignmentPayloadSchema`
-
-```typescript
-export const ConfirmAssignmentPayloadSchema = z.object({
-  pendingAssignmentId: z.number().int().positive()
-})
-export type ConfirmAssignmentPayload = z.infer<typeof ConfirmAssignmentPayloadSchema>
-```
-
-The `pendingAssignmentId` is the AUTOINCREMENT integer primary key of the `pending_assignments` row (one of the few non-UUID identifiers in the schema — the table predates the project's UUID convention for new tables and uses `INTEGER PRIMARY KEY AUTOINCREMENT`). The service `confirmPending` wraps the lifecycle `assignCspPosition` call and the `UPDATE pending_assignments SET status='confirmed'` in a single outer `db.transaction()` so the two state changes commit atomically. Error envelopes carry a `code` field (`NOT_FOUND` / `NOT_PENDING` / `TRANSITION_REJECTED`) alongside `errors`, mapped via the bespoke `pendingAssignmentErrorResponse` helper rather than the standard `handleIpcCall` path (a known limitation — `handleIpcCall` cannot express a top-level `code` alongside `errors`). Bound to `assignments:confirm`. Driven by [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md).
-
-### `DismissAssignmentPayloadSchema`
-
-```typescript
-export const DismissAssignmentPayloadSchema = z.object({
-  pendingAssignmentId: z.number().int().positive()
-})
-export type DismissAssignmentPayload = z.infer<typeof DismissAssignmentPayloadSchema>
-```
-
-**Deliberately separate from `ConfirmAssignmentPayloadSchema` despite identical shape.** The two schemas could share a base (and at the moment a reader could be forgiven for thinking they're duplication ripe for extraction), but they're kept as distinct named exports so future divergence — e.g. adding a `reason: z.enum([...])` field to dismiss for "why did the trader reject this assignment?" telemetry — can land as an additive change to one schema rather than a breaking-change migration that ripples across both flows. Error envelopes carry `code: 'NOT_FOUND' | 'NOT_PENDING'` (no `TRANSITION_REJECTED` — dismiss does not invoke the lifecycle engine). Bound to `assignments:dismiss`. Driven by [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md).
-
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33 -->
 
 ## Result interfaces
 
@@ -557,61 +535,9 @@ interface IpcStreamErrorEvent {
 
 `change` and `changePercent` are intentionally **not** part of `IpcStockQuote` — the renderer derives both from `(price, prevClose)` so the math lives in one place. Driven by [us-32 — Live Position Prices](../features/us-32-live-position-prices.md).
 
-### Assignment-detection result shapes
-
-us-35 introduced four assignment IPC channels backed by these shapes. They live alongside the position result interfaces in `src/main/schemas.ts` and are mirrored in `src/preload/index.d.ts`.
-
-```typescript
-// assignments:list-pending success
-interface ListPendingAssignmentsResult {
-  ok: true
-  assignments: PendingAssignmentNotification[]
-}
-
-interface PendingAssignmentNotification {
-  id: number // pending_assignments.id (AUTOINCREMENT integer)
-  ticker: string
-  strike: string // 2 dp
-  expiration: string // ISO date
-  contractType: 'put' | 'call'
-  qty: number
-  transactionTime: string // ISO-8601 from the OPASN activity
-  positionId: string // UUID — corrected from `number` during us-35 code-review (Area E1)
-}
-
-// assignments:confirm success
-interface ConfirmAssignmentResult {
-  ok: true
-  position: { id: string; phase: 'HOLDING_SHARES'; assignedAt: string }
-}
-
-// assignments:dismiss success
-interface DismissAssignmentResult {
-  ok: true
-  dismissedAt: string // ISO-8601
-}
-
-// assignments:run-detection-now success (dev / settings affordance)
-interface RunDetectionNowResult {
-  ok: true
-  detected: number
-  skipped: number
-  durationMs: number
-}
-
-// Error envelope for assignments:confirm / assignments:dismiss
-interface AssignmentErrorResponse {
-  ok: false
-  errors: string[]
-  code: 'NOT_FOUND' | 'NOT_PENDING' | 'TRANSITION_REJECTED'
-}
-```
-
-`PendingAssignmentNotification.positionId` is the UUID of the parent CSP position (not the pending row); it is joined server-side from `pending_assignments.position_id`. The error envelope carries a top-level `code` field — confirm/dismiss handlers cannot use the standard `handleIpcCall` wrapper because that helper has no way to surface `code` alongside `errors`. Instead, a bespoke `pendingAssignmentErrorResponse` helper in `src/main/ipc/assignments.ts` maps `PendingAssignmentError` (and the lifecycle `ValidationError` from `assignCspPosition`) into the shape above. Driven by [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md).
-
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37 -->
 
 ## Driven by
 
@@ -630,7 +556,139 @@ interface AssignmentErrorResponse {
 - [us-15 — Roll pair timeline grouping](../features/us-15-roll-pair-timeline.md) — `LegRecord.rollChainId` field (surfaced through `getPosition` for the leg-history table)
 - [us-32 — Live Position Prices](../features/us-32-live-position-prices.md) — `GetStockQuotesPayloadSchema`, `SetStockQuoteTickersPayloadSchema`, `IpcStockQuote` / `IpcMarketStatus` / push-event payloads
 - [us-33 — Option mid + unrealized P&L](../features/us-33-option-mid-pnl.md) — `GetOptionSnapshotsPayloadSchema`
-- [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md) — `ConfirmAssignmentPayloadSchema`, `DismissAssignmentPayloadSchema` (separate exports despite identical shape), `PendingAssignmentNotification` / `ConfirmAssignmentResult` / `DismissAssignmentResult` / `RunDetectionNowResult` result shapes, bespoke `AssignmentErrorResponse` envelope with top-level `code` field
+- [us-35 — Assignment detection and auto-transition](../features/us-35-assignment-detection.md) — `ConfirmAssignmentPayloadSchema`, `DismissAssignmentPayloadSchema`, `PendingAssignmentNotification` shape (with bespoke `code` error envelope)
+- [us-37 — Paper/live broker environment toggle](../features/us-37-paper-live-broker-environment-toggle.md) — `BrokerEnvironmentSchema`, `SaveAlpacaCredentialsPayloadSchema`, `RemoveAlpacaCredentialsPayloadSchema`, `SetActiveBrokerEnvironmentPayloadSchema`, `TestStoredAlpacaConnectionPayloadSchema`, `TestConnectionPayloadSchema` (discriminated union on `vendor`), `CredentialStatus` / `TestSettingsConnectionResult` / `SaveAlpacaCredentialsResult` shapes
+<!-- /generated -->
+
+<!-- generated:from us-35 -->
+
+## Assignment payloads and result shapes
+
+US-35 adds the renderer → main schemas for confirming and dismissing a detected assignment. Both schemas have the same single-field shape today and live in `src/main/schemas.ts`.
+
+### Payload schemas
+
+```typescript
+export const ConfirmAssignmentPayloadSchema = z.object({
+  pendingAssignmentId: z.number().int().positive()
+})
+export type ConfirmAssignmentPayload = z.infer<typeof ConfirmAssignmentPayloadSchema>
+
+export const DismissAssignmentPayloadSchema = z.object({
+  pendingAssignmentId: z.number().int().positive()
+})
+export type DismissAssignmentPayload = z.infer<typeof DismissAssignmentPayloadSchema>
+```
+
+`pendingAssignmentId` references `pending_assignments.id` (INTEGER PRIMARY KEY AUTOINCREMENT) — note that this is an integer in contrast to position UUIDs, because `pending_assignments` is the only table us-35 introduced with autoincrement keys. The two schemas are kept as separate named exports rather than aliased so that future divergence (e.g. adding a `confirmedAt` override on the confirm path) is purely additive. Bound to `assignments:confirm` and `assignments:dismiss` respectively. The matching `assignments:list-pending` handler takes no payload and `assignments:run-detection-now` takes no payload, so neither has a schema.
+
+### Result shapes
+
+```typescript
+// assignments:list-pending success — note this type lives in src/preload/index.d.ts
+// alongside the bridge, not src/main/schemas.ts.
+interface PendingAssignmentNotification {
+  id: number
+  ticker: string
+  strike: string // 2 dp
+  expiration: string // ISO date
+  contractType: 'put' | 'call'
+  qty: number
+  transactionTime: string // ISO-8601
+  positionId: string // UUID — corrected from the plan's INTEGER spec to match
+  // the existing positions/legs TEXT primary-key scheme
+}
+
+// assignments:confirm success
+interface ConfirmAssignmentResult {
+  position: { id: string; phase: 'HOLDING_SHARES'; assignedAt: string }
+}
+
+// assignments:dismiss success
+interface DismissAssignmentResult {
+  dismissedAt: string // ISO-8601
+}
+```
+
+The confirm and dismiss error envelopes carry an extra top-level `code` field (`'NOT_FOUND' | 'NOT_PENDING' | 'TRANSITION_REJECTED'` for confirm; `'NOT_FOUND' | 'NOT_PENDING'` for dismiss) alongside `errors[]`. This sits outside the standard `handleIpcCall` shape — see the `pendingAssignmentErrorResponse` helper in `src/main/ipc/assignments.ts` for the mapping. Driven by [us-35 — Assignment detection and auto-transition](../features/us-35-assignment-detection.md).
+
+<!-- /generated -->
+
+<!-- generated:from us-37 -->
+
+## Settings payloads and result shapes
+
+US-37 adds broker/settings-specific schemas to `src/main/schemas.ts`.
+
+### Payload schemas
+
+```ts
+const NonEmptyTrimmedStringSchema = z.string().trim().min(1, 'Required')
+
+export const SaveAlpacaCredentialsPayloadSchema = z.object({
+  environment: BrokerEnvironmentSchema,
+  keyId: NonEmptyTrimmedStringSchema,
+  secret: NonEmptyTrimmedStringSchema
+})
+
+export const RemoveAlpacaCredentialsPayloadSchema = z.object({
+  environment: BrokerEnvironmentSchema
+})
+
+export const SetActiveBrokerEnvironmentPayloadSchema = z.object({
+  environment: BrokerEnvironmentSchema
+})
+
+export const TestStoredAlpacaConnectionPayloadSchema = z.object({
+  environment: BrokerEnvironmentSchema
+})
+
+export const TestConnectionPayloadSchema = z.discriminatedUnion('vendor', [
+  z.object({ vendor: z.literal('massive') }),
+  z.object({
+    vendor: z.literal('alpaca'),
+    environment: BrokerEnvironmentSchema,
+    keyId: NonEmptyTrimmedStringSchema,
+    secret: NonEmptyTrimmedStringSchema
+  })
+])
+```
+
+- `BrokerEnvironmentSchema` is the shared `'paper' | 'live'` enum used across save/remove/switch/test payloads.
+- All user-entered credential fields are trimmed before validation.
+- `settings:test-stored-alpaca-connection` validates only the target environment because secrets are loaded from encrypted persistence in the main process.
+
+### Result shapes
+
+```ts
+type CredentialStatus = {
+  massive: 'configured' | 'missing'
+  alpacaPaper: 'configured' | 'missing'
+  alpacaLive: 'configured' | 'missing'
+  activeBrokerEnv: 'paper' | 'live' | 'none'
+  massiveLastCheckedAt: string | null
+  alpacaPaperAccountNumberMasked: string | null
+  alpacaLiveAccountNumberMasked: string | null
+}
+
+type TestSettingsConnectionResult =
+  | { ok: true; vendor: 'massive'; status: 'connected' }
+  | {
+      ok: true
+      vendor: 'alpaca'
+      environment: 'paper' | 'live'
+      accountNumberMasked: string
+    }
+  | { ok: false; errorCode: string; message: string }
+
+type SaveAlpacaCredentialsResult = {
+  status: CredentialStatus
+  test: Extract<TestSettingsConnectionResult, { ok: true; vendor: 'alpaca' }>
+}
+```
+
+These shapes back the renderer settings API in `src/renderer/src/api/settings.ts` and are returned by the `settings:*` IPC handlers documented in [contracts/ipc-handlers.md](./ipc-handlers.md).
+
 <!-- /generated -->
 
 <!-- Hand-written sections below this line are preserved across regeneration. -->

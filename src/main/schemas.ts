@@ -388,6 +388,53 @@ export const GetBrokerActivitiesPayloadSchema = z.object({
 export type GetBrokerActivitiesPayload = z.infer<typeof GetBrokerActivitiesPayloadSchema>
 
 // ---------------------------------------------------------------------------
+// Settings schemas
+// ---------------------------------------------------------------------------
+
+export const BrokerEnvironmentSchema = z.enum(['paper', 'live'])
+
+const NonEmptyTrimmedStringSchema = z.string().trim().min(1, 'Required')
+
+export const SaveAlpacaCredentialsPayloadSchema = z.object({
+  environment: BrokerEnvironmentSchema,
+  keyId: NonEmptyTrimmedStringSchema,
+  secret: NonEmptyTrimmedStringSchema
+})
+export type SaveAlpacaCredentialsPayload = z.infer<typeof SaveAlpacaCredentialsPayloadSchema>
+
+export const RemoveAlpacaCredentialsPayloadSchema = z.object({
+  environment: BrokerEnvironmentSchema
+})
+export type RemoveAlpacaCredentialsPayload = z.infer<typeof RemoveAlpacaCredentialsPayloadSchema>
+
+export const SetActiveBrokerEnvironmentPayloadSchema = z.object({
+  environment: BrokerEnvironmentSchema
+})
+export type SetActiveBrokerEnvironmentPayload = z.infer<
+  typeof SetActiveBrokerEnvironmentPayloadSchema
+>
+
+export const TestStoredAlpacaConnectionPayloadSchema = z.object({
+  environment: BrokerEnvironmentSchema
+})
+export type TestStoredAlpacaConnectionPayload = z.infer<
+  typeof TestStoredAlpacaConnectionPayloadSchema
+>
+
+export const TestConnectionPayloadSchema = z.discriminatedUnion('vendor', [
+  z.object({
+    vendor: z.literal('massive')
+  }),
+  z.object({
+    vendor: z.literal('alpaca'),
+    environment: BrokerEnvironmentSchema,
+    keyId: NonEmptyTrimmedStringSchema,
+    secret: NonEmptyTrimmedStringSchema
+  })
+])
+export type TestConnectionPayload = z.infer<typeof TestConnectionPayloadSchema>
+
+// ---------------------------------------------------------------------------
 // Assignments schemas
 // ---------------------------------------------------------------------------
 

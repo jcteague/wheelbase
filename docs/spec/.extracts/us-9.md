@@ -14,59 +14,69 @@ This story implements the covered-call expiry flow: when a `CC_OPEN` position's 
 ## Architecture Decisions
 
 ### ADR: New lifecycle function `expireCc()` returns `HOLDING_SHARES`, not `WHEEL_COMPLETE`
+
 - **Decision:** Add a dedicated `expireCc()` to `src/main/core/lifecycle.ts` that returns `{ phase: 'HOLDING_SHARES' }`. CC expiry keeps the wheel alive; the position stays `ACTIVE` with `closedDate = null`.
 - **Why:** Structurally different from `expireCsp()` (which ends the wheel at `WHEEL_COMPLETE`). After CC expiry the trader still holds shares and will sell another CC to continue the wheel.
 - **Alternatives considered:** Reusing `expireCsp()` with a flag — rejected; separate function keeps core engine functions single-purpose.
 - **Source:** `plans/us-9/research.md`
 
 ### ADR: No cost basis snapshot on CC expiry
+
 - **Decision:** No new row is written to `cost_basis_snapshots` on CC expiry. The EXPIRE leg is the only DB mutation alongside the position phase update.
 - **Why:** The CC premium was already incorporated into the snapshot created during `openCoveredCallPosition()` (US-7). The EXPIRE leg only records that the contract expired; no financial event changes the basis.
 - **Alternatives considered:** Writing a snapshot for audit trail — rejected per story technical notes; the existing snapshot is already correct.
 - **Source:** `plans/us-9/research.md`, `plans/us-9/data-model.md`
 
 ### ADR: Exact error message formats specified by ACs
+
 - **Decision:** Wrong-phase rejection uses `"No open covered call on this position"`. Premature-expiry rejection uses `"Cannot record expiration before the expiration date (YYYY-MM-DD)"` with the literal `expirationDate` interpolated.
 - **Why:** AC 3 and AC 4 quote these exact messages. The date-in-message pattern requires `expireCc()` to receive `expirationDate` as a string it can interpolate (not just a comparison value).
 - **Alternatives considered:** Generic "invalid phase" message from `expireCsp` — rejected because AC specifies a different message.
 - **Source:** `plans/us-9/research.md`, `plans/us-9/data-model.md`
 
 ### ADR: No DB migration required
+
 - **Decision:** US-9 uses existing `legs` and `positions` tables only. `EXPIRE` leg role, `CALL` instrument type, and `HOLDING_SHARES` phase are already in the type enums (`src/main/core/types.ts`).
 - **Why:** No new schema elements introduced; only new combinations of existing enum values.
 - **Alternatives considered:** None.
 - **Source:** `plans/us-9/research.md`, `plans/us-9/data-model.md`
 
 ### ADR: IPC channel naming follows established convention
+
 - **Decision:** Channel is `positions:expire-cc`; preload method is `expireCc`.
 - **Why:** Follows the established `positions:{verb}-{noun}` pattern (`positions:expire-csp`, `positions:open-cc`).
 - **Alternatives considered:** `positions:expire-covered-call` — too verbose given the existing abbreviation convention.
 - **Source:** `plans/us-9/research.md`, `plans/us-9/contracts/expire-cc.md`
 
 ### ADR: "Record Expiration →" button visibility is frontend-guarded by DTE
+
 - **Decision:** Button appears in `PositionDetailActions` only when `phase === 'CC_OPEN'` AND `computeDte(activeLeg.expiration) <= 0` (today is on or after the CC expiration date).
 - **Why:** Matches AC 3 ("Reject expiration before the expiration date") and the technical note: "Record Expiration → button visible in position detail header when phase = CC_OPEN and today ≥ CC expiration". `computeDte` already exists in `src/renderer/src/lib/format.ts`. Frontend guard provides better UX than relying solely on backend rejection.
 - **Alternatives considered:** Always showing the button and relying on backend rejection — provides worse UX.
 - **Source:** `plans/us-9/research.md`
 
 ### ADR: "Sell New Covered Call" CTA closes the sheet (no explicit navigation)
+
 - **Decision:** The success-state CTA calls `onClose()`. After TanStack Query cache invalidation, the position refetches with `phase = HOLDING_SHARES` and the existing `OpenCoveredCallSheet` entry-point button becomes visible in the position detail header.
 - **Why:** The user is already on the position detail page. Closing the sheet and letting the query refresh naturally surfaces the CC form — no extra navigation needed.
 - **Alternatives considered:** Explicit `navigate(#/positions/${positionId})` — redundant since the user is already there.
 - **Source:** `plans/us-9/research.md`
 
 ### ADR: `sharesHeld` included in IPC result (not re-queried by renderer)
+
 - **Decision:** `ExpireCcPositionResult` includes `sharesHeld: number`, computed from the ASSIGN leg as `assignLeg.contracts * 100`.
 - **Why:** The success screen needs "Still Holding: N shares of TICKER" and the renderer should not re-query the position to find this. The service already loads the position detail (including all legs) to perform validation, so computing this is zero-cost. `basisPerShare` from the snapshot is a money value, not a share count, so it cannot be used.
 - **Alternatives considered:** Derive `sharesHeld` from `basisPerShare` — unreliable.
 - **Source:** `plans/us-9/research.md`, `plans/us-9/contracts/expire-cc.md`
 
 ### ADR: `expirationDateOverride` plays double duty (referenceDate + recordedDate)
+
 - **Decision:** The optional `expirationDateOverride` field on `ExpireCcPayloadSchema` serves as both `referenceDate` (the "today" used in the date guard) and `recordedDate` (the `fill_date` on the inserted leg) when provided.
 - **Why:** Same dual-use pattern as `ExpireCspPayloadSchema.expirationDateOverride`. Used in tests to bypass system clock dependency; defaults to today and to the CC's expiration date respectively when omitted.
 - **Source:** `plans/us-9/contracts/expire-cc.md`, `plans/us-9/plan.md` §3
 
 ### ADR: Worktree must merge local main before implementation
+
 - **Decision:** Implementation must rebase or merge `main` into `worktree-us-9` first.
 - **Why:** `worktree-us-9` was created from `origin/main` (commit `47f5412`) which predates the US-7 "open cover calls" commit (`9fb1928`) on local `main`. `expireCc` depends on `openCoveredCall` being present in `lifecycle.ts`, the `CC_OPEN` leg query in `get-position.ts`, and the `openCoveredCall` service.
 - **Source:** `plans/us-9/research.md`, `plans/us-9/quickstart.md`
@@ -74,8 +84,10 @@ This story implements the covered-call expiry flow: when a `CC_OPEN` position's 
 ## Contracts
 
 ### `positions:expire-cc`
+
 - **Type:** IPC handler (renderer → main, invoke / request-response)
 - **Shape:**
+
   ```typescript
   // Request payload (validated by ExpireCcPayloadSchema)
   {
@@ -103,24 +115,26 @@ This story implements the covered-call expiry flow: when a `CC_OPEN` position's 
   ```
 
   Known error cases:
-  | field        | code             | message                                                              |
+  | field | code | message |
   | ------------ | ---------------- | -------------------------------------------------------------------- |
-  | `__root__`   | `not_found`      | "Position not found"                                                 |
-  | `__phase__`  | `invalid_phase`  | "No open covered call on this position"                              |
-  | `__root__`   | `no_active_leg`  | "Position has no active leg"                                         |
-  | `expiration` | `too_early`      | "Cannot record expiration before the expiration date (YYYY-MM-DD)"   |
-  | (field name) | (zod code)       | (zod message)                                                        |
-  | `__root__`   | `internal_error` | "An unexpected error occurred"                                       |
+  | `__root__` | `not_found` | "Position not found" |
+  | `__phase__` | `invalid_phase` | "No open covered call on this position" |
+  | `__root__` | `no_active_leg` | "Position has no active leg" |
+  | `expiration` | `too_early` | "Cannot record expiration before the expiration date (YYYY-MM-DD)" |
+  | (field name) | (zod code) | (zod message) |
+  | `__root__` | `internal_error` | "An unexpected error occurred" |
+
 - **Source:** `plans/us-9/contracts/expire-cc.md`, `plans/us-9/plan.md` §4
 - **Implementation:** `src/main/ipc/positions.ts`, `src/main/services/expire-cc-position.ts`
 
 ### `ExpireCcPayloadSchema`
+
 - **Type:** Zod schema
 - **Shape:**
   ```typescript
   export const ExpireCcPayloadSchema = z.object({
     positionId: z.string().uuid(),
-    expirationDateOverride: z.string().optional()  // YYYY-MM-DD
+    expirationDateOverride: z.string().optional() // YYYY-MM-DD
   })
   export type ExpireCcPayload = z.infer<typeof ExpireCcPayloadSchema>
   ```
@@ -128,6 +142,7 @@ This story implements the covered-call expiry flow: when a `CC_OPEN` position's 
 - **Implementation:** `src/main/schemas.ts`
 
 ### `ExpireCcPositionResult`
+
 - **Type:** other (IPC return type definition)
 - **Shape:**
   ```typescript
@@ -139,17 +154,19 @@ This story implements the covered-call expiry flow: when a `CC_OPEN` position's 
       status: 'ACTIVE'
       closedDate: null
     }
-    leg: LegRecord                       // the newly inserted EXPIRE/CALL leg
-    costBasisSnapshot: CostBasisSnapshotRecord  // unchanged from CC open
-    sharesHeld: number                   // ASSIGN leg.contracts × 100
+    leg: LegRecord // the newly inserted EXPIRE/CALL leg
+    costBasisSnapshot: CostBasisSnapshotRecord // unchanged from CC open
+    sharesHeld: number // ASSIGN leg.contracts × 100
   }
   ```
 - **Source:** `plans/us-9/plan.md` §2, `plans/us-9/contracts/expire-cc.md`
 - **Implementation:** `src/main/schemas.ts`
 
 ### `ExpireCcInput` / `ExpireCcResult` (lifecycle engine)
+
 - **Type:** other (core lifecycle function signature)
 - **Shape:**
+
   ```typescript
   ExpireCcInput {
     currentPhase: WheelPhase
@@ -161,15 +178,18 @@ This story implements the covered-call expiry flow: when a `CC_OPEN` position's 
     phase: 'HOLDING_SHARES'
   }
   ```
+
   Engine throws `ValidationError` with one of:
   - `__phase__` / `invalid_phase` / "No open covered call on this position" — when `currentPhase !== 'CC_OPEN'`
   - `expiration` / `too_early` / "Cannot record expiration before the expiration date (${expirationDate})" — when `referenceDate < expirationDate`
 
   Boundary: `referenceDate === expirationDate` is **allowed** (passes); one day earlier throws.
+
 - **Source:** `plans/us-9/plan.md` §1, `plans/us-9/data-model.md`
 - **Implementation:** `src/main/core/lifecycle.ts`
 
 ### Preload bridge addition
+
 - **Type:** other (preload contextBridge API)
 - **Shape:**
   ```typescript
@@ -183,8 +203,10 @@ This story implements the covered-call expiry flow: when a `CC_OPEN` position's 
 - **Implementation:** `src/preload/index.ts`, `src/preload/index.d.ts`
 
 ### Renderer `ExpireCcPayload` / `ExpireCcResponse`
+
 - **Type:** other (renderer adapter types — snake_case payload)
 - **Shape:**
+
   ```typescript
   export type ExpireCcPayload = {
     position_id: string
@@ -220,10 +242,12 @@ This story implements the covered-call expiry flow: when a `CC_OPEN` position's 
     sharesHeld: number
   }
   ```
+
 - **Source:** `plans/us-9/contracts/expire-cc.md`, `plans/us-9/plan.md` §6
 - **Implementation:** `src/renderer/src/api/positions.ts`
 
 ### Renderer API adapter snake_case ↔ camelCase mapping
+
 - **Type:** other (renderer adapter mapping)
 - **Shape:**
   ```
@@ -236,6 +260,7 @@ This story implements the covered-call expiry flow: when a `CC_OPEN` position's 
 - **Implementation:** `src/renderer/src/api/positions.ts`
 
 ### `useExpireCoveredCall` mutation hook
+
 - **Type:** other (renderer TanStack Query mutation hook)
 - **Shape:**
   ```typescript
@@ -247,6 +272,7 @@ This story implements the covered-call expiry flow: when a `CC_OPEN` position's 
 - **Implementation:** `src/renderer/src/hooks/useExpireCoveredCall.ts`
 
 ### `CcExpirationSheet` component props
+
 - **Type:** other (renderer component contract)
 - **Shape:**
   ```typescript
@@ -255,11 +281,11 @@ This story implements the covered-call expiry flow: when a `CC_OPEN` position's 
     positionId: string
     ticker: string
     strike: string
-    expiration: string              // YYYY-MM-DD
-    expirationDisplay: string       // e.g. "Feb 21, 2026"
+    expiration: string // YYYY-MM-DD
+    expirationDisplay: string // e.g. "Feb 21, 2026"
     contracts: number
-    premiumPerContract: string      // e.g. "2.3000"
-    sharesHeld: number              // passed from PositionDetailPage
+    premiumPerContract: string // e.g. "2.3000"
+    sharesHeld: number // passed from PositionDetailPage
     onClose: () => void
   }
   ```
@@ -270,42 +296,46 @@ This story implements the covered-call expiry flow: when a `CC_OPEN` position's 
 ## Schema Changes
 
 ### No new tables, columns, or migrations
+
 - **Change:** none — US-9 uses existing `legs` and `positions` tables. No migration required.
 - **Source:** `plans/us-9/data-model.md`, `plans/us-9/research.md`
 
 ### `legs` row INSERT — EXPIRE leg on CC expiry
+
 - **Change:** new row (no schema change)
 - **Columns / fields:**
-  | Field                  | Value                                        |
+  | Field | Value |
   | ---------------------- | -------------------------------------------- |
-  | `id`                   | new UUID                                     |
-  | `position_id`          | FK → CC_OPEN position's ID                   |
-  | `leg_role`             | `'EXPIRE'`                                   |
-  | `action`               | `'EXPIRE'`                                   |
-  | `instrument_type`      | `'CALL'`                                     |
-  | `strike`               | copied from the active CC_OPEN leg           |
-  | `expiration`           | copied from the active CC_OPEN leg           |
-  | `contracts`            | copied from the active CC_OPEN leg           |
-  | `premium_per_contract` | `'0.0000'` — expiration collects no premium  |
-  | `fill_price`           | `NULL` — no market fill on expiry            |
-  | `fill_date`            | recordedDate (CC's expiration date string, YYYY-MM-DD) |
-  | `created_at`           | ISO timestamp now                            |
-  | `updated_at`           | ISO timestamp now                            |
+  | `id` | new UUID |
+  | `position_id` | FK → CC_OPEN position's ID |
+  | `leg_role` | `'EXPIRE'` |
+  | `action` | `'EXPIRE'` |
+  | `instrument_type` | `'CALL'` |
+  | `strike` | copied from the active CC_OPEN leg |
+  | `expiration` | copied from the active CC_OPEN leg |
+  | `contracts` | copied from the active CC_OPEN leg |
+  | `premium_per_contract` | `'0.0000'` — expiration collects no premium |
+  | `fill_price` | `NULL` — no market fill on expiry |
+  | `fill_date` | recordedDate (CC's expiration date string, YYYY-MM-DD) |
+  | `created_at` | ISO timestamp now |
+  | `updated_at` | ISO timestamp now |
 - **Source:** `plans/us-9/data-model.md`
 - **Migration file:** none
 
 ### `positions` row UPDATE on CC expiry
+
 - **Change:** altered row (no schema change)
 - **Columns / fields:**
-  | Field         | Before        | After                |
+  | Field | Before | After |
   | ------------- | ------------- | -------------------- |
-  | `phase`       | `CC_OPEN`     | `HOLDING_SHARES`     |
-  | `status`      | `ACTIVE`      | `ACTIVE` (no change) |
-  | `closed_date` | `NULL`        | `NULL` (no change)   |
-  | `updated_at`  | prior value   | ISO timestamp now    |
+  | `phase` | `CC_OPEN` | `HOLDING_SHARES` |
+  | `status` | `ACTIVE` | `ACTIVE` (no change) |
+  | `closed_date` | `NULL` | `NULL` (no change) |
+  | `updated_at` | prior value | ISO timestamp now |
 - **Source:** `plans/us-9/data-model.md`
 
 ### `cost_basis_snapshots` — explicitly NOT touched
+
 - **Change:** no row inserted, updated, or deleted on CC expiry. The existing snapshot (written when the CC was opened in US-7) remains the source of truth for `basisPerShare` and `totalPremiumCollected`.
 - **Why:** CC premium was already captured at CC-open; expiry is not a financial event.
 - **Source:** `plans/us-9/data-model.md`, `plans/us-9/research.md`
@@ -313,6 +343,7 @@ This story implements the covered-call expiry flow: when a `CC_OPEN` position's 
 ## Acceptance Criteria
 
 Background:
+
 - The trader has a CC_OPEN position on AAPL
 - The CC strike is $182.00 with $2.30 premium, expiration "2026-02-21", 1 contract
 - Today is on or after "2026-02-21"
@@ -392,6 +423,7 @@ Files this plan introduced or modified (verified to exist on disk at extraction 
 ## Open Questions
 
 **No `refactor-phase-results.md` exists for this plan.** This extract therefore records no Refactor-phase decisions, simplifications, file splits, or post-refactor test counts. The Refactor-phase "cleanup to consider" hints in `plans/us-9/plan.md` were:
+
 - §1 (`expireCc`): Extract a `requirePhase` helper if the pattern repeats across `expireCsp` and `expireCc` — gated on genuine duplication reduction.
 - §2 (schemas): Check naming consistency with `ExpireCspPayload` / `ExpireCspPositionResult`.
 - §3 (service): Check for duplication with `expire-csp-position.ts` in date handling; extract a helper only if ≥3 uses emerge.

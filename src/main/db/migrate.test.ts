@@ -102,8 +102,8 @@ describe('runMigrations', () => {
       '003_rename_option_type_to_instrument_type.sql',
       '004_add_trigger_event_to_snapshots.sql',
       '005_add_profit_target_percent.sql',
-      '006_create_pending_assignments.sql',
-      '007_create_app_settings.sql'
+      '006_add_credential_settings.sql',
+      '008_create_pending_assignments.sql'
     ])
   })
 
@@ -167,7 +167,7 @@ describe('runMigrations', () => {
     expect(profitTargetCol?.notnull).toBe(0)
   })
 
-  it('migration 006 creates pending_assignments table with UNIQUE(activity_id) constraint', () => {
+  it('migration 008 creates pending_assignments table with compound UNIQUE(activity_id, position_id)', () => {
     const db = makeTestDb()
 
     expect(listUserTables(db)).toContain('pending_assignments')
@@ -186,7 +186,7 @@ describe('runMigrations', () => {
     expect(() => insert.run()).toThrow(/UNIQUE constraint failed/i)
   })
 
-  it('migration 006 creates index on status and on position_id', () => {
+  it('migration 008 creates index on status and on position_id', () => {
     const db = makeTestDb()
     const indexes = listIndexes(db, 'pending_assignments')
 
@@ -194,15 +194,20 @@ describe('runMigrations', () => {
     expect(indexes).toContain('idx_pending_assignments_position')
   })
 
-  it('migration 007 creates app_settings table with PRIMARY KEY(key)', () => {
+  it('migration 006 creates app_settings table with PRIMARY KEY(key)', () => {
     const db = makeTestDb()
 
     expect(listUserTables(db)).toContain('app_settings')
 
-    db.prepare(`INSERT INTO app_settings (key, value) VALUES ('foo', 'bar')`).run()
+    const now = new Date().toISOString()
+    db.prepare(`INSERT INTO app_settings (key, value, updated_at) VALUES ('foo', 'bar', ?)`).run(
+      now
+    )
 
     expect(() =>
-      db.prepare(`INSERT INTO app_settings (key, value) VALUES ('foo', 'baz')`).run()
+      db
+        .prepare(`INSERT INTO app_settings (key, value, updated_at) VALUES ('foo', 'baz', ?)`)
+        .run(now)
     ).toThrow(/UNIQUE constraint failed/i)
   })
 })

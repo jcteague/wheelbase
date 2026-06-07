@@ -14,48 +14,56 @@ This story adds the ability to sell a covered call against shares held after CSP
 ## Architecture Decisions
 
 ### ADR: New lifecycle function `openCoveredCall()` instead of overloading an existing one
+
 - **Decision:** Add a dedicated `openCoveredCall()` to `src/main/core/lifecycle.ts` following the `recordAssignment()` pattern — a pure state-machine function that validates phase + input constraints and returns `{ phase: 'CC_OPEN' }`.
 - **Why:** The lifecycle engine is a pure state machine; each transition deserves its own named function. Consistent with the established pattern.
 - **Alternatives considered:** None — the pattern is established.
 - **Source:** `plans/us-7/research.md`
 
 ### ADR: Cost basis after CC open — separate function
+
 - **Decision:** Add a dedicated `calculateCcOpenBasis()` to `src/main/core/costbasis.ts`. Formula: `newBasisPerShare = prevBasisPerShare − ccPremiumPerContract`; `newTotalPremium = prevTotal + (ccPremium × contracts × 100)`.
 - **Why:** CC premium reduces basis because the trader receives a credit. A separate function keeps the engine open/closed — folding into `calculateAssignmentBasis()` would conflate two distinct events.
 - **Alternatives considered:** Fold into `calculateAssignmentBasis()` — rejected as it conflates two distinct events.
 - **Source:** `plans/us-7/research.md`
 
 ### ADR: Contracts validation lives in the service layer (not the lifecycle engine)
+
 - **Decision:** Validate `contracts ≤ position.contracts` in the service layer by querying the ASSIGN leg's `contracts` from leg history. The lifecycle engine validates phase and date bounds only.
-- **Why:** The ASSIGN leg is the source of truth for shares held. Putting contract-count validation in the engine would require passing position contract count as input, coupling the pure engine to DB query results. *(Note: the implemented plan in §1 actually passes `positionContracts` into `openCoveredCall()` and the engine throws `exceeds_shares` itself — the contract-count check moved into the engine while the assignment-leg lookup stayed in the service.)*
+- **Why:** The ASSIGN leg is the source of truth for shares held. Putting contract-count validation in the engine would require passing position contract count as input, coupling the pure engine to DB query results. _(Note: the implemented plan in §1 actually passes `positionContracts` into `openCoveredCall()` and the engine throws `exceeds_shares` itself — the contract-count check moved into the engine while the assignment-leg lookup stayed in the service.)_
 - **Alternatives considered:** Validate in the lifecycle engine directly.
 - **Source:** `plans/us-7/research.md`, `plans/us-7/plan.md` §1
 
 ### ADR: Fill date validation in the lifecycle engine
+
 - **Decision:** Validate `fillDate ≥ assignmentDate` (sourced from the ASSIGN leg's `fill_date`) and `fillDate ≤ referenceDate` (today). Both checks happen in the lifecycle engine as pure date string comparisons.
 - **Why:** Follows the pattern of `openWheel()` (validates `fillDate ≤ referenceDate`) and `recordAssignment()` (validates `assignmentDate ≥ openFillDate`).
 - **Alternatives considered:** None — consistent with existing patterns.
 - **Source:** `plans/us-7/research.md`
 
 ### ADR: Cost basis guardrail is client-side only and non-blocking
+
 - **Decision:** Implement the strike-vs-basis guardrail as a pure function (`computeGuardrail`) in the renderer. The Confirm button stays enabled regardless of warning state. No server-side validation.
 - **Why:** The story explicitly states the guardrail is client-side and informational. This is a UX aid, not a business rule — the trader may have a deliberate reason to sell below basis.
 - **Alternatives considered:** Shared utility / server validation — both rejected; it's a 10-line UI helper.
 - **Source:** `plans/us-7/research.md`, `plans/us-7/data-model.md`
 
 ### ADR: No schema migration
+
 - **Decision:** No migration. Reuse existing `legs`, `cost_basis_snapshots`, and `positions` tables. The schema was designed generically to support all leg types.
 - **Why:** All required fields already exist (`leg_role`, `action`, `instrument_type`, `strike`, `expiration`, `contracts`, `premium_per_contract`, `fill_date`).
 - **Alternatives considered:** None needed.
 - **Source:** `plans/us-7/research.md`, `plans/us-7/data-model.md`, `plans/us-7/quickstart.md`
 
 ### ADR: Sheet component pattern — mirror `AssignmentSheet`
+
 - **Decision:** Create `OpenCoveredCallSheet.tsx` as a portal-based right-side panel with a form-state → success-state transition, mirroring `AssignmentSheet.tsx`.
 - **Why:** The mockup shows the same sheet pattern (right-side panel, header/body/footer, form fields, guardrail alert, success hero card).
 - **Alternatives considered:** Modal — rejected; mockup explicitly shows a sheet.
 - **Source:** `plans/us-7/research.md`
 
 ### ADR: Position detail page hosts the entry point
+
 - **Decision:** Add a conditional "Open Covered Call →" button to `PositionDetailPage` header, visible only when `phase === 'HOLDING_SHARES'`. The page owns `openCcCtx` state populated from the position's basis-per-share, total-premium-collected, contracts, and assignment date.
 - **Why:** Consistent with US-6 assignment entry point and the story's Technical Notes ("CC form appears in position detail header when phase = HOLDING_SHARES").
 - **Source:** `plans/us-7/plan.md` §9
@@ -63,8 +71,10 @@ This story adds the ability to sell a covered call against shares held after CSP
 ## Contracts
 
 ### `positions:open-cc`
+
 - **Type:** IPC handler (renderer → main, invoke / request-response)
 - **Shape:**
+
   ```typescript
   // Request payload (validated by OpenCcPayloadSchema)
   {
@@ -117,18 +127,20 @@ This story adds the ability to sell a covered call against shares held after CSP
   ```
 
   Known error codes:
-  | field                | code                | message                                                                                        |
+  | field | code | message |
   | -------------------- | ------------------- | ---------------------------------------------------------------------------------------------- |
-  | `__phase__`          | `invalid_phase`     | "Position is not in HOLDING_SHARES phase" or "A covered call is already open on this position" |
-  | `contracts`          | `exceeds_shares`    | "Contracts cannot exceed shares held ({n})"                                                    |
-  | `fillDate`           | `before_assignment` | "Fill date cannot be before the assignment date"                                               |
-  | `fillDate`           | `cannot_be_future`  | "Fill date cannot be in the future"                                                            |
-  | `strike`             | `must_be_positive`  | "Strike must be positive"                                                                      |
-  | `premiumPerContract` | `must_be_positive`  | "Premium per contract must be positive"                                                        |
+  | `__phase__` | `invalid_phase` | "Position is not in HOLDING_SHARES phase" or "A covered call is already open on this position" |
+  | `contracts` | `exceeds_shares` | "Contracts cannot exceed shares held ({n})" |
+  | `fillDate` | `before_assignment` | "Fill date cannot be before the assignment date" |
+  | `fillDate` | `cannot_be_future` | "Fill date cannot be in the future" |
+  | `strike` | `must_be_positive` | "Strike must be positive" |
+  | `premiumPerContract` | `must_be_positive` | "Premium per contract must be positive" |
+
 - **Source:** `plans/us-7/contracts/open-cc.md`, `plans/us-7/plan.md` §5
 - **Implementation:** `src/main/ipc/positions.ts`, `src/main/services/open-covered-call-position.ts`
 
 ### `OpenCcPayloadSchema`
+
 - **Type:** Zod schema
 - **Shape:**
   ```typescript
@@ -146,6 +158,7 @@ This story adds the ability to sell a covered call against shares held after CSP
 - **Implementation:** `src/main/schemas.ts`
 
 ### `OpenCcPositionResult`
+
 - **Type:** other (IPC return type definition)
 - **Shape:**
   ```typescript
@@ -159,8 +172,10 @@ This story adds the ability to sell a covered call against shares held after CSP
 - **Implementation:** `src/main/schemas.ts`
 
 ### `OpenCoveredCallInput` / `OpenCoveredCallResult` (lifecycle engine)
+
 - **Type:** other (core lifecycle function signature)
 - **Shape:**
+
   ```typescript
   OpenCoveredCallInput {
     currentPhase: WheelPhase
@@ -178,13 +193,17 @@ This story adds the ability to sell a covered call against shares held after CSP
     phase: 'CC_OPEN'
   }
   ```
+
   Engine throws `ValidationError` with one of: `__phase__` / `invalid_phase`, `contracts` / `exceeds_shares`, `fillDate` / `before_assignment`, `fillDate` / `cannot_be_future`, `strike` / `must_be_positive`, `premiumPerContract` / `must_be_positive`.
+
 - **Source:** `plans/us-7/plan.md` §1, `plans/us-7/data-model.md`
 - **Implementation:** `src/main/core/lifecycle.ts`
 
 ### `CcOpenBasisInput` / `CcOpenBasisResult` (cost basis engine)
+
 - **Type:** other (core cost basis function signature)
 - **Shape:**
+
   ```typescript
   CcOpenBasisInput {
     prevBasisPerShare: string
@@ -198,11 +217,14 @@ This story adds the ability to sell a covered call against shares held after CSP
     totalPremiumCollected: string   // 4 dp
   }
   ```
+
   Formula: `basisPerShare = round4(prevBasisPerShare − ccPremiumPerContract)`; `totalPremiumCollected = round4(prevTotal + ccPremium × contracts × 100)`. Uses `decimal.js` with `ROUND_HALF_UP` via existing `round4` helper.
+
 - **Source:** `plans/us-7/plan.md` §2, `plans/us-7/data-model.md`
 - **Implementation:** `src/main/core/costbasis.ts`
 
 ### Preload bridge addition
+
 - **Type:** other (preload contextBridge API)
 - **Shape:**
   ```typescript
@@ -212,8 +234,10 @@ This story adds the ability to sell a covered call against shares held after CSP
 - **Implementation:** `src/preload/index.ts`
 
 ### Renderer `OpenCcPayload` / `OpenCcResponse`
+
 - **Type:** other (renderer adapter types — snake_case payload)
 - **Shape:**
+
   ```typescript
   export type OpenCcPayload = {
     position_id: string
@@ -248,12 +272,15 @@ This story adds the ability to sell a covered call against shares held after CSP
     }
   }
   ```
+
 - **Source:** `plans/us-7/contracts/open-cc.md`, `plans/us-7/plan.md` §6
 - **Implementation:** `src/renderer/src/api/positions.ts`
 
 ### Renderer API adapter snake_case ↔ camelCase mapping
+
 - **Type:** other (renderer adapter mapping)
 - **Shape:**
+
   ```
   openCoveredCall payload (renderer snake_case -> IPC camelCase):
     position_id           -> positionId
@@ -268,10 +295,12 @@ This story adds the ability to sell a covered call against shares held after CSP
     premiumPerContract    -> premium_per_contract
     fillDate              -> fill_date
   ```
+
 - **Source:** `plans/us-7/plan.md` §6
 - **Implementation:** `src/renderer/src/api/positions.ts` (`IPC_TO_FORM_FIELD`)
 
 ### `useOpenCoveredCall` mutation hook
+
 - **Type:** other (renderer TanStack Query mutation hook)
 - **Shape:**
   ```typescript
@@ -283,6 +312,7 @@ This story adds the ability to sell a covered call against shares held after CSP
 - **Implementation:** `src/renderer/src/hooks/useOpenCoveredCall.ts`
 
 ### Guardrail pure function (renderer)
+
 - **Type:** other (renderer pure helper)
 - **Shape:**
   ```typescript
@@ -295,56 +325,60 @@ This story adds the ability to sell a covered call against shares held after CSP
   - `strike > basis` → `type: 'above'`, info message "Shares called away at ${strike} → profit of ${diff}/share" (info AlertBox)
   - `strike == basis` → `type: 'at'`, warning "This strike is at your cost basis — you would break even if called away"
   - `strike < basis` → `type: 'below'`, warning "This strike is below your cost basis — you would lock in a loss of ${diff}/share if called away"
-  Confirm button stays enabled in all three cases.
+    Confirm button stays enabled in all three cases.
 - **Source:** `plans/us-7/plan.md` §8, `plans/us-7/data-model.md`, `plans/us-7/refactor-phase-results.md` §2
 - **Implementation:** `src/renderer/src/components/openCcGuardrail.ts` (extracted during refactor)
 
 ## Schema Changes
 
 ### No new tables, columns, or migrations
+
 - **Change:** none — existing schema fully supports CC open. No migration required. Reuses `legs`, `cost_basis_snapshots`, and `positions` as designed.
 - **Source:** `plans/us-7/data-model.md`, `plans/us-7/research.md`, `plans/us-7/quickstart.md`
 
 ### `legs` row INSERT — CC open leg
+
 - **Change:** new row (no schema change)
 - **Columns / fields:**
-  | Field                  | Value                                            |
+  | Field | Value |
   | ---------------------- | ------------------------------------------------ |
-  | `id`                   | new UUID                                         |
-  | `position_id`          | FK → parent HOLDING_SHARES position              |
-  | `leg_role`             | `'CC_OPEN'`                                      |
-  | `action`               | `'SELL'`                                         |
-  | `instrument_type`      | `'CALL'`                                         |
-  | `strike`               | CC strike price (4 dp TEXT)                      |
-  | `expiration`           | CC expiration date (ISO string)                  |
-  | `contracts`            | Integer, must be ≤ ASSIGN leg's contracts        |
-  | `premium_per_contract` | Credit received per share (4 dp TEXT)            |
-  | `fill_price`           | `null` (manual entry)                            |
-  | `fill_date`            | CC fill date (ISO string)                        |
+  | `id` | new UUID |
+  | `position_id` | FK → parent HOLDING_SHARES position |
+  | `leg_role` | `'CC_OPEN'` |
+  | `action` | `'SELL'` |
+  | `instrument_type` | `'CALL'` |
+  | `strike` | CC strike price (4 dp TEXT) |
+  | `expiration` | CC expiration date (ISO string) |
+  | `contracts` | Integer, must be ≤ ASSIGN leg's contracts |
+  | `premium_per_contract` | Credit received per share (4 dp TEXT) |
+  | `fill_price` | `null` (manual entry) |
+  | `fill_date` | CC fill date (ISO string) |
 - **Source:** `plans/us-7/data-model.md`
 - **Migration file:** none
 
 ### `cost_basis_snapshots` row INSERT — post-CC-open snapshot
+
 - **Change:** new row (no schema change)
 - **Columns / fields:**
-  | Field                     | Value                                                          |
+  | Field | Value |
   | ------------------------- | -------------------------------------------------------------- |
-  | `id`                      | new UUID                                                       |
-  | `position_id`             | FK → parent position                                           |
-  | `basis_per_share`         | `prevBasisPerShare − ccPremiumPerContract` (4 dp TEXT)         |
-  | `total_premium_collected` | `prevTotal + (ccPremium × contracts × 100)` (4 dp TEXT)        |
-  | `final_pnl`               | `null` (position still open)                                   |
-  | `snapshot_at`             | now (ISO timestamp)                                            |
+  | `id` | new UUID |
+  | `position_id` | FK → parent position |
+  | `basis_per_share` | `prevBasisPerShare − ccPremiumPerContract` (4 dp TEXT) |
+  | `total_premium_collected` | `prevTotal + (ccPremium × contracts × 100)` (4 dp TEXT) |
+  | `final_pnl` | `null` (position still open) |
+  | `snapshot_at` | now (ISO timestamp) |
 - **Source:** `plans/us-7/data-model.md`
 - **Migration file:** none
 
 ### `positions` row UPDATE on CC open
+
 - **Change:** altered row (no schema change)
 - **Columns / fields:**
-  | Field        | Before CC open    | After CC open     |
+  | Field | Before CC open | After CC open |
   | ------------ | ----------------- | ----------------- |
-  | `phase`      | `HOLDING_SHARES`  | `CC_OPEN`         |
-  | `updated_at` | prior timestamp   | now               |
+  | `phase` | `HOLDING_SHARES` | `CC_OPEN` |
+  | `updated_at` | prior timestamp | now |
 - **Source:** `plans/us-7/data-model.md`
 - **Migration file:** none
 
@@ -426,6 +460,7 @@ This story adds the ability to sell a covered call against shares held after CSP
 - E2E spec includes 8 scenarios mapped 1:1 to ACs; reuses `launchFreshApp()`, `openPosition()`, `selectDate()`, `openDetailFor()` helpers, and adds an `assignPosition()` plus `openCcSheet()` helper. (Source: `plans/us-7/plan.md` §10)
 
 Refactor-phase decisions (authoritative; `plans/us-7/refactor-phase-results.md`):
+
 - **Extracted shared validators in `lifecycle.ts`** — `requirePositiveStrike(strike)` and `requirePositivePremium(premiumPerContract)` extracted as private helpers used by both `openWheel()` and `openCoveredCall()` to remove duplicated 4-line validation blocks.
 - **Split oversized `OpenCoveredCallSheet.tsx`** (was 649 lines, far exceeding the ~200-line file size limit) into four files plus a guardrail module:
   - `OpenCoveredCallSheet.tsx` — 104 lines, orchestrator only (state, submit handler, portal render)
@@ -464,6 +499,7 @@ Files this plan introduced or modified (verified to exist on disk; one path from
 - `e2e/open-covered-call.spec.ts` — 8 e2e tests, one per AC.
 
 Plan-mentioned path not present at filesystem check (likely consolidated by a later commit; not verified beyond the check):
+
 - `src/renderer/src/components/OpenCcSheetHeader.tsx` (named in `plans/us-7/refactor-phase-results.md` §2 as a 65-line extracted file).
 
 ## Open Questions

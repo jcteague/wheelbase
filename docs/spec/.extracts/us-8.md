@@ -9,59 +9,68 @@ status: complete
 
 ## Summary
 
-This story adds buy-to-close functionality for an open covered call, introducing the lifecycle transition `CC_OPEN → HOLDING_SHARES`. A new `closeCoveredCall()` lifecycle function validates phase plus close-price positivity and fill-date bounds (`>=` CC open fill date, `<=` CC expiration); a new `calculateCcClose()` cost-basis function returns the CC leg P&L as `(openPremium − closePrice) × contracts × 100` to 4 dp. A new `positions:close-cc-early` IPC channel backed by `closeCoveredCallPosition()` service inserts a single `CC_CLOSE` / `BUY` / `CALL` leg (copying strike/expiration/contracts from the active `CC_OPEN` leg, premium set to the close price), updates the position phase to `HOLDING_SHARES`, and **does not** create a new cost-basis snapshot — the existing CC_OPEN snapshot is left unchanged. The renderer ships a `CloseCcEarlySheet` right-side panel that mirrors `OpenCoveredCallSheet`: a live `CcPnlPreview` ("X% of max" for profit, "X% above open" for loss, "$0.00 break-even" when equal), an irrevocable-warning `AlertBox`, and a success state with a `+$X.XX` / `−$X.XX` hero card and a "Sell New Covered Call on {ticker} →" CTA. No DB migration is required. (Source: `plans/us-8/plan.md`, `plans/us-8/research.md`)
+This story adds buy-to-close functionality for an open covered call, introducing the lifecycle transition `CC_OPEN → HOLDING_SHARES`. A new `closeCoveredCall()` lifecycle function validates phase plus close-price positivity and fill-date bounds (`>=` CC open fill date, `<=` CC expiration); a new `calculateCcClose()` cost-basis function returns the CC leg P&L as `(openPremium − closePrice) × contracts × 100` to 4 dp. A new `positions:close-cc-early` IPC channel backed by `closeCoveredCallPosition()` service inserts a single `CC_CLOSE` / `BUY` / `CALL` leg (copying strike/expiration/contracts from the active `CC_OPEN` leg, premium set to the close price), updates the position phase to `HOLDING_SHARES`, and **does not** create a new cost-basis snapshot — the existing CC_OPEN snapshot is left unchanged. The renderer ships a `CloseCcEarlySheet` right-side panel that mirrors `OpenCoveredCallSheet`: a live `CcPnlPreview` ("X% of max" for profit, "X% above open" for loss, "$0.00 break-even" when equal), an irrevocable-warning `AlertBox`, and a success state with a `+$X.XX`/`−$X.XX`hero card and a "Sell New Covered Call on {ticker} →" CTA. No DB migration is required. (Source:`plans/us-8/plan.md`, `plans/us-8/research.md`)
 
 ## Architecture Decisions
 
 ### ADR: New lifecycle function `closeCoveredCall()` (own state-machine function)
+
 - **Decision:** Add a dedicated `closeCoveredCall()` to `src/main/core/lifecycle.ts` that validates `currentPhase === 'CC_OPEN'`, positive close price, and fill-date bounds, and returns `{ phase: 'HOLDING_SHARES' }`.
 - **Why:** The lifecycle engine is a pure state machine; each transition deserves its own named function. Consistent with `closeCsp()`, `recordAssignment()`, `openCoveredCall()`.
 - **Alternatives considered:** None — established pattern.
 - **Source:** `plans/us-8/research.md`, `plans/us-8/plan.md` §1
 
 ### ADR: No new cost-basis snapshot on CC close
+
 - **Decision:** Do **not** insert a new `cost_basis_snapshots` row when closing the CC early. The existing CC_OPEN snapshot remains the current snapshot.
 - **Why:** The CC_OPEN snapshot already reflects the CC premium reduction; closing the CC does not reverse that. The wheel is still ACTIVE and no final P&L exists for the position.
 - **Alternatives considered:** Creating a snapshot with `final_pnl` for the CC leg (as in CSP close) — rejected; would be incorrect for a still-open wheel.
 - **Source:** `plans/us-8/research.md`, `plans/us-8/data-model.md`, `docs/epics/02-stories/US-8-close-covered-call-early.md` Technical Notes
 
 ### ADR: Dedicated `calculateCcClose()` instead of reusing `calculateCspClose()`
+
 - **Decision:** Add a separate `calculateCcClose()` to `src/main/core/costbasis.ts`. Formula: `(openPremium − closePrice) × contracts × 100`, 4 dp, `ROUND_HALF_UP`.
 - **Why:** The formula is identical to `calculateCspClose()`, but a named `calculateCcClose` clearly communicates domain intent. Keeps the engine open/closed.
 - **Alternatives considered:** Reuse `calculateCspClose` directly — rejected for domain clarity.
 - **Source:** `plans/us-8/research.md`, `plans/us-8/plan.md` §2
 
 ### ADR: `ccLegPnl` returned in IPC response, not persisted
+
 - **Decision:** Compute `ccLegPnl` in the service and return it on the IPC envelope. Do not add a column to any table.
 - **Why:** P&L is derivable from leg data at any time; the renderer needs it for the success hero card. Avoids schema bloat.
 - **Alternatives considered:** Add a `cc_leg_pnl` column — rejected; redundant with leg history.
 - **Source:** `plans/us-8/research.md`, `plans/us-8/data-model.md`
 
 ### ADR: Fill-date validation bounds (lifecycle engine)
+
 - **Decision:** Validate `fillDate >= CC_OPEN leg fillDate` AND `fillDate <= CC expiration` in `closeCoveredCall()`. Both are pure date-string comparisons.
 - **Why:** The story specifies exactly these two date error cases. Future dates are implicitly rejected via referenceDate consistency with other lifecycle functions (story Technical Notes also list `<= today` as a requirement, though the engine itself enforces only the two named bounds).
 - **Alternatives considered:** Bounding only one side — insufficient per ACs.
 - **Source:** `plans/us-8/research.md`, `plans/us-8/data-model.md`, `docs/epics/02-stories/US-8-close-covered-call-early.md`
 
 ### ADR: P&L preview display logic (renderer)
+
 - **Decision:** Show `+$X.XX profit · Y.Y% of max` (green) when `closePrice < openPremium`; `−$X.XX loss · Y.Y% above open` (red) when `closePrice > openPremium`; `$0.00 break-even` (neutral) when equal; render nothing when close price is empty or `<= 0`.
 - **Why:** Directly from the story Technical Notes; the mockup `MockPnlPreview` confirms the pattern.
 - **Alternatives considered:** Always show percentage — not aligned with story spec.
 - **Source:** `plans/us-8/research.md`, `plans/us-8/data-model.md`
 
 ### ADR: No schema migration
+
 - **Decision:** No migration. Reuse existing `legs` and `positions` tables.
 - **Why:** `legs` already supports `CC_CLOSE` leg role and `BUY` action; `positions` already supports `HOLDING_SHARES` phase.
 - **Alternatives considered:** None needed.
 - **Source:** `plans/us-8/research.md`, `plans/us-8/data-model.md`, `plans/us-8/quickstart.md`
 
 ### ADR: Sheet component pattern — mirror `OpenCoveredCallSheet`
+
 - **Decision:** Build the renderer flow as `CloseCcEarlySheet` (portal orchestrator) + `CloseCcEarlyForm` (form body) + `CloseCcEarlySuccess` (success state), plus a dedicated `CcPnlPreview` UI component.
 - **Why:** Existing sheets (`OpenCoveredCallSheet`, `AssignmentSheet`, `ExpirationSheet`) all use `createPortal` with a fixed right-panel overlay; the mockup uses the same layout.
 - **Alternatives considered:** shadcn Sheet primitive — rejected as inconsistent with the established custom portal pattern.
 - **Source:** `plans/us-8/research.md`, `plans/us-8/plan.md` §10
 
 ### ADR: Reuse existing `CC_CLOSE` LegRole
+
 - **Decision:** Use the existing `'CC_CLOSE'` value already in the `LegRole` enum (`src/main/core/types.ts`).
 - **Why:** The enum already contains the value — no schema or migration change needed.
 - **Alternatives considered:** Adding a new role — not needed.
@@ -70,8 +79,10 @@ This story adds buy-to-close functionality for an open covered call, introducing
 ## Contracts
 
 ### `positions:close-cc-early`
+
 - **Type:** IPC handler (renderer → main, invoke / request-response)
 - **Shape:**
+
   ```typescript
   // Request payload (validated by CloseCcPayloadSchema)
   {
@@ -113,25 +124,27 @@ This story adds buy-to-close functionality for an open covered call, introducing
   ```
 
   Known error codes:
-  | field                   | code                          | message                                                                          |
+  | field | code | message |
   | ----------------------- | ----------------------------- | -------------------------------------------------------------------------------- |
-  | `__phase__`             | `invalid_phase`               | "No open covered call on this position"                                          |
-  | `closePricePerContract` | `must_be_positive`            | "Close price must be greater than zero"                                          |
-  | `fillDate`              | `close_date_before_open`      | "Fill date cannot be before the CC open date"                                    |
-  | `fillDate`              | `close_date_after_expiration` | "Fill date cannot be after the CC expiration date — use Record Expiry instead"   |
-  | `__root__`              | `not_found`                   | "Position not found"                                                             |
-  | `__root__`              | `internal_error`              | "An unexpected error occurred"                                                   |
+  | `__phase__` | `invalid_phase` | "No open covered call on this position" |
+  | `closePricePerContract` | `must_be_positive` | "Close price must be greater than zero" |
+  | `fillDate` | `close_date_before_open` | "Fill date cannot be before the CC open date" |
+  | `fillDate` | `close_date_after_expiration` | "Fill date cannot be after the CC expiration date — use Record Expiry instead" |
+  | `__root__` | `not_found` | "Position not found" |
+  | `__root__` | `internal_error` | "An unexpected error occurred" |
+
 - **Source:** `plans/us-8/contracts/positions-close-cc.md`, `plans/us-8/plan.md` §5
 - **Implementation:** `src/main/ipc/positions.ts`, `src/main/services/close-covered-call-position.ts`
 
 ### `CloseCcPayloadSchema`
+
 - **Type:** Zod schema
 - **Shape:**
   ```typescript
   export const CloseCcPayloadSchema = z.object({
     positionId: z.string().uuid(),
     closePricePerContract: z.number().positive(),
-    fillDate: z.string().optional()  // YYYY-MM-DD; defaults to today
+    fillDate: z.string().optional() // YYYY-MM-DD; defaults to today
   })
   export type CloseCcPayload = z.infer<typeof CloseCcPayloadSchema>
   ```
@@ -139,6 +152,7 @@ This story adds buy-to-close functionality for an open covered call, introducing
 - **Implementation:** `src/main/schemas.ts`
 
 ### `CloseCcPositionResult`
+
 - **Type:** other (IPC return type definition)
 - **Shape:**
   ```typescript
@@ -150,16 +164,18 @@ This story adds buy-to-close functionality for an open covered call, introducing
       status: 'ACTIVE'
       closedDate: null
     }
-    leg: LegRecord         // the new CC_CLOSE leg
-    ccLegPnl: string       // Decimal string, 4 dp
+    leg: LegRecord // the new CC_CLOSE leg
+    ccLegPnl: string // Decimal string, 4 dp
   }
   ```
 - **Source:** `plans/us-8/plan.md` §3, `plans/us-8/contracts/positions-close-cc.md`
 - **Implementation:** `src/main/schemas.ts`
 
 ### `CloseCoveredCallInput` / `CloseCoveredCallResult` (lifecycle engine)
+
 - **Type:** other (core lifecycle function signature)
 - **Shape:**
+
   ```typescript
   CloseCoveredCallInput {
     currentPhase: WheelPhase
@@ -173,13 +189,17 @@ This story adds buy-to-close functionality for an open covered call, introducing
     phase: 'HOLDING_SHARES'
   }
   ```
+
   Engine throws `ValidationError` with one of: `__phase__` / `invalid_phase`, `closePricePerContract` / `must_be_positive`, `fillDate` / `close_date_before_open`, `fillDate` / `close_date_after_expiration`.
+
 - **Source:** `plans/us-8/plan.md` §1, `plans/us-8/data-model.md`
 - **Implementation:** `src/main/core/lifecycle.ts`
 
 ### `CcCloseInput` / `CcCloseResult` (cost basis engine)
+
 - **Type:** other (core cost basis function signature)
 - **Shape:**
+
   ```typescript
   CcCloseInput {
     openPremiumPerContract: string
@@ -191,11 +211,14 @@ This story adds buy-to-close functionality for an open covered call, introducing
     ccLegPnl: string         // 4 dp, e.g. "120.0000" or "-120.0000"
   }
   ```
+
   Formula: `ccLegPnl = round4((openPremium − closePrice) × contracts × 100)` via `decimal.js` with `ROUND_HALF_UP`.
+
 - **Source:** `plans/us-8/plan.md` §2, `plans/us-8/data-model.md`
 - **Implementation:** `src/main/core/costbasis.ts`
 
 ### Preload bridge addition
+
 - **Type:** other (preload contextBridge API)
 - **Shape:**
   ```typescript
@@ -207,8 +230,10 @@ This story adds buy-to-close functionality for an open covered call, introducing
 - **Implementation:** `src/preload/index.ts`, `src/preload/index.d.ts`
 
 ### Renderer `CloseCcPayload` / `CloseCcResponse`
+
 - **Type:** other (renderer adapter types — snake_case payload)
 - **Shape:**
+
   ```typescript
   export type CloseCcPayload = {
     position_id: string
@@ -238,13 +263,17 @@ This story adds buy-to-close functionality for an open covered call, introducing
     ccLegPnl: string
   }
   ```
+
   Adapter `closeCoveredCallEarly(payload)` maps snake_case → camelCase before calling `window.api.closeCoveredCallEarly(...)`; throws `apiError(400, ...)` with `mapIpcErrors(result.errors)` on `{ ok: false }`.
+
 - **Source:** `plans/us-8/plan.md` §7, `plans/us-8/contracts/positions-close-cc.md`
 - **Implementation:** `src/renderer/src/api/positions.ts`
 
 ### Renderer API adapter snake_case ↔ camelCase mapping
+
 - **Type:** other (renderer adapter mapping)
 - **Shape:**
+
   ```
   closeCoveredCallEarly payload (renderer snake_case -> IPC camelCase):
     position_id                -> positionId
@@ -255,10 +284,12 @@ This story adds buy-to-close functionality for an open covered call, introducing
     closePricePerContract      -> close_price_per_contract
     fillDate                   -> fill_date
   ```
+
 - **Source:** `plans/us-8/plan.md` §7, `plans/us-8/contracts/positions-close-cc.md`
 - **Implementation:** `src/renderer/src/api/positions.ts` (`IPC_TO_FORM_FIELD`)
 
 ### `useCloseCoveredCallEarly` mutation hook
+
 - **Type:** other (renderer TanStack Query mutation hook)
 - **Shape:**
   ```typescript
@@ -270,6 +301,7 @@ This story adds buy-to-close functionality for an open covered call, introducing
 - **Implementation:** `src/renderer/src/hooks/useCloseCoveredCallEarly.ts`
 
 ### `CcPnlPreview` component
+
 - **Type:** other (renderer UI component)
 - **Shape:**
   ```typescript
@@ -288,6 +320,7 @@ This story adds buy-to-close functionality for an open covered call, introducing
 - **Implementation:** `src/renderer/src/components/ui/CcPnlPreview.tsx`
 
 ### `CloseCcEarlySheetProps`
+
 - **Type:** other (renderer sheet orchestrator props)
 - **Shape:**
   ```typescript
@@ -311,38 +344,42 @@ This story adds buy-to-close functionality for an open covered call, introducing
 ## Schema Changes
 
 ### No new tables, columns, or migrations
+
 - **Change:** none — existing schema fully supports CC close. No migration required. Reuses `legs` and `positions` as designed.
 - **Source:** `plans/us-8/data-model.md`, `plans/us-8/research.md`, `plans/us-8/quickstart.md`
 
 ### `legs` row INSERT — CC close leg
+
 - **Change:** new row (no schema change)
 - **Columns / fields:**
-  | Field                  | Value                                                |
+  | Field | Value |
   | ---------------------- | ---------------------------------------------------- |
-  | `id`                   | `randomUUID()`                                       |
-  | `position_id`          | FK → parent CC_OPEN position                         |
-  | `leg_role`             | `'CC_CLOSE'`                                         |
-  | `action`               | `'BUY'`  (buy to close)                              |
-  | `instrument_type`      | `'CALL'`                                             |
-  | `strike`               | copied from CC_OPEN leg (4 dp TEXT)                  |
-  | `expiration`           | copied from CC_OPEN leg                              |
-  | `contracts`            | copied from CC_OPEN leg (must match; no partial close) |
+  | `id` | `randomUUID()` |
+  | `position_id` | FK → parent CC_OPEN position |
+  | `leg_role` | `'CC_CLOSE'` |
+  | `action` | `'BUY'` (buy to close) |
+  | `instrument_type` | `'CALL'` |
+  | `strike` | copied from CC_OPEN leg (4 dp TEXT) |
+  | `expiration` | copied from CC_OPEN leg |
+  | `contracts` | copied from CC_OPEN leg (must match; no partial close) |
   | `premium_per_contract` | `closePricePerContract` (4 dp TEXT) — buy-to-close fill price |
-  | `fill_price`           | same as `premium_per_contract`                       |
-  | `fill_date`            | from payload (or today)                              |
+  | `fill_price` | same as `premium_per_contract` |
+  | `fill_date` | from payload (or today) |
 - **Source:** `plans/us-8/data-model.md`
 - **Migration file:** none
 
 ### `positions` row UPDATE on CC close
+
 - **Change:** altered row (no schema change)
 - **Columns / fields:**
-  | Field        | Before CC close  | After CC close   |
+  | Field | Before CC close | After CC close |
   | ------------ | ---------------- | ---------------- |
-  | `phase`      | `CC_OPEN`        | `HOLDING_SHARES` |
-  | `updated_at` | prior timestamp  | now              |
+  | `phase` | `CC_OPEN` | `HOLDING_SHARES` |
+  | `updated_at` | prior timestamp | now |
 - **Source:** `plans/us-8/data-model.md`
 
 ### `cost_basis_snapshots` — explicitly NOT touched
+
 - **Change:** none — no INSERT, no UPDATE. The existing CC_OPEN snapshot remains the current snapshot.
 - **Why:** See ADR "No new cost-basis snapshot on CC close".
 - **Source:** `plans/us-8/data-model.md`, `plans/us-8/research.md`, `docs/epics/02-stories/US-8-close-covered-call-early.md` Technical Notes
@@ -350,6 +387,7 @@ This story adds buy-to-close functionality for an open covered call, introducing
 ## Acceptance Criteria
 
 Background:
+
 - The trader has a `CC_OPEN` position on AAPL
 - The CC was sold at $2.30 premium, strike $182.00, 1 contract
 - The effective cost basis is $174.20 per share
@@ -414,6 +452,7 @@ Background:
 - E2E spec covers 8 scenarios mapped 1:1 to ACs (`e2e/close-cc-early.spec.ts`) and seeds a `CC_OPEN` state by running the UI flow through `createPosition → assignCsp → openCoveredCall` before clicking `data-testid="close-cc-early-btn"`. The green E2E run is the one acceptance task that remains pending because `pnpm test:e2e` requires a GUI terminal. (Source: `plans/us-8/plan.md` §13, `plans/us-8/green-phase-results.md`)
 
 Refactor-phase decisions (authoritative; `plans/us-8/refactor-phase-results.md`):
+
 - **Extracted shared `requirePositiveClosePrice(closePricePerContract: string): void` helper in `src/main/core/lifecycle.ts`.** The inline `new Decimal(input.closePricePerContract).lte(0)` guard was duplicated in both `closeCsp` and `closeCoveredCall` with inconsistent messages ("Close price must be positive" vs "Close price must be greater than zero"). Both functions now call the helper; the message is normalized to "Close price must be greater than zero". Consistent with the existing `requirePositiveStrike` / `requirePositivePremium` pattern.
 - **Test execution after refactor:** 376 tests passing, no regressions; `pnpm test`, `pnpm lint`, `pnpm typecheck` all clean.
 - **No automated `code-simplifier` agent run** — the changes were simple, targeted extractions, so no agent was invoked.

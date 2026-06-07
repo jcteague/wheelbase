@@ -72,8 +72,8 @@ describe('detectAssignments', () => {
       const db = makeTestDb()
       const watermark = '2026-01-15T10:00:00.000Z'
       db.prepare(
-        `INSERT INTO app_settings (key, value) VALUES ('assignments_last_poll_at:paper', ?)`
-      ).run(watermark)
+        `INSERT INTO app_settings (key, value, updated_at) VALUES ('assignments_last_poll_at:paper', ?, ?)`
+      ).run(watermark, new Date().toISOString())
 
       const broker = makeBroker([])
       await detectAssignments({ db, brokerProvider: broker, env: 'paper' })

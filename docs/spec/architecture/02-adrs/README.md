@@ -2,7 +2,7 @@
 
 Each ADR captures one architectural choice that emerged from a plan/story. Decisions are grouped below by theme; many ADRs are referenced by multiple feature pages.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,missing-ac,us-35 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,missing-ac -->
 
 ## Engine & architecture
 
@@ -11,6 +11,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [single-step-phase-transitions](./single-step-phase-transitions.md) — No synthetic `*_PENDING` / `*_EXPIRED` intermediate phases.
 - [standalone-service-per-operation](./standalone-service-per-operation.md) — One service file per mutation operation under `src/main/services/`.
 - [decimal-money-math](./decimal-money-math.md) — `decimal.js` with `ROUND_HALF_UP` at 4 dp; stored as TEXT.
+- [runtime-broker-provider-refresh](./runtime-broker-provider-refresh.md) — Broker settings changes recreate only broker state at runtime; market data stays untouched.
 - [occ-symbol-pure-leaf](./occ-symbol-pure-leaf.md) — Build OCC symbols in a pure `src/main/core/option-symbol.ts` leaf; no `contract_id` column.
 - [pnl-math-in-costbasis](./pnl-math-in-costbasis.md) — `computeUnrealizedPnl` lives in `costbasis.ts`; 4 dp decimal strings; pnlPercent on 0–100 scale.
 - [spread-no-bid-renderer-predicates](./spread-no-bid-renderer-predicates.md) — `isWideSpread` and `hasNoBid` as pure renderer predicates.
@@ -27,6 +28,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [active-leg-resolution](./active-leg-resolution.md) — Phase-aware `activeLegSubquery()` shared by list and detail queries.
 - [profit-target-nullable-column](./profit-target-nullable-column.md) — Nullable `profit_target_percent` column + hard-coded default constant.
 - [active-leg-metadata-via-positions-list](./active-leg-metadata-via-positions-list.md) — `PositionListItem` extended with active-leg metadata via the existing subquery.
+- [shared-massive-app-configuration](./shared-massive-app-configuration.md) — Massive credentials stay in shared app configuration; settings store Alpaca only.
 
 ## IPC contracts
 
@@ -41,6 +43,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [sheet-component-pattern](./sheet-component-pattern.md) — Right-side portal sheets with form→success states for every mutation.
 - [tanstack-query-mutation-hooks](./tanstack-query-mutation-hooks.md) — `useMutation` + invalidate `positionQueryKeys.all` on success.
 - [react-hook-form-zod](./react-hook-form-zod.md) — All renderer forms use RHF + `zodResolver(schema)`; no hand-managed form state.
+- [vendor-scoped-query-keys](./vendor-scoped-query-keys.md) — Broker and market queries use distinct prefixes so settings invalidation stays vendor-scoped.
 - [client-side-pnl-preview](./client-side-pnl-preview.md) — Form previews compute locally with `decimal.js`; no IPC round-trip.
 - [pct-of-max-formula](./pct-of-max-formula.md) — `(openPremium − closePrice) / openPremium × 100` ("% of max captured") for CC close.
 - [action-buttons-phase-gated](./action-buttons-phase-gated.md) — UI hides mutation buttons when phase (and DTE) don't permit the action.
@@ -77,14 +80,14 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 
 ## Background polling & assignment detection
 
-- [polling-scheduler-settimeout-chain](./polling-scheduler-settimeout-chain.md) — `PollingScheduler` uses a per-job `setTimeout` chain, not `setInterval`, so async handlers serialise naturally.
-- [polling-scheduler-stateless](./polling-scheduler-stateless.md) — Scheduler is purely in-memory; handlers own their own watermarks (no `last_run_at` column).
-- [assignment-watermark-poll-start](./assignment-watermark-poll-start.md) — Assignment-poll watermark is captured at the start of the poll to avoid losing activities that arrive mid-fetch.
-- [pending-assignments-compound-unique](./pending-assignments-compound-unique.md) — `pending_assignments` uniqueness is compound on `(activity_id, position_id)`; one Alpaca activity can match multiple open CSPs.
-- [pending-assignments-table-as-notification](./pending-assignments-table-as-notification.md) — The `pending_assignments` table IS the notification queue; no separate notification entity.
-- [assignment-polling-cadence](./assignment-polling-cadence.md) — Assignment detection runs every 60 s during regular hours, 5 min in extended hours, and is parked overnight.
-- [scheduler-singleton-safe-broker](./scheduler-singleton-safe-broker.md) — Scheduler is a module-level singleton wired with a safe-broker fallback when Alpaca credentials are missing.
-- [dev-only-test-scheduler-ipc](./dev-only-test-scheduler-ipc.md) — Dev-only IPC channels drive the `PollingScheduler` from e2e tests without exposing them in production builds.
-- [consolidated-before-quit](./consolidated-before-quit.md) — A single `before-quit` handler awaits scheduler and market-data shutdown in order.
+- [polling-scheduler-settimeout-chain](./polling-scheduler-settimeout-chain.md) — PollingScheduler uses a setTimeout chain, not setInterval.
+- [polling-scheduler-stateless](./polling-scheduler-stateless.md) — Scheduler keeps no persisted state; handlers own their own watermarks.
+- [assignment-polling-cadence](./assignment-polling-cadence.md) — 60s regular, 5min extended, parked overnight; first poll on next market open.
+- [assignment-watermark-poll-start](./assignment-watermark-poll-start.md) — Stamp `assignments_last_poll_at` at the start of the poll to avoid the read-then-update race.
+- [pending-assignments-table-as-notification](./pending-assignments-table-as-notification.md) — A pending row in `pending_assignments` IS the renderer notification; survives restart.
+- [pending-assignments-compound-unique](./pending-assignments-compound-unique.md) — Compound `UNIQUE(activity_id, position_id)` so one OPASN can fan out across colliding CSPs.
+- [scheduler-singleton-safe-broker](./scheduler-singleton-safe-broker.md) — Module-level singleton scheduler with a safe-broker stub when credentials are missing.
+- [consolidated-before-quit](./consolidated-before-quit.md) — Single `before-quit` handler awaits scheduler + market-data shutdown concurrently.
+- [dev-only-test-scheduler-ipc](./dev-only-test-scheduler-ipc.md) — `_test:scheduler-*` channels guarded by `NODE_ENV === 'test'` for e2e introspection.
 
 <!-- /generated -->

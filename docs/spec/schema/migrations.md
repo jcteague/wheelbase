@@ -1,6 +1,6 @@
 # Migrations
 
-<!-- generated:from us-6,us-33,us-35 -->
+<!-- generated:from us-6,us-33,us-35,us-37 -->
 
 ## Overview
 
@@ -12,27 +12,25 @@ tracking table inside the database itself. The runner is invoked once at
 app startup before any service touches the connection.
 
 Migrations are **filename-ordered** and, once shipped, **append-only**. New
-schema work normally adds a numbered file (`NNN_short_description.sql`) — never
-edits an existing one. The numeric prefix is the sort key, so the runner
-replays the same sequence in the same order on every fresh database.
-Idempotency comes from the tracking table: a migration that has already been
-applied to this database is skipped, so it is always safe to start the app
-against an existing database without manually pruning files.
+schema work adds a numbered file (`NNN_short_description.sql`); the numeric
+prefix is the sort key, so the runner replays the same sequence in the same
+order on every fresh database. Idempotency comes from the tracking table: a
+migration that has already been applied to this database is skipped, so it is
+always safe to start the app against an existing database without manually
+pruning files.
 
-> **Pre-ship in-place edits are allowed.** While the product has not shipped,
-> a migration that is still in the same release as its corresponding feature
-> may be edited in place rather than superseded by a follow-up migration. The
-> bar is that no user database depends on the prior shape. Once any user is
-> running the migration in production, the append-only rule is absolute and
-> changes must go in a new numbered file. See the migration-006 entry below
-> for a worked example (compound UNIQUE swap during US-35 code review).
+The one pragmatic carve-out is the **edit-in-place pre-ship policy** — a
+migration that has not yet been merged to `main` and reached real user
+machines may still be edited or renumbered in-place. Once a migration ships,
+the rule reverts to strict append-only. See
+[Migration authoring policy](#migration-authoring-policy) below.
 
 See [`schema/tables.md`](./tables.md) for the row-level catalogue produced
 by these migrations.
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35 -->
+<!-- generated:from us-6,us-33,us-35,us-37 -->
 
 ## Migration runner
 
@@ -61,7 +59,68 @@ Implementation: `src/main/db/migrate.ts`.
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35 -->
+<!-- generated:from us-35 -->
+
+## Migration authoring policy
+
+Wheelbase distinguishes between **pre-ship** and **post-ship** migrations and
+applies different rules to each.
+
+### Pre-ship (not yet merged to `main`)
+
+A migration is "pre-ship" while it lives only on a feature branch and the
+story that introduced it has not yet been merged. Devs running the branch
+can rebuild their local database trivially by deleting the SQLite file, so
+the cost of editing the migration is the cost of one `rm` for each dev.
+
+While pre-ship, it is acceptable to:
+
+- **Edit the migration file in place** — rename columns, change CHECK
+  constraints, switch a column-level UNIQUE to a compound index, fix typed
+  primary-key choice, etc.
+- **Renumber the migration** when merging with `main` would otherwise cause
+  a filename collision with another in-flight story.
+
+### Post-ship (merged to `main`)
+
+Once a migration has shipped, treat it as immutable. Schema changes ride a
+**new** numbered file that mutates the table forward (`ALTER TABLE`, table
+rebuild, drop+recreate). The runner replays history in order; rewriting
+history would diverge the schema across users who have already applied the
+old version.
+
+### Worked example — US-35's `008_create_pending_assignments.sql`
+
+The pending-assignments work for US-35 hit both halves of the policy:
+
+1. **Pre-merge in-place correction.** The migration originally declared
+   `activity_id TEXT NOT NULL UNIQUE`. Code review caught that a single
+   `OPASN` activity can legitimately match multiple open CSP positions
+   on the same OCC symbol (two CSP positions on AAPL `$180 2026-01-19 P`),
+   and the single-column UNIQUE would silently drop the second pending
+   row. The fix replaced the column-level UNIQUE with a compound
+   `CREATE UNIQUE INDEX uq_pending_assignments_activity_position ON
+   pending_assignments(activity_id, position_id)`. Because the migration
+   had not yet shipped, the file was **edited in place** rather than
+   followed by a `00X_fix_pending_assignments_unique.sql`.
+
+2. **Pre-merge renumber.** The story originally numbered its migration
+   `006_create_pending_assignments.sql`. While the branch was in review,
+   [us-37](../features/us-37-paper-live-broker-environment-toggle.md)
+   merged to `main` first and claimed `006` for `credential_settings`.
+   On the rebase, the pending-assignments migration was renumbered to
+   `008_create_pending_assignments.sql` (skipping `007`; see
+   [Gaps](#gaps)). Both the file name and any test fixtures referencing
+   the old number were updated in the same commit.
+
+The combined upshot: in `main`, US-35 contributes one new migration file
+(`008_create_pending_assignments.sql`) and **consumes** the `app_settings`
+table that US-37's `006_add_credential_settings.sql` creates. There is no
+separate "US-35 app_settings migration" in tree.
+
+<!-- /generated -->
+
+<!-- generated:from us-6,us-33,us-35,us-37 -->
 
 ## Migration catalogue
 
@@ -82,7 +141,7 @@ Implementation: `src/main/db/migrate.ts`.
   and equities (`STOCK`) in a single discriminated enum. PMCC legs are
   still `CALL`s, so the rename alone future-proofs the field without
   introducing more values.
-- **Approach inside the migration file:** SQLite ≥ 3.25.0 supports
+- **Approach inside the migration file:** SQLite >= 3.25.0 supports
   `ALTER TABLE legs RENAME COLUMN option_type TO instrument_type`, which
   handles the column rename in place. SQLite **cannot** modify a CHECK
   constraint in place, however, so the always-safe form (and the form the
@@ -154,11 +213,56 @@ COLUMN`. No table rebuild required because there is no constraint
     `src/main/core/profit-target.ts`.
 - **Source:** `migrations/005_add_profit_target_percent.sql`
 
-### `migrations/006_create_pending_assignments.sql` — pending assignments table + compound UNIQUE
+### `migrations/006_add_credential_settings.sql` — add encrypted credential storage and app settings
+
+- **Driven by:** [us-37 — Paper/Live Broker Environment Toggle](../features/us-37-paper-live-broker-environment-toggle.md)
+- **Rationale:** Persist user-specific Alpaca paper/live credentials securely
+  and remember the active broker environment across launches without storing
+  Massive credentials in user settings.
+- **Change scope:** introduces two new tables, `credential_settings` and
+  `app_settings`.
+- **Field-level summary:**
+
+  | Table                 | Columns                                                                                                              | Primary key             |
+  | --------------------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+  | `credential_settings` | `vendor`, `environment`, `key_id_encrypted` (BLOB), `secret_encrypted` (BLOB), `last_verified_at`, `account_number_masked`, `created_at`, `updated_at` | `(vendor, environment)` |
+  | `app_settings`        | `key`, `value`, `updated_at`                                                                                         | `key`                   |
+
+- **Highlights:**
+  - `credential_settings` stores encrypted key/secret pairs, masked
+    account number, and verification metadata keyed by
+    `(vendor, environment)`. Encryption uses Electron's
+    `safeStorage.encryptString` on the way in and `decryptString` on
+    the way out — the renderer never sees plaintext.
+  - `app_settings` stores non-secret key/value state. US-37 writes
+    `active_broker_environment`; US-35 later writes
+    `assignments_last_poll_at:paper` and `assignments_last_poll_at:live`
+    against the same table.
+- **Why generic names?** The schema is intentionally vendor-agnostic so
+  future broker vendors can reuse it, even though US-37 writes Alpaca
+  rows only.
+- **Cross-story note:** US-35 consumes `app_settings` (poll watermark)
+  but contributes no migration to create it; see
+  [Migration authoring policy](#migration-authoring-policy).
+- **Downstream code touches (no further schema change):**
+  - `src/main/services/settings.ts`
+  - `src/main/services/settings-connections.ts`
+  - `src/main/services/app-settings.ts` (US-35; reads/writes
+    `app_settings`)
+  - `src/main/integrations/broker-factory.ts`
+  - `src/main/ipc/settings.ts`
+  - `src/renderer/src/api/settings.ts`
+- **Source:** `migrations/006_add_credential_settings.sql`
+
+### `migrations/008_create_pending_assignments.sql` — create `pending_assignments` for assignment-detection notifications
 
 - **Driven by:** [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md)
-- **Change scope:** new table `pending_assignments` plus three indexes.
-- **SQL (final shape after the in-place edit, see note below):**
+- **Rationale:** Persist OPASN assignments detected from Alpaca polling so
+  the renderer can surface a notification banner that survives app
+  restarts. A row in this table _is_ the notification — confirm and
+  dismiss are state transitions on the same row, not a separate inbox.
+- **Change scope:** introduces one new table and three indexes.
+- **SQL (verbatim from the migration file):**
 
   ```sql
   CREATE TABLE IF NOT EXISTS pending_assignments (
@@ -169,138 +273,113 @@ COLUMN`. No table rebuild required because there is no constraint
     broker_symbol   TEXT NOT NULL,
     qty             INTEGER NOT NULL,
     transaction_time TEXT NOT NULL,
-    status          TEXT NOT NULL CHECK (status IN ('pending','confirmed','dismissed')),
+    status          TEXT NOT NULL CHECK (status IN ('pending', 'confirmed', 'dismissed')),
     detected_at     TEXT NOT NULL DEFAULT (datetime('now')),
     confirmed_at    TEXT,
     dismissed_at    TEXT
   );
 
-  CREATE INDEX IF NOT EXISTS idx_pending_assignments_status
-    ON pending_assignments(status);
-  CREATE INDEX IF NOT EXISTS idx_pending_assignments_position
-    ON pending_assignments(position_id);
+  CREATE INDEX IF NOT EXISTS idx_pending_assignments_status   ON pending_assignments(status);
+  CREATE INDEX IF NOT EXISTS idx_pending_assignments_position ON pending_assignments(position_id);
   CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_assignments_activity_position
     ON pending_assignments(activity_id, position_id);
   ```
 
-- **Why:** the detection job (`detect-assignments`) needs a durable place
-  to record OPASN activities it matched to open CSP legs so that the
-  notification banner survives app restarts and so that subsequent polls
-  can `INSERT OR IGNORE` against already-seen activities. A "pending" row
-  **is** the notification — confirm/dismiss are status transitions on the
-  same row.
-- **Key-type note:** `position_id` and `leg_id` are `TEXT` (UUIDs) to
-  match the existing positions/legs schema, which uses TEXT primary keys.
-  The plan originally specified INTEGER; this was corrected during the
-  green phase to preserve FK referential integrity.
-- **Deduplication / compound UNIQUE — in-place edit during code review:**
-  the original draft used a **column-level** `UNIQUE` on `activity_id`
-  alone. Code review for US-35 caught that a single OPASN activity can
-  legitimately match more than one open CSP position on the same OCC
-  symbol (e.g. two CSP positions on `AAPL 2026-01-19 $180 PUT`); the
-  single-column UNIQUE would silently lose the second row on
-  `INSERT OR IGNORE`. The fix was to drop the column-level UNIQUE and
-  introduce the compound
-
-  ```sql
-  CREATE UNIQUE INDEX uq_pending_assignments_activity_position
-    ON pending_assignments(activity_id, position_id);
-  ```
-
-  Because US-35 had not yet shipped and no user database held real
-  `pending_assignments` rows, this change was made **in place** in
-  `migrations/006_create_pending_assignments.sql` rather than as a
-  follow-up `008_*.sql`. This is the project's stated policy while
-  pre-release: edit the migration in place if no shipped data depends on
-  the prior shape. Developers with a local sqlite file simply delete it
-  and let the migration runner rebuild. Once the product ships, the
-  append-only rule becomes absolute.
-- **Approach inside the migration file:** plain `CREATE TABLE` + three
-  `CREATE INDEX` statements. No table rebuild needed — the table is new.
+- **Field-level notes:**
+  - `position_id` and `leg_id` are `TEXT` (UUID) to match the existing
+    schema's `positions.id` / `legs.id` primary keys. The plan
+    originally specified `INTEGER`; this was corrected in the green
+    phase before merge to preserve FK referential integrity.
+  - `status` is a CHECK-bounded enum (`pending` / `confirmed` /
+    `dismissed`); the service layer enforces legal transitions on top
+    of the CHECK.
+  - `detected_at` defaults to `datetime('now')` so polling code does
+    not need to set it explicitly.
+- **Dedupe key — compound UNIQUE.** The unique index on
+  `(activity_id, position_id)` is intentional. A single OPASN activity
+  can match more than one open CSP position on the same OCC symbol
+  (e.g. two AAPL `$180 2026-01-19 P` CSPs); the compound key allows one
+  pending row per `(activity, position)` pair while `INSERT OR IGNORE`
+  still keeps the poll job idempotent. See [Migration authoring
+  policy](#migration-authoring-policy) for the in-place edit that
+  introduced this from a single-column UNIQUE before merge.
+- **Approach inside the migration file:** straight `CREATE TABLE` plus
+  three `CREATE INDEX` statements. No table rebuild, no data
+  backfill.
+- **Renumbering note:** this file was numbered `006` on the feature
+  branch and renumbered to `008` during merge with `main`, which had
+  already claimed `006` for [credential
+  settings](#migrations006_add_credential_settingssql--add-encrypted-credential-storage-and-app-settings).
+  `007` was skipped (see [Gaps](#gaps)). The renumber is the only
+  reason `006` and `008` are non-contiguous in tree.
 - **Downstream code touches (no further schema change):**
-  - `src/main/services/pending-assignments.ts` — `listPending`,
-    `confirmPending` (outer transaction wrapping `assignCspPosition` +
-    status update), `dismissPending` (rejects non-pending rows with
-    `PendingAssignmentError('NOT_PENDING')`).
-  - `src/main/services/detect-assignments.ts` —
-    `INSERT OR IGNORE INTO pending_assignments ...` per match returned by
-    `matchActivityToLegs`.
-  - `src/main/ipc/assignments.ts` — `assignments:list-pending`,
+  - `src/main/services/detect-assignments.ts` (poll job; `INSERT OR
+IGNORE` on the compound key)
+  - `src/main/services/pending-assignments.ts` (`listPending`,
+    `confirmPending`, `dismissPending`; `PendingAssignmentError`)
+  - `src/main/ipc/assignments.ts` (`assignments:list-pending`,
     `assignments:confirm`, `assignments:dismiss`,
-    `assignments:run-detection-now`.
-- **Source:** `migrations/006_create_pending_assignments.sql`
-
-### `migrations/007_create_app_settings.sql` — generic key/value settings table
-
-- **Driven by:** [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md)
-- **Change scope:** new table `app_settings`.
-- **SQL:**
-
-  ```sql
-  CREATE TABLE IF NOT EXISTS app_settings (
-    key   TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-  );
-  ```
-
-- **Why:** US-35 needs a per-environment "last poll" watermark so that
-  the detection job can ask Alpaca for activities `since X` rather than
-  re-scanning the entire history every tick. The watermark is captured
-  at **poll start** (not poll end) so activities that arrive during the
-  broker call are replayed on the next tick and the compound UNIQUE
-  handles dedupe. Keys used today:
-  - `assignments_last_poll_at:paper`
-  - `assignments_last_poll_at:live`
-- **Why a generic table, not a watermark-specific column:** the same
-  shape is expected to host other small singletons (feature flags,
-  one-off cursors) without further migrations. Keeping it intentionally
-  thin — string key, string value — defers any schema work to a future
-  story that genuinely needs typed columns.
-- **Approach inside the migration file:** plain `CREATE TABLE`.
-- **Downstream code touches:** `src/main/services/app-settings.ts`
-  exposes `appSettings.get(db, key)` / `appSettings.set(db, key, value)`;
-  `detectAssignments` reads/writes the two watermark keys.
-- **Source:** `migrations/007_create_app_settings.sql`
+    `assignments:run-detection-now`)
+- **Source:** `migrations/008_create_pending_assignments.sql`
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35 -->
+<!-- generated:from us-6,us-33,us-35,us-37 -->
 
 ## Gaps
 
 Migrations `001_initial_schema.sql` and `002_add_query_indexes.sql` are
 referenced throughout the codebase (the initial table layout and the
 `LegRole` CHECK constraint that already includes `'ASSIGN'` both come from
-`001`; the secondary indexes for list/by-position lookups come from `002`)
-but no plan extract in the current set documents them — they predate the
-spec wiki. Future `/build-spec` or `/audit-spec` runs should backfill
-these entries by reading the migration files directly from `migrations/`.
+`001`) but no plan extract in the current set documents them — they
+predate the spec wiki. Future `/build-spec` or `/audit-spec` runs should
+backfill these entries by reading the migration files directly from
+`migrations/`.
 
 Migration `004_add_trigger_event_to_snapshots.sql` is mentioned on
 [`domain/cost-basis.md`](../domain/cost-basis.md) (the
 `cost_basis_snapshots.trigger_event` column) but has not yet been
 extracted into a dedicated entry here.
 
+There is no `migrations/007_*.sql` file. The number was reserved on a
+US-35 working branch for a standalone `create_app_settings` migration
+and then dropped during merge resolution when `006_add_credential_settings.sql`
+turned out to create `app_settings` already (see [Migration authoring
+policy](#migration-authoring-policy)). The gap in the sequence is
+intentional and the runner's filename sort handles it without issue.
+
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35 -->
+<!-- generated:from us-6,us-33,us-35,us-37 -->
+
+## Driven by
+
+- [us-6 — Record Assignment](../features/us-6-record-assignment.md) —
+  migration `003`
+- [us-33 — Option Mid & Unrealized P&L](../features/us-33-option-mid-pnl.md) —
+  migration `005`
+- [us-37 — Paper/Live Broker Environment Toggle](../features/us-37-paper-live-broker-environment-toggle.md) —
+  migration `006`
+- [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md) —
+  migration `008` (and consumer of `006`'s `app_settings` table)
+
+<!-- /generated -->
+
+<!-- generated:from us-6,us-33,us-35,us-37 -->
 
 ## See also
 
 - [`schema/tables.md`](./tables.md) — row-level catalogue of every table
   produced by these migrations
 - [us-6 — Record Assignment](../features/us-6-record-assignment.md) —
-  introduced migration `003`
+  the feature that introduced migration `003`
 - [us-33 — Option Mid & Unrealized P&L](../features/us-33-option-mid-pnl.md) —
-  introduced migration `005`
+  the feature that introduced migration `005`
+- [us-37 — Paper/Live Broker Environment Toggle](../features/us-37-paper-live-broker-environment-toggle.md) —
+  the feature that introduced migration `006`
 - [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md) —
-  introduced migrations `006` and `007`
-- [us-46 — Polling Scheduler](../features/us-46-polling-scheduler.md) —
-  the scheduler that drives the `detect-assignments` job (no schema of
-  its own; included for cross-reference)
+  the feature that introduced migration `008`
 
 <!-- /generated -->
 
 <!-- Hand-written sections below this line are preserved across regeneration. -->
-</content>
-</invoke>

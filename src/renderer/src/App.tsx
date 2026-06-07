@@ -2,10 +2,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Route, Router, Switch, useLocation } from 'wouter'
 import { useHashLocation } from 'wouter/use-hash-location'
 
+import { EnvironmentBadge } from './components/EnvironmentBadge'
+import { MarketDataStatusDot } from './components/MarketDataStatusDot'
 import { NavItem } from './components/NavItem'
+import { useSettingsStatus } from './hooks/useSettings'
 import { NewWheelPage } from './pages/NewWheelPage'
 import { PositionDetailPage } from './pages/PositionDetailPage'
 import { PositionsListPage } from './pages/PositionsListPage'
+import { SettingsPage } from './pages/SettingsPage'
 
 const queryClient = new QueryClient()
 
@@ -32,6 +36,10 @@ function Sidebar(): React.JSX.Element {
         </div>
         <NavItem href="/" label="Positions" icon="◈" active={location === '/' || location === ''} />
         <NavItem href="/new" label="Open Wheel" icon="+" active={location === '/new'} />
+        <div className="px-[12px] py-[6px] mb-[4px] mt-[12px] text-[0.65rem] font-semibold tracking-[0.1em] uppercase text-wb-text-muted font-wb-mono">
+          System
+        </div>
+        <NavItem href="/settings" label="Settings" icon="⚙" active={location === '/settings'} />
       </nav>
 
       {/* Footer */}
@@ -42,14 +50,37 @@ function Sidebar(): React.JSX.Element {
   )
 }
 
+function ShellHeader(): React.JSX.Element {
+  const [location] = useLocation()
+  const { data } = useSettingsStatus()
+  const activeBrokerEnv = data?.activeBrokerEnv ?? 'none'
+  const massive = data?.massive ?? 'missing'
+  const title =
+    location === '/settings' ? 'Settings' : location === '/new' ? 'Open Wheel' : 'Dashboard'
+
+  return (
+    <div className="flex items-center justify-between border-b border-wb-border bg-wb-bg-surface px-6 py-3">
+      <div className="font-wb-mono text-[0.72rem] uppercase tracking-[0.12em] text-wb-text-muted">
+        {title}
+      </div>
+      <div className="flex items-center gap-3">
+        <EnvironmentBadge activeBrokerEnv={activeBrokerEnv} />
+        <MarketDataStatusDot massive={massive} />
+      </div>
+    </div>
+  )
+}
+
 function AppShell(): React.JSX.Element {
   return (
     <div className="flex h-screen bg-wb-bg-base text-wb-text-primary">
       <Sidebar />
       <main className="flex-1 overflow-hidden flex flex-col">
+        <ShellHeader />
         <Switch>
           <Route path="/" component={PositionsListPage} />
           <Route path="/new" component={NewWheelPage} />
+          <Route path="/settings" component={SettingsPage} />
           <Route path="/positions/:id" component={PositionDetailPage} />
         </Switch>
       </main>

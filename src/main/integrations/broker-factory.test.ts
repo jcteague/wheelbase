@@ -3,6 +3,7 @@ import { brokerFactory } from './broker-factory'
 import { AlpacaBrokerProvider } from './alpaca-broker'
 import { FakeBrokerProvider } from './fake-broker'
 import { BrokerError } from './broker-provider'
+import { marketDataFactory } from './market-data-factory'
 
 describe('brokerFactory', () => {
   beforeEach(() => {
@@ -11,19 +12,28 @@ describe('brokerFactory', () => {
     delete process.env.ALPACA_PAPER
     delete process.env.FAKE_BROKER
     brokerFactory.recreate()
+    brokerFactory.configure({
+      loadActiveAlpacaCredentials: () => {
+        const keyId = process.env.ALPACA_KEY_ID
+        const secret = process.env.ALPACA_SECRET_KEY
+        if (!keyId || !secret) return null
+        return {
+          keyId,
+          secret,
+          environment: process.env.ALPACA_PAPER === 'true' ? 'paper' : 'live'
+        }
+      }
+    })
   })
 
-  it('returns AlpacaBrokerProvider when ALPACA_KEY_ID and ALPACA_SECRET_KEY are configured', () => {
-    process.env.ALPACA_KEY_ID = 'PA123'
-    process.env.ALPACA_SECRET_KEY = 'secret'
-    process.env.ALPACA_PAPER = 'true'
-    const provider = brokerFactory.create()
-    expect(provider).toBeInstanceOf(AlpacaBrokerProvider)
-  })
-
-  it('returns AlpacaBrokerProvider with live base URL when ALPACA_PAPER is not set', () => {
-    process.env.ALPACA_KEY_ID = 'LIVE123'
-    process.env.ALPACA_SECRET_KEY = 'secret'
+  it('returns AlpacaBrokerProvider for persisted active paper credentials', () => {
+    brokerFactory.configure({
+      loadActiveAlpacaCredentials: () => ({
+        keyId: 'PKPAPER123',
+        secret: 'paper-secret',
+        environment: 'paper'
+      })
+    })
     const provider = brokerFactory.create()
     expect(provider).toBeInstanceOf(AlpacaBrokerProvider)
   })
@@ -34,7 +44,34 @@ describe('brokerFactory', () => {
     expect(provider).toBeInstanceOf(FakeBrokerProvider)
   })
 
-  it('throws BrokerError with auth_failed code when no credentials configured', () => {
+  it('recreates the broker provider when active environment switches to live without touching market data', () => {
+    brokerFactory.configure({
+      loadActiveAlpacaCredentials: () => ({
+        keyId: 'PKPAPER123',
+        secret: 'paper-secret',
+        environment: 'paper'
+      })
+    })
+    const initial = brokerFactory.create()
+    const marketProvider = marketDataFactory.create
+
+    brokerFactory.configure({
+      loadActiveAlpacaCredentials: () => ({
+        keyId: 'AKLIVE456',
+        secret: 'live-secret',
+        environment: 'live'
+      })
+    })
+    brokerFactory.recreate()
+    const next = brokerFactory.create()
+
+    expect(initial).toBeInstanceOf(AlpacaBrokerProvider)
+    expect(next).toBeInstanceOf(AlpacaBrokerProvider)
+    expect(next).not.toBe(initial)
+    expect(marketDataFactory.create).toBe(marketProvider)
+  })
+
+  it('throws BrokerError with auth_failed code when no Alpaca credentials are configured', () => {
     let caught: unknown
     try {
       brokerFactory.create()
@@ -43,5 +80,6 @@ describe('brokerFactory', () => {
     }
     expect(caught).toBeInstanceOf(BrokerError)
     expect((caught as BrokerError).code).toBe('auth_failed')
+    expect((caught as BrokerError).message).toMatch(/not configured/i)
   })
 })

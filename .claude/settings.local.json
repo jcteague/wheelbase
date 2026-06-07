@@ -50,7 +50,9 @@
       "mcp__playwright__browser_resize",
       "mcp__playwright__browser_navigate",
       "WebFetch(domain:massive.com)",
-      "Skill(options-expert)"
+      "Skill(options-expert)",
+      "WebFetch(domain:marketchameleon.com)",
+      "WebFetch(domain:www.barchart.com)"
     ]
   },
   "enableAllProjectMcpServers": true,

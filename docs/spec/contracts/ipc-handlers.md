@@ -1,12 +1,16 @@
 # IPC Handlers
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39 -->
 
 ## Overview
 
 Every interaction between the renderer and the main process flows through `ipcMain.handle` channels registered under `src/main/ipc/`. Handlers follow a strict envelope contract: they return either `{ ok: true, ...result }` or `{ ok: false, errors: [{ field, code, message }] }` and **never throw to the renderer** (per `CLAUDE.md`). Validation and error normalisation are centralised in two helpers in `src/main/ipc/utils.ts`: `handleIpcCall(logLabel, fn)` wraps any handler with try/catch + structured logging, and `registerParsedPositionHandler(db, channel, errLabel, schema, service)` adds Zod payload parsing on top for the common "validate → call service → return result" shape used by every position mutation handler.
 
+**Documented envelope deviation (us-35).** The `assignments:confirm` and `assignments:dismiss` handlers return an error envelope with an **additional top-level `code` field** alongside the standard `errors` array: `{ ok: false, code: 'NOT_FOUND' | 'NOT_PENDING' | 'TRANSITION_REJECTED', errors: [{ field: '__root__', code, message }] }`. The deviation exists because `handleIpcCall` cannot express a top-level discriminator alongside the field-level error array, and the renderer's banner state machine switches on the top-level `code` without having to scan the `errors[]` list. The shared helper `pendingAssignmentErrorResponse(err: PendingAssignmentError)` in `src/main/ipc/assignments.ts` produces this shape; treat it as an exceptional pattern, not a precedent — every other handler in this document uses the canonical `{ ok, errors }` envelope.
+
 Two transport patterns are in use. Most handlers are request/response (`ipcRenderer.invoke` ↔ `ipcMain.handle`) and carry a Zod-validated payload from the renderer through to a service function. The market-data subsystem additionally uses **fire-and-forget push events** (`webContents.send` ↔ `ipcRenderer.on`) for stream ticks (`market-data:stock-quote`) and stream failures (`market-data:stream-error`); these are one-way, main → renderer, and have no response envelope. Payload validation happens twice: the renderer adapter (`src/renderer/src/api/*.ts`) maps snake_case form state to camelCase IPC fields, and the main-process handler re-validates via the matching `*PayloadSchema` from `src/main/schemas.ts` before calling the service.
+
+**Broker / market-data namespace split (us-39).** US-39 separated broker concerns from market-data concerns at the IPC layer. The old `AlpacaMarketDataProvider` (which handled both quote data and broker calls) was replaced by two separate providers: `MassiveMarketDataProvider` (market data) and `AlpacaBrokerProvider` (broker). Three new `broker:*` channels (`broker:account-info`, `broker:market-status`, `broker:activities`) now route to `AlpacaBrokerProvider` via `src/main/ipc/broker.ts`. All `market-data:*` channels route to `MassiveMarketDataProvider` via `src/main/ipc/market-data.ts`. The `market-data:market-status` channel (which previously forwarded to Alpaca) is now served by `broker:market-status`; the old channel name is still registered for backward compatibility but the canonical broker path is the `broker:*` namespace.
 
 **Leg shape (`instrumentType`, not `optionType`).** us-6 renamed the leg field `optionType` → `instrumentType` across every handler that returns a leg and added `'STOCK'` as a third enum value (`PUT | CALL | STOCK`). The DB column was renamed from `option_type` to `instrument_type` via `migrations/003_rename_option_type_to_instrument_type.sql`, and the CHECK constraint was expanded accordingly. All handler responses below use `instrumentType`; older plan extracts that still reference `optionType` are stale.
 
@@ -16,11 +20,9 @@ Two transport patterns are in use. Most handlers are request/response (`ipcRende
 
 **`rollChainId` on legs (us-15).** Every leg in the `LegRecord` shape now carries a `rollChainId: string | null` field. The roll services (`roll-csp-position.ts` and `roll-cc-position.ts`) write a shared UUID onto both halves of a roll pair (ROLL_FROM + ROLL_TO); every other write-path sets `rollChainId: null` explicitly. The `roll_chain_id` column was already present on `legs` (migration 001) — us-15 only exposed it through `positions:get` so the renderer's `buildRollTimeline` can group the two halves of a roll into a single visual section in `LegHistoryTable`. The `activeLeg` returned by `positions:get` still surfaces `rollChainId: null` even when the underlying row has a real UUID (a deliberate scoping decision — `activeLeg` is consumed only by the position header, not the timeline).
 
-**`assignments:*` handlers (us-35) — tracked envelope deviation.** us-35 introduced four `assignments:*` IPC channels (`assignments:list-pending`, `assignments:confirm`, `assignments:dismiss`, `assignments:run-detection-now`) plus four dev-only `_test:scheduler-*` channels for E2E test introspection. The two mutation handlers (`assignments:confirm` and `assignments:dismiss`) **deviate from the standard `{ ok, errors }` envelope** by surfacing a top-level `code: 'NOT_FOUND' | 'NOT_PENDING' | 'TRANSITION_REJECTED'` field alongside `errors` on failure. This is a tracked deviation — `handleIpcCall` cannot express a top-level `code` alongside `errors`, so these handlers use a bespoke `pendingAssignmentErrorResponse` helper in `src/main/ipc/assignments.ts` that catches `PendingAssignmentError` (which carries a `.code`) and emits the augmented envelope. If more handlers need a top-level `code` field, the recommendation is to widen the shared envelope rather than duplicate the helper. All other handlers — including `assignments:list-pending` and `assignments:run-detection-now` — return the standard envelope.
-
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39 -->
 
 ## Handler reference
 
@@ -702,8 +704,9 @@ Handlers are grouped by namespace. Each subsection documents the request payload
   | (zod path) | (zod code)       | zod issue message        |
 
 - **Note:** the renderer adapter throws `apiError(502, { detail: result.errors })` on `ok: false` so TanStack Query sets `isError`. `change` / `changePercent` are intentionally NOT included in `IpcStockQuote` — the renderer derives them from `(price, prevClose)`.
+- **us-39 routing change:** as of us-39, this channel routes to `MassiveMarketDataProvider` (not Alpaca). The handler file is unchanged (`src/main/ipc/market-data.ts`) but the provider instance is now `MassiveMarketDataProvider` from `src/main/integrations/massive-market-data.ts`. Auth failures from a missing or empty Massive API key surface as `auth_failed`.
 - **Source:** `src/main/ipc/market-data.ts`, `src/main/schemas.ts`
-- **Driven by:** [us-32 — Live Position Prices](../features/us-32-live-position-prices.md)
+- **Driven by:** [us-32 — Live Position Prices](../features/us-32-live-position-prices.md), [us-39 — Massive Market Data Provider](../features/us-39-massive-market-data-provider.md)
 
 ### `market-data:set-stock-quote-tickers`
 
@@ -739,6 +742,7 @@ Handlers are grouped by namespace. Each subsection documents the request payload
 
 ### `market-data:market-status`
 
+- **Deprecated by us-39.** The canonical market-status channel is now `broker:market-status` (see the `broker:*` namespace section below). The `market-data:market-status` channel name may remain registered for backward compatibility, but all new code should call `broker:market-status` instead.
 - **Purpose:** return current session (`regular`/`pre`/`post`/`closed`) plus `nextOpen`/`nextClose` timestamps. Polled by `useMarketStatus()` every 60 s to drive the `MarketStatusPill`.
 - **Request:** none.
 - **Response (success):**
@@ -762,17 +766,26 @@ Handlers are grouped by namespace. Each subsection documents the request payload
   | `__root__` | `rate_limited`   | provider rate limit hit  |
   | `__root__` | `internal_error` | uncaught error           |
 
-- **Source:** `src/main/ipc/market-data.ts`
+- **Source:** `src/main/ipc/market-data.ts` (legacy); see `src/main/ipc/broker.ts` for the authoritative `broker:market-status` handler.
 - **Driven by:** [us-32 — Live Position Prices](../features/us-32-live-position-prices.md)
 
-### `market-data:option-snapshots`
+### `market-data:option-snapshots` (superseded)
 
-- **Purpose:** REST-style snapshot of the full option chain shape (bid/ask/mid, last trade, open interest, volume, Greeks) for a list of OCC option symbols. Used by the renderer's `useOptionSnapshots(legs, { session })` hook as the TanStack Query `queryFn`, polled every 60 s while the market is open to drive the `Opt Mid` / `P&L` list columns and the position-detail Open Leg stats (Current Mid, Unrealized P&L, % of Max Profit). Symbols are built renderer-side from active option legs via the pure `buildOccSymbol()` helper in `src/main/core/option-symbol.ts`.
+- **Superseded by us-39.** This channel (plural bulk OCC symbol lookup) was introduced by us-33 and is replaced by two purpose-fit channels: `market-data:option-snapshot` (singular, single-contract lookup) and `market-data:option-chain` (filtered + paginated chain). Callers that used the old bulk endpoint must migrate to one of those two channels.
+- **Purpose (historical):** REST-style snapshot of the full option chain shape (bid/ask/mid, last trade, open interest, volume, Greeks) for a list of OCC option symbols. Polled every 60 s via `useOptionSnapshots(legs, { session })` to drive the `Opt Mid` / `P&L` list columns and the position-detail Open Leg stats. Symbols built renderer-side via `buildOccSymbol()` in `src/main/core/option-symbol.ts`.
+- **Breaking change (us-39):** `greeks` is now **optional** on `IpcOptionSnapshot`. When the Massive provider does not include Greeks (e.g. deep ITM, missing data), `greeks` is `undefined` rather than zero-filled — renderer code reading `snapshot.greeks.delta` must be updated to `snapshot.greeks?.delta` to avoid runtime errors.
+- **Source (historical):** `src/main/ipc/market-data.ts`, `src/main/services/market-data.ts`, `src/main/schemas.ts`
+- **Driven by:** [us-33 — Option Mid + Unrealized P&L](../features/us-33-option-mid-pnl.md)
+
+### `market-data:option-snapshot`
+
+- **Purpose:** single-contract lookup returning the full snapshot (bid/ask/mid, last trade, open interest, volume, optional Greeks) for one OCC option symbol. Replaces the bulk `market-data:option-snapshots` channel for single-leg pricing. Routes to `MassiveMarketDataProvider`.
 - **Request:**
   ```typescript
-  // Zod: GetOptionSnapshotsPayloadSchema
+  // Zod validated
   {
-    symbols: string[]   // OCC option symbols (e.g. 'AAPL260516P00180000'); each min(1) max(25) chars; up to 50 symbols; empty array is valid
+    underlying: string // e.g. 'AAPL'
+    contract: string // OCC format, regex-validated, e.g. 'AAPL260516P00180000'
   }
   ```
 - **Response (success):**
@@ -780,17 +793,17 @@ Handlers are grouped by namespace. Each subsection documents the request payload
   ```typescript
   {
     ok: true,
-    snapshots: Record<string, IpcOptionSnapshot>
+    snapshot: IpcOptionSnapshot | null   // null when the provider has no data for the contract
   }
 
   type IpcOptionSnapshot = {
     bid: string                // 4 dp TEXT
     ask: string                // 4 dp TEXT
-    mid: string                // 4 dp TEXT; provider-computed (bid + ask) / 2
+    mid: string                // 4 dp TEXT; (bid + ask) / 2
     lastTrade: string          // 4 dp TEXT
-    openInterest: number | null   // null for Alpaca (not exposed by the snapshot endpoint)
-    volume: number | null         // null for Alpaca
-    greeks: {
+    openInterest: number | null
+    volume: number | null
+    greeks?: {                 // optional — absent when Massive does not return Greeks
       delta: string            // 4 dp TEXT
       gamma: string            // 4 dp TEXT
       theta: string            // 4 dp TEXT
@@ -803,63 +816,189 @@ Handlers are grouped by namespace. Each subsection documents the request payload
 
 - **Error codes:**
 
-  | field                | code             | message                  |
-  | -------------------- | ---------------- | ------------------------ |
-  | `__root__`           | `auth_failed`    | provider auth rejected   |
-  | `__root__`           | `network_error`  | upstream network failure |
-  | `__root__`           | `rate_limited`   | provider rate limit hit  |
-  | `__root__`           | `internal_error` | uncaught error           |
-  | `symbols` (zod path) | (zod code)       | zod issue message        |
+  | field      | code             | message                                              |
+  | ---------- | ---------------- | ---------------------------------------------------- |
+  | `__root__` | `auth_failed`    | provider auth rejected (missing/invalid Massive key) |
+  | `__root__` | `network_error`  | upstream network failure                             |
+  | `__root__` | `rate_limited`   | provider rate limit hit                              |
+  | `__root__` | `internal_error` | uncaught error                                       |
+  | (zod path) | (zod code)       | zod issue message                                    |
 
-- **Empty-input behavior:** when `symbols.length === 0`, the handler short-circuits and returns `{ ok: true, snapshots: {} }` **without** calling the provider. This avoids spurious provider auth/network traffic when the renderer has no active option legs to price.
-- **Unknown-symbol behavior:** if the provider's returned Map omits a requested symbol (e.g. invalid OCC, no quote available), that symbol is simply **absent** from `snapshots` — the handler does not raise an error. The renderer renders `—` for absent symbols.
-- **Full-shape contract:** unlike `IpcStockQuote` (which strips `change`/`changePercent`), this IPC layer ships the provider's `OptionSnapshot` shape 1:1 — including `greeks`, `lastTrade`, `openInterest`, and `volume` — so us-34 (Greeks display) can consume `greeks` without a follow-up contract change.
-- **Logging:** `INFO market_data_option_snapshots_request { count: symbols.length }` at entry, `INFO market_data_option_snapshots_response { count: Object.keys(snapshots).length }` at success, `ERROR market_data_option_snapshots_unhandled_error` for the catch-all.
-- **Source:** `src/main/ipc/market-data.ts`, `src/main/services/market-data.ts` (`fetchOptionSnapshots(provider, symbols)`), `src/main/schemas.ts` (`GetOptionSnapshotsPayloadSchema`)
-- **Driven by:** [us-33 — Option Mid + Unrealized P&L](../features/us-33-option-mid-pnl.md)
+- **Notes:** `null` snapshot is a normal non-error response — the renderer renders `—` for absent symbols. `greeks` is optional: when Massive omits Greeks for a contract (e.g. deep ITM, expiry edge cases), the field is absent rather than zero-filled. Renderer code must use `snapshot.greeks?.delta` rather than `snapshot.greeks.delta`.
+- **Source:** `src/main/ipc/market-data.ts`
+- **Driven by:** [us-39 — Massive Market Data Provider](../features/us-39-massive-market-data-provider.md), [us-33 — Option Mid + Unrealized P&L](../features/us-33-option-mid-pnl.md)
 
-### `assignments:list-pending`
+### `market-data:option-chain`
 
-- **Purpose:** return every `pending_assignments` row currently in `status='pending'` plus the display fields (`ticker`, `strike`, `expiration`, `contractType`, `qty`, `transactionTime`, `positionId`) sourced by joining to `positions` and the matched open `legs` row. Drives the `AssignmentNotificationBanner` stack and the `pendingPositionIds` set used by `PositionCard` to render the pulsing amber indicator.
-- **Request:** none (no payload).
+- **Purpose:** filtered and paginated option chain lookup — returns all option snapshots for an underlying that match the supplied filter criteria. Intended for the option screener and chain explorer UI. Routes to `MassiveMarketDataProvider`.
+- **Request:**
+  ```typescript
+  // Zod validated
+  {
+    underlying: string          // ticker, e.g. 'AAPL'
+    expirationFrom?: string     // ISO date filter (inclusive lower bound)
+    expirationTo?: string       // ISO date filter (inclusive upper bound)
+    type?: 'call' | 'put'       // filter by option type
+    strikeFrom?: number         // filter by strike (inclusive lower bound)
+    strikeTo?: number           // filter by strike (inclusive upper bound)
+    limit?: number              // max results per page
+    cursor?: string             // pagination cursor from a prior response
+  }
+  ```
 - **Response (success):**
-
   ```typescript
   {
     ok: true,
-    assignments: PendingAssignmentNotification[]
-  }
-
-  type PendingAssignmentNotification = {
-    id: number
-    ticker: string
-    strike: string                 // 2 dp
-    expiration: string             // ISO date
-    contractType: 'put' | 'call'
-    qty: number
-    transactionTime: string        // ISO-8601
-    positionId: string             // UUID — corrected from the plan's original `number` type per code-review Area E1
+    snapshots: IpcOptionSnapshot[]   // array of matching snapshots; IpcOptionSnapshot shape same as market-data:option-snapshot
+    nextCursor: string | null        // null in the current implementation (real pagination deferred)
   }
   ```
+- **Error codes:**
 
+  | field      | code             | message                  |
+  | ---------- | ---------------- | ------------------------ |
+  | `__root__` | `auth_failed`    | provider auth rejected   |
+  | `__root__` | `network_error`  | upstream network failure |
+  | `__root__` | `rate_limited`   | provider rate limit hit  |
+  | `__root__` | `internal_error` | uncaught error           |
+  | (zod path) | (zod code)       | zod issue message        |
+
+- **Notes:** `nextCursor` is always `null` in the current implementation — real cursor-based pagination is deferred to a follow-up story when the option screener (Epic 3) requires it. All filter fields are optional; omitting all filters returns the full chain for the underlying.
+- **Source:** `src/main/ipc/market-data.ts`
+- **Driven by:** [us-39 — Massive Market Data Provider](../features/us-39-massive-market-data-provider.md)
+
+### `broker:account-info`
+
+- **Purpose:** fetch the current broker account details (buying power, portfolio value, cash balance, account number). Routes to `AlpacaBrokerProvider` via `src/main/ipc/broker.ts`. Part of the us-39 broker/market-data namespace split.
+- **Request:** none.
+- **Response (success):**
+  ```typescript
+  {
+    ok: true,
+    accountInfo: {
+      // AlpacaBrokerProvider shape; exact fields mirror Alpaca GET /v2/account
+      accountNumber: string
+      buyingPower: string      // 4 dp TEXT
+      portfolioValue: string   // 4 dp TEXT
+      cash: string             // 4 dp TEXT
+    }
+  }
+  ```
+- **Error codes:**
+
+  | field      | code             | message                                |
+  | ---------- | ---------------- | -------------------------------------- |
+  | `__root__` | `auth_failed`    | Alpaca credentials missing or rejected |
+  | `__root__` | `network_error`  | upstream network failure               |
+  | `__root__` | `internal_error` | uncaught error                         |
+
+- **Source:** `src/main/ipc/broker.ts`, `src/main/integrations/alpaca-broker.ts`
+- **Driven by:** [us-39 — Massive Market Data Provider](../features/us-39-massive-market-data-provider.md)
+
+### `broker:market-status`
+
+- **Purpose:** return current session (`regular`/`pre`/`post`/`closed`) plus `nextOpen`/`nextClose` timestamps from Alpaca's clock endpoint. This is the us-39 replacement for `market-data:market-status`. Polled by `useMarketStatus()` every 60 s to drive the `MarketStatusPill`. Routes to `AlpacaBrokerProvider` via `src/main/ipc/broker.ts`.
+- **Request:** none.
+- **Response (success):**
+  ```typescript
+  {
+    ok: true,
+    status: {
+      isOpen: boolean
+      nextOpen: string    // ISO-8601
+      nextClose: string   // ISO-8601
+      session: 'regular' | 'pre' | 'post' | 'closed'
+    }
+  }
+  ```
+- **Error codes:**
+
+  | field      | code             | message                                |
+  | ---------- | ---------------- | -------------------------------------- |
+  | `__root__` | `auth_failed`    | Alpaca credentials missing or rejected |
+  | `__root__` | `network_error`  | upstream network failure               |
+  | `__root__` | `rate_limited`   | Alpaca rate limit hit                  |
+  | `__root__` | `internal_error` | uncaught error                         |
+
+- **Notes:** Alpaca's `getClock()` is the authoritative source for session state. Massive's market-status endpoint was not adopted (it is per-asset-class and does not map cleanly to the single `MarketStatus` shape).
+- **Source:** `src/main/ipc/broker.ts`, `src/main/integrations/alpaca-broker.ts`
+- **Driven by:** [us-39 — Massive Market Data Provider](../features/us-39-massive-market-data-provider.md), [us-32 — Live Position Prices](../features/us-32-live-position-prices.md)
+
+### `broker:activities`
+
+- **Purpose:** fetch recent broker account activities (fills, dividends, transfers) from Alpaca. Routes to `AlpacaBrokerProvider` via `src/main/ipc/broker.ts`. Part of the us-39 broker/market-data namespace split.
+- **Request:**
+  ```typescript
+  // filter object; all fields optional
+  {
+    activityType?: string    // Alpaca activity type filter (e.g. 'FILL')
+    after?: string           // ISO-8601 cursor
+    until?: string           // ISO-8601 cursor
+    pageSize?: number
+  }
+  ```
+- **Response (success):**
+  ```typescript
+  {
+    ok: true,
+    activities: Array<{
+      // shape mirrors Alpaca GET /v2/account/activities response items
+      id: string
+      activityType: string
+      date: string           // ISO date
+      [additionalFields: string]: unknown
+    }>
+  }
+  ```
+- **Error codes:**
+
+  | field      | code             | message                                |
+  | ---------- | ---------------- | -------------------------------------- |
+  | `__root__` | `auth_failed`    | Alpaca credentials missing or rejected |
+  | `__root__` | `network_error`  | upstream network failure               |
+  | `__root__` | `internal_error` | uncaught error                         |
+
+- **Source:** `src/main/ipc/broker.ts`, `src/main/integrations/alpaca-broker.ts`
+- **Driven by:** [us-39 — Massive Market Data Provider](../features/us-39-massive-market-data-provider.md)
+
+### `assignments:list-pending`
+
+- **Purpose:** hydrate the `AssignmentNotificationBanner` stack on the positions list with every `pending_assignments` row in `status='pending'`, joined to the parent position + leg for the display fields (ticker, strike, expiration, contract type, qty). Polled by `usePendingAssignments` via TanStack Query with a 30s `refetchInterval`.
+- **Request:** none (no payload).
+- **Response (success):**
+  ```typescript
+  {
+    ok: true,
+    assignments: Array<{
+      id: number                          // pending_assignments.id (AUTOINCREMENT integer)
+      ticker: string                      // parsed from the OPASN OCC symbol
+      strike: string                      // 2 dp TEXT
+      expiration: string                  // ISO date
+      contractType: 'put' | 'call'        // OPASN symbol parse — always 'put' in current flow
+      qty: number                         // contracts assigned
+      transactionTime: string             // ISO-8601 (from Alpaca activity)
+      positionId: string                  // UUID — corrected from the plan's `number` per Area E1
+    }>
+  }
+  ```
 - **Error codes:**
 
   | field      | code             | message                        |
   | ---------- | ---------------- | ------------------------------ |
   | `__root__` | `internal_error` | `An unexpected error occurred` |
 
-- **Envelope:** standard `{ ok, errors }`. No top-level `code` field.
-- **Source:** `src/main/ipc/assignments.ts`, `src/main/services/pending-assignments.ts` (`listPending`)
+- **Notes:** the `id` is an `INTEGER PRIMARY KEY AUTOINCREMENT` from `pending_assignments` — the only IPC channel in the app that surfaces a non-UUID integer identifier on the renderer. The renderer's banner threads this id back through `assignments:confirm` / `assignments:dismiss`. A "pending" row IS the notification — there is no separate notifications table; persistence across app restarts falls out of the table itself.
+- **Source:** `src/main/ipc/assignments.ts`, `src/main/services/pending-assignments.ts`
 - **Driven by:** [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md)
 
 ### `assignments:confirm`
 
-- **Purpose:** trader-confirmed assignment — atomically calls `assignCspPosition` (transitions the position to `HOLDING_SHARES`, writes the `ASSIGN` event-marker leg and cost-basis snapshot per `positions:assign-csp`) **and** updates the `pending_assignments` row to `status='confirmed'`, `confirmed_at=now()`. Wrapped in an outer `db.transaction()` so the position transition and the pending-row state change are atomic (better-sqlite3 savepoint composition with the inner `assignCspPosition` transaction).
+- **Purpose:** record trader confirmation of a detected assignment. Validates the pending row exists and is in `status='pending'`, then atomically (via outer `db.transaction()` composing with `assignCspPosition`'s inner transaction) calls `assignCspPosition` to transition the position from `CSP_OPEN → HOLDING_SHARES` and updates the pending row to `status='confirmed'` with `confirmed_at = now()`. On success the renderer invalidates `['positions', 'list']`, `['positions', positionId]`, and `['assignments', 'pending']` query keys.
 - **Request:**
   ```typescript
   // Zod schema: ConfirmAssignmentPayloadSchema
   {
-    pendingAssignmentId: number // positive integer — the pending_assignments.id
+    pendingAssignmentId: number // positive integer — required
   }
   ```
 - **Response (success):**
@@ -869,72 +1008,79 @@ Handlers are grouped by namespace. Each subsection documents the request payload
     position: {
       id: string
       phase: 'HOLDING_SHARES'
-      assignedAt: string        // ISO-8601
+      assignedAt: string // ISO date — = the assignment date passed to assignCspPosition
     }
+  }
+  ```
+- **Response (failure — documented envelope deviation):**
+  ```typescript
+  {
+    ok: false,
+    code: 'NOT_FOUND' | 'NOT_PENDING' | 'TRANSITION_REJECTED',
+    errors: [{ field: '__root__', code, message }]
   }
   ```
 - **Error codes:**
 
-  | code                  | meaning                                                              |
-  | --------------------- | -------------------------------------------------------------------- |
-  | `NOT_FOUND`           | `pendingAssignmentId` does not match an existing row                 |
-  | `NOT_PENDING`         | row exists but `status !== 'pending'` (already confirmed / dismissed) |
-  | `TRANSITION_REJECTED` | inner `assignCspPosition` lifecycle guard rejected the transition    |
+  | field      | code                  | message                                                          |
+  | ---------- | --------------------- | ---------------------------------------------------------------- |
+  | `__root__` | `NOT_FOUND`           | `Pending assignment not found`                                   |
+  | `__root__` | `NOT_PENDING`         | `Pending assignment is no longer pending`                        |
+  | `__root__` | `TRANSITION_REJECTED` | (rejection message from the lifecycle engine bubbled up)         |
+  | `__root__` | `internal_error`      | `An unexpected error occurred` (uncaught — via `handleIpcCall`)  |
 
-- **Envelope (deviation):** failure responses use a **bespoke envelope** that adds a top-level `code` field:
-  ```typescript
-  {
-    ok: false,
-    errors: string[],
-    code: 'NOT_FOUND' | 'NOT_PENDING' | 'TRANSITION_REJECTED'
-  }
-  ```
-  This is a tracked deviation from the standard `{ ok, errors }` envelope — see the Overview section. The mapping is done by the shared `pendingAssignmentErrorResponse` helper in `src/main/ipc/assignments.ts`, which catches `PendingAssignmentError` (a class carrying a `.code` of the same union) and emits the augmented shape. Zod payload validation failures still flow through `handleIpcCall` and produce the standard `{ ok: false, errors: [{ field, code, message }] }` envelope without a top-level `code`.
-- **Renderer cache invalidation:** on `ok: true`, the mutation hook invalidates the `['assignments', 'pending']`, `['positions', 'list']`, and `['positions', positionId]` query keys. The `AssignmentNotificationBanner` retains a local `dismissedIds` set so the banner can show the "Open covered call →" success view without waiting for the pending-list invalidation to refetch.
-- **Source:** `src/main/ipc/assignments.ts`, `src/main/services/pending-assignments.ts` (`confirmPending`), `src/main/services/assign-csp-position.ts` (`assignCspPosition`), `src/main/schemas.ts` (`ConfirmAssignmentPayloadSchema`)
+- **Notes:** this handler is **not** registered via `registerParsedPositionHandler` — it does its own Zod parse + try/catch because the failure envelope carries the top-level `code` field (see Overview's deviation note). The error codes `NOT_FOUND` / `NOT_PENDING` / `TRANSITION_REJECTED` are UPPER_SNAKE_CASE rather than the catalogue's lowercase convention because they originate from `PendingAssignmentError.code` rather than the field-error builders. `TRANSITION_REJECTED` covers e.g. a position that was independently transitioned out of `CSP_OPEN` between the OPASN poll and the trader's confirmation — the lifecycle engine's standard phase-guard rejection is mapped to this code.
+- **Source:** `src/main/ipc/assignments.ts`, `src/main/services/pending-assignments.ts` (`confirmPending`), `src/main/services/assign-csp-position.ts`
 - **Driven by:** [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md)
 
 ### `assignments:dismiss`
 
-- **Purpose:** mark a pending assignment as dismissed without transitioning the position — the trader's "I don't want to record this assignment right now" path. Updates `pending_assignments.status` to `'dismissed'` and stamps `dismissed_at`. Does not touch the underlying position or leg state. Idempotent for already-dismissed rows (silently no-ops); rejects confirmed rows and missing rows.
+- **Purpose:** dismiss a detected assignment without transitioning the position (e.g. trader is confident it's a false positive, or has already recorded the assignment manually). Validates the pending row exists and is in `status='pending'`, then updates the row to `status='dismissed'` with `dismissed_at = now()`. Dismissed rows are excluded from the next poll's OPASN match results because `INSERT OR IGNORE` on the compound `UNIQUE(activity_id, position_id)` silently drops the duplicate.
 - **Request:**
   ```typescript
   // Zod schema: DismissAssignmentPayloadSchema
   {
-    pendingAssignmentId: number // positive integer
+    pendingAssignmentId: number // positive integer — required
   }
   ```
 - **Response (success):**
   ```typescript
   {
     ok: true,
-    dismissedAt: string // ISO-8601
+    dismissedAt: string // ISO-8601 — computed in the handler, not read back from the DB row
+  }
+  ```
+- **Response (failure — documented envelope deviation):**
+  ```typescript
+  {
+    ok: false,
+    code: 'NOT_FOUND' | 'NOT_PENDING',
+    errors: [{ field: '__root__', code, message }]
   }
   ```
 - **Error codes:**
 
-  | code          | meaning                                                                          |
-  | ------------- | -------------------------------------------------------------------------------- |
-  | `NOT_FOUND`   | `pendingAssignmentId` does not match an existing row                             |
-  | `NOT_PENDING` | row exists but `status='confirmed'` (was previously silently accepted; per code-review Area B1 now rejects) |
+  | field      | code             | message                                                          |
+  | ---------- | ---------------- | ---------------------------------------------------------------- |
+  | `__root__` | `NOT_FOUND`      | `Pending assignment not found`                                   |
+  | `__root__` | `NOT_PENDING`    | `Pending assignment is no longer pending`                        |
+  | `__root__` | `internal_error` | `An unexpected error occurred` (uncaught — via `handleIpcCall`)  |
 
-- **Envelope (deviation):** same bespoke `{ ok: false, errors, code }` shape as `assignments:confirm`, routed via the shared `pendingAssignmentErrorResponse` helper. See the Overview tracked-deviation note.
-- **Renderer cache invalidation:** on `ok: true`, invalidates `['assignments', 'pending']`. The banner component additionally tracks a local `dismissedIds` set so the row disappears immediately without waiting for the refetch.
-- **Notes:** per code-review Area B1, `dismissPending` now **rejects** non-pending states rather than silently accepting them — confirmed rows raise `PendingAssignmentError('NOT_PENDING')` and missing rows raise `PendingAssignmentError('NOT_FOUND')`. Already-dismissed rows still no-op (idempotent).
-- **Source:** `src/main/ipc/assignments.ts`, `src/main/services/pending-assignments.ts` (`dismissPending`), `src/main/schemas.ts` (`DismissAssignmentPayloadSchema`)
+- **Notes:** post-Area-B1 code review, `dismissPending` rejects confirmed rows with `NOT_PENDING` rather than silently no-op'ing — only already-dismissed rows are idempotent. Same envelope-deviation pattern as `assignments:confirm` (see Overview).
+- **Source:** `src/main/ipc/assignments.ts`, `src/main/services/pending-assignments.ts` (`dismissPending`)
 - **Driven by:** [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md)
 
 ### `assignments:run-detection-now`
 
-- **Purpose:** trigger an out-of-band invocation of the `detect-assignments` poll job — bypasses the scheduler's cadence and runs the handler immediately. Used by a "Refresh now" affordance in Settings and by dev/debug tooling. Delegates to `scheduler.runNow('detect-assignments')`.
+- **Purpose:** manually trigger an out-of-band run of the `detect-assignments` poll job — the same job the scheduler runs on its cadence. Useful for a "Refresh now" affordance in Settings or for ad-hoc debugging. Calls `scheduler.runNow(DETECT_ASSIGNMENTS_JOB_NAME)` and waits for the handler to settle.
 - **Request:** none (no payload).
 - **Response (success):**
   ```typescript
   {
-    ok: true,
-    detected: number      // pending_assignments rows inserted by this run
-    skipped: number       // OPASN activities matched an existing (activity_id, position_id) row and were INSERT OR IGNORE'd
-    durationMs: number    // wall-clock duration of the handler call
+    ok: true
+    // Tech debt (Area E2): the contract aspires to return { detected, skipped, durationMs } but
+    // scheduler.runNow does not currently surface the handler's return value. The handler returns
+    // an empty object; the preload's d.ts type is documented but not satisfied at runtime.
   }
   ```
 - **Error codes:**
@@ -943,29 +1089,64 @@ Handlers are grouped by namespace. Each subsection documents the request payload
   | ---------- | ---------------- | ------------------------------ |
   | `__root__` | `internal_error` | `An unexpected error occurred` |
 
-- **Envelope:** standard `{ ok, errors }`. No top-level `code` field.
-- **Notes:** **planned shape per code-review Area E2.** At the time the plan landed, `scheduler.runNow` returned `Promise<void>` and the handler returned only `{ ok: true }`; code-review Area E2 recommends piping the real `{ detected, skipped, durationMs }` triple through the scheduler so the handler returns honest values rather than dummy zeros. Treat the documented response shape as the target contract — verify against `src/main/ipc/assignments.ts` for the live wire shape.
-- **Source:** `src/main/ipc/assignments.ts`, `src/main/services/scheduler-instance.ts` (singleton), `src/main/services/polling-scheduler.ts` (`runNow`), `src/main/services/detect-assignments.ts` (`detectAssignments`, `DETECT_ASSIGNMENTS_JOB_NAME`)
-- **Driven by:** [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md)
-
-### Dev-only `_test:scheduler-*` channels
-
-us-35 ships four dev-only IPC channels under `src/main/ipc/test-scheduler.ts`, registered **only** when `NODE_ENV === 'test'`. They exist so E2E specs (`e2e/polling-scheduler.spec.ts`, `e2e/assignment-detection.spec.ts`) can introspect the in-memory scheduler registry and trigger out-of-band runs without polluting the production IPC surface or coupling tests to wall-clock cadence. Test jobs can additionally be seeded at startup from the `WHEELBASE_TEST_JOBS` env var via `seedTestJobsFromEnv`.
-
-| Channel                         | Purpose                                                                                                                                                                                                                  |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `_test:scheduler-registry`      | Return the `JobRegistryEntry[]` snapshot from `scheduler.getRegistry()` — job name, cadence policy, last-tick timestamps, per-state invocation counters.                                                                 |
-| `_test:scheduler-run-now`       | Take a `jobName` and call `scheduler.runNow(jobName)`. Mirrors `assignments:run-detection-now` for arbitrary registered jobs.                                                                                            |
-| `_test:scheduler-register`      | Register a synthetic job under the singleton scheduler at runtime for tests that want to assert registration semantics (e.g. duplicate-name rejection).                                                                  |
-| `_test:scheduler-simulate-wake` | Effectively a no-op against the current setTimeout-chain implementation — chained timers cannot accumulate missed ticks across sleep, so there is nothing to "fire". Retained as a placeholder if the scheduler ever switches to absolute fire-at semantics with catch-up. |
-
-These channels are intentionally **not** documented as a stable contract — they exist solely for test ergonomics and are subject to change without notice.
-
-- **Source:** `src/main/ipc/test-scheduler.ts`, `src/main/services/polling-scheduler.ts` (`getRegistry`, `runNow`), `src/main/services/scheduler-instance.ts`
+- **Notes:** the standard `{ ok, errors }` envelope (no `code` deviation). Implementation tech debt: `scheduler.runNow` returns `Promise<void>` rather than the detection summary, so the IPC response currently has no `detected` / `skipped` / `durationMs` fields despite the preload's d.ts advertising them. Code-review Area E2 recommends piping handler return values through `PollingScheduler.runNow`; until that lands, treat the response as `{ ok: true }` only.
+- **Source:** `src/main/ipc/assignments.ts`, `src/main/services/scheduler-instance.ts`, `src/main/services/detect-assignments.ts`
 - **Driven by:** [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md)
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35 -->
+<!-- generated:from us-35 -->
+
+## Dev-only scheduler handlers (us-35)
+
+Registered by `src/main/ipc/test-scheduler.ts` and wired into the main process **only when `NODE_ENV === 'test'`** so they never appear on the production IPC surface. Backed by the same `scheduler` singleton from `src/main/services/scheduler-instance.ts` that registers the production `detect-assignments` job — there is no separate state. Used by `e2e/polling-scheduler.spec.ts` and `e2e/assignment-detection.spec.ts` to introspect and drive the scheduler from outside the process.
+
+These channels do **not** follow the `{ ok, errors }` envelope — they return ad-hoc shapes shaped to their test consumers' needs. They are not part of the public IPC contract.
+
+### `_test:scheduler-registry`
+
+- **Purpose:** introspect the scheduler's current job registry (names, cadences, invocation counters per state).
+- **Request:** none.
+- **Response:**
+  ```typescript
+  JobRegistryEntry[]
+  // type JobRegistryEntry = { name: string; cadence: CadencePolicy; invocations: number }
+  ```
+- **Source:** `src/main/ipc/test-scheduler.ts`, `src/main/services/polling-scheduler.ts` (`getRegistry()`).
+
+### `_test:scheduler-run-now`
+
+- **Purpose:** trigger an out-of-band run of a registered job by name. Mirror of the production `scheduler.runNow` API exposed for tests.
+- **Request:** `jobName: string` (positional, not wrapped in an object).
+- **Response:** `Promise<void>` — resolves when the handler settles.
+- **Source:** `src/main/ipc/test-scheduler.ts`.
+
+### `_test:scheduler-register`
+
+- **Purpose:** register a synthetic test job at runtime (e.g. an interval job that throws to exercise the scheduler's error-swallow behaviour). Also seedable at process start via the `WHEELBASE_TEST_JOBS` env var consumed by `seedTestJobsFromEnv(scheduler)`.
+- **Request:**
+  ```typescript
+  type TestJobFixture = {
+    name: string
+    cadence: CadencePolicy
+    throws?: boolean // if true, the handler throws on every tick
+  }
+  ```
+- **Response:**
+  ```typescript
+  { ok: true } | { ok: false; errorCode: SchedulerError['code'] | 'unknown' }
+  // SchedulerError codes: 'already_registered' | 'job_not_found' | 'not_started'
+  ```
+- **Source:** `src/main/ipc/test-scheduler.ts`.
+
+### `_test:scheduler-simulate-wake`
+
+- **Purpose:** simulate a system-wake event for the scheduler. **No-op in the current implementation** — the setTimeout-chain scheduler cannot accumulate missed ticks (each tick only schedules the next tick), so wake simulation has no internal state to nudge. The handler exists so the e2e suite can prove the property by observing that no extra invocations occur after the call.
+- **Request:** none.
+- **Response:** `{ ok: true }`.
+- **Source:** `src/main/ipc/test-scheduler.ts`.
+<!-- /generated -->
+
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39 -->
 
 ## Push events
 
@@ -1004,45 +1185,42 @@ Push events are one-way `main → renderer` messages sent via `webContents.send`
 - **Driven by:** [us-32 — Live Position Prices](../features/us-32-live-position-prices.md)
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39 -->
 
 ## Standard error codes
 
 Cross-handler catalogue of every error `code` value emitted, with the set of handlers that produce it.
 
-| code                          | meaning                                                                                                     | used by                                                                                                                                                                                                                |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `invalid_phase`               | wrong position phase for the requested operation                                                            | `positions:close-csp`, `positions:expire-csp`, `positions:assign-csp`, `positions:open-cc`, `positions:close-cc-early`, `positions:expire-cc`, `positions:record-call-away`, `positions:roll-csp`, `positions:roll-cc` |
-| `must_be_positive`            | numeric input was ≤ 0                                                                                       | `positions:close-csp`, `positions:open-cc`, `positions:close-cc-early`, `positions:roll-csp`, `positions:roll-cc`                                                                                                      |
-| `must_be_after_current`       | new date is not strictly after the current date being replaced                                              | `positions:roll-csp` (planned to be superseded by `no_change` + `must_not_be_earlier` in us-13)                                                                                                                        |
-| `must_be_on_or_after_current` | new expiration earlier than current expiration on a CC roll (inclusive bound — same expiration is accepted) | `positions:roll-cc`                                                                                                                                                                                                    |
-| `close_date_before_open`      | close fill date earlier than open leg's fill date                                                           | `positions:close-csp`, `positions:close-cc-early`, `positions:record-call-away`                                                                                                                                        |
-| `close_date_after_expiration` | close fill date later than the option's expiration                                                          | `positions:close-csp`, `positions:close-cc-early`                                                                                                                                                                      |
-| `too_early`                   | expiration cannot be recorded before the option's expiration date                                           | `positions:expire-csp`, `positions:expire-cc`                                                                                                                                                                          |
-| `date_before_open`            | assignment date earlier than the CSP open date                                                              | `positions:assign-csp`                                                                                                                                                                                                 |
-| `before_assignment`           | CC fill date earlier than the ASSIGN leg's fill date                                                        | `positions:open-cc`                                                                                                                                                                                                    |
-| `cannot_be_future`            | CC fill date later than today                                                                               | `positions:open-cc`                                                                                                                                                                                                    |
-| `exceeds_shares`              | CC contracts exceed shares held (= ASSIGN leg's contracts)                                                  | `positions:open-cc`                                                                                                                                                                                                    |
-| `multi_contract_unsupported`  | contracts > 1 (Phase 1 limitation)                                                                          | `positions:record-call-away`                                                                                                                                                                                           |
-| `not_found`                   | record (position) does not exist                                                                            | `positions:get`, `positions:expire-csp`, `positions:assign-csp`, `positions:close-cc-early`, `positions:expire-cc`, `positions:record-call-away`, `positions:roll-csp`, `positions:roll-cc`                            |
-| `no_active_leg`               | position has no resolvable active open leg                                                                  | `positions:assign-csp`, `positions:expire-cc`, `positions:roll-csp`, `positions:roll-cc`                                                                                                                               |
-| `no_cc_open_leg`              | position has no resolvable open covered call leg                                                            | `positions:record-call-away`                                                                                                                                                                                           |
-| `no_change`                   | roll attempted with both strike and expiration unchanged                                                    | `positions:roll-cc` (on sentinel field `__roll__`); **planned** for `positions:roll-csp` in us-13 (on `__root__`)                                                                                                      |
-| `must_not_be_earlier`         | new expiration earlier than current expiration (**planned** — us-13)                                        | `positions:roll-csp`                                                                                                                                                                                                   |
-| `auth_failed`                 | upstream market-data provider rejected credentials                                                          | `market-data:stock-quotes`, `market-data:set-stock-quote-tickers`, `market-data:market-status`, `market-data:option-snapshots`                                                                                         |
-| `network_error`               | upstream market-data provider unreachable                                                                   | `market-data:stock-quotes`, `market-data:set-stock-quote-tickers`, `market-data:market-status`, `market-data:option-snapshots`                                                                                         |
-| `rate_limited`                | upstream market-data provider returned 429                                                                  | `market-data:stock-quotes`, `market-data:set-stock-quote-tickers`, `market-data:market-status`, `market-data:option-snapshots`                                                                                         |
-| `streaming_unsupported`       | provider does not implement streaming for the requested feed                                                | `market-data:set-stock-quote-tickers`                                                                                                                                                                                  |
-| `internal_error`              | uncaught error in the handler                                                                               | all request/response handlers (including `positions:list`)                                                                                                                                                             |
-| `(zod path)`                  | Zod payload validation failure — `field` is the issue's `path.join('.')`, `code` is the Zod issue `code`    | all schema-parsed handlers                                                                                                                                                                                             |
-
-**`assignments:*` envelope-deviation codes (us-35).** `assignments:confirm` and `assignments:dismiss` surface their error code at the **top level** of the response envelope (`{ ok: false, errors, code: '…' }`) rather than inside an `errors[].code` slot. These are tracked separately from the table above because they are not interchangeable with the standard envelope.
-
-| code                  | meaning                                                                                                                              | used by                                              |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| `NOT_FOUND`           | `pendingAssignmentId` does not match an existing `pending_assignments` row                                                          | `assignments:confirm`, `assignments:dismiss`         |
-| `NOT_PENDING`         | row exists but `status !== 'pending'` (e.g. already confirmed; for `dismiss`, already-dismissed rows still no-op without this error) | `assignments:confirm`, `assignments:dismiss`         |
-| `TRANSITION_REJECTED` | inner `assignCspPosition` lifecycle guard rejected the auto-transition                                                              | `assignments:confirm`                                |
+| code                          | meaning                                                                                                     | used by                                                                                                                                                                                                                       |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `invalid_phase`               | wrong position phase for the requested operation                                                            | `positions:close-csp`, `positions:expire-csp`, `positions:assign-csp`, `positions:open-cc`, `positions:close-cc-early`, `positions:expire-cc`, `positions:record-call-away`, `positions:roll-csp`, `positions:roll-cc`        |
+| `must_be_positive`            | numeric input was ≤ 0                                                                                       | `positions:close-csp`, `positions:open-cc`, `positions:close-cc-early`, `positions:roll-csp`, `positions:roll-cc`                                                                                                             |
+| `must_be_after_current`       | new date is not strictly after the current date being replaced                                              | `positions:roll-csp` (planned to be superseded by `no_change` + `must_not_be_earlier` in us-13)                                                                                                                               |
+| `must_be_on_or_after_current` | new expiration earlier than current expiration on a CC roll (inclusive bound — same expiration is accepted) | `positions:roll-cc`                                                                                                                                                                                                           |
+| `close_date_before_open`      | close fill date earlier than open leg's fill date                                                           | `positions:close-csp`, `positions:close-cc-early`, `positions:record-call-away`                                                                                                                                               |
+| `close_date_after_expiration` | close fill date later than the option's expiration                                                          | `positions:close-csp`, `positions:close-cc-early`                                                                                                                                                                             |
+| `too_early`                   | expiration cannot be recorded before the option's expiration date                                           | `positions:expire-csp`, `positions:expire-cc`                                                                                                                                                                                 |
+| `date_before_open`            | assignment date earlier than the CSP open date                                                              | `positions:assign-csp`                                                                                                                                                                                                        |
+| `before_assignment`           | CC fill date earlier than the ASSIGN leg's fill date                                                        | `positions:open-cc`                                                                                                                                                                                                           |
+| `cannot_be_future`            | CC fill date later than today                                                                               | `positions:open-cc`                                                                                                                                                                                                           |
+| `exceeds_shares`              | CC contracts exceed shares held (= ASSIGN leg's contracts)                                                  | `positions:open-cc`                                                                                                                                                                                                           |
+| `multi_contract_unsupported`  | contracts > 1 (Phase 1 limitation)                                                                          | `positions:record-call-away`                                                                                                                                                                                                  |
+| `not_found`                   | record (position) does not exist                                                                            | `positions:get`, `positions:expire-csp`, `positions:assign-csp`, `positions:close-cc-early`, `positions:expire-cc`, `positions:record-call-away`, `positions:roll-csp`, `positions:roll-cc`                                   |
+| `no_active_leg`               | position has no resolvable active open leg                                                                  | `positions:assign-csp`, `positions:expire-cc`, `positions:roll-csp`, `positions:roll-cc`                                                                                                                                      |
+| `no_cc_open_leg`              | position has no resolvable open covered call leg                                                            | `positions:record-call-away`                                                                                                                                                                                                  |
+| `no_change`                   | roll attempted with both strike and expiration unchanged                                                    | `positions:roll-cc` (on sentinel field `__roll__`); **planned** for `positions:roll-csp` in us-13 (on `__root__`)                                                                                                             |
+| `must_not_be_earlier`         | new expiration earlier than current expiration (**planned** — us-13)                                        | `positions:roll-csp`                                                                                                                                                                                                          |
+| `auth_failed`                 | upstream market-data or broker provider rejected credentials                                                | `market-data:stock-quotes`, `market-data:set-stock-quote-tickers`, `market-data:market-status`, `market-data:option-snapshot`, `market-data:option-chain`, `broker:account-info`, `broker:market-status`, `broker:activities` |
+| `network_error`               | upstream provider unreachable                                                                               | `market-data:stock-quotes`, `market-data:set-stock-quote-tickers`, `market-data:market-status`, `market-data:option-snapshot`, `market-data:option-chain`, `broker:account-info`, `broker:market-status`, `broker:activities` |
+| `rate_limited`                | upstream provider returned 429                                                                              | `market-data:stock-quotes`, `market-data:set-stock-quote-tickers`, `market-data:market-status`, `market-data:option-snapshot`, `market-data:option-chain`, `broker:market-status`                                             |
+| `streaming_unsupported`       | provider does not implement streaming for the requested feed                                                | `market-data:set-stock-quote-tickers`                                                                                                                                                                                         |
+| `missing_credentials`         | requested broker environment has no saved Alpaca credentials                                                | `settings:set-active-broker-environment`, `settings:test-stored-alpaca-connection`                                                                                                                                            |
+| `environment_mismatch`        | Alpaca credentials are valid but belong to the wrong environment (e.g. LIVE keys submitted to a paper card) | `settings:test-connection` (Alpaca probe path)                                                                                                                                                                                |
+| `NOT_FOUND`                   | pending assignment row does not exist (us-35; UPPER_SNAKE_CASE — originates from `PendingAssignmentError`)  | `assignments:confirm`, `assignments:dismiss`                                                                                                                                                                                  |
+| `NOT_PENDING`                 | pending assignment row exists but is no longer in `status='pending'` (us-35)                                | `assignments:confirm`, `assignments:dismiss`                                                                                                                                                                                  |
+| `TRANSITION_REJECTED`         | lifecycle engine rejected the `CSP_OPEN → HOLDING_SHARES` transition during confirm (us-35)                 | `assignments:confirm`                                                                                                                                                                                                         |
+| `internal_error`              | uncaught error in the handler                                                                               | all request/response handlers (including `positions:list`)                                                                                                                                                                    |
+| `(zod path)`                  | Zod payload validation failure — `field` is the issue's `path.join('.')`, `code` is the Zod issue `code`    | all schema-parsed handlers                                                                                                                                                                                                    |
 
 Sentinel `field` values used across handlers:
 
@@ -1054,7 +1232,7 @@ Renderer adapters in `src/renderer/src/api/*.ts` translate IPC camelCase field n
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39 -->
 
 ## Driven by
 
@@ -1074,8 +1252,155 @@ Renderer adapters in `src/renderer/src/api/*.ts` translate IPC camelCase field n
 - [us-32 — Live Position Prices](../features/us-32-live-position-prices.md)
 - [us-33 — Option Mid + Unrealized P&L](../features/us-33-option-mid-pnl.md)
 - [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md)
+- [us-37 — Paper/Live Broker Environment Toggle](../features/us-37-paper-live-broker-environment-toggle.md)
+- [us-39 — Massive Market Data Provider](../features/us-39-massive-market-data-provider.md)
 
-(us-2 was authored as a FastAPI `GET /api/positions` HTTP endpoint; the surviving Electron equivalent is `src/main/services/list-positions.ts` and the IPC channel name `positions:list` documented above is derived rather than authoritative. us-12-refactor introduced no new IPC handlers; it centralised the active-leg SQL into `src/main/services/active-leg-sql.ts` which is consumed by both `positions:get` and `positions:list`. us-6 introduced the global `optionType` → `instrumentType` rename across all leg-returning handlers and the `instrument_type` DB migration; us-5, us-6, and us-10 added `'EXPIRE'`, `'ASSIGN'`, and `'EXERCISE'` respectively to the `LegAction` enum. us-8 and us-9 both deliberately omit a new `cost_basis_snapshots` insert — us-8 because the existing CC_OPEN snapshot already captures the CC premium and the wheel is still open, us-9 because CC expiration is not a financial event (the premium was captured at CC open in us-7). us-10 introduced the new `positions:record-call-away` channel, the `'CALLED_AWAY'` `legRole` value, and the `WHEEL_COMPLETE` terminal phase. us-11 widened the `positions:get` response with an `allSnapshots` array (used by the renderer's `deriveRunningBasis()` pure helper to attach a running cost basis to every row in `LegHistoryTable`) and split previously-overloaded role values into distinct terminal-event values: `'CALLED_AWAY'` (now written by `positions:record-call-away` instead of `'CC_CLOSE'`) and `'CC_EXPIRED'` (now written by `positions:expire-cc` instead of a generic `'EXPIRE'`). us-13 is **plan-only** — the plan directory has no `tasks.md` or `refactor-phase-results.md` yet; both its planned changes (adding `rollCount` to `positions:get` and relaxing `positions:roll-csp` validation to allow same-expiration strike-only rolls) are documented as planned above. us-14 introduced the new `positions:roll-cc` channel — a mirror of `positions:roll-csp` for the CC leg with two intentional behaviour differences (`>=` expiration instead of `>`, plus an explicit `no_change` lifecycle guard on the sentinel field `__roll__`); the refactor phase consolidated `RollCspPayloadSchema` / `RollCcPayloadSchema` into a shared `RollPayloadBaseSchema` and `RollCspResult` / `RollCcResult` onto a shared `RollResultBase` interface — `calculateRollBasis()` is reused unchanged. us-15 added the `rollChainId: string | null` field to every entry in `positions:get`'s `legs[]` payload (the underlying `legs.roll_chain_id` column already existed from migration 001; us-15 only exposed it through `GET_LEGS_QUERY` + `mapLegRow`) and added the same field to the `LegRecord` TypeScript interface — all non-roll write-paths set `rollChainId: null` explicitly while the two roll services pass the shared UUID. The `activeLeg` payload deliberately still surfaces `rollChainId: null`. us-33 introduced the new `market-data:option-snapshots` request/response channel (full provider `OptionSnapshot` shape including `greeks`, 1:1 with the provider — not flattened like `IpcStockQuote`) and extended `positions:list` with four nullable active-leg fields (`instrumentType`, `contracts`, `entryPremiumPerContract`, `profitTargetPercent`) sourced from the existing active-leg subquery plus the new `positions.profit_target_percent` column from migration `005`. us-31 (the market-data provider/foundation story) shipped **no** new IPC handlers — it landed the `MarketDataProvider` interface and `getOptionSnapshots(symbols)` adapter method that this channel consumes; us-34 (Greeks display) ships **no** new IPC handlers either, re-using the existing `market-data:option-snapshots` channel and reading `snapshots[symbol].greeks` directly. us-35 introduced the four new `assignments:*` channels (`assignments:list-pending`, `assignments:confirm`, `assignments:dismiss`, `assignments:run-detection-now`) plus four dev-only `_test:scheduler-*` channels for E2E scheduler introspection, and is the first feature to ship the **`pendingAssignmentErrorResponse` envelope deviation** — `assignments:confirm` and `assignments:dismiss` add a top-level `code: 'NOT_FOUND' | 'NOT_PENDING' | 'TRANSITION_REJECTED'` alongside `errors` on failure because `handleIpcCall` cannot express a top-level code; the bespoke helper is tracked as future work if more handlers need the same shape. All are tracked here for regeneration completeness.)
+(us-2 was authored as a FastAPI `GET /api/positions` HTTP endpoint; the surviving Electron equivalent is `src/main/services/list-positions.ts` and the IPC channel name `positions:list` documented above is derived rather than authoritative. us-12-refactor introduced no new IPC handlers; it centralised the active-leg SQL into `src/main/services/active-leg-sql.ts` which is consumed by both `positions:get` and `positions:list`. us-6 introduced the global `optionType` → `instrumentType` rename across all leg-returning handlers and the `instrument_type` DB migration; us-5, us-6, and us-10 added `'EXPIRE'`, `'ASSIGN'`, and `'EXERCISE'` respectively to the `LegAction` enum. us-8 and us-9 both deliberately omit a new `cost_basis_snapshots` insert — us-8 because the existing CC_OPEN snapshot already captures the CC premium and the wheel is still open, us-9 because CC expiration is not a financial event (the premium was captured at CC open in us-7). us-10 introduced the new `positions:record-call-away` channel, the `'CALLED_AWAY'` `legRole` value, and the `WHEEL_COMPLETE` terminal phase. us-11 widened the `positions:get` response with an `allSnapshots` array (used by the renderer's `deriveRunningBasis()` pure helper to attach a running cost basis to every row in `LegHistoryTable`) and split previously-overloaded role values into distinct terminal-event values: `'CALLED_AWAY'` (now written by `positions:record-call-away` instead of `'CC_CLOSE'`) and `'CC_EXPIRED'` (now written by `positions:expire-cc` instead of a generic `'EXPIRE'`). us-13 is **plan-only** — the plan directory has no `tasks.md` or `refactor-phase-results.md` yet; both its planned changes (adding `rollCount` to `positions:get` and relaxing `positions:roll-csp` validation to allow same-expiration strike-only rolls) are documented as planned above. us-14 introduced the new `positions:roll-cc` channel — a mirror of `positions:roll-csp` for the CC leg with two intentional behaviour differences (`>=` expiration instead of `>`, plus an explicit `no_change` lifecycle guard on the sentinel field `__roll__`); the refactor phase consolidated `RollCspPayloadSchema` / `RollCcPayloadSchema` into a shared `RollPayloadBaseSchema` and `RollCspResult` / `RollCcResult` onto a shared `RollResultBase` interface — `calculateRollBasis()` is reused unchanged. us-15 added the `rollChainId: string | null` field to every entry in `positions:get`'s `legs[]` payload (the underlying `legs.roll_chain_id` column already existed from migration 001; us-15 only exposed it through `GET_LEGS_QUERY` + `mapLegRow`) and added the same field to the `LegRecord` TypeScript interface — all non-roll write-paths set `rollChainId: null` explicitly while the two roll services pass the shared UUID. The `activeLeg` payload deliberately still surfaces `rollChainId: null`. us-33 introduced the `market-data:option-snapshots` request/response channel (full provider `OptionSnapshot` shape including `greeks`, 1:1 with the provider — not flattened like `IpcStockQuote`) and extended `positions:list` with four nullable active-leg fields (`instrumentType`, `contracts`, `entryPremiumPerContract`, `profitTargetPercent`) sourced from the existing active-leg subquery plus the new `positions.profit_target_percent` column from migration `005`. us-31 (the market-data provider/foundation story) shipped **no** new IPC handlers — it landed the `MarketDataProvider` interface and `getOptionSnapshots(symbols)` adapter method that this channel consumes; us-34 (Greeks display) ships **no** new IPC handlers either, re-using the existing option-snapshots channel and reading `snapshots[symbol].greeks` directly. us-39 introduced the broker/market-data namespace split: `AlpacaMarketDataProvider` was removed entirely and replaced by `MassiveMarketDataProvider` (all `market-data:*` channels) and `AlpacaBrokerProvider` (all `broker:*` channels); the old plural `market-data:option-snapshots` channel was superseded by `market-data:option-snapshot` (singular) and `market-data:option-chain`; three new `broker:*` channels (`broker:account-info`, `broker:market-status`, `broker:activities`) now route to `AlpacaBrokerProvider` via `src/main/ipc/broker.ts`; `market-data:stock-quotes` now routes to `MassiveMarketDataProvider`; `greeks` on `IpcOptionSnapshot` became optional (absent rather than zero-filled when the provider omits them). us-39 introduced no DB migrations. us-35 introduced the four `assignments:*` channels (`assignments:list-pending`, `assignments:confirm`, `assignments:dismiss`, `assignments:run-detection-now`) plus four dev-only `_test:scheduler-*` channels (`_test:scheduler-registry`, `_test:scheduler-run-now`, `_test:scheduler-register`, `_test:scheduler-simulate-wake`) registered only when `NODE_ENV === 'test'`. `assignments:confirm` and `assignments:dismiss` are the only handlers in this document that deviate from the canonical `{ ok, errors }` envelope — they add a top-level `code` field (`NOT_FOUND` / `NOT_PENDING` / `TRANSITION_REJECTED`) sourced from `PendingAssignmentError.code` because `handleIpcCall` cannot express a top-level discriminator alongside the field-error array. us-35 also added migration `008_create_pending_assignments.sql` (with a compound `UNIQUE(activity_id, position_id)` index to support multi-CSP collisions on a single OPASN activity) and consumes the `app_settings` key/value table introduced by us-37's migration `006_add_credential_settings.sql` (per-environment watermark keys `assignments_last_poll_at:paper` / `:live`). us-37 introduced the six `settings:*` channels (`settings:get-credential-status`, `settings:save-alpaca-credentials`, `settings:remove-alpaca-credentials`, `settings:set-active-broker-environment`, `settings:test-connection`, `settings:test-stored-alpaca-connection`) and the migration `006_add_credential_settings.sql` that creates the `credential_settings` (encrypted Alpaca key material) and `app_settings` (active-broker-environment + general key/value) tables; broker provider refresh is runtime-scoped to broker handlers only — market-data providers continue uninterrupted across environment switches. All are tracked here for regeneration completeness.)
+
+<!-- /generated -->
+
+<!-- generated:from us-37 -->
+
+## Settings handlers
+
+US-37 adds a dedicated `settings:*` namespace for credential status, Alpaca credential management, broker-environment switching, and connection probes. All six handlers live in `src/main/ipc/settings.ts`, validate with Zod schemas from `src/main/schemas.ts`, and use `handleIpcCall(...)` so failures stay inside the standard `{ ok: false, errors }` envelope.
+
+### `settings:get-credential-status`
+
+- **Purpose:** hydrate the settings page, the app-shell broker badge, and vendor-specific degraded-state UI with shared Massive status plus Alpaca paper/live status.
+- **Request:** none.
+- **Response (success):**
+  ```ts
+  {
+    ok: true,
+    status: {
+      massive: 'configured' | 'missing'
+      alpacaPaper: 'configured' | 'missing'
+      alpacaLive: 'configured' | 'missing'
+      activeBrokerEnv: 'paper' | 'live' | 'none'
+      massiveLastCheckedAt: string | null
+      alpacaPaperAccountNumberMasked: string | null
+      alpacaLiveAccountNumberMasked: string | null
+    }
+  }
+  ```
+- **Notes:** Massive status is derived from shared app configuration and does not create a `credential_settings` row. `massiveLastCheckedAt` is currently always `null`.
+
+### `settings:save-alpaca-credentials`
+
+- **Purpose:** validate, verify, encrypt, and upsert Alpaca credentials for `paper` or `live`.
+- **Request:**
+  ```ts
+  {
+    environment: 'paper' | 'live'
+    keyId: string
+    secret: string
+  }
+  ```
+- **Response (success):**
+  ```ts
+  {
+    ok: true,
+    status: CredentialStatus,
+    test: {
+      ok: true,
+      vendor: 'alpaca',
+      environment: 'paper' | 'live',
+      accountNumberMasked: string
+    }
+  }
+  ```
+- **Behavior:** trims `keyId` and `secret`, verifies the candidate credentials before save, encrypts with Electron `safeStorage`, and refreshes broker state only when the changed environment is active.
+
+### `settings:remove-alpaca-credentials`
+
+- **Purpose:** remove one saved Alpaca environment.
+- **Request:**
+  ```ts
+  {
+    environment: 'paper' | 'live'
+  }
+  ```
+- **Response (success):**
+  ```ts
+  {
+    ok: true,
+    status: CredentialStatus
+  }
+  ```
+- **Behavior:** deletes a single `credential_settings` row. If the removed environment was active, the effective active broker environment becomes `none` and broker state is refreshed.
+
+### `settings:set-active-broker-environment`
+
+- **Purpose:** switch the current broker environment between saved paper and live credentials.
+- **Request:**
+  ```ts
+  {
+    environment: 'paper' | 'live'
+  }
+  ```
+- **Response (success):**
+  ```ts
+  {
+    ok: true,
+    status: CredentialStatus
+  }
+  ```
+- **Error codes:**
+
+  | field         | code                  | message                                                                                      |
+  | ------------- | --------------------- | -------------------------------------------------------------------------------------------- |
+  | `environment` | `missing_credentials` | `Alpaca paper credentials are not configured` / `Alpaca live credentials are not configured` |
+
+- **Behavior:** persists `active_broker_environment`, recreates only the broker provider, and leaves market-data providers untouched.
+
+### `settings:test-connection`
+
+- **Purpose:** run a vendor-specific probe without saving credentials.
+- **Request:**
+  ```ts
+  | { vendor: 'massive' }
+  | { vendor: 'alpaca', environment: 'paper' | 'live', keyId: string, secret: string }
+  ```
+- **Response (success):**
+  ```ts
+  {
+    ok: true,
+    test:
+      | { ok: true, vendor: 'massive', status: 'connected' }
+      | { ok: true, vendor: 'alpaca', environment: 'paper' | 'live', accountNumberMasked: string }
+      | { ok: false, errorCode: string, message: string }
+  }
+  ```
+- **Vendor specifics:**
+  - Massive probes `GET /v3/reference/tickers/AAPL` with the shared configured key.
+  - Alpaca probes `GET /v2/account` against paper or live and does not import activities.
+  - Paper-card live-key mismatch returns `environment_mismatch` with message `Environment mismatch — these are LIVE keys, not paper keys`.
+
+### `settings:test-stored-alpaca-connection`
+
+- **Purpose:** re-verify already-saved encrypted Alpaca credentials without exposing secrets back to the renderer.
+- **Request:**
+  ```ts
+  {
+    environment: 'paper' | 'live'
+  }
+  ```
+- **Response (success):**
+  ```ts
+  {
+    ok: true,
+    test: TestSettingsConnectionResult
+  }
+  ```
+- **Error codes:**
+
+  | field         | code                  | message                                                                                      |
+  | ------------- | --------------------- | -------------------------------------------------------------------------------------------- |
+  | `environment` | `missing_credentials` | `Alpaca paper credentials are not configured` / `Alpaca live credentials are not configured` |
+
+- **Source:** `src/main/ipc/settings.ts`, `src/main/services/settings.ts`, `src/main/services/settings-connections.ts`
+- **Driven by:** [us-37 — Paper/Live Broker Environment Toggle](../features/us-37-paper-live-broker-environment-toggle.md)
 
 <!-- /generated -->
 

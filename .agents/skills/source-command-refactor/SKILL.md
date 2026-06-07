@@ -51,7 +51,7 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
    - Look for common code smells:
      - **Duplication**: Repeated logic blocks
      - **Long functions**: Functions > 20 lines
-     - **Large files**: Files > 300 lines
+     - **Large files**: Files over ~300 lines should be reviewed for splitting
      - **Deep nesting**: Nesting > 3 levels
      - **Magic numbers/strings**: Hardcoded monetary values, phase names, status strings
      - **Poor naming**: Unclear variable or function names
@@ -70,7 +70,7 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
    - `services/` — DB + core composition; if it contains IPC/routing logic, extract it
    - `ipc/` handlers — if they contain more than ~10 lines of logic, extract to a service
    - Components — if they contain fetch logic, move to a hook
-   - **File size gate**: any file over ~200 lines must be split before refactor is considered complete
+   - **File size guideline**: files over ~300 lines should be reviewed for splitting. Split only when it improves cohesion or readability; do not split cohesive files just to satisfy a line count.
 
 8. **Open/Closed Check**
    - Would adding a new leg role, phase, or alert type require editing a core engine file?

@@ -5,8 +5,9 @@
 // keyed by OCC symbol. Stock quote fixtures are passed via WHEELBASE_MOCK_STOCK_QUOTES
 // keyed by ticker.
 //
-// NOTE: These tests require a compiled app (pnpm build) and must be run from a
-// GUI terminal (iTerm/Terminal.app): pnpm test:e2e — NOT from Claude Code's shell.
+// NOTE: These tests require a compiled app. `pnpm test:e2e` handles the build
+// step for you; if you invoke Vitest directly, run `pnpm build` first so
+// `out/main/index.js` exists.
 import { afterEach, describe, expect, it } from 'vitest'
 import { _electron as electron } from 'playwright'
 import type { ElectronApplication, Page } from 'playwright'

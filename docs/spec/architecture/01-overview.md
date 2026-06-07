@@ -1,6 +1,6 @@
 # Architecture Overview
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-32,missing-ac,us-35 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-32,us-35,us-37,missing-ac -->
 
 Wheelbase is a single-user Electron desktop application for managing the options wheel strategy. This page summarises the cross-cutting architecture patterns that every shipped story has adhered to so far. Feature-specific details live on the per-story pages under `../features/`; deep dives on individual subsystems live on the topic pages cited inline.
 
@@ -99,21 +99,24 @@ Background polling across the app is owned by a single shared `PollingScheduler`
 
 A module-level singleton in `src/main/services/scheduler-instance.ts` exports the shared scheduler — built with a safe-broker fallback (`getSafeBroker()` returns a stub `BrokerProvider` reporting `session: 'closed'` when credentials are missing, so the module never throws at import time). Consumers `register()` their job at module load; the first consumer is `detect-assignments` (US-35), and future polling stories (e.g. US-44 IVR collector) attach to the same instance.
 
+The `detect-assignments` job is the canonical example of how a poll job interoperates with the US-37 credential workflow: rather than capture a broker provider once at registration time, its handler **lazy-reads both the active environment and the broker provider on every tick** — `settings.getCredentialStatus().activeBrokerEnv` first (a no-op return when `'none'`), then `brokerFactory.create()` inside a try/catch (WARN-and-skip on failure). This means that when a trader saves Alpaca credentials or switches paper ↔ live via the Settings page, the next scheduler tick picks up the new provider with no app restart and no scheduler re-registration. The scheduler itself stays oblivious to broker state; it is the handler's responsibility to resolve dependencies per tick.
+
 The scheduler integrates with the main-process bootstrap in `src/main/index.ts`:
 
 1. IPC handlers are registered first.
-2. `scheduler.start()` is called, which fires every registered job once and then on cadence.
-3. A consolidated `app.on('before-quit', ...)` handler awaits `Promise.all([scheduler.stop(), marketDataProvider.disconnect()])` and then calls `app.exit(0)`. `scheduler.stop()` cancels all pending invocations and drains in-flight handler promises with a 5-second timeout so neither subsystem is killed mid-tick.
+2. `scheduler.register({ name: DETECT_ASSIGNMENTS_JOB_NAME, cadence, handler })` attaches the assignment-detection job (handler shape described above).
+3. `scheduler.start()` is called, which fires every registered job once and then on cadence.
+4. A consolidated `app.on('before-quit', ...)` handler awaits `Promise.all([scheduler.stop(), marketDataProvider.disconnect()])` and then calls `app.exit(0)`. `scheduler.stop()` cancels all pending invocations and drains in-flight handler promises with a 5-second timeout so neither subsystem is killed mid-tick.
 
 Exceptions in handlers are caught, WARN-logged, and the chain is rescheduled — a failing handler never stops the scheduler or piles up runs. Handler crashes also do not affect other registered jobs. A dev-only `_test:scheduler-*` IPC surface (guarded by `NODE_ENV === 'test'` in `src/main/ipc/test-scheduler.ts`) lets E2E specs introspect the registry and trigger out-of-band runs without polluting the production IPC.
 
-The first consumer, `detectAssignments`, is the canonical example of how a poll job uses the scheduler: see `../features/us-46-polling-scheduler.md` for the scheduler itself and `../features/us-35-assignment-detection.md` for the assignment-detection wiring.
+See `../features/us-46-polling-scheduler.md` for the scheduler itself, `../features/us-35-assignment-detection.md` for the assignment-detection wiring, and `../features/us-37-settings-environment.md` for the credential workflow whose changes flow through via the lazy-resolve pattern.
 
 ## Cross-Poll State (`app_settings`)
 
-Background jobs that need a watermark or other small piece of cross-poll state share a single key/value table, `app_settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)`, introduced by migration `007_create_app_settings.sql`. The scheduler itself is intentionally stateless — any handler that cares about "what did I see last time" owns its own watermark here. The convention is one row per concern, keyed with an environment suffix where paper/live separation matters (e.g. `assignments_last_poll_at:paper`, `assignments_last_poll_at:live`).
+Background jobs that need a watermark or other small piece of cross-poll state share a single key/value table, `app_settings(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL)`. The table is **owned by US-37's migration** `006_add_credential_settings.sql` — it was minted alongside `credential_settings` to track `active_broker_environment`. US-35 originally proposed its own migration 007 to create a stripped-down version of the same table; that migration was dropped during merge resolution and US-35 consumes the richer schema instead, writing `updated_at` on every `set()`. (The US-35 pending_assignments table is now `migrations/008_create_pending_assignments.sql`, renumbered for the same reason.) The scheduler itself is intentionally stateless — any handler that cares about "what did I see last time" owns its own watermark here. The convention is one row per concern, keyed with an environment suffix where paper/live separation matters (e.g. `assignments_last_poll_at:paper`, `assignments_last_poll_at:live`, `active_broker_environment`).
 
-Reads and writes go through the thin `appSettings.get(db, key)` / `appSettings.set(db, key, value)` helper in `src/main/services/app-settings.ts`. The current sole consumer is the assignment watermark (US-35), captured **at poll start, not poll end**, so any activity that arrives during the broker call is replayed on the next poll and deduped via `INSERT OR IGNORE` on the compound unique index. Future polling stories should reuse the same table rather than minting new one-row tables.
+Reads and writes go through the thin `appSettings.get(db, key)` / `appSettings.set(db, key, value)` helper in `src/main/services/app-settings.ts`. Current consumers: the assignment watermark (US-35), captured **at poll start, not poll end**, so any activity that arrives during the broker call is replayed on the next poll and deduped via `INSERT OR IGNORE` on the compound unique index; and the active broker environment (US-37), read by both the broker factory and the `detect-assignments` handler on every tick. Future polling stories should reuse the same table rather than minting new one-row tables.
 
 ## Test Discipline
 

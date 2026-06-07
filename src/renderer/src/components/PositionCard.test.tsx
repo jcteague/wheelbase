@@ -131,6 +131,7 @@ it('renders PriceCell with quote=undefined when quote prop is missing', () => {
   // PriceCell renders — when quote is undefined
   const dashes = screen.getAllByText('—')
   expect(dashes.length).toBeGreaterThan(0)
+  expect(screen.getAllByText('unavailable').length).toBeGreaterThan(0)
 })
 
 it('column order is Ticker, Phase, Price, Opt Mid, P&L, Strike, Expiration, DTE, Premium, Cost Basis', () => {
@@ -198,6 +199,12 @@ it('renders dashes for HOLDING_SHARES row in Opt Mid and P&L cells', () => {
   const pnl = screen.getByTestId('position-card-AAPL-pnl')
   expect(optMid).toHaveTextContent('—')
   expect(pnl).toHaveTextContent('—')
+})
+
+it('renders unavailable helper copy for missing option snapshot on an active option leg', () => {
+  renderRow(BASE_ITEM)
+
+  expect(screen.getByTestId('position-card-AAPL-opt-mid')).toHaveTextContent('unavailable')
 })
 
 it('renders TargetBadge using per-position override when crossed', () => {
