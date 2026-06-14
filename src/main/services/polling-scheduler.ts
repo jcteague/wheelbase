@@ -90,8 +90,14 @@ type JobState = {
   invocations: number
 }
 
+/**
+ * Creates a polling scheduler bound to a broker getter rather than a broker
+ * instance. The broker is resolved fresh on every reschedule so that runtime
+ * credential changes (Settings page → brokerFactory.recreate()) take effect on
+ * the next tick without an app restart.
+ */
 export function createPollingScheduler(
-  brokerProvider: BrokerProvider,
+  getBroker: () => BrokerProvider,
   clock: Clock = realClock
 ): PollingScheduler {
   const jobs = new Map<string, JobState>()
@@ -117,7 +123,7 @@ export function createPollingScheduler(
     if (stopped) return
     let status: MarketStatus
     try {
-      status = await brokerProvider.getMarketStatus()
+      status = await getBroker().getMarketStatus()
     } catch (err) {
       logger.warn(
         { err, job: state.config.name },
@@ -156,7 +162,7 @@ export function createPollingScheduler(
     if (stopped) return
     let status: MarketStatus
     try {
-      status = await brokerProvider.getMarketStatus()
+      status = await getBroker().getMarketStatus()
     } catch (err) {
       logger.warn(
         { err, job: state.config.name },
@@ -208,12 +214,15 @@ export function createPollingScheduler(
 
       if (inFlight.size === 0) return Promise.resolve()
 
+      let timeoutId: TimerId | null = null
       const drainPromise = Promise.all([...inFlight]).then(() => {})
       const timeoutPromise = new Promise<void>((resolve) => {
-        clock.setTimeout(resolve, 5_000)
+        timeoutId = clock.setTimeout(resolve, 5_000)
       })
 
-      return Promise.race([drainPromise, timeoutPromise])
+      return Promise.race([drainPromise, timeoutPromise]).finally(() => {
+        if (timeoutId !== null) clock.clearTimeout(timeoutId)
+      })
     },
 
     async runNow(jobName: string): Promise<void> {

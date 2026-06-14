@@ -126,7 +126,12 @@ app.whenReady().then(() => {
     db,
     safeStorage,
     loadMassiveApiKey,
-    testAlpacaConnection
+    // Route the save-flow credential verification through the same mock-aware
+    // dispatcher used by the explicit "Test connection" IPC. In production the
+    // mock branch is dormant (env var absent) and behavior is identical to
+    // calling testAlpacaConnection directly; in e2e it lets WHEELBASE_MOCK_SETTINGS_CONNECTIONS
+    // intercept save-time verification the same way it intercepts the test button.
+    testAlpacaConnection: (input) => runSettingsConnectionTest({ vendor: 'alpaca', ...input })
   })
 
   marketDataFactory.configure({ loadMassiveApiKey })
@@ -147,6 +152,14 @@ app.whenReady().then(() => {
     onBrokerProviderChanged: () => {
       logger.info('Refreshing broker provider after settings change')
       brokerFactory.recreate()
+      // Re-tick the broker-gated detect-assignments job so polling resumes
+      // immediately with the new credentials. Without this nudge, a job parked
+      // while the market was closed (marketClosedMs:null) stays parked until the
+      // next app restart, so saving credentials at runtime would never resume
+      // detection.
+      void scheduler.runNow(DETECT_ASSIGNMENTS_JOB_NAME).catch((err) => {
+        logger.warn({ err }, 'failed to resume detect-assignments after broker change')
+      })
     }
   })
 
@@ -181,6 +194,21 @@ app.whenReady().then(() => {
   if (process.env.NODE_ENV === 'test') {
     seedTestJobsFromEnv(scheduler)
     registerTestSchedulerIpc(scheduler)
+
+    // Test-only: preseed an active broker environment so detect-assignments and
+    // other broker-gated jobs run without going through the credential-save UI
+    // path. Reads WHEELBASE_PRESEED_ACTIVE_ENV ('paper' | 'live').
+    const preseedEnv = process.env.WHEELBASE_PRESEED_ACTIVE_ENV
+    if (preseedEnv === 'paper' || preseedEnv === 'live') {
+      settings.saveAlpacaCredentials({
+        environment: preseedEnv,
+        keyId: `PK_TEST_${preseedEnv.toUpperCase()}`,
+        secret: 'test-secret',
+        accountNumberMasked: preseedEnv === 'paper' ? 'PA…ABC' : 'AL…XYZ'
+      })
+      settings.setActiveBrokerEnvironment({ environment: preseedEnv })
+      logger.info({ environment: preseedEnv }, 'preseeded_active_broker_environment_for_tests')
+    }
   }
 
   scheduler.start()

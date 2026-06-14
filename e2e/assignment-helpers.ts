@@ -121,7 +121,10 @@ export function buildLaunchEnv(dbPath: string, opts: LaunchOpts): Record<string,
     WHEELBASE_DB_PATH: dbPath,
     FAKE_MARKET_DATA: 'true',
     FAKE_BROKER: 'true',
-    NODE_ENV: 'test'
+    NODE_ENV: 'test',
+    // detect-assignments handler skips when activeBrokerEnv === 'none'; preseed
+    // 'paper' so the broker-gated job actually runs against the FakeBrokerProvider.
+    WHEELBASE_PRESEED_ACTIVE_ENV: 'paper'
   }
   if (opts.activities) env.FAKE_BROKER_ACTIVITIES = JSON.stringify(opts.activities)
   if (opts.marketStatus) env.FAKE_MARKET_STATUS = JSON.stringify(opts.marketStatus)

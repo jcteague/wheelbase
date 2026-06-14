@@ -335,19 +335,19 @@ poll watermarks.
 
 ### Columns
 
-| Column       | Type | Nullable | Purpose                                             |
-| ------------ | ---- | -------- | --------------------------------------------------- |
-| `key`        | TEXT | No       | Setting key (primary key)                           |
-| `value`      | TEXT | No       | Stored value                                        |
-| `updated_at` | TEXT | No       | ISO timestamp of the last write                     |
+| Column       | Type | Nullable | Purpose                         |
+| ------------ | ---- | -------- | ------------------------------- |
+| `key`        | TEXT | No       | Setting key (primary key)       |
+| `value`      | TEXT | No       | Stored value                    |
+| `updated_at` | TEXT | No       | ISO timestamp of the last write |
 
 ### Known keys
 
-| Key                              | Owner | Values                            | Purpose                                                                                                                |
-| -------------------------------- | ----- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `active_broker_environment`      | US-37 | `'paper'`, `'live'`, or `'none'`  | Trader-selected broker environment. Effective value collapses to `'none'` if the stored environment lacks credentials. |
-| `assignments_last_poll_at:paper` | US-35 | ISO-8601 timestamp                | High-water mark passed as `since` to `BrokerProvider.getActivities()` on the paper-env assignment poll.                |
-| `assignments_last_poll_at:live`  | US-35 | ISO-8601 timestamp                | Same as above for the live environment.                                                                                |
+| Key                              | Owner | Values                           | Purpose                                                                                                                |
+| -------------------------------- | ----- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `active_broker_environment`      | US-37 | `'paper'`, `'live'`, or `'none'` | Trader-selected broker environment. Effective value collapses to `'none'` if the stored environment lacks credentials. |
+| `assignments_last_poll_at:paper` | US-35 | ISO-8601 timestamp               | High-water mark passed as `since` to `BrokerProvider.getActivities()` on the paper-env assignment poll.                |
+| `assignments_last_poll_at:live`  | US-35 | ISO-8601 timestamp               | Same as above for the live environment.                                                                                |
 
 ### Semantics
 
@@ -381,19 +381,19 @@ and [us-46 — Polling Scheduler](../features/us-46-polling-scheduler.md).
 
 ### Columns
 
-| Column             | Type    | Nullable | Purpose                                                                                                                |
-| ------------------ | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `id`               | INTEGER | No       | Auto-increment primary key. Used as the opaque handle in IPC confirm/dismiss payloads.                                 |
-| `position_id`      | TEXT    | No       | FK → `positions.id` (`ON DELETE CASCADE`). TEXT because positions use UUID primary keys.                               |
-| `leg_id`           | TEXT    | No       | FK → `legs.id` (`ON DELETE CASCADE`). The open CSP leg whose OCC symbol matched the assignment activity.               |
-| `activity_id`      | TEXT    | No       | Alpaca activity identifier from the OPASN event. Drives dedupe.                                                        |
-| `broker_symbol`    | TEXT    | No       | OCC option symbol from the activity (e.g. `AAPL260119P00180000`).                                                      |
-| `qty`              | INTEGER | No       | Contract quantity reported by the activity.                                                                            |
-| `transaction_time` | TEXT    | No       | ISO-8601 timestamp from the activity.                                                                                  |
-| `status`           | TEXT    | No       | `'pending'`, `'confirmed'`, or `'dismissed'` — enforced by CHECK constraint.                                           |
-| `detected_at`      | TEXT    | No       | ISO timestamp when the row was inserted by the poll job (defaults to `datetime('now')`).                               |
-| `confirmed_at`     | TEXT    | Yes      | Set when `status` transitions to `'confirmed'`.                                                                        |
-| `dismissed_at`     | TEXT    | Yes      | Set when `status` transitions to `'dismissed'`.                                                                        |
+| Column             | Type    | Nullable | Purpose                                                                                                  |
+| ------------------ | ------- | -------- | -------------------------------------------------------------------------------------------------------- |
+| `id`               | INTEGER | No       | Auto-increment primary key. Used as the opaque handle in IPC confirm/dismiss payloads.                   |
+| `position_id`      | TEXT    | No       | FK → `positions.id` (`ON DELETE CASCADE`). TEXT because positions use UUID primary keys.                 |
+| `leg_id`           | TEXT    | No       | FK → `legs.id` (`ON DELETE CASCADE`). The open CSP leg whose OCC symbol matched the assignment activity. |
+| `activity_id`      | TEXT    | No       | Alpaca activity identifier from the OPASN event. Drives dedupe.                                          |
+| `broker_symbol`    | TEXT    | No       | OCC option symbol from the activity (e.g. `AAPL260119P00180000`).                                        |
+| `qty`              | INTEGER | No       | Contract quantity reported by the activity.                                                              |
+| `transaction_time` | TEXT    | No       | ISO-8601 timestamp from the activity.                                                                    |
+| `status`           | TEXT    | No       | `'pending'`, `'confirmed'`, or `'dismissed'` — enforced by CHECK constraint.                             |
+| `detected_at`      | TEXT    | No       | ISO timestamp when the row was inserted by the poll job (defaults to `datetime('now')`).                 |
+| `confirmed_at`     | TEXT    | Yes      | Set when `status` transitions to `'confirmed'`.                                                          |
+| `dismissed_at`     | TEXT    | Yes      | Set when `status` transitions to `'dismissed'`.                                                          |
 
 ### Constraints
 

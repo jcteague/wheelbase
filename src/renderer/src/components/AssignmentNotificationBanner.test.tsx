@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -102,16 +102,14 @@ async function renderBanner(): Promise<import('@testing-library/react').RenderRe
 // ─── Component tests ──────────────────────────────────────────────────────────
 
 describe('AssignmentNotificationBanner', () => {
-  it('renders ticker, strike, contract type, and transaction date', async () => {
+  it('renders the assignment-detected banner copy with ticker, strike, type, and date', async () => {
     await renderBanner()
 
-    expect(screen.getByText('AAPL')).toBeInTheDocument()
-    // Strike is displayed (e.g. "$180.00" or "180")
-    expect(screen.getByText(/180/)).toBeInTheDocument()
-    // Contract type label
-    expect(screen.getByText(/put/i)).toBeInTheDocument()
-    // Transaction date (ISO date portion must appear somewhere)
-    expect(screen.getByText(/2026-04-17/)).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        /Assignment detected: AAPL \$180 PUT was assigned on Apr 17\. Confirm to update position\./
+      )
+    ).toBeInTheDocument()
   })
 
   it('shows Confirm and Dismiss buttons', async () => {
@@ -121,7 +119,7 @@ describe('AssignmentNotificationBanner', () => {
     expect(screen.getByRole('button', { name: /dismiss/i })).toBeInTheDocument()
   })
 
-  it('clicking Confirm calls window.api.assignments.confirm with the id and shows a success message on ok:true', async () => {
+  it('clicking Confirm calls window.api.assignments.confirm with the id and shows the success toast copy on ok:true', async () => {
     const user = userEvent.setup()
     mockConfirm.mockResolvedValue({
       ok: true,
@@ -133,11 +131,13 @@ describe('AssignmentNotificationBanner', () => {
 
     await waitFor(() => {
       expect(mockConfirm).toHaveBeenCalledWith(ASSIGNMENT.id)
-      expect(screen.getByText(/assignment confirmed/i)).toBeInTheDocument()
+      expect(
+        screen.getByText('AAPL assigned — now holding 100 shares at $180 strike')
+      ).toBeInTheDocument()
     })
   })
 
-  it('success state includes "Open covered call →" link routing to the position detail page', async () => {
+  it('success toast includes "Open covered call →" link routing to the position detail page', async () => {
     const user = userEvent.setup()
     mockConfirm.mockResolvedValue({
       ok: true,
@@ -154,6 +154,57 @@ describe('AssignmentNotificationBanner', () => {
       // whatever href the component passes, so we assert on the path segment.
       expect(link).toHaveAttribute('href', `/positions/${ASSIGNMENT.positionId}`)
     })
+  })
+
+  it('surfaces an error toast and keeps the banner when confirm fails (result.ok === false)', async () => {
+    const user = userEvent.setup()
+    mockConfirm.mockResolvedValue({
+      ok: false,
+      code: 'not_pending',
+      errors: [
+        { field: '__root__', code: 'not_pending', message: 'Assignment is no longer pending' }
+      ]
+    })
+
+    await renderBanner()
+    await user.click(screen.getByRole('button', { name: /confirm/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Assignment is no longer pending')).toBeInTheDocument()
+    })
+    // The warning banner must remain so the trader can retry or dismiss.
+    expect(screen.getByText(/Assignment detected: AAPL/)).toBeInTheDocument()
+  })
+
+  it('auto-dismisses the success toast after the timeout elapses', async () => {
+    vi.useFakeTimers()
+    try {
+      mockConfirm.mockResolvedValue({
+        ok: true,
+        position: { id: 42, phase: 'HOLDING_SHARES', assignedAt: '2026-04-17T14:30:00Z' }
+      })
+
+      await renderBanner()
+      // fireEvent + act (rather than userEvent) so the async confirm handler and
+      // its state update flush cleanly under fake timers.
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+      })
+
+      expect(
+        screen.getByText('AAPL assigned — now holding 100 shares at $180 strike')
+      ).toBeInTheDocument()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
+
+      expect(
+        screen.queryByText('AAPL assigned — now holding 100 shares at $180 strike')
+      ).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('clicking Dismiss calls window.api.assignments.dismiss with the id and the banner unmounts on ok:true', async () => {

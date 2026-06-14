@@ -23,4 +23,4 @@ function getSafeBroker(): BrokerProvider {
   }
 }
 
-export const scheduler = createPollingScheduler(getSafeBroker())
+export const scheduler = createPollingScheduler(getSafeBroker)

@@ -325,6 +325,76 @@ it('surfaces save failures from the Alpaca credential form', async () => {
   )
 })
 
+it('Massive Test Connection surfaces IPC-level failures when mutateAsync rejects', async () => {
+  const testConnection = vi.fn().mockRejectedValue(
+    apiError(502, {
+      detail: [{ field: '__root__', code: 'unknown', message: 'IPC channel unavailable' }]
+    })
+  )
+  mockUseTestSettingsConnection.mockReturnValue({
+    mutateAsync: testConnection
+  } as unknown as ReturnType<typeof useTestSettingsConnection>)
+
+  render(<SettingsPage />)
+
+  const section = screen.getByRole('region', { name: /market data/i })
+  fireEvent.click(within(section).getByRole('button', { name: /^test connection$/i }))
+
+  expect(await within(section).findByText('IPC channel unavailable')).toHaveClass('text-wb-red')
+})
+
+it('Alpaca paper Test Connection (unsaved credentials) surfaces IPC-level failures', async () => {
+  const testConnection = vi.fn().mockRejectedValue(
+    apiError(502, {
+      detail: [{ field: '__root__', code: 'unknown', message: 'IPC channel unavailable' }]
+    })
+  )
+  mockUseSettingsStatus.mockReturnValue({
+    data: {
+      ...statusFixture,
+      alpacaPaper: 'missing',
+      alpacaPaperAccountNumberMasked: null
+    },
+    isLoading: false,
+    isError: false,
+    error: null
+  } as ReturnType<typeof useSettingsStatus>)
+  mockUseTestSettingsConnection.mockReturnValue({
+    mutateAsync: testConnection
+  } as unknown as ReturnType<typeof useTestSettingsConnection>)
+
+  render(<SettingsPage />)
+
+  const paperCard = screen.getByTestId('alpaca-card-paper')
+  fireEvent.change(within(paperCard).getByLabelText(/api key id/i), {
+    target: { value: 'PK_KEY' }
+  })
+  fireEvent.change(within(paperCard).getByLabelText(/secret key/i), {
+    target: { value: 'secret' }
+  })
+  fireEvent.click(within(paperCard).getByRole('button', { name: /test connection/i }))
+
+  expect(await within(paperCard).findByText('IPC channel unavailable')).toHaveClass('text-wb-red')
+})
+
+it('Alpaca paper Test Connection (stored credentials) surfaces IPC-level failures', async () => {
+  const testStoredConnection = vi.fn().mockRejectedValue(
+    apiError(502, {
+      detail: [{ field: '__root__', code: 'unknown', message: 'IPC channel unavailable' }]
+    })
+  )
+  mockUseTestStoredAlpacaConnection.mockReturnValue({
+    mutateAsync: testStoredConnection
+  } as unknown as ReturnType<typeof useTestStoredAlpacaConnection>)
+
+  render(<SettingsPage />)
+
+  const paperCard = screen.getByTestId('alpaca-card-paper')
+  fireEvent.click(within(paperCard).getByRole('button', { name: /test connection/i }))
+
+  expect(await within(paperCard).findByText('IPC channel unavailable')).toHaveClass('text-wb-red')
+})
+
 it('disables LIVE switching until live credentials are configured', () => {
   render(<SettingsPage />)
 

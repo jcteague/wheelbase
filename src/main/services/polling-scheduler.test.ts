@@ -50,7 +50,8 @@ function makeStartedScheduler(
 ): PollingScheduler {
   const { marketStatus = MARKET_OPEN, cadence = { kind: 'interval', marketOpenMs: 60_000 } } =
     options
-  const scheduler = createPollingScheduler(makeBroker(marketStatus))
+  const broker = makeBroker(marketStatus)
+  const scheduler = createPollingScheduler(() => broker)
   scheduler.register({ name: 'job', cadence, handler })
   scheduler.start()
   return scheduler
@@ -64,7 +65,8 @@ beforeEach(() => {
 
 describe('register()', () => {
   it('adds a job to the registry without throwing', () => {
-    const scheduler = createPollingScheduler(makeBroker())
+    const broker = makeBroker()
+    const scheduler = createPollingScheduler(() => broker)
     expect(() => {
       scheduler.register({
         name: 'test-job',
@@ -75,7 +77,8 @@ describe('register()', () => {
   })
 
   it('throws SchedulerError("already_registered") when registering a duplicate job name', () => {
-    const scheduler = createPollingScheduler(makeBroker())
+    const broker = makeBroker()
+    const scheduler = createPollingScheduler(() => broker)
     scheduler.register({
       name: 'test-job',
       cadence: { kind: 'interval', marketOpenMs: 60_000 },
@@ -102,7 +105,8 @@ describe('register()', () => {
 
 describe('runNow() — unknown job', () => {
   it('throws SchedulerError("job_not_found") for an unregistered job name', async () => {
-    const scheduler = createPollingScheduler(makeBroker())
+    const broker = makeBroker()
+    const scheduler = createPollingScheduler(() => broker)
     scheduler.start()
     await expect(scheduler.runNow('ghost')).rejects.toBeInstanceOf(SchedulerError)
     await expect(scheduler.runNow('ghost')).rejects.toMatchObject({ code: 'job_not_found' })
@@ -120,7 +124,7 @@ describe('start() — immediate invocations', () => {
 
   it('invokes every registered job handler once immediately on start()', async () => {
     const broker = makeBroker()
-    const scheduler = createPollingScheduler(broker)
+    const scheduler = createPollingScheduler(() => broker)
     const handler1 = vi.fn().mockResolvedValue(undefined)
     const handler2 = vi.fn().mockResolvedValue(undefined)
 
@@ -376,6 +380,152 @@ describe('stop()', () => {
 
     // stop() must resolve even with a hung handler
     await stopPromise
+  })
+})
+
+describe('broker getter is resolved fresh on every reschedule', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('reschedule uses the latest broker from the getter on every call', async () => {
+    const closedBroker = makeBroker(MARKET_CLOSED)
+    const openBroker = makeBroker(MARKET_OPEN)
+    let currentBroker: BrokerProvider = closedBroker
+
+    const handler = vi.fn().mockResolvedValue(undefined)
+    const scheduler = createPollingScheduler(() => currentBroker)
+    scheduler.register({
+      name: 'job',
+      cadence: { kind: 'interval', marketOpenMs: 60_000, marketClosedMs: null },
+      handler
+    })
+    scheduler.start()
+
+    await vi.advanceTimersByTimeAsync(0) // initial fire
+    expect(handler).toHaveBeenCalledTimes(1)
+    expect(closedBroker.getMarketStatus).toHaveBeenCalledTimes(1)
+
+    // Job parked because market is closed and marketClosedMs is null
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(handler).toHaveBeenCalledTimes(1)
+
+    // Swap to open broker — credentials change at runtime
+    currentBroker = openBroker
+
+    // Manually nudge the scheduler by calling runNow (mirrors what would happen if a
+    // settings change triggered a re-tick). The point is: reschedule() inside this call
+    // must hit the NEW broker, not the cached closed one.
+    await scheduler.runNow('job')
+    expect(handler).toHaveBeenCalledTimes(2)
+    expect(openBroker.getMarketStatus).toHaveBeenCalledTimes(1)
+
+    // Next cadence (60s) fires because new broker reports market open
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(handler).toHaveBeenCalledTimes(3)
+    expect(openBroker.getMarketStatus).toHaveBeenCalledTimes(2)
+
+    await scheduler.stop()
+  })
+
+  it('startAfterClose uses the latest broker from the getter', async () => {
+    vi.setSystemTime(new Date('2026-01-01T18:00:00Z'))
+
+    const initialBroker = makeBroker({
+      isOpen: true,
+      session: 'regular',
+      nextOpen: '2026-01-02T14:30:00Z',
+      nextClose: '2026-01-01T21:00:00Z'
+    })
+    const swappedBroker = makeBroker({
+      isOpen: true,
+      session: 'regular',
+      nextOpen: '2026-01-02T14:30:00Z',
+      nextClose: '2026-01-01T22:00:00Z' // 1 hour later
+    })
+    let currentBroker: BrokerProvider = initialBroker
+
+    const handler = vi.fn().mockResolvedValue(undefined)
+    const scheduler = createPollingScheduler(() => currentBroker)
+    scheduler.register({
+      name: 'job',
+      cadence: { kind: 'afterClose', offsetMinutes: 30 },
+      handler
+    })
+
+    // Swap broker BEFORE start — start() should call startAfterClose which must use the
+    // swapped broker, not anything captured at construction.
+    currentBroker = swappedBroker
+
+    scheduler.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(swappedBroker.getMarketStatus).toHaveBeenCalledTimes(1)
+    expect(initialBroker.getMarketStatus).not.toHaveBeenCalled()
+
+    // Fire time = 22:00 + 30min = 22:30; delay from 18:00 = 4h30m = 16_200_000ms
+    await vi.advanceTimersByTimeAsync(16_200_000 - 1)
+    expect(handler).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(handler).toHaveBeenCalledTimes(1)
+
+    await scheduler.stop()
+  })
+})
+
+describe('stop() — timeout cleanup', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('clears the drain-fallback timeout when in-flight handlers drain first', async () => {
+    let resolveHandler!: () => void
+    const handler = vi.fn().mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveHandler = resolve
+        })
+    )
+    const scheduler = makeStartedScheduler(handler)
+
+    await vi.advanceTimersByTimeAsync(0) // fire initial handler
+    expect(handler).toHaveBeenCalledTimes(1)
+
+    const stopPromise = scheduler.stop()
+    resolveHandler()
+    await stopPromise
+
+    // After drain wins, no pending timers should remain — particularly not the 5s
+    // fallback timeout that previously was never cleared.
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('falls back to the 5-second timeout when drain stalls and fires the timeout only once', async () => {
+    const neverResolves = new Promise<void>(() => {})
+    const handler = vi.fn().mockReturnValue(neverResolves)
+    const scheduler = makeStartedScheduler(handler)
+
+    await vi.advanceTimersByTimeAsync(0) // fire initial (hung)
+    expect(handler).toHaveBeenCalledTimes(1)
+
+    const stopPromise = scheduler.stop()
+
+    // Advance to just before timeout
+    await vi.advanceTimersByTimeAsync(4_999)
+
+    // Cross the boundary
+    await vi.advanceTimersByTimeAsync(2)
+    await stopPromise
+
+    // No further timer callbacks should be queued after stop resolves
+    expect(vi.getTimerCount()).toBe(0)
   })
 })
 

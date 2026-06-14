@@ -156,8 +156,8 @@ describe('US-35: assignment notification banner', () => {
     await page.waitForSelector('text=Confirm')
     await page.waitForSelector('text=Dismiss')
     const bannerText = await page.textContent('body')
-    expect(bannerText).toContain('180')
-    expect(bannerText).toContain('put')
+    expect(bannerText).toContain('Assignment detected: AAPL $180 PUT was assigned')
+    expect(bannerText).toContain('Confirm to update position.')
   })
 
   it('confirming the assignment transitions the position', async () => {

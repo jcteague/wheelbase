@@ -462,16 +462,21 @@ declare global {
           | { ok: true; assignments: PendingAssignmentNotification[] }
           | { ok: false; errors: string[] }
         >
-        confirm: (
-          pendingAssignmentId: number
-        ) => Promise<
+        confirm: (pendingAssignmentId: number) => Promise<
           | { ok: true; position: { id: number; phase: string; assignedAt: string } }
-          | { ok: false; errors: string[]; code?: string }
+          | {
+              ok: false
+              code?: string
+              errors: Array<{ field: string; code: string; message: string }>
+            }
         >
-        dismiss: (
-          pendingAssignmentId: number
-        ) => Promise<
-          { ok: true; dismissedAt: string } | { ok: false; errors: string[]; code?: string }
+        dismiss: (pendingAssignmentId: number) => Promise<
+          | { ok: true; dismissedAt: string }
+          | {
+              ok: false
+              code?: string
+              errors: Array<{ field: string; code: string; message: string }>
+            }
         >
         runDetectionNow: () => Promise<
           | { ok: true; detected: number; skipped: number; durationMs: number }

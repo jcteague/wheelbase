@@ -100,7 +100,7 @@ The pending-assignments work for US-35 hit both halves of the policy:
    and the single-column UNIQUE would silently drop the second pending
    row. The fix replaced the column-level UNIQUE with a compound
    `CREATE UNIQUE INDEX uq_pending_assignments_activity_position ON
-   pending_assignments(activity_id, position_id)`. Because the migration
+pending_assignments(activity_id, position_id)`. Because the migration
    had not yet shipped, the file was **edited in place** rather than
    followed by a `00X_fix_pending_assignments_unique.sql`.
 
@@ -223,10 +223,10 @@ COLUMN`. No table rebuild required because there is no constraint
   `app_settings`.
 - **Field-level summary:**
 
-  | Table                 | Columns                                                                                                              | Primary key             |
-  | --------------------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+  | Table                 | Columns                                                                                                                                                | Primary key             |
+  | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------- |
   | `credential_settings` | `vendor`, `environment`, `key_id_encrypted` (BLOB), `secret_encrypted` (BLOB), `last_verified_at`, `account_number_masked`, `created_at`, `updated_at` | `(vendor, environment)` |
-  | `app_settings`        | `key`, `value`, `updated_at`                                                                                         | `key`                   |
+  | `app_settings`        | `key`, `value`, `updated_at`                                                                                                                           | `key`                   |
 
 - **Highlights:**
   - `credential_settings` stores encrypted key/secret pairs, masked

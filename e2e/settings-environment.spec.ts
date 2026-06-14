@@ -9,6 +9,26 @@ import { localDate } from './dates'
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
 const APP_CWD = path.join(__dirname, '..')
 const DEFAULT_EXPIRATION = localDate(30)
+const DEFAULT_STRIKE = 180
+
+// OCC symbol builder kept inline to mirror the pattern in option-pnl.spec.ts /
+// position-cockpit.spec.ts — keeps the e2e fixture key in sync with the dynamic
+// expiration so tests don't rot the day after they're authored.
+function occSym(
+  ticker: string,
+  expiration: string,
+  instrumentType: 'PUT' | 'CALL',
+  strike: number
+): string {
+  const [yyyy, mm, dd] = expiration.split('-')
+  const yy = yyyy.slice(2)
+  const letter = instrumentType === 'PUT' ? 'P' : 'C'
+  const strikeInt = String(Math.round(strike * 1000)).padStart(8, '0')
+  return `${ticker.toUpperCase()}${yy}${mm}${dd}${letter}${strikeInt}`
+}
+
+const DEFAULT_OPTION_SYMBOL = occSym('AAPL', DEFAULT_EXPIRATION, 'PUT', DEFAULT_STRIKE)
+
 const STOCK_QUOTES = {
   AAPL: {
     price: '182.45',
@@ -22,7 +42,7 @@ const STOCK_QUOTES = {
   }
 }
 const OPTION_SNAPSHOTS = {
-  AAPL260702P00180000: {
+  [DEFAULT_OPTION_SYMBOL]: {
     bid: '3.50',
     ask: '3.70',
     mid: '3.60',

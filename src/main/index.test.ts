@@ -175,6 +175,30 @@ describe('main process bootstrap', () => {
     expect(startOrder).toBeGreaterThan(registerOrder)
   })
 
+  it('onBrokerProviderChanged refreshes the broker and re-ticks the detect-assignments job', async () => {
+    await triggerBootstrap()
+
+    const { registerSettingsHandlers } = await import('./ipc/settings')
+    const deps = vi.mocked(registerSettingsHandlers).mock.calls[0]?.[0] as
+      | { onBrokerProviderChanged: () => void }
+      | undefined
+    expect(deps).toBeDefined()
+
+    const { brokerFactory } = await import('./integrations/broker-factory')
+    vi.mocked(brokerFactory.recreate).mockClear()
+    mockSchedulerRunNow.mockClear()
+
+    // A runtime credential change must both rebuild the broker AND nudge the
+    // broker-gated detect-assignments job. Without the runNow, a job parked
+    // while the market was closed (marketClosedMs:null) would stay parked until
+    // the next app restart, so polling would never resume after saving creds.
+    deps!.onBrokerProviderChanged()
+    await Promise.resolve()
+
+    expect(vi.mocked(brokerFactory.recreate)).toHaveBeenCalled()
+    expect(mockSchedulerRunNow).toHaveBeenCalledWith('detect-assignments')
+  })
+
   it('before-quit handler calls scheduler.stop() and awaits it before app.exit()', async () => {
     const { appOnHandlers } = await triggerBootstrap()
 

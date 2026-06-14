@@ -1022,12 +1022,12 @@ Handlers are grouped by namespace. Each subsection documents the request payload
   ```
 - **Error codes:**
 
-  | field      | code                  | message                                                          |
-  | ---------- | --------------------- | ---------------------------------------------------------------- |
-  | `__root__` | `NOT_FOUND`           | `Pending assignment not found`                                   |
-  | `__root__` | `NOT_PENDING`         | `Pending assignment is no longer pending`                        |
-  | `__root__` | `TRANSITION_REJECTED` | (rejection message from the lifecycle engine bubbled up)         |
-  | `__root__` | `internal_error`      | `An unexpected error occurred` (uncaught — via `handleIpcCall`)  |
+  | field      | code                  | message                                                         |
+  | ---------- | --------------------- | --------------------------------------------------------------- |
+  | `__root__` | `NOT_FOUND`           | `Pending assignment not found`                                  |
+  | `__root__` | `NOT_PENDING`         | `Pending assignment is no longer pending`                       |
+  | `__root__` | `TRANSITION_REJECTED` | (rejection message from the lifecycle engine bubbled up)        |
+  | `__root__` | `internal_error`      | `An unexpected error occurred` (uncaught — via `handleIpcCall`) |
 
 - **Notes:** this handler is **not** registered via `registerParsedPositionHandler` — it does its own Zod parse + try/catch because the failure envelope carries the top-level `code` field (see Overview's deviation note). The error codes `NOT_FOUND` / `NOT_PENDING` / `TRANSITION_REJECTED` are UPPER_SNAKE_CASE rather than the catalogue's lowercase convention because they originate from `PendingAssignmentError.code` rather than the field-error builders. `TRANSITION_REJECTED` covers e.g. a position that was independently transitioned out of `CSP_OPEN` between the OPASN poll and the trader's confirmation — the lifecycle engine's standard phase-guard rejection is mapped to this code.
 - **Source:** `src/main/ipc/assignments.ts`, `src/main/services/pending-assignments.ts` (`confirmPending`), `src/main/services/assign-csp-position.ts`
@@ -1060,11 +1060,11 @@ Handlers are grouped by namespace. Each subsection documents the request payload
   ```
 - **Error codes:**
 
-  | field      | code             | message                                                          |
-  | ---------- | ---------------- | ---------------------------------------------------------------- |
-  | `__root__` | `NOT_FOUND`      | `Pending assignment not found`                                   |
-  | `__root__` | `NOT_PENDING`    | `Pending assignment is no longer pending`                        |
-  | `__root__` | `internal_error` | `An unexpected error occurred` (uncaught — via `handleIpcCall`)  |
+  | field      | code             | message                                                         |
+  | ---------- | ---------------- | --------------------------------------------------------------- |
+  | `__root__` | `NOT_FOUND`      | `Pending assignment not found`                                  |
+  | `__root__` | `NOT_PENDING`    | `Pending assignment is no longer pending`                       |
+  | `__root__` | `internal_error` | `An unexpected error occurred` (uncaught — via `handleIpcCall`) |
 
 - **Notes:** post-Area-B1 code review, `dismissPending` rejects confirmed rows with `NOT_PENDING` rather than silently no-op'ing — only already-dismissed rows are idempotent. Same envelope-deviation pattern as `assignments:confirm` (see Overview).
 - **Source:** `src/main/ipc/assignments.ts`, `src/main/services/pending-assignments.ts` (`dismissPending`)

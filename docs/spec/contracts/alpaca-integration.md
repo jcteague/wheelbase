@@ -54,11 +54,11 @@ Only `src/main/integrations/alpaca-broker.ts` may `import` from `@alpacahq/types
 
 The provider uses `@alpacahq/typescript-sdk` (v0.0.32-preview) selectively for broker REST calls — the SDK is a Deno-to-Node transpile, marked no-longer-maintained, but the broker-side endpoints work reliably. Rewriting them with raw `fetch` would be unnecessary churn.
 
-| SDK method          | Used to implement                                                          |
-| ------------------- | -------------------------------------------------------------------------- |
-| `client.getAccount` | `getAccountInfo()`                                                         |
-| `client.getClock`   | `getMarketStatus()` (session derived client-side from `is_open` + windows) |
-| `client.getActivity` | `getActivities(filter)` (with manual query-param construction)            |
+| SDK method           | Used to implement                                                          |
+| -------------------- | -------------------------------------------------------------------------- |
+| `client.getAccount`  | `getAccountInfo()`                                                         |
+| `client.getClock`    | `getMarketStatus()` (session derived client-side from `is_open` + windows) |
+| `client.getActivity` | `getActivities(filter)` (with manual query-param construction)             |
 
 **Streaming, stock quotes, option snapshots, and option chains do not go through Alpaca anymore.** Those concerns were removed from the Alpaca path entirely in US-39 — see the [Massive market-data adapter](../domain/market-data.md) for current behaviour.
 
@@ -132,13 +132,13 @@ Detected assignments are persisted with `INSERT OR IGNORE` against `UNIQUE(activ
 
 When `getActivities` throws a `BrokerError`, the detect-assignments job classifies and surfaces it without crashing the app:
 
-| `BrokerError.code`     | Detection-service behaviour                                                                                            |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `network_error`        | WARN log + bail out of the tick. Watermark is **not** advanced; the next scheduler tick retries naturally.             |
-| `auth_failed`          | Typed return (`{ detected: 0, skipped: 0, brokerError: { code: 'auth_failed' } }`). Scheduler can back off this job.   |
-| `rate_limited`         | WARN log + bail out; treated like `network_error` from the poll's perspective. Recovery on the next tick.              |
-| `environment_mismatch` | Typed return; surfaced via the settings page during credential entry, not during a normal poll.                        |
-| other / unknown        | WARN log + bail out; the scheduler's outer try/catch ensures it does not stop the scheduler (see `PollingScheduler`).  |
+| `BrokerError.code`     | Detection-service behaviour                                                                                           |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `network_error`        | WARN log + bail out of the tick. Watermark is **not** advanced; the next scheduler tick retries naturally.            |
+| `auth_failed`          | Typed return (`{ detected: 0, skipped: 0, brokerError: { code: 'auth_failed' } }`). Scheduler can back off this job.  |
+| `rate_limited`         | WARN log + bail out; treated like `network_error` from the poll's perspective. Recovery on the next tick.             |
+| `environment_mismatch` | Typed return; surfaced via the settings page during credential entry, not during a normal poll.                       |
+| other / unknown        | WARN log + bail out; the scheduler's outer try/catch ensures it does not stop the scheduler (see `PollingScheduler`). |
 
 The job handler in `src/main/index.ts` lazy-reads `brokerFactory.create()` plus `settings.getCredentialStatus().activeBrokerEnv` on every tick, then **short-circuits to a no-op when `activeBrokerEnv === 'none'`** — there is nothing to poll when no environment is active, and US-37's runtime credential changes flow through without restart.
 
@@ -217,13 +217,13 @@ function wrapError(err: unknown, op: string): never {
 
 `BrokerError` is a structured `Error` subclass with a discriminating `code` field:
 
-| Code                    | When                                                                                  |
-| ----------------------- | ------------------------------------------------------------------------------------- |
-| `auth_failed`           | SDK rejects credentials (HTTP 401, missing credentials)                               |
-| `network_error`         | Upstream unreachable, DNS failure, timeout                                            |
-| `rate_limited`          | SDK returns HTTP 429                                                                  |
-| `environment_mismatch`  | Live keys submitted to paper card or vice versa (US-39 addition; US-37 consumer)      |
-| `unknown`               | Catch-all for unclassified failures                                                   |
+| Code                   | When                                                                             |
+| ---------------------- | -------------------------------------------------------------------------------- |
+| `auth_failed`          | SDK rejects credentials (HTTP 401, missing credentials)                          |
+| `network_error`        | Upstream unreachable, DNS failure, timeout                                       |
+| `rate_limited`         | SDK returns HTTP 429                                                             |
+| `environment_mismatch` | Live keys submitted to paper card or vice versa (US-39 addition; US-37 consumer) |
+| `unknown`              | Catch-all for unclassified failures                                              |
 
 `MarketDataError` is a parallel taxonomy used by the Massive adapter and the (now-removed) old Alpaca market-data path — see [domain/market-data.md](../domain/market-data.md). Per US-39, `MarketDataError` no longer includes `options_no_subscription` (Alpaca-specific code) since Alpaca no longer serves market data.
 
