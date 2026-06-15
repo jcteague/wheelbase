@@ -1,7 +1,11 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AssignCspResponse } from '../api/positions'
+import { useAssignPosition } from '../hooks/useAssignPosition'
+import { AssignmentSheet } from './AssignmentSheet'
 
+vi.mock('../hooks/useAssignPosition')
 vi.mock('@/components/ui/date-picker', () => ({
   DatePicker: ({
     value,
@@ -27,16 +31,8 @@ vi.mock('@/components/ui/date-picker', () => ({
   )
 }))
 
-const mockNavigate = vi.fn()
-vi.mock('wouter', () => ({
-  useLocation: () => ['/', mockNavigate]
-}))
-
 const mockMutate = vi.fn()
-const mockUseAssignPosition = vi.fn()
-vi.mock('../hooks/useAssignPosition', () => ({
-  useAssignPosition: mockUseAssignPosition
-}))
+const mockUseAssignPosition = vi.mocked(useAssignPosition)
 
 const DEFAULT_PROPS = {
   open: true,
@@ -60,31 +56,39 @@ const SUCCESS_RESPONSE = {
   leg: { fillDate: '2026-04-17', contracts: 1, strike: '180.0000' },
   costBasisSnapshot: { basisPerShare: '177.2500', totalPremiumCollected: '2.7500' },
   premiumWaterfall: DEFAULT_PROPS.premiumWaterfall
-}
+} as unknown as AssignCspResponse
 
-const renderAssignmentSheet = async (): Promise<import('@testing-library/react').RenderResult> => {
-  const module = await import('./AssignmentSheet')
-  return render(<module.AssignmentSheet {...DEFAULT_PROPS} />)
+const IDLE_MUTATION = {
+  mutate: mockMutate,
+  isPending: false,
+  isSuccess: false,
+  isError: false,
+  data: undefined,
+  error: null
+} as unknown as ReturnType<typeof useAssignPosition>
+
+const renderSuccessState = (): void => {
+  let capturedOnSuccess: ((data: AssignCspResponse) => void) | undefined
+
+  mockUseAssignPosition.mockImplementation((options) => {
+    capturedOnSuccess = options?.onSuccess
+    return IDLE_MUTATION
+  })
+
+  render(<AssignmentSheet {...DEFAULT_PROPS} />)
+  act(() => capturedOnSuccess?.(SUCCESS_RESPONSE))
 }
 
 describe('AssignmentSheet', () => {
   beforeEach(() => {
-    mockNavigate.mockReset()
     mockMutate.mockReset()
     mockUseAssignPosition.mockReset()
     DEFAULT_PROPS.onClose.mockReset()
-    mockUseAssignPosition.mockReturnValue({
-      mutate: mockMutate,
-      isPending: false,
-      isSuccess: false,
-      isError: false,
-      data: undefined,
-      error: null
-    })
+    mockUseAssignPosition.mockReturnValue(IDLE_MUTATION)
   })
 
-  it('renders the summary card with premium waterfall lines when open', async () => {
-    await renderAssignmentSheet()
+  it('renders the summary card with premium waterfall lines when open', () => {
+    render(<AssignmentSheet {...DEFAULT_PROPS} />)
 
     expect(screen.getByText('Assign CSP to Shares')).toBeInTheDocument()
     expect(screen.getByText(/Assignment strike/i)).toBeInTheDocument()
@@ -93,15 +97,15 @@ describe('AssignmentSheet', () => {
     expect(screen.getByText(/Effective cost basis/i)).toBeInTheDocument()
   })
 
-  it('shows phase transition badges: Sell Put → Holding Shares', async () => {
-    await renderAssignmentSheet()
+  it('shows phase transition badges: Sell Put → Holding Shares', () => {
+    render(<AssignmentSheet {...DEFAULT_PROPS} />)
 
     expect(screen.getByText('Sell Put')).toBeInTheDocument()
     expect(screen.getAllByText('Holding Shares').length).toBeGreaterThan(0)
   })
 
-  it('shows shares to receive as contracts × 100', async () => {
-    await renderAssignmentSheet()
+  it('shows shares to receive as contracts × 100', () => {
+    render(<AssignmentSheet {...DEFAULT_PROPS} />)
 
     expect(screen.getByText(/Shares to receive/i)).toBeInTheDocument()
     expect(screen.getByText('100')).toBeInTheDocument()
@@ -109,7 +113,7 @@ describe('AssignmentSheet', () => {
 
   it('shows Confirm Assignment button enabled with a valid date', async () => {
     const user = userEvent.setup()
-    await renderAssignmentSheet()
+    render(<AssignmentSheet {...DEFAULT_PROPS} />)
 
     await user.type(screen.getByLabelText(/assignment date/i), '2026-04-17')
 
@@ -118,7 +122,7 @@ describe('AssignmentSheet', () => {
 
   it('shows red inline error "Assignment date is required" when submitted with no date', async () => {
     const user = userEvent.setup()
-    await renderAssignmentSheet()
+    render(<AssignmentSheet {...DEFAULT_PROPS} />)
 
     await user.click(screen.getByRole('button', { name: /confirm assignment/i }))
 
@@ -127,7 +131,7 @@ describe('AssignmentSheet', () => {
 
   it('shows red inline error "Assignment date cannot be before the CSP open date" for a date before openFillDate', async () => {
     const user = userEvent.setup()
-    await renderAssignmentSheet()
+    render(<AssignmentSheet {...DEFAULT_PROPS} />)
 
     await user.type(screen.getByLabelText(/assignment date/i), '2026-02-28')
     await user.click(screen.getByRole('button', { name: /confirm assignment/i }))
@@ -139,7 +143,7 @@ describe('AssignmentSheet', () => {
 
   it('shows gold soft warning "This date is in the future — are you sure?" for a future date and keeps Confirm Assignment enabled', async () => {
     const user = userEvent.setup()
-    await renderAssignmentSheet()
+    render(<AssignmentSheet {...DEFAULT_PROPS} />)
 
     await user.type(screen.getByLabelText(/assignment date/i), '2099-01-01')
 
@@ -149,85 +153,28 @@ describe('AssignmentSheet', () => {
 
   it('calls onClose when Cancel is clicked', async () => {
     const user = userEvent.setup()
-    await renderAssignmentSheet()
+    render(<AssignmentSheet {...DEFAULT_PROPS} />)
 
     await user.click(screen.getByRole('button', { name: /cancel/i }))
 
     await waitFor(() => expect(DEFAULT_PROPS.onClose).toHaveBeenCalled())
   })
 
-  it('renders success state with hero card "HOLDING 100 SHARES" and effective cost basis after mutation succeeds', async () => {
-    let capturedOnSuccess: ((data: typeof SUCCESS_RESPONSE) => void) | undefined
-
-    mockUseAssignPosition.mockImplementation(
-      ({ onSuccess }: { onSuccess?: (data: typeof SUCCESS_RESPONSE) => void } = {}) => {
-        capturedOnSuccess = onSuccess
-        return {
-          mutate: mockMutate,
-          isPending: false,
-          isSuccess: false,
-          isError: false,
-          data: undefined,
-          error: null
-        }
-      }
-    )
-
-    const { rerender } = await renderAssignmentSheet()
-    capturedOnSuccess?.(SUCCESS_RESPONSE)
-    const module = await import('./AssignmentSheet')
-    rerender(<module.AssignmentSheet {...DEFAULT_PROPS} />)
+  it('renders success state with hero card "HOLDING 100 SHARES" and effective cost basis after mutation succeeds', () => {
+    renderSuccessState()
 
     expect(screen.getByText('HOLDING 100 SHARES')).toBeInTheDocument()
     expect(screen.getByText(/Effective Cost Basis/i)).toBeInTheDocument()
   })
 
-  it('success state shows strategic nudge text about waiting 1–3 days', async () => {
-    let capturedOnSuccess: ((data: typeof SUCCESS_RESPONSE) => void) | undefined
-
-    mockUseAssignPosition.mockImplementation(
-      ({ onSuccess }: { onSuccess?: (data: typeof SUCCESS_RESPONSE) => void } = {}) => {
-        capturedOnSuccess = onSuccess
-        return {
-          mutate: mockMutate,
-          isPending: false,
-          isSuccess: false,
-          isError: false,
-          data: undefined,
-          error: null
-        }
-      }
-    )
-
-    const { rerender } = await renderAssignmentSheet()
-    capturedOnSuccess?.(SUCCESS_RESPONSE)
-    const module = await import('./AssignmentSheet')
-    rerender(<module.AssignmentSheet {...DEFAULT_PROPS} />)
+  it('success state shows strategic nudge text about waiting 1–3 days', () => {
+    renderSuccessState()
 
     expect(screen.getByText(/1–3 days/i)).toBeInTheDocument()
   })
 
-  it('success state shows "Open Covered Call" CTA button', async () => {
-    let capturedOnSuccess: ((data: typeof SUCCESS_RESPONSE) => void) | undefined
-
-    mockUseAssignPosition.mockImplementation(
-      ({ onSuccess }: { onSuccess?: (data: typeof SUCCESS_RESPONSE) => void } = {}) => {
-        capturedOnSuccess = onSuccess
-        return {
-          mutate: mockMutate,
-          isPending: false,
-          isSuccess: false,
-          isError: false,
-          data: undefined,
-          error: null
-        }
-      }
-    )
-
-    const { rerender } = await renderAssignmentSheet()
-    capturedOnSuccess?.(SUCCESS_RESPONSE)
-    const module = await import('./AssignmentSheet')
-    rerender(<module.AssignmentSheet {...DEFAULT_PROPS} />)
+  it('success state shows "Open Covered Call" CTA button', () => {
+    renderSuccessState()
 
     expect(screen.getByRole('button', { name: /open covered call/i })).toBeInTheDocument()
   })
