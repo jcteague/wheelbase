@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /Users/johnteague/my-stuff/wb-37/.codex/hooks/post-edit-quality.sh",
+            "command": "bash /Users/johnteague/my-stuff/wheelbase/.codex/hooks/post-edit-quality.sh",
             "timeout": 60
           }
         ],
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /Users/johnteague/my-stuff/wb-37/.codex/hooks/pre-stop-quality.sh",
+            "command": "bash /Users/johnteague/my-stuff/wheelbase/.codex/hooks/pre-stop-quality.sh",
             "timeout": 180
           }
         ]
