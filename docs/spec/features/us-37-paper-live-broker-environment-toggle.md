@@ -11,7 +11,7 @@ US-37 adds a dedicated settings experience for broker credentials and active-bro
 - **Shared Massive configuration enables market data** — with a configured shared Massive key, price and option-mid surfaces continue to work even when no Alpaca credentials are configured.
 - **Massive test connection uses a fixed reference probe** — `settings:test-connection` with `{ vendor: 'massive' }` probes `GET /v3/reference/tickers/AAPL` and returns `connected`/typed errors.
 - **Alpaca test connection surfaces account identity and environment** — testing paper/live candidate credentials returns `✓ Verified — Account XX…YYY (paper|live)` without importing activities.
-- **Environment mismatch is detected** — live keys entered in the paper card return `environment_mismatch` with the exact UI message `Environment mismatch — these are LIVE keys, not paper keys`.
+- **Environment mismatch is detected** — live keys entered in the paper card return `environment_mismatch` with message `Environment mismatch — these are LIVE keys, not paper keys`; paper keys entered in the live card return `environment_mismatch` with message `Environment mismatch — these are PAPER keys, not live keys`. Detection is heuristic: key IDs starting with `AK` are treated as live, `PK` as paper.
 - **Switching broker environment to LIVE requires confirmation** — the renderer shows a gold-accent confirmation dialog before invoking the live switch.
 - **LIVE confirmation warns when Wheelbase has open positions** — the dialog includes an open-position count based on existing journal data and reminds the trader that Wheelbase positions are not synchronized to Alpaca.
 - **Confirming the switch refreshes broker state only** — account/buying-power/activity surfaces refresh, but market-data polling and displayed quotes continue uninterrupted.
@@ -34,11 +34,12 @@ The shipped e2e coverage in `e2e/settings-environment.spec.ts` contains one scen
   - `app_settings` — key/value settings rows used for `active_broker_environment`
 - `src/main/services/settings.ts` owns:
   - `getCredentialStatus()`
-  - `saveVerifiedAlpacaCredentials()` / `saveAlpacaCredentials()`
+  - `saveAlpacaCredentials()`
   - `removeAlpacaCredentials()`
   - `setActiveBrokerEnvironment()`
   - `loadAlpacaCredentials()` / `loadActiveAlpacaCredentials()`
-- `src/main/services/settings-connections.ts` adds settings-specific probe helpers for Massive and Alpaca.
+- `src/main/services/save-verified-alpaca-credentials.ts` — post-plan service (extracted during code review) that owns the test-connection → validate → save → compute-refresh-flag flow; returns `{ status, test, refreshBroker }`. The IPC handler delegates to it rather than orchestrating inline.
+- `src/main/services/settings-connections.ts` adds settings-specific probe helpers for Massive and Alpaca, with bidirectional mismatch detection (`isLikelyLiveKey` / `isLikelyPaperKey`).
 
 ### IPC and preload surface
 
@@ -78,6 +79,7 @@ All handlers use `handleIpcCall`, validate with Zod, and return the standard `{ 
 - Shared Massive app configuration, not per-user settings → [[shared-massive-app-configuration]]
 - Runtime broker-only provider refresh → [[runtime-broker-provider-refresh]]
 - Vendor-scoped query keys and invalidation → [[vendor-scoped-query-keys]]
+- Test-then-save orchestration extracted into its own service → [[save-verified-alpaca-service]]
 
 ## Contracts
 
@@ -129,6 +131,7 @@ See [schema/tables.md](../schema/tables.md) and [schema/migrations.md](../schema
 - `migrations/006_add_credential_settings.sql`
 - `src/main/services/settings.ts`
 - `src/main/services/settings-connections.ts`
+- `src/main/services/save-verified-alpaca-credentials.ts`
 - `src/main/ipc/settings.ts`
 - `src/main/integrations/broker-factory.ts`
 - `src/main/integrations/market-data-factory.ts`

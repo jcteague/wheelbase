@@ -10,6 +10,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [named-lifecycle-functions](./named-lifecycle-functions.md) — One named pure function per wheel-phase transition; same shape for cost basis.
 - [single-step-phase-transitions](./single-step-phase-transitions.md) — No synthetic `*_PENDING` / `*_EXPIRED` intermediate phases.
 - [standalone-service-per-operation](./standalone-service-per-operation.md) — One service file per mutation operation under `src/main/services/`.
+- [save-verified-alpaca-service](./save-verified-alpaca-service.md) — Test-then-save orchestration for Alpaca credentials lives in its own service, not in the IPC handler.
 - [decimal-money-math](./decimal-money-math.md) — `decimal.js` with `ROUND_HALF_UP` at 4 dp; stored as TEXT.
 - [runtime-broker-provider-refresh](./runtime-broker-provider-refresh.md) — Broker settings changes recreate only broker state at runtime; market data stays untouched.
 - [occ-symbol-pure-leaf](./occ-symbol-pure-leaf.md) — Build OCC symbols in a pure `src/main/core/option-symbol.ts` leaf; no `contract_id` column.
