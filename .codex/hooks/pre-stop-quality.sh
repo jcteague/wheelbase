@@ -1,5 +1,6 @@
 #!/bin/bash
-# Stop hook: require formatting, lint, typecheck, and tests before Codex stops.
+# Stop hook: auto-fix formatting/lint where possible, then require formatting,
+# lint, typecheck, and tests before Codex stops.
 # Exit 2 → prevents Codex from stopping until quality checks are clean.
 
 set -u
@@ -20,6 +21,12 @@ except Exception:
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+FORMAT_FIX_OUTPUT=$(cd "$PROJECT_ROOT" && pnpm format 2>&1)
+FORMAT_FIX_EXIT=$?
+
+LINT_FIX_OUTPUT=$(cd "$PROJECT_ROOT" && pnpm lint -- --fix 2>&1)
+LINT_FIX_EXIT=$?
+
 FORMAT_OUTPUT=$(cd "$PROJECT_ROOT" && pnpm exec prettier --check . 2>&1)
 FORMAT_EXIT=$?
 
@@ -32,9 +39,21 @@ TYPECHECK_EXIT=$?
 TEST_OUTPUT=$(cd "$PROJECT_ROOT" && pnpm test 2>&1)
 TEST_EXIT=$?
 
-if [[ $FORMAT_EXIT -ne 0 || $LINT_EXIT -ne 0 || $TYPECHECK_EXIT -ne 0 || $TEST_EXIT -ne 0 ]]; then
+if [[ $FORMAT_FIX_EXIT -ne 0 || $LINT_FIX_EXIT -ne 0 || $FORMAT_EXIT -ne 0 || $LINT_EXIT -ne 0 || $TYPECHECK_EXIT -ne 0 || $TEST_EXIT -ne 0 ]]; then
     echo "Quality checks failed — fix all formatting, lint, typecheck, and test issues before stopping." >&2
     echo "" >&2
+
+    if [[ $FORMAT_FIX_EXIT -ne 0 ]]; then
+        echo "=== pnpm format ===" >&2
+        echo "$FORMAT_FIX_OUTPUT" >&2
+        echo "" >&2
+    fi
+
+    if [[ $LINT_FIX_EXIT -ne 0 ]]; then
+        echo "=== pnpm lint -- --fix ===" >&2
+        echo "$LINT_FIX_OUTPUT" >&2
+        echo "" >&2
+    fi
 
     if [[ $FORMAT_EXIT -ne 0 ]]; then
         echo "=== prettier --check . ===" >&2

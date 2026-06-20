@@ -1,4 +1,5 @@
 # ADR: React Hook Form + Zod resolver for renderer forms
+
 <!-- generated:from us-4, us-12, us-12-refactor, missing-ac -->
 
 ## Decision

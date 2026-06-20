@@ -41,10 +41,7 @@ describe('marketDataFactory', () => {
 
   it('does not consult user credential settings when Massive shared key is missing', () => {
     marketDataFactory.configure({
-      loadMassiveApiKey: () => '',
-      loadSettingsStatus: () => {
-        throw new Error('should not consult user settings')
-      }
+      loadMassiveApiKey: () => ''
     })
 
     expect(() => marketDataFactory.create()).toThrow(/not configured/i)

@@ -103,17 +103,17 @@ Phase tones in success-state sheet headers follow a stable mapping: green for `E
 
 Standardised in `plans/design-system/data-model.md` and applied through every migrated component:
 
-| Inline style | Tailwind utility |
-| ------------ | ---------------- |
-| `fontFamily: MONO` | `font-wb-mono` |
-| `background: 'var(--wb-bg-elevated)'` | `bg-wb-bg-elevated` |
+| Inline style                           | Tailwind utility          |
+| -------------------------------------- | ------------------------- |
+| `fontFamily: MONO`                     | `font-wb-mono`            |
+| `background: 'var(--wb-bg-elevated)'`  | `bg-wb-bg-elevated`       |
 | `border: '1px solid var(--wb-border)'` | `border border-wb-border` |
-| `borderRadius: 8` | `rounded-lg` |
-| `borderRadius: 6` | `rounded-md` |
-| `flex: 1` | `flex-1` |
-| `flexShrink: 0` | `shrink-0` |
-| `opacity: 0.5` | `opacity-50` |
-| `left: SIDEBAR_WIDTH` (constant 200) | `left-[200px]` |
+| `borderRadius: 8`                      | `rounded-lg`              |
+| `borderRadius: 6`                      | `rounded-md`              |
+| `flex: 1`                              | `flex-1`                  |
+| `flexShrink: 0`                        | `shrink-0`                |
+| `opacity: 0.5`                         | `opacity-50`              |
+| `left: SIDEBAR_WIDTH` (constant 200)   | `left-[200px]`            |
 
 `SheetPanel.width`, `SheetHeader.eyebrowColor` / `borderBottomColor`, the logo-dot glow, per-row phase-colour custom properties, and multi-stop linear gradients are intentionally NOT converted — they are documented dynamic exceptions (see Key decisions).
 

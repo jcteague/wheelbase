@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 import type { ExpireCspResponse } from '../api/positions'
@@ -193,13 +193,14 @@ it('shows success sheet title and P&L after confirming', async () => {
 
   const { rerender } = render(<ExpirationSheet {...DEFAULT_PROPS} />)
 
-  // Simulate success by triggering onSuccess
-  capturedOnSuccess?.({
-    position: { phase: 'WHEEL_COMPLETE' },
-    costBasisSnapshot: { finalPnl: '250.0000' }
-  } as ExpireCspResponse)
+  await act(async () => {
+    capturedOnSuccess?.({
+      position: { phase: 'WHEEL_COMPLETE' },
+      costBasisSnapshot: { finalPnl: '250.0000' }
+    } as ExpireCspResponse)
 
-  rerender(<ExpirationSheet {...DEFAULT_PROPS} />)
+    rerender(<ExpirationSheet {...DEFAULT_PROPS} />)
+  })
 
   await screen.findByText(/AAPL Expired Worthless/i)
   expect(screen.getByText(/\+\$250/)).toBeInTheDocument()
@@ -223,11 +224,13 @@ it('shows Open new wheel and View full position history in success state', async
   )
 
   const { rerender } = render(<ExpirationSheet {...DEFAULT_PROPS} />)
-  capturedOnSuccess?.({
-    position: { phase: 'WHEEL_COMPLETE' },
-    costBasisSnapshot: { finalPnl: '250.0000' }
-  } as ExpireCspResponse)
-  rerender(<ExpirationSheet {...DEFAULT_PROPS} />)
+  await act(async () => {
+    capturedOnSuccess?.({
+      position: { phase: 'WHEEL_COMPLETE' },
+      costBasisSnapshot: { finalPnl: '250.0000' }
+    } as ExpireCspResponse)
+    rerender(<ExpirationSheet {...DEFAULT_PROPS} />)
+  })
 
   await screen.findByText(/Open new wheel on AAPL/i)
   expect(screen.getByText(/View full position history/i)).toBeInTheDocument()
@@ -252,11 +255,13 @@ it('clicking View full position history calls onClose', async () => {
   )
 
   const { rerender } = render(<ExpirationSheet {...DEFAULT_PROPS} />)
-  capturedOnSuccess?.({
-    position: { phase: 'WHEEL_COMPLETE' },
-    costBasisSnapshot: { finalPnl: '250.0000' }
-  } as ExpireCspResponse)
-  rerender(<ExpirationSheet {...DEFAULT_PROPS} />)
+  await act(async () => {
+    capturedOnSuccess?.({
+      position: { phase: 'WHEEL_COMPLETE' },
+      costBasisSnapshot: { finalPnl: '250.0000' }
+    } as ExpireCspResponse)
+    rerender(<ExpirationSheet {...DEFAULT_PROPS} />)
+  })
 
   const link = await screen.findByText(/View full position history/i)
   await user.click(link)
@@ -283,11 +288,13 @@ it('clicking Open new wheel navigates to /new?ticker=AAPL', async () => {
   )
 
   const { rerender } = render(<ExpirationSheet {...DEFAULT_PROPS} />)
-  capturedOnSuccess?.({
-    position: { phase: 'WHEEL_COMPLETE' },
-    costBasisSnapshot: { finalPnl: '250.0000' }
-  } as ExpireCspResponse)
-  rerender(<ExpirationSheet {...DEFAULT_PROPS} />)
+  await act(async () => {
+    capturedOnSuccess?.({
+      position: { phase: 'WHEEL_COMPLETE' },
+      costBasisSnapshot: { finalPnl: '250.0000' }
+    } as ExpireCspResponse)
+    rerender(<ExpirationSheet {...DEFAULT_PROPS} />)
+  })
 
   const btn = await screen.findByText(/Open new wheel on AAPL/i)
   await user.click(btn)

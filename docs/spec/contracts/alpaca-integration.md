@@ -1,321 +1,272 @@
 # Alpaca Integration
 
-<!-- generated:from us-31,us-32,us-33 -->
+<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39 -->
+
 ## Overview
 
-Alpaca is the upstream broker and market-data vendor for Wheelbase. The integration boundary is the **`MarketDataProvider` interface** — a provider-agnostic contract that downstream code consumes. The Alpaca-specific implementation (`AlpacaMarketDataProvider`) lives behind that interface and is constructed only by a factory; no service, IPC handler, or renderer module imports the concrete class or the `@alpacahq/typescript-sdk` package directly.
+Alpaca is Wheelbase's **broker** integration — the source of account info, broker activities (assignments, exercises, expirations), and the market clock used to drive session-aware UI and polling. As of US-39, Alpaca is **no longer the market-data vendor**: stock quotes, option snapshots, and option chains are now sourced from Massive via a separate provider. The two concerns are split across two interfaces (`BrokerProvider` and `MarketDataProvider`) with independent factories and IPC namespaces.
 
-The provider exposes both transports the application needs:
+This page documents the Alpaca-facing surface:
 
-- **REST** — request/response, used for snapshots (`getStockQuotes`, `getOptionSnapshots`), broker activity polling (`getActivities`), account info (`getAccountInfo`), and the market clock (`getMarketStatus`). Returns plain `Promise`s.
-- **Stream** — long-lived WebSocket multiplexing per-symbol subscriptions, exposed as an RxJS `Observable<StreamEvent<T>>` via `provider.stream(feed, symbols)`. Two independent sockets — one for stock quotes (JSON frames), one for option quotes/trades (MessagePack frames).
+- The `BrokerProvider` contract (Alpaca-backed via `AlpacaBrokerProvider`)
+- The `broker:*` IPC namespace
+- Activity polling (the only consumer pattern in the codebase today is US-35's assignment detection)
+- Settings-side credential probes for paper/live environments
+- Runtime broker recreation when credentials or the active environment change
 
-Adapter responses use the project's domain types (`StockQuote`, `OptionSnapshot`, `MarketStatus`, `AccountInfo`, `BrokerActivity`) — never the raw SDK shapes. Errors are normalised into the typed `MarketDataError` family before they cross the boundary, with discriminating `code` fields that IPC handlers map to error envelopes — see [contracts/ipc-handlers.md](./ipc-handlers.md#market-datastock-quotes).
+For the Massive-backed market-data adapter and the `MarketDataProvider` interface it implements, see [contracts/ipc-handlers.md](./ipc-handlers.md) and [domain/market-data.md](../domain/market-data.md). For the activity-driven cost-basis flow that consumes assignment events, see [domain/cost-basis.md](../domain/cost-basis.md).
 
-For the higher-level cache/lifecycle model (REST seed + stream tick bridge, market-status polling, stale-data detection), see [domain/market-data.md](../domain/market-data.md).
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33 -->
-## Abstraction layer
+<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39 -->
 
-US-31 introduced a provider-agnostic abstraction so the rest of the application never depends on Alpaca specifically. There are three pieces:
+## Boundary layout
 
-### `MarketDataProvider` interface
+Wheelbase keeps every Alpaca SDK call behind a small set of files. Three layers compose the boundary:
 
-The single contract every market-data provider must satisfy. Defined in `src/main/integrations/market-data-provider.ts`:
+### `BrokerProvider` interface
 
-```typescript
-interface MarketDataProvider {
-  getStockQuotes(tickers: string[]): Promise<Map<string, StockQuote>>
-  getOptionSnapshots(contractIds: string[]): Promise<Map<string, OptionSnapshot>>
-  getActivities(filter: ActivityFilter): Promise<BrokerActivity[]>
-  getAccountInfo(): Promise<AccountInfo>
-  getMarketStatus(): Promise<MarketStatus>
-  supportsStreaming(feed: DataFeed): boolean
-  connect(): Promise<void>
-  disconnect(): Promise<void>
-  stream(
-    feed: DataFeed,
-    symbols: string[]
-  ): Observable<StreamEvent<StockQuote | OptionSnapshot>>
-}
-```
+Provider-agnostic contract every broker implementation satisfies. Defined in `src/main/integrations/broker-provider.ts`. Methods:
 
-### `AlpacaMarketDataProvider` implementation
+- `getAccountInfo(): Promise<AccountInfo>`
+- `getMarketStatus(): Promise<MarketStatus>`
+- `getActivities(filter: ActivityFilter): Promise<BrokerActivity[]>`
 
-The Alpaca-backed concrete class. Lives alongside the interface (current tree exposes it via a sibling file under `src/main/integrations/`). It is the only module in the repo permitted to import `@alpacahq/typescript-sdk`, the only module permitted to import `ws`, and the only module permitted to import `@msgpack/msgpack`.
+### `AlpacaBrokerProvider` implementation
 
-### `createMarketDataProvider` factory
+The Alpaca-backed concrete class. Lives at `src/main/integrations/alpaca-broker.ts` (post-US-39 split; absorbed the broker-side methods that used to live on the combined `AlpacaMarketDataProvider`). It is the only module in the repo permitted to import `@alpacahq/typescript-sdk`. Constructed lazily — `new AlpacaBrokerProvider({ keyId, secretKey, paper })` does not perform any network I/O.
 
-The single entrypoint downstream code uses. Defined in `src/main/integrations/market-data-factory.ts`:
+### `createBrokerProvider` factory
 
-```typescript
-interface MarketDataConfig {
-  provider: 'alpaca' // extensible union for future providers
-  keyId: string
-  secretKey: string
-  paper: boolean
-  dataFeed?: 'sip' | 'iex' | 'delayed_sip' // stock feed, default 'sip'
-  optionFeed?: 'opra' | 'indicative'       // option feed, default 'opra'
-}
+The single entrypoint downstream code uses. Defined in `src/main/integrations/broker-factory.ts`. Resolves the active broker environment (`'paper' | 'live' | 'none'`) and the corresponding stored credentials via `src/main/services/settings.ts`, then constructs an `AlpacaBrokerProvider` for the active environment. Returns `null` when no environment is active or no credentials exist.
 
-function createMarketDataProvider(config: MarketDataConfig): MarketDataProvider
-```
+A `FakeBrokerProvider` sibling exists for e2e and dev (`src/main/integrations/fake-broker.ts`) — same interface, env-driven canned responses.
 
-The factory switches on `config.provider`, returns `AlpacaMarketDataProvider` for `'alpaca'`, and throws for unknown providers. Services and IPC handlers import this function and the interface — never the concrete class. `src/main/index.ts` constructs the provider once at app startup and threads it through to handler registration.
+### Single-import-site rule
 
-A `FakeMarketDataProvider` sibling exists for e2e and dev (`src/main/integrations/fake-market-data.ts`) — same interface, env-driven canned responses (`WHEELBASE_MARKET_MOCK`, `WHEELBASE_MOCK_OPTION_SNAPSHOTS`).
+Only `src/main/integrations/alpaca-broker.ts` may `import` from `@alpacahq/typescript-sdk`. IPC handlers (`src/main/ipc/broker.ts`), services (`src/main/services/detect-assignments.ts`, `src/main/services/scheduler-instance.ts`), the renderer, and the pure-core engines all consume `BrokerProvider` via the factory. SDK raw shapes (`activity_type`, `transaction_time`, etc.) never leak past the adapter; the boundary only emits domain types (`AccountInfo`, `MarketStatus`, `BrokerActivity`).
+
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33 -->
-## Boundary rules
+<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39 -->
 
-- **Single import site for the SDK.** Only the Alpaca adapter file may `import { ... } from '@alpacahq/typescript-sdk'`. IPC handlers (`src/main/ipc/market-data.ts`), services, the renderer, and the pure-core engines never touch the SDK type or runtime.
-- **Single import site for `ws` and `@msgpack/msgpack`.** Streaming transport packages are similarly confined to the adapter.
-- **Domain types out, SDK types in.** The adapter accepts plain values (ticker arrays, OCC symbols, activity filters) and returns the project's domain types. SDK raw shapes (`latest_quote`, `prev_daily_bar`, etc.) and module-scoped local types for fields the SDK omits stay inside the adapter file; casts never leak outward.
-- **Errors are typed before they leave.** Every thrown SDK error or socket failure is caught inside the adapter and re-thrown as `MarketDataError` with a discriminant `code`. IPC handlers map those codes 1:1 to error-envelope codes without re-inspecting the underlying SDK error.
-- **Services consume the factory, not the class.** `src/main/services/market-data.ts` (`fetchStockQuotes`, `fetchOptionSnapshots`) takes a `MarketDataProvider` parameter — never an `AlpacaMarketDataProvider`.
-- **Pure-core engines never see the adapter.** `src/main/core/` (lifecycle, cost basis, option-symbol, profit-target) has no I/O imports. Alpaca data only enters the system via IPC handlers calling the provider, then flows into the renderer's TanStack Query cache.
-<!-- /generated -->
+## SDK usage and bypass
 
-<!-- generated:from us-31,us-32,us-33 -->
-## What the SDK is used for vs bypassed
+The provider uses `@alpacahq/typescript-sdk` (v0.0.32-preview) selectively for broker REST calls — the SDK is a Deno-to-Node transpile, marked no-longer-maintained, but the broker-side endpoints work reliably. Rewriting them with raw `fetch` would be unnecessary churn.
 
-The provider uses `@alpacahq/typescript-sdk` (v0.0.32-preview) selectively — keeping SDK calls where they work, bypassing where they don't.
+| SDK method           | Used to implement                                                          |
+| -------------------- | -------------------------------------------------------------------------- |
+| `client.getAccount`  | `getAccountInfo()`                                                         |
+| `client.getClock`    | `getMarketStatus()` (session derived client-side from `is_open` + windows) |
+| `client.getActivity` | `getActivities(filter)` (with manual query-param construction)             |
 
-**Use the SDK for these REST calls:**
-
-| SDK method | Used to implement |
-| --- | --- |
-| `client.getAccount` | `getAccountInfo()` |
-| `client.getClock` | `getMarketStatus()` (clock half) |
-| `client.getStocksQuotesLatest` | `getStockQuotes()` bid/ask (mid computed locally) |
-| `client.getActivity` | `getActivities()` (with manual query-param handling) |
-
-**Bypass the SDK for:**
-
-| What | Why bypassed | What replaces it |
-| --- | --- | --- |
-| Streaming entirely | SDK marks streaming "todo" — zero WebSocket support | Raw `ws` package, two dedicated sockets |
-| `client.getStocksSnapshots` | Hits the wrong API path | `getStocksQuotesLatest` (US-32 path) — `prevClose` carried via a separate request that returns `prev_daily_bar` |
-| `client.getOptionsSnapshots` | Response type omits `greeks` and `impliedVolatility` | Raw `fetch` against `/v1beta1/options/snapshots` with adapter-local types |
-| Option streaming MessagePack decoding | SDK doesn't decode option frames | `@msgpack/msgpack` `decodeMulti()` (handles Alpaca's batching) |
-
-**Why not replace the SDK entirely?** It is a Deno-to-Node transpile (via `dnt`), marked no-longer-maintained, but the working REST endpoints work reliably. Rewriting them with raw `fetch` is unnecessary churn. **Why not `alpaca-trade-api-js`?** Older, callback-based, worse TypeScript support.
+**Streaming, stock quotes, option snapshots, and option chains do not go through Alpaca anymore.** Those concerns were removed from the Alpaca path entirely in US-39 — see the [Massive market-data adapter](../domain/market-data.md) for current behaviour.
 
 ### Deprecated `src/main/integrations/alpaca.ts`
 
-The pre-existing `src/main/integrations/alpaca.ts` (`client`, `resetClient`) is marked `@deprecated` by US-31. It remains in the tree to avoid breaking any in-flight branch that imports it, but no new code uses it — new code goes through `createMarketDataProvider`. Removal happens once downstream callers have migrated.
+The pre-existing `src/main/integrations/alpaca.ts` (`client`, `resetClient`) is marked `@deprecated`. It remains in the tree to avoid breaking any in-flight branch that imports it, but no new code uses it — new code goes through `createBrokerProvider`. Removal happens once downstream callers have migrated.
+
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33 -->
+<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39 -->
+
 ## REST surface
 
 Each REST method is wrapped in a `try` / `wrapError(err, opLabel)` block that normalises HTTP 401 → `auth_failed`, 429 → `rate_limited`, network failures → `network_error`, and unknown failures → `unknown` (IPC handlers default that to `internal_error`).
-
-### `getStockQuotes(tickers): Promise<Map<string, StockQuote>>`
-
-- **SDK method:** `client.getStocksQuotesLatest({ symbols: tickers })` — plus a separate previous-close request to populate `prevClose`.
-- **Used by:** `market-data:stock-quotes` IPC handler, called as the TanStack Query `queryFn` to **seed** the renderer cache with full quote data (including `prevClose`) before stream ticks start arriving.
-- **Mapping per entry:**
-  - `bid = Decimal(bp).toFixed(2)`
-  - `ask = Decimal(ap).toFixed(2)`
-  - `price = ((bid + ask) / 2).toFixed(2)` (mid)
-  - `prevClose = Decimal(prev_daily_bar.c).toFixed(2)` (US-32 addition)
-  - `change` / `changePercent` — see the data gaps section below
-  - `volume = latest_quote.v ?? 0`
-  - `timestamp = latest_quote.t` (ISO-8601)
-- **Unknown ticker handling (AC-15):** unknown symbols are simply absent from the returned `Map`; no error is thrown.
-
-### `getOptionSnapshots(contractIds): Promise<Map<string, OptionSnapshot>>`
-
-- **HTTP path:** `/v1beta1/options/snapshots` (raw `fetch` — SDK type is incomplete).
-- **Input:** OCC-formatted symbols (e.g. `AAPL260516P00180000`) built renderer-side via `buildOccSymbol` from `src/main/core/option-symbol.ts`.
-- **Used by:** `market-data:option-snapshots` IPC handler (US-33). The renderer's `useOptionSnapshots(legs, { session })` hook builds OCC symbols from active option legs and polls this every 60 s when the market session is not `closed`.
-- **Mapping per entry:**
-  - `bid`, `ask`, `lastTrade` — 2dp decimal strings
-  - `mid = ((bid + ask) / 2).toFixed(2)` — **computed by the provider**, not the renderer. The renderer reads `snapshot.mid` directly and never recomputes.
-  - `openInterest`, `volume` — both typed `number | null`, both always `null` from Alpaca (see data gaps below)
-  - `greeks.{delta, gamma, theta, vega}` — 4dp decimal strings
-  - `greeks.iv` — implied volatility, 4dp decimal string
-  - `timestamp` — ISO-8601
-- **Unknown symbol handling:** absent from the returned `Map`; the renderer renders `—`.
-
-### `getActivities(filter): Promise<BrokerActivity[]>`
-
-- **SDK method:** `client.getActivity` (with manual query-param construction — the SDK ignores some params on this endpoint).
-- **Filter shape:** `{ type: string; since?: string /* YYYY-MM-DD */ }`. `type` is an Alpaca activity code (e.g. `'OPASN'` for option assignment, `'OPEXP'` for expiration, `'OPXRC'` for exercise).
-- **Returns:** array sorted by `transactionTime` descending. Each entry carries `activityId`, `activityType`, `symbol`, `qty`, `price`, `transactionTime`.
 
 ### `getAccountInfo(): Promise<AccountInfo>`
 
 - **SDK method:** `client.getAccount`.
 - **Returns:** `{ buyingPower, portfolioValue, cash, environment: 'paper' | 'live' }`. `environment` is derived from the provider's `paper` config flag — Alpaca's `getAccount()` carries no paper/live indicator.
+- **IPC channel:** `broker:account-info` (US-39 split namespace).
 
 ### `getMarketStatus(): Promise<MarketStatus>`
 
 - **SDK method:** `client.getClock`.
-- **Used by:** `market-data:market-status` IPC handler, polled by the renderer's `useMarketStatus()` hook every 60 s. Drives the `MarketStatusPill` (`LIVE` / `EXT` / `CLOSED` / `DELAYED`).
+- **Used by:** `broker:market-status` IPC handler, polled by the renderer's `useMarketStatus()` hook every 60 s. Drives the `MarketStatusPill` (`LIVE` / `EXT` / `CLOSED` / `DELAYED`). Also queried by the `PollingScheduler` per tick to decide the next-tick cadence (see [Activity polling pattern](#activity-polling-pattern-us-35) below).
 - **Returns:** `{ isOpen, nextOpen, nextClose, session: 'regular' | 'pre' | 'post' | 'closed' }`. Alpaca's `/v2/clock` only returns `is_open`, `next_open`, `next_close` — `session` is **derived client-side** by comparing the clock timestamp against calendar windows (pre: 4:00–9:30 AM ET, regular: 9:30 AM–4:00 PM ET when `is_open`, post: 4:00–8:00 PM ET, closed: otherwise).
 - **Why poll instead of stream?** Alpaca offers no streaming option for clock/session changes; transitions are predictable boundaries (4 AM, 9:30 AM, 4 PM, 8 PM ET, weekends/holidays) so a 60 s poll catches them within a minute.
+- **Why broker, not market-data?** Per US-39, Massive's market-status endpoint is per-asset-class and doesn't map cleanly to the single `MarketStatus` shape — Alpaca's clock is the authoritative session signal used across the UI and scheduler.
+
+### `getActivities(filter): Promise<BrokerActivity[]>`
+
+- **SDK method:** `client.getActivity` (with manual query-param construction — the SDK ignores some params on this endpoint).
+- **Filter shape:** `{ type: string; since?: string /* ISO-8601 */ }`. `type` is an Alpaca activity code:
+  - `'OPASN'` — option assignment (the only consumer in the codebase today; see US-35)
+  - `'OPEXP'` — option expiration
+  - `'OPXRC'` — option exercise
+- **Returns:** array sorted by `transactionTime` descending. Each entry carries `activityId`, `activityType`, `symbol`, `qty`, `price`, `transactionTime`.
+- **IPC channel:** `broker:activities` (US-39 split namespace).
+
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33 -->
-## Streaming surface
+<!-- generated:from us-35 -->
 
-The provider exposes streaming as a typed Observable, never as raw SDK callbacks. Internally it owns two independent WebSocket lifecycles and multiplexes per-symbol subscriptions over each.
+## Activity polling pattern (US-35)
 
-### `provider.stream(feed, symbols): Observable<StreamEvent<T>>`
+US-35 is the first real consumer of `BrokerProvider.getActivities({ type: 'OPASN', since })`. It introduces a watermark + dedupe pattern that any future activity-polling job (`OPEXP`, `OPXRC`, etc.) should follow.
 
-```typescript
-type DataFeed = 'stockQuotes' | 'optionQuotes' | 'optionTrades'
+### Watermark captured at poll start, not poll end
 
-interface StreamEvent<T> {
-  feed: DataFeed
-  symbol: string
-  data: T // StockQuote or OptionSnapshot depending on feed
-  timestamp: string // ISO-8601
+The detection service stamps `pollStartedAt = new Date().toISOString()` **before** awaiting `brokerProvider.getActivities({ type: 'OPASN', since })`, then persists that timestamp (not `now()`) once the batch completes successfully.
+
+- **Why:** Stamping at the end of the call would lose any activity that lands during the broker round trip. Stamping at the start means anything that arrived during the gap is replayed on the next poll, and dedupe handles it.
+- **Cost:** Slightly more re-processing per poll — bounded by the activity volume during the call, and absorbed by `INSERT OR IGNORE` against the compound unique index.
+
+### Per-environment watermark keys
+
+The watermark is stored in the `app_settings` key-value table (owned by main's migration 006; see [domain/market-data.md](../domain/market-data.md) for the table shape). Keys are **per environment**, with an `:env` suffix:
+
+- `assignments_last_poll_at:paper`
+- `assignments_last_poll_at:live`
+
+This keeps paper and live histories independent — switching the active broker environment (US-37) starts the new environment's polling from its own last-seen watermark without leaking activity from the other.
+
+The same suffix convention should be used for any future activity-polling watermark (`<job>_last_poll_at:<env>`).
+
+### Dedupe via compound UNIQUE
+
+Detected assignments are persisted with `INSERT OR IGNORE` against `UNIQUE(activity_id, position_id)` on `pending_assignments` (see migration `008_create_pending_assignments.sql`). The compound index allows one pending row per matching position when a single OPASN activity collides with multiple open CSPs on the same OCC symbol, while still rejecting genuine replays.
+
+### `BrokerError` handling and scheduler back-off
+
+When `getActivities` throws a `BrokerError`, the detect-assignments job classifies and surfaces it without crashing the app:
+
+| `BrokerError.code`     | Detection-service behaviour                                                                                           |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `network_error`        | WARN log + bail out of the tick. Watermark is **not** advanced; the next scheduler tick retries naturally.            |
+| `auth_failed`          | Typed return (`{ detected: 0, skipped: 0, brokerError: { code: 'auth_failed' } }`). Scheduler can back off this job.  |
+| `rate_limited`         | WARN log + bail out; treated like `network_error` from the poll's perspective. Recovery on the next tick.             |
+| `environment_mismatch` | Typed return; surfaced via the settings page during credential entry, not during a normal poll.                       |
+| other / unknown        | WARN log + bail out; the scheduler's outer try/catch ensures it does not stop the scheduler (see `PollingScheduler`). |
+
+The job handler in `src/main/index.ts` lazy-reads `brokerFactory.create()` plus `settings.getCredentialStatus().activeBrokerEnv` on every tick, then **short-circuits to a no-op when `activeBrokerEnv === 'none'`** — there is nothing to poll when no environment is active, and US-37's runtime credential changes flow through without restart.
+
+### Polling cadence
+
+The job registers with the `PollingScheduler` (see [features/us-46-polling-scheduler.md](../features/us-46-polling-scheduler.md)) using a market-aware interval policy:
+
+```ts
+{
+  kind: 'interval',
+  marketOpenMs: 60_000,      // 60s during regular hours
+  extendedHoursMs: 300_000,  // 5min during pre/post
+  marketClosedMs: null       // parked overnight; next run on market open
 }
 ```
 
-- **`stockQuotes`** — JSON frames; each event's `data` is a `StockQuote`.
-- **`optionQuotes` / `optionTrades`** — MessagePack binary frames decoded via `decodeMulti()`; each event's `data` is an `OptionSnapshot` (quote-only — Greeks/IV are not in stream frames; see data gaps).
+OPASN events typically post overnight after expiration, so the next morning's first poll catches them; during-hours polling exists for same-day early-exercise corner cases.
 
-The renderer's `market-data:set-stock-quote-tickers` IPC handler holds one subscription per active-ticker change and emits per-tick `webContents.send('market-data:stock-quote', ...)` push events. Unsubscribing the prior Observable (via `subscription.unsubscribe()`) triggers an Alpaca `unsubscribe` frame for those symbols via Observable teardown.
-
-### Transport (raw `ws` + two sockets)
-
-| Feed | URL | Encoding |
-| --- | --- | --- |
-| Stocks | `wss://stream.data.alpaca.markets/v2/{dataFeed}` (default `sip`) | JSON text frames |
-| Options | `wss://stream.data.alpaca.markets/v1beta1/{optionFeed}` (default `opra`) | MessagePack binary frames |
-
-- **Connection limit:** Alpaca allows 1 concurrent connection per endpoint. The adapter therefore multiplexes all symbol subscriptions over each socket. Paper and live accounts share the same data-stream URLs — the paper/live distinction only affects the trading API base URL.
-- **One `Subject` per socket** bridges WebSocket events to Observable subscribers. Each `stream()` call returns a new Observable that filters from the per-socket `Subject<StreamEvent>` by symbol; teardown sends `unsubscribe` and removes the symbol filter.
-
-### Auth and subscribe protocol
-
-Both sockets follow the same handshake:
-
-```
-1. Client connects to WebSocket
-2. Server: [{"T":"success","msg":"connected"}]
-3. Client: {"action":"auth","key":"...","secret":"..."}
-4. Server: [{"T":"success","msg":"authenticated"}]
-5. Client: {"action":"subscribe","quotes":["AAPL","MSFT"]}
-6. Server pushes frames: [{"T":"q","S":"AAPL","bp":172.60,"ap":172.70,...}]
-7. On Observable teardown:
-   Client: {"action":"unsubscribe","quotes":["AAPL","MSFT"]}
-```
-
-For the option socket, frames 5–7 are MessagePack-encoded; the auth frame (step 3) is still JSON.
-
-### Connection lifecycle
-
-- **Constructor is lazy.** `new AlpacaMarketDataProvider({ keyId, secretKey, paper, dataFeed?, optionFeed? })` does **not** open any socket. It creates the SDK client internally via `createClient({ key, secret, paper })` and captures config; environments without credentials (e2e, renderer-only tooling) can still instantiate it.
-- **`connect()` on first use.** Sockets open on the first subscription request — never at app startup. The IPC handler's module-scoped `connected` flag invokes `provider.connect()` on the first non-empty `setStockQuoteTickers` call. This avoids opening sockets the user may never need.
-- **One socket per feed per app session.** Subsequent subscribe/unsubscribe requests reuse the existing socket; the adapter multiplexes internally.
-- **`disconnect()` on app quit.** The main process registers `app.on('before-quit', () => provider.disconnect())`. `disconnect()` closes both sockets, completes the per-socket `Subject`s so all active subscribers receive `complete`, and **nulls out internal socket and Subject references** to prevent accidental use of closed/completed resources.
-
-### Stream events and errors
-
-`StreamError` is emitted through the Observable error channel:
-
-```typescript
-interface StreamError {
-  feed: DataFeed
-  code: string         // 'stream_disconnected' | 'auth_failed' | ...
-  message: string
-  reconnectable: boolean
-}
-```
-
-When the underlying WebSocket fails (auth loss, network drop, server-side disconnect), the adapter re-emits a `StreamError` through the Observable's `error` callback. The IPC handler catches it, forwards it to the renderer via the `market-data:stream-error` push event, and logs it. The renderer surfaces the `StaleDataBanner` immediately on receipt without waiting for the 5-minute freshness threshold (see [contracts/ipc-handlers.md](./ipc-handlers.md#market-datastream-error)).
-
-**Reconnection logic is intentionally NOT in the provider.** `StreamError.reconnectable: true` is a hint, not behaviour. Consumers compose `retry` / `retryWhen` operators on the Observable themselves — RxJS gives downstream stories (US-38) the operators they need without bolting them onto the integration layer.
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33 -->
+<!-- generated:from us-37 -->
+
+## Broker settings and environment selection (US-37)
+
+US-37 moves Alpaca credentials into encrypted settings persistence and adds runtime broker-environment switching, while keeping Massive's shared app-level configuration out of user settings.
+
+- **Encrypted persistence.** `src/main/services/settings.ts` stores Alpaca paper and live credentials in `credential_settings` with Electron `safeStorage.encryptString`. Plaintext secrets never round-trip to the renderer — saved cards render masked placeholders plus a `Replace` flow.
+- **Active environment persisted separately.** `app_settings.active_broker_environment` stores `'paper' | 'live' | 'none'`. `createBrokerProvider` resolves the effective environment via this setting plus credential presence.
+- **Broker-only refresh.** Settings mutations that change broker state call `brokerFactory.recreate()`, which rebuilds only the broker provider cache. The Massive market-data factory is **not** touched — quote streams and option polls continue uninterrupted.
+- **Vendor-scoped query invalidation.** Renderer query keys are namespaced (`['broker', ...]` vs `['market', ...]`). Settings mutations invalidate broker queries via a predicate on `queryKey[0] === 'broker'`, refreshing buying power / activities / market-status surfaces without causing stock or option quote churn.
+- **LIVE confirmation.** The renderer shows a `LiveBrokerConfirmDialog` before invoking `settings:set-active-broker-environment` with `environment: 'live'`. Switching from live back to paper is immediate (no dialog).
+
+### Settings probe flows
+
+Settings-side Alpaca probes are intentionally separate from regular `BrokerProvider` reads so the app can test paper and live environments directly without depending on the currently active broker:
+
+- **Candidate credentials:** `settings:test-connection` with `{ vendor: 'alpaca', environment, keyId, secret }` calls `GET /v2/account` against paper or live using the candidate credentials and returns a masked account number on success.
+- **Stored credentials:** `settings:test-stored-alpaca-connection` loads encrypted credentials for the requested environment and runs the same probe without exposing secrets back to the renderer.
+- **Environment mismatch:** entering live keys in the paper card returns `environment_mismatch` with the exact message `Environment mismatch — these are LIVE keys, not paper keys`. (`environment_mismatch` was added to `BrokerError` in US-39 specifically for this detection.)
+
+All Alpaca HTTP/SDK interaction stays inside `alpaca-broker.ts` or the settings-probe helpers in `src/main/services/settings-connections.ts`; the renderer and IPC layers only see typed result objects.
+
+<!-- /generated -->
+
+<!-- generated:from us-39 -->
+
+## Massive market-data adapter (US-39)
+
+US-39 introduced `MassiveMarketDataProvider` as the second concrete `MarketDataProvider` implementation and **removed the old `AlpacaMarketDataProvider` class entirely**. Market data and broker are now two independent stacks.
+
+This page documents the Alpaca side; below is a brief summary of the Massive side and how it relates.
+
+- **REST-only, raw `fetch`.** No SDK — Massive has no official Node client and Node 20+ `fetch` is sufficient. Bearer auth via `Authorization: Bearer ${apiKey}` header.
+- **Shared app configuration.** The Massive API key loads once per process from app configuration (not user settings). US-37 deliberately keeps Massive out of `credential_settings`.
+- **Optional Greeks.** `OptionSnapshot.greeks` and `OptionSnapshot.impliedVolatility` are optional — the adapter returns `undefined` when Massive omits them rather than fabricating zeros. Renderers must use `snapshot.greeks?.delta` and render `—` when absent.
+- **Streaming declared but deferred.** `supportsStreaming('stockQuotes' | 'optionQuotes')` returns `true`, but `stream()` throws `MarketDataError` with `code: 'streaming_unsupported'`. REST polling meets Phase 2 requirements; Massive WebSocket auth is a separate story.
+- **`market-data:*` IPC.** New `market-data:stock-quotes` (plural batch), `market-data:option-snapshot` (singular per-contract), and `market-data:option-chain` (filtered paginated) channels replace the old US-33 `market-data:option-snapshots` plural-bulk channel.
+- **No fallback to Alpaca.** Users without Massive configured see a clear `auth_failed` error; the codebase does not retain a dual-path implementation.
+
+See [domain/market-data.md](../domain/market-data.md) and [contracts/ipc-handlers.md](./ipc-handlers.md) for the full Massive surface.
+
+<!-- /generated -->
+
+<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39 -->
+
 ## Error model
 
-Every SDK error path and every socket failure funnels through a single helper inside the adapter:
+Every SDK error path and every probe failure funnels through a single helper inside the adapter:
 
 ```ts
 function wrapError(err: unknown, op: string): never {
   // inspect err.response.status, err.code, etc.
-  // throw new MarketDataError({ op, code: '<code>', cause: err })
+  // throw new BrokerError({ op, code: '<code>', cause: err })
 }
 ```
 
-`MarketDataError` is a structured `Error` subclass with a discriminating `code` field:
+`BrokerError` is a structured `Error` subclass with a discriminating `code` field:
 
-```typescript
-class MarketDataError extends Error {
-  code:
-    | 'auth_failed'
-    | 'network_error'
-    | 'rate_limited'
-    | 'stream_disconnected'
-    | 'streaming_unsupported'
-    | 'subscription_failed'
-    | 'unknown'
-}
-```
+| Code                   | When                                                                             |
+| ---------------------- | -------------------------------------------------------------------------------- |
+| `auth_failed`          | SDK rejects credentials (HTTP 401, missing credentials)                          |
+| `network_error`        | Upstream unreachable, DNS failure, timeout                                       |
+| `rate_limited`         | SDK returns HTTP 429                                                             |
+| `environment_mismatch` | Live keys submitted to paper card or vice versa (US-39 addition; US-37 consumer) |
+| `unknown`              | Catch-all for unclassified failures                                              |
 
-| Code | When |
-| --- | --- |
-| `auth_failed` | SDK rejects credentials (HTTP 401, `Missing credentials`, stream auth frame rejected) |
-| `network_error` | Upstream unreachable, socket dropped, DNS failure, timeout |
-| `rate_limited` | SDK returns HTTP 429 |
-| `stream_disconnected` | Unexpected WebSocket close during an active subscription |
-| `streaming_unsupported` | `provider.stream(feed, ...)` called for a feed `supportsStreaming(feed)` rejects |
-| `subscription_failed` | Subscribe frame acknowledged with error |
-| `unknown` | Catch-all for unclassified failures |
+`MarketDataError` is a parallel taxonomy used by the Massive adapter and the (now-removed) old Alpaca market-data path — see [domain/market-data.md](../domain/market-data.md). Per US-39, `MarketDataError` no longer includes `options_no_subscription` (Alpaca-specific code) since Alpaca no longer serves market data.
 
-**Errors are thrown, not returned** (no `Result<T, E>` tuples), consistent with the rest of the codebase. The IPC handler layer maps the codes directly to envelope error codes — see the [Standard error codes](./ipc-handlers.md#standard-error-codes) table. Unclassified exceptions propagate as generic `Error` and become `internal_error` at the handler.
+**Errors are thrown, not returned** (no `Result<T, E>` tuples), consistent with the rest of the codebase. IPC handler layers map the codes directly to envelope error codes — see the [Standard error codes](./ipc-handlers.md#standard-error-codes) table. Unclassified exceptions propagate as generic `Error` and become `internal_error` at the handler.
 
-The adapter records **no explicit retry policy, no exponential backoff, and no per-call rate-limit tracker**. Recovery is the next user action (refresh, re-mount the positions page), the next 60 s `useMarketStatus` poll, or — for streams — whatever `retry` operator the consumer composes.
+The adapter records **no explicit retry policy, no exponential backoff, and no per-call rate-limit tracker**. Recovery is:
+
+- For broker reads driven by the renderer: the next user action (refresh, re-mount of the settings or positions page) or the next 60 s `useMarketStatus` poll.
+- For broker reads driven by the scheduler: the next tick (cadence-aware) — see the [Activity polling pattern](#activity-polling-pattern-us-35).
+
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33 -->
-## Data gaps and known limitations
+<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39 -->
 
-A handful of fields are typed in the domain shapes but cannot be sourced from Alpaca:
-
-- **`StockQuote.change` / `changePercent`** — Hardcoded to `'0.00'` in US-31 for both REST and streaming paths (Alpaca's `getStocksQuotesLatest` and stream frames don't carry previous-close). US-32 added `prevClose` to the REST path so the renderer can compute change client-side from `(price − prevClose)` whenever a tick arrives.
-- **`OptionSnapshot.openInterest`** — Typed `number | null`, always `null` from Alpaca. Not available on any Alpaca option endpoint.
-- **`OptionSnapshot.volume`** — Typed `number | null`, always `null` from Alpaca on snapshots. Could be derived from `getOptionsBars()` but that's deferred.
-- **`OptionSnapshot.greeks` / `iv` on stream frames** — Only available via the REST `/v1beta1/options/snapshots` endpoint. Stream frames carry quote (bid/ask) or trade (price/size) only. US-33 polls REST every 60 s rather than bridging the stream for this reason.
-- **`MarketStatus.session`** — Alpaca's `/v2/clock` carries no `session` field; the value is derived client-side inside the adapter.
-
-These gaps shape several decisions documented in [domain/market-data.md](../domain/market-data.md) — most notably the REST-seed + stream-bridge cache pattern (so previous-close survives across stream ticks) and the 60 s REST poll for option snapshots (so Greeks stay fresh without a separate transport).
-<!-- /generated -->
-
-<!-- generated:from us-31,us-32,us-33 -->
 ## Source files
 
-- `src/main/integrations/market-data-provider.ts` — the `MarketDataProvider` interface; `StockQuote`, `OptionSnapshot`, `MarketStatus`, `AccountInfo`, `BrokerActivity`, `ActivityFilter`, `DataFeed`, `StreamEvent`, `StreamError` types; `MarketDataError` class.
-- `src/main/integrations/market-data-factory.ts` — `createMarketDataProvider(config)` factory + `MarketDataConfig` shape. Consumed once at startup by `src/main/index.ts`.
-- `src/main/integrations/` (Alpaca adapter) — `AlpacaMarketDataProvider` implementation. The only file in the repo permitted to import `@alpacahq/typescript-sdk`, `ws`, or `@msgpack/msgpack`. Owns lazy SDK client construction, REST mapping, two-socket stream lifecycle, per-socket `Subject` bridging, and `wrapError` normalisation.
-- `src/main/integrations/alpaca-stream-test-utils.ts` — shared `MockSocket`, `emitSocketEvent`, `simulateAuth` helpers used by adapter unit/e2e tests.
-- `src/main/integrations/fake-market-data.ts` — `FakeMarketDataProvider` for e2e and dev; env-driven canned responses (`WHEELBASE_MARKET_MOCK`, `WHEELBASE_MOCK_OPTION_SNAPSHOTS`).
-- `src/main/integrations/alpaca.ts` — pre-existing helper marked `@deprecated` by US-31; kept available, no new code uses it.
+- `src/main/integrations/broker-provider.ts` — `BrokerProvider` interface; `AccountInfo`, `MarketStatus`, `BrokerActivity`, `ActivityFilter` types; `BrokerError` class.
+- `src/main/integrations/alpaca-broker.ts` — `AlpacaBrokerProvider` implementation. The only file in the repo permitted to import `@alpacahq/typescript-sdk`. Owns lazy SDK client construction, REST mapping for `getAccountInfo` / `getMarketStatus` / `getActivities`, and `wrapError` normalisation.
+- `src/main/integrations/broker-factory.ts` — `createBrokerProvider` factory + `brokerFactory.recreate()`. Resolves the active environment via `src/main/services/settings.ts`.
+- `src/main/integrations/fake-broker.ts` — `FakeBrokerProvider` for e2e and dev; env-driven canned responses.
+- `src/main/integrations/alpaca.ts` — pre-existing helper marked `@deprecated`; kept available, no new code uses it.
+- `src/main/ipc/broker.ts` — `broker:account-info`, `broker:market-status`, `broker:activities` IPC handlers (US-39 split namespace).
+- `src/main/services/settings.ts` — encrypted `credential_settings` persistence; `getCredentialStatus()` reads the active broker environment.
+- `src/main/services/settings-connections.ts` — Massive and Alpaca probe helpers with typed error mapping. The Alpaca probes (`settings:test-connection`, `settings:test-stored-alpaca-connection`) are deliberately separate from regular `BrokerProvider` reads.
+- `src/main/services/detect-assignments.ts` — US-35 poll job. Captures `pollStartedAt` before `getActivities`, persists per-environment watermarks (`assignments_last_poll_at:paper` / `:live`), handles `BrokerError.code` for graceful back-off.
+- `src/main/services/scheduler-instance.ts` — module-level singleton `PollingScheduler` with safe-broker fallback. Consumes `BrokerProvider.getMarketStatus()` per tick for cadence decisions.
+- `src/main/index.ts` — wires broker handlers against a current-provider accessor so US-37 settings changes recreate only the broker provider; registers the US-35 `detect-assignments` job; consolidated `before-quit` awaits `Promise.all([scheduler.stop(), marketDataProvider.disconnect()])`.
 
-New dependencies introduced by US-31 (`package.json`):
+For the Massive market-data adapter files (`massive-market-data.ts`, `market-data-provider.ts`, `market-data-factory.ts`, `massive-credentials.ts`, `fake-market-data.ts`, `src/main/ipc/market-data.ts`), see [domain/market-data.md](../domain/market-data.md).
 
-- `ws` and `@types/ws` — WebSocket client for the Electron main process.
-- `@msgpack/msgpack` — decode option stream MessagePack frames (`decodeMulti()`).
-- `rxjs` — `Observable`, `Subject`, and a handful of utility functions for the streaming interface.
-
-Plan-cited paths that do not exist at their named location after the "market data / broker api separation" refactor — e.g. `alpaca-market-data.ts`, `alpaca-market-data.test.ts`, `alpaca-market-data.e2e.test.ts` — moved into `market-data-provider.ts` plus a sibling Alpaca file under the same directory. Treat path references as approximate; the boundary contract (single import site, typed errors out, factory-only construction) is the load-bearing piece.
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33 -->
+<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39 -->
+
 ## Driven by
 
 - [us-31 — Market Data Provider Adapter](../features/us-31-market-data-provider-adapter.md)
 - [us-32 — Live Position Prices](../features/us-32-live-position-prices.md)
 - [us-33 — Option Mid Price & Unrealized P&L](../features/us-33-option-mid-pnl.md)
+- [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md)
+- [us-37 — Paper / Live Broker Environment Toggle](../features/us-37-paper-live-broker-environment-toggle.md)
+- [us-39 — Massive Market Data Provider](../features/us-39-massive-market-data-provider.md)
+
 <!-- /generated -->
 
 <!-- generated:from us-37 -->

@@ -1,4 +1,5 @@
 # ADR: Stream-first market data with one-shot REST seed
+
 <!-- generated:from us-32 -->
 
 ## Decision

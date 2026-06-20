@@ -1,4 +1,5 @@
 # ADR: Renderer snake_case payloads, IPC camelCase boundary
+
 <!-- generated:from us-4, us-5, us-6, us-7, us-8, us-9, us-12, missing-ac -->
 
 ## Decision

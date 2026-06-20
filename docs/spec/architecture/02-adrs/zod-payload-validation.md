@@ -1,4 +1,5 @@
 # ADR: Zod payload validation at the IPC boundary
+
 <!-- generated:from us-4, us-5, us-6, us-7, us-8, us-9, us-12, us-32 -->
 
 ## Decision

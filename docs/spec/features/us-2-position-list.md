@@ -1,6 +1,7 @@
 # US-2: Position list
 
 <!-- generated:from us-2 -->
+
 ## Summary
 
 Renders every wheel the trader owns on a single positions list page. Each row shows the ticker, phase badge, active-leg strike and expiration, days-to-expiration, premium collected to date, and the latest effective cost basis. Rows are sorted by DTE ascending with no-active-option positions (holding shares, closed wheels) placed last so the trader sees the nearest decision point first. An empty trader sees a "No positions yet" state with a CTA linking to the New Wheel form. No new schema or migration: every field is sourced from existing Phase 1 tables, with DTE computed at query time.

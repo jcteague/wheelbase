@@ -1,4 +1,5 @@
 # ADR: `InstrumentType` enum replaces `OptionType` and adds `STOCK`
+
 <!-- generated:from us-6 -->
 
 ## Decision

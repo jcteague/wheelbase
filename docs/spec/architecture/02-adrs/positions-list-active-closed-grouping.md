@@ -1,4 +1,5 @@
 # ADR: Positions list splits into Active / Closed sections
+
 <!-- generated:from us-5 -->
 
 ## Decision

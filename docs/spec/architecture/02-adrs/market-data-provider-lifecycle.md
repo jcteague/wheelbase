@@ -1,4 +1,5 @@
 # ADR: MarketDataProvider connect-on-demand lifecycle
+
 <!-- generated:from us-32 -->
 
 ## Decision

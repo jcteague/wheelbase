@@ -10,6 +10,10 @@ import { brokerFactory } from './integrations/broker-factory'
 import { loadMassiveApiKey } from './integrations/massive-credentials'
 import { registerMarketDataHandlers } from './ipc/market-data'
 import { registerBrokerHandlers } from './ipc/broker'
+import { registerAssignmentsIpc } from './ipc/assignments'
+import { registerTestSchedulerIpc, seedTestJobsFromEnv } from './ipc/test-scheduler'
+import { DETECT_ASSIGNMENTS_JOB_NAME, detectAssignments } from './services/detect-assignments'
+import { scheduler } from './services/scheduler-instance'
 import { registerSettingsHandlers } from './ipc/settings'
 import type { TestConnectionPayload } from './schemas'
 import { createSettingsService } from './services/settings'
@@ -19,6 +23,7 @@ import {
   type TestConnectionResult
 } from './services/settings-connections'
 import { logger } from './logger'
+import type { BrokerProvider } from './integrations/broker-provider'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -121,7 +126,12 @@ app.whenReady().then(() => {
     db,
     safeStorage,
     loadMassiveApiKey,
-    testAlpacaConnection
+    // Route the save-flow credential verification through the same mock-aware
+    // dispatcher used by the explicit "Test connection" IPC. In production the
+    // mock branch is dormant (env var absent) and behavior is identical to
+    // calling testAlpacaConnection directly; in e2e it lets WHEELBASE_MOCK_SETTINGS_CONNECTIONS
+    // intercept save-time verification the same way it intercepts the test button.
+    testAlpacaConnection: (input) => runSettingsConnectionTest({ vendor: 'alpaca', ...input })
   })
 
   marketDataFactory.configure({ loadMassiveApiKey })
@@ -134,9 +144,6 @@ app.whenReady().then(() => {
 
   const marketDataProvider = marketDataFactory.create()
   registerMarketDataHandlers(marketDataProvider, () => mainWindow)
-  app.on('before-quit', () => {
-    void marketDataProvider.disconnect()
-  })
 
   registerBrokerHandlers(() => brokerFactory.create())
   registerSettingsHandlers({
@@ -145,13 +152,77 @@ app.whenReady().then(() => {
     onBrokerProviderChanged: () => {
       logger.info('Refreshing broker provider after settings change')
       brokerFactory.recreate()
+      // Re-tick the broker-gated detect-assignments job so polling resumes
+      // immediately with the new credentials. Without this nudge, a job parked
+      // while the market was closed (marketClosedMs:null) stays parked until the
+      // next app restart, so saving credentials at runtime would never resume
+      // detection.
+      void scheduler.runNow(DETECT_ASSIGNMENTS_JOB_NAME).catch((err) => {
+        logger.warn({ err }, 'failed to resume detect-assignments after broker change')
+      })
     }
   })
+
+  registerAssignmentsIpc({ db, scheduler })
+
+  // Detect-assignments job: looks up the current broker provider and active
+  // environment lazily on every tick so credential changes flow through without
+  // restart. When no broker is configured (activeBrokerEnv === 'none'), the
+  // tick is a no-op.
+  scheduler.register({
+    name: DETECT_ASSIGNMENTS_JOB_NAME,
+    cadence: {
+      kind: 'interval',
+      marketOpenMs: 60_000,
+      extendedHoursMs: 300_000,
+      marketClosedMs: null
+    },
+    handler: async () => {
+      const env = settings.getCredentialStatus().activeBrokerEnv
+      if (env === 'none') return
+      let brokerProvider: BrokerProvider
+      try {
+        brokerProvider = brokerFactory.create()
+      } catch (err) {
+        logger.warn({ err }, 'detect-assignments: broker provider unavailable')
+        return
+      }
+      await detectAssignments({ db, brokerProvider, env })
+    }
+  })
+
+  if (process.env.NODE_ENV === 'test') {
+    seedTestJobsFromEnv(scheduler)
+    registerTestSchedulerIpc(scheduler)
+
+    // Test-only: preseed an active broker environment so detect-assignments and
+    // other broker-gated jobs run without going through the credential-save UI
+    // path. Reads WHEELBASE_PRESEED_ACTIVE_ENV ('paper' | 'live').
+    const preseedEnv = process.env.WHEELBASE_PRESEED_ACTIVE_ENV
+    if (preseedEnv === 'paper' || preseedEnv === 'live') {
+      settings.saveAlpacaCredentials({
+        environment: preseedEnv,
+        keyId: `PK_TEST_${preseedEnv.toUpperCase()}`,
+        secret: 'test-secret',
+        accountNumberMasked: preseedEnv === 'paper' ? 'PA…ABC' : 'AL…XYZ'
+      })
+      settings.setActiveBrokerEnvironment({ environment: preseedEnv })
+      logger.info({ environment: preseedEnv }, 'preseeded_active_broker_environment_for_tests')
+    }
+  }
+
+  scheduler.start()
 
   createWindow()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+
+  app.on('before-quit', async (e) => {
+    e.preventDefault()
+    await Promise.all([scheduler.stop(), marketDataProvider.disconnect()])
+    app.exit(0)
   })
 })
 

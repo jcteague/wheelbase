@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 import type { RollCcResponse } from '../api/positions'
@@ -175,7 +175,7 @@ it('schema validation — rejects zero new premium', async () => {
   })
 })
 
-it('transitions to RollCcSuccess when mutation resolves', () => {
+it('transitions to RollCcSuccess when mutation resolves', async () => {
   let capturedOnSuccess: ((data: RollCcResponse) => void) | undefined
 
   mockUseRollCc.mockImplementation(
@@ -192,10 +192,10 @@ it('transitions to RollCcSuccess when mutation resolves', () => {
     }
   )
 
-  const { rerender } = render(<RollCcSheet {...DEFAULT_PROPS} />)
-
-  capturedOnSuccess?.(SUCCESS_RESPONSE)
-  rerender(<RollCcSheet {...DEFAULT_PROPS} />)
+  render(<RollCcSheet {...DEFAULT_PROPS} />)
+  await act(async () => {
+    capturedOnSuccess?.(SUCCESS_RESPONSE)
+  })
 
   expect(screen.getByText(/CC Rolled Successfully/)).toBeInTheDocument()
 })
@@ -227,8 +227,10 @@ it('success screen shows pre-roll basis even when basisPerShare prop updates aft
   await user.click(screen.getByRole('button', { name: /confirm roll/i }))
 
   // simulate props updating (React Query refetch) before success renders
-  capturedOnSuccess?.(SUCCESS_RESPONSE)
-  rerender(<RollCcSheet {...DEFAULT_PROPS} basisPerShare="174.9000" />)
+  await act(async () => {
+    capturedOnSuccess?.(SUCCESS_RESPONSE)
+    rerender(<RollCcSheet {...DEFAULT_PROPS} basisPerShare="174.9000" />)
+  })
 
   // prevBasis should be the value at submit time (176.5000), not the updated prop (174.9000)
   expect(screen.getByText(/\$176\.50.*\$174\.90/)).toBeInTheDocument()

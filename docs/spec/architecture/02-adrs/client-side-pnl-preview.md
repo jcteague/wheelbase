@@ -1,4 +1,5 @@
 # ADR: Client-side P&L / net-credit previews — no IPC round-trip
+
 <!-- generated:from us-4, us-7, us-8, us-12 -->
 
 ## Decision

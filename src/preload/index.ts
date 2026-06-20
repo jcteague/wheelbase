@@ -56,7 +56,21 @@ const api = {
   // WHEELBASE_MARKET_MOCK=true; safe to expose unconditionally (no-op in prod)
   triggerTestTick: (payload: unknown) => invoke('test:trigger-stock-tick', payload),
   triggerStreamError: (payload: unknown) => invoke('test:trigger-stream-error', payload),
-  setPositionProfitTarget: (payload: unknown) => invoke('test:set-position-profit-target', payload)
+  setPositionProfitTarget: (payload: unknown) => invoke('test:set-position-profit-target', payload),
+  assignments: {
+    listPending: () => invoke('assignments:list-pending'),
+    confirm: (pendingAssignmentId: number) =>
+      invoke('assignments:confirm', { pendingAssignmentId }),
+    dismiss: (pendingAssignmentId: number) =>
+      invoke('assignments:dismiss', { pendingAssignmentId }),
+    runDetectionNow: () => invoke('assignments:run-detection-now')
+  },
+  // Dev-only scheduler inspection — backed by IPC handlers registered only when
+  // NODE_ENV === 'test'. Safe to expose unconditionally (channels are absent in prod).
+  testSchedulerRegistry: () => invoke('_test:scheduler-registry'),
+  testSchedulerRunNow: (jobName: string) => invoke('_test:scheduler-run-now', jobName),
+  testSchedulerRegister: (job: unknown) => invoke('_test:scheduler-register', job),
+  testSchedulerSimulateWake: (payload: unknown) => invoke('_test:scheduler-simulate-wake', payload)
 }
 
 if (process.contextIsolated) {

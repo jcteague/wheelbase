@@ -70,8 +70,9 @@ Scenario: Manual trigger from settings
 
 Scenario: Market is closed on a non-trading day
   Given today is a recognised market holiday or weekend
-  When the scheduler fires
-  Then the collector exits without making any network requests
+  When collectIVRSnapshots runs (whether via scheduler or manual trigger)
+  Then it calls BrokerProvider.getMarketStatus() and detects a non-trading day
+  And the collector exits without making any network requests
   And an INFO log records the skip reason
 ```
 
@@ -79,11 +80,28 @@ Scenario: Market is closed on a non-trading day
 
 ## Technical Notes
 
-- Migration file: `migrations/0007_create_ivr_snapshot.sql` (next available number — verify).
+- Migration file: `migrations/008_create_ivr_snapshot.sql` (verify numbering is contiguous with us-35 migrations 006 + 007).
 - Service file: `src/main/services/ivr-collector.ts`.
-- Scheduler: register an `afterClose` job with the shared `PollingScheduler` from US-46 (offset +30 minutes). Do not introduce a new scheduling library.
-- Trading-day determination uses `BrokerProvider.getMarketStatus()` (from US-40) via the cached `nextOpen` value or a static market-holiday list.
-- Politeness: rate limit of 1 req/sec is enforced in the collector, not just the scraper, so concurrent callers cannot bypass it.
+- Scheduler: register an `afterClose` job with the shared `PollingScheduler` singleton from US-46. Do not introduce a new scheduling library.
+
+  ```typescript
+  // In src/main/index.ts, alongside the detect-assignments registration:
+  import { scheduler } from './services/scheduler-instance'
+  import { collectIVRSnapshots } from './services/ivr-collector'
+
+  scheduler.register({
+    name: 'ivr-collect',
+    cadence: { kind: 'afterClose', offsetMinutes: 60 },
+    handler: () => collectIVRSnapshots({ db, brokerProvider, logger })
+  })
+  // scheduler.start() is called once, after all jobs are registered
+  ```
+
+  Full consumer guide: `plans/us-35/quickstart.md` → "Adding a new scheduled job".
+
+- Manual trigger IPC: `'ivr:collect-now'` calls `scheduler.runNow('ivr-collect')` — the scheduler resets the cadence clock to now after the out-of-band run.
+- Trading-day guard: `collectIVRSnapshots` must call `BrokerProvider.getMarketStatus()` at the start and return early with an INFO log if it's a non-trading day. This covers both the scheduled path and `ivr:collect-now` manual triggers on weekends/holidays. The `afterClose` cadence also skips non-trading days at the scheduler level, so the guard is belt-and-suspenders for the scheduled path but essential for the manual path.
+- Politeness: rate limit of 1 req/sec enforced in the collector, not just the scraper, so concurrent callers cannot bypass it.
 - Same-day overwrite semantics: chosen so the last value of the day wins (closest to market close). Tests must cover the manual-trigger-after-scheduled-run case.
 
 ---

@@ -2,7 +2,7 @@
 
 Each ADR captures one architectural choice that emerged from a plan/story. Decisions are grouped below by theme; many ADRs are referenced by multiple feature pages.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-37,missing-ac -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,missing-ac -->
 
 ## Engine & architecture
 
@@ -77,5 +77,17 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [option-snapshots-rest-polling](./option-snapshots-rest-polling.md) — REST polling at 60 s, disabled when market closed; no stream bridge.
 - [renderer-builds-occ-symbols](./renderer-builds-occ-symbols.md) — Renderer builds OCC symbols from active legs; no server-side building.
 - [ipc-returns-full-option-snapshot](./ipc-returns-full-option-snapshot.md) — `market-data:option-snapshots` returns the full `OptionSnapshot` shape.
+
+## Background polling & assignment detection
+
+- [polling-scheduler-settimeout-chain](./polling-scheduler-settimeout-chain.md) — PollingScheduler uses a setTimeout chain, not setInterval.
+- [polling-scheduler-stateless](./polling-scheduler-stateless.md) — Scheduler keeps no persisted state; handlers own their own watermarks.
+- [assignment-polling-cadence](./assignment-polling-cadence.md) — 60s regular, 5min extended, parked overnight; first poll on next market open.
+- [assignment-watermark-poll-start](./assignment-watermark-poll-start.md) — Stamp `assignments_last_poll_at` at the start of the poll to avoid the read-then-update race.
+- [pending-assignments-table-as-notification](./pending-assignments-table-as-notification.md) — A pending row in `pending_assignments` IS the renderer notification; survives restart.
+- [pending-assignments-compound-unique](./pending-assignments-compound-unique.md) — Compound `UNIQUE(activity_id, position_id)` so one OPASN can fan out across colliding CSPs.
+- [scheduler-singleton-safe-broker](./scheduler-singleton-safe-broker.md) — Module-level singleton scheduler with a safe-broker stub when credentials are missing.
+- [consolidated-before-quit](./consolidated-before-quit.md) — Single `before-quit` handler awaits scheduler + market-data shutdown concurrently.
+- [dev-only-test-scheduler-ipc](./dev-only-test-scheduler-ipc.md) — `_test:scheduler-*` channels guarded by `NODE_ENV === 'test'` for e2e introspection.
 
 <!-- /generated -->

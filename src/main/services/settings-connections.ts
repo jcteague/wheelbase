@@ -43,6 +43,7 @@ const ALPACA_BASE_URLS: Record<BrokerEnvironment, string> = {
 const AUTH_FAILED_MESSAGE = 'Authentication failed (401)'
 const RATE_LIMITED_MESSAGE = 'Rate limited — please try again'
 const PAPER_LIVE_KEY_MISMATCH_MESSAGE = 'Environment mismatch — these are LIVE keys, not paper keys'
+const LIVE_PAPER_KEY_MISMATCH_MESSAGE = 'Environment mismatch — these are PAPER keys, not live keys'
 
 function failure(errorCode: ConnectionErrorCode, message: string): ConnectionFailure {
   return { ok: false, errorCode, message }
@@ -91,6 +92,10 @@ function maskAccountNumber(accountNumber: string): string {
 
 function isLikelyLiveKey(keyId: string): boolean {
   return keyId.trim().startsWith('AK')
+}
+
+function isLikelyPaperKey(keyId: string): boolean {
+  return keyId.trim().startsWith('PK')
 }
 
 export async function testMassiveConnection({
@@ -156,6 +161,14 @@ export async function testAlpacaConnection(
   if (response.status === 401 || response.status === 403) {
     if (input.environment === 'paper' && isLikelyLiveKey(keyId)) {
       const mismatch = failure('environment_mismatch', PAPER_LIVE_KEY_MISMATCH_MESSAGE)
+      logger.debug(
+        { vendor: 'alpaca', environment: input.environment, errorCode: mismatch.errorCode },
+        'settings_connection_test_failed'
+      )
+      return mismatch
+    }
+    if (input.environment === 'live' && isLikelyPaperKey(keyId)) {
+      const mismatch = failure('environment_mismatch', LIVE_PAPER_KEY_MISMATCH_MESSAGE)
       logger.debug(
         { vendor: 'alpaca', environment: input.environment, errorCode: mismatch.errorCode },
         'settings_connection_test_failed'

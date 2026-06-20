@@ -1,16 +1,20 @@
 # Database Tables
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-35,us-37 -->
 
 ## Overview
 
 Wheelbase persists every wheel position, every option/stock leg, and every
-basis-changing event in a single SQLite database. The schema is three tables
-deep — **`positions`** owns one row per wheel, **`legs`** owns one row per
-sold/bought/expired/assigned option (and one row per stock-assignment marker),
-and **`cost_basis_snapshots`** owns an append-only history of effective
-per-share basis and final P&L. SQLite is the source of truth; Alpaca (when
-wired in) is the execution layer only.
+basis-changing event in a single SQLite database. The wheel-domain core is
+three tables deep — **`positions`** owns one row per wheel, **`legs`** owns
+one row per sold/bought/expired/assigned option (and one row per
+stock-assignment marker), and **`cost_basis_snapshots`** owns an append-only
+history of effective per-share basis and final P&L. Three supporting tables
+sit alongside the domain core: **`pending_assignments`** records broker-detected
+assignments awaiting trader confirmation, **`credential_settings`** holds
+encrypted broker credentials, and **`app_settings`** is a generic key/value
+store for non-secret settings (broker environment selection, poll watermarks).
+SQLite is the source of truth; Alpaca is the execution layer only.
 
 Money values are stored as `TEXT` at 4 dp and converted to/from `decimal.js`
 at the boundary using `ROUND_HALF_UP` via the shared `round4` helper. Dates
@@ -37,21 +41,21 @@ list view can render an "Active" / "Closed" split.
 
 ### Columns
 
-| Column                   | Type    | Nullable | Purpose                                                                   |
-| ------------------------ | ------- | -------- | ------------------------------------------------------------------------- |
-| `id`                     | TEXT    | No       | UUID primary key                                                          |
-| `ticker`                 | TEXT    | No       | Equity symbol, uppercase                                                  |
-| `strategy_type`          | TEXT    | No       | Strategy identifier (Phase 1: wheel)                                      |
-| `phase`                  | TEXT    | No       | Lifecycle phase (`CSP_OPEN`, `HOLDING_SHARES`, `CC_OPEN`, `WHEEL_COMPLETE`, `CSP_CLOSED_PROFIT`, `CSP_CLOSED_LOSS`) |
-| `status`                 | TEXT    | No       | `ACTIVE`, `PAUSED`, or `CLOSED`                                           |
-| `opened_date`            | TEXT    | No       | ISO date when the wheel was opened                                        |
-| `closed_date`            | TEXT    | Yes      | ISO date set when the position transitions to a terminal phase            |
-| `contracts`              | INTEGER | No       | Contracts on the original CSP (shares held after assignment = `× 100`)    |
-| `notes`                  | TEXT    | Yes      | Free-form trader notes                                                    |
-| `thesis`                 | TEXT    | Yes      | Free-form trade thesis                                                    |
-| `profit_target_percent`  | INTEGER | Yes      | Per-position profit-target override (1..100); `NULL` → use the global default constant `DEFAULT_PROFIT_TARGET_PERCENT = 50`. Added by migration `005`. No DB `CHECK` — validation is deferred to the service layer if/when an edit IPC ships. Read-only in US-33 (seeded only via tests/dev). See [us-33 — Option Mid & Unrealized P&L](../features/us-33-option-mid-pnl.md). |
-| `created_at`             | TEXT    | No       | ISO timestamp at row insert                                               |
-| `updated_at`             | TEXT    | No       | ISO timestamp, refreshed on every phase transition                        |
+| Column                  | Type    | Nullable | Purpose                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------- | ------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                    | TEXT    | No       | UUID primary key                                                                                                                                                                                                                                                                                                                                                              |
+| `ticker`                | TEXT    | No       | Equity symbol, uppercase                                                                                                                                                                                                                                                                                                                                                      |
+| `strategy_type`         | TEXT    | No       | Strategy identifier (Phase 1: wheel)                                                                                                                                                                                                                                                                                                                                          |
+| `phase`                 | TEXT    | No       | Lifecycle phase (`CSP_OPEN`, `HOLDING_SHARES`, `CC_OPEN`, `WHEEL_COMPLETE`, `CSP_CLOSED_PROFIT`, `CSP_CLOSED_LOSS`)                                                                                                                                                                                                                                                           |
+| `status`                | TEXT    | No       | `ACTIVE`, `PAUSED`, or `CLOSED`                                                                                                                                                                                                                                                                                                                                               |
+| `opened_date`           | TEXT    | No       | ISO date when the wheel was opened                                                                                                                                                                                                                                                                                                                                            |
+| `closed_date`           | TEXT    | Yes      | ISO date set when the position transitions to a terminal phase                                                                                                                                                                                                                                                                                                                |
+| `contracts`             | INTEGER | No       | Contracts on the original CSP (shares held after assignment = `× 100`)                                                                                                                                                                                                                                                                                                        |
+| `notes`                 | TEXT    | Yes      | Free-form trader notes                                                                                                                                                                                                                                                                                                                                                        |
+| `thesis`                | TEXT    | Yes      | Free-form trade thesis                                                                                                                                                                                                                                                                                                                                                        |
+| `profit_target_percent` | INTEGER | Yes      | Per-position profit-target override (1..100); `NULL` → use the global default constant `DEFAULT_PROFIT_TARGET_PERCENT = 50`. Added by migration `005`. No DB `CHECK` — validation is deferred to the service layer if/when an edit IPC ships. Read-only in US-33 (seeded only via tests/dev). See [us-33 — Option Mid & Unrealized P&L](../features/us-33-option-mid-pnl.md). |
+| `created_at`            | TEXT    | No       | ISO timestamp at row insert                                                                                                                                                                                                                                                                                                                                                   |
+| `updated_at`            | TEXT    | No       | ISO timestamp, refreshed on every phase transition                                                                                                                                                                                                                                                                                                                            |
 
 ### How rows change
 
@@ -87,24 +91,24 @@ immutability is what lets cost basis and P&L be re-derived from leg history.
 
 ### Columns
 
-| Column                 | Type    | Nullable | Purpose                                                                                 |
-| ---------------------- | ------- | -------- | --------------------------------------------------------------------------------------- |
-| `id`                   | TEXT    | No       | UUID primary key                                                                        |
-| `position_id`          | TEXT    | No       | FK → `positions.id`                                                                     |
+| Column                 | Type    | Nullable | Purpose                                                                                                                        |
+| ---------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                   | TEXT    | No       | UUID primary key                                                                                                               |
+| `position_id`          | TEXT    | No       | FK → `positions.id`                                                                                                            |
 | `leg_role`             | TEXT    | No       | One of `CSP_OPEN`, `CSP_CLOSE`, `CC_OPEN`, `CC_CLOSE`, `CC_EXPIRED`, `CALLED_AWAY`, `ROLL_FROM`, `ROLL_TO`, `ASSIGN`, `EXPIRE` |
-| `action`               | TEXT    | No       | `SELL`, `BUY`, `EXPIRE`, `ASSIGN`, or `EXERCISE` (see enum evolution below)             |
-| `instrument_type`      | TEXT    | No       | `PUT`, `CALL`, or `STOCK` (renamed from `option_type` in migration 003)                 |
-| `strike`               | TEXT    | No       | 4-dp Decimal string                                                                     |
-| `expiration`           | TEXT    | No       | ISO date                                                                                |
-| `contracts`            | INTEGER | No       | Contract count for this leg                                                             |
-| `premium_per_contract` | TEXT    | No       | 4-dp Decimal string; `'0.0000'` for `EXPIRE` and `ASSIGN` event markers                 |
-| `fill_price`           | TEXT    | Yes      | 4-dp Decimal string; `NULL` for `EXPIRE` and `ASSIGN` legs (no broker fill occurs)      |
-| `fill_date`            | TEXT    | No       | ISO date                                                                                |
-| `roll_from_leg_id`     | TEXT    | Yes      | FK → `legs.id`; set on the `ROLL_TO` leg, points back at its paired `ROLL_FROM`         |
-| `roll_to_leg_id`       | TEXT    | Yes      | FK → `legs.id`; set on the `ROLL_FROM` leg, points forward at its paired `ROLL_TO`      |
-| `roll_chain_id`        | TEXT    | Yes      | Shared UUID stamped on both legs of a roll pair; lets the chain be queried as a unit    |
-| `created_at`           | TEXT    | No       | ISO timestamp                                                                           |
-| `updated_at`           | TEXT    | No       | ISO timestamp                                                                           |
+| `action`               | TEXT    | No       | `SELL`, `BUY`, `EXPIRE`, `ASSIGN`, or `EXERCISE` (see enum evolution below)                                                    |
+| `instrument_type`      | TEXT    | No       | `PUT`, `CALL`, or `STOCK` (renamed from `option_type` in migration 003)                                                        |
+| `strike`               | TEXT    | No       | 4-dp Decimal string                                                                                                            |
+| `expiration`           | TEXT    | No       | ISO date                                                                                                                       |
+| `contracts`            | INTEGER | No       | Contract count for this leg                                                                                                    |
+| `premium_per_contract` | TEXT    | No       | 4-dp Decimal string; `'0.0000'` for `EXPIRE` and `ASSIGN` event markers                                                        |
+| `fill_price`           | TEXT    | Yes      | 4-dp Decimal string; `NULL` for `EXPIRE` and `ASSIGN` legs (no broker fill occurs)                                             |
+| `fill_date`            | TEXT    | No       | ISO date                                                                                                                       |
+| `roll_from_leg_id`     | TEXT    | Yes      | FK → `legs.id`; set on the `ROLL_TO` leg, points back at its paired `ROLL_FROM`                                                |
+| `roll_to_leg_id`       | TEXT    | Yes      | FK → `legs.id`; set on the `ROLL_FROM` leg, points forward at its paired `ROLL_TO`                                             |
+| `roll_chain_id`        | TEXT    | Yes      | Shared UUID stamped on both legs of a roll pair; lets the chain be queried as a unit                                           |
+| `created_at`           | TEXT    | No       | ISO timestamp                                                                                                                  |
+| `updated_at`           | TEXT    | No       | ISO timestamp                                                                                                                  |
 
 ### CHECK constraints
 
@@ -242,18 +246,18 @@ audit trail of how basis evolved over the life of the wheel.
 
 ### Which events write a snapshot
 
-| Event                              | Writes row? | `final_pnl`                          |
-| ---------------------------------- | ----------- | ------------------------------------ |
-| CSP open (US-1)                    | Yes         | `NULL`                               |
-| Roll CSP (US-12)                   | Yes         | `NULL`                               |
-| Close CSP early (US-4)             | Yes         | `(openPremium − closePrice) × contracts × 100` |
-| Expire CSP worthless (US-5)        | Yes         | equals `total_premium_collected` (100% captured) |
-| Record assignment (US-6)           | Yes         | `NULL` (position still active)       |
-| Open covered call (US-7)           | Yes         | `NULL`                               |
-| **Close CC early (US-8)**          | **No**      | n/a — CC_OPEN snapshot unchanged; `ccLegPnl` returned via IPC only |
-| **CC expires worthless (US-9)**    | **No**      | n/a — CC_OPEN snapshot unchanged     |
-| Shares called away (US-10)         | Yes         | `(ccStrike − basisPerShare) × contracts × 100` — terminal |
-| Roll CC (US-14)                    | Yes         | `NULL`                               |
+| Event                           | Writes row? | `final_pnl`                                                        |
+| ------------------------------- | ----------- | ------------------------------------------------------------------ |
+| CSP open (US-1)                 | Yes         | `NULL`                                                             |
+| Roll CSP (US-12)                | Yes         | `NULL`                                                             |
+| Close CSP early (US-4)          | Yes         | `(openPremium − closePrice) × contracts × 100`                     |
+| Expire CSP worthless (US-5)     | Yes         | equals `total_premium_collected` (100% captured)                   |
+| Record assignment (US-6)        | Yes         | `NULL` (position still active)                                     |
+| Open covered call (US-7)        | Yes         | `NULL`                                                             |
+| **Close CC early (US-8)**       | **No**      | n/a — CC_OPEN snapshot unchanged; `ccLegPnl` returned via IPC only |
+| **CC expires worthless (US-9)** | **No**      | n/a — CC_OPEN snapshot unchanged                                   |
+| Shares called away (US-10)      | Yes         | `(ccStrike − basisPerShare) × contracts × 100` — terminal          |
+| Roll CC (US-14)                 | Yes         | `NULL`                                                             |
 
 The two "no snapshot" cases are deliberate: at CC close / CC expiry the
 existing CC_OPEN snapshot already reflects the CC premium reduction, the
@@ -301,16 +305,16 @@ Generic encrypted credential storage for external vendors. US-37 writes Alpaca r
 
 ### Columns
 
-| Column | Type | Nullable | Purpose |
-| --- | --- | --- | --- |
-| `vendor` | TEXT | No | Vendor identifier; US-37 writes `'alpaca'` |
-| `environment` | TEXT | No | Environment key (`'paper'` or `'live'`) |
-| `key_id_encrypted` | BLOB | No | Encrypted Alpaca key ID |
-| `secret_encrypted` | BLOB | No | Encrypted Alpaca secret |
-| `last_verified_at` | TEXT | Yes | ISO timestamp of the last successful verification |
-| `account_number_masked` | TEXT | Yes | Masked account identity like `PA…ABC` |
-| `created_at` | TEXT | No | ISO timestamp at insert |
-| `updated_at` | TEXT | No | ISO timestamp at last update |
+| Column                  | Type | Nullable | Purpose                                           |
+| ----------------------- | ---- | -------- | ------------------------------------------------- |
+| `vendor`                | TEXT | No       | Vendor identifier; US-37 writes `'alpaca'`        |
+| `environment`           | TEXT | No       | Environment key (`'paper'` or `'live'`)           |
+| `key_id_encrypted`      | BLOB | No       | Encrypted Alpaca key ID                           |
+| `secret_encrypted`      | BLOB | No       | Encrypted Alpaca secret                           |
+| `last_verified_at`      | TEXT | Yes      | ISO timestamp of the last successful verification |
+| `account_number_masked` | TEXT | Yes      | Masked account identity like `PA…ABC`             |
+| `created_at`            | TEXT | No       | ISO timestamp at insert                           |
+| `updated_at`            | TEXT | No       | ISO timestamp at last update                      |
 
 ### Constraints and semantics
 
@@ -320,25 +324,119 @@ Generic encrypted credential storage for external vendors. US-37 writes Alpaca r
 
 <!-- /generated -->
 
-<!-- generated:from us-37 -->
+<!-- generated:from us-37,us-35 -->
 
 ## `app_settings`
 
-Lightweight key/value persistence for non-secret application settings. US-37 uses it to remember the active broker environment across launches.
+Lightweight key/value persistence for non-secret application settings. US-37
+introduced the table to remember the active broker environment across launches;
+US-35 consumes the same table to persist per-environment assignment-detection
+poll watermarks.
 
 ### Columns
 
-| Column | Type | Nullable | Purpose |
-| --- | --- | --- | --- |
-| `key` | TEXT | No | Setting key, e.g. `active_broker_environment` |
-| `value` | TEXT | No | Stored value, e.g. `'paper'`, `'live'`, or `'none'` |
-| `updated_at` | TEXT | No | ISO timestamp of the last write |
+| Column       | Type | Nullable | Purpose                         |
+| ------------ | ---- | -------- | ------------------------------- |
+| `key`        | TEXT | No       | Setting key (primary key)       |
+| `value`      | TEXT | No       | Stored value                    |
+| `updated_at` | TEXT | No       | ISO timestamp of the last write |
+
+### Known keys
+
+| Key                              | Owner | Values                           | Purpose                                                                                                                |
+| -------------------------------- | ----- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `active_broker_environment`      | US-37 | `'paper'`, `'live'`, or `'none'` | Trader-selected broker environment. Effective value collapses to `'none'` if the stored environment lacks credentials. |
+| `assignments_last_poll_at:paper` | US-35 | ISO-8601 timestamp               | High-water mark passed as `since` to `BrokerProvider.getActivities()` on the paper-env assignment poll.                |
+| `assignments_last_poll_at:live`  | US-35 | ISO-8601 timestamp               | Same as above for the live environment.                                                                                |
 
 ### Semantics
 
-- The stored value may be `'paper'`, `'live'`, or `'none'`.
-- Effective active environment is derived through settings service logic: if the stored environment no longer has credentials, the effective value collapses to `'none'`.
-- The current implementation uses this table only for broker-environment state, but the shape is generic enough for future non-secret settings.
+- The table is owned by US-37 (migration 006); US-35 consumes it without
+  schema changes — only the set of recognised keys grows.
+- Watermark keys follow the convention `<feature>_last_poll_at:<env>` so
+  paper and live state never collide. Watermarks are captured at **poll
+  start** (not poll end) — see
+  [us-35 — Assignment Detection](../features/us-35-assignment-detection.md)
+  for the read-then-update race rationale.
+- `appSettings.get/set` lives in `src/main/services/app-settings.ts` and
+  always writes `updated_at` on `set()`.
+- Effective active broker environment is derived through
+  `src/main/services/settings.ts` logic, not by reading
+  `active_broker_environment` directly.
+
+<!-- /generated -->
+
+<!-- generated:from us-35 -->
+
+## `pending_assignments`
+
+Broker-detected assignment activities awaiting trader confirmation. A
+"pending" row IS the notification — the renderer queries this table directly,
+which lets banners survive app restart for free and makes confirm/dismiss a
+plain status transition on the same row. Rows are written by the
+`detect-assignments` poll job that consumes Alpaca `OPASN` activities; rows
+are mutated by the `assignments:confirm` and `assignments:dismiss` IPC
+handlers. See [us-35 — Assignment Detection](../features/us-35-assignment-detection.md)
+and [us-46 — Polling Scheduler](../features/us-46-polling-scheduler.md).
+
+### Columns
+
+| Column             | Type    | Nullable | Purpose                                                                                                  |
+| ------------------ | ------- | -------- | -------------------------------------------------------------------------------------------------------- |
+| `id`               | INTEGER | No       | Auto-increment primary key. Used as the opaque handle in IPC confirm/dismiss payloads.                   |
+| `position_id`      | TEXT    | No       | FK → `positions.id` (`ON DELETE CASCADE`). TEXT because positions use UUID primary keys.                 |
+| `leg_id`           | TEXT    | No       | FK → `legs.id` (`ON DELETE CASCADE`). The open CSP leg whose OCC symbol matched the assignment activity. |
+| `activity_id`      | TEXT    | No       | Alpaca activity identifier from the OPASN event. Drives dedupe.                                          |
+| `broker_symbol`    | TEXT    | No       | OCC option symbol from the activity (e.g. `AAPL260119P00180000`).                                        |
+| `qty`              | INTEGER | No       | Contract quantity reported by the activity.                                                              |
+| `transaction_time` | TEXT    | No       | ISO-8601 timestamp from the activity.                                                                    |
+| `status`           | TEXT    | No       | `'pending'`, `'confirmed'`, or `'dismissed'` — enforced by CHECK constraint.                             |
+| `detected_at`      | TEXT    | No       | ISO timestamp when the row was inserted by the poll job (defaults to `datetime('now')`).                 |
+| `confirmed_at`     | TEXT    | Yes      | Set when `status` transitions to `'confirmed'`.                                                          |
+| `dismissed_at`     | TEXT    | Yes      | Set when `status` transitions to `'dismissed'`.                                                          |
+
+### Constraints
+
+- `CHECK (status IN ('pending','confirmed','dismissed'))`.
+- `FOREIGN KEY (position_id) REFERENCES positions(id) ON DELETE CASCADE`.
+- `FOREIGN KEY (leg_id) REFERENCES legs(id) ON DELETE CASCADE`.
+
+### Indexes
+
+- `idx_pending_assignments_status` on `status` — supports the
+  `listPending` query (`WHERE status='pending'`).
+- `idx_pending_assignments_position` on `position_id` — supports the
+  position-list page's "which positions have a pending assignment?" set
+  computation.
+- `uq_pending_assignments_activity_position` — **compound UNIQUE** on
+  `(activity_id, position_id)`. The poll job uses `INSERT OR IGNORE` for
+  idempotency; the compound key allows a single OPASN activity to match
+  multiple open CSP positions on the same OCC symbol (one pending row per
+  position) while still preventing duplicate processing of the same
+  `(activity, position)` pair on subsequent polls.
+
+### How rows change
+
+- **Detect** (US-35 poll job): `INSERT OR IGNORE` with `status='pending'`,
+  `detected_at=datetime('now')`. One row per `(activity_id, position_id)`
+  match.
+- **Confirm**: `UPDATE` `status='confirmed'`, `confirmed_at=now`. Wrapped in
+  an outer `db.transaction()` so the inner `assignCspPosition` call (which
+  transitions the position to `HOLDING_SHARES`, inserts an `ASSIGN` stock
+  leg, and writes a cost-basis snapshot) and this status flip are atomic.
+- **Dismiss**: `UPDATE` `status='dismissed'`, `dismissed_at=now`. Idempotent
+  for already-dismissed rows; rejects confirmed rows with
+  `PendingAssignmentError('NOT_PENDING')`.
+
+### Why an integer primary key (not a UUID)
+
+`pending_assignments.id` is `INTEGER PRIMARY KEY AUTOINCREMENT` even though
+the rest of the schema uses TEXT UUID PKs. The integer is an opaque server-
+generated handle passed back via IPC for confirm/dismiss; it never crosses
+trust boundaries beyond the renderer and isn't referenced by any other table.
+FK columns (`position_id`, `leg_id`) are TEXT to match their referenced
+tables — the green phase corrected an early INTEGER spec that would have
+broken referential integrity.
 
 <!-- /generated -->
 
@@ -346,8 +444,9 @@ Lightweight key/value persistence for non-secret application settings. US-37 use
 
 - [Migrations](./migrations.md) — chronological change log for the schema
   including migration 003 (`option_type → instrument_type`), migration
-  005 (`positions.profit_target_percent`), and migration 006
-  (`credential_settings` / `app_settings`).
+  005 (`positions.profit_target_percent`), migration 006
+  (`credential_settings` / `app_settings`), and migration 008
+  (`pending_assignments`).
 - [Cost Basis](../domain/cost-basis.md) — how the append-only snapshot
   pattern is produced by each lifecycle event.
 - [Wheel Lifecycle](../domain/wheel-lifecycle.md) — phase transitions that
@@ -356,3 +455,9 @@ Lightweight key/value persistence for non-secret application settings. US-37 use
   the feature that introduced `positions.profit_target_percent`.
 - [us-37 — Paper/Live Broker Environment Toggle](../features/us-37-paper-live-broker-environment-toggle.md) —
   the feature that introduced `credential_settings` and `app_settings`.
+- [us-35 — Assignment Detection](../features/us-35-assignment-detection.md) —
+  the feature that introduced `pending_assignments` and the
+  `assignments_last_poll_at:<env>` watermark keys in `app_settings`.
+- [us-46 — Polling Scheduler](../features/us-46-polling-scheduler.md) —
+  the in-memory market-aware scheduler that drives the assignment-detection
+  poll job (no schema state of its own).

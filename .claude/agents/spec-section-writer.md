@@ -31,7 +31,9 @@ Every section you produce is wrapped in markers:
 
 ```markdown
 <!-- generated:from us-4,us-6,us-11 -->
+
 …content you synthesized…
+
 <!-- /generated -->
 ```
 
@@ -39,6 +41,7 @@ The `from` list is the plan names that contributed. On re-run, you **replace
 everything between matching markers** and leave the rest of the file untouched.
 
 If the target file exists, read it first and identify:
+
 - Existing `<!-- generated:from ... -->` blocks (regenerate these)
 - Everything else (preserve verbatim, including human-added prose, headings,
   examples, and any sections you didn't produce on the first pass)
@@ -51,27 +54,39 @@ Topic pages follow this skeleton:
 # <Topic title>
 
 <!-- generated:from <plan-list> -->
+
 ## Overview
+
 One or two paragraphs synthesizing the topic from extracts.
+
 <!-- /generated -->
 
 <!-- generated:from <plan-list> -->
+
 ## Key decisions
+
 For each ADR-worthy decision pulled from extracts:
+
 ### <decision title>
+
 - **Decision:** …
 - **Why:** …
 - **Driven by:** [us-N](../features/us-N-<slug>.md)
 <!-- /generated -->
 
 <!-- generated:from <plan-list> -->
+
 ## Contracts / Schema / API
+
 Whichever subsections apply to this topic. Cite source files in src/ where
 possible (verify with Glob).
+
 <!-- /generated -->
 
 <!-- generated:from <plan-list> -->
+
 ## Driven by
+
 - [us-N — title](../features/us-N-<slug>.md)
 - [us-M — title](../features/us-M-<slug>.md)
 <!-- /generated -->
@@ -79,7 +94,7 @@ possible (verify with Glob).
 <!-- Hand-written sections live below — do not touch -->
 ```
 
-## Feature pages (docs/spec/features/us-N-*.md)
+## Feature pages (docs/spec/features/us-N-\*.md)
 
 If you're writing a **feature page** (path matches `docs/spec/features/us-*.md`),
 use the skeleton below.
@@ -97,19 +112,24 @@ Skeleton:
 # US-N: <title — derived from the parent extract>
 
 <!-- generated:from us-N,us-N-refactor,...  (comma list, parent first) -->
+
 ## Summary
+
 Synthesized to reflect the CURRENT state (post-all-revisions). Don't write
 "originally X, later changed to Y" here — that belongs in Revisions.
 
 ## Acceptance criteria
+
 The original story's AC list. Refactor AC (regression coverage, dedupe, tests
 pass) doesn't usually belong here — call it out in the revision bullet instead.
 
 ## What was built
+
 Current-state narrative: the architecture, contracts, and schema that exist
 today after all revisions. Reads like a wiki entry, not a changelog.
 
 ## Revisions
+
 Include this section ONLY if there's more than one contributing extract.
 One bullet per contributing plan, chronological (parent first):
 
@@ -120,23 +140,27 @@ One bullet per contributing plan, chronological (parent first):
 If only one extract contributes, omit this section entirely.
 
 ## Architecture decisions
+
 Union across all extracts, deduped. Each ADR links to its topic page or is
 inlined per the mapping rules below.
 
 ## Contracts touched
+
 Union across all extracts, deduped.
 
 ## Source files
+
 Union across all extracts, deduped, **production files only**.
 
 Rules:
+
 - **Omit** unit/integration test files (`*.test.ts`, `*.test.tsx`). The repo
   uses strict sibling naming (`foo.ts` ↔ `foo.test.ts`); readers can derive
   the test path mechanically.
 - **Keep** e2e tests (`e2e/*.spec.ts`) — naming is decoupled from production
   files and they document AC coverage.
 - **Keep** test-only helper files that aren't sibling tests (e.g. fixture
-  builders, mock factories).
+builders, mock factories).
 <!-- /generated -->
 
 <!-- Hand-written notes below this line are preserved across regeneration. -->
@@ -200,8 +224,8 @@ months later. Apply this discipline:
   itself.** If the answer is "open `src/main/core/lifecycle.ts` and read",
   just say that. Don't paraphrase the file.
 
-**Rule of thumb:** the spec answers *why* and *where*. The source code answers
-*what* and *how*. When in doubt about whether to include a snippet, ask: would
+**Rule of thumb:** the spec answers _why_ and _where_. The source code answers
+_what_ and _how_. When in doubt about whether to include a snippet, ask: would
 this still be true if the implementation changed? If no, leave it out and
 let the agent grep.
 

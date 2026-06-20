@@ -145,5 +145,21 @@ describe('settings connection probes', () => {
         message: 'Environment mismatch — these are LIVE keys, not paper keys'
       })
     })
+
+    it('maps paper keys submitted to the Live card to the exact environment mismatch message', async () => {
+      mockFetch.mockResolvedValue(fetchErr(401, 'Unauthorized'))
+
+      await expect(
+        testAlpacaConnection({
+          environment: 'live',
+          keyId: 'PKPAPER123',
+          secret: 'paper-secret'
+        })
+      ).resolves.toEqual({
+        ok: false,
+        errorCode: 'environment_mismatch',
+        message: 'Environment mismatch — these are PAPER keys, not live keys'
+      })
+    })
   })
 })

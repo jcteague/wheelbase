@@ -41,6 +41,9 @@ export default defineConfig({
           name: 'renderer',
           environment: 'jsdom',
           globals: true,
+          // jsdom + userEvent sheet tests can exceed the 5s default when all
+          // test files run in parallel under machine load
+          testTimeout: 15000,
           include: [
             'src/renderer/**/*.test.tsx',
             'src/renderer/**/*.test.ts',

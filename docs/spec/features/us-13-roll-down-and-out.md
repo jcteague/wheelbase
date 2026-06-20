@@ -30,15 +30,15 @@ The `rollCspPosition` service wires the strike pair through to the engine — `c
 
 A new pure renderer module `src/renderer/src/lib/rollType.ts` exports a 4-arg `getRollTypeLabel(currentStrike, newStrike, currentExpiration, newExpiration)` returning one of five labels via the decision table:
 
-| strike    | expiration | label             |
-| --------- | ---------- | ----------------- |
-| same      | later      | Roll Out          |
-| lower     | later      | Roll Down & Out   |
-| higher    | later      | Roll Up & Out     |
-| lower     | same       | Roll Down         |
-| higher    | same       | Roll Up           |
-| same      | same       | rejected upstream |
-| any       | earlier    | rejected upstream |
+| strike | expiration | label             |
+| ------ | ---------- | ----------------- |
+| same   | later      | Roll Out          |
+| lower  | later      | Roll Down & Out   |
+| higher | later      | Roll Up & Out     |
+| lower  | same       | Roll Down         |
+| higher | same       | Roll Up           |
+| same   | same       | rejected upstream |
+| any    | earlier    | rejected upstream |
 
 This replaces the inline 3-arg helper used by `RollCspSheet` in US-12 and is shared with `RollCspSuccess`. `RollCspSheet` gains a `rollCount: number` prop driving a "Roll #{rollCount}" badge (gray `#8899aa` below 3, red `#f85149` at 3+) and the amber `AlertBox` at 3+. Client-side `validate()` mirrors the engine's two rules so obvious errors don't require a round-trip. The debit-warning copy passed to `NetCreditDebitPreview` is updated to the new cost-basis wording. `RollCspSuccess` adds a gold "Active strike: $X → $Y" row and an info `AlertBox` mentioning assignment at the new strike when the strikes differ.
 

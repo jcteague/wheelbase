@@ -1,6 +1,7 @@
 # US-33: Show current option mid-price and unrealized P&L for open legs
 
 <!-- generated:from us-33 -->
+
 ## Summary
 
 Adds live option pricing and unrealized P&L to every position with an open option leg. Two new columns — `Opt Mid` and `P&L` — sit between `Price` and `Strike` on the positions list, and the position-detail Open Leg section gains three matching stats (`Current Mid`, `Unrealized P&L`, `% of Max Profit`). A new `market-data:option-snapshots` IPC channel polls the [us-31-market-data-provider-adapter](./us-31-market-data-provider-adapter.md) `MarketDataProvider.getOptionSnapshots()` every 60 s for OCC symbols built from each active leg. A gold `TARGET` badge fires when P&L crosses the position's profit target (default 50 %, optional per-position override stored on a new nullable column). HOLDING_SHARES rows and rows with no snapshot render `—` without breaking the rest of the layout.

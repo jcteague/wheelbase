@@ -38,7 +38,7 @@ returns few hits.
 
 Prefer hits in this order:
 
-1. **Title / `# heading`** of a page — that page is *about* the query.
+1. **Title / `# heading`** of a page — that page is _about_ the query.
 2. **`##` or `###` heading** — section is about the query.
 3. **`<!-- generated -->` body** — synthesized content mentions it.
 4. **Hand-written prose** — humans wrote about it.

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 import type { CloseCcEarlyResponse } from '../api/positions'
@@ -182,7 +182,7 @@ it('shows inline error "Fill date cannot be before the CC open date" for fill da
   })
 })
 
-it('renders success state with hero card "+$120.00" after successful profit close', () => {
+it('renders success state with hero card "+$120.00" after successful profit close', async () => {
   let capturedOnSuccess: ((data: CloseCcEarlyResponse) => void) | undefined
 
   mockUseCloseCoveredCallEarly.mockImplementation(
@@ -199,15 +199,15 @@ it('renders success state with hero card "+$120.00" after successful profit clos
     }
   )
 
-  const { rerender } = render(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
-
-  capturedOnSuccess?.(SUCCESS_PROFIT_RESPONSE)
-  rerender(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
+  render(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
+  await act(async () => {
+    capturedOnSuccess?.(SUCCESS_PROFIT_RESPONSE)
+  })
 
   expect(screen.getByText(/\+\$120/)).toBeInTheDocument()
 })
 
-it('renders success state with hero card "−$120.00" after successful loss close', () => {
+it('renders success state with hero card "−$120.00" after successful loss close', async () => {
   let capturedOnSuccess: ((data: CloseCcEarlyResponse) => void) | undefined
 
   mockUseCloseCoveredCallEarly.mockImplementation(
@@ -224,15 +224,15 @@ it('renders success state with hero card "−$120.00" after successful loss clos
     }
   )
 
-  const { rerender } = render(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
-
-  capturedOnSuccess?.(SUCCESS_LOSS_RESPONSE)
-  rerender(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
+  render(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
+  await act(async () => {
+    capturedOnSuccess?.(SUCCESS_LOSS_RESPONSE)
+  })
 
   expect(screen.getByText(/\u2212\$120|-\$120/)).toBeInTheDocument()
 })
 
-it('renders "Sell New Covered Call on AAPL →" CTA in success state', () => {
+it('renders "Sell New Covered Call on AAPL →" CTA in success state', async () => {
   let capturedOnSuccess: ((data: CloseCcEarlyResponse) => void) | undefined
 
   mockUseCloseCoveredCallEarly.mockImplementation(
@@ -249,14 +249,15 @@ it('renders "Sell New Covered Call on AAPL →" CTA in success state', () => {
     }
   )
 
-  const { rerender } = render(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
-  capturedOnSuccess?.(SUCCESS_PROFIT_RESPONSE)
-  rerender(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
+  render(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
+  await act(async () => {
+    capturedOnSuccess?.(SUCCESS_PROFIT_RESPONSE)
+  })
 
   expect(screen.getByText(/Sell New Covered Call on AAPL/i)).toBeInTheDocument()
 })
 
-it('renders phase transition CC_OPEN→HOLDING_SHARES in success summary card', () => {
+it('renders phase transition CC_OPEN→HOLDING_SHARES in success summary card', async () => {
   let capturedOnSuccess: ((data: CloseCcEarlyResponse) => void) | undefined
 
   mockUseCloseCoveredCallEarly.mockImplementation(
@@ -273,15 +274,16 @@ it('renders phase transition CC_OPEN→HOLDING_SHARES in success summary card', 
     }
   )
 
-  const { rerender } = render(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
-  capturedOnSuccess?.(SUCCESS_PROFIT_RESPONSE)
-  rerender(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
+  render(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
+  await act(async () => {
+    capturedOnSuccess?.(SUCCESS_PROFIT_RESPONSE)
+  })
 
   expect(screen.getAllByText(/Sell Call/i).length).toBeGreaterThan(0)
   expect(screen.getAllByText(/Holding Shares/i).length).toBeGreaterThan(0)
 })
 
-it('renders cost basis "(unchanged)" in success summary card', () => {
+it('renders cost basis "(unchanged)" in success summary card', async () => {
   let capturedOnSuccess: ((data: CloseCcEarlyResponse) => void) | undefined
 
   mockUseCloseCoveredCallEarly.mockImplementation(
@@ -298,9 +300,10 @@ it('renders cost basis "(unchanged)" in success summary card', () => {
     }
   )
 
-  const { rerender } = render(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
-  capturedOnSuccess?.(SUCCESS_PROFIT_RESPONSE)
-  rerender(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
+  render(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
+  await act(async () => {
+    capturedOnSuccess?.(SUCCESS_PROFIT_RESPONSE)
+  })
 
   expect(screen.getByText(/unchanged/i)).toBeInTheDocument()
 })

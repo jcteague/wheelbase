@@ -57,10 +57,7 @@ interface MarketDataProvider {
   supportsStreaming(feed: DataFeed): boolean
   connect(): Promise<void>
   disconnect(): Promise<void>
-  stream(
-    feed: DataFeed,
-    symbols: string[]
-  ): Observable<StreamEvent<StockQuote | OptionSnapshot>>
+  stream(feed: DataFeed, symbols: string[]): Observable<StreamEvent<StockQuote | OptionSnapshot>>
 }
 
 type DataFeed = 'stockQuotes' | 'optionQuotes' | 'optionTrades'
@@ -100,12 +97,12 @@ type DataFeed = 'stockQuotes' | 'optionQuotes' | 'optionTrades'
 
 ```typescript
 interface MarketDataConfig {
-  provider: 'alpaca'           // extensible union for future providers
+  provider: 'alpaca' // extensible union for future providers
   keyId: string
   secretKey: string
   paper: boolean
-  dataFeed?: 'sip' | 'iex' | 'delayed_sip'  // stock feed, default 'sip'
-  optionFeed?: 'opra' | 'indicative'        // option feed, default 'opra'
+  dataFeed?: 'sip' | 'iex' | 'delayed_sip' // stock feed, default 'sip'
+  optionFeed?: 'opra' | 'indicative' // option feed, default 'opra'
 }
 ```
 
@@ -131,14 +128,14 @@ REST is request/response and returns `Promise`s. Every money field is a
 
 ```typescript
 {
-  price: string          // last trade or mid, 2dp
-  bid: string            // best bid, 2dp
-  ask: string            // best ask, 2dp
-  prevClose: string      // prior day close (2dp) — US-32 addition
-  change: string         // daily change, 2dp — derived in renderer per render
-  changePercent: string  // daily change %, 4dp — derived in renderer per render
+  price: string // last trade or mid, 2dp
+  bid: string // best bid, 2dp
+  ask: string // best ask, 2dp
+  prevClose: string // prior day close (2dp) — US-32 addition
+  change: string // daily change, 2dp — derived in renderer per render
+  changePercent: string // daily change %, 4dp — derived in renderer per render
   volume: number
-  timestamp: string      // ISO-8601
+  timestamp: string // ISO-8601
 }
 ```
 
@@ -152,20 +149,20 @@ tickers are simply absent from the returned map — never an error.
 
 ```typescript
 {
-  bid: string                  // 2dp
-  ask: string                  // 2dp
-  mid: string                  // (bid + ask) / 2, 2dp — computed by adapter
-  lastTrade: string            // 2dp
-  openInterest: number | null  // null for Alpaca (not exposed)
-  volume: number | null        // null for Alpaca (not exposed)
+  bid: string // 2dp
+  ask: string // 2dp
+  mid: string // (bid + ask) / 2, 2dp — computed by adapter
+  lastTrade: string // 2dp
+  openInterest: number | null // null for Alpaca (not exposed)
+  volume: number | null // null for Alpaca (not exposed)
   greeks: {
-    delta: string   // 4dp
-    gamma: string   // 4dp
-    theta: string   // 4dp
-    vega: string    // 4dp
-    iv: string      // 4dp — implied volatility
+    delta: string // 4dp
+    gamma: string // 4dp
+    theta: string // 4dp
+    vega: string // 4dp
+    iv: string // 4dp — implied volatility
   }
-  timestamp: string            // ISO-8601
+  timestamp: string // ISO-8601
 }
 ```
 
@@ -182,8 +179,8 @@ polled (60 s) rather than streamed.
 ```typescript
 {
   isOpen: boolean
-  nextOpen: string   // ISO-8601
-  nextClose: string  // ISO-8601
+  nextOpen: string // ISO-8601
+  nextClose: string // ISO-8601
   session: 'regular' | 'pre' | 'post' | 'closed'
 }
 ```
@@ -241,10 +238,10 @@ a drift surface.
 Streaming uses two independent WebSocket connections opened on demand, each
 multiplexing all symbol subscriptions for its feed:
 
-| Feed                                  | URL                                                         | Frame format |
-| ------------------------------------- | ----------------------------------------------------------- | ------------ |
-| `stockQuotes`                         | `wss://stream.data.alpaca.markets/v2/{dataFeed}`            | JSON text    |
-| `optionQuotes` &nbsp;/&nbsp; `optionTrades` | `wss://stream.data.alpaca.markets/v1beta1/{optionFeed}`     | MessagePack binary |
+| Feed                                        | URL                                                     | Frame format       |
+| ------------------------------------------- | ------------------------------------------------------- | ------------------ |
+| `stockQuotes`                               | `wss://stream.data.alpaca.markets/v2/{dataFeed}`        | JSON text          |
+| `optionQuotes` &nbsp;/&nbsp; `optionTrades` | `wss://stream.data.alpaca.markets/v1beta1/{optionFeed}` | MessagePack binary |
 
 The Alpaca SDK has no WebSocket support, so the adapter uses the `ws` npm
 package directly. Option frames are decoded with `@msgpack/msgpack`'s
@@ -292,7 +289,7 @@ interface StreamEvent<T> {
 
 interface StreamError {
   feed: DataFeed
-  code: string         // e.g. 'stream_disconnected'
+  code: string // e.g. 'stream_disconnected'
   message: string
   reconnectable: boolean
 }
@@ -310,10 +307,10 @@ a future reconnection story).
 
 Two REST surfaces are on a fixed-interval poll, both at **60 s**:
 
-| Channel                       | Interval         | Notes                                                    |
-| ----------------------------- | ---------------- | -------------------------------------------------------- |
-| `market-data:market-status`   | 60 s             | Session boundaries shift ~6 times per day; 60 s catches every transition within a minute. No streaming option exists for the clock. |
-| `market-data:option-snapshots`| 60 s (disabled when `session === 'closed'`) | Greeks/IV only available via REST snapshot — streaming option-quote frames carry only bid/ask/last. |
+| Channel                        | Interval                                    | Notes                                                                                                                               |
+| ------------------------------ | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `market-data:market-status`    | 60 s                                        | Session boundaries shift ~6 times per day; 60 s catches every transition within a minute. No streaming option exists for the clock. |
+| `market-data:option-snapshots` | 60 s (disabled when `session === 'closed'`) | Greeks/IV only available via REST snapshot — streaming option-quote frames carry only bid/ask/last.                                 |
 
 Stock quotes are **not** on a fixed poll — a one-shot REST snapshot seeds the
 cache and every subsequent update arrives over the WebSocket stream (see
@@ -438,11 +435,11 @@ For the full live-prices feature (column, animations, banner copy), see
 Market status is a four-state enum surfaced by `MarketStatusPill` in the
 positions-list header and on the position-detail header.
 
-| State     | Meaning                                                                                                            | Visual         |
-| --------- | ------------------------------------------------------------------------------------------------------------------ | -------------- |
-| `LIVE`    | Regular session — prices are flowing from the stream.                                                              | Green, pulsing |
-| `EXT`     | Pre-market or after-hours session — prices are flowing but less liquid.                                            | Amber          |
-| `CLOSED`  | Market is closed (weekend, holiday, or outside extended hours). Last close prices shown.                           | Gray           |
+| State     | Meaning                                                                                                            | Visual          |
+| --------- | ------------------------------------------------------------------------------------------------------------------ | --------------- |
+| `LIVE`    | Regular session — prices are flowing from the stream.                                                              | Green, pulsing  |
+| `EXT`     | Pre-market or after-hours session — prices are flowing but less liquid.                                            | Amber           |
+| `CLOSED`  | Market is closed (weekend, holiday, or outside extended hours). Last close prices shown.                           | Gray            |
 | `DELAYED` | Stream has stalled or errored — last update is >5 min ago, or a `market-data:stream-error` event has been emitted. | Amber, no pulse |
 
 The provider's session enum has four values — `'regular' | 'pre' | 'post' |
@@ -477,10 +474,10 @@ session === 'closed' (or session unknown)    → CLOSED
 ```typescript
 useQuery({
   queryKey: marketDataQueryKeys.stockQuotes(tickers),
-  queryFn:  () => getStockQuotes({ tickers }),
-  enabled:  sortedTickers.length > 0,
-  staleTime: Infinity,                // stream ticks are the only live signal
-  refetchOnWindowFocus: true          // refresh prevClose on focus
+  queryFn: () => getStockQuotes({ tickers }),
+  enabled: sortedTickers.length > 0,
+  staleTime: Infinity, // stream ticks are the only live signal
+  refetchOnWindowFocus: true // refresh prevClose on focus
 })
 ```
 
@@ -496,7 +493,7 @@ safe to call unconditionally before data has loaded.
 ```typescript
 useQuery({
   queryKey: marketDataQueryKeys.marketStatus,
-  queryFn:  () => getMarketStatus(),
+  queryFn: () => getMarketStatus(),
   refetchInterval: 60_000,
   staleTime: 30_000,
   refetchOnWindowFocus: true
@@ -516,7 +513,7 @@ For every active option leg the list shows:
 
 - **Opt Mid** — `snapshot.mid` formatted as money. Adorned with an amber `⚠`
   when `isWideSpread({ bid, ask, mid })` (i.e. `mid > 0 && (ask − bid) / mid >
-  0.10`), or a `no bid` caption when `Decimal(bid).isZero()`. When `mid === 0`
+0.10`), or a `no bid` caption when `Decimal(bid).isZero()`. When `mid === 0`
   the wide-spread predicate returns `false` and the no-bid indicator owns the
   cell.
 - **P&L** — `computeUnrealizedPnl({ entryPremium, currentMid, contracts })`
@@ -526,7 +523,7 @@ For every active option leg the list shows:
   - `maxProfit = entryPremium × contracts × 100`
   - `pnlPercent = (pnl / maxProfit) × 100` on a 0–100 scale
 - **TARGET badge** — gold pill rendered when `pnlPercent >=
-  resolveProfitTarget(profitTargetPercent)`. The default profit target is `50`
+resolveProfitTarget(profitTargetPercent)`. The default profit target is `50`
   (`DEFAULT_PROFIT_TARGET_PERCENT` in `src/main/core/profit-target.ts`);
   positions can override it via the nullable `profit_target_percent` column.
   `resolveProfitTarget(0)` returns `0` (explicit override; not falsy-coalesced).

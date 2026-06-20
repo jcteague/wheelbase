@@ -1,4 +1,5 @@
 # ADR: Single-step phase transitions (no intermediate states)
+
 <!-- generated:from us-5, us-6, us-9 -->
 
 ## Decision

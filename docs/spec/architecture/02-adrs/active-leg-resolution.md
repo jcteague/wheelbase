@@ -1,15 +1,16 @@
 # ADR: Phase-aware active-leg SQL subquery (`activeLegSubquery`)
+
 <!-- generated:from us-12, us-12-refactor -->
 
 ## Decision
 
 The "current open leg" of a position is resolved via a shared SQL subquery exposed by `activeLegSubquery()` in `src/main/services/active-leg-sql.ts`. The subquery is phase-aware:
 
-| Position phase   | Eligible leg roles            |
-| ---------------- | ----------------------------- |
-| `CSP_OPEN`       | `CSP_OPEN`, `ROLL_TO`         |
-| `CC_OPEN`        | `CC_OPEN`, `ROLL_TO`          |
-| All other phases | No active leg (returns null)  |
+| Position phase   | Eligible leg roles           |
+| ---------------- | ---------------------------- |
+| `CSP_OPEN`       | `CSP_OPEN`, `ROLL_TO`        |
+| `CC_OPEN`        | `CC_OPEN`, `ROLL_TO`         |
+| All other phases | No active leg (returns null) |
 
 Tie-breaking: `ORDER BY fill_date DESC, created_at DESC LIMIT 1`. The function returns a string SQL fragment (no parameters; it references `p.id` and `p.phase` from the outer query). It is used by both `list-positions.ts` and `get-position.ts` so the two queries can never drift.
 

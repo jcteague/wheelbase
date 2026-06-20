@@ -16,52 +16,61 @@ This story implements the assignment flow that transitions a `CSP_OPEN` position
 ## Architecture Decisions
 
 ### ADR: Rename `OptionType` -> `InstrumentType` and add `STOCK`
+
 - **Decision:** Rename the `OptionType` Zod enum / TypeScript type to `InstrumentType`. Add `'STOCK'` as a third value so the enum becomes `PUT | CALL | STOCK`. Rename the `option_type` column to `instrument_type` in the `legs` table via a new DB migration (`migrations/003_rename_option_type_to_instrument_type.sql`) and expand the CHECK constraint to `instrument_type IN ('PUT', 'CALL', 'STOCK')`. Every service SQL INSERT/SELECT referencing the column must be updated.
 - **Why:** `OptionType` is semantically wrong for a field that must now represent stocks as well as options. `InstrumentType` is standard financial terminology that covers options (PUT, CALL) and equities (STOCK) within one enum. PMCC legs are still CALLs, so no new values are needed for that strategy — the rename alone future-proofs the field.
 - **Alternatives considered:** `PositionType` (conflicts with the existing `positions` table and `strategy_type`); leaving `OptionType` and adding `STOCK` (user explicitly flagged as semantically wrong); separate nullable `stockFlag` boolean (over-complicated; a discriminated enum is cleaner).
 - **Source:** `plans/us-6/research.md`, `plans/us-6/data-model.md`
 
 ### ADR: Add `'ASSIGN'` to `LegAction` enum
+
 - **Decision:** Extend the `LegAction` Zod enum from `SELL | BUY | EXPIRE` to `SELL | BUY | EXPIRE | ASSIGN`. The assignment leg uses `action='ASSIGN'`.
 - **Why:** Assignment is a broker-initiated stock delivery — semantically distinct from `BUY` (no market-price purchase), `SELL`, or `EXPIRE`. The story specifies `LegAction: assign`.
 - **Alternatives considered:** Reusing `EXPIRE` (semantically wrong); reusing `BUY` (shares are not purchased at market price).
 - **Source:** `plans/us-6/research.md`
 
 ### ADR: Reuse existing `'ASSIGN'` `LegRole`
+
 - **Decision:** Use the existing `'ASSIGN'` value already present in the `LegRole` Zod enum (`src/main/core/types.ts`) and the DB CHECK constraint (`migrations/001_initial_schema.sql`).
 - **Why:** `ASSIGN` is already defined and correct. The story's reference to `stock_assignment` describes the operation's semantics; `ASSIGN` is the code-level identifier already established by earlier schema work.
 - **Alternatives considered:** Adding a new `'STOCK_ASSIGNMENT'` value — rejected: would require a schema migration and break the existing CHECK constraint for no benefit.
 - **Source:** `plans/us-6/research.md`
 
 ### ADR: Premium waterfall computed in the cost basis engine
+
 - **Decision:** `calculateAssignmentBasis()` accepts an array of `{ legRole, premiumPerContract, contracts }` objects and returns both the numeric `basisPerShare` and a `premiumWaterfall: Array<{ label, amount }>`. The service passes all `CSP_OPEN` and `ROLL_TO` legs from the position's leg history. Label is `'Roll credit'` when `legRole === 'ROLL_TO'`, otherwise `'CSP premium'`.
 - **Why:** The mockup and acceptance criteria require each premium line to render individually (e.g., "− CSP premium $3.50", "− Roll credit $1.50"). Returning the waterfall from the pure core function keeps rendering logic out of the service and component.
 - **Alternatives considered:** Computing the waterfall in the component from raw leg data (puts domain logic in the renderer); computing only a total in the core and re-deriving lines in the component (duplicates leg traversal).
 - **Source:** `plans/us-6/research.md`
 
 ### ADR: Cost basis snapshot on assignment — new row, `final_pnl=NULL`, position stays ACTIVE
+
 - **Decision:** The assignment service inserts a new `cost_basis_snapshots` row with `final_pnl = NULL`. The position `status` remains `'ACTIVE'` and `closed_date` remains `NULL`. Only `phase` (-> `HOLDING_SHARES`) and `updated_at` change on the `positions` row.
 - **Why:** Assignment is a phase transition, not a position close. The snapshot records the effective cost basis at the moment of assignment. `final_pnl` is only set when the wheel completes (CC close or expiry).
 - **Alternatives considered:** No new snapshot (cost basis changes at assignment — it is now measured against the assignment strike minus all collected premiums, not just the initial CSP premium).
 - **Source:** `plans/us-6/research.md`, `plans/us-6/data-model.md`
 
 ### ADR: Future assignment date — client-side warning only
+
 - **Decision:** The `recordAssignment()` lifecycle engine does NOT throw a `ValidationError` for future dates. The future-date warning ("This date is in the future — are you sure?") is rendered client-side only as a gold soft warning; the form remains submittable.
 - **Why:** Some brokers post assignment details over the weekend and the recorded date may technically be a future business day. The story explicitly states: "Future-date warning is client-side only; the backend does not reject future dates."
 - **Alternatives considered:** Backend validation — explicitly rejected by the story spec.
 - **Source:** `plans/us-6/research.md`, `docs/epics/02-stories/US-6-record-csp-assignment.md`
 
 ### ADR: `activeLeg` returns `null` for `HOLDING_SHARES` positions
+
 - **Decision:** After assignment, the `getPosition` service's `activeLeg` query returns `null` for `HOLDING_SHARES` positions (the CSP option no longer exists as an open leg). The ASSIGN leg is an event marker, not an ongoing position.
 - **Why:** Consistent with how `EXPIRE` legs work — they are appended as event markers. The `PositionDetailPage` already guards `activeLeg &&` before rendering the open leg card, so returning `null` is safe without a page rewrite.
 - **Source:** `plans/us-6/research.md`
 
 ### ADR: Date validation parameters mirror `closeCsp` / `expireCsp`
+
 - **Decision:** `recordAssignment()` accepts `{ currentPhase, assignmentDate, openFillDate }` and uses ISO string comparison (consistent with `closeCsp` and `expireCsp`). It validates `currentPhase === 'CSP_OPEN'` and `assignmentDate >= openFillDate`. The boundary case `assignmentDate === openFillDate` is valid.
 - **Why:** Keeps the lifecycle engine pure (no DB access). The service looks up `openFillDate` from the open leg and passes it in. Matches the pattern established by US-4 / US-5.
 - **Source:** `plans/us-6/plan.md`, `plans/us-6/data-model.md`
 
 ### ADR: Waterfall data source for the form state
+
 - **Decision:** The `AssignmentSheet` needs the premium waterfall to render the form state before the assignment is submitted. `getPosition` already returns `legs: LegRecord[]`. Either (a) the page filters `legs` for `CSP_OPEN` and `ROLL_TO` roles and builds the `premiumWaterfall` prop inline (a pure display transform — acceptable in the page layer), or (b) `getPosition` returns a pre-computed waterfall. Either approach is acceptable; the choice is to be documented in code comments.
 - **Why:** Both options avoid duplicating engine logic. The page-layer transform is leaner; pushing it into the service centralises the shape. Plan leaves the choice open.
 - **Source:** `plans/us-6/plan.md`
@@ -69,8 +78,10 @@ This story implements the assignment flow that transitions a `CSP_OPEN` position
 ## Contracts
 
 ### `positions:assign-csp`
+
 - **Type:** IPC handler
 - **Shape:**
+
   ```typescript
   // Request payload (Zod-validated via AssignCspPayloadSchema)
   {
@@ -124,22 +135,25 @@ This story implements the assignment flow that transitions a `CSP_OPEN` position
   { ok: false, errors: [{ field: 'assignmentDate', code: 'date_before_open', message: 'Assignment date cannot be before the CSP open date' }] }
   { ok: false, errors: [{ field: '__root__',       code: 'internal_error',   message: 'An unexpected error occurred' }] }
   ```
+
 - **Source:** `plans/us-6/contracts/assign-csp.md`, `plans/us-6/data-model.md`
 - **Implementation:** `src/main/ipc/positions.ts`, `src/main/services/assign-csp-position.ts`
 
 ### `AssignCspPayloadSchema`
+
 - **Type:** Zod schema
 - **Shape:**
   ```typescript
   z.object({
     positionId: z.string().uuid(),
-    assignmentDate: z.string()   // ISO date string YYYY-MM-DD
+    assignmentDate: z.string() // ISO date string YYYY-MM-DD
   })
   ```
 - **Source:** `plans/us-6/data-model.md`, `plans/us-6/contracts/assign-csp.md`
 - **Implementation:** `src/main/schemas.ts`
 
 ### `AssignCspPositionResult`
+
 - **Type:** other (IPC return type definition)
 - **Shape:**
   ```typescript
@@ -159,28 +173,33 @@ This story implements the assignment flow that transitions a `CSP_OPEN` position
 - **Implementation:** `src/main/schemas.ts`
 
 ### `RecordAssignmentInput` / `RecordAssignmentResult` (lifecycle engine)
+
 - **Type:** other (core lifecycle function signature)
 - **Shape:**
+
   ```typescript
   interface RecordAssignmentInput {
     currentPhase: WheelPhase
-    assignmentDate: string   // YYYY-MM-DD
-    openFillDate: string     // YYYY-MM-DD — assignment must not precede this
+    assignmentDate: string // YYYY-MM-DD
+    openFillDate: string // YYYY-MM-DD — assignment must not precede this
   }
 
   interface RecordAssignmentResult {
     phase: 'HOLDING_SHARES'
   }
   ```
+
 - **Source:** `plans/us-6/plan.md`, `plans/us-6/data-model.md`
 - **Implementation:** `src/main/core/lifecycle.ts`
 
 ### `AssignmentBasisInput` / `AssignmentBasisResult` (cost basis engine)
+
 - **Type:** other (core cost basis function signature)
 - **Shape:**
+
   ```typescript
   interface AssignmentBasisLeg {
-    legRole: LegRole           // 'CSP_OPEN' | 'ROLL_TO'
+    legRole: LegRole // 'CSP_OPEN' | 'ROLL_TO'
     premiumPerContract: string
     contracts: number
   }
@@ -198,10 +217,12 @@ This story implements the assignment flow that transitions a `CSP_OPEN` position
     premiumWaterfall: Array<{ label: string; amount: string }>
   }
   ```
+
 - **Source:** `plans/us-6/data-model.md`, `plans/us-6/plan.md`
 - **Implementation:** `src/main/core/costbasis.ts`
 
 ### `InstrumentType` (renamed from `OptionType`)
+
 - **Type:** Zod schema / TypeScript type
 - **Shape:**
   ```typescript
@@ -212,6 +233,7 @@ This story implements the assignment flow that transitions a `CSP_OPEN` position
 - **Implementation:** `src/main/core/types.ts`
 
 ### `LegAction` (extended)
+
 - **Type:** Zod schema / TypeScript type
 - **Shape:**
   ```typescript
@@ -222,14 +244,17 @@ This story implements the assignment flow that transitions a `CSP_OPEN` position
 - **Implementation:** `src/main/core/types.ts`
 
 ### `LegRecord` (updated field rename)
+
 - **Type:** Zod schema / TypeScript type
 - **Shape:** Rename field `optionType: OptionType` -> `instrumentType: InstrumentType` (no other field changes).
 - **Source:** `plans/us-6/data-model.md`
 - **Implementation:** `src/main/schemas.ts`
 
 ### Renderer adapter — `assignPosition()`
+
 - **Type:** other (renderer API adapter)
 - **Shape:**
+
   ```typescript
   // Renderer payload type (snake_case form fields)
   type AssignCspPayload = {
@@ -240,14 +265,18 @@ This story implements the assignment flow that transitions a `CSP_OPEN` position
   // Response type
   type AssignCspResponse = {
     position: { id: string; ticker: string; phase: WheelPhase; status: WheelStatus }
-    leg: { /* …LegRecord shape with camelCase from IPC… */ }
-    costBasisSnapshot: { /* …snapshot shape… */ }
+    leg: {
+      /* …LegRecord shape with camelCase from IPC… */
+    }
+    costBasisSnapshot: {
+      /* …snapshot shape… */
+    }
     premiumWaterfall: Array<{ label: string; amount: string }>
   }
 
   async function assignPosition(payload: AssignCspPayload): Promise<AssignCspResponse> {
     const result = await window.api.assignPosition({
-      positionId:     payload.position_id,
+      positionId: payload.position_id,
       assignmentDate: payload.assignment_date
     })
     if (!result.ok) {
@@ -256,11 +285,14 @@ This story implements the assignment flow that transitions a `CSP_OPEN` position
     return result as unknown as AssignCspResponse
   }
   ```
+
   `IPC_TO_FORM_FIELD` mapping addition: `assignmentDate: 'assignment_date'`.
+
 - **Source:** `plans/us-6/contracts/assign-csp.md`, `plans/us-6/plan.md`
 - **Implementation:** `src/renderer/src/api/positions.ts`
 
 ### Preload binding — `assignPosition`
+
 - **Type:** other (preload contextBridge API)
 - **Shape:**
   ```typescript
@@ -270,12 +302,14 @@ This story implements the assignment flow that transitions a `CSP_OPEN` position
 - **Implementation:** `src/preload/index.ts`
 
 ### Renderer hook — `useAssignPosition()`
+
 - **Type:** other (TanStack Query mutation hook)
 - **Shape:** Mirrors `useExpirePosition` exactly. On success, calls `queryClient.invalidateQueries({ queryKey: positionQueryKeys.all })`. Accepts an optional `onSuccess` callback receiving `AssignCspResponse`.
 - **Source:** `plans/us-6/plan.md`
 - **Implementation:** `src/renderer/src/hooks/useAssignPosition.ts`
 
 ### `AssignmentSheetProps`
+
 - **Type:** other (React component props)
 - **Shape:**
   ```typescript
@@ -286,7 +320,7 @@ This story implements the assignment flow that transitions a `CSP_OPEN` position
     strike: string
     expiration: string
     contracts: number
-    openFillDate: string  // for date_before_open validation
+    openFillDate: string // for date_before_open validation
     premiumWaterfall: Array<{ label: string; amount: string }>
     projectedBasisPerShare: string
     onClose: () => void
@@ -298,11 +332,12 @@ This story implements the assignment flow that transitions a `CSP_OPEN` position
 ## Schema Changes
 
 ### Migration `migrations/003_rename_option_type_to_instrument_type.sql` — rename column + expand CHECK constraint
+
 - **Change:** renamed column + altered CHECK constraint on the `legs` table.
 - **Columns / fields:**
-  | Field             | Before                            | After                                     |
+  | Field | Before | After |
   | ----------------- | --------------------------------- | ----------------------------------------- |
-  | `option_type`     | column name; CHECK `IN ('PUT','CALL')` | column renamed to `instrument_type`; CHECK `instrument_type IN ('PUT', 'CALL', 'STOCK')` |
+  | `option_type` | column name; CHECK `IN ('PUT','CALL')` | column renamed to `instrument_type`; CHECK `instrument_type IN ('PUT', 'CALL', 'STOCK')` |
 - **Approach:** Prefer `ALTER TABLE legs RENAME COLUMN option_type TO instrument_type;` (SQLite ≥ 3.25.0). SQLite cannot modify a CHECK constraint in place, so the always-safe form is a table rebuild: create `legs_new` with `instrument_type` and the new CHECK, copy data, drop old, rename. The migration runner in `src/main/db/migrate.ts` discovers and runs files in `migrations/` in filename order.
 - **Downstream code touches (no further schema change):**
   - All service SQL INSERTs for legs use `instrument_type` (was `option_type`): `services/positions.ts` (createPosition), `services/close-csp-position.ts`, `services/expire-csp-position.ts`.
@@ -311,51 +346,54 @@ This story implements the assignment flow that transitions a `CSP_OPEN` position
 - **Migration file:** `migrations/003_rename_option_type_to_instrument_type.sql`
 
 ### `positions` row UPDATE on assignment
+
 - **Change:** altered row (no schema change)
 - **Columns / fields:**
-  | Field         | Before        | After             |
+  | Field | Before | After |
   | ------------- | ------------- | ----------------- |
-  | `phase`       | `CSP_OPEN`    | `HOLDING_SHARES`  |
-  | `status`      | `ACTIVE`      | `ACTIVE` (unchanged) |
-  | `closed_date` | `NULL`        | `NULL` (unchanged)   |
-  | `updated_at`  | open timestamp | assignment timestamp |
+  | `phase` | `CSP_OPEN` | `HOLDING_SHARES` |
+  | `status` | `ACTIVE` | `ACTIVE` (unchanged) |
+  | `closed_date` | `NULL` | `NULL` (unchanged) |
+  | `updated_at` | open timestamp | assignment timestamp |
 - **Source:** `plans/us-6/data-model.md`
 - **Migration file:** none
 
 ### `legs` row INSERT — ASSIGN leg
+
 - **Change:** new row (no schema change beyond migration 003)
 - **Columns / fields:**
-  | Field                  | Value                                          |
+  | Field | Value |
   | ---------------------- | ---------------------------------------------- |
-  | `id`                   | new UUID                                       |
-  | `position_id`          | parent position ID                             |
-  | `leg_role`             | `'ASSIGN'`                                     |
-  | `action`               | `'ASSIGN'`                                     |
-  | `instrument_type`      | `'STOCK'`                                      |
-  | `strike`               | copied from the CSP_OPEN leg (assignment price) |
-  | `expiration`           | copied from the CSP_OPEN leg (for reference)   |
-  | `contracts`            | copied from the CSP_OPEN leg                   |
-  | `premium_per_contract` | `'0.0000'` (no premium on assignment itself)   |
-  | `fill_price`           | `NULL`                                         |
-  | `fill_date`            | `assignmentDate` from payload                  |
-  | `created_at`           | now                                            |
-  | `updated_at`           | now                                            |
+  | `id` | new UUID |
+  | `position_id` | parent position ID |
+  | `leg_role` | `'ASSIGN'` |
+  | `action` | `'ASSIGN'` |
+  | `instrument_type` | `'STOCK'` |
+  | `strike` | copied from the CSP_OPEN leg (assignment price) |
+  | `expiration` | copied from the CSP_OPEN leg (for reference) |
+  | `contracts` | copied from the CSP_OPEN leg |
+  | `premium_per_contract` | `'0.0000'` (no premium on assignment itself) |
+  | `fill_price` | `NULL` |
+  | `fill_date` | `assignmentDate` from payload |
+  | `created_at` | now |
+  | `updated_at` | now |
 - **Source:** `plans/us-6/data-model.md`
 - **Migration file:** none
 
 ### `cost_basis_snapshots` row INSERT — assignment snapshot
+
 - **Change:** new row (no schema change)
 - **Columns / fields:**
-  | Field                     | Value                                                                 |
+  | Field | Value |
   | ------------------------- | --------------------------------------------------------------------- |
-  | `id`                      | new UUID                                                              |
-  | `position_id`             | parent position ID                                                    |
-  | `basis_per_share`         | `strike − Σ(premiumPerContract)` for each CSP/roll-credit premium leg |
-  | `total_premium_collected` | `Σ(premiumPerContract × leg.contracts × 100)` for all CSP/roll legs   |
-  | `final_pnl`               | `NULL` (position still open)                                          |
-  | `annualized_return`       | `NULL` (future story)                                                 |
-  | `snapshot_at`             | now                                                                   |
-  | `created_at`              | now                                                                   |
+  | `id` | new UUID |
+  | `position_id` | parent position ID |
+  | `basis_per_share` | `strike − Σ(premiumPerContract)` for each CSP/roll-credit premium leg |
+  | `total_premium_collected` | `Σ(premiumPerContract × leg.contracts × 100)` for all CSP/roll legs |
+  | `final_pnl` | `NULL` (position still open) |
+  | `annualized_return` | `NULL` (future story) |
+  | `snapshot_at` | now |
+  | `created_at` | now |
 - **Source:** `plans/us-6/data-model.md`
 - **Migration file:** none
 
@@ -465,6 +503,7 @@ This story implements the assignment flow that transitions a `CSP_OPEN` position
 - One E2E test (waterfall with rolls) is conditional on US-4/US-5 roll functionality being e2e-testable; otherwise it is marked `it.todo` to be enabled later. (Source: `plans/us-6/plan.md`)
 
 Deferred / out of scope (noted in story, not unresolved):
+
 - Automatic assignment detection via Alpaca polling (Epic 06)
 - **Partial assignment** — multi-contract positions where only some contracts are assigned (requires a mixed-phase lifecycle model; deferred)
 - Early assignment before expiration date (treated identically to expiration assignment; no special handling in Phase 1)

@@ -37,6 +37,7 @@ Position list updates with real-time prices, Greeks, and unrealized P&L via prov
 - [ ] **US-31 (rewrite):** Split `MarketDataProvider` and `BrokerProvider` interfaces
 - [ ] **US-39:** Implement `MassiveMarketDataProvider` (REST quotes, option snapshots, option chains)
 - [ ] **US-40:** Implement `AlpacaBrokerProvider` (account, activities, market status)
+- [ ] **US-47:** Close remaining `AlpacaBrokerProvider` acceptance-criteria gaps
 
 ### Live Data Display
 
@@ -75,21 +76,22 @@ US-43 (MC scraper) ── US-44 (snapshot store) ── US-45 (query service)
 
 ### Story Files
 
-| Story     | File                                                              | Points |
-| --------- | ----------------------------------------------------------------- | ------ |
-| US-31     | `docs/epics/06-stories/US-31-market-data-provider-adapter.md`     | 3      |
-| US-32     | `docs/epics/06-stories/US-32-live-underlying-price.md`            | 5      |
-| US-33     | `docs/epics/06-stories/US-33-option-price-unrealized-pnl.md`      | 5      |
-| US-34     | `docs/epics/06-stories/US-34-greeks-display.md`                   | 3      |
-| US-37     | `docs/epics/06-stories/US-37-paper-live-environment-toggle.md`    | 8      |
-| US-38     | `docs/epics/06-stories/US-38-polling-frequency-configuration.md`  | 5      |
-| US-39     | `docs/epics/06-stories/US-39-massive-market-data-provider.md`     | 8      |
-| US-40     | `docs/epics/06-stories/US-40-alpaca-broker-provider.md`           | 3      |
-| US-43     | `docs/epics/06-stories/US-43-market-chameleon-ivr-scraper.md`     | 5      |
-| US-44     | `docs/epics/06-stories/US-44-ivr-snapshot-store-and-scheduler.md` | 5      |
-| US-45     | `docs/epics/06-stories/US-45-ivr-query-service-and-ipc.md`        | 3      |
-| US-46     | `docs/epics/06-stories/US-46-polling-scheduler.md`                | 5      |
-| **Total** |                                                                   | **58** |
+| Story     | File                                                                 | Points |
+| --------- | -------------------------------------------------------------------- | ------ |
+| US-31     | `docs/epics/06-stories/US-31-market-data-provider-adapter.md`        | 3      |
+| US-32     | `docs/epics/06-stories/US-32-live-underlying-price.md`               | 5      |
+| US-33     | `docs/epics/06-stories/US-33-option-price-unrealized-pnl.md`         | 5      |
+| US-34     | `docs/epics/06-stories/US-34-greeks-display.md`                      | 3      |
+| US-37     | `docs/epics/06-stories/US-37-paper-live-environment-toggle.md`       | 8      |
+| US-38     | `docs/epics/06-stories/US-38-polling-frequency-configuration.md`     | 5      |
+| US-39     | `docs/epics/06-stories/US-39-massive-market-data-provider.md`        | 8      |
+| US-40     | `docs/epics/06-stories/US-40-alpaca-broker-provider.md`              | 3      |
+| US-47     | `docs/epics/06-stories/US-47-alpaca-broker-provider-ac-hardening.md` | 3      |
+| US-43     | `docs/epics/06-stories/US-43-market-chameleon-ivr-scraper.md`        | 5      |
+| US-44     | `docs/epics/06-stories/US-44-ivr-snapshot-store-and-scheduler.md`    | 5      |
+| US-45     | `docs/epics/06-stories/US-45-ivr-query-service-and-ipc.md`           | 3      |
+| US-46     | `docs/epics/06-stories/US-46-polling-scheduler.md`                   | 5      |
+| **Total** |                                                                      | **58** |
 
 ## Dependencies
 

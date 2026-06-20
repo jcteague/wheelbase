@@ -1,4 +1,5 @@
 # ADR: One named pure function per lifecycle transition
+
 <!-- generated:from us-4, us-5, us-6, us-7, us-8, us-9, us-12 -->
 
 ## Decision

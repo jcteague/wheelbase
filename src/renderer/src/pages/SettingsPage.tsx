@@ -131,24 +131,28 @@ function AlpacaCredentialCard({
   const maskedKey = isPaper ? 'PK_••••••••••••• (paper)' : 'AK_••••••••••••• (live)'
 
   async function handleTestConnection(values: CredentialFormValues): Promise<void> {
-    const result = await onTestConnection({ environment, ...values })
-    if (!result) {
-      return
-    }
-    if (result.ok && result.vendor === 'alpaca') {
+    try {
+      const result = await onTestConnection({ environment, ...values })
+      if (!result) {
+        return
+      }
+      if (result.ok && result.vendor === 'alpaca') {
+        setMessage({
+          tone: 'success',
+          text: `✓ Verified — Account ${result.accountNumberMasked} (${result.environment})`
+        })
+        return
+      }
+      if (result.ok) {
+        return
+      }
       setMessage({
-        tone: 'success',
-        text: `✓ Verified — Account ${result.accountNumberMasked} (${result.environment})`
+        tone: 'error',
+        text: result.message
       })
-      return
+    } catch (error) {
+      setMessage({ tone: 'error', text: getApiErrorMessage(error) })
     }
-    if (result.ok) {
-      return
-    }
-    setMessage({
-      tone: 'error',
-      text: result.message
-    })
   }
 
   async function handleSave(values: CredentialFormValues): Promise<void> {
@@ -169,24 +173,28 @@ function AlpacaCredentialCard({
   }
 
   async function handleStoredConnectionTest(): Promise<void> {
-    const result = await onTestStoredConnection({ environment })
-    if (!result) {
-      return
-    }
-    if (result.ok && result.vendor === 'alpaca') {
+    try {
+      const result = await onTestStoredConnection({ environment })
+      if (!result) {
+        return
+      }
+      if (result.ok && result.vendor === 'alpaca') {
+        setMessage({
+          tone: 'success',
+          text: `✓ Verified — Account ${result.accountNumberMasked} (${result.environment})`
+        })
+        return
+      }
+      if (result.ok) {
+        return
+      }
       setMessage({
-        tone: 'success',
-        text: `✓ Verified — Account ${result.accountNumberMasked} (${result.environment})`
+        tone: 'error',
+        text: result.message
       })
-      return
+    } catch (error) {
+      setMessage({ tone: 'error', text: getApiErrorMessage(error) })
     }
-    if (result.ok) {
-      return
-    }
-    setMessage({
-      tone: 'error',
-      text: result.message
-    })
   }
 
   return (
@@ -358,15 +366,19 @@ export function SettingsPage(): React.JSX.Element {
   const hasLiveCredentials = activeStatus.alpacaLive === 'configured'
 
   async function handleMassiveTestConnection(): Promise<void> {
-    const result = await testConnection.mutateAsync({ vendor: 'massive' })
-    if (result.ok && result.vendor === 'massive') {
-      setMassiveMessage({ tone: 'success', text: 'Connected' })
-      return
+    try {
+      const result = await testConnection.mutateAsync({ vendor: 'massive' })
+      if (result.ok && result.vendor === 'massive') {
+        setMassiveMessage({ tone: 'success', text: 'Connected' })
+        return
+      }
+      if (result.ok) {
+        return
+      }
+      setMassiveMessage({ tone: 'error', text: result.message })
+    } catch (error) {
+      setMassiveMessage({ tone: 'error', text: getApiErrorMessage(error) })
     }
-    if (result.ok) {
-      return
-    }
-    setMassiveMessage({ tone: 'error', text: result.message })
   }
 
   return (
@@ -457,7 +469,7 @@ export function SettingsPage(): React.JSX.Element {
                     <span
                       className={[
                         'inline-flex rounded px-4 py-2 font-wb-mono text-xs font-semibold tracking-[0.08em]',
-                        activeStatus.activeBrokerEnv !== 'live'
+                        activeStatus.activeBrokerEnv === 'paper'
                           ? 'border border-wb-gold-border bg-wb-gold-dim text-wb-gold'
                           : 'text-wb-text-muted'
                       ].join(' ')}

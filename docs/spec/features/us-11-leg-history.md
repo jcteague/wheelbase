@@ -1,6 +1,7 @@
 # US-11: Leg history
 
 <!-- generated:from us-11 -->
+
 ## Summary
 
 Rewrites the position detail page's leg history table from a 5-column ledger into the mockup's 8-column wheel chain view: `Role | Action | Strike | Expiration | Contracts | Premium | Fill Date | Running Basis / Share`. The new `Running Basis / Share` column is derived in the renderer by walking the legs in chronological order alongside the position's cost-basis snapshots and carrying forward the last seen `basisPerShare` whenever a leg has no snapshot of its own (e.g. `CC_CLOSE`). To support this, the `positions:get` IPC response gains an `allSnapshots` field returning every snapshot for the position ordered by `snapshot_at ASC`, and the green phase began persisting explicit `CALLED_AWAY` and `CC_EXPIRED` leg roles in place of the generic `CC_CLOSE` / `EXPIRE` values used by earlier stories. No schema migration is required — every field is sourced from existing Phase 1 tables.

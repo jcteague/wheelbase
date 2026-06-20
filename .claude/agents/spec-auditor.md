@@ -49,18 +49,22 @@ findings: <count>
 # Audit: <page>
 
 ## Verified (N)
+
 - ✓ Claim about X matches `src/path/to/file.ts:42`
 
 ## Drift (M)
+
 - ✗ Page claims IPC handler `positions:openCSP` exists, but grep finds
   `positions:createCsp` instead in `src/main/ipc/positions.ts:18`. Suggested
   fix: update page or rename handler.
 
 ## Unverifiable (K)
+
 - ? Page claims "the lifecycle engine is pure". Too narrative to mechanically
   verify; flag for human review.
 
 ## Missing files (L)
+
 - ✗ Page links to `../features/us-99-foo.md` which doesn't exist.
 ```
 

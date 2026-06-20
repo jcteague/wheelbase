@@ -54,12 +54,15 @@ status: complete | partial | missing
 # Extract: <plan-name>
 
 ## Summary
+
 One paragraph: what this plan delivered and why.
 
 ## Architecture Decisions
+
 For each meaningful decision, one subsection:
 
 ### ADR: <short title>
+
 - **Decision:** What was chosen.
 - **Why:** Rationale from the plan/research.
 - **Alternatives considered:** If documented.
@@ -68,35 +71,43 @@ For each meaningful decision, one subsection:
 If no architecture decisions, write "None recorded."
 
 ## Contracts
+
 For each contract (IPC handler, API call, event):
 
 ### <contract name>
+
 - **Type:** IPC handler | Alpaca call | event | Zod schema | other
 - **Shape:** request/response or payload (code block, exact from contracts/ if present)
 - **Source:** `plans/<plan-name>/contracts/<file>`
 - **Implementation:** path under src/ if discoverable, else "not yet wired"
 
 ## Schema Changes
+
 For each new/altered table, column, or migration:
 
 ### <table or migration name>
+
 - **Change:** new table | new column | altered constraint | new migration
 - **Columns / fields:** as documented
 - **Source:** `plans/<plan-name>/data-model.md`
 - **Migration file:** `migrations/<file>` if identifiable
 
 ## Acceptance Criteria
+
 Verbatim AC list from plan.md (or paraphrased if only narrative). Bullet list.
 
 ## Decisions & Tradeoffs
+
 Any decision that isn't strictly architectural but worth preserving (naming,
 ergonomics, UX tradeoffs, why a simpler approach was rejected).
 
 ## Source Code References
+
 Bulleted list of file paths under `src/` that this plan introduced or modified, if
 identifiable from the plan or results files. Verify each with Glob before listing.
 
 ## Open Questions
+
 Anything the plan flagged as unresolved or deferred.
 ```
 

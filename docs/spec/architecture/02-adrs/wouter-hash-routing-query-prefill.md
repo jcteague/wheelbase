@@ -1,4 +1,5 @@
 # ADR: wouter hash routing; query string for form pre-fill, not global state
+
 <!-- generated:from us-5 -->
 
 ## Decision

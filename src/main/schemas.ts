@@ -433,3 +433,17 @@ export const TestConnectionPayloadSchema = z.discriminatedUnion('vendor', [
   })
 ])
 export type TestConnectionPayload = z.infer<typeof TestConnectionPayloadSchema>
+
+// ---------------------------------------------------------------------------
+// Assignments schemas
+// ---------------------------------------------------------------------------
+
+export const ConfirmAssignmentPayloadSchema = z.object({
+  pendingAssignmentId: z.number().int().positive()
+})
+export type ConfirmAssignmentPayload = z.infer<typeof ConfirmAssignmentPayloadSchema>
+
+export const DismissAssignmentPayloadSchema = z.object({
+  pendingAssignmentId: z.number().int().positive()
+})
+export type DismissAssignmentPayload = z.infer<typeof DismissAssignmentPayloadSchema>

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 import type { RollCspResponse } from '../api/positions'
@@ -259,7 +259,7 @@ it('shows validation error "New premium must be greater than zero" on submit wit
   })
 })
 
-it('renders success state with green header "Roll Complete", hero net credit, and summary card after onSuccess', () => {
+it('renders success state with green header "Roll Complete", hero net credit, and summary card after onSuccess', async () => {
   let capturedOnSuccess: ((data: RollCspResponse) => void) | undefined
 
   mockUseRollCsp.mockImplementation(
@@ -276,10 +276,10 @@ it('renders success state with green header "Roll Complete", hero net credit, an
     }
   )
 
-  const { rerender } = render(<RollCspSheet {...DEFAULT_PROPS} />)
-
-  capturedOnSuccess?.(SUCCESS_CREDIT_RESPONSE)
-  rerender(<RollCspSheet {...DEFAULT_PROPS} />)
+  render(<RollCspSheet {...DEFAULT_PROPS} />)
+  await act(async () => {
+    capturedOnSuccess?.(SUCCESS_CREDIT_RESPONSE)
+  })
 
   expect(screen.getByText(/Roll Complete/)).toBeInTheDocument()
   expect(screen.getByText(/CSP Rolled Successfully/)).toBeInTheDocument()
@@ -290,7 +290,7 @@ it('renders success state with green header "Roll Complete", hero net credit, an
   expect(screen.getByText(/\$174\.90/)).toBeInTheDocument()
 })
 
-it('renders success state for net-debit roll with gold/amber hero colors, not green', () => {
+it('renders success state for net-debit roll with gold/amber hero colors, not green', async () => {
   let capturedOnSuccess: ((data: RollCspResponse) => void) | undefined
 
   mockUseRollCsp.mockImplementation(
@@ -307,10 +307,10 @@ it('renders success state for net-debit roll with gold/amber hero colors, not gr
     }
   )
 
-  const { rerender } = render(<RollCspSheet {...DEFAULT_PROPS} />)
-
-  capturedOnSuccess?.(SUCCESS_DEBIT_RESPONSE)
-  rerender(<RollCspSheet {...DEFAULT_PROPS} />)
+  render(<RollCspSheet {...DEFAULT_PROPS} />)
+  await act(async () => {
+    capturedOnSuccess?.(SUCCESS_DEBIT_RESPONSE)
+  })
 
   // Should show "Roll Net Debit" label
   expect(screen.getByText(/Roll Net Debit/)).toBeInTheDocument()
