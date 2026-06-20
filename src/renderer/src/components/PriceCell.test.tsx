@@ -11,6 +11,16 @@ type StockQuote = {
 }
 
 describe('PriceCell', () => {
+  function renderPriceCell(element: React.ReactElement): ReturnType<typeof render> {
+    return render(
+      <table>
+        <tbody>
+          <tr>{element}</tr>
+        </tbody>
+      </table>
+    )
+  }
+
   it('renders price and positive change with green design-system class when up', () => {
     const quote: StockQuote = {
       price: '182.45',
@@ -21,7 +31,7 @@ describe('PriceCell', () => {
       timestamp: ''
     }
 
-    render(<PriceCell quote={quote} />)
+    renderPriceCell(<PriceCell quote={quote} />)
 
     expect(screen.getByText('$182.45')).toBeInTheDocument()
     const changeEl = screen.getByText('+$1.45')
@@ -38,7 +48,7 @@ describe('PriceCell', () => {
       timestamp: ''
     }
 
-    render(<PriceCell quote={quote} />)
+    renderPriceCell(<PriceCell quote={quote} />)
 
     expect(screen.getByText('$418.30')).toBeInTheDocument()
     const changeEl = screen.getByText('-$1.70')
@@ -46,14 +56,14 @@ describe('PriceCell', () => {
   })
 
   it('renders dash and tooltip when quote is undefined', () => {
-    render(<PriceCell quote={undefined} />)
+    renderPriceCell(<PriceCell quote={undefined} />)
 
     expect(screen.getByText('—')).toBeInTheDocument()
     expect(screen.getByTitle('Price unavailable')).toBeInTheDocument()
   })
 
   it('renders dash and tooltip when prevClose is null and price is null', () => {
-    render(<PriceCell quote={undefined} />)
+    renderPriceCell(<PriceCell quote={undefined} />)
 
     expect(screen.getByText('—')).toBeInTheDocument()
     expect(screen.getByTitle('Price unavailable')).toBeInTheDocument()
@@ -69,7 +79,7 @@ describe('PriceCell', () => {
       timestamp: ''
     }
 
-    render(<PriceCell quote={quote} />)
+    renderPriceCell(<PriceCell quote={quote} />)
 
     expect(screen.getByText('$182.45')).toBeInTheDocument()
     expect(screen.queryByText(/^[+-]\$/)).toBeNull()
@@ -85,7 +95,7 @@ describe('PriceCell', () => {
       timestamp: ''
     }
 
-    render(<PriceCell quote={quote} session="closed" />)
+    renderPriceCell(<PriceCell quote={quote} session="closed" />)
 
     expect(screen.getByText('$182.00')).toBeInTheDocument()
     expect(screen.queryByText('$182.45')).toBeNull()

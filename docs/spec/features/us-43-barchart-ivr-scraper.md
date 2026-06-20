@@ -38,6 +38,7 @@ Related stories in this IVR cluster:
 ### Barchart API details
 
 **Endpoint:**
+
 ```
 GET https://www.barchart.com/proxies/core-api/v1/options/get
   ?baseSymbol={TICKER}
@@ -48,13 +49,13 @@ GET https://www.barchart.com/proxies/core-api/v1/options/get
 
 **Field mapping (from `raw` object inside `data[0]`):**
 
-| `IVROk.data` field | Barchart raw field                    | Transform                                           |
-| ------------------ | ------------------------------------- | --------------------------------------------------- |
-| `ivr`              | `raw.impliedVolatilityRank1y`         | `Math.round(v * 10) / 10` — already 0–100 scale    |
-| `ivp`              | `raw.impliedVolatilityPercentile1y`   | `Math.round(v * 1000) / 10` — 0–1 → 0–100, 1 dp   |
-| `iv30`             | `raw.historicVolatility20d`           | passthrough — optional context                      |
-| `observedAt`       | —                                     | `new Date().toISOString()` at fetch time            |
-| `source`           | —                                     | literal `"barchart"`                                |
+| `IVROk.data` field | Barchart raw field                  | Transform                                       |
+| ------------------ | ----------------------------------- | ----------------------------------------------- |
+| `ivr`              | `raw.impliedVolatilityRank1y`       | `Math.round(v * 10) / 10` — already 0–100 scale |
+| `ivp`              | `raw.impliedVolatilityPercentile1y` | `Math.round(v * 1000) / 10` — 0–1 → 0–100, 1 dp |
+| `iv30`             | `raw.historicVolatility20d`         | passthrough — optional context                  |
+| `observedAt`       | —                                   | `new Date().toISOString()` at fetch time        |
+| `source`           | —                                   | literal `"barchart"`                            |
 
 **Authentication:** GET any Barchart page → harvest `Set-Cookie` response headers → extract and URL-decode `XSRF-TOKEN` → send as `X-XSRF-TOKEN` header and `Cookie` header on API calls. No login required.
 

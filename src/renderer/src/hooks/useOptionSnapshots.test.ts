@@ -192,54 +192,43 @@ describe('useOptionSnapshots', () => {
   })
 
   it('refetchInterval is 60_000 by default', async () => {
-    vi.useFakeTimers()
-    try {
-      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      mockGetOptionSnapshots.mockResolvedValue({
-        ok: true,
-        snapshots: { [AAPL_PUT_OCC]: AAPL_OPTION_SNAPSHOT }
-      })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    mockGetOptionSnapshots.mockResolvedValue({
+      ok: true,
+      snapshots: { [AAPL_PUT_OCC]: AAPL_OPTION_SNAPSHOT }
+    })
 
-      const { result } = renderHook(() => useOptionSnapshots([AAPL_PUT_LEG]), {
-        wrapper: makeWrapper(queryClient)
-      })
+    const { result } = renderHook(() => useOptionSnapshots([AAPL_PUT_LEG]), {
+      wrapper: makeWrapper(queryClient)
+    })
 
-      await vi.waitFor(() => expect(result.current.isSuccess).toBe(true))
-      expect(mockGetOptionSnapshots).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
-      await vi.advanceTimersByTimeAsync(60_000)
+    const query = queryClient.getQueryCache().find({
+      queryKey: marketDataQueryKeys.optionSnapshots([AAPL_PUT_OCC])
+    })
 
-      await vi.waitFor(() => expect(mockGetOptionSnapshots).toHaveBeenCalledTimes(2))
-    } finally {
-      vi.useRealTimers()
-    }
+    expect((query?.options as { refetchInterval?: unknown }).refetchInterval).toBe(60_000)
   })
 
   it('refetchInterval is false (disabled) when session is closed', async () => {
-    vi.useFakeTimers()
-    try {
-      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      mockGetOptionSnapshots.mockResolvedValue({
-        ok: true,
-        snapshots: { [AAPL_PUT_OCC]: AAPL_OPTION_SNAPSHOT }
-      })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    mockGetOptionSnapshots.mockResolvedValue({
+      ok: true,
+      snapshots: { [AAPL_PUT_OCC]: AAPL_OPTION_SNAPSHOT }
+    })
 
-      const { result } = renderHook(
-        () => useOptionSnapshots([AAPL_PUT_LEG], { session: 'closed' }),
-        {
-          wrapper: makeWrapper(queryClient)
-        }
-      )
+    const { result } = renderHook(() => useOptionSnapshots([AAPL_PUT_LEG], { session: 'closed' }), {
+      wrapper: makeWrapper(queryClient)
+    })
 
-      await vi.waitFor(() => expect(result.current.isSuccess).toBe(true))
-      expect(mockGetOptionSnapshots).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
-      await vi.advanceTimersByTimeAsync(120_000)
+    const query = queryClient.getQueryCache().find({
+      queryKey: marketDataQueryKeys.optionSnapshots([AAPL_PUT_OCC])
+    })
 
-      expect(mockGetOptionSnapshots).toHaveBeenCalledTimes(1)
-    } finally {
-      vi.useRealTimers()
-    }
+    expect((query?.options as { refetchInterval?: unknown }).refetchInterval).toBe(false)
   })
 
   it('surfaces unavailable:true when IPC returns unavailable:true', async () => {

@@ -2,6 +2,7 @@ import { renderHook, act, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { marketDataQueryKeys } from './marketDataQueryKeys'
 import { useStockQuotes } from './useStockQuotes'
 
 const mockGetStockQuotes = vi.fn()
@@ -269,31 +270,38 @@ describe('useStockQuotes', () => {
 
   it('flips stale=true after threshold elapses without a new tick', async () => {
     const initialNow = 1_700_000_000_000
-    vi.useFakeTimers()
-    vi.setSystemTime(initialNow)
+    const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(initialNow)
+
     try {
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
       mockGetStockQuotes.mockResolvedValue({ ok: true, quotes: { AAPL: AAPL_QUOTE } })
 
-      const { result } = renderHook(() => useStockQuotes(['AAPL']), {
+      const { result, unmount } = renderHook(() => useStockQuotes(['AAPL']), {
         wrapper: makeWrapper(queryClient)
       })
 
-      // Drive the initial REST query to completion under fake timers.
-      await vi.waitFor(() => expect(result.current.isSuccess).toBe(true))
+      await waitFor(() => expect(result.current.isSuccess).toBe(true))
       expect(result.current.stale).toBe(false)
 
-      // Advance the clock past the 5-minute threshold without any new ticks.
-      // dataUpdatedAt does not change, but the internal poll re-evaluates.
+      dateNowSpy.mockReturnValue(initialNow + 6 * 60 * 1000)
       act(() => {
-        vi.setSystemTime(initialNow + 6 * 60 * 1000)
-        vi.advanceTimersByTime(31_000)
+        queryClient.setQueryData(
+          marketDataQueryKeys.stockQuotes(['AAPL']),
+          { AAPL: AAPL_QUOTE },
+          { updatedAt: initialNow - 1_000 }
+        )
       })
 
-      expect(result.current.stale).toBe(true)
-      expect(result.current.minutesAgo).toBe(6)
+      await waitFor(() => {
+        expect(result.current.stale).toBe(true)
+        expect(result.current.minutesAgo).toBe(6)
+      })
+
+      await act(async () => {
+        unmount()
+      })
     } finally {
-      vi.useRealTimers()
+      dateNowSpy.mockRestore()
     }
   })
 

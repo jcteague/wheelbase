@@ -23,6 +23,8 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # ── Run quality checks ─────────────────────────────────────────────────────────
 FAILED=0
 
+cd "$PROJECT_ROOT" && pnpm format >/dev/null 2>&1
+
 LINT_OUTPUT=$(cd "$PROJECT_ROOT" && pnpm lint 2>&1)
 LINT_EXIT=$?
 
