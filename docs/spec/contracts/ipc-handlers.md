@@ -1310,7 +1310,7 @@ US-37 adds a dedicated `settings:*` namespace for credential status, Alpaca cred
     }
   }
   ```
-- **Behavior:** trims `keyId` and `secret`, verifies the candidate credentials before save, encrypts with Electron `safeStorage`, and refreshes broker state only when the changed environment is active.
+- **Behavior:** delegates to `saveVerifiedAlpacaCredentials` (`src/main/services/save-verified-alpaca-credentials.ts`), which trims and validates, tests the connection, and saves only on success. Encrypts with Electron `safeStorage`, refreshes broker state only when the changed environment is active.
 
 ### `settings:remove-alpaca-credentials`
 
@@ -1375,7 +1375,7 @@ US-37 adds a dedicated `settings:*` namespace for credential status, Alpaca cred
 - **Vendor specifics:**
   - Massive probes `GET /v3/reference/tickers/AAPL` with the shared configured key.
   - Alpaca probes `GET /v2/account` against paper or live and does not import activities.
-  - Paper-card live-key mismatch returns `environment_mismatch` with message `Environment mismatch — these are LIVE keys, not paper keys`.
+  - Mismatch detection is bidirectional (heuristic by key prefix): live keys (`AK…`) in the paper card → `environment_mismatch` / `Environment mismatch — these are LIVE keys, not paper keys`; paper keys (`PK…`) in the live card → `environment_mismatch` / `Environment mismatch — these are PAPER keys, not live keys`.
 
 ### `settings:test-stored-alpaca-connection`
 
@@ -1399,7 +1399,7 @@ US-37 adds a dedicated `settings:*` namespace for credential status, Alpaca cred
   | ------------- | --------------------- | -------------------------------------------------------------------------------------------- |
   | `environment` | `missing_credentials` | `Alpaca paper credentials are not configured` / `Alpaca live credentials are not configured` |
 
-- **Source:** `src/main/ipc/settings.ts`, `src/main/services/settings.ts`, `src/main/services/settings-connections.ts`
+- **Source:** `src/main/ipc/settings.ts`, `src/main/services/settings.ts`, `src/main/services/settings-connections.ts`, `src/main/services/save-verified-alpaca-credentials.ts`
 - **Driven by:** [us-37 — Paper/Live Broker Environment Toggle](../features/us-37-paper-live-broker-environment-toggle.md)
 
 <!-- /generated -->

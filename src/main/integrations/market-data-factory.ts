@@ -4,7 +4,6 @@ import { FakeMarketDataProvider } from './fake-market-data'
 
 type MarketDataFactoryConfig = {
   loadMassiveApiKey: () => string
-  loadSettingsStatus?: () => unknown
 }
 
 let config: MarketDataFactoryConfig = {

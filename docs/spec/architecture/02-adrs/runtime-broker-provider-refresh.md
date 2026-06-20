@@ -1,5 +1,4 @@
 # ADR: Runtime broker provider refresh
-
 <!-- generated:from us-37 -->
 
 ## Decision

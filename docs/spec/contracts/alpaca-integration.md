@@ -177,7 +177,7 @@ Settings-side Alpaca probes are intentionally separate from regular `BrokerProvi
 
 - **Candidate credentials:** `settings:test-connection` with `{ vendor: 'alpaca', environment, keyId, secret }` calls `GET /v2/account` against paper or live using the candidate credentials and returns a masked account number on success.
 - **Stored credentials:** `settings:test-stored-alpaca-connection` loads encrypted credentials for the requested environment and runs the same probe without exposing secrets back to the renderer.
-- **Environment mismatch:** entering live keys in the paper card returns `environment_mismatch` with the exact message `Environment mismatch — these are LIVE keys, not paper keys`. (`environment_mismatch` was added to `BrokerError` in US-39 specifically for this detection.)
+- **Environment mismatch:** detected bidirectionally via key prefix heuristic (`AK…` = live, `PK…` = paper). Live keys in the paper card return `environment_mismatch` / `Environment mismatch — these are LIVE keys, not paper keys`; paper keys in the live card return `environment_mismatch` / `Environment mismatch — these are PAPER keys, not live keys`. (`environment_mismatch` was added to `BrokerError` in US-39 specifically for this detection.)
 
 All Alpaca HTTP/SDK interaction stays inside `alpaca-broker.ts` or the settings-probe helpers in `src/main/services/settings-connections.ts`; the renderer and IPC layers only see typed result objects.
 
@@ -268,5 +268,6 @@ For the Massive market-data adapter files (`massive-market-data.ts`, `market-dat
 - [us-39 — Massive Market Data Provider](../features/us-39-massive-market-data-provider.md)
 
 <!-- /generated -->
+
 
 <!-- Hand-written sections below this line are preserved across regeneration. -->

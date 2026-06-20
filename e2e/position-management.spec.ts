@@ -4,7 +4,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { localToday } from './dates'
+import { localDate, localToday } from './dates'
 
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
 const APP_CWD = path.join(__dirname, '..')
@@ -13,10 +13,9 @@ const APP_CWD = path.join(__dirname, '..')
 const NEAR_ISO = localToday()
 const [NEAR_YEAR, NEAR_MONTH, NEAR_DAY] = NEAR_ISO.split('-').map(Number)
 
-// Far expiration: June 2026
-const FAR_YEAR = 2026
-const FAR_MONTH = 6
-const FAR_DAY = 20
+// Far expiration: 60 days from today (always in the future)
+const FAR_ISO = localDate(60)
+const [FAR_YEAR, FAR_MONTH, FAR_DAY] = FAR_ISO.split('-').map(Number)
 
 async function openPosition(
   page: Page,

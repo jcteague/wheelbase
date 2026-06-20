@@ -1,6 +1,6 @@
 # Code Review Summary — branch `us-3t` (US-37 Settings + Paper/Live Toggle)
 
-> Prompt: _"This branch is complete and ready to be merged into main. Perform a thorough code review to look for any bugs, missing acceptance criteria, and verify development standards have been followed."_
+> Prompt: *"This branch is complete and ready to be merged into main. Perform a thorough code review to look for any bugs, missing acceptance criteria, and verify development standards have been followed."*
 
 ## Verification results
 
@@ -39,14 +39,14 @@
 
 ## Missing acceptance criteria
 
-| Scenario                                                                      | Status                                                                       |
-| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Massive API key field, Save, Replace, Remove, masked-on-reload, trim-on-paste | Missing (B6)                                                                 |
-| Test connection on saved Alpaca credentials                                   | Faked (B2)                                                                   |
-| Stale-price fallback after Massive removed                                    | Missing (no remove flow)                                                     |
-| Mid-session 401 degrades MarketDataStatusDot to grey                          | Missing — dot reads only static `massive: configured\|missing`               |
-| Empty-state banner on positions list with the AC copy                         | Missing/off-spec — text only on Settings page, and only when positions exist |
-| Massive •••••••• mask on next page load + Replace flow                        | Missing                                                                      |
+| Scenario | Status |
+| --- | --- |
+| Massive API key field, Save, Replace, Remove, masked-on-reload, trim-on-paste | Missing (B6) |
+| Test connection on saved Alpaca credentials | Faked (B2) |
+| Stale-price fallback after Massive removed | Missing (no remove flow) |
+| Mid-session 401 degrades MarketDataStatusDot to grey | Missing — dot reads only static `massive: configured\|missing` |
+| Empty-state banner on positions list with the AC copy | Missing/off-spec — text only on Settings page, and only when positions exist |
+| Massive •••••••• mask on next page load + Replace flow | Missing |
 
 ## Nits
 

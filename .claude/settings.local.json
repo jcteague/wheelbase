@@ -53,7 +53,8 @@
       "Skill(options-expert)",
       "WebFetch(domain:marketchameleon.com)",
       "WebFetch(domain:www.barchart.com)",
-      "Bash(./node_modules/.bin/vitest run *)"
+      "Bash(./node_modules/.bin/vitest run *)",
+      "Bash(git checkout *)"
     ]
   },
   "enableAllProjectMcpServers": true,
