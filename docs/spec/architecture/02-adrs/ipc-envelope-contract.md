@@ -1,6 +1,6 @@
 # ADR: IPC envelope contract — `{ ok: true, ... } | { ok: false, errors: [...] }`
 
-<!-- generated:from us-4, us-5, us-6, us-7, us-8, us-9, us-12, us-32 -->
+<!-- generated:from us-4, us-5, us-6, us-7, us-8, us-9, us-12, us-32, us-47-49 -->
 
 ## Decision
 
@@ -27,6 +27,12 @@ The renderer API adapter inspects `result.ok`; on `false` it constructs an `ApiE
 - **Throw exceptions across IPC** — rejected; loses structured error data and forces every renderer caller to wrap `await` in `try/catch`.
 - **HTTP-style status codes inside the envelope** — rejected; over-engineered for a local IPC channel and conflates transport semantics with domain validation.
 - **Per-handler error shapes** — rejected; each new handler would invent its own contract.
+
+## Documented envelope extensions
+
+**`deeplink` on broker auth errors (US-47).** When `handleIpcCall` catches a `BrokerError` that carries a `deeplink` string (populated by `requireCredentials()` for missing credentials), the `{ ok: false }` envelope includes it as a top-level field: `{ ok: false, deeplink: 'settings/credentials/alpaca', errors: [...] }`. This lets the renderer navigate the user to the relevant settings screen without scanning `errors[]`. See [ADR: deeplink-in-ipc-error-envelope](./deeplink-in-ipc-error-envelope.md).
+
+**Top-level `code` on assignment handlers (US-35).** `assignments:confirm` and `assignments:dismiss` include an additional top-level `code` field (`'NOT_FOUND' | 'NOT_PENDING' | 'TRANSITION_REJECTED'`) so the renderer's banner state machine can switch on a single discriminator without scanning the array. This is an exceptional pattern; treat as a precedent-limited deviation for state-machine consumers.
 
 ## Consequences
 

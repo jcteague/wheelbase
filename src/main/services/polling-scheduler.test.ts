@@ -151,6 +151,7 @@ describe('start() — immediate invocations', () => {
 describe('interval cadence', () => {
   beforeEach(() => {
     vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T10:00:00Z'))
   })
   afterEach(() => {
     vi.useRealTimers()
@@ -411,6 +412,7 @@ describe('stop()', () => {
 describe('broker getter is resolved fresh on every reschedule', () => {
   beforeEach(() => {
     vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T10:00:00Z'))
   })
   afterEach(() => {
     vi.useRealTimers()
@@ -551,6 +553,181 @@ describe('stop() — timeout cleanup', () => {
 
     // No further timer callbacks should be queued after stop resolves
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe('parked-job self-resume (US-49)', () => {
+  const FAKE_NOW = '2026-01-01T10:00:00Z'
+  const NEXT_OPEN = '2026-01-02T14:30:00Z'
+  const WAKE_DELAY_MS = new Date(NEXT_OPEN).getTime() - new Date(FAKE_NOW).getTime()
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(FAKE_NOW))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('schedules a wake timer at nextOpen when market is closed and marketClosedMs is null', async () => {
+    const handler = vi.fn().mockResolvedValue(undefined)
+    const broker = makeBroker(MARKET_CLOSED)
+    const scheduler = createPollingScheduler(() => broker)
+    scheduler.register({
+      name: 'job',
+      cadence: { kind: 'interval', marketOpenMs: 60_000, marketClosedMs: null },
+      handler
+    })
+    scheduler.start()
+
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(vi.getTimerCount()).toBe(1)
+
+    await scheduler.stop()
+  })
+
+  it('logs INFO when parking a job until nextOpen', async () => {
+    const handler = vi.fn().mockResolvedValue(undefined)
+    const broker = makeBroker(MARKET_CLOSED)
+    const scheduler = createPollingScheduler(() => broker)
+    scheduler.register({
+      name: 'job',
+      cadence: { kind: 'interval', marketOpenMs: 60_000, marketClosedMs: null },
+      handler
+    })
+    scheduler.start()
+
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
+      expect.objectContaining({ job: 'job', nextOpen: NEXT_OPEN }),
+      expect.stringMatching(/parked until next market open/)
+    )
+
+    await scheduler.stop()
+  })
+
+  it('job resumes marketOpenMs cadence when wake fires and market is open', async () => {
+    const handler = vi.fn().mockResolvedValue(undefined)
+    const closedBroker = makeBroker(MARKET_CLOSED)
+    const openBroker = makeBroker(MARKET_OPEN)
+    let currentBroker: BrokerProvider = closedBroker
+
+    const scheduler = createPollingScheduler(() => currentBroker)
+    scheduler.register({
+      name: 'job',
+      cadence: { kind: 'interval', marketOpenMs: 60_000, marketClosedMs: null },
+      handler
+    })
+    scheduler.start()
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(handler).toHaveBeenCalledTimes(1)
+
+    currentBroker = openBroker
+    await vi.advanceTimersByTimeAsync(WAKE_DELAY_MS)
+    expect(handler).toHaveBeenCalledTimes(2)
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(handler).toHaveBeenCalledTimes(3)
+
+    await scheduler.stop()
+  })
+
+  it('job resumes extendedHoursMs cadence when wake fires during pre-market', async () => {
+    const handler = vi.fn().mockResolvedValue(undefined)
+    const closedBroker = makeBroker(MARKET_CLOSED)
+    const extendedBroker = makeBroker(MARKET_EXTENDED)
+    let currentBroker: BrokerProvider = closedBroker
+
+    const scheduler = createPollingScheduler(() => currentBroker)
+    scheduler.register({
+      name: 'job',
+      cadence: {
+        kind: 'interval',
+        marketOpenMs: 60_000,
+        extendedHoursMs: 300_000,
+        marketClosedMs: null
+      },
+      handler
+    })
+    scheduler.start()
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(handler).toHaveBeenCalledTimes(1)
+
+    currentBroker = extendedBroker
+    await vi.advanceTimersByTimeAsync(WAKE_DELAY_MS)
+    expect(handler).toHaveBeenCalledTimes(2)
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(handler).toHaveBeenCalledTimes(2)
+
+    await vi.advanceTimersByTimeAsync(240_000)
+    expect(handler).toHaveBeenCalledTimes(3)
+
+    await scheduler.stop()
+  })
+
+  it('launching after hours parks the job with exactly one timer pending', async () => {
+    const handler = vi.fn().mockResolvedValue(undefined)
+    const broker = makeBroker(MARKET_CLOSED)
+    const scheduler = createPollingScheduler(() => broker)
+    scheduler.register({
+      name: 'job',
+      cadence: { kind: 'interval', marketOpenMs: 60_000, marketClosedMs: null },
+      handler
+    })
+    scheduler.start()
+
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(vi.getTimerCount()).toBe(1)
+
+    await scheduler.stop()
+  })
+
+  it('stop() clears the park-wake timer', async () => {
+    const handler = vi.fn().mockResolvedValue(undefined)
+    const broker = makeBroker(MARKET_CLOSED)
+    const scheduler = createPollingScheduler(() => broker)
+    scheduler.register({
+      name: 'job',
+      cadence: { kind: 'interval', marketOpenMs: 60_000, marketClosedMs: null },
+      handler
+    })
+    scheduler.start()
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(vi.getTimerCount()).toBe(1)
+
+    await scheduler.stop()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('stale nextOpen in the past falls back to marketOpenMs and logs WARN', async () => {
+    vi.setSystemTime(new Date('2026-06-01T00:00:00Z'))
+
+    const handler = vi.fn().mockResolvedValue(undefined)
+    const broker = makeBroker(MARKET_CLOSED)
+    const scheduler = createPollingScheduler(() => broker)
+    scheduler.register({
+      name: 'job',
+      cadence: { kind: 'interval', marketOpenMs: 60_000, marketClosedMs: null },
+      handler
+    })
+    scheduler.start()
+
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(vi.getTimerCount()).toBe(1)
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      expect.objectContaining({ job: 'job' }),
+      expect.stringMatching(/nextOpen.*unusable/)
+    )
+
+    await scheduler.stop()
   })
 })
 

@@ -174,8 +174,9 @@ export function PositionsListPage(): React.JSX.Element {
     [activePositions]
   )
 
+  const hasBroker = settingsQuery.data?.activeBrokerEnv !== 'none'
   const quotesQuery = useStockQuotes(tickers)
-  const statusQuery = useMarketStatus()
+  const statusQuery = useMarketStatus(hasBroker)
   const snapshotsQuery = useOptionSnapshots(legs, { session: statusQuery.data?.session })
   const pendingAssignmentsQuery = usePendingAssignments()
   const pendingPositionIds = useMemo(
@@ -192,8 +193,9 @@ export function PositionsListPage(): React.JSX.Element {
     quotesQuery.streamError?.code === 'auth_failed'
       ? 'Massive authentication failed — check your key in Settings'
       : null
+  // Only surface an auth error when credentials ARE configured but rejected — not when none are saved
   const brokerAuthPrompt =
-    getErrorCode(statusQuery.error) === 'auth_failed'
+    hasBroker && getErrorCode(statusQuery.error) === 'auth_failed'
       ? 'Alpaca authentication failed — check your key in Settings'
       : null
 

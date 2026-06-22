@@ -74,6 +74,8 @@ Generated regions are bounded by `<!-- generated:from ... -->` / `<!-- /generate
 - [US-43 — IVR Scraper (Barchart)](features/us-43-barchart-ivr-scraper.md) — pure `fetchIVR(ticker)` integration module; fetches IV Rank + IV Percentile from Barchart's internal JSON API; typed discriminated union result; never throws; foundational primitive for US-44 (scheduled collection) and US-45 (UI display)
 - [US-44 — IVR Snapshot Store & Scheduler](features/us-44-ivr-snapshot-store-and-scheduler.md) — `ivr_snapshot` table (migration 007) + main-process `collectIVRSnapshots` batch collector over active-position underlyings + `afterClose` scheduler job + `ivr:collect-now` manual trigger surfaced as "Refresh IVR now" in Settings
 - [US-46 — Polling Scheduler](features/us-46-polling-scheduler.md) — generic market-session-aware setTimeout-chain job runner; foundation for all background poll jobs
+- [US-47/49 — Broker AC Hardening + Scheduler Park-Wake Resume](features/us-47-49-broker-ac-hardening.md) — `BrokerError.deeplink`, 4dp money normalization, two-direction key-mismatch detection, IPC deeplink envelope, park-wake self-resume at `nextOpen`
+- [US-48 — Scheduler + Settings Fixes](features/us-48-scheduler-settings-fixes.md) — broker getter injection, `stop()` timer cleanup, Settings Test Connection rejection handling
 
 ## Gaps / not yet built
 

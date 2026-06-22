@@ -5,6 +5,7 @@ import type { Observable } from 'rxjs'
 export type MarketDataErrorCode =
   | 'auth_failed'
   | 'network_error'
+  | 'not_found'
   | 'rate_limited'
   | 'streaming_unsupported'
   | 'unknown'

@@ -73,7 +73,7 @@ describe('registerMarketDataHandlers', () => {
     const { ipcMain } = await import('electron')
     const { registerMarketDataHandlers } = await import('./market-data')
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
 
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([c]) => c as string)
     expect(channels).toContain('market-data:stock-quotes')
@@ -92,7 +92,7 @@ describe('registerMarketDataHandlers', () => {
       ])
     )
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'market-data:stock-quotes'
@@ -119,7 +119,7 @@ describe('registerMarketDataHandlers', () => {
     const { ipcMain } = await import('electron')
     const { registerMarketDataHandlers } = await import('./market-data')
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'market-data:stock-quotes'
@@ -139,7 +139,7 @@ describe('registerMarketDataHandlers', () => {
       new MarketDataError('auth_failed', 'authentication failed')
     )
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'market-data:stock-quotes'
@@ -161,7 +161,7 @@ describe('registerMarketDataHandlers', () => {
       new MarketDataError('network_error', 'connection refused')
     )
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'market-data:stock-quotes'
@@ -182,7 +182,7 @@ describe('registerMarketDataHandlers', () => {
 
     provider.getStockQuotes.mockRejectedValue(new Error('unexpected'))
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'market-data:stock-quotes'
@@ -201,7 +201,7 @@ describe('registerMarketDataHandlers', () => {
     const { ipcMain } = await import('electron')
     const { registerMarketDataHandlers } = await import('./market-data')
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'market-data:stock-quotes'
@@ -219,7 +219,7 @@ describe('registerMarketDataHandlers', () => {
     const { ipcMain } = await import('electron')
     const { registerMarketDataHandlers } = await import('./market-data')
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'market-data:set-stock-quote-tickers'
@@ -234,7 +234,7 @@ describe('registerMarketDataHandlers', () => {
     const { ipcMain } = await import('electron')
     const { registerMarketDataHandlers } = await import('./market-data')
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'market-data:set-stock-quote-tickers'
@@ -253,7 +253,7 @@ describe('registerMarketDataHandlers', () => {
     const subject = new Subject<StreamEvent<StockQuote | OptionSnapshot>>()
     provider.stream.mockReturnValue(subject.asObservable())
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'market-data:set-stock-quote-tickers'
@@ -299,7 +299,7 @@ describe('registerMarketDataHandlers', () => {
     const subject = new Subject<StreamEvent<StockQuote | OptionSnapshot>>()
     provider.stream.mockReturnValue(subject.asObservable())
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'market-data:set-stock-quote-tickers'
@@ -318,7 +318,7 @@ describe('registerMarketDataHandlers', () => {
     const { ipcMain } = await import('electron')
     const { registerMarketDataHandlers } = await import('./market-data')
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'market-data:set-stock-quote-tickers'
@@ -337,7 +337,7 @@ describe('registerMarketDataHandlers', () => {
     const subject = new Subject<StreamEvent<StockQuote | OptionSnapshot>>()
     provider.stream.mockReturnValue(subject.asObservable())
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'market-data:set-stock-quote-tickers'
@@ -387,7 +387,7 @@ describe('registerMarketDataHandlers', () => {
     const { ipcMain } = await import('electron')
     const { registerMarketDataHandlers } = await import('./market-data')
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
 
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([c]) => c as string)
     expect(channels).toContain('market-data:option-snapshots')
@@ -399,7 +399,7 @@ describe('registerMarketDataHandlers', () => {
 
     provider.getOptionSnapshot.mockResolvedValue(AAPL_SNAPSHOT)
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'market-data:option-snapshots'
@@ -424,7 +424,7 @@ describe('registerMarketDataHandlers', () => {
     const { ipcMain } = await import('electron')
     const { registerMarketDataHandlers } = await import('./market-data')
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'market-data:option-snapshots'
@@ -444,7 +444,7 @@ describe('registerMarketDataHandlers', () => {
       new MarketDataError('auth_failed', 'authentication failed')
     )
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'market-data:option-snapshots'
@@ -466,7 +466,7 @@ describe('registerMarketDataHandlers', () => {
       new MarketDataError('network_error', 'connection refused')
     )
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'market-data:option-snapshots'
@@ -487,7 +487,7 @@ describe('registerMarketDataHandlers', () => {
 
     provider.getOptionSnapshot.mockRejectedValue(new Error('unexpected'))
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'market-data:option-snapshots'
@@ -506,7 +506,7 @@ describe('registerMarketDataHandlers', () => {
     const { ipcMain } = await import('electron')
     const { registerMarketDataHandlers } = await import('./market-data')
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'market-data:option-snapshots'
@@ -526,7 +526,7 @@ describe('registerMarketDataHandlers', () => {
     const { ipcMain } = await import('electron')
     const { registerMarketDataHandlers } = await import('./market-data')
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
 
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([c]) => c as string)
     expect(channels).toContain('market-data:option-snapshot')
@@ -538,7 +538,7 @@ describe('registerMarketDataHandlers', () => {
 
     provider.getOptionSnapshot.mockResolvedValue(AAPL_SNAPSHOT)
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'market-data:option-snapshot'
@@ -556,7 +556,7 @@ describe('registerMarketDataHandlers', () => {
     const { ipcMain } = await import('electron')
     const { registerMarketDataHandlers } = await import('./market-data')
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
 
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([c]) => c as string)
     expect(channels).toContain('market-data:option-chain')
@@ -568,7 +568,7 @@ describe('registerMarketDataHandlers', () => {
 
     provider.getOptionChainSnapshot.mockResolvedValue([AAPL_SNAPSHOT])
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'market-data:option-chain'
@@ -585,7 +585,7 @@ describe('registerMarketDataHandlers', () => {
     const { ipcMain } = await import('electron')
     const { registerMarketDataHandlers } = await import('./market-data')
 
-    registerMarketDataHandlers(provider, getWindow)
+    registerMarketDataHandlers(() => provider, getWindow)
 
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([c]) => c as string)
     expect(channels).not.toContain('market-data:activities')

@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js'
-import type { Observable } from 'rxjs'
+import { Subject, filter, type Observable } from 'rxjs'
+import WebSocket from 'ws'
 import {
   MarketDataError,
   type MarketDataFeed,
@@ -10,15 +11,34 @@ import {
   type StreamEvent
 } from './market-data-provider'
 import { isNetworkError } from './integration-errors'
+import { logger } from '../logger'
 
-const BASE_URL = 'https://api.syncswimmer.com'
+const BASE_URL = 'https://api.massive.com'
+const WS_URL = 'wss://delayed.massive.com/stocks'
 const MAX_RETRIES = 2
 
 export type MassiveMarketDataConfig = { apiKey: string }
 
+// Polygon-compatible WebSocket message shapes
+type WsStatusMsg = { ev: 'status'; status: string; message?: string }
+type WsAmMsg = {
+  ev: 'AM'
+  sym: string
+  v: number
+  vw: number
+  c: number
+  o: number
+  h: number
+  l: number
+  s: number // start ms
+  e: number // end ms
+}
+type WsMsg = WsStatusMsg | WsAmMsg
+
+// Polygon-compatible option snapshot shape
 type SnapResult = {
-  latest_quote: { b: number; a: number; t: string }
-  latest_trade: { p: number; t: string }
+  last_quote: { bid: number; ask: number; last_updated: number }
+  last_trade: { price: number; sip_timestamp: number }
   greeks: { delta: number; gamma: number; theta: number; vega: number } | null
   implied_volatility: number | null
 }
@@ -26,6 +46,17 @@ type SnapResult = {
 type ChainResponse = {
   results: SnapResult[]
   next_url: string | null
+}
+
+// Massive v2 stock snapshot shape (aggregate bars, no live bid/ask)
+type StockSnapshotResult = {
+  ticker: {
+    day: { c: number; v: number }
+    min: { c: number; t: number } // last-minute close + timestamp (ms)
+    prevDay: { c: number }
+    todaysChange: number
+    todaysChangePerc: number
+  }
 }
 
 function parseUnderlying(contractId: string): string {
@@ -38,17 +69,17 @@ function computeMid(bid: Decimal, ask: Decimal): Decimal {
 }
 
 function mapSnapResult(r: SnapResult): OptionSnapshot {
-  const bid = new Decimal(r.latest_quote.b)
-  const ask = new Decimal(r.latest_quote.a)
+  const bid = new Decimal(r.last_quote.bid)
+  const ask = new Decimal(r.last_quote.ask)
   const mid = computeMid(bid, ask)
   const snap: OptionSnapshot = {
     bid: bid.toFixed(2),
     ask: ask.toFixed(2),
     mid: mid.toFixed(2),
-    lastTrade: new Decimal(r.latest_trade.p).toFixed(2),
+    lastTrade: new Decimal(r.last_trade.price).toFixed(2),
     openInterest: null,
     volume: null,
-    timestamp: r.latest_quote.t
+    timestamp: new Date(r.last_quote.last_updated / 1_000_000).toISOString()
   }
   if (r.greeks !== null) {
     snap.greeks = {
@@ -66,9 +97,31 @@ function mapSnapResult(r: SnapResult): OptionSnapshot {
 
 export class MassiveMarketDataProvider implements MarketDataProvider {
   private readonly apiKey: string
+  private ws: WebSocket | null = null
+  private readonly tickSubject = new Subject<StreamEvent<StockQuote>>()
 
   constructor(config: MassiveMarketDataConfig) {
     this.apiKey = config.apiKey
+  }
+
+  private emitTick(msg: WsAmMsg): void {
+    const price = new Decimal(msg.c)
+    const quote: StockQuote = {
+      price: price.toFixed(2),
+      bid: price.toFixed(2),
+      ask: price.toFixed(2),
+      change: '',
+      changePercent: '',
+      prevClose: '',
+      volume: msg.v,
+      timestamp: new Date(msg.e).toISOString()
+    }
+    this.tickSubject.next({
+      feed: 'stockQuotes',
+      symbol: msg.sym,
+      data: quote,
+      timestamp: quote.timestamp
+    })
   }
 
   private requireApiKey(): void {
@@ -77,12 +130,16 @@ export class MassiveMarketDataProvider implements MarketDataProvider {
     }
   }
 
+  private authedUrl(url: string): string {
+    const parsed = new URL(url)
+    parsed.searchParams.set('apiKey', this.apiKey)
+    return parsed.toString()
+  }
+
   private async apiFetch(url: string, retryCount = 0): Promise<unknown> {
     let response: Response
     try {
-      response = await fetch(url, {
-        headers: { Authorization: `Bearer ${this.apiKey}` }
-      })
+      response = await fetch(this.authedUrl(url))
     } catch (err) {
       if (isNetworkError(err)) {
         throw new MarketDataError(
@@ -107,6 +164,9 @@ export class MassiveMarketDataProvider implements MarketDataProvider {
       return this.apiFetch(url, retryCount + 1)
     }
 
+    if (response.status === 404) {
+      throw new MarketDataError('not_found', `HTTP 404: ${url}`)
+    }
     if (!response.ok) {
       throw new MarketDataError('unknown', `HTTP ${response.status}`)
     }
@@ -118,22 +178,21 @@ export class MassiveMarketDataProvider implements MarketDataProvider {
     this.requireApiKey()
     const pairs = await Promise.all(
       tickers.map(async (ticker) => {
-        const data = (await this.apiFetch(`${BASE_URL}/v3/quotes/${ticker}/last`)) as {
-          results: { last: { b: number; a: number; t: string } }
-        }
-        const { b, a, t } = data.results.last
-        const bid = new Decimal(b)
-        const ask = new Decimal(a)
-        const mid = computeMid(bid, ask)
+        const data = (await this.apiFetch(
+          `${BASE_URL}/v2/snapshot/locale/us/markets/stocks/tickers/${ticker}`
+        )) as StockSnapshotResult
+        const { day, min, prevDay, todaysChange, todaysChangePerc } = data.ticker
+        // Massive provides aggregate bars — use last-minute close as price (no live bid/ask)
+        const price = new Decimal(min.c)
         const quote: StockQuote = {
-          price: mid.toFixed(2),
-          bid: bid.toFixed(2),
-          ask: ask.toFixed(2),
-          change: '0.00',
-          changePercent: '0.0000',
-          prevClose: '',
-          volume: 0,
-          timestamp: t
+          price: price.toFixed(2),
+          bid: price.toFixed(2),
+          ask: price.toFixed(2),
+          change: new Decimal(todaysChange).toFixed(2),
+          changePercent: new Decimal(todaysChangePerc).toFixed(4),
+          prevClose: new Decimal(prevDay.c).toFixed(2),
+          volume: day.v,
+          timestamp: new Date(min.t).toISOString()
         }
         return [ticker, quote] as [string, StockQuote]
       })
@@ -182,8 +241,8 @@ export class MassiveMarketDataProvider implements MarketDataProvider {
     return snapshots
   }
 
-  supportsStreaming(feed: MarketDataFeed): boolean {
-    return feed === 'stockQuotes' || feed === 'optionQuotes'
+  supportsStreaming(): boolean {
+    return true
   }
 
   stream(
@@ -191,15 +250,58 @@ export class MassiveMarketDataProvider implements MarketDataProvider {
     symbols: string[]
   ): Observable<StreamEvent<StockQuote | OptionSnapshot>> {
     void feed
-    void symbols
-    throw new MarketDataError('streaming_unsupported', 'streaming not yet supported')
+    const symbolSet = new Set(symbols)
+    return this.tickSubject.pipe(filter((ev) => symbolSet.size === 0 || symbolSet.has(ev.symbol)))
   }
 
   async connect(): Promise<void> {
-    // no-op
+    this.requireApiKey()
+    return new Promise<void>((resolve, reject) => {
+      const ws = new WebSocket(WS_URL)
+      this.ws = ws
+
+      ws.on('open', () => {
+        ws.send(JSON.stringify({ action: 'auth', params: this.apiKey }))
+      })
+
+      ws.on('message', (rawData: Buffer | string) => {
+        const text = Buffer.isBuffer(rawData) ? rawData.toString('utf8') : rawData
+        let messages: WsMsg[]
+        try {
+          messages = JSON.parse(text) as WsMsg[]
+        } catch {
+          return
+        }
+        for (const msg of messages) {
+          if (msg.ev === 'status') {
+            if (msg.status === 'auth_success') {
+              ws.send(JSON.stringify({ action: 'subscribe', params: 'AM.*' }))
+            } else if (msg.status === 'success') {
+              logger.info({ serverMsg: msg.message }, 'massive_ws_subscribed')
+              resolve()
+            } else if (msg.status === 'auth_failed') {
+              reject(new MarketDataError('auth_failed', 'Massive WebSocket auth failed'))
+              ws.close()
+            }
+          } else if (msg.ev === 'AM') {
+            this.emitTick(msg)
+          }
+        }
+      })
+
+      ws.on('error', (err) => {
+        reject(new MarketDataError('network_error', err.message))
+      })
+
+      ws.on('close', () => {
+        this.ws = null
+        logger.info('massive_ws_closed')
+      })
+    })
   }
 
   async disconnect(): Promise<void> {
-    // no-op
+    this.ws?.close()
+    this.ws = null
   }
 }

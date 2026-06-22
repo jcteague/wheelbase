@@ -146,8 +146,10 @@ app.whenReady().then(() => {
   registerPingHandler()
   registerPositionsHandlers(db)
 
-  const marketDataProvider = marketDataFactory.create()
-  registerMarketDataHandlers(marketDataProvider, () => mainWindow)
+  registerMarketDataHandlers(
+    () => marketDataFactory.create(),
+    () => mainWindow
+  )
 
   registerBrokerHandlers(() => brokerFactory.create())
   registerSettingsHandlers({
@@ -239,7 +241,7 @@ app.whenReady().then(() => {
 
   app.on('before-quit', async (e) => {
     e.preventDefault()
-    await Promise.all([scheduler.stop(), marketDataProvider.disconnect()])
+    await Promise.all([scheduler.stop(), marketDataFactory.disconnect()])
     app.exit(0)
   })
 })

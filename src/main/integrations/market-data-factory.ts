@@ -36,5 +36,8 @@ export const marketDataFactory = {
   },
   recreate(): void {
     cached = null
+  },
+  disconnect(): Promise<void> {
+    return cached ? cached.disconnect() : Promise.resolve()
   }
 }

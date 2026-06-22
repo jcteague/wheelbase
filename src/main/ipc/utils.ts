@@ -10,7 +10,9 @@ export type IpcFieldError = { field: string; code: string; message: string }
 export async function handleIpcCall<T extends object>(
   logLabel: string,
   fn: () => T | Promise<T>
-): Promise<({ ok: true } & T) | { ok: false; code?: string; errors: IpcFieldError[] }> {
+): Promise<
+  ({ ok: true } & T) | { ok: false; code?: string; deeplink?: string; errors: IpcFieldError[] }
+> {
   try {
     return { ok: true, ...(await fn()) }
   } catch (err) {
@@ -24,8 +26,23 @@ export async function handleIpcCall<T extends object>(
         errors: [{ field: '__root__', code: err.code, message: err.message }]
       }
     }
-    if (err instanceof MarketDataError || err instanceof BrokerError) {
-      logger.error({ code: err.code, message: err.message }, logLabel)
+    if (err instanceof BrokerError) {
+      // auth_failed is expected when credentials aren't configured — WARN, not ERROR
+      const log = err.code === 'auth_failed' ? logger.warn : logger.error
+      log.call(logger, { code: err.code, message: err.message }, logLabel)
+      return {
+        ok: false,
+        ...(err.deeplink ? { deeplink: err.deeplink } : {}),
+        errors: [{ field: '__root__', code: err.code, message: err.message }]
+      }
+    }
+    if (err instanceof MarketDataError) {
+      // Handled API errors (auth, not_found, rate_limit) are WARN; unknown failures are ERROR
+      const log =
+        err.code === 'auth_failed' || err.code === 'not_found' || err.code === 'rate_limited'
+          ? logger.warn
+          : logger.error
+      log.call(logger, { code: err.code, message: err.message }, logLabel)
       return { ok: false, errors: [{ field: '__root__', code: err.code, message: err.message }] }
     }
     if (err instanceof ZodError) {

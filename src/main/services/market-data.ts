@@ -1,5 +1,6 @@
 import type { Subscription } from 'rxjs'
 import {
+  MarketDataError,
   type MarketDataProvider,
   type OptionSnapshot,
   type StockQuote,
@@ -57,11 +58,18 @@ export async function fetchOptionSnapshots(
   if (symbols.length === 0) return { snapshots: {}, unavailable: false }
   const entries = await Promise.all(
     symbols.map(async (s) => {
-      const snap = await provider.getOptionSnapshot(s)
-      return [s, snap] as const
+      try {
+        const snap = await provider.getOptionSnapshot(s)
+        return [s, snap] as [string, OptionSnapshot]
+      } catch (err) {
+        if (err instanceof MarketDataError && err.code === 'not_found') return null
+        throw err
+      }
     })
   )
-  return { snapshots: Object.fromEntries(entries), unavailable: false }
+  const found = entries.filter((e): e is [string, OptionSnapshot] => e !== null)
+  if (found.length === 0 && symbols.length > 0) return { snapshots: {}, unavailable: true }
+  return { snapshots: Object.fromEntries(found), unavailable: false }
 }
 
 export async function subscribeToStockQuotes(

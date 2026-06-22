@@ -136,4 +136,33 @@ describe('registerBrokerHandlers', () => {
       errors: [expect.objectContaining({ field: '__root__', code: 'auth_failed' })]
     })
   })
+
+  it('broker:account IPC includes deeplink when BrokerError carries one', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerBrokerHandlers } = await import('./broker')
+
+    provider.getAccountInfo.mockRejectedValue(
+      new BrokerError(
+        'auth_failed',
+        'Alpaca credentials not configured',
+        'settings/credentials/alpaca'
+      )
+    )
+
+    registerBrokerHandlers(provider)
+    const handler = getHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'broker:account'
+    )
+
+    const result = await handler(null, undefined)
+
+    expect(result).toMatchObject({
+      ok: false,
+      deeplink: 'settings/credentials/alpaca',
+      errors: [
+        { field: '__root__', code: 'auth_failed', message: 'Alpaca credentials not configured' }
+      ]
+    })
+  })
 })

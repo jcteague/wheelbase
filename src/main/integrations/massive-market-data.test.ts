@@ -1,9 +1,31 @@
 // [US-39] MassiveMarketDataProvider — implements MarketDataProvider
 
+import type { EventEmitter } from 'events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MarketDataError, type OptionChainFilter } from './market-data-provider'
 
 const mockFetch = vi.fn()
+
+type MockWsInstance = EventEmitter & {
+  send: ReturnType<typeof vi.fn>
+  close: ReturnType<typeof vi.fn>
+}
+
+// Captured WebSocket instances so tests can drive the auth flow
+const mockWsInstances: MockWsInstance[] = []
+vi.mock('ws', async () => {
+  const { EventEmitter: Emitter } = await import('events')
+  class MockWs extends Emitter {
+    send = vi.fn()
+    close = vi.fn()
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    constructor(_url: string) {
+      super()
+      mockWsInstances.push(this as unknown as MockWsInstance)
+    }
+  }
+  return { default: MockWs }
+})
 
 function fetchOk(body: unknown, headers: Record<string, string> = {}): Response {
   return {
@@ -34,6 +56,7 @@ function createProvider(apiKey = 'test-massive-key'): MassiveMarketDataProvider 
 describe('MassiveMarketDataProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockWsInstances.length = 0
     vi.stubGlobal('fetch', mockFetch)
   })
 
@@ -44,36 +67,61 @@ describe('MassiveMarketDataProvider', () => {
   // === getStockQuotes ===
 
   describe('getStockQuotes', () => {
-    it("issues two GET /v3/quotes/{ticker}/last requests in parallel for ['AAPL', 'MSFT']", async () => {
-      mockFetch.mockResolvedValue(
-        fetchOk({ results: { last: { b: 172.6, a: 172.7, t: '2026-05-29T14:00:00Z' } } })
-      )
+    function stockSnapshotBody(opts: {
+      price: number
+      prevClose?: number
+      volume?: number
+      todaysChange?: number
+      todaysChangePerc?: number
+    }): unknown {
+      return {
+        ticker: {
+          day: { c: opts.price, v: opts.volume ?? 1000000 },
+          min: { c: opts.price, t: 1748527200000 },
+          prevDay: { c: opts.prevClose ?? 170.0 },
+          todaysChange: opts.todaysChange ?? 0,
+          todaysChangePerc: opts.todaysChangePerc ?? 0
+        }
+      }
+    }
+
+    it("issues two GET /v2/snapshot requests in parallel for ['AAPL', 'MSFT']", async () => {
+      mockFetch.mockResolvedValue(fetchOk(stockSnapshotBody({ price: 172.65 })))
 
       const provider = createProvider()
       await provider.getStockQuotes(['AAPL', 'MSFT'])
 
       expect(mockFetch).toHaveBeenCalledTimes(2)
       const urls = mockFetch.mock.calls.map((c: unknown[]) => c[0] as string)
-      expect(urls.some((u) => u.includes('/v3/quotes/AAPL/last'))).toBe(true)
-      expect(urls.some((u) => u.includes('/v3/quotes/MSFT/last'))).toBe(true)
+      expect(
+        urls.some((u) => u.includes('/v2/snapshot/locale/us/markets/stocks/tickers/AAPL'))
+      ).toBe(true)
+      expect(
+        urls.some((u) => u.includes('/v2/snapshot/locale/us/markets/stocks/tickers/MSFT'))
+      ).toBe(true)
     })
 
-    it('constructs Authorization: Bearer ${apiKey} header on every request', async () => {
-      mockFetch.mockResolvedValue(
-        fetchOk({ results: { last: { b: 172.6, a: 172.7, t: '2026-05-29T14:00:00Z' } } })
-      )
+    it('appends apiKey as a query parameter on every request', async () => {
+      mockFetch.mockResolvedValue(fetchOk(stockSnapshotBody({ price: 172.65 })))
 
       const provider = createProvider('my-secret-key')
       await provider.getStockQuotes(['AAPL'])
 
-      const init = mockFetch.mock.calls[0][1] as RequestInit
-      const headers = init.headers as Record<string, string>
-      expect(headers['Authorization']).toBe('Bearer my-secret-key')
+      const url = mockFetch.mock.calls[0][0] as string
+      expect(url).toContain('apiKey=my-secret-key')
     })
 
-    it('returns Map keyed by ticker with bid/ask/price/timestamp parsed from results.last.b/a/t', async () => {
+    it('returns Map keyed by ticker with price/prevClose/change from Massive aggregate snapshot', async () => {
       mockFetch.mockResolvedValue(
-        fetchOk({ results: { last: { b: 172.6, a: 172.7, t: '2026-05-29T14:00:00Z' } } })
+        fetchOk(
+          stockSnapshotBody({
+            price: 172.65,
+            prevClose: 170.5,
+            volume: 50_000_000,
+            todaysChange: 2.15,
+            todaysChangePerc: 1.26
+          })
+        )
       )
 
       const provider = createProvider()
@@ -81,21 +129,22 @@ describe('MassiveMarketDataProvider', () => {
 
       expect(result).toBeInstanceOf(Map)
       const quote = result.get('AAPL')!
-      expect(quote.bid).toBe('172.60')
-      expect(quote.ask).toBe('172.70')
-      expect(quote.timestamp).toBe('2026-05-29T14:00:00Z')
+      // Massive has no live bid/ask — price, bid, ask are all the last-minute close
+      expect(quote.price).toBe('172.65')
+      expect(quote.bid).toBe('172.65')
+      expect(quote.ask).toBe('172.65')
+      expect(quote.prevClose).toBe('170.50')
+      expect(quote.change).toBe('2.15')
+      expect(quote.volume).toBe(50_000_000)
     })
 
-    it('computes mid as (bid + ask) / 2 with HALF_UP to 2dp: bid=10.01 ask=10.04 → mid=10.03', async () => {
-      mockFetch.mockResolvedValue(
-        fetchOk({ results: { last: { b: 10.01, a: 10.04, t: '2026-05-29T14:00:00Z' } } })
-      )
+    it('uses last-minute close (min.c) as the price and sets bid === ask === price', async () => {
+      mockFetch.mockResolvedValue(fetchOk(stockSnapshotBody({ price: 748.07 })))
 
       const provider = createProvider()
-      const result = await provider.getStockQuotes(['TSLA'])
+      const result = await provider.getStockQuotes(['SPY'])
 
-      // (10.01 + 10.04) / 2 = 10.025 → rounds HALF_UP to 10.03
-      expect(result.get('TSLA')!.price).toBe('10.03')
+      expect(result.get('SPY')!.price).toBe('748.07')
     })
   })
 
@@ -114,8 +163,12 @@ describe('MassiveMarketDataProvider', () => {
       return {
         results: {
           details: { contract_type: 'put', strike_price: '180', expiration_date: '2026-05-16' },
-          latest_quote: { b: opts.bid, a: opts.ask, t: '2026-05-29T14:00:00Z' },
-          latest_trade: { p: opts.lastTrade ?? 2.5, t: '2026-05-29T13:59:00Z', s: 10 },
+          last_quote: { bid: opts.bid, ask: opts.ask, last_updated: 1748527200000000000 },
+          last_trade: {
+            price: opts.lastTrade ?? 2.5,
+            sip_timestamp: 1748527140000000000,
+            size: 10
+          },
           greeks: opts.greeks ?? null,
           implied_volatility: opts.impliedVolatility ?? null
         }
@@ -175,8 +228,8 @@ describe('MassiveMarketDataProvider', () => {
     function makeSnapResult(symbol: string): unknown {
       return {
         symbol,
-        latest_quote: { b: 2.0, a: 2.2, t: '2026-05-29T14:00:00Z' },
-        latest_trade: { p: 2.1, t: '2026-05-29T13:59:00Z', s: 5 },
+        last_quote: { bid: 2.0, ask: 2.2, last_updated: 1748527200000000000 },
+        last_trade: { price: 2.1, sip_timestamp: 1748527140000000000, size: 5 },
         greeks: null,
         implied_volatility: null
       }
@@ -298,7 +351,15 @@ describe('MassiveMarketDataProvider', () => {
       mockFetch
         .mockResolvedValueOnce(fetchErr(429, 'Too Many Requests', { 'Retry-After': '0' }))
         .mockResolvedValueOnce(
-          fetchOk({ results: { last: { b: 172.6, a: 172.7, t: '2026-05-29T14:00:00Z' } } })
+          fetchOk({
+            ticker: {
+              day: { c: 172.65, v: 1000000 },
+              min: { c: 172.65, t: 1748527200000 },
+              prevDay: { c: 170.0 },
+              todaysChange: 2.65,
+              todaysChangePerc: 1.56
+            }
+          })
         )
 
       const provider = createProvider()
@@ -324,40 +385,113 @@ describe('MassiveMarketDataProvider', () => {
   // === Streaming capability ===
 
   describe('streaming', () => {
-    it("supportsStreaming('stockQuotes') returns true", () => {
-      const provider = createProvider()
-      expect(provider.supportsStreaming('stockQuotes')).toBe(true)
+    it('supportsStreaming() returns true', () => {
+      expect(createProvider().supportsStreaming()).toBe(true)
     })
 
-    it("supportsStreaming('optionQuotes') returns true", () => {
+    it('stream() returns an Observable filtered to the given symbols', () => {
       const provider = createProvider()
-      expect(provider.supportsStreaming('optionQuotes')).toBe(true)
-    })
-
-    it("stream() throws MarketDataError('streaming_unsupported') for now", () => {
-      const provider = createProvider()
-
-      expect(() => provider.stream('stockQuotes', ['AAPL'])).toThrow(MarketDataError)
-
-      try {
-        provider.stream('stockQuotes', ['AAPL'])
-      } catch (err) {
-        expect((err as MarketDataError).code).toBe('streaming_unsupported')
-      }
+      const obs = provider.stream('stockQuotes', ['AAPL'])
+      expect(obs).toHaveProperty('subscribe')
     })
   })
 
   // === connect / disconnect ===
 
   describe('connect and disconnect', () => {
-    it('connect() resolves without error (no-op)', async () => {
-      const provider = createProvider()
-      await expect(provider.connect()).resolves.toBeUndefined()
+    function simulateAuthFlow(ws: EventEmitter): void {
+      // open → provider sends auth; auth_success → provider sends subscribe; success → resolves
+      ws.emit('open')
+      process.nextTick(() => {
+        ws.emit('message', Buffer.from(JSON.stringify([{ ev: 'status', status: 'auth_success' }])))
+        process.nextTick(() => {
+          ws.emit('message', Buffer.from(JSON.stringify([{ ev: 'status', status: 'success' }])))
+        })
+      })
+    }
+
+    it('connect() resolves after auth_success + subscription confirmed', async () => {
+      const provider = createProvider('my-key')
+      const connectPromise = provider.connect()
+      simulateAuthFlow(mockWsInstances[0])
+      await expect(connectPromise).resolves.toBeUndefined()
     })
 
-    it('disconnect() resolves without error (no-op)', async () => {
-      const provider = createProvider()
-      await expect(provider.disconnect()).resolves.toBeUndefined()
+    it('connect() rejects with auth_failed when server refuses the key', async () => {
+      const provider = createProvider('bad-key')
+      const connectPromise = provider.connect()
+      const ws = mockWsInstances[0]
+      ws.emit('open')
+      process.nextTick(() => {
+        ws.emit('message', Buffer.from(JSON.stringify([{ ev: 'status', status: 'auth_failed' }])))
+      })
+      await expect(connectPromise).rejects.toMatchObject({ code: 'auth_failed' })
+    })
+
+    it('connect() sends auth message with the API key on open', async () => {
+      const provider = createProvider('secret-key')
+      const connectPromise = provider.connect()
+      const ws = mockWsInstances[0]
+      simulateAuthFlow(ws)
+      await connectPromise
+      expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ action: 'auth', params: 'secret-key' }))
+    })
+
+    it('stream() emits AM bar ticks filtered to subscribed symbols', async () => {
+      const provider = createProvider('key')
+      const connectPromise = provider.connect()
+      simulateAuthFlow(mockWsInstances[0])
+      await connectPromise
+
+      const ticks: unknown[] = []
+      provider.stream('stockQuotes', ['SPY']).subscribe((ev) => ticks.push(ev))
+
+      const ws = mockWsInstances[0]
+      ws.emit(
+        'message',
+        Buffer.from(
+          JSON.stringify([
+            {
+              ev: 'AM',
+              sym: 'SPY',
+              v: 1000,
+              vw: 748.0,
+              c: 748.0,
+              o: 747.0,
+              h: 749.0,
+              l: 746.0,
+              s: 1748527140000,
+              e: 1748527200000
+            },
+            {
+              ev: 'AM',
+              sym: 'AAPL',
+              v: 500,
+              vw: 200.0,
+              c: 200.0,
+              o: 199.0,
+              h: 201.0,
+              l: 198.0,
+              s: 1748527140000,
+              e: 1748527200000
+            }
+          ])
+        )
+      )
+      await Promise.resolve()
+
+      expect(ticks).toHaveLength(1)
+      expect((ticks[0] as { symbol: string }).symbol).toBe('SPY')
+    })
+
+    it('disconnect() closes the WebSocket', async () => {
+      const provider = createProvider('key')
+      const connectPromise = provider.connect()
+      simulateAuthFlow(mockWsInstances[0])
+      await connectPromise
+      const ws = mockWsInstances[0]
+      await provider.disconnect()
+      expect(ws.close).toHaveBeenCalled()
     })
   })
 })

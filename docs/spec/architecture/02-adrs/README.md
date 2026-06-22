@@ -37,6 +37,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 ## IPC contracts
 
 - [ipc-envelope-contract](./ipc-envelope-contract.md) — All handlers return `{ ok: true, ... } | { ok: false, errors: [...] }`; never throw.
+- [deeplink-in-ipc-error-envelope](./deeplink-in-ipc-error-envelope.md) — `deeplink` as a top-level field on broker auth-failed error envelopes (US-47).
 - [ipc-channel-naming](./ipc-channel-naming.md) — `{domain}:{verb}-{noun}` channel pattern (`positions:close-csp`, `market-data:stock-quotes`, ...).
 - [zod-payload-validation](./zod-payload-validation.md) — Zod schemas in `src/main/schemas.ts` validate every IPC payload at the boundary.
 - [error-field-naming-convention](./error-field-naming-convention.md) — `__root__`, `__phase__`, or literal field name; canonical `code` vocabulary.
@@ -95,6 +96,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [pending-assignments-table-as-notification](./pending-assignments-table-as-notification.md) — A pending row in `pending_assignments` IS the renderer notification; survives restart.
 - [pending-assignments-compound-unique](./pending-assignments-compound-unique.md) — Compound `UNIQUE(activity_id, position_id)` so one OPASN can fan out across colliding CSPs.
 - [scheduler-singleton-safe-broker](./scheduler-singleton-safe-broker.md) — Module-level singleton scheduler with a safe-broker stub when credentials are missing.
+- [park-wake-reuses-scheduletick](./park-wake-reuses-scheduletick.md) — Park-wake timer reuses `scheduleTick`; stale `nextOpen` falls back to `marketOpenMs` (US-49).
 - [consolidated-before-quit](./consolidated-before-quit.md) — Single `before-quit` handler awaits scheduler + market-data shutdown concurrently.
 - [dev-only-test-scheduler-ipc](./dev-only-test-scheduler-ipc.md) — `_test:scheduler-*` channels guarded by `NODE_ENV === 'test'` for e2e introspection.
 - [ivr-non-trading-day-guard-in-collector](./ivr-non-trading-day-guard-in-collector.md) — The collector owns the weekend/holiday guard so scheduled and manual runs share one skip path.

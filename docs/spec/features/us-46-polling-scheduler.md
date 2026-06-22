@@ -1,6 +1,6 @@
 # US-46: Polling Scheduler
 
-<!-- generated:from us-35 -->
+<!-- generated:from us-35,us-47-49,us-48 -->
 
 ## Summary
 
@@ -10,7 +10,7 @@ A shared, market-session-aware job scheduler for the main process. Stories that 
 
 - **AC-1:** Register an interval job.
 - **AC-2:** `start()` invokes every registered job once and then on cadence.
-- **AC-3:** Market-hours-aware interval respects `marketClosedMs` of `null` (parked overnight).
+- **AC-3:** Market-hours-aware interval with `marketClosedMs: null` parks the job at market close and schedules a wake timer at `status.nextOpen`; the job auto-resumes when the timer fires (US-49).
 - **AC-4:** Market-hours-aware interval with extended hours uses a different cadence from regular hours.
 - **AC-5:** After-market-close cron-style job runs once per trading day at `marketClose + offsetMinutes`; skips weekends/holidays; missed runs are not backfilled.
 - **AC-6:** Handler exception does not stop the scheduler (WARN log, reschedule next tick, no pile-up).
@@ -23,11 +23,11 @@ Coverage lives in `e2e/polling-scheduler.spec.ts` (10 scenarios, one per AC).
 
 ## What was built
 
-The `PollingScheduler` interface and `createPollingScheduler(brokerProvider, clock?)` factory in `src/main/services/polling-scheduler.ts`. Each `register(config)` call appends a `JobRegistryEntry` keyed by name; duplicate names throw `SchedulerError('already_registered')`. `start()` flips a started flag, invokes every registered handler once, then schedules each job's next tick via `setTimeout(handlerWrapper, cadenceMs)`. Jobs registered after `start()` auto-schedule on registration. Each tick:
+The `PollingScheduler` interface and `createPollingScheduler(getBroker: () => BrokerProvider, clock?)` factory in `src/main/services/polling-scheduler.ts`. The factory accepts a broker **getter** rather than a broker instance (changed in US-48) so the scheduler always resolves fresh credentials per tick — credential changes propagate without app restart. Each `register(config)` call appends a `JobRegistryEntry` keyed by name; duplicate names throw `SchedulerError('already_registered')`. `start()` flips a started flag, invokes every registered handler once, then schedules each job's next tick via `setTimeout(handlerWrapper, cadenceMs)`. Jobs registered after `start()` auto-schedule on registration. Each tick:
 
 1. Reads `BrokerProvider.getMarketStatus()` once (cached for the tick to avoid double-calls).
 2. Resolves cadence via `decideNextCadenceMs(policy, status)` (interval) or `decideAfterCloseFireAt(nextClose, offsetMinutes, nowMs)` (afterClose).
-3. If cadence is `null`, parks (no tick scheduled until `runNow`, `stop`, or a future restart).
+3. If cadence is `null` (market closed + `marketClosedMs: null`), schedules a park-wake timer at `status.nextOpen` via `scheduleTick(state, wakeDelayMs)` (US-49). If `nextOpen` is stale or missing, falls back to `scheduleTick(state, cadence.marketOpenMs)` with a WARN log. No burst is possible because only one timer occupies `state.timerId` at a time.
 4. Otherwise schedules the next `setTimeout`.
 5. Awaits the handler. On rejection, logs WARN and continues — never tears down the chain.
 
@@ -35,7 +35,7 @@ The handler's promise is tracked in an in-flight set; `stop()` cancels all pendi
 
 `runNow(jobName)` invokes the handler immediately and resolves when it settles, without disturbing the regular chain. `getRegistry()` returns a snapshot of registered jobs plus per-state invocation counters (used by the dev-only test IPC).
 
-The module-level singleton in `src/main/services/scheduler-instance.ts` exports `const scheduler = createPollingScheduler(getSafeBroker())`. `getSafeBroker()` wraps `brokerFactory.create()` in try/catch; on failure (missing credentials, bad config) it returns a stub `BrokerProvider` that reports `session: 'closed'` and otherwise no-ops. The singleton therefore loads cleanly at boot even with no broker configured — jobs simply park rather than crash the main process.
+The module-level singleton in `src/main/services/scheduler-instance.ts` exports `const scheduler = createPollingScheduler(getSafeBroker)` (getter passed through, not called at import time — changed in US-48). `getSafeBroker()` wraps `brokerFactory.create()` in try/catch; on failure (missing credentials, bad config) it returns a stub `BrokerProvider` that reports `session: 'closed'` and otherwise no-ops. The singleton therefore loads cleanly at boot even with no broker configured — jobs simply park rather than crash the main process. When credentials are later saved and `brokerFactory.configure()` runs, the next tick picks up the new provider automatically via the getter.
 
 Dev-only test IPC channels (`_test:scheduler-registry`, `_test:scheduler-run-now`, `_test:scheduler-register`, `_test:scheduler-simulate-wake`) are exposed via `src/main/ipc/test-scheduler.ts` and guarded by `NODE_ENV === 'test'`. `seedTestJobsFromEnv()` reads the `WHEELBASE_TEST_JOBS` env var (comma-separated job names) and registers tracked no-op handlers, letting Playwright specs assert registration without depending on a real broker.
 
@@ -57,7 +57,7 @@ Dev-only test IPC channels (`_test:scheduler-registry`, `_test:scheduler-run-now
 - **`JobConfig`** — `{ name: string; cadence: CadencePolicy; handler: () => Promise<void> }`.
 - **`SchedulerError`** — `Error` subclass with `code: 'already_registered' | 'job_not_found' | 'not_started'`.
 - **`decideNextCadenceMs(policy, status)`** and **`decideAfterCloseFireAt(nextClose, offsetMinutes, nowMs)`** — pure helpers used by each tick to compute the next delay.
-- **`createPollingScheduler(brokerProvider, clock?)`** — factory; optional `Clock` injection for deterministic tests.
+- **`createPollingScheduler(getBroker: () => BrokerProvider, clock?)`** — factory; broker getter called fresh each tick. Optional `Clock` injection for deterministic tests.
 - **Dev-only IPC** — `_test:scheduler-registry`, `_test:scheduler-run-now`, `_test:scheduler-register`, `_test:scheduler-simulate-wake`. Registered only when `NODE_ENV === 'test'`. See [`../contracts/ipc-handlers.md`](../contracts/ipc-handlers.md).
 - **`WHEELBASE_TEST_JOBS` env var** — comma-separated list of job names; `seedTestJobsFromEnv()` registers tracked no-op handlers for each at boot when set.
 
@@ -67,18 +67,22 @@ Dev-only test IPC channels (`_test:scheduler-registry`, `_test:scheduler-run-now
 - `src/main/services/scheduler-instance.ts` — module-level singleton, `getSafeBroker()` fallback
 - `src/main/ipc/test-scheduler.ts` — dev-only IPC handlers, `seedTestJobsFromEnv()`
 - `src/main/index.ts` — bootstrap: registers `detect-assignments`, calls `scheduler.start()`, awaits `Promise.all([scheduler.stop(), marketDataProvider.disconnect()])` in `before-quit`
-- `e2e/polling-scheduler.spec.ts` — 10 US-46 AC scenarios
+- `e2e/polling-scheduler.spec.ts` — 10 US-46 AC scenarios + 3 US-49 park-wake scenarios
 
 ## Revisions
 
 - **us-35** (original bundled story): shipped the `PollingScheduler` interface, `setTimeout`-chain factory, singleton instance with safe-broker fallback, consolidated `before-quit` shutdown, and dev-only `_test:scheduler-*` IPC channels alongside the US-35 assignment-detection consumer.
-- **us-35 code-review fixes (Area F1):** `scheduler.stop()` now captures the 5-second drain-timeout `setTimeout` id and clears it once `Promise.race([drainAll, timeout])` resolves. Prevents an uncleared timer when the drain wins, which would otherwise keep the event loop alive and delay process exit.
+- **us-48** (US-35 code-review fixes): `createPollingScheduler` now takes `getBroker: () => BrokerProvider` instead of a broker instance, so credential changes propagate without restart. `scheduler.stop()` now captures the 5-second drain-timeout id and clears it in `.finally`, preventing a timer leak when the drain wins. See [US-48](./us-48-scheduler-settings-fixes.md).
+- **us-49** (park-wake self-resume): `marketClosedMs: null` jobs now schedule a wake timer at `status.nextOpen` rather than parking permanently. Stale `nextOpen` falls back to `marketOpenMs`. Three new e2e AC scenarios in `e2e/polling-scheduler.spec.ts`. See [US-47/49](./us-47-49-broker-ac-hardening.md) and [ADR: park-wake-reuses-scheduletick](../architecture/02-adrs/park-wake-reuses-scheduletick.md).
 
 ## Cross-references
 
 - [US-35: Assignment Detection & Auto-Transition](./us-35-assignment-detection.md) — first consumer; registers `detect-assignments` job.
+- [US-47/49: Broker AC Hardening + Park-Wake](./us-47-49-broker-ac-hardening.md) — park-wake self-resume.
+- [US-48: Scheduler + Settings Fixes](./us-48-scheduler-settings-fixes.md) — broker getter + stop() cleanup.
 - [IPC handlers](../contracts/ipc-handlers.md) — dev-only `_test:scheduler-*` channels.
 - [Architecture overview](../architecture/01-overview.md) — main-process services topology.
+- [ADR: park-wake-reuses-scheduletick](../architecture/02-adrs/park-wake-reuses-scheduletick.md)
 
 <!-- /generated -->
 

@@ -68,16 +68,22 @@ The pre-existing `src/main/integrations/alpaca.ts` (`client`, `resetClient`) is 
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39 -->
+<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39,us-47-49 -->
 
 ## REST surface
 
-Each REST method is wrapped in a `try` / `wrapError(err, opLabel)` block that normalises HTTP 401 → `auth_failed`, 429 → `rate_limited`, network failures → `network_error`, and unknown failures → `unknown` (IPC handlers default that to `internal_error`).
+Each REST method is wrapped in a `try` / `wrapError(err, opLabel)` block that normalises HTTP 401 → `auth_failed`, 429 → `rate_limited`, network failures → `network_error`, and unknown failures → `unknown` (IPC handlers default that to `internal_error`). The Alpaca SDK may omit the HTTP `status` field and embed a JSON body code instead (e.g. `{"code":40110000,"message":"request is not authorized"}`); `wrapError` parses these 401-class body codes as `auth_failed`.
+
+**Credential guard (US-47).** `requireCredentials()` is called as the **first line** of every public method. Missing `keyId` or `secretKey` throws `BrokerError('auth_failed', 'Alpaca credentials not configured', 'settings/credentials/alpaca')` immediately, before the SDK is invoked. This ensures every method returns a consistently typed `auth_failed` error with a navigation deeplink rather than falling through to `wrapError` as `unknown`.
+
+**Environment mismatch detection (US-47).** `wrapError` detects both directions of key/environment mismatch:
+- Paper env + live key (starts with `AK`) → `BrokerError('environment_mismatch', 'Environment mismatch — these are LIVE keys, not paper keys')`
+- Live env + paper key (starts with `P`) → `BrokerError('environment_mismatch', 'Environment mismatch — these are PAPER keys, not live keys')`
 
 ### `getAccountInfo(): Promise<AccountInfo>`
 
 - **SDK method:** `client.getAccount`.
-- **Returns:** `{ buyingPower, portfolioValue, cash, environment: 'paper' | 'live' }`. `environment` is derived from the provider's `paper` config flag — Alpaca's `getAccount()` carries no paper/live indicator.
+- **Returns:** `{ buyingPower, portfolioValue, cash, environment: 'paper' | 'live', accountNumberMasked }`. All three money fields are **normalized to 4 decimal-place strings** via `new Decimal(s).toFixed(4)` (US-47 AC-1) — e.g. `'10000.0000'` not `'10000.00'`. `environment` is derived from the provider's `paper` config flag.
 - **IPC channel:** `broker:account-info` (US-39 split namespace).
 
 ### `getMarketStatus(): Promise<MarketStatus>`
@@ -97,6 +103,10 @@ Each REST method is wrapped in a `try` / `wrapError(err, opLabel)` block that no
   - `'OPXRC'` — option exercise
 - **Returns:** array sorted by `transactionTime` descending. Each entry carries `activityId`, `activityType`, `symbol`, `qty`, `price`, `transactionTime`.
 - **IPC channel:** `broker:activities` (US-39 split namespace).
+
+### `BrokerError` shape
+
+`BrokerError` (in `src/main/integrations/broker-provider.ts`) carries three fields: `code: BrokerErrorCode`, `message: string`, and `deeplink?: string`. `deeplink` is populated only by `requireCredentials()` (value: `'settings/credentials/alpaca'`); all other throws leave it `undefined`. The IPC error envelope (US-47) spreads `deeplink` as a top-level field when present — see [ADR: deeplink-in-ipc-error-envelope](../architecture/02-adrs/deeplink-in-ipc-error-envelope.md).
 
 <!-- /generated -->
 
@@ -177,7 +187,7 @@ Settings-side Alpaca probes are intentionally separate from regular `BrokerProvi
 
 - **Candidate credentials:** `settings:test-connection` with `{ vendor: 'alpaca', environment, keyId, secret }` calls `GET /v2/account` against paper or live using the candidate credentials and returns a masked account number on success.
 - **Stored credentials:** `settings:test-stored-alpaca-connection` loads encrypted credentials for the requested environment and runs the same probe without exposing secrets back to the renderer.
-- **Environment mismatch:** detected bidirectionally via key prefix heuristic (`AK…` = live, `PK…` = paper). Live keys in the paper card return `environment_mismatch` / `Environment mismatch — these are LIVE keys, not paper keys`; paper keys in the live card return `environment_mismatch` / `Environment mismatch — these are PAPER keys, not live keys`. (`environment_mismatch` was added to `BrokerError` in US-39 specifically for this detection.)
+- **Environment mismatch:** detected bidirectionally via key prefix heuristic (`AK…` = live, `PK…` = paper). Live keys in the paper card return `environment_mismatch` / `Environment mismatch — these are LIVE keys, not paper keys`; paper keys in the live card return `environment_mismatch` / `Environment mismatch — these are PAPER keys, not live keys`. Both directions detected in `wrapError` (US-47 AC-4/AC-5); `environment_mismatch` was added to `BrokerError` in US-39 for one direction.
 
 All Alpaca HTTP/SDK interaction stays inside `alpaca-broker.ts` or the settings-probe helpers in `src/main/services/settings-connections.ts`; the renderer and IPC layers only see typed result objects.
 

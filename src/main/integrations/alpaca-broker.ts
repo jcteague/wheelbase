@@ -1,3 +1,4 @@
+import { Decimal } from 'decimal.js'
 import { createClient } from '@alpacahq/typescript-sdk'
 import {
   BrokerError,
@@ -60,9 +61,27 @@ function deriveSession(isOpen: boolean, timestamp: string): 'regular' | 'pre' | 
 }
 
 function isAuthError(err: unknown): boolean {
-  if (typeof err !== 'object' || err === null || !('status' in err)) return false
-  const { status } = err as { status: number }
-  return status === 401 || status === 403
+  if (typeof err !== 'object' || err === null) return false
+  // Primary path: SDK surfaces a status field
+  if ('status' in err) {
+    const { status } = err as { status: number }
+    if (status === 401 || status === 403) return true
+  }
+  // Fallback: Alpaca SDK may omit status but embed a JSON body with a 401xxxxx error code
+  const msg = err instanceof Error ? err.message : null
+  if (msg) {
+    try {
+      const body = JSON.parse(msg) as { code?: number }
+      if (typeof body.code === 'number' && String(body.code).startsWith('401')) return true
+    } catch {
+      // not a JSON body — not an auth error
+    }
+  }
+  return false
+}
+
+function toMoney(value: string): string {
+  return new Decimal(value).toFixed(4)
 }
 
 function maskAccountNumber(accountNumber: string): string {
@@ -91,7 +110,11 @@ export class AlpacaBrokerProvider implements BrokerProvider {
 
   private requireCredentials(): void {
     if (!this.config.keyId || !this.config.secretKey) {
-      throw new BrokerError('auth_failed', 'Alpaca credentials not configured')
+      throw new BrokerError(
+        'auth_failed',
+        'Alpaca credentials not configured',
+        'settings/credentials/alpaca'
+      )
     }
   }
 
@@ -99,10 +122,16 @@ export class AlpacaBrokerProvider implements BrokerProvider {
     if (err instanceof BrokerError) throw err
 
     if (isAuthError(err)) {
+      if (this.config.environment === 'paper' && this.config.keyId.startsWith('AK')) {
+        throw new BrokerError(
+          'environment_mismatch',
+          'Environment mismatch — these are LIVE keys, not paper keys'
+        )
+      }
       if (this.config.environment === 'live' && this.config.keyId.startsWith('P')) {
         throw new BrokerError(
           'environment_mismatch',
-          `${context}: paper key used with live environment`
+          'Environment mismatch — these are PAPER keys, not live keys'
         )
       }
       throw new BrokerError('auth_failed', `${context}: authentication failed`)
@@ -126,9 +155,9 @@ export class AlpacaBrokerProvider implements BrokerProvider {
     try {
       const account = (await this.lazyClient.getAccount()) as AlpacaAccount
       return {
-        buyingPower: account.buying_power,
-        portfolioValue: account.portfolio_value,
-        cash: account.cash,
+        buyingPower: toMoney(account.buying_power),
+        portfolioValue: toMoney(account.portfolio_value),
+        cash: toMoney(account.cash),
         environment: this.config.environment,
         accountNumberMasked: maskAccountNumber(account.account_number ?? '')
       }
@@ -138,6 +167,7 @@ export class AlpacaBrokerProvider implements BrokerProvider {
   }
 
   async getActivities(filter: ActivityFilter): Promise<BrokerActivity[]> {
+    this.requireCredentials()
     try {
       const params = {
         activity_type: filter.type,
@@ -164,6 +194,7 @@ export class AlpacaBrokerProvider implements BrokerProvider {
   }
 
   async getMarketStatus(): Promise<MarketStatus> {
+    this.requireCredentials()
     try {
       const clock = await this.lazyClient.getClock()
       return {

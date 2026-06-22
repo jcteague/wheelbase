@@ -87,8 +87,11 @@ describe('US-46: PollingScheduler — registry and lifecycle', () => {
 
   it('market-hours-aware interval respects marketClosedMs of null', async () => {
     dbPath = tmpDb('wb-e2e-sched-closed')
+    // Use a future nextOpen so the park-wake timer fires after the 500ms observation
+    // window (not the stale-nextOpen fallback, which would re-tick at marketOpenMs).
+    const nextOpen = new Date(Date.now() + 60_000).toISOString()
     app = await launchApp(dbPath, {
-      marketStatus: CLOSED_SESSION,
+      marketStatus: { ...CLOSED_SESSION, nextOpen },
       testJobs: [
         {
           name: 'parked-job',
@@ -98,7 +101,7 @@ describe('US-46: PollingScheduler — registry and lifecycle', () => {
     })
     const page = await getPage(app)
 
-    // First tick runs (start kicks off all jobs once); then job parks.
+    // First tick runs (start kicks off all jobs once); then job parks until nextOpen.
     await waitForInvocations(page, 'parked-job', 1)
     await new Promise((r) => setTimeout(r, 500))
     const registry = await getSchedulerRegistry(page)
@@ -242,5 +245,73 @@ describe('US-46: PollingScheduler — registry and lifecycle', () => {
     })
     expect(result.ok).toBe(false)
     expect(result.errorCode).toBe('already_registered')
+  })
+})
+
+describe('US-49: parked-job self-resume', () => {
+  let app: ElectronApplication
+  let dbPath: string
+
+  afterEach(async () => {
+    await app?.close()
+    cleanupDb(dbPath)
+  })
+
+  it('US-49 AC-1: parked job fires once on start then waits for nextOpen wake', async () => {
+    const nextOpen = new Date(Date.now() + 12_000).toISOString()
+    dbPath = tmpDb('wb-e2e-park-ac1')
+    app = await launchApp(dbPath, {
+      marketStatus: { ...CLOSED_SESSION, nextOpen },
+      testJobs: [
+        { name: 'park-job', cadence: { kind: 'interval', marketOpenMs: 50, marketClosedMs: null } }
+      ]
+    })
+    const page = await getPage(app)
+
+    await waitForInvocations(page, 'park-job', 1, 5_000)
+
+    await new Promise((r) => setTimeout(r, 3_000))
+    const mid = await getSchedulerRegistry(page)
+    expect(mid.find((j) => j.name === 'park-job')?.invocations).toBe(1)
+
+    const finalCount = await waitForInvocations(page, 'park-job', 2, 15_000)
+    expect(finalCount).toBeGreaterThanOrEqual(2)
+  })
+
+  it('US-49 AC-4: launching after hours parks the job without crashing', async () => {
+    const nextOpen = new Date(Date.now() + 30_000).toISOString()
+    dbPath = tmpDb('wb-e2e-park-ac4')
+    app = await launchApp(dbPath, {
+      marketStatus: { ...CLOSED_SESSION, nextOpen },
+      testJobs: [
+        { name: 'park-job', cadence: { kind: 'interval', marketOpenMs: 50, marketClosedMs: null } }
+      ]
+    })
+    const page = await getPage(app)
+
+    await waitForInvocations(page, 'park-job', 1, 5_000)
+    await new Promise((r) => setTimeout(r, 2_000))
+
+    const registry = await getSchedulerRegistry(page)
+    expect(registry.find((j) => j.name === 'park-job')?.invocations).toBe(1)
+  })
+
+  it('US-49 AC-5: app.close() completes within 8s when a park-wake timer is pending', async () => {
+    const nextOpen = new Date(Date.now() + 60_000).toISOString()
+    dbPath = tmpDb('wb-e2e-park-ac5')
+    app = await launchApp(dbPath, {
+      marketStatus: { ...CLOSED_SESSION, nextOpen },
+      testJobs: [
+        { name: 'park-job', cadence: { kind: 'interval', marketOpenMs: 50, marketClosedMs: null } }
+      ]
+    })
+    const page = await getPage(app)
+
+    await waitForInvocations(page, 'park-job', 1, 5_000)
+
+    const closeStart = Date.now()
+    await app.close()
+    app = null as unknown as ElectronApplication
+    expect(Date.now() - closeStart).toBeLessThan(8_000)
   })
 })

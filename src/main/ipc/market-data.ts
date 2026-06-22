@@ -21,7 +21,7 @@ import {
 import { handleIpcCall } from './utils'
 
 export function registerMarketDataHandlers(
-  provider: MarketDataProvider,
+  getProvider: () => MarketDataProvider,
   getWindow: () => BrowserWindow | null
 ): void {
   const streamState = newStreamState()
@@ -29,7 +29,7 @@ export function registerMarketDataHandlers(
   ipcMain.handle('market-data:stock-quotes', (_, payload: unknown) =>
     handleIpcCall('market_data_stock_quotes_unhandled_error', async () => {
       const { tickers } = GetStockQuotesPayloadSchema.parse(payload)
-      const quotes = await fetchStockQuotes(provider, tickers)
+      const quotes = await fetchStockQuotes(getProvider(), tickers)
       return { quotes }
     })
   )
@@ -39,7 +39,7 @@ export function registerMarketDataHandlers(
       const { tickers } = SetStockQuoteTickersPayloadSchema.parse(payload)
       const subscribedTickers = await subscribeToStockQuotes(
         streamState,
-        provider,
+        getProvider(),
         tickers,
         (ticker, quote) =>
           getWindow()?.webContents.send('market-data:stock-quote', { ticker, quote }),
@@ -52,14 +52,14 @@ export function registerMarketDataHandlers(
   ipcMain.handle('market-data:option-snapshots', (_, payload: unknown) =>
     handleIpcCall('market_data_option_snapshots_unhandled_error', async () => {
       const { symbols } = GetOptionSnapshotsPayloadSchema.parse(payload)
-      return fetchOptionSnapshots(provider, symbols)
+      return fetchOptionSnapshots(getProvider(), symbols)
     })
   )
 
   ipcMain.handle('market-data:option-snapshot', (_, payload: unknown) =>
     handleIpcCall('market_data_option_snapshot_unhandled_error', async () => {
       const { contract } = GetOptionSnapshotPayloadSchema.parse(payload)
-      const snapshot = await provider.getOptionSnapshot(contract)
+      const snapshot = await getProvider().getOptionSnapshot(contract)
       return { snapshot }
     })
   )
@@ -67,7 +67,7 @@ export function registerMarketDataHandlers(
   ipcMain.handle('market-data:option-chain', (_, payload: unknown) =>
     handleIpcCall('market_data_option_chain_unhandled_error', async () => {
       const filter = GetOptionChainPayloadSchema.parse(payload)
-      const snapshots = await provider.getOptionChainSnapshot(filter)
+      const snapshots = await getProvider().getOptionChainSnapshot(filter)
       return { snapshots, nextCursor: null }
     })
   )

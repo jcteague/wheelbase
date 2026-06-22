@@ -8,10 +8,12 @@ export type BrokerErrorCode =
 /** Broker-side error. Distinct from MarketDataError: includes 'environment_mismatch' instead of 'streaming_unsupported'. */
 export class BrokerError extends Error {
   readonly code: BrokerErrorCode
+  readonly deeplink?: string
 
-  constructor(code: BrokerErrorCode, message: string) {
+  constructor(code: BrokerErrorCode, message: string, deeplink?: string) {
     super(message)
     this.code = code
+    this.deeplink = deeplink
     this.name = 'BrokerError'
   }
 }

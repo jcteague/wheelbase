@@ -120,6 +120,24 @@ export function createPollingScheduler(
     }
   }
 
+  function parkUntilNextOpen(state: JobState, status: MarketStatus, marketOpenMs: number): void {
+    const nextOpenMs = status.nextOpen ? new Date(status.nextOpen).getTime() : NaN
+    const wakeDelayMs = nextOpenMs - clock.now()
+    if (wakeDelayMs > 0) {
+      logger.info(
+        { job: state.config.name, nextOpen: status.nextOpen },
+        `job ${state.config.name} parked until next market open at ${status.nextOpen}`
+      )
+      scheduleTick(state, wakeDelayMs)
+    } else {
+      logger.warn(
+        { job: state.config.name, nextOpen: status.nextOpen },
+        `nextOpen was unusable for ${state.config.name}; scheduling fallback re-check at marketOpenMs`
+      )
+      scheduleTick(state, marketOpenMs)
+    }
+  }
+
   async function reschedule(state: JobState): Promise<void> {
     if (stopped) return
     let status: MarketStatus
@@ -140,7 +158,11 @@ export function createPollingScheduler(
     const { cadence } = state.config
     if (cadence.kind === 'interval') {
       const delayMs = decideNextCadenceMs(cadence, status)
-      if (delayMs !== null) scheduleTick(state, delayMs)
+      if (delayMs !== null) {
+        scheduleTick(state, delayMs)
+      } else {
+        parkUntilNextOpen(state, status, cadence.marketOpenMs)
+      }
     } else {
       const nowMs = clock.now()
       const fireAt = decideAfterCloseFireAt(status.nextClose, cadence.offsetMinutes, nowMs)

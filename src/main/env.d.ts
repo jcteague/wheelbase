@@ -1,4 +1,5 @@
 interface ImportMetaEnv {
+  readonly MAIN_VITE_MASSIVE_API_KEY?: string
   readonly MAIN_VITE_ALPACA_KEY_ID?: string
   readonly MAIN_VITE_ALPACA_SECRET_KEY?: string
   readonly MAIN_VITE_ALPACA_PAPER?: string

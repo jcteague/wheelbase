@@ -1,4 +1,5 @@
 // [US-40] AlpacaBrokerProvider — implements BrokerProvider interface
+// [US-47] AlpacaBrokerProvider hardening — deeplink, credential checks, money normalization
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BrokerError } from './broker-provider'
@@ -31,6 +32,14 @@ function createProvider(
   })
 }
 
+// A1
+describe('BrokerError', () => {
+  it('carries deeplink field when constructed with one', () => {
+    const err = new BrokerError('auth_failed', 'msg', 'settings/credentials/alpaca')
+    expect(err.deeplink).toBe('settings/credentials/alpaca')
+  })
+})
+
 describe('AlpacaBrokerProvider', () => {
   beforeEach(() => {
     vi.resetAllMocks()
@@ -61,9 +70,9 @@ describe('AlpacaBrokerProvider', () => {
 
       expect(result.accountNumberMasked).toBe('PA…ABC')
       expect(result.environment).toBe('paper')
-      expect(result.buyingPower).toBe('10000.00')
-      expect(result.portfolioValue).toBe('50000.00')
-      expect(result.cash).toBe('5000.00')
+      expect(result.buyingPower).toBe('10000.0000')
+      expect(result.portfolioValue).toBe('50000.0000')
+      expect(result.cash).toBe('5000.0000')
     })
 
     it("throws BrokerError('auth_failed') on 401", async () => {
@@ -102,6 +111,38 @@ describe('AlpacaBrokerProvider', () => {
       await provider.getAccountInfo()
 
       expect(mockCreateClient).toHaveBeenCalledWith(expect.objectContaining({ paper: false }))
+    })
+
+    // A6
+    it('normalizes money fields to 4 decimal places', async () => {
+      mockGetAccount.mockResolvedValue({
+        buying_power: '10000.00',
+        portfolio_value: '50000',
+        cash: '5000.1',
+        account_number: 'PA12345ABC'
+      })
+
+      const provider = createProvider()
+      const result = await provider.getAccountInfo()
+
+      expect(result.buyingPower).toBe('10000.0000')
+      expect(result.portfolioValue).toBe('50000.0000')
+      expect(result.cash).toBe('5000.1000')
+    })
+
+    // A7
+    it('normalizes raw integer buying_power to 4 decimal places', async () => {
+      mockGetAccount.mockResolvedValue({
+        buying_power: '9999',
+        portfolio_value: '50000.0000',
+        cash: '5000.0000',
+        account_number: 'PA12345ABC'
+      })
+
+      const provider = createProvider()
+      const result = await provider.getAccountInfo()
+
+      expect(result.buyingPower).toBe('9999.0000')
     })
   })
 
@@ -180,6 +221,17 @@ describe('AlpacaBrokerProvider', () => {
         transactionTime: '2024-01-15T14:30:00Z'
       })
     })
+
+    // A2
+    it('rejects missing credentials with auth_failed and deeplink', async () => {
+      const provider = createProvider({ keyId: '', secretKey: '' })
+      const thrown = await provider.getActivities({ type: 'OPASN' }).catch((e: unknown) => e)
+
+      expect(thrown).toBeInstanceOf(BrokerError)
+      expect((thrown as BrokerError).code).toBe('auth_failed')
+      expect((thrown as BrokerError).message).toBe('Alpaca credentials not configured')
+      expect((thrown as BrokerError).deeplink).toBe('settings/credentials/alpaca')
+    })
   })
 
   // === getMarketStatus ===
@@ -244,6 +296,17 @@ describe('AlpacaBrokerProvider', () => {
 
       expect(result.session).toBe('closed')
     })
+
+    // A3
+    it('rejects missing credentials with auth_failed and deeplink', async () => {
+      const provider = createProvider({ keyId: '', secretKey: '' })
+      const thrown = await provider.getMarketStatus().catch((e: unknown) => e)
+
+      expect(thrown).toBeInstanceOf(BrokerError)
+      expect((thrown as BrokerError).code).toBe('auth_failed')
+      expect((thrown as BrokerError).message).toBe('Alpaca credentials not configured')
+      expect((thrown as BrokerError).deeplink).toBe('settings/credentials/alpaca')
+    })
   })
 
   // === Error handling ===
@@ -279,6 +342,52 @@ describe('AlpacaBrokerProvider', () => {
 
       expect(thrown).toBeInstanceOf(BrokerError)
       expect((thrown as BrokerError).code).toBe('network_error')
+    })
+
+    // A4
+    it('paper environment with AK key surfaces environment_mismatch on 401', async () => {
+      mockGetClock.mockRejectedValue(Object.assign(new Error(), { status: 401 }))
+
+      const provider = createProvider({
+        environment: 'paper',
+        keyId: 'AK_LIVE_KEY',
+        secretKey: 'secret'
+      })
+      const thrown = await provider.getMarketStatus().catch((e: unknown) => e)
+
+      expect(thrown).toBeInstanceOf(BrokerError)
+      expect((thrown as BrokerError).code).toBe('environment_mismatch')
+      expect((thrown as BrokerError).message).toBe(
+        'Environment mismatch — these are LIVE keys, not paper keys'
+      )
+    })
+
+    // A5
+    it('non-mismatch 401 on paper env with PK key stays auth_failed', async () => {
+      mockGetClock.mockRejectedValue(Object.assign(new Error(), { status: 401 }))
+
+      const provider = createProvider({
+        environment: 'paper',
+        keyId: 'PKPAPER123',
+        secretKey: 'secret'
+      })
+      const thrown = await provider.getMarketStatus().catch((e: unknown) => e)
+
+      expect(thrown).toBeInstanceOf(BrokerError)
+      expect((thrown as BrokerError).code).toBe('auth_failed')
+    })
+
+    it('Alpaca JSON body error code 40110000 (no HTTP status field) maps to auth_failed', async () => {
+      // Alpaca SDK sometimes throws with no .status but with a JSON body as the message
+      mockGetClock.mockRejectedValue(
+        new Error(JSON.stringify({ code: 40110000, message: 'request is not authorized' }))
+      )
+
+      const provider = createProvider({ environment: 'live', keyId: 'AKLIVE123', secretKey: 's' })
+      const thrown = await provider.getMarketStatus().catch((e: unknown) => e)
+
+      expect(thrown).toBeInstanceOf(BrokerError)
+      expect((thrown as BrokerError).code).toBe('auth_failed')
     })
   })
 })

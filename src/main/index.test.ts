@@ -53,7 +53,8 @@ vi.mock('./ipc/settings', () => ({ registerSettingsHandlers: vi.fn() }))
 vi.mock('./integrations/market-data-factory', () => ({
   marketDataFactory: {
     create: vi.fn().mockReturnValue({ disconnect: vi.fn() }),
-    configure: vi.fn()
+    configure: vi.fn(),
+    disconnect: vi.fn().mockResolvedValue(undefined)
   }
 }))
 

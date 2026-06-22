@@ -6,10 +6,11 @@ import { brokerQueryKeys } from './brokerQueryKeys'
 const REFETCH_INTERVAL_MS = 60_000
 const STALE_TIME_MS = 30_000
 
-export function useMarketStatus(): UseQueryResult<MarketStatus, ApiError> {
+export function useMarketStatus(enabled = true): UseQueryResult<MarketStatus, ApiError> {
   return useQuery({
     queryKey: brokerQueryKeys.marketStatus,
     queryFn: getMarketStatus,
+    enabled,
     refetchInterval: REFETCH_INTERVAL_MS,
     staleTime: STALE_TIME_MS,
     refetchOnWindowFocus: true
