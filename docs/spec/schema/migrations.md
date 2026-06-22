@@ -1,6 +1,6 @@
 # Migrations
 
-<!-- generated:from us-6,us-33,us-35,us-37 -->
+<!-- generated:from us-6,us-33,us-35,us-37,us-44 -->
 
 ## Overview
 
@@ -30,7 +30,7 @@ by these migrations.
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35,us-37 -->
+<!-- generated:from us-6,us-33,us-35,us-37,us-44 -->
 
 ## Migration runner
 
@@ -120,7 +120,7 @@ separate "US-35 app_settings migration" in tree.
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35,us-37 -->
+<!-- generated:from us-6,us-33,us-35,us-37,us-44 -->
 
 ## Migration catalogue
 
@@ -254,6 +254,50 @@ COLUMN`. No table rebuild required because there is no constraint
   - `src/renderer/src/api/settings.ts`
 - **Source:** `migrations/006_add_credential_settings.sql`
 
+### `migrations/007_create_ivr_snapshot.sql` — create `ivr_snapshot` for daily IVR storage
+
+- **Driven by:** [us-44 — IVR Snapshot Store & Scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md)
+- **Rationale:** First persisted IVR storage path. A post-close collector
+  batches active-position underlyings through the Barchart scraper and writes
+  one snapshot row per ticker per market day; downstream reads (US-45) want the
+  latest snapshot per underlying.
+- **Change scope:** introduces one new table and one secondary index.
+- **Field-level summary:**
+
+  | Field         | Type   | Required | Notes                                                                 |
+  | ------------- | ------ | -------- | --------------------------------------------------------------------- |
+  | `underlying`  | `TEXT` | Yes      | Uppercase ticker from `positions.ticker`.                             |
+  | `observed_at` | `TEXT` | Yes      | ISO-8601 timestamp from `fetchIVR(...).data.observedAt`.              |
+  | `ivr`         | `TEXT` | Yes      | Decimal string, 1 dp; `0..100` via `IVRDataSchema`.                   |
+  | `ivp`         | `TEXT` | No       | Decimal string, 1 dp, when Barchart returns percentile.               |
+  | `iv30`        | `TEXT` | No       | Decimal string for 30-day historical volatility when provided.        |
+  | `source`      | `TEXT` | Yes      | `source TEXT NOT NULL DEFAULT 'barchart'`; persisted as `'barchart'`. |
+  - Primary key: `(underlying, observed_at)`.
+  - Secondary index: `(underlying, observed_at DESC)` for latest-snapshot
+    lookups in US-45.
+
+- **Same-day overwrite:** because the primary key includes the exact
+  `observed_at` timestamp, a second run on the same day with a later
+  timestamp does **not** replace the earlier row. The collector's persist
+  step therefore deletes any existing row for the same `underlying` whose
+  `observed_at` falls on the same UTC calendar date before inserting the
+  fresh row — the latest same-day value wins. This is service-layer logic,
+  not a schema constraint.
+- **Approach inside the migration file:** straight `CREATE TABLE` plus one
+  `CREATE INDEX`. No table rebuild, no data backfill.
+- **Numbering note:** this file deliberately fills the `007` gap. The repo
+  already had `006_add_credential_settings.sql` and
+  `008_create_pending_assignments.sql` with no `007` (see [Gaps](#gaps));
+  the lexicographic runner applies the new file in sequence between them,
+  keeping the numbering contiguous rather than appending `009`.
+- **Downstream code touches (no further schema change):**
+  - `src/main/services/ivr-collector.ts` (`collectIVRSnapshots` — batch,
+    throttle, delete-then-insert)
+  - `src/main/ipc/ivr.ts` (`ivr:collect-now` manual trigger)
+  - `src/main/index.ts` (registers the `ivr-collect` scheduler job,
+    `afterClose` cadence)
+- **Source:** `migrations/007_create_ivr_snapshot.sql`
+
 ### `migrations/008_create_pending_assignments.sql` — create `pending_assignments` for assignment-detection notifications
 
 - **Driven by:** [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md)
@@ -324,7 +368,7 @@ IGNORE` on the compound key)
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35,us-37 -->
+<!-- generated:from us-6,us-33,us-35,us-37,us-44 -->
 
 ## Gaps
 
@@ -341,16 +385,18 @@ Migration `004_add_trigger_event_to_snapshots.sql` is mentioned on
 `cost_basis_snapshots.trigger_event` column) but has not yet been
 extracted into a dedicated entry here.
 
-There is no `migrations/007_*.sql` file. The number was reserved on a
-US-35 working branch for a standalone `create_app_settings` migration
-and then dropped during merge resolution when `006_add_credential_settings.sql`
-turned out to create `app_settings` already (see [Migration authoring
-policy](#migration-authoring-policy)). The gap in the sequence is
-intentional and the runner's filename sort handles it without issue.
+The `007` slot was once an intentional gap. The number had been reserved on a
+US-35 working branch for a standalone `create_app_settings` migration and then
+dropped during merge resolution when `006_add_credential_settings.sql` turned
+out to create `app_settings` already (see [Migration authoring
+policy](#migration-authoring-policy)), leaving `006` and `008` non-contiguous.
+[us-44](../features/us-44-ivr-snapshot-store-and-scheduler.md) later filled the
+slot with `007_create_ivr_snapshot.sql`; the runner's filename sort applies it
+between `006` and `008` without issue. The sequence is now contiguous again.
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35,us-37 -->
+<!-- generated:from us-6,us-33,us-35,us-37,us-44 -->
 
 ## Driven by
 
@@ -360,12 +406,14 @@ intentional and the runner's filename sort handles it without issue.
   migration `005`
 - [us-37 — Paper/Live Broker Environment Toggle](../features/us-37-paper-live-broker-environment-toggle.md) —
   migration `006`
+- [us-44 — IVR Snapshot Store & Scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md) —
+  migration `007`
 - [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md) —
   migration `008` (and consumer of `006`'s `app_settings` table)
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35,us-37 -->
+<!-- generated:from us-6,us-33,us-35,us-37,us-44 -->
 
 ## See also
 
@@ -377,6 +425,8 @@ intentional and the runner's filename sort handles it without issue.
   the feature that introduced migration `005`
 - [us-37 — Paper/Live Broker Environment Toggle](../features/us-37-paper-live-broker-environment-toggle.md) —
   the feature that introduced migration `006`
+- [us-44 — IVR Snapshot Store & Scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md) —
+  the feature that introduced migration `007`
 - [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md) —
   the feature that introduced migration `008`
 

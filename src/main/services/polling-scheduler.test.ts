@@ -330,6 +330,31 @@ describe('runNow()', () => {
 
     await scheduler.stop()
   })
+
+  it('returns the registered handler result for ivr-collect callers', async () => {
+    const broker = makeBroker()
+    const scheduler = createPollingScheduler(() => broker)
+    const batch = {
+      successCount: 2,
+      errorCount: 1,
+      skippedCount: 0,
+      skippedReason: null
+    }
+    const handler = vi.fn().mockResolvedValue(batch)
+
+    scheduler.register({
+      name: 'ivr-collect',
+      cadence: { kind: 'afterClose', offsetMinutes: 60 },
+      handler
+    })
+    scheduler.start()
+
+    await vi.advanceTimersByTimeAsync(0)
+
+    await expect(scheduler.runNow('ivr-collect')).resolves.toEqual(batch)
+
+    await scheduler.stop()
+  })
 })
 
 describe('stop()', () => {

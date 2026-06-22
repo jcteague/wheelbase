@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, vi } from 'vitest'
 import { SettingsPage } from './SettingsPage'
 import { apiError } from '../api/error'
+import { useCollectIvrNow } from '../hooks/useCollectIvrNow'
 import {
   useRemoveAlpacaCredentials,
   useSaveAlpacaCredentials,
@@ -25,6 +26,10 @@ vi.mock('../hooks/usePositions', () => ({
   usePositions: vi.fn()
 }))
 
+vi.mock('../hooks/useCollectIvrNow', () => ({
+  useCollectIvrNow: vi.fn()
+}))
+
 const mockUseSettingsStatus = vi.mocked(useSettingsStatus)
 const mockUseSaveAlpacaCredentials = vi.mocked(useSaveAlpacaCredentials)
 const mockUseRemoveAlpacaCredentials = vi.mocked(useRemoveAlpacaCredentials)
@@ -32,6 +37,7 @@ const mockUseSetActiveBrokerEnvironment = vi.mocked(useSetActiveBrokerEnvironmen
 const mockUseTestStoredAlpacaConnection = vi.mocked(useTestStoredAlpacaConnection)
 const mockUseTestSettingsConnection = vi.mocked(useTestSettingsConnection)
 const mockUsePositions = vi.mocked(usePositions)
+const mockUseCollectIvrNow = vi.mocked(useCollectIvrNow)
 
 const statusFixture = {
   massive: 'configured' as const,
@@ -71,6 +77,9 @@ beforeEach(() => {
     isError: false,
     error: null
   } as unknown as ReturnType<typeof usePositions>)
+  mockUseCollectIvrNow.mockReturnValue({
+    mutateAsync: vi.fn()
+  } as unknown as ReturnType<typeof useCollectIvrNow>)
 })
 
 it('renders Market Data (Massive) as shared app status with a Test connection button and no key input', () => {
@@ -83,6 +92,72 @@ it('renders Market Data (Massive) as shared app status with a Test connection bu
   expect(
     within(section).queryByPlaceholderText(/paste your massive api key/i)
   ).not.toBeInTheDocument()
+})
+
+it('renders a Refresh IVR now button in the Market Data section', () => {
+  render(<SettingsPage />)
+
+  const section = screen.getByRole('region', { name: /market data/i })
+  expect(within(section).getByRole('button', { name: /refresh ivr now/i })).toBeInTheDocument()
+})
+
+it('clicking Refresh IVR now surfaces the returned success and error counts', async () => {
+  const collectIvrNow = vi.fn().mockResolvedValue({
+    successCount: 2,
+    errorCount: 1,
+    skippedCount: 0,
+    skippedReason: null
+  })
+  mockUseCollectIvrNow.mockReturnValue({
+    mutateAsync: collectIvrNow
+  } as unknown as ReturnType<typeof useCollectIvrNow>)
+
+  render(<SettingsPage />)
+
+  const section = screen.getByRole('region', { name: /market data/i })
+  fireEvent.click(within(section).getByRole('button', { name: /refresh ivr now/i }))
+
+  expect(collectIvrNow).toHaveBeenCalledTimes(1)
+  expect(
+    await within(section).findByText('IVR refresh complete: 2 snapshots saved, 1 errors.')
+  ).toBeInTheDocument()
+})
+
+it('shows a skipped message when the collector reports market_closed', async () => {
+  mockUseCollectIvrNow.mockReturnValue({
+    mutateAsync: vi.fn().mockResolvedValue({
+      successCount: 0,
+      errorCount: 0,
+      skippedCount: 0,
+      skippedReason: 'market_closed'
+    })
+  } as unknown as ReturnType<typeof useCollectIvrNow>)
+
+  render(<SettingsPage />)
+
+  const section = screen.getByRole('region', { name: /market data/i })
+  fireEvent.click(within(section).getByRole('button', { name: /refresh ivr now/i }))
+
+  expect(
+    await within(section).findByText('IVR refresh skipped: market closed on a non-trading day.')
+  ).toHaveClass('text-wb-text-muted')
+})
+
+it('shows an error message when the IVR collect mutation rejects', async () => {
+  mockUseCollectIvrNow.mockReturnValue({
+    mutateAsync: vi.fn().mockRejectedValue(
+      apiError(502, {
+        detail: [{ field: 'general', code: 'broker_error', message: 'Broker request failed' }]
+      })
+    )
+  } as unknown as ReturnType<typeof useCollectIvrNow>)
+
+  render(<SettingsPage />)
+
+  const section = screen.getByRole('region', { name: /market data/i })
+  fireEvent.click(within(section).getByRole('button', { name: /refresh ivr now/i }))
+
+  expect(await within(section).findByText('Broker request failed')).toHaveClass('text-wb-red')
 })
 
 it('renders Broker (Alpaca) with Paper and Live credential cards and the active environment control above them', () => {

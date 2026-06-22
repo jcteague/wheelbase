@@ -269,5 +269,4 @@ For the Massive market-data adapter files (`massive-market-data.ts`, `market-dat
 
 <!-- /generated -->
 
-
 <!-- Hand-written sections below this line are preserved across regeneration. -->

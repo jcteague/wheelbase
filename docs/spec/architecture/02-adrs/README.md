@@ -2,7 +2,7 @@
 
 Each ADR captures one architectural choice that emerged from a plan/story. Decisions are grouped below by theme; many ADRs are referenced by multiple feature pages.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,missing-ac -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,missing-ac -->
 
 ## Engine & architecture
 
@@ -30,6 +30,9 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [profit-target-nullable-column](./profit-target-nullable-column.md) — Nullable `profit_target_percent` column + hard-coded default constant.
 - [active-leg-metadata-via-positions-list](./active-leg-metadata-via-positions-list.md) — `PositionListItem` extended with active-leg metadata via the existing subquery.
 - [shared-massive-app-configuration](./shared-massive-app-configuration.md) — Massive credentials stay in shared app configuration; settings store Alpaca only.
+- [fill-migration-gap-with-007](./fill-migration-gap-with-007.md) — Use migration `007_create_ivr_snapshot.sql` to fill the open numbering gap between `006` and `008`.
+- [ivr-same-day-overwrite-delete-then-insert](./ivr-same-day-overwrite-delete-then-insert.md) — Same-day IVR refreshes delete the prior UTC-day row, then insert the fresh snapshot.
+- [active-ivr-targets-from-positions](./active-ivr-targets-from-positions.md) — IVR collection targets come from distinct active `positions.ticker` values, not renderer list projections.
 
 ## IPC contracts
 
@@ -38,6 +41,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [zod-payload-validation](./zod-payload-validation.md) — Zod schemas in `src/main/schemas.ts` validate every IPC payload at the boundary.
 - [error-field-naming-convention](./error-field-naming-convention.md) — `__root__`, `__phase__`, or literal field name; canonical `code` vocabulary.
 - [renderer-snake-case-adapter](./renderer-snake-case-adapter.md) — Renderer uses snake_case; adapters translate to/from IPC camelCase.
+- [dedicated-ivr-ipc-surface](./dedicated-ivr-ipc-surface.md) — Manual IVR collection lives on a dedicated `ivr:*` IPC namespace instead of `settings:*`.
 
 ## Renderer & UI
 
@@ -58,6 +62,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [leg-history-in-cost-basis-drawer](./leg-history-in-cost-basis-drawer.md) — Leg-history table lives inside the cockpit's cost-basis drawer.
 - [no-active-leg-cockpit-branch](./no-active-leg-cockpit-branch.md) — No-active-leg branch renders verdict + cost-basis drawer only.
 - [cockpit-component-decomposition](./cockpit-component-decomposition.md) — Eight files under `position-cockpit/`; one per cockpit part.
+- [settings-market-data-action-placement](./settings-market-data-action-placement.md) — "Refresh IVR now" extends the Settings page Market Data section with inline feedback instead of a new page/panel.
 
 ## Market data
 
@@ -78,6 +83,8 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [option-snapshots-rest-polling](./option-snapshots-rest-polling.md) — REST polling at 60 s, disabled when market closed; no stream bridge.
 - [renderer-builds-occ-symbols](./renderer-builds-occ-symbols.md) — Renderer builds OCC symbols from active legs; no server-side building.
 - [ipc-returns-full-option-snapshot](./ipc-returns-full-option-snapshot.md) — `market-data:option-snapshots` returns the full `OptionSnapshot` shape.
+- [barchart-as-canonical-ivr-source](./barchart-as-canonical-ivr-source.md) — IVR collection builds on the existing Barchart scraper and persists `source='barchart'`.
+- [ivr-collector-throttle-boundary](./ivr-collector-throttle-boundary.md) — The IVR collector enforces the 1 request/second batch throttle, even though the scraper also rate-limits.
 
 ## Background polling & assignment detection
 
@@ -90,5 +97,6 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [scheduler-singleton-safe-broker](./scheduler-singleton-safe-broker.md) — Module-level singleton scheduler with a safe-broker stub when credentials are missing.
 - [consolidated-before-quit](./consolidated-before-quit.md) — Single `before-quit` handler awaits scheduler + market-data shutdown concurrently.
 - [dev-only-test-scheduler-ipc](./dev-only-test-scheduler-ipc.md) — `_test:scheduler-*` channels guarded by `NODE_ENV === 'test'` for e2e introspection.
+- [ivr-non-trading-day-guard-in-collector](./ivr-non-trading-day-guard-in-collector.md) — The collector owns the weekend/holiday guard so scheduled and manual runs share one skip path.
 
 <!-- /generated -->

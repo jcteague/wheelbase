@@ -65,12 +65,17 @@ const api = {
       invoke('assignments:dismiss', { pendingAssignmentId }),
     runDetectionNow: () => invoke('assignments:run-detection-now')
   },
+  ivr: {
+    collectNow: () => invoke('ivr:collect-now')
+  },
   // Dev-only scheduler inspection — backed by IPC handlers registered only when
   // NODE_ENV === 'test'. Safe to expose unconditionally (channels are absent in prod).
   testSchedulerRegistry: () => invoke('_test:scheduler-registry'),
   testSchedulerRunNow: (jobName: string) => invoke('_test:scheduler-run-now', jobName),
   testSchedulerRegister: (job: unknown) => invoke('_test:scheduler-register', job),
-  testSchedulerSimulateWake: (payload: unknown) => invoke('_test:scheduler-simulate-wake', payload)
+  testSchedulerSimulateWake: (payload: unknown) => invoke('_test:scheduler-simulate-wake', payload),
+  testIvrSetOutcomes: (outcomes: unknown) => invoke('_test:ivr-set-outcomes', outcomes),
+  testIvrSnapshots: () => invoke('_test:ivr-snapshots')
 }
 
 if (process.contextIsolated) {

@@ -1,6 +1,6 @@
 # Database Tables
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-35,us-37 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-35,us-37,us-44 -->
 
 ## Overview
 
@@ -14,6 +14,9 @@ sit alongside the domain core: **`pending_assignments`** records broker-detected
 assignments awaiting trader confirmation, **`credential_settings`** holds
 encrypted broker credentials, and **`app_settings`** is a generic key/value
 store for non-secret settings (broker environment selection, poll watermarks).
+A separate market-data table sits outside the wheel domain entirely:
+**`ivr_snapshot`** stores one daily IV-rank observation per active-position
+underlying, written by the after-close IVR collection job.
 SQLite is the source of truth; Alpaca is the execution layer only.
 
 Money values are stored as `TEXT` at 4 dp and converted to/from `decimal.js`
@@ -440,12 +443,70 @@ broken referential integrity.
 
 <!-- /generated -->
 
+<!-- generated:from us-44 -->
+
+## `ivr_snapshot`
+
+Daily implied-volatility-rank observations, one row per active-position
+underlying per market day. Rows are written by the after-close IVR
+collection job (`collectIVRSnapshots`), which batches distinct active
+tickers through the Barchart scraper. This table sits outside the wheel
+domain — it has no foreign key into `positions`; targets are derived by
+selecting distinct `ticker` from `positions` where `status != 'CLOSED'`.
+Added by migration `007`. See
+[us-44 — IVR Snapshot Store and Scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md).
+
+### Columns
+
+| Column        | Type | Nullable | Purpose                                                                              |
+| ------------- | ---- | -------- | ------------------------------------------------------------------------------------ |
+| `underlying`  | TEXT | No       | Uppercase ticker symbol, sourced from `positions.ticker`                             |
+| `observed_at` | TEXT | No       | ISO-8601 timestamp of the observation (from the scraper's `observedAt`)              |
+| `ivr`         | TEXT | No       | IV rank as a Decimal string at 1 dp; constrained to `0..100` via `IVRDataSchema`     |
+| `ivp`         | TEXT | Yes      | IV percentile as a Decimal string at 1 dp when Barchart returns it; otherwise `NULL` |
+| `iv30`        | TEXT | Yes      | 30-day historical volatility as a Decimal string when provided; otherwise `NULL`     |
+| `source`      | TEXT | No       | Data-provider tag; `NOT NULL DEFAULT 'barchart'`, persisted exactly as `'barchart'`  |
+
+### Constraints and indexes
+
+- **Primary key** `(underlying, observed_at)` — a single underlying may hold
+  multiple observations distinguished by timestamp.
+- **Secondary index** on `(underlying, observed_at DESC)` — supports
+  latest-snapshot lookups (the most recent observation per underlying).
+- `underlying` is validated non-empty and uppercase before persistence; `ivr`
+  is range-checked `0..100` at the schema boundary. There are no DB-level
+  CHECK constraints — validation lives in the service layer via
+  `IVRDataSchema`.
+
+### Same-day overwrite
+
+The latest same-day value wins. Because the primary key includes the exact
+`observed_at` timestamp, a second run on the same day would otherwise insert a
+new row rather than replace the earlier one. The collector therefore runs a
+delete-then-insert inside one transaction: before inserting the fresh row it
+deletes any existing row for the same `underlying` whose `observed_at` falls on
+the same **UTC calendar date** as the new observation. This keeps one row per
+underlying per UTC day while preserving the precise observation timestamp.
+
+### How rows change
+
+- **Collect** (US-44, scheduled after-close job or manual `ivr:collect-now`
+  trigger): for each distinct active-position underlying, delete same-UTC-day
+  rows then `INSERT` the fresh observation with `source='barchart'`. A
+  `not_available` scraper result writes **no row** (counted as skipped);
+  parse/network/rate-limit errors write no row and the batch continues to the
+  next ticker. On a non-trading day the whole batch exits before any fetch and
+  no rows are written.
+
+<!-- /generated -->
+
 ## See also
 
 - [Migrations](./migrations.md) — chronological change log for the schema
   including migration 003 (`option_type → instrument_type`), migration
   005 (`positions.profit_target_percent`), migration 006
-  (`credential_settings` / `app_settings`), and migration 008
+  (`credential_settings` / `app_settings`), migration 007
+  (`ivr_snapshot`), and migration 008
   (`pending_assignments`).
 - [Cost Basis](../domain/cost-basis.md) — how the append-only snapshot
   pattern is produced by each lifecycle event.
@@ -461,3 +522,6 @@ broken referential integrity.
 - [us-46 — Polling Scheduler](../features/us-46-polling-scheduler.md) —
   the in-memory market-aware scheduler that drives the assignment-detection
   poll job (no schema state of its own).
+- [us-44 — IVR Snapshot Store and Scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md) —
+  the feature that introduced `ivr_snapshot` (migration 007) and the
+  after-close IVR collection job.

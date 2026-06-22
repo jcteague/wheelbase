@@ -339,6 +339,13 @@ type IpcSaveAlpacaCredentialsResult = IpcResult<{
   test: Extract<IpcTestConnectionResult, { ok: true; vendor: 'alpaca' }>
 }>
 type IpcTestSettingsConnectionResult = IpcResult<{ test: IpcTestConnectionResult }>
+type IpcCollectIvrNowBatch = {
+  successCount: number
+  errorCount: number
+  skippedCount: number
+  skippedReason: 'market_closed' | null
+}
+type IpcCollectIvrNowResult = IpcResult<{ batch: IpcCollectIvrNowBatch }>
 
 interface IpcGetOptionSnapshotsPayload {
   symbols: string[]
@@ -482,6 +489,9 @@ declare global {
           | { ok: true; detected: number; skipped: number; durationMs: number }
           | { ok: false; errors: string[] }
         >
+      }
+      ivr: {
+        collectNow: () => Promise<IpcCollectIvrNowResult>
       }
     }
   }

@@ -143,6 +143,15 @@ export interface PositionListItem {
   profitTargetPercent: number | null
 }
 
+export const CollectIvrNowBatchSchema = z.object({
+  successCount: z.number().int().min(0),
+  errorCount: z.number().int().min(0),
+  skippedCount: z.number().int().min(0),
+  skippedReason: z.enum(['market_closed']).nullable()
+})
+
+export type CollectIvrNowBatch = z.infer<typeof CollectIvrNowBatchSchema>
+
 // ---------------------------------------------------------------------------
 // Expire CSP schemas
 // ---------------------------------------------------------------------------

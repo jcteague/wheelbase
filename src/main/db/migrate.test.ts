@@ -27,6 +27,14 @@ function listIndexes(db: Database.Database, tableName: string): string[] {
   )
 }
 
+function indexSql(db: Database.Database, indexName: string): string | null {
+  const row = db
+    .prepare(`SELECT sql FROM sqlite_master WHERE type='index' AND name=?`)
+    .get(indexName) as { sql: string | null } | undefined
+
+  return row?.sql ?? null
+}
+
 function columnInfo(
   db: Database.Database,
   tableName: string
@@ -103,6 +111,7 @@ describe('runMigrations', () => {
       '004_add_trigger_event_to_snapshots.sql',
       '005_add_profit_target_percent.sql',
       '006_add_credential_settings.sql',
+      '007_create_ivr_snapshot.sql',
       '008_create_pending_assignments.sql'
     ])
   })
@@ -209,5 +218,28 @@ describe('runMigrations', () => {
         .prepare(`INSERT INTO app_settings (key, value, updated_at) VALUES ('foo', 'baz', ?)`)
         .run(now)
     ).toThrow(/UNIQUE constraint failed/i)
+  })
+
+  it('applies 007_create_ivr_snapshot.sql and creates ivr_snapshot with latest-first index', () => {
+    const db = makeTestDb()
+
+    expect(listUserTables(db)).toContain('ivr_snapshot')
+    expect(
+      columnInfo(db, 'ivr_snapshot').map(({ name, type, notnull }) => ({ name, type, notnull }))
+    ).toEqual([
+      { name: 'underlying', type: 'TEXT', notnull: 1 },
+      { name: 'observed_at', type: 'TEXT', notnull: 1 },
+      { name: 'ivr', type: 'TEXT', notnull: 1 },
+      { name: 'ivp', type: 'TEXT', notnull: 0 },
+      { name: 'iv30', type: 'TEXT', notnull: 0 },
+      { name: 'source', type: 'TEXT', notnull: 1 }
+    ])
+
+    expect(listIndexes(db, 'ivr_snapshot')).toContain(
+      'idx_ivr_snapshot_underlying_observed_at_desc'
+    )
+    expect(indexSql(db, 'idx_ivr_snapshot_underlying_observed_at_desc')).toContain(
+      'ON ivr_snapshot (underlying, observed_at DESC)'
+    )
   })
 })

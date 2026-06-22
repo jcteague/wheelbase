@@ -13,6 +13,7 @@ import type {
 import { LiveBrokerConfirmDialog } from '../components/LiveBrokerConfirmDialog'
 import { AlertBox } from '../components/ui/AlertBox'
 import { PageHeader, PageLayout } from '../components/PageLayout'
+import { useCollectIvrNow } from '../hooks/useCollectIvrNow'
 import { usePositions } from '../hooks/usePositions'
 import {
   useRemoveAlpacaCredentials,
@@ -33,6 +34,21 @@ type CredentialFormValues = z.infer<typeof credentialsSchema>
 type ConnectionMessage = {
   tone: 'success' | 'error' | 'muted'
   text: string
+}
+
+function messageClassName(message: ConnectionMessage): string {
+  return [
+    'm-0 font-wb-mono text-[0.68rem]',
+    message.tone === 'success'
+      ? 'text-wb-green'
+      : message.tone === 'error'
+        ? 'text-wb-red'
+        : 'text-wb-text-muted'
+  ].join(' ')
+}
+
+function MessageText({ message }: { message: ConnectionMessage }): React.JSX.Element {
+  return <p className={messageClassName(message)}>{message.text}</p>
 }
 
 function getApiErrorMessage(error: unknown): string {
@@ -339,12 +355,14 @@ function AlpacaCredentialCard({
 export function SettingsPage(): React.JSX.Element {
   const { data: status } = useSettingsStatus()
   const { data: positions } = usePositions()
+  const collectIvrNow = useCollectIvrNow()
   const saveMutation = useSaveAlpacaCredentials()
   const removeMutation = useRemoveAlpacaCredentials()
   const setActiveBrokerEnvironment = useSetActiveBrokerEnvironment()
   const testConnection = useTestSettingsConnection()
   const testStoredAlpacaConnection = useTestStoredAlpacaConnection()
   const [massiveMessage, setMassiveMessage] = useState<ConnectionMessage | null>(null)
+  const [ivrMessage, setIvrMessage] = useState<ConnectionMessage | null>(null)
   const [showLiveDialog, setShowLiveDialog] = useState(false)
 
   const activeStatus = status ?? {
@@ -378,6 +396,26 @@ export function SettingsPage(): React.JSX.Element {
       setMassiveMessage({ tone: 'error', text: result.message })
     } catch (error) {
       setMassiveMessage({ tone: 'error', text: getApiErrorMessage(error) })
+    }
+  }
+
+  async function handleCollectIvrNow(): Promise<void> {
+    try {
+      const batch = await collectIvrNow.mutateAsync()
+      if (batch.skippedReason === 'market_closed') {
+        setIvrMessage({
+          tone: 'muted',
+          text: 'IVR refresh skipped: market closed on a non-trading day.'
+        })
+        return
+      }
+
+      setIvrMessage({
+        tone: batch.errorCount > 0 ? 'muted' : 'success',
+        text: `IVR refresh complete: ${batch.successCount} snapshots saved, ${batch.errorCount} errors.`
+      })
+    } catch (error) {
+      setIvrMessage({ tone: 'error', text: getApiErrorMessage(error) })
     }
   }
 
@@ -420,24 +458,25 @@ export function SettingsPage(): React.JSX.Element {
                     ? 'Last verified via shared Massive configuration'
                     : 'Shared market-data credentials are configured outside this page'}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => void handleMassiveTestConnection()}
-                  className="rounded-md border border-wb-border px-3 py-2 font-wb-mono text-xs font-semibold tracking-[0.06em] text-wb-text-secondary"
-                >
-                  Test connection
-                </button>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleCollectIvrNow()}
+                    className="rounded-md border border-wb-border px-3 py-2 font-wb-mono text-xs font-semibold tracking-[0.06em] text-wb-text-secondary"
+                  >
+                    Refresh IVR now
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleMassiveTestConnection()}
+                    className="rounded-md border border-wb-border px-3 py-2 font-wb-mono text-xs font-semibold tracking-[0.06em] text-wb-text-secondary"
+                  >
+                    Test connection
+                  </button>
+                </div>
               </div>
-              {massiveMessage && (
-                <p
-                  className={[
-                    'm-0 font-wb-mono text-[0.68rem]',
-                    massiveMessage.tone === 'success' ? 'text-wb-green' : 'text-wb-red'
-                  ].join(' ')}
-                >
-                  {massiveMessage.text}
-                </p>
-              )}
+              {ivrMessage && <MessageText message={ivrMessage} />}
+              {massiveMessage && <MessageText message={massiveMessage} />}
             </div>
           </section>
 

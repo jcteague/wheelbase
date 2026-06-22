@@ -11,8 +11,12 @@ import { loadMassiveApiKey } from './integrations/massive-credentials'
 import { registerMarketDataHandlers } from './ipc/market-data'
 import { registerBrokerHandlers } from './ipc/broker'
 import { registerAssignmentsIpc } from './ipc/assignments'
+import { registerIvrIpc } from './ipc/ivr'
 import { registerTestSchedulerIpc, seedTestJobsFromEnv } from './ipc/test-scheduler'
+import { registerTestIvrIpc } from './ipc/test-ivr'
+import { createFakeIvrCollaborators } from './integrations/fake-ivr'
 import { DETECT_ASSIGNMENTS_JOB_NAME, detectAssignments } from './services/detect-assignments'
+import { collectIVRSnapshots, IVR_COLLECT_JOB_NAME } from './services/ivr-collector'
 import { scheduler } from './services/scheduler-instance'
 import { registerSettingsHandlers } from './ipc/settings'
 import type { TestConnectionPayload } from './schemas'
@@ -164,6 +168,7 @@ app.whenReady().then(() => {
   })
 
   registerAssignmentsIpc({ db, scheduler })
+  registerIvrIpc({ scheduler })
 
   // Detect-assignments job: looks up the current broker provider and active
   // environment lazily on every tick so credential changes flow through without
@@ -191,9 +196,22 @@ app.whenReady().then(() => {
     }
   })
 
+  // In production this resolves to `{}` so the real Barchart scraper is used; e2e
+  // runs set WHEELBASE_FAKE_IVR to inject a deterministic offline fetcher + clock.
+  const ivrCollaborators = createFakeIvrCollaborators()
+  scheduler.register({
+    name: IVR_COLLECT_JOB_NAME,
+    cadence: { kind: 'afterClose', offsetMinutes: 60 },
+    handler: async () => {
+      const brokerProvider = brokerFactory.create()
+      return collectIVRSnapshots({ db, brokerProvider, logger, ...ivrCollaborators })
+    }
+  })
+
   if (process.env.NODE_ENV === 'test') {
     seedTestJobsFromEnv(scheduler)
     registerTestSchedulerIpc(scheduler)
+    registerTestIvrIpc(db)
 
     // Test-only: preseed an active broker environment so detect-assignments and
     // other broker-gated jobs run without going through the credential-save UI

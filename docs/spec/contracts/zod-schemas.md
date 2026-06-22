@@ -1,6 +1,6 @@
 # Zod Schemas
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-44 -->
 
 ## Overview
 
@@ -51,7 +51,7 @@ export type InstrumentType = z.infer<typeof InstrumentType>
 
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-12,us-13,us-14,us-32,us-33 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-12,us-13,us-14,us-32,us-33,us-44 -->
 
 ## Payload schemas
 
@@ -214,6 +214,19 @@ export type GetOptionSnapshotsPayload = z.infer<typeof GetOptionSnapshotsPayload
 ```
 
 Up to 50 OCC symbols per call (matches the `stock-quotes` batch limit), each 1–25 characters — OCC symbols are at most 21 characters (e.g. `AAPL260516P00180000`), and 25 gives headroom for longer underlying roots. Empty array is valid (the service returns `{ ok: true, snapshots: {} }` without calling the provider). Bound to `market-data:option-snapshots`. Driven by [us-33 — Option mid + unrealized P&L](../features/us-33-option-mid-pnl.md).
+
+### `CollectIvrNowBatchSchema`
+
+```typescript
+export const CollectIvrNowBatchSchema = z.object({
+  successCount: z.number().int().min(0),
+  errorCount: z.number().int().min(0),
+  skippedCount: z.number().int().min(0),
+  skippedReason: z.enum(['market_closed']).nullable()
+})
+```
+
+Unusually for this section, this is **not** a request payload — `ivr:collect-now` takes no payload, so there is no request schema. It validates the _result_ the scheduler hands back at the `ivr:collect-now` IPC boundary: the batch summary produced by `collectIVRSnapshots(...)`. The handler re-parses the scheduler's `runNow('ivr-collect')` return through this schema before returning it to the renderer, which guards against a swallowed-error path returning an `undefined` batch (a parse failure surfaces as a normal `{ ok: false, errors }` envelope rather than a malformed success). `skippedReason` is `'market_closed'` only on the non-trading-day early exit (`successCount=0, errorCount=0, skippedCount=0`); otherwise `null`. Bound to `ivr:collect-now`. Driven by [us-44 — IVR snapshot store and scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md).
 
 <!-- /generated -->
 
@@ -537,7 +550,7 @@ interface IpcStreamErrorEvent {
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-44 -->
 
 ## Driven by
 
@@ -558,6 +571,7 @@ interface IpcStreamErrorEvent {
 - [us-33 — Option mid + unrealized P&L](../features/us-33-option-mid-pnl.md) — `GetOptionSnapshotsPayloadSchema`
 - [us-35 — Assignment detection and auto-transition](../features/us-35-assignment-detection.md) — `ConfirmAssignmentPayloadSchema`, `DismissAssignmentPayloadSchema`, `PendingAssignmentNotification` shape (with bespoke `code` error envelope)
 - [us-37 — Paper/live broker environment toggle](../features/us-37-paper-live-broker-environment-toggle.md) — `BrokerEnvironmentSchema`, `SaveAlpacaCredentialsPayloadSchema`, `RemoveAlpacaCredentialsPayloadSchema`, `SetActiveBrokerEnvironmentPayloadSchema`, `TestStoredAlpacaConnectionPayloadSchema`, `TestConnectionPayloadSchema` (discriminated union on `vendor`), `CredentialStatus` / `TestSettingsConnectionResult` / `SaveAlpacaCredentialsResult` shapes
+- [us-44 — IVR snapshot store and scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md) — `CollectIvrNowBatchSchema` (result-validation schema for the no-payload `ivr:collect-now` boundary)
 <!-- /generated -->
 
 <!-- generated:from us-35 -->

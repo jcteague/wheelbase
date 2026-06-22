@@ -1,6 +1,7 @@
 # US-37: Paper/Live Broker Environment Toggle
 
 <!-- generated:from us-37 -->
+
 ## Summary
 
 US-37 adds a dedicated settings experience for broker credentials and active-broker switching while keeping shared market-data configuration separate. Massive remains app-provided and shared across users: the settings page can show its status and run a fixed probe, but it does not let the user save or remove a Massive key. Alpaca paper and live credentials are stored per environment in SQLite using `safeStorage` encryption, the active broker environment is persisted across launches, and the broker provider can be recreated at runtime without resetting stock/option market-data flows. On the renderer side the app now exposes `#/settings`, always shows a broker environment badge, uses a separate market-data status dot, invalidates only broker-prefixed queries after broker changes, and prompts before switching to LIVE.

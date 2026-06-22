@@ -1,4 +1,5 @@
 # ADR: Vendor-scoped query keys
+
 <!-- generated:from us-37 -->
 
 ## Decision

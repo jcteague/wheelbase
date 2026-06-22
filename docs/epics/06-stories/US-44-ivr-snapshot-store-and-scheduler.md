@@ -8,9 +8,9 @@
 
 ## Context
 
-US-43 fetches IVR for a single ticker. This story adds persistence and a scheduler so the app maintains an up-to-date IVR record for every underlying with an active position. Collection runs once per market day, after market close, with politeness controls so Market Chameleon is not hammered.
+US-43 fetches IVR for a single ticker. This story adds persistence and a scheduler so the app maintains an up-to-date IVR record for every underlying with an active position. Collection runs once per market day, after market close, with politeness controls so Barchart is not hammered.
 
-Epic 12 had originally planned an `iv_snapshot` table holding raw 30-day IV values, with IVR computed locally. Because Market Chameleon publishes IVR directly on free pages, this story stores **IVR snapshots** (the computed value) instead. The Epic 12 plan will be revised in a separate update.
+Epic 12 had originally planned an `iv_snapshot` table holding raw 30-day IV values, with IVR computed locally. Because Barchart exposes IVR directly in the scraper response, this story stores **IVR snapshots** (the computed value) instead. The Epic 12 plan will be revised in a separate update.
 
 ---
 
@@ -24,7 +24,7 @@ Background:
     ivr TEXT NOT NULL,                   -- decimal string, 1 dp
     ivp TEXT,                            -- nullable
     iv30 TEXT,                           -- nullable
-    source TEXT NOT NULL DEFAULT 'market-chameleon',
+    source TEXT NOT NULL DEFAULT 'barchart',
     PRIMARY KEY (underlying, observed_at)
   And an index exists on (underlying, observed_at DESC)
 
@@ -36,11 +36,11 @@ Scenario: Collector runs once per market day after close
 Scenario: Collector picks up all active-position underlyings
   Given positions exist for tickers ["SPY", "AAPL", "TSLA"] in phases other than CLOSED
   When collectIVRSnapshots runs
-  Then it calls fetchMarketChameleonIVR for each distinct underlying
+  Then it calls fetchIVR for each distinct underlying
   And requests are spaced at least 1 second apart
 
 Scenario: Successful snapshot is persisted
-  Given fetchMarketChameleonIVR returns { status: "ok", data: { ticker: "SPY", ivr: 42.5, ivp: 50.0, iv30: 0.18, observedAt: "2026-05-29T21:05:00Z" } }
+  Given fetchIVR returns { status: "ok", data: { ticker: "SPY", ivr: 42.5, ivp: 50.0, iv30: 0.18, observedAt: "2026-05-29T21:05:00Z" } }
   When the collector persists the result
   Then a row is inserted into ivr_snapshot for ("SPY", "2026-05-29T21:05:00Z") with ivr "42.5"
 
@@ -51,13 +51,13 @@ Scenario: Re-running on the same calendar day overwrites the existing row
   And no exception propagates from the unique constraint
 
 Scenario: Not-available ticker is recorded but with no row written
-  Given fetchMarketChameleonIVR returns { status: "not_available" }
+  Given fetchIVR returns { status: "not_available" }
   When the collector handles the result
   Then it does not insert a row for that ticker
-  And an INFO log records "ticker not covered by Market Chameleon free IVR" with the symbol
+  And an INFO log records "ticker not covered by Barchart IVR" with the symbol
 
 Scenario: Parse error is logged and the collector continues to the next ticker
-  Given fetchMarketChameleonIVR returns { status: "parse_error" }
+  Given fetchIVR returns { status: "parse_error" }
   When the collector handles the result
   Then a WARN log is emitted
   And the collector continues to the next ticker without aborting the batch

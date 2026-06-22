@@ -10,7 +10,7 @@ export type CadencePolicy =
     }
   | { kind: 'afterClose'; offsetMinutes: number }
 
-export type JobHandler = () => Promise<void>
+export type JobHandler = () => Promise<unknown>
 
 export type JobConfig = {
   name: string
@@ -28,7 +28,7 @@ export interface PollingScheduler {
   register(config: JobConfig): void
   start(): void
   stop(): Promise<void>
-  runNow(jobName: string): Promise<void>
+  runNow(jobName: string): Promise<unknown>
   getRegistry(): JobRegistryEntry[]
 }
 
@@ -101,7 +101,7 @@ export function createPollingScheduler(
   clock: Clock = realClock
 ): PollingScheduler {
   const jobs = new Map<string, JobState>()
-  const inFlight = new Set<Promise<void>>()
+  const inFlight = new Set<Promise<unknown>>()
   let stopped = false
   let started = false
 
@@ -110,12 +110,13 @@ export function createPollingScheduler(
     state.timerId = clock.setTimeout(() => void tick(state), delayMs)
   }
 
-  async function runHandler(state: JobState): Promise<void> {
+  async function runHandler(state: JobState): Promise<unknown> {
     state.invocations++
     try {
-      await state.config.handler()
+      return await state.config.handler()
     } catch (err) {
       logger.warn({ err, job: state.config.name }, `Job '${state.config.name}' handler error`)
+      return undefined
     }
   }
 
@@ -225,7 +226,7 @@ export function createPollingScheduler(
       })
     },
 
-    async runNow(jobName: string): Promise<void> {
+    async runNow(jobName: string): Promise<unknown> {
       const state = jobs.get(jobName)
       if (!state) {
         throw new SchedulerError('job_not_found', `Job not found: ${jobName}`)
@@ -238,13 +239,15 @@ export function createPollingScheduler(
 
       const p = runHandler(state)
       inFlight.add(p)
+      let result: unknown
       try {
-        await p
+        result = await p
       } finally {
         inFlight.delete(p)
       }
 
       await reschedule(state)
+      return result
     },
 
     getRegistry(): JobRegistryEntry[] {

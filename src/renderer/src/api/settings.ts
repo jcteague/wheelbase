@@ -1,4 +1,4 @@
-import { apiError, type ApiError } from './error'
+import { apiError, type ApiError, type IpcResult } from './error'
 
 export type { ApiError }
 
@@ -51,14 +51,6 @@ export type TestSettingsConnectionResult =
       accountNumberMasked: string
     }
   | { ok: false; errorCode: string; message: string }
-
-type IpcFieldError = {
-  field: string
-  code: string
-  message: string
-}
-
-type IpcResult<T> = ({ ok: true } & T) | { ok: false; errors: IpcFieldError[] }
 
 function unwrapStatus(result: IpcResult<{ status: CredentialStatus }>): CredentialStatus {
   if (!result.ok) {

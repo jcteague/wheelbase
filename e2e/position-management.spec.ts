@@ -13,7 +13,9 @@ const APP_CWD = path.join(__dirname, '..')
 const NEAR_ISO = localToday()
 const [NEAR_YEAR, NEAR_MONTH, NEAR_DAY] = NEAR_ISO.split('-').map(Number)
 
-// Far expiration: 60 days from today (always in the future)
+// Far expiration: a dynamic future date so its DTE always exceeds NEAR (today),
+// regardless of when the suite runs. (A hardcoded date eventually equals today
+// and makes the DTE-sort comparison ambiguous.)
 const FAR_ISO = localDate(60)
 const [FAR_YEAR, FAR_MONTH, FAR_DAY] = FAR_ISO.split('-').map(Number)
 

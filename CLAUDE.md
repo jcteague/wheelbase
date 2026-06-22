@@ -92,6 +92,11 @@ After every code change, run in order:
 - Avoid classes in TypeScript; use plain functions and types
 - Keep side effects at the boundaries (IPC calls, DB writes); keep core logic pure
 
+### Date Handling
+
+- Use `date-fns` helpers for date parsing and calendar comparisons instead of string slicing timestamps.
+- Do not use patterns like `timestamp.slice(0, 10)` to decide same-day behavior; make the timezone basis explicit, especially for UTC-vs-local checks.
+
 ### Logging Standards
 
 Library: `pino`. Configured in `src/main/logger.ts`.

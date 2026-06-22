@@ -47,6 +47,7 @@ vi.mock('./ipc/positions', () => ({ registerPositionsHandlers: vi.fn() }))
 vi.mock('./ipc/market-data', () => ({ registerMarketDataHandlers: vi.fn() }))
 vi.mock('./ipc/broker', () => ({ registerBrokerHandlers: vi.fn() }))
 vi.mock('./ipc/assignments', () => ({ registerAssignmentsIpc: vi.fn() }))
+vi.mock('./ipc/ivr', () => ({ registerIvrIpc: vi.fn() }))
 vi.mock('./ipc/settings', () => ({ registerSettingsHandlers: vi.fn() }))
 
 vi.mock('./integrations/market-data-factory', () => ({
@@ -90,6 +91,16 @@ vi.mock('./logger', () => ({
 vi.mock('./services/detect-assignments', () => ({
   DETECT_ASSIGNMENTS_JOB_NAME: 'detect-assignments',
   detectAssignments: vi.fn().mockResolvedValue({ detected: 0, skipped: 0 })
+}))
+
+vi.mock('./services/ivr-collector', () => ({
+  IVR_COLLECT_JOB_NAME: 'ivr-collect',
+  collectIVRSnapshots: vi.fn().mockResolvedValue({
+    successCount: 0,
+    errorCount: 0,
+    skippedCount: 0,
+    skippedReason: null
+  })
 }))
 
 const mockSchedulerRegister = vi.fn()
@@ -165,6 +176,43 @@ describe('main process bootstrap', () => {
     )
   })
 
+  it('registers the ivr-collect scheduler job with afterClose offsetMinutes 60', async () => {
+    await triggerBootstrap()
+
+    expect(mockSchedulerRegister).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'ivr-collect',
+        cadence: { kind: 'afterClose', offsetMinutes: 60 }
+      })
+    )
+  })
+
+  it('ivr-collect job handler delegates to collectIVRSnapshots with db, brokerProvider, and logger', async () => {
+    await triggerBootstrap()
+
+    const registration = mockSchedulerRegister.mock.calls
+      .map(([job]) => job)
+      .find((job) => job.name === 'ivr-collect') as { handler: () => Promise<unknown> } | undefined
+
+    expect(registration).toBeDefined()
+
+    const { collectIVRSnapshots } = await import('./services/ivr-collector')
+    const { brokerFactory } = await import('./integrations/broker-factory')
+    const brokerProvider = { getMarketStatus: vi.fn(), getActivities: vi.fn() }
+    vi.mocked(brokerFactory.create).mockReturnValue(brokerProvider as never)
+
+    await registration!.handler()
+
+    expect(vi.mocked(brokerFactory.create)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(collectIVRSnapshots)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        db: expect.anything(),
+        brokerProvider,
+        logger: expect.anything()
+      })
+    )
+  })
+
   it('bootstrap starts the scheduler after registering jobs', async () => {
     await triggerBootstrap()
 
@@ -197,6 +245,16 @@ describe('main process bootstrap', () => {
 
     expect(vi.mocked(brokerFactory.recreate)).toHaveBeenCalled()
     expect(mockSchedulerRunNow).toHaveBeenCalledWith('detect-assignments')
+  })
+
+  it('registers IVR IPC handlers', async () => {
+    await triggerBootstrap()
+
+    const { registerIvrIpc } = await import('./ipc/ivr')
+
+    expect(vi.mocked(registerIvrIpc)).toHaveBeenCalledWith({
+      scheduler: expect.anything()
+    })
   })
 
   it('before-quit handler calls scheduler.stop() and awaits it before app.exit()', async () => {
