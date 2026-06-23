@@ -77,6 +77,7 @@ Each REST method is wrapped in a `try` / `wrapError(err, opLabel)` block that no
 **Credential guard (US-47).** `requireCredentials()` is called as the **first line** of every public method. Missing `keyId` or `secretKey` throws `BrokerError('auth_failed', 'Alpaca credentials not configured', 'settings/credentials/alpaca')` immediately, before the SDK is invoked. This ensures every method returns a consistently typed `auth_failed` error with a navigation deeplink rather than falling through to `wrapError` as `unknown`.
 
 **Environment mismatch detection (US-47).** `wrapError` detects both directions of key/environment mismatch:
+
 - Paper env + live key (starts with `AK`) → `BrokerError('environment_mismatch', 'Environment mismatch — these are LIVE keys, not paper keys')`
 - Live env + paper key (starts with `P`) → `BrokerError('environment_mismatch', 'Environment mismatch — these are PAPER keys, not live keys')`
 
