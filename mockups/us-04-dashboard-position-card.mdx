@@ -37,9 +37,6 @@ _This mockup shows the unified position card after all dashboard stories are com
 
 ---
 
-{/* ── Design Tokens ── */}
-{/* Matches: src/renderer/src/index.css :root variables */}
-
 export const T = {
   bgBase: '#0d1117',
   bgSurface: '#161b27',
@@ -63,21 +60,15 @@ export const T = {
   violetDim: 'rgba(210,168,255,0.12)'
 }
 
-{/* Matches: src/renderer/src/lib/tokens.ts */}
 export const MONO = "ui-monospace, 'SF Mono', Menlo, 'Cascadia Code', 'Fira Code', monospace"
 
-{/* Matches: PHASE_COLOR + PHASE_LABEL from src/renderer/src/lib/phase.ts */}
 export const PHASE = {
-CSP_OPEN: { color: T.gold, label: 'Sell Put' },
-HOLDING_SHARES: { color: T.sky, label: 'Holding Shares' },
-CC_OPEN: { color: T.violet, label: 'Sell Call' },
-WHEEL_COMPLETE: { color: T.green, label: 'Wheel Complete' },
-CSP_CLOSED_LOSS: { color: T.red, label: 'Closed ✗' },
+  CSP_OPEN: { color: T.gold, label: 'Sell Put' },
+  HOLDING_SHARES: { color: T.sky, label: 'Holding Shares' },
+  CC_OPEN: { color: T.violet, label: 'Sell Call' },
+  WHEEL_COMPLETE: { color: T.green, label: 'Wheel Complete' },
+  CSP_CLOSED_LOSS: { color: T.red, label: 'Closed ✗' }
 }
-
-{/* ── Data ── */}
-{/_ Shape matches PositionListItem from src/renderer/src/api/positions.ts
-plus Phase 2 fields: currentPrice (from Epic 06 market data) _/}
 
 export const CARDS = {
   portfolio: [
@@ -242,8 +233,6 @@ export const CARDS = {
   ]
 }
 
-{/* ── Distance Logic ── */}
-
 export function distCalc(inst, strike, price) {
   if (!price || !strike) return null
   return ((price - parseFloat(strike)) / parseFloat(strike)) * 100
@@ -278,9 +267,6 @@ export function distStatus(inst, dist) {
   return 'OTM'
 }
 
-{/* ── Primitives ── */}
-
-{/* Matches: PhaseBadge.tsx → Badge with color dot + label */}
 export function MockPhaseBadge({ phase }) {
 const cfg = PHASE[phase] ?? { color: T.textSec, label: phase }
 return (
@@ -297,7 +283,6 @@ return (
 )
 }
 
-{/* Matches: Stat from src/renderer/src/components/ui/Stat.tsx */}
 export function MockStat({ label, value, color }) {
 return (
 
@@ -308,7 +293,6 @@ return (
 )
 }
 
-{/* Matches: Caption from src/renderer/src/components/ui/Caption.tsx */}
 export function MockCaption({ children, color }) {
 return (
 
@@ -316,21 +300,6 @@ return (
 )
 }
 
-{/* ── Position Card ── */}
-{/\*
-Layout zones: 1. Header — ticker + PhaseBadge 2. Stats — 2×2 StatGrid (strike, DTE, premium, cost basis) 3. Distance — gauge bar + percentage + status (Phase 2 only, when price available) 4. Footer — expiration + navigation hint
-
-Real:
-
-<a href={`#/positions/${pos.id}`}> // US-24: semantic link
-<SectionCard> // card wrapper
-<div>{ticker}<PhaseBadge phase={pos.phase} /></div> // zone 1
-<StatGrid minWidth={110} items={[...]} /> // zone 2
-{pos.currentPrice && <DistanceGauge ... />} // zone 3 (US-22)
-<div>Exp: {exp} <span>View →</span></div> // zone 4
-</SectionCard>
-</a>
-\*/}
 export function PositionCard({ pos }) {
 const isUrgent = pos.dte !== null && pos.dte <= 7
 const isClosed = pos.phase === 'WHEEL_COMPLETE' || pos.phase === 'CSP_CLOSED_LOSS'
@@ -500,8 +469,6 @@ e.currentTarget.style.boxShadow = 'none'
 )
 }
 
-{/* ── Filter Pills (US-20) ── */}
-{/* Real: phase filter pills with count badges */}
 export function FilterBar({ positions, active, onSelect }) {
 const groups = [
 { key: 'ALL', label: 'All', color: T.gold, count: positions.filter(p => p.phase !== 'WHEEL_COMPLETE' && p.phase !== 'CSP_CLOSED_LOSS').length },
@@ -538,7 +505,6 @@ return (
 )
 }
 
-{/* ── Sort Control (US-21) ── */}
 export function SortControl({ active }) {
 const opts = [
 { key: 'dte', label: 'DTE' },
@@ -565,8 +531,6 @@ return (
 )
 }
 
-{/* ── Summary Bar (US-19) ── */}
-{/* Real: <SectionCard header="Portfolio Overview"><StatGrid minWidth={140} items={[...]} /></SectionCard> */}
 export function SummaryBar() {
 return (
 
@@ -595,7 +559,6 @@ return (
 )
 }
 
-{/* ── Empty State (US-23) ── */}
 export function EmptyState() {
 return (
 
@@ -622,8 +585,6 @@ Start your first wheel by selling a cash-secured put.
 </div>
 )
 }
-
-{/* ── Full Dashboard Mockup ── */}
 
 export function Mockup() {
   const [state, setState] = useState('portfolio')

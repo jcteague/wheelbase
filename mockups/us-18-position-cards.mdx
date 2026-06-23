@@ -20,33 +20,110 @@ _Display active positions as a responsive card grid with phase badge, ticker, st
 
 export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
 
-{/* Matches: PHASE_COLOR + PHASE_LABEL from src/renderer/src/lib/phase.ts */}
 export const PHASE_CONFIG = {
-CSP_OPEN: { label: 'Sell Put', color: '#e6a817' },
-HOLDING_SHARES: { label: 'Holding Shares', color: '#79c0ff' },
-CC_OPEN: { label: 'Sell Call', color: '#d2a8ff' },
-WHEEL_COMPLETE: { label: 'Wheel Complete', color: '#3fb950' },
+  CSP_OPEN: { label: 'Sell Put', color: '#e6a817' },
+  HOLDING_SHARES: { label: 'Holding Shares', color: '#79c0ff' },
+  CC_OPEN: { label: 'Sell Call', color: '#d2a8ff' },
+  WHEEL_COMPLETE: { label: 'Wheel Complete', color: '#3fb950' }
 }
 
-{/* Data shape matches PositionListItem from src/renderer/src/api/positions.ts */}
 export const POSITIONS = {
-'multi-position': [
-{ id: '1', ticker: 'AAPL', phase: 'CSP_OPEN', instrumentLabel: 'PUT', strike: '180.00', expiration: 'May 16', dte: 25, premiumCollected: '3.50', effectiveCostBasis: '176.50' },
-{ id: '2', ticker: 'MSFT', phase: 'CC_OPEN', instrumentLabel: 'CALL', strike: '420.00', expiration: 'May 09', dte: 18, premiumCollected: '5.20', effectiveCostBasis: '412.80' },
-{ id: '3', ticker: 'TSLA', phase: 'HOLDING_SHARES', instrumentLabel: null, strike: null, expiration: null, dte: null, premiumCollected: '8.00', effectiveCostBasis: '242.00' },
-],
-'dte-urgent': [
-{ id: '1', ticker: 'AAPL', phase: 'CSP_OPEN', instrumentLabel: 'PUT', strike: '180.00', expiration: 'Apr 25', dte: 4, premiumCollected: '3.50', effectiveCostBasis: '176.50' },
-{ id: '2', ticker: 'MSFT', phase: 'CC_OPEN', instrumentLabel: 'CALL', strike: '420.00', expiration: 'Apr 28', dte: 7, premiumCollected: '5.20', effectiveCostBasis: '412.80' },
-{ id: '3', ticker: 'GOOG', phase: 'CSP_OPEN', instrumentLabel: 'PUT', strike: '165.00', expiration: 'Jun 20', dte: 60, premiumCollected: '2.10', effectiveCostBasis: '162.90' },
-],
-'holding-no-leg': [
-{ id: '1', ticker: 'TSLA', phase: 'HOLDING_SHARES', instrumentLabel: null, strike: null, expiration: null, dte: null, premiumCollected: '8.00', effectiveCostBasis: '242.00' },
-{ id: '2', ticker: 'AAPL', phase: 'CSP_OPEN', instrumentLabel: 'PUT', strike: '180.00', expiration: 'May 16', dte: 25, premiumCollected: '3.50', effectiveCostBasis: '176.50' },
-],
+  'multi-position': [
+    {
+      id: '1',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      instrumentLabel: 'PUT',
+      strike: '180.00',
+      expiration: 'May 16',
+      dte: 25,
+      premiumCollected: '3.50',
+      effectiveCostBasis: '176.50'
+    },
+    {
+      id: '2',
+      ticker: 'MSFT',
+      phase: 'CC_OPEN',
+      instrumentLabel: 'CALL',
+      strike: '420.00',
+      expiration: 'May 09',
+      dte: 18,
+      premiumCollected: '5.20',
+      effectiveCostBasis: '412.80'
+    },
+    {
+      id: '3',
+      ticker: 'TSLA',
+      phase: 'HOLDING_SHARES',
+      instrumentLabel: null,
+      strike: null,
+      expiration: null,
+      dte: null,
+      premiumCollected: '8.00',
+      effectiveCostBasis: '242.00'
+    }
+  ],
+  'dte-urgent': [
+    {
+      id: '1',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      instrumentLabel: 'PUT',
+      strike: '180.00',
+      expiration: 'Apr 25',
+      dte: 4,
+      premiumCollected: '3.50',
+      effectiveCostBasis: '176.50'
+    },
+    {
+      id: '2',
+      ticker: 'MSFT',
+      phase: 'CC_OPEN',
+      instrumentLabel: 'CALL',
+      strike: '420.00',
+      expiration: 'Apr 28',
+      dte: 7,
+      premiumCollected: '5.20',
+      effectiveCostBasis: '412.80'
+    },
+    {
+      id: '3',
+      ticker: 'GOOG',
+      phase: 'CSP_OPEN',
+      instrumentLabel: 'PUT',
+      strike: '165.00',
+      expiration: 'Jun 20',
+      dte: 60,
+      premiumCollected: '2.10',
+      effectiveCostBasis: '162.90'
+    }
+  ],
+  'holding-no-leg': [
+    {
+      id: '1',
+      ticker: 'TSLA',
+      phase: 'HOLDING_SHARES',
+      instrumentLabel: null,
+      strike: null,
+      expiration: null,
+      dte: null,
+      premiumCollected: '8.00',
+      effectiveCostBasis: '242.00'
+    },
+    {
+      id: '2',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      instrumentLabel: 'PUT',
+      strike: '180.00',
+      expiration: 'May 16',
+      dte: 25,
+      premiumCollected: '3.50',
+      effectiveCostBasis: '176.50'
+    }
+  ]
 }
 
-{/* Matches: PhaseBadge.tsx — Badge with color dot + label */}
 export function MockPhaseBadge({ phase }) {
 const cfg = PHASE_CONFIG[phase] ?? { label: phase, color: '#8899aa' }
 return (
@@ -63,7 +140,6 @@ return (
 )
 }
 
-{/* Matches: Stat from src/renderer/src/components/ui/Stat.tsx */}
 export function MockStat({ label, value, valueColor }) {
 return (
 
@@ -74,16 +150,6 @@ return (
 )
 }
 
-{/\*
-PositionCard layout — three zones: 1. Header: Ticker + PhaseBadge 2. Body: 2×2 StatGrid (Strike, DTE, Premium, Cost Basis) 3. Status Footer: Expiration + urgency badge (Phase 1)
-→ Phase 2 (US-22) adds distance-to-strike indicator here
-
-Real:
-
-<SectionCard> wrapper (border + radius + surface bg)
-<StatGrid minWidth={110} items={[...]} /> for the body
-<PhaseBadge phase={pos.phase} /> in the header
-\*/}
 export function PositionCard({ pos }) {
 const isUrgent = pos.dte !== null && pos.dte <= 7
 const dteColor = isUrgent ? 'var(--wb-gold, #e6a817)' : 'var(--wb-text-primary, #e2eaf2)'

@@ -1,0 +1,294 @@
+---
+title: 'US-51: Management Queue Dashboard'
+story: 'As a wheel trader starting my day, I want a management queue at the top of the dashboard ordered by urgency, so that I know what needs attention first.'
+states: ['queue', 'dense', 'empty']
+---
+
+import { useState } from 'react'
+
+# US-51: Management Queue Dashboard
+
+_As a wheel trader starting my day, I want a management queue at the top of the dashboard ordered by urgency, so that I know what needs attention first._
+
+## Acceptance Criteria States
+
+- **queue**: top-of-dashboard queue with three alerts sorted high to low, each showing ticker, phase, trigger summary, and a quick action
+- **dense**: same surface with multiple open alerts and a visibly crowded week to confirm the list remains scannable
+- **empty**: calm empty state when no positions currently need attention
+
+---
+
+export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
+
+export const ALERTS = {
+  queue: [
+    {
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      urgency: 'HIGH',
+      summary: 'Expires in 3 days at $180.00 strike',
+      action: 'Review position'
+    },
+    {
+      ticker: 'TSLA',
+      phase: 'CSP_OPEN',
+      urgency: 'MED',
+      summary: 'Stock is 0.5% below the $250.00 put strike',
+      action: 'Review position'
+    },
+    {
+      ticker: 'NVDA',
+      phase: 'CSP_OPEN',
+      urgency: 'LOW',
+      summary: '51.4% of max profit captured',
+      action: 'Review position'
+    }
+  ],
+  dense: [
+    {
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      urgency: 'HIGH',
+      summary: 'Expires in 2 days at $180.00 strike',
+      action: 'Review position'
+    },
+    {
+      ticker: 'AMD',
+      phase: 'CC_OPEN',
+      urgency: 'HIGH',
+      summary: 'Earnings in 4 days before expiration',
+      action: 'Review position'
+    },
+    {
+      ticker: 'MSFT',
+      phase: 'CC_OPEN',
+      urgency: 'MED',
+      summary: 'Stock is 1.8% above the $420.00 call strike — shares may be called away',
+      action: 'Review position'
+    },
+    {
+      ticker: 'GOOGL',
+      phase: 'CC_OPEN',
+      urgency: 'MED',
+      summary: '14 DTE remaining — review for roll or close',
+      action: 'Review position'
+    },
+    {
+      ticker: 'PLTR',
+      phase: 'CSP_OPEN',
+      urgency: 'LOW',
+      summary: 'Profit target reached at 62.0%',
+      action: 'Review position'
+    }
+  ],
+  empty: []
+}
+
+export function UrgencyPill({ level }) {
+  const map = {
+    HIGH: { fg: '#f85149', bg: 'rgba(248,81,73,0.12)' },
+    MED: { fg: '#e6a817', bg: 'rgba(230,168,23,0.12)' },
+    LOW: { fg: '#58a6ff', bg: 'rgba(88,166,255,0.12)' }
+  }
+  const tone = map[level]
+  return (
+    <span
+      style={{
+        padding: '3px 8px',
+        borderRadius: 999,
+        background: tone.bg,
+        color: tone.fg,
+        fontSize: '0.65rem',
+        fontWeight: 700,
+        letterSpacing: '0.08em'
+      }}
+    >
+      {level}
+    </span>
+  )
+}
+
+export function PhasePill({ phase }) {
+  const map = {
+    CSP_OPEN: '#e6a817',
+    CC_OPEN: '#bc8cff'
+  }
+  return (
+    <span
+      style={{
+        color: map[phase] ?? '#9fb0c0',
+        fontSize: '0.72rem',
+        fontWeight: 600,
+        letterSpacing: '0.08em'
+      }}
+    >
+      {phase.replace('_', ' ')}
+    </span>
+  )
+}
+
+export function QueueCard({ item }) {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '96px 92px 1fr 160px',
+        gap: 16,
+        alignItems: 'center',
+        padding: '14px 16px',
+        borderTop: '1px solid rgba(30,42,56,0.7)'
+      }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ fontSize: '1rem', fontWeight: 700, color: '#f3f6fb' }}>{item.ticker}</div>
+        <UrgencyPill level={item.urgency} />
+      </div>
+      <PhasePill phase={item.phase} />
+      <div style={{ color: '#b5c2cf', lineHeight: 1.55 }}>{item.summary}</div>
+      <button
+        style={{
+          justifySelf: 'end',
+          padding: '10px 14px',
+          borderRadius: 8,
+          border: '1px solid rgba(230,168,23,0.25)',
+          background: 'rgba(230,168,23,0.12)',
+          color: '#f6c445',
+          fontFamily: MONO,
+          fontWeight: 700
+        }}
+      >
+        {item.action}
+      </button>
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [state, setState] = useState('queue')
+  const items = ALERTS[state]
+
+return (
+
+<div
+style={{
+        minHeight: '100vh',
+        background:
+          'radial-gradient(circle at top left, rgba(230,168,23,0.08), transparent 30%), #061018',
+        color: '#e7edf5',
+        fontFamily: MONO,
+        padding: 28
+      }} >
+<div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+{['queue', 'dense', 'empty'].map((value) => (
+<button
+key={value}
+onClick={() => setState(value)}
+style={{
+              padding: '7px 10px',
+              borderRadius: 999,
+              border: '1px solid rgba(74,90,106,0.8)',
+              background: state === value ? 'rgba(230,168,23,0.18)' : 'transparent',
+              color: state === value ? '#f6c445' : '#8da0b4',
+              fontFamily: MONO
+            }} >
+{value}
+</button>
+))}
+</div>
+
+      <div style={{ maxWidth: 1200, margin: '0 auto', display: 'grid', gap: 18 }}>
+        <section
+          style={{
+            border: '1px solid rgba(30,42,56,0.9)',
+            borderRadius: 14,
+            overflow: 'hidden',
+            background: 'rgba(8,15,23,0.92)',
+            boxShadow: '0 24px 60px rgba(0,0,0,0.28)'
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '14px 16px',
+              borderBottom: '1px solid rgba(30,42,56,0.9)'
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontSize: '0.72rem',
+                  color: '#7f93a7',
+                  letterSpacing: '0.14em',
+                  textTransform: 'uppercase'
+                }}
+              >
+                Management Queue
+              </div>
+              <div style={{ marginTop: 4, fontSize: '1.15rem', fontWeight: 700 }}>
+                What Needs Attention First
+              </div>
+            </div>
+            <div style={{ color: '#7f93a7', fontSize: '0.75rem' }}>
+              {items.length ? `${items.length} open alerts` : 'All clear'}
+            </div>
+          </div>
+
+          {items.length ? (
+            items.map((item) => <QueueCard key={`${item.ticker}-${item.summary}`} item={item} />)
+          ) : (
+            <div style={{ padding: 28, textAlign: 'center', color: '#9fb0c0', lineHeight: 1.7 }}>
+              <div style={{ fontSize: '1rem', color: '#e7edf5', marginBottom: 8 }}>
+                No positions need attention right now
+              </div>
+              <div>
+                All active wheels are outside the management window and below their alert
+                thresholds.
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section
+          style={{
+            border: '1px solid rgba(30,42,56,0.9)',
+            borderRadius: 14,
+            background: 'rgba(8,15,23,0.82)',
+            overflow: 'hidden'
+          }}
+        >
+          <div
+            style={{
+              padding: '12px 16px',
+              borderBottom: '1px solid rgba(30,42,56,0.9)',
+              color: '#7f93a7',
+              fontSize: '0.72rem',
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase'
+            }}
+          >
+            Dashboard Positions
+          </div>
+          {['AAPL · CSP_OPEN · 3 DTE', 'TSLA · CSP_OPEN · 9 DTE', 'NVDA · CSP_OPEN · 31 DTE'].map(
+            (row) => (
+              <div
+                key={row}
+                style={{
+                  padding: '14px 16px',
+                  borderTop: '1px solid rgba(30,42,56,0.55)',
+                  color: '#b5c2cf'
+                }}
+              >
+                {row}
+              </div>
+            )
+          )}
+        </section>
+      </div>
+    </div>
+
+)
+}
+
+<Mockup />

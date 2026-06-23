@@ -439,7 +439,7 @@ const isValidationErr = state === 'validation-error'
 const isDownOut = state === 'down-and-out'
 const isRollCountWarn = state === 'roll-count-warning'
 
-/_ state-driven form values _/
+// State-driven form values
 const newStrike = (isDownOut || isRollCountWarn) ? '175.00' : pos.strike
 const newExpiration = isValidationErr ? '2026-04-11' : '2026-05-16'
 const costToClose = isDebit ? '5.20' : isDownOut ? '2.80' : isRollCountWarn ? '2.80' : '1.20'

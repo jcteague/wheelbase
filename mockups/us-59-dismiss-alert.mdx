@@ -1,0 +1,207 @@
+---
+title: 'US-59: Dismiss Alert'
+story: 'As a wheel trader triaging my queue, I want to dismiss an alert I have reviewed so the queue stays focused while preserving an audit trail.'
+states: ['open', 'confirm', 'dismissed']
+---
+
+import { useState } from 'react'
+
+# US-59: Dismiss Alert
+
+_As a wheel trader triaging my queue, I want to dismiss an alert I have reviewed so the queue stays focused while preserving an audit trail._
+
+## Acceptance Criteria States
+
+- **open**: active queue item with a dismiss affordance beside the quick action
+- **confirm**: explicit confirmation state so the trader understands the alert will be hidden until the condition clears
+- **dismissed**: open queue is cleared and the dismissal record remains visible in history
+
+---
+
+export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
+
+export function Panel({ title, children }) {
+  return (
+    <section
+      style={{
+        border: '1px solid rgba(30,42,56,0.9)',
+        borderRadius: 16,
+        background: 'rgba(8,15,23,0.94)',
+        overflow: 'hidden'
+      }}
+    >
+      <div
+        style={{
+          padding: '14px 16px',
+          borderBottom: '1px solid rgba(30,42,56,0.9)',
+          color: '#7f93a7',
+          fontSize: '0.72rem',
+          letterSpacing: '0.14em',
+          textTransform: 'uppercase'
+        }}
+      >
+        {title}
+      </div>
+      <div style={{ padding: 16 }}>{children}</div>
+    </section>
+  )
+}
+
+export function QueueItem({ muted = false }) {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr auto auto',
+        gap: 12,
+        alignItems: 'center',
+        padding: '14px 16px',
+        borderRadius: 12,
+        border: '1px solid rgba(230,168,23,0.2)',
+        background: muted ? 'rgba(248,81,73,0.05)' : 'rgba(230,168,23,0.08)'
+      }}
+    >
+      <div>
+        <div style={{ fontSize: '1rem', fontWeight: 700, color: '#edf2f8' }}>
+          AAPL · MANAGEMENT_WINDOW
+        </div>
+        <div style={{ marginTop: 4, color: '#b5c2cf', lineHeight: 1.55 }}>
+          12 DTE remaining — review for roll or close
+        </div>
+      </div>
+      <button
+        style={{
+          padding: '10px 14px',
+          borderRadius: 10,
+          border: '1px solid rgba(230,168,23,0.25)',
+          background: 'rgba(230,168,23,0.12)',
+          color: '#f6c445',
+          fontFamily: MONO,
+          fontWeight: 700
+        }}
+      >
+        Review position
+      </button>
+      <button
+        style={{
+          padding: '10px 14px',
+          borderRadius: 10,
+          border: '1px solid rgba(248,81,73,0.35)',
+          background: 'rgba(248,81,73,0.1)',
+          color: '#f87171',
+          fontFamily: MONO,
+          fontWeight: 700
+        }}
+      >
+        {muted ? 'Dismissed' : 'Dismiss'}
+      </button>
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [state, setState] = useState('open')
+
+return (
+
+<div
+style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(180deg, #071018 0%, #09141f 100%)',
+        color: '#e8eef6',
+        fontFamily: MONO,
+        padding: 28
+      }} >
+<div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+{['open', 'confirm', 'dismissed'].map((value) => (
+<button
+key={value}
+onClick={() => setState(value)}
+style={{
+              padding: '7px 10px',
+              borderRadius: 999,
+              border: '1px solid rgba(74,90,106,0.8)',
+              background: state === value ? 'rgba(230,168,23,0.18)' : 'transparent',
+              color: state === value ? '#f6c445' : '#8da0b4',
+              fontFamily: MONO
+            }} >
+{value}
+</button>
+))}
+</div>
+
+      <div style={{ maxWidth: 980, margin: '0 auto', display: 'grid', gap: 18 }}>
+        <Panel title="Management Queue">
+          {state === 'dismissed' ? (
+            <div style={{ color: '#9fb0c0', lineHeight: 1.7 }}>
+              No open alerts remain for AAPL. The queue stays quiet until the management-window
+              condition clears and later returns.
+            </div>
+          ) : (
+            <QueueItem />
+          )}
+        </Panel>
+
+        {state === 'confirm' ? (
+          <Panel title="Confirm Dismissal">
+            <div style={{ display: 'grid', gap: 12 }}>
+              <div style={{ color: '#edf2f8', fontSize: '1rem', fontWeight: 700 }}>
+                Hide this alert until the condition clears?
+              </div>
+              <div style={{ color: '#b5c2cf', lineHeight: 1.6 }}>
+                AAPL will disappear from the open queue, but the dismissal will be recorded with a
+                timestamp. If AAPL leaves the 21-DTE window and later re-enters it, a fresh alert
+                can appear.
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  style={{
+                    padding: '11px 14px',
+                    borderRadius: 10,
+                    border: 'none',
+                    background: '#f85149',
+                    color: '#fff',
+                    fontFamily: MONO,
+                    fontWeight: 700
+                  }}
+                >
+                  Confirm dismiss
+                </button>
+                <button
+                  style={{
+                    padding: '11px 14px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(30,42,56,0.9)',
+                    background: 'transparent',
+                    color: '#9fb0c0',
+                    fontFamily: MONO
+                  }}
+                >
+                  Keep alert open
+                </button>
+              </div>
+            </div>
+          </Panel>
+        ) : null}
+
+        <Panel title="Alert History">
+          {state === 'dismissed' ? <QueueItem muted /> : null}
+          <div
+            style={{
+              marginTop: state === 'dismissed' ? 14 : 0,
+              color: '#7f93a7',
+              lineHeight: 1.65
+            }}
+          >
+            {state === 'dismissed'
+              ? 'Dismissed at 2026-07-09 10:14 CT. Status is retained for audit and will not re-open until the rule condition clears and later re-triggers.'
+              : 'Dismissed alerts appear here after action, preserving the audit trail without cluttering the open queue.'}
+          </div>
+        </Panel>
+      </div>
+    </div>
+
+)
+}
+
+<Mockup />

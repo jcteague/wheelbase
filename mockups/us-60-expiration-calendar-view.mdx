@@ -1,0 +1,242 @@
+---
+title: 'US-60: Expiration Calendar View'
+story: 'As a wheel trader planning my week, I want a color-coded expiration calendar so I can see when management work is clustering.'
+states: ['month', 'selected', 'empty']
+---
+
+import { useState } from 'react'
+
+# US-60: Expiration Calendar View
+
+_As a wheel trader planning my week, I want a color-coded expiration calendar so I can see when management work is clustering._
+
+## Acceptance Criteria States
+
+- **month**: populated month view with expirations rendered directly on date cells using phase colors
+- **selected**: a clicked date reveals a detail panel showing ticker, phase, strike, and DTE
+- **empty**: clean month state when there are no expirations in view
+
+---
+
+export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
+export const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+export const MONTH = [
+  [
+    { d: 11 },
+    { d: 12 },
+    { d: 13 },
+    {
+      d: 14,
+      chips: [
+        { ticker: 'AAPL', color: '#e6a817' },
+        { ticker: 'MSFT', color: '#bc8cff' }
+      ]
+    },
+    { d: 15 },
+    { d: 16 },
+    { d: 17 }
+  ],
+  [
+    { d: 18 },
+    { d: 19 },
+    { d: 20 },
+    {
+      d: 21,
+      chips: [
+        { ticker: 'AMD', color: '#e6a817' },
+        { ticker: 'PLTR', color: '#bc8cff' },
+        { ticker: 'NVDA', color: '#e6a817' }
+      ],
+      more: '+2 more'
+    },
+    { d: 22 },
+    { d: 23 },
+    { d: 24 }
+  ],
+  [{ d: 25 }, { d: 26 }, { d: 27 }, { d: 28 }, { d: 29 }, { d: 30 }, { d: 31 }]
+]
+
+export function Chip({ ticker, color }) {
+  return (
+    <div
+      style={{
+        padding: '3px 6px',
+        borderRadius: 8,
+        background: `${color}20`,
+        color,
+        fontSize: '0.67rem',
+        fontWeight: 700
+      }}
+    >
+      {ticker}
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [state, setState] = useState('month')
+  const cells =
+    state === 'empty' ? MONTH.map((week) => week.map((cell) => ({ d: cell.d }))).flat() : MONTH.flat()
+
+return (
+
+<div
+style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(180deg, #071018 0%, #0a1622 100%)',
+        color: '#e8eef6',
+        fontFamily: MONO,
+        padding: 28
+      }} >
+<div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+{['month', 'selected', 'empty'].map((value) => (
+<button
+key={value}
+onClick={() => setState(value)}
+style={{
+              padding: '7px 10px',
+              borderRadius: 999,
+              border: '1px solid rgba(74,90,106,0.8)',
+              background: state === value ? 'rgba(230,168,23,0.18)' : 'transparent',
+              color: state === value ? '#f6c445' : '#8da0b4',
+              fontFamily: MONO
+            }} >
+{value}
+</button>
+))}
+</div>
+
+      <div
+        style={{
+          maxWidth: 1180,
+          margin: '0 auto',
+          display: 'grid',
+          gridTemplateColumns: '1.45fr 0.9fr',
+          gap: 18
+        }}
+      >
+        <section
+          style={{
+            border: '1px solid rgba(30,42,56,0.9)',
+            borderRadius: 16,
+            background: 'rgba(8,15,23,0.94)',
+            overflow: 'hidden'
+          }}
+        >
+          <div style={{ padding: '16px 18px', borderBottom: '1px solid rgba(30,42,56,0.9)' }}>
+            <div
+              style={{
+                fontSize: '0.72rem',
+                color: '#7f93a7',
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase'
+              }}
+            >
+              Expiration Calendar
+            </div>
+            <div style={{ marginTop: 6, fontSize: '1.18rem', fontWeight: 700 }}>August 2026</div>
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(7, 1fr)',
+              gap: 1,
+              background: 'rgba(30,42,56,0.9)',
+              padding: 1
+            }}
+          >
+            {DAYS.map((day) => (
+              <div
+                key={day}
+                style={{
+                  padding: 10,
+                  background: '#08111a',
+                  color: '#7f93a7',
+                  fontSize: '0.72rem',
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase'
+                }}
+              >
+                {day}
+              </div>
+            ))}
+            {cells.map((cell) => (
+              <div
+                key={cell.d}
+                style={{
+                  minHeight: 112,
+                  padding: 10,
+                  background: '#08111a',
+                  display: 'grid',
+                  alignContent: 'start',
+                  gap: 6
+                }}
+              >
+                <div style={{ color: '#edf2f8', fontWeight: 700 }}>{cell.d}</div>
+                {(cell.chips ?? []).map((chip) => (
+                  <Chip key={`${cell.d}-${chip.ticker}`} ticker={chip.ticker} color={chip.color} />
+                ))}
+                {cell.more ? <div style={{ color: '#84baf9', fontSize: '0.68rem' }}>{cell.more}</div> : null}
+              </div>
+            ))}
+          </div>
+
+          {state === 'empty' ? (
+            <div style={{ padding: 18, color: '#9fb0c0' }}>No expirations this month.</div>
+          ) : null}
+        </section>
+
+        <section
+          style={{
+            border: '1px solid rgba(30,42,56,0.9)',
+            borderRadius: 16,
+            background: 'rgba(8,15,23,0.94)',
+            overflow: 'hidden'
+          }}
+        >
+          <div
+            style={{
+              padding: '14px 16px',
+              borderBottom: '1px solid rgba(30,42,56,0.9)',
+              color: '#7f93a7',
+              fontSize: '0.72rem',
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase'
+            }}
+          >
+            {state === 'selected' ? 'August 14 Detail' : 'Day Detail'}
+          </div>
+          <div style={{ padding: 16, display: 'grid', gap: 12 }}>
+            {state === 'selected' ? (
+              ['AAPL · CSP_OPEN · $180.00 strike · 6 DTE', 'MSFT · CC_OPEN · $420.00 strike · 6 DTE'].map(
+                (row) => (
+                  <div
+                    key={row}
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(30,42,56,0.9)',
+                      background: 'rgba(6,11,17,0.92)',
+                      color: '#edf2f8'
+                    }}
+                  >
+                    {row}
+                  </div>
+                )
+              )
+            ) : (
+              <div style={{ color: '#9fb0c0', lineHeight: 1.7 }}>
+                Click any populated date to inspect the expirations, strike context, and DTE for
+                that day.
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+    </div>
+
+)
+}
+
+<Mockup />

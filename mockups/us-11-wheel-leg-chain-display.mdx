@@ -173,13 +173,55 @@ export const LEGS_COMPLETE = [
   }
 ]
 
-// CC_EXPIRED state: CC expires worthless; trader will open another CC cycle.
-// Running basis carries forward from CC_OPEN snapshot.
 export const LEGS_CC_EXPIRED = [
-{ id: '1', legRole: 'CSP_OPEN', action: 'open', instrumentType: 'PUT', strike: '180.00', expiration: '2026-01-17', premiumPerContract: '3.50', contracts: 1, fillDate: '2026-01-03', runningCostBasis: '176.50' },
-{ id: '2', legRole: 'ASSIGN', action: 'assign', instrumentType: 'PUT', strike: '180.00', expiration: null, premiumPerContract: null, contracts: 1, fillDate: '2026-01-17', runningCostBasis: '176.50' },
-{ id: '3', legRole: 'CC_OPEN', action: 'open', instrumentType: 'CALL', strike: '182.00', expiration: '2026-02-21', premiumPerContract: '2.30', contracts: 1, fillDate: '2026-01-20', runningCostBasis: '174.20' },
-{ id: '4', legRole: 'CC_EXPIRED', action: 'expire', instrumentType: 'CALL', strike: '182.00', expiration: '2026-02-21', premiumPerContract: null, contracts: 1, fillDate: '2026-02-21', runningCostBasis: '174.20' },
+  {
+    id: '1',
+    legRole: 'CSP_OPEN',
+    action: 'open',
+    instrumentType: 'PUT',
+    strike: '180.00',
+    expiration: '2026-01-17',
+    premiumPerContract: '3.50',
+    contracts: 1,
+    fillDate: '2026-01-03',
+    runningCostBasis: '176.50'
+  },
+  {
+    id: '2',
+    legRole: 'ASSIGN',
+    action: 'assign',
+    instrumentType: 'PUT',
+    strike: '180.00',
+    expiration: null,
+    premiumPerContract: null,
+    contracts: 1,
+    fillDate: '2026-01-17',
+    runningCostBasis: '176.50'
+  },
+  {
+    id: '3',
+    legRole: 'CC_OPEN',
+    action: 'open',
+    instrumentType: 'CALL',
+    strike: '182.00',
+    expiration: '2026-02-21',
+    premiumPerContract: '2.30',
+    contracts: 1,
+    fillDate: '2026-01-20',
+    runningCostBasis: '174.20'
+  },
+  {
+    id: '4',
+    legRole: 'CC_EXPIRED',
+    action: 'expire',
+    instrumentType: 'CALL',
+    strike: '182.00',
+    expiration: '2026-02-21',
+    premiumPerContract: null,
+    contracts: 1,
+    fillDate: '2026-02-21',
+    runningCostBasis: '174.20'
+  }
 ]
 
 export function MockBadge({ children, color }) {

@@ -85,7 +85,7 @@ export function DistanceGauge({ type, strike, price }) {
   const abs = distance !== null ? Math.abs(distance) : 0
 
 // Gauge bar width: capped at 100% for ±10%
-const barWidth = distance !== null ? Math.min(abs / 10 \* 100, 100) : 0
+const barWidth = distance !== null ? Math.min((abs / 10) \* 100, 100) : 0
 
 return (
 

@@ -1,0 +1,237 @@
+---
+title: 'US-57: Global Alert Thresholds'
+story: 'As a wheel trader with a preferred management style, I want to configure my default profit target percentage and management-window DTE so the app matches how I manage positions.'
+states: ['defaults', 'customized', 'invalid', 'saved']
+---
+
+import { useState } from 'react'
+
+# US-57: Global Alert Thresholds
+
+_As a wheel trader with a preferred management style, I want to configure my default profit target percentage and management-window DTE so the app matches how I manage positions._
+
+## Acceptance Criteria States
+
+- **defaults**: existing 50% / 21 DTE values loaded from settings
+- **customized**: trader edits to 40% / 14 DTE and sees the new behavior preview before saving
+- **invalid**: inline validation errors for out-of-range values
+- **saved**: confirmation banner after settings persist successfully
+
+---
+
+export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
+
+export const STATES = {
+  defaults: { profit: '50', dte: '21', banner: null, errors: {} },
+  customized: { profit: '40', dte: '14', banner: null, errors: {} },
+  invalid: {
+    profit: '0',
+    dte: '0',
+    banner: null,
+    errors: {
+      profit: 'Profit target must be between 1 and 99',
+      dte: 'Management window must be between 6 and 45 DTE'
+    }
+  },
+  saved: { profit: '40', dte: '14', banner: 'Alert defaults saved', errors: {} }
+}
+
+export function Field({ label, value, suffix, error }) {
+  return (
+    <div style={{ display: 'grid', gap: 6 }}>
+      <div
+        style={{
+          fontSize: '0.7rem',
+          color: '#7f93a7',
+          letterSpacing: '0.14em',
+          textTransform: 'uppercase'
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          border: `1px solid ${error ? 'rgba(248,81,73,0.6)' : 'rgba(30,42,56,0.9)'}`,
+          borderRadius: 10,
+          background: 'rgba(7,12,18,0.95)',
+          padding: '12px 14px'
+        }}
+      >
+        <span style={{ flex: 1, color: '#edf2f8', fontSize: '1rem' }}>{value}</span>
+        <span style={{ color: '#7f93a7', fontSize: '0.8rem' }}>{suffix}</span>
+      </div>
+      {error ? <div style={{ color: '#f85149', fontSize: '0.74rem' }}>{error}</div> : null}
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [state, setState] = useState('defaults')
+  const current = STATES[state]
+
+return (
+
+<div
+style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(160deg, #071018 0%, #08131d 50%, #0b1b29 100%)',
+        color: '#e8eef6',
+        fontFamily: MONO,
+        padding: 28
+      }} >
+<div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+{['defaults', 'customized', 'invalid', 'saved'].map((value) => (
+<button
+key={value}
+onClick={() => setState(value)}
+style={{
+              padding: '7px 10px',
+              borderRadius: 999,
+              border: '1px solid rgba(74,90,106,0.8)',
+              background: state === value ? 'rgba(230,168,23,0.18)' : 'transparent',
+              color: state === value ? '#f6c445' : '#8da0b4',
+              fontFamily: MONO
+            }} >
+{value}
+</button>
+))}
+</div>
+
+      <div style={{ maxWidth: 920, margin: '0 auto', display: 'grid', gap: 18 }}>
+        <section
+          style={{
+            border: '1px solid rgba(30,42,56,0.9)',
+            borderRadius: 16,
+            background: 'rgba(8,15,23,0.94)',
+            overflow: 'hidden'
+          }}
+        >
+          <div style={{ padding: '16px 18px', borderBottom: '1px solid rgba(30,42,56,0.9)' }}>
+            <div
+              style={{
+                fontSize: '0.72rem',
+                color: '#7f93a7',
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase'
+              }}
+            >
+              Settings / Alert Defaults
+            </div>
+            <div style={{ marginTop: 6, fontSize: '1.2rem', fontWeight: 700 }}>
+              Global Management Preferences
+            </div>
+          </div>
+
+          {current.banner ? (
+            <div
+              style={{
+                margin: 18,
+                padding: '12px 14px',
+                borderRadius: 10,
+                border: '1px solid rgba(63,185,80,0.3)',
+                background: 'rgba(63,185,80,0.1)',
+                color: '#3fb950'
+              }}
+            >
+              {current.banner}
+            </div>
+          ) : null}
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1.25fr 0.95fr',
+              gap: 18,
+              padding: 18
+            }}
+          >
+            <div style={{ display: 'grid', gap: 16 }}>
+              <Field
+                label="Profit Target"
+                value={current.profit}
+                suffix="percent of max profit"
+                error={current.errors.profit}
+              />
+              <Field
+                label="Management Window"
+                value={current.dte}
+                suffix="DTE"
+                error={current.errors.dte}
+              />
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  style={{
+                    padding: '11px 14px',
+                    borderRadius: 10,
+                    border: 'none',
+                    background: state === 'invalid' ? 'rgba(230,168,23,0.35)' : '#e6a817',
+                    color: '#071018',
+                    fontFamily: MONO,
+                    fontWeight: 700
+                  }}
+                >
+                  Save alert defaults
+                </button>
+                <button
+                  style={{
+                    padding: '11px 14px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(30,42,56,0.9)',
+                    background: 'transparent',
+                    color: '#9fb0c0',
+                    fontFamily: MONO
+                  }}
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gap: 14 }}>
+              <div
+                style={{
+                  border: '1px solid rgba(30,42,56,0.9)',
+                  borderRadius: 14,
+                  background: 'rgba(6,11,17,0.92)'
+                }}
+              >
+                <div
+                  style={{
+                    padding: '12px 14px',
+                    borderBottom: '1px solid rgba(30,42,56,0.9)',
+                    color: '#7f93a7',
+                    fontSize: '0.72rem',
+                    letterSpacing: '0.14em',
+                    textTransform: 'uppercase'
+                  }}
+                >
+                  Engine Preview
+                </div>
+                <div style={{ padding: 14, display: 'grid', gap: 12 }}>
+                  <div style={{ color: '#edf2f8' }}>
+                    Profit alert fires at{' '}
+                    <span style={{ color: '#f6c445' }}>{current.profit}%</span> of max profit
+                  </div>
+                  <div style={{ color: '#edf2f8' }}>
+                    Management alert fires at{' '}
+                    <span style={{ color: '#58a6ff' }}>{current.dte} DTE</span>, with the
+                    separate expiration-imminent rule still taking over inside 5 DTE
+                  </div>
+                  <div style={{ color: '#7f93a7', lineHeight: 1.6 }}>
+                    Per-position overrides remain intact and only positions inheriting globals
+                    will pick up these defaults.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+)
+}
+
+<Mockup />

@@ -1,0 +1,266 @@
+---
+title: 'US-58: Position Alert Overrides'
+story: 'As a wheel trader making ticker-specific choices, I want to override global alert thresholds for one position so I can manage that name differently without changing everything.'
+states: ['inherit', 'override', 'cleared', 'invalid']
+---
+
+import { useState } from 'react'
+
+# US-58: Position Alert Overrides
+
+_As a wheel trader making ticker-specific choices, I want to override global alert thresholds for one position so I can manage that name differently without changing everything._
+
+## Acceptance Criteria States
+
+- **inherit**: position is using the app-wide 50% / 21 DTE defaults
+- **override**: custom 25% / 14 DTE thresholds are active for one position
+- **cleared**: trader has chosen to revert to global defaults
+- **invalid**: inline validation when custom values are out of range
+
+---
+
+export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
+
+export const STATES = {
+  inherit: { label: 'Using global defaults', profit: '50', dte: '21', active: false, errors: {} },
+  override: {
+    label: 'Custom alert thresholds active',
+    profit: '25',
+    dte: '14',
+    active: true,
+    errors: {}
+  },
+  cleared: {
+    label: 'Overrides cleared — back to defaults',
+    profit: '50',
+    dte: '21',
+    active: false,
+    errors: {}
+  },
+  invalid: {
+    label: 'Custom alert thresholds active',
+    profit: '100',
+    dte: '60',
+    active: true,
+    errors: {
+      profit: 'Profit target must be between 1 and 99',
+      dte: 'Management window must be between 6 and 45 DTE'
+    }
+  }
+}
+
+export function Tone({ active, children }) {
+  return (
+    <div
+      style={{
+        padding: '11px 13px',
+        borderRadius: 10,
+        border: `1px solid ${active ? 'rgba(230,168,23,0.3)' : 'rgba(88,166,255,0.22)'}`,
+        background: active ? 'rgba(230,168,23,0.1)' : 'rgba(88,166,255,0.08)',
+        color: active ? '#f6c445' : '#84baf9'
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
+export function Field({ label, value, suffix, error }) {
+  return (
+    <div style={{ display: 'grid', gap: 6 }}>
+      <div
+        style={{
+          fontSize: '0.7rem',
+          color: '#7f93a7',
+          letterSpacing: '0.14em',
+          textTransform: 'uppercase'
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          border: `1px solid ${error ? 'rgba(248,81,73,0.6)' : 'rgba(30,42,56,0.9)'}`,
+          borderRadius: 10,
+          background: 'rgba(7,12,18,0.95)',
+          padding: '12px 14px'
+        }}
+      >
+        <span style={{ color: '#edf2f8' }}>{value}</span>
+        <span style={{ color: '#7f93a7', fontSize: '0.8rem' }}>{suffix}</span>
+      </div>
+      {error ? <div style={{ color: '#f85149', fontSize: '0.74rem' }}>{error}</div> : null}
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [state, setState] = useState('inherit')
+  const current = STATES[state]
+
+return (
+
+<div
+style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(180deg, #061018 0%, #08141f 100%)',
+        color: '#e8eef6',
+        fontFamily: MONO,
+        padding: 28
+      }} >
+<div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+{['inherit', 'override', 'cleared', 'invalid'].map((value) => (
+<button
+key={value}
+onClick={() => setState(value)}
+style={{
+              padding: '7px 10px',
+              borderRadius: 999,
+              border: '1px solid rgba(74,90,106,0.8)',
+              background: state === value ? 'rgba(230,168,23,0.18)' : 'transparent',
+              color: state === value ? '#f6c445' : '#8da0b4',
+              fontFamily: MONO
+            }} >
+{value}
+</button>
+))}
+</div>
+
+      <div
+        style={{
+          maxWidth: 980,
+          margin: '0 auto',
+          display: 'grid',
+          gridTemplateColumns: '1.1fr 0.95fr',
+          gap: 18
+        }}
+      >
+        <section
+          style={{
+            border: '1px solid rgba(30,42,56,0.9)',
+            borderRadius: 16,
+            background: 'rgba(8,15,23,0.94)',
+            overflow: 'hidden'
+          }}
+        >
+          <div style={{ padding: '16px 18px', borderBottom: '1px solid rgba(30,42,56,0.9)' }}>
+            <div
+              style={{
+                fontSize: '0.72rem',
+                color: '#7f93a7',
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase'
+              }}
+            >
+              AAPL / Position Detail
+            </div>
+            <div style={{ marginTop: 6, fontSize: '1.18rem', fontWeight: 700 }}>
+              Per-Position Alert Thresholds
+            </div>
+          </div>
+          <div style={{ padding: 18, display: 'grid', gap: 16 }}>
+            <Tone active={current.active}>{current.label}</Tone>
+            <Field
+              label="Profit Target Override"
+              value={current.profit}
+              suffix="percent"
+              error={current.errors.profit}
+            />
+            <Field
+              label="Management Window Override"
+              value={current.dte}
+              suffix="DTE"
+              error={current.errors.dte}
+            />
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                style={{
+                  padding: '11px 14px',
+                  borderRadius: 10,
+                  border: 'none',
+                  background: '#e6a817',
+                  color: '#071018',
+                  fontFamily: MONO,
+                  fontWeight: 700
+                }}
+              >
+                Save overrides
+              </button>
+              <button
+                style={{
+                  padding: '11px 14px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(30,42,56,0.9)',
+                  background: 'transparent',
+                  color: '#9fb0c0',
+                  fontFamily: MONO
+                }}
+              >
+                Use global defaults
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section
+          style={{
+            border: '1px solid rgba(30,42,56,0.9)',
+            borderRadius: 16,
+            background: 'rgba(8,15,23,0.9)',
+            overflow: 'hidden'
+          }}
+        >
+          <div
+            style={{
+              padding: '14px 16px',
+              borderBottom: '1px solid rgba(30,42,56,0.9)',
+              color: '#7f93a7',
+              fontSize: '0.72rem',
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase'
+            }}
+          >
+            Effective Alert Logic
+          </div>
+          <div style={{ padding: 16, display: 'grid', gap: 12 }}>
+            <div style={{ color: '#b7c4d1', lineHeight: 1.6 }}>
+              Global defaults: <span style={{ color: '#84baf9' }}>50%</span> profit target and{' '}
+              <span style={{ color: '#84baf9' }}>21 DTE</span> management window.
+            </div>
+            <div style={{ color: '#b7c4d1', lineHeight: 1.6 }}>
+              This position will evaluate at{' '}
+              <span style={{ color: current.active ? '#f6c445' : '#84baf9' }}>
+                {current.profit}%
+              </span>{' '}
+              and{' '}
+              <span style={{ color: current.active ? '#f6c445' : '#84baf9' }}>
+                {current.dte} DTE
+              </span>
+              .
+            </div>
+            <div
+              style={{
+                marginTop: 8,
+                padding: '12px 14px',
+                borderRadius: 10,
+                border: '1px solid rgba(30,42,56,0.9)',
+                background: 'rgba(5,9,14,0.85)',
+                color: '#7f93a7',
+                lineHeight: 1.65
+              }}
+            >
+              MSFT, NVDA, and other positions still inherit the global defaults unless they
+              explicitly opt into custom thresholds.
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+)
+}
+
+<Mockup />
