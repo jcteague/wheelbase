@@ -56,19 +56,31 @@ export async function fetchOptionSnapshots(
   symbols: string[]
 ): Promise<FetchOptionSnapshotsResult> {
   if (symbols.length === 0) return { snapshots: {}, unavailable: false }
+  logger.debug({ symbols }, 'fetch_option_snapshots_request')
   const entries = await Promise.all(
     symbols.map(async (s) => {
       try {
         const snap = await provider.getOptionSnapshot(s)
         return [s, snap] as [string, OptionSnapshot]
       } catch (err) {
-        if (err instanceof MarketDataError && err.code === 'not_found') return null
+        if (err instanceof MarketDataError && err.code === 'not_found') {
+          logger.debug(
+            { symbol: s, code: err.code, message: err.message },
+            'option_snapshot_missing'
+          )
+          return null
+        }
         throw err
       }
     })
   )
   const found = entries.filter((e): e is [string, OptionSnapshot] => e !== null)
-  if (found.length === 0 && symbols.length > 0) return { snapshots: {}, unavailable: true }
+  const unavailable = found.length === 0 && symbols.length > 0
+  logger.debug(
+    { requested: symbols.length, resolved: found.length, unavailable },
+    'fetch_option_snapshots_result'
+  )
+  if (unavailable) return { snapshots: {}, unavailable: true }
   return { snapshots: Object.fromEntries(found), unavailable: false }
 }
 

@@ -5,4 +5,5 @@ interface ImportMetaEnv {
   readonly MAIN_VITE_ALPACA_PAPER?: string
   readonly MAIN_VITE_ALPACA_DATA_FEED?: string
   readonly MAIN_VITE_ALPACA_OPTION_FEED?: string
+  readonly MAIN_VITE_LOG_LEVEL?: string
 }

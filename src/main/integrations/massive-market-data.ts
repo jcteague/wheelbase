@@ -64,6 +64,12 @@ function parseUnderlying(contractId: string): string {
   return match ? match[0] : contractId
 }
 
+// Massive/Polygon options tickers are prefixed with `O:` (e.g. `O:SPY260604P00750000`).
+// The renderer builds bare OCC symbols, so the prefix is applied at the API boundary here.
+function withOptionPrefix(contractId: string): string {
+  return contractId.startsWith('O:') ? contractId : `O:${contractId}`
+}
+
 function computeMid(bid: Decimal, ask: Decimal): Decimal {
   return bid.plus(ask).dividedBy(2).toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
 }
@@ -137,6 +143,7 @@ export class MassiveMarketDataProvider implements MarketDataProvider {
   }
 
   private async apiFetch(url: string, retryCount = 0): Promise<unknown> {
+    logger.debug({ url, retryCount }, 'massive_api_request')
     let response: Response
     try {
       response = await fetch(this.authedUrl(url))
@@ -171,6 +178,7 @@ export class MassiveMarketDataProvider implements MarketDataProvider {
       throw new MarketDataError('unknown', `HTTP ${response.status}`)
     }
 
+    logger.debug({ url, status: response.status }, 'massive_api_response')
     return response.json()
   }
 
@@ -204,7 +212,7 @@ export class MassiveMarketDataProvider implements MarketDataProvider {
     this.requireApiKey()
     const underlying = parseUnderlying(contractId)
     const data = (await this.apiFetch(
-      `${BASE_URL}/v3/snapshot/options/${underlying}/${contractId}`
+      `${BASE_URL}/v3/snapshot/options/${underlying}/${withOptionPrefix(contractId)}`
     )) as { results: SnapResult }
     return mapSnapResult(data.results)
   }

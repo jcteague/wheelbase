@@ -183,7 +183,8 @@ describe('MassiveMarketDataProvider', () => {
 
       const url = mockFetch.mock.calls[0][0] as string
       expect(url).toContain('/v3/snapshot/options/AAPL/')
-      expect(url).toContain(contract)
+      // Massive/Polygon requires the `O:` prefix on the contract ticker.
+      expect(url).toContain(`/v3/snapshot/options/AAPL/O:${contract}`)
     })
 
     it('returns greeks + impliedVolatility when response includes them', async () => {
