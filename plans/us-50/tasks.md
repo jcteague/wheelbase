@@ -88,21 +88,21 @@
 
 **Requires:** Area 2 Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/main/services/alerts.test.ts` _(depends on: Area 2 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/main/services/alerts.test.ts` _(depends on: Area 2 Green ✓)_
   - Test cases (alongside the schema block from Area 2):
     - `upsertOpenAlert` inserts a new `open` row with equal `triggered_at`/`last_evaluated_at` and stores `position_id`, `rule_code`, `urgency`, `summary`, `quick_action`
     - `upsertOpenAlert` again for same `(position_id, rule_code)` with later `now` + changed `summary`: no second row; `triggered_at` unchanged; `last_evaluated_at` and `summary` updated
     - `resolveAlertsNotIn(db, matchedKeys, now)` sets `status='resolved'` + `resolved_at` for open alerts absent from `matchedKeys`; leaves matched open; already-resolved untouched
     - `listOpenAlerts(db)` returns only `open` rows mapped to `AlertRecord` (camelCase), excluding resolved/dismissed
   - Run `pnpm test src/main/services/alerts.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/services/alerts.ts` (+ types in `src/main/schemas.ts`) _(depends on: Area 3 Red ✓)_
+- [x] **[Green]** Implement — `src/main/services/alerts.ts` (+ types in `src/main/schemas.ts`) _(depends on: Area 3 Red ✓)_
   - Add `AlertRecord`, `AlertUrgency`, `AlertStatus`, `EvaluateAlertsResult` to `schemas.ts`
   - `upsertOpenAlert(db, match, positionId, now)`: SELECT existing open row → UPDATE `summary, urgency, quick_action, last_evaluated_at, updated_at` if present, else INSERT new (`crypto.randomUUID()` id, `triggered_at = last_evaluated_at = now`, `status='open'`)
   - `resolveAlertsNotIn(db, matchedKeys: Set<string>, now)` keyed `` `${positionId}::${ruleCode}` ``; UPDATE open rows not in the set to `resolved`
   - `listOpenAlerts(db): AlertRecord[]` mapping snake_case → camelCase
   - DEBUG logs for insert vs update branch and resolve count
   - Run `pnpm test src/main/services/alerts.test.ts` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — `src/main/services/alerts.ts` _(depends on: Area 3 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `src/main/services/alerts.ts` _(depends on: Area 3 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Centralize the `${positionId}::${ruleCode}` key builder for reuse by Area 5; check column-mapping duplication
   - Run `pnpm test && pnpm lint && pnpm typecheck`

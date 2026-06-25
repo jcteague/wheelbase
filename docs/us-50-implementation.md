@@ -1,7 +1,7 @@
 # US-50 Implementation — Alert Engine Scheduled Evaluation
 
-> **Status:** Layer 1 (Foundation) complete. Layers 2–5 (persistence service,
-> orchestration, scheduler registration, AC e2e tests) are not yet implemented.
+> **Status:** Layers 1–2 complete (foundation + persistence service). Layers 3–5
+> (orchestration, scheduler registration, AC e2e tests) are not yet implemented.
 
 ## Purpose & Scope
 
@@ -30,7 +30,7 @@ a private copy, removing the duplicated `Date.UTC` math.
 Stores one row per fired (and historical) alert. Key invariants:
 
 - `idx_alerts_open_unique` — **partial** unique index on `(position_id, rule_code)
-  WHERE status = 'open'`: at most one open alert per position+rule, while resolved
+WHERE status = 'open'`: at most one open alert per position+rule, while resolved
   / dismissed history for the same pair is retained.
 - `idx_alerts_status_urgency` — read path for the future open management queue
   (US-51).
@@ -42,10 +42,10 @@ Stores one row per fired (and historical) alert. Key invariants:
 single position. Rules live in an ordered `RULES` registry so later stories
 (US-54/55/56/62) append without editing the evaluation loop:
 
-| Rule | Urgency | Condition | Summary |
-| --- | --- | --- | --- |
-| `EXPIRATION_IMMINENT` | high | `dte <= 5` | `Expires in {dte} days at ${strike} strike` |
-| `MANAGEMENT_WINDOW` | medium | `6 <= dte <= managementWindowDte` (default 21) | `{dte} DTE remaining — review for roll or close` |
+| Rule                  | Urgency | Condition                                      | Summary                                          |
+| --------------------- | ------- | ---------------------------------------------- | ------------------------------------------------ |
+| `EXPIRATION_IMMINENT` | high    | `dte <= 5`                                     | `Expires in {dte} days at ${strike} strike`      |
+| `MANAGEMENT_WINDOW`   | medium  | `6 <= dte <= managementWindowDte` (default 21) | `{dte} DTE remaining — review for roll or close` |
 
 - Ranges are mutually exclusive, so EXPIRATION_IMMINENT naturally takes
   precedence over MANAGEMENT_WINDOW (no ordering-dependent logic).
@@ -72,17 +72,33 @@ flowchart TD
 
 ## Key files
 
-| File | Role |
-| --- | --- |
-| `src/main/core/dte.ts` | Shared pure DTE calculation (new) |
-| `src/main/core/alerts.ts` | Pure rule engine + engine types (new) |
-| `migrations/009_create_alerts.sql` | `alerts` table + indexes (new) |
-| `src/main/services/list-positions.ts` | Now consumes shared `computeDte` |
+| File                                  | Role                                  |
+| ------------------------------------- | ------------------------------------- |
+| `src/main/core/dte.ts`                | Shared pure DTE calculation (new)     |
+| `src/main/core/alerts.ts`             | Pure rule engine + engine types (new) |
+| `migrations/009_create_alerts.sql`    | `alerts` table + indexes (new)        |
+| `src/main/services/list-positions.ts` | Now consumes shared `computeDte`      |
+
+## Layer 2 — Persistence service (`src/main/services/alerts.ts`)
+
+Three primitives the orchestrator (Layer 3) will compose, plus `AlertRecord` /
+`EvaluateAlertsResult` types in `schemas.ts`:
+
+- `upsertOpenAlert(db, match, positionId, now)` — inserts a new `open` alert, or
+  updates the existing open one **in place**: `triggered_at` is preserved while
+  `last_evaluated_at`, `summary`, `urgency`, and `quick_action` are refreshed.
+  Returns `'inserted' | 'updated'` so the job can count created vs updated.
+- `resolveAlertsNotIn(db, matchedKeys, now)` — marks every open alert whose
+  `(positionId, ruleCode)` key is **absent** from `matchedKeys` as `resolved`
+  (sets `resolved_at`); matched and already-resolved rows are untouched. Returns
+  the resolved count.
+- `listOpenAlerts(db)` — returns only `open` rows mapped to camelCase
+  `AlertRecord`, excluding resolved/dismissed.
+- `alertKey(positionId, ruleCode)` — the single `${positionId}::${ruleCode}`
+  identity builder, shared with the Layer 3 orchestrator.
 
 ## Remaining work (later layers)
 
-- **Layer 2 (Area 3):** `src/main/services/alerts.ts` persistence primitives
-  (`upsertOpenAlert`, `resolveAlertsNotIn`, `listOpenAlerts`) + `schemas.ts` types.
 - **Layer 3 (Area 5):** `evaluate-alerts.ts` orchestration (load positions →
   evaluate → atomic persist + resolve).
 - **Layer 4 (Area 6):** scheduler registration in `src/main/index.ts`.

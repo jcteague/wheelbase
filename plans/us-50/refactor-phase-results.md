@@ -100,11 +100,85 @@ None (Layer 1 is pure-unit / migration scope; AC e2e tests are Layer 5).
 ## Remaining Tech Debt
 
 - [ ] **Pre-existing, out of scope:** `src/main/ipc/market-data.test.ts` has 3
-  failing tests (`market-data:option-snapshots …`) that also fail on the baseline
-  with these changes stashed. Not introduced by US-50 Layer 1.
+      failing tests (`market-data:option-snapshots …`) that also fail on the baseline
+      with these changes stashed. Not introduced by US-50 Layer 1.
 
 ## Notes
 
 `migrate.test.ts`'s applied-migrations inventory was updated to include
 `009_create_alerts.sql` — required because the migration list is an exact-match
 assertion, not a behavioural change to the feature.
+
+---
+
+# Refactor Phase Results: US-50 Layer 2 (Area 3 — persistence service)
+
+Scope: `src/main/services/alerts.ts` (new) + the `AlertRecord` /
+`EvaluateAlertsResult` / `AlertUrgency` / `AlertStatus` additions in
+`src/main/schemas.ts`.
+
+## Automated Simplification
+
+- code-simplifier agent run: **not run** — single small, focused service file;
+  manual review kept the TDD loop tight.
+
+## Manual Refactorings Performed
+
+The Green implementation already landed in the target shape, so this pass was
+mostly verification of the two guidance points:
+
+### 1. Centralized alert-identity key builder — confirmed
+
+**File**: `src/main/services/alerts.ts`
+**Decision**: `alertKey(positionId, ruleCode)` is exported from the persistence
+service (not duplicated inline). The persistence service owns the "one open alert
+per (position, rule)" identity concept, so it is the correct home; the Area 5
+orchestrator will import `alertKey` rather than re-deriving `${positionId}::${ruleCode}`.
+Verified no other inline key building exists in the codebase yet.
+
+### 2. Column mapping — left as a local mapper (no over-abstraction)
+
+**File**: `src/main/services/alerts.ts`
+**Decision**: `mapAlertRow` (snake_case → camelCase) matches the existing
+per-service mapping convention (`list-positions.ts`, `get-position.ts` map their
+own rows inline). No shared snake→camel mapper utility exists, and building one
+generically is the tracked LegData snake_case tech debt — intentionally **not**
+expanded here.
+
+### 3. Type reuse for alert unions
+
+**File**: `src/main/schemas.ts`
+**Before/After**: `AlertUrgency` / `AlertStatus` are imported from
+`./core/alerts` and re-exported from `schemas.ts` rather than re-declared, so the
+union definitions live in exactly one place (the pure engine) while remaining
+available from the schemas module the services consume.
+
+## Test Execution Results
+
+```
+✓ src/main/services/alerts.test.ts (7 tests)
+✓ src/main/schemas.test.ts (37 tests)
+
+44 passed (44)
+```
+
+## Quality Checks
+
+- ✅ `pnpm test` (affected files) passed
+- ✅ `pnpm lint` passed (0 errors, 0 warnings)
+- ✅ `pnpm typecheck` passed (node + web)
+
+## Files touched (production)
+
+- `src/main/services/alerts.ts` (new)
+- `src/main/schemas.ts` (alert record + result types)
+
+## E2E coverage added or modified
+
+None (AC e2e tests are Layer 5).
+
+## Remaining Tech Debt
+
+- [ ] The duplicated raw-INSERT pattern across services (now including
+      `services/alerts.ts`) is captured as a standalone story —
+      `docs/epics/07-stories/US-63-centralize-insert-statements.md`.
