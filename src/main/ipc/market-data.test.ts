@@ -12,7 +12,7 @@ vi.mock('electron', () => ({
 }))
 
 vi.mock('../logger', () => ({
-  logger: { error: vi.fn(), warn: vi.fn() }
+  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() }
 }))
 
 const provider = {
