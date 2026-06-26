@@ -143,14 +143,14 @@
 
 **Requires:** Area 5 Green ✓
 
-- [ ] **[Red]** Add/extend test — `src/main/index.test.ts` (if it asserts the job registry) _(depends on: Area 5 Green ✓)_
+- [x] **[Red]** Add/extend test — `src/main/index.test.ts` (if it asserts the job registry) _(depends on: Area 5 Green ✓)_
   - If `index.test.ts` checks `scheduler.getRegistry()`, add an expectation that `alert-evaluation` is registered with an interval cadence. If no such test exists, note that job behavior is covered by Area 5 + Layer 5 and skip a dedicated Red.
   - Run `pnpm test src/main/index.test.ts` — new expectation (if added) must fail
-- [ ] **[Green]** Implement — `src/main/index.ts` _(depends on: Area 6 Red ✓)_
+- [x] **[Green]** Implement — `src/main/index.ts` _(depends on: Area 6 Red ✓)_
   - Import `ALERT_EVAL_JOB_NAME`, `evaluateAlerts` from `services/evaluate-alerts`
   - `scheduler.register({ name: ALERT_EVAL_JOB_NAME, cadence: { kind: 'interval', marketOpenMs: 60_000, extendedHoursMs: 300_000, marketClosedMs: null }, handler: async () => evaluateAlerts({ db }) })` before `scheduler.start()`; not broker-gated
   - Run `pnpm test src/main/index.test.ts` — tests must pass
-- [ ] **[Refactor]** `/refactor` — `src/main/index.ts` _(depends on: Area 6 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `src/main/index.ts` _(depends on: Area 6 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Keep registration adjacent to the other `scheduler.register` blocks; match comment style
   - Run `pnpm test && pnpm lint && pnpm typecheck`

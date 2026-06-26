@@ -182,3 +182,58 @@ None (AC e2e tests are Layer 5).
 - [ ] The duplicated raw-INSERT pattern across services (now including
       `services/alerts.ts`) is captured as a standalone story —
       `docs/epics/07-stories/US-63-centralize-insert-statements.md`.
+
+---
+
+# Refactor Phase Results: US-50 Layer 4 (Area 6 — scheduler registration)
+
+Scope: registering the `alert-evaluation` job in `src/main/index.ts`.
+
+## Automated Simplification
+
+- code-simplifier agent run: **not run** — the change is a single ~13-line
+  `scheduler.register` block; nothing to simplify.
+
+## Manual Refactorings Performed
+
+None. The `alert-evaluation` registration block was authored to match the
+adjacent `detect-assignments` and `ivr-collect` blocks — same comment style,
+same inline `cadence` shape, same `handler: async () => ...` form — so it already
+meets the Area 6 refactor goal ("keep registration adjacent to the other
+scheduler.register blocks; match comment style").
+
+### Considered and rejected
+
+- **Extract the shared interval cadence (`marketOpenMs: 60_000, extendedHoursMs:
+  300_000, marketClosedMs: null`) into a constant.** `detect-assignments` inlines
+  the identical cadence. Extracting it would touch out-of-scope code and diverge
+  from the file's established convention. Left inlined for consistency.
+
+## Test Execution Results
+
+```
+Test Files  131 passed (131)
+     Tests  1423 passed (1423)
+```
+
+## Quality Checks
+
+- ✅ `pnpm test` passed (full suite, no regressions)
+- ✅ `pnpm lint` passed
+- ✅ `pnpm typecheck` passed (node + web)
+
+## Files touched (production)
+
+- `src/main/index.ts` — register the `alert-evaluation` interval job before
+  `scheduler.start()`.
+
+## E2E coverage added or modified
+
+None. Registration is covered by two new `src/main/index.test.ts` cases; job
+behavior is covered by `evaluate-alerts.test.ts` (Layer 3) and the Layer 5 AC
+tests.
+
+## Remaining Tech Debt
+
+- [ ] None for this layer. (The Layer 1 note about failing
+      `market-data.test.ts` no longer reproduces — the full suite is green.)

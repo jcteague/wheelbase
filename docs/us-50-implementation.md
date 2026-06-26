@@ -1,8 +1,8 @@
 # US-50 Implementation — Alert Engine Scheduled Evaluation
 
-> **Status:** Layers 1–3 complete (foundation + persistence service +
-> evaluation orchestration). Layers 4–5 (scheduler registration, AC e2e tests)
-> are not yet implemented.
+> **Status:** Layers 1–4 complete (foundation + persistence service +
+> evaluation orchestration + scheduler registration). Layer 5 (AC integration
+> tests) is not yet implemented.
 
 ## Purpose & Scope
 
@@ -138,8 +138,37 @@ flowchart TD
   K --> L[logger.info summary + return result]
 ```
 
+## Layer 4 — Scheduler registration (`src/main/index.ts`)
+
+The `alert-evaluation` job is registered on the shared US-46 polling scheduler
+during bootstrap, alongside `detect-assignments` and `ivr-collect`, before
+`scheduler.start()`:
+
+```ts
+scheduler.register({
+  name: ALERT_EVAL_JOB_NAME,
+  cadence: {
+    kind: 'interval',
+    marketOpenMs: 60_000,
+    extendedHoursMs: 300_000,
+    marketClosedMs: null
+  },
+  handler: async () => evaluateAlerts({ db })
+})
+```
+
+- **Interval cadence** matching `detect-assignments`: every 60s during market
+  hours, 300s in extended hours, parked (`null`) while the market is closed.
+- **Not broker-gated** — the DTE rules read expiration from the active leg, so no
+  broker call is required for the handler to run.
+- The handler is a thin delegate to `evaluateAlerts({ db })` (Layer 3); the
+  scheduler owns cadence, gating, and lifecycle.
+
+Two `src/main/index.test.ts` cases cover this: one asserts the job is registered
+with the interval cadence, the other that its handler delegates to
+`evaluateAlerts` with `db`.
+
 ## Remaining work (later layers)
 
-- **Layer 4 (Area 6):** scheduler registration in `src/main/index.ts`
-  (`ALERT_EVAL_JOB_NAME` on the US-46 interval cadence, not broker-gated).
-- **Layer 5 (Area 7):** AC-driven integration tests.
+- **Layer 5 (Area 7):** AC-driven integration tests against `makeTestDb()` with
+  an injected `now`, one test per US-50 acceptance scenario.
