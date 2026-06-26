@@ -112,7 +112,8 @@ describe('runMigrations', () => {
       '005_add_profit_target_percent.sql',
       '006_add_credential_settings.sql',
       '007_create_ivr_snapshot.sql',
-      '008_create_pending_assignments.sql'
+      '008_create_pending_assignments.sql',
+      '009_create_alerts.sql'
     ])
   })
 

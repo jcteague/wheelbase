@@ -17,6 +17,7 @@ import { registerTestIvrIpc } from './ipc/test-ivr'
 import { createFakeIvrCollaborators } from './integrations/fake-ivr'
 import { DETECT_ASSIGNMENTS_JOB_NAME, detectAssignments } from './services/detect-assignments'
 import { collectIVRSnapshots, IVR_COLLECT_JOB_NAME } from './services/ivr-collector'
+import { ALERT_EVAL_JOB_NAME, evaluateAlerts } from './services/evaluate-alerts'
 import { scheduler } from './services/scheduler-instance'
 import { registerSettingsHandlers } from './ipc/settings'
 import type { TestConnectionPayload } from './schemas'
@@ -208,6 +209,20 @@ app.whenReady().then(() => {
       const brokerProvider = brokerFactory.create()
       return collectIVRSnapshots({ db, brokerProvider, logger, ...ivrCollaborators })
     }
+  })
+
+  // Alert-evaluation job: evaluates the built-in DTE rules against every active
+  // CSP/CC position on the shared market-data cadence. Not broker-gated — the
+  // rules read DTE from the active leg, which needs no broker call.
+  scheduler.register({
+    name: ALERT_EVAL_JOB_NAME,
+    cadence: {
+      kind: 'interval',
+      marketOpenMs: 60_000,
+      extendedHoursMs: 300_000,
+      marketClosedMs: null
+    },
+    handler: async () => evaluateAlerts({ db })
   })
 
   if (process.env.NODE_ENV === 'test') {

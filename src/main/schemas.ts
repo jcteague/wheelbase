@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { AlertStatus, AlertUrgency } from './core/alerts'
 import type {
   LegAction,
   LegRole,
@@ -456,3 +457,32 @@ export const DismissAssignmentPayloadSchema = z.object({
   pendingAssignmentId: z.number().int().positive()
 })
 export type DismissAssignmentPayload = z.infer<typeof DismissAssignmentPayloadSchema>
+
+// ---------------------------------------------------------------------------
+// Alerts (US-50)
+// ---------------------------------------------------------------------------
+
+export type { AlertUrgency, AlertStatus } from './core/alerts'
+
+export interface AlertRecord {
+  id: string
+  positionId: string
+  ruleCode: string
+  urgency: AlertUrgency
+  summary: string
+  quickAction: string
+  status: AlertStatus
+  triggeredAt: string
+  lastEvaluatedAt: string
+  resolvedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+// Returned by the evaluation job for logging + tests.
+export interface EvaluateAlertsResult {
+  createdCount: number
+  updatedCount: number
+  resolvedCount: number
+  skippedRuleCount: number
+}

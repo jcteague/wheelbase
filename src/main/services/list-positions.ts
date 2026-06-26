@@ -3,6 +3,7 @@
 
 import Database from 'better-sqlite3'
 import Decimal from 'decimal.js'
+import { computeDte } from '../core/dte'
 import { isOptionInstrument } from '../core/types'
 import type { InstrumentType, WheelPhase, WheelStatus } from '../core/types'
 import { logger } from '../logger'
@@ -50,15 +51,6 @@ const LIST_QUERY = `
     LIMIT 1
   )
 `
-
-function computeDte(expiration: string | null): number | null {
-  if (!expiration) return null
-  const [ey, em, ed] = expiration.split('-').map(Number)
-  const now = new Date()
-  const todayMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
-  const expirationMs = Date.UTC(ey, em - 1, ed)
-  return Math.round((expirationMs - todayMs) / 86_400_000)
-}
 
 function dteSortKey(item: PositionListItem): [boolean, number] {
   return [item.dte === null, item.dte ?? 0]

@@ -104,6 +104,11 @@ vi.mock('./services/ivr-collector', () => ({
   })
 }))
 
+vi.mock('./services/evaluate-alerts', () => ({
+  ALERT_EVAL_JOB_NAME: 'alert-evaluation',
+  evaluateAlerts: vi.fn().mockReturnValue({ createdCount: 0, updatedCount: 0, resolvedCount: 0 })
+}))
+
 const mockSchedulerRegister = vi.fn()
 const mockSchedulerStart = vi.fn()
 const mockSchedulerStop = vi.fn().mockResolvedValue(undefined)
@@ -211,6 +216,41 @@ describe('main process bootstrap', () => {
         brokerProvider,
         logger: expect.anything()
       })
+    )
+  })
+
+  it('registers the alert-evaluation scheduler job with an interval cadence', async () => {
+    await triggerBootstrap()
+
+    expect(mockSchedulerRegister).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'alert-evaluation',
+        cadence: {
+          kind: 'interval',
+          marketOpenMs: 60_000,
+          extendedHoursMs: 300_000,
+          marketClosedMs: null
+        }
+      })
+    )
+  })
+
+  it('alert-evaluation job handler delegates to evaluateAlerts with db', async () => {
+    await triggerBootstrap()
+
+    const registration = mockSchedulerRegister.mock.calls
+      .map(([job]) => job)
+      .find((job) => job.name === 'alert-evaluation') as
+      | { handler: () => Promise<unknown> }
+      | undefined
+
+    expect(registration).toBeDefined()
+
+    const { evaluateAlerts } = await import('./services/evaluate-alerts')
+    await registration!.handler()
+
+    expect(vi.mocked(evaluateAlerts)).toHaveBeenCalledWith(
+      expect.objectContaining({ db: expect.anything() })
     )
   })
 
