@@ -1,8 +1,8 @@
 # US-50 Implementation — Alert Engine Scheduled Evaluation
 
-> **Status:** Layers 1–4 complete (foundation + persistence service +
-> evaluation orchestration + scheduler registration). Layer 5 (AC integration
-> tests) is not yet implemented.
+> **Status:** Complete. Layers 1–5 implemented — foundation, persistence
+> service, evaluation orchestration, scheduler registration, and AC-driven
+> integration tests. All five US-50 acceptance criteria are covered.
 
 ## Purpose & Scope
 
@@ -105,7 +105,7 @@ is the service the scheduler handler (Layer 4) will call. It composes the Layer 
 engine and Layer 2 primitives into one restart-safe pass:
 
 1. **Load** evaluable positions — `status = 'ACTIVE'`, `phase IN ('CSP_OPEN',
-   'CC_OPEN')` — inner-`JOIN`ed to their active option leg via
+'CC_OPEN')` — inner-`JOIN`ed to their active option leg via
    `activeLegSubquery()`. The inner join drops positions with no open option leg
    (e.g. `HOLDING_SHARES` without a covered call), satisfying AC-4 by selection.
 2. **Compute** (pure): map each row to an `AlertEvaluationInput`
@@ -168,7 +168,23 @@ Two `src/main/index.test.ts` cases cover this: one asserts the job is registered
 with the interval cadence, the other that its handler delegates to
 `evaluateAlerts` with `db`.
 
-## Remaining work (later layers)
+## Layer 5 — AC-driven tests (`src/main/services/evaluate-alerts.e2e.test.ts`)
 
-- **Layer 5 (Area 7):** AC-driven integration tests against `makeTestDb()` with
-  an injected `now`, one test per US-50 acceptance scenario.
+Five integration tests, one per US-50 acceptance scenario, each `it()` name
+mirroring the Gherkin scenario title. They run against `makeTestDb()` with an
+injected `now`, invoking `evaluateAlerts` the way the scheduler handler does, and
+seed positions through a single DTE-relative helper
+`seedActiveLegAtDte(db, { id, ticker, phase, strike, dte, now? })`.
+
+| AC                                                      | Test                                                                    |
+| ------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Scheduled evaluation creates open alerts                | `AC: Scheduled evaluation creates open alerts for triggered rules`      |
+| Re-evaluation updates an existing alert (no duplicate)  | `AC: Re-evaluation updates an existing open alert instead of duplicating it` |
+| Cleared conditions resolve the alert                    | `AC: Cleared conditions resolve the alert`                              |
+| Positions without an active option leg are skipped      | `AC: Positions without an active option leg are skipped`                |
+| Missing data for one rule does not fail the whole job   | `AC: Missing data for one rule does not fail the whole evaluation job`  |
+
+AC-1 additionally asserts the persisted row carries all eight named fields
+(position id, rule code, urgency, summary, quick action, status, triggered_at,
+last_evaluated_at). As an AC-verification layer over the already-shipped
+Layers 1–4, no production code was required.

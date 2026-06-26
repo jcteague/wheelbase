@@ -166,7 +166,7 @@
 
 ### Area 7 — E2E (AC-driven) Tests
 
-- [ ] **[Red]** Write failing AC tests — `src/main/services/evaluate-alerts.e2e.test.ts` (or a `describe('US-50 acceptance', …)` block) _(depends on: all Green tasks ✓)_
+- [x] **[Red]** Write failing AC tests — `src/main/services/evaluate-alerts.e2e.test.ts` (or a `describe('US-50 acceptance', …)` block) _(depends on: all Green tasks ✓)_
   - One test per AC; names mirror the AC language:
     - AC-1: Scheduled evaluation creates open alerts for triggered rules → `it('AC: Scheduled evaluation creates open alerts for triggered rules')` — AAPL 4 DTE + MSFT 17 DTE; assert `EXPIRATION_IMMINENT` for AAPL and `MANAGEMENT_WINDOW` for MSFT, each row carrying all eight fields (position id, rule code, urgency, summary, quick action, status, triggered_at, last_evaluated_at)
     - AC-2: Re-evaluation updates an existing open alert instead of duplicating it → `it('AC: Re-evaluation updates an existing open alert instead of duplicating it')` — unchanged 17 DTE; exactly one MSFT row, `triggered_at` preserved, `last_evaluated_at` advanced
@@ -174,10 +174,10 @@
     - AC-4: Positions without an active option leg are skipped → `it('AC: Positions without an active option leg are skipped')` — TSLA `HOLDING_SHARES`, no CC; no alert rows for TSLA
     - AC-5: Missing data for one rule does not fail the whole evaluation job → `it('AC: Missing data for one rule does not fail the whole evaluation job')` — skipped-rule position + triggering AAPL; AAPL alert persisted, skip logged at DEBUG with no row, no partially written rows
   - Run `pnpm test src/main/services/evaluate-alerts.e2e.test.ts` — all new tests must fail
-- [ ] **[Green]** Make AC tests pass _(depends on: Area 7 Red ✓)_
+- [x] **[Green]** Make AC tests pass _(depends on: Area 7 Red ✓)_
   - No new production code expected beyond Areas 1–6; add only a `seedActiveLegAtDte(db, position, dte, now)` test helper as needed
   - Run `pnpm test src/main/services/evaluate-alerts.e2e.test.ts` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — AC tests _(depends on: Area 7 Green ✓)_
+- [x] **[Refactor]** `/refactor` — AC tests _(depends on: Area 7 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Extract the shared `seedActiveLegAtDte` helper to remove duplication across the AC tests
   - Run `pnpm test && pnpm lint && pnpm typecheck`

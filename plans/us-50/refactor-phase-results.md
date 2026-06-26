@@ -205,7 +205,7 @@ scheduler.register blocks; match comment style").
 ### Considered and rejected
 
 - **Extract the shared interval cadence (`marketOpenMs: 60_000, extendedHoursMs:
-  300_000, marketClosedMs: null`) into a constant.** `detect-assignments` inlines
+300_000, marketClosedMs: null`) into a constant.** `detect-assignments` inlines
   the identical cadence. Extracting it would touch out-of-scope code and diverge
   from the file's established convention. Left inlined for consistency.
 
@@ -237,3 +237,74 @@ tests.
 
 - [ ] None for this layer. (The Layer 1 note about failing
       `market-data.test.ts` no longer reproduces — the full suite is green.)
+
+---
+
+# Refactor Phase Results: US-50 Layer 5 (Area 7 — AC-driven tests)
+
+Scope: `src/main/services/evaluate-alerts.e2e.test.ts` (new) — the five AC
+acceptance tests.
+
+## Automated Simplification
+
+- code-simplifier agent run: **not run** — single, focused test file; manual
+  review kept the TDD loop tight.
+
+## Manual Refactorings Performed
+
+### 1. Single `seedActiveLegAtDte` helper across all AC tests — done
+
+**File**: `src/main/services/evaluate-alerts.e2e.test.ts`
+**Before/After**: every AC test seeds positions through one
+`seedActiveLegAtDte(db, { id, ticker, phase, strike, dte, now? })` helper that
+maps a `dte` (or `null`, for the missing-data path) to a concrete leg expiration
+relative to the injected `NOW`. No per-test raw INSERT duplication remains.
+**Reason**: the Area 7 refactor goal — remove seeding duplication across the AC
+tests behind one DTE-relative helper.
+
+## Considered and rejected
+
+- **Extract a shared cross-file test-helper module** (e.g.
+  `alert-test-helpers.ts`) consumed by both `evaluate-alerts.e2e.test.ts` and
+  `evaluate-alerts.test.ts`. Rejected: the codebase has **no** shared
+  service-test-helper convention — every service test (including the sibling
+  `evaluate-alerts.test.ts`) inlines its own seed helpers, and the two files use
+  intentionally different signatures (`seedEvaluablePosition(expiration)` vs
+  `seedActiveLegAtDte(dte)`). Introducing the first such module under a
+  layer-scoped AC-test refactor is scope creep (CLAUDE.md "match existing style",
+  "nothing speculative"). Left as optional tech debt below.
+
+## Test Execution Results
+
+```
+Test Files  132 passed (132)
+     Tests  1428 passed (1428)
+```
+
+(`evaluate-alerts.e2e.test.ts` contributes 5 AC tests, all green. As an
+AC-verification layer over already-shipped Layers 1–4, these tests passed on
+first run — no production code was required.)
+
+## Quality Checks
+
+- ✅ `pnpm test` passed (full suite, no regressions)
+- ✅ `pnpm lint` passed
+- ✅ `pnpm typecheck` passed (node + web)
+
+## Files touched (production)
+
+None. Layer 5 is test-only; the five ACs are verified against the existing
+Layers 1–4 implementation.
+
+## E2E coverage added or modified
+
+- `src/main/services/evaluate-alerts.e2e.test.ts` — 5 AC scenarios (one per
+  US-50 acceptance criterion).
+
+## Remaining Tech Debt
+
+- [ ] **Optional:** if a third alert-related service test appears, promote the
+      duplicated `seedPosition` / `seedActiveLegAtDte` / `readAlertRows` helpers
+      (shared between `evaluate-alerts.test.ts` and `evaluate-alerts.e2e.test.ts`)
+      into a shared module. Deferred to avoid creating a new test-helper pattern
+      for only two files.
