@@ -115,7 +115,7 @@
 
 **Requires:** Area 1 Green ✓, Area 3 Green ✓, Area 4 Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/main/services/evaluate-alerts.test.ts` _(depends on: Area 1 Green ✓, Area 3 Green ✓, Area 4 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/main/services/evaluate-alerts.test.ts` _(depends on: Area 1 Green ✓, Area 3 Green ✓, Area 4 Green ✓)_
   - Test cases (integration, `makeTestDb()`, injected `now`):
     - loads only evaluable positions: AAPL `CSP_OPEN` (4 DTE), MSFT `CC_OPEN` (17 DTE), TSLA `HOLDING_SHARES` (no CC) → `listOpenAlerts` has AAPL `EXPIRATION_IMMINENT` + MSFT `MANAGEMENT_WINDOW`, no TSLA row
     - `EvaluateAlertsResult` counts: first run `createdCount` > 0; immediate second run unchanged DTE → `createdCount=0`, `updatedCount` covers re-matches, no new rows
@@ -123,14 +123,14 @@
     - resolution: create MSFT `MANAGEMENT_WINDOW`, move leg to 29 DTE, re-run → row `resolved` with `resolved_at`, absent from `listOpenAlerts`
     - per-rule isolation + atomicity: a skipped-rule position (force `dte = null`) alongside triggering AAPL → AAPL alert persisted, skip logged at DEBUG (spy on `logger.debug`), no partial rows
   - Run `pnpm test src/main/services/evaluate-alerts.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/services/evaluate-alerts.ts` _(depends on: Area 5 Red ✓)_
+- [x] **[Green]** Implement — `src/main/services/evaluate-alerts.ts` _(depends on: Area 5 Red ✓)_
   - Export `ALERT_EVAL_JOB_NAME = 'alert-evaluation'` and `evaluateAlerts({ db, now?, managementWindowDte?, logger? }): EvaluateAlertsResult`
   - Query evaluable positions via `JOIN activeLegSubquery()` (status ACTIVE, phase IN CSP_OPEN/CC_OPEN) — see `data-model.md`
   - Compute phase: map each row → `AlertEvaluationInput` (`computeDte` from `core/dte.ts`, default `managementWindowDte` 21); call `evaluatePosition` in a per-position `try/catch`; accumulate matches/skips; `logger.debug` each skip
   - Persist phase (single `db.transaction`): `upsertOpenAlert` each match (track created vs updated), build matched-key set, `resolveAlertsNotIn(db, matchedKeys, now)`
   - Return `EvaluateAlertsResult`; `logger.info` one-line summary
   - Run `pnpm test src/main/services/evaluate-alerts.test.ts` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — `src/main/services/evaluate-alerts.ts` _(depends on: Area 5 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `src/main/services/evaluate-alerts.ts` _(depends on: Area 5 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Share the matched-key builder with `services/alerts.ts`; mirror `collectIVRSnapshots` result/log shape
   - Run `pnpm test && pnpm lint && pnpm typecheck`

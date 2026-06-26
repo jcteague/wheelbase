@@ -1,7 +1,8 @@
 # US-50 Implementation — Alert Engine Scheduled Evaluation
 
-> **Status:** Layers 1–2 complete (foundation + persistence service). Layers 3–5
-> (orchestration, scheduler registration, AC e2e tests) are not yet implemented.
+> **Status:** Layers 1–3 complete (foundation + persistence service +
+> evaluation orchestration). Layers 4–5 (scheduler registration, AC e2e tests)
+> are not yet implemented.
 
 ## Purpose & Scope
 
@@ -97,9 +98,48 @@ Three primitives the orchestrator (Layer 3) will compose, plus `AlertRecord` /
 - `alertKey(positionId, ruleCode)` — the single `${positionId}::${ruleCode}`
   identity builder, shared with the Layer 3 orchestrator.
 
+## Layer 3 — Evaluation orchestration (`src/main/services/evaluate-alerts.ts`)
+
+`evaluateAlerts({ db, now?, managementWindowDte?, logger? }): EvaluateAlertsResult`
+is the service the scheduler handler (Layer 4) will call. It composes the Layer 1
+engine and Layer 2 primitives into one restart-safe pass:
+
+1. **Load** evaluable positions — `status = 'ACTIVE'`, `phase IN ('CSP_OPEN',
+   'CC_OPEN')` — inner-`JOIN`ed to their active option leg via
+   `activeLegSubquery()`. The inner join drops positions with no open option leg
+   (e.g. `HOLDING_SHARES` without a covered call), satisfying AC-4 by selection.
+2. **Compute** (pure): map each row to an `AlertEvaluationInput`
+   (`toEvaluationInput` + `computeDte`) and run `evaluatePosition` inside a
+   per-position `try/catch`. Matches are accumulated; each skipped rule is counted
+   and logged at DEBUG (`{ positionId, ruleCode, reason }`) — AC-5.
+3. **Persist** (single `db.transaction`): `upsertOpenAlert` per match (counting
+   `inserted` vs `updated`), build the matched-key set via the shared `alertKey`,
+   then `resolveAlertsNotIn` to resolve cleared conditions. One transaction means
+   a compute error cannot leave partial rows.
+
+Exports `ALERT_EVAL_JOB_NAME = 'alert-evaluation'` for Layer 4 registration.
+Returns `{ createdCount, updatedCount, resolvedCount, skippedRuleCount }` and logs
+a one-line INFO summary, mirroring `collectIVRSnapshots`.
+
+```mermaid
+flowchart TD
+  A[evaluateAlerts] --> B[Query evaluable positions<br/>JOIN activeLegSubquery]
+  B --> C{For each position}
+  C --> D[toEvaluationInput + computeDte]
+  D --> E[evaluatePosition - pure]
+  E -->|matches| F[accumulate]
+  E -->|skipped| G[count + logger.debug]
+  F --> H{more?}
+  G --> H
+  H -->|yes| C
+  H -->|no| I[db.transaction]
+  I --> J[upsertOpenAlert per match]
+  J --> K[resolveAlertsNotIn via alertKey set]
+  K --> L[logger.info summary + return result]
+```
+
 ## Remaining work (later layers)
 
-- **Layer 3 (Area 5):** `evaluate-alerts.ts` orchestration (load positions →
-  evaluate → atomic persist + resolve).
-- **Layer 4 (Area 6):** scheduler registration in `src/main/index.ts`.
+- **Layer 4 (Area 6):** scheduler registration in `src/main/index.ts`
+  (`ALERT_EVAL_JOB_NAME` on the US-46 interval cadence, not broker-gated).
 - **Layer 5 (Area 7):** AC-driven integration tests.
