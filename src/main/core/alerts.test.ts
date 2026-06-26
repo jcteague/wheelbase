@@ -5,7 +5,6 @@ import type { AlertEvaluationInput } from './alerts'
 function makeInput(overrides: Partial<AlertEvaluationInput> = {}): AlertEvaluationInput {
   return {
     positionId: 'pos-1',
-    ticker: 'AAPL',
     phase: 'CSP_OPEN',
     instrumentType: 'PUT',
     strike: '180.0000',
@@ -63,6 +62,19 @@ describe('evaluatePosition', () => {
     const { matches } = evaluatePosition(makeInput({ dte: 4 }))
     expect(matches).toHaveLength(1)
     expect(matches[0].ruleCode).toBe('EXPIRATION_IMMINENT')
+  })
+
+  it('fires EXPIRATION_IMMINENT at the dte = 0 boundary (expires today)', () => {
+    const { matches } = evaluatePosition(makeInput({ dte: 0 }))
+    expect(matches).toHaveLength(1)
+    expect(matches[0].ruleCode).toBe('EXPIRATION_IMMINENT')
+    expect(matches[0].summary).toBe('Expires in 0 days at $180.00 strike')
+  })
+
+  it('produces no matches for an already-expired position (dte < 0)', () => {
+    const { matches, skipped } = evaluatePosition(makeInput({ dte: -2 }))
+    expect(matches).toEqual([])
+    expect(skipped).toEqual([])
   })
 
   it('skips both DTE-dependent rules with reason missing_dte when dte is null', () => {

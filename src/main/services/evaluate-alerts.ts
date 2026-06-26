@@ -28,7 +28,6 @@ export const ALERT_EVAL_JOB_NAME = 'alert-evaluation'
 
 interface EvaluableRow {
   position_id: string
-  ticker: string
   phase: WheelPhase
   instrument_type: 'PUT' | 'CALL' | 'STOCK' | null
   strike: string | null
@@ -38,7 +37,6 @@ interface EvaluableRow {
 const EVALUABLE_QUERY = `
   SELECT
     p.id   AS position_id,
-    p.ticker,
     p.phase,
     l.instrument_type,
     l.strike,
@@ -58,7 +56,6 @@ function toEvaluationInput(
 ): AlertEvaluationInput {
   return {
     positionId: row.position_id,
-    ticker: row.ticker,
     phase: row.phase,
     instrumentType: row.instrument_type === 'STOCK' ? null : row.instrument_type,
     strike: row.strike,

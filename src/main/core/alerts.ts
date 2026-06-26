@@ -23,7 +23,6 @@ const MISSING_DTE = 'missing_dte'
 /** Plain values the engine evaluates — no DB rows. */
 export interface AlertEvaluationInput {
   positionId: string
-  ticker: string
   phase: WheelPhase
   instrumentType: 'PUT' | 'CALL' | null
   strike: string | null // 4dp TEXT as stored on the leg
@@ -83,7 +82,8 @@ const RULES: RuleDefinition[] = [
     code: 'EXPIRATION_IMMINENT',
     urgency: 'high',
     requiresDte: true,
-    test: (input) => input.dte !== null && input.dte <= EXPIRATION_IMMINENT_MAX_DTE,
+    test: (input) =>
+      input.dte !== null && input.dte >= 0 && input.dte <= EXPIRATION_IMMINENT_MAX_DTE,
     summary: expirationImminentSummary
   },
   {

@@ -52,6 +52,7 @@ Scenario: Dismissing an already resolved alert is rejected
 - Model dismissal as a status transition (`open -> dismissed`) plus timestamp, not a destructive delete.
 - A dismissed alert should be re-openable only through a fresh trigger cycle after the condition has cleared.
 - Reuse the existing app pattern for "dismissed but retained in SQLite" established by pending assignments.
+- **Carryover from US-50:** `upsertOpenAlert` in `src/main/services/alerts.ts` currently looks only for an existing `status = 'open'` row, so on the very next evaluation tick it would re-INSERT a fresh open alert for a still-true condition — silently undoing the dismissal (scenario 2). This story must make the upsert dismissal-aware: skip re-opening while a `dismissed` row exists for the same `(position_id, rule_code)` until the condition has cleared. Note that `resolveAlertsNotIn` only touches `status = 'open'` rows, so a dismissed alert is never auto-resolved — the "condition cleared" signal that permits re-firing (scenario 3) needs an explicit mechanism (e.g. clear/replace the dismissed row, or compare against last-evaluated state) rather than relying on the existing resolve path.
 
 ---
 
