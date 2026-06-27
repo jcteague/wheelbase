@@ -2,7 +2,7 @@
 
 Each ADR captures one architectural choice that emerged from a plan/story. Decisions are grouped below by theme; many ADRs are referenced by multiple feature pages.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,missing-ac -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,missing-ac -->
 
 ## Engine & architecture
 
@@ -100,5 +100,15 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [consolidated-before-quit](./consolidated-before-quit.md) — Single `before-quit` handler awaits scheduler + market-data shutdown concurrently.
 - [dev-only-test-scheduler-ipc](./dev-only-test-scheduler-ipc.md) — `_test:scheduler-*` channels guarded by `NODE_ENV === 'test'` for e2e introspection.
 - [ivr-non-trading-day-guard-in-collector](./ivr-non-trading-day-guard-in-collector.md) — The collector owns the weekend/holiday guard so scheduled and manual runs share one skip path.
+- [alert-evaluation-job-cadence](./alert-evaluation-job-cadence.md) — `alert-evaluation` reuses the US-46 scheduler with a 60 s / 5 min interval cadence; parked overnight; not broker-gated.
+
+## Management alerts
+
+- [alert-engine-pure-matches-skips](./alert-engine-pure-matches-skips.md) — `evaluatePosition` is a pure function returning `{ matches, skipped }`; missing data is skipped, never thrown; the service logs skips.
+- [alert-rule-registry](./alert-rule-registry.md) — Rules are an ordered open/closed registry; precedence via exclusive DTE ranges; management-window threshold as a defaulted parameter.
+- [alert-compute-then-persist](./alert-compute-then-persist.md) — Compute all matches/skips outside any transaction, then upsert + resolve in one `db.transaction`; no partial writes.
+- [alert-resolution-global](./alert-resolution-global.md) — Every open alert not re-matched this run resolves, including alerts for now-unevaluable (closed) positions.
+- [alerts-partial-unique-open](./alerts-partial-unique-open.md) — Partial unique index `(position_id, rule_code) WHERE status='open'` allows one open alert per pair plus historical resolved rows.
+- [shared-dte-helper](./shared-dte-helper.md) — `computeDte` extracted into a pure `src/main/core/dte.ts` shared by the positions list and the alert engine.
 
 <!-- /generated -->

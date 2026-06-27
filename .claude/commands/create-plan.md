@@ -23,7 +23,12 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Post-success UX (shortcuts, navigation, badge changes)
      Keep these notes in memory — they will directly inform the frontend implementation areas in Phase 2.
 
-3. **Understand context**: Read `CLAUDE.md` and relevant existing source files to understand what is already implemented. Identify gaps between the current codebase and what the story requires.
+3. **Understand context**: Read `CLAUDE.md`, then consult the spec wiki under `docs/spec/` before reading source. The spec is the synthesized source-of-truth for cross-cutting decisions already made — use it to orient quickly instead of re-deriving everything from prior plan dirs:
+   - Run `/spec-search <key terms from the story>` (or browse directly) to find the relevant topic pages (`domain/`, `contracts/`, `schema/`), ADRs (`architecture/02-adrs/`), and any feature pages this story builds on.
+   - Pull out the established decisions, contracts, schema, and patterns the story must respect or extend (e.g. an existing engine, table, IPC namespace, or ADR that constrains the approach), and carry them into Phase 0 research and the Phase 2 plan. Use the `topics:` frontmatter (Phase 2) to record which spec topic pages this story contributes to.
+   - Treat the spec as orientation, not ground truth for current code state — it can lag `src/`. Verify any spec claim you intend to depend on against the actual source files before committing to it in the plan.
+
+   Then read the relevant existing source files to confirm what is actually implemented, and identify gaps between the current codebase and what the story requires.
 
 4. **Execute plan workflow**: Follow the Phase 0, Phase 1, and Phase 2 workflow below to:
    - Phase 0: Generate `research.md` (resolve all unknowns)

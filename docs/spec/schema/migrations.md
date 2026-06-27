@@ -1,6 +1,6 @@
 # Migrations
 
-<!-- generated:from us-6,us-33,us-35,us-37,us-44 -->
+<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50 -->
 
 ## Overview
 
@@ -30,7 +30,7 @@ by these migrations.
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35,us-37,us-44 -->
+<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50 -->
 
 ## Migration runner
 
@@ -120,7 +120,7 @@ separate "US-35 app_settings migration" in tree.
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35,us-37,us-44 -->
+<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50 -->
 
 ## Migration catalogue
 
@@ -366,9 +366,72 @@ IGNORE` on the compound key)
     `assignments:run-detection-now`)
 - **Source:** `migrations/008_create_pending_assignments.sql`
 
+### `migrations/009_create_alerts.sql` — create `alerts` for the management-alert evaluation engine
+
+- **Driven by:** [us-50 — Alert Evaluation Engine](../features/us-50-alert-evaluation-engine.md)
+- **Rationale:** First persistence for Epic 07 management alerts. A scheduled
+  job evaluates active CSP/CC positions against built-in DTE rules and maintains
+  a deduplicated, restart-safe alert set. A row in this table _is_ the alert;
+  re-evaluation updates the open row in place and cleared conditions resolve it
+  without deleting history (audit trail). The schema is designed so the
+  remaining Classic Wheel rules slot in without further migrations.
+- **Change scope:** introduces one new table and two indexes.
+- **Field-level summary:**
+
+  | Field               | Type   | Required | Notes                                                                    |
+  | ------------------- | ------ | -------- | ------------------------------------------------------------------------ |
+  | `id`                | `TEXT` | Yes      | UUID PK, generated in the service layer (`crypto.randomUUID()`).         |
+  | `position_id`       | `TEXT` | Yes      | `NOT NULL REFERENCES positions(id)`.                                     |
+  | `rule_code`         | `TEXT` | Yes      | Rule that fired (`EXPIRATION_IMMINENT`, `MANAGEMENT_WINDOW`, …).         |
+  | `urgency`           | `TEXT` | Yes      | `high` / `medium` / `low`.                                               |
+  | `summary`           | `TEXT` | Yes      | Human-readable queue text (e.g. `Expires in 5 days at $180.00 strike`).  |
+  | `quick_action`      | `TEXT` | Yes      | Queue button label (Phase 3: always `Review position`).                  |
+  | `status`            | `TEXT` | Yes      | `NOT NULL DEFAULT 'open'`; `open` / `resolved` / `dismissed`.            |
+  | `triggered_at`      | `TEXT` | Yes      | ISO timestamp of first firing; never mutated while the alert stays open. |
+  | `last_evaluated_at` | `TEXT` | Yes      | ISO timestamp of the most recent re-matching evaluation.                 |
+  | `resolved_at`       | `TEXT` | No       | Set when status transitions to `resolved`.                               |
+  | `created_at`        | `TEXT` | Yes      | Row creation timestamp.                                                  |
+  | `updated_at`        | `TEXT` | Yes      | Last write timestamp.                                                    |
+  - Partial unique index:
+    `CREATE UNIQUE INDEX idx_alerts_open_unique ON alerts (position_id, rule_code) WHERE status = 'open'` —
+    at most one open alert per `(position, rule)`, while any number of
+    historical resolved/dismissed rows for the same pair are allowed.
+  - Secondary index:
+    `CREATE INDEX idx_alerts_status_urgency ON alerts (status, urgency)` —
+    the open management-queue read path (US-51 consumes).
+
+- **Partial unique index — the central invariant.** Re-evaluation must update
+  the existing open alert in place rather than insert a duplicate; resolution
+  must never delete (audit trail); and a _later_ re-firing of the same rule must
+  create a new open row, leaving the old resolved row intact. A partial unique
+  index keyed on `status = 'open'` expresses exactly that at the DB layer — full
+  uniqueness on `(position_id, rule_code)` would block re-firing after
+  resolution and lose the distinct `triggered_at` history. See
+  [`schema/tables.md`](./tables.md) for the row-level catalogue.
+- **State transitions:** `(none) → open` (rule matches); `open → open`
+  (re-match: `triggered_at` preserved, `last_evaluated_at` + `summary`
+  advanced); `open → resolved` (no longer matches: `resolved_at` set, row
+  retained, excluded from open-queue reads); `resolved → (new) open row`
+  (matches again later, old resolved row retained); `open → dismissed`
+  (US-59, out of scope; status domain reserved). Rows are never deleted.
+- **Approach inside the migration file:** straight `CREATE TABLE` plus two
+  `CREATE INDEX` statements. No table rebuild, no data backfill.
+- **Numbering note:** straight append after `008`; the `007` gap was already
+  filled by US-44 (see [Gaps](#gaps)), so the sequence is contiguous.
+- **Downstream code touches (no further schema change):**
+  - `src/main/services/alerts.ts` (persistence primitives `upsertOpenAlert`,
+    `resolveAlertsNotIn`, `listOpenAlerts`, `alertKey`, `mapAlertRow`)
+  - `src/main/services/evaluate-alerts.ts` (`evaluateAlerts` orchestration;
+    compute-then-persist in a single `db.transaction`; `ALERT_EVAL_JOB_NAME`)
+  - `src/main/core/alerts.ts` (pure rule engine + registry) and
+    `src/main/core/dte.ts` (shared pure `computeDte`)
+  - `src/main/index.ts` (registers the `alert-evaluation` interval job, not
+    broker-gated, before `scheduler.start()`)
+- **Source:** `migrations/009_create_alerts.sql`
+
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35,us-37,us-44 -->
+<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50 -->
 
 ## Gaps
 
@@ -396,7 +459,7 @@ between `006` and `008` without issue. The sequence is now contiguous again.
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35,us-37,us-44 -->
+<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50 -->
 
 ## Driven by
 
@@ -410,10 +473,12 @@ between `006` and `008` without issue. The sequence is now contiguous again.
   migration `007`
 - [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md) —
   migration `008` (and consumer of `006`'s `app_settings` table)
+- [us-50 — Alert Evaluation Engine](../features/us-50-alert-evaluation-engine.md) —
+  migration `009`
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35,us-37,us-44 -->
+<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50 -->
 
 ## See also
 
@@ -429,6 +494,8 @@ between `006` and `008` without issue. The sequence is now contiguous again.
   the feature that introduced migration `007`
 - [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md) —
   the feature that introduced migration `008`
+- [us-50 — Alert Evaluation Engine](../features/us-50-alert-evaluation-engine.md) —
+  the feature that introduced migration `009`
 
 <!-- /generated -->
 

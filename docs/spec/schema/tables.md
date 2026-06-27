@@ -1,6 +1,6 @@
 # Database Tables
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-35,us-37,us-44 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-35,us-37,us-44,us-50 -->
 
 ## Overview
 
@@ -16,7 +16,11 @@ encrypted broker credentials, and **`app_settings`** is a generic key/value
 store for non-secret settings (broker environment selection, poll watermarks).
 A separate market-data table sits outside the wheel domain entirely:
 **`ivr_snapshot`** stores one daily IV-rank observation per active-position
-underlying, written by the after-close IVR collection job.
+underlying, written by the after-close IVR collection job. Finally,
+**`alerts`** holds the management-alert set produced by the scheduled
+evaluation job: at most one **open** alert per `(position, rule)`, with cleared
+conditions resolved in place (rows are never deleted, so the table doubles as
+an audit trail).
 SQLite is the source of truth; Alpaca is the execution layer only.
 
 Money values are stored as `TEXT` at 4 dp and converted to/from `decimal.js`
@@ -497,6 +501,75 @@ underlying per UTC day while preserving the precise observation timestamp.
   parse/network/rate-limit errors write no row and the batch continues to the
   next ticker. On a non-trading day the whole batch exits before any fetch and
   no rows are written.
+
+<!-- /generated -->
+
+<!-- generated:from us-50 -->
+
+## `alerts`
+
+Management alerts produced by the scheduled `alert-evaluation` job. The
+evaluation engine in `src/main/core/alerts.ts` matches every active CSP/CC
+position against the built-in rules; the persistence layer in
+`src/main/services/alerts.ts` upserts open alerts in place and resolves
+cleared conditions. Rows are **never deleted** — resolution flips status and
+stamps `resolved_at`, so the table is a complete audit trail of what fired and
+when. The table carries no IPC surface in US-50 (the `alerts:list` read path
+is US-51). Added by migration `009`. See
+[us-50 — Alert Evaluation Engine](../features/us-50-alert-evaluation-engine.md)
+and [Alert Engine](../domain/alert-engine.md).
+
+### Columns
+
+| Column              | Type | Nullable | Purpose                                                                                                         |
+| ------------------- | ---- | -------- | --------------------------------------------------------------------------------------------------------------- |
+| `id`                | TEXT | No       | UUID primary key, generated in the service layer via `crypto.randomUUID()`                                      |
+| `position_id`       | TEXT | No       | FK → `positions.id`                                                                                             |
+| `rule_code`         | TEXT | No       | Rule identifier; US-50 emits `EXPIRATION_IMMINENT` or `MANAGEMENT_WINDOW`                                       |
+| `urgency`           | TEXT | No       | `high`, `medium`, or `low` (US-50 emits `high` / `medium`)                                                      |
+| `summary`           | TEXT | No       | Human-readable queue text, e.g. `Expires in 5 days at $180.00 strike`                                           |
+| `quick_action`      | TEXT | No       | Queue button label; Phase 3 always `Review position`                                                            |
+| `status`            | TEXT | No       | `open`, `resolved`, or `dismissed`; `NOT NULL DEFAULT 'open'` (`dismissed` reserved for US-59, unused in US-50) |
+| `triggered_at`      | TEXT | No       | ISO timestamp of first firing; never mutated while the alert stays open                                         |
+| `last_evaluated_at` | TEXT | No       | ISO timestamp of the most recent re-matching evaluation                                                         |
+| `resolved_at`       | TEXT | Yes      | Set when `status` transitions to `resolved`                                                                     |
+| `created_at`        | TEXT | No       | ISO timestamp at row insert                                                                                     |
+| `updated_at`        | TEXT | No       | ISO timestamp at last update                                                                                    |
+
+### Indexes
+
+- `idx_alerts_open_unique` — **partial UNIQUE** on `(position_id, rule_code)`
+  `WHERE status = 'open'`. Guarantees at most one open alert per
+  `(position, rule)` while allowing any number of historical
+  `resolved` / `dismissed` rows for the same pair. Full uniqueness on
+  `(position_id, rule_code)` was rejected because it would block a rule from
+  re-firing after its earlier alert resolved.
+- `idx_alerts_status_urgency` on `(status, urgency)` — supports the
+  open-management-queue read path (US-51 consumes it).
+
+### State transitions
+
+- `(none) → open` — a rule matches; INSERT with `status='open'`,
+  `triggered_at=last_evaluated_at=now`.
+- `open → open` — re-match on a later run: in-place UPDATE that preserves
+  `triggered_at` and advances `last_evaluated_at` and `summary`.
+- `open → resolved` — the condition no longer matches: UPDATE
+  `status='resolved'`, `resolved_at=now`; the row is retained and excluded
+  from open-queue reads. Resolution is **global** — every open alert whose
+  `(position_id, rule_code)` key is absent from the current run's match set is
+  resolved, including alerts for positions that have closed, rolled out of
+  window, or lost their active option leg.
+- `resolved → (new) open row` — if the same rule matches again later, a fresh
+  open row is inserted; the old resolved row stays intact (distinct
+  `triggered_at` history).
+- `open → dismissed` — reserved for US-59; the `dismissed` status value is
+  part of the domain but unused in US-50.
+
+Rows are never deleted. Persistence runs **compute-then-persist**: all pure
+engine evaluation happens outside any transaction (per-position `try/catch` so
+one bad position cannot abort the run), then every upsert and every resolution
+is written inside a single `db.transaction(...)`, so a compute error never
+leaves partially written rows.
 
 <!-- /generated -->
 

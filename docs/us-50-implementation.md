@@ -176,13 +176,13 @@ injected `now`, invoking `evaluateAlerts` the way the scheduler handler does, an
 seed positions through a single DTE-relative helper
 `seedActiveLegAtDte(db, { id, ticker, phase, strike, dte, now? })`.
 
-| AC                                                      | Test                                                                    |
-| ------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Scheduled evaluation creates open alerts                | `AC: Scheduled evaluation creates open alerts for triggered rules`      |
-| Re-evaluation updates an existing alert (no duplicate)  | `AC: Re-evaluation updates an existing open alert instead of duplicating it` |
-| Cleared conditions resolve the alert                    | `AC: Cleared conditions resolve the alert`                              |
-| Positions without an active option leg are skipped      | `AC: Positions without an active option leg are skipped`                |
-| Missing data for one rule does not fail the whole job   | `AC: Missing data for one rule does not fail the whole evaluation job`  |
+| AC                                                     | Test                                                                         |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| Scheduled evaluation creates open alerts               | `AC: Scheduled evaluation creates open alerts for triggered rules`           |
+| Re-evaluation updates an existing alert (no duplicate) | `AC: Re-evaluation updates an existing open alert instead of duplicating it` |
+| Cleared conditions resolve the alert                   | `AC: Cleared conditions resolve the alert`                                   |
+| Positions without an active option leg are skipped     | `AC: Positions without an active option leg are skipped`                     |
+| Missing data for one rule does not fail the whole job  | `AC: Missing data for one rule does not fail the whole evaluation job`       |
 
 AC-1 additionally asserts the persisted row carries all eight named fields
 (position id, rule code, urgency, summary, quick action, status, triggered_at,
