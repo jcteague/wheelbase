@@ -1,6 +1,6 @@
 # ADR: REST polling for option snapshots, disabled when market closed
 
-<!-- generated:from us-33 -->
+<!-- generated:from us-33,market-data-massive-migration -->
 
 ## Decision
 

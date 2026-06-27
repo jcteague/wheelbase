@@ -1,12 +1,18 @@
 # ADR: MarketDataProvider connect-on-demand lifecycle
 
-<!-- generated:from us-32 -->
+<!-- generated:from us-32,market-data-massive-migration -->
 
 ## Decision
 
-`createMarketDataProvider(...)` is instantiated once at app startup in `src/main/index.ts`. `provider.connect()` is **not** called at startup — it's deferred until the first non-empty `market-data:set-stock-quote-tickers` subscription request from the renderer. A module-scoped `let connected = false` flag inside `src/main/ipc/market-data.ts` ensures `connect()` is called only once per app session. On `app.before-quit`, `provider.disconnect()` is called.
+The provider is instantiated once at app startup in `src/main/index.ts`. `provider.connect()` is **not** called at startup — it's deferred until the first non-empty `market-data:set-stock-quote-tickers` subscription request from the renderer. A `connected` flag ensures `connect()` is called only once per app session. On `app.before-quit`, `provider.disconnect()` is called.
 
-The current Observable subscription (the one bridging stream ticks to renderer push events) is held at module scope. Every new `set-stock-quote-tickers` call tears down the prior subscription, optionally connects the provider (if not already), and subscribes to the new ticker set.
+The current Observable subscription (the one bridging stream ticks to renderer push events) is held alongside that flag. Every new `set-stock-quote-tickers` call tears down the prior subscription, optionally connects the provider (if not already), and subscribes to the new ticker set.
+
+## Current state
+
+- The factory is `marketDataFactory.create()` (configured via `marketDataFactory.configure(...)` and torn down via `marketDataFactory.disconnect()` in the `app.before-quit` handler), not `createMarketDataProvider(...)`. See ADR [market-data-provider-interface](./market-data-provider-interface.md).
+- The `connected` flag and the active subscription are not module-scoped in `src/main/ipc/market-data.ts`. They live in a `StreamState` object (`{ connected, activeSub }`) created by `newStreamState()` and threaded into `subscribeToStockQuotes` in the service layer (`src/main/services/market-data.ts`). Teardown is `state.activeSub?.unsubscribe()`.
+- The concrete provider is now `MassiveMarketDataProvider`; there is no `AlpacaMarketDataProvider` class, so the red-phase lazy-getter note below is historical (it described the original Alpaca provider).
 
 ## Context / Why
 

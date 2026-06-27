@@ -4,11 +4,11 @@
 
 ## Decision
 
-The Electron `app.on('before-quit', ...)` handler calls `e.preventDefault()`, awaits `Promise.all([scheduler.stop(), marketDataProvider.disconnect()])`, then calls `app.exit(0)`. There is exactly one `before-quit` registration.
+The Electron `app.on('before-quit', ...)` handler calls `e.preventDefault()`, awaits `Promise.all([scheduler.stop(), marketDataFactory.disconnect()])`, then calls `app.exit(0)`. There is exactly one `before-quit` registration.
 
 ## Why
 
-Before US-35 the `marketDataProvider.disconnect()` call was fire-and-forget — quit completed before the WebSocket closed cleanly. Adding the scheduler's `stop()` (which drains in-flight handler promises with a 5-second timeout) made it worth doing the shutdown deterministically: prevent the default quit, wait for both subsystems to finish, then exit.
+Before US-35 the `marketDataFactory.disconnect()` call was fire-and-forget — quit completed before the WebSocket closed cleanly. Adding the scheduler's `stop()` (which drains in-flight handler promises with a 5-second timeout) made it worth doing the shutdown deterministically: prevent the default quit, wait for both subsystems to finish, then exit.
 
 Running the two shutdowns through `Promise.all` overlaps them — the scheduler can be draining the same poll that the market-data provider's WebSocket close interrupts.
 

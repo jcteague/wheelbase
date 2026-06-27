@@ -4,7 +4,7 @@
 
 ## Summary
 
-Adds live option pricing and unrealized P&L to every position with an open option leg. Two new columns — `Opt Mid` and `P&L` — sit between `Price` and `Strike` on the positions list, and the position-detail Open Leg section gains three matching stats (`Current Mid`, `Unrealized P&L`, `% of Max Profit`). A new `market-data:option-snapshots` IPC channel polls the [us-31-market-data-provider-adapter](./us-31-market-data-provider-adapter.md) `MarketDataProvider.getOptionSnapshots()` every 60 s for OCC symbols built from each active leg. A gold `TARGET` badge fires when P&L crosses the position's profit target (default 50 %, optional per-position override stored on a new nullable column). HOLDING_SHARES rows and rows with no snapshot render `—` without breaking the rest of the layout.
+Adds live option pricing and unrealized P&L to every position with an open option leg. Two new columns — `Opt Mid` and `P&L` — sit between `Price` and `Strike` on the positions list, and the position-detail Open Leg section gains three matching stats (`Current Mid`, `Unrealized P&L`, `% of Max Profit`). A new `market-data:option-snapshots` IPC channel polls the [us-31-market-data-provider-adapter](./us-31-market-data-provider-adapter.md) `MarketDataProvider.getOptionSnapshot()` (singular, called once per symbol) every 60 s for OCC symbols built from each active leg. A gold `TARGET` badge fires when P&L crosses the position's profit target (default 50 %, optional per-position override stored on a new nullable column). HOLDING_SHARES rows and rows with no snapshot render `—` without breaking the rest of the layout.
 
 This story also prototyped a "Triage Cockpit" redesign of `PositionDetailContent` inside `plans/us-33/handoff/`. The cockpit itself — verdict engine, delta gauge, distance thermometer, context strip, collapsible drawers — was **not** shipped under us-33; it was ported and finished under us-34 (see [us-34-position-cockpit](./us-34-position-cockpit.md)). Everything below covers the data layer us-33 actually shipped.
 
@@ -27,12 +27,12 @@ Background: the trader has an open CSP on AAPL with strike `180.00`, expiration 
 
 ## Architecture decisions
 
-- OCC option symbol building lives in a new pure leaf module `src/main/core/option-symbol.ts` (format `{TICKER}{YYMMDD}{P|C}{STRIKE×1000 padded 8}`), imported directly by both main and renderer — domain rule, single source of truth → [[occ-symbol-pure-leaf]]
+- OCC option symbol building lives in a pure leaf module `src/shared/option-symbol.ts` (format `{TICKER}{YYMMDD}{P|C}{STRIKE×1000 padded 8}`), re-exported through `src/main/core/option-symbol.ts` and imported by both main and renderer — domain rule, single source of truth → [[occ-symbol-pure-leaf]]
 - Profit-target storage: a nullable `profit_target_percent INTEGER` column on `positions` (migration `005`), plus a hard-coded `DEFAULT_PROFIT_TARGET_PERCENT = 50` constant resolved by `resolveProfitTarget(override)`; no `app_settings` table → [[profit-target-nullable-column]]
 - Target-reached check runs renderer-side after `computeUnrealizedPnl` — IPC does not ship a `targetReached` boolean, avoiding an extra round-trip on every price tick → [[profit-target-nullable-column]]
 - P&L math (`computeUnrealizedPnl`) is added to `src/main/core/costbasis.ts`, returning `Decimal.toFixed(4)` strings on the 0–100 percent scale to match the engine's existing convention → [[pnl-math-in-costbasis]]
 - REST-only polling at 60 s, disabled when `session === 'closed'`; no WebSocket stream (Alpaca's option-quote stream lacks Greeks, which us-34 needs) → [[option-snapshots-rest-polling]]
-- The renderer builds OCC symbols from active legs and calls `getOptionSnapshots(symbols)`; the main process never receives raw leg objects → [[renderer-builds-occ-symbols]]
+- The renderer builds OCC symbols from active legs and calls `getOptionSnapshots(payload)` (the IPC channel is plural); the main process never receives raw leg objects → [[renderer-builds-occ-symbols]]
 - Active-leg metadata (`instrumentType`, `contracts`, `entryPremiumPerContract`, `profitTargetPercent`) flows through `positions:list` by extending the existing active-leg subquery — no second query → [[active-leg-metadata-via-positions-list]]
 - `market-data:option-snapshots` returns the provider's full `OptionSnapshot` 1:1 including `greeks`, `lastTrade`, `openInterest`, `volume` — no flattening, so us-34 can read Greeks without a contract change → [[ipc-returns-full-option-snapshot]]
 - Wide-spread (`(ask − bid) / mid > 0.10`) and no-bid (`Decimal(bid).isZero()`) are pure renderer predicates in `src/renderer/src/lib/option-display.ts`, directly testable without React state → [[spread-no-bid-renderer-predicates]]
@@ -46,7 +46,7 @@ Background: the trader has an open CSP on AAPL with strike `180.00`, expiration 
 - `GetOptionSnapshotsPayloadSchema` — Zod `{ symbols: z.array(z.string().min(1).max(25)).max(50) }`; empty array is valid → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
 - `positions:list` (extension) — `PositionListItem` gains four nullable fields: `instrumentType: 'PUT' | 'CALL' | null`, `contracts: number | null`, `entryPremiumPerContract: string | null`, `profitTargetPercent: number | null`. Sourced by extending `LIST_QUERY`'s active-leg subquery SELECT to include `l.instrument_type, l.contracts, l.premium_per_contract` plus `p.profit_target_percent`. All four are `null` when no active option leg exists → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
 - Preload bridge — `window.api.getOptionSnapshots(payload)` invoke method; no event listeners (REST-only) → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
-- `buildOccSymbol({ ticker, expiration, strike, instrumentType })` — pure function; trims/uppercases ticker, validates `YYYY-MM-DD`, requires `strike > 0` and `instrumentType ∈ {PUT, CALL}`; supports up to 4-decimal strikes; only imports `decimal.js` → `src/main/core/option-symbol.ts`
+- `buildOccSymbol({ ticker, expiration, strike, instrumentType })` — pure function; trims/uppercases ticker, validates `YYYY-MM-DD`, requires `strike > 0` and `instrumentType ∈ {PUT, CALL}`; supports up to 4-decimal strikes; only imports `decimal.js`. Defined in `src/shared/option-symbol.ts` and re-exported through `src/main/core/option-symbol.ts` (a barrel)
 - `computeUnrealizedPnl({ entryPremium, currentMid, contracts })` → `{ pnl, pnlPercent, maxProfit }` — all `Decimal.toFixed(4)` strings; `pnlPercent` on the 0–100 scale; `Decimal.ROUND_HALF_UP`; validates `entryPremium > 0`, `currentMid ≥ 0`, `contracts ≥ 1` → [domain/cost-basis.md](../domain/cost-basis.md)
 - `resolveProfitTarget(override: number | null) → number` — returns `DEFAULT_PROFIT_TARGET_PERCENT = 50` when override is `null`; explicit `=== null` so `0` is honored as a real override → `src/main/core/profit-target.ts`
 - `useOptionSnapshots(legs, { session })` — renderer hook; `useMemo`-builds OCC symbols (per-leg try/catch skips legs that throw), `enabled: symbols.length > 0`, `refetchInterval: session === 'closed' ? false : 60_000`, `staleTime: 30_000`, `refetchOnWindowFocus: true`. Exports `legsToOccSymbols(legs)` for direct unit testing.
@@ -83,21 +83,21 @@ ALTER TABLE positions
 - **Spread-warning tooltip** — `Wide spread: $0.50 × $1.50 — P&L may be unreliable` (formatted from `bid`/`ask` via `fmtMoney`). E2E selects via `data-testid="opt-mid-spread-warning"`.
 - **Test IDs added for e2e** — `position-card-{TICKER}-opt-mid`, `position-card-{TICKER}-pnl`, `target-badge`, `opt-mid-spread-warning`.
 - **Refactor extractions** — `derivePositionRowDisplay(item, snapshot)` returns `{ targetReached, pnlPercent, maxProfit, targetPercent }` to keep JSX clean and testable; `formatSignedMoney(value)` moved to `src/renderer/src/lib/format.ts` for reuse between `UnrealizedPnlCell` and the detail-page Open Leg stats.
-- **`FakeMarketDataProvider.getOptionSnapshots`** — Reads `WHEELBASE_MOCK_OPTION_SNAPSHOTS` (JSON map keyed by OCC), returns a `Map<string, OptionSnapshot>` of only the requested symbols, empty Map when unset. Matches the env-driven pattern `getStockQuotes` uses from [us-32-live-position-prices](./us-32-live-position-prices.md).
+- **`FakeMarketDataProvider.getOptionSnapshot`** (singular) — Reads `WHEELBASE_MOCK_OPTION_SNAPSHOTS` (JSON map keyed by OCC) and returns the `OptionSnapshot` for the requested contract id, throwing an `unknown` `MarketDataError` when the symbol is absent. Matches the env-driven pattern `getStockQuotes` uses from [us-32-live-position-prices](./us-32-live-position-prices.md).
 - **E2E mocking strategy** — `e2e/option-pnl.spec.ts` sets `WHEELBASE_MARKET_MOCK=true` (the us-32 lever) plus `WHEELBASE_MOCK_OPTION_SNAPSHOTS`; each test seeds positions via `createPosition` IPC and hard-codes OCC symbols verified by `option-symbol.test.ts`. AC-5 writes `profit_target_percent=25` directly to SQLite via `better-sqlite3` (cleaner than a test-only IPC handler).
 
 ## Source code references
 
 Files this plan introduced or modified:
 
-- `src/main/core/option-symbol.ts` — new pure module: `buildOccSymbol`
+- `src/shared/option-symbol.ts` — pure module defining `buildOccSymbol`; re-exported through the `src/main/core/option-symbol.ts` barrel
 - `src/main/core/profit-target.ts` — new pure module: `DEFAULT_PROFIT_TARGET_PERCENT`, `resolveProfitTarget`
 - `src/main/core/costbasis.ts` — added `computeUnrealizedPnl` + types
 - `src/main/schemas.ts` — `GetOptionSnapshotsPayloadSchema`; `PositionListItem` extended with `instrumentType`, `contracts`, `entryPremiumPerContract`, `profitTargetPercent`
 - `src/main/services/list-positions.ts` — extended `LIST_QUERY` SELECT and row mapper with active-leg `instrument_type`/`contracts`/`premium_per_contract` and `positions.profit_target_percent`
-- `src/main/services/market-data.ts` — added `fetchOptionSnapshots(provider, symbols)`
+- `src/main/services/market-data.ts` — added `fetchOptionSnapshots(provider, symbols)`, which loops calling the provider's singular `getOptionSnapshot(symbol)` per OCC symbol
 - `src/main/ipc/market-data.ts` — extended `registerMarketDataHandlers` with `market-data:option-snapshots`
-- `src/main/integrations/fake-market-data.ts` — replaced stub `getOptionSnapshots` with env-driven implementation
+- `src/main/integrations/fake-market-data.ts` — replaced stub `getOptionSnapshot` (singular) with env-driven implementation
 - `migrations/005_add_profit_target_percent.sql` — nullable `profit_target_percent INTEGER` on `positions`
 - `src/preload/index.ts` — `getOptionSnapshots` invoke method
 - `src/preload/index.d.ts` — `IpcOptionSnapshot`, `IpcGetOptionSnapshotsPayload`, `IpcGetOptionSnapshotsResult`; `Window['api']` extension

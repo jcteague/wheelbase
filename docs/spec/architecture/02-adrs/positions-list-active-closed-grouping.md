@@ -4,7 +4,9 @@
 
 ## Decision
 
-The positions list page renders two visually distinct sections: **Active** positions and **Closed** positions. Closed positions render at lowered opacity (~0.55) with a `WHEEL_COMPLETE` badge in the project green token, no pulse animation, and a "Final P&L" value (green) in place of the live "Premium" label. No separate route is introduced — both groups are on the same page.
+The positions list page renders two visually distinct sections: **Active** positions and **Closed** positions. Closed positions render at lowered opacity (~0.55) and suppress live-price/snapshot columns. No separate route is introduced — both groups are on the same page.
+
+> **Current state:** `PositionCard` was restructured from a card into a table-row layout (`PriceCell`, `OptMidCell`, `UnrealizedPnlCell`, `TargetBadge`). The closed state is now surfaced as a plain status text label (`{item.status}`), not a `WHEEL_COMPLETE` badge or a "Final P&L" label as originally designed. The opacity nudge and the `data-testid="position-card-closed"` marker remain.
 
 `PositionCard` auto-detects closed state via `closed = isClosed ?? item.status === 'CLOSED'`, controlling the `data-testid="position-card-closed"` marker and the de-emphasis styling.
 

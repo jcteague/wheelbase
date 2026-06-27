@@ -1,6 +1,6 @@
 # US-39: Massive Market Data Provider
 
-<!-- generated:from us-39 -->
+<!-- generated:from us-39,market-data-massive-migration -->
 
 ## Summary
 
@@ -26,7 +26,7 @@ Related stories in Epic 06 (Live Market Data):
 - **AC-6:** A missing or empty API key surfaces `MarketDataError` with `code: 'auth_failed'`.
 - **AC-7:** A Massive 429 response triggers retry with exponential backoff (2 retries max).
 - **AC-8:** A Massive 401 or 403 response surfaces `MarketDataError` with `code: 'auth_failed'`.
-- **AC-9:** `supportsStreaming('stockQuotes')` and `supportsStreaming('optionQuotes')` return `true`; `stream()` throws `MarketDataError` with `code: 'streaming_unsupported'`.
+- **AC-9:** `supportsStreaming()` returns `true`. Streaming is now fully implemented: `connect()` opens a Massive WebSocket (auth + subscribe), and `stream(feed, symbols)` returns an `Observable` over the live tick subject filtered to the requested symbols. (The original US-39 ship only declared streaming and threw `streaming_unsupported`; a later story implemented the real WebSocket path.)
 
 ## What was built
 
@@ -41,7 +41,7 @@ Related stories in Epic 06 (Live Market Data):
 - Renderer API adapters (`src/renderer/src/api/broker.ts`, `src/renderer/src/api/market-data.ts`) updated to the new channel names.
 - `src/preload/index.ts` updated to expose both `market-data:*` and `broker:*` channels through the context bridge.
 
-The `market-data:option-snapshots` bulk endpoint (from US-33) was replaced: single-contract lookup is now `market-data:option-snapshot` (singular) and filtered discovery is `market-data:option-chain`. The old `AlpacaMarketDataProvider` class was deleted with no fallback.
+The `market-data:option-snapshots` bulk endpoint (from US-33) was **retained**; US-39 _added_ two new channels alongside it — single-contract lookup `market-data:option-snapshot` (singular) and filtered discovery `market-data:option-chain`. The old `AlpacaMarketDataProvider` class was deleted with no fallback.
 
 ## Architecture decisions
 
@@ -53,9 +53,9 @@ Node 20+ built-in `fetch` is used directly for all Massive API calls. Massive ha
 
 The Massive API key is sent as `Authorization: Bearer ${apiKey}` on every request. Query-string `?apiKey=` was rejected because it exposes secrets in URLs and server logs.
 
-### Streaming declared but deferred
+### Streaming declared, later implemented
 
-`supportsStreaming()` returns `true` for `stockQuotes` and `optionQuotes` feeds, but `stream()` throws `MarketDataError` with `code: 'streaming_unsupported'`. This signals Massive's real capability without the Phase 2 overhead of implementing WebSocket auth. Returning `false` was rejected to avoid misrepresenting Massive's actual API surface to future callers.
+At US-39 ship, `supportsStreaming()` returned `true` while `stream()` threw `MarketDataError` with `code: 'streaming_unsupported'` — signalling Massive's real capability without the Phase 2 overhead of WebSocket auth. Returning `false` was rejected to avoid misrepresenting Massive's actual API surface to future callers. This decision has since been superseded: `supportsStreaming()` (no argument) returns `true` unconditionally, and streaming is fully implemented — `connect()` opens a WebSocket and `stream(feed, symbols)` returns an `Observable` over the live tick subject.
 
 ### Optional Greeks — no fabricated zeros
 
@@ -73,9 +73,9 @@ The Massive API key is sent as `Authorization: Bearer ${apiKey}` on every reques
 
 The broker/market-data separation that US-31 introduced in the provider interface is now reflected at the IPC layer. Previously, the single combined `AlpacaMarketDataProvider` handled both sets of concerns through the same handler. Keeping mixed channels in one namespace would make the split invisible to renderers and preload code. See [IPC handlers contract](../contracts/ipc-handlers.md) for the full channel registry.
 
-### `market-data:option-snapshots` (bulk) replaced by singular + chain
+### `market-data:option-snapshots` (bulk) retained; singular + chain added
 
-The US-33 bulk endpoint forced callers to batch OCC symbols themselves with no filter support. The new shapes — `market-data:option-snapshot` for single-contract lookups and `market-data:option-chain` for filtered discovery — match Massive's actual API surface and enable the option screener work planned for Epic 3.
+The US-33 bulk endpoint forced callers to batch OCC symbols themselves with no filter support. Rather than removing it, US-39 _added_ two new shapes alongside the retained bulk channel — `market-data:option-snapshot` for single-contract lookups and `market-data:option-chain` for filtered discovery — which match Massive's actual API surface and enable the option screener work planned for Epic 3. The bulk channel is still registered (`market-data:option-snapshots`) and exposed in preload as `getOptionSnapshots`.
 
 ## Contracts touched
 
@@ -126,7 +126,7 @@ Response: { ok: true; snapshots: OptionSnapshot[]; nextCursor: null }
 
 Implemented in `src/main/ipc/market-data.ts`.
 
-### `broker:account-info`, `broker:market-status`, `broker:activities`
+### `broker:account`, `broker:market-status`, `broker:activities`
 
 Three new IPC request/response channels that replace broker methods previously exposed through the combined Alpaca provider. All route to `AlpacaBrokerProvider` via `src/main/ipc/broker.ts`. Payloads mirror the shapes previously documented under the old Alpaca integration — see [alpaca-integration contract](../contracts/alpaca-integration.md).
 

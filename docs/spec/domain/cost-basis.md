@@ -82,7 +82,7 @@ migration `005`) and falls back to `DEFAULT_PROFIT_TARGET_PERCENT = 50` when
   discriminator plus optional `prevStrike` / `newStrike` (required when
   `legType === 'CSP'`). Three formulas, picked by branching on `legType`
   and whether the strike moved:
-  - **CC roll (any strike):** `basisPerShare = prevBasisPerShare − net`
+  - **CC roll (any strike):** `basisPerShare = prevBasisPerShare − (net × contracts × 100) / (positionContracts × 100)` (prorated across held shares; requires `positionContracts`)
   - **CSP roll, same strike:** `basisPerShare = prevBasisPerShare − net`
   - **CSP roll, different strike:**
     `basisPerShare = prevBasisPerShare + (newStrike − prevStrike) − net`
@@ -160,8 +160,10 @@ contracts })` returns `finalPnl = openPremium × contracts × 100` and a
 
 ### CC premium reduces basis the same way a roll credit does
 
-- **Decision:** `calculateCcOpenBasis` subtracts `ccPremiumPerContract` from
-  `prevBasisPerShare` and adds `ccPremium × contracts × 100` to
+- **Decision:** `calculateCcOpenBasis` reduces `prevBasisPerShare` by the CC
+  income prorated across all held shares
+  (`(ccPremiumPerContract × contracts × 100) / (positionContracts × 100)`)
+  and adds `ccPremium × contracts × 100` to
   `totalPremiumCollected`. The new snapshot leaves `final_pnl` `null` — the
   wheel is still in flight.
 - **Why:** A covered call is a credit, just like a roll. Folding it into
@@ -189,7 +191,7 @@ positionOpenedDate, fillDate })` computes
   re-adds `totalPremiumCollected` because every premium collected across
   the wheel — CSP open, every roll credit, the CC premium — is already
   baked into `basisPerShare`. The same engine call also returns
-  `sharesHeld`, `capitalDeployed`, `cycleDays` (calendar days from
+  `capitalDeployed`, `cycleDays` (calendar days from
   `positionOpenedDate` to `fillDate`), and an `annualizedReturn` that
   falls back to `'0.0000'` when `cycleDays <= 0`.
 - **Why:** Re-adding premium would double-count the credit that's
@@ -401,23 +403,29 @@ The position row is **not** updated on a roll — phase stays `CSP_OPEN`,
 
 ### CC roll
 
-`calculateRollBasis` is called with `legType: 'CC'`. Strike fields are
-ignored — the shares are already held, so a CC strike change does not move
-share basis. Let `net = newPremium − costToClose` (positive = credit):
+`calculateRollBasis` is called with `legType: 'CC'` and a required
+`positionContracts`. Strike fields are ignored — the shares are already
+held, so a CC strike change does not move share basis. Let
+`net = newPremium − costToClose` (positive = credit). The per-share
+reduction is prorated across all held shares
+(`totalShares = positionContracts × 100`):
 
 ```
-basisPerShare         = prevBasisPerShare − net
-totalPremiumCollected = prevTotalPremiumCollected + net × contracts × 100
+netTotal              = net × contracts × 100
+basisPerShare         = prevBasisPerShare − (netTotal / totalShares)
+totalPremiumCollected = prevTotalPremiumCollected + netTotal
 ```
+
+`calculateRollBasis` throws if `positionContracts` is omitted on a CC roll.
 
 Snapshot row written:
 
-| Column                    | Value                                                      |
-| ------------------------- | ---------------------------------------------------------- |
-| `basis_per_share`         | `prevBasisPerShare − net` (4 dp)                           |
-| `total_premium_collected` | `prevTotalPremiumCollected + net × contracts × 100` (4 dp) |
-| `final_pnl`               | `NULL` (position remains open)                             |
-| `snapshot_at`             | now                                                        |
+| Column                    | Value                                                 |
+| ------------------------- | ----------------------------------------------------- |
+| `basis_per_share`         | `prevBasisPerShare − (netTotal / totalShares)` (4 dp) |
+| `total_premium_collected` | `prevTotalPremiumCollected + netTotal` (4 dp)         |
+| `final_pnl`               | `NULL` (position remains open)                        |
+| `snapshot_at`             | now                                                   |
 
 The position row is **not** updated on a CC roll — phase stays `CC_OPEN`,
 `status` stays `ACTIVE`. ROLL_FROM (BUY CALL) and ROLL_TO (SELL CALL) legs
@@ -479,21 +487,23 @@ because the CSP option no longer exists as an open leg.
 
 ### Covered call open (HOLDING_SHARES → CC_OPEN)
 
-Formula:
+Formula (the per-share reduction is the CC income prorated across all held
+shares, where `totalShares = positionContracts × 100`):
 
 ```
-basisPerShare         = prevBasisPerShare − ccPremiumPerContract
-totalPremiumCollected = prevTotalPremiumCollected + (ccPremium × contracts × 100)
+totalCcIncome         = ccPremiumPerContract × contracts × 100
+basisPerShare         = prevBasisPerShare − (totalCcIncome / totalShares)
+totalPremiumCollected = prevTotalPremiumCollected + totalCcIncome
 ```
 
 Snapshot row written:
 
-| Column                    | Value                                              |
-| ------------------------- | -------------------------------------------------- |
-| `basis_per_share`         | `prevBasisPerShare − ccPremiumPerContract` (4 dp)  |
-| `total_premium_collected` | `prevTotal + (ccPremium × contracts × 100)` (4 dp) |
-| `final_pnl`               | `NULL` (position still open)                       |
-| `snapshot_at`             | now                                                |
+| Column                    | Value                                                      |
+| ------------------------- | ---------------------------------------------------------- |
+| `basis_per_share`         | `prevBasisPerShare − (totalCcIncome / totalShares)` (4 dp) |
+| `total_premium_collected` | `prevTotal + totalCcIncome` (4 dp)                         |
+| `final_pnl`               | `NULL` (position still open)                               |
+| `snapshot_at`             | now                                                        |
 
 The position row's `phase` flips to `CC_OPEN`; `status` stays `ACTIVE`. The
 strike-vs-basis guardrail (warn when CC strike ≤ basis) is a client-side
@@ -716,6 +726,7 @@ export interface RollBasisInput {
   legType: 'CSP' | 'CC'
   prevStrike?: string // required when legType === 'CSP'
   newStrike?: string // required when legType === 'CSP'
+  positionContracts?: number // required when legType === 'CC' — prorates basis reduction
 }
 export interface RollBasisResult {
   basisPerShare: string
@@ -751,6 +762,7 @@ export interface CcOpenBasisInput {
   prevTotalPremiumCollected: string
   ccPremiumPerContract: string
   contracts: number
+  positionContracts: number // total contracts held — prorates the basis reduction
 }
 export interface CcOpenBasisResult {
   basisPerShare: string // 4 dp
@@ -779,7 +791,6 @@ export interface CallAwayInput {
 }
 export interface CallAwayResult {
   finalPnl: string // 4 dp, signed
-  sharesHeld: number // contracts × 100
   capitalDeployed: string // basisPerShare × sharesHeld, 4 dp
   cycleDays: number // calendar days, openedDate → fillDate
   annualizedReturn: string // 4 dp; '0.0000' if cycleDays <= 0
@@ -787,9 +798,9 @@ export interface CallAwayResult {
 export function calculateCallAway(input: CallAwayInput): CallAwayResult
 ```
 
-Shared helpers also live in `src/main/core/costbasis.ts`:
+Module-internal helpers also live in `src/main/core/costbasis.ts`:
 `SHARES_PER_CONTRACT`, `sharesFromContracts()`, and `calculateCycleDays()`
-— reused by call-away and other cost-basis math. A
+— all file-private (not exported), reused only within `costbasis.ts`. A
 `LEG_ROLE_LABEL` map maps known `legRole` values to default waterfall
 labels (e.g., `CSP_OPEN → 'CSP premium'`); per-leg `label` overrides take
 precedence.

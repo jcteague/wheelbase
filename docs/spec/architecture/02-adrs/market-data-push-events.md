@@ -1,6 +1,6 @@
 # ADR: Two push event channels for market data (tick + stream error)
 
-<!-- generated:from us-32 -->
+<!-- generated:from us-32,market-data-massive-migration -->
 
 ## Decision
 

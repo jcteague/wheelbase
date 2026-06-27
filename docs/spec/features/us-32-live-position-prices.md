@@ -1,6 +1,6 @@
 # US-32: Live Position Prices
 
-<!-- generated:from us-32 -->
+<!-- generated:from us-32,market-data-massive-migration -->
 
 ## Summary
 
@@ -17,15 +17,15 @@ Adds a live `Price` column to the Positions list (between `Phase` and `Strike`) 
 
 ## What was built
 
-A stream-first market-data pipeline for stock quotes. The main process owns a single `MarketDataProvider` instance (connected lazily on first subscription request), and `src/main/ipc/market-data.ts` exposes three request/response handlers (`stock-quotes`, `set-stock-quote-tickers`, `market-status`) plus two fire-and-forget push events (`stock-quote`, `stream-error`). On every active-ticker change the renderer calls `setStockQuoteTickers`, which tears down the prior Observable subscription, subscribes to `provider.stream('stockQuotes', tickers)`, and forwards each frame as a `market-data:stock-quote` event.
+A stream-first market-data pipeline for stock quotes. The main process owns a single `MarketDataProvider` instance (connected lazily on first subscription request), and `src/main/ipc/market-data.ts` exposes two request/response handlers (`stock-quotes`, `set-stock-quote-tickers`) plus two fire-and-forget push events (`stock-quote`, `stream-error`); market-status is served separately by the broker handler `broker:market-status`. On every active-ticker change the renderer calls `setStockQuoteTickers`, which tears down the prior Observable subscription, subscribes to `provider.stream('stockQuotes', tickers)`, and forwards each frame as a `market-data:stock-quote` event.
 
-The renderer's `useStockQuotes` hook uses TanStack Query as the single cache: a REST seed (via `queryFn`) populates `prevClose` once per ticker; subsequent stream ticks merge into the cache via `setQueryData`, carrying `prevClose` forward. `change` and `changePercent` are computed at render time from `(price, prevClose)`. Staleness is detected from `dataUpdatedAt` (>5 min → `DELAYED`), and `useMarketStatus` polls `market-data:market-status` every 60s for session boundaries. Three new presentational components — `MarketStatusPill`, `PriceCell`, `StaleDataBanner` — plus changes to `PositionCard` and `PositionsListPage` deliver the UI.
+The renderer's `useStockQuotes` hook uses TanStack Query as the single cache: a REST seed (via `queryFn`) populates `prevClose` once per ticker; subsequent stream ticks merge into the cache via `setQueryData`, carrying `prevClose` forward. `change` and `changePercent` are computed at render time from `(price, prevClose)`. Staleness is detected from `dataUpdatedAt` (>5 min → `DELAYED`), and `useMarketStatus` polls `broker:market-status` every 60s for session boundaries. Three new presentational components — `MarketStatusPill`, `PriceCell`, `StaleDataBanner` — plus changes to `PositionCard` and `PositionsListPage` deliver the UI.
 
 ## Architecture decisions
 
 - Stream-first transport with REST seed for `prevClose`; provider lifecycle, push event channels, and stale-data detection → [domain/market-data.md](../domain/market-data.md)
 - IPC handler shape (`{ ok: true, ... } | { ok: false, errors }`) and `MarketDataError` → IPC error code mapping → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
-- Alpaca SDK switch from `getStocksQuotesLatest` to `getStocksSnapshots` so `prev_daily_bar.c` is available to compute `change`/`changePercent` in the adapter → [contracts/alpaca-integration.md](../contracts/alpaca-integration.md)
+- `prevClose` is sourced from the market-data provider's stock-quote payload so the renderer can compute `change`/`changePercent`; the provider is Massive-based (see [us-31](./us-31-market-data-provider-adapter.md)), not the Alpaca SDK → [domain/market-data.md](../domain/market-data.md)
 - Renderer state shape: single TanStack Query cache as the bridge between REST seed and stream ticks; `useStockQuotes` + `useMarketStatus` as two TanStack-backed hooks → [domain/market-data.md](../domain/market-data.md)
 - Renderer-side ADRs without dedicated topic pages:
   - **Daily change computed renderer-side** from `(price, prevClose)`; stream ticks emit `prevClose: null` and the renderer carries the seed value forward.
@@ -36,13 +36,13 @@ The renderer's `useStockQuotes` hook uses TanStack Query as the single cache: a 
 
 - `market-data:stock-quotes` — REST snapshot handler returning `Record<string, IpcStockQuote>` keyed by ticker → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
 - `market-data:set-stock-quote-tickers` — subscription mutation; manages stream lifecycle and connects the provider on demand → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
-- `market-data:market-status` — request/response for session info, polled every 60 s → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
+- `broker:market-status` — request/response for session info, polled every 60 s by `useMarketStatus`; there is no `market-data:market-status` channel → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
 - `market-data:stock-quote` (push event) — per-tick delta forwarded from the Observable; `prevClose` always `null` → [domain/market-data.md](../domain/market-data.md)
 - `market-data:stream-error` (push event) — relays provider `StreamError`; renderer surfaces the banner immediately → [domain/market-data.md](../domain/market-data.md)
-- `GetStockQuotesPayloadSchema` / `SetStockQuoteTickersPayloadSchema` — Zod: `tickers: z.array(z.string().min(1).max(10)).max(50)` → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
-- `StockQuote` (provider type) — extended with `prevClose: string` → [contracts/alpaca-integration.md](../contracts/alpaca-integration.md)
+- `GetStockQuotesPayloadSchema` / `SetStockQuoteTickersPayloadSchema` — Zod: `tickers: TickerListSchema` = `z.array(z.string().min(1).max(MAX_TICKER_LENGTH)).max(MAX_TICKERS_PER_REQUEST)`, where the constants are `MAX_TICKER_LENGTH = 10` and `MAX_TICKERS_PER_REQUEST = 50` → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
+- `StockQuote` (provider type) — extended with `prevClose: string` → [domain/market-data.md](../domain/market-data.md)
 - `IpcStockQuote` — IPC-flat shape with `prevClose: string | null` (set on REST seed, null on tick) → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
-- Preload bridge: `window.api.getStockQuotes`, `setStockQuoteTickers`, `getMarketStatus`, `onStockQuote`, `onStreamError` → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
+- Preload bridge: stock quotes are namespaced as `window.api.marketData.stockQuotes` and market status as `window.api.broker.marketStatus`; `setStockQuoteTickers`, `onStockQuote`, `onStreamError` are flat on `window.api` → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
 - `marketDataQueryKeys` — `['market-data', 'stock-quotes', sortedTickers.join(',')]`, `['market-data', 'market-status']`.
 
 ## Source files

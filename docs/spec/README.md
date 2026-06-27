@@ -2,7 +2,7 @@
 
 This directory is a generated source-of-truth wiki for the Wheelbase application. Pages are synthesized from the per-story plan dirs under `plans/` via the `/build-spec` (initial) and `/update-spec` (incremental) skills; each page's body sits between `<!-- generated:from <plan-list> -->` markers and is re-generated when any listed plan changes. Browse by topic (architecture, domain, contracts, schema) for cross-cutting concerns, or by feature (US-N) for story-level behaviour.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-16,us-17,us-31,us-32,us-33,us-34,us-35,us-37,us-39,us-43,us-44,us-50,us-51,missing-ac,design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-16,us-17,us-31,us-32,us-33,us-34,us-35,us-37,us-39,us-43,us-44,us-50,us-51,market-data-massive-migration,missing-ac,design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse -->
 
 ## Maintenance
 
@@ -77,6 +77,7 @@ Generated regions are bounded by `<!-- generated:from ... -->` / `<!-- /generate
 - [US-46 — Polling Scheduler](features/us-46-polling-scheduler.md) — generic market-session-aware setTimeout-chain job runner; foundation for all background poll jobs
 - [US-47/49 — Broker AC Hardening + Scheduler Park-Wake Resume](features/us-47-49-broker-ac-hardening.md) — `BrokerError.deeplink`, 4dp money normalization, two-direction key-mismatch detection, IPC deeplink envelope, park-wake self-resume at `nextOpen`
 - [US-48 — Scheduler + Settings Fixes](features/us-48-scheduler-settings-fixes.md) — broker getter injection, `stop()` timer cleanup, Settings Test Connection rejection handling
+- [Market-Data Provider Migration: Alpaca → Massive](features/market-data-massive-migration.md) — **retro plan / migration** capturing the swap of the live market-data provider from Alpaca to Massive (provider-agnostic interface + `marketDataFactory` + `MassiveMarketDataProvider`; broker concerns split onto `broker:*`); supersedes the market-data portions of US-31/US-32/US-39
 
 ### Epic 07 — Management alerts
 

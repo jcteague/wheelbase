@@ -4,7 +4,7 @@
 
 ## Decision
 
-`PositionListItem` is extended with four nullable fields — `instrumentType: 'PUT' | 'CALL' | null`, `contracts: number | null`, `entryPremiumPerContract: string | null`, `profitTargetPercent: number | null` — sourced by extending the existing active-leg subquery in `LIST_QUERY` to select `l.instrument_type, l.contracts, l.premium_per_contract` plus `p.profit_target_percent`. No separate IPC call.
+`PositionListItem` is extended with four nullable fields — `instrumentType: 'PUT' | 'CALL' | null`, `contracts: number | null`, `entryPremiumPerContract: string | null`, `profitTargetPercent: number | null` — sourced by extending the SELECT columns of `LIST_QUERY` (which already JOINs the active leg via `activeLegSubquery()`) to select `l.instrument_type, l.contracts, l.premium_per_contract` plus `p.profit_target_percent`. The shared `activeLegSubquery()` helper itself still returns only the active leg's `id` — the extra columns are read from the joined `legs` row in the list query body. No separate IPC call.
 
 ## Why
 

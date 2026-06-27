@@ -1,6 +1,6 @@
 # ADR: MessagePack decoding for option stream frames
 
-<!-- generated:from us-31 -->
+<!-- generated:from us-31,market-data-massive-migration -->
 
 ## Decision
 
@@ -13,6 +13,10 @@ Decode Alpaca's option WebSocket frames with `@msgpack/msgpack`, using `decodeMu
 ## Alternatives considered
 
 - **`msgpack-lite`** — older, less maintained, same API surface.
+
+## Current state
+
+Superseded / not implemented: this ADR described an Alpaca option-streaming design that was never shipped. The live market-data provider is **Massive** (`src/main/integrations/massive-market-data.ts`), which serves option data via REST snapshots and streams Polygon-compatible JSON ticks over a single `ws` socket — there is no MessagePack option socket. No `msgpack`, `decodeMulti`, or `@msgpack/msgpack` reference exists anywhere in `src/`; the `@msgpack/msgpack` dependency in `package.json` is unused. The original decision/rationale is retained here for history only.
 
 ## Source
 

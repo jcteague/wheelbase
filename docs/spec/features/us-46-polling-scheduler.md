@@ -39,7 +39,7 @@ The module-level singleton in `src/main/services/scheduler-instance.ts` exports 
 
 Dev-only test IPC channels (`_test:scheduler-registry`, `_test:scheduler-run-now`, `_test:scheduler-register`, `_test:scheduler-simulate-wake`) are exposed via `src/main/ipc/test-scheduler.ts` and guarded by `NODE_ENV === 'test'`. `seedTestJobsFromEnv()` reads the `WHEELBASE_TEST_JOBS` env var (comma-separated job names) and registers tracked no-op handlers, letting Playwright specs assert registration without depending on a real broker.
 
-`src/main/index.ts` registers the `detect-assignments` job at boot, calls `scheduler.start()`, and on `app.on('before-quit')` awaits `Promise.all([scheduler.stop(), marketDataProvider.disconnect()])` before `app.exit(0)`.
+`src/main/index.ts` registers the `detect-assignments` job at boot, calls `scheduler.start()`, and on `app.on('before-quit')` awaits `Promise.all([scheduler.stop(), marketDataFactory.disconnect()])` before `app.exit(0)`.
 
 ## Architecture decisions
 
@@ -47,7 +47,7 @@ Dev-only test IPC channels (`_test:scheduler-registry`, `_test:scheduler-run-now
 - **Scheduler does not persist state.** No `last_run_at`, no settings row, no journal. The scheduler is pure in-memory. Handlers that need "what did I see last time" own their own watermark (US-35 keeps `assignments_last_poll_at` in `app_settings`). Keeps the scheduler dumb, fast, and trivially testable. Driven by US-46.
 - **Module-level singleton with safe-broker fallback.** Node module caching guarantees one scheduler instance; multiple stories (US-35 today, US-44 IVR collector and beyond) register on the same object. `getSafeBroker()` wraps the broker factory so missing credentials degrade to "parked jobs" rather than crashing at import time. A lazy `getScheduler()` factory with `resetSchedulerForTests()` is filed as a follow-on (Area H1) for cleaner test ergonomics. Driven by US-46.
 - **Cadence is decided per tick, not per job.** Two pure helpers — `decideNextCadenceMs(policy, status)` and `decideAfterCloseFireAt(nextClose, offsetMinutes, nowMs)` — take the current market status and return the next delay (or `null` to park). This is what lets a single `interval` policy quote 60s during regular hours, 5 minutes during extended hours, and `null` while closed.
-- **Consolidated `before-quit` shutdown.** A single `app.on('before-quit')` handler awaits `Promise.all([scheduler.stop(), marketDataProvider.disconnect()])` then `app.exit(0)`. Both subsystems shut down concurrently and cleanly; the previous fire-and-forget `disconnect()` no longer races the exit. `scheduler.stop()` drains in-flight handlers under a 5-second timeout so a stuck handler can't hang the quit. Driven by US-46.
+- **Consolidated `before-quit` shutdown.** A single `app.on('before-quit')` handler awaits `Promise.all([scheduler.stop(), marketDataFactory.disconnect()])` then `app.exit(0)`. Both subsystems shut down concurrently and cleanly; the previous fire-and-forget `disconnect()` no longer races the exit. `scheduler.stop()` drains in-flight handlers under a 5-second timeout so a stuck handler can't hang the quit. Driven by US-46.
 - **Dev-only `_test:scheduler-*` IPC kept off the production surface.** E2E specs need to introspect the registry and trigger out-of-band runs without polluting `window.api`. The test IPC lives in its own handler file, registers only when `NODE_ENV === 'test'`, and exposes `getRegistry`, `runNow`, `register`, and a `simulateWake` stub. `WHEELBASE_TEST_JOBS` env-var seeding lets specs assert registration without depending on real broker credentials. Driven by US-46.
 
 ## Contracts touched
@@ -66,7 +66,7 @@ Dev-only test IPC channels (`_test:scheduler-registry`, `_test:scheduler-run-now
 - `src/main/services/polling-scheduler.ts` — `PollingScheduler` factory, cadence helpers, drain-on-stop, dynamic auto-start, `JobRegistryEntry` + `getRegistry()`, per-state invocation counters
 - `src/main/services/scheduler-instance.ts` — module-level singleton, `getSafeBroker()` fallback
 - `src/main/ipc/test-scheduler.ts` — dev-only IPC handlers, `seedTestJobsFromEnv()`
-- `src/main/index.ts` — bootstrap: registers `detect-assignments`, calls `scheduler.start()`, awaits `Promise.all([scheduler.stop(), marketDataProvider.disconnect()])` in `before-quit`
+- `src/main/index.ts` — bootstrap: registers `detect-assignments`, calls `scheduler.start()`, awaits `Promise.all([scheduler.stop(), marketDataFactory.disconnect()])` in `before-quit`
 - `e2e/polling-scheduler.spec.ts` — 10 US-46 AC scenarios + 3 US-49 park-wake scenarios
 
 ## Revisions

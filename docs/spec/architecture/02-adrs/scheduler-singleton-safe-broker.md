@@ -4,7 +4,7 @@
 
 ## Decision
 
-`src/main/services/scheduler-instance.ts` exports `const scheduler = createPollingScheduler(getSafeBroker())` evaluated at module load. `getSafeBroker()` wraps `brokerFactory.create()` in try/catch and returns a stub `BrokerProvider` (reports `session: 'closed'`, returns `[]` from `getActivities`) when broker credentials are missing.
+`src/main/services/scheduler-instance.ts` exports `const scheduler = createPollingScheduler(getSafeBroker)` evaluated at module load. Note the scheduler receives the `getSafeBroker` factory reference (uninvoked), not a constructed broker. `getSafeBroker()` wraps `brokerFactory.create()` in try/catch and returns a stub `BrokerProvider` when broker credentials are missing: its `getMarketStatus` reports `session: 'closed'`, `getActivities` returns `[]`, and `getAccountInfo` rejects with `Error('Broker not configured')`.
 
 ## Why
 

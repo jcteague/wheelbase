@@ -1,6 +1,6 @@
 # ADR: Raw `ws` package with two dedicated sockets for streaming
 
-<!-- generated:from us-31 -->
+<!-- generated:from us-31,market-data-massive-migration -->
 
 ## Decision
 
@@ -14,6 +14,10 @@ Alpaca's SDK has zero WebSocket support, and Node's built-in `WebSocket` (Node 2
 
 - **Node built-in WebSocket** — Electron's bundled Node may not match the expected API; less mockable.
 - **`socket.io`** — wrong protocol; Alpaca uses raw WebSocket frames.
+
+## Current state
+
+Superseded: the two-Alpaca-socket design was migrated to a **single** WebSocket against a **Massive** (Polygon-compatible) endpoint in commit `2debc14` ("market data / broker api separation, massive for market data"). The shipped code instantiates exactly one socket — `wss://delayed.massive.com/stocks` (`WS_URL`) via `new WebSocket(WS_URL)` in `src/main/integrations/massive-market-data.ts:17,268`. No `stream.data.alpaca.markets`, `v1beta1`, `dataFeed`, or `optionFeed` references remain in `src/`, and the stock-JSON / option-MessagePack two-feed framing split no longer maps to code (Massive frames use Polygon-compatible JSON message shapes). The original decision to use the raw `ws` package, multiplex subscriptions, and keep `MockSocket` test utilities still holds.
 
 ## Source
 

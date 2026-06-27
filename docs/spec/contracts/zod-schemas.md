@@ -6,7 +6,7 @@
 
 Every IPC payload that crosses the renderer → main boundary is validated by a Zod schema in `src/main/schemas.ts`. The matching `z.infer<typeof ...>` TypeScript type is exported alongside each schema so the handler, the service function, and the renderer adapter all bind to the same shape. The schema lives in main (it is the source of truth); the renderer learns the field names through the adapter's snake_case → camelCase mapping documented in [IPC handlers](./ipc-handlers.md), then re-parses nothing on its own — the main-process handler is the only place validation runs.
 
-Validation discipline is centralised. Every mutating position handler is registered via `registerParsedPositionHandler(db, channel, errLabel, schema, service)` from `src/main/ipc/utils.ts`, which performs `schema.safeParse(raw)` → on failure, returns `{ ok: false, errors: [...zodIssue.path / zodIssue.code / zodIssue.message] }`; on success, calls the service with the parsed payload and wraps the result in `{ ok: true, ...result }`. The helper also catches `ValidationError` thrown by lifecycle engines (mapped to `{ field, code, message }` shape) and any uncaught error (returned as `__root__` / `internal_error`). This means handler files contain no Zod boilerplate — just `registerParsedPositionHandler(db, 'positions:close-csp', 'positions_close_csp_unhandled_error', CloseCspPayloadSchema, closeCspPosition)`.
+Validation discipline is centralised. Every mutating position handler is registered via `registerParsedPositionHandler(db, channel, errLabel, schema, service)` (a private helper in `src/main/ipc/positions.ts`, built on top of the shared `handleIpcCall` from `src/main/ipc/utils.ts`), which performs `schema.safeParse(raw)` → on failure, returns `{ ok: false, errors: [...zodIssue.path / zodIssue.code / zodIssue.message] }`; on success, calls the service with the parsed payload and wraps the result in `{ ok: true, ...result }`. The helper also catches `ValidationError` thrown by lifecycle engines (mapped to `{ field, code, message }` shape) and any uncaught error (returned as `__root__` / `internal_error`). This means handler files contain no Zod boilerplate — just `registerParsedPositionHandler(db, 'positions:close-csp', 'positions_close_csp_unhandled_error', CloseCspPayloadSchema, closeCspPosition)`.
 
 Three classes of types are catalogued below: **core enums** (the discriminator values used throughout the wheel lifecycle), **payload schemas** (one `z.object({...})` per mutating IPC handler), and **result interfaces** (the record shapes returned in IPC responses). Result interfaces are TypeScript `interface`s rather than Zod schemas — they are produced by services, not parsed from input — but they live in `src/main/schemas.ts` alongside the payload schemas because both halves of the IPC contract belong together. A small set of shared helper schemas — `PositionIdSchema = z.string().uuid()` (extracted during the us-10 refactor pass), `RollPayloadBaseSchema` and `RollResultBase` (extracted during the us-14 refactor pass when the CC roll proved field-for-field identical to the CSP roll), and the `IsoDateRegex` / `IsoDateMessage` constants — are reused across payload schemas rather than re-declared.
 
@@ -24,7 +24,7 @@ The lifecycle state of a wheel. Values used across the extracted plans: `CSP_OPE
 
 ### `WheelStatus`
 
-`'ACTIVE' | 'PAUSED' | 'CLOSED'`. Tracks whether the position is being actively managed. `CLOSED` is set when the wheel finishes (`WHEEL_COMPLETE` after CSP expiry or call-away, or `CSP_CLOSED_PROFIT|LOSS` after an early CSP close). Assignment, CC open, CC close-early, and CC expire all keep `status: 'ACTIVE'` because the wheel is still in flight.
+`'ACTIVE' | 'CLOSED'`. Tracks whether the position is being actively managed. `CLOSED` is set when the wheel finishes (`WHEEL_COMPLETE` after CSP expiry or call-away, or `CSP_CLOSED_PROFIT|LOSS` after an early CSP close). Assignment, CC open, CC close-early, and CC expire all keep `status: 'ACTIVE'` because the wheel is still in flight.
 
 ### `LegRole`
 
@@ -33,7 +33,7 @@ The role each leg plays in the wheel history. Current values: `CSP_OPEN`, `CSP_C
 ### `LegAction`
 
 ```typescript
-export const LEG_ACTION_VALUES = ['SELL', 'BUY', 'EXPIRE', 'ASSIGN', 'EXERCISE'] as const
+const LEG_ACTION_VALUES = ['SELL', 'BUY', 'EXPIRE', 'ASSIGN', 'EXERCISE'] as const // module-private
 export const LegAction = z.enum(LEG_ACTION_VALUES)
 export type LegAction = z.infer<typeof LegAction>
 ```

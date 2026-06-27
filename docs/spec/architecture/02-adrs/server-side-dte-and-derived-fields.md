@@ -4,7 +4,7 @@
 
 ## Decision
 
-Days-to-expiration (DTE) and other derived fields are computed in the main process (the IPC service) and returned in the response, not computed in the renderer from the expiration date. DTE for closed/expired positions (no active option) is returned as `null`; the renderer renders `null` as `"Expired"`.
+Days-to-expiration (DTE) and other derived fields are computed in the main process (the IPC service) and returned in the response, not computed in the renderer from the expiration date. DTE for closed/expired positions (no active option) is returned as `null`; the renderer renders `null` as `—` (em dash).
 
 The positions list is sorted server-side by `dte ASC, nulls last` so the trader sees positions in management-priority order without client-side resorting.
 
@@ -25,7 +25,7 @@ The positions list is sorted server-side by `dte ASC, nulls last` so the trader 
 ## Consequences
 
 - `GET /api/positions` (now the `positions:list` IPC handler) returns `dte: int | None` per row.
-- The renderer's `PositionCard` renders DTE as `"42d"` or `"Expired"` based on whether `dte` is null.
+- The renderer's `PositionCard` renders DTE as `"42d"` or `—` (em dash) based on whether `dte` is null.
 - The list view trusts the server's sort order; tests assert "first card matches the nearest-expiration ticker" rather than re-sorting client-side.
 - The same principle applies to other derived fields (premium-waterfall ordering, sharesHeld, etc.): pure transforms live in core engines and are returned by services.
 

@@ -8,10 +8,10 @@ Several user-facing checks are implemented as **soft, client-side-only warnings*
 
 Examples:
 
-- **Future assignment date** (`assignmentDate > today`) — "This date is in the future — are you sure?"
-- **Future CC fill date** (`fillDate > today` on CC open or CC close) — "This date is in the future — are you sure?"
-- **Zero CC premium** (`premium = 0`) — "Premium is $0.00 — are you sure?"
+- **Future assignment date** (`assignmentDate > today`) — "This date is in the future — are you sure?" (rendered in `AssignmentSheet`).
 - **Cost-basis guardrail** on CC open (`strike <= basis`) — "This strike is below your cost basis — you would lock in a loss of $X.XX/share if called away" or "...at your cost basis — you would break even...".
+
+> **Current state:** Earlier drafts of this ADR also listed a "future CC fill date" warning and a "zero CC premium ($0.00 — are you sure?)" warning as the same soft pattern. Those were never implemented — the covered-call forms only enforce a hard "Premium is required" error plus the cost-basis guardrail, with no `fillDate > today` or `premium === 0` soft warning. The future-date soft warning currently exists only for the assignment date. The pattern below still stands for any future warnings of this kind.
 
 Hard validation (negative price, contracts exceeding shares-held, fill-date before open) is enforced by the lifecycle engine and surfaces as a blocking IPC error.
 
@@ -19,7 +19,7 @@ Hard validation (negative price, contracts exceeding shares-held, fill-date befo
 
 - Some brokers post assignment details over the weekend; the recorded date may technically be a future business day. Hard rejection would force the trader to lie about the date.
 - A CC sold at-or-below cost basis is a deliberate trade decision (the trader may want to be called away for tax or rebalancing reasons). The app should warn, not block.
-- Zero-premium CCs are unusual but legal (e.g. a deep ITM call). The warning prompts a sanity check without preventing the entry.
+- Zero-premium CCs are unusual but legal (e.g. a deep ITM call). The original design proposed a soft warning here as a sanity check that would not prevent entry, but it was not implemented (see Current state above).
 - Stories explicitly state these are warnings only: "Future-date warning is client-side only; the backend does not reject future dates."
 
 ## Alternatives considered

@@ -28,7 +28,7 @@ The done state — encoded as architectural rule rather than aspiration — is t
 
 ### One canonical Sheet primitive set powers every action sheet
 
-- **Decision:** Sheet layout is decomposed into six children-composed primitives — `SheetOverlay`, `SheetPanel`, `SheetHeader`, `SheetBody`, `SheetFooter`, `SheetCloseButton` — exported from `src/renderer/src/components/ui/Sheet.tsx` and reused by every action sheet (`ExpirationSheet`, `CcExpirationSheet`, `AssignmentSheet`, `OpenCoveredCallSheet`, `CloseCcEarlySheet`, `CallAwaySheet`, `RollCspSheet`). `SIDEBAR_WIDTH = 200` is exported from the same module rather than redefined per sheet. The pre-extraction header component `OpenCcSheetHeader.tsx` is deleted.
+- **Decision:** Sheet layout is decomposed into six children-composed primitives — `SheetOverlay`, `SheetPanel`, `SheetHeader`, `SheetBody`, `SheetFooter`, `SheetCloseButton` — exported from `src/renderer/src/components/ui/Sheet.tsx` and reused by every action sheet (`ExpirationSheet`, `CcExpirationSheet`, `AssignmentSheet`, `OpenCoveredCallSheet`, `CloseCcEarlySheet`, `CallAwaySheet` / `CallAwaySuccess`, `RollCspSheet`). The 200 px sidebar offset is a hardcoded Tailwind arbitrary value (`left-[200px]` in `SheetOverlay`) rather than a shared `SIDEBAR_WIDTH` constant. The pre-extraction header component `OpenCcSheetHeader.tsx` is deleted.
 - **Why:** Before the extraction, each sheet redefined ~40 lines of identical overlay/panel/header/footer markup as inline styles. A single composable primitive set means a style change (token swap, shadow tweak, scrim opacity) propagates to every sheet through one file. Children-based composition matches the existing `SectionCard`/`StatGrid`/`PageLayout` codebase pattern, keeping the primitives flexible enough to serve both form and success states without a variant enum.
 - **Driven by:** [us-4 — Close a CSP early](../features/us-4-close-csp.md), [us-5 — Record CSP expiration](../features/us-5-expire-csp.md), [us-6 — Record CSP assignment](../features/us-6-record-assignment.md), [us-7 — Open covered call](../features/us-7-open-covered-call.md), [us-8 — Close a covered call early](../features/us-8-close-cc-early.md), [us-9 — Record CC expiration](../features/us-9-expire-cc.md), [us-10 — Record shares called away](../features/us-10-call-away.md), [us-12 — Roll a CSP](../features/us-12-roll-csp.md)
 
@@ -47,7 +47,7 @@ The done state — encoded as architectural rule rather than aspiration — is t
 ### Class-name assertions are the migration's TDD signal
 
 - **Decision:** For each migrated component, tests assert specific Tailwind class names on rendered elements (`expect(element).toHaveClass('border-t')`). The `Sheet.tsx` test suite migrates from `toHaveStyle({ borderRadius: '50%' })`-style assertions to `toHaveClass('rounded-full')` as part of its Red phase. Existing behaviour tests (text content, interactions) serve as regression guard.
-- **Why:** Without class-asserting tests the migration has no Red → Green signal; snapshot tests are brittle for class-heavy markup, and visual-only verification has no regression net. The migration's E2E suite (`e2e/design-system.spec.ts`) closes the loop by reading computed styles in the live Electron renderer — for example, asserting the Wheelbase logo dot's `background-color` equals the resolved `--wb-gold` RGB.
+- **Why:** Without class-asserting tests the migration has no Red → Green signal; snapshot tests are brittle for class-heavy markup, and visual-only verification has no regression net. Component-level class assertions are the migration's regression net; no dedicated design-system E2E spec landed in `e2e/`.
 - **Driven by:** [us-7 — Open covered call](../features/us-7-open-covered-call.md), [us-12 — Roll a CSP](../features/us-12-roll-csp.md)
 
 ### Shared formatters and phase labels live once in `lib/`
@@ -113,7 +113,7 @@ Standardised in `plans/design-system/data-model.md` and applied through every mi
 | `flex: 1`                              | `flex-1`                  |
 | `flexShrink: 0`                        | `shrink-0`                |
 | `opacity: 0.5`                         | `opacity-50`              |
-| `left: SIDEBAR_WIDTH` (constant 200)   | `left-[200px]`            |
+| `left: 200` (sidebar offset)           | `left-[200px]`            |
 
 `SheetPanel.width`, `SheetHeader.eyebrowColor` / `borderBottomColor`, the logo-dot glow, per-row phase-colour custom properties, and multi-stop linear gradients are intentionally NOT converted — they are documented dynamic exceptions (see Key decisions).
 
@@ -121,13 +121,14 @@ Standardised in `plans/design-system/data-model.md` and applied through every mi
 
 `src/renderer/src/components/ui/Sheet.tsx` exports the layout pieces every action sheet composes:
 
-- `SheetOverlay({ children, onClose })` — fixed-position scrim + frame, offset by `SIDEBAR_WIDTH` from the left so the sidebar stays visible. Scrim is the first child of the overlay and dismisses on click.
+- `SheetOverlay({ children, onClose })` — fixed-position scrim + frame, offset from the left by the hardcoded `left-[200px]` so the sidebar stays visible. Scrim is the first child of the overlay and dismisses on click.
 - `SheetPanel({ children, width = 400 })` — right-anchored full-height panel, `bg-wb-bg-surface`, left border `border-wb-border`, `shadow-sheet`, `font-wb-mono` colour `text-wb-text-primary`. Width is a runtime prop (only `RollCspSheet` overrides to 420).
 - `SheetHeader({ eyebrow, title, subtitle?, onClose, eyebrowColor?, borderBottomColor? })` — uppercase eyebrow + title + optional subtitle, with a close button on the right. `eyebrowColor` / `borderBottomColor` tint the header for success states.
 - `SheetBody({ children })` — vertically scrolling content area with consistent padding and gap.
 - `SheetFooter({ children })` — bottom action bar with top border and horizontal flex layout for buttons.
 - `SheetCloseButton({ onClick })` — the standalone `×` button used inside `SheetHeader` (exported so callers can place a close affordance elsewhere if needed).
-- `SIDEBAR_WIDTH` — the `200` constant used for sheet left-offset and the App-shell sidebar width. Single source of truth.
+
+The 200 px sidebar left-offset is a hardcoded `left-[200px]` Tailwind arbitrary value in `SheetOverlay`, not a shared `SIDEBAR_WIDTH` constant.
 
 `createPortal` is called by the consumer sheet (e.g. `ExpirationSheet`), not inside the primitive, so the primitives are pure layout components that don't need DOM mocking in unit tests. The portal target is always `document.getElementById('sheet-portal')` — set up once in `App.tsx`.
 

@@ -43,7 +43,7 @@ Field naming conventions, established across the lifecycle stories, are stable:
 
 Two IPC transports are used:
 
-1. **Request/response** (`ipcRenderer.invoke` / `ipcMain.handle`) for every position mutation and query: `positions:list`, `positions:get`, `positions:create`, `positions:close-csp`, `positions:expire-csp`, `positions:assign-csp`, `positions:open-cc`, `positions:close-cc-early`, `positions:expire-cc`, `positions:roll-csp`, `market-data:stock-quotes`, `market-data:set-stock-quote-tickers`, `market-data:market-status`. The renderer awaits a response envelope.
+1. **Request/response** (`ipcRenderer.invoke` / `ipcMain.handle`) for every position mutation and query: `positions:list`, `positions:get`, `positions:create`, `positions:close-csp`, `positions:expire-csp`, `positions:assign-csp`, `positions:open-cc`, `positions:close-cc-early`, `positions:expire-cc`, `positions:record-call-away`, `positions:roll-csp`, `positions:roll-cc`, `market-data:stock-quotes`, `market-data:set-stock-quote-tickers`, `market-data:option-snapshots`, `market-data:option-snapshot`, `market-data:option-chain`, and `broker:market-status`. The renderer awaits a response envelope.
 2. **Push events** (`webContents.send`) for fire-and-forget streams from main to renderer. The market-data subsystem uses this for `market-data:stock-quote` (per-tick price updates) and `market-data:stream-error` (WebSocket failures); the renderer subscribes via `onStockQuote(cb)` / `onStreamError(cb)` helpers that return an `unsubscribe` function.
 
 A complete handler-by-handler reference lives in `../contracts/ipc-handlers.md`.
@@ -53,12 +53,12 @@ A complete handler-by-handler reference lives in `../contracts/ipc-handlers.md`.
 Every IPC payload is validated twice — once at the boundary on each side — so renderer bugs and main-process bugs surface at the layer that caused them:
 
 1. **Renderer adapter** (`src/renderer/src/api/positions.ts`, `api/market-data.ts`) maps snake_case form fields to camelCase IPC fields and wraps `{ ok: false }` responses into thrown `ApiError`s so TanStack Query treats them as errors. A shared `mapIpcErrors(errors)` helper applies an `IPC_TO_FORM_FIELD` map so server-side field names (`closePricePerContract`, `fillDate`, `assignmentDate`, etc.) surface on the matching form field (`close_price_per_contract`, `fill_date`, `assignment_date`).
-2. **Main-process Zod schemas** (`src/main/schemas.ts`) define a `*PayloadSchema` for each mutation — `OpenWheelPayloadSchema`, `CloseCspPayloadSchema`, `ExpireCspPayloadSchema`, `AssignCspPayloadSchema`, `OpenCcPayloadSchema`, `CloseCcPayloadSchema`, `ExpireCcPayloadSchema`, `RollCspPayloadSchema`, `GetStockQuotesPayloadSchema`, `SetStockQuoteTickersPayloadSchema`. Handlers parse the payload before doing anything else.
+2. **Main-process Zod schemas** (`src/main/schemas.ts`) define a `*PayloadSchema` for each mutation — `CreatePositionPayloadSchema`, `CloseCspPayloadSchema`, `ExpireCspPayloadSchema`, `AssignCspPayloadSchema`, `OpenCcPayloadSchema`, `CloseCcPayloadSchema`, `ExpireCcPayloadSchema`, `RollCspPayloadSchema`, `GetStockQuotesPayloadSchema`, `SetStockQuoteTickersPayloadSchema`. Handlers parse the payload before doing anything else.
 
-Two shared helpers in `src/main/ipc/utils.ts` keep handlers thin:
+Two helpers keep handlers thin:
 
-- `handleIpcCall(logLabel, fn)` — wraps the body of a handler, catches `ValidationError` (maps to `{ ok: false, errors }`) and unhandled errors (logs with the label, returns `internal_error`).
-- `registerParsedPositionHandler(db, channel, logLabel, schema, service)` — registers a handler that parses the payload with the supplied Zod schema, invokes the service, and returns the envelope. Used by every position mutation introduced after the helper landed; the result is that the IPC layer carries no business logic — it is Zod + service call + envelope.
+- `handleIpcCall(logLabel, fn)` — the one shared helper, exported from `src/main/ipc/utils.ts`. It wraps the body of a handler, catches `ValidationError` (maps to `{ ok: false, errors }`) and unhandled errors (logs with the label, returns `internal_error`).
+- `registerParsedPositionHandler(db, channel, logLabel, schema, service)` — a module-private helper in `src/main/ipc/positions.ts` (not exported). It registers a handler that parses the payload with the supplied Zod schema, invokes the service, and returns the envelope. Used by every position mutation in that file; the result is that the IPC layer carries no business logic — it is Zod + service call + envelope.
 
 ## Money Math
 
@@ -89,7 +89,7 @@ US-31 introduced a `MarketDataProvider` interface in `src/main/integrations/mark
 - A REST seed via `market-data:stock-quotes` populates the renderer's TanStack Query cache with `price`, `bid`, `ask`, `prevClose`, and `volume` for each ticker; the renderer derives `change` and `changePercent` client-side from `(price, prevClose)` so the math lives in one place.
 - A WebSocket stream, multiplexed across all active position tickers, pushes per-tick updates over `market-data:stock-quote`. The renderer merges each tick into the TanStack Query cache via `setQueryData`, carrying `prevClose` forward from the seed because stream frames don't carry it.
 
-A separate `useMarketStatus()` hook polls `market-data:market-status` every 60s. The pill (`<MarketStatusPill>`) derives `LIVE` / `EXT` / `CLOSED` / `DELAYED` from market session + `dataUpdatedAt` freshness + stream error state; the same pill is intended for reuse on list and detail headers (no "POLL" or timing copy — the pill is the status indicator). When no quotes have arrived for >5 minutes, `<StaleDataBanner>` renders above the table and the pill flips to `DELAYED`.
+A separate `useMarketStatus()` hook polls `broker:market-status` every 60s. The pill (`<MarketStatusPill>`) derives `LIVE` / `EXT` / `CLOSED` / `DELAYED` from market session + `dataUpdatedAt` freshness + stream error state; the same pill is intended for reuse on list and detail headers (no "POLL" or timing copy — the pill is the status indicator). When no quotes have arrived for >5 minutes, `<StaleDataBanner>` renders above the table and the pill flips to `DELAYED`.
 
 The full price-column flow lives on `../features/us-32-live-position-prices.md`.
 
@@ -106,7 +106,7 @@ The scheduler integrates with the main-process bootstrap in `src/main/index.ts`:
 1. IPC handlers are registered first.
 2. `scheduler.register({ name: DETECT_ASSIGNMENTS_JOB_NAME, cadence, handler })` attaches the assignment-detection job (handler shape described above).
 3. `scheduler.start()` is called, which fires every registered job once and then on cadence.
-4. A consolidated `app.on('before-quit', ...)` handler awaits `Promise.all([scheduler.stop(), marketDataProvider.disconnect()])` and then calls `app.exit(0)`. `scheduler.stop()` cancels all pending invocations and drains in-flight handler promises with a 5-second timeout so neither subsystem is killed mid-tick.
+4. A consolidated `app.on('before-quit', ...)` handler awaits `Promise.all([scheduler.stop(), marketDataFactory.disconnect()])` and then calls `app.exit(0)`. `scheduler.stop()` cancels all pending invocations and drains in-flight handler promises with a 5-second timeout so neither subsystem is killed mid-tick.
 
 Exceptions in handlers are caught, WARN-logged, and the chain is rescheduled — a failing handler never stops the scheduler or piles up runs. Handler crashes also do not affect other registered jobs. A dev-only `_test:scheduler-*` IPC surface (guarded by `NODE_ENV === 'test'` in `src/main/ipc/test-scheduler.ts`) lets E2E specs introspect the registry and trigger out-of-band runs without polluting the production IPC.
 

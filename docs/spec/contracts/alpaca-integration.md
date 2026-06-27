@@ -1,6 +1,6 @@
 # Alpaca Integration
 
-<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39 -->
+<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39,market-data-massive-migration -->
 
 ## Overview
 
@@ -18,7 +18,7 @@ For the Massive-backed market-data adapter and the `MarketDataProvider` interfac
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39 -->
+<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39,market-data-massive-migration -->
 
 ## Boundary layout
 
@@ -34,7 +34,7 @@ Provider-agnostic contract every broker implementation satisfies. Defined in `sr
 
 ### `AlpacaBrokerProvider` implementation
 
-The Alpaca-backed concrete class. Lives at `src/main/integrations/alpaca-broker.ts` (post-US-39 split; absorbed the broker-side methods that used to live on the combined `AlpacaMarketDataProvider`). It is the only module in the repo permitted to import `@alpacahq/typescript-sdk`. Constructed lazily — `new AlpacaBrokerProvider({ keyId, secretKey, paper })` does not perform any network I/O.
+The Alpaca-backed concrete class. Lives at `src/main/integrations/alpaca-broker.ts` (post-US-39 split; absorbed the broker-side methods that used to live on the combined `AlpacaMarketDataProvider`). It is the only module in the repo permitted to import `@alpacahq/typescript-sdk`. Constructed lazily — `new AlpacaBrokerProvider({ keyId, secretKey, environment })` (where `environment` is `'paper' | 'live'`) does not perform any network I/O.
 
 ### `createBrokerProvider` factory
 
@@ -48,7 +48,7 @@ Only `src/main/integrations/alpaca-broker.ts` may `import` from `@alpacahq/types
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39 -->
+<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39,market-data-massive-migration -->
 
 ## SDK usage and bypass
 
@@ -68,7 +68,7 @@ The pre-existing `src/main/integrations/alpaca.ts` (`client`, `resetClient`) is 
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39,us-47-49 -->
+<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39,us-47-49,market-data-massive-migration -->
 
 ## REST surface
 
@@ -84,8 +84,8 @@ Each REST method is wrapped in a `try` / `wrapError(err, opLabel)` block that no
 ### `getAccountInfo(): Promise<AccountInfo>`
 
 - **SDK method:** `client.getAccount`.
-- **Returns:** `{ buyingPower, portfolioValue, cash, environment: 'paper' | 'live', accountNumberMasked }`. All three money fields are **normalized to 4 decimal-place strings** via `new Decimal(s).toFixed(4)` (US-47 AC-1) — e.g. `'10000.0000'` not `'10000.00'`. `environment` is derived from the provider's `paper` config flag.
-- **IPC channel:** `broker:account-info` (US-39 split namespace).
+- **Returns:** `{ buyingPower, portfolioValue, cash, environment: 'paper' | 'live', accountNumberMasked }`. All three money fields are **normalized to 4 decimal-place strings** via `new Decimal(s).toFixed(4)` (US-47 AC-1) — e.g. `'10000.0000'` not `'10000.00'`. `environment` is taken directly from the provider's `environment` config field (`'paper' | 'live'`).
+- **IPC channel:** `broker:account` (US-39 split namespace).
 
 ### `getMarketStatus(): Promise<MarketStatus>`
 
@@ -111,7 +111,7 @@ Each REST method is wrapped in a `try` / `wrapError(err, opLabel)` block that no
 
 <!-- /generated -->
 
-<!-- generated:from us-35 -->
+<!-- generated:from us-35,market-data-massive-migration -->
 
 ## Activity polling pattern (US-35)
 
@@ -170,7 +170,7 @@ OPASN events typically post overnight after expiration, so the next morning's fi
 
 <!-- /generated -->
 
-<!-- generated:from us-37 -->
+<!-- generated:from us-37,market-data-massive-migration -->
 
 ## Broker settings and environment selection (US-37)
 
@@ -194,7 +194,7 @@ All Alpaca HTTP/SDK interaction stays inside `alpaca-broker.ts` or the settings-
 
 <!-- /generated -->
 
-<!-- generated:from us-39 -->
+<!-- generated:from us-39,market-data-massive-migration -->
 
 ## Massive market-data adapter (US-39)
 
@@ -213,7 +213,7 @@ See [domain/market-data.md](../domain/market-data.md) and [contracts/ipc-handler
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39 -->
+<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39,market-data-massive-migration -->
 
 ## Error model
 
@@ -247,7 +247,7 @@ The adapter records **no explicit retry policy, no exponential backoff, and no p
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39 -->
+<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39,market-data-massive-migration -->
 
 ## Source files
 
@@ -256,7 +256,7 @@ The adapter records **no explicit retry policy, no exponential backoff, and no p
 - `src/main/integrations/broker-factory.ts` — `createBrokerProvider` factory + `brokerFactory.recreate()`. Resolves the active environment via `src/main/services/settings.ts`.
 - `src/main/integrations/fake-broker.ts` — `FakeBrokerProvider` for e2e and dev; env-driven canned responses.
 - `src/main/integrations/alpaca.ts` — pre-existing helper marked `@deprecated`; kept available, no new code uses it.
-- `src/main/ipc/broker.ts` — `broker:account-info`, `broker:market-status`, `broker:activities` IPC handlers (US-39 split namespace).
+- `src/main/ipc/broker.ts` — `broker:account`, `broker:market-status`, `broker:activities` IPC handlers (US-39 split namespace).
 - `src/main/services/settings.ts` — encrypted `credential_settings` persistence; `getCredentialStatus()` reads the active broker environment.
 - `src/main/services/settings-connections.ts` — Massive and Alpaca probe helpers with typed error mapping. The Alpaca probes (`settings:test-connection`, `settings:test-stored-alpaca-connection`) are deliberately separate from regular `BrokerProvider` reads.
 - `src/main/services/detect-assignments.ts` — US-35 poll job. Captures `pollStartedAt` before `getActivities`, persists per-environment watermarks (`assignments_last_poll_at:paper` / `:live`), handles `BrokerError.code` for graceful back-off.
@@ -267,7 +267,7 @@ For the Massive market-data adapter files (`massive-market-data.ts`, `market-dat
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39 -->
+<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39,market-data-massive-migration -->
 
 ## Driven by
 

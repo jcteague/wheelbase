@@ -1,10 +1,10 @@
 # ADR: `MarketDataError` with a discriminating `code`
 
-<!-- generated:from us-31 -->
+<!-- generated:from us-31,market-data-massive-migration -->
 
 ## Decision
 
-`MarketDataError extends Error` with a typed `code` field. The vocabulary is fixed: `auth_failed | network_error | rate_limited | stream_disconnected | streaming_unsupported | subscription_failed | unknown`. The provider throws these (rather than returning a `Result` tuple), consistent with the rest of the codebase. IPC handlers translate the thrown error into the standard envelope, mapping `code` onto the `__root__` field.
+`MarketDataError extends Error` with a typed `code` field. The vocabulary is fixed: `auth_failed | network_error | not_found | rate_limited | streaming_unsupported | unknown`. The provider throws these (rather than returning a `Result` tuple), consistent with the rest of the codebase. IPC handlers translate the thrown error into the standard envelope, mapping `code` onto the `__root__` field.
 
 ## Why
 

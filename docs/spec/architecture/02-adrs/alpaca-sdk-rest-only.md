@@ -1,10 +1,10 @@
 # ADR: Use Alpaca SDK for REST only; bypass it for streaming
 
-<!-- generated:from us-31 -->
+<!-- generated:from us-31,market-data-massive-migration -->
 
 ## Decision
 
-Use `@alpacahq/typescript-sdk` (v0.0.32-preview) for the REST endpoints where it works (`getAccount`, `getClock`, `getStocksQuotesLatest`, `getActivity`). Bypass the SDK entirely for WebSocket streaming — that path uses the raw `ws` package directly. Existing REST callers stay on the SDK rather than being rewritten against `fetch`.
+Use `@alpacahq/typescript-sdk` (v0.0.32-preview) for the REST endpoints where it works (`getAccount`, `getClock`, `getActivity`). Bypass the SDK entirely for WebSocket streaming — that path uses the raw `ws` package directly (now in `src/main/integrations/massive-market-data.ts`; see `## Current state`). Existing REST callers stay on the SDK rather than being rewritten against `fetch`.
 
 ## Why
 
@@ -14,6 +14,10 @@ The SDK is a Deno-to-Node transpile via `dnt`, marked unmaintained, with known b
 
 - **Replace SDK entirely with raw `fetch`** — too much work for endpoints that already function.
 - **`alpaca-trade-api-js`** — older, callback-based, weaker TypeScript support.
+
+## Current state
+
+The original `getStocksQuotesLatest` endpoint was never wired up; market-data quotes now come from the Massive provider's REST snapshots, not an Alpaca REST quotes call. The Alpaca SDK client (`src/main/integrations/alpaca.ts` / `alpaca-broker.ts`) is now used only for `getAccount`, `getActivity`, and `getClock`. The from-scratch `ws` streaming path described above lives in `src/main/integrations/massive-market-data.ts` (Massive / Polygon-compatible), not an Alpaca streaming provider.
 
 ## Source
 

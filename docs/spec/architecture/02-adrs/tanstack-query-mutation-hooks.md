@@ -10,7 +10,7 @@ Every position-mutation IPC call is wrapped in a TanStack Query mutation hook (`
 2. On success, calls `queryClient.invalidateQueries({ queryKey: positionQueryKeys.all })` so both the list and any detail-page cache entries refetch.
 3. Forwards an optional `onSuccess(data)` callback — used by sheet components to transition from form-state to success-state with the returned data.
 
-Read paths use `useQuery` hooks (`usePositions`, `usePosition`) with the same `positionQueryKeys` registry. Market data uses a separate `marketDataQueryKeys` registry (see ADR [market-data-tanstack-cache](./market-data-tanstack-cache.md)).
+Read paths use `useQuery` hooks (`usePositions`, `usePosition`) with the same `positionQueryKeys` registry. Market data uses a separate `marketDataQueryKeys` registry (see ADR [market-data-tanstack-cache](./market-data-tanstack-cache.md)). Per US-37 (vendor-scoped query keys), `useMarketStatus` was moved under a `brokerQueryKeys` registry (`['broker', 'market-status']`, `src/renderer/src/hooks/brokerQueryKeys.ts`) rather than the market-data registry.
 
 The shared `usePositionMutation(adapter, options)` helper extracted during US-12-refactor implements this pattern in one place so every mutation hook is a one-line wrapper.
 
@@ -42,7 +42,7 @@ The shared `usePositionMutation(adapter, options)` helper extracted during US-12
 - [extract: us-8](../../.extracts/us-8.md) — `useCloseCoveredCallEarly` mutation hook
 - [extract: us-9](../../.extracts/us-9.md) — `useExpireCoveredCall` mutation hook
 - [extract: us-12](../../.extracts/us-12.md) — `useRollCsp` via shared `usePositionMutation` helper
-- [extract: us-32](../../.extracts/us-32.md) — `useStockQuotes` / `useMarketStatus` query hooks
+- [extract: us-32](../../.extracts/us-32.md) — `useStockQuotes` / `useMarketStatus` query hooks (market-status keys later moved to `brokerQueryKeys` in US-37)
 - [feature: us-2-position-list](../../features/us-2-position-list.md)
 - [feature: us-4-close-csp](../../features/us-4-close-csp.md)
 - [feature: us-12-roll-csp](../../features/us-12-roll-csp.md)

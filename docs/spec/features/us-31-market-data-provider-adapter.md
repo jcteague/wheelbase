@@ -1,97 +1,88 @@
 # US-31: Market Data Provider Adapter
 
-<!-- generated:from us-31 -->
+<!-- generated:from us-31,market-data-massive-migration -->
 
 ## Summary
 
-Foundational backend-only story for Epic 06. Ships the provider-agnostic `MarketDataProvider` interface, the concrete `AlpacaMarketDataProvider` implementation, and the `createMarketDataProvider` factory that downstream services use to obtain a provider without importing the concrete class. REST methods (stock quotes, option snapshots, broker activities, account info, market status) return `Promise`s; streaming (stock quotes JSON, option quotes/trades MessagePack) returns RxJS `Observable<StreamEvent<…>>` so consumers get first-class unsubscription, error/completion channels, and operators (`retry`, `share`, `debounceTime`) for downstream stories. WebSocket transport uses the raw `ws` package with two dedicated sockets — one per Alpaca data endpoint. No UI, no IPC handlers, no Zod schemas, no migrations — this story lives entirely in `src/main/integrations/` and is consumed by [US-32](./us-32-live-position-prices.md), [US-33](./us-33-option-mid-pnl.md), and [US-34](./us-34-position-cockpit.md).
+Foundational backend-only story for Epic 06. Ships the provider-agnostic `MarketDataProvider` interface and the `marketDataFactory` that downstream services use to obtain a provider without importing the concrete class. REST methods (stock quotes, option snapshot, option chain snapshot) return `Promise`s; streaming (stock-quote aggregate bars) returns an RxJS `Observable<StreamEvent<…>>` so consumers get first-class unsubscription, error/completion channels, and operators (`retry`, `share`, `debounceTime`) for downstream stories. WebSocket transport uses the raw `ws` package with a single stock stream. No UI, no IPC handlers, no Zod schemas, no migrations — this story lives entirely in `src/main/integrations/` and is consumed by [US-32](./us-32-live-position-prices.md), [US-33](./us-33-option-mid-pnl.md), and [US-34](./us-34-position-cockpit.md).
+
+> **Provider migration:** this story originally shipped an `AlpacaMarketDataProvider`; the market-data layer has since migrated to **Massive** (a Polygon-compatible API). The concrete implementer of the interface is now `MassiveMarketDataProvider` (`src/main/integrations/massive-market-data.ts`), with `FakeMarketDataProvider` for tests/dev. Account info, broker activities, and market status moved off the market-data provider onto a separate `BrokerProvider` (`broker:*` IPC); the only `Alpaca*` class left is `AlpacaBrokerProvider`, which implements that separate interface. The sections below reflect the current Massive-based state.
 
 ## Acceptance criteria
 
-- **AC-1:** `getStockQuotes(["AAPL","MSFT","TSLA"])` returns a `Map` with three entries; each entry's `price` is a 2dp decimal string.
-- **AC-2:** `getOptionSnapshots(["AAPL260516P00180000"])` returns a `Map` entry with `bid`, `ask`, `mid` (= `(bid+ask)/2`), `greeks.delta`, `greeks.iv`, and `timestamp`.
-- **AC-3:** `getActivities({ type: "OPASN", since: "2026-04-20" })` returns an array sorted by `transactionTime` descending with fields `activityId`, `activityType`, `symbol`, `qty`, `price`, `transactionTime`.
-- **AC-4:** `getAccountInfo()` returns `buyingPower`, `portfolioValue`, `cash`, and `environment` (`"paper"` or `"live"`).
-- **AC-5:** `getMarketStatus()` returns `isOpen`, `nextOpen`, `nextClose`, and `session` (one of `regular | pre | post | closed`).
-- **AC-6:** `supportsStreaming(feed)` returns `true` for `"stockQuotes"`, `"optionQuotes"`, and `"optionTrades"`.
-- **AC-7:** After `connect()`, `stream("stockQuotes", ["AAPL","MSFT"]).subscribe(observer)` emits a `StreamEvent<StockQuote>` for each tick.
-- **AC-8:** `stream("optionQuotes", ["AAPL260516P00180000"]).subscribe(observer)` decodes MessagePack frames and emits `StreamEvent`.
-- **AC-9:** Calling `subscription.unsubscribe()` sends the WebSocket `unsubscribe` message; the observer receives no further emissions; the underlying socket stays open for other subscriptions.
-- **AC-10:** `disconnect()` closes both sockets and all active subscribers receive `complete`.
-- **AC-11:** A provider built with `paper: true` authenticates against paper endpoints; `getAccountInfo()` returns `environment: "paper"`.
-- **AC-12:** A 401 from the SDK becomes `MarketDataError` with `code: "auth_failed"` and a message containing `"authentication"`.
-- **AC-13:** A network error becomes `MarketDataError` with `code: "network_error"` and a message that includes endpoint context.
-- **AC-14:** An unexpected WebSocket close pushes a `StreamError` through the Observable error channel with `code: "stream_disconnected"`, the feed name, and `reconnectable: true`.
-- **AC-15:** `getStockQuotes(["AAPL","ZZZZZ"])` returns a `Map` with AAPL only; no error is thrown.
-- **AC-16:** Calling `stream(feed, …)` for a feed where `supportsStreaming(feed)` is `false` throws `MarketDataError` with `code: "streaming_unsupported"`.
+The criteria below describe the current Massive-based provider surface; coverage lives in `src/main/integrations/massive-market-data.test.ts` (and `market-data-provider.test.ts` / `market-data-factory.test.ts` for the interface + factory).
 
-(One e2e test per AC; all 16 pass in `src/main/integrations/alpaca-market-data.e2e.test.ts`.)
+- **AC-1:** `getStockQuotes(["AAPL","MSFT","TSLA"])` returns a `Map` with three entries; each entry's `price`, `change`, and `prevClose` are decimal strings (price/change/prevClose 2dp, `changePercent` 4dp).
+- **AC-2:** `getOptionSnapshot("AAPL260516P00180000")` returns an `OptionSnapshot` with `bid`, `ask`, `mid` (= `(bid+ask)/2`, computed via decimal.js), `lastTrade`, optional `greeks.{delta,gamma,theta,vega}` (4dp), optional `impliedVolatility` (4dp), and `timestamp`.
+- **AC-3:** `getOptionChainSnapshot(filter)` returns an array of `OptionSnapshot`, following Massive's `next_url` cursor pagination until exhausted (or stopping at `filter.limit` when provided).
+- **AC-4:** `supportsStreaming()` returns `true`.
+- **AC-5:** After `connect()`, `stream("stockQuotes", ["AAPL","MSFT"]).subscribe(observer)` emits a `StreamEvent<StockQuote>` for each aggregate-minute (`AM`) bar matching one of the subscribed symbols; an empty symbol list matches all.
+- **AC-6:** A 401/403 response becomes `MarketDataError` with `code: "auth_failed"`.
+- **AC-7:** A network error becomes `MarketDataError` with `code: "network_error"`.
+- **AC-8:** A 429 is retried up to `MAX_RETRIES` honouring `Retry-After`; once exhausted it becomes `MarketDataError` with `code: "rate_limited"`.
+- **AC-9:** A 404 becomes `MarketDataError` with `code: "not_found"`.
+- **AC-10:** `disconnect()` closes the socket and nulls the reference.
+- **AC-11:** A missing API key throws `MarketDataError` with `code: "auth_failed"` before any network call.
 
 ## What was built
 
-The `MarketDataProvider` interface and shared types in `src/main/integrations/market-data-provider.ts`, the `AlpacaMarketDataProvider` implementation, and the `createMarketDataProvider` factory in `src/main/integrations/market-data-factory.ts`. The implementation creates its own Alpaca SDK client internally and owns two raw `ws` WebSocket connections (stock JSON at `wss://stream.data.alpaca.markets/v2/{dataFeed}`, option MessagePack at `wss://stream.data.alpaca.markets/v1beta1/{optionFeed}`). Each socket has one `Subject<StreamEvent>` that bridges frame events to Observable subscribers; each `stream()` call returns a new Observable that filters that Subject by symbol, sends `subscribe` on first subscription, and sends `unsubscribe` on Observable teardown. Three new npm dependencies introduced: `ws` + `@types/ws`, `@msgpack/msgpack` (decode via `decodeMulti()` because Alpaca batches frames), and `rxjs`. The pre-existing `src/main/integrations/alpaca.ts` is kept but marked `@deprecated` for removal once US-32/33/34 migrate callers.
+The `MarketDataProvider` interface and shared types in `src/main/integrations/market-data-provider.ts`, the `MassiveMarketDataProvider` implementation in `src/main/integrations/massive-market-data.ts`, the `FakeMarketDataProvider` in `src/main/integrations/fake-market-data.ts`, and the `marketDataFactory` in `src/main/integrations/market-data-factory.ts`. The Massive implementation talks to a Polygon-compatible REST API (`https://api.massive.com`) over the global `fetch`, appending `apiKey` to each request, and owns a single raw `ws` WebSocket (`wss://delayed.massive.com/stocks`) for aggregate-minute (`AM`) stock bars. One `Subject<StreamEvent<StockQuote>>` bridges incoming bars to Observable subscribers; each `stream()` call returns an Observable filtering that Subject by symbol. REST errors map onto `MarketDataError` codes by HTTP status (`401/403 → auth_failed`, `429 → rate_limited` after retry, `404 → not_found`, network failure → `network_error`, else `unknown`); 429s retry up to `MAX_RETRIES` honouring `Retry-After`. The npm dependencies `ws` + `@types/ws` and `rxjs` are used; `@msgpack/msgpack` was introduced by the original Alpaca version. The pre-existing `src/main/integrations/alpaca.ts` is kept but marked `@deprecated`.
 
 ## Architecture decisions
 
-- **REST stays on the Alpaca SDK, streaming bypasses it.** The `@alpacahq/typescript-sdk` is a Deno-to-Node transpile and is no longer maintained; several methods have bugs (`getStocksSnapshots` wrong path, `getOptionsSnapshots` missing `greeks`/`impliedVolatility` in types, `getActivity` ignores query params) and WebSocket support is "todo". Working endpoints (`getAccount`, `getClock`, `getStocksQuotesLatest`, `getActivity`) stay on the SDK; streaming uses raw `ws` instead → [[alpaca-sdk-rest-only]]
-- **Two dedicated WebSocket connections via the `ws` npm package.** Alpaca caps each endpoint at 1 concurrent connection, so the adapter multiplexes all symbol subscriptions per socket. `ws` is preferred over Node 21+'s built-in `WebSocket` because Electron's bundled Node version may differ and `ws` is trivially mockable in Vitest → [[ws-package-streaming]]
+- **Massive (Polygon-compatible) over the Alpaca SDK.** The market-data layer was migrated to Massive; `MassiveMarketDataProvider` talks to `https://api.massive.com` REST over the global `fetch` (no SDK dependency) and a single `wss://delayed.massive.com/stocks` WebSocket. The Polygon-compatible message/snapshot shapes are mapped to the provider's neutral types at the boundary → [[massive-market-data-provider]]
+- **Single WebSocket via the `ws` npm package for aggregate-minute bars.** The stock stream subscribes to `AM.*` (aggregate-minute bars) after `auth`; there is no separate option stream. `ws` is preferred over Node's built-in `WebSocket` because it is trivially mockable in Vitest → [[ws-package-streaming]]
 - **RxJS `Observable` for `stream(feed, symbols)`; `Promise` for everything else.** REST is request/response, streaming is push — they get different return types intentionally. Observables provide first-class `Subscription` teardown, error/completion channels, and the operators (`retry`/`retryWhen` for reconnection, `share`/`shareReplay` for multicast, `debounceTime`/`distinctUntilChanged` for throttling) that downstream stories will compose. Native Observable is Chromium-only, so the renderer-side primitive isn't usable in the Node main process → [[rxjs-observables-for-streaming]]
-- **MessagePack decoding via `@msgpack/msgpack` using `decodeMulti()`.** Alpaca batches messages as arrays per frame; `decode()` throws `RangeError` on multi-object buffers, `decodeMulti()` is the documented multi-object reader → [[msgpack-option-streaming]]
-- **Structured `MarketDataError` class with a discriminating `code` field.** Codes: `auth_failed`, `network_error`, `rate_limited`, `stream_disconnected`, `streaming_unsupported`, `subscription_failed`, `unknown`. Thrown (not returned), consistent with the rest of the codebase, so services pattern-match on `error.code` without parsing message strings → [[marketdataerror-structured-codes]]
-- **`MarketStatus.session` is derived client-side from clock + extended-hours windows.** Alpaca's `/v2/clock` only returns `is_open`, `next_open`, `next_close` — no `session` field. The adapter derives `pre` (4:00–9:30 AM ET), `regular` (9:30 AM–4:00 PM ET when `is_open`), `post` (4:00–8:00 PM ET), and `closed` (otherwise) → [[market-session-derivation]]
-- **Greeks/IV are REST-only; open interest is never available.** `OptionSnapshot.greeks` and `OptionSnapshot.iv` come from `/v1beta1/options/snapshots` only — stream frames never carry them. `openInterest` and `volume` are typed `number | null` and Alpaca always returns `null` for both → [[option-data-availability]]
-- **Provider constructor owns the SDK client and the `paper`/`live` flag.** `AlpacaMarketDataProvider` creates the Alpaca SDK client internally via `createClient({ key, secret, paper })`. `environment: 'paper' | 'live'` is derived from the constructor's `paper` config, not from any API response, because `getAccount()` has no paper/live indicator → [[market-data-provider-interface]]
-- **Factory hides the concrete provider; services never import the class.** `createMarketDataProvider(config)` switches on `config.provider` and returns the right implementation behind the interface — adding a non-Alpaca provider later is one new case in the factory → [[market-data-provider-interface]]
-- **`src/main/integrations/alpaca.ts` is `@deprecated`, not deleted.** Removal happens incrementally as US-32/33/34 migrate callers; deleting now is safe today but unnecessarily risky.
+- **One `Subject<StreamEvent<StockQuote>>` bridges the socket to subscribers.** Each `stream()` call returns `tickSubject.pipe(filter(...))` keyed by the requested symbol set (empty set matches all); incoming `AM` bars are pushed onto the Subject in the socket's `message` handler → [[rxjs-observables-for-streaming]]
+- **Structured `MarketDataError` class with a discriminating `code` field.** Codes: `auth_failed`, `network_error`, `not_found`, `rate_limited`, `streaming_unsupported`, `unknown`. Mapped from HTTP status (`401/403`, `404`, `429`-after-retry) and network failures. Thrown (not returned), consistent with the rest of the codebase, so services pattern-match on `error.code` without parsing message strings → [[marketdataerror-structured-codes]]
+- **429s are retried in-adapter honouring `Retry-After`.** `apiFetch` retries up to `MAX_RETRIES` (2) on a 429, waiting `Retry-After` seconds (default 1s) before re-issuing; only after exhaustion does it throw `rate_limited`.
+- **Greeks/IV are nullable on the snapshot.** `OptionSnapshot.greeks` and `OptionSnapshot.impliedVolatility` are optional and only populated when Massive returns them; `openInterest` and `volume` are typed `number | null` and always `null` from the snapshot endpoint → [[option-data-availability]]
+- **Option contract ids get an `O:` prefix at the API boundary.** The renderer builds bare OCC symbols; `MassiveMarketDataProvider` prefixes them with `O:` (Polygon convention) when calling the options snapshot endpoint, and derives the underlying ticker by parsing the leading letters → [[massive-market-data-provider]]
+- **Factory hides the concrete provider; services never import the class.** `marketDataFactory.create()` returns `FakeMarketDataProvider` when `FAKE_MARKET_DATA === 'true'`, otherwise `MassiveMarketDataProvider` when `MASSIVE_API_KEY` is set, else throws. The result is cached; `configure()`/`recreate()` reset the cache. Adding another provider later is one new branch in `buildProvider()` → [[market-data-provider-interface]]
+- **`src/main/integrations/alpaca.ts` is `@deprecated`, not deleted.** It predates this layer; account info / activities / market status now flow through the separate `BrokerProvider` (`broker:*` IPC) and `AlpacaBrokerProvider`.
 
 ## Contracts touched
 
-- **`MarketDataProvider`** — integration interface exposing `getStockQuotes`, `getOptionSnapshots`, `getActivities`, `getAccountInfo`, `getMarketStatus`, `supportsStreaming(feed)`, `connect()`, `disconnect()`, and `stream(feed, symbols): Observable<StreamEvent<…>>`. Implementation: `src/main/integrations/market-data-provider.ts`.
-- **`StockQuote`** — `{ price, bid, ask, change, changePercent: string (2dp); volume: number; timestamp: ISO-8601 }`. `change` and `changePercent` ship hardcoded to `'0.00'` in US-31 (see Open Questions); US-32 adds `prevClose` and computes them client-side. Implementation: `src/main/integrations/market-data-provider.ts`.
-- **`OptionSnapshot`** — `{ bid, ask, mid (computed), lastTrade: string (2dp); openInterest, volume: number | null; greeks: { delta, gamma, theta, vega, iv: string (4dp) }; timestamp }`. `mid` is computed via decimal.js, not from the API. Implementation: `src/main/integrations/market-data-provider.ts`.
-- **`BrokerActivity` + `ActivityFilter`** — `{ activityId, activityType, symbol, qty, price, transactionTime }` sorted by `transactionTime` desc; filter is `{ type: string; since?: YYYY-MM-DD }`. Implementation: `src/main/integrations/market-data-provider.ts`.
-- **`AccountInfo`** — `{ buyingPower, portfolioValue, cash: string; environment: 'paper' | 'live' }`. `environment` is derived from constructor config. Implementation: `src/main/integrations/market-data-provider.ts`.
-- **`MarketStatus`** — `{ isOpen: boolean; nextOpen, nextClose: ISO-8601; session: 'regular' | 'pre' | 'post' | 'closed' }`. `session` is derived client-side. Implementation: `src/main/integrations/market-data-provider.ts`.
-- **`DataFeed`, `StreamEvent<T>`, `StreamError`** — `DataFeed = 'stockQuotes' | 'optionQuotes' | 'optionTrades'`; `StreamEvent<T> = { feed, symbol, data: T, timestamp }`; `StreamError = { feed, code, message, reconnectable }`. Implementation: `src/main/integrations/market-data-provider.ts`.
-- **`MarketDataError`** — `Error` subclass with discriminated `code: 'auth_failed' | 'network_error' | 'rate_limited' | 'stream_disconnected' | 'streaming_unsupported' | 'subscription_failed' | 'unknown'`. Thrown by all REST methods and `stream()` when the feed is unsupported. Implementation: `src/main/integrations/market-data-provider.ts`.
-- **`createMarketDataProvider(config)`** — factory. `MarketDataConfig = { provider: 'alpaca'; keyId; secretKey; paper; dataFeed?: 'sip' | 'iex' | 'delayed_sip'; optionFeed?: 'opra' | 'indicative' }`. Switches on `provider`; throws for unknown values. Implementation: `src/main/integrations/market-data-factory.ts`.
-- **WebSocket subscribe/unsubscribe protocol** — connect → server `success/connected` → client `auth` → server `success/authenticated` → client `{action:'subscribe', quotes:[…]}` → server pushes frames; unsubscribe on Observable teardown via `{action:'unsubscribe', quotes:[…]}`. Stock socket: `wss://stream.data.alpaca.markets/v2/{dataFeed}` (default `sip`), JSON text frames. Option socket: `wss://stream.data.alpaca.markets/v1beta1/{optionFeed}` (default `opra`), MessagePack binary frames. Paper and live accounts share the same stream URLs.
+- **`MarketDataProvider`** — integration interface exposing `getStockQuotes(tickers)`, `getOptionSnapshot(contractId)` (singular), `getOptionChainSnapshot(filter)`, `supportsStreaming(feed)`, `connect(feeds?)`, `disconnect()`, and `stream(feed, symbols): Observable<StreamEvent<StockQuote | OptionSnapshot>>`. Defined in `src/main/integrations/market-data-provider.ts`. (Account info, broker activities, and market status are **not** on this interface — they live on `BrokerProvider`.)
+- **`StockQuote`** — `{ price, bid, ask, change: string (2dp); changePercent: string (4dp); prevClose: string (2dp); volume: number; timestamp: ISO-8601 }`. From REST, `change`/`changePercent`/`prevClose` come from Massive's snapshot (`todaysChange`, `todaysChangePerc`, `prevDay.c`); stream ticks leave them as empty strings. Defined in `src/main/integrations/market-data-provider.ts`.
+- **`OptionSnapshot`** — `{ bid, ask, mid (computed, 2dp), lastTrade: string (2dp); openInterest, volume: number | null; greeks?: { delta, gamma, theta, vega: string (4dp) }; impliedVolatility?: string (4dp); timestamp }`. `mid` is computed via decimal.js, not from the API; `greeks` and `impliedVolatility` are optional. Defined in `src/main/integrations/market-data-provider.ts`.
+- **`OptionChainFilter`** — `{ underlying: string; expirationFrom?, expirationTo?: string; type?: 'put' | 'call'; strikeFrom?, strikeTo?: string; limit?: number; cursor?: string }`. Defined in `src/main/integrations/market-data-provider.ts`.
+- **`MarketDataFeed`, `StreamEvent<T>`, `StreamError`** — `MarketDataFeed = 'stockQuotes' | 'optionQuotes' | 'optionTrades'`; `StreamEvent<T> = { feed, symbol, data: T, timestamp }`; `StreamError = { feed, code, message, reconnectable }`. Defined in `src/main/integrations/market-data-provider.ts`.
+- **`MarketDataError`** — `Error` subclass with discriminated `code: 'auth_failed' | 'network_error' | 'not_found' | 'rate_limited' | 'streaming_unsupported' | 'unknown'`. Thrown by REST methods. Defined in `src/main/integrations/market-data-provider.ts`.
+- **`marketDataFactory`** — an object (not a function) with `create()`, `configure(next)`, `recreate()`, and `disconnect()`. `create()` returns a cached `FakeMarketDataProvider` (when `FAKE_MARKET_DATA === 'true'`) or `MassiveMarketDataProvider` (when `MASSIVE_API_KEY` is set), otherwise throws. `MassiveMarketDataConfig = { apiKey: string }`. Defined in `src/main/integrations/market-data-factory.ts`.
+- **WebSocket protocol** — connect to `wss://delayed.massive.com/stocks` → on open, client sends `{action:'auth', params: apiKey}` → server `status/auth_success` → client `{action:'subscribe', params:'AM.*'}` → server `status/success` (resolves `connect()`) and then pushes `AM` aggregate-minute bars; `status/auth_failed` rejects. JSON text frames throughout (Polygon-compatible shapes). There is no option WebSocket and no per-symbol unsubscribe message — symbol filtering is done in the Observable.
 
 No IPC contracts, no Zod schemas, no preload bridge methods, and no DB migrations are introduced by this story — downstream UI stories (US-32, US-33, US-34) wire all of that on top of this layer.
 
 ## Decisions & tradeoffs
 
-- **One factory entry per provider; services never import the concrete class.** Adding a non-Alpaca provider later is one new case in `createMarketDataProvider` and a new implementation file, with no consumer churn.
+- **One factory branch per provider; services never import the concrete class.** Adding another provider later is one new branch in `buildProvider()` and a new implementation file, with no consumer churn.
 - **REST methods are `Promise`-returning; only `stream()` is an Observable.** Mixed paradigms intentionally — request/response and push are different shapes and should be modeled accordingly.
-- **`StockQuote.change` / `changePercent` are hardcoded to `'0.00'` on both REST and stream paths.** Previous-close isn't available from `getStocksQuotesLatest` or stream frames; US-32 addresses this by adding `prevClose` and computing the change renderer-side.
-- **No reconnection logic in the provider.** `StreamError.reconnectable: true` is a hint, not a behavior — `retry`/`retryWhen` will be composed by consumers (US-38).
-- **One `Subject` per socket bridges WebSocket events to Observable subscribers.** Each `stream()` call returns a new Observable that filters from the per-socket `Subject<StreamEvent>` by symbol; teardown sends `unsubscribe` and removes the symbol filter.
-- **`disconnect()` nulls out internal socket and Subject references after cleanup** to prevent accidental use of closed/completed resources.
-- **Shared `mapQuoteToStockQuote(bp, ap, timestamp)` helper** keeps REST and streaming codepaths consistent for `StockQuote` construction.
-- **Test utilities (`emitSocketEvent`, `simulateAuth`, `MockSocket`) extracted to `alpaca-stream-test-utils.ts`** to avoid drift between unit and e2e tests; `connectAndAuth` is kept per-file because factory-driven vs direct-constructor versions differ.
-- **All money values converted via `new Decimal(value).toFixed(2)` (or `.toFixed(4)` for greeks)** — never floats in the public type surface.
+- **Stream ticks carry only price/volume.** `AM` aggregate-minute bars don't include daily change or previous close, so stream `StockQuote`s leave `change`/`changePercent`/`prevClose` as empty strings; the REST snapshot path populates them, and US-32 carries the seed value forward.
+- **No reconnection logic in the provider.** `StreamError.reconnectable: true` is a hint, not a behavior — `retry`/`retryWhen` will be composed by consumers.
+- **A single `Subject` bridges the socket to Observable subscribers.** Each `stream()` call returns `tickSubject.pipe(filter(...))`; symbol filtering happens in the operator (an empty symbol list matches all). There is no per-symbol WebSocket unsubscribe.
+- **`disconnect()` closes the socket and nulls the reference** to prevent accidental use of a closed resource.
+- **All money values converted via `new Decimal(value).toFixed(2)` (or `.toFixed(4)` for greeks/IV)** — never floats in the public type surface; `mid` uses `ROUND_HALF_UP`.
 - **Backend-only story — no UI, no IPC handlers, no Zod schemas, no migrations.** Every integration touchpoint is a TypeScript type at the `src/main/integrations/` boundary.
-- **Test file naming:** unit + integration tests live alongside the implementation (`*.test.ts`); end-to-end factory-driven tests live in `*.e2e.test.ts` colocated in the same dir.
 
 ## Source files
 
 - `src/main/integrations/market-data-provider.ts` — interface, shared types, `MarketDataError` class
 - `src/main/integrations/market-data-provider.test.ts` — type contract + `MarketDataError` tests
-- `src/main/integrations/market-data-factory.ts` — `createMarketDataProvider` + `MarketDataConfig`
+- `src/main/integrations/market-data-factory.ts` — `marketDataFactory`
 - `src/main/integrations/market-data-factory.test.ts` — factory tests
-- `src/main/integrations/alpaca-market-data.ts` — `AlpacaMarketDataProvider` implementation (current tree may use `alpaca-broker.ts` after later refactors)
-- `src/main/integrations/alpaca-market-data.test.ts` — unit + integration tests
-- `src/main/integrations/alpaca-market-data.e2e.test.ts` — one e2e test per AC
-- `src/main/integrations/alpaca-stream-test-utils.ts` — shared `MockSocket`, `emitSocketEvent`, `simulateAuth` helpers
-- `src/main/integrations/alpaca.ts` — pre-existing file, `@deprecated` by this story
-- `package.json` — new deps: `ws`, `@types/ws`, `@msgpack/msgpack`, `rxjs`
+- `src/main/integrations/massive-market-data.ts` — `MassiveMarketDataProvider` implementation
+- `src/main/integrations/massive-market-data.test.ts` — unit + integration tests
+- `src/main/integrations/fake-market-data.ts` — `FakeMarketDataProvider` (env-driven test/dev provider)
+- `src/main/integrations/fake-market-data.test.ts` — fake-provider tests
+- `src/main/integrations/integration-errors.ts` — shared `isNetworkError` helper
+- `src/main/integrations/alpaca.ts` — pre-existing file, `@deprecated`
+- `package.json` — deps: `ws`, `@types/ws`, `rxjs` (and `@msgpack/msgpack` from the original Alpaca version)
 
 ## Open questions
 
-- **Reconnection logic is deferred to consumers / a future story.** `StreamError.reconnectable: true` signals intent only; `retry`/`retryWhen` composition lives in US-38.
-- **`change` / `changePercent` ship as `'0.00'`** until US-32 adds `prevClose` and computes the daily change renderer-side.
-- **`alpaca-market-data.ts` may grow large** — flagged at ~400 lines in refactor; "could be split if more streaming features are added (e.g., trade stream handling)" but not actioned.
-- **Optional integration test against real Alpaca paper credentials** is described in `quickstart.md` but not committed; uses `describe.skipIf(!process.env.ALPACA_KEY_ID)` and is excluded from CI.
+- **Reconnection logic is deferred to consumers / a future story.** `StreamError.reconnectable: true` signals intent only; `retry`/`retryWhen` composition lives downstream.
+- **Stream `change` / `changePercent` / `prevClose` ship as empty strings**; US-32 carries the REST-seeded `prevClose` forward and computes the daily change renderer-side.
 <!-- /generated -->
 
 <!-- Hand-written notes below this line are preserved across regeneration. -->

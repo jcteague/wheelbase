@@ -16,7 +16,7 @@ Compound `UNIQUE(activity_id, position_id)` allows N rows per activity (one per 
 
 ## Alternatives considered
 
-- **Single-column `UNIQUE(activity_id)`** — original implementation; broken under multi-CSP collision. Fixed in-place via migration 006 edit (no shipped data to preserve).
+- **Single-column `UNIQUE(activity_id)`** — original implementation; broken under multi-CSP collision. Fixed in-place via migration 008 (`migrations/008_create_pending_assignments.sql`) edit (no shipped data to preserve).
 - **Position-account modelling** — defer to a follow-on story. Today positions don't track sub-accounts; even with that, two positions per account on the same OCC symbol remains possible.
 
 ## Source

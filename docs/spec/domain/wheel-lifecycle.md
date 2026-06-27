@@ -404,8 +404,8 @@ interface RollCspInput {
   newStrike: string // us-13 (planned)
   currentExpiration: string
   newExpiration: string
-  costToClosePerContract: number // us-12 — number; us-13 keeps schema unchanged
-  newPremiumPerContract: number
+  costToClosePerContract: string
+  newPremiumPerContract: string
 }
 
 interface RollCspResult {
@@ -476,8 +476,8 @@ interface RollCcInput {
   currentExpiration: string
   newStrike: string
   newExpiration: string
-  costToClosePerContract: number
-  newPremiumPerContract: number
+  costToClosePerContract: string
+  newPremiumPerContract: string
 }
 
 interface RollCcResult {
@@ -589,8 +589,8 @@ LegAction = z.enum(['SELL', 'BUY', 'EXPIRE', 'ASSIGN', 'EXERCISE'])
 - `EXERCISE` — added in us-10; used exclusively for the `CALLED_AWAY` leg
   when a covered call is exercised against the trader. Distinct from `BUY`
   (the trader did not buy back the contract — it was exercised against them).
-  The set is exported as the named constant `LEG_ACTION_VALUES` so the
-  `EXERCISE`-enabled list is explicit (us-10 refactor).
+  The set is held in the module-private constant `LEG_ACTION_VALUES`
+  (not exported) so the `EXERCISE`-enabled list is explicit (us-10 refactor).
 
 ### `InstrumentType` (renamed from `OptionType` in us-6)
 

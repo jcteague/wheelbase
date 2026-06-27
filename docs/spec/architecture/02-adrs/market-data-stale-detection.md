@@ -1,6 +1,6 @@
 # ADR: Stale market data detection via `dataUpdatedAt > 5 min`
 
-<!-- generated:from us-32 -->
+<!-- generated:from us-32,market-data-massive-migration -->
 
 ## Decision
 

@@ -4,7 +4,7 @@
 
 ## Decision
 
-`positions.profit_target_percent INTEGER` is added as a nullable column via migration `005_add_profit_target_percent.sql`. The "global default" is a hard-coded `DEFAULT_PROFIT_TARGET_PERCENT = 50` in `src/main/core/profit-target.ts`. A pure helper `resolveProfitTarget(override: number | null): number` returns the override when non-null (explicit `=== null` check so `0` is a real override, not falsy-coalesced) and the constant otherwise. No `app_settings` table is introduced.
+`positions.profit_target_percent INTEGER` is added as a nullable column via migration `005_add_profit_target_percent.sql`. The "global default" is a hard-coded `DEFAULT_PROFIT_TARGET_PERCENT = 50` in `src/main/core/profit-target.ts`. A pure helper `resolveProfitTarget(override: number | null): number` returns the override when non-null (explicit `=== null` check so `0` is a real override, not falsy-coalesced) and the constant otherwise. No `app_settings` row/key is used for the profit target — it lives entirely in the per-position column plus the constant. (An `app_settings` table was later added in migration `006_add_credential_settings.sql` for unrelated credential/settings storage; the profit target does not use it.)
 
 ## Why
 

@@ -13,7 +13,11 @@
 5. `dte ≤ 21 && dte > 7` → **WATCH** (gold)
 6. otherwise → **HOLD** (green)
 
-No active leg → `SHARES_VERDICT` ("NO ACTIVE LEG", sky). No greeks data → `HOLD` with sub "Awaiting market data".
+No greeks data → `HOLD` with sub "Awaiting market data".
+
+The `deltaSeverity` bands in rules 3–4 are not a flat `0.50` cut: they are instrument- and DTE-aware (`deltaSeverity`). The danger threshold is `cspDangerDelta = 0.45` for puts and `ccDangerDelta = 0.50` for calls, each shifted down by `tightDeltaShift = 0.05` when `dte ≤ 7`; the warning band works the same way against the `*WarningDelta` thresholds.
+
+The no-active-leg case (`SHARES_VERDICT`, "NO ACTIVE LEG", sky) is handled **by the caller** (`PositionCockpit`), not inside `computeVerdict` — the function has no shares branch; it only returns the no-greeks `HOLD` fallback. `SHARES_VERDICT` is exported for the component to render directly.
 
 ## Why
 

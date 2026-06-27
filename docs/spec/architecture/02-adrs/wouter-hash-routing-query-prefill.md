@@ -24,7 +24,7 @@ No global state library (Zustand, Redux) is introduced for this kind of one-shot
 ## Consequences
 
 - `NewWheelPage` reads `?ticker=...` from `useSearch()` and passes `defaultTicker` to `NewWheelForm` for its `useForm({ defaultValues })`.
-- The post-CSP-expiration success state navigates with `navigate('/new?ticker=' + ticker)`.
+- Two navigation mechanisms carry the ticker forward: `ExpirationSheet` uses wouter's `navigate(\`/new?ticker=${ticker}\`)`, while `CallAwaySuccess` mutates the hash directly with `window.location.hash = \`#/new?ticker=${ticker}\``. Both land on the same `#/new?ticker=…` route.
 - This pattern extends naturally to any other "carry one value to the next page" scenario (e.g. opening a CC after assignment — though that flow happens inline on the same page).
 
 ## Sources

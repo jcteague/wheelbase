@@ -6,9 +6,9 @@
 
 The `PositionDetailActions` component renders mutation buttons only when the position's `phase` (and sometimes DTE) permits the action. Examples:
 
-- `CSP_OPEN`: shows `Close Early →`, `Roll CSP →`, `Record Expiration →`, `Record Assignment →`.
+- `CSP_OPEN`: shows `Roll CSP →`, `Record Assignment →`, `Record Expiration →`. (Early close is a separate `CloseCspForm` component, not a header action button.)
 - `HOLDING_SHARES`: shows `Open Covered Call →`.
-- `CC_OPEN`: shows `Close CC Early →`, `Record Expiration →` (the CC variant — only when `computeDte(ccLeg.expiration) <= 0`).
+- `CC_OPEN`: shows `Roll CC →`, `Close CC Early →`, `Record Call-Away →`, plus `Record Expiration →` (the CC variant — only when `computeDte(ccLeg.expiration) <= 0`).
 - `WHEEL_COMPLETE` / `CSP_CLOSED_*`: shows no mutation actions (terminal phases).
 
 This is a UI-layer gate on top of the authoritative lifecycle engine guard (`__phase__` / `invalid_phase`). The backend still rejects illegal transitions when called directly (e.g. via an IPC call from outside the UI), but the UI never offers the button in the wrong state.

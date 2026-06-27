@@ -125,10 +125,9 @@ No IPC handlers. The engine/service entry points introduced:
 ## Source files
 
 - `src/main/core/dte.ts` — pure `computeDte` helper.
-- `src/main/core/alerts.ts` — pure alert engine + rule registry.
-- `src/main/core/types.ts` — engine input/output types (`AlertUrgency`,
-  `AlertStatus`, `RuleCode`, `AlertEvaluationInput`, `AlertMatch`, `SkippedRule`,
-  `PositionEvaluation`).
+- `src/main/core/alerts.ts` — pure alert engine + rule registry, plus the
+  engine input/output types (`AlertUrgency`, `AlertStatus`, `RuleCode`,
+  `AlertEvaluationInput`, `AlertMatch`, `SkippedRule`, `PositionEvaluation`).
 - `src/main/services/alerts.ts` — persistence primitives.
 - `src/main/services/evaluate-alerts.ts` — orchestration service.
 - `src/main/services/list-positions.ts` — adopts the shared `computeDte`.

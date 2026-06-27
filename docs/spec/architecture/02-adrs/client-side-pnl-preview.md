@@ -6,7 +6,7 @@
 
 All in-form numeric previews (P&L on close, net credit/debit on roll, cost-basis guardrail on CC open) are computed locally in the renderer using `decimal.js`. There is no debounced IPC call; the math runs on every keystroke via `useWatch` (or the equivalent reactive form state). The same pure math lives inside the lifecycle / cost-basis engines for the authoritative post-submit calculation, but it is duplicated in the renderer for preview purposes.
 
-The previews live in dedicated UI components (`CcPnlPreview`, `NetCreditDebitPreview`) or extracted pure helpers (`computeGuardrail` in `openCcGuardrail.ts`, `computeNetCreditDebit` in `lib/rolls.ts`).
+The previews live in UI components (`CcPnlPreview` under `components/ui/`, `NetCreditDebitPreview` as an inline component within each roll form) or extracted pure helpers (`computeGuardrail` in `openCcGuardrail.ts`, `computeNetCreditDebit` in `lib/rolls.ts`). The close-CSP preview (`computePreview`) is a local function inside `CloseCspForm.tsx` rather than an extracted helper.
 
 ## Context / Why
 
@@ -24,7 +24,7 @@ The previews live in dedicated UI components (`CcPnlPreview`, `NetCreditDebitPre
 ## Consequences
 
 - The renderer imports `decimal.js` directly and applies `ROUND_HALF_UP` for parity with the server.
-- Pure helper functions (`computeGuardrail`, `computeNetCreditDebit`, `computePreview`) are extracted to `src/renderer/src/lib/` or `src/renderer/src/components/*Guardrail.ts` to keep the form component readable and to satisfy the `react-refresh/only-export-components` lint rule.
+- Pure helper functions are extracted where it aids reuse and satisfies the `react-refresh/only-export-components` lint rule: `computeNetCreditDebit` lives in `src/renderer/src/lib/rolls.ts` and `computeGuardrail` in `src/renderer/src/components/openCcGuardrail.ts`. `computePreview` remains a local function inside `CloseCspForm.tsx` (not extracted to `lib/`).
 - Renderer-side helpers are unit-tested with the same numeric fixtures the server tests use, ensuring formula parity.
 - US-8 caught a bug here: the `CcPnlPreview` percentage formula was `closePrice / openPremium × 100` ("% of premium paid back") rather than `(openPremium − closePrice) / openPremium × 100` ("% of max captured"). Fixed in `us-8-pct-fix` — see ADR [pct-of-max-formula](./pct-of-max-formula.md).
 

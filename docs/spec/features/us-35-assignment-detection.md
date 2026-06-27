@@ -97,7 +97,8 @@ to parked jobs rather than crashing at import time. The consolidated
 on `PositionsListPage`, renders one banner per pending row stacked on top of
 the list, and on confirm transitions in-place to a success view with the
 "Open covered call →" link. `PositionCard` shows a pulsing amber dot
-(`bg-wb-gold animate-wb-pulse`, `data-testid="pending-assignment-indicator"`)
+(`bg-wb-gold animate-wb-pulse`,
+`data-testid={`pending-assignment-indicator-${item.id}`}` — id-suffixed)
 when the row's `positionId` appears in the pending set.
 
 **Dev IPC.** `src/main/ipc/test-scheduler.ts` exposes
@@ -149,7 +150,7 @@ ship in production builds.
 - **Compound UNIQUE on `(activity_id, position_id)`.** Supports the
   rare-but-real case of multiple CSP positions on the same OCC symbol. The
   original single-column UNIQUE would have silently dropped the second
-  position's pending row. Migration 006 was edited in place — no shipped
+  position's pending row. Migration 008 was edited in place — no shipped
   data to preserve.
 - **OCC-symbol matching, not ticker/strike/expiration parsing.** The match
   query joins on `legs.option_symbol` directly. Parsing is deferred to the
@@ -214,9 +215,12 @@ Lifecycle: confirm calls into `assignCspPosition`, the same
 Schema (see [schema/tables.md](../schema/tables.md) and
 [schema/migrations.md](../schema/migrations.md)):
 
-- Migration 006 — `pending_assignments` table with `(activity_id, position_id)`
-  compound UNIQUE; TEXT (UUID) foreign keys to `positions` and `legs`.
-- Migration 007 — `app_settings` key/value table.
+- Migration 008 (`008_create_pending_assignments.sql`) — `pending_assignments`
+  table with `(activity_id, position_id)` compound UNIQUE; TEXT (UUID) foreign
+  keys to `positions` and `legs`.
+- The `app_settings` key/value table is created in
+  `006_add_credential_settings.sql` (folded in alongside the credential
+  settings; there is no standalone `app_settings` migration).
 
 ## Source files
 
@@ -235,8 +239,8 @@ Schema (see [schema/tables.md](../schema/tables.md) and
 - `src/renderer/src/components/AssignmentNotificationBanner.tsx`
 - `src/renderer/src/pages/PositionsListPage.tsx`
 - `src/renderer/src/components/PositionCard.tsx`
-- `migrations/006_create_pending_assignments.sql`
-- `migrations/007_create_app_settings.sql`
+- `migrations/008_create_pending_assignments.sql`
+- `migrations/006_add_credential_settings.sql` (creates the `app_settings` table)
 - `e2e/polling-scheduler.spec.ts`
 - `e2e/assignment-detection.spec.ts`
 - `e2e/assignment-helpers.ts`

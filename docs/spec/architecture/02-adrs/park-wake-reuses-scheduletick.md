@@ -16,9 +16,9 @@ Re-fetching market status immediately (zero delay) was rejected: it could busy-l
 
 ## Consequences
 
-- `reschedule()` in `src/main/services/polling-scheduler.ts` extended with an `else` branch inside the interval-job block:
+- The park logic in `src/main/services/polling-scheduler.ts` is factored into a dedicated `parkUntilNextOpen(state, status, marketOpenMs)` helper called from `reschedule()` (rather than an inline `else` branch):
   - Valid future `nextOpen` → `scheduleTick(state, wakeDelayMs)` + INFO log: `"job {name} parked until next market open at {nextOpen}"`
-  - Stale/missing `nextOpen` → `scheduleTick(state, cadence.marketOpenMs)` + WARN log: `"nextOpen was unusable for {name}; scheduling fallback re-check"`
+  - Stale/missing `nextOpen` → `scheduleTick(state, cadence.marketOpenMs)` + WARN log: `"nextOpen was unusable for {name}; scheduling fallback re-check at marketOpenMs"`
 - `stop()`, `scheduleTick()`, and the public `PollingScheduler` interface are unchanged.
 - The e2e suite (`e2e/polling-scheduler.spec.ts`) gained 3 new AC scenarios verifying park-wake timing and clean shutdown.
 

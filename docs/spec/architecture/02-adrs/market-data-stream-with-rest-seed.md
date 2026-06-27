@@ -1,6 +1,6 @@
 # ADR: Stream-first market data with one-shot REST seed
 
-<!-- generated:from us-32 -->
+<!-- generated:from us-32,market-data-massive-migration -->
 
 ## Decision
 
@@ -27,7 +27,11 @@ Live underlying prices are delivered to the renderer via the `MarketDataProvider
 - The renderer hook `useStockQuotes(tickers)` runs the REST seed as its `queryFn` and bridges stream events into the TanStack Query cache via `setQueryData` — see ADR [market-data-tanstack-cache](./market-data-tanstack-cache.md).
 - `IpcStockQuote` gains a `prevClose: string | null` field: populated on REST seed, `null` on stream tick. The renderer merges by carrying forward the cached value.
 - `change` / `changePercent` are **not** in `IpcStockQuote` — they're derived in the renderer per render. This keeps the math in one place and prevents drift between REST-returned `change` and renderer-computed `change` after a tick.
-- The REST adapter uses `getStocksSnapshots()` (returns `latest_quote` + `prev_daily_bar`) instead of `getStocksQuotesLatest`; per-entry, `mid = (bid+ask)/2`, `prevClose = prev_daily_bar.c`, `change = mid − prevClose`.
+- The REST adapter (now the Massive provider, `getStockQuotes`) calls the Massive snapshot endpoint `GET /v2/snapshot/locale/us/markets/stocks/tickers/{ticker}` and derives values from the aggregate-bar fields: `price = min.c`, `prevClose = prevDay.c`, `change = todaysChange`, `changePercent = todaysChangePerc`. Massive carries no live bid/ask, so `bid`/`ask` are set equal to `price` (see `## Current state`).
+
+## Current state
+
+Superseded transport details: the implementation pivoted from Alpaca to the **Massive** (Polygon-compatible) provider (`src/main/integrations/massive-market-data.ts`). The stream-first + one-shot-REST-seed design is intact, but the Alpaca-specific frame shape referenced in the Decision ("Alpaca stream frames carry only `bp`/`ap`/`bs`/`as`/`t`") no longer applies — Massive streams Polygon-compatible aggregate-bar ticks. `prevClose` still seeds only from the REST call, and the renderer still recomputes `change`/`changePercent` per render (`PriceCell.tsx`).
 
 ## Sources
 

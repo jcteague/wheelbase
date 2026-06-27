@@ -1,10 +1,10 @@
 # ADR: TanStack Query as the single cache for live stock quotes
 
-<!-- generated:from us-32 -->
+<!-- generated:from us-32,market-data-massive-migration -->
 
 ## Decision
 
-Live stock quotes live in a single TanStack Query cache entry: `queryKey: ['market-data', 'stock-quotes', sortedTickers.join(',')]`, `queryFn` calls `market-data:stock-quotes` (the REST snapshot), `staleTime: Infinity` (so stream ticks are the only live signal), `refetchOnWindowFocus: true` (refresh `prevClose` when the user comes back).
+Live stock quotes live in a single TanStack Query cache entry: `queryKey: ['market', 'stock-quotes', sortedTickers.join(',')]`, `queryFn` calls `market-data:stock-quotes` (the REST snapshot), `staleTime: Infinity` (so stream ticks are the only live signal), `refetchOnWindowFocus: true` (refresh `prevClose` when the user comes back).
 
 In the same hook (`useStockQuotes(tickers)`), a side effect:
 
@@ -32,7 +32,7 @@ In the same hook (`useStockQuotes(tickers)`), a side effect:
 ## Consequences
 
 - `useStockQuotes` returns `UseQueryResult<StockQuotesByTicker> & { streamError: IpcStreamErrorEvent | null }`. Effect cleanup resets `streamError` so a successful re-subscribe clears the stale flag.
-- `marketDataQueryKeys` lives in `src/renderer/src/hooks/marketDataQueryKeys.ts` and exports `stockQuotes(tickers)` and `marketStatus`.
+- `marketDataQueryKeys` lives in `src/renderer/src/hooks/marketDataQueryKeys.ts` and exports `stockQuotes(tickers)` (and `optionSnapshots(symbols)`). The market-status key is **not** in this family — it lives on `brokerQueryKeys.marketStatus`, and `useMarketStatus()` reads from `../api/broker` (see ADR [market-status-pill](./market-status-pill.md)).
 - The `enabled: sortedTickers.length > 0` guard prevents the REST query from firing when there are no tickers to subscribe to.
 - Renderer never imports from `src/main/`; IPC-flat types live in `src/preload/index.d.ts`, re-exported with renderer aliases via `src/renderer/src/api/market-data.ts`.
 

@@ -1,6 +1,6 @@
 # ADR: `market-data:option-snapshots` returns the full `OptionSnapshot` shape
 
-<!-- generated:from us-33 -->
+<!-- generated:from us-33,market-data-massive-migration -->
 
 ## Decision
 

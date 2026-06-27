@@ -24,7 +24,7 @@ an audit trail).
 SQLite is the source of truth; Alpaca is the execution layer only.
 
 Money values are stored as `TEXT` at 4 dp and converted to/from `decimal.js`
-at the boundary using `ROUND_HALF_UP` via the shared `round4` helper. Dates
+at the boundary using `ROUND_HALF_UP` via the `round4` helper. Dates
 are ISO `YYYY-MM-DD` strings; timestamps are ISO 8601 strings. Foreign keys
 on `legs.position_id` and `cost_basis_snapshots.position_id` reference
 `positions.id`. CHECK constraints enforce enum membership on `legs.leg_role`,
@@ -54,12 +54,14 @@ list view can render an "Active" / "Closed" split.
 | `ticker`                | TEXT    | No       | Equity symbol, uppercase                                                                                                                                                                                                                                                                                                                                                      |
 | `strategy_type`         | TEXT    | No       | Strategy identifier (Phase 1: wheel)                                                                                                                                                                                                                                                                                                                                          |
 | `phase`                 | TEXT    | No       | Lifecycle phase (`CSP_OPEN`, `HOLDING_SHARES`, `CC_OPEN`, `WHEEL_COMPLETE`, `CSP_CLOSED_PROFIT`, `CSP_CLOSED_LOSS`)                                                                                                                                                                                                                                                           |
-| `status`                | TEXT    | No       | `ACTIVE`, `PAUSED`, or `CLOSED`                                                                                                                                                                                                                                                                                                                                               |
+| `status`                | TEXT    | No       | `ACTIVE` or `CLOSED`                                                                                                                                                                                                                                                                                                                                                          |
 | `opened_date`           | TEXT    | No       | ISO date when the wheel was opened                                                                                                                                                                                                                                                                                                                                            |
 | `closed_date`           | TEXT    | Yes      | ISO date set when the position transitions to a terminal phase                                                                                                                                                                                                                                                                                                                |
+| `account_id`            | TEXT    | Yes      | Broker account identifier the position belongs to; `NULL` when unassigned                                                                                                                                                                                                                                                                                                     |
 | `contracts`             | INTEGER | No       | Contracts on the original CSP (shares held after assignment = `× 100`)                                                                                                                                                                                                                                                                                                        |
 | `notes`                 | TEXT    | Yes      | Free-form trader notes                                                                                                                                                                                                                                                                                                                                                        |
 | `thesis`                | TEXT    | Yes      | Free-form trade thesis                                                                                                                                                                                                                                                                                                                                                        |
+| `tags`                  | TEXT    | No       | JSON-encoded array of trader tags; `NOT NULL DEFAULT '[]'`                                                                                                                                                                                                                                                                                                                    |
 | `profit_target_percent` | INTEGER | Yes      | Per-position profit-target override (1..100); `NULL` → use the global default constant `DEFAULT_PROFIT_TARGET_PERCENT = 50`. Added by migration `005`. No DB `CHECK` — validation is deferred to the service layer if/when an edit IPC ships. Read-only in US-33 (seeded only via tests/dev). See [us-33 — Option Mid & Unrealized P&L](../features/us-33-option-mid-pnl.md). |
 | `created_at`            | TEXT    | No       | ISO timestamp at row insert                                                                                                                                                                                                                                                                                                                                                   |
 | `updated_at`            | TEXT    | No       | ISO timestamp, refreshed on every phase transition                                                                                                                                                                                                                                                                                                                            |
@@ -111,8 +113,7 @@ immutability is what lets cost basis and P&L be re-derived from leg history.
 | `premium_per_contract` | TEXT    | No       | 4-dp Decimal string; `'0.0000'` for `EXPIRE` and `ASSIGN` event markers                                                        |
 | `fill_price`           | TEXT    | Yes      | 4-dp Decimal string; `NULL` for `EXPIRE` and `ASSIGN` legs (no broker fill occurs)                                             |
 | `fill_date`            | TEXT    | No       | ISO date                                                                                                                       |
-| `roll_from_leg_id`     | TEXT    | Yes      | FK → `legs.id`; set on the `ROLL_TO` leg, points back at its paired `ROLL_FROM`                                                |
-| `roll_to_leg_id`       | TEXT    | Yes      | FK → `legs.id`; set on the `ROLL_FROM` leg, points forward at its paired `ROLL_TO`                                             |
+| `order_id`             | TEXT    | Yes      | Broker order id for the fill; `NULL` for manually entered or event-marker legs                                                 |
 | `roll_chain_id`        | TEXT    | Yes      | Shared UUID stamped on both legs of a roll pair; lets the chain be queried as a unit                                           |
 | `created_at`           | TEXT    | No       | ISO timestamp                                                                                                                  |
 | `updated_at`           | TEXT    | No       | ISO timestamp                                                                                                                  |
@@ -151,9 +152,9 @@ copied from the prior leg), and the `ROLL_TO` leg records the sell-to-open
 `CSP_OPEN` for a CSP roll (US-12) or `CC_OPEN` for a CC roll (US-14). The
 active-leg query in `src/main/services/active-leg-sql.ts` therefore resolves
 the "current open leg" as the most recent open or `ROLL_TO` leg by
-`fill_date DESC, created_at DESC`. The `roll_from_leg_id` / `roll_to_leg_id`
-columns provide direct forward and reverse pointers between the paired
-legs. The CSP and CC roll paths write identical row shapes apart from
+`fill_date DESC, created_at DESC`. The shared `roll_chain_id` UUID is the
+only linkage between the paired legs — it lets the `ROLL_FROM` / `ROLL_TO`
+pair be queried as a unit. The CSP and CC roll paths write identical row shapes apart from
 `instrument_type` (`PUT` vs `CALL`) — the schema and the
 `calculateRollBasis()` math are shared (US-14 reuses both unchanged).
 
@@ -296,9 +297,10 @@ earlier), the new row's `snapshot_at` is bumped by 1 ms so the
 
 - All money is stored as `TEXT` at 4 dp. The renderer formats to 2 dp for
   display.
-- All arithmetic uses `decimal.js` with `ROUND_HALF_UP` via the shared
-  `round4` helper in `src/main/core/costbasis.ts`. No native float math is
-  used anywhere in the core engines.
+- All arithmetic uses `decimal.js` with `ROUND_HALF_UP` via the private
+  `round4` helper in `src/main/core/costbasis.ts` (not exported; used only
+  within that module). No native float math is used anywhere in the core
+  engines.
 - IPC payloads accept numbers (validated by Zod) and the service layer
   converts to Decimal strings before the SQL INSERT.
 
@@ -514,8 +516,8 @@ position against the built-in rules; the persistence layer in
 `src/main/services/alerts.ts` upserts open alerts in place and resolves
 cleared conditions. Rows are **never deleted** — resolution flips status and
 stamps `resolved_at`, so the table is a complete audit trail of what fired and
-when. The table carries no IPC surface in US-50 (the `alerts:list` read path
-is US-51). Added by migration `009`. See
+when. US-50 introduced the table with no IPC surface; the `alerts:list` read
+path now exists in `src/main/ipc/alerts.ts`. Added by migration `009`. See
 [us-50 — Alert Evaluation Engine](../features/us-50-alert-evaluation-engine.md)
 and [Alert Engine](../domain/alert-engine.md).
 

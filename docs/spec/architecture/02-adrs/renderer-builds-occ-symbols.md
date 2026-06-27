@@ -1,14 +1,14 @@
 # ADR: Renderer builds OCC symbols from active legs
 
-<!-- generated:from us-33 -->
+<!-- generated:from us-33,market-data-massive-migration -->
 
 ## Decision
 
-`useOptionSnapshots(legs: ActiveLegSummary[])` builds OCC symbols on the renderer side via `buildOccSymbol` (imported directly from `src/main/core/option-symbol.ts`) and then calls `getOptionSnapshots(symbols)` over IPC. A per-leg `try/catch` around `buildOccSymbol` skips legs with invalid inputs (e.g. `strike: 0`) without breaking the batch. There is no server-side symbol-building IPC.
+`useOptionSnapshots(legs: ActiveLegSummary[])` builds OCC symbols on the renderer side via `buildOccSymbol` (imported directly from `src/shared/option-symbol.ts`) and then calls `getOptionSnapshots(symbols)` over IPC. A per-leg `try/catch` around `buildOccSymbol` skips legs with invalid inputs (e.g. `strike: 0`) without breaking the batch. There is no server-side symbol-building IPC.
 
 ## Why
 
-Mirrors `useStockQuotes(tickers)` — the renderer already has every input needed (ticker, strike, expiration, instrumentType) via the active-leg metadata surfaced on `PositionListItem`. Symbol building is pure and lives in a `src/main/core/` leaf module that the renderer can safely import. Moving construction server-side would add an IPC round-trip with no benefit.
+Mirrors `useStockQuotes(tickers)` — the renderer already has every input needed (ticker, strike, expiration, instrumentType) via the active-leg metadata surfaced on `PositionListItem`. Symbol building is pure and lives in the `src/shared/option-symbol.ts` leaf module (re-exported by `src/main/core/`) that the renderer can safely import. Moving construction server-side would add an IPC round-trip with no benefit.
 
 ## Alternatives considered
 

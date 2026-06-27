@@ -15,6 +15,10 @@ CLAUDE.md prefers shadcn/ui for UI primitives. `Collapsible` ships accessible ke
 - **Native `useState` + conditional render** (the handoff prototype's approach) — works but bypasses shadcn's accessibility plumbing.
 - **Custom hook** — same problem; reinvents the primitive.
 
+## Current state
+
+The implementation diverged from the recorded decision. `CollapsedDrawer` (`src/renderer/src/components/position-cockpit/CollapsedDrawer.tsx`) is built on the rejected `useState` + conditional-render approach, not the shadcn `Collapsible` primitive. There is no `Collapsible` primitive in the project (`src/renderer/src/components/ui/collapsible.tsx` does not exist, and `@radix-ui/react-collapsible` is not a dependency). The chevron is a manual `▼`/`▶` toggle driven by the `open` boolean, and `aria-expanded` is set explicitly in the code rather than provided by `data-[state=open]:` attribute variants. The rationale below (shadcn accessibility wins) reflects the original intent; revisit it if the drawers are migrated to the `Collapsible` primitive.
+
 ## Source
 
 - `plans/us-34/research.md`

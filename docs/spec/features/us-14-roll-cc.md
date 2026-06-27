@@ -15,7 +15,7 @@ Lets the trader roll an open covered call to a different strike, a later (or equ
 - "Roll Out" (same strike, later expiration), "Roll Down & Out" (lower strike, later expiration), and "Roll Up" (same expiration, higher strike) are all accepted with their respective labels.
 - A net debit preview shows when cost-to-close exceeds the new premium; the roll can still be confirmed.
 - The form rejects a new expiration earlier than the current expiration with "New expiration must be on or after the current expiration (...)".
-- The form rejects a roll where neither strike nor expiration changed with "Roll must change the expiration, strike, or both"; the confirm button is disabled in that state.
+- The form rejects a roll where neither strike nor expiration changed at field `__roll__` with code `no_change` and message "Roll must change at least one of strike or expiration"; the confirm button is disabled in that state.
 - The form rejects non-positive cost-to-close with "Cost to close must be greater than zero".
 
 ## What was built

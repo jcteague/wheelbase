@@ -1,6 +1,6 @@
 # Market Data
 
-<!-- generated:from us-31,us-32,us-33,us-34 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration -->
 
 ## Overview
 
@@ -14,13 +14,14 @@ TanStack Query, and discarded on app close.
 The domain has four moving parts:
 
 - A **provider interface** (`MarketDataProvider`) that abstracts every
-  vendor-specific SDK call. Alpaca is the first concrete adapter; a factory
-  decides which adapter is instantiated.
+  vendor-specific call. `MassiveMarketDataProvider` is the concrete adapter;
+  a factory (`marketDataFactory`) decides which adapter is instantiated.
 - A **REST request/response surface** for snapshots — stock quotes, option
   snapshots (with greeks/IV), the market clock, broker activities, and account
   info. Promise-returning.
-- A **dual-socket WebSocket streaming surface** for push updates — stocks over
-  JSON, options over MessagePack — exposed as RxJS `Observable<StreamEvent<T>>`.
+- A **WebSocket streaming surface** for push updates — stock quotes over a
+  single JSON socket (options are REST-only) — exposed as RxJS
+  `Observable<StreamEvent<T>>`.
 - A **renderer cache** (TanStack Query) that merges both transports under a
   single freshness clock and feeds the UI (price cells, P&L cells, market-status
   pill, position cockpit).
@@ -31,10 +32,12 @@ The contract details for the IPC channels that surface this data
 events) live in [`contracts/ipc-handlers.md`](../contracts/ipc-handlers.md). The
 vendor-specific field-by-field translation lives in
 [`contracts/alpaca-integration.md`](../contracts/alpaca-integration.md).
+(Alpaca remains the broker for account, activities, and clock data; the live
+quote/option feed is now the **Massive** provider described below.)
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration -->
 
 ## Provider interface
 
@@ -54,22 +57,27 @@ interface MarketDataProvider {
   getMarketStatus(): Promise<MarketStatus>
 
   // Streaming — Observables
-  supportsStreaming(feed: DataFeed): boolean
-  connect(): Promise<void>
+  supportsStreaming(feed: MarketDataFeed): boolean
+  connect(feeds?: MarketDataFeed[]): Promise<void>
   disconnect(): Promise<void>
-  stream(feed: DataFeed, symbols: string[]): Observable<StreamEvent<StockQuote | OptionSnapshot>>
+  stream(
+    feed: MarketDataFeed,
+    symbols: string[]
+  ): Observable<StreamEvent<StockQuote | OptionSnapshot>>
 }
 
-type DataFeed = 'stockQuotes' | 'optionQuotes' | 'optionTrades'
+type MarketDataFeed = 'stockQuotes' | 'optionQuotes' | 'optionTrades'
 ```
 
 ### Adapter rules
 
-- **Every vendor SDK call lives behind the adapter.** Alpaca's
-  `@alpacahq/typescript-sdk` is touched only inside
-  `src/main/integrations/market-data-provider.ts` and its companion streaming
-  module. The IPC handlers (`src/main/ipc/market-data.ts`) consume the
-  interface, never the SDK.
+- **Every vendor call lives behind the adapter.** The concrete adapter is
+  `MassiveMarketDataProvider` in
+  `src/main/integrations/massive-market-data.ts` — a REST + WebSocket client
+  against Massive. `src/main/integrations/market-data-provider.ts` holds only
+  the `MarketDataProvider` interface and the `MarketDataError` class. The IPC
+  handlers (`src/main/ipc/market-data.ts`) consume the interface, never the
+  vendor client.
 - **Errors normalise to `MarketDataError`.** The adapter wraps any vendor-
   specific exception in a `MarketDataError` whose `code` field is drawn from a
   fixed set: `auth_failed`, `network_error`, `rate_limited`,
@@ -77,45 +85,47 @@ type DataFeed = 'stockQuotes' | 'optionQuotes' | 'optionTrades'
   `unknown`. IPC handlers catch and convert to the `{ ok: false, errors: [...] }`
   envelope; the stream-error push channel uses the same codes. Services can
   pattern-match on `error.code` without parsing message strings.
-- **The factory is the only place that picks an adapter.**
-  `createMarketDataProvider(config)` in
-  `src/main/integrations/market-data-factory.ts` is consumed by
-  `src/main/index.ts` once at startup. No other file knows which adapter is in
-  use. Services import the factory and the `MarketDataProvider` interface
-  only — never the concrete provider class.
-- **The adapter's client is lazy.** The Alpaca adapter's SDK `client` is a
-  getter that calls `createClient()` on first access, not in the constructor —
-  instantiating the provider with missing credentials must not throw (e2e tests
-  rely on this).
-- **REST stays on the SDK; streaming bypasses it.** Where the
-  `@alpacahq/typescript-sdk` works (`getAccount`, `getClock`,
-  `getStocksSnapshots`, `getActivity`, options snapshots), the adapter uses it.
-  Streaming is not implemented in the SDK, so the adapter uses raw `ws`
-  WebSocket clients.
+- **The factory is the only place that picks an adapter.** The factory is the
+  object `marketDataFactory` in
+  `src/main/integrations/market-data-factory.ts`, with `.configure(...)`,
+  `.create()`, `.recreate()`, and `.disconnect()` methods. `src/main/index.ts`
+  calls `marketDataFactory.configure(...)` once at startup and
+  `marketDataFactory.create()` to obtain the cached provider. No other file
+  knows which adapter is in use. Services import the factory and the
+  `MarketDataProvider` interface only — never the concrete provider class.
+  (When `FAKE_MARKET_DATA=true`, the factory returns a
+  `FakeMarketDataProvider` instead.)
+- **The provider is REST-first with raw WebSocket streaming.** Massive's REST
+  endpoints supply stock snapshots and option snapshots (greeks/IV); streaming
+  stock quotes use a raw `ws` WebSocket client. There is no vendor SDK — the
+  adapter talks to Massive's HTTP and WS APIs directly.
 
 ### Configuration
 
+The factory takes a small config that supplies the Massive API key lazily; the
+provider itself takes just the resolved key:
+
 ```typescript
-interface MarketDataConfig {
-  provider: 'alpaca' // extensible union for future providers
-  keyId: string
-  secretKey: string
-  paper: boolean
-  dataFeed?: 'sip' | 'iex' | 'delayed_sip' // stock feed, default 'sip'
-  optionFeed?: 'opra' | 'indicative' // option feed, default 'opra'
+// market-data-factory.ts
+type MarketDataFactoryConfig = {
+  loadMassiveApiKey: () => string
 }
+
+// massive-market-data.ts
+type MassiveMarketDataConfig = { apiKey: string }
 ```
 
-`environment: 'paper' | 'live'` on `AccountInfo` is derived from the
-constructor's `paper` flag, not from any API response — Alpaca's `getAccount()`
-has no paper/live indicator.
+`src/main/index.ts` calls `marketDataFactory.configure({ loadMassiveApiKey })`
+at startup; the key is resolved lazily on first `marketDataFactory.create()`.
+With no key (and `FAKE_MARKET_DATA` unset) `create()` throws — the provider is
+not constructed until live data is actually requested.
 
 For the full extracted contract (US-31 scope and per-method semantics) see
 [`features/us-31-market-data-provider-adapter.md`](../features/us-31-market-data-provider-adapter.md).
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration -->
 
 ## REST surface
 
@@ -139,9 +149,11 @@ REST is request/response and returns `Promise`s. Every money field is a
 }
 ```
 
-`prevClose` is sourced from Alpaca's `prev_daily_bar.c` and is the per-day
-baseline used to compute the signed change displayed in `PriceCell`. Unknown
-tickers are simply absent from the returned map — never an error.
+`prevClose` is sourced from Massive's `prevDay.c` and is the per-day
+baseline used to compute the signed change displayed in `PriceCell`. (Massive
+also returns `todaysChange` / `todaysChangePerc` directly, which the adapter
+maps to `change` / `changePercent`.) Unknown tickers are simply absent from the
+returned map — never an error.
 
 ### Option snapshot
 
@@ -153,24 +165,24 @@ tickers are simply absent from the returned map — never an error.
   ask: string // 2dp
   mid: string // (bid + ask) / 2, 2dp — computed by adapter
   lastTrade: string // 2dp
-  openInterest: number | null // null for Alpaca (not exposed)
-  volume: number | null // null for Alpaca (not exposed)
-  greeks: {
+  openInterest: number | null // null for Massive (not exposed on the snapshot)
+  volume: number | null // null for Massive (not exposed on the snapshot)
+  greeks?: {
     delta: string // 4dp
     gamma: string // 4dp
     theta: string // 4dp
     vega: string // 4dp
-    iv: string // 4dp — implied volatility
   }
+  impliedVolatility?: string // 4dp — top-level, not under greeks
   timestamp: string // ISO-8601
 }
 ```
 
 `mid` is computed by the adapter (`Decimal(bid + ask) / 2`) — never read from
-the API directly. Greeks and IV come from the REST snapshot **only**; the
-option streaming feeds (`optionQuotes`, `optionTrades`) carry quote/trade data
-but never greeks. That asymmetry is the practical reason option data is
-polled (60 s) rather than streamed.
+the API directly. Greeks and IV come from the REST snapshot **only**; there is
+no option streaming feed. That is the practical reason option data is
+polled (60 s) rather than streamed. `greeks` and `impliedVolatility` are
+omitted entirely when the snapshot has no greeks (e.g. illiquid contracts).
 
 ### Market clock
 
@@ -200,7 +212,7 @@ polling, expiration confirmation) elsewhere in the app.
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration -->
 
 ## OCC option symbols
 
@@ -216,10 +228,10 @@ supports up to four decimal places. Example: AAPL 2026-05-16 $180.00 PUT →
 `AAPL260516P00180000`.
 
 The symbol is constructed by `buildOccSymbol({ ticker, expiration, strike,
-instrumentType })` in `src/main/core/option-symbol.ts` — a pure leaf module
-that imports only `decimal.js`. Because it is pure with no DB/Electron imports,
-the renderer imports it directly (the architecture rule against importing from
-`src/main/` is relaxed for `src/main/core/` leaves).
+instrumentType })`, defined in `src/shared/option-symbol.ts` — a pure leaf
+module that imports only `decimal.js`. `src/main/core/option-symbol.ts`
+re-exports it for main-process callers. Because it is pure with no DB/Electron
+imports, the renderer imports it directly (from the shared module).
 
 Validation rules: non-empty ticker, ISO date `YYYY-MM-DD`, strike strictly
 positive and finite, `instrumentType ∈ {'PUT', 'CALL'}`. Each invariant violation
@@ -231,35 +243,37 @@ a drift surface.
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration -->
 
 ## Streaming surface
 
-Streaming uses two independent WebSocket connections opened on demand, each
-multiplexing all symbol subscriptions for its feed:
+Streaming covers stock quotes over a single Massive WebSocket connection.
+Options are **REST-only** (greeks/IV are not streamed), so there is no option
+WebSocket feed.
 
-| Feed                                        | URL                                                     | Frame format       |
-| ------------------------------------------- | ------------------------------------------------------- | ------------------ |
-| `stockQuotes`                               | `wss://stream.data.alpaca.markets/v2/{dataFeed}`        | JSON text          |
-| `optionQuotes` &nbsp;/&nbsp; `optionTrades` | `wss://stream.data.alpaca.markets/v1beta1/{optionFeed}` | MessagePack binary |
+| Feed          | URL                                | Frame format |
+| ------------- | ---------------------------------- | ------------ |
+| `stockQuotes` | `wss://delayed.massive.com/stocks` | JSON text    |
 
-The Alpaca SDK has no WebSocket support, so the adapter uses the `ws` npm
-package directly. Option frames are decoded with `@msgpack/msgpack`'s
-`decodeMulti()` (not `decode()`) because Alpaca batches messages as arrays per
-frame. Paper and live accounts share the same data stream URLs — the
-paper/live distinction only affects the trading API base URL.
+REST base URL is `https://api.massive.com`. The adapter uses the `ws` npm
+package directly (there is no vendor SDK). Massive's WebSocket messages are
+Polygon-compatible JSON (`status` and `AM` aggregate-bar frames); options
+tickers are prefixed with `O:` (e.g. `O:SPY260604P00750000`) at the REST
+boundary.
 
 ### Wire protocol
 
 ```
 1. Client connects                          → WS open
-2. Server: [{"T":"success","msg":"connected"}]
-3. Client: {"action":"auth","key":"...","secret":"..."}
-4. Server: [{"T":"success","msg":"authenticated"}]
-5. Client: {"action":"subscribe","quotes":["AAPL","MSFT"]}
-6. Server pushes quote frames               → [{"T":"q","S":"AAPL","bp":...,"ap":...}]
-7. Client: {"action":"unsubscribe","quotes":[...]}   (on teardown)
+2. Client: {"action":"auth","params":"<apiKey>"}
+3. Server: {"ev":"status","status":"auth_success"}
+4. Client: {"action":"subscribe","params":"AM.*"}
+5. Server: {"ev":"status","status":"success"}
+6. Server pushes aggregate-bar frames        → {"ev":"AM","sym":"AAPL","c":...,"v":...}
 ```
+
+Auth failure surfaces as `{"ev":"status","status":"auth_failed"}`, mapped to a
+`MarketDataError('auth_failed', ...)`.
 
 ### Observable model
 
@@ -281,14 +295,14 @@ nulls internal references so closed resources cannot be reused.
 
 ```typescript
 interface StreamEvent<T> {
-  feed: DataFeed
+  feed: MarketDataFeed
   symbol: string
   data: T
   timestamp: string
 }
 
 interface StreamError {
-  feed: DataFeed
+  feed: MarketDataFeed
   code: string // e.g. 'stream_disconnected'
   message: string
   reconnectable: boolean
@@ -301,7 +315,7 @@ a future reconnection story).
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration -->
 
 ## Polling cadence
 
@@ -324,7 +338,7 @@ and `refetchOnWindowFocus: true`. The hook builds OCC symbols inside a
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration -->
 
 ## Stream-first transport for stocks
 
@@ -338,8 +352,8 @@ Renderer                            Main process                       Provider
 --------                            ------------                       --------
 useStockQuotes(tickers)
   │
-  ├── queryFn → IPC invoke ────────► getStockQuotes()        ────────► REST  getStocksSnapshots()
-  │                                  (snapshot, with                   (latest_quote + prev_daily_bar)
+  ├── queryFn → IPC invoke ────────► getStockQuotes()        ────────► REST  Massive v2 snapshot
+  │                                  (snapshot, with                   (min.c + prevDay.c)
   │   ◄────────── snapshot ──────── prevClose computed)
   │
   ├── effect → IPC invoke ─────────► setStockQuoteTickers()  ────────► stream('stockQuotes', tickers)
@@ -355,12 +369,12 @@ useStockQuotes(tickers)
 
 ### Why both paths
 
-Alpaca's quote stream frames carry only `bp` / `ap` / `bs` / `as` / `t` —
-**no previous-close field**. Without a REST seed, the price column would be
-empty until the first tick arrived (which during low-liquidity hours can be a
-long wait), and the daily `change` value could not be computed at all. The
-REST snapshot gives a per-day baseline (`prev_daily_bar.c`) and an initial
-price; the stream takes over from there.
+Massive's stream frames are aggregate bars (`AM`) carrying only the latest
+bar fields (`c` / `v` / timestamps) — **no previous-close field**. Without a
+REST seed, the price column would be empty until the first tick arrived (which
+during low-liquidity hours can be a long wait), and the daily `change` value
+could not be computed at all. The REST snapshot gives a per-day baseline
+(`prevDay.c`) and an initial price; the stream takes over from there.
 
 The seed fires whenever the active-ticker list changes (positions added,
 closed, or initial mount). The stream subscription is then torn down and
@@ -369,8 +383,9 @@ call.
 
 ### Provider lifecycle
 
-`createMarketDataProvider(...)` is instantiated once at app startup in
-`src/main/index.ts`. `provider.connect()` is **not** called at startup — it
+The provider is created via `marketDataFactory.create()` (cached) once at app
+startup in `src/main/index.ts`. `provider.connect()` is **not** called at
+startup — it
 fires on the **first non-empty** `setStockQuoteTickers` invocation. A
 module-scoped `let connected = false` inside `registerMarketDataHandlers`
 guards the call so the WebSocket is opened exactly once per app session.
@@ -402,12 +417,12 @@ that produce the same ticker set do not retrigger the subscription churn.
 ### Daily change split: adapter vs renderer
 
 `change` and `changePercent` are split across two compute sites because the
-stream frame does not carry `prev_daily_bar.c`:
+stream frame does not carry a previous-close field:
 
-- **REST snapshot path** — the adapter computes `change = mid − prevClose`
-  and `changePercent = change / prevClose` (4 dp) inside `getStockQuotes()`.
-  `prevClose` is set to `Decimal(prev_daily_bar.c).toFixed(2)` and travels in
-  the snapshot.
+- **REST snapshot path** — the adapter fills `change` / `changePercent` from
+  Massive's `todaysChange` / `todaysChangePerc` inside `getStockQuotes()`, and
+  sets `prevClose` to `Decimal(prevDay.c).toFixed(2)`; all three travel in the
+  snapshot.
 - **Stream tick path** — the adapter cannot compute change (no prev_close in
   the frame). The IPC layer forwards the tick with `prevClose: null`. The
   renderer carries `prevClose` forward from the cached snapshot value:
@@ -428,7 +443,7 @@ For the full live-prices feature (column, animations, banner copy), see
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration -->
 
 ## Session model
 
@@ -461,11 +476,14 @@ session === 'pre' | 'post'                   → EXT
 session === 'closed' (or session unknown)    → CLOSED
 ```
 
-`STALE_THRESHOLD_MS = 5 * 60 * 1000` (300 000 ms) is the only tunable.
+`STALE_THRESHOLD_MS = 5 * 60 * 1000` (300 000 ms) is the staleness tunable; it
+lives in `src/renderer/src/hooks/useStockQuotes.ts` (with a sibling
+`SNAPSHOT_STALE_THRESHOLD_MS` in `PositionDetailPage.tsx`). The
+`deriveMarketStatusDisplay` helper itself takes a precomputed `stale` boolean.
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration -->
 
 ## Consumers: how the UI uses market data
 
@@ -541,13 +559,13 @@ For the full feature behaviour table, see
 The position detail page renders a deterministic **Position Cockpit** that
 consumes both market-data sources:
 
-- **Underlying price** comes from `useStockQuotes([position.ticker])` — Alpaca's
+- **Underlying price** comes from `useStockQuotes([position.ticker])` — the
   option-snapshot endpoint does not include the underlying price, so the
   cockpit reads it from the stock-quote stream. `OptionSnapshot` is **not**
   extended to carry it.
 - **Greeks and IV** come from `useOptionSnapshots([leg]).data?.[occSymbol]`.
-  The cockpit reads `snapshot.greeks.iv` (not a `snapshot.impliedVolatility`
-  field — that doesn't exist on `OptionSnapshot`); all five greek fields are
+  IV is a top-level `snapshot.impliedVolatility` field; the four greeks
+  (`delta`, `gamma`, `theta`, `vega`) live under `snapshot.greeks`. All are
   decimal strings and the cockpit `parseFloat`s each.
 
 `computeVerdict(input)` in `src/renderer/src/lib/verdict.ts` is a pure function
@@ -593,7 +611,7 @@ For the full cockpit layout, severity bands, and acceptance criteria, see
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration -->
 
 ## Staleness detection
 
@@ -623,7 +641,7 @@ fix this; it is deferred tech debt.
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration -->
 
 ## One cache, two transports
 
@@ -641,7 +659,7 @@ components subscribe to the same ticker list.
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration -->
 
 ## Architectural invariant: market data is transient
 
@@ -682,7 +700,7 @@ and [`features/us-34-position-cockpit.md`](../features/us-34-position-cockpit.md
 
 <!-- /generated -->
 
-<!-- generated:from us-37 -->
+<!-- generated:from us-37,market-data-massive-migration -->
 
 ## Shared market data vs broker state
 

@@ -32,7 +32,7 @@ The renderer API adapter inspects `result.ok`; on `false` it constructs an `ApiE
 
 **`deeplink` on broker auth errors (US-47).** When `handleIpcCall` catches a `BrokerError` that carries a `deeplink` string (populated by `requireCredentials()` for missing credentials), the `{ ok: false }` envelope includes it as a top-level field: `{ ok: false, deeplink: 'settings/credentials/alpaca', errors: [...] }`. This lets the renderer navigate the user to the relevant settings screen without scanning `errors[]`. See [ADR: deeplink-in-ipc-error-envelope](./deeplink-in-ipc-error-envelope.md).
 
-**Top-level `code` on assignment handlers (US-35).** `assignments:confirm` and `assignments:dismiss` include an additional top-level `code` field (`'NOT_FOUND' | 'NOT_PENDING' | 'TRANSITION_REJECTED'`) so the renderer's banner state machine can switch on a single discriminator without scanning the array. This is an exceptional pattern; treat as a precedent-limited deviation for state-machine consumers.
+**Top-level `code` on assignment handlers (US-35).** `assignments:confirm` and `assignments:dismiss` include an additional top-level `code` field (`'NOT_FOUND' | 'NOT_PENDING'`) so the renderer's banner state machine can switch on a single discriminator without scanning the array. This is an exceptional pattern; treat as a precedent-limited deviation for state-machine consumers.
 
 ## Consequences
 

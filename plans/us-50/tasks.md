@@ -68,7 +68,7 @@
     - `managementWindowDte = 14`: `dte = 18` → no match; `dte = 14` → `MANAGEMENT_WINDOW`
     - strike formatting: `7.5000` → `$7.50`; `1250.0000` → `$1250.00`
   - Run `pnpm test src/main/core/alerts.test.ts` — all new tests must fail
-- [x] **[Green]** Implement — `src/main/core/alerts.ts` (+ engine types in `src/main/core/types.ts`) _(depends on: Area 4 Red ✓)_
+- [x] **[Green]** Implement — `src/main/core/alerts.ts` (engine input/output types co-located in `src/main/core/alerts.ts`, not a separate `core/types.ts`) _(depends on: Area 4 Red ✓)_
   - Add `AlertUrgency`, `AlertStatus`, `RuleCode`, `AlertEvaluationInput`, `AlertMatch`, `SkippedRule`, `PositionEvaluation` (see `data-model.md`)
   - `evaluatePosition(input): PositionEvaluation` — pure; `EXPIRATION_IMMINENT` when `dte !== null && dte <= 5`; `MANAGEMENT_WINDOW` when `dte !== null && 6 <= dte <= managementWindowDte`; `dte === null` → both DTE rules in `skipped` with `reason:'missing_dte'`
   - Format strike via `new Decimal(strike).toFixed(2)` prefixed with `$`; export `DEFAULT_MANAGEMENT_WINDOW_DTE = 21` and default the param to it; no DB/broker/logger imports

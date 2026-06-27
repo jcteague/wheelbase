@@ -28,7 +28,7 @@ Because the option no longer exists as an open position, `getPosition.activeLeg`
 
 ## Consequences
 
-- The `LegAction` enum extends to `SELL | BUY | EXPIRE | ASSIGN` (started as `SELL | BUY`; expanded in US-5 then US-6).
+- The `LegAction` enum extends to `SELL | BUY | EXPIRE | ASSIGN` (started as `SELL | BUY`; expanded in US-5 then US-6). A later story added `EXERCISE`, so the current enum is `SELL | BUY | EXPIRE | ASSIGN | EXERCISE`.
 - `LegRole` already contained `EXPIRE` and `ASSIGN` values; no new schema CHECK was needed for those.
 - The expiration snapshot uses `snapshot_at = now + 1ms` so it sorts after the opening snapshot when both are written within the same millisecond.
 - The CC-expire flow writes only the EXPIRE leg (no new snapshot; see ADR [append-only-cost-basis-snapshots](./append-only-cost-basis-snapshots.md)) because the CC premium was already booked at CC-open.

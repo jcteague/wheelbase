@@ -2,7 +2,7 @@
 
 <!-- generated:from us-13 -->
 
-> **Status: plan-only — not yet implemented.** The `plans/us-13/` directory contains `plan.md`, `research.md`, `data-model.md`, `contracts/positions-roll-csp.md`, and `quickstart.md`, but **no `tasks.md` and no `refactor-phase-results.md`**. Everything below records design intent only; none of it has been verified against the running code. Re-run `/update-spec us-13` once the implementation artifacts land.
+> **Status: plan-only — not yet implemented.** The US-13 engine work (the `currentStrike`/`newStrike` extensions to `rollCsp`, the new `rollType.ts` module, and the `rollCount` field) is absent from the current code. The original `plans/us-13/` directory has since been removed, so the design intent below is preserved here as the only record; none of it has been verified against the running code.
 
 ## Summary
 
@@ -74,7 +74,7 @@ This replaces the inline 3-arg helper used by `RollCspSheet` in US-12 and is sha
 
 ## Planned source files
 
-(Paths reflect `plans/us-13/plan.md`; none have been verified against the working tree.)
+(Paths reflect the original US-13 plan, now removed; none have been verified against the working tree.)
 
 - `src/main/core/lifecycle.ts` — extend `RollCspInput`, add positive-strike / no-change / earlier-expiration validations
 - `src/main/core/lifecycle.test.ts` — new tests covering all five accepted labels, plus the two rejections

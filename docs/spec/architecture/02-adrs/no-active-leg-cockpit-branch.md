@@ -4,7 +4,9 @@
 
 ## Decision
 
-When `activeLeg` is null (e.g. `HOLDING_SHARES` between selling a CSP and opening a CC), `PositionCockpit` renders only `<VerdictBlock>` (with `SHARES_VERDICT` and `pnl={null}`) plus the "Cost basis & history" `<CollapsedDrawer defaultOpen>`. `RiskSnapshot`, `ContextStrip`, and the "Leg reference" drawer are **not** rendered.
+When `activeLeg` is null (e.g. `HOLDING_SHARES` between selling a CSP and opening a CC), `PositionCockpit` renders only `<VerdictBlock>` (with `pnl={null}`) plus the "Cost basis & history" drawer. `RiskSnapshot`, `ContextStrip`, and the "Leg reference" drawer are **not** rendered.
+
+The verdict shown depends on phase: `WHEEL_COMPLETE_VERDICT` when `position.phase === 'WHEEL_COMPLETE'`, otherwise `SHARES_VERDICT`. The cost-basis history is rendered through a local `CostBasisDrawer` wrapper (which renders a `<CollapsedDrawer defaultOpen>` titled "Cost basis & history"), not a bare `CollapsedDrawer`.
 
 ## Why
 
