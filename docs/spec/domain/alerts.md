@@ -1,6 +1,6 @@
 # Management Alerts
 
-<!-- generated:from us-50 -->
+<!-- generated:from us-50,us-51 -->
 
 ## Overview
 
@@ -18,6 +18,11 @@ management-window threshold, default 21). The engine and table are built
 open/closed so later Classic Wheel rules (`PROFIT_TARGET`, `STRIKE_PROXIMITY`,
 `EARNINGS_PROXIMITY`, `COVERED_CALL_BREACH`) and the renderer-facing queue
 (US-51) attach without schema or control-flow changes.
+
+US-51 adds the read/display half: a `listManagementQueue` read path that enriches
+the persisted open alerts with their position's `ticker` and `phase` and sorts
+them by urgency for the dashboard "management queue". No engine or schema work is
+required — it consumes the US-50 table as-is.
 
 <!-- /generated -->
 
@@ -70,7 +75,7 @@ leak open alerts for closed positions.
 
 <!-- /generated -->
 
-<!-- generated:from us-50 -->
+<!-- generated:from us-50,us-51 -->
 
 ## Key decisions
 
@@ -123,6 +128,20 @@ leak open alerts for closed positions.
 - **Driven by:** [us-50](../features/us-50-alert-engine.md) ·
   [alert-evaluation-job-cadence](../architecture/02-adrs/alert-evaluation-job-cadence.md)
 
+### Dedicated enriched, sorted management-queue read path
+
+- **Decision:** A new `listManagementQueue(db)` joins open `alerts` to
+  `positions` to attach `ticker` and `phase`, sorts by urgency tier
+  (high → medium → low) then `triggered_at` ASC, and projects into a
+  purpose-built `ManagementQueueItem` view-model — rather than reusing or
+  extending the `listOpenAlerts` primitive.
+- **Why:** The queue UI needs fields the `alerts` row lacks and an ordering the
+  raw primitive doesn't provide; a separate function keeps `listOpenAlerts`'
+  contract (relied on by US-50 evaluation tests) stable and keeps "raw open
+  alerts" distinct from "display queue".
+- **Driven by:** [us-51](../features/us-51-management-queue-dashboard.md) ·
+  [management-queue-read-path](../architecture/02-adrs/management-queue-read-path.md)
+
 <!-- /generated -->
 
 <!-- generated:from us-50 -->
@@ -138,11 +157,34 @@ for full column detail.
 
 <!-- /generated -->
 
-<!-- generated:from us-50 -->
+<!-- generated:from us-51 -->
+
+## Management-queue read path
+
+`listManagementQueue(db)` (`src/main/services/alerts.ts`) is the display-side
+read over the US-50 store. It joins each open `alerts` row to its `positions` row
+to add `ticker` and the current `phase`, orders by urgency tier
+(high → medium → low) then `triggered_at` ASC, and maps the result into a
+`ManagementQueueItem[]` (defined in `src/main/schemas.ts`). It is exposed over the
+`alerts:list` IPC channel (`src/main/ipc/alerts.ts`) and read in the renderer via
+`src/renderer/src/api/alerts.ts`.
+
+`ManagementQueueItem` is a purpose-built view-model — not the persisted
+`AlertRecord`. It carries only `alertId`, `positionId`, `ticker`, `phase`,
+`urgency`, `summary`, `quickAction`, and `triggeredAt`, deliberately excluding the
+audit fields (`lastEvaluatedAt`, `resolvedAt`, `createdAt`, `updatedAt`,
+`status`) that the queue never displays. `alertId` serves as the stable React key
+(one row per open alert in US-51 scope). An empty result is valid and drives the
+dashboard's empty state.
+
+<!-- /generated -->
+
+<!-- generated:from us-50,us-51 -->
 
 ## Driven by
 
 - [US-50 — Scheduled alert-rule evaluation engine](../features/us-50-alert-engine.md)
+- [US-51 — Management queue dashboard](../features/us-51-management-queue-dashboard.md)
 
 <!-- /generated -->
 

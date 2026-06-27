@@ -25,21 +25,21 @@ the existing US-50 alert backend.
 
 ## Key files changed
 
-| Layer | File | Change |
-| ----- | ---- | ------ |
-| Service | `src/main/schemas.ts` | New `ManagementQueueItem` interface |
-| Service | `src/main/services/alerts.ts` | New `listManagementQueue(db)` + joined-row mapper |
-| IPC | `src/main/ipc/alerts.ts` | New `registerAlertsHandlers`, channel `alerts:list` |
-| IPC | `src/main/index.ts` | Wired `registerAlertsHandlers({ db })` |
-| Preload | `src/preload/index.ts` | `api.alerts.list()` bridge |
-| Preload | `src/preload/index.d.ts` | `ManagementQueueItem` + `api.alerts.list` typing |
-| Renderer | `src/renderer/src/api/alerts.ts` | `listManagementQueue()` adapter |
-| Renderer | `src/renderer/src/hooks/useManagementQueue.ts` | TanStack Query hook (30s refetch) |
-| Renderer | `src/renderer/src/components/UrgencyPill.tsx` | HIGH/MED/LOW pill (`wb-*` tokens) |
-| Renderer | `src/renderer/src/components/ManagementQueueRow.tsx` | Row: ticker, pill, phase badge, summary, action |
-| Renderer | `src/renderer/src/components/ManagementQueue.tsx` | `SectionCard` queue + header + empty state |
-| Renderer | `src/renderer/src/pages/PositionsListPage.tsx` | Mounts `<ManagementQueue />` above the grid |
-| E2E | `e2e/management-queue.spec.ts` | One test per AC |
+| Layer    | File                                                 | Change                                              |
+| -------- | ---------------------------------------------------- | --------------------------------------------------- |
+| Service  | `src/main/schemas.ts`                                | New `ManagementQueueItem` interface                 |
+| Service  | `src/main/services/alerts.ts`                        | New `listManagementQueue(db)` + joined-row mapper   |
+| IPC      | `src/main/ipc/alerts.ts`                             | New `registerAlertsHandlers`, channel `alerts:list` |
+| IPC      | `src/main/index.ts`                                  | Wired `registerAlertsHandlers({ db })`              |
+| Preload  | `src/preload/index.ts`                               | `api.alerts.list()` bridge                          |
+| Preload  | `src/preload/index.d.ts`                             | `ManagementQueueItem` + `api.alerts.list` typing    |
+| Renderer | `src/renderer/src/api/alerts.ts`                     | `listManagementQueue()` adapter                     |
+| Renderer | `src/renderer/src/hooks/useManagementQueue.ts`       | TanStack Query hook (30s refetch)                   |
+| Renderer | `src/renderer/src/components/UrgencyPill.tsx`        | HIGH/MED/LOW pill (`wb-*` tokens)                   |
+| Renderer | `src/renderer/src/components/ManagementQueueRow.tsx` | Row: ticker, pill, phase badge, summary, action     |
+| Renderer | `src/renderer/src/components/ManagementQueue.tsx`    | `SectionCard` queue + header + empty state          |
+| Renderer | `src/renderer/src/pages/PositionsListPage.tsx`       | Mounts `<ManagementQueue />` above the grid         |
+| E2E      | `e2e/management-queue.spec.ts`                       | One test per AC                                     |
 
 ## Data flow
 
@@ -57,12 +57,12 @@ flowchart LR
 
 ## AC coverage (E2E)
 
-| AC scenario | E2E test |
-| ----------- | -------- |
-| Queue above grid, ordered by urgency then time | `queue appears above the positions grid ordered by urgency then time` |
-| Queue item shows key fields | `queue item shows ticker, phase badge, trigger summary, and a Review position action` |
-| Quick action opens the position | `quick action opens the related position detail page` |
-| Empty state, no buttons | `empty state renders when there are no open alerts` |
+| AC scenario                                    | E2E test                                                                              |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Queue above grid, ordered by urgency then time | `queue appears above the positions grid ordered by urgency then time`                 |
+| Queue item shows key fields                    | `queue item shows ticker, phase badge, trigger summary, and a Review position action` |
+| Quick action opens the position                | `quick action opens the related position detail page`                                 |
+| Empty state, no buttons                        | `empty state renders when there are no open alerts`                                   |
 
 ## Notable deviation from the story AC
 

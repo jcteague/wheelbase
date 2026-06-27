@@ -2,7 +2,7 @@
 
 Each ADR captures one architectural choice that emerged from a plan/story. Decisions are grouped below by theme; many ADRs are referenced by multiple feature pages.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,missing-ac -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,missing-ac -->
 
 ## Engine & architecture
 
@@ -110,5 +110,6 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [alert-resolution-global](./alert-resolution-global.md) — Every open alert not re-matched this run resolves, including alerts for now-unevaluable (closed) positions.
 - [alerts-partial-unique-open](./alerts-partial-unique-open.md) — Partial unique index `(position_id, rule_code) WHERE status='open'` allows one open alert per pair plus historical resolved rows.
 - [shared-dte-helper](./shared-dte-helper.md) — `computeDte` extracted into a pure `src/main/core/dte.ts` shared by the positions list and the alert engine.
+- [management-queue-read-path](./management-queue-read-path.md) — `listManagementQueue` joins open alerts to positions and sorts by urgency tier then `triggered_at`; dedicated `ManagementQueueItem` view-model leaves `listOpenAlerts` untouched.
 
 <!-- /generated -->
