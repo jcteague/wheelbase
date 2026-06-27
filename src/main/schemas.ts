@@ -479,6 +479,19 @@ export interface AlertRecord {
   updatedAt: string
 }
 
+// Enriched, sorted view-model for the dashboard management queue (US-51).
+// One row per open alert, joined to its position's ticker and phase.
+export interface ManagementQueueItem {
+  alertId: string
+  positionId: string
+  ticker: string
+  phase: WheelPhase
+  urgency: AlertUrgency
+  summary: string
+  quickAction: string
+  triggeredAt: string
+}
+
 // Returned by the evaluation job for logging + tests.
 export interface EvaluateAlertsResult {
   createdCount: number

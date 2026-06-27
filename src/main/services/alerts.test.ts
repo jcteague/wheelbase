@@ -4,7 +4,13 @@ import { describe, expect, it } from 'vitest'
 import type { AlertMatch } from '../core/alerts'
 import type { CreatePositionPayload } from '../schemas'
 import { makeTestDb, isoDate } from '../test-utils'
-import { alertKey, listOpenAlerts, resolveAlertsNotIn, upsertOpenAlert } from './alerts'
+import {
+  alertKey,
+  listManagementQueue,
+  listOpenAlerts,
+  resolveAlertsNotIn,
+  upsertOpenAlert
+} from './alerts'
 import { createPosition } from './positions'
 
 const VALID_PAYLOAD: CreatePositionPayload = {
@@ -177,6 +183,82 @@ describe('resolveAlertsNotIn', () => {
     // already-resolved row keeps its original (null resolved_at from the raw seed)
     expect(preResolved.status).toBe('resolved')
     expect(preResolved.resolved_at).toBeNull()
+  })
+})
+
+describe('listManagementQueue', () => {
+  function seedPositionWithTicker(db: Database.Database, ticker: string): string {
+    return createPosition(db, { ...VALID_PAYLOAD, ticker }).position.id
+  }
+
+  it('returns open alerts joined with ticker and phase from positions', () => {
+    const db = makeTestDb()
+    const aaplId = seedPositionWithTicker(db, 'AAPL')
+    const tslaId = seedPositionWithTicker(db, 'TSLA')
+    upsertOpenAlert(db, EXPIRATION_MATCH, aaplId, NOW)
+    upsertOpenAlert(db, EXPIRATION_MATCH, tslaId, NOW)
+
+    const queue = listManagementQueue(db)
+
+    expect(queue).toHaveLength(2)
+    const aapl = queue.find((item) => item.positionId === aaplId)!
+    expect(aapl).toEqual({
+      alertId: expect.any(String),
+      positionId: aaplId,
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      urgency: 'high',
+      summary: 'Expires in 5 days at $180.00 strike',
+      quickAction: 'Review position',
+      triggeredAt: NOW
+    })
+    const tsla = queue.find((item) => item.positionId === tslaId)!
+    expect(tsla.ticker).toBe('TSLA')
+    expect(tsla.phase).toBe('CSP_OPEN')
+  })
+
+  it('orders by urgency tier high → medium → low', () => {
+    const db = makeTestDb()
+    const lowId = seedPositionWithTicker(db, 'LOW')
+    const highId = seedPositionWithTicker(db, 'HIGH')
+    const medId = seedPositionWithTicker(db, 'MED')
+    upsertOpenAlert(db, { ...EXPIRATION_MATCH, urgency: 'low' }, lowId, NOW)
+    upsertOpenAlert(db, { ...EXPIRATION_MATCH, urgency: 'high' }, highId, NOW)
+    upsertOpenAlert(db, { ...EXPIRATION_MATCH, urgency: 'medium' }, medId, NOW)
+
+    const queue = listManagementQueue(db)
+
+    expect(queue.map((item) => item.urgency)).toEqual(['high', 'medium', 'low'])
+  })
+
+  it('breaks urgency ties by triggered_at ascending', () => {
+    const db = makeTestDb()
+    const laterId = seedPositionWithTicker(db, 'LATE')
+    const earlierId = seedPositionWithTicker(db, 'EARLY')
+    upsertOpenAlert(db, { ...EXPIRATION_MATCH, urgency: 'medium' }, laterId, LATER)
+    upsertOpenAlert(db, { ...EXPIRATION_MATCH, urgency: 'medium' }, earlierId, NOW)
+
+    const queue = listManagementQueue(db)
+
+    expect(queue.map((item) => item.positionId)).toEqual([earlierId, laterId])
+  })
+
+  it('excludes non-open alerts', () => {
+    const db = makeTestDb()
+    const positionId = seedPositionWithTicker(db, 'AAPL')
+    upsertOpenAlert(db, EXPIRATION_MATCH, positionId, NOW)
+    rawInsertAlert(db, positionId, { ruleCode: 'MANAGEMENT_WINDOW', status: 'resolved' })
+    rawInsertAlert(db, positionId, { ruleCode: 'STRIKE_PROXIMITY', status: 'dismissed' })
+
+    const queue = listManagementQueue(db)
+
+    expect(queue).toHaveLength(1)
+    expect(queue[0].positionId).toBe(positionId)
+  })
+
+  it('returns an empty array when there are no open alerts', () => {
+    const db = makeTestDb()
+    expect(listManagementQueue(db)).toEqual([])
   })
 })
 

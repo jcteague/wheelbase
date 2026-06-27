@@ -65,6 +65,9 @@ const api = {
       invoke('assignments:dismiss', { pendingAssignmentId }),
     runDetectionNow: () => invoke('assignments:run-detection-now')
   },
+  alerts: {
+    list: () => invoke('alerts:list')
+  },
   ivr: {
     collectNow: () => invoke('ivr:collect-now')
   },

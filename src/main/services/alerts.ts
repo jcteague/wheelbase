@@ -4,9 +4,10 @@
 
 import { randomUUID } from 'node:crypto'
 import Database from 'better-sqlite3'
-import type { AlertMatch } from '../core/alerts'
+import type { AlertMatch, AlertUrgency } from '../core/alerts'
+import type { WheelPhase } from '../core/types'
 import { logger } from '../logger'
-import type { AlertRecord } from '../schemas'
+import type { AlertRecord, ManagementQueueItem } from '../schemas'
 
 // ---------------------------------------------------------------------------
 // Internal DB row type
@@ -142,4 +143,66 @@ export function listOpenAlerts(db: Database.Database): AlertRecord[] {
     .prepare(`SELECT * FROM alerts WHERE status = 'open' ORDER BY rowid`)
     .all() as AlertRow[]
   return rows.map(mapAlertRow)
+}
+
+// ---------------------------------------------------------------------------
+// Management queue read path (US-51)
+// ---------------------------------------------------------------------------
+
+// Joined alerts→positions row backing a `ManagementQueueItem`. `phase` and
+// `urgency` carry their domain types (the DB columns are constrained to those
+// values), so the mapper is a pure snake→camel rename.
+interface QueueRow {
+  alert_id: string
+  position_id: string
+  ticker: string
+  phase: WheelPhase
+  urgency: AlertUrgency
+  summary: string
+  quick_action: string
+  triggered_at: string
+}
+
+function mapQueueRow(row: QueueRow): ManagementQueueItem {
+  return {
+    alertId: row.alert_id,
+    positionId: row.position_id,
+    ticker: row.ticker,
+    phase: row.phase,
+    urgency: row.urgency,
+    summary: row.summary,
+    quickAction: row.quick_action,
+    triggeredAt: row.triggered_at
+  }
+}
+
+/**
+ * Returns every open alert enriched with its position's ticker and phase,
+ * sorted by urgency tier (high → medium → low) then `triggered_at` ascending,
+ * for the dashboard management queue.
+ */
+export function listManagementQueue(db: Database.Database): ManagementQueueItem[] {
+  const rows = db
+    .prepare(
+      `SELECT
+         a.id           AS alert_id,
+         a.position_id  AS position_id,
+         p.ticker       AS ticker,
+         p.phase        AS phase,
+         a.urgency      AS urgency,
+         a.summary      AS summary,
+         a.quick_action AS quick_action,
+         a.triggered_at AS triggered_at
+       FROM alerts a
+       JOIN positions p ON p.id = a.position_id
+       WHERE a.status = 'open'
+       ORDER BY
+         CASE a.urgency WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN 'low' THEN 2 ELSE 3 END,
+         a.triggered_at ASC`
+    )
+    .all() as QueueRow[]
+
+  const items = rows.map(mapQueueRow)
+  logger.debug({ count: items.length }, 'management_queue_listed')
+  return items
 }

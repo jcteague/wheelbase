@@ -7,6 +7,7 @@ import { useMarketStatus } from '../hooks/useMarketStatus'
 import { useStockQuotes } from '../hooks/useStockQuotes'
 import { useOptionSnapshots } from '../hooks/useOptionSnapshots'
 import { useSettingsStatus } from '../hooks/useSettings'
+import { useManagementQueue } from '../hooks/useManagementQueue'
 import { PositionsListPage } from './PositionsListPage'
 
 vi.mock('../hooks/usePositions')
@@ -14,6 +15,7 @@ vi.mock('../hooks/useStockQuotes')
 vi.mock('../hooks/useMarketStatus')
 vi.mock('../hooks/useOptionSnapshots')
 vi.mock('../hooks/useSettings')
+vi.mock('../hooks/useManagementQueue')
 vi.mock('../components/AssignmentNotificationBanner', () => ({
   AssignmentNotificationBanner: () => null
 }))
@@ -60,6 +62,22 @@ const mockUseStockQuotes = vi.mocked(useStockQuotes)
 const mockUseMarketStatus = vi.mocked(useMarketStatus)
 const mockUseOptionSnapshots = vi.mocked(useOptionSnapshots)
 const mockUseSettingsStatus = vi.mocked(useSettingsStatus)
+const mockUseManagementQueue = vi.mocked(useManagementQueue)
+
+function makeQueueResult(items: ManagementQueueItem[]): ReturnType<typeof useManagementQueue> {
+  return { data: items } as unknown as ReturnType<typeof useManagementQueue>
+}
+
+const QUEUE_ITEM: ManagementQueueItem = {
+  alertId: 'q1',
+  positionId: 'aaa',
+  ticker: 'AAPL',
+  phase: 'CSP_OPEN',
+  urgency: 'high',
+  summary: 'Expires in 3 days at $180.00 strike',
+  quickAction: 'Review position',
+  triggeredAt: '2026-06-25T12:00:00.000Z'
+}
 
 const AAPL_QUOTE: StockQuote = {
   price: '182.45',
@@ -237,6 +255,7 @@ beforeEach(() => {
   mockUseMarketStatus.mockReturnValue(makeMarketStatusResult())
   mockUseOptionSnapshots.mockReturnValue(makeOptionSnapshotsResult())
   mockUsePendingAssignments.mockReturnValue({ data: [], isLoading: false, isError: false })
+  mockUseManagementQueue.mockReturnValue(makeQueueResult([]))
   mockUseSettingsStatus.mockReturnValue({
     data: {
       massive: 'configured',
@@ -716,4 +735,29 @@ it('continues to render live prices and mids from Massive when no Alpaca credent
   expect(screen.getByTestId('mock-quote-AAPL')).toHaveTextContent('182.45')
   expect(screen.getByTestId('mock-snapshot-AAPL')).toHaveTextContent('1.30')
   expect(screen.getByText(/connect alpaca to enable/i)).toBeInTheDocument()
+})
+
+// ── US-51: management queue placement ─────────────────────────────────────────
+
+it('renders the management queue above the positions grid', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1, ITEM_2]))
+  mockUseManagementQueue.mockReturnValue(makeQueueResult([QUEUE_ITEM]))
+
+  render(<PositionsListPage />)
+
+  const queueHeading = screen.getByText('What Needs Attention First')
+  const firstCard = screen.getAllByTestId('position-card')[0]
+
+  expect(queueHeading.compareDocumentPosition(firstCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING
+  )
+})
+
+it('renders the management queue even when there are no positions', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([]))
+  mockUseManagementQueue.mockReturnValue(makeQueueResult([]))
+
+  render(<PositionsListPage />)
+
+  expect(screen.getByText('No positions need attention right now')).toBeInTheDocument()
 })

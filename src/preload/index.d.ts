@@ -391,6 +391,17 @@ declare global {
     positionId: string
   }
 
+  interface ManagementQueueItem {
+    alertId: string
+    positionId: string
+    ticker: string
+    phase: string
+    urgency: 'high' | 'medium' | 'low'
+    summary: string
+    quickAction: string
+    triggeredAt: string
+  }
+
   interface IpcStockQuoteEvent {
     ticker: string
     quote: IpcStockQuote
@@ -488,6 +499,12 @@ declare global {
         runDetectionNow: () => Promise<
           | { ok: true; detected: number; skipped: number; durationMs: number }
           | { ok: false; errors: string[] }
+        >
+      }
+      alerts: {
+        list: () => Promise<
+          | { ok: true; items: ManagementQueueItem[] }
+          | { ok: false; errors: Array<{ field: string; code: string; message: string }> }
         >
       }
       ivr: {

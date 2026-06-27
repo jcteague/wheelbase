@@ -11,6 +11,7 @@ import { loadMassiveApiKey } from './integrations/massive-credentials'
 import { registerMarketDataHandlers } from './ipc/market-data'
 import { registerBrokerHandlers } from './ipc/broker'
 import { registerAssignmentsIpc } from './ipc/assignments'
+import { registerAlertsHandlers } from './ipc/alerts'
 import { registerIvrIpc } from './ipc/ivr'
 import { registerTestSchedulerIpc, seedTestJobsFromEnv } from './ipc/test-scheduler'
 import { registerTestIvrIpc } from './ipc/test-ivr'
@@ -171,6 +172,7 @@ app.whenReady().then(() => {
   })
 
   registerAssignmentsIpc({ db, scheduler })
+  registerAlertsHandlers({ db })
   registerIvrIpc({ scheduler })
 
   // Detect-assignments job: looks up the current broker provider and active

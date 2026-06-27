@@ -23,6 +23,7 @@ import { useSettingsStatus } from '../hooks/useSettings'
 import { useStockQuotes } from '../hooks/useStockQuotes'
 import { deriveMarketStatusDisplay } from '../lib/market-status'
 import { AssignmentNotificationBanner } from '../components/AssignmentNotificationBanner'
+import { ManagementQueue } from '../components/ManagementQueue'
 import { usePendingAssignments } from '../api/assignments'
 
 const TABLE_COLUMNS = [
@@ -204,6 +205,10 @@ export function PositionsListPage(): React.JSX.Element {
       header={<PositionsHeader count={activePositions.length} marketStatusDisplay={display} />}
     >
       <AssignmentNotificationBanner />
+
+      <div className="mx-[24px] my-[16px]">
+        <ManagementQueue />
+      </div>
 
       {isLoading && <LoadingState message="Loading positions…" />}
 
