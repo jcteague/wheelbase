@@ -36,9 +36,9 @@ Provider-agnostic contract every broker implementation satisfies. Defined in `sr
 
 The Alpaca-backed concrete class. Lives at `src/main/integrations/alpaca-broker.ts` (post-US-39 split; absorbed the broker-side methods that used to live on the combined `AlpacaMarketDataProvider`). It is the only module in the repo permitted to import `@alpacahq/typescript-sdk`. Constructed lazily — `new AlpacaBrokerProvider({ keyId, secretKey, environment })` (where `environment` is `'paper' | 'live'`) does not perform any network I/O.
 
-### `createBrokerProvider` factory
+### `brokerFactory` object
 
-The single entrypoint downstream code uses. Defined in `src/main/integrations/broker-factory.ts`. Resolves the active broker environment (`'paper' | 'live' | 'none'`) and the corresponding stored credentials via `src/main/services/settings.ts`, then constructs an `AlpacaBrokerProvider` for the active environment. Returns `null` when no environment is active or no credentials exist.
+The single entrypoint downstream code uses. Defined in `src/main/integrations/broker-factory.ts` as the `brokerFactory` object with methods `configure(next)`, `create()`, and `recreate()`. `create()` resolves the active broker environment (`'paper' | 'live' | 'none'`) and the corresponding stored credentials via `src/main/services/settings.ts`, then constructs an `AlpacaBrokerProvider` for the active environment. When no environment is active or no credentials exist, `brokerFactory.create()` (via `buildProvider()`) **throws** `new BrokerError('auth_failed', 'Alpaca credentials not configured')` rather than returning `null`.
 
 A `FakeBrokerProvider` sibling exists for e2e and dev (`src/main/integrations/fake-broker.ts`) — same interface, env-driven canned responses.
 
@@ -64,7 +64,7 @@ The provider uses `@alpacahq/typescript-sdk` (v0.0.32-preview) selectively for b
 
 ### Deprecated `src/main/integrations/alpaca.ts`
 
-The pre-existing `src/main/integrations/alpaca.ts` (`client`, `resetClient`) is marked `@deprecated`. It remains in the tree to avoid breaking any in-flight branch that imports it, but no new code uses it — new code goes through `createBrokerProvider`. Removal happens once downstream callers have migrated.
+The pre-existing `src/main/integrations/alpaca.ts` (`client`, `resetClient`) is marked `@deprecated`. It remains in the tree to avoid breaking any in-flight branch that imports it, but no new code uses it — new code goes through `brokerFactory.create()`. Removal happens once downstream callers have migrated.
 
 <!-- /generated -->
 
@@ -177,7 +177,7 @@ OPASN events typically post overnight after expiration, so the next morning's fi
 US-37 moves Alpaca credentials into encrypted settings persistence and adds runtime broker-environment switching, while keeping Massive's shared app-level configuration out of user settings.
 
 - **Encrypted persistence.** `src/main/services/settings.ts` stores Alpaca paper and live credentials in `credential_settings` with Electron `safeStorage.encryptString`. Plaintext secrets never round-trip to the renderer — saved cards render masked placeholders plus a `Replace` flow.
-- **Active environment persisted separately.** `app_settings.active_broker_environment` stores `'paper' | 'live' | 'none'`. `createBrokerProvider` resolves the effective environment via this setting plus credential presence.
+- **Active environment persisted separately.** `app_settings.active_broker_environment` stores `'paper' | 'live' | 'none'`. `brokerFactory.create()` resolves the effective environment via this setting plus credential presence.
 - **Broker-only refresh.** Settings mutations that change broker state call `brokerFactory.recreate()`, which rebuilds only the broker provider cache. The Massive market-data factory is **not** touched — quote streams and option polls continue uninterrupted.
 - **Vendor-scoped query invalidation.** Renderer query keys are namespaced (`['broker', ...]` vs `['market', ...]`). Settings mutations invalidate broker queries via a predicate on `queryKey[0] === 'broker'`, refreshing buying power / activities / market-status surfaces without causing stock or option quote churn.
 - **LIVE confirmation.** The renderer shows a `LiveBrokerConfirmDialog` before invoking `settings:set-active-broker-environment` with `environment: 'live'`. Switching from live back to paper is immediate (no dialog).
@@ -202,11 +202,11 @@ US-39 introduced `MassiveMarketDataProvider` as the second concrete `MarketDataP
 
 This page documents the Alpaca side; below is a brief summary of the Massive side and how it relates.
 
-- **REST-only, raw `fetch`.** No SDK — Massive has no official Node client and Node 20+ `fetch` is sufficient. Bearer auth via `Authorization: Bearer ${apiKey}` header.
-- **Shared app configuration.** The Massive API key loads once per process from app configuration (not user settings). US-37 deliberately keeps Massive out of `credential_settings`.
-- **Optional Greeks.** `OptionSnapshot.greeks` and `OptionSnapshot.impliedVolatility` are optional — the adapter returns `undefined` when Massive omits them rather than fabricating zeros. Renderers must use `snapshot.greeks?.delta` and render `—` when absent.
-- **Streaming declared but deferred.** `supportsStreaming('stockQuotes' | 'optionQuotes')` returns `true`, but `stream()` throws `MarketDataError` with `code: 'streaming_unsupported'`. REST polling meets Phase 2 requirements; Massive WebSocket auth is a separate story.
-- **`market-data:*` IPC.** New `market-data:stock-quotes` (plural batch), `market-data:option-snapshot` (singular per-contract), and `market-data:option-chain` (filtered paginated) channels replace the old US-33 `market-data:option-snapshots` plural-bulk channel.
+- **REST-only, raw `fetch`.** No SDK — Massive has no official Node client and Node 20+ `fetch` is sufficient. The API key is passed as an `?apiKey=` query param (not a Bearer header).
+- **Shared app configuration.** The Massive API key loads once per process from app configuration via `massive-credentials.ts` (`loadMassiveApiKey`, which prefers `MAIN_VITE_MASSIVE_API_KEY` and falls back to `MASSIVE_API_KEY`) — not user settings. US-37 deliberately keeps Massive out of `credential_settings`.
+- **Optional Greeks.** `OptionSnapshot.greeks` is optional and `OptionSnapshot.impliedVolatility` is top-level optional (no longer nested under `greeks`) — the adapter returns `undefined` when Massive omits them rather than fabricating zeros. Renderers must use `snapshot.greeks?.delta` and render `—` when absent.
+- **Single JSON WebSocket streaming.** Streaming is served over one socket (`wss://delayed.massive.com/stocks`) with JSON framing — `{action:'auth',params:<apiKey>}` then `{action:'subscribe',params:'AM.*'}` — exposed as an RxJS `Observable<StreamEvent<…>>` filtered to the subscribed symbols. This replaced the Alpaca two-socket / MessagePack design; the earlier "streaming deferred" note no longer holds.
+- **`market-data:*` IPC.** Quote/option reads live on `market-data:*` — `stock-quotes` (plural batch), `option-snapshot` (singular per-contract), `option-chain` (filtered paginated), and the retained `option-snapshots` (bulk) channel, plus `set-stock-quote-tickers` and the `stock-quote` / `stream-error` push events. The US-39-era claim that the bulk channel was deleted was wrong — it was kept, with the singular and chain channels added alongside it.
 - **No fallback to Alpaca.** Users without Massive configured see a clear `auth_failed` error; the codebase does not retain a dual-path implementation.
 
 See [domain/market-data.md](../domain/market-data.md) and [contracts/ipc-handlers.md](./ipc-handlers.md) for the full Massive surface.
@@ -253,7 +253,7 @@ The adapter records **no explicit retry policy, no exponential backoff, and no p
 
 - `src/main/integrations/broker-provider.ts` — `BrokerProvider` interface; `AccountInfo`, `MarketStatus`, `BrokerActivity`, `ActivityFilter` types; `BrokerError` class.
 - `src/main/integrations/alpaca-broker.ts` — `AlpacaBrokerProvider` implementation. The only file in the repo permitted to import `@alpacahq/typescript-sdk`. Owns lazy SDK client construction, REST mapping for `getAccountInfo` / `getMarketStatus` / `getActivities`, and `wrapError` normalisation.
-- `src/main/integrations/broker-factory.ts` — `createBrokerProvider` factory + `brokerFactory.recreate()`. Resolves the active environment via `src/main/services/settings.ts`.
+- `src/main/integrations/broker-factory.ts` — `brokerFactory` object with `configure()`, `create()`, and `recreate()`. Resolves the active environment via `src/main/services/settings.ts`.
 - `src/main/integrations/fake-broker.ts` — `FakeBrokerProvider` for e2e and dev; env-driven canned responses.
 - `src/main/integrations/alpaca.ts` — pre-existing helper marked `@deprecated`; kept available, no new code uses it.
 - `src/main/ipc/broker.ts` — `broker:account`, `broker:market-status`, `broker:activities` IPC handlers (US-39 split namespace).

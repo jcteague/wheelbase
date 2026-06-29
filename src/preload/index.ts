@@ -53,7 +53,7 @@ const api = {
     optionChain: (payload: unknown) => invoke('market-data:option-chain', payload)
   },
   // Test-only helpers — backed by IPC channels that are only meaningful when
-  // WHEELBASE_MARKET_MOCK=true; safe to expose unconditionally (no-op in prod)
+  // FAKE_MARKET_DATA=true; safe to expose unconditionally (no-op in prod)
   triggerTestTick: (payload: unknown) => invoke('test:trigger-stock-tick', payload),
   triggerStreamError: (payload: unknown) => invoke('test:trigger-stream-error', payload),
   setPositionProfitTarget: (payload: unknown) => invoke('test:set-position-profit-target', payload),

@@ -11,7 +11,9 @@ Live market-data updates flow from main to renderer via two **push event** chann
 
 The initial REST snapshot is delivered via the request/response `market-data:stock-quotes` invoke (consumed by TanStack Query's `queryFn`), **not** via a push event.
 
-Preload exposes `onStockQuote(cb)` and `onStreamError(cb)` returning unsubscribe functions that wrap `ipcRenderer.removeListener`.
+Preload surfaces the two subscriptions at the top level of the bridge as `window.api.onStockQuote(cb)` and `window.api.onStreamError(cb)`, each returning an unsubscribe function that wraps `ipcRenderer.removeListener`. (The request/response market-data reads are namespaced under `window.api.marketData.*`, but these two event subscriptions stay flat on `window.api`.)
+
+Two **test-only** IPC handlers drive the channels in e2e: `test:trigger-stock-tick` and `test:trigger-stream-error`. They let Playwright fire a tick or a stream error deterministically without a live WebSocket, paired with `FakeMarketDataProvider` (`FAKE_MARKET_DATA=true`).
 
 ## Context / Why
 
@@ -34,5 +36,6 @@ Preload exposes `onStockQuote(cb)` and `onStreamError(cb)` returning unsubscribe
 ## Sources
 
 - [extract: us-32](../../.extracts/us-32.md) — ADR "Push Event Channels (main → renderer)"; ADR "IPC Error Mapping — Two Pathways"
+- [extract: market-data-massive-migration](../../.extracts/market-data-massive-migration.md) — § "IPC channels" (`stock-quote`/`stream-error` pushes, `test:trigger-*` handlers, flat `onStockQuote`/`onStreamError` bridge)
 - [feature: us-32-live-position-prices](../../features/us-32-live-position-prices.md)
 <!-- /generated -->

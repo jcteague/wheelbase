@@ -14,13 +14,13 @@ function makeClient(): ReturnType<typeof createClient> {
 // Lazily initialised — avoids crashing at import time if env vars are absent.
 let _client: ReturnType<typeof createClient> | null = null
 
-/** @deprecated Use createMarketDataProvider() from market-data-factory.ts instead */
+/** @deprecated Legacy raw Alpaca client; market data now uses MassiveMarketDataProvider and broker uses AlpacaBrokerProvider. */
 function client(): ReturnType<typeof createClient> {
   if (!_client) _client = makeClient()
   return _client
 }
 
-/** @deprecated Use createMarketDataProvider() from market-data-factory.ts instead */
+/** @deprecated Legacy raw Alpaca client; market data now uses MassiveMarketDataProvider and broker uses AlpacaBrokerProvider. */
 export function resetClient(): void {
   _client = null
 }

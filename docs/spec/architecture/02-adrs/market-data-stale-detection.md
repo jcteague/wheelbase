@@ -25,12 +25,13 @@ The banner text reads `⚠ Prices may be delayed — last updated {minutesAgo}m 
 ## Consequences
 
 - The hook surfaces `streamError` to the page; the page combines that with `dataUpdatedAt` via `deriveMarketStatusDisplay` (see ADR [market-status-pill](./market-status-pill.md)).
-- The staleness effect emits a single combined `setStaleInfo({ stale, minutesAgo })` setState, marked with `// eslint-disable-next-line react-hooks/set-state-in-effect` because checking `Date.now()` in an effect is legitimate.
-- The staleness display only fires when `dataUpdatedAt` changes — if quotes stop arriving but `dataUpdatedAt` remains constant, the `minutesAgo` counter won't tick forward without an interval refresh. Tracked as deferred tech debt: a periodic 30 s tick would fix it but is out of scope for US-32.
+- The staleness effect emits a single combined `setStaleInfo({ stale, minutesAgo })` setState, using a functional `setStaleInfo((prev) => …)` updater that no-ops when the value is unchanged.
+- The staleness display is re-evaluated on a periodic 30 s tick (`STALE_POLL_INTERVAL_MS = 30 * 1000`, `setInterval(evaluate, STALE_POLL_INTERVAL_MS)`), so the `minutesAgo` counter keeps advancing even when quotes stop arriving and `dataUpdatedAt` remains constant.
 - Test coverage: e2e mocks `Date.now()` to return `t - 6min`, fires a tick (so TanStack Query records `dataUpdatedAt = t - 6min`), then restores `Date.now` and asserts the banner appears.
 
 ## Sources
 
 - [extract: us-32](../../.extracts/us-32.md) — ADR "Stale Data Detection (>5 min)"; `STALE_THRESHOLD_MS = 5 * 60 * 1000`
+- [extract: market-data-massive-migration](../../.extracts/market-data-massive-migration.md) — current-state location of `STALE_THRESHOLD_MS = 5 * 60 * 1000` in `src/renderer/src/hooks/useStockQuotes.ts`
 - [feature: us-32-live-position-prices](../../features/us-32-live-position-prices.md)
 <!-- /generated -->

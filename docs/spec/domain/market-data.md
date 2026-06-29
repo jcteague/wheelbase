@@ -13,12 +13,15 @@ TanStack Query, and discarded on app close.
 
 The domain has four moving parts:
 
-- A **provider interface** (`MarketDataProvider`) that abstracts every
-  vendor-specific call. `MassiveMarketDataProvider` is the concrete adapter;
-  a factory (`marketDataFactory`) decides which adapter is instantiated.
-- A **REST request/response surface** for snapshots — stock quotes, option
-  snapshots (with greeks/IV), the market clock, broker activities, and account
-  info. Promise-returning.
+- A **provider type** (`MarketDataProvider`, declared as a TypeScript `type`)
+  that abstracts every vendor-specific quote/option call.
+  `MassiveMarketDataProvider` is the concrete adapter; a factory
+  (`marketDataFactory`) decides which adapter is instantiated.
+- A **REST request/response surface** for snapshots — stock quotes and option
+  snapshots (with greeks/IV), single-contract and full-chain. Promise-returning.
+  (The market clock, broker activities, and account info are **not** on this
+  type — they moved to a separate `BrokerProvider` on the `broker:*` IPC
+  namespace.)
 - A **WebSocket streaming surface** for push updates — stock quotes over a
   single JSON socket (options are REST-only) — exposed as RxJS
   `Observable<StreamEvent<T>>`.
@@ -27,9 +30,10 @@ The domain has four moving parts:
   pill, position cockpit).
 
 The contract details for the IPC channels that surface this data
-(`market-data:stock-quotes`, `market-data:option-snapshots`,
-`market-data:market-status`, plus the `stock-quote` / `stream-error` push
-events) live in [`contracts/ipc-handlers.md`](../contracts/ipc-handlers.md). The
+(`market-data:stock-quotes`, `market-data:option-snapshots` /
+`-option-snapshot` / `-option-chain`, plus the `stock-quote` / `stream-error`
+push events) live in [`contracts/ipc-handlers.md`](../contracts/ipc-handlers.md).
+Market session/clock is served separately by `broker:market-status`. The
 vendor-specific field-by-field translation lives in
 [`contracts/alpaca-integration.md`](../contracts/alpaca-integration.md).
 (Alpaca remains the broker for account, activities, and clock data; the live
@@ -42,19 +46,21 @@ quote/option feed is now the **Massive** provider described below.)
 ## Provider interface
 
 `MarketDataProvider` is the single seam between the rest of the app and any
-specific vendor. The interface is intentionally minimal — snapshot, stream,
-clock, account, activities — so adding a second provider (Polygon, IBKR, a
+specific quote/option vendor. It is declared as a TypeScript `type` (not an
+`interface`) and is intentionally minimal — stock quotes, option snapshot,
+option chain, and streaming — so adding a second provider (Polygon, IBKR, a
 recorded fixture for tests) requires no changes to the IPC layer, the hooks, or
-the UI.
+the UI. Account, market clock/session, and broker activities are **not** on
+this type; they live on a separate `BrokerProvider` (`broker:*` IPC).
 
 ```typescript
-interface MarketDataProvider {
+type MarketDataFeed = 'stockQuotes' | 'optionQuotes' | 'optionTrades'
+
+type MarketDataProvider = {
   // REST — request/response
   getStockQuotes(tickers: string[]): Promise<Map<string, StockQuote>>
-  getOptionSnapshots(contractIds: string[]): Promise<Map<string, OptionSnapshot>>
-  getActivities(filter: ActivityFilter): Promise<BrokerActivity[]>
-  getAccountInfo(): Promise<AccountInfo>
-  getMarketStatus(): Promise<MarketStatus>
+  getOptionSnapshot(contractId: string): Promise<OptionSnapshot>
+  getOptionChainSnapshot(filter: OptionChainFilter): Promise<OptionSnapshot[]>
 
   // Streaming — Observables
   supportsStreaming(feed: MarketDataFeed): boolean
@@ -65,9 +71,12 @@ interface MarketDataProvider {
     symbols: string[]
   ): Observable<StreamEvent<StockQuote | OptionSnapshot>>
 }
-
-type MarketDataFeed = 'stockQuotes' | 'optionQuotes' | 'optionTrades'
 ```
+
+`getOptionChainSnapshot(filter)` takes a single `OptionChainFilter` object
+(the `underlying` lives inside it, alongside optional `expirationFrom/To`,
+`type: 'put' | 'call'`, `strikeFrom/To`, `limit`, `cursor`) and follows
+Massive's `next_url` cursor pagination until exhausted (or `filter.limit`).
 
 ### Adapter rules
 
@@ -75,16 +84,19 @@ type MarketDataFeed = 'stockQuotes' | 'optionQuotes' | 'optionTrades'
   `MassiveMarketDataProvider` in
   `src/main/integrations/massive-market-data.ts` — a REST + WebSocket client
   against Massive. `src/main/integrations/market-data-provider.ts` holds only
-  the `MarketDataProvider` interface and the `MarketDataError` class. The IPC
-  handlers (`src/main/ipc/market-data.ts`) consume the interface, never the
-  vendor client.
+  the `MarketDataProvider` type, the shared data types, and the
+  `MarketDataError` class. The IPC handlers (`src/main/ipc/market-data.ts`)
+  consume the type, never the vendor client.
 - **Errors normalise to `MarketDataError`.** The adapter wraps any vendor-
-  specific exception in a `MarketDataError` whose `code` field is drawn from a
-  fixed set: `auth_failed`, `network_error`, `rate_limited`,
-  `stream_disconnected`, `streaming_unsupported`, `subscription_failed`,
-  `unknown`. IPC handlers catch and convert to the `{ ok: false, errors: [...] }`
-  envelope; the stream-error push channel uses the same codes. Services can
-  pattern-match on `error.code` without parsing message strings.
+  specific exception in a `MarketDataError` whose `code` (`MarketDataErrorCode`)
+  is drawn from a fixed set of six: `auth_failed`, `network_error`,
+  `not_found`, `rate_limited`, `streaming_unsupported`, `unknown`. Codes are
+  mapped from Massive's HTTP status: `401/403 → auth_failed`, `404 →
+not_found`, `429 → rate_limited` (after `MAX_RETRIES` honouring `Retry-After`),
+  other non-ok / unexpected → `unknown`. IPC handlers catch and convert to the
+  `{ ok: false, errors: [...] }` envelope; the stream-error push channel uses
+  the same codes. Services can pattern-match on `error.code` without parsing
+  message strings.
 - **The factory is the only place that picks an adapter.** The factory is the
   object `marketDataFactory` in
   `src/main/integrations/market-data-factory.ts`, with `.configure(...)`,
@@ -130,7 +142,10 @@ For the full extracted contract (US-31 scope and per-method semantics) see
 ## REST surface
 
 REST is request/response and returns `Promise`s. Every money field is a
-`decimal.js`-formatted string (2dp for prices, 4dp for greeks) — never a float.
+`decimal.js`-formatted string (2dp for prices, 4dp for greeks/IV) — never a
+float. The base URL is `https://api.massive.com`; the key travels as an
+`apiKey` query param (no Bearer header, no SDK). Stock reads use the v2
+snapshot endpoint; option reads use v3 snapshot/chain endpoints.
 
 ### Stock quote snapshot
 
@@ -138,26 +153,32 @@ REST is request/response and returns `Promise`s. Every money field is a
 
 ```typescript
 {
-  price: string // last trade or mid, 2dp
-  bid: string // best bid, 2dp
-  ask: string // best ask, 2dp
+  price: string // 2dp
+  bid: string // 2dp
+  ask: string // 2dp
   prevClose: string // prior day close (2dp) — US-32 addition
-  change: string // daily change, 2dp — derived in renderer per render
-  changePercent: string // daily change %, 4dp — derived in renderer per render
+  change: string // daily change, 2dp
+  changePercent: string // daily change %, 4dp
   volume: number
   timestamp: string // ISO-8601
 }
 ```
 
-`prevClose` is sourced from Massive's `prevDay.c` and is the per-day
-baseline used to compute the signed change displayed in `PriceCell`. (Massive
-also returns `todaysChange` / `todaysChangePerc` directly, which the adapter
-maps to `change` / `changePercent`.) Unknown tickers are simply absent from the
-returned map — never an error.
+Massive's stock snapshot is an **aggregate bar**, not a live quote — there is
+no real bid/ask. The adapter therefore sets `price`, `bid`, and `ask` all to
+the last-minute close (`min.c`). `prevClose` is sourced from Massive's
+`prevDay.c` and is the per-day baseline used to compute the signed change
+displayed in `PriceCell`. `change` / `changePercent` are filled on the REST
+path from Massive's `todaysChange` / `todaysChangePerc`; the renderer
+recomputes the displayed change per render from `(price, prevClose)`. Unknown
+tickers are simply absent from the returned map — never an error.
 
 ### Option snapshot
 
-`getOptionSnapshots(contractIds)` returns a `Map<OCC symbol, OptionSnapshot>`:
+The provider exposes two option reads: `getOptionSnapshot(contractId)` for a
+single OCC contract, and `getOptionChainSnapshot(filter)` for a full chain
+(see the provider type above). Both return the same `OptionSnapshot` shape,
+keyed in the renderer by OCC symbol:
 
 ```typescript
 {
@@ -173,7 +194,7 @@ returned map — never an error.
     theta: string // 4dp
     vega: string // 4dp
   }
-  impliedVolatility?: string // 4dp — top-level, not under greeks
+  impliedVolatility?: string // 4dp — top-level, NOT nested under greeks
   timestamp: string // ISO-8601
 }
 ```
@@ -181,34 +202,27 @@ returned map — never an error.
 `mid` is computed by the adapter (`Decimal(bid + ask) / 2`) — never read from
 the API directly. Greeks and IV come from the REST snapshot **only**; there is
 no option streaming feed. That is the practical reason option data is
-polled (60 s) rather than streamed. `greeks` and `impliedVolatility` are
-omitted entirely when the snapshot has no greeks (e.g. illiquid contracts).
+polled (60 s) rather than streamed. `greeks` and `impliedVolatility` are each
+optional and omitted entirely when the snapshot has no greeks (e.g. illiquid
+contracts). The bulk `market-data:option-snapshots` IPC channel (and a
+service-level batch over `getOptionSnapshot`) is what the renderer's
+`useOptionSnapshots` hook polls; singular `market-data:option-snapshot` and
+`market-data:option-chain` channels exist alongside it.
 
-### Market clock
+### Market clock, account, and activities (broker, not market-data)
 
-`getMarketStatus()` returns:
-
-```typescript
-{
-  isOpen: boolean
-  nextOpen: string // ISO-8601
-  nextClose: string // ISO-8601
-  session: 'regular' | 'pre' | 'post' | 'closed'
-}
-```
-
-`session` is derived client-side by the adapter — Alpaca's `/v2/clock` returns
-only `is_open`, `next_open`, `next_close`. The adapter compares the clock
-timestamp against known extended-hours windows: pre-market 4:00–9:30 AM ET,
-regular 9:30 AM–4:00 PM ET (when `is_open`), post-market 4:00–8:00 PM ET,
-otherwise `closed`.
-
-### Account and activities
-
-`getAccountInfo()` returns `{ buyingPower, portfolioValue, cash, environment }`.
-`getActivities({ type, since? })` returns `BrokerActivity[]` sorted by
-`transactionTime` descending — used by activity-driven detection (assignment
-polling, expiration confirmation) elsewhere in the app.
+The market clock/session, account info, and broker activities are **not** part
+of `MarketDataProvider`. They moved onto a separate `BrokerProvider`
+(`AlpacaBrokerProvider`) served by the `broker:market-status`,
+`broker:account`, and `broker:activities` IPC channels — there is no
+`market-data:market-status` channel. `MarketStatus` (`{ isOpen, nextOpen,
+nextClose, session: 'regular' | 'pre' | 'post' | 'closed' }`) is still derived
+client-side by the broker adapter from the broker clock + extended-hours
+windows (pre-market 4:00–9:30 AM ET, regular 9:30 AM–4:00 PM ET when open,
+post-market 4:00–8:00 PM ET, otherwise `closed`). The broker remains Alpaca;
+only the quote/option vendor changed to Massive. See
+[`contracts/ipc-handlers.md`](../contracts/ipc-handlers.md) for the broker
+channel contracts.
 
 <!-- /generated -->
 
@@ -321,10 +335,10 @@ a future reconnection story).
 
 Two REST surfaces are on a fixed-interval poll, both at **60 s**:
 
-| Channel                        | Interval                                    | Notes                                                                                                                               |
-| ------------------------------ | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `market-data:market-status`    | 60 s                                        | Session boundaries shift ~6 times per day; 60 s catches every transition within a minute. No streaming option exists for the clock. |
-| `market-data:option-snapshots` | 60 s (disabled when `session === 'closed'`) | Greeks/IV only available via REST snapshot — streaming option-quote frames carry only bid/ask/last.                                 |
+| Channel                        | Interval                                    | Notes                                                                                                                                                                      |
+| ------------------------------ | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `broker:market-status`         | 60 s                                        | Session boundaries shift ~6 times per day; 60 s catches every transition within a minute. No streaming option exists for the clock. (Broker channel, not `market-data:*`.) |
+| `market-data:option-snapshots` | 60 s (disabled when `session === 'closed'`) | Greeks/IV only available via REST snapshot — there is no option streaming feed at all.                                                                                     |
 
 Stock quotes are **not** on a fixed poll — a one-shot REST snapshot seeds the
 cache and every subsequent update arrives over the WebSocket stream (see
@@ -384,12 +398,14 @@ call.
 ### Provider lifecycle
 
 The provider is created via `marketDataFactory.create()` (cached) once at app
-startup in `src/main/index.ts`. `provider.connect()` is **not** called at
-startup — it
-fires on the **first non-empty** `setStockQuoteTickers` invocation. A
-module-scoped `let connected = false` inside `registerMarketDataHandlers`
-guards the call so the WebSocket is opened exactly once per app session.
-`app.on('before-quit', () => provider.disconnect())` closes it cleanly.
+startup in `src/main/index.ts`. `provider.connect(['stockQuotes'])` is **not**
+called at startup — it
+fires on the **first non-empty** `setStockQuoteTickers` invocation, from inside
+the `subscribeToStockQuotes` service (`src/main/services/market-data.ts`). A
+`connected` flag on the handler's `StreamState` (created by `newStreamState()`
+in `registerMarketDataHandlers` and flipped inside that service) guards the call
+so the WebSocket is opened exactly once per app session. On `before-quit`,
+`marketDataFactory.disconnect()` closes it cleanly.
 
 This connect-on-demand pattern matches user intent: the WebSocket only opens
 when the renderer has decided it wants live data, not when the user is on the
@@ -457,9 +473,10 @@ positions-list header and on the position-detail header.
 | `CLOSED`  | Market is closed (weekend, holiday, or outside extended hours). Last close prices shown.                           | Gray            |
 | `DELAYED` | Stream has stalled or errored — last update is >5 min ago, or a `market-data:stream-error` event has been emitted. | Amber, no pulse |
 
-The provider's session enum has four values — `'regular' | 'pre' | 'post' |
-'closed'` — derived client-side by the adapter (see "Market clock" above) and
-fetched via `market-data:market-status` on a 60 s `refetchInterval`.
+The session enum has four values — `'regular' | 'pre' | 'post' | 'closed'` —
+derived client-side by the broker adapter (see "Market clock, account, and
+activities" above) and fetched via `broker:market-status` on a 60 s
+`refetchInterval`. There is no `market-data:market-status` channel.
 
 ### Display derivation
 
@@ -508,15 +525,12 @@ safe to call unconditionally before data has loaded.
 
 ### `useMarketStatus()` — polling
 
-```typescript
-useQuery({
-  queryKey: marketDataQueryKeys.marketStatus,
-  queryFn: () => getMarketStatus(),
-  refetchInterval: 60_000,
-  staleTime: 30_000,
-  refetchOnWindowFocus: true
-})
-```
+Polls the broker clock via `window.api.broker.marketStatus()` (the
+`broker:market-status` channel) on a 60 s `refetchInterval`, with
+`staleTime: 30_000` and `refetchOnWindowFocus: true`. Its query key is
+broker-prefixed (`['broker', ...]`) so a broker-environment switch refreshes it
+without churning the stock/option quote caches (see "Shared market data vs
+broker state" below).
 
 ### `useOptionSnapshots(legs, { session })` — option polling
 
