@@ -1,6 +1,6 @@
 # Management Alerts
 
-<!-- generated:from us-50,us-51 -->
+<!-- generated:from us-50,us-51,us-52 -->
 
 ## Overview
 
@@ -13,7 +13,7 @@ condition clears. The evaluation engine is a pure function; persistence,
 scheduling, and logging live in the service and main-process layers around it.
 
 US-50 establishes this backbone with two rules — `EXPIRATION_IMMINENT` (the
-active option leg has DTE ≤ 5) and `MANAGEMENT_WINDOW` (6 ≤ DTE ≤ the
+active option leg has `0 ≤ DTE ≤ 5`) and `MANAGEMENT_WINDOW` (6 ≤ DTE ≤ the
 management-window threshold, default 21). The engine and table are built
 open/closed so later Classic Wheel rules (`PROFIT_TARGET`, `STRIKE_PROXIMITY`,
 `EARNINGS_PROXIMITY`, `COVERED_CALL_BREACH`) and the renderer-facing queue
@@ -24,23 +24,36 @@ the persisted open alerts with their position's `ticker` and `phase` and sorts
 them by urgency for the dashboard "management queue". No engine or schema work is
 required — it consumes the US-50 table as-is.
 
+US-52 formalizes `EXPIRATION_IMMINENT` as its own high-urgency rule and pins down
+its contract: it fires only inside the final five days (`0 ≤ DTE ≤ 5`) on active
+short option legs, its threshold is a fixed built-in (independent of the
+configurable management window), and it stays mutually exclusive with
+`MANAGEMENT_WINDOW`. The behavior already existed in the US-50 registry, so US-52
+required no new migration, IPC channel, or renderer contract — the work was
+regression hardening (direct core/service/e2e coverage) around the existing rule.
+
 <!-- /generated -->
 
-<!-- generated:from us-50 -->
+<!-- generated:from us-50,us-52 -->
 
 ## Built-in rules
 
 Each rule is a pure predicate over a position's current active option leg.
 
-| Rule code             | Urgency | Triggers when                                           | Summary template                                 | Quick action      |
-| --------------------- | ------- | ------------------------------------------------------- | ------------------------------------------------ | ----------------- |
-| `EXPIRATION_IMMINENT` | high    | active leg `dte ≤ 5`                                    | `Expires in {dte} days at ${strike} strike`      | `Review position` |
-| `MANAGEMENT_WINDOW`   | medium  | active leg `6 ≤ dte ≤ managementWindowDte` (default 21) | `{dte} DTE remaining — review for roll or close` | `Review position` |
+| Rule code             | Urgency | Triggers when                                                  | Summary template                                 | Quick action      |
+| --------------------- | ------- | -------------------------------------------------------------- | ------------------------------------------------ | ----------------- |
+| `EXPIRATION_IMMINENT` | high    | active leg `0 ≤ dte ≤ 5`                                       | `Expires in {dte} days at ${strike} strike`      | `Review position` |
+| `MANAGEMENT_WINDOW`   | medium  | active leg `dte > 5 && dte ≤ managementWindowDte` (default 21) | `{dte} DTE remaining — review for roll or close` | `Review position` |
 
-`{strike}` is formatted to two decimals with a leading `$` via `decimal.js`
-(`new Decimal(strike).toFixed(2)`). The two rules use mutually-exclusive DTE
-ranges, so `EXPIRATION_IMMINENT` takes precedence inside 5 DTE without a
-post-filter and the same leg never produces both alerts. DTE is computed by the
+`{strike}` is formatted to two decimals with a leading `$` (`Expires in 5 days at
+$180.00 strike`). The two rules use mutually-exclusive DTE ranges, so
+`EXPIRATION_IMMINENT` takes precedence inside 5 DTE without a post-filter and the
+same leg never produces both alerts — at 6 DTE the imminent rule does **not** fire
+and `MANAGEMENT_WINDOW` fires instead at medium urgency. `EXPIRATION_IMMINENT`'s
+`0 ≤ dte ≤ 5` bound is a fixed built-in threshold
+(`EXPIRATION_IMMINENT_MAX_DTE = 5` in `src/main/core/alerts.ts`), deliberately
+independent of the configurable `managementWindowDte`; a leg with `dte === null`
+skips with reason `missing_dte` rather than matching. DTE is computed by the
 shared `computeDte` helper (`src/main/core/dte.ts`) so queue messaging stays
 consistent with the positions list.
 
@@ -179,12 +192,13 @@ dashboard's empty state.
 
 <!-- /generated -->
 
-<!-- generated:from us-50,us-51 -->
+<!-- generated:from us-50,us-51,us-52 -->
 
 ## Driven by
 
 - [US-50 — Scheduled alert-rule evaluation engine](../features/us-50-alert-engine.md)
 - [US-51 — Management queue dashboard](../features/us-51-management-queue-dashboard.md)
+- [US-52 — Expiration-imminent alert](../features/us-52-expiration-imminent-alert.md)
 
 <!-- /generated -->
 

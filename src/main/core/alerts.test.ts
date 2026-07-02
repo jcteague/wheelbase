@@ -14,7 +14,7 @@ function makeInput(overrides: Partial<AlertEvaluationInput> = {}): AlertEvaluati
 }
 
 describe('evaluatePosition', () => {
-  it('fires EXPIRATION_IMMINENT (high) at dte = 5 and not MANAGEMENT_WINDOW', () => {
+  it('fires EXPIRATION_IMMINENT at dte = 5 with high urgency, story summary text, and Review position quick action', () => {
     const { matches, skipped } = evaluatePosition(makeInput({ dte: 5 }))
     expect(skipped).toEqual([])
     expect(matches).toEqual([
@@ -27,13 +27,13 @@ describe('evaluatePosition', () => {
     ])
   })
 
-  it('reflects the live dte in the EXPIRATION_IMMINENT summary at dte = 3', () => {
+  it('updates the expiration-imminent summary to the live dte value inside the final window', () => {
     const { matches } = evaluatePosition(makeInput({ dte: 3 }))
     expect(matches).toHaveLength(1)
     expect(matches[0].summary).toBe('Expires in 3 days at $180.00 strike')
   })
 
-  it('fires MANAGEMENT_WINDOW (medium) at dte = 6', () => {
+  it('does not match expiration imminent at dte = 6', () => {
     const { matches, skipped } = evaluatePosition(makeInput({ dte: 6 }))
     expect(skipped).toEqual([])
     expect(matches).toEqual([
@@ -58,7 +58,7 @@ describe('evaluatePosition', () => {
     expect(skipped).toEqual([])
   })
 
-  it('fires only EXPIRATION_IMMINENT at dte = 4 (precedence over management window)', () => {
+  it('does not emit both EXPIRATION_IMMINENT and MANAGEMENT_WINDOW inside 5 dte', () => {
     const { matches } = evaluatePosition(makeInput({ dte: 4 }))
     expect(matches).toHaveLength(1)
     expect(matches[0].ruleCode).toBe('EXPIRATION_IMMINENT')

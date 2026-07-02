@@ -18,6 +18,8 @@ const NOW = new Date('2026-06-25T16:00:00.000Z')
 const NOW_ISO = NOW.toISOString()
 const LATER = new Date('2026-06-26T16:00:00.000Z')
 const LATER_ISO = LATER.toISOString()
+const TWO_DAYS_LATER = new Date('2026-06-27T16:00:00.000Z')
+const TWO_DAYS_LATER_ISO = TWO_DAYS_LATER.toISOString()
 
 /** A `YYYY-MM-DD` expiration that is `dte` calendar days after NOW. */
 function expirationForDte(dte: number, from: Date = NOW): string {
@@ -89,6 +91,8 @@ interface AlertRow {
   position_id: string
   rule_code: string
   urgency: string
+  summary: string
+  quick_action: string
   status: string
   triggered_at: string
   last_evaluated_at: string
@@ -106,6 +110,126 @@ describe('evaluateAlerts', () => {
 
   beforeEach(() => {
     db = makeTestDb()
+  })
+
+  it('creates an open EXPIRATION_IMMINENT alert for an active CSP at 5 dte', () => {
+    seedEvaluablePosition(db, {
+      id: 'pos-aapl',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      strike: '180.0000',
+      expiration: expirationForDte(5)
+    })
+
+    const result = evaluateAlerts({ db, now: NOW })
+
+    expect(result).toEqual({
+      createdCount: 1,
+      updatedCount: 0,
+      resolvedCount: 0,
+      skippedRuleCount: 0
+    })
+    expect(listOpenAlerts(db)).toEqual([
+      expect.objectContaining({
+        positionId: 'pos-aapl',
+        ruleCode: 'EXPIRATION_IMMINENT',
+        urgency: 'high',
+        summary: 'Expires in 5 days at $180.00 strike',
+        quickAction: 'Review position',
+        status: 'open',
+        triggeredAt: NOW_ISO,
+        lastEvaluatedAt: NOW_ISO,
+        resolvedAt: null
+      })
+    ])
+  })
+
+  it('keeps the existing expiration-imminent row open and refreshes the summary from 5 dte to 3 dte', () => {
+    seedEvaluablePosition(db, {
+      id: 'pos-aapl',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      strike: '180.0000',
+      expiration: expirationForDte(5)
+    })
+
+    evaluateAlerts({ db, now: NOW })
+    const firstRow = readAlertRows(db)[0]
+
+    const result = evaluateAlerts({ db, now: TWO_DAYS_LATER })
+
+    expect(result).toEqual({
+      createdCount: 0,
+      updatedCount: 1,
+      resolvedCount: 0,
+      skippedRuleCount: 0
+    })
+
+    const rows = readAlertRows(db)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toEqual({
+      ...firstRow,
+      summary: 'Expires in 3 days at $180.00 strike',
+      quick_action: 'Review position',
+      triggered_at: NOW_ISO,
+      last_evaluated_at: TWO_DAYS_LATER_ISO,
+      updated_at: TWO_DAYS_LATER_ISO,
+      resolved_at: null
+    })
+  })
+
+  it('does not create an expiration-imminent alert when the active leg has 6 dte', () => {
+    seedEvaluablePosition(db, {
+      id: 'pos-aapl',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      strike: '180.0000',
+      expiration: expirationForDte(6)
+    })
+
+    const result = evaluateAlerts({ db, now: NOW })
+
+    expect(result).toEqual({
+      createdCount: 1,
+      updatedCount: 0,
+      resolvedCount: 0,
+      skippedRuleCount: 0
+    })
+    expect(listOpenAlerts(db)).toEqual([
+      expect.objectContaining({
+        positionId: 'pos-aapl',
+        ruleCode: 'MANAGEMENT_WINDOW'
+      })
+    ])
+    expect(listOpenAlerts(db).some((alert) => alert.ruleCode === 'EXPIRATION_IMMINENT')).toBe(false)
+  })
+
+  it('resolves the open expiration-imminent alert when the short leg is closed before the next evaluation', () => {
+    seedEvaluablePosition(db, {
+      id: 'pos-aapl',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      strike: '180.0000',
+      expiration: expirationForDte(5)
+    })
+
+    evaluateAlerts({ db, now: NOW })
+    db.prepare(`DELETE FROM legs WHERE position_id = ?`).run('pos-aapl')
+
+    const result = evaluateAlerts({ db, now: LATER })
+
+    expect(result).toEqual({
+      createdCount: 0,
+      updatedCount: 0,
+      resolvedCount: 1,
+      skippedRuleCount: 0
+    })
+
+    const rows = readAlertRows(db)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].status).toBe('resolved')
+    expect(rows[0].resolved_at).toBe(LATER_ISO)
+    expect(listOpenAlerts(db)).toEqual([])
   })
 
   it('persists alerts only for evaluable positions, skipping those without an active option leg', () => {

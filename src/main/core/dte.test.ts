@@ -18,7 +18,7 @@ describe('computeDte', () => {
     expect(computeDte('2026-06-20', new Date('2026-06-25T12:00:00'))).toBe(-5)
   })
 
-  it('is timezone-stable: a now late in the local day yields the same whole-day count as midnight', () => {
+  it('returns 5 for a leg expiring five calendar days after now regardless of time-of-day', () => {
     const lateInDay = computeDte('2026-06-30', new Date('2026-06-25T23:59:00'))
     const atMidnight = computeDte('2026-06-30', new Date('2026-06-25T00:00:00'))
     expect(lateInDay).toBe(5)

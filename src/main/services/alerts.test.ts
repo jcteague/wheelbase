@@ -134,14 +134,14 @@ describe('upsertOpenAlert', () => {
     expect(row.resolved_at).toBeNull()
   })
 
-  it('updates the existing open row in place: no second row, triggered_at preserved, summary + last_evaluated_at advanced', () => {
+  it('upsertOpenAlert updates summary and last_evaluated_at without changing triggered_at for EXPIRATION_IMMINENT', () => {
     const db = makeTestDb()
     const positionId = seedPositionId(db)
     upsertOpenAlert(db, EXPIRATION_MATCH, positionId, NOW)
 
     upsertOpenAlert(
       db,
-      { ...EXPIRATION_MATCH, summary: 'Expires in 4 days at $180.00 strike' },
+      { ...EXPIRATION_MATCH, summary: 'Expires in 3 days at $180.00 strike' },
       positionId,
       LATER
     )
@@ -151,7 +151,7 @@ describe('upsertOpenAlert', () => {
     const row = rows[0]
     expect(row.triggered_at).toBe(NOW)
     expect(row.last_evaluated_at).toBe(LATER)
-    expect(row.summary).toBe('Expires in 4 days at $180.00 strike')
+    expect(row.summary).toBe('Expires in 3 days at $180.00 strike')
   })
 })
 

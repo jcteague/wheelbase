@@ -2,7 +2,7 @@
 
 This directory is a generated source-of-truth wiki for the Wheelbase application. Pages are synthesized from the per-story plan dirs under `plans/` via the `/build-spec` (initial) and `/update-spec` (incremental) skills; each page's body sits between `<!-- generated:from <plan-list> -->` markers and is re-generated when any listed plan changes. Browse by topic (architecture, domain, contracts, schema) for cross-cutting concerns, or by feature (US-N) for story-level behaviour.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-16,us-17,us-31,us-32,us-33,us-34,us-35,us-37,us-39,us-43,us-44,us-50,us-51,market-data-massive-migration,missing-ac,design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-16,us-17,us-31,us-32,us-33,us-34,us-35,us-37,us-39,us-43,us-44,us-50,us-51,us-52,market-data-massive-migration,missing-ac,design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse -->
 
 ## Maintenance
 
@@ -83,6 +83,7 @@ Generated regions are bounded by `<!-- generated:from ... -->` / `<!-- /generate
 
 - [US-50 — Scheduled Alert-Rule Evaluation Engine](features/us-50-alert-engine.md) — pure rule-evaluation engine + `alerts` table (migration 009) with in-place upsert/resolution + `alert-evaluation` job on the US-46 scheduler; built-in `EXPIRATION_IMMINENT` and `MANAGEMENT_WINDOW` rules; backbone of Epic 07 (no IPC surface yet)
 - [US-51 — Management Queue on Dashboard](features/us-51-management-queue-dashboard.md) — surfaces US-50's open alerts as a prioritized "management queue" above the positions grid; new `listManagementQueue` read path + `alerts:list` IPC channel + `useManagementQueue` hook; each row shows ticker, phase badge, trigger summary, urgency pill, and a "Review position" action, with an empty state when no alerts are open
+- [US-52 — Expiration-Imminent Alert](features/us-52-expiration-imminent-alert.md) — formalizes the high-urgency `EXPIRATION_IMMINENT` rule (fires for active short option legs at `0 ≤ DTE ≤ 5`); regression-hardening on the US-50 engine with no production code, schema, or IPC changes — surfaced through the US-51 management queue
 
 ## Gaps / not yet built
 

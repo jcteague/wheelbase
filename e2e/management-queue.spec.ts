@@ -20,33 +20,9 @@ import {
   goToPositionsList,
   launchApp,
   seedCsp,
-  tmpDb,
-  type CspFixture
+  tmpDb
 } from './assignment-helpers'
-import { localDate } from './dates'
-
-const QUEUE_ROW = '[data-testid="management-queue-row"]'
-
-function cspAtDte(ticker: string, strike: number, dte: number): CspFixture {
-  const expiration = localDate(dte)
-  const [year, month, day] = expiration.split('-')
-  const occStrike = String(strike * 1000).padStart(8, '0')
-  return {
-    ticker,
-    strike,
-    expiration,
-    contracts: 1,
-    premiumPerContract: 2.5,
-    occSymbol: `${ticker}${year.slice(2)}${month}${day}P${occStrike}`
-  }
-}
-
-async function runAlertEvaluation(page: Page): Promise<void> {
-  await page.evaluate(async () => {
-    const api = window.api as unknown as { testSchedulerRunNow: (name: string) => Promise<void> }
-    await api.testSchedulerRunNow('alert-evaluation')
-  })
-}
+import { cspAtDte, QUEUE_ROW, runAlertEvaluation } from './alert-helpers'
 
 async function queueTickers(page: Page): Promise<string[]> {
   return page
