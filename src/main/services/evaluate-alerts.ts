@@ -13,10 +13,14 @@ import {
 } from '../core/alerts'
 import { computeDte } from '../core/dte'
 import type { WheelPhase } from '../core/types'
+import { marketDataFactory } from '../integrations/market-data-factory'
+import type { MarketDataProvider, OptionSnapshot } from '../integrations/market-data-provider'
 import { logger as defaultLogger } from '../logger'
 import type { EvaluateAlertsResult } from '../schemas'
+import { buildOccSymbol } from '../../shared/option-symbol'
 import { activeLegSubquery } from './active-leg-sql'
 import { alertKey, resolveAlertsNotIn, upsertOpenAlert } from './alerts'
+import { fetchOptionSnapshots, fetchStockQuotes, type IpcStockQuote } from './market-data'
 
 export const ALERT_EVAL_JOB_NAME = 'alert-evaluation'
 
@@ -28,19 +32,27 @@ export const ALERT_EVAL_JOB_NAME = 'alert-evaluation'
 
 interface EvaluableRow {
   position_id: string
+  ticker: string
   phase: WheelPhase
+  profit_target_percent: number | null
   instrument_type: 'PUT' | 'CALL' | 'STOCK' | null
   strike: string | null
   expiration: string | null
+  premium_per_contract: string | null
+  contracts: number | null
 }
 
 const EVALUABLE_QUERY = `
   SELECT
     p.id   AS position_id,
+    p.ticker,
     p.phase,
+    p.profit_target_percent,
     l.instrument_type,
     l.strike,
-    l.expiration
+    l.expiration,
+    l.premium_per_contract,
+    l.contracts
   FROM positions p
   JOIN legs l ON l.id = (
     ${activeLegSubquery()}
@@ -49,10 +61,40 @@ const EVALUABLE_QUERY = `
     AND p.phase IN ('CSP_OPEN', 'CC_OPEN')
 `
 
+type LoggerLike = Pick<Logger, 'info' | 'debug' | 'warn' | 'error'>
+
+/** OCC symbol for a row's active option leg, or null when it isn't an option or
+ *  the leg data can't form a valid symbol (logged, never thrown — so one bad
+ *  leg can't abort the whole batch or suppress its OCC-independent DTE rules). */
+function occSymbolForRow(row: EvaluableRow, logger: LoggerLike): string | null {
+  if (
+    row.instrument_type === null ||
+    row.instrument_type === 'STOCK' ||
+    row.strike === null ||
+    !row.expiration
+  ) {
+    return null
+  }
+  try {
+    return buildOccSymbol({
+      ticker: row.ticker,
+      expiration: row.expiration,
+      strike: row.strike,
+      instrumentType: row.instrument_type
+    })
+  } catch (error) {
+    logger.warn({ positionId: row.position_id, error }, 'alert_evaluation_occ_symbol_invalid')
+    return null
+  }
+}
+
 function toEvaluationInput(
   row: EvaluableRow,
   now: Date,
-  managementWindowDte: number
+  managementWindowDte: number,
+  occ: string | null,
+  priceByTicker: Record<string, IpcStockQuote>,
+  midByOccSymbol: Record<string, OptionSnapshot>
 ): AlertEvaluationInput {
   return {
     positionId: row.position_id,
@@ -60,40 +102,103 @@ function toEvaluationInput(
     instrumentType: row.instrument_type === 'STOCK' ? null : row.instrument_type,
     strike: row.strike,
     dte: computeDte(row.expiration, now),
-    managementWindowDte
+    managementWindowDte,
+    entryPremiumPerContract: row.premium_per_contract,
+    contracts: row.contracts,
+    currentOptionMid: occ ? (midByOccSymbol[occ]?.mid ?? null) : null,
+    profitTargetPercentOverride: row.profit_target_percent,
+    currentUnderlyingPrice: priceByTicker[row.ticker]?.price ?? null
   }
 }
 
 type EvaluateAlertsInput = {
   db: Database.Database
+  provider?: MarketDataProvider
   now?: Date
   managementWindowDte?: number
-  logger?: Pick<Logger, 'info' | 'debug' | 'warn' | 'error'>
+  logger?: LoggerLike
 }
 
-export function evaluateAlerts({
+/** Runs a market-data fetch, degrading to `fallback` (with a WARN) on failure so
+ *  a provider outage can't abort the market-data-independent DTE rules. */
+async function fetchOrDegrade<T>(
+  fetchFn: () => Promise<T>,
+  fallback: T,
+  logger: LoggerLike,
+  event: string
+): Promise<T> {
+  try {
+    return await fetchFn()
+  } catch (error) {
+    logger.warn({ error }, event)
+    return fallback
+  }
+}
+
+export async function evaluateAlerts({
   db,
+  provider = marketDataFactory.create(),
   now = new Date(),
   managementWindowDte = DEFAULT_MANAGEMENT_WINDOW_DTE,
   logger = defaultLogger
-}: EvaluateAlertsInput): EvaluateAlertsResult {
+}: EvaluateAlertsInput): Promise<EvaluateAlertsResult> {
   const nowIso = now.toISOString()
   logger.debug({ now: nowIso, managementWindowDte }, 'alert_evaluation_start')
 
   const rows = db.prepare(EVALUABLE_QUERY).all() as EvaluableRow[]
   logger.debug({ count: rows.length }, 'alert_evaluation_targets_loaded')
 
+  // Build each row's OCC symbol once (non-throwing) so a single malformed leg
+  // can't abort the batch when collecting the symbol set below or mapping inputs.
+  const occByPositionId = new Map(
+    rows.map((row) => [row.position_id, occSymbolForRow(row, logger)])
+  )
+
+  // Pre-fetch live market data once for the whole batch (US-54/US-55). Both feeds
+  // run concurrently and each degrades to empty on failure, so a provider outage
+  // still lets the DTE rules evaluate. Awaited before the persist transaction, so
+  // US-50 write atomicity is unchanged.
+  const tickers = [...new Set(rows.map((row) => row.ticker))]
+  const symbols = [...new Set([...occByPositionId.values()].filter((s): s is string => s !== null))]
+  const [priceByTicker, { snapshots: midByOccSymbol }] = await Promise.all([
+    fetchOrDegrade(
+      () => fetchStockQuotes(provider, tickers),
+      {} as Record<string, IpcStockQuote>,
+      logger,
+      'alert_evaluation_stock_quotes_unavailable'
+    ),
+    fetchOrDegrade(
+      () => fetchOptionSnapshots(provider, symbols),
+      { snapshots: {}, unavailable: true },
+      logger,
+      'alert_evaluation_option_snapshots_unavailable'
+    )
+  ])
+
   // Compute phase — pure, per-position, isolated so one failure can't abort
   // the others or leave partial writes (persistence happens in one transaction).
   const matches: Array<{ positionId: string; match: AlertMatch }> = []
+  // Keys of rules skipped for missing data — kept open below, since a skipped
+  // rule wasn't evaluated and must not be treated as cleared (US-54/55).
+  const skippedKeys = new Set<string>()
   let skippedRuleCount = 0
 
   for (const row of rows) {
     try {
-      const evaluation = evaluatePosition(toEvaluationInput(row, now, managementWindowDte))
+      const evaluation = evaluatePosition(
+        toEvaluationInput(
+          row,
+          now,
+          managementWindowDte,
+          occByPositionId.get(row.position_id) ?? null,
+          priceByTicker,
+          midByOccSymbol
+        )
+      )
       evaluation.matches.forEach((match) => matches.push({ positionId: row.position_id, match }))
       evaluation.skipped.forEach((skip) => {
         skippedRuleCount++
+        skippedKeys.add(alertKey(row.position_id, skip.ruleCode))
         logger.debug(
           { positionId: row.position_id, ruleCode: skip.ruleCode, reason: skip.reason },
           'alert_rule_skipped'
@@ -111,13 +216,13 @@ export function evaluateAlerts({
   let resolvedCount = 0
 
   db.transaction(() => {
-    const matchedKeys = new Set<string>()
+    const keepOpenKeys = new Set(skippedKeys)
     for (const { positionId, match } of matches) {
       if (upsertOpenAlert(db, match, positionId, nowIso) === 'inserted') createdCount++
       else updatedCount++
-      matchedKeys.add(alertKey(positionId, match.ruleCode))
+      keepOpenKeys.add(alertKey(positionId, match.ruleCode))
     }
-    resolvedCount = resolveAlertsNotIn(db, matchedKeys, nowIso)
+    resolvedCount = resolveAlertsNotIn(db, keepOpenKeys, nowIso)
   })()
 
   logger.info(

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { differenceInCalendarDays, parseISO } from 'date-fns'
 import { describe, expect, it } from 'vitest'
 import type { CreatePositionPayload } from '../schemas'
 import { makeTestDb, isoDate } from '../test-utils'
@@ -55,10 +56,10 @@ describe('listPositions', () => {
     const expiration = isoDate(37)
     createPosition(db, { ...VALID_PAYLOAD, expiration })
     const [item] = listPositions(db)
-    const today = new Date()
-    const todayMs = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
-    const [ey, em, ed] = expiration.split('-').map(Number)
-    const expectedDte = Math.round((Date.UTC(ey, em - 1, ed) - todayMs) / 86_400_000)
+    // Local calendar-day basis, matching computeDte (differenceInCalendarDays +
+    // parseISO). Mixing a UTC "today" against a local expiration was off-by-one
+    // in the evening at negative UTC offsets.
+    const expectedDte = differenceInCalendarDays(parseISO(expiration), new Date())
     expect(item.dte).toBe(expectedDte)
   })
 
@@ -148,10 +149,7 @@ describe('listPositions', () => {
       newStrike: 185
     })
     const [item] = listPositions(db)
-    const today = new Date()
-    const todayMs = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
-    const [ey, em, ed] = newExpiration.split('-').map(Number)
-    const expectedDte = Math.round((Date.UTC(ey, em - 1, ed) - todayMs) / 86_400_000)
+    const expectedDte = differenceInCalendarDays(parseISO(newExpiration), new Date())
     expect(item.dte).toBe(expectedDte)
   })
 

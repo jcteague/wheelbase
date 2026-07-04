@@ -224,7 +224,7 @@ app.whenReady().then(() => {
       extendedHoursMs: 300_000,
       marketClosedMs: null
     },
-    handler: async () => evaluateAlerts({ db })
+    handler: async () => evaluateAlerts({ db, provider: marketDataFactory.create() })
   })
 
   if (process.env.NODE_ENV === 'test') {

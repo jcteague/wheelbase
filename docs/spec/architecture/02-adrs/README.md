@@ -2,7 +2,7 @@
 
 Each ADR captures one architectural choice that emerged from a plan/story. Decisions are grouped below by theme; many ADRs are referenced by multiple feature pages.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,missing-ac -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,us-53-54-55,missing-ac -->
 
 ## Engine & architecture
 
@@ -107,9 +107,10 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [alert-engine-pure-matches-skips](./alert-engine-pure-matches-skips.md) — `evaluatePosition` is a pure function returning `{ matches, skipped }`; missing data is skipped, never thrown; the service logs skips.
 - [alert-rule-registry](./alert-rule-registry.md) — Rules are an ordered open/closed registry; precedence via exclusive DTE ranges; management-window threshold as a defaulted parameter.
 - [alert-compute-then-persist](./alert-compute-then-persist.md) — Compute all matches/skips outside any transaction, then upsert + resolve in one `db.transaction`; no partial writes.
-- [alert-resolution-global](./alert-resolution-global.md) — Every open alert not re-matched this run resolves, including alerts for now-unevaluable (closed) positions.
+- [alert-resolution-global](./alert-resolution-global.md) — Every open alert neither re-matched nor skipped for missing data this run resolves, including alerts for now-unevaluable (closed) positions.
 - [alerts-partial-unique-open](./alerts-partial-unique-open.md) — Partial unique index `(position_id, rule_code) WHERE status='open'` allows one open alert per pair plus historical resolved rows.
 - [shared-dte-helper](./shared-dte-helper.md) — `computeDte` extracted into a pure `src/main/core/dte.ts` shared by the positions list and the alert engine.
 - [management-queue-read-path](./management-queue-read-path.md) — `listManagementQueue` joins open alerts to positions and sorts by urgency tier then `triggered_at`; dedicated `ManagementQueueItem` view-model leaves `listOpenAlerts` untouched.
+- [alert-evaluation-failure-isolation](./alert-evaluation-failure-isolation.md) — Batch evaluation isolates per-item failures and degrades boundary I/O (market-data prefetch, symbol building) to empty + log, never aborting the run; callers guard throwing pure helpers.
 
 <!-- /generated -->

@@ -3,12 +3,18 @@
 // No DB, broker, or logger imports.
 
 import Decimal from 'decimal.js'
+import { computeUnrealizedPnl } from './costbasis'
+import { resolveProfitTarget } from './profit-target'
 import type { WheelPhase } from './types'
 
 export type AlertUrgency = 'high' | 'medium' | 'low'
 export type AlertStatus = 'open' | 'resolved' | 'dismissed'
-export type RuleCode = 'EXPIRATION_IMMINENT' | 'MANAGEMENT_WINDOW'
-// (future: 'PROFIT_TARGET' | 'STRIKE_PROXIMITY' | 'EARNINGS_PROXIMITY' | 'COVERED_CALL_BREACH')
+export type RuleCode =
+  | 'EXPIRATION_IMMINENT'
+  | 'MANAGEMENT_WINDOW'
+  | 'PROFIT_TARGET' // US-54
+  | 'STRIKE_PROXIMITY' // US-55
+// (future: 'EARNINGS_PROXIMITY' | 'COVERED_CALL_BREACH')
 
 /** Largest DTE that still counts as "expiration imminent" (inclusive). */
 const EXPIRATION_IMMINENT_MAX_DTE = 5
@@ -16,9 +22,15 @@ const EXPIRATION_IMMINENT_MAX_DTE = 5
 /** Default upper bound of the management window, in calendar days to expiration. */
 export const DEFAULT_MANAGEMENT_WINDOW_DTE = 21
 
+/** Widest gap between stock price and CSP strike that still warns, as a percent. */
+const STRIKE_PROXIMITY_MAX_PERCENT = 1
+
 const QUICK_ACTION_REVIEW = 'Review position'
 
 const MISSING_DTE = 'missing_dte'
+const MISSING_OPTION_MARK = 'missing_option_mark'
+const MISSING_UNDERLYING_PRICE = 'missing_underlying_price'
+const INVALID_PROFIT_TARGET_INPUT = 'invalid_profit_target_input'
 
 /** Plain values the engine evaluates — no DB rows. */
 export interface AlertEvaluationInput {
@@ -28,7 +40,25 @@ export interface AlertEvaluationInput {
   strike: string | null // 4dp TEXT as stored on the leg
   dte: number | null // calendar days to expiration; null when unknown
   managementWindowDte?: number // defaults to DEFAULT_MANAGEMENT_WINDOW_DTE
+
+  // US-54 PROFIT_TARGET inputs
+  entryPremiumPerContract: string | null // legs.premium_per_contract (TEXT 4dp)
+  contracts: number | null // legs.contracts
+  currentOptionMid: string | null // pre-fetched OptionSnapshot.mid, or null if unavailable
+  profitTargetPercentOverride: number | null // positions.profit_target_percent (nullable)
+
+  // US-55 STRIKE_PROXIMITY input
+  currentUnderlyingPrice: string | null // pre-fetched IpcStockQuote.price, or null if unavailable
 }
+
+/** Exactly the fields the PROFIT_TARGET (US-54) helpers read. */
+export type ProfitTargetInput = Pick<
+  AlertEvaluationInput,
+  'entryPremiumPerContract' | 'contracts' | 'currentOptionMid' | 'profitTargetPercentOverride'
+>
+
+/** Exactly the fields the STRIKE_PROXIMITY (US-55) helpers read. */
+export type StrikeProximityInput = Pick<AlertEvaluationInput, 'strike' | 'currentUnderlyingPrice'>
 
 export interface AlertMatch {
   ruleCode: RuleCode
@@ -63,25 +93,74 @@ function managementWindowSummary(input: AlertEvaluationInput): string {
   return `${input.dte} DTE remaining — review for roll or close`
 }
 
+/** True when the premium/contracts satisfy computeUnrealizedPnl's preconditions,
+ *  so capturedPercent can't throw. Guards against non-positive stored data. */
+function hasComputableProfit(input: ProfitTargetInput): boolean {
+  if (!Number.isInteger(input.contracts!) || input.contracts! < 1) return false
+  try {
+    return new Decimal(input.entryPremiumPerContract!).gt(0)
+  } catch {
+    return false
+  }
+}
+
+/** Percent of max profit captured on a short option leg, as a Decimal. */
+function capturedPercent(input: ProfitTargetInput): Decimal {
+  return new Decimal(
+    computeUnrealizedPnl({
+      entryPremium: input.entryPremiumPerContract!,
+      currentMid: input.currentOptionMid!,
+      contracts: input.contracts!
+    }).pnlPercent
+  )
+}
+
+function profitTargetSummary(input: ProfitTargetInput): string {
+  return `${capturedPercent(input).toFixed(1)}% of max profit captured — consider closing`
+}
+
+/** Absolute gap between the stock price and the CSP strike, as a percent Decimal. */
+function proximityPercent(input: StrikeProximityInput): Decimal {
+  const price = new Decimal(input.currentUnderlyingPrice!)
+  const strike = new Decimal(input.strike!)
+  return price.minus(strike).abs().dividedBy(strike).times(100)
+}
+
+function strikeProximitySummary(input: StrikeProximityInput): string {
+  const price = new Decimal(input.currentUnderlyingPrice!)
+  const strike = new Decimal(input.strike!)
+  const pct = proximityPercent(input).toFixed(1)
+  const direction = price.gte(strike) ? 'above' : 'below'
+  const base = `Stock is ${pct}% ${direction} the ${formatStrike(input.strike)} put strike`
+  return direction === 'below' ? `${base} — now in the money` : base
+}
+
 // ---------------------------------------------------------------------------
 // Rule registry — ordered list of pure predicates. Append future rules here
-// without touching the evaluation loop; their DTE ranges are mutually exclusive,
-// so EXPIRATION_IMMINENT naturally takes precedence over MANAGEMENT_WINDOW.
+// without touching the evaluation loop. The two DTE rules are mutually exclusive
+// by their DTE ranges (EXPIRATION_IMMINENT takes precedence over MANAGEMENT_WINDOW);
+// PROFIT_TARGET and STRIKE_PROXIMITY are independent and may co-fire with them.
+// Each rule declares its own `missingData` guard, so a rule is skipped only when
+// its own required inputs are absent.
 // ---------------------------------------------------------------------------
 
 interface RuleDefinition {
   code: RuleCode
   urgency: AlertUrgency
-  requiresDte: boolean
+  // Returns a skip reason when a required input is absent, else null.
+  missingData?: (input: AlertEvaluationInput) => string | null
   test: (input: AlertEvaluationInput, managementWindowDte: number) => boolean
   summary: (input: AlertEvaluationInput) => string
 }
+
+const missingDteReason = (input: AlertEvaluationInput): string | null =>
+  input.dte === null ? MISSING_DTE : null
 
 const RULES: RuleDefinition[] = [
   {
     code: 'EXPIRATION_IMMINENT',
     urgency: 'high',
-    requiresDte: true,
+    missingData: missingDteReason,
     test: (input) =>
       input.dte !== null && input.dte >= 0 && input.dte <= EXPIRATION_IMMINENT_MAX_DTE,
     summary: expirationImminentSummary
@@ -89,25 +168,58 @@ const RULES: RuleDefinition[] = [
   {
     code: 'MANAGEMENT_WINDOW',
     urgency: 'medium',
-    requiresDte: true,
+    missingData: missingDteReason,
     test: (input, managementWindowDte) =>
       input.dte !== null &&
       input.dte > EXPIRATION_IMMINENT_MAX_DTE &&
       input.dte <= managementWindowDte,
     summary: managementWindowSummary
+  },
+  {
+    code: 'PROFIT_TARGET',
+    urgency: 'low',
+    missingData: (input) => {
+      if (
+        input.entryPremiumPerContract === null ||
+        input.contracts === null ||
+        input.currentOptionMid === null
+      ) {
+        return MISSING_OPTION_MARK
+      }
+      return hasComputableProfit(input) ? null : INVALID_PROFIT_TARGET_INPUT
+    },
+    test: (input) =>
+      capturedPercent(input).gte(resolveProfitTarget(input.profitTargetPercentOverride)),
+    summary: profitTargetSummary
+  },
+  {
+    code: 'STRIKE_PROXIMITY',
+    urgency: 'medium',
+    missingData: (input) =>
+      input.phase === 'CSP_OPEN' && input.currentUnderlyingPrice === null
+        ? MISSING_UNDERLYING_PRICE
+        : null,
+    test: (input) =>
+      input.phase === 'CSP_OPEN' &&
+      input.strike !== null &&
+      input.currentUnderlyingPrice !== null &&
+      proximityPercent(input).lte(STRIKE_PROXIMITY_MAX_PERCENT),
+    summary: strikeProximitySummary
   }
 ]
 
 export function evaluatePosition(input: AlertEvaluationInput): PositionEvaluation {
   const managementWindowDte = input.managementWindowDte ?? DEFAULT_MANAGEMENT_WINDOW_DTE
-  const hasMissingData = (rule: RuleDefinition): boolean => rule.requiresDte && input.dte === null
+  const skipReason = (rule: RuleDefinition): string | null =>
+    rule.missingData ? rule.missingData(input) : null
 
-  const skipped = RULES.filter(hasMissingData).map(
-    (rule): SkippedRule => ({ ruleCode: rule.code, reason: MISSING_DTE })
-  )
+  const skipped = RULES.flatMap((rule): SkippedRule[] => {
+    const reason = skipReason(rule)
+    return reason === null ? [] : [{ ruleCode: rule.code, reason }]
+  })
 
   const matches = RULES.filter(
-    (rule) => !hasMissingData(rule) && rule.test(input, managementWindowDte)
+    (rule) => skipReason(rule) === null && rule.test(input, managementWindowDte)
   ).map(
     (rule): AlertMatch => ({
       ruleCode: rule.code,

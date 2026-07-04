@@ -109,12 +109,14 @@ export function upsertOpenAlert(
 
 /**
  * Marks every currently-open alert whose `(positionId, ruleCode)` key is absent
- * from `matchedKeys` as resolved. Matched alerts stay open; already-resolved /
- * dismissed rows are untouched. Returns the number of alerts resolved.
+ * from `keepOpenKeys` as resolved. Alerts whose key is present stay open — this
+ * covers both rules that matched this run and rules that were skipped for missing
+ * data (a skipped rule wasn't evaluated, so it must not be treated as cleared).
+ * Already-resolved / dismissed rows are untouched. Returns the number resolved.
  */
 export function resolveAlertsNotIn(
   db: Database.Database,
-  matchedKeys: Set<string>,
+  keepOpenKeys: Set<string>,
   now: string
 ): number {
   const openRows = db
@@ -122,7 +124,7 @@ export function resolveAlertsNotIn(
     .all() as Array<{ id: string; position_id: string; rule_code: string }>
 
   const toResolve = openRows.filter(
-    (row) => !matchedKeys.has(alertKey(row.position_id, row.rule_code))
+    (row) => !keepOpenKeys.has(alertKey(row.position_id, row.rule_code))
   )
 
   const update = db.prepare(

@@ -235,7 +235,7 @@ describe('main process bootstrap', () => {
     )
   })
 
-  it('alert-evaluation job handler delegates to evaluateAlerts with db', async () => {
+  it('alert-evaluation handler delegates to evaluateAlerts with db and provider', async () => {
     await triggerBootstrap()
 
     const registration = mockSchedulerRegister.mock.calls
@@ -247,10 +247,15 @@ describe('main process bootstrap', () => {
     expect(registration).toBeDefined()
 
     const { evaluateAlerts } = await import('./services/evaluate-alerts')
+    const { marketDataFactory } = await import('./integrations/market-data-factory')
+    const provider = { disconnect: vi.fn() }
+    vi.mocked(marketDataFactory.create).mockReturnValue(provider as never)
+
     await registration!.handler()
 
+    expect(vi.mocked(marketDataFactory.create)).toHaveBeenCalled()
     expect(vi.mocked(evaluateAlerts)).toHaveBeenCalledWith(
-      expect.objectContaining({ db: expect.anything() })
+      expect.objectContaining({ db: expect.anything(), provider })
     )
   })
 

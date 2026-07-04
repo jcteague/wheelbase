@@ -174,6 +174,15 @@ Skip this step if the selected set contains only `[Red]` tasks.
 
 ---
 
+## Step 4b — Refresh the spec wiki
+
+If this run **completed a plan** (not a `[Red]`-only or partial-phase slice), run
+`/update-spec <plan-name>` so the change lands in `docs/spec/` and doesn't drift.
+It re-extracts the plan dir and refreshes only the topic/feature pages it drives.
+Skip for `[Red]`-only runs.
+
+---
+
 ## Step 5 — AC Audit
 
 Before reporting success, re-read the user story's acceptance criteria and verify every AC is covered by a checked-off e2e test in tasks.md.

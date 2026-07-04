@@ -4,7 +4,7 @@
 
 ## Decision
 
-`evaluateAlerts` runs in two phases. The **compute phase** (outside any transaction) loads evaluable positions, builds engine inputs, calls `evaluatePosition` per position wrapped in a per-position `try/catch` so one bad position cannot abort the run, and accumulates all matches + skips. The **persist phase** (one `db.transaction(...)`) upserts every matched alert and resolves every open alert not re-matched this run. No DB writes happen until all pure computation has succeeded.
+`evaluateAlerts` runs in two phases. The **compute phase** (outside any transaction) loads evaluable positions, builds engine inputs, calls `evaluatePosition` per position wrapped in a per-position `try/catch` so one bad position cannot abort the run, and accumulates all matches + skips. The **persist phase** (one `db.transaction(...)`) upserts every matched alert and resolves every open alert that this run neither re-matched nor skipped for missing data. No DB writes happen until all pure computation has succeeded. (Rules skipped for missing data are held open — see [alert-resolution-global](alert-resolution-global.md).)
 
 ## Why
 

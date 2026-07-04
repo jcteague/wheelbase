@@ -61,7 +61,8 @@ and the positions list compute DTE identically.
 **Persistence service (`src/main/services/alerts.ts`).** `upsertOpenAlert`
 (SELECT existing open → UPDATE in place or INSERT a new UUID row),
 `resolveAlertsNotIn` (mark every open alert whose key is absent from this run's
-matched set as resolved), `listOpenAlerts` (open rows only, snake_case →
+keep-open set — matched rules plus rules skipped for missing data — as resolved),
+`listOpenAlerts` (open rows only, snake_case →
 camelCase via a local `mapAlertRow`), and an exported `alertKey(positionId,
 ruleCode)` identity-key builder shared with the orchestrator.
 
@@ -71,7 +72,7 @@ a compute phase (load evaluable positions via a join on the phase-aware
 `activeLegSubquery()`, build engine inputs, call the engine per position inside a
 `try/catch`, accumulate matches + skips, DEBUG-log each skip) and a persist phase
 (a single `db.transaction` that upserts every match and resolves every open alert
-not re-matched this run). It returns `EvaluateAlertsResult`
+this run neither re-matched nor skipped for missing data). It returns `EvaluateAlertsResult`
 (`createdCount`/`updatedCount`/`resolvedCount`/`skippedRuleCount`) and exports
 `ALERT_EVAL_JOB_NAME = 'alert-evaluation'`.
 
@@ -97,8 +98,8 @@ US-50 adds **no IPC surface** — the `alerts:list` / `alerts:dismiss` /
   — compute outside any transaction, then persist the whole result set in one
   transaction.
 - [alert-resolution-global](../architecture/02-adrs/alert-resolution-global.md) —
-  resolution spans every open alert not re-matched, including now-unevaluable
-  positions.
+  resolution spans every open alert neither re-matched nor skipped for missing
+  data, including now-unevaluable positions.
 - [alert-evaluation-job-cadence](../architecture/02-adrs/alert-evaluation-job-cadence.md)
   — reuse the US-46 scheduler with a `detect-assignments`-style interval cadence;
   not broker-gated.

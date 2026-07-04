@@ -54,12 +54,19 @@
       "WebFetch(domain:marketchameleon.com)",
       "WebFetch(domain:www.barchart.com)",
       "Bash(./node_modules/.bin/vitest run *)",
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "Skill(plan-tasks)"
     ]
   },
   "enableAllProjectMcpServers": true,
-  "enabledMcpjsonServers": ["alpaca", "playwright", "electron"],
-  "disabledMcpjsonServers": ["postgres"],
+  "enabledMcpjsonServers": [
+    "alpaca",
+    "playwright",
+    "electron"
+  ],
+  "disabledMcpjsonServers": [
+    "postgres"
+  ],
   "enabledPlugins": {
     "code-simplifier@claude-plugins-official": true
   }

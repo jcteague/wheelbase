@@ -85,6 +85,8 @@ After every code change, run in order:
 4. `pnpm format` — run prettier to format code
 5. **Logging** — INFO for business events, DEBUG for inputs/checkpoints
 
+When a **plan or story completes** (not every code change), run `/update-spec <plan-name>` so the work is captured into `docs/spec/` before its plan docs age out — the spec drifts otherwise.
+
 ### Functional Programming Style
 
 - Prefer pure functions and immutable data; avoid mutation
@@ -118,6 +120,7 @@ Library: `pino`. Configured in `src/main/logger.ts`.
 - Wouter **must** use hash-based routing (`useHashLocation`) — browser-history routing breaks in packaged Electron
 - All renderer forms **must** use React Hook Form + Zod resolver — no hand-managed `useState` form state; use `useForm({ resolver: zodResolver(...) })`, `register`, `Controller` for custom inputs, and `useWatch` for reactive derived values
 - Renderer components **must** use Tailwind utility classes and `wb-*` design tokens (`text-wb-green`, `bg-wb-gold`, `animate-wb-pulse`, etc.) — never raw inline styles for color, spacing, or animation; inline `style` is only acceptable for values that cannot be expressed as a Tailwind class (e.g. a truly dynamic numeric value not in the scale)
+- Scheduled batch jobs (e.g. `evaluateAlerts`) **must isolate per-item failures**: evaluate each item in its own `try/catch`, and make boundary I/O (market-data prefetch, symbol building) **degrade to empty + log** rather than reject the whole run — one bad item or a provider outage must not suppress the others' results. Callers of pure helpers that **throw** on invalid input (e.g. `computeUnrealizedPnl`) must validate before calling, not rely on a downstream catch that would drop the item's other results. Rationale + the incident that motivated this: [alert-evaluation-failure-isolation ADR](docs/spec/architecture/02-adrs/alert-evaluation-failure-isolation.md)
 
 ---
 
