@@ -55,7 +55,8 @@
       "WebFetch(domain:www.barchart.com)",
       "Bash(./node_modules/.bin/vitest run *)",
       "Bash(git checkout *)",
-      "Skill(plan-tasks)"
+      "Skill(plan-tasks)",
+      "Workflow(code-review)"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -14,6 +14,7 @@ import {
   type StockQuote
 } from '../integrations/market-data-provider'
 import { buildOccSymbol } from '../../shared/option-symbol'
+import type { FetchEarnings } from './evaluate-alerts'
 
 // ---------------------------------------------------------------------------
 // Clock fixtures — a fixed NOW and a one-day-later LATER for re-run scenarios.
@@ -166,6 +167,27 @@ export function inertProvider(): MarketDataProvider {
     disconnect: vi.fn(async () => {}),
     stream: vi.fn()
   } as unknown as MarketDataProvider
+}
+
+// ---------------------------------------------------------------------------
+// Earnings fetchers (US-56)
+// ---------------------------------------------------------------------------
+
+/** fetchEarnings stub resolving the supplied ticker → 'YYYY-MM-DD' map verbatim;
+ *  tickers absent from the map are simply omitted (the missing-data path). */
+export function stubEarnings(earningsByTicker: Record<string, string>): FetchEarnings {
+  return vi.fn(async () => earningsByTicker)
+}
+
+/**
+ * fetchEarnings stub that keeps EARNINGS_PROXIMITY inert: every requested ticker
+ * gets an earnings date far beyond the 10-day window, so the rule neither fires
+ * nor skips — the earnings analogue of `inertProvider`.
+ */
+export function inertEarnings(): FetchEarnings {
+  return vi.fn(async (tickers: string[], opts?: { now?: Date }) =>
+    Object.fromEntries(tickers.map((t) => [t, format(addDays(opts?.now ?? NOW, 45), 'yyyy-MM-dd')]))
+  )
 }
 
 /**

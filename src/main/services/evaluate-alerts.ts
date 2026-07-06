@@ -4,7 +4,6 @@
 // No Electron or broker imports here.
 
 import Database from 'better-sqlite3'
-import type { Logger } from 'pino'
 import {
   DEFAULT_MANAGEMENT_WINDOW_DTE,
   evaluatePosition,
@@ -13,9 +12,10 @@ import {
 } from '../core/alerts'
 import { computeDte } from '../core/dte'
 import type { WheelPhase } from '../core/types'
+import { fetchNextEarningsDates } from '../integrations/finnhub-earnings'
 import { marketDataFactory } from '../integrations/market-data-factory'
 import type { MarketDataProvider, OptionSnapshot } from '../integrations/market-data-provider'
-import { logger as defaultLogger } from '../logger'
+import { logger as defaultLogger, type LoggerLike } from '../logger'
 import type { EvaluateAlertsResult } from '../schemas'
 import { buildOccSymbol } from '../../shared/option-symbol'
 import { activeLegSubquery } from './active-leg-sql'
@@ -61,8 +61,6 @@ const EVALUABLE_QUERY = `
     AND p.phase IN ('CSP_OPEN', 'CC_OPEN')
 `
 
-type LoggerLike = Pick<Logger, 'info' | 'debug' | 'warn' | 'error'>
-
 /** OCC symbol for a row's active option leg, or null when it isn't an option or
  *  the leg data can't form a valid symbol (logged, never thrown — so one bad
  *  leg can't abort the whole batch or suppress its OCC-independent DTE rules). */
@@ -94,7 +92,8 @@ function toEvaluationInput(
   managementWindowDte: number,
   occ: string | null,
   priceByTicker: Record<string, IpcStockQuote>,
-  midByOccSymbol: Record<string, OptionSnapshot>
+  midByOccSymbol: Record<string, OptionSnapshot>,
+  earningsDateByTicker: Record<string, string>
 ): AlertEvaluationInput {
   return {
     positionId: row.position_id,
@@ -107,9 +106,17 @@ function toEvaluationInput(
     contracts: row.contracts,
     currentOptionMid: occ ? (midByOccSymbol[occ]?.mid ?? null) : null,
     profitTargetPercentOverride: row.profit_target_percent,
-    currentUnderlyingPrice: priceByTicker[row.ticker]?.price ?? null
+    currentUnderlyingPrice: priceByTicker[row.ticker]?.price ?? null,
+    daysToEarnings: computeDte(earningsDateByTicker[row.ticker] ?? null, now),
+    expiration: row.expiration
   }
 }
+
+/** Injection seam for the earnings feed (defaults to the real Finnhub batch). */
+export type FetchEarnings = (
+  tickers: string[],
+  opts?: { now?: Date; logger?: LoggerLike }
+) => Promise<Record<string, string>>
 
 type EvaluateAlertsInput = {
   db: Database.Database
@@ -117,6 +124,7 @@ type EvaluateAlertsInput = {
   now?: Date
   managementWindowDte?: number
   logger?: LoggerLike
+  fetchEarnings?: FetchEarnings
 }
 
 /** Runs a market-data fetch, degrading to `fallback` (with a WARN) on failure so
@@ -140,7 +148,8 @@ export async function evaluateAlerts({
   provider = marketDataFactory.create(),
   now = new Date(),
   managementWindowDte = DEFAULT_MANAGEMENT_WINDOW_DTE,
-  logger = defaultLogger
+  logger = defaultLogger,
+  fetchEarnings = fetchNextEarningsDates
 }: EvaluateAlertsInput): Promise<EvaluateAlertsResult> {
   const nowIso = now.toISOString()
   logger.debug({ now: nowIso, managementWindowDte }, 'alert_evaluation_start')
@@ -154,13 +163,13 @@ export async function evaluateAlerts({
     rows.map((row) => [row.position_id, occSymbolForRow(row, logger)])
   )
 
-  // Pre-fetch live market data once for the whole batch (US-54/US-55). Both feeds
-  // run concurrently and each degrades to empty on failure, so a provider outage
-  // still lets the DTE rules evaluate. Awaited before the persist transaction, so
-  // US-50 write atomicity is unchanged.
+  // Pre-fetch live market data once for the whole batch (US-54/US-55/US-56).
+  // All three feeds run concurrently and each degrades to empty on failure, so a
+  // provider outage still lets the DTE rules evaluate. Awaited before the persist
+  // transaction, so US-50 write atomicity is unchanged.
   const tickers = [...new Set(rows.map((row) => row.ticker))]
   const symbols = [...new Set([...occByPositionId.values()].filter((s): s is string => s !== null))]
-  const [priceByTicker, { snapshots: midByOccSymbol }] = await Promise.all([
+  const [priceByTicker, { snapshots: midByOccSymbol }, earningsDateByTicker] = await Promise.all([
     fetchOrDegrade(
       () => fetchStockQuotes(provider, tickers),
       {} as Record<string, IpcStockQuote>,
@@ -172,6 +181,12 @@ export async function evaluateAlerts({
       { snapshots: {}, unavailable: true },
       logger,
       'alert_evaluation_option_snapshots_unavailable'
+    ),
+    fetchOrDegrade(
+      () => fetchEarnings(tickers, { now, logger }),
+      {} as Record<string, string>,
+      logger,
+      'alert_evaluation_earnings_unavailable'
     )
   ])
 
@@ -192,7 +207,8 @@ export async function evaluateAlerts({
           managementWindowDte,
           occByPositionId.get(row.position_id) ?? null,
           priceByTicker,
-          midByOccSymbol
+          midByOccSymbol,
+          earningsDateByTicker
         )
       )
       evaluation.matches.forEach((match) => matches.push({ positionId: row.position_id, match }))

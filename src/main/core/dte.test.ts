@@ -25,4 +25,12 @@ describe('computeDte', () => {
     expect(atMidnight).toBe(5)
     expect(lateInDay).toBe(atMidnight)
   })
+
+  it('returns null (never NaN) for a non-date string', () => {
+    expect(computeDte('TBD', new Date('2026-06-25T12:00:00'))).toBeNull()
+  })
+
+  it('returns null (never NaN) for a non-ISO date format', () => {
+    expect(computeDte('2026-8-14', new Date('2026-06-25T12:00:00'))).toBeNull()
+  })
 })

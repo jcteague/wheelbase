@@ -1,6 +1,6 @@
 # Market Data
 
-<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56 -->
 
 ## Overview
 
@@ -11,7 +11,15 @@ that is fully transient — no SQLite rows, no migrations, no persistent state.
 Every value is fetched from a `MarketDataProvider`, held in renderer memory via
 TanStack Query, and discarded on app close.
 
-The domain has four moving parts:
+Alongside the primary quote/option feed, the domain carries **auxiliary
+vendor feeds** — standalone integration modules for data the primary vendor
+cannot serve on the current plan. The Barchart IVR scraper (US-43) set the
+precedent; the Finnhub earnings-calendar feed
+([US-56](../features/us-56-earnings-proximity-alert.md)) follows it. Neither
+is a `MarketDataProvider` method (see "Auxiliary feed: Finnhub earnings
+calendar" below).
+
+The primary feed has four moving parts:
 
 - A **provider type** (`MarketDataProvider`, declared as a TypeScript `type`)
   that abstracts every vendor-specific quote/option call.
@@ -41,7 +49,7 @@ quote/option feed is now the **Massive** provider described below.)
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56 -->
 
 ## Provider interface
 
@@ -111,6 +119,16 @@ not_found`, `429 → rate_limited` (after `MAX_RETRIES` honouring `Retry-After`)
   endpoints supply stock snapshots and option snapshots (greeks/IV); streaming
   stock quotes use a raw `ws` WebSocket client. There is no vendor SDK — the
   adapter talks to Massive's HTTP and WS APIs directly.
+- **The type stays scoped to what the primary vendor serves.** Data Massive
+  cannot supply on the current plan (IVR, earnings dates) is deliberately
+  **not** added to `MarketDataProvider` — doing so would force every provider
+  (including the fake) to implement a capability the primary vendor lacks.
+  Such data lives in standalone auxiliary integration modules instead: the
+  Barchart IVR scraper
+  ([us-43](../features/us-43-barchart-ivr-scraper.md)) and the Finnhub
+  earnings-calendar feed
+  ([us-56](../features/us-56-earnings-proximity-alert.md); see "Auxiliary
+  feed: Finnhub earnings calendar" below).
 
 ### Configuration
 
@@ -673,14 +691,110 @@ components subscribe to the same ticker list.
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration -->
+<!-- generated:from us-56 -->
+
+## Auxiliary feed: Finnhub earnings calendar
+
+Next-earnings dates power the `EARNINGS_PROXIMITY` alert rule
+([US-56](../features/us-56-earnings-proximity-alert.md)). Neither Massive
+(earnings is a $99/mo Benzinga add-on) nor Alpaca serves earnings data, so the
+feed comes from **Finnhub's free tier** — an official, keyed, JSON-over-HTTPS
+calendar endpoint whose query-param auth matches the Massive adapter
+conventions.
+
+### Standalone integration module, not a provider method
+
+The feed lives in `src/main/integrations/finnhub-earnings.ts` and is **not**
+a `MarketDataProvider` method (see the adapter rules above). It follows the
+Barchart IVR scraper ([us-43](../features/us-43-barchart-ivr-scraper.md))
+precedent for vendor-specific auxiliary feeds: one integration module, one
+consumer, no generic multi-vendor abstraction.
+
+### HTTP contract
+
+`GET https://finnhub.io/api/v1/calendar/earnings?symbol={ticker}&from={date}&to={date}&token={key}`
+— one request per ticker, auth via `token` query param. The response's
+`earningsCalendar` array carries per-event objects; `date` (`YYYY-MM-DD`) is
+the only field consumed. An empty array means no events in the window — a
+valid result, cached as null so the rule skips.
+
+The batch wrapper is
+`fetchNextEarningsDates(tickers) → Promise<Record<ticker, isoDate>>`; failed
+or eventless tickers are simply absent from the returned record — never an
+error to the caller.
+
+### Query window and event selection
+
+The query spans `from = now − 7d` to `to = now + 30d`
+(`EARNINGS_LOOKBACK_DAYS` / `EARNINGS_LOOKAHEAD_DAYS`). Per ticker the module
+drops calendar rows whose `date` is not a `YYYY-MM-DD` string (the payload is
+unvalidated vendor JSON — a null/`TBD` row must not displace a valid event),
+then selects the **earliest event with `date >= today`**, falling back to the
+most recent past event when no upcoming event exists in the window. The 30-day
+lookahead comfortably covers the rule's 10-day threshold; the 7-day lookback
+exists purely for **alert resolution** — a recent-past event yields negative
+`daysToEarnings`, the predicate returns false, and an open alert resolves on
+the next run instead of freezing open on a skip. (Accepted limitation: if the
+lookback has rolled off and the next event is beyond the window, the input
+goes null and an open alert would freeze; in practice the lookback covers the
+resolution window.)
+
+### Caching: 12 h module-level TTL, no SQLite
+
+The module holds a per-ticker in-memory cache with a **12 h TTL — negative
+results (no event) are cached too** — so the 60 s alert-evaluation cadence
+produces roughly one Finnhub burst per half-day, not one per run
+(uncached, that would be ~4k calls per market day for near-static data).
+Per-ticker **failures are negatively cached for 5 minutes**
+(`EARNINGS_FAILURE_TTL_MS`) so a rate-limited or failing ticker backs off
+instead of refiring against an exhausted quota on every scheduler run.
+There is no `earnings_snapshot` table and no scheduled collector job: the
+IVR-style persisted snapshot exists because IVR needs _history_; earnings
+proximity needs only the _next_ date, so the feed honors the transient-market-
+data invariant below.
+
+### Failure isolation
+
+Per-ticker failures are isolated and mapped to WARN codes, never thrown to
+the batch caller:
+
+| Condition       | Behavior                                                   |
+| --------------- | ---------------------------------------------------------- |
+| Missing API key | `{}` + WARN `earnings_fetch_no_api_key` (once per process) |
+| HTTP 401/403    | WARN `earnings_fetch_failed`, code `auth_failed`           |
+| HTTP 429        | code `rate_limited` (failure cached 5 min before retry)    |
+| Network/other   | code `network_error` / `unknown`                           |
+| Empty calendar  | DEBUG `earnings_no_event_in_window`, null cached           |
+
+A whole-feed outage degrades to an empty record. `evaluateAlerts` consumes
+the batch as a **third concurrent `fetchOrDegrade`** alongside stock quotes
+and option snapshots (WARN `alert_evaluation_earnings_unavailable`), via an
+injectable `FetchEarnings` seam in `src/main/services/evaluate-alerts.ts` —
+per the alert-evaluation failure-isolation ADR, missing data skips the rule
+and never suppresses other rules' results.
+
+### Credentials
+
+`loadFinnhubApiKey()` in `src/main/integrations/finnhub-credentials.ts`
+mirrors the `massive-credentials.ts` pattern: it reads
+`import.meta.env.MAIN_VITE_FINNHUB_API_KEY` with a
+`process.env.FINNHUB_API_KEY` runtime fallback. No settings UI, no encrypted
+storage, no migration — the app remains fully functional without the key
+(the rule skips everywhere; every other rule is unaffected).
+
+<!-- /generated -->
+
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56 -->
 
 ## Architectural invariant: market data is transient
 
 There are no migrations, no SQLite tables, and no persistent state for market
 data. Every value:
 
-- Originates from the `MarketDataProvider` (REST snapshot or WebSocket frame).
+- Originates from the `MarketDataProvider` (REST snapshot or WebSocket frame)
+  or an auxiliary integration module (Finnhub earnings dates, held in a
+  module-level 12 h TTL cache — deliberately no SQLite table; see
+  [us-56](../features/us-56-earnings-proximity-alert.md)).
 - Crosses the IPC boundary as a flat shape (`IpcStockQuote`, `IpcOptionSnapshot`,
   `IpcMarketStatus`).
 - Lives in renderer memory inside TanStack Query.
@@ -710,7 +824,8 @@ For the story-level acceptance criteria and the UI behaviour tables, see
 [`features/us-31-market-data-provider-adapter.md`](../features/us-31-market-data-provider-adapter.md),
 [`features/us-32-live-position-prices.md`](../features/us-32-live-position-prices.md),
 [`features/us-33-option-mid-pnl.md`](../features/us-33-option-mid-pnl.md),
-and [`features/us-34-position-cockpit.md`](../features/us-34-position-cockpit.md).
+[`features/us-34-position-cockpit.md`](../features/us-34-position-cockpit.md),
+and [`features/us-56-earnings-proximity-alert.md`](../features/us-56-earnings-proximity-alert.md).
 
 <!-- /generated -->
 

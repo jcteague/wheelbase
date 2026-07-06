@@ -14,7 +14,8 @@ export type RuleCode =
   | 'MANAGEMENT_WINDOW'
   | 'PROFIT_TARGET' // US-54
   | 'STRIKE_PROXIMITY' // US-55
-// (future: 'EARNINGS_PROXIMITY' | 'COVERED_CALL_BREACH')
+  | 'EARNINGS_PROXIMITY' // US-56
+// (future: 'COVERED_CALL_BREACH')
 
 /** Largest DTE that still counts as "expiration imminent" (inclusive). */
 const EXPIRATION_IMMINENT_MAX_DTE = 5
@@ -25,11 +26,16 @@ export const DEFAULT_MANAGEMENT_WINDOW_DTE = 21
 /** Widest gap between stock price and CSP strike that still warns, as a percent. */
 const STRIKE_PROXIMITY_MAX_PERCENT = 1
 
+/** Largest days-to-earnings that still counts as "earnings proximity" (inclusive). */
+const EARNINGS_PROXIMITY_MAX_DAYS = 10
+
 const QUICK_ACTION_REVIEW = 'Review position'
 
 const MISSING_DTE = 'missing_dte'
 const MISSING_OPTION_MARK = 'missing_option_mark'
 const MISSING_UNDERLYING_PRICE = 'missing_underlying_price'
+const MISSING_EARNINGS_DATE = 'missing_earnings_date'
+const MISSING_EXPIRATION = 'missing_expiration'
 const INVALID_PROFIT_TARGET_INPUT = 'invalid_profit_target_input'
 
 /** Plain values the engine evaluates — no DB rows. */
@@ -49,6 +55,10 @@ export interface AlertEvaluationInput {
 
   // US-55 STRIKE_PROXIMITY input
   currentUnderlyingPrice: string | null // pre-fetched IpcStockQuote.price, or null if unavailable
+
+  // US-56 EARNINGS_PROXIMITY inputs
+  daysToEarnings: number | null // calendar days to next earnings; null when unknown
+  expiration: string | null // legs.expiration as YYYY-MM-DD; null when unknown
 }
 
 /** Exactly the fields the PROFIT_TARGET (US-54) helpers read. */
@@ -59,6 +69,9 @@ export type ProfitTargetInput = Pick<
 
 /** Exactly the fields the STRIKE_PROXIMITY (US-55) helpers read. */
 export type StrikeProximityInput = Pick<AlertEvaluationInput, 'strike' | 'currentUnderlyingPrice'>
+
+/** Exactly the fields the EARNINGS_PROXIMITY (US-56) helpers read. */
+export type EarningsProximityInput = Pick<AlertEvaluationInput, 'daysToEarnings' | 'expiration'>
 
 export interface AlertMatch {
   ruleCode: RuleCode
@@ -135,6 +148,12 @@ function strikeProximitySummary(input: StrikeProximityInput): string {
   return direction === 'below' ? `${base} — now in the money` : base
 }
 
+function earningsProximitySummary(input: EarningsProximityInput): string {
+  const days = input.daysToEarnings!
+  const when = days === 0 ? 'today' : days === 1 ? 'in 1 day' : `in ${days} days`
+  return `Earnings ${when} before your ${input.expiration} expiration`
+}
+
 // ---------------------------------------------------------------------------
 // Rule registry — ordered list of pure predicates. Append future rules here
 // without touching the evaluation loop. The two DTE rules are mutually exclusive
@@ -205,6 +224,23 @@ const RULES: RuleDefinition[] = [
       input.currentUnderlyingPrice !== null &&
       proximityPercent(input).lte(STRIKE_PROXIMITY_MAX_PERCENT),
     summary: strikeProximitySummary
+  },
+  {
+    code: 'EARNINGS_PROXIMITY',
+    urgency: 'medium',
+    // Guards every field the test and summary read: dte, expiration (interpolated
+    // into the summary), and the earnings date itself.
+    missingData: (input) =>
+      missingDteReason(input) ??
+      (input.expiration === null ? MISSING_EXPIRATION : null) ??
+      (input.daysToEarnings === null ? MISSING_EARNINGS_DATE : null),
+    test: (input) =>
+      input.daysToEarnings !== null &&
+      input.dte !== null &&
+      input.daysToEarnings >= 0 &&
+      input.daysToEarnings <= EARNINGS_PROXIMITY_MAX_DAYS &&
+      input.daysToEarnings <= input.dte,
+    summary: earningsProximitySummary
   }
 ]
 

@@ -17,6 +17,11 @@ function makeInput(overrides: Partial<AlertEvaluationInput> = {}): AlertEvaluati
     currentOptionMid: '3.5000',
     profitTargetPercentOverride: null,
     currentUnderlyingPrice: '200.0000',
+    // Inert default for EARNINGS_PROXIMITY: earnings far beyond the 10-day
+    // window and a present expiration, so the rule neither fires nor skips
+    // unless a test overrides it.
+    daysToEarnings: 45,
+    expiration: '2026-12-18',
     ...overrides
   }
 }
@@ -85,12 +90,13 @@ describe('evaluatePosition', () => {
     expect(skipped).toEqual([])
   })
 
-  it('skips both DTE-dependent rules with reason missing_dte when dte is null', () => {
+  it('skips the DTE-dependent rules with reason missing_dte when dte is null', () => {
     const { matches, skipped } = evaluatePosition(makeInput({ dte: null }))
     expect(matches).toEqual([])
     expect(skipped).toEqual([
       { ruleCode: 'EXPIRATION_IMMINENT', reason: 'missing_dte' },
-      { ruleCode: 'MANAGEMENT_WINDOW', reason: 'missing_dte' }
+      { ruleCode: 'MANAGEMENT_WINDOW', reason: 'missing_dte' },
+      { ruleCode: 'EARNINGS_PROXIMITY', reason: 'missing_dte' }
     ])
   })
 
@@ -308,6 +314,135 @@ describe('evaluatePosition — STRIKE_PROXIMITY (US-55)', () => {
       ruleCode: 'STRIKE_PROXIMITY',
       reason: 'missing_underlying_price'
     })
+  })
+})
+
+describe('evaluatePosition — EARNINGS_PROXIMITY (US-56)', () => {
+  it('EARNINGS_PROXIMITY fires when earnings fall within 10 days and before expiration', () => {
+    const { matches, skipped } = evaluatePosition(
+      makeInput({
+        dte: 13,
+        daysToEarnings: 6,
+        expiration: '2026-08-21'
+      })
+    )
+    const match = matches.find((m) => m.ruleCode === 'EARNINGS_PROXIMITY')
+    expect(match).toEqual({
+      ruleCode: 'EARNINGS_PROXIMITY',
+      urgency: 'medium',
+      summary: 'Earnings in 6 days before your 2026-08-21 expiration',
+      quickAction: 'Review position'
+    })
+    expect(skipped.find((s) => s.ruleCode === 'EARNINGS_PROXIMITY')).toBeUndefined()
+  })
+
+  it('EARNINGS_PROXIMITY fires at the daysToEarnings = 10 inclusive upper bound', () => {
+    const { matches } = evaluatePosition(
+      makeInput({ dte: 30, daysToEarnings: 10, expiration: '2026-09-07' })
+    )
+    expect(matches.find((m) => m.ruleCode === 'EARNINGS_PROXIMITY')).toBeDefined()
+  })
+
+  it('EARNINGS_PROXIMITY fires at the daysToEarnings = 0 boundary with "today" copy', () => {
+    const { matches } = evaluatePosition(
+      makeInput({ dte: 13, daysToEarnings: 0, expiration: '2026-08-21' })
+    )
+    const match = matches.find((m) => m.ruleCode === 'EARNINGS_PROXIMITY')
+    expect(match?.summary).toBe('Earnings today before your 2026-08-21 expiration')
+  })
+
+  it('EARNINGS_PROXIMITY uses singular copy at daysToEarnings = 1', () => {
+    const { matches } = evaluatePosition(
+      makeInput({ dte: 13, daysToEarnings: 1, expiration: '2026-08-21' })
+    )
+    const match = matches.find((m) => m.ruleCode === 'EARNINGS_PROXIMITY')
+    expect(match?.summary).toBe('Earnings in 1 day before your 2026-08-21 expiration')
+  })
+
+  it('EARNINGS_PROXIMITY fires when earnings land on expiration day (daysToEarnings === dte)', () => {
+    const { matches } = evaluatePosition(
+      makeInput({ dte: 8, daysToEarnings: 8, expiration: '2026-08-16' })
+    )
+    expect(matches.find((m) => m.ruleCode === 'EARNINGS_PROXIMITY')).toBeDefined()
+  })
+
+  it('EARNINGS_PROXIMITY does not fire at daysToEarnings = 11', () => {
+    const { matches, skipped } = evaluatePosition(
+      makeInput({ dte: 30, daysToEarnings: 11, expiration: '2026-09-07' })
+    )
+    expect(matches.find((m) => m.ruleCode === 'EARNINGS_PROXIMITY')).toBeUndefined()
+    expect(skipped.find((s) => s.ruleCode === 'EARNINGS_PROXIMITY')).toBeUndefined()
+  })
+
+  it('EARNINGS_PROXIMITY does not fire at daysToEarnings = 13 with dte = 19', () => {
+    const { matches, skipped } = evaluatePosition(
+      makeInput({ dte: 19, daysToEarnings: 13, expiration: '2026-08-27' })
+    )
+    expect(matches.find((m) => m.ruleCode === 'EARNINGS_PROXIMITY')).toBeUndefined()
+    expect(skipped.find((s) => s.ruleCode === 'EARNINGS_PROXIMITY')).toBeUndefined()
+  })
+
+  it('EARNINGS_PROXIMITY does not fire (and records no skip) when earnings fall after expiration', () => {
+    const { matches, skipped } = evaluatePosition(
+      makeInput({ dte: 5, daysToEarnings: 8, expiration: '2026-08-15' })
+    )
+    expect(matches.find((m) => m.ruleCode === 'EARNINGS_PROXIMITY')).toBeUndefined()
+    expect(skipped.find((s) => s.ruleCode === 'EARNINGS_PROXIMITY')).toBeUndefined()
+  })
+
+  it('EARNINGS_PROXIMITY does not fire (and records no skip) for negative daysToEarnings', () => {
+    const { matches, skipped } = evaluatePosition(
+      makeInput({ dte: 13, daysToEarnings: -2, expiration: '2026-08-21' })
+    )
+    expect(matches.find((m) => m.ruleCode === 'EARNINGS_PROXIMITY')).toBeUndefined()
+    expect(skipped.find((s) => s.ruleCode === 'EARNINGS_PROXIMITY')).toBeUndefined()
+  })
+
+  it('EARNINGS_PROXIMITY skips with missing_earnings_date when daysToEarnings is null', () => {
+    const { matches, skipped } = evaluatePosition(
+      makeInput({ dte: 13, daysToEarnings: null, expiration: '2026-08-21' })
+    )
+    expect(matches.find((m) => m.ruleCode === 'EARNINGS_PROXIMITY')).toBeUndefined()
+    expect(skipped).toContainEqual({
+      ruleCode: 'EARNINGS_PROXIMITY',
+      reason: 'missing_earnings_date'
+    })
+  })
+
+  it('EARNINGS_PROXIMITY skips with missing_expiration when expiration is null, never rendering "null expiration"', () => {
+    const { matches, skipped } = evaluatePosition(
+      makeInput({ dte: 13, daysToEarnings: 6, expiration: null })
+    )
+    expect(matches.find((m) => m.ruleCode === 'EARNINGS_PROXIMITY')).toBeUndefined()
+    expect(skipped).toContainEqual({ ruleCode: 'EARNINGS_PROXIMITY', reason: 'missing_expiration' })
+  })
+
+  it('EARNINGS_PROXIMITY skips with missing_dte when dte is null', () => {
+    const { matches, skipped } = evaluatePosition(
+      makeInput({ dte: null, daysToEarnings: 6, expiration: '2026-08-21' })
+    )
+    expect(matches.find((m) => m.ruleCode === 'EARNINGS_PROXIMITY')).toBeUndefined()
+    expect(skipped).toContainEqual({ ruleCode: 'EARNINGS_PROXIMITY', reason: 'missing_dte' })
+  })
+
+  it('EARNINGS_PROXIMITY co-fires with EXPIRATION_IMMINENT', () => {
+    const { matches } = evaluatePosition(
+      makeInput({ dte: 4, daysToEarnings: 2, expiration: '2026-08-12' })
+    )
+    expect(matches.find((m) => m.ruleCode === 'EXPIRATION_IMMINENT')).toBeDefined()
+    expect(matches.find((m) => m.ruleCode === 'EARNINGS_PROXIMITY')).toBeDefined()
+  })
+
+  it('EARNINGS_PROXIMITY is phase-agnostic: matches identically for CSP_OPEN and CC_OPEN', () => {
+    const overrides = { dte: 13, daysToEarnings: 6, expiration: '2026-08-21' }
+    const csp = evaluatePosition(makeInput({ ...overrides, phase: 'CSP_OPEN' }))
+    const cc = evaluatePosition(
+      makeInput({ ...overrides, phase: 'CC_OPEN', instrumentType: 'CALL' })
+    )
+    const cspMatch = csp.matches.find((m) => m.ruleCode === 'EARNINGS_PROXIMITY')
+    const ccMatch = cc.matches.find((m) => m.ruleCode === 'EARNINGS_PROXIMITY')
+    expect(cspMatch).toBeDefined()
+    expect(ccMatch).toEqual(cspMatch)
   })
 })
 

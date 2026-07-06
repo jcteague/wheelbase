@@ -4,8 +4,9 @@
 
 import { randomUUID } from 'node:crypto'
 import Database from 'better-sqlite3'
+import { addDays } from 'date-fns'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { makeTestDb } from '../test-utils'
+import { makeSpyLogger, makeTestDb } from '../test-utils'
 import { listOpenAlerts } from './alerts'
 import { evaluateAlerts } from './evaluate-alerts'
 import {
@@ -16,13 +17,22 @@ import {
   TWO_DAYS_LATER,
   TWO_DAYS_LATER_ISO,
   expirationForDte,
+  inertEarnings,
   inertProvider,
   occFor,
   readAlertRows,
   seedPosition,
   seedShortOptionAtPremium,
+  stubEarnings,
   stubProvider
 } from './evaluate-alerts-test-utils'
+
+// Default-fetcher guard: tests that don't inject `fetchEarnings` must never
+// reach the real Finnhub module (which would hit the network whenever a key is
+// present in the shell env). The mock mirrors the no-key behavior: empty record.
+vi.mock('../integrations/finnhub-earnings', () => ({
+  fetchNextEarningsDates: vi.fn(async () => ({}))
+}))
 
 // ---------------------------------------------------------------------------
 // Fixtures + raw-insert seed helpers (fully deterministic DTE control)
@@ -94,7 +104,12 @@ describe('evaluateAlerts', () => {
       expiration: expirationForDte(5)
     })
 
-    const result = await evaluateAlerts({ db, now: NOW, provider: inertProvider() })
+    const result = await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
 
     expect(result).toEqual({
       createdCount: 1,
@@ -126,10 +141,20 @@ describe('evaluateAlerts', () => {
       expiration: expirationForDte(5)
     })
 
-    await evaluateAlerts({ db, now: NOW, provider: inertProvider() })
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
     const firstRow = readAlertRows(db)[0]
 
-    const result = await evaluateAlerts({ db, now: TWO_DAYS_LATER, provider: inertProvider() })
+    const result = await evaluateAlerts({
+      db,
+      now: TWO_DAYS_LATER,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
 
     expect(result).toEqual({
       createdCount: 0,
@@ -160,7 +185,12 @@ describe('evaluateAlerts', () => {
       expiration: expirationForDte(6)
     })
 
-    const result = await evaluateAlerts({ db, now: NOW, provider: inertProvider() })
+    const result = await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
 
     expect(result).toEqual({
       createdCount: 1,
@@ -186,10 +216,20 @@ describe('evaluateAlerts', () => {
       expiration: expirationForDte(5)
     })
 
-    await evaluateAlerts({ db, now: NOW, provider: inertProvider() })
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
     db.prepare(`DELETE FROM legs WHERE position_id = ?`).run('pos-aapl')
 
-    const result = await evaluateAlerts({ db, now: LATER, provider: inertProvider() })
+    const result = await evaluateAlerts({
+      db,
+      now: LATER,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
 
     expect(result).toEqual({
       createdCount: 0,
@@ -223,7 +263,12 @@ describe('evaluateAlerts', () => {
     // HOLDING_SHARES with no open covered call → no active option leg.
     seedPosition(db, { id: 'pos-tsla', ticker: 'TSLA', phase: 'HOLDING_SHARES' })
 
-    await evaluateAlerts({ db, now: NOW, provider: inertProvider() })
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
 
     const open = listOpenAlerts(db)
     expect(open).toHaveLength(2)
@@ -248,12 +293,22 @@ describe('evaluateAlerts', () => {
       expiration: expirationForDte(17)
     })
 
-    const first = await evaluateAlerts({ db, now: NOW, provider: inertProvider() })
+    const first = await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
     expect(first.createdCount).toBe(2)
     expect(first.updatedCount).toBe(0)
     expect(first.resolvedCount).toBe(0)
 
-    const second = await evaluateAlerts({ db, now: NOW, provider: inertProvider() })
+    const second = await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
     expect(second.createdCount).toBe(0)
     expect(second.updatedCount).toBe(2)
     expect(second.resolvedCount).toBe(0)
@@ -270,12 +325,22 @@ describe('evaluateAlerts', () => {
       expiration: expirationForDte(4)
     })
 
-    await evaluateAlerts({ db, now: NOW, provider: inertProvider() })
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
     const [afterFirst] = readAlertRows(db)
     expect(afterFirst.triggered_at).toBe(NOW_ISO)
     expect(afterFirst.last_evaluated_at).toBe(NOW_ISO)
 
-    await evaluateAlerts({ db, now: LATER, provider: inertProvider() })
+    await evaluateAlerts({
+      db,
+      now: LATER,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
     const rows = readAlertRows(db)
     expect(rows).toHaveLength(1)
     expect(rows[0].triggered_at).toBe(NOW_ISO)
@@ -291,7 +356,12 @@ describe('evaluateAlerts', () => {
       expiration: expirationForDte(17)
     })
 
-    await evaluateAlerts({ db, now: NOW, provider: inertProvider() })
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
     expect(listOpenAlerts(db)).toHaveLength(1)
 
     // Move the active leg out to 29 DTE — no longer in the management window.
@@ -300,7 +370,12 @@ describe('evaluateAlerts', () => {
       'pos-msft'
     )
 
-    const result = await evaluateAlerts({ db, now: NOW, provider: inertProvider() })
+    const result = await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
     expect(result.resolvedCount).toBe(1)
 
     const rows = readAlertRows(db)
@@ -327,8 +402,14 @@ describe('evaluateAlerts', () => {
       expiration: ''
     })
 
-    const logger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
-    const result = await evaluateAlerts({ db, now: NOW, provider: inertProvider(), logger })
+    const logger = makeSpyLogger()
+    const result = await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings(),
+      logger
+    })
 
     // AAPL alert is still persisted.
     const open = listOpenAlerts(db)
@@ -341,9 +422,10 @@ describe('evaluateAlerts', () => {
     expect(readAlertRows(db)).toHaveLength(1)
 
     // The skip is logged at DEBUG with its reason. With no resolvable expiration
-    // the position skips both DTE rules (missing_dte) and PROFIT_TARGET (no OCC
-    // symbol → missing_option_mark) — three skips in total.
-    expect(result.skippedRuleCount).toBe(3)
+    // the position skips the DTE-dependent rules (missing_dte, incl.
+    // EARNINGS_PROXIMITY) and PROFIT_TARGET (no OCC symbol →
+    // missing_option_mark) — four skips in total.
+    expect(result.skippedRuleCount).toBe(4)
     expect(logger.debug).toHaveBeenCalledWith(
       expect.objectContaining({ positionId: 'pos-skip', reason: 'missing_dte' }),
       expect.any(String)
@@ -363,7 +445,7 @@ describe('evaluateAlerts', () => {
     const provider = inertProvider()
     ;(provider.getStockQuotes as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('outage'))
     ;(provider.getOptionSnapshot as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('outage'))
-    const logger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
+    const logger = makeSpyLogger()
 
     await evaluateAlerts({ db, now: NOW, provider, logger })
 
@@ -389,7 +471,12 @@ describe('evaluateAlerts', () => {
       expiration: expirationForDte(4)
     })
 
-    await evaluateAlerts({ db, now: NOW, provider: inertProvider() })
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
 
     const open = listOpenAlerts(db)
     // The healthy position is evaluated and persisted.
@@ -531,8 +618,14 @@ describe('evaluateAlerts — live market-data enrichment', () => {
     // No snapshot for the symbol → currentOptionMid null → PROFIT_TARGET skips.
     // Price far from strike → STRIKE_PROXIMITY does not fire and is not skipped.
     const provider = stubProvider({ priceByTicker: { AAPL: '200.00' } })
-    const logger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
-    const result = await evaluateAlerts({ db, now: NOW, provider, logger })
+    const logger = makeSpyLogger()
+    const result = await evaluateAlerts({
+      db,
+      now: NOW,
+      provider,
+      fetchEarnings: inertEarnings(),
+      logger
+    })
 
     expect(result.skippedRuleCount).toBe(1)
     expect(logger.debug).toHaveBeenCalledWith(
@@ -635,5 +728,263 @@ describe('evaluateAlerts — live market-data enrichment', () => {
     })
     expect(result.resolvedCount).toBeGreaterThanOrEqual(1)
     expect(listOpenAlerts(db).some((a) => a.ruleCode === 'PROFIT_TARGET')).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// [US-56] Earnings boundary fetch — third concurrent feed + input mapping.
+// ---------------------------------------------------------------------------
+
+describe('evaluateAlerts — earnings boundary fetch (US-56)', () => {
+  let db: Database.Database
+
+  beforeEach(() => {
+    db = makeTestDb()
+  })
+
+  it('fires EARNINGS_PROXIMITY with the exact summary when earnings are 6 days out and expiration 13 days out', async () => {
+    const expiration = expirationForDte(13)
+    seedShortOptionAtPremium(db, {
+      id: 'pos-nvda',
+      ticker: 'NVDA',
+      phase: 'CC_OPEN',
+      strike: '500.0000',
+      contracts: 1,
+      entryPremium: '3.5000',
+      expiration
+    })
+
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: stubEarnings({ NVDA: expirationForDte(6) })
+    })
+
+    const earnings = listOpenAlerts(db).find((a) => a.ruleCode === 'EARNINGS_PROXIMITY')
+    expect(earnings).toEqual(
+      expect.objectContaining({
+        positionId: 'pos-nvda',
+        urgency: 'medium',
+        summary: `Earnings in 6 days before your ${expiration} expiration`,
+        quickAction: 'Review position',
+        status: 'open'
+      })
+    )
+  })
+
+  it('skips the rule (missing_earnings_date) and still persists the DTE rules when no earnings date is available', async () => {
+    seedShortOptionAtPremium(db, {
+      id: 'pos-nvda',
+      ticker: 'NVDA',
+      phase: 'CSP_OPEN',
+      strike: '500.0000',
+      contracts: 1,
+      entryPremium: '3.5000',
+      expiration: expirationForDte(6)
+    })
+
+    const logger = makeSpyLogger()
+    const result = await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: stubEarnings({}),
+      logger
+    })
+
+    const codes = listOpenAlerts(db).map((a) => a.ruleCode)
+    expect(codes).not.toContain('EARNINGS_PROXIMITY')
+    expect(codes).toContain('MANAGEMENT_WINDOW')
+    expect(result.skippedRuleCount).toBe(1)
+    expect(logger.debug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        positionId: 'pos-nvda',
+        ruleCode: 'EARNINGS_PROXIMITY',
+        reason: 'missing_earnings_date'
+      }),
+      'alert_rule_skipped'
+    )
+  })
+
+  it('degrades with a WARN and leaves the DTE rules unaffected when the earnings fetch throws', async () => {
+    seedShortOptionAtPremium(db, {
+      id: 'pos-nvda',
+      ticker: 'NVDA',
+      phase: 'CSP_OPEN',
+      strike: '500.0000',
+      contracts: 1,
+      entryPremium: '3.5000',
+      expiration: expirationForDte(6)
+    })
+
+    const logger = makeSpyLogger()
+    const result = await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: vi.fn(async () => {
+        throw new Error('earnings feed outage')
+      }),
+      logger
+    })
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.anything() }),
+      'alert_evaluation_earnings_unavailable'
+    )
+    expect(result.createdCount).toBe(1)
+    expect(listOpenAlerts(db).map((a) => a.ruleCode)).toContain('MANAGEMENT_WINDOW')
+  })
+
+  it('keeps the alert open with its original triggered_at across a transient earnings-data gap', async () => {
+    const expiration = expirationForDte(13)
+    seedShortOptionAtPremium(db, {
+      id: 'pos-nvda',
+      ticker: 'NVDA',
+      phase: 'CC_OPEN',
+      strike: '500.0000',
+      contracts: 1,
+      entryPremium: '3.5000',
+      expiration
+    })
+
+    // Run 1: earnings present → alert fires.
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: stubEarnings({ NVDA: expirationForDte(6) })
+    })
+    expect(listOpenAlerts(db).some((a) => a.ruleCode === 'EARNINGS_PROXIMITY')).toBe(true)
+
+    // Run 2: earnings feed comes back empty → skip keeps the row open, untouched.
+    await evaluateAlerts({
+      db,
+      now: LATER,
+      provider: inertProvider(),
+      fetchEarnings: stubEarnings({})
+    })
+
+    const earnings = listOpenAlerts(db).find((a) => a.ruleCode === 'EARNINGS_PROXIMITY')
+    expect(earnings).toEqual(
+      expect.objectContaining({ status: 'open', triggeredAt: NOW_ISO, resolvedAt: null })
+    )
+  })
+
+  it('treats a malformed earnings date as missing (skip) instead of resolving the open alert', async () => {
+    const expiration = expirationForDte(13)
+    seedShortOptionAtPremium(db, {
+      id: 'pos-nvda',
+      ticker: 'NVDA',
+      phase: 'CC_OPEN',
+      strike: '500.0000',
+      contracts: 1,
+      entryPremium: '3.5000',
+      expiration
+    })
+
+    // Run 1: valid earnings date → alert fires.
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: stubEarnings({ NVDA: expirationForDte(6) })
+    })
+    expect(listOpenAlerts(db).some((a) => a.ruleCode === 'EARNINGS_PROXIMITY')).toBe(true)
+
+    // Run 2: the feed returns a non-ISO date. Without validation this becomes a
+    // NaN daysToEarnings that neither matches nor skips, wrongly resolving the
+    // still-valid alert. It must skip as missing data and keep the row open.
+    const logger = makeSpyLogger()
+    await evaluateAlerts({
+      db,
+      now: LATER,
+      provider: inertProvider(),
+      fetchEarnings: stubEarnings({ NVDA: 'TBD' }),
+      logger
+    })
+
+    const earnings = listOpenAlerts(db).find((a) => a.ruleCode === 'EARNINGS_PROXIMITY')
+    expect(earnings).toEqual(
+      expect.objectContaining({ status: 'open', triggeredAt: NOW_ISO, resolvedAt: null })
+    )
+    expect(logger.debug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        positionId: 'pos-nvda',
+        ruleCode: 'EARNINGS_PROXIMITY',
+        reason: 'missing_earnings_date'
+      }),
+      'alert_rule_skipped'
+    )
+  })
+
+  it('resolves the alert once the (lookback) earnings date is behind now', async () => {
+    const expiration = expirationForDte(13)
+    const earningsDate = expirationForDte(6)
+    seedShortOptionAtPremium(db, {
+      id: 'pos-nvda',
+      ticker: 'NVDA',
+      phase: 'CC_OPEN',
+      strike: '500.0000',
+      contracts: 1,
+      entryPremium: '3.5000',
+      expiration
+    })
+
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: stubEarnings({ NVDA: earningsDate })
+    })
+    expect(listOpenAlerts(db).some((a) => a.ruleCode === 'EARNINGS_PROXIMITY')).toBe(true)
+
+    // Eight days later the same (now lookback) event is behind us → predicate is
+    // false → the open alert resolves rather than freezing.
+    const afterEarnings = addDays(NOW, 8)
+    await evaluateAlerts({
+      db,
+      now: afterEarnings,
+      provider: inertProvider(),
+      fetchEarnings: stubEarnings({ NVDA: earningsDate })
+    })
+
+    const row = readAlertRows(db).find((r) => r.rule_code === 'EARNINGS_PROXIMITY')
+    expect(row).toEqual(
+      expect.objectContaining({ status: 'resolved', resolved_at: afterEarnings.toISOString() })
+    )
+  })
+
+  it('calls the batch earnings fetch once per run with the deduped ticker set', async () => {
+    const expiration = expirationForDte(13)
+    for (const [id, ticker] of [
+      ['pos-nvda-1', 'NVDA'],
+      ['pos-nvda-2', 'NVDA'],
+      ['pos-aapl', 'AAPL']
+    ] as const) {
+      seedShortOptionAtPremium(db, {
+        id,
+        ticker,
+        phase: 'CSP_OPEN',
+        strike: '100.0000',
+        contracts: 1,
+        entryPremium: '3.5000',
+        expiration
+      })
+    }
+
+    const fetchEarnings = inertEarnings()
+    const logger = makeSpyLogger()
+    await evaluateAlerts({ db, now: NOW, provider: inertProvider(), fetchEarnings, logger })
+
+    expect(fetchEarnings).toHaveBeenCalledTimes(1)
+    const [calledTickers, calledOpts] = (fetchEarnings as ReturnType<typeof vi.fn>).mock
+      .calls[0] as [string[], { now?: Date }]
+    expect(calledTickers).toHaveLength(2)
+    expect(new Set(calledTickers)).toEqual(new Set(['NVDA', 'AAPL']))
+    // The run's injected logger is forwarded so the earnings feed logs through
+    // it like the quote/snapshot feeds do, not through the global pino logger.
+    expect(calledOpts).toEqual({ now: NOW, logger })
   })
 })

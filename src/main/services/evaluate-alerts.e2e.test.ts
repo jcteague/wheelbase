@@ -8,8 +8,9 @@
 
 import { randomUUID } from 'node:crypto'
 import Database from 'better-sqlite3'
+import { parseISO } from 'date-fns'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { makeTestDb } from '../test-utils'
+import { makeSpyLogger, makeTestDb } from '../test-utils'
 import { listOpenAlerts } from './alerts'
 import { evaluateAlerts } from './evaluate-alerts'
 import {
@@ -23,8 +24,16 @@ import {
   readAlertRows,
   seedPosition,
   seedShortOptionAtPremium,
+  stubEarnings,
   stubProvider
 } from './evaluate-alerts-test-utils'
+
+// Default-fetcher guard: tests that don't inject `fetchEarnings` must never
+// reach the real Finnhub module (which would hit the network whenever a key is
+// present in the shell env). The mock mirrors the no-key behavior: empty record.
+vi.mock('../integrations/finnhub-earnings', () => ({
+  fetchNextEarningsDates: vi.fn(async () => ({}))
+}))
 
 /**
  * Seeds an evaluable CSP/CC position with an active option leg at `dte` calendar
@@ -186,7 +195,7 @@ describe('US-50 acceptance', () => {
       dte: null
     })
 
-    const logger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
+    const logger = makeSpyLogger()
     await evaluateAlerts({ db, now: NOW, provider: inertProvider(), logger })
 
     // The AAPL alert is still persisted.
@@ -383,7 +392,7 @@ describe('US-54 acceptance — PROFIT_TARGET', () => {
 
     // No snapshot for the symbol → mid null → PROFIT_TARGET skips. Price far from
     // strike so STRIKE_PROXIMITY neither fires nor skips.
-    const logger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
+    const logger = makeSpyLogger()
     await evaluateAlerts({
       db,
       now: NOW,
@@ -496,5 +505,109 @@ describe('US-55 acceptance — STRIKE_PROXIMITY', () => {
     })
 
     expect(listOpenAlerts(db).some((a) => a.ruleCode === 'STRIKE_PROXIMITY')).toBe(false)
+  })
+})
+
+describe('US-56 acceptance — EARNINGS_PROXIMITY', () => {
+  let db: Database.Database
+
+  beforeEach(() => {
+    db = makeTestDb()
+  })
+
+  /** Seeds the story's NVDA covered call with an absolute expiration date. */
+  function seedNvdaCc(expiration: string): void {
+    seedShortOptionAtPremium(db, {
+      id: 'pos-nvda',
+      ticker: 'NVDA',
+      phase: 'CC_OPEN',
+      strike: '500.0000',
+      contracts: 1,
+      entryPremium: '3.5000',
+      expiration
+    })
+  }
+
+  it('fires a medium-urgency EARNINGS_PROXIMITY alert when earnings are within 10 calendar days and before expiration', async () => {
+    // Today 2026-08-08; earnings 08-14 (6 days out); expiration 08-21 (13 dte).
+    // parseISO keeps `now` on the same local-day basis computeDte uses for the
+    // YYYY-MM-DD fixture dates, so the day counts hold in every timezone.
+    seedNvdaCc('2026-08-21')
+
+    await evaluateAlerts({
+      db,
+      now: parseISO('2026-08-08'),
+      provider: inertProvider(),
+      fetchEarnings: stubEarnings({ NVDA: '2026-08-14' })
+    })
+
+    const earnings = listOpenAlerts(db).filter((a) => a.ruleCode === 'EARNINGS_PROXIMITY')
+    expect(earnings).toHaveLength(1)
+    expect(earnings[0]).toEqual(
+      expect.objectContaining({
+        positionId: 'pos-nvda',
+        urgency: 'medium',
+        summary: 'Earnings in 6 days before your 2026-08-21 expiration',
+        status: 'open'
+      })
+    )
+  })
+
+  it('does not fire when earnings are more than 10 days away', async () => {
+    // Today 2026-08-08; earnings 08-21 (13 days out); expiration 08-27.
+    seedNvdaCc('2026-08-27')
+
+    await evaluateAlerts({
+      db,
+      now: parseISO('2026-08-08'),
+      provider: inertProvider(),
+      fetchEarnings: stubEarnings({ NVDA: '2026-08-21' })
+    })
+
+    expect(listOpenAlerts(db).some((a) => a.ruleCode === 'EARNINGS_PROXIMITY')).toBe(false)
+  })
+
+  it('does not fire when earnings occur after the option expires', async () => {
+    // Today 2026-08-10; expiration 08-15 (5 dte); earnings 08-18 (8 days out, after expiry).
+    seedNvdaCc('2026-08-15')
+
+    await evaluateAlerts({
+      db,
+      now: parseISO('2026-08-10'),
+      provider: inertProvider(),
+      fetchEarnings: stubEarnings({ NVDA: '2026-08-18' })
+    })
+
+    const codes = listOpenAlerts(db).map((a) => a.ruleCode)
+    expect(codes).not.toContain('EARNINGS_PROXIMITY')
+    // The 5-dte EXPIRATION_IMMINENT alert co-exists — earnings staying silent is
+    // its own rule's decision, not a suppression of the others.
+    expect(codes).toContain('EXPIRATION_IMMINENT')
+  })
+
+  it('skips the rule without failing the run when no earnings date is available', async () => {
+    // 6 dte → MANAGEMENT_WINDOW persists, proving the run completed normally.
+    seedNvdaCc(expirationForDte(6))
+
+    const logger = makeSpyLogger()
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: stubEarnings({}),
+      logger
+    })
+
+    const codes = listOpenAlerts(db).map((a) => a.ruleCode)
+    expect(codes).not.toContain('EARNINGS_PROXIMITY')
+    expect(codes).toContain('MANAGEMENT_WINDOW')
+    expect(logger.debug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        positionId: 'pos-nvda',
+        ruleCode: 'EARNINGS_PROXIMITY',
+        reason: 'missing_earnings_date'
+      }),
+      'alert_rule_skipped'
+    )
   })
 })

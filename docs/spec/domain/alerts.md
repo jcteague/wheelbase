@@ -1,6 +1,6 @@
 # Management Alerts
 
-<!-- generated:from us-50,us-51,us-52,us-53-54-55 -->
+<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56 -->
 
 ## Overview
 
@@ -26,8 +26,15 @@ newly shipped — they are no longer "later" rules. Because the latter two need
 live prices, `evaluateAlerts` became **async** with an injected market-data
 provider dependency: the service pre-fetches live option mids and underlying
 prices at the boundary and passes plain values into the still-pure engine.
-(`EARNINGS_PROXIMITY` and `COVERED_CALL_BREACH` remain future rules — the latter
-is US-62.)
+(`COVERED_CALL_BREACH` remains a future rule — US-62.)
+
+US-56 adds `EARNINGS_PROXIMITY`: a medium-urgency, phase-agnostic rule that fires
+when a position's next earnings event is within 10 calendar days and on/before
+the active leg's expiration. It brings a new earnings-date feed — a standalone
+Finnhub integration (free tier, per-ticker calendar query, 12 h in-module cache)
+consumed by `evaluateAlerts` as a **third** concurrent degradeable boundary
+fetch. No schema, IPC, or renderer change was needed; the US-51 queue displays
+the new rule code transparently.
 
 US-51 adds the read/display half: a `listManagementQueue` read path that enriches
 the persisted open alerts with their position's `ticker` and `phase` and sorts
@@ -45,19 +52,21 @@ regression hardening (direct core/service/e2e coverage) around the existing rule
 
 <!-- /generated -->
 
-<!-- generated:from us-50,us-52,us-53-54-55 -->
+<!-- generated:from us-50,us-52,us-53-54-55,us-56 -->
 
 ## Built-in rules
 
 Each rule is a pure predicate over a position's current active option leg (plus,
-for the market-data rules, the pre-fetched live prices).
+for the market-data rules, the pre-fetched live prices, and for the earnings
+rule, the pre-fetched next-earnings date).
 
-| Rule code             | Urgency | Applies to                    | Triggers when                                           | Summary template                                          | Quick action      |
-| --------------------- | ------- | ----------------------------- | ------------------------------------------------------- | --------------------------------------------------------- | ----------------- |
-| `EXPIRATION_IMMINENT` | high    | any open short leg (CSP / CC) | active leg `0 ≤ dte ≤ 5`                                | `Expires in {dte} days at ${strike} strike`               | `Review position` |
-| `MANAGEMENT_WINDOW`   | medium  | any open short leg (CSP / CC) | active leg `6 ≤ dte ≤ managementWindowDte` (default 21) | `{dte} DTE remaining — review for roll or close`          | `Review position` |
-| `PROFIT_TARGET`       | low     | any open short leg (CSP / CC) | captured profit `% ≥ target` (default 50%)              | `{pct}% of max profit captured — consider closing`        | `Review position` |
-| `STRIKE_PROXIMITY`    | medium  | CSP only (`CSP_OPEN`)         | `proximityPct = \|price − strike\| / strike × 100 ≤ 1`  | `Stock is {pct}% {above\|below} the ${strike} put strike` | `Review position` |
+| Rule code             | Urgency | Applies to                    | Triggers when                                            | Summary template                                                              | Quick action      |
+| --------------------- | ------- | ----------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------- |
+| `EXPIRATION_IMMINENT` | high    | any open short leg (CSP / CC) | active leg `0 ≤ dte ≤ 5`                                 | `Expires in {dte} days at ${strike} strike`                                   | `Review position` |
+| `MANAGEMENT_WINDOW`   | medium  | any open short leg (CSP / CC) | active leg `6 ≤ dte ≤ managementWindowDte` (default 21)  | `{dte} DTE remaining — review for roll or close`                              | `Review position` |
+| `PROFIT_TARGET`       | low     | any open short leg (CSP / CC) | captured profit `% ≥ target` (default 50%)               | `{pct}% of max profit captured — consider closing`                            | `Review position` |
+| `STRIKE_PROXIMITY`    | medium  | CSP only (`CSP_OPEN`)         | `proximityPct = \|price − strike\| / strike × 100 ≤ 1`   | `Stock is {pct}% {above\|below} the ${strike} put strike`                     | `Review position` |
+| `EARNINGS_PROXIMITY`  | medium  | any open short leg (CSP / CC) | `0 ≤ daysToEarnings ≤ 10` **and** `daysToEarnings ≤ dte` | `Earnings {today\|in 1 day\|in {N} days} before your {YYYY-MM-DD} expiration` | `Review position` |
 
 `{strike}` is formatted to two decimals with a leading `$` via `decimal.js`
 (`new Decimal(strike).toFixed(2)`); `{pct}` is formatted to one decimal. The two
@@ -81,6 +90,18 @@ underlying is `above` or `below` the put strike (by `price >= strike`), and the
 below-strike case appends `" — now in the money"` because that is the genuine
 assignment-risk direction. Covered-call breach is a separate future rule (US-62),
 so `CC_OPEN` positions produce no `STRIKE_PROXIMITY` match and no skip.
+
+`EARNINGS_PROXIMITY` is phase-agnostic (gap risk applies to CSPs and CCs alike)
+and co-fires with every other rule — no cross-rule suppression. Its
+`daysToEarnings` is computed at the service boundary via the shared `computeDte`
+against the next-earnings date, so `daysToEarnings ≤ dte` is equivalent to
+"earnings on or before expiration" using one date-math code path. A recent-past
+event yields negative `daysToEarnings`, so the predicate returns false and any
+open alert resolves on the next run. The 10-day bound is the fixed built-in
+`EARNINGS_PROXIMITY_MAX_DAYS = 10` (`src/main/core/alerts.ts`). The summary
+adapts to the day count — `Earnings today …` at 0, `Earnings in 1 day …` at 1,
+plural `Earnings in {N} days …` otherwise (post-review fix; the original
+always-plural template rendered "Earnings in 1 days" at the most urgent moment).
 
 <!-- /generated -->
 
@@ -117,7 +138,7 @@ then reopen the alert with a fresh `triggered_at` on a transient snapshot gap
 
 <!-- /generated -->
 
-<!-- generated:from us-53-54-55 -->
+<!-- generated:from us-53-54-55,us-56 -->
 
 ## Skip reasons & missing-data handling
 
@@ -127,37 +148,58 @@ logs each skip at DEBUG (`alert_rule_skipped`). US-50 shipped this for DTE; the
 market-data rules generalized it from a single `requiresDte` boolean into a
 per-rule `missingData` function that returns a reason string (or `null` to
 proceed). Each rule owns its own guard, so one rule's missing input never
-suppresses another's alert. The four reason strings and the rule each guards:
+suppresses another's alert. The six reason strings and the rule each guards:
 
-| Reason string                 | Rule guarded                               | Fires when                                                                                |
-| ----------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| `missing_dte`                 | `EXPIRATION_IMMINENT`, `MANAGEMENT_WINDOW` | `dte` is null (expiration unknown)                                                        |
-| `missing_option_mark`         | `PROFIT_TARGET`                            | entry premium, contracts, or the live option mid is absent                                |
-| `invalid_profit_target_input` | `PROFIT_TARGET`                            | premium is non-positive or contracts is not a positive integer (would throw the P&L math) |
-| `missing_underlying_price`    | `STRIKE_PROXIMITY`                         | position is `CSP_OPEN` and the live underlying price is absent                            |
+| Reason string                 | Rule guarded                                                     | Fires when                                                                                |
+| ----------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `missing_dte`                 | `EXPIRATION_IMMINENT`, `MANAGEMENT_WINDOW`, `EARNINGS_PROXIMITY` | `dte` is null (expiration unknown or unparseable — `computeDte` returns null, never NaN)  |
+| `missing_option_mark`         | `PROFIT_TARGET`                                                  | entry premium, contracts, or the live option mid is absent                                |
+| `invalid_profit_target_input` | `PROFIT_TARGET`                                                  | premium is non-positive or contracts is not a positive integer (would throw the P&L math) |
+| `missing_underlying_price`    | `STRIKE_PROXIMITY`                                               | position is `CSP_OPEN` and the live underlying price is absent                            |
+| `missing_expiration`          | `EARNINGS_PROXIMITY`                                             | `expiration` is null while `dte` is not — the summary interpolates it, so it is guarded   |
+| `missing_earnings_date`       | `EARNINGS_PROXIMITY`                                             | `daysToEarnings` is null (no event in the fetch window, feed failed, or unparseable date) |
 
 `invalid_profit_target_input` came from the post-review hardening pass: without it
 a stored non-positive premium/contracts would make `computeUnrealizedPnl` throw
 and cost the whole position its alerts. The guard rejects those inputs cleanly so
 the position's other rules (notably the DTE rules) still evaluate.
 
+`missing_earnings_date` deliberately does **not** distinguish "no event in the
+window" from "feed failed" — the US-56 AC treats both uniformly as a skip, and a
+flat `null → skip` matches every existing rule input. The earnings fetch window's
+7-day lookback exists so a just-passed event still produces a (negative)
+`daysToEarnings` and resolves the open alert rather than freezing it on a skip.
+
 <!-- /generated -->
 
-<!-- generated:from us-53-54-55 -->
+<!-- generated:from us-53-54-55,us-56 -->
 
 ## Live market-data enrichment & failure isolation
 
-`PROFIT_TARGET` and `STRIKE_PROXIMITY` need live prices, but the engine must stay
-pure — so the service (`evaluate-alerts.ts`) enriches at the boundary and passes
-plain string values (`currentOptionMid`, `currentUnderlyingPrice`) into the
-engine. Per run, the compute phase builds each evaluable leg's OCC symbol once,
-then issues one batched `fetchStockQuotes` for the distinct tickers and one
-batched `fetchOptionSnapshots` for the distinct OCC symbols. Both fetches run
-**concurrently** under `Promise.all`, and each is wrapped so that on failure it
-**degrades to empty** rather than rejecting — DTE rules, which need no market
-data, always evaluate. OCC-symbol building is non-throwing: a leg that cannot form
-a valid symbol yields `null` (that leg's `PROFIT_TARGET` skips) without aborting
-the batch.
+`PROFIT_TARGET` and `STRIKE_PROXIMITY` need live prices and `EARNINGS_PROXIMITY`
+needs the next earnings date, but the engine must stay pure — so the service
+(`evaluate-alerts.ts`) enriches at the boundary and passes plain values
+(`currentOptionMid`, `currentUnderlyingPrice`, `daysToEarnings`, `expiration`)
+into the engine. Per run, the compute phase builds each evaluable leg's OCC
+symbol once, then issues one batched `fetchStockQuotes` for the distinct
+tickers, one batched `fetchOptionSnapshots` for the distinct OCC symbols, and
+one batched `fetchNextEarningsDates` for the distinct tickers (the Finnhub
+integration, injectable via the `FetchEarnings` seam). All three fetches run
+**concurrently** under `Promise.all`, and each is wrapped (`fetchOrDegrade`) so
+that on failure it **degrades to empty** rather than rejecting — DTE rules,
+which need no market data, always evaluate. OCC-symbol building is non-throwing:
+a leg that cannot form a valid symbol yields `null` (that leg's `PROFIT_TARGET`
+skips) without aborting the batch.
+
+The earnings feed (`src/main/integrations/finnhub-earnings.ts`) is itself
+isolated per ticker and holds a module-level 12 h TTL cache (negative results
+cached too), so the 60 s evaluation cadence produces roughly one Finnhub burst
+per half-day. Its own log events: `earnings_fetch_no_api_key` (WARN, once per
+process — missing key returns an empty record so the rule skips everywhere),
+`earnings_fetch_failed` (WARN, with a code such as `auth_failed`,
+`rate_limited`, `network_error`, or `unknown`), and
+`earnings_no_event_in_window` (DEBUG — empty calendar for a ticker, cached as
+null).
 
 The guiding invariant, established by the post-review hardening pass: **one bad
 leg, one bad position, or a whole-provider outage must never suppress healthy
@@ -170,6 +212,9 @@ their log events:
 - `alert_evaluation_option_snapshots_unavailable` (WARN) — the option-snapshot feed
   threw; option mids degrade to empty, so `PROFIT_TARGET` skips but DTE rules still
   fire.
+- `alert_evaluation_earnings_unavailable` (WARN) — the earnings feed threw;
+  earnings dates degrade to empty, so `EARNINGS_PROXIMITY` skips
+  (`missing_earnings_date`) but every other rule still fires.
 - `alert_evaluation_occ_symbol_invalid` (WARN) — one leg's ticker/strike/expiration
   can't form an OCC symbol; that leg gets `currentOptionMid = null` and its DTE
   rules still fire.
@@ -181,7 +226,7 @@ their log events:
 
 <!-- /generated -->
 
-<!-- generated:from us-50,us-51,us-53-54-55 -->
+<!-- generated:from us-50,us-51,us-53-54-55,us-56 -->
 
 ## Key decisions
 
@@ -308,6 +353,45 @@ their log events:
 - **Driven by:** [US-53/54/55](../features/us-53-54-55-market-data-alert-rules.md) ·
   [alert-rule-registry](../architecture/02-adrs/alert-rule-registry.md)
 
+### Earnings dates come from a standalone Finnhub integration, not `MarketDataProvider`
+
+- **Decision:** `fetchNextEarningsDates(tickers)` lives in its own module
+  (`src/main/integrations/finnhub-earnings.ts`, key loader
+  `finnhub-credentials.ts`); it is **not** a `MarketDataProvider` method and not
+  in the market-data factory. Finnhub's free earnings-calendar endpoint is the
+  source (Massive's earnings data is a paid add-on; Alpaca has none).
+- **Why:** `MarketDataProvider` is the Massive vendor seam — adding a method the
+  primary vendor can't serve would force every provider (including the fake) to
+  fake it. The Barchart IVR scraper (US-43) is the precedent for a
+  vendor-specific auxiliary feed in its own module.
+- **Driven by:** [us-56](../features/us-56-earnings-proximity-alert.md)
+
+### Earnings data is transient — per-run boundary fetch with a 12 h TTL cache
+
+- **Decision:** No SQLite table and no scheduled collector job: `evaluateAlerts`
+  pre-fetches earnings dates as a third concurrent `fetchOrDegrade`, and the
+  integration's module-level per-ticker cache (12 h TTL, negative results
+  included) absorbs the 60 s cadence.
+- **Why:** Matches the market-data invariant ("market data is transient — no
+  SQLite rows") and the US-53/54/55 enrichment shape; earnings proximity needs
+  only the _next_ date, not history (which is what justifies the IVR snapshot
+  table), and an uncached fetch would cost ~4k Finnhub calls per market day.
+- **Driven by:** [us-56](../features/us-56-earnings-proximity-alert.md)
+
+### Engine input carries precomputed `daysToEarnings` plus raw `expiration`
+
+- **Decision:** `AlertEvaluationInput` gains `daysToEarnings: number | null`
+  (computed at the boundary via the shared `computeDte`) and
+  `expiration: string | null` (raw leg expiration for the summary template); the
+  predicate is `daysToEarnings >= 0 && daysToEarnings <= 10 && daysToEarnings <= dte`.
+  A narrow `EarningsProximityInput` Pick-slice types the summary helper.
+- **Why:** The pure engine has no `now`, so day-count math happens at the
+  boundary exactly as `dte` does; comparing two `computeDte` results is
+  equivalent to `earningsDate <= expirationDate` on one date-math code path (no
+  ISO-string comparisons, per the date-handling standard).
+- **Driven by:** [us-56](../features/us-56-earnings-proximity-alert.md) ·
+  [alert-engine-pure-matches-skips](../architecture/02-adrs/alert-engine-pure-matches-skips.md)
+
 <!-- /generated -->
 
 <!-- generated:from us-50 -->
@@ -345,7 +429,7 @@ dashboard's empty state.
 
 <!-- /generated -->
 
-<!-- generated:from us-50,us-51,us-52,us-53-54-55 -->
+<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56 -->
 
 ## Driven by
 
@@ -353,6 +437,7 @@ dashboard's empty state.
 - [US-51 — Management queue dashboard](../features/us-51-management-queue-dashboard.md)
 - [US-52 — Expiration-imminent alert](../features/us-52-expiration-imminent-alert.md)
 - [US-53/54/55 — Live market-data alert rules](../features/us-53-54-55-market-data-alert-rules.md)
+- [US-56 — Earnings-proximity alert](../features/us-56-earnings-proximity-alert.md)
 
 <!-- /generated -->
 
