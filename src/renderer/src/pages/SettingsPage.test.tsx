@@ -1,10 +1,12 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, vi } from 'vitest'
 import { SettingsPage } from './SettingsPage'
 import { apiError } from '../api/error'
 import { useCollectIvrNow } from '../hooks/useCollectIvrNow'
 import {
+  useAlertDefaults,
   useRemoveAlpacaCredentials,
+  useSaveAlertDefaults,
   useSaveAlpacaCredentials,
   useSetActiveBrokerEnvironment,
   useSettingsStatus,
@@ -19,7 +21,9 @@ vi.mock('../hooks/useSettings', () => ({
   useRemoveAlpacaCredentials: vi.fn(),
   useSetActiveBrokerEnvironment: vi.fn(),
   useTestStoredAlpacaConnection: vi.fn(),
-  useTestSettingsConnection: vi.fn()
+  useTestSettingsConnection: vi.fn(),
+  useAlertDefaults: vi.fn(),
+  useSaveAlertDefaults: vi.fn()
 }))
 
 vi.mock('../hooks/usePositions', () => ({
@@ -38,6 +42,8 @@ const mockUseTestStoredAlpacaConnection = vi.mocked(useTestStoredAlpacaConnectio
 const mockUseTestSettingsConnection = vi.mocked(useTestSettingsConnection)
 const mockUsePositions = vi.mocked(usePositions)
 const mockUseCollectIvrNow = vi.mocked(useCollectIvrNow)
+const mockUseAlertDefaults = vi.mocked(useAlertDefaults)
+const mockUseSaveAlertDefaults = vi.mocked(useSaveAlertDefaults)
 
 const statusFixture = {
   massive: 'configured' as const,
@@ -80,6 +86,15 @@ beforeEach(() => {
   mockUseCollectIvrNow.mockReturnValue({
     mutateAsync: vi.fn()
   } as unknown as ReturnType<typeof useCollectIvrNow>)
+  mockUseAlertDefaults.mockReturnValue({
+    data: { profitTargetPercent: 50, managementWindowDte: 21 },
+    isLoading: false,
+    isError: false,
+    error: null
+  } as ReturnType<typeof useAlertDefaults>)
+  mockUseSaveAlertDefaults.mockReturnValue({
+    mutate: vi.fn()
+  } as unknown as ReturnType<typeof useSaveAlertDefaults>)
 })
 
 it('renders Market Data (Massive) as shared app status with a Test connection button and no key input', () => {
@@ -482,4 +497,98 @@ it('disables LIVE switching until live credentials are configured', () => {
   expect(setActiveBrokerEnvironment.mutate).not.toHaveBeenCalled()
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   expect(screen.getByText(/save live credentials before switching/i)).toBeInTheDocument()
+})
+
+it('renders an Alert Defaults region showing the loaded profit target and management window', async () => {
+  render(<SettingsPage />)
+
+  const section = screen.getByRole('region', { name: /alert defaults/i })
+  await waitFor(() => expect(within(section).getByLabelText(/profit target/i)).toHaveValue(50))
+  expect(within(section).getByLabelText(/management window/i)).toHaveValue(21)
+})
+
+it('saves edited alert defaults and shows the saved banner', async () => {
+  const mutate = vi.fn((_payload, opts?: { onSuccess?: () => void }) => opts?.onSuccess?.())
+  mockUseSaveAlertDefaults.mockReturnValue({
+    mutate
+  } as unknown as ReturnType<typeof useSaveAlertDefaults>)
+
+  render(<SettingsPage />)
+
+  const section = screen.getByRole('region', { name: /alert defaults/i })
+  fireEvent.change(within(section).getByLabelText(/profit target/i), { target: { value: '40' } })
+  fireEvent.change(within(section).getByLabelText(/management window/i), {
+    target: { value: '14' }
+  })
+
+  const saveButton = within(section).getByRole('button', { name: /save alert defaults/i })
+  await waitFor(() => expect(saveButton).not.toBeDisabled())
+  fireEvent.click(saveButton)
+
+  await waitFor(() =>
+    expect(mutate).toHaveBeenCalledWith(
+      { profitTargetPercent: 40, managementWindowDte: 14 },
+      expect.anything()
+    )
+  )
+  expect(within(section).getByText(/alert defaults saved/i)).toBeInTheDocument()
+})
+
+it('shows inline validation errors and disables Save for out-of-range values, without calling the mutation', async () => {
+  const mutate = vi.fn()
+  mockUseSaveAlertDefaults.mockReturnValue({
+    mutate
+  } as unknown as ReturnType<typeof useSaveAlertDefaults>)
+
+  render(<SettingsPage />)
+
+  const section = screen.getByRole('region', { name: /alert defaults/i })
+  fireEvent.change(within(section).getByLabelText(/profit target/i), { target: { value: '0' } })
+  fireEvent.change(within(section).getByLabelText(/management window/i), {
+    target: { value: '0' }
+  })
+
+  await waitFor(() =>
+    expect(within(section).getByText(/profit target must be between 1 and 99/i)).toBeInTheDocument()
+  )
+  expect(
+    within(section).getByText(/management window must be between 6 and 45 dte/i)
+  ).toBeInTheDocument()
+  expect(within(section).getByRole('button', { name: /save alert defaults/i })).toBeDisabled()
+  expect(mutate).not.toHaveBeenCalled()
+})
+
+it('surfaces server-side field errors from a rejected save the same as client-side validation', async () => {
+  const mutate = vi.fn((_payload, opts?: { onError?: (error: unknown) => void }) =>
+    opts?.onError?.(
+      apiError(400, {
+        detail: [
+          {
+            field: 'profitTargetPercent',
+            code: 'out_of_range',
+            message: 'Profit target must be between 1 and 99'
+          }
+        ]
+      })
+    )
+  )
+  mockUseSaveAlertDefaults.mockReturnValue({
+    mutate
+  } as unknown as ReturnType<typeof useSaveAlertDefaults>)
+
+  render(<SettingsPage />)
+
+  const section = screen.getByRole('region', { name: /alert defaults/i })
+  fireEvent.change(within(section).getByLabelText(/profit target/i), { target: { value: '40' } })
+  fireEvent.change(within(section).getByLabelText(/management window/i), {
+    target: { value: '14' }
+  })
+
+  const saveButton = within(section).getByRole('button', { name: /save alert defaults/i })
+  await waitFor(() => expect(saveButton).not.toBeDisabled())
+  fireEvent.click(saveButton)
+
+  await waitFor(() =>
+    expect(within(section).getByText(/profit target must be between 1 and 99/i)).toBeInTheDocument()
+  )
 })

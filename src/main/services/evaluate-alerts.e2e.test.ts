@@ -11,8 +11,11 @@ import Database from 'better-sqlite3'
 import { parseISO } from 'date-fns'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeSpyLogger, makeTestDb } from '../test-utils'
+import { getAlertDefaults, saveAlertDefaults } from './alert-defaults'
 import { listOpenAlerts } from './alerts'
 import { evaluateAlerts } from './evaluate-alerts'
+import { getPosition } from './get-position'
+import { savePositionAlertOverrides } from './save-position-alert-overrides'
 import {
   LATER,
   LATER_ISO,
@@ -24,6 +27,7 @@ import {
   readAlertRows,
   seedPosition,
   seedShortOptionAtPremium,
+  seedShortOptionWithOcc,
   stubEarnings,
   stubProvider
 } from './evaluate-alerts-test-utils'
@@ -609,5 +613,258 @@ describe('US-56 acceptance — EARNINGS_PROXIMITY', () => {
       }),
       'alert_rule_skipped'
     )
+  })
+})
+
+describe('US-57 acceptance', () => {
+  let db: Database.Database
+
+  beforeEach(() => {
+    db = makeTestDb()
+  })
+
+  it('applies the saved global defaults to future evaluations of positions without overrides', async () => {
+    saveAlertDefaults(db, { profitTargetPercent: 40, managementWindowDte: 14 })
+
+    // 18 DTE and 45% captured, no per-position override.
+    const occ = seedShortOptionWithOcc(db, {
+      id: 'pos-aapl',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      strike: '180.0000',
+      contracts: 1,
+      entryPremium: '4.0000',
+      expiration: expirationForDte(18)
+    })
+
+    const { profitTargetPercent, managementWindowDte } = getAlertDefaults(db)
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: stubProvider({
+        midBySymbol: { [occ]: '2.2000' },
+        priceByTicker: { AAPL: '200.00' }
+      }),
+      managementWindowDte,
+      profitTargetPercentDefault: profitTargetPercent
+    })
+
+    const codes = listOpenAlerts(db).map((a) => a.ruleCode)
+    // Saved default of 14 DTE applies (18 > 14) — the old hardcoded 21 DTE
+    // default would have fired at 18 DTE, so this proves the saved value won.
+    expect(codes).not.toContain('MANAGEMENT_WINDOW')
+    // Saved default of 40% applies (45% >= 40%) — the old hardcoded 50% default
+    // would not have fired at 45% captured, so this proves the saved value won.
+    expect(codes).toContain('PROFIT_TARGET')
+  })
+
+  it('saves new global defaults and future alert evaluations use them for positions without overrides', async () => {
+    saveAlertDefaults(db, { profitTargetPercent: 40, managementWindowDte: 30 })
+
+    // 25 DTE, no per-position override — outside the old hardcoded 21-DTE
+    // default, but inside the newly saved 30-DTE default.
+    seedActiveLegAtDte(db, {
+      id: 'pos-aapl',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      strike: '180.0000',
+      dte: 25
+    })
+
+    const { profitTargetPercent, managementWindowDte } = getAlertDefaults(db)
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      managementWindowDte,
+      profitTargetPercentDefault: profitTargetPercent
+    })
+
+    const alert = listOpenAlerts(db).find(
+      (a) => a.positionId === 'pos-aapl' && a.ruleCode === 'MANAGEMENT_WINDOW'
+    )
+    expect(alert).toBeDefined()
+  })
+
+  it('rejects invalid global default values without saving them', () => {
+    saveAlertDefaults(db, { profitTargetPercent: 40, managementWindowDte: 14 })
+
+    expect(() =>
+      saveAlertDefaults(db, { profitTargetPercent: 0, managementWindowDte: 14 })
+    ).toThrow('Profit target must be between 1 and 99')
+    expect(() =>
+      saveAlertDefaults(db, { profitTargetPercent: 40, managementWindowDte: 100 })
+    ).toThrow('Management window must be between 6 and 45 DTE')
+
+    expect(getAlertDefaults(db)).toEqual({ profitTargetPercent: 40, managementWindowDte: 14 })
+  })
+
+  it('does not overwrite an existing per-position override when global defaults are saved', () => {
+    seedShortOptionAtPremium(db, {
+      id: 'pos-msft',
+      ticker: 'MSFT',
+      phase: 'CC_OPEN',
+      strike: '420.0000',
+      contracts: 1,
+      entryPremium: '4.0000',
+      expiration: expirationForDte(30),
+      profitTargetPercent: 25
+    })
+
+    saveAlertDefaults(db, { profitTargetPercent: 40, managementWindowDte: 14 })
+
+    expect(getPosition(db, 'pos-msft')?.position.profitTargetPercent).toBe(25)
+  })
+})
+
+describe('US-58 acceptance', () => {
+  let db: Database.Database
+
+  beforeEach(() => {
+    db = makeTestDb()
+  })
+
+  it('saves per-position overrides and future evaluations for that position use them', async () => {
+    const occ = seedShortOptionWithOcc(db, {
+      id: 'pos-aapl',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      strike: '180.0000',
+      contracts: 1,
+      entryPremium: '4.0000',
+      expiration: expirationForDte(25)
+    })
+
+    savePositionAlertOverrides(db, 'pos-aapl', { profitTargetPercent: 25, managementWindowDte: 30 })
+
+    // Batch defaults (50% / 21 DTE) would not fire either rule at 25 DTE / 30%
+    // captured — only the per-position overrides (30 DTE / 25%) make them fire.
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: stubProvider({
+        midBySymbol: { [occ]: '2.8000' },
+        priceByTicker: { AAPL: '200.00' }
+      }),
+      managementWindowDte: 21,
+      profitTargetPercentDefault: 50
+    })
+
+    const codes = listOpenAlerts(db)
+      .filter((a) => a.positionId === 'pos-aapl')
+      .map((a) => a.ruleCode)
+    expect(codes).toContain('MANAGEMENT_WINDOW')
+    expect(codes).toContain('PROFIT_TARGET')
+  })
+
+  it('leaves other positions on the global defaults when one position has overrides', async () => {
+    const aaplOcc = seedShortOptionWithOcc(db, {
+      id: 'pos-aapl',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      strike: '180.0000',
+      contracts: 1,
+      entryPremium: '4.0000',
+      expiration: expirationForDte(30)
+    })
+    savePositionAlertOverrides(db, 'pos-aapl', {
+      profitTargetPercent: 25,
+      managementWindowDte: null
+    })
+
+    const msftOcc = seedShortOptionWithOcc(db, {
+      id: 'pos-msft',
+      ticker: 'MSFT',
+      phase: 'CC_OPEN',
+      strike: '420.0000',
+      contracts: 1,
+      entryPremium: '4.0000',
+      expiration: expirationForDte(30)
+    })
+
+    // Both positions captured 30% — only AAPL's override (25%) fires; MSFT
+    // stays on the 50% global default and does not fire.
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: stubProvider({
+        midBySymbol: { [aaplOcc]: '2.8000', [msftOcc]: '2.8000' },
+        priceByTicker: { AAPL: '200.00', MSFT: '400.00' }
+      }),
+      managementWindowDte: 21,
+      profitTargetPercentDefault: 50
+    })
+
+    const aaplCodes = listOpenAlerts(db)
+      .filter((a) => a.positionId === 'pos-aapl')
+      .map((a) => a.ruleCode)
+    const msftCodes = listOpenAlerts(db)
+      .filter((a) => a.positionId === 'pos-msft')
+      .map((a) => a.ruleCode)
+    expect(aaplCodes).toContain('PROFIT_TARGET')
+    expect(msftCodes).not.toContain('PROFIT_TARGET')
+  })
+
+  it('clears overrides and reverts the position to the global defaults', async () => {
+    const occ = seedShortOptionWithOcc(db, {
+      id: 'pos-aapl',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      strike: '180.0000',
+      contracts: 1,
+      entryPremium: '4.0000',
+      expiration: expirationForDte(30),
+      profitTargetPercent: 25
+    })
+
+    savePositionAlertOverrides(db, 'pos-aapl', {
+      profitTargetPercent: null,
+      managementWindowDte: null
+    })
+
+    // 30% captured no longer clears the (now-cleared) 25% override — the 50%
+    // global default applies instead, so PROFIT_TARGET does not fire.
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: stubProvider({
+        midBySymbol: { [occ]: '2.8000' },
+        priceByTicker: { AAPL: '200.00' }
+      }),
+      managementWindowDte: 21,
+      profitTargetPercentDefault: 50
+    })
+
+    expect(listOpenAlerts(db).some((a) => a.ruleCode === 'PROFIT_TARGET')).toBe(false)
+    expect(getPosition(db, 'pos-aapl')?.position.profitTargetPercent).toBeNull()
+  })
+
+  it('rejects invalid per-position override values without saving them', () => {
+    seedShortOptionAtPremium(db, {
+      id: 'pos-aapl',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      strike: '180.0000',
+      contracts: 1,
+      entryPremium: '4.0000',
+      expiration: expirationForDte(30)
+    })
+
+    expect(() =>
+      savePositionAlertOverrides(db, 'pos-aapl', {
+        profitTargetPercent: 100,
+        managementWindowDte: 14
+      })
+    ).toThrow('Profit target must be between 1 and 99')
+    expect(() =>
+      savePositionAlertOverrides(db, 'pos-aapl', {
+        profitTargetPercent: 25,
+        managementWindowDte: 60
+      })
+    ).toThrow('Management window must be between 6 and 45 DTE')
+
+    const position = getPosition(db, 'pos-aapl')?.position
+    expect(position?.profitTargetPercent).toBeNull()
+    expect(position?.managementWindowDteOverride).toBeNull()
   })
 })

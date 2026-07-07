@@ -19,6 +19,7 @@ import { createFakeIvrCollaborators } from './integrations/fake-ivr'
 import { DETECT_ASSIGNMENTS_JOB_NAME, detectAssignments } from './services/detect-assignments'
 import { collectIVRSnapshots, IVR_COLLECT_JOB_NAME } from './services/ivr-collector'
 import { ALERT_EVAL_JOB_NAME, evaluateAlerts } from './services/evaluate-alerts'
+import { getAlertDefaults, saveAlertDefaults } from './services/alert-defaults'
 import { scheduler } from './services/scheduler-instance'
 import { registerSettingsHandlers } from './ipc/settings'
 import type { TestConnectionPayload } from './schemas'
@@ -156,6 +157,10 @@ app.whenReady().then(() => {
   registerBrokerHandlers(() => brokerFactory.create())
   registerSettingsHandlers({
     settings,
+    alertDefaults: {
+      getAlertDefaults: () => getAlertDefaults(db),
+      saveAlertDefaults: (input) => saveAlertDefaults(db, input)
+    },
     testConnection: runSettingsConnectionTest,
     onBrokerProviderChanged: () => {
       logger.info('Refreshing broker provider after settings change')
@@ -224,7 +229,15 @@ app.whenReady().then(() => {
       extendedHoursMs: 300_000,
       marketClosedMs: null
     },
-    handler: async () => evaluateAlerts({ db, provider: marketDataFactory.create() })
+    handler: async () => {
+      const { profitTargetPercent, managementWindowDte } = getAlertDefaults(db)
+      return evaluateAlerts({
+        db,
+        provider: marketDataFactory.create(),
+        managementWindowDte,
+        profitTargetPercentDefault: profitTargetPercent
+      })
+    }
   })
 
   if (process.env.NODE_ENV === 'test') {

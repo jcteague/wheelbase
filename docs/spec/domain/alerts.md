@@ -52,7 +52,7 @@ regression hardening (direct core/service/e2e coverage) around the existing rule
 
 <!-- /generated -->
 
-<!-- generated:from us-50,us-52,us-53-54-55,us-56 -->
+<!-- generated:from us-50,us-52,us-53-54-55,us-56,us-57-58 -->
 
 ## Built-in rules
 
@@ -60,13 +60,13 @@ Each rule is a pure predicate over a position's current active option leg (plus,
 for the market-data rules, the pre-fetched live prices, and for the earnings
 rule, the pre-fetched next-earnings date).
 
-| Rule code             | Urgency | Applies to                    | Triggers when                                            | Summary template                                                              | Quick action      |
-| --------------------- | ------- | ----------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------- |
-| `EXPIRATION_IMMINENT` | high    | any open short leg (CSP / CC) | active leg `0 ≤ dte ≤ 5`                                 | `Expires in {dte} days at ${strike} strike`                                   | `Review position` |
-| `MANAGEMENT_WINDOW`   | medium  | any open short leg (CSP / CC) | active leg `6 ≤ dte ≤ managementWindowDte` (default 21)  | `{dte} DTE remaining — review for roll or close`                              | `Review position` |
-| `PROFIT_TARGET`       | low     | any open short leg (CSP / CC) | captured profit `% ≥ target` (default 50%)               | `{pct}% of max profit captured — consider closing`                            | `Review position` |
-| `STRIKE_PROXIMITY`    | medium  | CSP only (`CSP_OPEN`)         | `proximityPct = \|price − strike\| / strike × 100 ≤ 1`   | `Stock is {pct}% {above\|below} the ${strike} put strike`                     | `Review position` |
-| `EARNINGS_PROXIMITY`  | medium  | any open short leg (CSP / CC) | `0 ≤ daysToEarnings ≤ 10` **and** `daysToEarnings ≤ dte` | `Earnings {today\|in 1 day\|in {N} days} before your {YYYY-MM-DD} expiration` | `Review position` |
+| Rule code             | Urgency | Applies to                    | Triggers when                                                                                                     | Summary template                                                              | Quick action      |
+| --------------------- | ------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------- |
+| `EXPIRATION_IMMINENT` | high    | any open short leg (CSP / CC) | active leg `0 ≤ dte ≤ 5`                                                                                          | `Expires in {dte} days at ${strike} strike`                                   | `Review position` |
+| `MANAGEMENT_WINDOW`   | medium  | any open short leg (CSP / CC) | active leg `6 ≤ dte ≤ managementWindowDte` (resolved: per-position override → saved global default → built-in 21) | `{dte} DTE remaining — review for roll or close`                              | `Review position` |
+| `PROFIT_TARGET`       | low     | any open short leg (CSP / CC) | captured profit `% ≥ target` (resolved: per-position override → saved global default → built-in 50%)              | `{pct}% of max profit captured — consider closing`                            | `Review position` |
+| `STRIKE_PROXIMITY`    | medium  | CSP only (`CSP_OPEN`)         | `proximityPct = \|price − strike\| / strike × 100 ≤ 1`                                                            | `Stock is {pct}% {above\|below} the ${strike} put strike`                     | `Review position` |
+| `EARNINGS_PROXIMITY`  | medium  | any open short leg (CSP / CC) | `0 ≤ daysToEarnings ≤ 10` **and** `daysToEarnings ≤ dte`                                                          | `Earnings {today\|in 1 day\|in {N} days} before your {YYYY-MM-DD} expiration` | `Review position` |
 
 `{strike}` is formatted to two decimals with a leading `$` via `decimal.js`
 (`new Decimal(strike).toFixed(2)`); `{pct}` is formatted to one decimal. The two
@@ -81,9 +81,12 @@ computed by the shared `computeDte` helper (`src/main/core/dte.ts`) so queue
 messaging stays consistent with the positions list.
 
 `PROFIT_TARGET` captured-percent is `computeUnrealizedPnl`'s `pnlPercent` compared
-against the resolved target (per-position override, else the 50% default). It
-co-fires with the DTE rules — a position can hold an open `PROFIT_TARGET` and an
-open `EXPIRATION_IMMINENT` at once (distinct rule codes → distinct rows).
+against the resolved target: a per-position override wins if set, else the saved
+global default (editable on the Settings page, US-57), else the hardcoded 50%
+fallback (see [Configurable thresholds — resolution precedence](#configurable-thresholds--resolution-precedence)
+below). It co-fires with the DTE rules — a position can hold an open
+`PROFIT_TARGET` and an open `EXPIRATION_IMMINENT` at once (distinct rule codes →
+distinct rows).
 
 `STRIKE_PROXIMITY` is CSP-only and direction-aware: the summary states whether the
 underlying is `above` or `below` the put strike (by `price >= strike`), and the
@@ -102,6 +105,62 @@ open alert resolves on the next run. The 10-day bound is the fixed built-in
 adapts to the day count — `Earnings today …` at 0, `Earnings in 1 day …` at 1,
 plural `Earnings in {N} days …` otherwise (post-review fix; the original
 always-plural template rendered "Earnings in 1 days" at the most urgent moment).
+
+<!-- /generated -->
+
+<!-- generated:from us-57-58 -->
+
+## Configurable thresholds — resolution precedence
+
+`MANAGEMENT_WINDOW`'s DTE threshold and `PROFIT_TARGET`'s percent threshold are
+each resolved through the same three-tier precedence: a **per-position
+override** (non-null) wins; else the **saved global default**; else the
+**hardcoded constant** as a final fallback that only applies before any global
+default has ever been saved.
+
+- **Per-position override** — `positions.profit_target_percent` (existing,
+  migration 005) and the new nullable `positions.management_window_dte_override`
+  (migration `010_add_management_window_dte_override.sql`) share identical
+  semantics: `NULL` = inherit, non-null = override. Edited from the
+  position-detail "Effective Alert Logic" panel via the
+  `positions:save-alert-overrides` IPC channel
+  (`src/main/services/save-position-alert-overrides.ts`); passing `null` for
+  both fields clears them back to inheriting.
+- **Saved global default** — two `app_settings` rows,
+  `alert_default_profit_target_percent` and
+  `alert_default_management_window_dte`, read/written via `getAlertDefaults` /
+  `saveAlertDefaults` (`src/main/services/alert-defaults.ts`). Edited on the
+  Settings page; absence of a row means no default has been saved yet.
+- **Hardcoded constant** — `DEFAULT_PROFIT_TARGET_PERCENT = 50`
+  (`src/main/core/profit-target.ts`) and `DEFAULT_MANAGEMENT_WINDOW_DTE = 21`
+  (`src/main/core/alerts.ts`). This tier is reached only when no global default
+  has ever been saved.
+
+One resolution rule, three call sites. Both helpers are the same shape —
+`override === null ? default : override` — and are reused identically by:
+
+1. The alert engine — `evaluatePosition` computes a single `ResolvedThresholds`
+   up front via `resolveProfitTarget` and `resolveManagementWindowDte`
+   (`src/main/core/alerts.ts`), and the rules read the resolved values rather
+   than re-resolving.
+2. The renderer's positions-list `TARGET` badge — `PositionCard.tsx`'s
+   `deriveRowDisplay` calls `resolveProfitTarget` with the same per-position
+   override and the batch's global default.
+3. The position-detail "Effective Alert Logic" panel, which resolves and
+   displays the same effective thresholds a position is currently subject to.
+
+Validation bounds are identical across both storage tiers and enforced
+server-side (`ValidationError`, no partial writes) by both the global-defaults
+service and the per-position-overrides service, mirrored client-side via Zod:
+profit target `1–99`, management window `6–45` DTE.
+
+The scheduler wiring in `src/main/index.ts` calls `getAlertDefaults(db)` fresh
+on every `alert-evaluation` tick before `evaluateAlerts`, so a newly saved
+global default takes effect on the next scheduled run without a restart.
+
+**Isolation guarantee:** saving global defaults never touches `positions` rows,
+and saving a per-position override never touches `app_settings` — verified by
+an e2e test for each direction.
 
 <!-- /generated -->
 
@@ -429,7 +488,7 @@ dashboard's empty state.
 
 <!-- /generated -->
 
-<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56 -->
+<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56,us-57-58 -->
 
 ## Driven by
 
@@ -438,6 +497,7 @@ dashboard's empty state.
 - [US-52 — Expiration-imminent alert](../features/us-52-expiration-imminent-alert.md)
 - [US-53/54/55 — Live market-data alert rules](../features/us-53-54-55-market-data-alert-rules.md)
 - [US-56 — Earnings-proximity alert](../features/us-56-earnings-proximity-alert.md)
+- [US-57/58 — Configurable alert thresholds](../features/us-57-58-configurable-alert-thresholds.md)
 
 <!-- /generated -->
 

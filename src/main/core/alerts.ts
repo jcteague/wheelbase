@@ -4,7 +4,7 @@
 
 import Decimal from 'decimal.js'
 import { computeUnrealizedPnl } from './costbasis'
-import { resolveProfitTarget } from './profit-target'
+import { DEFAULT_PROFIT_TARGET_PERCENT, resolveProfitTarget } from './profit-target'
 import type { WheelPhase } from './types'
 
 export type AlertUrgency = 'high' | 'medium' | 'low'
@@ -22,6 +22,15 @@ const EXPIRATION_IMMINENT_MAX_DTE = 5
 
 /** Default upper bound of the management window, in calendar days to expiration. */
 export const DEFAULT_MANAGEMENT_WINDOW_DTE = 21
+
+/** Resolves the effective management-window DTE: per-position override wins
+ *  when present, otherwise the batch/global default. */
+export function resolveManagementWindowDte(
+  override: number | null,
+  defaultDte: number = DEFAULT_MANAGEMENT_WINDOW_DTE
+): number {
+  return override === null ? defaultDte : override
+}
 
 /** Widest gap between stock price and CSP strike that still warns, as a percent. */
 const STRIKE_PROXIMITY_MAX_PERCENT = 1
@@ -45,13 +54,15 @@ export interface AlertEvaluationInput {
   instrumentType: 'PUT' | 'CALL' | null
   strike: string | null // 4dp TEXT as stored on the leg
   dte: number | null // calendar days to expiration; null when unknown
-  managementWindowDte?: number // defaults to DEFAULT_MANAGEMENT_WINDOW_DTE
+  managementWindowDte?: number // batch-level global default, falls back to DEFAULT_MANAGEMENT_WINDOW_DTE
+  managementWindowDteOverride: number | null // positions.management_window_dte_override (nullable)
 
   // US-54 PROFIT_TARGET inputs
   entryPremiumPerContract: string | null // legs.premium_per_contract (TEXT 4dp)
   contracts: number | null // legs.contracts
   currentOptionMid: string | null // pre-fetched OptionSnapshot.mid, or null if unavailable
   profitTargetPercentOverride: number | null // positions.profit_target_percent (nullable)
+  profitTargetPercentDefault?: number // batch-level global default, falls back to DEFAULT_PROFIT_TARGET_PERCENT
 
   // US-55 STRIKE_PROXIMITY input
   currentUnderlyingPrice: string | null // pre-fetched IpcStockQuote.price, or null if unavailable
@@ -163,12 +174,19 @@ function earningsProximitySummary(input: EarningsProximityInput): string {
 // its own required inputs are absent.
 // ---------------------------------------------------------------------------
 
+/** Per-position thresholds resolved once per evaluation, combining each
+ *  field's override (if any) with its batch/global default. */
+interface ResolvedThresholds {
+  managementWindowDte: number
+  profitTargetPercent: number
+}
+
 interface RuleDefinition {
   code: RuleCode
   urgency: AlertUrgency
   // Returns a skip reason when a required input is absent, else null.
   missingData?: (input: AlertEvaluationInput) => string | null
-  test: (input: AlertEvaluationInput, managementWindowDte: number) => boolean
+  test: (input: AlertEvaluationInput, resolved: ResolvedThresholds) => boolean
   summary: (input: AlertEvaluationInput) => string
 }
 
@@ -188,10 +206,10 @@ const RULES: RuleDefinition[] = [
     code: 'MANAGEMENT_WINDOW',
     urgency: 'medium',
     missingData: missingDteReason,
-    test: (input, managementWindowDte) =>
+    test: (input, resolved) =>
       input.dte !== null &&
       input.dte > EXPIRATION_IMMINENT_MAX_DTE &&
-      input.dte <= managementWindowDte,
+      input.dte <= resolved.managementWindowDte,
     summary: managementWindowSummary
   },
   {
@@ -207,8 +225,7 @@ const RULES: RuleDefinition[] = [
       }
       return hasComputableProfit(input) ? null : INVALID_PROFIT_TARGET_INPUT
     },
-    test: (input) =>
-      capturedPercent(input).gte(resolveProfitTarget(input.profitTargetPercentOverride)),
+    test: (input, resolved) => capturedPercent(input).gte(resolved.profitTargetPercent),
     summary: profitTargetSummary
   },
   {
@@ -245,7 +262,16 @@ const RULES: RuleDefinition[] = [
 ]
 
 export function evaluatePosition(input: AlertEvaluationInput): PositionEvaluation {
-  const managementWindowDte = input.managementWindowDte ?? DEFAULT_MANAGEMENT_WINDOW_DTE
+  const resolved: ResolvedThresholds = {
+    managementWindowDte: resolveManagementWindowDte(
+      input.managementWindowDteOverride,
+      input.managementWindowDte ?? DEFAULT_MANAGEMENT_WINDOW_DTE
+    ),
+    profitTargetPercent: resolveProfitTarget(
+      input.profitTargetPercentOverride,
+      input.profitTargetPercentDefault ?? DEFAULT_PROFIT_TARGET_PERCENT
+    )
+  }
   const skipReason = (rule: RuleDefinition): string | null =>
     rule.missingData ? rule.missingData(input) : null
 
@@ -255,7 +281,7 @@ export function evaluatePosition(input: AlertEvaluationInput): PositionEvaluatio
   })
 
   const matches = RULES.filter(
-    (rule) => skipReason(rule) === null && rule.test(input, managementWindowDte)
+    (rule) => skipReason(rule) === null && rule.test(input, resolved)
   ).map(
     (rule): AlertMatch => ({
       ruleCode: rule.code,

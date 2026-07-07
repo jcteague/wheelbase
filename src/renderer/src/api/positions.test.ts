@@ -337,6 +337,97 @@ describe('expireCc', () => {
   })
 })
 
+describe('saveAlertOverrides', () => {
+  const mockSaveAlertOverrides = vi.fn()
+
+  beforeEach(() => {
+    mockSaveAlertOverrides.mockReset()
+    Object.assign(window, {
+      api: {
+        ...(window.api ?? {}),
+        saveAlertOverrides: mockSaveAlertOverrides
+      }
+    })
+  })
+
+  it('exports saveAlertOverrides from the renderer positions API module', () => {
+    expect(positionsApi.saveAlertOverrides).toEqual(expect.any(Function))
+  })
+
+  it('calls window.api.saveAlertOverrides with the given payload and returns the position', async () => {
+    mockSaveAlertOverrides.mockResolvedValue({
+      ok: true,
+      position: { id: 'pos-123', profitTargetPercent: 25, managementWindowDteOverride: 14 }
+    })
+
+    const result = await positionsApi.saveAlertOverrides({
+      positionId: 'pos-123',
+      profitTargetPercent: 25,
+      managementWindowDte: 14
+    })
+
+    expect(mockSaveAlertOverrides).toHaveBeenCalledWith({
+      positionId: 'pos-123',
+      profitTargetPercent: 25,
+      managementWindowDte: 14
+    })
+    expect(result).toMatchObject({
+      position: { id: 'pos-123', profitTargetPercent: 25, managementWindowDteOverride: 14 }
+    })
+  })
+
+  it('calls window.api.saveAlertOverrides with null values when clearing overrides', async () => {
+    mockSaveAlertOverrides.mockResolvedValue({
+      ok: true,
+      position: { id: 'pos-123', profitTargetPercent: null, managementWindowDteOverride: null }
+    })
+
+    await positionsApi.saveAlertOverrides({
+      positionId: 'pos-123',
+      profitTargetPercent: null,
+      managementWindowDte: null
+    })
+
+    expect(mockSaveAlertOverrides).toHaveBeenCalledWith({
+      positionId: 'pos-123',
+      profitTargetPercent: null,
+      managementWindowDte: null
+    })
+  })
+
+  it('throws apiError(400) with field errors when the IPC request fails', async () => {
+    mockSaveAlertOverrides.mockResolvedValue({
+      ok: false,
+      errors: [
+        {
+          field: 'managementWindowDte',
+          code: 'out_of_range',
+          message: 'Management window must be between 6 and 45 DTE'
+        }
+      ]
+    })
+
+    await expect(
+      positionsApi.saveAlertOverrides({
+        positionId: 'pos-123',
+        profitTargetPercent: 25,
+        managementWindowDte: 60
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: {
+        detail: [
+          {
+            field: 'managementWindowDte',
+            code: 'out_of_range',
+            message: 'Management window must be between 6 and 45 DTE'
+          }
+        ]
+      }
+    })
+  })
+})
+
 describe('rollCc', () => {
   beforeEach(() => {
     mockRollCc.mockReset()

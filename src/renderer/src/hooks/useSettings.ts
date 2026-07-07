@@ -7,15 +7,19 @@ import {
   type UseQueryResult
 } from '@tanstack/react-query'
 import {
+  getAlertDefaults,
   getCredentialStatus,
   removeAlpacaCredentials,
+  saveAlertDefaults,
   saveAlpacaCredentials,
   setActiveBrokerEnvironment,
   testStoredAlpacaConnection,
   testSettingsConnection,
+  type AlertDefaults,
   type ApiError,
   type CredentialStatus,
   type RemoveAlpacaCredentialsPayload,
+  type SaveAlertDefaultsPayload,
   type SaveAlpacaCredentialsPayload,
   type SaveAlpacaCredentialsResult,
   type SetActiveBrokerEnvironmentPayload,
@@ -95,5 +99,25 @@ export function useTestStoredAlpacaConnection(): UseMutationResult<
 > {
   return useMutation<TestSettingsConnectionResult, ApiError, TestStoredAlpacaConnectionPayload>({
     mutationFn: testStoredAlpacaConnection
+  })
+}
+
+export function useAlertDefaults(): UseQueryResult<AlertDefaults, ApiError> {
+  return useQuery<AlertDefaults, ApiError>({
+    queryKey: settingsQueryKeys.alertDefaults,
+    queryFn: getAlertDefaults
+  })
+}
+
+export function useSaveAlertDefaults(): UseMutationResult<
+  AlertDefaults,
+  ApiError,
+  SaveAlertDefaultsPayload
+> {
+  const queryClient = useQueryClient()
+
+  return useMutation<AlertDefaults, ApiError, SaveAlertDefaultsPayload>({
+    mutationFn: saveAlertDefaults,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: settingsQueryKeys.alertDefaults })
   })
 }

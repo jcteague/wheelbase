@@ -2,7 +2,7 @@
 
 Each ADR captures one architectural choice that emerged from a plan/story. Decisions are grouped below by theme; many ADRs are referenced by multiple feature pages.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,us-53-54-55,missing-ac -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,us-53-54-55,us-57-58,missing-ac -->
 
 ## Engine & architecture
 
@@ -112,5 +112,6 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [shared-dte-helper](./shared-dte-helper.md) — `computeDte` extracted into a pure `src/main/core/dte.ts` shared by the positions list and the alert engine.
 - [management-queue-read-path](./management-queue-read-path.md) — `listManagementQueue` joins open alerts to positions and sorts by urgency tier then `triggered_at`; dedicated `ManagementQueueItem` view-model leaves `listOpenAlerts` untouched.
 - [alert-evaluation-failure-isolation](./alert-evaluation-failure-isolation.md) — Batch evaluation isolates per-item failures and degrades boundary I/O (market-data prefetch, symbol building) to empty + log, never aborting the run; callers guard throwing pure helpers.
+- [configurable-alert-thresholds](./configurable-alert-thresholds.md) — Shared override→global-default→constant resolution precedence for both alert thresholds.
 
 <!-- /generated -->

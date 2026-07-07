@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  getAlertDefaults,
   getCredentialStatus,
   removeAlpacaCredentials,
+  saveAlertDefaults,
   saveAlpacaCredentials,
   setActiveBrokerEnvironment,
   testStoredAlpacaConnection,
@@ -14,6 +16,8 @@ const mockSettingsRemoveAlpaca = vi.fn()
 const mockSettingsSetActiveBrokerEnvironment = vi.fn()
 const mockSettingsTestConnection = vi.fn()
 const mockSettingsTestStoredAlpacaConnection = vi.fn()
+const mockGetAlertDefaults = vi.fn()
+const mockSaveAlertDefaults = vi.fn()
 
 const STATUS_FIXTURE = {
   massive: 'configured' as const,
@@ -32,6 +36,8 @@ beforeEach(() => {
   mockSettingsSetActiveBrokerEnvironment.mockReset()
   mockSettingsTestConnection.mockReset()
   mockSettingsTestStoredAlpacaConnection.mockReset()
+  mockGetAlertDefaults.mockReset()
+  mockSaveAlertDefaults.mockReset()
 
   Object.assign(window, {
     api: {
@@ -42,7 +48,9 @@ beforeEach(() => {
         removeAlpaca: mockSettingsRemoveAlpaca,
         setActiveBrokerEnvironment: mockSettingsSetActiveBrokerEnvironment,
         testConnection: mockSettingsTestConnection,
-        testStoredAlpacaConnection: mockSettingsTestStoredAlpacaConnection
+        testStoredAlpacaConnection: mockSettingsTestStoredAlpacaConnection,
+        getAlertDefaults: mockGetAlertDefaults,
+        saveAlertDefaults: mockSaveAlertDefaults
       }
     }
   })
@@ -134,5 +142,76 @@ describe('testStoredAlpacaConnection', () => {
     mockSettingsTestStoredAlpacaConnection.mockResolvedValue({ ok: true, test: testResult })
 
     await expect(testStoredAlpacaConnection({ environment: 'paper' })).resolves.toEqual(testResult)
+  })
+})
+
+describe('getAlertDefaults', () => {
+  it('calls window.api.settings.getAlertDefaults and unwraps defaults', async () => {
+    mockGetAlertDefaults.mockResolvedValue({
+      ok: true,
+      defaults: { profitTargetPercent: 50, managementWindowDte: 21 }
+    })
+
+    await expect(getAlertDefaults()).resolves.toEqual({
+      profitTargetPercent: 50,
+      managementWindowDte: 21
+    })
+  })
+
+  it('throws an apiError with the field errors when the result is not ok', async () => {
+    mockGetAlertDefaults.mockResolvedValue({
+      ok: false,
+      errors: [{ field: '__root__', code: 'unexpected', message: 'failed' }]
+    })
+
+    await expect(getAlertDefaults()).rejects.toMatchObject({
+      status: 400,
+      body: { detail: [{ field: '__root__', code: 'unexpected', message: 'failed' }] }
+    })
+  })
+})
+
+describe('saveAlertDefaults', () => {
+  it('calls window.api.settings.saveAlertDefaults and unwraps defaults', async () => {
+    mockSaveAlertDefaults.mockResolvedValue({
+      ok: true,
+      defaults: { profitTargetPercent: 40, managementWindowDte: 14 }
+    })
+
+    await expect(
+      saveAlertDefaults({ profitTargetPercent: 40, managementWindowDte: 14 })
+    ).resolves.toEqual({ profitTargetPercent: 40, managementWindowDte: 14 })
+    expect(mockSaveAlertDefaults).toHaveBeenCalledWith({
+      profitTargetPercent: 40,
+      managementWindowDte: 14
+    })
+  })
+
+  it('throws an apiError with the field errors when validation fails', async () => {
+    mockSaveAlertDefaults.mockResolvedValue({
+      ok: false,
+      errors: [
+        {
+          field: 'profitTargetPercent',
+          code: 'out_of_range',
+          message: 'Profit target must be between 1 and 99'
+        }
+      ]
+    })
+
+    await expect(
+      saveAlertDefaults({ profitTargetPercent: 0, managementWindowDte: 14 })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: {
+        detail: [
+          {
+            field: 'profitTargetPercent',
+            code: 'out_of_range',
+            message: 'Profit target must be between 1 and 99'
+          }
+        ]
+      }
+    })
   })
 })

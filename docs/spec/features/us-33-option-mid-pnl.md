@@ -62,7 +62,7 @@ ALTER TABLE positions
 ```
 
 - Nullable `INTEGER`, no default. `NULL` means "use `DEFAULT_PROFIT_TARGET_PERCENT = 50`".
-- Valid non-null range when an edit IPC eventually ships: `1..100` inclusive. No DB-level `CHECK`; validation is deferred to the service layer.
+- Valid non-null range: `1-99` inclusive. No DB-level `CHECK`; validation is enforced in the service layer. (This corrects the earlier prediction of "1..100" made before the edit IPC shipped — see [us-57-58 — Configurable Alert Thresholds](../features/us-57-58-configurable-alert-thresholds.md), which shipped the real edit path with the 1-99 bound.)
 - Read-only for this story — seeded only via tests/dev. Migration runs automatically on app start via `runMigrations()`.
 
 → [schema/tables.md](../schema/tables.md)

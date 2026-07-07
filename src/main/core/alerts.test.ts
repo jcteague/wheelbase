@@ -22,6 +22,11 @@ function makeInput(overrides: Partial<AlertEvaluationInput> = {}): AlertEvaluati
     // unless a test overrides it.
     daysToEarnings: 45,
     expiration: '2026-12-18',
+    // Inert default for the US-57/58 resolved-thresholds behavior: no
+    // per-position management-window override, so MANAGEMENT_WINDOW resolves
+    // purely from managementWindowDte/DEFAULT_MANAGEMENT_WINDOW_DTE unless a
+    // test overrides it.
+    managementWindowDteOverride: null,
     ...overrides
   }
 }
@@ -461,5 +466,72 @@ describe('evaluatePosition — new rules co-fire with DTE rules', () => {
     )
     const codes = matches.map((m) => m.ruleCode).sort()
     expect(codes).toEqual(['EXPIRATION_IMMINENT', 'PROFIT_TARGET', 'STRIKE_PROXIMITY'])
+  })
+})
+
+describe('evaluatePosition — resolved thresholds (US-57/58)', () => {
+  it('applies the batch-level global default when no per-position override is set', () => {
+    const { matches } = evaluatePosition(makeInput({ dte: 16, managementWindowDte: 14 }))
+    expect(matches.find((m) => m.ruleCode === 'MANAGEMENT_WINDOW')).toBeUndefined()
+  })
+
+  it('a tighter per-position override wins over a wider global default', () => {
+    const { matches } = evaluatePosition(
+      makeInput({ dte: 16, managementWindowDte: 21, managementWindowDteOverride: 10 })
+    )
+    expect(matches.find((m) => m.ruleCode === 'MANAGEMENT_WINDOW')).toBeUndefined()
+  })
+
+  it('a wider per-position override wins over a narrower global default', () => {
+    const { matches } = evaluatePosition(
+      makeInput({ dte: 16, managementWindowDte: 21, managementWindowDteOverride: 30 })
+    )
+    expect(matches.find((m) => m.ruleCode === 'MANAGEMENT_WINDOW')).toBeDefined()
+  })
+
+  it('PROFIT_TARGET fires against the batch-level global default when no per-position override is set', () => {
+    const { matches } = evaluatePosition(
+      makeInput({
+        dte: 30,
+        entryPremiumPerContract: '3.5000',
+        currentOptionMid: '1.9250', // 45% captured
+        contracts: 1,
+        profitTargetPercentOverride: null,
+        profitTargetPercentDefault: 40
+      })
+    )
+    expect(matches.find((m) => m.ruleCode === 'PROFIT_TARGET')).toBeDefined()
+  })
+
+  it('a higher per-position override wins over a lower global default', () => {
+    const { matches } = evaluatePosition(
+      makeInput({
+        dte: 30,
+        entryPremiumPerContract: '3.5000',
+        currentOptionMid: '1.9250', // 45% captured
+        contracts: 1,
+        profitTargetPercentOverride: 60,
+        profitTargetPercentDefault: 40
+      })
+    )
+    expect(matches.find((m) => m.ruleCode === 'PROFIT_TARGET')).toBeUndefined()
+  })
+
+  it('pre-existing default-50 PROFIT_TARGET behavior is unchanged when no default is passed', () => {
+    const fires = evaluatePosition(
+      makeInput({
+        dte: 30,
+        entryPremiumPerContract: '3.5000',
+        currentOptionMid: '1.7000',
+        contracts: 1,
+        profitTargetPercentOverride: null
+      })
+    )
+    expect(fires.matches.find((m) => m.ruleCode === 'PROFIT_TARGET')).toBeDefined()
+  })
+
+  it('pre-existing default-21 MANAGEMENT_WINDOW behavior is unchanged when no override is passed', () => {
+    const { matches } = evaluatePosition(makeInput({ dte: 21 }))
+    expect(matches.find((m) => m.ruleCode === 'MANAGEMENT_WINDOW')).toBeDefined()
   })
 })

@@ -1,5 +1,13 @@
 import { z } from 'zod'
 import type { AlertStatus, AlertUrgency } from './core/alerts'
+import {
+  MANAGEMENT_WINDOW_MAX,
+  MANAGEMENT_WINDOW_MIN,
+  MANAGEMENT_WINDOW_RANGE_MESSAGE,
+  PROFIT_TARGET_MAX,
+  PROFIT_TARGET_MIN,
+  PROFIT_TARGET_RANGE_MESSAGE
+} from './core/alert-thresholds'
 import type {
   LegAction,
   LegRole,
@@ -48,6 +56,8 @@ export interface PositionRecord {
   notes: string | null
   thesis: string | null
   tags: string[]
+  profitTargetPercent: number | null
+  managementWindowDteOverride: number | null
   createdAt: string
   updatedAt: string
 }
@@ -430,6 +440,37 @@ export const TestStoredAlpacaConnectionPayloadSchema = z.object({
 export type TestStoredAlpacaConnectionPayload = z.infer<
   typeof TestStoredAlpacaConnectionPayloadSchema
 >
+
+export const SaveAlertDefaultsPayloadSchema = z.object({
+  profitTargetPercent: z
+    .number()
+    .int()
+    .min(PROFIT_TARGET_MIN, PROFIT_TARGET_RANGE_MESSAGE)
+    .max(PROFIT_TARGET_MAX, PROFIT_TARGET_RANGE_MESSAGE),
+  managementWindowDte: z
+    .number()
+    .int()
+    .min(MANAGEMENT_WINDOW_MIN, MANAGEMENT_WINDOW_RANGE_MESSAGE)
+    .max(MANAGEMENT_WINDOW_MAX, MANAGEMENT_WINDOW_RANGE_MESSAGE)
+})
+export type SaveAlertDefaultsPayload = z.infer<typeof SaveAlertDefaultsPayloadSchema>
+
+export const SaveAlertOverridesPayloadSchema = z.object({
+  positionId: z.string().min(1),
+  profitTargetPercent: z
+    .number()
+    .int()
+    .min(PROFIT_TARGET_MIN, PROFIT_TARGET_RANGE_MESSAGE)
+    .max(PROFIT_TARGET_MAX, PROFIT_TARGET_RANGE_MESSAGE)
+    .nullable(),
+  managementWindowDte: z
+    .number()
+    .int()
+    .min(MANAGEMENT_WINDOW_MIN, MANAGEMENT_WINDOW_RANGE_MESSAGE)
+    .max(MANAGEMENT_WINDOW_MAX, MANAGEMENT_WINDOW_RANGE_MESSAGE)
+    .nullable()
+})
+export type SaveAlertOverridesPayload = z.infer<typeof SaveAlertOverridesPayloadSchema>
 
 export const TestConnectionPayloadSchema = z.discriminatedUnion('vendor', [
   z.object({

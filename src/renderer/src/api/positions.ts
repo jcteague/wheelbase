@@ -161,6 +161,8 @@ export type PositionDetail = {
     notes: string | null
     thesis: string | null
     tags: string[]
+    profitTargetPercent: number | null
+    managementWindowDteOverride: number | null
     createdAt: string
     updatedAt: string
   }
@@ -557,6 +559,30 @@ export async function rollCc(payload: RollCcPayload): Promise<RollCcResponse> {
     throwMappedIpcErrors(result.errors)
   }
   return result as unknown as RollCcResponse
+}
+
+export type SaveAlertOverridesPayload = {
+  positionId: string
+  profitTargetPercent: number | null
+  managementWindowDte: number | null
+}
+
+export type SaveAlertOverridesResponse = {
+  position: {
+    id: string
+    profitTargetPercent: number | null
+    managementWindowDteOverride: number | null
+  }
+}
+
+export async function saveAlertOverrides(
+  payload: SaveAlertOverridesPayload
+): Promise<SaveAlertOverridesResponse> {
+  const result = await window.api.saveAlertOverrides(payload)
+  if (!result.ok) {
+    throwMappedIpcErrors(result.errors)
+  }
+  return result as unknown as SaveAlertOverridesResponse
 }
 
 export async function createPosition(

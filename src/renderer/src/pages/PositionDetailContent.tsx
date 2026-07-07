@@ -1,6 +1,7 @@
 import type { OptionSnapshot } from '../api/market-data'
 import type { PositionDetail } from '../api/positions'
 import { CloseCspForm } from '../components/CloseCspForm'
+import { PositionAlertOverridesForm } from '../components/PositionAlertOverridesForm'
 import { Caption } from '../components/ui/Caption'
 import { SectionCard } from '../components/ui/SectionCard'
 import { PositionCockpit } from '../components/position-cockpit/PositionCockpit'
@@ -51,6 +52,12 @@ export function PositionDetailContent({
         snapshot={snapshot}
         underlyingPrice={underlyingPrice}
         pnlStale={pnlStale}
+      />
+
+      <PositionAlertOverridesForm
+        positionId={position.id}
+        profitTargetPercent={position.profitTargetPercent}
+        managementWindowDteOverride={position.managementWindowDteOverride}
       />
 
       {(position.thesis || position.notes) && (

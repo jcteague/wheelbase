@@ -60,15 +60,22 @@ export function seedShortOptionAtPremium(
     entryPremium: string
     expiration: string
     profitTargetPercent?: number | null
+    managementWindowDteOverride?: number | null
   }
 ): void {
   db.prepare(
     `INSERT INTO positions
        (id, ticker, strategy_type, status, phase, profit_target_percent,
-        opened_date, created_at, updated_at)
-     VALUES (?, ?, 'WHEEL', 'ACTIVE', ?, ?, '2026-06-01',
+        management_window_dte_override, opened_date, created_at, updated_at)
+     VALUES (?, ?, 'WHEEL', 'ACTIVE', ?, ?, ?, '2026-06-01',
              '2026-06-01T00:00:00.000Z', '2026-06-01T00:00:00.000Z')`
-  ).run(input.id, input.ticker, input.phase, input.profitTargetPercent ?? null)
+  ).run(
+    input.id,
+    input.ticker,
+    input.phase,
+    input.profitTargetPercent ?? null,
+    input.managementWindowDteOverride ?? null
+  )
 
   const isCc = input.phase === 'CC_OPEN'
   db.prepare(
@@ -97,6 +104,23 @@ export function occFor(input: {
   instrumentType: 'PUT' | 'CALL'
 }): string {
   return buildOccSymbol(input)
+}
+
+/** Seeds a short-option position at a pinned entry premium (and, for US-57/58,
+ *  pinned per-position overrides) and returns its OCC symbol — call sites that
+ *  need both the seed and a matching `stubProvider` key would otherwise repeat
+ *  the `seedShortOptionAtPremium` + `occFor` pairing verbatim. */
+export function seedShortOptionWithOcc(
+  db: Database.Database,
+  input: Parameters<typeof seedShortOptionAtPremium>[1]
+): string {
+  seedShortOptionAtPremium(db, input)
+  return occFor({
+    ticker: input.ticker,
+    expiration: input.expiration,
+    strike: input.strike,
+    instrumentType: input.phase === 'CC_OPEN' ? 'CALL' : 'PUT'
+  })
 }
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import type { ApiError } from '../api/error'
 import type {
+  AlertDefaults,
   CredentialState,
   SaveAlpacaCredentialsPayload,
   SaveAlpacaCredentialsResult,
@@ -15,8 +16,11 @@ import { AlertBox } from '../components/ui/AlertBox'
 import { PageHeader, PageLayout } from '../components/PageLayout'
 import { useCollectIvrNow } from '../hooks/useCollectIvrNow'
 import { usePositions } from '../hooks/usePositions'
+import { alertThresholdsSchema, type AlertThresholdsFormValues } from '../schemas/alert-thresholds'
 import {
+  useAlertDefaults,
   useRemoveAlpacaCredentials,
+  useSaveAlertDefaults,
   useSaveAlpacaCredentials,
   useSetActiveBrokerEnvironment,
   useSettingsStatus,
@@ -352,6 +356,134 @@ function AlpacaCredentialCard({
   )
 }
 
+type AlertDefaultsFormValues = AlertThresholdsFormValues
+
+function toAlertDefaultsFormValues(defaults: AlertDefaults): AlertDefaultsFormValues {
+  return {
+    profitTargetPercent: String(defaults.profitTargetPercent),
+    managementWindowDte: String(defaults.managementWindowDte)
+  }
+}
+
+function extractAlertDefaultsFieldErrors(
+  error: ApiError
+): Array<{ field: string; message: string }> {
+  const { body } = error
+  if (body && typeof body === 'object' && 'detail' in body) {
+    return (body as { detail: Array<{ field: string; message: string }> }).detail
+  }
+  return []
+}
+
+function AlertDefaultsSection(): React.JSX.Element {
+  const { data: defaults } = useAlertDefaults()
+  const saveMutation = useSaveAlertDefaults()
+  const [saved, setSaved] = useState(false)
+
+  const form = useForm<AlertDefaultsFormValues>({
+    resolver: zodResolver(alertThresholdsSchema),
+    mode: 'onChange',
+    defaultValues: { profitTargetPercent: '50', managementWindowDte: '21' },
+    // Re-sync the form once the persisted defaults load (or change).
+    values: defaults ? toAlertDefaultsFormValues(defaults) : undefined
+  })
+
+  function onSubmit(values: AlertDefaultsFormValues): void {
+    setSaved(false)
+    saveMutation.mutate(
+      {
+        profitTargetPercent: parseInt(values.profitTargetPercent, 10),
+        managementWindowDte: parseInt(values.managementWindowDte, 10)
+      },
+      {
+        onSuccess: () => setSaved(true),
+        onError: (error) => {
+          extractAlertDefaultsFieldErrors(error as ApiError).forEach((e) => {
+            form.setError(e.field as keyof AlertDefaultsFormValues, { message: e.message })
+          })
+        }
+      }
+    )
+  }
+
+  return (
+    <section
+      role="region"
+      aria-label="Alert Defaults"
+      className="rounded-lg border border-wb-border bg-wb-bg-surface"
+    >
+      <div className="border-b border-wb-border px-5 py-4">
+        <div className="font-wb-mono text-[0.74rem] font-semibold uppercase tracking-[0.12em] text-wb-text-secondary">
+          Alert Defaults
+        </div>
+      </div>
+      <form
+        onSubmit={form.handleSubmit(onSubmit)}
+        className="flex flex-col gap-4 px-5 py-5"
+        onChange={() => setSaved(false)}
+      >
+        <Field id="profit-target-percent" label="Profit Target">
+          <input
+            id="profit-target-percent"
+            type="number"
+            aria-label="Profit Target"
+            {...form.register('profitTargetPercent')}
+            className="h-10 w-full rounded-md border border-wb-border bg-wb-bg-elevated px-3 font-wb-mono text-sm text-wb-text-primary"
+          />
+        </Field>
+        {form.formState.errors.profitTargetPercent && (
+          <p role="alert" className="m-0 font-wb-mono text-[0.66rem] leading-5 text-wb-red">
+            {form.formState.errors.profitTargetPercent.message}
+          </p>
+        )}
+
+        <Field id="management-window-dte" label="Management Window">
+          <input
+            id="management-window-dte"
+            type="number"
+            aria-label="Management Window"
+            {...form.register('managementWindowDte')}
+            className="h-10 w-full rounded-md border border-wb-border bg-wb-bg-elevated px-3 font-wb-mono text-sm text-wb-text-primary"
+          />
+        </Field>
+        {form.formState.errors.managementWindowDte && (
+          <p role="alert" className="m-0 font-wb-mono text-[0.66rem] leading-5 text-wb-red">
+            {form.formState.errors.managementWindowDte.message}
+          </p>
+        )}
+
+        {saved && (
+          <p className="m-0 font-wb-mono text-[0.68rem] leading-5 text-wb-green">
+            Alert defaults saved
+          </p>
+        )}
+
+        <div className="flex items-center gap-2">
+          <button
+            type="submit"
+            disabled={!form.formState.isValid}
+            className="rounded-md bg-wb-gold px-3 py-2 font-wb-mono text-xs font-semibold tracking-[0.06em] text-wb-bg-base disabled:opacity-40"
+          >
+            Save alert defaults
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (defaults) {
+                form.reset(toAlertDefaultsFormValues(defaults))
+              }
+              setSaved(false)
+            }}
+            className="rounded-md border border-wb-border px-3 py-2 font-wb-mono text-xs font-semibold tracking-[0.06em] text-wb-text-secondary"
+          >
+            Reset
+          </button>
+        </div>
+      </form>
+    </section>
+  )
+}
+
 export function SettingsPage(): React.JSX.Element {
   const { data: status } = useSettingsStatus()
   const { data: positions } = usePositions()
@@ -586,6 +718,8 @@ export function SettingsPage(): React.JSX.Element {
               </AlertBox>
             </div>
           </section>
+
+          <AlertDefaultsSection />
         </div>
       </PageLayout>
 

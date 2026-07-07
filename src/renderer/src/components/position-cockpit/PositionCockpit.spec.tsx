@@ -48,6 +48,8 @@ const baseDetail: PositionDetail = {
     notes: null,
     thesis: null,
     tags: [],
+    profitTargetPercent: null,
+    managementWindowDteOverride: null,
     createdAt: '2024-01-15T00:00:00Z',
     updatedAt: '2024-01-15T00:00:00Z'
   },

@@ -51,7 +51,7 @@ export type InstrumentType = z.infer<typeof InstrumentType>
 
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-12,us-13,us-14,us-32,us-33,us-44 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-12,us-13,us-14,us-32,us-33,us-44,us-57-58 -->
 
 ## Payload schemas
 
@@ -227,6 +227,49 @@ export const CollectIvrNowBatchSchema = z.object({
 ```
 
 Unusually for this section, this is **not** a request payload — `ivr:collect-now` takes no payload, so there is no request schema. It validates the _result_ the scheduler hands back at the `ivr:collect-now` IPC boundary: the batch summary produced by `collectIVRSnapshots(...)`. The handler re-parses the scheduler's `runNow('ivr-collect')` return through this schema before returning it to the renderer, which guards against a swallowed-error path returning an `undefined` batch (a parse failure surfaces as a normal `{ ok: false, errors }` envelope rather than a malformed success). `skippedReason` is `'market_closed'` only on the non-trading-day early exit (`successCount=0, errorCount=0, skippedCount=0`); otherwise `null`. Bound to `ivr:collect-now`. Driven by [us-44 — IVR snapshot store and scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md).
+
+### `SaveAlertDefaultsPayloadSchema`
+
+```typescript
+export const SaveAlertDefaultsPayloadSchema = z.object({
+  profitTargetPercent: z
+    .number()
+    .int()
+    .min(1, 'Profit target must be between 1 and 99')
+    .max(99, 'Profit target must be between 1 and 99'),
+  managementWindowDte: z
+    .number()
+    .int()
+    .min(6, 'Management window must be between 6 and 45 DTE')
+    .max(45, 'Management window must be between 6 and 45 DTE')
+})
+export type SaveAlertDefaultsPayload = z.infer<typeof SaveAlertDefaultsPayloadSchema>
+```
+
+Both fields are required integers with inclusive bounds enforced at the schema level (1-99 for profit target, 6-45 DTE for management window) — the exact AC error messages are attached per-bound so `too_small`/`too_big` both resolve to the same user-facing copy. Source: `src/main/schemas.ts`. Bound to `settings:save-alert-defaults`. Driven by [us-57-58 — Configurable alert thresholds](../features/us-57-58-configurable-alert-thresholds.md).
+
+### `SaveAlertOverridesPayloadSchema`
+
+```typescript
+export const SaveAlertOverridesPayloadSchema = z.object({
+  positionId: z.string().min(1),
+  profitTargetPercent: z
+    .number()
+    .int()
+    .min(1, 'Profit target must be between 1 and 99')
+    .max(99, 'Profit target must be between 1 and 99')
+    .nullable(),
+  managementWindowDte: z
+    .number()
+    .int()
+    .min(6, 'Management window must be between 6 and 45 DTE')
+    .max(45, 'Management window must be between 6 and 45 DTE')
+    .nullable()
+})
+export type SaveAlertOverridesPayload = z.infer<typeof SaveAlertOverridesPayloadSchema>
+```
+
+Same numeric bounds and messages as `SaveAlertDefaultsPayloadSchema`, but both threshold fields are `.nullable()` — passing `null` for both clears the per-position override (the position reverts to inheriting the global defaults); passing numbers sets both. `positionId` is a non-empty string (not `.uuid()`, matching the plain string ID scheme used elsewhere for positions). Source: `src/main/schemas.ts`. Bound to `positions:save-alert-overrides`. Driven by [us-57-58 — Configurable alert thresholds](../features/us-57-58-configurable-alert-thresholds.md).
 
 <!-- /generated -->
 
@@ -550,7 +593,7 @@ interface IpcStreamErrorEvent {
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-44 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-44,us-57-58 -->
 
 ## Driven by
 
@@ -572,6 +615,7 @@ interface IpcStreamErrorEvent {
 - [us-35 — Assignment detection and auto-transition](../features/us-35-assignment-detection.md) — `ConfirmAssignmentPayloadSchema`, `DismissAssignmentPayloadSchema`, `PendingAssignmentNotification` shape (with bespoke `code` error envelope)
 - [us-37 — Paper/live broker environment toggle](../features/us-37-paper-live-broker-environment-toggle.md) — `BrokerEnvironmentSchema`, `SaveAlpacaCredentialsPayloadSchema`, `RemoveAlpacaCredentialsPayloadSchema`, `SetActiveBrokerEnvironmentPayloadSchema`, `TestStoredAlpacaConnectionPayloadSchema`, `TestConnectionPayloadSchema` (discriminated union on `vendor`), `CredentialStatus` / `TestSettingsConnectionResult` / `SaveAlpacaCredentialsResult` shapes
 - [us-44 — IVR snapshot store and scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md) — `CollectIvrNowBatchSchema` (result-validation schema for the no-payload `ivr:collect-now` boundary)
+- [us-57-58 — Configurable alert thresholds](../features/us-57-58-configurable-alert-thresholds.md) — `SaveAlertDefaultsPayloadSchema`, `SaveAlertOverridesPayloadSchema`
 <!-- /generated -->
 
 <!-- generated:from us-35 -->

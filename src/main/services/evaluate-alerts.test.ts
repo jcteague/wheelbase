@@ -988,3 +988,117 @@ describe('evaluateAlerts — earnings boundary fetch (US-56)', () => {
     expect(calledOpts).toEqual({ now: NOW, logger })
   })
 })
+
+describe('evaluateAlerts — resolved thresholds (US-57/58 wiring)', () => {
+  let db: Database.Database
+
+  beforeEach(() => {
+    db = makeTestDb()
+  })
+
+  it('creates a MANAGEMENT_WINDOW alert when the per-position override widens the batch default', async () => {
+    seedShortOptionAtPremium(db, {
+      id: 'pos-aapl',
+      ticker: 'AAPL',
+      phase: 'CC_OPEN',
+      strike: '180.0000',
+      contracts: 1,
+      entryPremium: '3.5000',
+      expiration: expirationForDte(16),
+      managementWindowDteOverride: 30
+    })
+
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings(),
+      managementWindowDte: 21
+    })
+
+    expect(listOpenAlerts(db).some((a) => a.ruleCode === 'MANAGEMENT_WINDOW')).toBe(true)
+  })
+
+  it('does not create a MANAGEMENT_WINDOW alert when the per-position override narrows the batch default', async () => {
+    seedShortOptionAtPremium(db, {
+      id: 'pos-aapl',
+      ticker: 'AAPL',
+      phase: 'CC_OPEN',
+      strike: '180.0000',
+      contracts: 1,
+      entryPremium: '3.5000',
+      expiration: expirationForDte(16),
+      managementWindowDteOverride: 10
+    })
+
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings(),
+      managementWindowDte: 21
+    })
+
+    expect(listOpenAlerts(db).some((a) => a.ruleCode === 'MANAGEMENT_WINDOW')).toBe(false)
+  })
+
+  it('creates a PROFIT_TARGET alert using the batch profitTargetPercentDefault when no override is set', async () => {
+    const expiration = expirationForDte(30)
+    seedShortOptionAtPremium(db, {
+      id: 'pos-aapl',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      strike: '180.0000',
+      contracts: 1,
+      entryPremium: '4.0000',
+      expiration,
+      profitTargetPercent: null
+    })
+    const occ = occFor({ ticker: 'AAPL', expiration, strike: '180.0000', instrumentType: 'PUT' })
+    // entry 4.00, mid 2.60 -> 35% captured
+    const provider = stubProvider({
+      midBySymbol: { [occ]: '2.6000' },
+      priceByTicker: { AAPL: '1.00' }
+    })
+
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider,
+      fetchEarnings: inertEarnings(),
+      profitTargetPercentDefault: 30
+    })
+
+    expect(listOpenAlerts(db).some((a) => a.ruleCode === 'PROFIT_TARGET')).toBe(true)
+  })
+
+  it('does not create a PROFIT_TARGET alert when the per-position override is higher than the batch default', async () => {
+    const expiration = expirationForDte(30)
+    seedShortOptionAtPremium(db, {
+      id: 'pos-aapl',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      strike: '180.0000',
+      contracts: 1,
+      entryPremium: '4.0000',
+      expiration,
+      profitTargetPercent: 60
+    })
+    const occ = occFor({ ticker: 'AAPL', expiration, strike: '180.0000', instrumentType: 'PUT' })
+    // entry 4.00, mid 2.60 -> 35% captured
+    const provider = stubProvider({
+      midBySymbol: { [occ]: '2.6000' },
+      priceByTicker: { AAPL: '1.00' }
+    })
+
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider,
+      fetchEarnings: inertEarnings(),
+      profitTargetPercentDefault: 30
+    })
+
+    expect(listOpenAlerts(db).some((a) => a.ruleCode === 'PROFIT_TARGET')).toBe(false)
+  })
+})

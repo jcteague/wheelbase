@@ -2,7 +2,7 @@
 
 This directory is a generated source-of-truth wiki for the Wheelbase application. Pages are synthesized from the per-story plan dirs under `plans/` via the `/build-spec` (initial) and `/update-spec` (incremental) skills; each page's body sits between `<!-- generated:from <plan-list> -->` markers and is re-generated when any listed plan changes. Browse by topic (architecture, domain, contracts, schema) for cross-cutting concerns, or by feature (US-N) for story-level behaviour.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-16,us-17,us-31,us-32,us-33,us-34,us-35,us-37,us-39,us-43,us-44,us-50,us-51,us-52,us-53-54-55,us-56,market-data-massive-migration,missing-ac,design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-16,us-17,us-31,us-32,us-33,us-34,us-35,us-37,us-39,us-43,us-44,us-50,us-51,us-52,us-53-54-55,us-56,us-57-58,market-data-massive-migration,missing-ac,design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse -->
 
 ## Maintenance
 
@@ -86,6 +86,7 @@ Generated regions are bounded by `<!-- generated:from ... -->` / `<!-- /generate
 - [US-52 — Expiration-Imminent Alert](features/us-52-expiration-imminent-alert.md) — formalizes the high-urgency `EXPIRATION_IMMINENT` rule (fires for active short option legs at `0 ≤ DTE ≤ 5`); regression-hardening on the US-50 engine with no production code, schema, or IPC changes — surfaced through the US-51 management queue
 - [US-53/54/55 — Live Market-Data Alert Rules](features/us-53-54-55-market-data-alert-rules.md) — adds `MANAGEMENT_WINDOW` (AC verification), `PROFIT_TARGET`, and `STRIKE_PROXIMITY` rules; makes `evaluateAlerts` async with an injected market-data provider that pre-fetches live option mids + underlying prices at the boundary; generalizes the skip mechanism to per-rule `missingData` reasons; post-review hardening isolates provider outages, invalid OCC symbols, and bad premiums so healthy positions' DTE alerts always fire
 - [US-56 — Earnings-Proximity Alert](features/us-56-earnings-proximity-alert.md) — adds the medium-urgency `EARNINGS_PROXIMITY` rule (fires when the next earnings event is within 10 calendar days and on/before the leg's expiration) plus the Finnhub earnings-calendar feed it depends on (free-tier keyed HTTP, 12 h in-module TTL cache, per-ticker failure isolation) consumed by `evaluateAlerts` as a third concurrent degradeable boundary fetch; no schema, IPC, or renderer changes
+- [US-57/58 — Configurable Alert Thresholds](features/us-57-58-configurable-alert-thresholds.md) — makes the profit-target and management-window thresholds configurable at both a global (Settings-page, `app_settings`-backed) and per-position (`positions.management_window_dte_override`, migration 010) level, resolved via a shared override→global-default→constant precedence (`resolveProfitTarget`/`resolveManagementWindowDte`) reused by the alert engine, the positions-list `TARGET` badge, and the position-detail panel
 
 ## Gaps / not yet built
 

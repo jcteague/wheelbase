@@ -113,7 +113,8 @@ describe('runMigrations', () => {
       '006_add_credential_settings.sql',
       '007_create_ivr_snapshot.sql',
       '008_create_pending_assignments.sql',
-      '009_create_alerts.sql'
+      '009_create_alerts.sql',
+      '010_add_management_window_dte_override.sql'
     ])
   })
 

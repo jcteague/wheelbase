@@ -21,6 +21,7 @@ type Props = {
   session?: string
   snapshot?: OptionSnapshot
   hasPendingAssignment?: boolean
+  profitTargetDefault?: number
 }
 
 const CELL_CLASS = 'py-[10px] px-[16px] border-b-0'
@@ -35,9 +36,10 @@ type RowDisplay = {
 
 function deriveRowDisplay(
   item: PositionListItem,
-  snapshot: OptionSnapshot | undefined
+  snapshot: OptionSnapshot | undefined,
+  profitTargetDefault?: number
 ): RowDisplay {
-  const targetPercent = resolveProfitTarget(item.profitTargetPercent ?? null)
+  const targetPercent = resolveProfitTarget(item.profitTargetPercent ?? null, profitTargetDefault)
   if (!snapshot || !item.entryPremiumPerContract || !item.contracts) {
     return { targetReached: false, pnlPercent: '0', maxProfit: '0', targetPercent }
   }
@@ -57,7 +59,8 @@ export function PositionRow({
   quote,
   session,
   snapshot,
-  hasPendingAssignment = false
+  hasPendingAssignment = false,
+  profitTargetDefault
 }: Props): React.JSX.Element {
   const closed = isClosed ?? item.status === 'CLOSED'
   const dteUrgent = item.dte !== null && item.dte <= 7
@@ -71,7 +74,7 @@ export function PositionRow({
   } as React.CSSProperties
 
   const effectiveSnapshot = closed ? undefined : snapshot
-  const display = deriveRowDisplay(item, effectiveSnapshot)
+  const display = deriveRowDisplay(item, effectiveSnapshot, profitTargetDefault)
 
   const optMidLeg = isOptionInstrument(item.instrumentType)
     ? { instrumentType: item.instrumentType }

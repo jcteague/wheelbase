@@ -120,7 +120,7 @@ separate "US-35 app_settings migration" in tree.
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50 -->
+<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50,us-57-58 -->
 
 ## Migration catalogue
 
@@ -192,13 +192,17 @@ separate "US-35 app_settings migration" in tree.
   | ----------------------- | --------------- | ------------------------------- |
   | `profit_target_percent` | (column absent) | `INTEGER`, nullable, no default |
 
-- **Semantics:** `NULL` means "use the global default constant"
-  (`DEFAULT_PROFIT_TARGET_PERCENT = 50` from
+- **Semantics:** `NULL` means "inherit the global default" (the
+  `alert_default_profit_target_percent` `app_settings` key from
+  [us-57-58 — Configurable Alert Thresholds](../features/us-57-58-configurable-alert-thresholds.md),
+  else the hardcoded `DEFAULT_PROFIT_TARGET_PERCENT = 50` from
   `src/main/core/profit-target.ts`). Valid values when non-null are
-  `1..100` inclusive. There is no DB-level `CHECK` constraint —
-  validation is deferred to the service layer if/when an edit IPC ships.
-  For US-33 the column is read-only and seeded only via tests/dev; no
-  edit UI exists yet.
+  `1..99` inclusive. There is no DB-level `CHECK` constraint —
+  validation lives in the service layer, enforced by the
+  `positions:save-alert-overrides` IPC
+  (`src/main/services/save-position-alert-overrides.ts`), which shipped
+  in us-57-58. For US-33 itself the column was read-only and seeded only
+  via tests/dev; no edit UI existed until us-57-58.
 - **Approach inside the migration file:** plain `ALTER TABLE ... ADD
 COLUMN`. No table rebuild required because there is no constraint
   change.
@@ -428,6 +432,46 @@ IGNORE` on the compound key)
   - `src/main/index.ts` (registers the `alert-evaluation` interval job, not
     broker-gated, before `scheduler.start()`)
 - **Source:** `migrations/009_create_alerts.sql`
+
+### `migrations/010_add_management_window_dte_override.sql` — add nullable per-position management-window override
+
+- **Driven by:** [us-57-58 — Configurable Alert Thresholds](../features/us-57-58-configurable-alert-thresholds.md)
+- **Rationale:** Adds a nullable per-position override for the management-window DTE threshold, mirroring the existing `profit_target_percent` override column so both configurable alert thresholds follow the same override-then-global-default shape.
+- **Change scope:** the `positions` table only.
+- **SQL:**
+
+  ```sql
+  ALTER TABLE positions
+    ADD COLUMN management_window_dte_override INTEGER;
+  ```
+
+- **Field-level diff:**
+
+  | Field                            | Before          | After                           |
+  | -------------------------------- | --------------- | ------------------------------- |
+  | `management_window_dte_override` | (column absent) | `INTEGER`, nullable, no default |
+
+- **Semantics:** `NULL` means "inherit the global default" (the
+  `alert_default_management_window_dte` `app_settings` key, else the
+  hardcoded `DEFAULT_MANAGEMENT_WINDOW_DTE = 21` from
+  `src/main/core/alerts.ts`). There is no DB-level `CHECK` constraint —
+  validation lives in the service layer, enforced by the
+  `positions:save-alert-overrides` IPC
+  (`src/main/services/save-position-alert-overrides.ts`). Valid values
+  when non-null are `6..45` inclusive, matching this migration's exact
+  single-statement pattern from migration `005`.
+- **Approach inside the migration file:** plain `ALTER TABLE ... ADD
+COLUMN`, matching migration `005`'s pattern exactly (per the plan's own
+  Refactor note) — no table rebuild required because there is no
+  constraint change.
+- **Downstream code touches (no further schema change):**
+  - `src/main/services/save-position-alert-overrides.ts` (new service;
+    validates and writes both override columns together)
+  - `src/main/services/get-position.ts` (SELECT extended to surface
+    `management_window_dte_override`)
+  - `src/main/core/alerts.ts` (`resolveManagementWindowDte`,
+    `AlertEvaluationInput.managementWindowDteOverride`)
+- **Source:** `migrations/010_add_management_window_dte_override.sql`
 
 <!-- /generated -->
 

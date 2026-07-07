@@ -22,7 +22,7 @@ Two transport patterns are in use. Most handlers are request/response (`ipcRende
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39,us-44,us-51 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39,us-44,us-51,us-57-58 -->
 
 ## Handler reference
 
@@ -49,7 +49,7 @@ Handlers are grouped by namespace. Each subsection documents the request payload
       instrumentType: 'PUT' | 'CALL' | null   // us-33: active leg's instrument_type; null when no active option
       contracts: number | null                // us-33: active leg's contracts; null when no active option
       entryPremiumPerContract: string | null  // us-33: active leg's premium_per_contract (4 dp TEXT); null when no active option
-      profitTargetPercent: number | null      // us-33: positions.profit_target_percent override; null → use DEFAULT_PROFIT_TARGET_PERCENT (50)
+      profitTargetPercent: number | null      // us-33: positions.profit_target_percent override; null → resolved against the saved global default (us-57-58), DEFAULT_PROFIT_TARGET_PERCENT (50) only as final fallback
     }>
   }
   ```
@@ -60,7 +60,7 @@ Handlers are grouped by namespace. Each subsection documents the request payload
   | `__root__` | `internal_error` | `An unexpected error occurred` |
 
 - **Active-leg resolution:** uses the shared `activeLegSubquery()` from `src/main/services/active-leg-sql.ts` so the list and detail views agree — phase-aware (`CSP_OPEN → CSP_OPEN|ROLL_TO`, `CC_OPEN → CC_OPEN|ROLL_TO`) with `ORDER BY fill_date DESC, created_at DESC LIMIT 1` tie-breaking. Positions with no active option (e.g. `HOLDING_SHARES`, `WHEEL_COMPLETE`) return `strike`, `expiration`, and `dte` as `null`; the renderer renders `null` DTE as "Expired".
-- **us-33 extension fields:** `instrumentType`, `contracts`, `entryPremiumPerContract` are sourced by extending the active-leg subquery's SELECT to include `l.instrument_type, l.contracts, l.premium_per_contract`. `profitTargetPercent` is read from the new `positions.profit_target_percent` column (added by migration `005_add_profit_target_percent.sql`). All four fields are `null` when no active option leg exists — i.e. on `HOLDING_SHARES`, `WHEEL_COMPLETE`, and any closed phase. `instrumentType` is the authoritative signal for "this row has an open option leg"; the renderer must not couple this purely on `phase`. `profitTargetPercent` is the per-position override only — when `null`, the renderer falls back to `DEFAULT_PROFIT_TARGET_PERCENT = 50` from `src/main/core/profit-target.ts` (resolved via `resolveProfitTarget(override)`; `0` is preserved as a real override).
+- **us-33 extension fields:** `instrumentType`, `contracts`, `entryPremiumPerContract` are sourced by extending the active-leg subquery's SELECT to include `l.instrument_type, l.contracts, l.premium_per_contract`. `profitTargetPercent` is read from the new `positions.profit_target_percent` column (added by migration `005_add_profit_target_percent.sql`). All four fields are `null` when no active option leg exists — i.e. on `HOLDING_SHARES`, `WHEEL_COMPLETE`, and any closed phase. `instrumentType` is the authoritative signal for "this row has an open option leg"; the renderer must not couple this purely on `phase`. `profitTargetPercent` is the per-position override only — when `null`, resolution flows through `resolveProfitTarget(override, defaultPercent)` (us-57-58: `src/main/core/alerts.ts`), which falls back to a saved global default before the hardcoded `DEFAULT_PROFIT_TARGET_PERCENT = 50` from `src/main/core/profit-target.ts`; the renderer supplies `defaultPercent` via `useAlertDefaults()` and the alert-evaluation scheduler supplies it via `getAlertDefaults(db)` (`src/main/services/alert-defaults.ts`) so the badge, the alert engine, and both new forms agree. Callers that omit the second argument still get the constant unchanged. `0` is preserved as a real override.
 - **Sort order:** DTE ascending, with `null` placed last so the trader sees positions closest to decision points first.
 - **Source:** `src/main/services/list-positions.ts`, `src/main/services/active-leg-sql.ts`
 - **Driven by:** [us-2 — Position list](../features/us-2-position-list.md), [us-33 — Option Mid + Unrealized P&L](../features/us-33-option-mid-pnl.md)
@@ -664,6 +664,44 @@ Handlers are grouped by namespace. Each subsection documents the request payload
 - **Registration:** uses `registerParsedPositionHandler(db, 'positions:roll-cc', 'positions_roll_cc_unhandled_error', RollCcPayloadSchema, rollCcPosition)` — same shared helper as `positions:roll-csp`.
 - **Source:** `src/main/ipc/positions.ts`, `src/main/services/roll-cc-position.ts`, `src/main/core/lifecycle.ts` (`rollCc()`), `src/main/core/costbasis.ts` (`calculateRollBasis()`)
 - **Driven by:** [us-14 — Roll a covered call](../features/us-14-roll-cc.md)
+
+### `positions:save-alert-overrides`
+
+- **Purpose:** save (or clear) the per-position alert-threshold overrides — `profitTargetPercent` and `managementWindowDte` — edited from the position-detail page's `PositionAlertOverridesForm`. Passing `null` for both fields clears them, reverting the position to inheriting the global defaults; passing numbers sets both.
+- **Request:**
+  ```typescript
+  // Zod schema: SaveAlertOverridesPayloadSchema
+  {
+    positionId: string // min length 1
+    profitTargetPercent: number | null // int, 1-99 when non-null
+    managementWindowDte: number | null // int, 6-45 DTE when non-null
+  }
+  ```
+- **Response (success):**
+  ```typescript
+  {
+    ok: true,
+    position: {
+      id: string
+      profitTargetPercent: number | null
+      managementWindowDteOverride: number | null
+    }
+  }
+  ```
+- **Error codes:**
+
+  | field                 | code             | message                                          |
+  | --------------------- | ---------------- | ------------------------------------------------ |
+  | `profitTargetPercent` | `too_small`      | `Profit target must be between 1 and 99`         |
+  | `profitTargetPercent` | `too_big`        | `Profit target must be between 1 and 99`         |
+  | `managementWindowDte` | `too_small`      | `Management window must be between 6 and 45 DTE` |
+  | `managementWindowDte` | `too_big`        | `Management window must be between 6 and 45 DTE` |
+  | `__root__`            | `not_found`      | `Position not found`                             |
+  | `__root__`            | `internal_error` | `An unexpected error occurred`                   |
+
+- **Notes:** both fields are validated (when non-null) before the `UPDATE positions` write — an invalid request writes nothing. `management_window_dte_override` is a new nullable column on `positions` added by migration `010_add_management_window_dte_override.sql`; `profit_target_percent` is the pre-existing us-33 column (migration `005`), now with its first real write path. Bounds mirror `settings:save-alert-defaults` exactly (same 1-99 / 6-45 ranges and messages) so a position's custom thresholds and the global defaults share one validation story.
+- **Source:** `src/main/ipc/positions.ts` (`registerPositionsHandlers`), `src/main/services/save-position-alert-overrides.ts` (`savePositionAlertOverrides`)
+- **Driven by:** [us-57-58 — Configurable alert thresholds](../features/us-57-58-configurable-alert-thresholds.md)
 
 ### `market-data:stock-quotes`
 
@@ -1294,7 +1332,7 @@ Renderer adapters in `src/renderer/src/api/*.ts` translate IPC camelCase field n
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39,us-44,us-51 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39,us-44,us-51,us-57-58 -->
 
 ## Driven by
 
@@ -1318,16 +1356,17 @@ Renderer adapters in `src/renderer/src/api/*.ts` translate IPC camelCase field n
 - [us-39 — Massive Market Data Provider](../features/us-39-massive-market-data-provider.md)
 - [us-44 — IVR snapshot store and scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md)
 - [us-51 — Management Queue Dashboard](../features/us-51-management-queue-dashboard.md)
+- [us-57-58 — Configurable alert thresholds](../features/us-57-58-configurable-alert-thresholds.md)
 
-(us-2 was authored as a FastAPI `GET /api/positions` HTTP endpoint; the surviving Electron equivalent is `src/main/services/list-positions.ts` and the IPC channel name `positions:list` documented above is derived rather than authoritative. us-12-refactor introduced no new IPC handlers; it centralised the active-leg SQL into `src/main/services/active-leg-sql.ts` which is consumed by both `positions:get` and `positions:list`. us-6 introduced the global `optionType` → `instrumentType` rename across all leg-returning handlers and the `instrument_type` DB migration; us-5, us-6, and us-10 added `'EXPIRE'`, `'ASSIGN'`, and `'EXERCISE'` respectively to the `LegAction` enum. us-8 and us-9 both deliberately omit a new `cost_basis_snapshots` insert — us-8 because the existing CC_OPEN snapshot already captures the CC premium and the wheel is still open, us-9 because CC expiration is not a financial event (the premium was captured at CC open in us-7). us-10 introduced the new `positions:record-call-away` channel, the `'CALLED_AWAY'` `legRole` value, and the `WHEEL_COMPLETE` terminal phase. us-11 widened the `positions:get` response with an `allSnapshots` array (used by the renderer's `deriveRunningBasis()` pure helper to attach a running cost basis to every row in `LegHistoryTable`) and split previously-overloaded role values into distinct terminal-event values: `'CALLED_AWAY'` (now written by `positions:record-call-away` instead of `'CC_CLOSE'`) and `'CC_EXPIRED'` (now written by `positions:expire-cc` instead of a generic `'EXPIRE'`). us-13 is **plan-only** — the plan directory has no `tasks.md` or `refactor-phase-results.md` yet; both its planned changes (adding `rollCount` to `positions:get` and relaxing `positions:roll-csp` validation to allow same-expiration strike-only rolls) are documented as planned above. us-14 introduced the new `positions:roll-cc` channel — a mirror of `positions:roll-csp` for the CC leg with two intentional behaviour differences (`>=` expiration instead of `>`, plus an explicit `no_change` lifecycle guard on the sentinel field `__roll__`); the refactor phase consolidated `RollCspPayloadSchema` / `RollCcPayloadSchema` into a shared `RollPayloadBaseSchema` and `RollCspResult` / `RollCcResult` onto a shared `RollResultBase` interface — `calculateRollBasis()` is reused unchanged. us-15 added the `rollChainId: string | null` field to every entry in `positions:get`'s `legs[]` payload (the underlying `legs.roll_chain_id` column already existed from migration 001; us-15 only exposed it through `GET_LEGS_QUERY` + `mapLegRow`) and added the same field to the `LegRecord` TypeScript interface — all non-roll write-paths set `rollChainId: null` explicitly while the two roll services pass the shared UUID. The `activeLeg` payload deliberately still surfaces `rollChainId: null`. us-33 introduced the `market-data:option-snapshots` request/response channel (full provider `OptionSnapshot` shape including `greeks`, 1:1 with the provider — not flattened like `IpcStockQuote`) and extended `positions:list` with four nullable active-leg fields (`instrumentType`, `contracts`, `entryPremiumPerContract`, `profitTargetPercent`) sourced from the existing active-leg subquery plus the new `positions.profit_target_percent` column from migration `005`. us-31 (the market-data provider/foundation story) shipped **no** new IPC handlers — it landed the `MarketDataProvider` interface and `getOptionSnapshots(symbols)` adapter method that this channel consumes; us-34 (Greeks display) ships **no** new IPC handlers either, re-using the existing option-snapshots channel and reading `snapshots[symbol].greeks` directly. us-39 introduced the broker/market-data namespace split: `AlpacaMarketDataProvider` was removed entirely and replaced by `MassiveMarketDataProvider` (all `market-data:*` channels) and `AlpacaBrokerProvider` (all `broker:*` channels); the old plural `market-data:option-snapshots` channel was superseded by `market-data:option-snapshot` (singular) and `market-data:option-chain`; three new `broker:*` channels (`broker:account`, `broker:market-status`, `broker:activities`) now route to `AlpacaBrokerProvider` via `src/main/ipc/broker.ts`; `market-data:stock-quotes` now routes to `MassiveMarketDataProvider`; `greeks` on `IpcOptionSnapshot` became optional (absent rather than zero-filled when the provider omits them). us-39 introduced no DB migrations. us-35 introduced the four `assignments:*` channels (`assignments:list-pending`, `assignments:confirm`, `assignments:dismiss`, `assignments:run-detection-now`) plus four dev-only `_test:scheduler-*` channels (`_test:scheduler-registry`, `_test:scheduler-run-now`, `_test:scheduler-register`, `_test:scheduler-simulate-wake`) registered only when `NODE_ENV === 'test'`. `assignments:confirm` and `assignments:dismiss` are the only handlers in this document that deviate from the canonical `{ ok, errors }` envelope — they add a top-level `code` field (`NOT_FOUND` / `NOT_PENDING` / `TRANSITION_REJECTED`) sourced from `PendingAssignmentError.code` because `handleIpcCall` cannot express a top-level discriminator alongside the field-error array. us-35 also added migration `008_create_pending_assignments.sql` (with a compound `UNIQUE(activity_id, position_id)` index to support multi-CSP collisions on a single OPASN activity) and consumes the `app_settings` key/value table introduced by us-37's migration `006_add_credential_settings.sql` (per-environment watermark keys `assignments_last_poll_at:paper` / `:live`). us-37 introduced the six `settings:*` channels (`settings:get-credential-status`, `settings:save-alpaca-credentials`, `settings:remove-alpaca-credentials`, `settings:set-active-broker-environment`, `settings:test-connection`, `settings:test-stored-alpaca-connection`) and the migration `006_add_credential_settings.sql` that creates the `credential_settings` (encrypted Alpaca key material) and `app_settings` (active-broker-environment + general key/value) tables; broker provider refresh is runtime-scoped to broker handlers only — market-data providers continue uninterrupted across environment switches. us-44 introduced the new dedicated `ivr:*` namespace with a single handler, `ivr:collect-now` (`src/main/ipc/ivr.ts`), a manual scheduler trigger for the `ivr-collect` job that — unlike `assignments:run-detection-now` — returns the collector batch summary (`{ successCount, errorCount, skippedCount, skippedReason }`) validated through `CollectIvrNowBatchSchema` so a swallowed job-handler error becomes an honest `{ ok: false }` rather than a fake success; it also added migration `007_create_ivr_snapshot.sql` (the `ivr_snapshot` table — see [schema/tables](../schema/tables.md)) and the `ivr-collect` scheduler job registration in `src/main/index.ts`. us-51 introduced the new dedicated `alerts:*` namespace with a single handler, `alerts:list` (`src/main/ipc/alerts.ts`, `registerAlertsHandlers({ db })`), a payload-free read path that surfaces US-50's persisted open alerts as the dashboard "Management Queue"; the service `listManagementQueue(db)` (`src/main/services/alerts.ts`) INNER-JOINs open `alerts` to `positions`, sorts in SQL by urgency rank (high→medium→low) then `triggered_at ASC`, and projects into the new `ManagementQueueItem` view-model (`src/main/schemas.ts`) — deliberately a narrower shape than `AlertRecord`. us-51 added **no** migration (it reads US-50's `alerts` table from `migrations/009_create_alerts.sql`) and structurally mirrors `assignments:list-pending`. All are tracked here for regeneration completeness.)
+(us-2 was authored as a FastAPI `GET /api/positions` HTTP endpoint; the surviving Electron equivalent is `src/main/services/list-positions.ts` and the IPC channel name `positions:list` documented above is derived rather than authoritative. us-12-refactor introduced no new IPC handlers; it centralised the active-leg SQL into `src/main/services/active-leg-sql.ts` which is consumed by both `positions:get` and `positions:list`. us-6 introduced the global `optionType` → `instrumentType` rename across all leg-returning handlers and the `instrument_type` DB migration; us-5, us-6, and us-10 added `'EXPIRE'`, `'ASSIGN'`, and `'EXERCISE'` respectively to the `LegAction` enum. us-8 and us-9 both deliberately omit a new `cost_basis_snapshots` insert — us-8 because the existing CC_OPEN snapshot already captures the CC premium and the wheel is still open, us-9 because CC expiration is not a financial event (the premium was captured at CC open in us-7). us-10 introduced the new `positions:record-call-away` channel, the `'CALLED_AWAY'` `legRole` value, and the `WHEEL_COMPLETE` terminal phase. us-11 widened the `positions:get` response with an `allSnapshots` array (used by the renderer's `deriveRunningBasis()` pure helper to attach a running cost basis to every row in `LegHistoryTable`) and split previously-overloaded role values into distinct terminal-event values: `'CALLED_AWAY'` (now written by `positions:record-call-away` instead of `'CC_CLOSE'`) and `'CC_EXPIRED'` (now written by `positions:expire-cc` instead of a generic `'EXPIRE'`). us-13 is **plan-only** — the plan directory has no `tasks.md` or `refactor-phase-results.md` yet; both its planned changes (adding `rollCount` to `positions:get` and relaxing `positions:roll-csp` validation to allow same-expiration strike-only rolls) are documented as planned above. us-14 introduced the new `positions:roll-cc` channel — a mirror of `positions:roll-csp` for the CC leg with two intentional behaviour differences (`>=` expiration instead of `>`, plus an explicit `no_change` lifecycle guard on the sentinel field `__roll__`); the refactor phase consolidated `RollCspPayloadSchema` / `RollCcPayloadSchema` into a shared `RollPayloadBaseSchema` and `RollCspResult` / `RollCcResult` onto a shared `RollResultBase` interface — `calculateRollBasis()` is reused unchanged. us-15 added the `rollChainId: string | null` field to every entry in `positions:get`'s `legs[]` payload (the underlying `legs.roll_chain_id` column already existed from migration 001; us-15 only exposed it through `GET_LEGS_QUERY` + `mapLegRow`) and added the same field to the `LegRecord` TypeScript interface — all non-roll write-paths set `rollChainId: null` explicitly while the two roll services pass the shared UUID. The `activeLeg` payload deliberately still surfaces `rollChainId: null`. us-33 introduced the `market-data:option-snapshots` request/response channel (full provider `OptionSnapshot` shape including `greeks`, 1:1 with the provider — not flattened like `IpcStockQuote`) and extended `positions:list` with four nullable active-leg fields (`instrumentType`, `contracts`, `entryPremiumPerContract`, `profitTargetPercent`) sourced from the existing active-leg subquery plus the new `positions.profit_target_percent` column from migration `005`. us-31 (the market-data provider/foundation story) shipped **no** new IPC handlers — it landed the `MarketDataProvider` interface and `getOptionSnapshots(symbols)` adapter method that this channel consumes; us-34 (Greeks display) ships **no** new IPC handlers either, re-using the existing option-snapshots channel and reading `snapshots[symbol].greeks` directly. us-39 introduced the broker/market-data namespace split: `AlpacaMarketDataProvider` was removed entirely and replaced by `MassiveMarketDataProvider` (all `market-data:*` channels) and `AlpacaBrokerProvider` (all `broker:*` channels); the old plural `market-data:option-snapshots` channel was superseded by `market-data:option-snapshot` (singular) and `market-data:option-chain`; three new `broker:*` channels (`broker:account`, `broker:market-status`, `broker:activities`) now route to `AlpacaBrokerProvider` via `src/main/ipc/broker.ts`; `market-data:stock-quotes` now routes to `MassiveMarketDataProvider`; `greeks` on `IpcOptionSnapshot` became optional (absent rather than zero-filled when the provider omits them). us-39 introduced no DB migrations. us-35 introduced the four `assignments:*` channels (`assignments:list-pending`, `assignments:confirm`, `assignments:dismiss`, `assignments:run-detection-now`) plus four dev-only `_test:scheduler-*` channels (`_test:scheduler-registry`, `_test:scheduler-run-now`, `_test:scheduler-register`, `_test:scheduler-simulate-wake`) registered only when `NODE_ENV === 'test'`. `assignments:confirm` and `assignments:dismiss` are the only handlers in this document that deviate from the canonical `{ ok, errors }` envelope — they add a top-level `code` field (`NOT_FOUND` / `NOT_PENDING` / `TRANSITION_REJECTED`) sourced from `PendingAssignmentError.code` because `handleIpcCall` cannot express a top-level discriminator alongside the field-error array. us-35 also added migration `008_create_pending_assignments.sql` (with a compound `UNIQUE(activity_id, position_id)` index to support multi-CSP collisions on a single OPASN activity) and consumes the `app_settings` key/value table introduced by us-37's migration `006_add_credential_settings.sql` (per-environment watermark keys `assignments_last_poll_at:paper` / `:live`). us-37 introduced the six `settings:*` channels (`settings:get-credential-status`, `settings:save-alpaca-credentials`, `settings:remove-alpaca-credentials`, `settings:set-active-broker-environment`, `settings:test-connection`, `settings:test-stored-alpaca-connection`) and the migration `006_add_credential_settings.sql` that creates the `credential_settings` (encrypted Alpaca key material) and `app_settings` (active-broker-environment + general key/value) tables; broker provider refresh is runtime-scoped to broker handlers only — market-data providers continue uninterrupted across environment switches. us-44 introduced the new dedicated `ivr:*` namespace with a single handler, `ivr:collect-now` (`src/main/ipc/ivr.ts`), a manual scheduler trigger for the `ivr-collect` job that — unlike `assignments:run-detection-now` — returns the collector batch summary (`{ successCount, errorCount, skippedCount, skippedReason }`) validated through `CollectIvrNowBatchSchema` so a swallowed job-handler error becomes an honest `{ ok: false }` rather than a fake success; it also added migration `007_create_ivr_snapshot.sql` (the `ivr_snapshot` table — see [schema/tables](../schema/tables.md)) and the `ivr-collect` scheduler job registration in `src/main/index.ts`. us-51 introduced the new dedicated `alerts:*` namespace with a single handler, `alerts:list` (`src/main/ipc/alerts.ts`, `registerAlertsHandlers({ db })`), a payload-free read path that surfaces US-50's persisted open alerts as the dashboard "Management Queue"; the service `listManagementQueue(db)` (`src/main/services/alerts.ts`) INNER-JOINs open `alerts` to `positions`, sorts in SQL by urgency rank (high→medium→low) then `triggered_at ASC`, and projects into the new `ManagementQueueItem` view-model (`src/main/schemas.ts`) — deliberately a narrower shape than `AlertRecord`. us-51 added **no** migration (it reads US-50's `alerts` table from `migrations/009_create_alerts.sql`) and structurally mirrors `assignments:list-pending`. us-57-58 introduced three new channels — `settings:get-alert-defaults`, `settings:save-alert-defaults`, and `positions:save-alert-overrides` — making the alert engine's two thresholds (profit-target percent, management-window DTE) configurable at both a global (`app_settings`-backed) and per-position (`positions.management_window_dte_override`, migration `010`) level; it added no new migration for the global-defaults half (reuses the existing `app_settings` table) and one migration for the per-position half. All are tracked here for regeneration completeness.)
 
 <!-- /generated -->
 
-<!-- generated:from us-37 -->
+<!-- generated:from us-37,us-57-58 -->
 
 ## Settings handlers
 
-US-37 adds a dedicated `settings:*` namespace for credential status, Alpaca credential management, broker-environment switching, and connection probes. All six handlers live in `src/main/ipc/settings.ts`, validate with Zod schemas from `src/main/schemas.ts`, and use `handleIpcCall(...)` so failures stay inside the standard `{ ok: false, errors }` envelope.
+US-37 adds a dedicated `settings:*` namespace for credential status, Alpaca credential management, broker-environment switching, and connection probes. All six handlers live in `src/main/ipc/settings.ts`, validate with Zod schemas from `src/main/schemas.ts`, and use `handleIpcCall(...)` so failures stay inside the standard `{ ok: false, errors }` envelope. us-57-58 adds two more handlers to this same namespace/file for the global alert-defaults settings (profit-target percent, management-window DTE).
 
 ### `settings:get-credential-status`
 
@@ -1465,6 +1504,65 @@ US-37 adds a dedicated `settings:*` namespace for credential status, Alpaca cred
 
 - **Source:** `src/main/ipc/settings.ts`, `src/main/services/settings.ts`, `src/main/services/settings-connections.ts`, `src/main/services/save-verified-alpaca-credentials.ts`
 - **Driven by:** [us-37 — Paper/Live Broker Environment Toggle](../features/us-37-paper-live-broker-environment-toggle.md)
+
+### `settings:get-alert-defaults`
+
+- **Purpose:** read the global alert-defaults settings (profit-target percent, management-window DTE) shown on the Settings page and consumed by the renderer's `useAlertDefaults()` hook so the positions-list `TARGET` badge and any new form agree with the alert engine.
+- **Request:** none (no payload).
+- **Response (success):**
+  ```typescript
+  {
+    ok: true,
+    defaults: {
+      profitTargetPercent: number    // 1-99, defaults to 50 when unset
+      managementWindowDte: number    // 6-45, defaults to 21 when unset
+    }
+  }
+  ```
+- **Error codes:**
+
+  | field      | code             | message                        |
+  | ---------- | ---------------- | ------------------------------ |
+  | `__root__` | `internal_error` | `An unexpected error occurred` |
+
+- **Notes:** payload-free read; performs no parsing of caller input, so the only possible error is the standard envelope internal error. Backed by `getAlertDefaults(db)`, which reads the two `app_settings` rows (`alert_default_profit_target_percent`, `alert_default_management_window_dte`) via the existing `appSettings.get`/`appSettings.set` helpers (`src/main/services/app-settings.ts`); an absent row falls back to `DEFAULT_PROFIT_TARGET_PERCENT = 50` / `DEFAULT_MANAGEMENT_WINDOW_DTE = 21`. No new migration — reuses the existing `app_settings` table.
+- **Source:** `src/main/ipc/settings.ts` (`registerSettingsHandlers`), `src/main/services/alert-defaults.ts` (`getAlertDefaults`)
+- **Driven by:** [us-57-58 — Configurable alert thresholds](../features/us-57-58-configurable-alert-thresholds.md)
+
+### `settings:save-alert-defaults`
+
+- **Purpose:** save the two global alert-defaults settings edited from the Settings page's alert-defaults section.
+- **Request:**
+  ```typescript
+  // Zod schema: SaveAlertDefaultsPayloadSchema
+  {
+    profitTargetPercent: number // int, 1-99
+    managementWindowDte: number // int, 6-45 DTE
+  }
+  ```
+- **Response (success):**
+  ```typescript
+  {
+    ok: true,
+    defaults: {
+      profitTargetPercent: number
+      managementWindowDte: number
+    }
+  }
+  ```
+- **Error codes:**
+
+  | field                 | code             | message                                          |
+  | --------------------- | ---------------- | ------------------------------------------------ |
+  | `profitTargetPercent` | `too_small`      | `Profit target must be between 1 and 99`         |
+  | `profitTargetPercent` | `too_big`        | `Profit target must be between 1 and 99`         |
+  | `managementWindowDte` | `too_small`      | `Management window must be between 6 and 45 DTE` |
+  | `managementWindowDte` | `too_big`        | `Management window must be between 6 and 45 DTE` |
+  | `__root__`            | `internal_error` | `An unexpected error occurred`                   |
+
+- **Notes:** both fields are validated before either `app_settings` row is written — an invalid request writes nothing. Backed by `saveAlertDefaults(db, input)`, which writes both keys via `appSettings.set`. No new migration — reuses the existing `app_settings` table (per the `alert-default_profit_target_percent` / `alert_default_management_window_dte` key/value pair, mirroring the existing `active_broker_environment` singleton-config pattern).
+- **Source:** `src/main/ipc/settings.ts` (`registerSettingsHandlers`), `src/main/services/alert-defaults.ts` (`saveAlertDefaults`)
+- **Driven by:** [us-57-58 — Configurable alert thresholds](../features/us-57-58-configurable-alert-thresholds.md)
 
 <!-- /generated -->
 

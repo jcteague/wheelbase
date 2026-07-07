@@ -28,6 +28,8 @@ interface PositionRow {
   notes: string | null
   thesis: string | null
   tags: string
+  profit_target_percent: number | null
+  management_window_dte_override: number | null
   created_at: string
   updated_at: string
   // leg columns (nullable if no active leg)
@@ -175,6 +177,7 @@ const GET_QUERY = `
     p.id, p.ticker, p.phase, p.status,
     p.strategy_type, p.opened_date, p.closed_date,
     p.account_id, p.notes, p.thesis, p.tags,
+    p.profit_target_percent, p.management_window_dte_override,
     p.created_at, p.updated_at,
     l.id           AS leg_id,
     l.leg_role,
@@ -230,6 +233,8 @@ export function getPosition(db: Database.Database, positionId: string): GetPosit
     notes: row.notes ?? null,
     thesis: row.thesis ?? null,
     tags: JSON.parse(row.tags ?? '[]') as string[],
+    profitTargetPercent: row.profit_target_percent ?? null,
+    managementWindowDteOverride: row.management_window_dte_override ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   }

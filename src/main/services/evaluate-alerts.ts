@@ -10,6 +10,7 @@ import {
   type AlertEvaluationInput,
   type AlertMatch
 } from '../core/alerts'
+import { DEFAULT_PROFIT_TARGET_PERCENT } from '../core/profit-target'
 import { computeDte } from '../core/dte'
 import type { WheelPhase } from '../core/types'
 import { fetchNextEarningsDates } from '../integrations/finnhub-earnings'
@@ -35,6 +36,7 @@ interface EvaluableRow {
   ticker: string
   phase: WheelPhase
   profit_target_percent: number | null
+  management_window_dte_override: number | null
   instrument_type: 'PUT' | 'CALL' | 'STOCK' | null
   strike: string | null
   expiration: string | null
@@ -48,6 +50,7 @@ const EVALUABLE_QUERY = `
     p.ticker,
     p.phase,
     p.profit_target_percent,
+    p.management_window_dte_override,
     l.instrument_type,
     l.strike,
     l.expiration,
@@ -86,15 +89,27 @@ function occSymbolForRow(row: EvaluableRow, logger: LoggerLike): string | null {
   }
 }
 
-function toEvaluationInput(
-  row: EvaluableRow,
-  now: Date,
-  managementWindowDte: number,
-  occ: string | null,
-  priceByTicker: Record<string, IpcStockQuote>,
-  midByOccSymbol: Record<string, OptionSnapshot>,
+interface ToEvaluationInputParams {
+  row: EvaluableRow
+  now: Date
+  managementWindowDte: number
+  profitTargetPercentDefault: number
+  occ: string | null
+  priceByTicker: Record<string, IpcStockQuote>
+  midByOccSymbol: Record<string, OptionSnapshot>
   earningsDateByTicker: Record<string, string>
-): AlertEvaluationInput {
+}
+
+function toEvaluationInput({
+  row,
+  now,
+  managementWindowDte,
+  profitTargetPercentDefault,
+  occ,
+  priceByTicker,
+  midByOccSymbol,
+  earningsDateByTicker
+}: ToEvaluationInputParams): AlertEvaluationInput {
   return {
     positionId: row.position_id,
     phase: row.phase,
@@ -102,10 +117,12 @@ function toEvaluationInput(
     strike: row.strike,
     dte: computeDte(row.expiration, now),
     managementWindowDte,
+    managementWindowDteOverride: row.management_window_dte_override,
     entryPremiumPerContract: row.premium_per_contract,
     contracts: row.contracts,
     currentOptionMid: occ ? (midByOccSymbol[occ]?.mid ?? null) : null,
     profitTargetPercentOverride: row.profit_target_percent,
+    profitTargetPercentDefault,
     currentUnderlyingPrice: priceByTicker[row.ticker]?.price ?? null,
     daysToEarnings: computeDte(earningsDateByTicker[row.ticker] ?? null, now),
     expiration: row.expiration
@@ -123,6 +140,7 @@ type EvaluateAlertsInput = {
   provider?: MarketDataProvider
   now?: Date
   managementWindowDte?: number
+  profitTargetPercentDefault?: number
   logger?: LoggerLike
   fetchEarnings?: FetchEarnings
 }
@@ -148,6 +166,7 @@ export async function evaluateAlerts({
   provider = marketDataFactory.create(),
   now = new Date(),
   managementWindowDte = DEFAULT_MANAGEMENT_WINDOW_DTE,
+  profitTargetPercentDefault = DEFAULT_PROFIT_TARGET_PERCENT,
   logger = defaultLogger,
   fetchEarnings = fetchNextEarningsDates
 }: EvaluateAlertsInput): Promise<EvaluateAlertsResult> {
@@ -201,15 +220,16 @@ export async function evaluateAlerts({
   for (const row of rows) {
     try {
       const evaluation = evaluatePosition(
-        toEvaluationInput(
+        toEvaluationInput({
           row,
           now,
           managementWindowDte,
-          occByPositionId.get(row.position_id) ?? null,
+          profitTargetPercentDefault,
+          occ: occByPositionId.get(row.position_id) ?? null,
           priceByTicker,
           midByOccSymbol,
           earningsDateByTicker
-        )
+        })
       )
       evaluation.matches.forEach((match) => matches.push({ positionId: row.position_id, match }))
       evaluation.skipped.forEach((skip) => {

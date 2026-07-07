@@ -59,6 +59,23 @@ vi.mock('../components/RollCcSheet', () => ({
     ) : null
 }))
 
+// Mock PositionAlertOverridesForm to avoid testing it in isolation here
+vi.mock('../components/PositionAlertOverridesForm', () => ({
+  PositionAlertOverridesForm: ({
+    positionId,
+    profitTargetPercent,
+    managementWindowDteOverride
+  }: {
+    positionId: string
+    profitTargetPercent: number | null
+    managementWindowDteOverride: number | null
+  }) => (
+    <div data-testid="position-alert-overrides-form">
+      {positionId}:{String(profitTargetPercent)}:{String(managementWindowDteOverride)}
+    </div>
+  )
+}))
+
 // Mock wouter so useParams works
 vi.mock('wouter', () => ({
   useParams: () => ({ id: 'pos-123' }),
@@ -111,6 +128,8 @@ const CSP_OPEN_DETAIL = {
     notes: null,
     thesis: null,
     tags: [],
+    profitTargetPercent: null,
+    managementWindowDteOverride: null,
     createdAt: '2026-03-01T00:00:00.000Z',
     updatedAt: '2026-03-01T00:00:00.000Z'
   },
@@ -178,6 +197,25 @@ it('shows position details and CloseCspForm for a CSP_OPEN position', () => {
   expect(screen.getAllByText(/CSP/i).length).toBeGreaterThan(0)
   expect(screen.getByTestId('position-detail')).toBeInTheDocument()
   expect(screen.getByTestId('close-csp-form')).toBeInTheDocument()
+})
+
+it('renders PositionAlertOverridesForm with the position’s alert override fields', () => {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: {
+      ...CSP_OPEN_DETAIL,
+      position: {
+        ...CSP_OPEN_DETAIL.position,
+        profitTargetPercent: 25,
+        managementWindowDteOverride: 14
+      }
+    },
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+
+  render(<PositionDetailPage />)
+  expect(screen.getByTestId('position-alert-overrides-form')).toHaveTextContent('pos-123:25:14')
 })
 
 it('shows loading spinner when position is loading', () => {

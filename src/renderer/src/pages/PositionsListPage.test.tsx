@@ -6,7 +6,7 @@ import { usePositions } from '../hooks/usePositions'
 import { useMarketStatus } from '../hooks/useMarketStatus'
 import { useStockQuotes } from '../hooks/useStockQuotes'
 import { useOptionSnapshots } from '../hooks/useOptionSnapshots'
-import { useSettingsStatus } from '../hooks/useSettings'
+import { useAlertDefaults, useSettingsStatus } from '../hooks/useSettings'
 import { useManagementQueue } from '../hooks/useManagementQueue'
 import { PositionsListPage } from './PositionsListPage'
 
@@ -62,6 +62,7 @@ const mockUseStockQuotes = vi.mocked(useStockQuotes)
 const mockUseMarketStatus = vi.mocked(useMarketStatus)
 const mockUseOptionSnapshots = vi.mocked(useOptionSnapshots)
 const mockUseSettingsStatus = vi.mocked(useSettingsStatus)
+const mockUseAlertDefaults = vi.mocked(useAlertDefaults)
 const mockUseManagementQueue = vi.mocked(useManagementQueue)
 
 function makeQueueResult(items: ManagementQueueItem[]): ReturnType<typeof useManagementQueue> {
@@ -270,6 +271,12 @@ beforeEach(() => {
     isError: false,
     error: null
   } as ReturnType<typeof useSettingsStatus>)
+  mockUseAlertDefaults.mockReturnValue({
+    data: { profitTargetPercent: 50, managementWindowDte: 21 },
+    isLoading: false,
+    isError: false,
+    error: null
+  } as ReturnType<typeof useAlertDefaults>)
 })
 
 it('renders a new wheel button in the header', () => {

@@ -12,6 +12,7 @@ const openCoveredCallPosition = vi.fn()
 const recordCallAwayPosition = vi.fn()
 const rollCspPosition = vi.fn()
 const rollCcPosition = vi.fn()
+const savePositionAlertOverrides = vi.fn()
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -52,6 +53,10 @@ vi.mock('../services/roll-cc-position', () => ({
   rollCcPosition
 }))
 
+vi.mock('../services/save-position-alert-overrides', () => ({
+  savePositionAlertOverrides
+}))
+
 function getRegisteredHandler(
   calls: Array<[string, (...args: unknown[]) => unknown]>,
   channel: string
@@ -74,6 +79,7 @@ describe('registerPositionsHandlers', () => {
     recordCallAwayPosition.mockReset()
     rollCspPosition.mockReset()
     rollCcPosition.mockReset()
+    savePositionAlertOverrides.mockReset()
   })
 
   it('registers a positions:assign-csp handler', async () => {
@@ -922,5 +928,89 @@ describe('registerPositionsHandlers', () => {
     expect((result as { errors: Array<{ field: string }> }).errors).toEqual(
       expect.arrayContaining([expect.objectContaining({ field: 'positionId' })])
     )
+  })
+
+  it('registers a positions:save-alert-overrides handler', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+
+    registerPositionsHandlers({} as never)
+
+    expect(vi.mocked(ipcMain.handle)).toHaveBeenCalledWith(
+      'positions:save-alert-overrides',
+      expect.any(Function)
+    )
+  })
+
+  it('positions:save-alert-overrides returns ok:true with the saved position on a valid payload', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+    const db = {} as never
+
+    savePositionAlertOverrides.mockReturnValue({
+      id: '11111111-1111-4111-8111-111111111111',
+      profitTargetPercent: 25,
+      managementWindowDteOverride: 14
+    })
+
+    registerPositionsHandlers(db)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:save-alert-overrides'
+    )
+
+    const result = await handler?.(null, {
+      positionId: '11111111-1111-4111-8111-111111111111',
+      profitTargetPercent: 25,
+      managementWindowDte: 14
+    })
+
+    expect(savePositionAlertOverrides).toHaveBeenCalledWith(
+      db,
+      '11111111-1111-4111-8111-111111111111',
+      {
+        positionId: '11111111-1111-4111-8111-111111111111',
+        profitTargetPercent: 25,
+        managementWindowDte: 14
+      }
+    )
+    expect(result).toMatchObject({
+      ok: true,
+      position: {
+        id: '11111111-1111-4111-8111-111111111111',
+        profitTargetPercent: 25,
+        managementWindowDteOverride: 14
+      }
+    })
+  })
+
+  it('positions:save-alert-overrides returns ok:false with the exact management-window message for an out-of-range value', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+
+    registerPositionsHandlers({} as never)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:save-alert-overrides'
+    )
+
+    const result = await handler?.(null, {
+      positionId: '11111111-1111-4111-8111-111111111111',
+      profitTargetPercent: 25,
+      managementWindowDte: 60
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          field: 'managementWindowDte',
+          message: 'Management window must be between 6 and 45 DTE'
+        })
+      ]
+    })
+    expect(savePositionAlertOverrides).not.toHaveBeenCalled()
   })
 })

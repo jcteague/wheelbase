@@ -11,7 +11,8 @@ import {
   OpenCcPayloadSchema,
   RecordCallAwayPayloadSchema,
   RollCcPayloadSchema,
-  RollCspPayloadSchema
+  RollCspPayloadSchema,
+  SaveAlertOverridesPayloadSchema
 } from '../schemas'
 import {
   assignCspPosition,
@@ -27,6 +28,7 @@ import { closeCoveredCallPosition } from '../services/close-covered-call-positio
 import { recordCallAwayPosition } from '../services/record-call-away-position'
 import { rollCspPosition } from '../services/roll-csp-position'
 import { rollCcPosition } from '../services/roll-cc-position'
+import { savePositionAlertOverrides } from '../services/save-position-alert-overrides'
 import type { CreatePositionPayload } from '../schemas'
 
 function registerParsedPositionHandler<Payload extends { positionId: string }>(
@@ -131,6 +133,16 @@ export function registerPositionsHandlers(db: Database.Database): void {
     'positions_roll_cc_unhandled_error',
     RollCcPayloadSchema,
     rollCcPosition
+  )
+
+  registerParsedPositionHandler(
+    db,
+    'positions:save-alert-overrides',
+    'positions_save_alert_overrides_unhandled_error',
+    SaveAlertOverridesPayloadSchema,
+    (db, positionId, payload) => ({
+      position: savePositionAlertOverrides(db, positionId, payload)
+    })
   )
 
   // Test-only: sets profit_target_percent directly so e2e tests can verify the

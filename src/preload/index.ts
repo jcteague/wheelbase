@@ -27,6 +27,7 @@ const api = {
   expireCc: (payload: unknown) => invoke('positions:expire-cc', payload),
   rollCsp: (payload: unknown) => invoke('positions:roll-csp', payload),
   rollCc: (payload: unknown) => invoke('positions:roll-cc', payload),
+  saveAlertOverrides: (payload: unknown) => invoke('positions:save-alert-overrides', payload),
   setStockQuoteTickers: (payload: unknown) =>
     invoke('market-data:set-stock-quote-tickers', payload),
   getOptionSnapshots: (payload: unknown) => invoke('market-data:option-snapshots', payload),
@@ -45,7 +46,9 @@ const api = {
       invoke('settings:set-active-broker-environment', payload),
     testConnection: (payload: unknown) => invoke('settings:test-connection', payload),
     testStoredAlpacaConnection: (payload: unknown) =>
-      invoke('settings:test-stored-alpaca-connection', payload)
+      invoke('settings:test-stored-alpaca-connection', payload),
+    getAlertDefaults: () => invoke('settings:get-alert-defaults'),
+    saveAlertDefaults: (payload: unknown) => invoke('settings:save-alert-defaults', payload)
   },
   marketData: {
     stockQuotes: (payload: unknown) => invoke('market-data:stock-quotes', payload),

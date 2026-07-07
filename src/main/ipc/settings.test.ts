@@ -49,6 +49,13 @@ const settings = {
 const testConnection = vi.fn<(_: unknown) => Promise<TestConnectionResult>>()
 const onBrokerProviderChanged = vi.fn()
 
+const ALERT_DEFAULTS = { profitTargetPercent: 50, managementWindowDte: 21 }
+
+const alertDefaults = {
+  getAlertDefaults: vi.fn(() => ALERT_DEFAULTS),
+  saveAlertDefaults: vi.fn((input: typeof ALERT_DEFAULTS) => input)
+}
+
 function getHandler(
   calls: Array<[string, (...args: unknown[]) => unknown]>,
   channel: string
@@ -61,6 +68,8 @@ function getHandler(
 describe('registerSettingsHandlers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    alertDefaults.getAlertDefaults.mockReturnValue(ALERT_DEFAULTS)
+    alertDefaults.saveAlertDefaults.mockImplementation((input: typeof ALERT_DEFAULTS) => input)
     settings.getCredentialStatus.mockReturnValue(STATUS)
     settings.saveAlpacaCredentials.mockReturnValue(STATUS)
     settings.saveVerifiedAlpacaCredentials.mockResolvedValue({
@@ -86,7 +95,7 @@ describe('registerSettingsHandlers', () => {
     const { ipcMain } = await import('electron')
     const { registerSettingsHandlers } = await import('./settings')
 
-    registerSettingsHandlers({ settings, testConnection, onBrokerProviderChanged })
+    registerSettingsHandlers({ settings, alertDefaults, testConnection, onBrokerProviderChanged })
 
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([channel]) => channel as string)
     expect(channels).toEqual(
@@ -105,7 +114,7 @@ describe('registerSettingsHandlers', () => {
     const { ipcMain } = await import('electron')
     const { registerSettingsHandlers } = await import('./settings')
 
-    registerSettingsHandlers({ settings, testConnection, onBrokerProviderChanged })
+    registerSettingsHandlers({ settings, alertDefaults, testConnection, onBrokerProviderChanged })
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'settings:get-credential-status'
@@ -120,7 +129,7 @@ describe('registerSettingsHandlers', () => {
     const { ipcMain } = await import('electron')
     const { registerSettingsHandlers } = await import('./settings')
 
-    registerSettingsHandlers({ settings, testConnection, onBrokerProviderChanged })
+    registerSettingsHandlers({ settings, alertDefaults, testConnection, onBrokerProviderChanged })
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'settings:save-alpaca-credentials'
@@ -150,7 +159,7 @@ describe('registerSettingsHandlers', () => {
       throw new Error('Alpaca live credentials are not configured')
     })
 
-    registerSettingsHandlers({ settings, testConnection, onBrokerProviderChanged })
+    registerSettingsHandlers({ settings, alertDefaults, testConnection, onBrokerProviderChanged })
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'settings:set-active-broker-environment'
@@ -174,7 +183,7 @@ describe('registerSettingsHandlers', () => {
       message: 'Environment mismatch — these are LIVE keys, not paper keys'
     })
 
-    registerSettingsHandlers({ settings, testConnection, onBrokerProviderChanged })
+    registerSettingsHandlers({ settings, alertDefaults, testConnection, onBrokerProviderChanged })
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'settings:test-connection'
@@ -201,7 +210,7 @@ describe('registerSettingsHandlers', () => {
     const { ipcMain } = await import('electron')
     const { registerSettingsHandlers } = await import('./settings')
 
-    registerSettingsHandlers({ settings, testConnection, onBrokerProviderChanged })
+    registerSettingsHandlers({ settings, alertDefaults, testConnection, onBrokerProviderChanged })
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'settings:test-connection'
@@ -229,7 +238,7 @@ describe('registerSettingsHandlers', () => {
 
     settings.saveVerifiedAlpacaCredentials.mockRejectedValueOnce(new Error('keyId is required'))
 
-    registerSettingsHandlers({ settings, testConnection, onBrokerProviderChanged })
+    registerSettingsHandlers({ settings, alertDefaults, testConnection, onBrokerProviderChanged })
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'settings:save-alpaca-credentials'
@@ -268,7 +277,7 @@ describe('registerSettingsHandlers', () => {
       refreshBroker: true
     })
 
-    registerSettingsHandlers({ settings, testConnection, onBrokerProviderChanged })
+    registerSettingsHandlers({ settings, alertDefaults, testConnection, onBrokerProviderChanged })
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'settings:save-alpaca-credentials'
@@ -309,7 +318,7 @@ describe('registerSettingsHandlers', () => {
       accountNumberMasked: 'PA…ABC'
     })
 
-    registerSettingsHandlers({ settings, testConnection, onBrokerProviderChanged })
+    registerSettingsHandlers({ settings, alertDefaults, testConnection, onBrokerProviderChanged })
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'settings:test-stored-alpaca-connection'
@@ -341,7 +350,7 @@ describe('registerSettingsHandlers', () => {
 
     settings.loadAlpacaCredentials.mockReturnValueOnce(null)
 
-    registerSettingsHandlers({ settings, testConnection, onBrokerProviderChanged })
+    registerSettingsHandlers({ settings, alertDefaults, testConnection, onBrokerProviderChanged })
     const handler = getHandler(
       vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
       'settings:test-stored-alpaca-connection'
@@ -360,5 +369,66 @@ describe('registerSettingsHandlers', () => {
       ]
     })
     expect(testConnection).not.toHaveBeenCalled()
+  })
+
+  it('settings:get-alert-defaults returns the current global alert defaults', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerSettingsHandlers } = await import('./settings')
+
+    registerSettingsHandlers({ settings, alertDefaults, testConnection, onBrokerProviderChanged })
+    const handler = getHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'settings:get-alert-defaults'
+    )
+
+    const result = await handler(null, undefined)
+
+    expect(result).toEqual({ ok: true, defaults: ALERT_DEFAULTS })
+  })
+
+  it('settings:save-alert-defaults saves a valid payload and returns the saved defaults', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerSettingsHandlers } = await import('./settings')
+
+    registerSettingsHandlers({ settings, alertDefaults, testConnection, onBrokerProviderChanged })
+    const handler = getHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'settings:save-alert-defaults'
+    )
+
+    const result = await handler(null, { profitTargetPercent: 40, managementWindowDte: 14 })
+
+    expect(alertDefaults.saveAlertDefaults).toHaveBeenCalledWith({
+      profitTargetPercent: 40,
+      managementWindowDte: 14
+    })
+    expect(result).toEqual({
+      ok: true,
+      defaults: { profitTargetPercent: 40, managementWindowDte: 14 }
+    })
+  })
+
+  it('settings:save-alert-defaults rejects an out-of-range profitTargetPercent via the Zod path', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerSettingsHandlers } = await import('./settings')
+
+    registerSettingsHandlers({ settings, alertDefaults, testConnection, onBrokerProviderChanged })
+    const handler = getHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'settings:save-alert-defaults'
+    )
+
+    const result = await handler(null, { profitTargetPercent: 0, managementWindowDte: 14 })
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          field: 'profitTargetPercent',
+          message: 'Profit target must be between 1 and 99'
+        })
+      ]
+    })
+    expect(alertDefaults.saveAlertDefaults).not.toHaveBeenCalled()
   })
 })

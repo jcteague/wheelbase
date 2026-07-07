@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  getAlertDefaults,
   getCredentialStatus,
   removeAlpacaCredentials,
+  saveAlertDefaults,
   saveAlpacaCredentials,
   setActiveBrokerEnvironment,
   testStoredAlpacaConnection,
@@ -11,7 +13,9 @@ import { brokerQueryKeys } from './brokerQueryKeys'
 import { marketDataQueryKeys } from './marketDataQueryKeys'
 import { settingsQueryKeys } from './settingsQueryKeys'
 import {
+  useAlertDefaults,
   useRemoveAlpacaCredentials,
+  useSaveAlertDefaults,
   useSaveAlpacaCredentials,
   useSetActiveBrokerEnvironment,
   useSettingsStatus,
@@ -40,7 +44,9 @@ vi.mock('../api/settings', () => ({
   removeAlpacaCredentials: vi.fn(),
   setActiveBrokerEnvironment: vi.fn(),
   testStoredAlpacaConnection: vi.fn(),
-  testSettingsConnection: vi.fn()
+  testSettingsConnection: vi.fn(),
+  getAlertDefaults: vi.fn(),
+  saveAlertDefaults: vi.fn()
 }))
 
 function expectBrokerOnlyInvalidation(
@@ -151,5 +157,31 @@ describe('useSettings hooks', () => {
     expect(options.mutationFn).toBe(testStoredAlpacaConnection)
     options.onSuccess?.({})
     expect(mockInvalidateQueries).not.toHaveBeenCalled()
+  })
+
+  it('useAlertDefaults queries with settingsQueryKeys.alertDefaults', () => {
+    useAlertDefaults()
+
+    expect(mockUseQuery).toHaveBeenCalledOnce()
+    const [options] = mockUseQuery.mock.calls[0] as [
+      { queryKey: typeof settingsQueryKeys.alertDefaults; queryFn: typeof getAlertDefaults }
+    ]
+
+    expect(options.queryKey).toEqual(settingsQueryKeys.alertDefaults)
+    expect(options.queryFn).toBe(getAlertDefaults)
+  })
+
+  it('useSaveAlertDefaults invalidates settingsQueryKeys.alertDefaults after success', () => {
+    useSaveAlertDefaults()
+
+    const [options] = mockUseMutation.mock.calls[0] as [
+      { mutationFn: typeof saveAlertDefaults; onSuccess?: (data: unknown) => void }
+    ]
+
+    expect(options.mutationFn).toBe(saveAlertDefaults)
+    options.onSuccess?.({})
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: settingsQueryKeys.alertDefaults
+    })
   })
 })

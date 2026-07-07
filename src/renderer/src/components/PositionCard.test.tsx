@@ -6,12 +6,22 @@ import type { StockQuote } from './PriceCell'
 
 function renderRow(
   item: PositionListItem,
-  opts: { quote?: StockQuote; snapshot?: OptionSnapshot } = {}
+  opts: {
+    quote?: StockQuote
+    snapshot?: OptionSnapshot
+    profitTargetDefault?: number
+  } = {}
 ): ReturnType<typeof render> {
   return render(
     <table>
       <tbody>
-        <PositionRow item={item} index={0} quote={opts.quote} snapshot={opts.snapshot} />
+        <PositionRow
+          item={item}
+          index={0}
+          quote={opts.quote}
+          snapshot={opts.snapshot}
+          profitTargetDefault={opts.profitTargetDefault}
+        />
       </tbody>
     </table>
   )
@@ -212,5 +222,20 @@ it('renders TargetBadge using per-position override when crossed', () => {
   const item: PositionListItem = { ...BASE_ITEM, profitTargetPercent: 25 }
   const snap: OptionSnapshot = { ...AAPL_SNAPSHOT, bid: '2.40', ask: '2.60', mid: '2.50' }
   renderRow(item, { snapshot: snap })
+  expect(screen.getByTestId('target-badge')).toBeInTheDocument()
+})
+
+it('renders TargetBadge using the passed-in global profitTargetDefault when no per-position override', () => {
+  // default 40%, entry 3.50, mid 2.50 -> ~28.57%, below 40% -> no badge
+  const snap: OptionSnapshot = { ...AAPL_SNAPSHOT, bid: '2.40', ask: '2.60', mid: '2.50' }
+  renderRow(BASE_ITEM, { snapshot: snap, profitTargetDefault: 40 })
+  expect(screen.queryByTestId('target-badge')).not.toBeInTheDocument()
+})
+
+it('renders TargetBadge when crossing the passed-in global profitTargetDefault', () => {
+  // default 40%, entry 3.50, mid 2.00 -> ~42.86%, above 40% -> badge shown
+  // (below the hardcoded 50% default, proving the badge reads the saved global default)
+  const snap: OptionSnapshot = { ...AAPL_SNAPSHOT, bid: '1.90', ask: '2.10', mid: '2.00' }
+  renderRow(BASE_ITEM, { snapshot: snap, profitTargetDefault: 40 })
   expect(screen.getByTestId('target-badge')).toBeInTheDocument()
 })

@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import {
   RemoveAlpacaCredentialsPayloadSchema,
+  SaveAlertDefaultsPayloadSchema,
   SaveAlpacaCredentialsPayloadSchema,
   SetActiveBrokerEnvironmentPayloadSchema,
   TestConnectionPayloadSchema,
@@ -9,6 +10,7 @@ import {
 } from '../schemas'
 import { ValidationError } from '../core/lifecycle'
 import { logger } from '../logger'
+import type { AlertDefaults } from '../services/alert-defaults'
 import type { CredentialStatus, SettingsService } from '../services/settings'
 import type { TestConnectionResult } from '../services/settings-connections'
 import { handleIpcCall } from './utils'
@@ -22,6 +24,10 @@ type SettingsHandlersDependencies = {
     | 'setActiveBrokerEnvironment'
     | 'loadAlpacaCredentials'
   >
+  alertDefaults: {
+    getAlertDefaults: () => AlertDefaults
+    saveAlertDefaults: (input: AlertDefaults) => AlertDefaults
+  }
   testConnection: (payload: TestConnectionPayload) => Promise<TestConnectionResult>
   onBrokerProviderChanged: () => void
 }
@@ -42,6 +48,7 @@ function refreshBrokerIfActive(
 
 export function registerSettingsHandlers({
   settings,
+  alertDefaults,
   testConnection,
   onBrokerProviderChanged
 }: SettingsHandlersDependencies): void {
@@ -130,6 +137,20 @@ export function registerSettingsHandlers({
           secret: credentials.secret
         })
       }
+    })
+  )
+
+  ipcMain.handle('settings:get-alert-defaults', () =>
+    handleIpcCall('settings_get_alert_defaults_unhandled_error', () => ({
+      defaults: alertDefaults.getAlertDefaults()
+    }))
+  )
+
+  ipcMain.handle('settings:save-alert-defaults', (_, payload: unknown) =>
+    handleIpcCall('settings_save_alert_defaults_unhandled_error', () => {
+      const parsed = SaveAlertDefaultsPayloadSchema.parse(payload)
+      logger.debug(parsed, 'settings_save_alert_defaults_requested')
+      return { defaults: alertDefaults.saveAlertDefaults(parsed) }
     })
   )
 }

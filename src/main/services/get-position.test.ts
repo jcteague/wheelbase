@@ -270,4 +270,38 @@ describe('getPosition', () => {
     expect(cspOpenLeg).toBeDefined()
     expect(cspOpenLeg!.rollChainId).toBeNull()
   })
+
+  it('returns profitTargetPercent and managementWindowDteOverride when both columns are set', () => {
+    const db = makeTestDb()
+    const positionId = randomUUID()
+    const now = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO positions
+        (id, ticker, strategy_type, status, phase, opened_date, account_id, notes, thesis, tags, profit_target_percent, management_window_dte_override, created_at, updated_at)
+       VALUES (?, 'TSLA', 'WHEEL', 'ACTIVE', 'CSP_OPEN', ?, NULL, NULL, NULL, '[]', 25, 10, ?, ?)`
+    ).run(positionId, isoDate(0), now, now)
+
+    const detail = getPosition(db, positionId)
+
+    expect(detail).not.toBeNull()
+    expect(detail!.position.profitTargetPercent).toBe(25)
+    expect(detail!.position.managementWindowDteOverride).toBe(10)
+  })
+
+  it('returns profitTargetPercent and managementWindowDteOverride as null when both columns are NULL', () => {
+    const db = makeTestDb()
+    const positionId = randomUUID()
+    const now = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO positions
+        (id, ticker, strategy_type, status, phase, opened_date, account_id, notes, thesis, tags, created_at, updated_at)
+       VALUES (?, 'TSLA', 'WHEEL', 'ACTIVE', 'CSP_OPEN', ?, NULL, NULL, NULL, '[]', ?, ?)`
+    ).run(positionId, isoDate(0), now, now)
+
+    const detail = getPosition(db, positionId)
+
+    expect(detail).not.toBeNull()
+    expect(detail!.position.profitTargetPercent).toBeNull()
+    expect(detail!.position.managementWindowDteOverride).toBeNull()
+  })
 })

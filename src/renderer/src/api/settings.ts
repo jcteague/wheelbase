@@ -118,3 +118,31 @@ export async function testStoredAlpacaConnection(
   }
   return result.test
 }
+
+export type AlertDefaults = {
+  profitTargetPercent: number
+  managementWindowDte: number
+}
+
+export type SaveAlertDefaultsPayload = AlertDefaults
+
+// Alert defaults are validation-style errors (like positions.ts), so failures
+// surface as 400 rather than the 502 used for broker/credential operations above.
+function unwrapAlertDefaults(result: IpcResult<{ defaults: AlertDefaults }>): AlertDefaults {
+  if (!result.ok) {
+    throw apiError(400, { detail: result.errors })
+  }
+  return result.defaults
+}
+
+export async function getAlertDefaults(): Promise<AlertDefaults> {
+  return unwrapAlertDefaults(
+    (await window.api.settings.getAlertDefaults()) as IpcResult<{ defaults: AlertDefaults }>
+  )
+}
+
+export async function saveAlertDefaults(payload: SaveAlertDefaultsPayload): Promise<AlertDefaults> {
+  return unwrapAlertDefaults(
+    (await window.api.settings.saveAlertDefaults(payload)) as IpcResult<{ defaults: AlertDefaults }>
+  )
+}

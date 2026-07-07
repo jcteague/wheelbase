@@ -19,7 +19,7 @@ import { TableHeader } from '../components/ui/TablePrimitives'
 import { useMarketStatus } from '../hooks/useMarketStatus'
 import { useOptionSnapshots, type ActiveLegSummary } from '../hooks/useOptionSnapshots'
 import { usePositions } from '../hooks/usePositions'
-import { useSettingsStatus } from '../hooks/useSettings'
+import { useAlertDefaults, useSettingsStatus } from '../hooks/useSettings'
 import { useStockQuotes } from '../hooks/useStockQuotes'
 import { deriveMarketStatusDisplay } from '../lib/market-status'
 import { AssignmentNotificationBanner } from '../components/AssignmentNotificationBanner'
@@ -109,6 +109,7 @@ type PositionTableProps = {
   session?: string
   snapshots?: OptionSnapshotsBySymbol
   pendingPositionIds?: ReadonlySet<string>
+  profitTargetDefault?: number
 }
 
 function PositionTable({
@@ -117,7 +118,8 @@ function PositionTable({
   quotes = {},
   session,
   snapshots,
-  pendingPositionIds
+  pendingPositionIds,
+  profitTargetDefault
 }: PositionTableProps): React.JSX.Element {
   return (
     <table
@@ -145,6 +147,7 @@ function PositionTable({
             session={session}
             snapshot={isClosed ? undefined : snapshotForItem(item, snapshots)}
             hasPendingAssignment={pendingPositionIds?.has(item.id) ?? false}
+            profitTargetDefault={profitTargetDefault}
           />
         ))}
       </tbody>
@@ -155,6 +158,7 @@ function PositionTable({
 export function PositionsListPage(): React.JSX.Element {
   const { data, isLoading, isError } = usePositions()
   const settingsQuery = useSettingsStatus()
+  const alertDefaultsQuery = useAlertDefaults()
 
   const activePositions = useMemo(() => data?.filter((p) => p.status === 'ACTIVE') ?? [], [data])
   const closedPositions = useMemo(() => data?.filter((p) => p.status === 'CLOSED') ?? [], [data])
@@ -271,12 +275,17 @@ export function PositionsListPage(): React.JSX.Element {
             session={statusQuery.data?.session}
             snapshots={snapshotsQuery.data}
             pendingPositionIds={pendingPositionIds}
+            profitTargetDefault={alertDefaultsQuery.data?.profitTargetPercent}
           />
 
           {closedPositions.length > 0 && (
             <>
               <SectionHeader title="Closed" />
-              <PositionTable items={closedPositions} isClosed />
+              <PositionTable
+                items={closedPositions}
+                isClosed
+                profitTargetDefault={alertDefaultsQuery.data?.profitTargetPercent}
+              />
             </>
           )}
         </>

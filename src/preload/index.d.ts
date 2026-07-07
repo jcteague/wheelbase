@@ -39,6 +39,8 @@ interface IpcPositionRecord {
   notes: string | null
   thesis: string | null
   tags: string[]
+  profitTargetPercent: number | null
+  managementWindowDteOverride: number | null
   createdAt: string
   updatedAt: string
 }
@@ -333,6 +335,27 @@ type IpcTestConnectionResult =
     }
   | { ok: false; errorCode: string; message: string }
 
+interface IpcAlertDefaults {
+  profitTargetPercent: number
+  managementWindowDte: number
+}
+
+type IpcAlertDefaultsResult = IpcResult<{ defaults: IpcAlertDefaults }>
+
+interface IpcSaveAlertOverridesPayload {
+  positionId: string
+  profitTargetPercent: number | null
+  managementWindowDte: number | null
+}
+
+type IpcSaveAlertOverridesResult = IpcResult<{
+  position: {
+    id: string
+    profitTargetPercent: number | null
+    managementWindowDteOverride: number | null
+  }
+}>
+
 type IpcCredentialStatusResult = IpcResult<{ status: IpcCredentialStatus }>
 type IpcSaveAlpacaCredentialsResult = IpcResult<{
   status: IpcCredentialStatus
@@ -430,6 +453,9 @@ declare global {
       expireCc: (payload: IpcExpireCcPayload) => Promise<IpcExpireCcResult>
       rollCsp: (payload: IpcRollCspPayload) => Promise<IpcRollCspResult>
       rollCc: (payload: IpcRollCcPayload) => Promise<IpcRollCcResult>
+      saveAlertOverrides: (
+        payload: IpcSaveAlertOverridesPayload
+      ) => Promise<IpcSaveAlertOverridesResult>
       setStockQuoteTickers: (
         payload: IpcSetStockQuoteTickersPayload
       ) => Promise<IpcSetStockQuoteTickersResult>
@@ -463,6 +489,8 @@ declare global {
         testStoredAlpacaConnection: (
           payload: IpcTestStoredAlpacaConnectionPayload
         ) => Promise<IpcTestSettingsConnectionResult>
+        getAlertDefaults: () => Promise<IpcAlertDefaultsResult>
+        saveAlertDefaults: (payload: IpcAlertDefaults) => Promise<IpcAlertDefaultsResult>
       }
       marketData: {
         stockQuotes: (payload: IpcGetStockQuotesPayload) => Promise<IpcGetStockQuotesResult>

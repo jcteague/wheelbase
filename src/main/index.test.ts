@@ -109,6 +109,11 @@ vi.mock('./services/evaluate-alerts', () => ({
   evaluateAlerts: vi.fn().mockReturnValue({ createdCount: 0, updatedCount: 0, resolvedCount: 0 })
 }))
 
+vi.mock('./services/alert-defaults', () => ({
+  getAlertDefaults: vi.fn().mockReturnValue({ profitTargetPercent: 50, managementWindowDte: 21 }),
+  saveAlertDefaults: vi.fn()
+}))
+
 const mockSchedulerRegister = vi.fn()
 const mockSchedulerStart = vi.fn()
 const mockSchedulerStop = vi.fn().mockResolvedValue(undefined)
@@ -255,7 +260,36 @@ describe('main process bootstrap', () => {
 
     expect(vi.mocked(marketDataFactory.create)).toHaveBeenCalled()
     expect(vi.mocked(evaluateAlerts)).toHaveBeenCalledWith(
-      expect.objectContaining({ db: expect.anything(), provider })
+      expect.objectContaining({
+        db: expect.anything(),
+        provider,
+        managementWindowDte: 21,
+        profitTargetPercentDefault: 50
+      })
+    )
+  })
+
+  it('alert-evaluation handler reads the current saved global defaults on every tick', async () => {
+    await triggerBootstrap()
+
+    const registration = mockSchedulerRegister.mock.calls
+      .map(([job]) => job)
+      .find((job) => job.name === 'alert-evaluation') as
+      | { handler: () => Promise<unknown> }
+      | undefined
+    expect(registration).toBeDefined()
+
+    const { getAlertDefaults } = await import('./services/alert-defaults')
+    vi.mocked(getAlertDefaults).mockReturnValue({
+      profitTargetPercent: 40,
+      managementWindowDte: 14
+    })
+
+    await registration!.handler()
+
+    const { evaluateAlerts } = await import('./services/evaluate-alerts')
+    expect(vi.mocked(evaluateAlerts)).toHaveBeenCalledWith(
+      expect.objectContaining({ managementWindowDte: 14, profitTargetPercentDefault: 40 })
     )
   })
 

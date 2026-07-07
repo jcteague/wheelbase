@@ -132,6 +132,8 @@ export function createPosition(
       notes: payload.notes ?? null,
       thesis: payload.thesis ?? null,
       tags: [],
+      profitTargetPercent: null,
+      managementWindowDteOverride: null,
       createdAt: now,
       updatedAt: now
     },
