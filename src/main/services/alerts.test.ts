@@ -5,7 +5,10 @@ import type { AlertMatch } from '../core/alerts'
 import type { CreatePositionPayload } from '../schemas'
 import { makeTestDb, isoDate } from '../test-utils'
 import {
+  AlertError,
   alertKey,
+  clearStaleDismissals,
+  dismissAlert,
   listManagementQueue,
   listOpenAlerts,
   resolveAlertsNotIn,
@@ -33,14 +36,16 @@ function rawInsertAlert(
   overrides: Partial<{
     ruleCode: string
     status: string
+    dismissedAt: string
+    resolvedAt: string
   }> = {}
 ): void {
   const now = '2026-06-25T12:00:00.000Z'
   db.prepare(
     `INSERT INTO alerts (
        id, position_id, rule_code, urgency, summary, quick_action,
-       status, triggered_at, last_evaluated_at, created_at, updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       status, triggered_at, last_evaluated_at, dismissed_at, resolved_at, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     randomUUID(),
     positionId,
@@ -51,6 +56,8 @@ function rawInsertAlert(
     overrides.status ?? 'open',
     now,
     now,
+    overrides.dismissedAt ?? null,
+    overrides.resolvedAt ?? null,
     now,
     now
   )
@@ -80,6 +87,47 @@ describe('alerts schema', () => {
       rawInsertAlert(db, positionId, { ruleCode: 'EXPIRATION_IMMINENT', status: 'open' })
     ).not.toThrow()
   })
+
+  it('accepts a dismissed row with a dismissed_at timestamp', () => {
+    const db = makeTestDb()
+    const positionId = seedPositionId(db)
+    const dismissedAt = '2026-06-25T12:00:00.000Z'
+    rawInsertAlert(db, positionId, {
+      ruleCode: 'EXPIRATION_IMMINENT',
+      status: 'dismissed',
+      dismissedAt
+    })
+    const row = db.prepare('SELECT dismissed_at FROM alerts').get() as {
+      dismissed_at: string | null
+    }
+    expect(row.dismissed_at).toBe(dismissedAt)
+  })
+
+  it('rejects a second dismissed row for the same (position_id, rule_code) via the partial unique index', () => {
+    const db = makeTestDb()
+    const positionId = seedPositionId(db)
+    rawInsertAlert(db, positionId, { ruleCode: 'EXPIRATION_IMMINENT', status: 'dismissed' })
+    expect(() =>
+      rawInsertAlert(db, positionId, { ruleCode: 'EXPIRATION_IMMINENT', status: 'dismissed' })
+    ).toThrow()
+  })
+
+  it('allows an open, a resolved, and a dismissed historical row for the same (position_id, rule_code)', () => {
+    const db = makeTestDb()
+    const positionId = seedPositionId(db)
+    rawInsertAlert(db, positionId, { ruleCode: 'EXPIRATION_IMMINENT', status: 'open' })
+    rawInsertAlert(db, positionId, { ruleCode: 'EXPIRATION_IMMINENT', status: 'resolved' })
+    // A historical dismissal whose lifetime already ended: cleared to `resolved`
+    // (only one *currently* dismissed row per key is allowed by the new index).
+    expect(() =>
+      rawInsertAlert(db, positionId, {
+        ruleCode: 'EXPIRATION_IMMINENT',
+        status: 'resolved',
+        dismissedAt: '2026-06-24T12:00:00.000Z',
+        resolvedAt: '2026-06-25T12:00:00.000Z'
+      })
+    ).not.toThrow()
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -104,6 +152,7 @@ interface AlertRow {
   triggered_at: string
   last_evaluated_at: string
   resolved_at: string | null
+  dismissed_at: string | null
 }
 
 function readAlertRows(db: Database.Database): AlertRow[] {
@@ -152,6 +201,164 @@ describe('upsertOpenAlert', () => {
     expect(row.triggered_at).toBe(NOW)
     expect(row.last_evaluated_at).toBe(LATER)
     expect(row.summary).toBe('Expires in 3 days at $180.00 strike')
+  })
+
+  it('returns "suppressed" and does not insert or update when a dismissed row exists for the same (position_id, rule_code)', () => {
+    const db = makeTestDb()
+    const positionId = seedPositionId(db)
+    rawInsertAlert(db, positionId, {
+      ruleCode: 'EXPIRATION_IMMINENT',
+      status: 'dismissed',
+      dismissedAt: NOW
+    })
+
+    const outcome = upsertOpenAlert(db, EXPIRATION_MATCH, positionId, LATER)
+
+    expect(outcome).toBe('suppressed')
+    const rows = readAlertRows(db)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].status).toBe('dismissed')
+    expect(rows[0].dismissed_at).toBe(NOW)
+  })
+
+  it('still inserts a new open row when only a resolved row exists for the key', () => {
+    const db = makeTestDb()
+    const positionId = seedPositionId(db)
+    rawInsertAlert(db, positionId, { ruleCode: 'EXPIRATION_IMMINENT', status: 'resolved' })
+
+    const outcome = upsertOpenAlert(db, EXPIRATION_MATCH, positionId, NOW)
+
+    expect(outcome).toBe('inserted')
+    const rows = readAlertRows(db)
+    expect(rows).toHaveLength(2)
+    const openRow = rows.find((r) => r.status === 'open')!
+    expect(openRow.position_id).toBe(positionId)
+  })
+})
+
+describe('dismissAlert', () => {
+  it('transitions an open alert to dismissed with a dismissed_at timestamp', () => {
+    const db = makeTestDb()
+    const positionId = seedPositionId(db)
+    upsertOpenAlert(db, EXPIRATION_MATCH, positionId, NOW)
+    const alertId = readAlertRows(db)[0].id
+
+    const record = dismissAlert(db, alertId, LATER)
+
+    expect(record.status).toBe('dismissed')
+    expect(record.dismissedAt).toBe(LATER)
+    expect(record.updatedAt).toBe(LATER)
+    const row = readAlertRows(db)[0]
+    expect(row.status).toBe('dismissed')
+    expect(row.dismissed_at).toBe(LATER)
+  })
+
+  it('throws AlertError NOT_FOUND for an unknown alertId', () => {
+    const db = makeTestDb()
+
+    let thrown: unknown
+    try {
+      dismissAlert(db, 'unknown-id', NOW)
+    } catch (err) {
+      thrown = err
+    }
+
+    expect(thrown).toBeInstanceOf(AlertError)
+    expect((thrown as AlertError).code).toBe('NOT_FOUND')
+  })
+
+  it('throws AlertError NOT_OPEN with message "Only open alerts can be dismissed" when the alert is resolved', () => {
+    const db = makeTestDb()
+    const positionId = seedPositionId(db)
+    rawInsertAlert(db, positionId, { ruleCode: 'EXPIRATION_IMMINENT', status: 'resolved' })
+    const alertId = readAlertRows(db)[0].id
+
+    let thrown: unknown
+    try {
+      dismissAlert(db, alertId, NOW)
+    } catch (err) {
+      thrown = err
+    }
+
+    expect(thrown).toBeInstanceOf(AlertError)
+    expect((thrown as AlertError).code).toBe('NOT_OPEN')
+    expect((thrown as AlertError).message).toBe('Only open alerts can be dismissed')
+  })
+
+  it('throws AlertError NOT_OPEN when the alert is already dismissed', () => {
+    const db = makeTestDb()
+    const positionId = seedPositionId(db)
+    rawInsertAlert(db, positionId, {
+      ruleCode: 'EXPIRATION_IMMINENT',
+      status: 'dismissed',
+      dismissedAt: NOW
+    })
+    const alertId = readAlertRows(db)[0].id
+
+    let thrown: unknown
+    try {
+      dismissAlert(db, alertId, LATER)
+    } catch (err) {
+      thrown = err
+    }
+
+    expect(thrown).toBeInstanceOf(AlertError)
+    expect((thrown as AlertError).code).toBe('NOT_OPEN')
+  })
+})
+
+describe('clearStaleDismissals', () => {
+  it('transitions a dismissed row to resolved when its key is absent from keepOpenKeys', () => {
+    const db = makeTestDb()
+    const positionId = seedPositionId(db)
+    rawInsertAlert(db, positionId, {
+      ruleCode: 'EXPIRATION_IMMINENT',
+      status: 'dismissed',
+      dismissedAt: NOW
+    })
+
+    const count = clearStaleDismissals(db, new Set(), LATER)
+
+    expect(count).toBe(1)
+    const row = readAlertRows(db)[0]
+    expect(row.status).toBe('resolved')
+    expect(row.resolved_at).toBe(LATER)
+    expect(row.dismissed_at).toBe(NOW)
+  })
+
+  it('leaves a dismissed row untouched when its key is present in keepOpenKeys', () => {
+    const db = makeTestDb()
+    const positionId = seedPositionId(db)
+    rawInsertAlert(db, positionId, {
+      ruleCode: 'EXPIRATION_IMMINENT',
+      status: 'dismissed',
+      dismissedAt: NOW
+    })
+    const keepOpenKeys = new Set([alertKey(positionId, 'EXPIRATION_IMMINENT')])
+
+    const count = clearStaleDismissals(db, keepOpenKeys, LATER)
+
+    expect(count).toBe(0)
+    const row = readAlertRows(db)[0]
+    expect(row.status).toBe('dismissed')
+    expect(row.resolved_at).toBeNull()
+  })
+
+  it('ignores already-resolved and already-open rows', () => {
+    const db = makeTestDb()
+    const openPos = seedPositionId(db)
+    const resolvedPos = seedPositionId(db)
+    upsertOpenAlert(db, EXPIRATION_MATCH, openPos, NOW)
+    rawInsertAlert(db, resolvedPos, { ruleCode: 'EXPIRATION_IMMINENT', status: 'resolved' })
+
+    const count = clearStaleDismissals(db, new Set(), LATER)
+
+    expect(count).toBe(0)
+    const rows = readAlertRows(db)
+    const openRow = rows.find((r) => r.position_id === openPos)!
+    const resolvedRow = rows.find((r) => r.position_id === resolvedPos)!
+    expect(openRow.status).toBe('open')
+    expect(resolvedRow.status).toBe('resolved')
   })
 })
 
@@ -284,6 +491,7 @@ describe('listOpenAlerts', () => {
       triggeredAt: NOW,
       lastEvaluatedAt: NOW,
       resolvedAt: null,
+      dismissedAt: null,
       createdAt: expect.any(String),
       updatedAt: expect.any(String)
     })

@@ -15,6 +15,7 @@ import {
   QUEUE_ROW,
   readAlertRows,
   runAlertEvaluation,
+  seedAndResolveAlert,
   setActiveLegExpiration
 } from './alert-helpers'
 import { localDate } from './dates'
@@ -120,19 +121,8 @@ describe('US-52: expiration imminent alert', () => {
     app = await launchApp(dbPath, { marketStatus: REGULAR_SESSION })
     const page = await getPage(app)
 
-    const positionId = await seedCsp(page, cspAtDte('AAPL', 180, 5))
-    await runAlertEvaluation(page)
+    const { openRow } = await seedAndResolveAlert(page, dbPath, cspAtDte('AAPL', 180, 5))
 
-    const [openRow] = readAlertRows(dbPath)
-    expect(openRow.status).toBe('open')
-
-    const closeResult = await page.evaluate(async (payload) => window.api.closePosition(payload), {
-      positionId,
-      closePricePerContract: 1.25
-    })
-    expect(closeResult.ok).toBe(true)
-
-    await runAlertEvaluation(page)
     await goToPositionsList(page)
     await page.waitForSelector('text=No positions need attention right now')
 

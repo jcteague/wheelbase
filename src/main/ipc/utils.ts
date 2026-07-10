@@ -3,16 +3,22 @@ import { ValidationError } from '../core/lifecycle'
 import { BrokerError } from '../integrations/broker-provider'
 import { MarketDataError } from '../integrations/market-data-provider'
 import { PendingAssignmentError } from '../services/pending-assignments'
+import { AlertError } from '../services/alerts'
 import { logger } from '../logger'
 
 export type IpcFieldError = { field: string; code: string; message: string }
 
+type IpcErrorEnvelope = { ok: false; code?: string; deeplink?: string; errors: IpcFieldError[] }
+
+/** Shape shared by service-layer errors that carry a `code` and no other detail. */
+function rootCauseEnvelope(code: string, message: string): IpcErrorEnvelope {
+  return { ok: false, code, errors: [{ field: '__root__', code, message }] }
+}
+
 export async function handleIpcCall<T extends object>(
   logLabel: string,
   fn: () => T | Promise<T>
-): Promise<
-  ({ ok: true } & T) | { ok: false; code?: string; deeplink?: string; errors: IpcFieldError[] }
-> {
+): Promise<({ ok: true } & T) | IpcErrorEnvelope> {
   try {
     return { ok: true, ...(await fn()) }
   } catch (err) {
@@ -20,11 +26,10 @@ export async function handleIpcCall<T extends object>(
       return { ok: false, errors: [{ field: err.field, code: err.code, message: err.message }] }
     }
     if (err instanceof PendingAssignmentError) {
-      return {
-        ok: false,
-        code: err.code,
-        errors: [{ field: '__root__', code: err.code, message: err.message }]
-      }
+      return rootCauseEnvelope(err.code, err.message)
+    }
+    if (err instanceof AlertError) {
+      return rootCauseEnvelope(err.code, err.message)
     }
     if (err instanceof BrokerError) {
       // auth_failed is expected when credentials aren't configured — WARN, not ERROR

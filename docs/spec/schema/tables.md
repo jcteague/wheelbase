@@ -507,7 +507,7 @@ underlying per UTC day while preserving the precise observation timestamp.
 
 <!-- /generated -->
 
-<!-- generated:from us-50 -->
+<!-- generated:from us-50,us-59 -->
 
 ## `alerts`
 
@@ -518,9 +518,11 @@ position against the built-in rules; the persistence layer in
 cleared conditions. Rows are **never deleted** — resolution flips status and
 stamps `resolved_at`, so the table is a complete audit trail of what fired and
 when. US-50 introduced the table with no IPC surface; the `alerts:list` read
-path now exists in `src/main/ipc/alerts.ts`. Added by migration `009`. See
-[us-50 — Alert Evaluation Engine](../features/us-50-alert-evaluation-engine.md)
-and [Alert Engine](../domain/alert-engine.md).
+path now exists in `src/main/ipc/alerts.ts`, and US-59 added `alerts:dismiss`.
+Added by migration `009`; extended by migration `011`. See
+[US-50 — Alert Engine](../features/us-50-alert-engine.md),
+[US-59 — Dismiss an Alert](../features/us-59-dismiss-alert.md), and
+[Management Alerts](../domain/alerts.md).
 
 ### Columns
 
@@ -528,14 +530,15 @@ and [Alert Engine](../domain/alert-engine.md).
 | ------------------- | ---- | -------- | --------------------------------------------------------------------------------------------------------------- |
 | `id`                | TEXT | No       | UUID primary key, generated in the service layer via `crypto.randomUUID()`                                      |
 | `position_id`       | TEXT | No       | FK → `positions.id`                                                                                             |
-| `rule_code`         | TEXT | No       | Rule identifier; US-50 emits `EXPIRATION_IMMINENT` or `MANAGEMENT_WINDOW`                                       |
-| `urgency`           | TEXT | No       | `high`, `medium`, or `low` (US-50 emits `high` / `medium`)                                                      |
+| `rule_code`         | TEXT | No       | Rule identifier; e.g. `EXPIRATION_IMMINENT` or `MANAGEMENT_WINDOW`                                              |
+| `urgency`           | TEXT | No       | `high`, `medium`, or `low`                                                                                       |
 | `summary`           | TEXT | No       | Human-readable queue text, e.g. `Expires in 5 days at $180.00 strike`                                           |
 | `quick_action`      | TEXT | No       | Queue button label; Phase 3 always `Review position`                                                            |
-| `status`            | TEXT | No       | `open`, `resolved`, or `dismissed`; `NOT NULL DEFAULT 'open'` (`dismissed` reserved for US-59, unused in US-50) |
+| `status`            | TEXT | No       | `open`, `resolved`, or `dismissed`; `NOT NULL DEFAULT 'open'`                                                    |
 | `triggered_at`      | TEXT | No       | ISO timestamp of first firing; never mutated while the alert stays open                                         |
 | `last_evaluated_at` | TEXT | No       | ISO timestamp of the most recent re-matching evaluation                                                         |
-| `resolved_at`       | TEXT | Yes      | Set when `status` transitions to `resolved`                                                                     |
+| `resolved_at`       | TEXT | Yes      | Set when `status` transitions to `resolved` (including a dismissed row that later clears, US-59)                |
+| `dismissed_at`      | TEXT | Yes      | **(US-59, migration 011)** Set once when `status` transitions `open → dismissed`; never cleared, even once the row later moves to `resolved` — permanent audit marker |
 | `created_at`        | TEXT | No       | ISO timestamp at row insert                                                                                     |
 | `updated_at`        | TEXT | No       | ISO timestamp at last update                                                                                    |
 
@@ -549,6 +552,11 @@ and [Alert Engine](../domain/alert-engine.md).
   re-firing after its earlier alert resolved.
 - `idx_alerts_status_urgency` on `(status, urgency)` — supports the
   open-management-queue read path (US-51 consumes it).
+- `idx_alerts_dismissed_unique` **(US-59, migration 011)** — partial UNIQUE on
+  `(position_id, rule_code) WHERE status = 'dismissed'`. Mirrors
+  `idx_alerts_open_unique`: at most one _currently_ dismissed row per
+  `(position, rule)` at a time, while historical dismissed-then-resolved rows
+  accumulate freely.
 
 ### State transitions
 
@@ -565,8 +573,17 @@ and [Alert Engine](../domain/alert-engine.md).
 - `resolved → (new) open row` — if the same rule matches again later, a fresh
   open row is inserted; the old resolved row stays intact (distinct
   `triggered_at` history).
-- `open → dismissed` — reserved for US-59; the `dismissed` status value is
-  part of the domain but unused in US-50.
+- `open → dismissed` **(US-59)** — the trader dismisses via `alerts:dismiss`:
+  UPDATE `status='dismissed'`, `dismissed_at=now`; `triggered_at` untouched.
+- `dismissed → dismissed` (blocked re-open, **US-59**) — while a dismissed row
+  exists for a key, `upsertOpenAlert` returns `'suppressed'` rather than
+  inserting or updating, so a still-true condition can't silently reappear.
+- `dismissed → resolved` **(US-59)** — the same global keep-open-key check
+  that resolves open rows also retires a dismissed row once its key drops out
+  of the current run's match set: UPDATE `status='resolved'`,
+  `resolved_at=now`; `dismissed_at` is preserved.
+- Dismissing a non-`open` row is rejected (`AlertError`, `NOT_FOUND` or
+  `NOT_OPEN`) rather than transitioning the row — **US-59**.
 
 Rows are never deleted. Persistence runs **compute-then-persist**: all pure
 engine evaluation happens outside any transaction (per-position `try/catch` so

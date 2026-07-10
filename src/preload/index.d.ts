@@ -425,6 +425,29 @@ declare global {
     triggeredAt: string
   }
 
+  interface IpcAlertRecord {
+    id: string
+    positionId: string
+    ruleCode: string
+    urgency: 'high' | 'medium' | 'low'
+    summary: string
+    quickAction: string
+    status: 'open' | 'resolved' | 'dismissed'
+    triggeredAt: string
+    lastEvaluatedAt: string
+    resolvedAt: string | null
+    dismissedAt: string | null
+    createdAt: string
+    updatedAt: string
+  }
+
+  // Narrows IpcAlertRecord for the alerts:dismiss success response: a dismiss
+  // always leaves the row 'dismissed' with a real dismissedAt timestamp.
+  interface IpcDismissedAlertRecord extends Omit<IpcAlertRecord, 'status' | 'dismissedAt'> {
+    status: 'dismissed'
+    dismissedAt: string
+  }
+
   interface IpcStockQuoteEvent {
     ticker: string
     quote: IpcStockQuote
@@ -533,6 +556,14 @@ declare global {
         list: () => Promise<
           | { ok: true; items: ManagementQueueItem[] }
           | { ok: false; errors: Array<{ field: string; code: string; message: string }> }
+        >
+        dismiss: (payload: { alertId: string }) => Promise<
+          | { ok: true; alert: IpcDismissedAlertRecord }
+          | {
+              ok: false
+              code?: string
+              errors: Array<{ field: string; code: string; message: string }>
+            }
         >
       }
       ivr: {

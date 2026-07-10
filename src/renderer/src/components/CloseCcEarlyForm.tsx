@@ -1,4 +1,5 @@
 import { DatePicker } from '@/components/ui/date-picker'
+import { firstErrorMessage, type ApiError } from '../api/error'
 import { fmtMoney } from '../lib/format'
 import { AlertBox } from './ui/AlertBox'
 import { Field } from './ui/FormField'
@@ -22,7 +23,7 @@ type CloseCcEarlyFormProps = {
   dateError: string | null
   isPending: boolean
   isError: boolean
-  error: unknown
+  error: ApiError | null
   onClosePriceChange: (value: string) => void
   onFillDateChange: (value: string) => void
   onSubmit: () => void
@@ -140,10 +141,7 @@ export function CloseCcEarlyForm({
 
         {isError && (
           <div className="text-wb-red text-[0.8rem]">
-            {String(
-              (error as { body?: { detail?: Array<{ message: string }> } })?.body?.detail?.[0]
-                ?.message ?? 'An unexpected error occurred'
-            )}
+            {firstErrorMessage(error, 'An unexpected error occurred')}
           </div>
         )}
       </SheetBody>

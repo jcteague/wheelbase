@@ -7,7 +7,7 @@ import Database from 'better-sqlite3'
 import { addDays } from 'date-fns'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeSpyLogger, makeTestDb } from '../test-utils'
-import { listOpenAlerts } from './alerts'
+import { dismissAlert, listOpenAlerts } from './alerts'
 import { evaluateAlerts } from './evaluate-alerts'
 import {
   LATER,
@@ -483,6 +483,137 @@ describe('evaluateAlerts', () => {
     expect(open.find((a) => a.positionId === 'pos-healthy')?.ruleCode).toBe('EXPIRATION_IMMINENT')
     // The malformed leg still gets its OCC-independent DTE alert (no throw).
     expect(open.find((a) => a.positionId === 'pos-badstrike')?.ruleCode).toBe('EXPIRATION_IMMINENT')
+  })
+
+  // ---------------------------------------------------------------------------
+  // [US-59] Dismissal-aware evaluation — clearStaleDismissals wired into the
+  // persist transaction alongside resolveAlertsNotIn.
+  // ---------------------------------------------------------------------------
+
+  it('keeps a dismissed MANAGEMENT_WINDOW alert hidden across a re-run where the position is still inside the window', async () => {
+    seedEvaluablePosition(db, {
+      id: 'pos-aapl',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      strike: '180.0000',
+      expiration: expirationForDte(12)
+    })
+
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
+    const [seeded] = readAlertRows(db)
+    dismissAlert(db, seeded.id, LATER_ISO)
+
+    const result = await evaluateAlerts({
+      db,
+      now: LATER,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
+
+    expect(result.createdCount).toBe(0)
+    expect(result.updatedCount).toBe(0)
+    expect(listOpenAlerts(db)).toEqual([])
+
+    const rows = readAlertRows(db)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].status).toBe('dismissed')
+  })
+
+  it('re-opens a dismissed MANAGEMENT_WINDOW alert with a new triggered_at after the position leaves and re-enters the window', async () => {
+    seedEvaluablePosition(db, {
+      id: 'pos-aapl',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      strike: '180.0000',
+      expiration: expirationForDte(12)
+    })
+
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
+    const [seeded] = readAlertRows(db)
+    dismissAlert(db, seeded.id, NOW_ISO)
+
+    // Rolled out to 30 DTE — outside the management window. The dismissed row
+    // must clear to resolved, not linger as a stale dismissal.
+    db.prepare(`UPDATE legs SET expiration = ? WHERE position_id = ?`).run(
+      expirationForDte(30),
+      'pos-aapl'
+    )
+    const clearResult = await evaluateAlerts({
+      db,
+      now: LATER,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
+
+    const afterClear = readAlertRows(db).find((r) => r.id === seeded.id)
+    expect(afterClear?.status).toBe('resolved')
+    expect(listOpenAlerts(db)).toEqual([])
+    // A dismissal clearing to resolved must be counted in resolvedCount, same
+    // as an open alert resolving — both are "the row is no longer active".
+    expect(clearResult.resolvedCount).toBe(1)
+
+    // Back inside the window — a brand-new open row with a later triggered_at.
+    db.prepare(`UPDATE legs SET expiration = ? WHERE position_id = ?`).run(
+      expirationForDte(14, TWO_DAYS_LATER),
+      'pos-aapl'
+    )
+    await evaluateAlerts({
+      db,
+      now: TWO_DAYS_LATER,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
+
+    const open = listOpenAlerts(db)
+    expect(open).toHaveLength(1)
+    expect(open[0].ruleCode).toBe('MANAGEMENT_WINDOW')
+    expect(new Date(open[0].triggeredAt).getTime()).toBeGreaterThan(new Date(NOW_ISO).getTime())
+  })
+
+  it('still resolves an open (non-dismissed) alert when its condition clears, unaffected by clearStaleDismissals', async () => {
+    seedEvaluablePosition(db, {
+      id: 'pos-msft',
+      ticker: 'MSFT',
+      phase: 'CC_OPEN',
+      strike: '300.0000',
+      expiration: expirationForDte(17)
+    })
+
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
+    expect(listOpenAlerts(db)).toHaveLength(1)
+
+    db.prepare(`UPDATE legs SET expiration = ? WHERE position_id = ?`).run(
+      expirationForDte(29),
+      'pos-msft'
+    )
+
+    const result = await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
+
+    expect(result.resolvedCount).toBe(1)
+    const rows = readAlertRows(db)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].status).toBe('resolved')
+    expect(listOpenAlerts(db)).toHaveLength(0)
   })
 })
 

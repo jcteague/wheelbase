@@ -8,6 +8,7 @@ import { useStockQuotes } from '../hooks/useStockQuotes'
 import { useOptionSnapshots } from '../hooks/useOptionSnapshots'
 import { useAlertDefaults, useSettingsStatus } from '../hooks/useSettings'
 import { useManagementQueue } from '../hooks/useManagementQueue'
+import { useDismissAlert } from '../hooks/useDismissAlert'
 import { PositionsListPage } from './PositionsListPage'
 
 vi.mock('../hooks/usePositions')
@@ -16,6 +17,7 @@ vi.mock('../hooks/useMarketStatus')
 vi.mock('../hooks/useOptionSnapshots')
 vi.mock('../hooks/useSettings')
 vi.mock('../hooks/useManagementQueue')
+vi.mock('../hooks/useDismissAlert')
 vi.mock('../components/AssignmentNotificationBanner', () => ({
   AssignmentNotificationBanner: () => null
 }))
@@ -64,9 +66,23 @@ const mockUseOptionSnapshots = vi.mocked(useOptionSnapshots)
 const mockUseSettingsStatus = vi.mocked(useSettingsStatus)
 const mockUseAlertDefaults = vi.mocked(useAlertDefaults)
 const mockUseManagementQueue = vi.mocked(useManagementQueue)
+const mockUseDismissAlert = vi.mocked(useDismissAlert)
 
 function makeQueueResult(items: ManagementQueueItem[]): ReturnType<typeof useManagementQueue> {
   return { data: items } as unknown as ReturnType<typeof useManagementQueue>
+}
+
+function makeDismissMutationResult(): ReturnType<typeof useDismissAlert> {
+  return {
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(),
+    reset: vi.fn(),
+    isPending: false,
+    isSuccess: false,
+    isError: false,
+    error: null,
+    data: undefined
+  } as unknown as ReturnType<typeof useDismissAlert>
 }
 
 const QUEUE_ITEM: ManagementQueueItem = {
@@ -257,6 +273,7 @@ beforeEach(() => {
   mockUseOptionSnapshots.mockReturnValue(makeOptionSnapshotsResult())
   mockUsePendingAssignments.mockReturnValue({ data: [], isLoading: false, isError: false })
   mockUseManagementQueue.mockReturnValue(makeQueueResult([]))
+  mockUseDismissAlert.mockReturnValue(makeDismissMutationResult())
   mockUseSettingsStatus.mockReturnValue({
     data: {
       massive: 'configured',

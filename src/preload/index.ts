@@ -69,7 +69,8 @@ const api = {
     runDetectionNow: () => invoke('assignments:run-detection-now')
   },
   alerts: {
-    list: () => invoke('alerts:list')
+    list: () => invoke('alerts:list'),
+    dismiss: (payload: { alertId: string }) => invoke('alerts:dismiss', payload)
   },
   ivr: {
     collectNow: () => invoke('ivr:collect-now')

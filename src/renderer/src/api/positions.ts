@@ -1,8 +1,9 @@
 // Adapter between the renderer and the IPC preload layer.
 
-import { type ApiError, apiError } from './error'
+import { type ApiError, apiError, type IpcFieldError, throwMappedIpcErrors } from './error'
 
 export type { ApiError }
+export type ApiFieldError = IpcFieldError
 
 export type WheelPhase =
   | 'CSP_OPEN'
@@ -73,12 +74,6 @@ export type PositionListItem = {
   profitTargetPercent: number | null
 }
 
-export type ApiFieldError = {
-  field: string
-  code: string
-  message: string
-}
-
 // IPC camelCase field names → renderer snake_case form field names
 const IPC_TO_FORM_FIELD: Record<string, string> = {
   premiumPerContract: 'premium_per_contract',
@@ -97,10 +92,6 @@ function mapIpcErrors(errors: ApiFieldError[]): ApiFieldError[] {
     code: e.code,
     message: e.message
   }))
-}
-
-function throwMappedIpcErrors(errors: ApiFieldError[]): never {
-  throw apiError(400, { detail: mapIpcErrors(errors) })
 }
 
 export async function listPositions(): Promise<PositionListItem[]> {
@@ -264,7 +255,7 @@ export async function closePosition(payload: CloseCspPayload): Promise<CloseCspR
     fillDate: payload.fill_date
   })
   if (!result.ok) {
-    throw apiError(400, { detail: mapIpcErrors(result.errors) })
+    throwMappedIpcErrors(mapIpcErrors(result.errors))
   }
   return result as unknown as CloseCspResponse
 }
@@ -275,7 +266,7 @@ export async function expirePosition(payload: ExpireCspPayload): Promise<ExpireC
     expirationDateOverride: payload.expiration_date_override
   })
   if (!result.ok) {
-    throw apiError(400, { detail: mapIpcErrors(result.errors) })
+    throwMappedIpcErrors(mapIpcErrors(result.errors))
   }
   return result as unknown as ExpireCspResponse
 }
@@ -286,7 +277,7 @@ export async function assignPosition(payload: AssignCspPayload): Promise<AssignC
     assignmentDate: payload.assignment_date
   })
   if (!result.ok) {
-    throw apiError(400, { detail: mapIpcErrors(result.errors) })
+    throwMappedIpcErrors(mapIpcErrors(result.errors))
   }
   return result as unknown as AssignCspResponse
 }
@@ -333,7 +324,7 @@ export async function openCoveredCall(payload: OpenCcPayload): Promise<OpenCcRes
     fillDate: payload.fill_date
   })
   if (!result.ok) {
-    throw apiError(400, { detail: mapIpcErrors(result.errors) })
+    throwMappedIpcErrors(mapIpcErrors(result.errors))
   }
   return result as unknown as OpenCcResponse
 }
@@ -365,7 +356,7 @@ export async function closeCoveredCallEarly(
     fillDate: payload.fill_date
   })
   if (!result.ok) {
-    throwMappedIpcErrors(result.errors)
+    throwMappedIpcErrors(mapIpcErrors(result.errors))
   }
   return result as unknown as CloseCcEarlyResponse
 }
@@ -409,7 +400,7 @@ export async function recordCallAway(
     positionId: payload.position_id
   })
   if (!result.ok) {
-    throwMappedIpcErrors(result.errors)
+    throwMappedIpcErrors(mapIpcErrors(result.errors))
   }
   return result as unknown as RecordCallAwayResponse
 }
@@ -456,7 +447,7 @@ export async function expireCc(payload: ExpireCcPayload): Promise<ExpireCcRespon
     expirationDateOverride: payload.expiration_date_override
   })
   if (!result.ok) {
-    throwMappedIpcErrors(result.errors)
+    throwMappedIpcErrors(mapIpcErrors(result.errors))
   }
   return result as unknown as ExpireCcResponse
 }
@@ -506,7 +497,7 @@ export async function rollCsp(payload: RollCspPayload): Promise<RollCspResponse>
     fillDate: payload.fill_date
   })
   if (!result.ok) {
-    throwMappedIpcErrors(result.errors)
+    throwMappedIpcErrors(mapIpcErrors(result.errors))
   }
   return result as unknown as RollCspResponse
 }
@@ -556,7 +547,7 @@ export async function rollCc(payload: RollCcPayload): Promise<RollCcResponse> {
     fillDate: payload.fill_date
   })
   if (!result.ok) {
-    throwMappedIpcErrors(result.errors)
+    throwMappedIpcErrors(mapIpcErrors(result.errors))
   }
   return result as unknown as RollCcResponse
 }
@@ -580,7 +571,7 @@ export async function saveAlertOverrides(
 ): Promise<SaveAlertOverridesResponse> {
   const result = await window.api.saveAlertOverrides(payload)
   if (!result.ok) {
-    throwMappedIpcErrors(result.errors)
+    throwMappedIpcErrors(mapIpcErrors(result.errors))
   }
   return result as unknown as SaveAlertOverridesResponse
 }
@@ -600,7 +591,7 @@ export async function createPosition(
   })
 
   if (!result.ok) {
-    throw apiError(400, { detail: mapIpcErrors(result.errors) })
+    throwMappedIpcErrors(mapIpcErrors(result.errors))
   }
 
   return {

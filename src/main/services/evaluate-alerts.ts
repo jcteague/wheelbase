@@ -20,7 +20,7 @@ import { logger as defaultLogger, type LoggerLike } from '../logger'
 import type { EvaluateAlertsResult } from '../schemas'
 import { buildOccSymbol } from '../../shared/option-symbol'
 import { activeLegSubquery } from './active-leg-sql'
-import { alertKey, resolveAlertsNotIn, upsertOpenAlert } from './alerts'
+import { alertKey, clearStaleDismissals, resolveAlertsNotIn, upsertOpenAlert } from './alerts'
 import { fetchOptionSnapshots, fetchStockQuotes, type IpcStockQuote } from './market-data'
 
 export const ALERT_EVAL_JOB_NAME = 'alert-evaluation'
@@ -246,7 +246,7 @@ export async function evaluateAlerts({
   }
 
   // Persist phase — single transaction: upsert every match, then resolve any
-  // open alert whose condition no longer matches this run.
+  // open or dismissed alert whose condition no longer matches this run.
   let createdCount = 0
   let updatedCount = 0
   let resolvedCount = 0
@@ -254,11 +254,13 @@ export async function evaluateAlerts({
   db.transaction(() => {
     const keepOpenKeys = new Set(skippedKeys)
     for (const { positionId, match } of matches) {
-      if (upsertOpenAlert(db, match, positionId, nowIso) === 'inserted') createdCount++
-      else updatedCount++
+      const outcome = upsertOpenAlert(db, match, positionId, nowIso)
+      if (outcome === 'inserted') createdCount++
+      else if (outcome === 'updated') updatedCount++
       keepOpenKeys.add(alertKey(positionId, match.ruleCode))
     }
     resolvedCount = resolveAlertsNotIn(db, keepOpenKeys, nowIso)
+    resolvedCount += clearStaleDismissals(db, keepOpenKeys, nowIso)
   })()
 
   logger.info(

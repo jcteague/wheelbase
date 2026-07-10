@@ -1,6 +1,7 @@
 import Decimal from 'decimal.js'
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { firstErrorMessage } from '../api/error'
 import type { AssignCspResponse } from '../api/positions'
 import { localToday } from '../lib/dates'
 import { fmtDate, fmtMoney } from '../lib/format'
@@ -125,14 +126,7 @@ export function AssignmentSheet(props: AssignmentSheetProps): React.JSX.Element 
           <strong>This cannot be undone.</strong> The position will transition to{' '}
           {PHASE_LABEL.HOLDING_SHARES}. Full leg history is preserved.
         </div>
-        {isError && (
-          <ErrorAlert>
-            {String(
-              (error.body as { detail?: Array<{ message: string }> })?.detail?.[0]?.message ??
-                'Assignment failed'
-            )}
-          </ErrorAlert>
-        )}
+        {isError && <ErrorAlert>{firstErrorMessage(error, 'Assignment failed')}</ErrorAlert>}
       </SheetBody>
       <SheetFooter>
         <FormButton

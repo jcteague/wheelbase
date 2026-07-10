@@ -516,8 +516,22 @@ export interface AlertRecord {
   triggeredAt: string
   lastEvaluatedAt: string
   resolvedAt: string | null
+  dismissedAt: string | null
   createdAt: string
   updatedAt: string
+}
+
+export const DismissAlertPayloadSchema = z.object({
+  alertId: z.string().min(1)
+})
+export type DismissAlertPayload = z.infer<typeof DismissAlertPayloadSchema>
+
+// Narrows AlertRecord for the alerts:dismiss success response: a dismiss
+// always leaves the row in 'dismissed' status with a real dismissedAt
+// timestamp, unlike the general AlertRecord where both are broader.
+export interface DismissedAlertRecord extends Omit<AlertRecord, 'status' | 'dismissedAt'> {
+  status: 'dismissed'
+  dismissedAt: string
 }
 
 // Enriched, sorted view-model for the dashboard management queue (US-51).

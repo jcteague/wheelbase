@@ -1,6 +1,6 @@
 # Management Alerts
 
-<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56 -->
+<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56,us-59 -->
 
 ## Overview
 
@@ -49,6 +49,14 @@ configurable management window), and it stays mutually exclusive with
 `MANAGEMENT_WINDOW`. The behavior already existed in the US-50 registry, so US-52
 required no new migration, IPC channel, or renderer contract — the work was
 regression hardening (direct core/service/e2e coverage) around the existing rule.
+
+US-59 adds a `Dismiss` action on open queue alerts: dismissing transitions a row
+to `status = 'dismissed'` with a `dismissed_at` timestamp and hides it from the
+open queue, while making the evaluation job's upsert logic dismissal-aware so a
+still-true condition doesn't silently re-open it. Once the condition genuinely
+clears, the dismissed row retires to `resolved` (preserving `dismissed_at`); if
+it later returns, a fresh open row is created with a new `triggered_at` — the
+same resolve→refire lifecycle already established for open alerts.
 
 <!-- /generated -->
 
@@ -164,7 +172,7 @@ an e2e test for each direction.
 
 <!-- /generated -->
 
-<!-- generated:from us-50 -->
+<!-- generated:from us-50,us-59 -->
 
 ## Alert lifecycle
 
@@ -183,7 +191,24 @@ table is an audit trail):
 - **resolved → (new) open** — if the rule fires again later, a fresh open row is
   inserted; the prior resolved row stays intact (distinct `triggered_at`
   history).
-- **open → dismissed** — reserved for US-59; out of scope for US-50.
+- **open → dismissed** (US-59) — the trader dismisses an open alert via
+  `alerts:dismiss`. `status = 'dismissed'`, `dismissed_at = now`,
+  `updated_at = now`; `triggered_at` is untouched. The row drops out of the
+  open queue immediately.
+- **dismissed → dismissed (blocked re-open)** (US-59) — while a dismissed row
+  exists for a key, `upsertOpenAlert` finds it and returns `'suppressed'`
+  instead of inserting or updating — a still-true condition never silently
+  reappears.
+- **dismissed → resolved** (US-59) — the same per-run "genuinely evaluated,
+  didn't match" signal that resolves open alerts (see below) also retires a
+  dismissed row: `status = 'resolved'`, `resolved_at = now`, `dismissed_at`
+  preserved. Once no `open` or `dismissed` row remains for the key, the next
+  match creates a brand-new open row with a fresh `triggered_at`.
+- **Illegal: dismissing a non-`open` row** (US-59) — rejected with
+  `AlertError('NOT_OPEN', 'Only open alerts can be dismissed')`; dismissing a
+  nonexistent `alertId` is rejected with `AlertError('NOT_FOUND', ...)`. The
+  `NOT_OPEN` message covers both an already-`resolved` and an
+  already-`dismissed` row identically.
 
 Resolution is **global**: on each run the persist phase marks every currently
 open alert whose `(position_id, rule_code)` key is absent from this run's
@@ -193,7 +218,10 @@ resolution would leak open alerts for closed positions. The keep-open set is the
 union of this run's matched keys **and** the keys of rules skipped for missing
 data: a skipped rule was never evaluated, so treating it as cleared would resolve
 then reopen the alert with a fresh `triggered_at` on a transient snapshot gap
-(e.g. a single absent option mid → `missing_option_mark`).
+(e.g. a single absent option mid → `missing_option_mark`). US-59's
+`clearStaleDismissals` reuses this exact keep-open set for dismissed rows, so
+"condition cleared" means precisely the same thing for a dismissed alert as it
+already does for an open one.
 
 <!-- /generated -->
 
@@ -285,7 +313,7 @@ their log events:
 
 <!-- /generated -->
 
-<!-- generated:from us-50,us-51,us-53-54-55,us-56 -->
+<!-- generated:from us-50,us-51,us-53-54-55,us-56,us-59 -->
 
 ## Key decisions
 
@@ -437,6 +465,21 @@ their log events:
   table), and an uncached fetch would cost ~4k Finnhub calls per market day.
 - **Driven by:** [us-56](../features/us-56-earnings-proximity-alert.md)
 
+### Dismissal reuses the open/resolved state machine rather than a parallel "cleared" concept
+
+- **Decision:** A dismissed alert retires to `resolved` (not a new terminal
+  state) once its rule's key drops out of the same per-run `keepOpenKeys` set
+  that resolves open alerts; a still-true condition can't silently reopen
+  because `upsertOpenAlert` checks for a blocking dismissed row first
+  (partial unique index `idx_alerts_dismissed_unique`) and returns
+  `'suppressed'` instead of inserting.
+- **Why:** One state machine, one shared "did the condition clear" signal for
+  open and dismissed rows alike; a rule skipped for missing data is never
+  treated as cleared for either.
+- **Driven by:** [us-59](../features/us-59-dismiss-alert.md) ·
+  [alert-resolution-global](../architecture/02-adrs/alert-resolution-global.md) ·
+  [alerts-partial-unique-open](../architecture/02-adrs/alerts-partial-unique-open.md)
+
 ### Engine input carries precomputed `daysToEarnings` plus raw `expiration`
 
 - **Decision:** `AlertEvaluationInput` gains `daysToEarnings: number | null`
@@ -453,7 +496,7 @@ their log events:
 
 <!-- /generated -->
 
-<!-- generated:from us-50 -->
+<!-- generated:from us-50,us-59 -->
 
 ## Schema
 
@@ -461,8 +504,11 @@ The `alerts` table (migration `009_create_alerts.sql`) persists every alert with
 `triggered_at` / `last_evaluated_at` / `resolved_at` timestamps and a
 `status` of `open` | `resolved` | `dismissed`. Two indexes: the partial unique
 `idx_alerts_open_unique` and `idx_alerts_status_urgency` for the open-queue read
-path. See [Tables](../schema/tables.md) and [Migrations](../schema/migrations.md)
-for full column detail.
+path. Migration `011_add_alerts_dismissal.sql` (US-59) adds a `dismissed_at TEXT`
+column (nullable, set once, never cleared) and a second partial unique index,
+`idx_alerts_dismissed_unique`, mirroring `idx_alerts_open_unique` for the
+`dismissed` status. See [Tables](../schema/tables.md) and
+[Migrations](../schema/migrations.md) for full column detail.
 
 <!-- /generated -->
 
@@ -488,7 +534,7 @@ dashboard's empty state.
 
 <!-- /generated -->
 
-<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56,us-57-58 -->
+<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56,us-57-58,us-59 -->
 
 ## Driven by
 
@@ -498,6 +544,7 @@ dashboard's empty state.
 - [US-53/54/55 — Live market-data alert rules](../features/us-53-54-55-market-data-alert-rules.md)
 - [US-56 — Earnings-proximity alert](../features/us-56-earnings-proximity-alert.md)
 - [US-57/58 — Configurable alert thresholds](../features/us-57-58-configurable-alert-thresholds.md)
+- [US-59 — Dismiss an alert with a record of the dismissal](../features/us-59-dismiss-alert.md)
 
 <!-- /generated -->
 

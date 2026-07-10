@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation } from 'wouter'
+import { firstErrorMessage } from '../api/error'
 import { useExpirePosition } from '../hooks/useExpirePosition'
 import { fmtDate, fmtMoney } from '../lib/format'
 import { getSheetPortal } from '../lib/portal'
@@ -198,12 +199,7 @@ export function ExpirationSheet({
           {/* Error */}
           {isError && error && (
             <div className="mb-4">
-              <ErrorAlert
-                message={
-                  (error.body as { detail?: Array<{ message: string }> } | null)?.detail?.[0]
-                    ?.message ?? 'An error occurred'
-                }
-              />
+              <ErrorAlert message={firstErrorMessage(error, 'An error occurred')} />
             </div>
           )}
         </SheetBody>

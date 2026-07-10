@@ -120,7 +120,7 @@ separate "US-35 app_settings migration" in tree.
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50,us-57-58 -->
+<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50,us-57-58,us-59 -->
 
 ## Migration catalogue
 
@@ -372,7 +372,7 @@ IGNORE` on the compound key)
 
 ### `migrations/009_create_alerts.sql` — create `alerts` for the management-alert evaluation engine
 
-- **Driven by:** [us-50 — Alert Evaluation Engine](../features/us-50-alert-evaluation-engine.md)
+- **Driven by:** [us-50 — Alert Engine](../features/us-50-alert-engine.md)
 - **Rationale:** First persistence for Epic 07 management alerts. A scheduled
   job evaluates active CSP/CC positions against built-in DTE rules and maintains
   a deduplicated, restart-safe alert set. A row in this table _is_ the alert;
@@ -416,8 +416,9 @@ IGNORE` on the compound key)
   (re-match: `triggered_at` preserved, `last_evaluated_at` + `summary`
   advanced); `open → resolved` (no longer matches: `resolved_at` set, row
   retained, excluded from open-queue reads); `resolved → (new) open row`
-  (matches again later, old resolved row retained); `open → dismissed`
-  (US-59, out of scope; status domain reserved). Rows are never deleted.
+  (matches again later, old resolved row retained); `open → dismissed`,
+  `dismissed → resolved`, and blocked dismissed re-open (migration `011`,
+  US-59 — see below). Rows are never deleted.
 - **Approach inside the migration file:** straight `CREATE TABLE` plus two
   `CREATE INDEX` statements. No table rebuild, no data backfill.
 - **Numbering note:** straight append after `008`; the `007` gap was already
@@ -473,6 +474,52 @@ COLUMN`, matching migration `005`'s pattern exactly (per the plan's own
     `AlertEvaluationInput.managementWindowDteOverride`)
 - **Source:** `migrations/010_add_management_window_dte_override.sql`
 
+### `migrations/011_add_alerts_dismissal.sql` — add `dismissed_at` and a mirrored partial unique index for the `dismissed` status
+
+- **Driven by:** [us-59 — Dismiss an Alert](../features/us-59-dismiss-alert.md)
+- **Rationale:** Persists the `open → dismissed` action: a `dismissed_at`
+  timestamp for the audit trail, and a partial unique index that lets
+  `upsertOpenAlert` cheaply detect "there's already a blocking dismissed row
+  for this key" so a still-true condition can't silently re-open it.
+- **Change scope:** the `alerts` table only (adds one column and one index).
+- **SQL:**
+
+  ```sql
+  ALTER TABLE alerts ADD COLUMN dismissed_at TEXT;
+
+  CREATE UNIQUE INDEX idx_alerts_dismissed_unique
+    ON alerts (position_id, rule_code) WHERE status = 'dismissed';
+  ```
+
+- **Field-level diff:**
+
+  | Field          | Before          | After                                        |
+  | -------------- | --------------- | --------------------------------------------- |
+  | `dismissed_at` | (column absent) | `TEXT`, nullable, no default                  |
+  | indexes        | (2 existing)    | + `idx_alerts_dismissed_unique` (partial UNIQUE) |
+
+- **Semantics:** `dismissed_at` is set once, when `status` transitions
+  `open → dismissed`, and is **never cleared** even if the row later moves to
+  `resolved` — it stays a permanent marker that the trader dismissed this
+  alert at some point, distinct from `resolved_at`. `idx_alerts_dismissed_unique`
+  mirrors `idx_alerts_open_unique`'s exact shape (partial UNIQUE on
+  `(position_id, rule_code)`, scoped to one status value), guaranteeing at
+  most one _currently_ dismissed row per key while allowing any number of
+  historical dismissed-then-resolved rows for the same pair.
+- **Approach inside the migration file:** plain `ALTER TABLE ... ADD COLUMN`
+  plus one `CREATE UNIQUE INDEX` — no table rebuild, no data backfill.
+- **Downstream code touches (no further schema change):**
+  - `src/main/services/alerts.ts` — `AlertError`, `dismissAlert`, the
+    dismissed-row guard added to `upsertOpenAlert` (new `'suppressed'`
+    outcome), `clearStaleDismissals`
+  - `src/main/services/evaluate-alerts.ts` — calls `clearStaleDismissals`
+    inside the existing persist transaction, reusing `resolveAlertsNotIn`'s
+    `keepOpenKeys` set
+  - `src/main/ipc/alerts.ts`, `src/main/ipc/utils.ts` — `alerts:dismiss`
+    handler, `AlertError` envelope mapping
+  - `src/main/schemas.ts` — `AlertRecord.dismissedAt`
+- **Source:** `migrations/011_add_alerts_dismissal.sql`
+
 <!-- /generated -->
 
 <!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50 -->
@@ -503,7 +550,7 @@ between `006` and `008` without issue. The sequence is now contiguous again.
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50 -->
+<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50,us-59 -->
 
 ## Driven by
 
@@ -517,12 +564,14 @@ between `006` and `008` without issue. The sequence is now contiguous again.
   migration `007`
 - [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md) —
   migration `008` (and consumer of `006`'s `app_settings` table)
-- [us-50 — Alert Evaluation Engine](../features/us-50-alert-evaluation-engine.md) —
+- [us-50 — Alert Engine](../features/us-50-alert-engine.md) —
   migration `009`
+- [us-59 — Dismiss an Alert](../features/us-59-dismiss-alert.md) —
+  migration `011`
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50 -->
+<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50,us-59 -->
 
 ## See also
 
@@ -538,8 +587,10 @@ between `006` and `008` without issue. The sequence is now contiguous again.
   the feature that introduced migration `007`
 - [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md) —
   the feature that introduced migration `008`
-- [us-50 — Alert Evaluation Engine](../features/us-50-alert-evaluation-engine.md) —
+- [us-50 — Alert Engine](../features/us-50-alert-engine.md) —
   the feature that introduced migration `009`
+- [us-59 — Dismiss an Alert](../features/us-59-dismiss-alert.md) —
+  the feature that introduced migration `011`
 
 <!-- /generated -->
 

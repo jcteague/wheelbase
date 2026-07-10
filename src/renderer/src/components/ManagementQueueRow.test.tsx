@@ -15,7 +15,7 @@ const ITEM: ManagementQueueItem = {
 
 describe('ManagementQueueRow', () => {
   it('renders ticker, urgency pill, phase badge, summary, and action button', () => {
-    render(<ManagementQueueRow item={ITEM} />)
+    render(<ManagementQueueRow item={ITEM} onDismissClick={vi.fn()} />)
 
     expect(screen.getByText('AAPL')).toBeInTheDocument()
     expect(screen.getByText('HIGH')).toBeInTheDocument()
@@ -28,9 +28,26 @@ describe('ManagementQueueRow', () => {
     const user = userEvent.setup()
     window.location.hash = ''
 
-    render(<ManagementQueueRow item={ITEM} />)
+    render(<ManagementQueueRow item={ITEM} onDismissClick={vi.fn()} />)
     await user.click(screen.getByRole('button', { name: 'Review position' }))
 
     expect(window.location.hash).toBe('#/positions/pos-123')
+  })
+
+  it('renders a Dismiss button alongside the quick action', () => {
+    render(<ManagementQueueRow item={ITEM} onDismissClick={vi.fn()} />)
+
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeInTheDocument()
+  })
+
+  it("clicking Dismiss calls onDismissClick with the item's alertId, not the mutation directly", async () => {
+    const user = userEvent.setup()
+    const onDismissClick = vi.fn()
+
+    render(<ManagementQueueRow item={ITEM} onDismissClick={onDismissClick} />)
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }))
+
+    expect(onDismissClick).toHaveBeenCalledTimes(1)
+    expect(onDismissClick).toHaveBeenCalledWith('a1')
   })
 })
