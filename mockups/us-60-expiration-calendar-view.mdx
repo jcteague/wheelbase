@@ -1,7 +1,7 @@
 ---
 title: 'US-60: Expiration Calendar View'
 story: 'As a wheel trader planning my week, I want a color-coded expiration calendar so I can see when management work is clustering.'
-states: ['month', 'selected', 'empty']
+states: ['grid', 'agenda', 'heatmap', 'empty']
 ---
 
 import { useState } from 'react'
@@ -12,231 +12,992 @@ _As a wheel trader planning my week, I want a color-coded expiration calendar so
 
 ## Acceptance Criteria States
 
-- **month**: populated month view with expirations rendered directly on date cells using phase colors
-- **selected**: a clicked date reveals a detail panel showing ticker, phase, strike, and DTE
-- **empty**: clean month state when there are no expirations in view
+- **grid** — populated month view with expirations rendered on date cells using phase colors; clicking a populated date opens the day-detail panel (ticker, phase, strike, DTE); the Aug 21 cluster demonstrates the `+2 more` overflow.
+- **agenda** — alternative layout: a week-grouped timeline with a per-week density bar, built for spotting weeks where management work piles up.
+- **heatmap** — alternative layout: a 14-day management-horizon strip where each day's workload is shaded by count.
+- **empty** — clean empty state (applies to whichever layout is active).
+
+All three layouts, colors, fonts, and chrome are driven directly by the app's design tokens in `src/renderer/src/index.css` (`--wb-*`) so the mockup tracks the real UI. Phase colors mirror `src/renderer/src/lib/phase.ts`. Positions in `HOLDING_SHARES` with no open option intentionally do not appear on the calendar.
 
 ---
 
-export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
-export const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-export const MONTH = [
-  [
-    { d: 11 },
-    { d: 12 },
-    { d: 13 },
-    {
-      d: 14,
-      chips: [
-        { ticker: 'AAPL', color: '#e6a817' },
-        { ticker: 'MSFT', color: '#bc8cff' }
-      ]
-    },
-    { d: 15 },
-    { d: 16 },
-    { d: 17 }
+export const T = {
+  base: 'var(--wb-bg-base)',
+  surface: 'var(--wb-bg-surface)',
+  elevated: 'var(--wb-bg-elevated)',
+  border: 'var(--wb-border)',
+  borderSub: 'var(--wb-border-subtle)',
+  text: 'var(--wb-text-primary)',
+  text2: 'var(--wb-text-secondary)',
+  muted: 'var(--wb-text-muted)',
+  gold: 'var(--wb-gold)',
+  goldSub: 'var(--wb-gold-subtle)',
+  green: 'var(--wb-green)',
+  blue: 'var(--wb-blue)',
+  sky: 'var(--wb-sky)',
+  violet: 'var(--wb-violet)',
+  mono: 'var(--font-wb-mono)',
+  r: 6
+}
+
+export const PHASE = {
+  CSP_OPEN: {
+    color: 'var(--wb-gold)',
+    bg: 'var(--wb-gold-dim)',
+    border: 'var(--wb-gold-border)',
+    label: 'Sell Put'
+  },
+  CC_OPEN: {
+    color: 'var(--wb-violet)',
+    bg: 'var(--wb-violet-dim)',
+    border: 'rgba(210,168,255,0.25)',
+    label: 'Sell Call'
+  }
+}
+
+export const EXP = {
+  12: [{ t: 'HOOD', p: 'CSP_OPEN', k: 22, dte: 4 }],
+  14: [
+    { t: 'AAPL', p: 'CSP_OPEN', k: 180, dte: 6 },
+    { t: 'MSFT', p: 'CC_OPEN', k: 420, dte: 6 }
   ],
-  [
-    { d: 18 },
-    { d: 19 },
-    { d: 20 },
-    {
-      d: 21,
-      chips: [
-        { ticker: 'AMD', color: '#e6a817' },
-        { ticker: 'PLTR', color: '#bc8cff' },
-        { ticker: 'NVDA', color: '#e6a817' }
-      ],
-      more: '+2 more'
-    },
-    { d: 22 },
-    { d: 23 },
-    { d: 24 }
+  21: [
+    { t: 'AMD', p: 'CSP_OPEN', k: 155, dte: 13 },
+    { t: 'PLTR', p: 'CC_OPEN', k: 58, dte: 13 },
+    { t: 'NVDA', p: 'CSP_OPEN', k: 120, dte: 13 },
+    { t: 'GOOGL', p: 'CC_OPEN', k: 180, dte: 13 },
+    { t: 'TSLA', p: 'CSP_OPEN', k: 250, dte: 13 }
   ],
-  [{ d: 25 }, { d: 26 }, { d: 27 }, { d: 28 }, { d: 29 }, { d: 30 }, { d: 31 }]
+  28: [{ t: 'KO', p: 'CC_OPEN', k: 62, dte: 20 }]
+}
+
+export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+export const GRID = [
+  [
+    { d: 26, off: 1 },
+    { d: 27, off: 1 },
+    { d: 28, off: 1 },
+    { d: 29, off: 1 },
+    { d: 30, off: 1 },
+    { d: 31, off: 1 },
+    { d: 1 }
+  ],
+  [{ d: 2 }, { d: 3 }, { d: 4 }, { d: 5 }, { d: 6 }, { d: 7 }, { d: 8, today: 1 }],
+  [{ d: 9 }, { d: 10 }, { d: 11 }, { d: 12 }, { d: 13 }, { d: 14 }, { d: 15 }],
+  [{ d: 16 }, { d: 17 }, { d: 18 }, { d: 19 }, { d: 20 }, { d: 21 }, { d: 22 }],
+  [{ d: 23 }, { d: 24 }, { d: 25 }, { d: 26 }, { d: 27 }, { d: 28 }, { d: 29 }],
+  [
+    { d: 30 },
+    { d: 31 },
+    { d: 1, off: 1 },
+    { d: 2, off: 1 },
+    { d: 3, off: 1 },
+    { d: 4, off: 1 },
+    { d: 5, off: 1 }
+  ]
 ]
 
-export function Chip({ ticker, color }) {
+export function money(n) {
+  return '$' + n.toFixed(2)
+}
+
+export function PhaseDot({ p, size = 6 }) {
+  return (
+    <span
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 999,
+        background: PHASE[p].color,
+        flexShrink: 0
+      }}
+    />
+  )
+}
+
+export function PhaseBadge({ p }) {
+  const ph = PHASE[p]
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        padding: '2px 8px',
+        borderRadius: 4,
+        background: ph.bg,
+        color: ph.color,
+        fontSize: '0.7rem',
+        fontWeight: 600,
+        letterSpacing: '0.02em'
+      }}
+    >
+      <PhaseDot p={p} size={5} />
+      {ph.label}
+    </span>
+  )
+}
+
+export function TickerChip({ e, dense }) {
+  const ph = PHASE[e.p]
   return (
     <div
       style={{
-        padding: '3px 6px',
-        borderRadius: 8,
-        background: `${color}20`,
-        color,
-        fontSize: '0.67rem',
-        fontWeight: 700
+        display: 'flex',
+        alignItems: 'center',
+        gap: 5,
+        padding: dense ? '1px 5px' : '3px 7px',
+        borderRadius: 4,
+        background: ph.bg,
+        border: `1px solid ${ph.border}`,
+        fontFamily: T.mono,
+        fontSize: dense ? '0.62rem' : '0.68rem',
+        fontWeight: 700,
+        color: ph.color,
+        lineHeight: 1.2
       }}
     >
-      {ticker}
+      <PhaseDot p={e.p} size={5} />
+      {e.t}
     </div>
   )
 }
 
-export function Mockup() {
-  const [state, setState] = useState('month')
-  const cells =
-    state === 'empty' ? MONTH.map((week) => week.map((cell) => ({ d: cell.d }))).flat() : MONTH.flat()
+export function SectionLabel({ children, style }) {
+  return (
+    <div
+      style={{
+        fontFamily: T.mono,
+        fontSize: '0.72rem',
+        textTransform: 'uppercase',
+        letterSpacing: '0.12em',
+        color: T.muted,
+        ...style
+      }}
+    >
+      {children}
+    </div>
+  )
+}
 
-return (
+export function Legend() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+      {['CSP_OPEN', 'CC_OPEN'].map((p) => (
+        <div key={p} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <PhaseDot p={p} size={7} />
+          <span style={{ fontSize: '0.72rem', color: T.text2 }}>{PHASE[p].label}</span>
+        </div>
+      ))}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ width: 7, height: 7, borderRadius: 999, background: T.sky }} />
+        <span style={{ fontSize: '0.72rem', color: T.text2 }}>Holding (off-calendar)</span>
+      </div>
+    </div>
+  )
+}
 
-<div
-style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(180deg, #071018 0%, #0a1622 100%)',
-        color: '#e8eef6',
-        fontFamily: MONO,
-        padding: 28
-      }} >
-<div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
-{['month', 'selected', 'empty'].map((value) => (
-<button
-key={value}
-onClick={() => setState(value)}
-style={{
-              padding: '7px 10px',
-              borderRadius: 999,
-              border: '1px solid rgba(74,90,106,0.8)',
-              background: state === value ? 'rgba(230,168,23,0.18)' : 'transparent',
-              color: state === value ? '#f6c445' : '#8da0b4',
-              fontFamily: MONO
-            }} >
-{value}
-</button>
-))}
-</div>
+export function NavRow({ icon, label, active }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '7px 12px',
+        borderRadius: T.r,
+        fontSize: '0.8125rem',
+        cursor: 'pointer',
+        background: active ? T.goldSub : 'transparent',
+        color: active ? T.gold : T.text2,
+        fontWeight: active ? 600 : 400
+      }}
+    >
+      <span style={{ fontFamily: T.mono, width: 14, textAlign: 'center' }}>{icon}</span>
+      {label}
+    </div>
+  )
+}
 
-      <div
+export function Shell({ children }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        height: 724,
+        border: `1px solid ${T.border}`,
+        borderRadius: 10,
+        overflow: 'hidden',
+        background: T.base,
+        boxShadow: '0 30px 80px rgba(0,0,0,0.45)'
+      }}
+    >
+      <aside
         style={{
-          maxWidth: 1180,
-          margin: '0 auto',
-          display: 'grid',
-          gridTemplateColumns: '1.45fr 0.9fr',
-          gap: 18
+          width: 200,
+          flexShrink: 0,
+          background: T.surface,
+          borderRight: `1px solid ${T.border}`,
+          display: 'flex',
+          flexDirection: 'column'
         }}
       >
-        <section
+        <div
           style={{
-            border: '1px solid rgba(30,42,56,0.9)',
-            borderRadius: 16,
-            background: 'rgba(8,15,23,0.94)',
-            overflow: 'hidden'
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '16px',
+            borderBottom: `1px solid ${T.border}`
           }}
         >
-          <div style={{ padding: '16px 18px', borderBottom: '1px solid rgba(30,42,56,0.9)' }}>
-            <div
+          <span
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: 999,
+              background: T.gold,
+              boxShadow: `0 0 6px ${T.gold}`
+            }}
+          />
+          <span
+            style={{
+              fontFamily: T.mono,
+              fontWeight: 700,
+              fontSize: '0.75rem',
+              letterSpacing: '0.15em',
+              textTransform: 'uppercase',
+              color: T.text
+            }}
+          >
+            Wheelbase
+          </span>
+        </div>
+        <nav
+          style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '16px 8px', flex: 1 }}
+        >
+          <SectionLabel style={{ fontSize: '0.65rem', padding: '6px 12px' }}>Trading</SectionLabel>
+          <NavRow icon="◈" label="Positions" />
+          <NavRow icon="+" label="Open Wheel" />
+          <NavRow icon="▦" label="Calendar" active />
+          <SectionLabel style={{ fontSize: '0.65rem', padding: '6px 12px', marginTop: 12 }}>
+            System
+          </SectionLabel>
+          <NavRow icon="⚙" label="Settings" />
+        </nav>
+        <div
+          style={{
+            padding: '12px 16px',
+            borderTop: `1px solid ${T.border}`,
+            fontFamily: T.mono,
+            fontSize: '0.65rem',
+            color: T.muted
+          }}
+        >
+          Wheel Strategy
+        </div>
+      </aside>
+
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <header
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 24px',
+            borderBottom: `1px solid ${T.border}`,
+            background: T.surface
+          }}
+        >
+          <SectionLabel>Expiration Calendar</SectionLabel>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span
               style={{
-                fontSize: '0.72rem',
-                color: '#7f93a7',
-                letterSpacing: '0.14em',
-                textTransform: 'uppercase'
+                fontFamily: T.mono,
+                fontSize: '0.65rem',
+                letterSpacing: '0.08em',
+                color: T.text2,
+                border: `1px solid ${T.border}`,
+                borderRadius: 4,
+                padding: '2px 8px'
               }}
             >
-              Expiration Calendar
-            </div>
-            <div style={{ marginTop: 6, fontSize: '1.18rem', fontWeight: 700 }}>August 2026</div>
-          </div>
-
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(7, 1fr)',
-              gap: 1,
-              background: 'rgba(30,42,56,0.9)',
-              padding: 1
-            }}
-          >
-            {DAYS.map((day) => (
-              <div
-                key={day}
+              PAPER
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 7, height: 7, borderRadius: 999, background: T.green }} />
+              <span
                 style={{
-                  padding: 10,
-                  background: '#08111a',
-                  color: '#7f93a7',
-                  fontSize: '0.72rem',
-                  letterSpacing: '0.1em',
-                  textTransform: 'uppercase'
+                  fontFamily: T.mono,
+                  fontSize: '0.65rem',
+                  letterSpacing: '0.08em',
+                  color: T.green
                 }}
               >
-                {day}
-              </div>
-            ))}
-            {cells.map((cell) => (
-              <div
-                key={cell.d}
-                style={{
-                  minHeight: 112,
-                  padding: 10,
-                  background: '#08111a',
-                  display: 'grid',
-                  alignContent: 'start',
-                  gap: 6
-                }}
-              >
-                <div style={{ color: '#edf2f8', fontWeight: 700 }}>{cell.d}</div>
-                {(cell.chips ?? []).map((chip) => (
-                  <Chip key={`${cell.d}-${chip.ticker}`} ticker={chip.ticker} color={chip.color} />
-                ))}
-                {cell.more ? <div style={{ color: '#84baf9', fontSize: '0.68rem' }}>{cell.more}</div> : null}
-              </div>
-            ))}
+                LIVE
+              </span>
+            </span>
           </div>
+        </header>
+        <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>{children}</div>
+      </div>
+    </div>
+  )
+}
 
-          {state === 'empty' ? (
-            <div style={{ padding: 18, color: '#9fb0c0' }}>No expirations this month.</div>
-          ) : null}
-        </section>
-
-        <section
+export function MonthNav({ label }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      {['‹', '›'].map((c) => (
+        <button
+          key={c}
           style={{
-            border: '1px solid rgba(30,42,56,0.9)',
-            borderRadius: 16,
-            background: 'rgba(8,15,23,0.94)',
+            width: 28,
+            height: 28,
+            borderRadius: T.r,
+            border: `1px solid ${T.border}`,
+            background: T.elevated,
+            color: T.text2,
+            fontFamily: T.mono,
+            cursor: 'pointer'
+          }}
+        >
+          {c}
+        </button>
+      ))}
+      <div style={{ fontSize: '1.15rem', fontWeight: 600, color: T.text }}>{label}</div>
+      <button
+        style={{
+          marginLeft: 4,
+          padding: '4px 10px',
+          borderRadius: 999,
+          border: `1px solid ${T.border}`,
+          background: 'transparent',
+          color: T.text2,
+          fontFamily: T.mono,
+          fontSize: '0.68rem',
+          cursor: 'pointer'
+        }}
+      >
+        Today
+      </button>
+    </div>
+  )
+}
+
+export function CalendarHeader({ title }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <MonthNav label={title} />
+      <Legend />
+    </div>
+  )
+}
+
+export function GridView({ empty, selected, onSelect }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <CalendarHeader title="August 2026" />
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) 320px', gap: 18 }}>
+        <div
+          style={{
+            border: `1px solid ${T.border}`,
+            borderRadius: T.r,
+            overflow: 'hidden',
+            background: T.surface
+          }}
+        >
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)' }}>
+            {WEEKDAYS.map((w) => (
+              <div
+                key={w}
+                style={{
+                  padding: '8px 10px',
+                  fontFamily: T.mono,
+                  fontSize: '0.68rem',
+                  letterSpacing: '0.05em',
+                  color: T.muted,
+                  borderBottom: `1px solid ${T.border}`
+                }}
+              >
+                {w}
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)' }}>
+            {GRID.flat().map((cell, i) => {
+              const items = !empty && !cell.off ? (EXP[cell.d] ?? []) : []
+              const isSel = !empty && selected === cell.d && items.length > 0
+              const visible = items.slice(0, 3)
+              const hidden = items.length - visible.length
+              return (
+                <div
+                  key={i}
+                  onClick={() => items.length && onSelect(cell.d)}
+                  style={{
+                    minHeight: 96,
+                    padding: 8,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 5,
+                    borderRight: (i + 1) % 7 === 0 ? 'none' : `1px solid ${T.borderSub}`,
+                    borderBottom: `1px solid ${T.borderSub}`,
+                    background: isSel ? T.goldSub : 'transparent',
+                    boxShadow: isSel ? `inset 0 0 0 1px ${T.gold}` : 'none',
+                    cursor: items.length ? 'pointer' : 'default',
+                    opacity: cell.off ? 0.35 : 1
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: '0.72rem',
+                        fontWeight: cell.today ? 700 : 500,
+                        color: cell.today ? T.gold : T.text2
+                      }}
+                    >
+                      {cell.d}
+                    </span>
+                    {cell.today ? (
+                      <span
+                        style={{
+                          fontFamily: T.mono,
+                          fontSize: '0.55rem',
+                          letterSpacing: '0.1em',
+                          color: T.gold
+                        }}
+                      >
+                        TODAY
+                      </span>
+                    ) : null}
+                  </div>
+                  {visible.map((e) => (
+                    <TickerChip key={e.t} e={e} />
+                  ))}
+                  {hidden > 0 ? (
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: '0.62rem',
+                        color: T.blue,
+                        paddingLeft: 2
+                      }}
+                    >
+                      +{hidden} more
+                    </div>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+          {empty ? (
+            <div style={{ padding: '28px 16px', textAlign: 'center' }}>
+              <div style={{ color: T.text, fontSize: '0.95rem', marginBottom: 6 }}>
+                No expirations this month
+              </div>
+              <div style={{ color: T.text2, fontSize: '0.8rem' }}>
+                Navigate to a month with active option positions to see them here.
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        <div
+          style={{
+            border: `1px solid ${T.border}`,
+            borderRadius: T.r,
+            background: T.surface,
+            alignSelf: 'start',
             overflow: 'hidden'
           }}
         >
-          <div
-            style={{
-              padding: '14px 16px',
-              borderBottom: '1px solid rgba(30,42,56,0.9)',
-              color: '#7f93a7',
-              fontSize: '0.72rem',
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase'
-            }}
-          >
-            {state === 'selected' ? 'August 14 Detail' : 'Day Detail'}
+          <div style={{ padding: '12px 14px', borderBottom: `1px solid ${T.border}` }}>
+            <SectionLabel>
+              {empty || !EXP[selected]
+                ? 'Day Detail'
+                : `Aug ${selected} · ${EXP[selected].length} expirations`}
+            </SectionLabel>
           </div>
-          <div style={{ padding: 16, display: 'grid', gap: 12 }}>
-            {state === 'selected' ? (
-              ['AAPL · CSP_OPEN · $180.00 strike · 6 DTE', 'MSFT · CC_OPEN · $420.00 strike · 6 DTE'].map(
-                (row) => (
+          <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {!empty && EXP[selected] ? (
+              EXP[selected].map((e) => (
+                <div
+                  key={e.t}
+                  style={{
+                    padding: 12,
+                    borderRadius: T.r,
+                    border: `1px solid ${T.border}`,
+                    background: T.base,
+                    borderLeft: `3px solid ${PHASE[e.p].color}`
+                  }}
+                >
                   <div
-                    key={row}
                     style={{
-                      padding: '12px 14px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(30,42,56,0.9)',
-                      background: 'rgba(6,11,17,0.92)',
-                      color: '#edf2f8'
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
                     }}
                   >
-                    {row}
+                    <span
+                      style={{
+                        fontFamily: T.mono,
+                        fontWeight: 700,
+                        fontSize: '0.9rem',
+                        color: T.text
+                      }}
+                    >
+                      {e.t}
+                    </span>
+                    <PhaseBadge p={e.p} />
                   </div>
-                )
-              )
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 18,
+                      marginTop: 10,
+                      fontFamily: T.mono,
+                      fontSize: '0.72rem'
+                    }}
+                  >
+                    <div>
+                      <div style={{ color: T.muted, fontSize: '0.62rem' }}>STRIKE</div>
+                      <div style={{ color: T.text }}>{money(e.k)}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: T.muted, fontSize: '0.62rem' }}>DTE</div>
+                      <div style={{ color: e.dte <= 7 ? T.gold : T.text }}>{e.dte}d</div>
+                    </div>
+                    <div>
+                      <div style={{ color: T.muted, fontSize: '0.62rem' }}>EXPIRES</div>
+                      <div style={{ color: T.text }}>Aug {selected}</div>
+                    </div>
+                  </div>
+                  <button
+                    style={{
+                      marginTop: 10,
+                      width: '100%',
+                      padding: '7px 0',
+                      borderRadius: T.r,
+                      border: `1px solid ${T.border}`,
+                      background: 'transparent',
+                      color: T.gold,
+                      fontFamily: T.mono,
+                      fontSize: '0.72rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Review position →
+                  </button>
+                </div>
+              ))
             ) : (
-              <div style={{ color: '#9fb0c0', lineHeight: 1.7 }}>
+              <div style={{ color: T.text2, fontSize: '0.82rem', lineHeight: 1.7 }}>
                 Click any populated date to inspect the expirations, strike context, and DTE for
                 that day.
               </div>
             )}
           </div>
-        </section>
+        </div>
       </div>
     </div>
+  )
+}
 
-)
+export const WEEKS = [
+  {
+    label: 'Week of Aug 9',
+    range: 'Aug 9 – 15',
+    days: [
+      { d: 12, wd: 'Wed' },
+      { d: 14, wd: 'Fri' }
+    ]
+  },
+  { label: 'Week of Aug 16', range: 'Aug 16 – 22', busy: 1, days: [{ d: 21, wd: 'Fri' }] },
+  { label: 'Week of Aug 23', range: 'Aug 23 – 29', days: [{ d: 28, wd: 'Fri' }] }
+]
+
+export function DensityBar({ items }) {
+  const csp = items.filter((e) => e.p === 'CSP_OPEN').length
+  const cc = items.filter((e) => e.p === 'CC_OPEN').length
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: 2,
+        width: 120,
+        height: 6,
+        borderRadius: 999,
+        overflow: 'hidden'
+      }}
+    >
+      {csp > 0 ? <div style={{ flexGrow: csp, background: PHASE.CSP_OPEN.color }} /> : null}
+      {cc > 0 ? <div style={{ flexGrow: cc, background: PHASE.CC_OPEN.color }} /> : null}
+    </div>
+  )
+}
+
+export function AgendaView({ empty }) {
+  if (empty) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <CalendarHeader title="August 2026" />
+        <div
+          style={{
+            border: `1px solid ${T.border}`,
+            borderRadius: T.r,
+            background: T.surface,
+            padding: '48px 16px',
+            textAlign: 'center'
+          }}
+        >
+          <div style={{ color: T.text, fontSize: '0.95rem', marginBottom: 6 }}>
+            No expirations in the next 30 days
+          </div>
+          <div style={{ color: T.text2, fontSize: '0.8rem' }}>
+            Your management horizon is clear — no options are set to expire.
+          </div>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <CalendarHeader title="August 2026" />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {WEEKS.map((wk) => {
+          const all = wk.days.flatMap((day) => EXP[day.d])
+          return (
+            <div
+              key={wk.label}
+              style={{
+                border: `1px solid ${wk.busy ? T.gold : T.border}`,
+                borderRadius: T.r,
+                overflow: 'hidden',
+                background: T.surface
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '10px 14px',
+                  borderBottom: `1px solid ${T.border}`,
+                  background: wk.busy ? T.goldSub : 'transparent'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+                  <span style={{ fontWeight: 600, color: T.text, fontSize: '0.9rem' }}>
+                    {wk.label}
+                  </span>
+                  <span style={{ fontFamily: T.mono, fontSize: '0.7rem', color: T.muted }}>
+                    {wk.range}
+                  </span>
+                  {wk.busy ? (
+                    <span
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: '0.6rem',
+                        letterSpacing: '0.1em',
+                        color: T.gold,
+                        border: `1px solid ${T.gold}`,
+                        borderRadius: 999,
+                        padding: '1px 7px'
+                      }}
+                    >
+                      BUSY WEEK
+                    </span>
+                  ) : null}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <DensityBar items={all} />
+                  <span
+                    style={{
+                      fontFamily: T.mono,
+                      fontSize: '0.72rem',
+                      color: T.text2,
+                      width: 64,
+                      textAlign: 'right'
+                    }}
+                  >
+                    {all.length} expiring
+                  </span>
+                </div>
+              </div>
+              {wk.days.map((day) => (
+                <div
+                  key={day.d}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '84px 1fr',
+                    gap: 14,
+                    padding: '12px 14px',
+                    borderTop: `1px solid ${T.borderSub}`,
+                    alignItems: 'center'
+                  }}
+                >
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontFamily: T.mono, fontSize: '0.62rem', color: T.muted }}>
+                      {day.wd}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: '1.35rem',
+                        fontWeight: 700,
+                        color: T.text
+                      }}
+                    >
+                      {day.d}
+                    </div>
+                    <div style={{ fontFamily: T.mono, fontSize: '0.6rem', color: T.muted }}>AUG</div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {EXP[day.d].map((e) => (
+                      <div
+                        key={e.t}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '64px 96px 1fr auto',
+                          gap: 12,
+                          alignItems: 'center',
+                          fontFamily: T.mono,
+                          fontSize: '0.75rem'
+                        }}
+                      >
+                        <span style={{ fontWeight: 700, color: T.text }}>{e.t}</span>
+                        <PhaseBadge p={e.p} />
+                        <span style={{ color: T.text2 }}>{money(e.k)} strike</span>
+                        <span style={{ color: e.dte <= 7 ? T.gold : T.text2 }}>{e.dte} DTE</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+export const HORIZON = [
+  { wd: 'Sat', d: 8, wknd: 1, today: 1 },
+  { wd: 'Sun', d: 9, wknd: 1 },
+  { wd: 'Mon', d: 10 },
+  { wd: 'Tue', d: 11 },
+  { wd: 'Wed', d: 12 },
+  { wd: 'Thu', d: 13 },
+  { wd: 'Fri', d: 14 },
+  { wd: 'Sat', d: 15, wknd: 1 },
+  { wd: 'Sun', d: 16, wknd: 1 },
+  { wd: 'Mon', d: 17 },
+  { wd: 'Tue', d: 18 },
+  { wd: 'Wed', d: 19 },
+  { wd: 'Thu', d: 20 },
+  { wd: 'Fri', d: 21 }
+]
+
+export function heatTint(count) {
+  if (count === 0) return 'transparent'
+  const alpha = Math.min(0.06 + count * 0.05, 0.3)
+  return `rgba(230,168,23,${alpha})`
+}
+
+export function HeatmapView({ empty }) {
+  const cols = HORIZON.map((day) => ({ ...day, items: empty ? [] : (EXP[day.d] ?? []) }))
+  const heaviest = empty
+    ? null
+    : cols.reduce((a, b) => (b.items.length > a.items.length ? b : a), cols[0])
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+        <div>
+          <SectionLabel style={{ marginBottom: 4 }}>Management Horizon · Next 14 Days</SectionLabel>
+          <div style={{ fontSize: '1.15rem', fontWeight: 600, color: T.text }}>
+            Aug 8 – 21, 2026
+          </div>
+        </div>
+        <Legend />
+      </div>
+
+      <div
+        style={{
+          border: `1px solid ${T.border}`,
+          borderRadius: T.r,
+          background: T.surface,
+          padding: 14,
+          display: 'grid',
+          gridTemplateColumns: `repeat(${HORIZON.length}, 1fr)`,
+          gap: 6
+        }}
+      >
+        {cols.map((day) => (
+          <div
+            key={day.d}
+            style={{
+              minHeight: 210,
+              borderRadius: T.r,
+              border: `1px solid ${day.items.length ? T.gold : T.borderSub}`,
+              background: day.wknd ? T.borderSub : heatTint(day.items.length),
+              padding: 7,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 5,
+              opacity: day.wknd ? 0.5 : 1
+            }}
+          >
+            <div style={{ textAlign: 'center', marginBottom: 2 }}>
+              <div
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: '0.58rem',
+                  color: day.today ? T.gold : T.muted
+                }}
+              >
+                {day.wd}
+              </div>
+              <div
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: '0.85rem',
+                  fontWeight: 700,
+                  color: day.today ? T.gold : T.text
+                }}
+              >
+                {day.d}
+              </div>
+            </div>
+            {day.items.length ? (
+              <div
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: '0.55rem',
+                  textAlign: 'center',
+                  color: T.gold,
+                  marginBottom: 2
+                }}
+              >
+                {day.items.length} exp
+              </div>
+            ) : null}
+            {day.items.map((e) => (
+              <TickerChip key={e.t} e={e} dense />
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {empty ? (
+        <div style={{ color: T.text2, fontSize: '0.82rem' }}>
+          Clear horizon — no expirations in the next 14 days.
+        </div>
+      ) : (
+        <div style={{ fontFamily: T.mono, fontSize: '0.75rem', color: T.text2 }}>
+          Heaviest day:{' '}
+          <span style={{ color: T.gold }}>
+            {heaviest.wd} Aug {heaviest.d} — {heaviest.items.length} expirations
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function Segment({ options, value, onChange }) {
+  return (
+    <div
+      style={{
+        display: 'inline-flex',
+        gap: 2,
+        padding: 3,
+        borderRadius: 999,
+        border: `1px solid ${T.border}`,
+        background: T.elevated
+      }}
+    >
+      {options.map((opt) => {
+        const active = value === opt.v
+        return (
+          <button
+            key={opt.v}
+            onClick={() => onChange(opt.v)}
+            style={{
+              padding: '5px 12px',
+              borderRadius: 999,
+              border: 'none',
+              cursor: 'pointer',
+              fontFamily: T.mono,
+              fontSize: '0.72rem',
+              background: active ? 'var(--wb-gold-dim)' : 'transparent',
+              color: active ? T.gold : T.text2,
+              fontWeight: active ? 700 : 400
+            }}
+          >
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [view, setView] = useState('grid')
+  const [empty, setEmpty] = useState(false)
+  const [selected, setSelected] = useState(14)
+
+  return (
+    <div style={{ fontFamily: 'inherit', color: T.text }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 20,
+          flexWrap: 'wrap',
+          marginBottom: 20
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <SectionLabel>Layout</SectionLabel>
+          <Segment
+            value={view}
+            onChange={setView}
+            options={[
+              { v: 'grid', label: 'A · Month Grid' },
+              { v: 'agenda', label: 'B · Agenda' },
+              { v: 'heatmap', label: 'C · Heatmap' }
+            ]}
+          />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <SectionLabel>Data</SectionLabel>
+          <Segment
+            value={empty ? 'empty' : 'pop'}
+            onChange={(v) => setEmpty(v === 'empty')}
+            options={[
+              { v: 'pop', label: 'Populated' },
+              { v: 'empty', label: 'Empty' }
+            ]}
+          />
+        </div>
+      </div>
+
+      <Shell>
+        {view === 'grid' ? (
+          <GridView empty={empty} selected={selected} onSelect={setSelected} />
+        ) : view === 'agenda' ? (
+          <AgendaView empty={empty} />
+        ) : (
+          <HeatmapView empty={empty} />
+        )}
+      </Shell>
+    </div>
+  )
 }
 
 <Mockup />

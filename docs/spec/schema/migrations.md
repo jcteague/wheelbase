@@ -493,9 +493,9 @@ COLUMN`, matching migration `005`'s pattern exactly (per the plan's own
 
 - **Field-level diff:**
 
-  | Field          | Before          | After                                        |
-  | -------------- | --------------- | --------------------------------------------- |
-  | `dismissed_at` | (column absent) | `TEXT`, nullable, no default                  |
+  | Field          | Before          | After                                            |
+  | -------------- | --------------- | ------------------------------------------------ |
+  | `dismissed_at` | (column absent) | `TEXT`, nullable, no default                     |
   | indexes        | (2 existing)    | + `idx_alerts_dismissed_unique` (partial UNIQUE) |
 
 - **Semantics:** `dismissed_at` is set once, when `status` transitions

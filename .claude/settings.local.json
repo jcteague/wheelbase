@@ -58,7 +58,8 @@
       "Skill(plan-tasks)",
       "Workflow(code-review)",
       "Bash(git diff *)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "mcp__playwright__browser_evaluate"
     ]
   },
   "enableAllProjectMcpServers": true,

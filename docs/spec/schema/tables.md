@@ -526,21 +526,21 @@ Added by migration `009`; extended by migration `011`. See
 
 ### Columns
 
-| Column              | Type | Nullable | Purpose                                                                                                         |
-| ------------------- | ---- | -------- | --------------------------------------------------------------------------------------------------------------- |
-| `id`                | TEXT | No       | UUID primary key, generated in the service layer via `crypto.randomUUID()`                                      |
-| `position_id`       | TEXT | No       | FK → `positions.id`                                                                                             |
-| `rule_code`         | TEXT | No       | Rule identifier; e.g. `EXPIRATION_IMMINENT` or `MANAGEMENT_WINDOW`                                              |
-| `urgency`           | TEXT | No       | `high`, `medium`, or `low`                                                                                       |
-| `summary`           | TEXT | No       | Human-readable queue text, e.g. `Expires in 5 days at $180.00 strike`                                           |
-| `quick_action`      | TEXT | No       | Queue button label; Phase 3 always `Review position`                                                            |
-| `status`            | TEXT | No       | `open`, `resolved`, or `dismissed`; `NOT NULL DEFAULT 'open'`                                                    |
-| `triggered_at`      | TEXT | No       | ISO timestamp of first firing; never mutated while the alert stays open                                         |
-| `last_evaluated_at` | TEXT | No       | ISO timestamp of the most recent re-matching evaluation                                                         |
-| `resolved_at`       | TEXT | Yes      | Set when `status` transitions to `resolved` (including a dismissed row that later clears, US-59)                |
+| Column              | Type | Nullable | Purpose                                                                                                                                                               |
+| ------------------- | ---- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                | TEXT | No       | UUID primary key, generated in the service layer via `crypto.randomUUID()`                                                                                            |
+| `position_id`       | TEXT | No       | FK → `positions.id`                                                                                                                                                   |
+| `rule_code`         | TEXT | No       | Rule identifier; e.g. `EXPIRATION_IMMINENT` or `MANAGEMENT_WINDOW`                                                                                                    |
+| `urgency`           | TEXT | No       | `high`, `medium`, or `low`                                                                                                                                            |
+| `summary`           | TEXT | No       | Human-readable queue text, e.g. `Expires in 5 days at $180.00 strike`                                                                                                 |
+| `quick_action`      | TEXT | No       | Queue button label; Phase 3 always `Review position`                                                                                                                  |
+| `status`            | TEXT | No       | `open`, `resolved`, or `dismissed`; `NOT NULL DEFAULT 'open'`                                                                                                         |
+| `triggered_at`      | TEXT | No       | ISO timestamp of first firing; never mutated while the alert stays open                                                                                               |
+| `last_evaluated_at` | TEXT | No       | ISO timestamp of the most recent re-matching evaluation                                                                                                               |
+| `resolved_at`       | TEXT | Yes      | Set when `status` transitions to `resolved` (including a dismissed row that later clears, US-59)                                                                      |
 | `dismissed_at`      | TEXT | Yes      | **(US-59, migration 011)** Set once when `status` transitions `open → dismissed`; never cleared, even once the row later moves to `resolved` — permanent audit marker |
-| `created_at`        | TEXT | No       | ISO timestamp at row insert                                                                                     |
-| `updated_at`        | TEXT | No       | ISO timestamp at last update                                                                                    |
+| `created_at`        | TEXT | No       | ISO timestamp at row insert                                                                                                                                           |
+| `updated_at`        | TEXT | No       | ISO timestamp at last update                                                                                                                                          |
 
 ### Indexes
 

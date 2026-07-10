@@ -5,3 +5,8 @@ LICENSE.md
 tsconfig.json
 tsconfig.*.json
 docs/spec/.extracts/*.md
+
+# MDX mockups are hand-authored design artifacts. Prettier's MDX/markdown
+# formatter rewrites JSX comments and emphasis chars (*/_), corrupting valid
+# files, so we keep it away from them.
+mockups/*.mdx

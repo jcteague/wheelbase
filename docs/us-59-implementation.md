@@ -94,7 +94,7 @@ modal:
 end to end (real evaluation job, real SQLite, real renderer):
 
 - **Trader dismisses an alert from the queue** — click `Dismiss` → `Confirm
-  dismiss`; asserts the row disappears from the queue and the DB row is
+dismiss`; asserts the row disappears from the queue and the DB row is
   `status: 'dismissed'` with a non-null `dismissed_at`.
 - **Dismissed alert does not immediately reappear while the condition is
   unchanged** — re-runs evaluation with the leg untouched; asserts no
@@ -156,4 +156,4 @@ stateDiagram-v2
 | `src/renderer/src/components/DismissConfirmPanel.tsx` | Confirm/cancel panel (new)                                                              |
 | `src/renderer/src/hooks/useDismissAlert.ts`           | Mutation hook, invalidates the management queue query (new)                             |
 | `e2e/dismiss-alert.spec.ts`                           | One e2e test per AC scenario (new)                                                      |
-| `e2e/alert-helpers.ts`                                | `dismissed_at` on `AlertRow`; `dismissAlertViaQueue`, `seedAndResolveAlert` helpers      |
+| `e2e/alert-helpers.ts`                                | `dismissed_at` on `AlertRow`; `dismissAlertViaQueue`, `seedAndResolveAlert` helpers     |
