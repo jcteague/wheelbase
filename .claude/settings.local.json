@@ -59,7 +59,9 @@
       "Workflow(code-review)",
       "Bash(git diff *)",
       "Read(//tmp/**)",
-      "mcp__playwright__browser_evaluate"
+      "mcp__playwright__browser_evaluate",
+      "Bash(npx prettier *)",
+      "Skill(code-review)"
     ]
   },
   "enableAllProjectMcpServers": true,

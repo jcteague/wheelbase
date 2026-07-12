@@ -1,13 +1,19 @@
+import { tintFromColor } from '../../lib/colorTint'
+
 type BadgeProps = {
   children: React.ReactNode
   color?: string
   className?: string
 }
 
+const GOLD_TINT = {
+  background: 'var(--wb-gold-dim)',
+  border: '1px solid var(--wb-gold-border)',
+  color: 'var(--wb-gold)'
+}
+
 export function Badge({ children, color, className }: BadgeProps): React.JSX.Element {
-  const fg = color ?? 'var(--wb-gold)'
-  const bg = color ? `${color}18` : 'var(--wb-gold-dim)'
-  const border = color ? `1px solid ${color}30` : '1px solid var(--wb-gold-border)'
+  const tint = color ? tintFromColor(color) : GOLD_TINT
 
   return (
     <span
@@ -17,7 +23,7 @@ export function Badge({ children, color, className }: BadgeProps): React.JSX.Ele
       ]
         .filter(Boolean)
         .join(' ')}
-      style={{ background: bg, color: fg, border }}
+      style={tint}
     >
       {children}
     </span>

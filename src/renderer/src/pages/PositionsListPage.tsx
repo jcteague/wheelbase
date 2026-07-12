@@ -16,12 +16,11 @@ import { Badge } from '../components/ui/Badge'
 import { ErrorAlert } from '../components/ui/ErrorAlert'
 import { LoadingState } from '../components/ui/LoadingState'
 import { TableHeader } from '../components/ui/TablePrimitives'
-import { useMarketStatus } from '../hooks/useMarketStatus'
+import { useMarketStatusDisplay } from '../hooks/useMarketStatusDisplay'
 import { useOptionSnapshots, type ActiveLegSummary } from '../hooks/useOptionSnapshots'
 import { usePositions } from '../hooks/usePositions'
-import { useAlertDefaults, useSettingsStatus } from '../hooks/useSettings'
+import { useAlertDefaults } from '../hooks/useSettings'
 import { useStockQuotes } from '../hooks/useStockQuotes'
-import { deriveMarketStatusDisplay } from '../lib/market-status'
 import { AssignmentNotificationBanner } from '../components/AssignmentNotificationBanner'
 import { ManagementQueue } from '../components/ManagementQueue'
 import { usePendingAssignments } from '../api/assignments'
@@ -157,7 +156,6 @@ function PositionTable({
 
 export function PositionsListPage(): React.JSX.Element {
   const { data, isLoading, isError } = usePositions()
-  const settingsQuery = useSettingsStatus()
   const alertDefaultsQuery = useAlertDefaults()
 
   const activePositions = useMemo(() => data?.filter((p) => p.status === 'ACTIVE') ?? [], [data])
@@ -179,9 +177,10 @@ export function PositionsListPage(): React.JSX.Element {
     [activePositions]
   )
 
-  const hasBroker = settingsQuery.data?.activeBrokerEnv !== 'none'
   const quotesQuery = useStockQuotes(tickers)
-  const statusQuery = useMarketStatus(hasBroker)
+  const { settingsQuery, hasBroker, statusQuery, display } = useMarketStatusDisplay(
+    quotesQuery.stale
+  )
   const snapshotsQuery = useOptionSnapshots(legs, { session: statusQuery.data?.session })
   const pendingAssignmentsQuery = usePendingAssignments()
   const pendingPositionIds = useMemo(
@@ -190,7 +189,6 @@ export function PositionsListPage(): React.JSX.Element {
   )
 
   const { stale, minutesAgo } = quotesQuery
-  const display = deriveMarketStatusDisplay(statusQuery.data?.session, stale)
   const showMassiveSetupBanner =
     settingsQuery.data?.massive === 'missing' && settingsQuery.data?.activeBrokerEnv === 'none'
   const showNoBrokerBanner = settingsQuery.data?.activeBrokerEnv === 'none'

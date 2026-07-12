@@ -4,6 +4,7 @@ import { computeUnrealizedPnl } from '../../../main/core/costbasis'
 import { resolveProfitTarget } from '../../../main/core/profit-target'
 import { isOptionInstrument } from '../../../main/core/types'
 import Decimal from 'decimal.js'
+import { isDteUrgent } from '../lib/dte'
 import { fmtMoney } from '../lib/format'
 import { PHASE_COLOR } from '../lib/phase'
 import { OptMidCell } from './OptMidCell'
@@ -63,7 +64,7 @@ export function PositionRow({
   profitTargetDefault
 }: Props): React.JSX.Element {
   const closed = isClosed ?? item.status === 'CLOSED'
-  const dteUrgent = item.dte !== null && item.dte <= 7
+  const dteUrgent = isDteUrgent(item.dte)
   const dteClass = dteUrgent
     ? `${VALUE_CLASS} font-semibold text-wb-gold`
     : `${VALUE_CLASS} font-normal text-wb-text-secondary`
