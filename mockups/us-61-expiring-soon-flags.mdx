@@ -12,166 +12,706 @@ _As a wheel trader scanning the dashboard and calendar, I want positions expirin
 
 ## Acceptance Criteria States
 
-- **dashboard**: row-level gold DTE flag on the dashboard surface
-- **calendar**: matching visual emphasis on the expiration calendar chip and date detail
-- **clean**: positions at 8 DTE or more render without the extra emphasis
+- **dashboard** — the positions table golds the DTE and pins an `Expiring soon` flag on any position at 7 DTE or less (AAPL · 7d, MSFT · 4d). NVDA at 8 DTE and the `HOLDING_SHARES` TSLA row stay quiet.
+- **calendar** — expiring-soon dates carry a gold ring on the month grid; the day-detail panel repeats the `Expiring soon` flag and golds the DTE, so the warning language is identical to the dashboard.
+- **clean** — flip _Flags_ to `Off` to see the same surfaces with the extra emphasis removed; this is exactly how positions at 8+ DTE (and holding-shares) already render.
+
+Colors, fonts, and chrome are driven by the app's design tokens in `src/renderer/src/index.css` (`--wb-*`). Phase colors mirror `src/renderer/src/lib/phase.ts`, the gold DTE emphasis reuses `isDteUrgent` (`DTE_URGENT_THRESHOLD = 7`) from `src/renderer/src/lib/dte.ts`, and the calendar grid + day detail track `CalendarMonthGrid`/`CalendarDayDetail`. `HOLDING_SHARES` positions have no option expiration, so they never flag and never appear on the calendar.
 
 ---
 
-export const MONO = "'JetBrains Mono', 'Fira Mono', monospace"
+export const T = {
+  base: 'var(--wb-bg-base)',
+  surface: 'var(--wb-bg-surface)',
+  elevated: 'var(--wb-bg-elevated)',
+  border: 'var(--wb-border)',
+  borderSub: 'var(--wb-border-subtle)',
+  text: 'var(--wb-text-primary)',
+  text2: 'var(--wb-text-secondary)',
+  muted: 'var(--wb-text-muted)',
+  gold: 'var(--wb-gold)',
+  goldDim: 'var(--wb-gold-dim)',
+  goldBorder: 'var(--wb-gold-border)',
+  goldSub: 'var(--wb-gold-subtle)',
+  green: 'var(--wb-green)',
+  blue: 'var(--wb-blue)',
+  sky: 'var(--wb-sky)',
+  violet: 'var(--wb-violet)',
+  mono: 'var(--font-wb-mono)',
+  r: 6
+}
 
-export function GoldFlag({ label }) {
+export const DTE_URGENT_THRESHOLD = 7
+export const isDteUrgent = (dte) => dte !== null && dte !== undefined && dte <= DTE_URGENT_THRESHOLD
+
+export const PHASE = {
+  CSP_OPEN: { color: 'var(--wb-gold)', bg: 'var(--wb-gold-dim)', border: 'var(--wb-gold-border)', label: 'CSP Open' },
+  CC_OPEN: { color: 'var(--wb-violet)', bg: 'var(--wb-violet-dim)', border: 'rgba(210,168,255,0.25)', label: 'CC Open' },
+  HOLDING_SHARES: { color: 'var(--wb-sky)', bg: 'rgba(121,192,255,0.12)', border: 'rgba(121,192,255,0.25)', label: 'Shares' }
+}
+
+export const POSITIONS = [
+  { ticker: 'AAPL', phase: 'CSP_OPEN', price: 181.2, strike: 180, exp: 'Jul 20', dte: 7, premium: 210 },
+  { ticker: 'MSFT', phase: 'CC_OPEN', price: 418.9, strike: 420, exp: 'Jul 17', dte: 4, premium: 340 },
+  { ticker: 'NVDA', phase: 'CC_OPEN', price: 118.4, strike: 120, exp: 'Jul 21', dte: 8, premium: 180 },
+  { ticker: 'TSLA', phase: 'HOLDING_SHARES', price: 250.1, strike: null, exp: null, dte: null, premium: 0 },
+  { ticker: 'KO', phase: 'CC_OPEN', price: 61.3, strike: 62, exp: 'Jul 31', dte: 18, premium: 95 }
+]
+
+export const EXP = {
+  17: [{ t: 'MSFT', p: 'CC_OPEN', k: 420, dte: 4, exp: 'Jul 17' }],
+  20: [{ t: 'AAPL', p: 'CSP_OPEN', k: 180, dte: 7, exp: 'Jul 20' }],
+  21: [{ t: 'NVDA', p: 'CC_OPEN', k: 120, dte: 8, exp: 'Jul 21' }],
+  31: [{ t: 'KO', p: 'CC_OPEN', k: 62, dte: 18, exp: 'Jul 31' }]
+}
+
+export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+export const GRID = [
+  [{ d: 28, off: 1 }, { d: 29, off: 1 }, { d: 30, off: 1 }, { d: 1 }, { d: 2 }, { d: 3 }, { d: 4 }],
+  [{ d: 5 }, { d: 6 }, { d: 7 }, { d: 8 }, { d: 9 }, { d: 10 }, { d: 11 }],
+  [{ d: 12 }, { d: 13, today: 1 }, { d: 14 }, { d: 15 }, { d: 16 }, { d: 17 }, { d: 18 }],
+  [{ d: 19 }, { d: 20 }, { d: 21 }, { d: 22 }, { d: 23 }, { d: 24 }, { d: 25 }],
+  [{ d: 26 }, { d: 27 }, { d: 28 }, { d: 29 }, { d: 30 }, { d: 31 }, { d: 1, off: 1 }]
+]
+
+export function money(n) {
+  return '$' + n.toFixed(2)
+}
+
+export function dayHasSoon(items) {
+  return items.some((e) => isDteUrgent(e.dte))
+}
+
+export function PhaseDot({ p, size = 5 }) {
+  return (
+    <span style={{ width: size, height: size, borderRadius: 999, background: PHASE[p].color, flexShrink: 0 }} />
+  )
+}
+
+export function PhaseBadge({ p }) {
+  const ph = PHASE[p]
   return (
     <span
       style={{
-        padding: '4px 8px',
-        borderRadius: 999,
-        background: 'rgba(230,168,23,0.14)',
-        border: '1px solid rgba(230,168,23,0.3)',
-        color: '#f6c445',
-        fontSize: '0.66rem',
-        fontWeight: 700,
-        letterSpacing: '0.08em'
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        padding: '2px 8px',
+        borderRadius: 4,
+        background: ph.bg,
+        color: ph.color,
+        fontFamily: T.mono,
+        fontSize: '0.7rem',
+        fontWeight: 600,
+        letterSpacing: '0.02em'
       }}
     >
-      {label}
+      <PhaseDot p={p} />
+      {ph.label}
     </span>
   )
 }
 
-export function Mockup() {
-  const [state, setState] = useState('dashboard')
+export function ExpiringSoonFlag({ compact }) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        padding: compact ? '1px 7px' : '2px 8px',
+        borderRadius: 999,
+        background: T.goldDim,
+        border: `1px solid ${T.goldBorder}`,
+        color: T.gold,
+        fontFamily: T.mono,
+        fontSize: compact ? '0.58rem' : '0.62rem',
+        fontWeight: 700,
+        letterSpacing: '0.09em',
+        textTransform: 'uppercase',
+        whiteSpace: 'nowrap'
+      }}
+    >
+      <span style={{ width: 5, height: 5, borderRadius: 999, background: T.gold, flexShrink: 0 }} />
+      Expiring soon
+    </span>
+  )
+}
 
-return (
+export function SectionLabel({ children, style }) {
+  return (
+    <div
+      style={{
+        fontFamily: T.mono,
+        fontSize: '0.72rem',
+        textTransform: 'uppercase',
+        letterSpacing: '0.12em',
+        color: T.muted,
+        ...style
+      }}
+    >
+      {children}
+    </div>
+  )
+}
 
-<div
-style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(180deg, #061018 0%, #0a1520 100%)',
-        color: '#e8eef6',
-        fontFamily: MONO,
-        padding: 28
-      }} >
-<div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
-{['dashboard', 'calendar', 'clean'].map((value) => (
-<button
-key={value}
-onClick={() => setState(value)}
-style={{
-              padding: '7px 10px',
-              borderRadius: 999,
-              border: '1px solid rgba(74,90,106,0.8)',
-              background: state === value ? 'rgba(230,168,23,0.18)' : 'transparent',
-              color: state === value ? '#f6c445' : '#8da0b4',
-              fontFamily: MONO
-            }} >
-{value}
-</button>
-))}
-</div>
+export function NavRow({ icon, label, active }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '7px 12px',
+        borderRadius: T.r,
+        fontSize: '0.8125rem',
+        cursor: 'pointer',
+        background: active ? T.goldSub : 'transparent',
+        color: active ? T.gold : T.text2,
+        fontWeight: active ? 600 : 400
+      }}
+    >
+      <span style={{ fontFamily: T.mono, width: 14, textAlign: 'center' }}>{icon}</span>
+      {label}
+    </div>
+  )
+}
 
-      <div
+export function Shell({ surface, children }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        height: 660,
+        border: `1px solid ${T.border}`,
+        borderRadius: 10,
+        overflow: 'hidden',
+        background: T.base,
+        boxShadow: '0 30px 80px rgba(0,0,0,0.45)'
+      }}
+    >
+      <aside
         style={{
-          maxWidth: 1100,
-          margin: '0 auto',
-          display: 'grid',
-          gridTemplateColumns: '1.1fr 0.95fr',
-          gap: 18
+          width: 200,
+          flexShrink: 0,
+          background: T.surface,
+          borderRight: `1px solid ${T.border}`,
+          display: 'flex',
+          flexDirection: 'column'
         }}
       >
-        <section
+        <div
           style={{
-            border: '1px solid rgba(30,42,56,0.9)',
-            borderRadius: 16,
-            background: 'rgba(8,15,23,0.94)',
-            overflow: 'hidden'
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '16px',
+            borderBottom: `1px solid ${T.border}`
           }}
         >
-          <div
+          <span style={{ width: 8, height: 8, borderRadius: 999, background: T.gold, boxShadow: `0 0 6px ${T.gold}` }} />
+          <span
             style={{
-              padding: '14px 16px',
-              borderBottom: '1px solid rgba(30,42,56,0.9)',
-              color: '#7f93a7',
-              fontSize: '0.72rem',
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase'
+              fontFamily: T.mono,
+              fontWeight: 700,
+              fontSize: '0.75rem',
+              letterSpacing: '0.15em',
+              textTransform: 'uppercase',
+              color: T.text
             }}
           >
-            Dashboard Rows
-          </div>
-          {[
-            { label: 'AAPL · CSP_OPEN · 7 DTE', flagged: state !== 'clean' },
-            { label: 'MSFT · CC_OPEN · 4 DTE', flagged: state !== 'clean' },
-            { label: 'NVDA · CC_OPEN · 8 DTE', flagged: false }
-          ].map((row) => (
-            <div
-              key={row.label}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '14px 16px',
-                borderTop: '1px solid rgba(30,42,56,0.65)'
-              }}
-            >
-              <div style={{ color: '#edf2f8' }}>{row.label}</div>
-              {row.flagged ? (
-                <GoldFlag label={row.label.includes('4 DTE') ? 'Expiring Soon' : '7 DTE'} />
-              ) : (
-                <span style={{ color: '#7f93a7' }}>Normal</span>
-              )}
-            </div>
-          ))}
-        </section>
+            Wheelbase
+          </span>
+        </div>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '16px 8px', flex: 1 }}>
+          <SectionLabel style={{ fontSize: '0.65rem', padding: '6px 12px' }}>Trading</SectionLabel>
+          <NavRow icon="◈" label="Positions" active={surface === 'dashboard'} />
+          <NavRow icon="+" label="Open Wheel" />
+          <NavRow icon="▦" label="Calendar" active={surface === 'calendar'} />
+          <SectionLabel style={{ fontSize: '0.65rem', padding: '6px 12px', marginTop: 12 }}>System</SectionLabel>
+          <NavRow icon="⚙" label="Settings" />
+        </nav>
+        <div
+          style={{
+            padding: '12px 16px',
+            borderTop: `1px solid ${T.border}`,
+            fontFamily: T.mono,
+            fontSize: '0.65rem',
+            color: T.muted
+          }}
+        >
+          Wheel Strategy
+        </div>
+      </aside>
 
-        <section
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <header
           style={{
-            border: '1px solid rgba(30,42,56,0.9)',
-            borderRadius: 16,
-            background: 'rgba(8,15,23,0.94)',
-            overflow: 'hidden'
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 24px',
+            borderBottom: `1px solid ${T.border}`,
+            background: T.surface
           }}
         >
-          <div
-            style={{
-              padding: '14px 16px',
-              borderBottom: '1px solid rgba(30,42,56,0.9)',
-              color: '#7f93a7',
-              fontSize: '0.72rem',
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase'
-            }}
-          >
-            Calendar Detail
-          </div>
-          <div style={{ padding: 16, display: 'grid', gap: 12 }}>
-            <div
+          <SectionLabel>{surface === 'calendar' ? 'Expiration Calendar' : 'Positions'}</SectionLabel>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '12px 14px',
-                borderRadius: 10,
-                border: '1px solid rgba(30,42,56,0.9)',
-                background: 'rgba(6,11,17,0.92)'
+                fontFamily: T.mono,
+                fontSize: '0.65rem',
+                letterSpacing: '0.08em',
+                color: T.text2,
+                border: `1px solid ${T.border}`,
+                borderRadius: 4,
+                padding: '2px 8px'
               }}
             >
-              <span style={{ color: '#edf2f8' }}>AAPL · Aug 14 · CSP_OPEN</span>
-              {state === 'calendar' || state === 'dashboard' ? (
-                <GoldFlag label="Expiring Soon" />
-              ) : null}
-            </div>
-            <div style={{ color: '#9fb0c0', lineHeight: 1.7 }}>
-              {state === 'clean'
-                ? 'When a position is outside the 7-DTE threshold, the extra dashboard and calendar emphasis disappears.'
-                : 'The same gold emphasis appears in both dashboard and calendar surfaces so the warning language stays consistent.'}
-            </div>
+              PAPER
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 7, height: 7, borderRadius: 999, background: T.green }} />
+              <span style={{ fontFamily: T.mono, fontSize: '0.65rem', letterSpacing: '0.08em', color: T.green }}>
+                LIVE
+              </span>
+            </span>
           </div>
-        </section>
+        </header>
+        <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>{children}</div>
       </div>
     </div>
+  )
+}
 
-)
+export const DASH_COLS = [
+  { key: 'ticker', label: 'Ticker', w: '1.4fr', align: 'left' },
+  { key: 'phase', label: 'Phase', w: '110px', align: 'left' },
+  { key: 'price', label: 'Underlying', w: '1fr', align: 'right' },
+  { key: 'strike', label: 'Strike', w: '1fr', align: 'right' },
+  { key: 'exp', label: 'Expires', w: '1fr', align: 'right' },
+  { key: 'dte', label: 'DTE', w: '84px', align: 'right' },
+  { key: 'premium', label: 'Premium', w: '1fr', align: 'right' }
+]
+
+export function DashboardView({ flags }) {
+  const template = DASH_COLS.map((c) => c.w).join(' ')
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <div style={{ fontSize: '1.15rem', fontWeight: 600, color: T.text }}>Active Positions</div>
+        <span style={{ fontFamily: T.mono, fontSize: '0.72rem', color: T.text2 }}>
+          {flags ? '2 expiring within 7 days' : '5 open'}
+        </span>
+      </div>
+
+      <div style={{ border: `1px solid ${T.border}`, borderRadius: T.r, overflow: 'hidden', background: T.surface }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: template,
+            gap: 16,
+            padding: '10px 16px',
+            borderBottom: `1px solid ${T.border}`
+          }}
+        >
+          {DASH_COLS.map((c) => (
+            <div
+              key={c.key}
+              style={{
+                fontFamily: T.mono,
+                fontSize: '0.62rem',
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                color: T.muted,
+                textAlign: c.align
+              }}
+            >
+              {c.label}
+            </div>
+          ))}
+        </div>
+
+        {POSITIONS.map((row, i) => {
+          const soon = flags && isDteUrgent(row.dte)
+          return (
+            <div
+              key={row.ticker}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: template,
+                gap: 16,
+                alignItems: 'center',
+                padding: '12px 16px',
+                borderTop: i === 0 ? 'none' : `1px solid ${T.borderSub}`,
+                borderLeft: `3px solid ${soon ? T.gold : 'transparent'}`,
+                background: soon ? T.goldSub : 'transparent'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontFamily: T.mono, fontWeight: 700, fontSize: '0.85rem', color: T.text, letterSpacing: '0.02em' }}>
+                  {row.ticker}
+                </span>
+                {soon ? <ExpiringSoonFlag /> : null}
+              </div>
+              <div>
+                <PhaseBadge p={row.phase} />
+              </div>
+              <div style={{ fontFamily: T.mono, fontSize: '0.8125rem', color: T.text, textAlign: 'right' }}>
+                {money(row.price)}
+              </div>
+              <div style={{ fontFamily: T.mono, fontSize: '0.8125rem', color: T.text, textAlign: 'right' }}>
+                {row.strike != null ? money(row.strike) : '—'}
+              </div>
+              <div style={{ fontFamily: T.mono, fontSize: '0.8125rem', color: T.text2, textAlign: 'right' }}>
+                {row.exp ?? '—'}
+              </div>
+              <div
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: '0.8125rem',
+                  fontWeight: soon ? 600 : 400,
+                  color: soon ? T.gold : T.text2,
+                  textAlign: 'right'
+                }}
+              >
+                {row.dte != null ? `${row.dte}d` : '—'}
+              </div>
+              <div style={{ fontFamily: T.mono, fontSize: '0.8125rem', color: T.green, fontWeight: 500, textAlign: 'right' }}>
+                {row.premium ? money(row.premium) : '—'}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div style={{ fontFamily: T.mono, fontSize: '0.7rem', color: T.muted, lineHeight: 1.7 }}>
+        {flags
+          ? 'The Expiring soon flag is a display rule on current DTE — not a dismissible alert. It shows even when a position has no open queue item.'
+          : 'Flags off: this is how NVDA (8 DTE) and the holding-shares TSLA row already render — no extra emphasis.'}
+      </div>
+    </div>
+  )
+}
+
+export function MonthNav({ label }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      {['‹', '›'].map((c) => (
+        <button
+          key={c}
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: T.r,
+            border: `1px solid ${T.border}`,
+            background: T.elevated,
+            color: T.text2,
+            fontFamily: T.mono,
+            cursor: 'pointer'
+          }}
+        >
+          {c}
+        </button>
+      ))}
+      <div style={{ fontSize: '1.15rem', fontWeight: 600, color: T.text }}>{label}</div>
+    </div>
+  )
+}
+
+export function Legend({ flags }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+      {['CSP_OPEN', 'CC_OPEN'].map((p) => (
+        <div key={p} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <PhaseDot p={p} size={7} />
+          <span style={{ fontSize: '0.72rem', color: T.text2 }}>{PHASE[p].label}</span>
+        </div>
+      ))}
+      {flags ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span
+            style={{
+              width: 10,
+              height: 10,
+              borderRadius: 3,
+              background: T.goldSub,
+              boxShadow: `inset 0 0 0 1px ${T.gold}`
+            }}
+          />
+          <span style={{ fontSize: '0.72rem', color: T.text2 }}>Expiring within 7 days</span>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+export function TickerChip({ e }) {
+  const ph = PHASE[e.p]
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 5,
+        padding: '3px 7px',
+        borderRadius: 4,
+        background: ph.bg,
+        border: `1px solid ${ph.border}`,
+        fontFamily: T.mono,
+        fontSize: '0.68rem',
+        fontWeight: 700,
+        color: ph.color,
+        lineHeight: 1.2
+      }}
+    >
+      <PhaseDot p={e.p} />
+      {e.t}
+    </div>
+  )
+}
+
+export function CalendarView({ flags, selected, onSelect }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <MonthNav label="July 2026" />
+        <Legend flags={flags} />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) 320px', gap: 18 }}>
+        <div style={{ border: `1px solid ${T.border}`, borderRadius: T.r, overflow: 'hidden', background: T.surface }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)' }}>
+            {WEEKDAYS.map((w) => (
+              <div
+                key={w}
+                style={{
+                  padding: '8px 10px',
+                  fontFamily: T.mono,
+                  fontSize: '0.68rem',
+                  letterSpacing: '0.05em',
+                  color: T.muted,
+                  borderBottom: `1px solid ${T.border}`
+                }}
+              >
+                {w}
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)' }}>
+            {GRID.flat().map((cell, i) => {
+              const items = !cell.off ? (EXP[cell.d] ?? []) : []
+              const soon = flags && dayHasSoon(items)
+              const isSel = selected === cell.d && items.length > 0
+              return (
+                <div
+                  key={i}
+                  onClick={() => items.length && onSelect(cell.d)}
+                  style={{
+                    minHeight: 92,
+                    padding: 8,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 5,
+                    borderRight: (i + 1) % 7 === 0 ? 'none' : `1px solid ${T.borderSub}`,
+                    borderBottom: `1px solid ${T.borderSub}`,
+                    background: soon ? T.goldSub : isSel ? T.goldSub : 'transparent',
+                    boxShadow: soon
+                      ? `inset 0 0 0 1px ${T.gold}`
+                      : isSel
+                        ? `inset 0 0 0 1px ${T.border}`
+                        : 'none',
+                    cursor: items.length ? 'pointer' : 'default',
+                    opacity: cell.off ? 0.35 : 1
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: '0.72rem',
+                        fontWeight: cell.today ? 700 : 500,
+                        color: cell.today ? T.gold : T.text2
+                      }}
+                    >
+                      {cell.d}
+                    </span>
+                    {cell.today ? (
+                      <span style={{ fontFamily: T.mono, fontSize: '0.55rem', letterSpacing: '0.1em', color: T.gold }}>
+                        TODAY
+                      </span>
+                    ) : soon ? (
+                      <span style={{ fontFamily: T.mono, fontSize: '0.55rem', letterSpacing: '0.1em', color: T.gold }}>
+                        SOON
+                      </span>
+                    ) : null}
+                  </div>
+                  {items.map((e) => (
+                    <TickerChip key={e.t} e={e} />
+                  ))}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <div
+          style={{
+            border: `1px solid ${T.border}`,
+            borderRadius: T.r,
+            background: T.surface,
+            alignSelf: 'start',
+            overflow: 'hidden'
+          }}
+        >
+          <div style={{ padding: '12px 14px', borderBottom: `1px solid ${T.border}` }}>
+            <SectionLabel>
+              {EXP[selected] ? `Jul ${selected} · ${EXP[selected].length} expiration${EXP[selected].length > 1 ? 's' : ''}` : 'Day Detail'}
+            </SectionLabel>
+          </div>
+          <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {(EXP[selected] ?? []).map((e) => {
+              const soon = flags && isDteUrgent(e.dte)
+              return (
+                <div
+                  key={e.t}
+                  style={{
+                    padding: 12,
+                    borderRadius: T.r,
+                    border: `1px solid ${soon ? T.goldBorder : T.border}`,
+                    background: T.base,
+                    boxShadow: `inset 3px 0 0 0 ${PHASE[e.p].color}`
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ fontFamily: T.mono, fontWeight: 700, fontSize: '0.9rem', color: T.text }}>{e.t}</span>
+                    <PhaseBadge p={e.p} />
+                  </div>
+                  {soon ? (
+                    <div style={{ marginTop: 8 }}>
+                      <ExpiringSoonFlag />
+                    </div>
+                  ) : null}
+                  <div style={{ display: 'flex', gap: 18, marginTop: 10, fontFamily: T.mono, fontSize: '0.72rem' }}>
+                    <div>
+                      <div style={{ color: T.muted, fontSize: '0.62rem' }}>STRIKE</div>
+                      <div style={{ color: T.text }}>{money(e.k)}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: T.muted, fontSize: '0.62rem' }}>DTE</div>
+                      <div style={{ color: soon ? T.gold : T.text }}>{e.dte}d</div>
+                    </div>
+                    <div>
+                      <div style={{ color: T.muted, fontSize: '0.62rem' }}>EXPIRES</div>
+                      <div style={{ color: T.text }}>{e.exp}</div>
+                    </div>
+                  </div>
+                  <button
+                    style={{
+                      marginTop: 10,
+                      width: '100%',
+                      padding: '7px 0',
+                      borderRadius: T.r,
+                      border: `1px solid ${T.border}`,
+                      background: 'transparent',
+                      color: T.gold,
+                      fontFamily: T.mono,
+                      fontSize: '0.72rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Review position →
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function Segment({ options, value, onChange }) {
+  return (
+    <div
+      style={{
+        display: 'inline-flex',
+        gap: 2,
+        padding: 3,
+        borderRadius: 999,
+        border: `1px solid ${T.border}`,
+        background: T.elevated
+      }}
+    >
+      {options.map((opt) => {
+        const active = value === opt.v
+        return (
+          <button
+            key={opt.v}
+            onClick={() => onChange(opt.v)}
+            style={{
+              padding: '5px 12px',
+              borderRadius: 999,
+              border: 'none',
+              cursor: 'pointer',
+              fontFamily: T.mono,
+              fontSize: '0.72rem',
+              background: active ? 'var(--wb-gold-dim)' : 'transparent',
+              color: active ? T.gold : T.text2,
+              fontWeight: active ? 700 : 400
+            }}
+          >
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [surface, setSurface] = useState('dashboard')
+  const [flags, setFlags] = useState(true)
+  const [selected, setSelected] = useState(17)
+
+  return (
+    <div style={{ fontFamily: 'inherit', color: T.text }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap', marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <SectionLabel>Surface</SectionLabel>
+          <Segment
+            value={surface}
+            onChange={setSurface}
+            options={[
+              { v: 'dashboard', label: 'Dashboard' },
+              { v: 'calendar', label: 'Calendar' }
+            ]}
+          />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <SectionLabel>Flags</SectionLabel>
+          <Segment
+            value={flags ? 'on' : 'off'}
+            onChange={(v) => setFlags(v === 'on')}
+            options={[
+              { v: 'on', label: 'On' },
+              { v: 'off', label: 'Off (clean)' }
+            ]}
+          />
+        </div>
+      </div>
+
+      <Shell surface={surface}>
+        {surface === 'dashboard' ? (
+          <DashboardView flags={flags} />
+        ) : (
+          <CalendarView flags={flags} selected={selected} onSelect={setSelected} />
+        )}
+      </Shell>
+    </div>
+  )
 }
 
 <Mockup />
