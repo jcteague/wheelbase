@@ -61,7 +61,9 @@
       "Read(//tmp/**)",
       "mcp__playwright__browser_evaluate",
       "Bash(npx prettier *)",
-      "Skill(code-review)"
+      "Skill(code-review)",
+      "Bash(git -c core.excludesfile=/dev/null add -N docs/us-61-implementation.md e2e/expiring-soon-flags.spec.ts plans/us-61/ src/renderer/src/components/ExpiringSoonFlag.test.tsx src/renderer/src/components/ExpiringSoonFlag.tsx)",
+      "Bash(git reset *)"
     ]
   },
   "enableAllProjectMcpServers": true,

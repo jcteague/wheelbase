@@ -1,5 +1,5 @@
 import { format } from 'date-fns'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 import {
@@ -149,5 +149,61 @@ describe('CalendarMonthGrid', () => {
 
     expect(screen.getAllByTestId(/^day-cell-/)).toHaveLength(42)
     expect(screen.getByText('No expirations this month')).toBeInTheDocument()
+  })
+
+  it('rings a day cell that has an expiring-soon entry and marks it SOON', () => {
+    const entries = [makeEntry({ id: 'e1', ticker: 'MSFT', dte: 4, expiration: '2026-08-14' })]
+    const grid = buildGrid(entries)
+
+    render(
+      <CalendarMonthGrid
+        grid={grid}
+        selectedDate={null}
+        onSelectDate={vi.fn()}
+        emptyMonth={false}
+      />
+    )
+
+    const cell = screen.getByTestId('day-cell-2026-08-14')
+    expect(cell.className).toContain('ring-wb-gold')
+    expect(cell.className).toContain('bg-wb-gold-subtle')
+    expect(within(cell).getByText('SOON')).toBeInTheDocument()
+  })
+
+  it('does not highlight a cell whose entries are all outside the 7-DTE threshold', () => {
+    const entries = [makeEntry({ id: 'e1', ticker: 'NVDA', dte: 8, expiration: '2026-08-14' })]
+    const grid = buildGrid(entries)
+
+    render(
+      <CalendarMonthGrid
+        grid={grid}
+        selectedDate={null}
+        onSelectDate={vi.fn()}
+        emptyMonth={false}
+      />
+    )
+
+    const cell = screen.getByTestId('day-cell-2026-08-14')
+    expect(cell.className).not.toContain('ring-wb-gold')
+    expect(cell.className).not.toContain('bg-wb-gold-subtle')
+    expect(within(cell).queryByText('SOON')).not.toBeInTheDocument()
+  })
+
+  it('shows TODAY, not SOON, on the today cell even when it is expiring soon', () => {
+    const entries = [makeEntry({ id: 'e1', ticker: 'AAPL', dte: 0, expiration: '2026-08-01' })]
+    const grid = buildGrid(entries)
+
+    render(
+      <CalendarMonthGrid
+        grid={grid}
+        selectedDate={null}
+        onSelectDate={vi.fn()}
+        emptyMonth={false}
+      />
+    )
+
+    const cell = screen.getByTestId('day-cell-2026-08-01')
+    expect(within(cell).getByText('TODAY')).toBeInTheDocument()
+    expect(within(cell).queryByText('SOON')).not.toBeInTheDocument()
   })
 })

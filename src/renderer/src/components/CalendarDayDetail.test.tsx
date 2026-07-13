@@ -50,6 +50,23 @@ describe('CalendarDayDetail', () => {
     ).toBeInTheDocument()
   })
 
+  it('labels an expiring-soon entry with the "Expiring soon" flag', () => {
+    const entries = [makeEntry({ id: 'e1', ticker: 'MSFT', dte: 4 })]
+
+    render(<CalendarDayDetail date="2026-08-14" entries={entries} onReview={vi.fn()} />)
+
+    expect(screen.getByTestId('expiring-soon-flag')).toBeInTheDocument()
+    expect(screen.getByText('4d')).toBeInTheDocument()
+  })
+
+  it('does not flag an entry outside the 7-DTE threshold', () => {
+    const entries = [makeEntry({ id: 'e1', ticker: 'NVDA', dte: 8 })]
+
+    render(<CalendarDayDetail date="2026-08-14" entries={entries} onReview={vi.fn()} />)
+
+    expect(screen.queryByTestId('expiring-soon-flag')).not.toBeInTheDocument()
+  })
+
   it('calls onReview with the position id when Review position is clicked', async () => {
     const user = userEvent.setup()
     const entries = [makeEntry({ id: 'pos-42', ticker: 'AAPL' })]

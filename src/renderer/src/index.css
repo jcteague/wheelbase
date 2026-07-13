@@ -221,6 +221,11 @@ body {
   border-left-color: var(--wb-row-phase-color, transparent);
 }
 
+.wb-position-row--soon {
+  background: var(--wb-gold-subtle);
+  border-left-color: var(--wb-gold);
+}
+
 .wb-hover-opacity {
   transition: opacity 0.15s;
 }

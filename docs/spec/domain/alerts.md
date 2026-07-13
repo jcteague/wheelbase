@@ -1,6 +1,6 @@
 # Management Alerts
 
-<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56,us-59 -->
+<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56,us-59,us-62 -->
 
 ## Overview
 
@@ -26,7 +26,6 @@ newly shipped — they are no longer "later" rules. Because the latter two need
 live prices, `evaluateAlerts` became **async** with an injected market-data
 provider dependency: the service pre-fetches live option mids and underlying
 prices at the boundary and passes plain values into the still-pure engine.
-(`COVERED_CALL_BREACH` remains a future rule — US-62.)
 
 US-56 adds `EARNINGS_PROXIMITY`: a medium-urgency, phase-agnostic rule that fires
 when a position's next earnings event is within 10 calendar days and on/before
@@ -58,9 +57,17 @@ clears, the dismissed row retires to `resolved` (preserving `dismissed_at`); if
 it later returns, a fresh open row is created with a new `triggered_at` — the
 same resolve→refire lifecycle already established for open alerts.
 
+US-62 adds `COVERED_CALL_BREACH`: the covered-call counterpart to
+`STRIKE_PROXIMITY`. It fires medium-urgency when a `CC_OPEN` position's underlying
+trades **at or above** its short-call strike (the call is in the money), reporting
+the percent distance above the strike so the trader can decide whether to roll
+up-and-out or accept the shares being called away. It reuses the `strike` and
+`currentUnderlyingPrice` inputs the market-data rules already carry, needs no
+schema/IPC/renderer change, and co-fires independently of the DTE rules.
+
 <!-- /generated -->
 
-<!-- generated:from us-50,us-52,us-53-54-55,us-56,us-57-58 -->
+<!-- generated:from us-50,us-52,us-53-54-55,us-56,us-57-58,us-62 -->
 
 ## Built-in rules
 
@@ -75,6 +82,7 @@ rule, the pre-fetched next-earnings date).
 | `PROFIT_TARGET`       | low     | any open short leg (CSP / CC) | captured profit `% ≥ target` (resolved: per-position override → saved global default → built-in 50%)              | `{pct}% of max profit captured — consider closing`                            | `Review position` |
 | `STRIKE_PROXIMITY`    | medium  | CSP only (`CSP_OPEN`)         | `proximityPct = \|price − strike\| / strike × 100 ≤ 1`                                                            | `Stock is {pct}% {above\|below} the ${strike} put strike`                     | `Review position` |
 | `EARNINGS_PROXIMITY`  | medium  | any open short leg (CSP / CC) | `0 ≤ daysToEarnings ≤ 10` **and** `daysToEarnings ≤ dte`                                                          | `Earnings {today\|in 1 day\|in {N} days} before your {YYYY-MM-DD} expiration` | `Review position` |
+| `COVERED_CALL_BREACH` | medium  | CC only (`CC_OPEN`)           | `price ≥ strike` (the short call is at/in the money)                                                              | `Stock is {pct}% above the ${strike} call strike — shares may be called away` | `Review position` |
 
 `{strike}` is formatted to two decimals with a leading `$` via `decimal.js`
 (`new Decimal(strike).toFixed(2)`); `{pct}` is formatted to one decimal. The two
@@ -99,8 +107,21 @@ distinct rows).
 `STRIKE_PROXIMITY` is CSP-only and direction-aware: the summary states whether the
 underlying is `above` or `below` the put strike (by `price >= strike`), and the
 below-strike case appends `" — now in the money"` because that is the genuine
-assignment-risk direction. Covered-call breach is a separate future rule (US-62),
-so `CC_OPEN` positions produce no `STRIKE_PROXIMITY` match and no skip.
+assignment-risk direction. Covered-call breach is the separate `COVERED_CALL_BREACH`
+rule (US-62), so `CC_OPEN` positions produce no `STRIKE_PROXIMITY` match and no skip.
+
+`COVERED_CALL_BREACH` is CC-only and the covered-call counterpart to
+`STRIKE_PROXIMITY`: it fires when `price ≥ strike` (a one-sided trigger, versus
+proximity's two-sided band), so the alert appears the moment the short call reaches
+at-the-money (0.0% above) and stays open while it is in the money. The percent-above
+reuses the shared `proximityPercent` helper — because the rule only fires at
+`price ≥ strike`, the absolute gap equals the signed percent-above, so no separate
+signed helper is needed. It co-fires with the DTE rules — a covered call can be both
+breached and inside the expiration window at once. A `CC_OPEN` position with an
+absent live price skips with `missing_underlying_price` (the open alert is kept
+open, not resolved). The engine input for both price-vs-strike rules is the shared
+`PriceVsStrikeInput` slice (`'strike' | 'currentUnderlyingPrice'`), which
+`StrikeProximityInput` and `CoveredCallBreachInput` alias.
 
 `EARNINGS_PROXIMITY` is phase-agnostic (gap risk applies to CSPs and CCs alike)
 and co-fires with every other rule — no cross-rule suppression. Its
@@ -225,7 +246,7 @@ already does for an open one.
 
 <!-- /generated -->
 
-<!-- generated:from us-53-54-55,us-56 -->
+<!-- generated:from us-53-54-55,us-56,us-62 -->
 
 ## Skip reasons & missing-data handling
 
@@ -237,14 +258,14 @@ per-rule `missingData` function that returns a reason string (or `null` to
 proceed). Each rule owns its own guard, so one rule's missing input never
 suppresses another's alert. The six reason strings and the rule each guards:
 
-| Reason string                 | Rule guarded                                                     | Fires when                                                                                |
-| ----------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `missing_dte`                 | `EXPIRATION_IMMINENT`, `MANAGEMENT_WINDOW`, `EARNINGS_PROXIMITY` | `dte` is null (expiration unknown or unparseable — `computeDte` returns null, never NaN)  |
-| `missing_option_mark`         | `PROFIT_TARGET`                                                  | entry premium, contracts, or the live option mid is absent                                |
-| `invalid_profit_target_input` | `PROFIT_TARGET`                                                  | premium is non-positive or contracts is not a positive integer (would throw the P&L math) |
-| `missing_underlying_price`    | `STRIKE_PROXIMITY`                                               | position is `CSP_OPEN` and the live underlying price is absent                            |
-| `missing_expiration`          | `EARNINGS_PROXIMITY`                                             | `expiration` is null while `dte` is not — the summary interpolates it, so it is guarded   |
-| `missing_earnings_date`       | `EARNINGS_PROXIMITY`                                             | `daysToEarnings` is null (no event in the fetch window, feed failed, or unparseable date) |
+| Reason string                 | Rule guarded                                                     | Fires when                                                                                       |
+| ----------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `missing_dte`                 | `EXPIRATION_IMMINENT`, `MANAGEMENT_WINDOW`, `EARNINGS_PROXIMITY` | `dte` is null (expiration unknown or unparseable — `computeDte` returns null, never NaN)         |
+| `missing_option_mark`         | `PROFIT_TARGET`                                                  | entry premium, contracts, or the live option mid is absent                                       |
+| `invalid_profit_target_input` | `PROFIT_TARGET`                                                  | premium is non-positive or contracts is not a positive integer (would throw the P&L math)        |
+| `missing_underlying_price`    | `STRIKE_PROXIMITY`, `COVERED_CALL_BREACH`                        | position is `CSP_OPEN` (proximity) or `CC_OPEN` (breach) and the live underlying price is absent |
+| `missing_expiration`          | `EARNINGS_PROXIMITY`                                             | `expiration` is null while `dte` is not — the summary interpolates it, so it is guarded          |
+| `missing_earnings_date`       | `EARNINGS_PROXIMITY`                                             | `daysToEarnings` is null (no event in the fetch window, feed failed, or unparseable date)        |
 
 `invalid_profit_target_input` came from the post-review hardening pass: without it
 a stored non-positive premium/contracts would make `computeUnrealizedPnl` throw
@@ -259,11 +280,12 @@ flat `null → skip` matches every existing rule input. The earnings fetch windo
 
 <!-- /generated -->
 
-<!-- generated:from us-53-54-55,us-56 -->
+<!-- generated:from us-53-54-55,us-56,us-62 -->
 
 ## Live market-data enrichment & failure isolation
 
-`PROFIT_TARGET` and `STRIKE_PROXIMITY` need live prices and `EARNINGS_PROXIMITY`
+`PROFIT_TARGET` needs the live option mid, `STRIKE_PROXIMITY` and
+`COVERED_CALL_BREACH` need the live underlying price, and `EARNINGS_PROXIMITY`
 needs the next earnings date, but the engine must stay pure — so the service
 (`evaluate-alerts.ts`) enriches at the boundary and passes plain values
 (`currentOptionMid`, `currentUnderlyingPrice`, `daysToEarnings`, `expiration`)
@@ -294,8 +316,8 @@ positions' alerts** — especially the high-urgency DTE rules. The failure paths
 their log events:
 
 - `alert_evaluation_stock_quotes_unavailable` (WARN) — the stock-quote feed threw;
-  underlying prices degrade to empty, so CSP `STRIKE_PROXIMITY` skips but DTE rules
-  still fire.
+  underlying prices degrade to empty, so CSP `STRIKE_PROXIMITY` and CC
+  `COVERED_CALL_BREACH` skip but DTE rules still fire.
 - `alert_evaluation_option_snapshots_unavailable` (WARN) — the option-snapshot feed
   threw; option mids degrade to empty, so `PROFIT_TARGET` skips but DTE rules still
   fire.
@@ -313,7 +335,7 @@ their log events:
 
 <!-- /generated -->
 
-<!-- generated:from us-50,us-51,us-53-54-55,us-56,us-59 -->
+<!-- generated:from us-50,us-51,us-53-54-55,us-56,us-59,us-62 -->
 
 ## Key decisions
 
@@ -424,8 +446,25 @@ their log events:
   below-strike case appends "— now in the money". `CC_OPEN` produces no match and
   no skip.
 - **Why:** Matches the US-55 ACs — below-strike is the genuine assignment-risk case;
-  covered-call breach is a separate future rule (US-62).
+  covered-call breach is the separate `COVERED_CALL_BREACH` rule (US-62).
 - **Driven by:** [US-53/54/55](../features/us-53-54-55-market-data-alert-rules.md)
+
+### `COVERED_CALL_BREACH` is CC-only, one-sided, and shares the price-vs-strike slice
+
+- **Decision:** A new medium-urgency rule matching only when `phase === 'CC_OPEN'`
+  and `price ≥ strike`; the summary reports the percent above the strike and warns
+  the shares may be called away. It reuses the shared `proximityPercent` helper and
+  the `PriceVsStrikeInput` slice (`StrikeProximityInput` and `CoveredCallBreachInput`
+  alias it), skips with `missing_underlying_price` on an absent price, and co-fires
+  with the DTE rules.
+- **Why:** Breach is the covered-call counterpart to US-55's CSP proximity, but a
+  one-sided `price ≥ strike` trigger rather than a two-sided band — extending
+  `STRIKE_PROXIMITY` was rejected for that reason. The absolute-value
+  `proximityPercent` equals the signed percent-above once `price ≥ strike`, so no
+  new signed helper was needed. PMCC short-call-against-LEAPS assignment is a
+  distinct concern deferred to Epic 09.
+- **Driven by:** [us-62](../features/us-62-covered-call-breach-alert.md) ·
+  [alert-rule-registry](../architecture/02-adrs/alert-rule-registry.md)
 
 ### `PROFIT_TARGET` and `STRIKE_PROXIMITY` co-fire with the DTE rules
 
@@ -534,7 +573,7 @@ dashboard's empty state.
 
 <!-- /generated -->
 
-<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56,us-57-58,us-59 -->
+<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56,us-57-58,us-59,us-62 -->
 
 ## Driven by
 
@@ -545,6 +584,7 @@ dashboard's empty state.
 - [US-56 — Earnings-proximity alert](../features/us-56-earnings-proximity-alert.md)
 - [US-57/58 — Configurable alert thresholds](../features/us-57-58-configurable-alert-thresholds.md)
 - [US-59 — Dismiss an alert with a record of the dismissal](../features/us-59-dismiss-alert.md)
+- [US-62 — Covered-call breach alert](../features/us-62-covered-call-breach-alert.md)
 
 <!-- /generated -->
 

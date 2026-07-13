@@ -3,6 +3,7 @@ import { isDteUrgent } from '../lib/dte'
 import type { CalendarEntry } from '../lib/expiration-calendar'
 import { PHASE_COLOR } from '../lib/phase'
 import { fmtMoney } from '../lib/format'
+import { ExpiringSoonFlag } from './ExpiringSoonFlag'
 import { PhaseBadge } from './PhaseBadge'
 import { SectionCard } from './ui/SectionCard'
 
@@ -20,10 +21,11 @@ function EntryCard({
   onReview: (id: string) => void
 }): React.JSX.Element {
   const color = PHASE_COLOR[entry.phase]
+  const soon = isDteUrgent(entry.dte)
 
   return (
     <div
-      className="p-3 rounded-lg border border-wb-border bg-wb-bg-elevated"
+      className={`p-3 rounded-lg border ${soon ? 'border-wb-gold-border' : 'border-wb-border'} bg-wb-bg-elevated`}
       style={{ borderLeft: `3px solid ${color}` }}
     >
       <div className="flex items-center justify-between">
@@ -32,6 +34,11 @@ function EntryCard({
         </span>
         <PhaseBadge phase={entry.phase} />
       </div>
+      {soon ? (
+        <div className="mt-2">
+          <ExpiringSoonFlag />
+        </div>
+      ) : null}
       <div className="flex gap-[18px] mt-[10px] font-wb-mono text-[0.72rem]">
         <div>
           <div className="text-wb-text-muted text-[0.62rem]">STRIKE</div>
@@ -41,7 +48,7 @@ function EntryCard({
         </div>
         <div>
           <div className="text-wb-text-muted text-[0.62rem]">DTE</div>
-          <div className={isDteUrgent(entry.dte) ? 'text-wb-gold' : 'text-wb-text-primary'}>
+          <div className={soon ? 'text-wb-gold' : 'text-wb-text-primary'}>
             {entry.dte != null ? `${entry.dte}d` : '—'}
           </div>
         </div>

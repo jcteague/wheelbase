@@ -15,7 +15,7 @@ export type RuleCode =
   | 'PROFIT_TARGET' // US-54
   | 'STRIKE_PROXIMITY' // US-55
   | 'EARNINGS_PROXIMITY' // US-56
-// (future: 'COVERED_CALL_BREACH')
+  | 'COVERED_CALL_BREACH' // US-62
 
 /** Largest DTE that still counts as "expiration imminent" (inclusive). */
 const EXPIRATION_IMMINENT_MAX_DTE = 5
@@ -43,6 +43,7 @@ const QUICK_ACTION_REVIEW = 'Review position'
 const MISSING_DTE = 'missing_dte'
 const MISSING_OPTION_MARK = 'missing_option_mark'
 const MISSING_UNDERLYING_PRICE = 'missing_underlying_price'
+const MISSING_STRIKE = 'missing_strike'
 const MISSING_EARNINGS_DATE = 'missing_earnings_date'
 const MISSING_EXPIRATION = 'missing_expiration'
 const INVALID_PROFIT_TARGET_INPUT = 'invalid_profit_target_input'
@@ -78,11 +79,18 @@ export type ProfitTargetInput = Pick<
   'entryPremiumPerContract' | 'contracts' | 'currentOptionMid' | 'profitTargetPercentOverride'
 >
 
+/** Fields the price-vs-strike helpers read, shared by the STRIKE_PROXIMITY
+ *  (US-55) and COVERED_CALL_BREACH (US-62) rules. */
+export type PriceVsStrikeInput = Pick<AlertEvaluationInput, 'strike' | 'currentUnderlyingPrice'>
+
 /** Exactly the fields the STRIKE_PROXIMITY (US-55) helpers read. */
-export type StrikeProximityInput = Pick<AlertEvaluationInput, 'strike' | 'currentUnderlyingPrice'>
+export type StrikeProximityInput = PriceVsStrikeInput
 
 /** Exactly the fields the EARNINGS_PROXIMITY (US-56) helpers read. */
 export type EarningsProximityInput = Pick<AlertEvaluationInput, 'daysToEarnings' | 'expiration'>
+
+/** Exactly the fields the COVERED_CALL_BREACH (US-62) helpers read. */
+export type CoveredCallBreachInput = PriceVsStrikeInput
 
 export interface AlertMatch {
   ruleCode: RuleCode
@@ -143,8 +151,19 @@ function profitTargetSummary(input: ProfitTargetInput): string {
   return `${capturedPercent(input).toFixed(1)}% of max profit captured — consider closing`
 }
 
-/** Absolute gap between the stock price and the CSP strike, as a percent Decimal. */
-function proximityPercent(input: StrikeProximityInput): Decimal {
+/** True when the string parses to a finite Decimal — the precondition every
+ *  Decimal-backed rule needs before parsing to avoid a throw on malformed data. */
+function isNumeric(value: string | null): boolean {
+  if (value === null) return false
+  try {
+    return new Decimal(value).isFinite()
+  } catch {
+    return false
+  }
+}
+
+/** Absolute gap between the stock price and the strike, as a percent Decimal. */
+function proximityPercent(input: PriceVsStrikeInput): Decimal {
   const price = new Decimal(input.currentUnderlyingPrice!)
   const strike = new Decimal(input.strike!)
   return price.minus(strike).abs().dividedBy(strike).times(100)
@@ -157,6 +176,10 @@ function strikeProximitySummary(input: StrikeProximityInput): string {
   const direction = price.gte(strike) ? 'above' : 'below'
   const base = `Stock is ${pct}% ${direction} the ${formatStrike(input.strike)} put strike`
   return direction === 'below' ? `${base} — now in the money` : base
+}
+
+function coveredCallBreachSummary(input: CoveredCallBreachInput): string {
+  return `Stock is ${proximityPercent(input).toFixed(1)}% above the ${formatStrike(input.strike)} call strike — shares may be called away`
 }
 
 function earningsProximitySummary(input: EarningsProximityInput): string {
@@ -192,6 +215,19 @@ interface RuleDefinition {
 
 const missingDteReason = (input: AlertEvaluationInput): string | null =>
   input.dte === null ? MISSING_DTE : null
+
+/** Skip guard shared by the price-vs-strike rules (STRIKE_PROXIMITY,
+ *  COVERED_CALL_BREACH). When the rule's phase is active, both the underlying
+ *  price and the strike must be numeric, else the rule skips with a reason
+ *  rather than throwing on a malformed value or silently resolving on a null. */
+const priceVsStrikeMissingData =
+  (phase: WheelPhase) =>
+  (input: AlertEvaluationInput): string | null => {
+    if (input.phase !== phase) return null
+    if (!isNumeric(input.currentUnderlyingPrice)) return MISSING_UNDERLYING_PRICE
+    if (!isNumeric(input.strike)) return MISSING_STRIKE
+    return null
+  }
 
 const RULES: RuleDefinition[] = [
   {
@@ -231,15 +267,9 @@ const RULES: RuleDefinition[] = [
   {
     code: 'STRIKE_PROXIMITY',
     urgency: 'medium',
-    missingData: (input) =>
-      input.phase === 'CSP_OPEN' && input.currentUnderlyingPrice === null
-        ? MISSING_UNDERLYING_PRICE
-        : null,
+    missingData: priceVsStrikeMissingData('CSP_OPEN'),
     test: (input) =>
-      input.phase === 'CSP_OPEN' &&
-      input.strike !== null &&
-      input.currentUnderlyingPrice !== null &&
-      proximityPercent(input).lte(STRIKE_PROXIMITY_MAX_PERCENT),
+      input.phase === 'CSP_OPEN' && proximityPercent(input).lte(STRIKE_PROXIMITY_MAX_PERCENT),
     summary: strikeProximitySummary
   },
   {
@@ -258,6 +288,14 @@ const RULES: RuleDefinition[] = [
       input.daysToEarnings <= EARNINGS_PROXIMITY_MAX_DAYS &&
       input.daysToEarnings <= input.dte,
     summary: earningsProximitySummary
+  },
+  {
+    code: 'COVERED_CALL_BREACH',
+    urgency: 'medium',
+    missingData: priceVsStrikeMissingData('CC_OPEN'),
+    test: (input) =>
+      input.phase === 'CC_OPEN' && new Decimal(input.currentUnderlyingPrice!).gte(input.strike!),
+    summary: coveredCallBreachSummary
   }
 ]
 

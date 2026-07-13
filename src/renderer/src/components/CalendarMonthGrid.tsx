@@ -1,5 +1,6 @@
 import { format } from 'date-fns'
 import { CHIP_LIMIT, visibleChips, type DayCell } from '../lib/expiration-calendar'
+import { isDteUrgent } from '../lib/dte'
 import { CalendarChip } from './CalendarChip'
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -22,6 +23,7 @@ function DayCellView({ cell, selectedDate, onSelectDate }: DayCellViewProps): Re
   const { visible, hiddenCount } = visibleChips(cell.entries, CHIP_LIMIT)
   const isPopulated = cell.entries.length > 0
   const isSelected = isPopulated && selectedDate === isoDate
+  const isSoon = cell.entries.some((entry) => isDteUrgent(entry.dte))
 
   return (
     <div
@@ -33,7 +35,7 @@ function DayCellView({ cell, selectedDate, onSelectDate }: DayCellViewProps): Re
         'min-h-24 p-2 flex flex-col gap-[5px] border-b border-r border-wb-border-subtle last:border-r-0',
         cell.inMonth ? '' : 'opacity-40',
         isPopulated ? 'cursor-pointer' : '',
-        isSelected ? 'bg-wb-gold-subtle ring-1 ring-inset ring-wb-gold' : ''
+        isSoon || isSelected ? 'bg-wb-gold-subtle ring-1 ring-inset ring-wb-gold' : ''
       ]
         .filter(Boolean)
         .join(' ')}
@@ -49,6 +51,8 @@ function DayCellView({ cell, selectedDate, onSelectDate }: DayCellViewProps): Re
         </span>
         {cell.isToday ? (
           <span className="font-wb-mono text-[0.55rem] tracking-[0.1em] text-wb-gold">TODAY</span>
+        ) : isSoon ? (
+          <span className="font-wb-mono text-[0.55rem] tracking-[0.1em] text-wb-gold">SOON</span>
         ) : null}
       </div>
       {visible.map((entry) => (

@@ -9,6 +9,7 @@ import { fmtMoney } from '../lib/format'
 import { PHASE_COLOR } from '../lib/phase'
 import { OptMidCell } from './OptMidCell'
 import { PhaseBadge } from './PhaseBadge'
+import { ExpiringSoonFlag } from './ExpiringSoonFlag'
 import { PriceCell, type StockQuote } from './PriceCell'
 import { TargetBadge } from './TargetBadge'
 import { UnrealizedPnlCell } from './UnrealizedPnlCell'
@@ -89,7 +90,12 @@ export function PositionRow({
   return (
     <tr
       data-testid={closed ? 'position-card-closed' : 'position-card'}
-      className="wb-position-row bg-wb-bg-surface border border-wb-border"
+      className={[
+        'wb-position-row bg-wb-bg-surface border border-wb-border',
+        dteUrgent ? 'wb-position-row--soon' : ''
+      ]
+        .filter(Boolean)
+        .join(' ')}
       onClick={() => {
         window.location.hash = `/positions/${item.id}`
       }}
@@ -114,6 +120,7 @@ export function PositionRow({
               maxProfit={display.maxProfit}
               targetPercent={display.targetPercent}
             />
+            {dteUrgent && <ExpiringSoonFlag compact />}
           </div>
           <span className="text-[0.65rem] text-wb-text-muted font-wb-mono">{item.status}</span>
         </div>

@@ -616,6 +616,116 @@ describe('US-56 acceptance — EARNINGS_PROXIMITY', () => {
   })
 })
 
+describe('US-62 acceptance — COVERED_CALL_BREACH', () => {
+  let db: Database.Database
+
+  beforeEach(() => {
+    db = makeTestDb()
+  })
+
+  /** Seeds the story's MSFT $420 covered call at 30 DTE (outside both DTE
+   *  windows, so only the breach rule can fire). No option mid is stubbed, so
+   *  PROFIT_TARGET simply skips and does not confound. */
+  function seedMsftCc(): void {
+    seedShortOptionAtPremium(db, {
+      id: 'pos-msft',
+      ticker: 'MSFT',
+      phase: 'CC_OPEN',
+      strike: '420.0000',
+      contracts: 1,
+      entryPremium: '4.0000',
+      expiration: expirationForDte(30)
+    })
+  }
+
+  it('fires a medium COVERED_CALL_BREACH alert when the stock rises above the call strike', async () => {
+    seedMsftCc()
+
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: stubProvider({ priceByTicker: { MSFT: '427.40' } })
+    })
+
+    const breach = listOpenAlerts(db).filter((a) => a.ruleCode === 'COVERED_CALL_BREACH')
+    expect(breach).toHaveLength(1)
+    expect(breach[0]).toEqual(
+      expect.objectContaining({
+        positionId: 'pos-msft',
+        urgency: 'medium',
+        summary: 'Stock is 1.8% above the $420.00 call strike — shares may be called away',
+        status: 'open'
+      })
+    )
+  })
+
+  it('does not create a COVERED_CALL_BREACH alert while the stock is below the call strike', async () => {
+    seedMsftCc()
+
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: stubProvider({ priceByTicker: { MSFT: '416.00' } })
+    })
+
+    expect(listOpenAlerts(db).some((a) => a.ruleCode === 'COVERED_CALL_BREACH')).toBe(false)
+  })
+
+  it('resolves the COVERED_CALL_BREACH alert when the stock falls back below the strike', async () => {
+    seedMsftCc()
+
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: stubProvider({ priceByTicker: { MSFT: '427.40' } })
+    })
+    expect(listOpenAlerts(db).some((a) => a.ruleCode === 'COVERED_CALL_BREACH')).toBe(true)
+
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: stubProvider({ priceByTicker: { MSFT: '415.00' } })
+    })
+
+    const rows = readAlertRows(db).filter((r) => r.rule_code === 'COVERED_CALL_BREACH')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].status).toBe('resolved')
+    expect(listOpenAlerts(db).some((a) => a.ruleCode === 'COVERED_CALL_BREACH')).toBe(false)
+  })
+
+  it('does not create a COVERED_CALL_BREACH alert for a cash-secured put', async () => {
+    seedShortOptionAtPremium(db, {
+      id: 'pos-aapl',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      strike: '180.0000',
+      contracts: 1,
+      entryPremium: '3.5000',
+      expiration: expirationForDte(30)
+    })
+
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: stubProvider({ priceByTicker: { AAPL: '185.00' } })
+    })
+
+    expect(listOpenAlerts(db).some((a) => a.ruleCode === 'COVERED_CALL_BREACH')).toBe(false)
+  })
+
+  it('does not evaluate a holding-shares position with no open covered call', async () => {
+    seedPosition(db, { id: 'pos-tsla', ticker: 'TSLA', phase: 'HOLDING_SHARES' })
+
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: stubProvider({ priceByTicker: { TSLA: '250.00' } })
+    })
+
+    expect(readAlertRows(db).some((r) => r.position_id === 'pos-tsla')).toBe(false)
+  })
+})
+
 describe('US-57 acceptance', () => {
   let db: Database.Database
 

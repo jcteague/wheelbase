@@ -239,3 +239,40 @@ it('renders TargetBadge when crossing the passed-in global profitTargetDefault',
   renderRow(BASE_ITEM, { snapshot: snap, profitTargetDefault: 40 })
   expect(screen.getByTestId('target-badge')).toBeInTheDocument()
 })
+
+it('shows the expiring-soon flag when DTE is 7 or less', () => {
+  renderRow({ ...BASE_ITEM, dte: 7 })
+  expect(screen.getByTestId('expiring-soon-flag')).toBeInTheDocument()
+})
+
+it('does not show the expiring-soon flag at 8 DTE', () => {
+  renderRow({ ...BASE_ITEM, dte: 8 })
+  expect(screen.queryByTestId('expiring-soon-flag')).not.toBeInTheDocument()
+  expect(screen.getByText('8d')).toBeInTheDocument()
+})
+
+it('does not show the expiring-soon flag when DTE is null (holding shares)', () => {
+  renderRow({
+    ...BASE_ITEM,
+    phase: 'HOLDING_SHARES',
+    strike: null,
+    expiration: null,
+    dte: null,
+    instrumentType: null,
+    contracts: null,
+    entryPremiumPerContract: null
+  })
+  expect(screen.queryByTestId('expiring-soon-flag')).not.toBeInTheDocument()
+})
+
+it('tints the row gold when expiring soon', () => {
+  renderRow({ ...BASE_ITEM, dte: 7 })
+  const row = screen.getByTestId('position-card')
+  expect(row.className).toContain('wb-position-row--soon')
+})
+
+it('does not tint the row gold when outside the threshold', () => {
+  renderRow({ ...BASE_ITEM, dte: 8 })
+  const row = screen.getByTestId('position-card')
+  expect(row.className).not.toContain('wb-position-row--soon')
+})

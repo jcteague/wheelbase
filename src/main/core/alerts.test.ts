@@ -320,6 +320,38 @@ describe('evaluatePosition — STRIKE_PROXIMITY (US-55)', () => {
       reason: 'missing_underlying_price'
     })
   })
+
+  it('STRIKE_PROXIMITY skips (never throws) when the price is non-numeric', () => {
+    const { matches, skipped } = evaluatePosition(
+      makeInput({
+        phase: 'CSP_OPEN',
+        dte: 30,
+        strike: '180.0000',
+        currentUnderlyingPrice: 'N/A'
+      })
+    )
+    expect(matches.find((m) => m.ruleCode === 'STRIKE_PROXIMITY')).toBeUndefined()
+    expect(skipped).toContainEqual({
+      ruleCode: 'STRIKE_PROXIMITY',
+      reason: 'missing_underlying_price'
+    })
+  })
+
+  it('STRIKE_PROXIMITY skips with missing_strike when the strike is null but a price is present', () => {
+    const { matches, skipped } = evaluatePosition(
+      makeInput({
+        phase: 'CSP_OPEN',
+        dte: 30,
+        strike: null,
+        currentUnderlyingPrice: '180.0000'
+      })
+    )
+    expect(matches.find((m) => m.ruleCode === 'STRIKE_PROXIMITY')).toBeUndefined()
+    expect(skipped).toContainEqual({
+      ruleCode: 'STRIKE_PROXIMITY',
+      reason: 'missing_strike'
+    })
+  })
 })
 
 describe('evaluatePosition — EARNINGS_PROXIMITY (US-56)', () => {
@@ -448,6 +480,134 @@ describe('evaluatePosition — EARNINGS_PROXIMITY (US-56)', () => {
     const ccMatch = cc.matches.find((m) => m.ruleCode === 'EARNINGS_PROXIMITY')
     expect(cspMatch).toBeDefined()
     expect(ccMatch).toEqual(cspMatch)
+  })
+})
+
+describe('evaluatePosition — COVERED_CALL_BREACH (US-62)', () => {
+  it('fires at/above the strike with medium urgency, story summary text, and Review position quick action', () => {
+    const { matches } = evaluatePosition(
+      makeInput({
+        phase: 'CC_OPEN',
+        instrumentType: 'CALL',
+        dte: 30,
+        strike: '420.0000',
+        currentUnderlyingPrice: '427.40'
+      })
+    )
+    const match = matches.find((m) => m.ruleCode === 'COVERED_CALL_BREACH')
+    expect(match).toEqual({
+      ruleCode: 'COVERED_CALL_BREACH',
+      urgency: 'medium',
+      summary: 'Stock is 1.8% above the $420.00 call strike — shares may be called away',
+      quickAction: 'Review position'
+    })
+  })
+
+  it('fires exactly at the strike (0.0%) — covers the ≥ boundary', () => {
+    const { matches } = evaluatePosition(
+      makeInput({
+        phase: 'CC_OPEN',
+        instrumentType: 'CALL',
+        dte: 30,
+        strike: '420.0000',
+        currentUnderlyingPrice: '420.00'
+      })
+    )
+    const match = matches.find((m) => m.ruleCode === 'COVERED_CALL_BREACH')
+    expect(match?.summary).toBe(
+      'Stock is 0.0% above the $420.00 call strike — shares may be called away'
+    )
+  })
+
+  it('does not fire below the strike', () => {
+    const { matches } = evaluatePosition(
+      makeInput({
+        phase: 'CC_OPEN',
+        instrumentType: 'CALL',
+        dte: 30,
+        strike: '420.0000',
+        currentUnderlyingPrice: '416.00'
+      })
+    )
+    expect(matches.find((m) => m.ruleCode === 'COVERED_CALL_BREACH')).toBeUndefined()
+  })
+
+  it('does not apply to CSP_OPEN (neither a match nor a skip)', () => {
+    const { matches, skipped } = evaluatePosition(
+      makeInput({
+        phase: 'CSP_OPEN',
+        dte: 30,
+        strike: '180.0000',
+        currentUnderlyingPrice: '185.00'
+      })
+    )
+    expect(matches.find((m) => m.ruleCode === 'COVERED_CALL_BREACH')).toBeUndefined()
+    expect(skipped.find((s) => s.ruleCode === 'COVERED_CALL_BREACH')).toBeUndefined()
+  })
+
+  it('skips with missing_underlying_price for a CC without a price', () => {
+    const { matches, skipped } = evaluatePosition(
+      makeInput({
+        phase: 'CC_OPEN',
+        instrumentType: 'CALL',
+        dte: 30,
+        strike: '420.0000',
+        currentUnderlyingPrice: null
+      })
+    )
+    expect(matches.find((m) => m.ruleCode === 'COVERED_CALL_BREACH')).toBeUndefined()
+    expect(skipped).toContainEqual({
+      ruleCode: 'COVERED_CALL_BREACH',
+      reason: 'missing_underlying_price'
+    })
+  })
+
+  it('skips (never throws) when the price is non-numeric for a CC', () => {
+    const { matches, skipped } = evaluatePosition(
+      makeInput({
+        phase: 'CC_OPEN',
+        instrumentType: 'CALL',
+        dte: 30,
+        strike: '420.0000',
+        currentUnderlyingPrice: 'N/A'
+      })
+    )
+    expect(matches.find((m) => m.ruleCode === 'COVERED_CALL_BREACH')).toBeUndefined()
+    expect(skipped).toContainEqual({
+      ruleCode: 'COVERED_CALL_BREACH',
+      reason: 'missing_underlying_price'
+    })
+  })
+
+  it('skips with missing_strike when the strike is null but a price is present for a CC', () => {
+    const { matches, skipped } = evaluatePosition(
+      makeInput({
+        phase: 'CC_OPEN',
+        instrumentType: 'CALL',
+        dte: 30,
+        strike: null,
+        currentUnderlyingPrice: '427.40'
+      })
+    )
+    expect(matches.find((m) => m.ruleCode === 'COVERED_CALL_BREACH')).toBeUndefined()
+    expect(skipped).toContainEqual({
+      ruleCode: 'COVERED_CALL_BREACH',
+      reason: 'missing_strike'
+    })
+  })
+
+  it('co-fires with DTE rules on a CC_OPEN position', () => {
+    const { matches } = evaluatePosition(
+      makeInput({
+        phase: 'CC_OPEN',
+        instrumentType: 'CALL',
+        dte: 4,
+        strike: '420.0000',
+        currentUnderlyingPrice: '427.40'
+      })
+    )
+    expect(matches.find((m) => m.ruleCode === 'EXPIRATION_IMMINENT')).toBeDefined()
+    expect(matches.find((m) => m.ruleCode === 'COVERED_CALL_BREACH')).toBeDefined()
   })
 })
 
