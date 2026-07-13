@@ -14,11 +14,11 @@ flag reuses the existing `isDteUrgent` / `DTE_URGENT_THRESHOLD = 7` predicate
 
 ## Behaviour
 
-| Surface                  | Treatment when DTE ≤ 7                                                               |
+| Surface                  | Treatment when DTE ≤ 7                                                              |
 | ------------------------ | ----------------------------------------------------------------------------------- |
-| Dashboard row            | `ExpiringSoonFlag` pill beside the ticker + gold row tint/left rail                  |
+| Dashboard row            | `ExpiringSoonFlag` pill beside the ticker + gold row tint/left rail                 |
 | Calendar month-grid cell | gold ring + `bg-wb-gold-subtle` + a `SOON` marker (`TODAY` takes the slot on today) |
-| Calendar day-detail card | `ExpiringSoonFlag` pill + gold card border (DTE text already gold)                   |
+| Calendar day-detail card | `ExpiringSoonFlag` pill + gold card border (DTE text already gold)                  |
 
 Calendar chips and the agenda view are unchanged (highlight is cell-level).
 

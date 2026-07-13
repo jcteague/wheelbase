@@ -7,7 +7,7 @@
 // expiration offsets so DTE lands deterministically and the suite never rots.
 import { afterEach, describe, expect, it } from 'vitest'
 import { _electron as electron } from 'playwright'
-import type { ElectronApplication, Page } from 'playwright'
+import type { ElectronApplication, Locator, Page } from 'playwright'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -55,7 +55,7 @@ async function goToDashboard(page: Page): Promise<void> {
 }
 
 /** The active-positions row whose ticker cell contains `ticker`. */
-function positionRow(page: Page, ticker: string) {
+function positionRow(page: Page, ticker: string): Locator {
   return page.locator('[data-testid="position-card"]', { hasText: ticker })
 }
 
@@ -76,7 +76,12 @@ describe('US-61: expiring-soon flags', () => {
 
     // AAPL CSP at exactly 7 DTE. No alert evaluation is run, so AAPL has no
     // management-queue item — the flag must still show purely from DTE.
-    await seedCspPosition(page, { ticker: 'AAPL', strike: 180, premium: 2, expiration: futureDate(7) })
+    await seedCspPosition(page, {
+      ticker: 'AAPL',
+      strike: 180,
+      premium: 2,
+      expiration: futureDate(7)
+    })
 
     await goToDashboard(page)
 

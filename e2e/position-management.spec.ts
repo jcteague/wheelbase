@@ -123,7 +123,7 @@ describe('US-2: positions sorted by DTE ascending', () => {
 
     // Extract tickers from active position rows in DOM order
     const tickers = await page.$$eval(
-      '[data-testid="position-card"] td:first-child span:first-child',
+      '[data-testid="position-card"] [data-testid="position-ticker"]',
       (cells) => cells.map((c) => c.textContent?.trim())
     )
 

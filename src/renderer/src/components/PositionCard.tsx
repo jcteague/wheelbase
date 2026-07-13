@@ -104,7 +104,10 @@ export function PositionRow({
       <TableCell className={CELL_CLASS}>
         <div className="flex flex-col gap-[1px]">
           <div className="flex items-center gap-1.5">
-            <span className="font-wb-mono font-bold text-sm text-wb-text-primary tracking-[0.02em]">
+            <span
+              data-testid="position-ticker"
+              className="font-wb-mono font-bold text-sm text-wb-text-primary tracking-[0.02em]"
+            >
               {item.ticker}
             </span>
             {hasPendingAssignment && (
