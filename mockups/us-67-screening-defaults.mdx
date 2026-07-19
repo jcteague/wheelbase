@@ -1,0 +1,556 @@
+---
+title: 'US-67: Screening Defaults'
+story: 'As a wheel trader, I want to configure the screener criteria — delta band, DTE window, liquidity gates, price ceiling, IV-rank floor, and earnings handling — so results reflect how I pick entries.'
+states: ['default', 'saved', 'invalid', 'flag']
+---
+
+import { useState } from 'react'
+
+# US-67: Screening Defaults
+
+_As a wheel trader, I want to configure the screener criteria — delta band, DTE window, liquidity gates, price ceiling, IV-rank floor, and earnings handling — so results reflect how I pick entries._
+
+## Acceptance Criteria States
+
+- **default** — every criterion at its shipped default (delta 0.20–0.30, DTE 30–45, min OI 500, max spread 10%, price ceiling off, IV-rank floor off, earnings **Exclude**). Save is enabled.
+- **saved** — a green `Screening criteria saved` banner confirms the write; fields stay at the saved values (price ceiling off).
+- **invalid** — the delta band (0.30 → 0.20) and DTE window (45 → 30) are inverted, each with an inline red error, and **Save is disabled** — mirroring the cross-field min-less-than-max validation. Price ceiling off.
+- **flag** — earnings handling switched to `Flag only`, with the IV-rank floor and the optional price ceiling both toggled `On` (30 IVR / $75), showing the enabled look of the optional inputs.
+
+Colors, fonts, and chrome are driven by the app's design tokens in `src/renderer/src/index.css` (`--wb-*`). Delta band and DTE window are paired min/max hard filters; liquidity is a hard gate; the price ceiling is off by default (an optional per-account buying-power limit — a fixed dollar ceiling on by default would silently hide large-cap names); the IV-rank floor is a soft ranking input (off by default so a low-vol regime doesn't empty results); earnings handling is the `exclude` / `flag` policy the scorer (US-65) and the earnings warning (US-70) read.
+
+---
+
+export const T = {
+  base: 'var(--wb-bg-base)',
+  surface: 'var(--wb-bg-surface)',
+  elevated: 'var(--wb-bg-elevated)',
+  border: 'var(--wb-border)',
+  borderSub: 'var(--wb-border-subtle)',
+  text: 'var(--wb-text-primary)',
+  text2: 'var(--wb-text-secondary)',
+  muted: 'var(--wb-text-muted)',
+  gold: 'var(--wb-gold)',
+  goldDim: 'var(--wb-gold-dim)',
+  goldBorder: 'var(--wb-gold-border)',
+  goldSub: 'var(--wb-gold-subtle)',
+  green: 'var(--wb-green)',
+  greenDim: 'var(--wb-green-dim)',
+  greenBorder: 'var(--wb-green-border)',
+  greenSub: 'var(--wb-green-subtle)',
+  red: 'var(--wb-red)',
+  redDim: 'var(--wb-red-dim)',
+  blue: 'var(--wb-blue)',
+  mono: 'var(--font-wb-mono)',
+  r: 6
+}
+
+export const RED_BORDER = 'rgba(248,113,113,0.4)'
+export const RED_SUBTLE = 'rgba(248,113,113,0.08)'
+
+export function SectionLabel({ children, style }) {
+  return (
+    <div
+      style={{
+        fontFamily: T.mono,
+        fontSize: '0.72rem',
+        textTransform: 'uppercase',
+        letterSpacing: '0.12em',
+        color: T.muted,
+        ...style
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
+export function NavRow({ icon, label, active }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '7px 12px',
+        borderRadius: T.r,
+        fontSize: '0.8125rem',
+        cursor: 'pointer',
+        background: active ? T.goldSub : 'transparent',
+        color: active ? T.gold : T.text2,
+        fontWeight: active ? 600 : 400
+      }}
+    >
+      <span style={{ fontFamily: T.mono, width: 14, textAlign: 'center' }}>{icon}</span>
+      {label}
+    </div>
+  )
+}
+
+export function Shell({ children }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        height: 720,
+        border: `1px solid ${T.border}`,
+        borderRadius: 10,
+        overflow: 'hidden',
+        background: T.base,
+        boxShadow: '0 30px 80px rgba(0,0,0,0.45)'
+      }}
+    >
+      <aside
+        style={{
+          width: 200,
+          flexShrink: 0,
+          background: T.surface,
+          borderRight: `1px solid ${T.border}`,
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '16px',
+            borderBottom: `1px solid ${T.border}`
+          }}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: 999, background: T.gold, boxShadow: `0 0 6px ${T.gold}` }} />
+          <span
+            style={{
+              fontFamily: T.mono,
+              fontWeight: 700,
+              fontSize: '0.75rem',
+              letterSpacing: '0.15em',
+              textTransform: 'uppercase',
+              color: T.text
+            }}
+          >
+            Wheelbase
+          </span>
+        </div>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '16px 8px', flex: 1 }}>
+          <SectionLabel style={{ fontSize: '0.65rem', padding: '6px 12px' }}>Trading</SectionLabel>
+          <NavRow icon="◈" label="Positions" />
+          <NavRow icon="+" label="Open Wheel" />
+          <NavRow icon="☰" label="Watchlist" />
+          <NavRow icon="⊹" label="Screener" />
+          <NavRow icon="▦" label="Calendar" />
+          <SectionLabel style={{ fontSize: '0.65rem', padding: '6px 12px', marginTop: 12 }}>System</SectionLabel>
+          <NavRow icon="⚙" label="Settings" active />
+        </nav>
+        <div
+          style={{
+            padding: '12px 16px',
+            borderTop: `1px solid ${T.border}`,
+            fontFamily: T.mono,
+            fontSize: '0.65rem',
+            color: T.muted
+          }}
+        >
+          Wheel Strategy
+        </div>
+      </aside>
+
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <header
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 24px',
+            borderBottom: `1px solid ${T.border}`,
+            background: T.surface
+          }}
+        >
+          <SectionLabel>Settings</SectionLabel>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span
+              style={{
+                fontFamily: T.mono,
+                fontSize: '0.65rem',
+                letterSpacing: '0.08em',
+                color: T.text2,
+                border: `1px solid ${T.border}`,
+                borderRadius: 4,
+                padding: '2px 8px'
+              }}
+            >
+              PAPER
+            </span>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                borderRadius: 10,
+                border: `1px solid rgba(63,185,80,0.3)`,
+                background: 'rgba(63,185,80,0.1)',
+                padding: '2px 8px 2px 6px',
+                fontFamily: T.mono,
+                fontSize: '0.6rem',
+                fontWeight: 700,
+                letterSpacing: '0.1em',
+                color: T.green
+              }}
+            >
+              <span style={{ width: 6, height: 6, borderRadius: 999, background: T.green }} />
+              LIVE
+            </span>
+          </div>
+        </header>
+        <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>{children}</div>
+      </div>
+    </div>
+  )
+}
+
+export function Segment({ options, value, onChange, size = 'md' }) {
+  const pad = size === 'sm' ? '4px 10px' : '5px 12px'
+  return (
+    <div
+      style={{
+        display: 'inline-flex',
+        gap: 2,
+        padding: 3,
+        borderRadius: 999,
+        border: `1px solid ${T.border}`,
+        background: T.elevated
+      }}
+    >
+      {options.map((opt) => {
+        const active = value === opt.v
+        return (
+          <button
+            key={opt.v}
+            onClick={() => onChange(opt.v)}
+            style={{
+              padding: pad,
+              borderRadius: 999,
+              border: 'none',
+              cursor: 'pointer',
+              fontFamily: T.mono,
+              fontSize: '0.72rem',
+              background: active ? T.goldDim : 'transparent',
+              color: active ? T.gold : T.text2,
+              fontWeight: active ? 700 : 400
+            }}
+          >
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+export function FieldLabel({ children }) {
+  return <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: T.text, marginBottom: 3 }}>{children}</div>
+}
+
+export function Caption({ children }) {
+  return <div style={{ fontSize: '0.72rem', color: T.muted, marginTop: 6, lineHeight: 1.5 }}>{children}</div>
+}
+
+export function NumInput({ value, suffix, prefix, error, disabled, w = 90 }) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        border: `1px solid ${error ? RED_BORDER : T.border}`,
+        background: disabled ? T.surface : T.base,
+        borderRadius: T.r,
+        padding: '7px 10px',
+        width: w,
+        opacity: disabled ? 0.5 : 1
+      }}
+    >
+      {prefix ? <span style={{ fontFamily: T.mono, fontSize: '0.8rem', color: T.muted }}>{prefix}</span> : null}
+      <span style={{ fontFamily: T.mono, fontSize: '0.85rem', color: T.text, flex: 1 }}>{value}</span>
+      {suffix ? <span style={{ fontFamily: T.mono, fontSize: '0.8rem', color: T.muted }}>{suffix}</span> : null}
+    </span>
+  )
+}
+
+export function ErrorText({ children }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, color: T.red, fontSize: '0.72rem' }}>
+      <span style={{ fontFamily: T.mono, fontWeight: 700 }}>!</span>
+      {children}
+    </div>
+  )
+}
+
+export function Row({ children, style }) {
+  return (
+    <div
+      style={{
+        padding: '16px 0',
+        borderTop: `1px solid ${T.borderSub}`,
+        display: 'grid',
+        gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1fr)',
+        gap: 24,
+        alignItems: 'start',
+        ...style
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
+export function Group({ label, children }) {
+  return (
+    <div style={{ marginTop: 24 }}>
+      <SectionLabel style={{ fontSize: '0.65rem' }}>{label}</SectionLabel>
+      <div style={{ marginTop: 4 }}>{children}</div>
+    </div>
+  )
+}
+
+export function Banner() {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '10px 14px',
+        borderRadius: T.r,
+        border: `1px solid ${T.greenBorder}`,
+        background: T.greenSub,
+        marginBottom: 20
+      }}
+    >
+      <span
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: 999,
+          background: T.greenDim,
+          color: T.green,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontFamily: T.mono,
+          fontSize: '0.7rem',
+          fontWeight: 700
+        }}
+      >
+        ✓
+      </span>
+      <span style={{ fontSize: '0.8125rem', color: T.green, fontWeight: 600 }}>Screening criteria saved</span>
+    </div>
+  )
+}
+
+export function SaveButton({ disabled }) {
+  return (
+    <div style={{ marginTop: 28, display: 'flex', alignItems: 'center', gap: 14 }}>
+      <button
+        disabled={disabled}
+        style={{
+          padding: '9px 18px',
+          borderRadius: T.r,
+          border: 'none',
+          background: disabled ? T.elevated : T.gold,
+          color: disabled ? T.muted : '#1a1204',
+          fontFamily: T.mono,
+          fontSize: '0.78rem',
+          fontWeight: 700,
+          letterSpacing: '0.02em',
+          cursor: disabled ? 'not-allowed' : 'pointer'
+        }}
+      >
+        Save screening criteria
+      </button>
+      {disabled ? (
+        <span style={{ fontSize: '0.72rem', color: T.muted }}>Fix the highlighted fields to save.</span>
+      ) : null}
+    </div>
+  )
+}
+
+export function CriteriaForm({ state }) {
+  const invalid = state === 'invalid'
+  const flag = state === 'flag'
+  const earnings = flag ? 'flag' : 'exclude'
+  const ivrOn = flag
+  const ceilingOn = flag
+
+  return (
+    <div style={{ maxWidth: 720 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
+        <div style={{ fontSize: '1.15rem', fontWeight: 600, color: T.text }}>Screening Criteria</div>
+        <span style={{ fontFamily: T.mono, fontSize: '0.7rem', color: T.text2 }}>Classic Wheel · CSP</span>
+      </div>
+      <div style={{ fontSize: '0.8rem', color: T.text2, marginBottom: 8, lineHeight: 1.6 }}>
+        Defaults the scorer applies to every watchlist ticker. Filters disqualify; ranking inputs order what survives.
+      </div>
+
+      {state === 'saved' ? <Banner /> : null}
+
+      <div
+        style={{
+          border: `1px solid ${T.border}`,
+          borderRadius: 10,
+          background: T.surface,
+          padding: '4px 20px 22px'
+        }}
+      >
+        <Group label="Filters (hard)">
+          <Row style={{ borderTop: 'none' }}>
+            <div>
+              <FieldLabel>Delta band</FieldLabel>
+              <Caption>Assignment-probability band for the short put.</Caption>
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <NumInput value={invalid ? '0.30' : '0.20'} error={invalid} w={80} />
+                <span style={{ color: T.muted, fontFamily: T.mono }}>–</span>
+                <NumInput value={invalid ? '0.20' : '0.30'} error={invalid} w={80} />
+                <span style={{ fontFamily: T.mono, fontSize: '0.72rem', color: T.muted }}>Δ</span>
+              </div>
+              {invalid ? <ErrorText>Minimum delta must be less than maximum delta</ErrorText> : null}
+            </div>
+          </Row>
+
+          <Row>
+            <div>
+              <FieldLabel>DTE window</FieldLabel>
+              <Caption>Days to expiration to include.</Caption>
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <NumInput value={invalid ? '45' : '30'} error={invalid} w={80} />
+                <span style={{ color: T.muted, fontFamily: T.mono }}>–</span>
+                <NumInput value={invalid ? '30' : '45'} error={invalid} w={80} />
+                <span style={{ fontFamily: T.mono, fontSize: '0.72rem', color: T.muted }}>days</span>
+              </div>
+              {invalid ? <ErrorText>Minimum DTE must be less than maximum DTE</ErrorText> : null}
+            </div>
+          </Row>
+
+          <Row>
+            <div>
+              <FieldLabel>Price ceiling</FieldLabel>
+              <Caption>
+                Off by default — an optional per-account buying-power limit; when off, large-cap names aren't hidden.
+              </Caption>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Segment
+                size="sm"
+                value={ceilingOn ? 'on' : 'off'}
+                onChange={() => {}}
+                options={[
+                  { v: 'off', label: 'Off' },
+                  { v: 'on', label: 'On' }
+                ]}
+              />
+              <NumInput value="75" prefix="$" disabled={!ceilingOn} w={110} />
+            </div>
+          </Row>
+        </Group>
+
+        <Group label="Liquidity (hard gate)">
+          <Row style={{ borderTop: 'none' }}>
+            <div>
+              <FieldLabel>Minimum open interest</FieldLabel>
+              <Caption>Contracts you can reliably enter and exit.</Caption>
+            </div>
+            <div>
+              <NumInput value="500" w={110} />
+            </div>
+          </Row>
+
+          <Row>
+            <div>
+              <FieldLabel>Max bid-ask spread</FieldLabel>
+              <Caption>of mark; a tight absolute spread (≤ $0.10) also passes.</Caption>
+            </div>
+            <div>
+              <NumInput value="10" suffix="%" w={110} />
+            </div>
+          </Row>
+        </Group>
+
+        <Group label="Ranking inputs (soft)">
+          <Row style={{ borderTop: 'none' }}>
+            <div>
+              <FieldLabel>IV-rank floor</FieldLabel>
+              <Caption>Off by default so a low-vol market doesn't empty results.</Caption>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Segment
+                size="sm"
+                value={ivrOn ? 'on' : 'off'}
+                onChange={() => {}}
+                options={[
+                  { v: 'off', label: 'Off' },
+                  { v: 'on', label: 'On' }
+                ]}
+              />
+              <NumInput value="30" suffix="IVR" disabled={!ivrOn} w={100} />
+            </div>
+          </Row>
+        </Group>
+
+        <Group label="Policy">
+          <Row style={{ borderTop: 'none' }}>
+            <div>
+              <FieldLabel>Earnings handling</FieldLabel>
+              <Caption>Exclude drops candidates with earnings on/before expiry; Flag keeps them with a warning.</Caption>
+            </div>
+            <div>
+              <Segment
+                value={earnings}
+                onChange={() => {}}
+                options={[
+                  { v: 'exclude', label: 'Exclude' },
+                  { v: 'flag', label: 'Flag only' }
+                ]}
+              />
+            </div>
+          </Row>
+        </Group>
+      </div>
+
+      <SaveButton disabled={invalid} />
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [state, setState] = useState('default')
+
+  return (
+    <div style={{ fontFamily: 'inherit', color: T.text }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
+        <SectionLabel>State</SectionLabel>
+        <Segment
+          value={state}
+          onChange={setState}
+          options={[
+            { v: 'default', label: 'Default' },
+            { v: 'saved', label: 'Saved' },
+            { v: 'invalid', label: 'Invalid' },
+            { v: 'flag', label: 'Flag + IVR floor' }
+          ]}
+        />
+      </div>
+
+      <Shell>
+        <CriteriaForm state={state} />
+      </Shell>
+    </div>
+  )
+}
+
+<Mockup />

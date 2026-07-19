@@ -1,0 +1,672 @@
+---
+title: 'US-66: Screener Results'
+story: 'As a wheel trader, I want a ranked, scannable table of candidate strikes so I can compare put-selling entries across tickers at a glance.'
+states: ['ranked', 'earnings', 'excluded', 'unavailable', 'empty', 'stale']
+---
+
+import { useState } from 'react'
+
+# US-66: Screener Results
+
+_As a wheel trader, I want a ranked, scannable table of candidate strikes so I can compare put-selling entries across tickers at a glance._
+
+## Acceptance Criteria States
+
+- **ranked** — the surviving candidates, one recommended put strike per ticker, ranked by **yield-per-delta** (annualized return-if-flat ÷ delta). KO (0.71) sorts above AAPL (0.53) above MSFT (0.50). MSFT's IV rank reads `n/a` because the volatility service returned no data — the candidate is still ranked. The `Excluded (4)` section sits collapsed below.
+- **earnings** — earnings handling set to `Flag only`: AAPL carries an `Earnings Jul 31 · 21d before expiry` warning and drops below the clean rows; NVDA shows a neutral `Earnings date unknown` caution. In the default `Exclude` mode these instead move into the Excluded section.
+- **excluded** — the `Excluded (4)` section expanded, each candidate paired with its machine-readable reason (spread, delta band, open interest, no options listed).
+- **unavailable** — Massive couldn't be reached on the last refresh. A distinct "market data unavailable" state — **not** the same as "no candidates".
+- **empty** — screening ran and nothing survived the criteria. Visually distinct from a provider outage.
+- **stale** — market CLOSED: the table renders but is badged as a stale snapshot with the quote time, since after-hours option marks are unreliable.
+
+Colors, fonts, and chrome are driven by the app's design tokens in `src/renderer/src/index.css` (`--wb-*`). The market-status pill mirrors `MarketStatusPill` (LIVE/CLOSED). Yield math is internally consistent: `period = mark / strike`, `annualized = period × 365 / DTE`, `score = annualized ÷ delta`.
+
+---
+
+export const T = {
+  base: 'var(--wb-bg-base)',
+  surface: 'var(--wb-bg-surface)',
+  elevated: 'var(--wb-bg-elevated)',
+  hover: 'var(--wb-bg-hover)',
+  border: 'var(--wb-border)',
+  borderSub: 'var(--wb-border-subtle)',
+  text: 'var(--wb-text-primary)',
+  text2: 'var(--wb-text-secondary)',
+  muted: 'var(--wb-text-muted)',
+  gold: 'var(--wb-gold)',
+  goldDim: 'var(--wb-gold-dim)',
+  goldBorder: 'var(--wb-gold-border)',
+  goldSub: 'var(--wb-gold-subtle)',
+  green: 'var(--wb-green)',
+  greenDim: 'var(--wb-green-dim)',
+  greenBorder: 'var(--wb-green-border)',
+  red: 'var(--wb-red)',
+  redDim: 'var(--wb-red-dim)',
+  blue: 'var(--wb-blue)',
+  sky: 'var(--wb-sky)',
+  violet: 'var(--wb-violet)',
+  mono: 'var(--font-wb-mono)',
+  r: 6
+}
+
+export const CANDIDATES = [
+  { rank: 1, ticker: 'KO', strike: 60, exp: 'Aug 21', dte: 37, mark: 0.95, bid: 0.92, ask: 0.98, spread: '$0.06 (6%)', delta: 0.22, ivr: 38, oi: '1,800', period: '1.58%', ann: '15.6%/yr', score: '0.71' },
+  { rank: 2, ticker: 'AAPL', strike: 180, exp: 'Aug 21', dte: 37, mark: 2.7, bid: 2.67, ask: 2.73, spread: '$0.06 (2%)', delta: 0.28, ivr: 44, oi: '4,200', period: '1.50%', ann: '14.8%/yr', score: '0.53' },
+  { rank: 3, ticker: 'MSFT', strike: 410, exp: 'Aug 28', dte: 44, mark: 6.2, bid: 6.05, ask: 6.35, spread: '$0.30 (5%)', delta: 0.25, ivr: null, oi: '2,600', period: '1.51%', ann: '12.5%/yr', score: '0.50' }
+]
+
+export const EARNINGS_ROWS = [
+  { rank: 1, ticker: 'KO', strike: 60, exp: 'Aug 21', dte: 37, mark: 0.95, spread: '$0.06 (6%)', delta: 0.22, ivr: 38, oi: '1,800', period: '1.58%', ann: '15.6%/yr', score: '0.71', flag: null },
+  { rank: 2, ticker: 'MSFT', strike: 410, exp: 'Aug 28', dte: 44, mark: 6.2, spread: '$0.30 (5%)', delta: 0.25, ivr: null, oi: '2,600', period: '1.51%', ann: '12.5%/yr', score: '0.50', flag: null },
+  { rank: null, ticker: 'NVDA', strike: 118, exp: 'Aug 21', dte: 37, mark: 2.15, spread: '$0.08 (4%)', delta: 0.26, ivr: 52, oi: '3,100', period: '1.82%', ann: '18.0%/yr', score: '0.69', flag: 'unknown' },
+  { rank: null, ticker: 'AAPL', strike: 180, exp: 'Aug 21', dte: 37, mark: 2.7, spread: '$0.06 (2%)', delta: 0.28, ivr: 44, oi: '4,200', period: '1.50%', ann: '14.8%/yr', score: '0.53', flag: 'earnings' }
+]
+
+export const EXCLUDED = [
+  { ticker: 'TSLA', reason: 'spread 22% exceeds 10%' },
+  { ticker: 'AMD', reason: 'delta 0.42 outside 0.20–0.30' },
+  { ticker: 'F', reason: 'open interest 120 below 500' },
+  { ticker: 'XYZ', reason: 'no options listed' }
+]
+
+export const COLS = [
+  { key: 'rank', label: '#', w: '40px', align: 'left' },
+  { key: 'ticker', label: 'Ticker', w: '1.1fr', align: 'left' },
+  { key: 'strike', label: 'Strike', w: '0.8fr', align: 'right' },
+  { key: 'exp', label: 'Exp', w: '0.9fr', align: 'right' },
+  { key: 'dte', label: 'DTE', w: '58px', align: 'right' },
+  { key: 'mark', label: 'Mark', w: '0.8fr', align: 'right' },
+  { key: 'period', label: 'Yield', w: '0.8fr', align: 'right' },
+  { key: 'ann', label: 'Ann.', w: '0.9fr', align: 'right' },
+  { key: 'delta', label: 'Δ', w: '0.6fr', align: 'right' },
+  { key: 'ivr', label: 'IVR', w: '0.6fr', align: 'right' },
+  { key: 'oi', label: 'OI', w: '0.8fr', align: 'right' },
+  { key: 'spread', label: 'Spread', w: '1fr', align: 'right' },
+  { key: 'promote', label: '', w: '104px', align: 'right' }
+]
+
+export const TEMPLATE = COLS.map((c) => c.w).join(' ')
+
+export function money(n) {
+  return '$' + n.toFixed(2)
+}
+
+export function SectionLabel({ children, style }) {
+  return (
+    <div
+      style={{
+        fontFamily: T.mono,
+        fontSize: '0.72rem',
+        textTransform: 'uppercase',
+        letterSpacing: '0.12em',
+        color: T.muted,
+        ...style
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
+export function MarketPill({ closed }) {
+  const color = closed ? T.text2 : T.green
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        borderRadius: 10,
+        border: `1px solid ${closed ? 'rgba(139,148,158,0.3)' : 'var(--wb-green-border)'}`,
+        background: closed ? 'rgba(139,148,158,0.1)' : 'var(--wb-green-dim)',
+        padding: '2px 8px 2px 6px',
+        fontFamily: T.mono,
+        fontSize: '0.6rem',
+        fontWeight: 700,
+        letterSpacing: '0.1em',
+        color
+      }}
+    >
+      <span style={{ width: 6, height: 6, borderRadius: 999, background: color, flexShrink: 0 }} />
+      {closed ? 'CLOSED' : 'LIVE'}
+    </span>
+  )
+}
+
+export function NavRow({ icon, label, active }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '7px 12px',
+        borderRadius: T.r,
+        fontSize: '0.8125rem',
+        cursor: 'pointer',
+        background: active ? T.goldSub : 'transparent',
+        color: active ? T.gold : T.text2,
+        fontWeight: active ? 600 : 400
+      }}
+    >
+      <span style={{ fontFamily: T.mono, width: 14, textAlign: 'center' }}>{icon}</span>
+      {label}
+    </div>
+  )
+}
+
+export function Shell({ closed, staleBadge, children }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        height: 680,
+        border: `1px solid ${T.border}`,
+        borderRadius: 10,
+        overflow: 'hidden',
+        background: T.base,
+        boxShadow: '0 30px 80px rgba(0,0,0,0.45)'
+      }}
+    >
+      <aside
+        style={{
+          width: 200,
+          flexShrink: 0,
+          background: T.surface,
+          borderRight: `1px solid ${T.border}`,
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '16px',
+            borderBottom: `1px solid ${T.border}`
+          }}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: 999, background: T.gold, boxShadow: `0 0 6px ${T.gold}` }} />
+          <span
+            style={{
+              fontFamily: T.mono,
+              fontWeight: 700,
+              fontSize: '0.75rem',
+              letterSpacing: '0.15em',
+              textTransform: 'uppercase',
+              color: T.text
+            }}
+          >
+            Wheelbase
+          </span>
+        </div>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '16px 8px', flex: 1 }}>
+          <SectionLabel style={{ fontSize: '0.65rem', padding: '6px 12px' }}>Trading</SectionLabel>
+          <NavRow icon="◈" label="Positions" />
+          <NavRow icon="+" label="Open Wheel" />
+          <NavRow icon="☰" label="Watchlist" />
+          <NavRow icon="⌕" label="Screener" active />
+          <NavRow icon="▦" label="Calendar" />
+          <SectionLabel style={{ fontSize: '0.65rem', padding: '6px 12px', marginTop: 12 }}>System</SectionLabel>
+          <NavRow icon="⚙" label="Settings" />
+        </nav>
+        <div
+          style={{
+            padding: '12px 16px',
+            borderTop: `1px solid ${T.border}`,
+            fontFamily: T.mono,
+            fontSize: '0.65rem',
+            color: T.muted
+          }}
+        >
+          Wheel Strategy
+        </div>
+      </aside>
+
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <header
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 24px',
+            borderBottom: `1px solid ${T.border}`,
+            background: T.surface
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <SectionLabel>Screener</SectionLabel>
+            {staleBadge ? (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  background: T.goldDim,
+                  border: `1px solid ${T.goldBorder}`,
+                  color: T.gold,
+                  fontFamily: T.mono,
+                  fontSize: '0.6rem',
+                  fontWeight: 700,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase'
+                }}
+              >
+                Stale snapshot
+              </span>
+            ) : null}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span
+              style={{
+                fontFamily: T.mono,
+                fontSize: '0.65rem',
+                letterSpacing: '0.08em',
+                color: T.text2,
+                border: `1px solid ${T.border}`,
+                borderRadius: 4,
+                padding: '2px 8px'
+              }}
+            >
+              PAPER
+            </span>
+            <MarketPill closed={closed} />
+          </div>
+        </header>
+        <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>{children}</div>
+      </div>
+    </div>
+  )
+}
+
+export function EarningsBadge({ kind }) {
+  const isUnknown = kind === 'unknown'
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        padding: '1px 7px',
+        borderRadius: 999,
+        background: isUnknown ? 'rgba(139,148,158,0.12)' : T.goldDim,
+        border: `1px solid ${isUnknown ? 'rgba(139,148,158,0.3)' : T.goldBorder}`,
+        color: isUnknown ? T.text2 : T.gold,
+        fontFamily: T.mono,
+        fontSize: '0.58rem',
+        fontWeight: 700,
+        letterSpacing: '0.04em',
+        whiteSpace: 'nowrap'
+      }}
+    >
+      {isUnknown ? '? Earnings date unknown' : '⚠ Earnings Jul 31 · 21d before expiry'}
+    </span>
+  )
+}
+
+export function HeaderRow() {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: TEMPLATE,
+        gap: 12,
+        padding: '10px 16px',
+        borderBottom: `1px solid ${T.border}`
+      }}
+    >
+      {COLS.map((c) => (
+        <div
+          key={c.key}
+          style={{
+            fontFamily: T.mono,
+            fontSize: '0.62rem',
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            color: T.muted,
+            textAlign: c.align
+          }}
+        >
+          {c.label}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function CandidateRow({ row, first, flag }) {
+  const cell = { fontFamily: T.mono, fontSize: '0.8125rem', color: T.text, textAlign: 'right' }
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: TEMPLATE,
+        gap: 12,
+        alignItems: 'center',
+        padding: '12px 16px',
+        borderTop: first ? 'none' : `1px solid ${T.borderSub}`,
+        borderLeft: `3px solid ${flag ? T.gold : 'transparent'}`,
+        background: flag ? T.goldSub : 'transparent'
+      }}
+    >
+      <div style={{ textAlign: 'left' }}>
+        {row.rank != null ? (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 20,
+              height: 20,
+              borderRadius: 5,
+              background: T.goldDim,
+              color: T.gold,
+              fontFamily: T.mono,
+              fontSize: '0.68rem',
+              fontWeight: 700
+            }}
+          >
+            {row.rank}
+          </span>
+        ) : (
+          <span style={{ fontFamily: T.mono, fontSize: '0.72rem', color: T.muted }}>—</span>
+        )}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span style={{ fontFamily: T.mono, fontWeight: 700, fontSize: '0.85rem', color: T.gold, letterSpacing: '0.02em' }}>
+          {row.ticker}
+        </span>
+        {flag ? <EarningsBadge kind={flag} /> : null}
+      </div>
+      <div style={cell}>{money(row.strike)}</div>
+      <div style={{ ...cell, color: T.text2 }}>{row.exp}</div>
+      <div style={{ ...cell, color: T.text2 }}>{row.dte}d</div>
+      <div style={cell}>{money(row.mark)}</div>
+      <div style={{ ...cell, color: T.green, fontWeight: 500 }}>{row.period}</div>
+      <div style={{ ...cell, color: T.green, fontWeight: 600 }}>{row.ann}</div>
+      <div style={cell}>{row.delta.toFixed(2)}</div>
+      <div style={{ ...cell, color: row.ivr == null ? T.muted : T.text }}>{row.ivr == null ? 'n/a' : row.ivr}</div>
+      <div style={{ ...cell, color: T.text2 }}>{row.oi}</div>
+      <div style={{ ...cell, color: T.text2 }}>{row.spread}</div>
+      <div style={{ textAlign: 'right' }}>
+        <button
+          style={{
+            padding: '5px 10px',
+            borderRadius: T.r,
+            border: `1px solid ${T.goldBorder}`,
+            background: 'transparent',
+            color: T.gold,
+            fontFamily: T.mono,
+            fontSize: '0.68rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          Promote →
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export function ScoreLegend() {
+  return (
+    <div style={{ fontFamily: T.mono, fontSize: '0.7rem', color: T.muted, lineHeight: 1.7 }}>
+      Ranked by <span style={{ color: T.gold }}>yield-per-delta</span> — annualized return-if-flat ÷ delta. KO 0.71 · AAPL
+      0.53 · MSFT 0.50. MSFT's <span style={{ color: T.text2 }}>IVR n/a</span> means the volatility service returned no
+      data; the candidate is still ranked on yield-per-delta.
+    </div>
+  )
+}
+
+export function ExcludedSection({ open, onToggle }) {
+  return (
+    <div style={{ border: `1px solid ${T.border}`, borderRadius: T.r, background: T.surface, overflow: 'hidden' }}>
+      <button
+        onClick={onToggle}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 16px',
+          border: 'none',
+          background: 'transparent',
+          cursor: 'pointer'
+        }}
+      >
+        <SectionLabel>Excluded ({EXCLUDED.length})</SectionLabel>
+        <span style={{ fontFamily: T.mono, fontSize: '0.72rem', color: T.muted }}>{open ? '▾' : '▸'}</span>
+      </button>
+      {open ? (
+        <div style={{ borderTop: `1px solid ${T.border}` }}>
+          {EXCLUDED.map((e, i) => (
+            <div
+              key={e.ticker}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: '10px 16px',
+                borderTop: i === 0 ? 'none' : `1px solid ${T.borderSub}`
+              }}
+            >
+              <span style={{ fontFamily: T.mono, fontWeight: 700, fontSize: '0.8rem', color: T.text2, width: 60 }}>
+                {e.ticker}
+              </span>
+              <span
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: '0.72rem',
+                  color: T.muted,
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  background: T.redDim,
+                  border: '1px solid rgba(248,113,113,0.25)'
+                }}
+              >
+                {e.reason}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+export function ResultsTable({ rows }) {
+  return (
+    <div style={{ border: `1px solid ${T.border}`, borderRadius: T.r, overflow: 'hidden', background: T.surface }}>
+      <HeaderRow />
+      {rows.map((row, i) => (
+        <CandidateRow key={row.ticker} row={row} first={i === 0} flag={row.flag} />
+      ))}
+    </div>
+  )
+}
+
+export function CenteredCard({ tone, title, body, action, caption }) {
+  const isError = tone === 'error'
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div
+        style={{
+          border: `1px solid ${isError ? 'rgba(248,113,113,0.3)' : T.border}`,
+          borderRadius: T.r,
+          background: T.surface,
+          padding: '48px 24px',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 12,
+          textAlign: 'center'
+        }}
+      >
+        <span
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: isError ? T.redDim : T.elevated,
+            color: isError ? T.red : T.muted,
+            fontSize: '1.1rem'
+          }}
+        >
+          {isError ? '⚠' : '⌕'}
+        </span>
+        <div style={{ fontSize: '1rem', fontWeight: 600, color: T.text }}>{title}</div>
+        <div style={{ fontSize: '0.82rem', color: T.text2, maxWidth: 380, lineHeight: 1.6 }}>{body}</div>
+        {action ? (
+          <button
+            style={{
+              marginTop: 6,
+              padding: '7px 16px',
+              borderRadius: T.r,
+              border: `1px solid ${T.border}`,
+              background: T.elevated,
+              color: T.text,
+              fontFamily: T.mono,
+              fontSize: '0.72rem',
+              cursor: 'pointer'
+            }}
+          >
+            {action}
+          </button>
+        ) : null}
+      </div>
+      {caption ? (
+        <div style={{ fontFamily: T.mono, fontSize: '0.7rem', color: T.muted, lineHeight: 1.6 }}>{caption}</div>
+      ) : null}
+    </div>
+  )
+}
+
+export function TitleBar({ count }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+      <div style={{ fontSize: '1.15rem', fontWeight: 600, color: T.text }}>Candidate Results</div>
+      <span style={{ fontFamily: T.mono, fontSize: '0.72rem', color: T.text2 }}>{count}</span>
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [state, setState] = useState('ranked')
+  const [excludedOpen, setExcludedOpen] = useState(false)
+
+  const closed = state === 'stale'
+  const open = state === 'excluded' ? true : excludedOpen
+
+  return (
+    <div style={{ fontFamily: 'inherit', color: T.text }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
+        <SectionLabel>State</SectionLabel>
+        <div
+          style={{
+            display: 'inline-flex',
+            gap: 2,
+            padding: 3,
+            borderRadius: 999,
+            border: `1px solid ${T.border}`,
+            background: T.elevated
+          }}
+        >
+          {['ranked', 'earnings', 'excluded', 'unavailable', 'empty', 'stale'].map((s) => {
+            const active = state === s
+            return (
+              <button
+                key={s}
+                onClick={() => setState(s)}
+                style={{
+                  padding: '5px 12px',
+                  borderRadius: 999,
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontFamily: T.mono,
+                  fontSize: '0.72rem',
+                  background: active ? T.goldDim : 'transparent',
+                  color: active ? T.gold : T.text2,
+                  fontWeight: active ? 700 : 400
+                }}
+              >
+                {s}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <Shell closed={closed} staleBadge={state === 'stale'}>
+        {state === 'unavailable' ? (
+          <CenteredCard
+            tone="error"
+            title="Market data unavailable"
+            body="Massive couldn't be reached on the last refresh. Candidates can't be scored until chain data is available."
+            action="Retry refresh"
+            caption="This is distinct from “no candidates found” — the screener never renders an empty table as a successful zero-result screen."
+          />
+        ) : state === 'empty' ? (
+          <CenteredCard
+            title="No candidates match your criteria"
+            body="Every strike on your watchlist was filtered out. Loosen your delta band or DTE window in Screener settings."
+            action="Open Screener settings"
+            caption="The screen ran successfully — nothing survived the hard filters. Visually distinct from a provider outage."
+          />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <TitleBar
+              count={
+                state === 'earnings'
+                  ? '2 clean · 2 flagged'
+                  : state === 'stale'
+                    ? '3 candidates · quoted 16:00:02'
+                    : '3 candidates · 4 excluded'
+              }
+            />
+
+            {state === 'stale' ? (
+              <div style={{ fontFamily: T.mono, fontSize: '0.7rem', color: T.gold, lineHeight: 1.6 }}>
+                Quoted 16:00:02 · after-hours option marks are unreliable — treat these as a stale snapshot.
+              </div>
+            ) : null}
+
+            {state === 'earnings' ? (
+              <ResultsTable rows={EARNINGS_ROWS} />
+            ) : (
+              <ResultsTable rows={CANDIDATES} />
+            )}
+
+            {state === 'earnings' ? (
+              <div style={{ fontFamily: T.mono, fontSize: '0.7rem', color: T.muted, lineHeight: 1.7 }}>
+                Earnings handling is <span style={{ color: T.gold }}>Flag only</span>. AAPL sells into earnings (Jul 31,
+                before its Aug 21 expiry) so it's flagged and pushed below the clean rows; NVDA's earnings date is unknown.
+                In the default <span style={{ color: T.text2 }}>Exclude</span> mode, both would move into the Excluded
+                section instead.
+              </div>
+            ) : (
+              <ScoreLegend />
+            )}
+
+            {state === 'ranked' ? (
+              <div style={{ fontFamily: T.mono, fontSize: '0.7rem', color: T.muted, lineHeight: 1.6 }}>
+                No price ceiling applied (off by default) — large-cap names appear.
+              </div>
+            ) : null}
+
+            <ExcludedSection open={open} onToggle={() => setExcludedOpen((v) => !v)} />
+          </div>
+        )}
+      </Shell>
+    </div>
+  )
+}
+
+<Mockup />

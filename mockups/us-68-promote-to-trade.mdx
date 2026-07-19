@@ -1,0 +1,538 @@
+---
+title: 'US-68: Promote to Trade'
+story: 'As a wheel trader, I want one click to open the new-wheel form pre-filled from a screener result, confirmed against a fresh quote, so I don''t re-key the trade.'
+states: ['prefilled', 'moved', 'stale', 'edited']
+---
+
+import { useState } from 'react'
+
+# US-68: Promote to Trade
+
+_As a wheel trader, I want one click to open the new-wheel form pre-filled from a screener result, confirmed against a fresh quote, so I don't re-key the trade._
+
+## Acceptance Criteria States
+
+- **prefilled** — promoting an AAPL screener result opens the New Wheel form with ticker `AAPL`, strike `180`, expiration `2026-08-21`, contracts `1`, and premium `2.70` filled in. The thesis is seeded from the watchlist note. A neutral note confirms the fresh quote still matches the promoted mark ($2.70). Nothing is recorded until the trader clicks **Record wheel**.
+- **moved** — the form re-fetched on open and the mark drifted past the $0.05 / 5% threshold, so a non-blocking gold banner reads _"Price moved: quoted $2.70 → now $2.50 — review before submitting."_ The premium input still holds the editable `2.70`; submit stays enabled.
+- **stale** — the market is `CLOSED`, so the pre-filled mark is an after-hours snapshot. A gold banner warns the mark is stale and to verify before recording. Submit stays enabled.
+- **edited** — the trader overrode the premium to `2.65`; the derived yield recomputes (1.47% period · 14.5%/yr) while capital stays $18,000. A muted note confirms the recorded trade uses the entered price, not the screener snapshot.
+
+Structural fields (ticker, strike, expiration) are stable choices; the premium is an **editable default**, never locked. Promote pre-fills and lands the trader in the form — it never places or records a trade on its own. Colors and chrome are driven by the app's `--wb-*` design tokens; the market-status pill mirrors `MarketStatusPill` (LIVE / CLOSED).
+
+---
+
+export const T = {
+  base: 'var(--wb-bg-base)',
+  surface: 'var(--wb-bg-surface)',
+  elevated: 'var(--wb-bg-elevated)',
+  hover: 'var(--wb-bg-hover)',
+  border: 'var(--wb-border)',
+  borderSub: 'var(--wb-border-subtle)',
+  text: 'var(--wb-text-primary)',
+  text2: 'var(--wb-text-secondary)',
+  muted: 'var(--wb-text-muted)',
+  gold: 'var(--wb-gold)',
+  goldDim: 'var(--wb-gold-dim)',
+  goldBorder: 'var(--wb-gold-border)',
+  goldSub: 'var(--wb-gold-subtle)',
+  green: 'var(--wb-green)',
+  greenDim: 'var(--wb-green-dim)',
+  greenBorder: 'var(--wb-green-border)',
+  greenSub: 'var(--wb-green-subtle)',
+  blue: 'var(--wb-blue)',
+  sky: 'var(--wb-sky)',
+  violet: 'var(--wb-violet)',
+  mono: 'var(--font-wb-mono)',
+  r: 6
+}
+
+export const STATES = [
+  { v: 'prefilled', label: 'Prefilled' },
+  { v: 'moved', label: 'Price moved' },
+  { v: 'stale', label: 'Market closed' },
+  { v: 'edited', label: 'Edited' }
+]
+
+export function money(n) {
+  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+}
+
+export function yieldHint(premium) {
+  const period = (premium / 180) * 100
+  const annual = period * (365 / 37)
+  return period.toFixed(2) + '% period · ' + annual.toFixed(1) + '%/yr'
+}
+
+export function SectionLabel({ children, style }) {
+  return (
+    <div
+      style={{
+        fontFamily: T.mono,
+        fontSize: '0.72rem',
+        textTransform: 'uppercase',
+        letterSpacing: '0.12em',
+        color: T.muted,
+        ...style
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
+export function MarketPill({ closed }) {
+  const color = closed ? T.text2 : T.green
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        borderRadius: 10,
+        border: `1px solid ${closed ? 'rgba(139,148,158,0.3)' : 'rgba(63,185,80,0.3)'}`,
+        background: closed ? 'rgba(139,148,158,0.1)' : 'rgba(63,185,80,0.1)',
+        padding: '2px 8px 2px 6px',
+        fontFamily: T.mono,
+        fontSize: '0.6rem',
+        fontWeight: 700,
+        letterSpacing: '0.1em',
+        color
+      }}
+    >
+      <span style={{ width: 6, height: 6, borderRadius: 999, background: color, flexShrink: 0 }} />
+      {closed ? 'CLOSED' : 'LIVE'}
+    </span>
+  )
+}
+
+export function NavRow({ icon, label, active }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '7px 12px',
+        borderRadius: T.r,
+        fontSize: '0.8125rem',
+        cursor: 'pointer',
+        background: active ? T.goldSub : 'transparent',
+        color: active ? T.gold : T.text2,
+        fontWeight: active ? 600 : 400
+      }}
+    >
+      <span style={{ fontFamily: T.mono, width: 14, textAlign: 'center' }}>{icon}</span>
+      {label}
+    </div>
+  )
+}
+
+export function Shell({ closed, children }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        height: 720,
+        border: `1px solid ${T.border}`,
+        borderRadius: 10,
+        overflow: 'hidden',
+        background: T.base,
+        boxShadow: '0 30px 80px rgba(0,0,0,0.45)'
+      }}
+    >
+      <aside
+        style={{
+          width: 200,
+          flexShrink: 0,
+          background: T.surface,
+          borderRight: `1px solid ${T.border}`,
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '16px',
+            borderBottom: `1px solid ${T.border}`
+          }}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: 999, background: T.gold, boxShadow: `0 0 6px ${T.gold}` }} />
+          <span
+            style={{
+              fontFamily: T.mono,
+              fontWeight: 700,
+              fontSize: '0.75rem',
+              letterSpacing: '0.15em',
+              textTransform: 'uppercase',
+              color: T.text
+            }}
+          >
+            Wheelbase
+          </span>
+        </div>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '16px 8px', flex: 1 }}>
+          <SectionLabel style={{ fontSize: '0.65rem', padding: '6px 12px' }}>Trading</SectionLabel>
+          <NavRow icon="◈" label="Positions" />
+          <NavRow icon="+" label="Open Wheel" active />
+          <NavRow icon="☰" label="Watchlist" />
+          <NavRow icon="⊞" label="Screener" />
+          <NavRow icon="▦" label="Calendar" />
+          <SectionLabel style={{ fontSize: '0.65rem', padding: '6px 12px', marginTop: 12 }}>System</SectionLabel>
+          <NavRow icon="⚙" label="Settings" />
+        </nav>
+        <div
+          style={{
+            padding: '12px 16px',
+            borderTop: `1px solid ${T.border}`,
+            fontFamily: T.mono,
+            fontSize: '0.65rem',
+            color: T.muted
+          }}
+        >
+          Wheel Strategy
+        </div>
+      </aside>
+
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <header
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 24px',
+            borderBottom: `1px solid ${T.border}`,
+            background: T.surface
+          }}
+        >
+          <SectionLabel>Open Wheel</SectionLabel>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span
+              style={{
+                fontFamily: T.mono,
+                fontSize: '0.65rem',
+                letterSpacing: '0.08em',
+                color: T.text2,
+                border: `1px solid ${T.border}`,
+                borderRadius: 4,
+                padding: '2px 8px'
+              }}
+            >
+              PAPER
+            </span>
+            <MarketPill closed={closed} />
+          </div>
+        </header>
+        <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>{children}</div>
+      </div>
+    </div>
+  )
+}
+
+export function Provenance({ closed }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '8px 12px',
+        borderRadius: T.r,
+        border: `1px solid ${T.goldBorder}`,
+        background: T.goldSub,
+        marginBottom: 18
+      }}
+    >
+      <span
+        style={{
+          fontFamily: T.mono,
+          fontSize: '0.6rem',
+          fontWeight: 700,
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          color: T.gold
+        }}
+      >
+        ⊞ Promoted from Screener
+      </span>
+      <span style={{ flex: 1 }} />
+      <span style={{ fontFamily: T.mono, fontSize: '0.68rem', color: closed ? T.text2 : T.muted }}>
+        Quoted {closed ? '16:00:02' : '10:42:15'}
+      </span>
+    </div>
+  )
+}
+
+export function Banner({ tone, children }) {
+  const gold = tone === 'gold'
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 8,
+        padding: '10px 12px',
+        borderRadius: T.r,
+        border: `1px solid ${gold ? T.goldBorder : T.greenBorder}`,
+        background: gold ? T.goldDim : T.greenSub,
+        marginBottom: 16
+      }}
+    >
+      <span style={{ fontFamily: T.mono, fontSize: '0.8rem', color: gold ? T.gold : T.green, lineHeight: 1.4 }}>
+        {gold ? '⚠' : '✓'}
+      </span>
+      <span style={{ fontSize: '0.78rem', color: T.text, lineHeight: 1.5 }}>{children}</span>
+    </div>
+  )
+}
+
+export function Field({ label, children, hint }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <label
+        style={{
+          fontFamily: T.mono,
+          fontSize: '0.62rem',
+          letterSpacing: '0.1em',
+          textTransform: 'uppercase',
+          color: T.muted
+        }}
+      >
+        {label}
+      </label>
+      {children}
+      {hint ? <span style={{ fontSize: '0.68rem', color: T.muted }}>{hint}</span> : null}
+    </div>
+  )
+}
+
+export function Input({ value, locked, accent }) {
+  return (
+    <div
+      style={{
+        padding: '9px 12px',
+        borderRadius: T.r,
+        border: `1px solid ${accent ? T.goldBorder : T.border}`,
+        background: locked ? T.surface : T.elevated,
+        fontFamily: T.mono,
+        fontSize: '0.85rem',
+        color: locked ? T.text2 : T.text,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8
+      }}
+    >
+      {value}
+      {locked ? (
+        <span style={{ marginLeft: 'auto', fontSize: '0.62rem', color: T.muted }}>🔒</span>
+      ) : accent ? (
+        <span style={{ marginLeft: 'auto', width: 6, height: 6, borderRadius: 999, background: T.gold }} />
+      ) : null}
+    </div>
+  )
+}
+
+export function DerivedRow({ premium, edited }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'baseline',
+        justifyContent: 'space-between',
+        padding: '12px 14px',
+        borderRadius: T.r,
+        border: `1px solid ${T.border}`,
+        background: T.surface,
+        marginTop: 4
+      }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <SectionLabel style={{ fontSize: '0.6rem' }}>Capital required</SectionLabel>
+        <span style={{ fontFamily: T.mono, fontSize: '1.1rem', fontWeight: 700, color: T.text }}>{money(18000)}</span>
+        <span style={{ fontFamily: T.mono, fontSize: '0.62rem', color: T.muted }}>180 × 100 × 1 contract</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-end' }}>
+        <SectionLabel style={{ fontSize: '0.6rem' }}>Yield if flat</SectionLabel>
+        <span style={{ fontFamily: T.mono, fontSize: '0.9rem', fontWeight: 600, color: T.green }}>
+          {yieldHint(premium)}
+        </span>
+        {edited ? (
+          <span style={{ fontFamily: T.mono, fontSize: '0.62rem', color: T.muted }}>recomputed from your price</span>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+export function PromoteForm({ state }) {
+  const closed = state === 'stale'
+  const edited = state === 'edited'
+  const premium = edited ? 2.65 : 2.7
+  const premiumStr = edited ? '2.65' : '2.70'
+
+  return (
+    <div style={{ maxWidth: 560 }}>
+      <div style={{ fontSize: '1.15rem', fontWeight: 600, color: T.text, marginBottom: 4 }}>New Wheel · Cash-Secured Put</div>
+      <div style={{ fontSize: '0.8rem', color: T.text2, marginBottom: 18 }}>
+        Confirm the details, then record the trade. Nothing is saved until you click Record wheel.
+      </div>
+
+      <Provenance closed={closed} />
+
+      {state === 'moved' ? (
+        <Banner tone="gold">
+          <strong>Price moved:</strong> quoted $2.70 → now $2.50 — review before submitting.
+        </Banner>
+      ) : null}
+      {state === 'stale' ? (
+        <Banner tone="gold">
+          <strong>Market closed</strong> — the pre-filled mark is a stale after-hours snapshot (quoted 16:00:02). Verify
+          before recording.
+        </Banner>
+      ) : null}
+      {state === 'prefilled' ? (
+        <Banner tone="green">Fresh quote matches the promoted mark — $2.70.</Banner>
+      ) : null}
+      {state === 'edited' ? (
+        <Banner tone="green">Recording your entered price ($2.65), not the screener snapshot ($2.70).</Banner>
+      ) : null}
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+        <Field label="Ticker" hint="from watchlist">
+          <Input value="AAPL" locked />
+        </Field>
+        <Field label="Strike" hint="capital = strike × 100">
+          <Input value="180" locked />
+        </Field>
+        <Field label="Expiration" hint="37 DTE">
+          <Input value="2026-08-21" locked />
+        </Field>
+        <Field label="Contracts">
+          <Input value="1" />
+        </Field>
+        <Field label="Premium / contract" hint="editable — override with the price you'll work">
+          <Input value={premiumStr} accent />
+        </Field>
+        <Field label="Fill date" hint="optional">
+          <Input value="2026-07-15" />
+        </Field>
+      </div>
+
+      <DerivedRow premium={premium} edited={edited} />
+
+      <div style={{ marginTop: 14, marginBottom: 20 }}>
+        <Field label="Thesis" hint="seeded from the watchlist note">
+          <div
+            style={{
+              padding: '10px 12px',
+              borderRadius: T.r,
+              border: `1px solid ${T.border}`,
+              background: T.elevated,
+              fontSize: '0.8rem',
+              color: T.text2,
+              lineHeight: 1.5,
+              minHeight: 46
+            }}
+          >
+            Would own below $170; waiting for IV to lift
+          </div>
+        </Field>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button
+          style={{
+            padding: '10px 20px',
+            borderRadius: T.r,
+            border: 'none',
+            background: T.gold,
+            color: '#1a1205',
+            fontFamily: T.mono,
+            fontSize: '0.78rem',
+            fontWeight: 700,
+            letterSpacing: '0.03em',
+            cursor: 'pointer'
+          }}
+        >
+          Record wheel
+        </button>
+        <button
+          style={{
+            padding: '10px 18px',
+            borderRadius: T.r,
+            border: `1px solid ${T.border}`,
+            background: 'transparent',
+            color: T.text2,
+            fontFamily: T.mono,
+            fontSize: '0.78rem',
+            cursor: 'pointer'
+          }}
+        >
+          Cancel
+        </button>
+        <span style={{ fontFamily: T.mono, fontSize: '0.66rem', color: T.muted, marginLeft: 'auto' }}>
+          Promote never auto-submits
+        </span>
+      </div>
+    </div>
+  )
+}
+
+export function Segment({ options, value, onChange }) {
+  return (
+    <div
+      style={{
+        display: 'inline-flex',
+        gap: 2,
+        padding: 3,
+        borderRadius: 999,
+        border: `1px solid ${T.border}`,
+        background: T.elevated
+      }}
+    >
+      {options.map((opt) => {
+        const active = value === opt.v
+        return (
+          <button
+            key={opt.v}
+            onClick={() => onChange(opt.v)}
+            style={{
+              padding: '5px 12px',
+              borderRadius: 999,
+              border: 'none',
+              cursor: 'pointer',
+              fontFamily: T.mono,
+              fontSize: '0.72rem',
+              background: active ? 'var(--wb-gold-dim)' : 'transparent',
+              color: active ? T.gold : T.text2,
+              fontWeight: active ? 700 : 400
+            }}
+          >
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [state, setState] = useState('prefilled')
+
+  return (
+    <div style={{ fontFamily: 'inherit', color: T.text }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
+        <SectionLabel>State</SectionLabel>
+        <Segment value={state} onChange={setState} options={STATES} />
+      </div>
+
+      <Shell closed={state === 'stale'}>
+        <PromoteForm state={state} />
+      </Shell>
+    </div>
+  )
+}
+
+<Mockup />

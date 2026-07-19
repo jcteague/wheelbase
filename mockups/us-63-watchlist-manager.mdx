@@ -1,0 +1,936 @@
+---
+title: 'US-63: Watchlist Manager'
+story: 'As a wheel trader, I want to maintain a watchlist of tickers (with a thesis) so the screener has a curated universe to pull chains for.'
+states: ['list', 'add', 'duplicate', 'edit', 'empty']
+---
+
+import { useState } from 'react'
+
+# US-63: Watchlist Manager
+
+_As a wheel trader, I want to maintain a watchlist of tickers (with a thesis) so the screener has a curated universe to pull chains for._
+
+> **Stories covered:** a shared watchlist mockup organized by action on an entry (ticker + thesis + conditions). Creating an entry is **US-63** (`add` / `duplicate` / `empty` states); editing an entry is **US-69** (`edit` state); viewing the list with live Price/IVR/earnings and the derived Signal chip is **US-96** (`list` state). The states below are grouped by behavior, not by story.
+
+## Acceptance Criteria States
+
+- **list** — the curated watchlist as a dense table: `Ticker · Signal · Price · IVR · Thesis · Added · ✕`. Each row carries the free-text thesis plus compact condition tags (`≤ $170`, `IVR ≥ 50`, `post-earnings`, `core`). **Price** shows the last trade with the 1-day change beneath it (`▲` green / `▼` red / `·` flat); **IVR** is the IV-rank colored to match the preset thresholds (muted `< 30`, gold `30–49`, green `≥ 50`). The derived **Signal** chip — `Entry ready` / `N% away` / `IV low` / `Earnings Nd` / `No thesis` — is computed from the conditions against live price / IV-rank / earnings; when more than one gate is unmet it lists the extra one beneath (e.g. `+ IV low`), and an amber `⚠ ER Nd` warning appears on any name reporting within ~7 days **even if `post-earnings only` isn't set**. Condition tags are clickable and open the entry in the edit form. New entries land at the top.
+- **add** — the add-entry form: a ticker input, quick-pick entry-condition chips (`Would own below`, `Wait for high IV`, `Post-earnings only`, `Core holding`), and a free-text thesis. Adding a value-bearing condition expands it into a labelled input — a `$` price field for `Would own below`, an `IVR ≥` field with `30 / 50 / 70` preset buttons for `Wait for high IV` — each removable with `✕`. The thesis is captured up front so the list can convey it immediately.
+- **duplicate** — the add-entry form rejecting a duplicate: typing `AAPL` (already listed) surfaces the inline error `AAPL is already on the watchlist` and adds nothing.
+- **edit** — the same form reused to modify an existing entry (here AAPL): the ticker is fixed, and every condition and the thesis are pre-filled and editable (e.g. change `own below $170`). Primary action is Save; the edited row is highlighted in the list. This supersedes the old thesis-only inline editor (US-69) by folding thesis + conditions into one surface.
+- **empty** — the first-run empty state explaining that adding tickers is what enables the screener, with the add-entry form ready.
+
+Condition presets map to **structured triggers** (target price, IV-rank threshold, earnings gate, always-on) while the thesis stays free text (500-char bound matches `newWheelSchema.thesis`). The **Signal** chip presumes live price / IV-rank / earnings from the market-data adapter (Epic 06) and is shown here with sample data. Colors, fonts, and chrome are driven by the app's design tokens in `src/renderer/src/index.css` (`--wb-*`). The header freshness indicator mirrors `MarketStatusPill` (`src/renderer/src/components/MarketStatusPill.tsx`); symbol validation reuses `tickerSchema`.
+
+---
+
+export const T = {
+  base: 'var(--wb-bg-base)',
+  surface: 'var(--wb-bg-surface)',
+  elevated: 'var(--wb-bg-elevated)',
+  hover: 'var(--wb-bg-hover)',
+  border: 'var(--wb-border)',
+  borderSub: 'var(--wb-border-subtle)',
+  text: 'var(--wb-text-primary)',
+  text2: 'var(--wb-text-secondary)',
+  muted: 'var(--wb-text-muted)',
+  gold: 'var(--wb-gold)',
+  goldDim: 'var(--wb-gold-dim)',
+  goldBorder: 'var(--wb-gold-border)',
+  goldSub: 'var(--wb-gold-subtle)',
+  green: 'var(--wb-green)',
+  red: 'var(--wb-red)',
+  redDim: 'var(--wb-red-dim)',
+  mono: 'var(--font-wb-mono)',
+  r: 6
+}
+
+export const WATCHLIST = [
+  {
+    ticker: 'AAPL',
+    note: 'Would own below $170; waiting for IV to lift',
+    added: 'Jul 2',
+    target: 170,
+    ivrTrigger: 50,
+    postEarnings: false,
+    core: false,
+    price: 178.4,
+    chg1d: 0.8,
+    ivr: 34,
+    erDays: null
+  },
+  {
+    ticker: 'MSFT',
+    note: 'Post-earnings entry only',
+    added: 'Jun 28',
+    target: null,
+    ivrTrigger: null,
+    postEarnings: true,
+    core: false,
+    price: 505.1,
+    chg1d: -1.2,
+    ivr: 41,
+    erDays: 3
+  },
+  {
+    ticker: 'NVDA',
+    note: '',
+    added: 'Jul 14',
+    target: null,
+    ivrTrigger: null,
+    postEarnings: false,
+    core: false,
+    price: 172.3,
+    chg1d: 2.4,
+    ivr: 46,
+    erDays: 5
+  },
+  {
+    ticker: 'KO',
+    note: 'Core wheel — always willing to own',
+    added: 'May 11',
+    target: null,
+    ivrTrigger: 40,
+    postEarnings: false,
+    core: true,
+    price: 68.9,
+    chg1d: 0.3,
+    ivr: 58,
+    erDays: null
+  }
+]
+
+export const COLS = [
+  { key: 'ticker', label: 'Ticker', w: '84px', align: 'left' },
+  { key: 'signal', label: 'Signal', w: '128px', align: 'left' },
+  { key: 'price', label: 'Price', w: '92px', align: 'right' },
+  { key: 'ivr', label: 'IVR', w: '52px', align: 'right' },
+  { key: 'thesis', label: 'Thesis', w: '1fr', align: 'left' },
+  { key: 'added', label: 'Added', w: '68px', align: 'right' },
+  { key: 'remove', label: '', w: '28px', align: 'right' }
+]
+
+export function fmtPrice(n) {
+  return '$' + n.toFixed(2)
+}
+
+export function conditionTags(r) {
+  const tags = []
+  if (r.target != null) tags.push('≤ $' + r.target)
+  if (r.ivrTrigger != null) tags.push('IVR ≥ ' + r.ivrTrigger)
+  if (r.postEarnings) tags.push('post-earnings')
+  if (r.core) tags.push('core')
+  return tags
+}
+
+export function deriveSignal(r) {
+  const hasCondition = r.target != null || r.ivrTrigger != null || r.postEarnings || r.core
+  if (!hasCondition) return { label: 'No thesis', tone: 'none', secondary: null }
+  if (r.postEarnings && r.erDays != null && r.erDays <= 7) {
+    return { label: 'Earnings ' + r.erDays + 'd', tone: 'caution', secondary: null }
+  }
+  const priceReady = r.target == null || r.price <= r.target
+  const ivReady = r.ivrTrigger == null || r.ivr >= r.ivrTrigger
+  if (priceReady && ivReady) return { label: 'Entry ready', tone: 'ready', secondary: null }
+  const unmet = []
+  if (!priceReady) unmet.push(((r.price / r.target - 1) * 100).toFixed(1) + '% away')
+  if (!ivReady) unmet.push('IV low')
+  return { label: unmet[0], tone: 'watching', secondary: unmet.slice(1).join(' · ') || null }
+}
+
+export function SectionLabel({ children, style }) {
+  return (
+    <div
+      style={{
+        fontFamily: T.mono,
+        fontSize: '0.72rem',
+        textTransform: 'uppercase',
+        letterSpacing: '0.12em',
+        color: T.muted,
+        ...style
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
+export function NavRow({ icon, label, active }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '7px 12px',
+        borderRadius: T.r,
+        fontSize: '0.8125rem',
+        cursor: 'pointer',
+        background: active ? T.goldSub : 'transparent',
+        color: active ? T.gold : T.text2,
+        fontWeight: active ? 600 : 400
+      }}
+    >
+      <span style={{ fontFamily: T.mono, width: 14, textAlign: 'center' }}>{icon}</span>
+      {label}
+    </div>
+  )
+}
+
+export function MarketStatusPill() {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      <span style={{ width: 7, height: 7, borderRadius: 999, background: T.green }} />
+      <span style={{ fontFamily: T.mono, fontSize: '0.65rem', letterSpacing: '0.08em', color: T.green }}>LIVE</span>
+    </span>
+  )
+}
+
+export function Shell({ children }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        height: 660,
+        border: `1px solid ${T.border}`,
+        borderRadius: 10,
+        overflow: 'hidden',
+        background: T.base,
+        boxShadow: '0 30px 80px rgba(0,0,0,0.45)'
+      }}
+    >
+      <aside
+        style={{
+          width: 200,
+          flexShrink: 0,
+          background: T.surface,
+          borderRight: `1px solid ${T.border}`,
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '16px',
+            borderBottom: `1px solid ${T.border}`
+          }}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: 999, background: T.gold, boxShadow: `0 0 6px ${T.gold}` }} />
+          <span
+            style={{
+              fontFamily: T.mono,
+              fontWeight: 700,
+              fontSize: '0.75rem',
+              letterSpacing: '0.15em',
+              textTransform: 'uppercase',
+              color: T.text
+            }}
+          >
+            Wheelbase
+          </span>
+        </div>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '16px 8px', flex: 1 }}>
+          <SectionLabel style={{ fontSize: '0.65rem', padding: '6px 12px' }}>Trading</SectionLabel>
+          <NavRow icon="◈" label="Positions" />
+          <NavRow icon="+" label="Open Wheel" />
+          <NavRow icon="▦" label="Calendar" />
+          <NavRow icon="☰" label="Watchlist" active />
+          <SectionLabel style={{ fontSize: '0.65rem', padding: '6px 12px', marginTop: 12 }}>System</SectionLabel>
+          <NavRow icon="⚙" label="Settings" />
+        </nav>
+        <div
+          style={{
+            padding: '12px 16px',
+            borderTop: `1px solid ${T.border}`,
+            fontFamily: T.mono,
+            fontSize: '0.65rem',
+            color: T.muted
+          }}
+        >
+          Wheel Strategy
+        </div>
+      </aside>
+
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <header
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 24px',
+            borderBottom: `1px solid ${T.border}`,
+            background: T.surface
+          }}
+        >
+          <SectionLabel>Watchlist</SectionLabel>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span
+              style={{
+                fontFamily: T.mono,
+                fontSize: '0.65rem',
+                letterSpacing: '0.08em',
+                color: T.text2,
+                border: `1px solid ${T.border}`,
+                borderRadius: 4,
+                padding: '2px 8px'
+              }}
+            >
+              PAPER
+            </span>
+            <MarketStatusPill />
+          </div>
+        </header>
+        <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>{children}</div>
+      </div>
+    </div>
+  )
+}
+
+export function TickerCell({ ticker }) {
+  return (
+    <span style={{ fontFamily: T.mono, fontWeight: 700, fontSize: '0.85rem', color: T.gold, letterSpacing: '0.03em' }}>
+      {ticker}
+    </span>
+  )
+}
+
+export function ConditionTag({ children }) {
+  return (
+    <span
+      title="Click to edit"
+      style={{
+        fontFamily: T.mono,
+        fontSize: '0.62rem',
+        color: T.text2,
+        border: `1px solid ${T.borderSub}`,
+        borderRadius: 4,
+        padding: '1px 6px',
+        letterSpacing: '0.02em',
+        cursor: 'pointer'
+      }}
+    >
+      {children}
+    </span>
+  )
+}
+
+export function SignalChip({ label, tone }) {
+  const color = { ready: T.green, watching: T.text2, caution: T.gold, none: T.muted }[tone]
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '2px 9px',
+        borderRadius: 999,
+        border: `1px solid ${tone === 'none' ? T.border : color}`,
+        color,
+        fontFamily: T.mono,
+        fontSize: '0.68rem',
+        letterSpacing: '0.03em',
+        fontWeight: 600
+      }}
+    >
+      {tone === 'ready' ? <span style={{ width: 6, height: 6, borderRadius: 999, background: T.green }} /> : null}
+      {label}
+    </span>
+  )
+}
+
+export function ivrColor(ivr) {
+  if (ivr >= 50) return T.green
+  if (ivr >= 30) return T.gold
+  return T.muted
+}
+
+export function PriceCell({ row }) {
+  const c = row.chg1d
+  const color = c > 0 ? T.green : c < 0 ? T.red : T.muted
+  const arrow = c > 0 ? '▲' : c < 0 ? '▼' : '·'
+  return (
+    <div style={{ textAlign: 'right' }}>
+      <div style={{ fontFamily: T.mono, fontSize: '0.8rem', color: T.text }}>{fmtPrice(row.price)}</div>
+      <div style={{ fontFamily: T.mono, fontSize: '0.66rem', color, marginTop: 2 }}>
+        {arrow} {Math.abs(c).toFixed(1)}%
+      </div>
+    </div>
+  )
+}
+
+export function IvrCell({ row }) {
+  return (
+    <div
+      style={{ textAlign: 'right', fontFamily: T.mono, fontSize: '0.82rem', fontWeight: 600, color: ivrColor(row.ivr) }}
+    >
+      {row.ivr}
+    </div>
+  )
+}
+
+export function SignalCell({ row }) {
+  const s = deriveSignal(row)
+  const erWarn = row.erDays != null && row.erDays <= 7 && !row.postEarnings
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+      <SignalChip label={s.label} tone={s.tone} />
+      {s.secondary ? (
+        <span style={{ fontFamily: T.mono, fontSize: '0.64rem', color: T.muted }}>+ {s.secondary}</span>
+      ) : null}
+      {erWarn ? (
+        <span style={{ fontFamily: T.mono, fontSize: '0.64rem', color: T.gold }}>⚠ ER {row.erDays}d</span>
+      ) : null}
+    </div>
+  )
+}
+
+export function ConditionChip({ label, on }) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '5px 11px',
+        borderRadius: 999,
+        cursor: 'pointer',
+        fontFamily: T.mono,
+        fontSize: '0.72rem',
+        border: `1px solid ${on ? T.goldBorder : T.border}`,
+        background: on ? T.goldDim : 'transparent',
+        color: on ? T.gold : T.text2,
+        fontWeight: on ? 700 : 400
+      }}
+    >
+      <span style={{ opacity: 0.7 }}>{on ? '✓' : '+'}</span>
+      {label}
+    </span>
+  )
+}
+
+export function ParamInput({ prefix, value, width }) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        background: T.base,
+        border: `1px solid ${T.border}`,
+        borderRadius: T.r,
+        padding: '4px 8px'
+      }}
+    >
+      {prefix ? <span style={{ fontFamily: T.mono, fontSize: '0.72rem', color: T.text2 }}>{prefix}</span> : null}
+      <input
+        readOnly
+        value={value}
+        style={{
+          width,
+          background: 'transparent',
+          border: 'none',
+          outline: 'none',
+          color: T.text,
+          fontFamily: T.mono,
+          fontSize: '0.8125rem'
+        }}
+      />
+    </span>
+  )
+}
+
+export function PresetButtons({ options, active }) {
+  return (
+    <span style={{ display: 'inline-flex', gap: 4 }}>
+      {options.map((o) => {
+        const on = o === active
+        return (
+          <button
+            key={o}
+            style={{
+              padding: '3px 9px',
+              borderRadius: 999,
+              border: `1px solid ${on ? T.goldBorder : T.border}`,
+              background: on ? T.goldDim : 'transparent',
+              color: on ? T.gold : T.text2,
+              fontFamily: T.mono,
+              fontSize: '0.66rem',
+              fontWeight: on ? 700 : 400,
+              cursor: 'pointer'
+            }}
+          >
+            {o}
+          </button>
+        )
+      })}
+    </span>
+  )
+}
+
+export function ConditionRow({ label, children }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        flexWrap: 'wrap',
+        padding: '8px 10px',
+        borderRadius: T.r,
+        border: `1px solid ${T.goldBorder}`,
+        background: T.goldDim
+      }}
+    >
+      <span style={{ fontFamily: T.mono, fontSize: '0.72rem', fontWeight: 700, color: T.gold }}>{label}</span>
+      {children}
+      <button
+        title="Remove condition"
+        style={{
+          marginLeft: 'auto',
+          width: 22,
+          height: 22,
+          borderRadius: T.r,
+          border: `1px solid ${T.goldBorder}`,
+          background: 'transparent',
+          color: T.gold,
+          fontFamily: T.mono,
+          fontSize: '0.78rem',
+          cursor: 'pointer',
+          lineHeight: 1
+        }}
+      >
+        ✕
+      </button>
+    </div>
+  )
+}
+
+export function AddEntryPanel({ mode = 'add', ticker, error, target, ivrTrigger, postEarnings, core, thesis }) {
+  const len = (thesis ?? '').length
+  const isEdit = mode === 'edit'
+  return (
+    <div
+      style={{
+        border: `1px solid ${T.goldBorder}`,
+        borderRadius: T.r,
+        background: T.surface,
+        padding: 16,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 14
+      }}
+    >
+      <SectionLabel style={{ fontSize: '0.65rem' }}>{isEdit ? `Edit ${ticker}` : 'Add to watchlist'}</SectionLabel>
+
+      {isEdit ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <TickerCell ticker={ticker} />
+          <span style={{ fontFamily: T.mono, fontSize: '0.66rem', color: T.muted }}>· ticker fixed</span>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <input
+            readOnly
+            value={ticker ?? ''}
+            placeholder="Ticker (e.g. NVDA)"
+            style={{
+              maxWidth: 240,
+              padding: '8px 12px',
+              borderRadius: T.r,
+              border: `1px solid ${error ? T.red : T.border}`,
+              background: T.base,
+              color: T.text,
+              fontFamily: T.mono,
+              fontSize: '0.8125rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.03em',
+              outline: 'none'
+            }}
+          />
+          {error ? <span style={{ fontFamily: T.mono, fontSize: '0.72rem', color: T.red }}>{error}</span> : null}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <SectionLabel style={{ fontSize: '0.62rem' }}>Entry conditions</SectionLabel>
+
+        {target != null ? (
+          <ConditionRow label="Would own below">
+            <ParamInput prefix="$" value={target.toFixed(2)} width={72} />
+          </ConditionRow>
+        ) : null}
+
+        {ivrTrigger != null ? (
+          <ConditionRow label="Wait for high IV">
+            <ParamInput prefix="IVR ≥" value={String(ivrTrigger)} width={40} />
+            <PresetButtons options={[30, 50, 70]} active={ivrTrigger} />
+          </ConditionRow>
+        ) : null}
+
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {target == null ? <ConditionChip label="Would own below" on={false} /> : null}
+          {ivrTrigger == null ? <ConditionChip label="Wait for high IV" on={false} /> : null}
+          <ConditionChip label="Post-earnings only" on={!!postEarnings} />
+          <ConditionChip label="Core holding" on={!!core} />
+        </div>
+
+        <span style={{ fontFamily: T.mono, fontSize: '0.66rem', color: T.muted, lineHeight: 1.6 }}>
+          Add a condition to expand its value field — set the price or IV-rank, then it drives the row’s Signal.
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <SectionLabel style={{ fontSize: '0.62rem' }}>
+          Thesis <span style={{ textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
+        </SectionLabel>
+        <textarea
+          readOnly
+          value={thesis ?? ''}
+          placeholder="Why you’d own this name…"
+          style={{
+            width: '100%',
+            minHeight: 56,
+            resize: 'none',
+            padding: '8px 10px',
+            borderRadius: T.r,
+            border: `1px solid ${T.border}`,
+            background: T.base,
+            color: T.text,
+            fontFamily: 'inherit',
+            fontSize: '0.8125rem',
+            lineHeight: 1.5,
+            outline: 'none'
+          }}
+        />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontFamily: T.mono, fontSize: '0.66rem', color: T.muted }}>{len} / 500</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              style={{
+                padding: '6px 14px',
+                borderRadius: T.r,
+                border: `1px solid ${T.border}`,
+                background: 'transparent',
+                color: T.text2,
+                fontFamily: T.mono,
+                fontSize: '0.72rem',
+                cursor: 'pointer'
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              style={{
+                padding: '6px 18px',
+                borderRadius: T.r,
+                border: `1px solid ${T.goldBorder}`,
+                background: error ? 'transparent' : T.goldDim,
+                color: error ? T.muted : T.gold,
+                fontFamily: T.mono,
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                letterSpacing: '0.04em',
+                cursor: error ? 'not-allowed' : 'pointer',
+                opacity: error ? 0.6 : 1
+              }}
+            >
+              {isEdit ? 'Save changes' : 'Add ticker'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function AddTrigger() {
+  return (
+    <button
+      style={{
+        alignSelf: 'flex-start',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '8px 16px',
+        borderRadius: T.r,
+        border: `1px solid ${T.goldBorder}`,
+        background: T.goldDim,
+        color: T.gold,
+        fontFamily: T.mono,
+        fontSize: '0.78rem',
+        fontWeight: 700,
+        letterSpacing: '0.03em',
+        cursor: 'pointer'
+      }}
+    >
+      <span>+</span> Add ticker
+    </button>
+  )
+}
+
+export function WatchlistTable({ editingTicker }) {
+  const template = COLS.map((c) => c.w).join(' ')
+  return (
+    <div style={{ border: `1px solid ${T.border}`, borderRadius: T.r, overflow: 'hidden', background: T.surface }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: template,
+          gap: 16,
+          padding: '10px 16px',
+          borderBottom: `1px solid ${T.border}`
+        }}
+      >
+        {COLS.map((c) => (
+          <div
+            key={c.key}
+            style={{
+              fontFamily: T.mono,
+              fontSize: '0.62rem',
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: T.muted,
+              textAlign: c.align
+            }}
+          >
+            {c.label}
+          </div>
+        ))}
+      </div>
+
+      {WATCHLIST.map((row, i) => {
+        const editing = editingTicker === row.ticker
+        const tags = conditionTags(row)
+        return (
+          <div
+            key={row.ticker}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: template,
+              gap: 16,
+              alignItems: 'center',
+              padding: '12px 16px',
+              borderTop: i === 0 ? 'none' : `1px solid ${T.borderSub}`,
+              background: editing ? T.goldSub : 'transparent'
+            }}
+          >
+            <div>
+              <TickerCell ticker={row.ticker} />
+            </div>
+            <div>
+              <SignalCell row={row} />
+            </div>
+            <PriceCell row={row} />
+            <IvrCell row={row} />
+            <div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {row.note ? (
+                  <span style={{ fontSize: '0.8125rem', color: T.text2, lineHeight: 1.5 }}>{row.note}</span>
+                ) : (
+                  <span style={{ fontSize: '0.8125rem', color: T.muted, fontStyle: 'italic', cursor: 'pointer' }}>
+                    Add a note…
+                  </span>
+                )}
+                {tags.length > 0 ? (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {tags.map((t) => (
+                      <ConditionTag key={t}>{t}</ConditionTag>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <div style={{ fontFamily: T.mono, fontSize: '0.78rem', color: T.muted, textAlign: 'right' }}>
+              {row.added}
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <button
+                title="Remove"
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: T.r,
+                  border: `1px solid ${T.border}`,
+                  background: 'transparent',
+                  color: T.muted,
+                  fontFamily: T.mono,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                  lineHeight: 1
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+export const ADD_DEMO = {
+  add: {
+    ticker: 'PLTR',
+    error: null,
+    target: 38,
+    ivrTrigger: 50,
+    postEarnings: false,
+    core: false,
+    thesis: 'Would own below $38 after the run-up; premium still rich here'
+  },
+  duplicate: {
+    ticker: 'AAPL',
+    error: 'AAPL is already on the watchlist',
+    target: 170,
+    ivrTrigger: 50,
+    postEarnings: false,
+    core: false,
+    thesis: 'Would own below $170; waiting for IV to lift'
+  },
+  edit: {
+    mode: 'edit',
+    ticker: 'AAPL',
+    error: null,
+    target: 170,
+    ivrTrigger: 50,
+    postEarnings: false,
+    core: false,
+    thesis: 'Would own below $170; waiting for IV to lift'
+  }
+}
+
+export function ListView({ state }) {
+  const editingTicker = state === 'edit' ? 'AAPL' : null
+  const showForm = state === 'add' || state === 'duplicate' || state === 'edit'
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <div style={{ fontSize: '1.15rem', fontWeight: 600, color: T.text }}>Watchlist</div>
+        <span style={{ fontFamily: T.mono, fontSize: '0.72rem', color: T.text2 }}>{WATCHLIST.length} tickers</span>
+      </div>
+
+      {showForm ? <AddEntryPanel {...ADD_DEMO[state]} /> : <AddTrigger />}
+
+      <WatchlistTable editingTicker={editingTicker} />
+
+      <div style={{ fontFamily: T.mono, fontSize: '0.7rem', color: T.muted, lineHeight: 1.7 }}>
+        {state === 'edit'
+          ? 'Editing reuses the add form — change any condition or the thesis in place. The ticker stays fixed; to watch a different name, add a new entry.'
+          : 'This list is the screener’s universe. The Signal chip compares each entry’s conditions against live price, IV-rank, and earnings so a shifting thesis is visible at a glance.'}
+      </div>
+    </div>
+  )
+}
+
+export function EmptyView() {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ fontSize: '1.15rem', fontWeight: 600, color: T.text }}>Watchlist</div>
+      <div
+        style={{
+          border: `1px dashed ${T.goldBorder}`,
+          borderRadius: 10,
+          background: T.surface,
+          padding: '32px',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          textAlign: 'center',
+          gap: 12
+        }}
+      >
+        <div
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 999,
+            background: T.goldDim,
+            border: `1px solid ${T.goldBorder}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: T.gold,
+            fontSize: '1.25rem'
+          }}
+        >
+          ☰
+        </div>
+        <div style={{ fontSize: '1rem', fontWeight: 600, color: T.text }}>No tickers yet</div>
+        <div style={{ fontSize: '0.85rem', color: T.text2, maxWidth: 420, lineHeight: 1.6 }}>
+          Add tickers you&rsquo;d consider selling puts on, with the conditions you&rsquo;re waiting for. The screener pulls
+          option chains for every name and ranks the best entries.
+        </div>
+      </div>
+      <AddEntryPanel ticker="" error={null} thesis="" />
+    </div>
+  )
+}
+
+export function Segment({ options, value, onChange }) {
+  return (
+    <div
+      style={{
+        display: 'inline-flex',
+        gap: 2,
+        padding: 3,
+        borderRadius: 999,
+        border: `1px solid ${T.border}`,
+        background: T.elevated
+      }}
+    >
+      {options.map((opt) => {
+        const active = value === opt.v
+        return (
+          <button
+            key={opt.v}
+            onClick={() => onChange(opt.v)}
+            style={{
+              padding: '5px 12px',
+              borderRadius: 999,
+              border: 'none',
+              cursor: 'pointer',
+              fontFamily: T.mono,
+              fontSize: '0.72rem',
+              background: active ? 'var(--wb-gold-dim)' : 'transparent',
+              color: active ? T.gold : T.text2,
+              fontWeight: active ? 700 : 400
+            }}
+          >
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [state, setState] = useState('list')
+
+  return (
+    <div style={{ fontFamily: 'inherit', color: T.text }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
+        <SectionLabel>State</SectionLabel>
+        <Segment
+          value={state}
+          onChange={setState}
+          options={[
+            { v: 'list', label: 'List' },
+            { v: 'add', label: 'Add entry' },
+            { v: 'duplicate', label: 'Add (duplicate)' },
+            { v: 'edit', label: 'Edit entry' },
+            { v: 'empty', label: 'Empty' }
+          ]}
+        />
+      </div>
+
+      <Shell>{state === 'empty' ? <EmptyView /> : <ListView state={state} />}</Shell>
+    </div>
+  )
+}
+
+<Mockup />

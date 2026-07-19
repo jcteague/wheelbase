@@ -20,29 +20,35 @@ A trader can maintain a watchlist of tickers they're evaluating, screen them aga
 
 ## Vertical Slice
 
-| Layer       | What ships                                                                                       |
-| ----------- | ------------------------------------------------------------------------------------------------ |
-| Integration | alpaca.py: get_option_chain(), get_iv_rank(), get_earnings_calendar()                            |
-| Core engine | screener.py: score and rank candidates against criteria                                          |
-| API         | GET /api/watchlist, POST /api/watchlist, GET /api/screener/results                               |
-| Frontend    | Watchlist manager, screener results table with ranking, filter controls, promote-to-trade button |
+| Layer       | What ships                                                                                                                                                                                                  |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Integration | Massive adapter: option-chain snapshots (bid/ask/mark, Greeks, OI/volume) via `MarketDataProvider` (US-39); IV rank from the volatility service (US-45); earnings dates from a separate calendar dependency |
+| Core engine | `src/main/core/screener.ts`: score and rank candidates against criteria (pure, no I/O)                                                                                                                      |
+| IPC         | `watchlist:list/add/remove/update`, `screener:results`                                                                                                                                                      |
+| Frontend    | Watchlist manager, screener results table with ranking, criteria settings, promote-to-trade button                                                                                                          |
 
 ## Stories
 
-- [ ] US-50: Add and remove tickers from the watchlist
-- [ ] US-51: Pull option chains from Alpaca for watchlist tickers
-- [ ] US-52: Score wheel candidates against configurable screening criteria
-- [ ] US-53: Display ranked screener results with key metrics (delta, premium yield, IV rank, OI, spread)
-- [ ] US-54: Configure screening defaults (delta range, DTE window, premium yield floor, earnings exclusion)
-- [ ] US-55: Promote a screener result to the new wheel form with pre-filled fields
-- [ ] US-56: Store per-ticker notes on the watchlist (why it's being considered)
-- [ ] US-57: Warn when a candidate has earnings within the DTE window
+> Story numbers were shifted from US-50–57 to US-63–70 to avoid a collision with Epic 07 (Management Alerts), which consumed US-50–62.
+
+- [ ] US-63: Create and remove watchlist entries (ticker + optional thesis + entry conditions)
+- [ ] US-64: Pull option chains from Massive for watchlist tickers
+- [ ] US-65: Score wheel candidates against configurable screening criteria
+- [ ] US-66: Display ranked screener results with key metrics (delta, premium yield, IV rank, OI, spread)
+- [ ] US-67: Configure screening defaults (delta band, DTE window, liquidity gates, price ceiling, earnings handling)
+- [ ] US-68: Promote a screener result to the new wheel form with pre-filled fields
+- [ ] US-69: Edit a watchlist entry (thesis + entry conditions in the shared form)
+- [ ] US-70: Warn when a candidate has earnings within the DTE window
+- [ ] US-96: View the watchlist with live prices, IV-rank, earnings, and a Signal verdict
+
+> The watchlist stories are organized by action on an **entry** (ticker + thesis + conditions): create/remove (US-63), edit (US-69), view with live data + Signal (US-96); promote happens downstream from a screener result (US-68). US-96 is numbered out of epic sequence (71–95 were claimed by Epics 09–12); it was split out after the shared watchlist mockup outgrew US-63's scope.
 
 ## Dependencies
 
-- Epic 06: Live Market Data (Alpaca integration for option chains)
+- Epic 06: Live Market Data (Massive provider adapter for option chains — US-39; IVR service — US-45)
 - Epic 12: Volatility Analytics (IVR/IVP data feed — Alpaca does not provide historical IV; the screener's IV rank column and filter consume the volatility service rather than computing rank inline)
 - Epic 01: Open and Track a CSP (trade entry form to promote into)
+- **External (unowned):** an earnings-calendar data source for US-70 — Massive supplies chains/quotes only, not earnings dates. Needs an owner before US-70 can ship.
 
 ## Strategy
 
