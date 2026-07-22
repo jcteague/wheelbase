@@ -11,6 +11,7 @@ import { NewWheelPage } from './pages/NewWheelPage'
 import { PositionDetailPage } from './pages/PositionDetailPage'
 import { PositionsListPage } from './pages/PositionsListPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { WATCHLIST_PAGE_TITLE, WatchlistPage } from './pages/WatchlistPage'
 
 const queryClient = new QueryClient()
 
@@ -43,6 +44,12 @@ function Sidebar(): React.JSX.Element {
           icon="▦"
           active={location === '/calendar'}
         />
+        <NavItem
+          href="/watchlist"
+          label={WATCHLIST_PAGE_TITLE}
+          icon="☰"
+          active={location === '/watchlist'}
+        />
         <div className="px-[12px] py-[6px] mb-[4px] mt-[12px] text-[0.65rem] font-semibold tracking-[0.1em] uppercase text-wb-text-muted font-wb-mono">
           System
         </div>
@@ -69,7 +76,9 @@ function ShellHeader(): React.JSX.Element {
         ? 'Open Wheel'
         : location === '/calendar'
           ? CALENDAR_PAGE_TITLE
-          : 'Dashboard'
+          : location === '/watchlist'
+            ? WATCHLIST_PAGE_TITLE
+            : 'Dashboard'
 
   return (
     <div className="flex items-center justify-between border-b border-wb-border bg-wb-bg-surface px-6 py-3">
@@ -95,6 +104,7 @@ function AppShell(): React.JSX.Element {
           <Route path="/new" component={NewWheelPage} />
           <Route path="/settings" component={SettingsPage} />
           <Route path="/calendar" component={CalendarPage} />
+          <Route path="/watchlist" component={WatchlistPage} />
           <Route path="/positions/:id" component={PositionDetailPage} />
         </Switch>
       </main>

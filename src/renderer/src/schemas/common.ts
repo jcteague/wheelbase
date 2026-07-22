@@ -1,10 +1,12 @@
 import { z } from 'zod'
 
+export const TICKER_REGEX = /^[A-Z]{1,5}$/
+
 export const tickerSchema = z
   .string()
   .trim()
   .toUpperCase()
-  .regex(/^[A-Z]{1,5}$/, 'Ticker must be 1-5 uppercase letters')
+  .regex(TICKER_REGEX, 'Ticker must be 1-5 uppercase letters')
 
 export const positiveMoneySchema = z
   .string()

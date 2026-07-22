@@ -571,6 +571,19 @@ between `006` and `008` without issue. The sequence is now contiguous again.
 
 <!-- /generated -->
 
+<!-- generated:from us-63 -->
+
+## Migration 012 — `watchlist`
+
+`migrations/012_create_watchlist.sql` (introduced by
+[us-63](../features/us-63-manage-watchlist.md)) creates the `watchlist` table keyed
+by `ticker TEXT PRIMARY KEY` plus the `idx_watchlist_added_at_desc` index for the
+newest-first list. Follows the keyed-table convention from migration `006`; the
+runner auto-applies it at startup. See [`schema/tables.md`](./tables.md#watchlist)
+for the column catalogue.
+
+<!-- /generated -->
+
 <!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50,us-59 -->
 
 ## See also

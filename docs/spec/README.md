@@ -2,7 +2,7 @@
 
 This directory is a generated source-of-truth wiki for the Wheelbase application. Pages are synthesized from the per-story plan dirs under `plans/` via the `/build-spec` (initial) and `/update-spec` (incremental) skills; each page's body sits between `<!-- generated:from <plan-list> -->` markers and is re-generated when any listed plan changes. Browse by topic (architecture, domain, contracts, schema) for cross-cutting concerns, or by feature (US-N) for story-level behaviour.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-16,us-17,us-31,us-32,us-33,us-34,us-35,us-37,us-39,us-43,us-44,us-50,us-51,us-52,us-53-54-55,us-56,us-57-58,us-59,us-60,us-62,market-data-massive-migration,missing-ac,design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-16,us-17,us-31,us-32,us-33,us-34,us-35,us-37,us-39,us-43,us-44,us-50,us-51,us-52,us-53-54-55,us-56,us-57-58,us-59,us-60,us-62,us-63,market-data-massive-migration,missing-ac,design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse -->
 
 ## Maintenance
 
@@ -90,6 +90,10 @@ Generated regions are bounded by `<!-- generated:from ... -->` / `<!-- /generate
 - [US-59 — Dismiss an Alert with a Record of the Dismissal](features/us-59-dismiss-alert.md) — adds a `Dismiss` action to open queue alerts (`dismissed_at` column + mirrored partial unique index, migration 011); makes `upsertOpenAlert` dismissal-aware (`'suppressed'` outcome) so a still-true condition can't silently reopen it; `clearStaleDismissals` retires a dismissed row to `resolved` once the condition genuinely clears, reusing the same `keepOpenKeys` set as `resolveAlertsNotIn`; new `alerts:dismiss` IPC channel + two-panel confirm UI (`DismissConfirmPanel`)
 - [US-60 — Expiration Calendar View (Month Grid + Agenda)](features/us-60-expiration-calendar-view.md) — pure-renderer calendar page (`#/calendar`) plotting active option expirations by date, phase-colored, with a month-grid + day-detail layout and a rolling 30-day agenda layout toggled by a persisted (`localStorage`) preference; reuses `positions:list`/`usePositions()` unchanged — no new IPC, service, engine, or migration
 - [US-62 — Covered-Call Breach Alert](features/us-62-covered-call-breach-alert.md) — adds the medium-urgency `COVERED_CALL_BREACH` rule (fires when a `CC_OPEN` position's underlying trades at/above its short-call strike), the covered-call counterpart to US-55's `STRIKE_PROXIMITY`; reports the percent above the strike, auto-resolves when the stock falls back below, skips on a missing price, and co-fires with the DTE rules — one pure-engine registry entry, no schema, IPC, or renderer change
+
+### Epic 08 — Watchlist
+
+- [US-63 — Create and remove watchlist entries](features/us-63-manage-watchlist.md) — foundation of the candidate-screener watchlist: a `watchlist` table keyed by normalized ticker (migration 012), `watchlist:list/add/remove` IPC handlers, and a Watchlist page (`#/watchlist`) where a trader adds a ticker with an optional thesis + structured entry conditions (would-own price, IV-rank trigger, post-earnings, core-holding), sees the bench newest-first with condition tags, and removes entries; symbol validation/uppercase-normalization/duplicate-rejection with an empty-state that explains the screener. Live Price/IVR/Signal columns (US-96) and editing (US-69) are out of scope
 
 ## Gaps / not yet built
 

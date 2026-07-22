@@ -826,4 +826,29 @@ These shapes back the renderer settings API in `src/renderer/src/api/settings.ts
 
 <!-- /generated -->
 
+<!-- generated:from us-63 -->
+
+## Watchlist payloads
+
+Introduced by [us-63](../features/us-63-manage-watchlist.md) in `src/main/schemas.ts`,
+backing the `watchlist:*` handlers in [contracts/ipc-handlers.md](./ipc-handlers.md).
+
+- **`WatchlistAddPayloadSchema`** — `{ ticker, notes?, ownBelowPrice?, ivrTrigger?,
+  postEarningsOnly?, coreHolding? }`. `ticker` is trimmed, uppercased, and matched
+  against `^[A-Z]{1,5}$` (the same rule as the shared `tickerSchema`); `notes` is
+  `≤ 500` chars; `ownBelowPrice` is a positive number or null; `ivrTrigger` is an
+  integer `0–100` or null; the two booleans default to `false`. The inferred
+  `WatchlistAddPayload` type is exported alongside.
+- **`WatchlistRemovePayloadSchema`** — `{ ticker }` with the same normalize/validate
+  rule.
+- **`WatchlistEntryRecord`** — result interface (not a Zod schema): `{ ticker; notes:
+  string | null; ownBelowPrice: string | null; ivrTrigger: number | null;
+  postEarningsOnly: boolean; coreHolding: boolean; addedAt: string }`.
+
+The renderer mirrors the ticker rule in its own form schema
+(`src/renderer/src/schemas/watchlist.ts`, `watchlistEntrySchema`) for client-side
+validation and messages ("Enter a ticker symbol" / "Enter a valid ticker symbol").
+
+<!-- /generated -->
+
 <!-- Hand-written sections below this line are preserved across regeneration. -->

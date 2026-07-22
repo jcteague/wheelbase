@@ -1635,4 +1635,47 @@ US-37 adds a dedicated `settings:*` namespace for credential status, Alpaca cred
 
 <!-- /generated -->
 
+<!-- generated:from us-63 -->
+
+## `watchlist:*` namespace
+
+The candidate-screener watchlist handlers, registered by `registerWatchlistIpc({ db })`
+in `src/main/ipc/watchlist.ts` and wired from `src/main/index.ts`. Each is thin —
+a Zod parse plus a single service call in `src/main/services/watchlist.ts`, wrapped in
+`handleIpcCall`. All use the canonical `{ ok, errors }` envelope. Introduced by
+[us-63 — Manage watchlist tickers](../features/us-63-manage-watchlist.md).
+
+### `watchlist:list`
+
+- **Purpose:** hydrate the Watchlist page, newest-first.
+- **Request:** none.
+- **Response (success):** `{ ok: true, entries: WatchlistEntryRecord[] }` ordered by
+  `added_at DESC`. `WatchlistEntryRecord = { ticker, notes: string | null,
+  ownBelowPrice: string | null, ivrTrigger: number | null, postEarningsOnly: boolean,
+  coreHolding: boolean, addedAt: string }` (`ownBelowPrice` is 4dp TEXT money).
+- **Source:** `src/main/ipc/watchlist.ts`, `src/main/services/watchlist.ts` (`listWatchlist`)
+
+### `watchlist:add`
+
+- **Purpose:** add a ticker with optional thesis + structured conditions.
+- **Request:** `WatchlistAddPayload { ticker, notes?, ownBelowPrice?, ivrTrigger?,
+  postEarningsOnly?, coreHolding? }` (parsed by `WatchlistAddPayloadSchema`; ticker
+  trimmed/uppercased and matched against `^[A-Z]{1,5}$`).
+- **Response (success):** `{ ok: true, entry: WatchlistEntryRecord }`.
+- **Error:** duplicate ticker → `{ ok: false, errors: [{ field: 'ticker', code:
+  'duplicate', message: '<TICKER> is already on the watchlist' }] }` (from a service
+  `ValidationError`). Bad payloads map to the standard Zod field errors.
+- **Source:** `src/main/ipc/watchlist.ts`, `src/main/schemas.ts`, `src/main/services/watchlist.ts` (`addWatchlistEntry`)
+
+### `watchlist:remove`
+
+- **Purpose:** remove a ticker from the bench.
+- **Request:** `{ ticker }` (parsed by `WatchlistRemovePayloadSchema`, normalized to
+  uppercase).
+- **Response (success):** `{ ok: true, ticker }`. Removing an absent ticker is a
+  no-op success (no error). Never touches positions or trade history.
+- **Source:** `src/main/ipc/watchlist.ts`, `src/main/services/watchlist.ts` (`removeWatchlistEntry`)
+
+<!-- /generated -->
+
 <!-- Hand-written sections below this line are preserved across regeneration. -->

@@ -500,6 +500,41 @@ export const DismissAssignmentPayloadSchema = z.object({
 export type DismissAssignmentPayload = z.infer<typeof DismissAssignmentPayloadSchema>
 
 // ---------------------------------------------------------------------------
+// Watchlist
+// ---------------------------------------------------------------------------
+
+const WatchlistTickerSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z]{1,5}$/, 'Enter a valid ticker symbol')
+
+export const WatchlistAddPayloadSchema = z.object({
+  ticker: WatchlistTickerSchema,
+  notes: z.string().trim().max(500).optional(),
+  ownBelowPrice: z.number().positive().nullable().optional(),
+  ivrTrigger: z.number().int().min(0).max(100).nullable().optional(),
+  postEarningsOnly: z.boolean().optional().default(false),
+  coreHolding: z.boolean().optional().default(false)
+})
+export type WatchlistAddPayload = z.infer<typeof WatchlistAddPayloadSchema>
+
+export const WatchlistRemovePayloadSchema = z.object({
+  ticker: WatchlistTickerSchema
+})
+export type WatchlistRemovePayload = z.infer<typeof WatchlistRemovePayloadSchema>
+
+export interface WatchlistEntryRecord {
+  ticker: string
+  notes: string | null
+  ownBelowPrice: string | null
+  ivrTrigger: number | null
+  postEarningsOnly: boolean
+  coreHolding: boolean
+  addedAt: string
+}
+
+// ---------------------------------------------------------------------------
 // Alerts (US-50)
 // ---------------------------------------------------------------------------
 

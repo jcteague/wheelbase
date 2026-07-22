@@ -593,6 +593,32 @@ leaves partially written rows.
 
 <!-- /generated -->
 
+<!-- generated:from us-63 -->
+
+## `watchlist`
+
+The candidate-screener bench: one row per ticker a trader is willing to sell puts
+on, keyed by normalized (uppercase) `ticker TEXT PRIMARY KEY`. Introduced by
+[us-63](../features/us-63-manage-watchlist.md) via `migrations/012_create_watchlist.sql`.
+
+| Column               | Type      | Notes                                                                 |
+| -------------------- | --------- | --------------------------------------------------------------------- |
+| `ticker`             | `TEXT` PK | Normalized to uppercase at the service boundary; the entry's identity |
+| `notes`              | `TEXT`    | Nullable free-text thesis (≤ 500 chars, matching `newWheelSchema.thesis`) |
+| `own_below_price`    | `TEXT`    | Nullable 4dp money (would-own target price)                           |
+| `ivr_trigger`        | `INTEGER` | Nullable IV-rank threshold (0–100)                                    |
+| `post_earnings_only` | `INTEGER` | Boolean 0/1, `NOT NULL DEFAULT 0`                                     |
+| `core_holding`       | `INTEGER` | Boolean 0/1, `NOT NULL DEFAULT 0`                                     |
+| `added_at`           | `TEXT`    | ISO 8601 timestamp, `NOT NULL`                                        |
+
+The structured conditions (`own_below_price`, `ivr_trigger`, `post_earnings_only`,
+`core_holding`) are **informational** — they drive the display tags and the future
+US-96 Signal, never a screener ranking input. `idx_watchlist_added_at_desc` on
+`(added_at DESC)` backs the newest-first list order. No foreign keys — the watchlist
+is independent of `positions`; removing a ticker never touches trade history.
+
+<!-- /generated -->
+
 ## See also
 
 - [Migrations](./migrations.md) — chronological change log for the schema

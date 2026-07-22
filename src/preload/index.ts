@@ -72,6 +72,11 @@ const api = {
     list: () => invoke('alerts:list'),
     dismiss: (payload: { alertId: string }) => invoke('alerts:dismiss', payload)
   },
+  watchlist: {
+    list: () => invoke('watchlist:list'),
+    add: (payload: unknown) => invoke('watchlist:add', payload),
+    remove: (payload: { ticker: string }) => invoke('watchlist:remove', payload)
+  },
   ivr: {
     collectNow: () => invoke('ivr:collect-now')
   },

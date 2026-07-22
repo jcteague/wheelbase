@@ -115,7 +115,8 @@ describe('runMigrations', () => {
       '008_create_pending_assignments.sql',
       '009_create_alerts.sql',
       '010_add_management_window_dte_override.sql',
-      '011_add_alerts_dismissal.sql'
+      '011_add_alerts_dismissal.sql',
+      '012_create_watchlist.sql'
     ])
   })
 
@@ -244,5 +245,27 @@ describe('runMigrations', () => {
     expect(indexSql(db, 'idx_ivr_snapshot_underlying_observed_at_desc')).toContain(
       'ON ivr_snapshot (underlying, observed_at DESC)'
     )
+  })
+
+  it('applies 012_create_watchlist.sql and creates watchlist with expected columns', () => {
+    const db = makeTestDb()
+
+    expect(listUserTables(db)).toContain('watchlist')
+    expect(columnInfo(db, 'watchlist').map((c) => c.name)).toEqual([
+      'ticker',
+      'notes',
+      'own_below_price',
+      'ivr_trigger',
+      'post_earnings_only',
+      'core_holding',
+      'added_at'
+    ])
+  })
+
+  it('migration 012 creates newest-first index on watchlist', () => {
+    const db = makeTestDb()
+
+    expect(listIndexes(db, 'watchlist')).toContain('idx_watchlist_added_at_desc')
+    expect(indexSql(db, 'idx_watchlist_added_at_desc')).toContain('ON watchlist (added_at DESC)')
   })
 })

@@ -370,6 +370,29 @@ type IpcCollectIvrNowBatch = {
 }
 type IpcCollectIvrNowResult = IpcResult<{ batch: IpcCollectIvrNowBatch }>
 
+interface IpcWatchlistAddPayload {
+  ticker: string
+  notes?: string
+  ownBelowPrice?: number | null
+  ivrTrigger?: number | null
+  postEarningsOnly?: boolean
+  coreHolding?: boolean
+}
+
+interface IpcWatchlistEntry {
+  ticker: string
+  notes: string | null
+  ownBelowPrice: string | null
+  ivrTrigger: number | null
+  postEarningsOnly: boolean
+  coreHolding: boolean
+  addedAt: string
+}
+
+type IpcWatchlistListResult = IpcResult<{ entries: IpcWatchlistEntry[] }>
+type IpcWatchlistAddResult = IpcResult<{ entry: IpcWatchlistEntry }>
+type IpcWatchlistRemoveResult = IpcResult<{ ticker: string }>
+
 interface IpcGetOptionSnapshotsPayload {
   symbols: string[]
 }
@@ -565,6 +588,11 @@ declare global {
               errors: Array<{ field: string; code: string; message: string }>
             }
         >
+      }
+      watchlist: {
+        list: () => Promise<IpcWatchlistListResult>
+        add: (payload: IpcWatchlistAddPayload) => Promise<IpcWatchlistAddResult>
+        remove: (payload: { ticker: string }) => Promise<IpcWatchlistRemoveResult>
       }
       ivr: {
         collectNow: () => Promise<IpcCollectIvrNowResult>

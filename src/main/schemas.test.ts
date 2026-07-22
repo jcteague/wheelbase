@@ -6,7 +6,9 @@ import {
   OpenCcPayloadSchema,
   RollCcPayloadSchema,
   RollCspPayloadSchema,
-  SetStockQuoteTickersPayloadSchema
+  SetStockQuoteTickersPayloadSchema,
+  WatchlistAddPayloadSchema,
+  WatchlistRemovePayloadSchema
 } from './schemas'
 
 const VALID_POSITION_ID = '11111111-1111-4111-8111-111111111111'
@@ -267,5 +269,75 @@ describe('GetOptionSnapshotsPayloadSchema', () => {
       symbols: Array(51).fill('AAPL260516P00180000')
     })
     expect(result.success).toBe(false)
+  })
+})
+
+describe('WatchlistAddPayloadSchema', () => {
+  it('accepts a full payload', () => {
+    const result = WatchlistAddPayloadSchema.parse({
+      ticker: 'AAPL',
+      notes: 'Would own below $180',
+      ownBelowPrice: 180,
+      ivrTrigger: 50,
+      postEarningsOnly: true,
+      coreHolding: true
+    })
+    expect(result).toEqual({
+      ticker: 'AAPL',
+      notes: 'Would own below $180',
+      ownBelowPrice: 180,
+      ivrTrigger: 50,
+      postEarningsOnly: true,
+      coreHolding: true
+    })
+  })
+
+  it('accepts a ticker-only payload with boolean defaults', () => {
+    const result = WatchlistAddPayloadSchema.parse({ ticker: 'AAPL' })
+    expect(result.ticker).toBe('AAPL')
+    expect(result.postEarningsOnly).toBe(false)
+    expect(result.coreHolding).toBe(false)
+  })
+
+  it('uppercases and trims the ticker', () => {
+    const result = WatchlistAddPayloadSchema.parse({ ticker: ' nvda ' })
+    expect(result.ticker).toBe('NVDA')
+  })
+
+  it('rejects ownBelowPrice <= 0', () => {
+    expect(WatchlistAddPayloadSchema.safeParse({ ticker: 'AAPL', ownBelowPrice: 0 }).success).toBe(
+      false
+    )
+    expect(WatchlistAddPayloadSchema.safeParse({ ticker: 'AAPL', ownBelowPrice: -5 }).success).toBe(
+      false
+    )
+  })
+
+  it('rejects ivrTrigger outside 0-100', () => {
+    expect(WatchlistAddPayloadSchema.safeParse({ ticker: 'AAPL', ivrTrigger: -1 }).success).toBe(
+      false
+    )
+    expect(WatchlistAddPayloadSchema.safeParse({ ticker: 'AAPL', ivrTrigger: 150 }).success).toBe(
+      false
+    )
+  })
+
+  it('rejects a non-integer ivrTrigger', () => {
+    expect(WatchlistAddPayloadSchema.safeParse({ ticker: 'AAPL', ivrTrigger: 50.5 }).success).toBe(
+      false
+    )
+  })
+
+  it('rejects notes longer than 500 chars', () => {
+    expect(
+      WatchlistAddPayloadSchema.safeParse({ ticker: 'AAPL', notes: 'a'.repeat(501) }).success
+    ).toBe(false)
+  })
+})
+
+describe('WatchlistRemovePayloadSchema', () => {
+  it('accepts { ticker } and normalizes it', () => {
+    const result = WatchlistRemovePayloadSchema.parse({ ticker: ' nvda ' })
+    expect(result.ticker).toBe('NVDA')
   })
 })
