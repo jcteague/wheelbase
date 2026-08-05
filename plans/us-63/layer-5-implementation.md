@@ -13,12 +13,12 @@ entry (US-69). The add form is deliberately built so US-69 can reuse it in edit 
 
 ## Key Files
 
-| File | Purpose |
-| --- | --- |
-| `src/renderer/src/pages/WatchlistPage.tsx` | Page container: header + count badge, loading/error states, empty guidance, add form, and the `WatchlistTable` (Ticker · Thesis(+tags) · Added · ✕). |
+| File                                               | Purpose                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/renderer/src/pages/WatchlistPage.tsx`         | Page container: header + count badge, loading/error states, empty guidance, add form, and the `WatchlistTable` (Ticker · Thesis(+tags) · Added · ✕).                                                                                                                                    |
 | `src/renderer/src/components/WatchlistAddForm.tsx` | RHF + `zodResolver(watchlistEntrySchema)` add surface: ticker input, quick-pick condition chips (own-below `$`, high-IV `IVR ≥` with 30/50/70 presets, post-earnings, core), thesis textarea + NN/500 counter. Maps server `ticker`/duplicate errors via `setError`; resets on success. |
-| `src/renderer/src/lib/watchlistConditionTags.ts` | `buildConditionTags(entry)` — pure helper deriving the compact tag strings (`≤ $38`, `IVR ≥ 50`, `post-earnings`, `core`); reused by the page and future US-96. |
-| `src/renderer/src/App.tsx` | Route `/watchlist`, `☰` NavItem in the Trading group, and header-title case. |
+| `src/renderer/src/lib/watchlistConditionTags.ts`   | `buildConditionTags(entry)` — pure helper deriving the compact tag strings (`≤ $38`, `IVR ≥ 50`, `post-earnings`, `core`); reused by the page and future US-96.                                                                                                                         |
+| `src/renderer/src/App.tsx`                         | Route `/watchlist`, `☰` NavItem in the Trading group, and header-title case.                                                                                                                                                                                                           |
 
 Test: `src/renderer/src/pages/WatchlistPage.test.tsx` (12 cases).
 

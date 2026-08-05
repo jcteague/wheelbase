@@ -1651,19 +1651,19 @@ a Zod parse plus a single service call in `src/main/services/watchlist.ts`, wrap
 - **Request:** none.
 - **Response (success):** `{ ok: true, entries: WatchlistEntryRecord[] }` ordered by
   `added_at DESC`. `WatchlistEntryRecord = { ticker, notes: string | null,
-  ownBelowPrice: string | null, ivrTrigger: number | null, postEarningsOnly: boolean,
-  coreHolding: boolean, addedAt: string }` (`ownBelowPrice` is 4dp TEXT money).
+ownBelowPrice: string | null, ivrTrigger: number | null, postEarningsOnly: boolean,
+coreHolding: boolean, addedAt: string }` (`ownBelowPrice` is 4dp TEXT money).
 - **Source:** `src/main/ipc/watchlist.ts`, `src/main/services/watchlist.ts` (`listWatchlist`)
 
 ### `watchlist:add`
 
 - **Purpose:** add a ticker with optional thesis + structured conditions.
 - **Request:** `WatchlistAddPayload { ticker, notes?, ownBelowPrice?, ivrTrigger?,
-  postEarningsOnly?, coreHolding? }` (parsed by `WatchlistAddPayloadSchema`; ticker
+postEarningsOnly?, coreHolding? }` (parsed by `WatchlistAddPayloadSchema`; ticker
   trimmed/uppercased and matched against `^[A-Z]{1,5}$`).
 - **Response (success):** `{ ok: true, entry: WatchlistEntryRecord }`.
 - **Error:** duplicate ticker → `{ ok: false, errors: [{ field: 'ticker', code:
-  'duplicate', message: '<TICKER> is already on the watchlist' }] }` (from a service
+'duplicate', message: '<TICKER> is already on the watchlist' }] }` (from a service
   `ValidationError`). Bad payloads map to the standard Zod field errors.
 - **Source:** `src/main/ipc/watchlist.ts`, `src/main/schemas.ts`, `src/main/services/watchlist.ts` (`addWatchlistEntry`)
 

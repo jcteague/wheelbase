@@ -834,7 +834,7 @@ Introduced by [us-63](../features/us-63-manage-watchlist.md) in `src/main/schema
 backing the `watchlist:*` handlers in [contracts/ipc-handlers.md](./ipc-handlers.md).
 
 - **`WatchlistAddPayloadSchema`** — `{ ticker, notes?, ownBelowPrice?, ivrTrigger?,
-  postEarningsOnly?, coreHolding? }`. `ticker` is trimmed, uppercased, and matched
+postEarningsOnly?, coreHolding? }`. `ticker` is trimmed, uppercased, and matched
   against `^[A-Z]{1,5}$` (the same rule as the shared `tickerSchema`); `notes` is
   `≤ 500` chars; `ownBelowPrice` is a positive number or null; `ivrTrigger` is an
   integer `0–100` or null; the two booleans default to `false`. The inferred
@@ -842,8 +842,8 @@ backing the `watchlist:*` handlers in [contracts/ipc-handlers.md](./ipc-handlers
 - **`WatchlistRemovePayloadSchema`** — `{ ticker }` with the same normalize/validate
   rule.
 - **`WatchlistEntryRecord`** — result interface (not a Zod schema): `{ ticker; notes:
-  string | null; ownBelowPrice: string | null; ivrTrigger: number | null;
-  postEarningsOnly: boolean; coreHolding: boolean; addedAt: string }`.
+string | null; ownBelowPrice: string | null; ivrTrigger: number | null;
+postEarningsOnly: boolean; coreHolding: boolean; addedAt: string }`.
 
 The renderer mirrors the ticker rule in its own form schema
 (`src/renderer/src/schemas/watchlist.ts`, `watchlistEntrySchema`) for client-side
