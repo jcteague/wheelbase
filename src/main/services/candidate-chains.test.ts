@@ -10,7 +10,11 @@ import {
 import { logger } from '../logger'
 import { makeTestDb } from '../test-utils'
 import { addWatchlistEntry } from './watchlist'
-import { pullWatchlistChains, type TickerChainResult } from './candidate-chains'
+import {
+  CHAIN_FETCH_CONCURRENCY,
+  pullWatchlistChains,
+  type TickerChainResult
+} from './candidate-chains'
 
 vi.mock('../logger', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
@@ -62,7 +66,7 @@ function byTicker(results: TickerChainResult[], ticker: string): TickerChainResu
   return found
 }
 
-const CURRENT_DATE = new Date('2026-07-23') // default 30–45 window → 2026-08-22 .. 2026-09-06
+const CURRENT_DATE = new Date(2026, 6, 23) // default 30–45 window → 2026-08-22 .. 2026-09-06
 
 describe('pullWatchlistChains', () => {
   it('returns ok with no tickers and never calls the provider for an empty watchlist', async () => {
@@ -138,6 +142,34 @@ describe('pullWatchlistChains', () => {
     )
   })
 
+  it('reports provider_unavailable even when one ticker fails at ticker level (delisted 404)', async () => {
+    const db = makeTestDb()
+    seedWatchlist(db, ['AAPL', 'MSFT', 'XYZ'])
+    const { provider } = makeProvider((filter) => {
+      // XYZ is delisted; the rest are down because the provider is down.
+      if (filter.underlying === 'XYZ') throw new MarketDataError('not_found', 'HTTP 404')
+      throw new MarketDataError('network_error', 'unreachable')
+    })
+
+    const result = await pullWatchlistChains(provider, db, { currentDate: CURRENT_DATE })
+
+    expect(result.status).toBe('provider_unavailable')
+  })
+
+  it('stays overall ok when a ticker answers with an empty chain (provider proven reachable)', async () => {
+    const db = makeTestDb()
+    seedWatchlist(db, ['AAPL', 'MSFT', 'XYZ'])
+    const { provider } = makeProvider((filter) => {
+      if (filter.underlying === 'XYZ') return []
+      throw new MarketDataError('network_error', 'unreachable')
+    })
+
+    const result = await pullWatchlistChains(provider, db, { currentDate: CURRENT_DATE })
+
+    expect(result.status).toBe('ok')
+    expect(byTicker(result.tickers, 'XYZ')).toEqual({ ticker: 'XYZ', status: 'no_options_listed' })
+  })
+
   it('stays overall ok when every ticker returns not_found (provider reachable)', async () => {
     const db = makeTestDb()
     seedWatchlist(db, ['AAPL', 'XYZ'])
@@ -198,6 +230,48 @@ describe('pullWatchlistChains', () => {
       expirationTo: '2026-08-12',
       type: 'put'
     })
+  })
+
+  it('caps in-flight chain requests so a large watchlist cannot self-inflict rate limiting', async () => {
+    const db = makeTestDb()
+    const tickers = ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMD', 'META', 'GOOG', 'AMZN', 'NFLX', 'INTC']
+    seedWatchlist(db, tickers)
+    let inFlight = 0
+    let peakInFlight = 0
+    const { provider } = makeProvider(async () => {
+      inFlight += 1
+      peakInFlight = Math.max(peakInFlight, inFlight)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      inFlight -= 1
+      return [putQuote()]
+    })
+
+    const result = await pullWatchlistChains(provider, db, { currentDate: CURRENT_DATE })
+
+    expect(result.tickers).toHaveLength(tickers.length)
+    expect(peakInFlight).toBeLessThanOrEqual(CHAIN_FETCH_CONCURRENCY)
+    expect(peakInFlight).toBeGreaterThan(1) // still concurrent, just bounded
+  })
+
+  it('logs an INFO summary of the completed batch', async () => {
+    const db = makeTestDb()
+    seedWatchlist(db, ['AAPL', 'XYZ'])
+    const { provider } = makeProvider((filter) => {
+      if (filter.underlying === 'XYZ') throw new MarketDataError('not_found', 'HTTP 404')
+      return [putQuote()]
+    })
+
+    await pullWatchlistChains(provider, db, { currentDate: CURRENT_DATE })
+
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'ok',
+        tickerCount: 2,
+        okCount: 1,
+        unavailableCount: 1
+      }),
+      expect.any(String)
+    )
   })
 
   it('drops zero-bid / one-sided strikes from ok results', async () => {

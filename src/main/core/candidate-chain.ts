@@ -2,7 +2,7 @@
 // No I/O, no logging: takes plain values (adapter quotes, error codes) and returns
 // plain results. Type-only imports keep this decoupled from the provider vendor.
 import Decimal from 'decimal.js'
-import { addDays } from 'date-fns'
+import { addDays, format } from 'date-fns'
 import type { MarketDataErrorCode, OptionChainQuote } from '../integrations/market-data-provider'
 
 export type DteWindow = { min: number; max: number }
@@ -24,23 +24,17 @@ export type CandidateStrike = {
   timestamp: string
 }
 
-// Formats a Date's UTC calendar day as yyyy-MM-dd. UTC is the explicit basis so the
-// derived expiration range is deterministic regardless of the caller's timezone and
-// matches the calendar-date semantics of Massive's expiration_date strings.
-function toUtcYmd(date: Date): string {
-  const year = date.getUTCFullYear()
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
-  const day = String(date.getUTCDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
+// DTE is counted from the trader's own calendar day, so both the day arithmetic and
+// the yyyy-MM-dd formatting use the local timezone — the same basis as the shared
+// helpers in src/main/dates.ts. Mixing bases (local addDays, UTC formatting) would
+// shift the whole window by a day whenever the run happens outside UTC's calendar day.
 export function dteWindowToExpirationRange(
   currentDate: Date,
   window: DteWindow
 ): { from: string; to: string } {
   return {
-    from: toUtcYmd(addDays(currentDate, window.min)),
-    to: toUtcYmd(addDays(currentDate, window.max))
+    from: format(addDays(currentDate, window.min), 'yyyy-MM-dd'),
+    to: format(addDays(currentDate, window.max), 'yyyy-MM-dd')
   }
 }
 

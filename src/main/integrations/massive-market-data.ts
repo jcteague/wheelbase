@@ -36,12 +36,14 @@ type WsAmMsg = {
 }
 type WsMsg = WsStatusMsg | WsAmMsg
 
-// Polygon-compatible option snapshot shape
+// Polygon-compatible option snapshot shape. Every block is optional: chain entries for
+// strikes that have never traded (or are never quoted) omit last_trade / last_quote /
+// greeks entirely rather than sending nulls.
 type SnapResult = {
-  last_quote: { bid: number; ask: number; last_updated: number }
-  last_trade: { price: number; sip_timestamp: number }
-  greeks: { delta: number; gamma: number; theta: number; vega: number } | null
-  implied_volatility: number | null
+  last_quote?: { bid: number; ask: number; last_updated: number }
+  last_trade?: { price: number; sip_timestamp: number }
+  greeks?: { delta: number; gamma: number; theta: number; vega: number } | null
+  implied_volatility?: number | null
 }
 
 // Chain snapshot results additionally carry per-strike identity and liquidity that
@@ -57,8 +59,10 @@ type ChainSnapResult = SnapResult & {
   day: { volume: number | null } | null
 }
 
+// `results` is omitted (not empty) when nothing matches the filter — e.g. a ticker with
+// no expirations inside the requested window.
 type ChainResponse = {
-  results: ChainSnapResult[]
+  results?: ChainSnapResult[]
   next_url: string | null
 }
 
@@ -89,19 +93,23 @@ function computeMid(bid: Decimal, ask: Decimal): Decimal {
 }
 
 function mapSnapResult(r: SnapResult): OptionSnapshot {
-  const bid = new Decimal(r.last_quote.bid)
-  const ask = new Decimal(r.last_quote.ask)
+  // A missing quote block means no market — zeroed bid/ask is what downstream
+  // tradeability checks already treat as unquoted, and it keeps one absent strike
+  // from discarding the whole chain.
+  const bid = new Decimal(r.last_quote?.bid ?? 0)
+  const ask = new Decimal(r.last_quote?.ask ?? 0)
   const mid = computeMid(bid, ask)
   const snap: OptionSnapshot = {
     bid: bid.toFixed(2),
     ask: ask.toFixed(2),
     mid: mid.toFixed(2),
-    lastTrade: new Decimal(r.last_trade.price).toFixed(2),
+    lastTrade: new Decimal(r.last_trade?.price ?? 0).toFixed(2),
     openInterest: null,
     volume: null,
-    timestamp: new Date(r.last_quote.last_updated / 1_000_000).toISOString()
+    // Massive timestamps are epoch nanoseconds; epoch 0 reads as "never quoted".
+    timestamp: new Date((r.last_quote?.last_updated ?? 0) / 1_000_000).toISOString()
   }
-  if (r.greeks !== null) {
+  if (r.greeks) {
     snap.greeks = {
       delta: new Decimal(r.greeks.delta).toFixed(4),
       gamma: new Decimal(r.greeks.gamma).toFixed(4),
@@ -109,7 +117,7 @@ function mapSnapResult(r: SnapResult): OptionSnapshot {
       vega: new Decimal(r.greeks.vega).toFixed(4)
     }
   }
-  if (r.implied_volatility !== null) {
+  if (r.implied_volatility != null) {
     snap.impliedVolatility = new Decimal(r.implied_volatility).toFixed(4)
   }
   return snap
@@ -123,7 +131,9 @@ function mapChainResult(r: ChainSnapResult): OptionChainQuote {
     openInterest: r.open_interest ?? null,
     volume: r.day?.volume ?? null,
     contractId: r.details.ticker.replace(/^O:/, ''),
-    strike: new Decimal(r.details.strike_price).toFixed(2),
+    // 4dp TEXT is the codebase-wide money representation (legs.strike, own_below_price),
+    // so chain strikes compare directly against persisted ones.
+    strike: new Decimal(r.details.strike_price).toFixed(4),
     expiration: r.details.expiration_date,
     contractType: r.details.contract_type
   }
@@ -261,7 +271,7 @@ export class MassiveMarketDataProvider implements MarketDataProvider {
 
     const snapshots: OptionChainQuote[] = []
     const firstPage = (await this.apiFetch(firstUrl)) as ChainResponse
-    snapshots.push(...firstPage.results.map(mapChainResult))
+    snapshots.push(...(firstPage.results ?? []).map(mapChainResult))
 
     if (filter.limit !== undefined) {
       return snapshots
@@ -270,7 +280,7 @@ export class MassiveMarketDataProvider implements MarketDataProvider {
     let nextUrl = firstPage.next_url
     while (nextUrl) {
       const page = (await this.apiFetch(nextUrl)) as ChainResponse
-      snapshots.push(...page.results.map(mapChainResult))
+      snapshots.push(...(page.results ?? []).map(mapChainResult))
       nextUrl = page.next_url
     }
 

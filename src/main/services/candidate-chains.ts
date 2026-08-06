@@ -30,6 +30,29 @@ type TickerOutcome = { result: TickerChainResult; failure: 'ticker' | 'provider'
 
 type PullOptions = { window?: DteWindow; currentDate?: Date }
 
+// Each ticker's chain is a fully-paginated walk, so an unbounded fan-out over a large
+// watchlist bursts hundreds of requests and earns a 429 from a healthy provider —
+// which classifies as provider-level and would surface as a fake outage.
+export const CHAIN_FETCH_CONCURRENCY = 4
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array<R>(items.length)
+  let cursor = 0
+  const worker = async (): Promise<void> => {
+    while (cursor < items.length) {
+      const index = cursor
+      cursor += 1
+      results[index] = await fn(items[index])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return results
+}
+
 async function pullTickerChain(
   provider: MarketDataProvider,
   ticker: string,
@@ -77,22 +100,26 @@ export async function pullWatchlistChains(
   const range = dteWindowToExpirationRange(currentDate, window)
   logger.debug({ tickers, range }, 'pull_watchlist_chains_request')
 
-  const outcomes = await Promise.all(
-    tickers.map((ticker) => pullTickerChain(provider, ticker, range))
+  const outcomes = await mapWithConcurrency(tickers, CHAIN_FETCH_CONCURRENCY, (ticker) =>
+    pullTickerChain(provider, ticker, range)
   )
 
-  const anyOk = outcomes.some((o) => o.result.status === 'ok')
-  const everyFailureIsProviderLevel = outcomes.every((o) => o.failure === 'provider')
-  const isOutage = tickers.length > 0 && !anyOk && everyFailureIsProviderLevel
+  // Any ticker the provider actually answered for — with strikes or a legitimately
+  // empty chain — proves the provider is up. Without that proof, a provider-level
+  // failure is an outage even if some other ticker failed for its own reason (a
+  // delisted 404), which must not mask the outage from the screener.
+  const providerAnswered = outcomes.some(
+    (o) => o.result.status === 'ok' || o.result.status === 'no_options_listed'
+  )
+  const anyProviderFailure = outcomes.some((o) => o.failure === 'provider')
+  const isOutage = !providerAnswered && anyProviderFailure
 
   const status: WatchlistChainsResult['status'] = isOutage ? 'provider_unavailable' : 'ok'
-  logger.debug(
-    {
-      status,
-      tickerCount: tickers.length,
-      okCount: outcomes.filter((o) => o.result.status === 'ok').length
-    },
-    'pull_watchlist_chains_result'
+  const okCount = outcomes.filter((o) => o.result.status === 'ok').length
+  const unavailableCount = outcomes.filter((o) => o.result.status === 'data_unavailable').length
+  logger.info(
+    { status, tickerCount: tickers.length, okCount, unavailableCount },
+    'Watchlist chain pull completed'
   )
 
   return { status, tickers: outcomes.map((o) => o.result) }

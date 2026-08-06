@@ -420,8 +420,16 @@ interface IpcOptionChainPayload {
   cursor?: string
 }
 
+// Chain entries carry the per-strike identity that the single-contract snapshot omits.
+interface IpcOptionChainQuote extends IpcOptionSnapshot {
+  contractId: string
+  strike: string
+  expiration: string
+  contractType: 'put' | 'call'
+}
+
 type IpcGetOptionChainResult = IpcResult<{
-  snapshots: IpcOptionSnapshot[]
+  snapshots: IpcOptionChainQuote[]
   nextCursor: string | null
 }>
 

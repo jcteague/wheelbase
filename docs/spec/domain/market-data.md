@@ -49,7 +49,7 @@ quote/option feed is now the **Massive** provider described below.)
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56,us-64 -->
 
 ## Provider interface
 
@@ -68,7 +68,7 @@ type MarketDataProvider = {
   // REST — request/response
   getStockQuotes(tickers: string[]): Promise<Map<string, StockQuote>>
   getOptionSnapshot(contractId: string): Promise<OptionSnapshot>
-  getOptionChainSnapshot(filter: OptionChainFilter): Promise<OptionSnapshot[]>
+  getOptionChainSnapshot(filter: OptionChainFilter): Promise<OptionChainQuote[]>
 
   // Streaming — Observables
   supportsStreaming(feed: MarketDataFeed): boolean
@@ -85,6 +85,9 @@ type MarketDataProvider = {
 (the `underlying` lives inside it, alongside optional `expirationFrom/To`,
 `type: 'put' | 'call'`, `strikeFrom/To`, `limit`, `cursor`) and follows
 Massive's `next_url` cursor pagination until exhausted (or `filter.limit`).
+It returns `OptionChainQuote[]` — a strict superset of `OptionSnapshot` (see
+[Option chain quotes](#option-chain-quotes) below) — while the single-contract
+`getOptionSnapshot` returns a plain `OptionSnapshot`.
 
 ### Adapter rules
 
@@ -195,8 +198,9 @@ tickers are simply absent from the returned map — never an error.
 
 The provider exposes two option reads: `getOptionSnapshot(contractId)` for a
 single OCC contract, and `getOptionChainSnapshot(filter)` for a full chain
-(see the provider type above). Both return the same `OptionSnapshot` shape,
-keyed in the renderer by OCC symbol:
+(see the provider type above). The single-contract read returns the
+`OptionSnapshot` shape below, keyed in the renderer by OCC symbol; chain
+results return the `OptionChainQuote` superset described in the next section:
 
 ```typescript
 {
@@ -204,8 +208,8 @@ keyed in the renderer by OCC symbol:
   ask: string // 2dp
   mid: string // (bid + ask) / 2, 2dp — computed by adapter
   lastTrade: string // 2dp
-  openInterest: number | null // null for Massive (not exposed on the snapshot)
-  volume: number | null // null for Massive (not exposed on the snapshot)
+  openInterest: number | null // null on the single-contract snapshot
+  volume: number | null // null on the single-contract snapshot
   greeks?: {
     delta: string // 4dp
     gamma: string // 4dp
@@ -226,6 +230,39 @@ contracts). The bulk `market-data:option-snapshots` IPC channel (and a
 service-level batch over `getOptionSnapshot`) is what the renderer's
 `useOptionSnapshots` hook polls; singular `market-data:option-snapshot` and
 `market-data:option-chain` channels exist alongside it.
+
+### Option chain quotes
+
+Chain results carry per-strike identity and real liquidity that the
+single-contract snapshot cannot supply, so they use a dedicated superset type
+(added by [US-64](../features/us-64-pull-option-chains-for-watchlist.md), the
+first consumer that needs to screen across strikes):
+
+```typescript
+type OptionChainQuote = OptionSnapshot & {
+  contractId: string // OCC symbol, `O:` prefix stripped
+  strike: string // 4dp decimal string
+  expiration: string // "YYYY-MM-DD"
+  contractType: 'put' | 'call'
+}
+```
+
+Identity fields are **required** rather than optional-everywhere, so screening
+consumers never null-check a field that is always present on a chain entry. For
+chain results `openInterest` and `volume` are populated from Massive's
+`open_interest` / `day.volume`; `strike` is 4 dp to match the codebase-wide TEXT
+money convention (`legs.strike`, `watchlist.own_below_price`). The money and
+Greeks mapping is shared with the single-contract path, so `mid` rounding lives
+in exactly one place.
+
+Every optional block in the vendor payload is guarded. A strike that has never
+traded (or is never quoted) omits `last_trade`, `last_quote`, or `greeks`
+entirely, and a zero-match chain response omits `results` altogether — these
+map to a zeroed quote and an empty chain respectively, never an error. One
+illiquid strike must not discard an entire underlying's chain.
+
+The renderer-facing `market-data:option-chain` channel widens to match
+(`IpcOptionChainQuote`); the singular snapshot channels are unaffected.
 
 ### Market clock, account, and activities (broker, not market-data)
 

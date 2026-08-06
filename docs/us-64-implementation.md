@@ -23,10 +23,12 @@ Per ticker, evaluated in its own `try/catch`:
 | throws `MarketDataError` (other codes) | `data_unavailable`         | warn      |
 | throws non-`MarketDataError`           | `data_unavailable`         | error     |
 
-Overall status is `provider_unavailable` **iff** the watchlist is non-empty, no ticker
-returned `ok`, and every failure was provider-level (`classifyChainFailure === 'provider'`).
-A single `not_found` (404) proves the provider is reachable, so it keeps the overall
-status `ok`. Zero-bid / one-sided strikes are dropped (no reliable mark).
+Overall status is `provider_unavailable` **iff** no ticker answered (none `ok`, none
+`no_options_listed`) **and** at least one failure was provider-level
+(`classifyChainFailure === 'provider'`). Any ticker the provider actually answered for
+proves it is reachable and keeps the overall status `ok`; a delisted ticker's 404 is a
+ticker-level failure and must not mask a real outage behind it. Zero-bid / one-sided
+strikes are dropped (no reliable mark).
 
 ## Key files changed
 
@@ -35,7 +37,7 @@ status `ok`. Zero-bid / one-sided strikes are dropped (no reliable mark).
 | `src/main/integrations/market-data-provider.ts` | Added `OptionChainQuote` (= `OptionSnapshot` + `contractId`/`strike`/`expiration`/`contractType`); `getOptionChainSnapshot` now returns `Promise<OptionChainQuote[]>`.       |
 | `src/main/integrations/massive-market-data.ts`  | Added `ChainSnapResult` + `mapChainResult` (reuses `mapSnapResult`/`computeMid`, adds identity + real OI/volume); chain path maps through it. `getOptionSnapshot` untouched. |
 | `src/main/integrations/fake-market-data.ts`     | `getOptionChainSnapshot` returns `OptionChainQuote[]`, filtering mock entries by underlying / type / expiration window.                                                      |
-| `src/main/core/candidate-chain.ts` (new)        | Pure helpers: `dteWindowToExpirationRange` (UTC-explicit), `isTradeableStrike`, `toCandidateStrikes`, `classifyChainFailure`, `DEFAULT_DTE_WINDOW`.                          |
+| `src/main/core/candidate-chain.ts` (new)        | Pure helpers: `dteWindowToExpirationRange` (local-day basis), `isTradeableStrike`, `toCandidateStrikes`, `classifyChainFailure`, `DEFAULT_DTE_WINDOW`.                       |
 | `src/main/services/candidate-chains.ts` (new)   | `pullWatchlistChains` orchestration + `TickerChainResult` / `WatchlistChainsResult`.                                                                                         |
 
 Tests: `massive-market-data.test.ts`, `fake-market-data.test.ts`,
@@ -50,7 +52,7 @@ flowchart TD
   B --> C{tickers empty?}
   C -->|yes| Z["{ status: 'ok', tickers: [] }"]
   C -->|no| D[dteWindowToExpirationRange<br/>currentDate + window → from/to]
-  D --> E[Promise.all: pullTickerChain per ticker<br/>each in its own try/catch]
+  D --> E[bounded worker pool: pullTickerChain per ticker<br/>each in its own try/catch]
 
   subgraph perTicker [pullTickerChain]
     E1[provider.getOptionChainSnapshot<br/>underlying, from, to, type: put]
@@ -60,8 +62,8 @@ flowchart TD
     E1 -->|throws other| E5[log error · failure: provider<br/>status: data_unavailable]
   end
 
-  E --> F[anyOk? everyFailureProviderLevel?]
-  F --> G{tickers>0 AND no ok<br/>AND all provider-level?}
+  E --> F[providerAnswered? anyProviderFailure?]
+  F --> G{no ticker answered<br/>AND any provider-level failure?}
   G -->|yes| H["status: 'provider_unavailable'"]
   G -->|no| I["status: 'ok'"]
   H --> J[return status + per-ticker results]
@@ -70,10 +72,19 @@ flowchart TD
 
 ## Notes / decisions
 
-- **UTC date basis.** `dteWindowToExpirationRange` formats with an explicit
-  `toUtcYmd` helper rather than `date-fns` local `format`, so the derived expiration
-  range is deterministic regardless of the runner timezone and matches the
-  calendar-date semantics of Massive's `expiration_date` strings.
+- **Single local-timezone basis.** `dteWindowToExpirationRange` does both the day
+  arithmetic (`addDays`) and the `yyyy-MM-dd` formatting (`format`) in the local
+  timezone — the same basis as the shared helpers in `src/main/dates.ts`. DTE counts
+  from the trader's own calendar day; mixing bases (local `addDays`, UTC formatting)
+  shifts the whole window by a day whenever the run falls outside UTC's calendar day.
+- **Bounded fan-out.** Each ticker's chain is a fully-paginated walk, so the pull runs
+  through a worker pool capped at `CHAIN_FETCH_CONCURRENCY`. An unbounded burst over a
+  large watchlist earns a 429, which classifies as provider-level and would surface as
+  a fake outage on every retry.
+- **Optional provider payload blocks are tolerated.** Never-traded or thinly-quoted
+  strikes omit `last_trade` / `last_quote` / `greeks`, and a zero-match response omits
+  `results` entirely; these degrade to a zeroed quote and an empty chain rather than
+  discarding the whole underlying's chain.
 - **Adapter reuse.** `mapChainResult` spreads `mapSnapResult` so all money/greeks
   rounding logic (`computeMid`, HALF_UP 2dp) lives in one place; the chain method only
   layers on identity + OI/volume. The single-contract `getOptionSnapshot` is unchanged.

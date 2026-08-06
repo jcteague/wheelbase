@@ -24,7 +24,7 @@ beforeEach(() => {
 
 // The screener refreshes "today" = 2026-07-23; default 30–45 DTE window resolves to
 // expirations in [2026-08-22, 2026-09-06]. 2026-09-05 sits inside that window.
-const CURRENT_DATE = new Date('2026-07-23')
+const CURRENT_DATE = new Date(2026, 6, 23)
 
 function seedWatchlist(db: Database.Database, tickers: string[]): void {
   for (const ticker of tickers) {

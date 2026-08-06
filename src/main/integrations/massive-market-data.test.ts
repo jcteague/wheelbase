@@ -359,7 +359,7 @@ describe('MassiveMarketDataProvider', () => {
       }
     }
 
-    it('maps each result to an OptionChainQuote with contractId (O: stripped), 2dp strike, expiration, contractType', async () => {
+    it('maps each result to an OptionChainQuote with contractId (O: stripped), 4dp strike, expiration, contractType', async () => {
       mockFetch.mockResolvedValue(
         fetchOk(
           chainBody([
@@ -379,7 +379,8 @@ describe('MassiveMarketDataProvider', () => {
       expect(results).toHaveLength(1)
       const quote = results[0]
       expect(quote.contractId).toBe('AAPL260918P00190000')
-      expect(quote.strike).toBe('190.00')
+      // 4dp TEXT is the codebase-wide money convention (legs.strike, own_below_price)
+      expect(quote.strike).toBe('190.0000')
       expect(quote.expiration).toBe('2026-09-18')
       expect(quote.contractType).toBe('put')
     })
@@ -465,6 +466,52 @@ describe('MassiveMarketDataProvider', () => {
       const results = await provider.getOptionChainSnapshot({ underlying: 'AAPL' })
 
       expect(results[0].greeks).toBeUndefined()
+    })
+
+    // Never-traded / thinly-quoted strikes come back without last_trade, last_quote or
+    // greeks. One such strike must not abort the whole underlying's chain.
+    it('keeps the chain intact when a strike omits last_trade, last_quote and greeks', async () => {
+      mockFetch.mockResolvedValue(
+        fetchOk(
+          chainBody([
+            {
+              details: {
+                ticker: 'O:AAPL260918P00050000',
+                strike_price: 50,
+                expiration_date: '2026-09-18',
+                contract_type: 'put'
+              },
+              open_interest: 0,
+              day: null
+            },
+            makeChainResult({ ticker: 'O:AAPL260918P00190000', strike: 190 })
+          ])
+        )
+      )
+
+      const provider = createProvider()
+      const results = await provider.getOptionChainSnapshot({ underlying: 'AAPL' })
+
+      expect(results).toHaveLength(2)
+      expect(results[0]).toMatchObject({
+        contractId: 'AAPL260918P00050000',
+        bid: '0.00',
+        ask: '0.00',
+        mid: '0.00',
+        lastTrade: '0.00'
+      })
+      expect(results[0].greeks).toBeUndefined()
+      expect(results[0].impliedVolatility).toBeUndefined()
+      expect(results[1].contractId).toBe('AAPL260918P00190000')
+    })
+
+    it('returns an empty chain when the provider answers with no results array', async () => {
+      mockFetch.mockResolvedValue(fetchOk({ status: 'OK', count: 0, next_url: null }))
+
+      const provider = createProvider()
+      const results = await provider.getOptionChainSnapshot({ underlying: 'AAPL' })
+
+      expect(results).toEqual([])
     })
 
     it('maps every page result through mapChainResult and preserves next_url pagination', async () => {

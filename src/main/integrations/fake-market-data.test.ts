@@ -164,4 +164,41 @@ describe('FakeMarketDataProvider.getOptionChainSnapshot (US-64)', () => {
 
     expect(result).toEqual([])
   })
+
+  // Pre-US-64 fixtures (and every existing e2e spec) seed this env var with bare
+  // OptionSnapshot values keyed by OCC symbol. The chain filter must derive the
+  // identity fields from the key rather than assume the fixture carries them.
+  it('derives identity from the OCC key for bare OptionSnapshot fixtures', async () => {
+    process.env.WHEELBASE_MOCK_OPTION_SNAPSHOTS = JSON.stringify({
+      AAPL260620P00180000: SNAPSHOT,
+      AAPL260620C00185000: SNAPSHOT,
+      MSFT260620P00400000: SNAPSHOT
+    })
+    const provider = new FakeMarketDataProvider()
+
+    const result = await provider.getOptionChainSnapshot({
+      underlying: 'AAPL',
+      type: 'put',
+      expirationFrom: '2026-06-01',
+      expirationTo: '2026-07-31'
+    })
+
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({
+      contractId: 'AAPL260620P00180000',
+      strike: '180.0000',
+      expiration: '2026-06-20',
+      contractType: 'put',
+      bid: SNAPSHOT.bid
+    })
+  })
+
+  it('skips fixture keys that are not parseable OCC symbols', async () => {
+    process.env.WHEELBASE_MOCK_OPTION_SNAPSHOTS = JSON.stringify({ 'not-an-occ-symbol': SNAPSHOT })
+    const provider = new FakeMarketDataProvider()
+
+    const result = await provider.getOptionChainSnapshot({ underlying: 'AAPL', type: 'put' })
+
+    expect(result).toEqual([])
+  })
 })

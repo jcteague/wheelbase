@@ -35,13 +35,26 @@ describe('DEFAULT_DTE_WINDOW', () => {
 })
 
 describe('dteWindowToExpirationRange', () => {
-  it('adds min/max days to currentDate and formats yyyy-MM-dd (UTC basis)', () => {
-    const range = dteWindowToExpirationRange(new Date('2026-07-23'), { min: 30, max: 45 })
+  it('adds min/max days to currentDate and formats yyyy-MM-dd', () => {
+    const range = dteWindowToExpirationRange(new Date(2026, 6, 23), { min: 30, max: 45 })
     expect(range).toEqual({ from: '2026-08-22', to: '2026-09-06' })
   })
 
-  it('is deterministic regardless of runner timezone (date-only input treated as UTC)', () => {
-    const range = dteWindowToExpirationRange(new Date('2026-01-01'), { min: 30, max: 45 })
+  // The window anchors on the trader's own calendar day. A late-evening instant is
+  // already tomorrow in UTC west of Greenwich; an early-morning instant is still
+  // yesterday in UTC east of it. Both must resolve to the same local-day window.
+  it("anchors on the trader's local day for a late-evening instant", () => {
+    const range = dteWindowToExpirationRange(new Date(2026, 6, 23, 23, 30), { min: 30, max: 45 })
+    expect(range).toEqual({ from: '2026-08-22', to: '2026-09-06' })
+  })
+
+  it("anchors on the trader's local day for an early-morning instant", () => {
+    const range = dteWindowToExpirationRange(new Date(2026, 6, 23, 0, 30), { min: 30, max: 45 })
+    expect(range).toEqual({ from: '2026-08-22', to: '2026-09-06' })
+  })
+
+  it('crosses month and year boundaries', () => {
+    const range = dteWindowToExpirationRange(new Date(2026, 0, 1), { min: 30, max: 45 })
     expect(range).toEqual({ from: '2026-01-31', to: '2026-02-15' })
   })
 })
