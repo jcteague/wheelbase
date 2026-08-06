@@ -217,6 +217,19 @@ describe('MassiveMarketDataProvider', () => {
       expect(snap.greeks).toBeUndefined()
       expect(snap.impliedVolatility).toBeUndefined()
     })
+
+    // Guard: US-64 widens getOptionChainSnapshot, NOT this single-contract method.
+    it('does not carry chain identity fields (contractId/strike/expiration/contractType)', async () => {
+      mockFetch.mockResolvedValue(fetchOk(optionSnapshotBody({ bid: 4.15, ask: 4.35 })))
+
+      const provider = createProvider()
+      const snap = await provider.getOptionSnapshot(contract)
+
+      expect(snap).not.toHaveProperty('contractId')
+      expect(snap).not.toHaveProperty('strike')
+      expect(snap).not.toHaveProperty('expiration')
+      expect(snap).not.toHaveProperty('contractType')
+    })
   })
 
   // === getOptionChainSnapshot ===
@@ -228,7 +241,14 @@ describe('MassiveMarketDataProvider', () => {
 
     function makeSnapResult(symbol: string): unknown {
       return {
-        symbol,
+        details: {
+          ticker: `O:${symbol}`,
+          strike_price: 180,
+          expiration_date: '2026-05-16',
+          contract_type: 'put'
+        },
+        open_interest: 100,
+        day: { volume: 50 },
         last_quote: { bid: 2.0, ask: 2.2, last_updated: 1748527200000000000 },
         last_trade: { price: 2.1, sip_timestamp: 1748527140000000000, size: 5 },
         greeks: null,
@@ -298,6 +318,176 @@ describe('MassiveMarketDataProvider', () => {
       // This is verified via the result length (only 1 page fetched)
       expect(mockFetch).toHaveBeenCalledTimes(1)
       expect(results).toHaveLength(1)
+    })
+  })
+
+  // === getOptionChainSnapshot — US-64 per-strike enrichment ===
+
+  describe('getOptionChainSnapshot — per-strike identity + OI/volume (US-64)', () => {
+    function chainBody(results: unknown[], nextUrl: string | null = null): unknown {
+      return { results, next_url: nextUrl }
+    }
+
+    function makeChainResult(opts: {
+      ticker: string
+      strike: number
+      expiration?: string
+      contractType?: 'put' | 'call'
+      bid?: number
+      ask?: number
+      openInterest?: number | null
+      volume?: number | null
+      greeks?: { delta: number; gamma: number; theta: number; vega: number } | null
+    }): unknown {
+      return {
+        details: {
+          ticker: opts.ticker,
+          strike_price: opts.strike,
+          expiration_date: opts.expiration ?? '2026-09-18',
+          contract_type: opts.contractType ?? 'put'
+        },
+        open_interest: opts.openInterest === undefined ? 1500 : opts.openInterest,
+        day: { volume: opts.volume === undefined ? 320 : opts.volume },
+        last_quote: {
+          bid: opts.bid ?? 2.0,
+          ask: opts.ask ?? 2.2,
+          last_updated: 1748527200000000000
+        },
+        last_trade: { price: 2.1, sip_timestamp: 1748527140000000000, size: 5 },
+        greeks: opts.greeks ?? null,
+        implied_volatility: null
+      }
+    }
+
+    it('maps each result to an OptionChainQuote with contractId (O: stripped), 2dp strike, expiration, contractType', async () => {
+      mockFetch.mockResolvedValue(
+        fetchOk(
+          chainBody([
+            makeChainResult({
+              ticker: 'O:AAPL260918P00190000',
+              strike: 190,
+              expiration: '2026-09-18',
+              contractType: 'put'
+            })
+          ])
+        )
+      )
+
+      const provider = createProvider()
+      const results = await provider.getOptionChainSnapshot({ underlying: 'AAPL' })
+
+      expect(results).toHaveLength(1)
+      const quote = results[0]
+      expect(quote.contractId).toBe('AAPL260918P00190000')
+      expect(quote.strike).toBe('190.00')
+      expect(quote.expiration).toBe('2026-09-18')
+      expect(quote.contractType).toBe('put')
+    })
+
+    it('populates openInterest and volume from open_interest / day.volume (source values preserved)', async () => {
+      mockFetch.mockResolvedValue(
+        fetchOk(
+          chainBody([
+            makeChainResult({
+              ticker: 'O:AAPL260918P00190000',
+              strike: 190,
+              openInterest: 4211,
+              volume: 875
+            })
+          ])
+        )
+      )
+
+      const provider = createProvider()
+      const results = await provider.getOptionChainSnapshot({ underlying: 'AAPL' })
+
+      expect(results[0].openInterest).toBe(4211)
+      expect(results[0].volume).toBe(875)
+    })
+
+    it('falls back to null openInterest/volume when Massive omits open_interest / day', async () => {
+      mockFetch.mockResolvedValue(
+        fetchOk(
+          chainBody([
+            {
+              details: {
+                ticker: 'O:AAPL260918P00190000',
+                strike_price: 190,
+                expiration_date: '2026-09-18',
+                contract_type: 'put'
+              },
+              open_interest: null,
+              day: null,
+              last_quote: { bid: 2.0, ask: 2.2, last_updated: 1748527200000000000 },
+              last_trade: { price: 2.1, sip_timestamp: 1748527140000000000, size: 5 },
+              greeks: null,
+              implied_volatility: null
+            }
+          ])
+        )
+      )
+
+      const provider = createProvider()
+      const results = await provider.getOptionChainSnapshot({ underlying: 'AAPL' })
+
+      expect(results[0].openInterest).toBeNull()
+      expect(results[0].volume).toBeNull()
+    })
+
+    it('reuses money logic: mid is (bid + ask) / 2 HALF_UP 2dp, bid/ask are 2dp strings', async () => {
+      mockFetch.mockResolvedValue(
+        fetchOk(
+          chainBody([
+            makeChainResult({ ticker: 'O:AAPL260918P00190000', strike: 190, bid: 2.11, ask: 2.16 })
+          ])
+        )
+      )
+
+      const provider = createProvider()
+      const results = await provider.getOptionChainSnapshot({ underlying: 'AAPL' })
+
+      expect(results[0].bid).toBe('2.11')
+      expect(results[0].ask).toBe('2.16')
+      // (2.11 + 2.16) / 2 = 2.135 -> HALF_UP 2dp -> 2.14
+      expect(results[0].mid).toBe('2.14')
+    })
+
+    it('omits greeks/delta when the chain entry has no greeks (no fabricated zeros)', async () => {
+      mockFetch.mockResolvedValue(
+        fetchOk(
+          chainBody([
+            makeChainResult({ ticker: 'O:AAPL260918P00190000', strike: 190, greeks: null })
+          ])
+        )
+      )
+
+      const provider = createProvider()
+      const results = await provider.getOptionChainSnapshot({ underlying: 'AAPL' })
+
+      expect(results[0].greeks).toBeUndefined()
+    })
+
+    it('maps every page result through mapChainResult and preserves next_url pagination', async () => {
+      const page1 = chainBody(
+        [makeChainResult({ ticker: 'O:AAPL260918P00190000', strike: 190 })],
+        'https://api.example.com/v3/snapshot/options/AAPL?cursor=abc123'
+      )
+      const page2 = chainBody(
+        [makeChainResult({ ticker: 'O:AAPL260918P00185000', strike: 185 })],
+        null
+      )
+      mockFetch.mockResolvedValueOnce(fetchOk(page1)).mockResolvedValueOnce(fetchOk(page2))
+
+      const provider = createProvider()
+      const results = await provider.getOptionChainSnapshot({ underlying: 'AAPL' })
+
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+      expect(results).toHaveLength(2)
+      expect(results.map((r) => r.contractId)).toEqual([
+        'AAPL260918P00190000',
+        'AAPL260918P00185000'
+      ])
+      expect(results.every((r) => typeof r.strike === 'string')).toBe(true)
     })
   })
 

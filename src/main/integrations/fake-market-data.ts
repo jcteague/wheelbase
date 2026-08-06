@@ -6,6 +6,7 @@ import {
   type MarketDataFeed,
   type MarketDataProvider,
   type OptionChainFilter,
+  type OptionChainQuote,
   type OptionSnapshot,
   type StockQuote,
   type StreamEvent,
@@ -54,12 +55,19 @@ export class FakeMarketDataProvider implements MarketDataProvider {
     return snapshot
   }
 
-  async getOptionChainSnapshot(filter: OptionChainFilter): Promise<OptionSnapshot[]> {
+  async getOptionChainSnapshot(filter: OptionChainFilter): Promise<OptionChainQuote[]> {
     this.maybeThrow()
     const raw = process.env.WHEELBASE_MOCK_OPTION_SNAPSHOTS
     if (!raw) return []
-    const all = JSON.parse(raw) as Record<string, OptionSnapshot>
-    return Object.values(all).filter(() => !!filter.underlying)
+    const all = JSON.parse(raw) as Record<string, OptionChainQuote>
+    return Object.values(all).filter((quote) => {
+      const underlying = quote.contractId.match(/^[A-Z]+/)?.[0]
+      if (underlying !== filter.underlying) return false
+      if (filter.type && quote.contractType !== filter.type) return false
+      if (filter.expirationFrom && quote.expiration < filter.expirationFrom) return false
+      if (filter.expirationTo && quote.expiration > filter.expirationTo) return false
+      return true
+    })
   }
 
   async connect(): Promise<void> {

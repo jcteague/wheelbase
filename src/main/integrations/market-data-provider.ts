@@ -50,6 +50,16 @@ export type OptionSnapshot = {
   timestamp: string
 }
 
+// Per-strike chain entry: an OptionSnapshot enriched with the identity fields the
+// screener needs (strike, expiration, contract identity). Only chain results carry
+// these — the single-contract getOptionSnapshot stays a plain OptionSnapshot.
+export type OptionChainQuote = OptionSnapshot & {
+  contractId: string
+  strike: string
+  expiration: string
+  contractType: 'put' | 'call'
+}
+
 export type OptionChainFilter = {
   underlying: string
   expirationFrom?: string
@@ -84,7 +94,7 @@ export type StreamError = {
 export type MarketDataProvider = {
   getStockQuotes(tickers: string[]): Promise<Map<string, StockQuote>>
   getOptionSnapshot(contractId: string): Promise<OptionSnapshot>
-  getOptionChainSnapshot(filter: OptionChainFilter): Promise<OptionSnapshot[]>
+  getOptionChainSnapshot(filter: OptionChainFilter): Promise<OptionChainQuote[]>
   supportsStreaming(feed: MarketDataFeed): boolean
   connect(feeds?: MarketDataFeed[]): Promise<void>
   disconnect(): Promise<void>

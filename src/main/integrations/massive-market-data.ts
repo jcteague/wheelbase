@@ -6,6 +6,7 @@ import {
   type MarketDataFeed,
   type MarketDataProvider,
   type OptionChainFilter,
+  type OptionChainQuote,
   type OptionSnapshot,
   type StockQuote,
   type StreamEvent
@@ -43,8 +44,21 @@ type SnapResult = {
   implied_volatility: number | null
 }
 
+// Chain snapshot results additionally carry per-strike identity and liquidity that
+// the single-contract snapshot omits.
+type ChainSnapResult = SnapResult & {
+  details: {
+    ticker: string
+    strike_price: number
+    expiration_date: string
+    contract_type: 'put' | 'call'
+  }
+  open_interest: number | null
+  day: { volume: number | null } | null
+}
+
 type ChainResponse = {
-  results: SnapResult[]
+  results: ChainSnapResult[]
   next_url: string | null
 }
 
@@ -99,6 +113,20 @@ function mapSnapResult(r: SnapResult): OptionSnapshot {
     snap.impliedVolatility = new Decimal(r.implied_volatility).toFixed(4)
   }
   return snap
+}
+
+// Reuses mapSnapResult's money/greeks logic, then layers on the chain-only identity
+// and real open-interest/volume that the single-contract snapshot leaves null.
+function mapChainResult(r: ChainSnapResult): OptionChainQuote {
+  return {
+    ...mapSnapResult(r),
+    openInterest: r.open_interest ?? null,
+    volume: r.day?.volume ?? null,
+    contractId: r.details.ticker.replace(/^O:/, ''),
+    strike: new Decimal(r.details.strike_price).toFixed(2),
+    expiration: r.details.expiration_date,
+    contractType: r.details.contract_type
+  }
 }
 
 export class MassiveMarketDataProvider implements MarketDataProvider {
@@ -217,7 +245,7 @@ export class MassiveMarketDataProvider implements MarketDataProvider {
     return mapSnapResult(data.results)
   }
 
-  async getOptionChainSnapshot(filter: OptionChainFilter): Promise<OptionSnapshot[]> {
+  async getOptionChainSnapshot(filter: OptionChainFilter): Promise<OptionChainQuote[]> {
     this.requireApiKey()
     const params = new URLSearchParams()
     if (filter.expirationFrom) params.set('expiration_date.gte', filter.expirationFrom)
@@ -231,9 +259,9 @@ export class MassiveMarketDataProvider implements MarketDataProvider {
     const queryString = params.toString()
     const firstUrl = `${BASE_URL}/v3/snapshot/options/${filter.underlying}${queryString ? `?${queryString}` : ''}`
 
-    const snapshots: OptionSnapshot[] = []
+    const snapshots: OptionChainQuote[] = []
     const firstPage = (await this.apiFetch(firstUrl)) as ChainResponse
-    snapshots.push(...firstPage.results.map(mapSnapResult))
+    snapshots.push(...firstPage.results.map(mapChainResult))
 
     if (filter.limit !== undefined) {
       return snapshots
@@ -242,7 +270,7 @@ export class MassiveMarketDataProvider implements MarketDataProvider {
     let nextUrl = firstPage.next_url
     while (nextUrl) {
       const page = (await this.apiFetch(nextUrl)) as ChainResponse
-      snapshots.push(...page.results.map(mapSnapResult))
+      snapshots.push(...page.results.map(mapChainResult))
       nextUrl = page.next_url
     }
 
