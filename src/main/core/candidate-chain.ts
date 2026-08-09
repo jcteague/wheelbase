@@ -38,10 +38,36 @@ export function dteWindowToExpirationRange(
   }
 }
 
-// A strike is tradeable only with a two-sided quote — a zero or missing bid/ask
-// leaves no reliable mark to screen against.
+/** The quote string as a finite Decimal, or null when it does not parse to one —
+ *  Decimal accepts 'NaN'/'Infinity' without throwing, so finiteness is checked too. */
+function toFiniteDecimal(value: string): Decimal | null {
+  try {
+    const parsed = new Decimal(value)
+    return parsed.isFinite() ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+// A strike is tradeable only with a two-sided quote — a zero, missing, or malformed
+// bid/ask leaves no reliable mark to screen against.
 export function isTradeableStrike(bid: string, ask: string): boolean {
-  return new Decimal(bid).gt(0) && new Decimal(ask).gt(0)
+  const parsedBid = toFiniteDecimal(bid)
+  const parsedAsk = toFiniteDecimal(ask)
+  return parsedBid !== null && parsedAsk !== null && parsedBid.gt(0) && parsedAsk.gt(0)
+}
+
+/** Whether every numeric field the screening engine does Decimal math on parses to a
+ *  finite number. The engine's helpers throw on malformed input, so callers screen
+ *  strikes through this first rather than relying on a catch that would cost the
+ *  ticker its other strikes. */
+export function isWellFormedStrike(strike: CandidateStrike): boolean {
+  return (
+    [strike.bid, strike.ask, strike.mark, strike.strike].every(
+      (value) => toFiniteDecimal(value) !== null
+    ) &&
+    (strike.delta === null || toFiniteDecimal(strike.delta) !== null)
+  )
 }
 
 export function toCandidateStrikes(quotes: OptionChainQuote[]): CandidateStrike[] {

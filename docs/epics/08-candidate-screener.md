@@ -40,8 +40,12 @@ A trader can maintain a watchlist of tickers they're evaluating, screen them aga
 - [ ] US-69: Edit a watchlist entry (thesis + entry conditions in the shared form)
 - [ ] US-70: Warn when a candidate has earnings within the DTE window
 - [ ] US-96: View the watchlist with live prices, IV-rank, earnings, and a Signal verdict
+- [ ] US-97: Collect IVR snapshots for watchlist underlyings (not just held positions)
+- [ ] US-98: Age an IV-rank reading so a stale one can't pass as current
 
 > The watchlist stories are organized by action on an **entry** (ticker + thesis + conditions): create/remove (US-63), edit (US-69), view with live data + Signal (US-96); promote happens downstream from a screener result (US-68). US-96 is numbered out of epic sequence (71–95 were claimed by Epics 09–12); it was split out after the shared watchlist mockup outgrew US-63's scope.
+
+> US-97 and US-98 are the two halves of making IV rank trustworthy on the bench, and both gate US-96. **US-97** closes a collection gap: US-44 collects IVR for open positions only (an explicit non-goal at the time), but US-65 and US-96 both read IVR for names the trader doesn't hold. **US-98** closes the read-side gap: nothing currently checks how old a reading is, so a snapshot from March renders identically to one from last night — and a stale-rich reading is the dangerous direction, because it sells premium that isn't there. US-65 already widened `ivRank` to carry `observedAt` so US-98 has something to read. US-98's tier boundaries need validation against real screening habits before it's built.
 
 ## Dependencies
 

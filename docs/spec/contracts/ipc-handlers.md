@@ -1678,4 +1678,65 @@ postEarningsOnly?, coreHolding? }` (parsed by `WatchlistAddPayloadSchema`; ticke
 
 <!-- /generated -->
 
+<!-- generated:from us-65 -->
+
+## `screener:*` namespace
+
+The candidate-screener read surface, registered by
+`registerScreenerIpc({ db, getProvider })` in `src/main/ipc/screener.ts` and wired from
+`src/main/index.ts` with the same `getProvider` accessor `registerMarketDataHandlers`
+receives. Introduced by
+[us-65 — Score wheel candidates](../features/us-65-score-wheel-candidates.md).
+
+### `screener:results`
+
+- **Purpose:** screen every watchlist ticker's pulled put chain against the screening
+  criteria and return the ranked survivors (one strike per ticker) plus every
+  non-ranking ticker with its exclusion reason. In an `ok` screen every watchlist ticker
+  appears in exactly one of `ranked` / `excluded`.
+- **Request:** none. The channel takes no payload and therefore has **no Zod request
+  schema** — the handler is a single `screenWatchlistCandidates(getProvider, db)` call
+  wrapped in `handleIpcCall`. The provider **thunk** is passed through and resolved
+  inside the service, so a never-configured provider (no API key) surfaces as
+  `status: 'provider_unavailable'` rather than the generic error row. Criteria come from
+  `DEFAULT_SCREENING_CRITERIA` until US-67 persists overrides (the service already
+  accepts a `criteria` option for that seam).
+- **Response (success):** `{ ok: true, status, ranked, excluded, quoteTimestamp }` where:
+  - `status` is `'ok' | 'provider_unavailable'`
+  - `ranked: ScoredCandidate[]` — rank order (`yieldPerDelta` desc, ties by ticker asc);
+    `[]` means nothing survived the filters
+  - `excluded: ScreenerExclusion[]` — one row per non-ranking ticker, watchlist order,
+    each `{ ticker, code, reason }`
+  - `quoteTimestamp: string | null` — the newest ranked strike's ISO quote time, for the
+    stale badge; `null` when `ranked` is empty
+- **`ScoredCandidate` fields:** `ticker`, `contractId`, `strike` (4dp), `expiration`,
+  `dte`, `bid` / `ask` / `mark` (2dp), `spreadAbsolute` / `spreadPercent` (2dp), `delta`
+  (4dp, **absolute**), `openInterest`, `volume`, `ivRank` (`{ value, observedAt }` or
+  `null` → the renderer shows "n/a"), `capitalSecured` (2dp), `periodYield` /
+  `annualizedYield` / `yieldPerDelta` (4dp fractions), `earningsFlagged` (boolean —
+  `true` only in `earningsHandling: 'flag'` mode when an earnings print lands inside the
+  holding window; latent until US-70 supplies earnings dates), `timestamp`.
+- **`ScreenerExclusion.code`:** the seven engine codes — `price_ceiling`,
+  `earnings_in_window`, `dte_window`, `delta_unavailable`, `delta_band`,
+  `open_interest`, `spread` — plus two chain-level codes, `no_options_listed` and
+  `data_unavailable`. `reason` is a rendered human string that the renderer shows
+  **verbatim** (e.g. `spread 22.23% exceeds 10%` — percents at up to 2dp, rounded up —
+  or `no puts quoted in the 30–45 DTE window`, built from the criteria).
+- **Outage vs empty:** `status: 'provider_unavailable'` always comes with `ranked: []`,
+  `excluded: []`, and `quoteTimestamp: null` — the market-data-unavailable state US-66
+  renders distinctly from an empty-but-successful screen (`status: 'ok'`, `ranked: []`).
+  It covers both a mid-flight provider outage and a never-configured provider.
+- **Error:** only the standard envelope row — `__root__` / `internal_error`. There is no
+  request payload to validate, and every expected failure mode is modelled **inside** the
+  success payload rather than thrown: a provider outage or unconfigured provider becomes
+  `status: 'provider_unavailable'`, per-ticker provider failures become
+  `data_unavailable` exclusions, and an IVR or per-ticker quote-fetch failure degrades to
+  missing soft data. `handleIpcCall` catches anything genuinely unexpected (e.g. a SQLite
+  failure) into that row.
+- **Source:** `src/main/ipc/screener.ts`, `src/main/services/screener.ts`
+  (`screenWatchlistCandidates`), `src/main/core/screener.ts` (`screenTicker`,
+  `rankCandidates`), `src/preload/index.ts`
+
+<!-- /generated -->
+
 <!-- Hand-written sections below this line are preserved across regeneration. -->

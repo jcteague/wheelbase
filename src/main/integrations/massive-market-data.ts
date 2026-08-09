@@ -12,11 +12,16 @@ import {
   type StreamEvent
 } from './market-data-provider'
 import { isNetworkError } from './integration-errors'
+import { mapWithConcurrency } from '../concurrency'
 import { logger } from '../logger'
 
 const BASE_URL = 'https://api.massive.com'
 const WS_URL = 'wss://delayed.massive.com/stocks'
 const MAX_RETRIES = 2
+
+// One snapshot request per ticker — an unbounded burst over a long watchlist earns
+// a 429 from a healthy provider, the same hazard the chain pull caps against.
+const STOCK_SNAPSHOT_CONCURRENCY = 4
 
 export type MassiveMarketDataConfig = { apiKey: string }
 
@@ -222,27 +227,25 @@ export class MassiveMarketDataProvider implements MarketDataProvider {
 
   async getStockQuotes(tickers: string[]): Promise<Map<string, StockQuote>> {
     this.requireApiKey()
-    const pairs = await Promise.all(
-      tickers.map(async (ticker) => {
-        const data = (await this.apiFetch(
-          `${BASE_URL}/v2/snapshot/locale/us/markets/stocks/tickers/${ticker}`
-        )) as StockSnapshotResult
-        const { day, min, prevDay, todaysChange, todaysChangePerc } = data.ticker
-        // Massive provides aggregate bars — use last-minute close as price (no live bid/ask)
-        const price = new Decimal(min.c)
-        const quote: StockQuote = {
-          price: price.toFixed(2),
-          bid: price.toFixed(2),
-          ask: price.toFixed(2),
-          change: new Decimal(todaysChange).toFixed(2),
-          changePercent: new Decimal(todaysChangePerc).toFixed(4),
-          prevClose: new Decimal(prevDay.c).toFixed(2),
-          volume: day.v,
-          timestamp: new Date(min.t).toISOString()
-        }
-        return [ticker, quote] as [string, StockQuote]
-      })
-    )
+    const pairs = await mapWithConcurrency(tickers, STOCK_SNAPSHOT_CONCURRENCY, async (ticker) => {
+      const data = (await this.apiFetch(
+        `${BASE_URL}/v2/snapshot/locale/us/markets/stocks/tickers/${ticker}`
+      )) as StockSnapshotResult
+      const { day, min, prevDay, todaysChange, todaysChangePerc } = data.ticker
+      // Massive provides aggregate bars — use last-minute close as price (no live bid/ask)
+      const price = new Decimal(min.c)
+      const quote: StockQuote = {
+        price: price.toFixed(2),
+        bid: price.toFixed(2),
+        ask: price.toFixed(2),
+        change: new Decimal(todaysChange).toFixed(2),
+        changePercent: new Decimal(todaysChangePerc).toFixed(4),
+        prevClose: new Decimal(prevDay.c).toFixed(2),
+        volume: day.v,
+        timestamp: new Date(min.t).toISOString()
+      }
+      return [ticker, quote] as [string, StockQuote]
+    })
     return new Map(pairs)
   }
 

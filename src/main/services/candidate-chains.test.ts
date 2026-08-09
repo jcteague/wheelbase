@@ -1,6 +1,5 @@
 // [US-64] candidate-chains service — pullWatchlistChains orchestration + failure isolation
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import Database from 'better-sqlite3'
 import {
   MarketDataError,
   type OptionChainFilter,
@@ -8,8 +7,7 @@ import {
   type MarketDataProvider
 } from '../integrations/market-data-provider'
 import { logger } from '../logger'
-import { makeTestDb } from '../test-utils'
-import { addWatchlistEntry } from './watchlist'
+import { makeTestDb, seedWatchlist } from '../test-utils'
 import {
   CHAIN_FETCH_CONCURRENCY,
   pullWatchlistChains,
@@ -23,12 +21,6 @@ vi.mock('../logger', () => ({
 beforeEach(() => {
   vi.clearAllMocks()
 })
-
-function seedWatchlist(db: Database.Database, tickers: string[]): void {
-  for (const ticker of tickers) {
-    addWatchlistEntry(db, { ticker, postEarningsOnly: false, coreHolding: false })
-  }
-}
 
 function putQuote(overrides: Partial<OptionChainQuote> = {}): OptionChainQuote {
   return {
@@ -188,6 +180,21 @@ describe('pullWatchlistChains', () => {
     const db = makeTestDb()
     seedWatchlist(db, ['XYZ'])
     const { provider } = makeProvider(() => [])
+
+    const result = await pullWatchlistChains(provider, db, { currentDate: CURRENT_DATE })
+
+    expect(result.status).toBe('ok')
+    expect(byTicker(result.tickers, 'XYZ')).toEqual({ ticker: 'XYZ', status: 'no_options_listed' })
+  })
+
+  it('marks a ticker whose quotes are all untradeable as no_options_listed, never ok-with-no-strikes', async () => {
+    const db = makeTestDb()
+    seedWatchlist(db, ['XYZ'])
+    // Two quotes, both one-sided — toCandidateStrikes filters every one of them.
+    const { provider } = makeProvider(() => [
+      putQuote({ contractId: 'A', bid: '0.00', ask: '0.15' }),
+      putQuote({ contractId: 'B', bid: '1.00', ask: '0.00' })
+    ])
 
     const result = await pullWatchlistChains(provider, db, { currentDate: CURRENT_DATE })
 

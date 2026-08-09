@@ -11,6 +11,7 @@ import {
   type CandidateStrike,
   type DteWindow
 } from '../core/candidate-chain'
+import { mapWithConcurrency } from '../concurrency'
 import { logger } from '../logger'
 import { listWatchlist } from './watchlist'
 
@@ -35,24 +36,6 @@ type PullOptions = { window?: DteWindow; currentDate?: Date }
 // which classifies as provider-level and would surface as a fake outage.
 export const CHAIN_FETCH_CONCURRENCY = 4
 
-async function mapWithConcurrency<T, R>(
-  items: readonly T[],
-  limit: number,
-  fn: (item: T) => Promise<R>
-): Promise<R[]> {
-  const results: R[] = new Array<R>(items.length)
-  let cursor = 0
-  const worker = async (): Promise<void> => {
-    while (cursor < items.length) {
-      const index = cursor
-      cursor += 1
-      results[index] = await fn(items[index])
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
-  return results
-}
-
 async function pullTickerChain(
   provider: MarketDataProvider,
   ticker: string,
@@ -66,12 +49,15 @@ async function pullTickerChain(
       type: 'put'
     })
 
-    if (quotes.length === 0) {
-      logger.debug({ ticker }, 'chain_pull_no_options_listed')
+    // An empty raw chain and a chain whose quotes are all untradeable both leave
+    // nothing to screen in the window — an `ok` result always carries ≥1 strike, so
+    // the ticker downstream can never vanish from both the ranked and excluded lists.
+    const strikes = toCandidateStrikes(quotes)
+    if (strikes.length === 0) {
+      logger.debug({ ticker, quoteCount: quotes.length }, 'chain_pull_no_options_listed')
       return { result: { ticker, status: 'no_options_listed' }, failure: null }
     }
 
-    const strikes = toCandidateStrikes(quotes)
     logger.debug({ ticker, strikeCount: strikes.length }, 'chain_pull_ok')
     return { result: { ticker, status: 'ok', strikes }, failure: null }
   } catch (err) {

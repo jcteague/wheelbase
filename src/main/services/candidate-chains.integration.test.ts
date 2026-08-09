@@ -2,7 +2,6 @@
 // (migration 012) driven by a scripted MarketDataProvider. One it() per acceptance
 // criterion; names mirror the Gherkin scenarios.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type Database from 'better-sqlite3'
 import {
   MarketDataError,
   type OptionChainFilter,
@@ -10,8 +9,7 @@ import {
   type MarketDataProvider
 } from '../integrations/market-data-provider'
 import { logger } from '../logger'
-import { makeTestDb } from '../test-utils'
-import { addWatchlistEntry } from './watchlist'
+import { makeTestDb, seedWatchlist } from '../test-utils'
 import { pullWatchlistChains, type TickerChainResult } from './candidate-chains'
 
 vi.mock('../logger', () => ({
@@ -25,12 +23,6 @@ beforeEach(() => {
 // The screener refreshes "today" = 2026-07-23; default 30–45 DTE window resolves to
 // expirations in [2026-08-22, 2026-09-06]. 2026-09-05 sits inside that window.
 const CURRENT_DATE = new Date(2026, 6, 23)
-
-function seedWatchlist(db: Database.Database, tickers: string[]): void {
-  for (const ticker of tickers) {
-    addWatchlistEntry(db, { ticker, postEarningsOnly: false, coreHolding: false })
-  }
-}
 
 function putQuote(overrides: Partial<OptionChainQuote> = {}): OptionChainQuote {
   return {

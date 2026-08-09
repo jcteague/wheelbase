@@ -6,6 +6,7 @@ import {
   classifyChainFailure,
   dteWindowToExpirationRange,
   isTradeableStrike,
+  isWellFormedStrike,
   toCandidateStrikes
 } from './candidate-chain'
 
@@ -70,6 +71,32 @@ describe('isTradeableStrike', () => {
 
   it('is false when one-sided (ask is zero)', () => {
     expect(isTradeableStrike('1.00', '0.00')).toBe(false)
+  })
+
+  it('is false rather than throwing when a quote side is not a number', () => {
+    expect(isTradeableStrike('not-a-number', '1.25')).toBe(false)
+    expect(isTradeableStrike('1.20', '')).toBe(false)
+    expect(isTradeableStrike('NaN', '1.25')).toBe(false)
+  })
+})
+
+describe('isWellFormedStrike', () => {
+  it('accepts a strike whose money fields are all finite decimals', () => {
+    expect(isWellFormedStrike(toCandidateStrikes([chainQuote()])[0])).toBe(true)
+  })
+
+  it('rejects a strike with a malformed money field', () => {
+    const [strike] = toCandidateStrikes([chainQuote()])
+    expect(isWellFormedStrike({ ...strike, bid: 'not-a-number' })).toBe(false)
+    expect(isWellFormedStrike({ ...strike, ask: '' })).toBe(false)
+    expect(isWellFormedStrike({ ...strike, mark: 'NaN' })).toBe(false)
+    expect(isWellFormedStrike({ ...strike, strike: 'Infinity' })).toBe(false)
+  })
+
+  it('rejects a malformed delta but accepts a null one', () => {
+    const [strike] = toCandidateStrikes([chainQuote()])
+    expect(isWellFormedStrike({ ...strike, delta: 'bad' })).toBe(false)
+    expect(isWellFormedStrike({ ...strike, delta: null })).toBe(true)
   })
 })
 

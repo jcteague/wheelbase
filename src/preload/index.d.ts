@@ -393,6 +393,63 @@ type IpcWatchlistListResult = IpcResult<{ entries: IpcWatchlistEntry[] }>
 type IpcWatchlistAddResult = IpcResult<{ entry: IpcWatchlistEntry }>
 type IpcWatchlistRemoveResult = IpcResult<{ ticker: string }>
 
+/** Mirrors `IvRank` in `src/main/core/screener.ts`. */
+interface IpcIvRank {
+  value: string // 1dp
+  observedAt: string // ISO timestamp of the scrape that produced it
+}
+
+/** Mirrors `ScoredCandidate` in `src/main/core/screener.ts` — one surviving strike,
+ *  fully scored. Delta is absolute. */
+interface IpcScoredCandidate {
+  ticker: string
+  contractId: string
+  strike: string // 4dp
+  expiration: string // 'YYYY-MM-DD'
+  dte: number
+  bid: string // 2dp
+  ask: string // 2dp
+  mark: string // 2dp
+  spreadAbsolute: string // 2dp
+  spreadPercent: string // 2dp
+  delta: string // 4dp, absolute
+  openInterest: number | null
+  volume: number | null
+  ivRank: IpcIvRank | null // null → render "n/a"
+  capitalSecured: string // 2dp
+  periodYield: string // 4dp fraction
+  annualizedYield: string // 4dp fraction
+  yieldPerDelta: string // 4dp — the rank score
+  earningsFlagged: boolean // 'flag' mode only: earnings land inside the holding window
+  timestamp: string // ISO
+}
+
+/** Mirrors `ScreenerExclusion` in `src/main/services/screener.ts` — one row per
+ *  non-ranking ticker, carrying the reason rendered verbatim. */
+interface IpcScreenerExclusion {
+  ticker: string
+  code:
+    | 'price_ceiling'
+    | 'earnings_in_window'
+    | 'dte_window'
+    | 'delta_unavailable'
+    | 'delta_band'
+    | 'open_interest'
+    | 'spread'
+    | 'no_options_listed'
+    | 'data_unavailable'
+  reason: string
+}
+
+// `provider_unavailable` always arrives with empty `ranked`/`excluded` and a null
+// timestamp — the outage state, rendered distinctly from an empty-but-successful screen.
+type IpcScreenerResultsResult = IpcResult<{
+  status: 'ok' | 'provider_unavailable'
+  ranked: IpcScoredCandidate[]
+  excluded: IpcScreenerExclusion[]
+  quoteTimestamp: string | null
+}>
+
 interface IpcGetOptionSnapshotsPayload {
   symbols: string[]
 }
@@ -601,6 +658,9 @@ declare global {
         list: () => Promise<IpcWatchlistListResult>
         add: (payload: IpcWatchlistAddPayload) => Promise<IpcWatchlistAddResult>
         remove: (payload: { ticker: string }) => Promise<IpcWatchlistRemoveResult>
+      }
+      screener: {
+        results: () => Promise<IpcScreenerResultsResult>
       }
       ivr: {
         collectNow: () => Promise<IpcCollectIvrNowResult>

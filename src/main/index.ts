@@ -13,6 +13,7 @@ import { registerBrokerHandlers } from './ipc/broker'
 import { registerAssignmentsIpc } from './ipc/assignments'
 import { registerAlertsHandlers } from './ipc/alerts'
 import { registerWatchlistIpc } from './ipc/watchlist'
+import { registerScreenerIpc } from './ipc/screener'
 import { registerIvrIpc } from './ipc/ivr'
 import { registerTestSchedulerIpc, seedTestJobsFromEnv } from './ipc/test-scheduler'
 import { registerTestIvrIpc } from './ipc/test-ivr'
@@ -180,6 +181,7 @@ app.whenReady().then(() => {
   registerAssignmentsIpc({ db, scheduler })
   registerAlertsHandlers({ db })
   registerWatchlistIpc({ db })
+  registerScreenerIpc({ db, getProvider: () => marketDataFactory.create() })
   registerIvrIpc({ scheduler })
 
   // Detect-assignments job: looks up the current broker provider and active

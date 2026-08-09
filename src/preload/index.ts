@@ -77,6 +77,9 @@ const api = {
     add: (payload: unknown) => invoke('watchlist:add', payload),
     remove: (payload: { ticker: string }) => invoke('watchlist:remove', payload)
   },
+  screener: {
+    results: () => invoke('screener:results')
+  },
   ivr: {
     collectNow: () => invoke('ivr:collect-now')
   },
