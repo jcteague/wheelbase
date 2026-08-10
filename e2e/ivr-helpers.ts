@@ -6,13 +6,11 @@
 // `fetchIvr` + instant clock into `collectIVRSnapshots`. Per-ticker outcomes are
 // programmed at runtime through the dev-only `_test:ivr-*` IPC channels (guarded
 // by NODE_ENV === 'test'), and persisted rows are read back the same way.
-import { _electron as electron } from 'playwright'
 import type { ElectronApplication, Page } from 'playwright'
 import {
-  APP_CWD,
-  APP_PATH,
   REGULAR_SESSION,
   buildLaunchEnv,
+  launchElectron,
   seedCsp,
   type CspFixture,
   type MarketStatusFixture
@@ -81,11 +79,7 @@ export async function launchIvrApp(
   dbPath: string,
   opts: IvrLaunchOpts = {}
 ): Promise<ElectronApplication> {
-  return electron.launch({
-    args: [APP_PATH, '--no-sandbox'],
-    cwd: APP_CWD,
-    env: buildIvrLaunchEnv(dbPath, opts)
-  })
+  return launchElectron(buildIvrLaunchEnv(dbPath, opts))
 }
 
 /** A future-dated CSP fixture for a given ticker so create-position validation passes. */

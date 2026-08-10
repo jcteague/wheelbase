@@ -10,10 +10,20 @@ import { CALENDAR_PAGE_TITLE, CalendarPage } from './pages/CalendarPage'
 import { NewWheelPage } from './pages/NewWheelPage'
 import { PositionDetailPage } from './pages/PositionDetailPage'
 import { PositionsListPage } from './pages/PositionsListPage'
+import { SCREENER_PAGE_TITLE, ScreenerPage } from './pages/ScreenerPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { WATCHLIST_PAGE_TITLE, WatchlistPage } from './pages/WatchlistPage'
 
 const queryClient = new QueryClient()
+
+/** Shell-header title per route; anything unmapped (`/`, `/positions/:id`) falls back to Dashboard. */
+const PAGE_TITLES: Record<string, string | undefined> = {
+  '/settings': 'Settings',
+  '/new': 'Open Wheel',
+  '/calendar': CALENDAR_PAGE_TITLE,
+  '/watchlist': WATCHLIST_PAGE_TITLE,
+  '/screener': SCREENER_PAGE_TITLE
+}
 
 function Sidebar(): React.JSX.Element {
   const [location] = useLocation()
@@ -50,6 +60,12 @@ function Sidebar(): React.JSX.Element {
           icon="☰"
           active={location === '/watchlist'}
         />
+        <NavItem
+          href="/screener"
+          label={SCREENER_PAGE_TITLE}
+          icon="⌕"
+          active={location === '/screener'}
+        />
         <div className="px-[12px] py-[6px] mb-[4px] mt-[12px] text-[0.65rem] font-semibold tracking-[0.1em] uppercase text-wb-text-muted font-wb-mono">
           System
         </div>
@@ -69,16 +85,7 @@ function ShellHeader(): React.JSX.Element {
   const { data } = useSettingsStatus()
   const activeBrokerEnv = data?.activeBrokerEnv ?? 'none'
   const massive = data?.massive ?? 'missing'
-  const title =
-    location === '/settings'
-      ? 'Settings'
-      : location === '/new'
-        ? 'Open Wheel'
-        : location === '/calendar'
-          ? CALENDAR_PAGE_TITLE
-          : location === '/watchlist'
-            ? WATCHLIST_PAGE_TITLE
-            : 'Dashboard'
+  const title = PAGE_TITLES[location] ?? 'Dashboard'
 
   return (
     <div className="flex items-center justify-between border-b border-wb-border bg-wb-bg-surface px-6 py-3">
@@ -105,6 +112,7 @@ function AppShell(): React.JSX.Element {
           <Route path="/settings" component={SettingsPage} />
           <Route path="/calendar" component={CalendarPage} />
           <Route path="/watchlist" component={WatchlistPage} />
+          <Route path="/screener" component={ScreenerPage} />
           <Route path="/positions/:id" component={PositionDetailPage} />
         </Switch>
       </main>

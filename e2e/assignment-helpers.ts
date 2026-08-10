@@ -133,15 +133,17 @@ export function buildLaunchEnv(dbPath: string, opts: LaunchOpts): Record<string,
   return env
 }
 
+/** Boot the built app with an already-prepared env — the single place the Electron
+ * launch arguments live, shared by every helper module's launcher. */
+export async function launchElectron(env: Record<string, string>): Promise<ElectronApplication> {
+  return electron.launch({ args: [APP_PATH, '--no-sandbox'], cwd: APP_CWD, env })
+}
+
 export async function launchApp(
   dbPath: string,
   opts: LaunchOpts = {}
 ): Promise<ElectronApplication> {
-  return electron.launch({
-    args: [APP_PATH, '--no-sandbox'],
-    cwd: APP_CWD,
-    env: buildLaunchEnv(dbPath, opts)
-  })
+  return launchElectron(buildLaunchEnv(dbPath, opts))
 }
 
 export async function getPage(app: ElectronApplication): Promise<Page> {
