@@ -1,0 +1,910 @@
+---
+title: 'US-67 (revised): Screening Criteria Sheet'
+story: 'As a wheel trader, I want to edit the screener criteria from the Screener itself — in a sheet, like every other form — so I can tune filters against the results I am looking at instead of navigating to Settings.'
+states: ['entry', 'default', 'invalid', 'optional', 'saved']
+---
+
+import { useState } from 'react'
+
+# US-67 (revised): Screening Criteria Sheet
+
+_As a wheel trader, I want to edit the screener criteria from the Screener itself — in a sheet, like every other form — so I can tune filters against the results I am looking at instead of navigating to Settings._
+
+## What changed from the original US-67
+
+The original story said "extend the existing settings surface — do not create a standalone page", and the first mockup (`us-67-screening-defaults.mdx`) put the criteria form on the Settings page. This revision moves the same criteria into a right-hand **sheet opened from the Screener**, matching `AssignmentSheet`, `RollCspSheet`, `CallAwaySheet`, and `CloseCcEarlySheet`.
+
+Three consequences worth deciding on before build:
+
+1. **Two entry points, one form.** A `⚙ Criteria` button in the Screener page header, plus a clickable criteria-summary strip above the results. The empty state's "Loosen your delta band or DTE window in Screener settings" copy becomes an in-place **Adjust criteria** button — no navigation away.
+2. **Save re-screens.** The primary action is `Save & re-screen`, not `Save screening criteria`. Co-locating the form with the results is the whole point of the move, so the results behind the sheet must refresh on save. This is a real behavioral change from the Settings version, where saving only persisted.
+3. **Persistence is unchanged.** The criteria still live in the same settings store the alert thresholds use (US-57), still validated by the same Zod schema on both sides of IPC. Only the surface moves. Settings keeps alert defaults and credentials; it no longer owns screening criteria.
+
+## Acceptance Criteria States
+
+- **entry** — sheet closed. Shows both entry points: the `⚙ Criteria` header button and the criteria-summary strip (`Δ 0.20–0.30 · DTE 30–45 · OI ≥ 500 · Spread ≤ 10% · Earnings Exclude`) sitting above the ranked results.
+- **default** — sheet open over the results at every shipped default. The scrim starts to the right of the sidebar (`SheetOverlay` is `left-[200px]`), so nav stays reachable. Save enabled.
+- **invalid** — delta band `0.30 → 0.20` and DTE window `45 → 30` both inverted, each with an inline error, and the footer **Save disabled** — the cross-field min-less-than-max validation.
+- **optional** — earnings handling switched to `Flag only`, with the IV-rank floor (30) and price ceiling ($75) both toggled `On`, showing the enabled look of the two optional inputs.
+- **saved** — sheet dismissed, a `Screening criteria saved` confirmation on the page, the summary strip updated to `Δ 0.15–0.20 · DTE 40–45`, and the table **re-screened** against the new band (KO 0.18 / MSFT 0.16 / AAPL 0.19, all 44 DTE; excluded count rises 4 → 7).
+
+Colors, fonts, and chrome come from `src/renderer/src/index.css` (`--wb-*`). Sheet anatomy mirrors `src/renderer/src/components/ui/Sheet.tsx` — `SheetOverlay` / `SheetPanel` / `SheetHeader` / `SheetBody` / `SheetFooter`. Panel is **460px** rather than the 400px default: the paired min/max inputs need the extra width. Yield math is internally consistent: `period = mark / strike`, `annualized = period × 365 / DTE`, `score = annualized ÷ delta`.
+
+---
+
+export const T = {
+  base: 'var(--wb-bg-base)',
+  surface: 'var(--wb-bg-surface)',
+  elevated: 'var(--wb-bg-elevated)',
+  border: 'var(--wb-border)',
+  borderSub: 'var(--wb-border-subtle)',
+  text: 'var(--wb-text-primary)',
+  text2: 'var(--wb-text-secondary)',
+  muted: 'var(--wb-text-muted)',
+  gold: 'var(--wb-gold)',
+  goldDim: 'var(--wb-gold-dim)',
+  goldBorder: 'var(--wb-gold-border)',
+  goldSub: 'var(--wb-gold-subtle)',
+  green: 'var(--wb-green)',
+  greenDim: 'var(--wb-green-dim)',
+  greenBorder: 'var(--wb-green-border)',
+  greenSub: 'var(--wb-green-subtle)',
+  red: 'var(--wb-red)',
+  redDim: 'var(--wb-red-dim)',
+  mono: 'var(--font-wb-mono)',
+  r: 6
+}
+
+export const RED_BORDER = 'rgba(248,113,113,0.4)'
+
+export const CANDIDATES = [
+  { rank: 1, ticker: 'KO', strike: 60, exp: 'Aug 21', dte: 37, mark: 0.95, delta: 0.22, ivr: 38, oi: '1,800', period: '1.58%', ann: '15.6%/yr', score: '0.71', spread: '$0.06 (6%)' },
+  { rank: 2, ticker: 'AAPL', strike: 180, exp: 'Aug 21', dte: 37, mark: 2.7, delta: 0.28, ivr: 44, oi: '4,200', period: '1.50%', ann: '14.8%/yr', score: '0.53', spread: '$0.06 (2%)' },
+  { rank: 3, ticker: 'MSFT', strike: 410, exp: 'Aug 28', dte: 44, mark: 6.2, delta: 0.25, ivr: null, oi: '2,600', period: '1.51%', ann: '12.5%/yr', score: '0.50', spread: '$0.30 (5%)' }
+]
+
+export const RESCREENED = [
+  { rank: 1, ticker: 'KO', strike: 57.5, exp: 'Aug 28', dte: 44, mark: 0.7, delta: 0.18, ivr: 38, oi: '1,100', period: '1.22%', ann: '10.1%/yr', score: '0.56', spread: '$0.04 (6%)' },
+  { rank: 2, ticker: 'MSFT', strike: 395, exp: 'Aug 28', dte: 44, mark: 3.9, delta: 0.16, ivr: null, oi: '1,900', period: '0.99%', ann: '8.2%/yr', score: '0.51', spread: '$0.25 (6%)' },
+  { rank: 3, ticker: 'AAPL', strike: 172.5, exp: 'Aug 28', dte: 44, mark: 1.85, delta: 0.19, ivr: 44, oi: '3,400', period: '1.07%', ann: '8.9%/yr', score: '0.47', spread: '$0.05 (3%)' }
+]
+
+export const COLS = [
+  { key: 'rank', label: '#', w: '40px', align: 'left' },
+  { key: 'ticker', label: 'Ticker', w: '1fr', align: 'left' },
+  { key: 'strike', label: 'Strike', w: '0.8fr', align: 'right' },
+  { key: 'exp', label: 'Exp', w: '0.9fr', align: 'right' },
+  { key: 'dte', label: 'DTE', w: '52px', align: 'right' },
+  { key: 'mark', label: 'Mark', w: '0.8fr', align: 'right' },
+  { key: 'ann', label: 'Ann.', w: '0.9fr', align: 'right' },
+  { key: 'delta', label: 'Δ', w: '0.6fr', align: 'right' },
+  { key: 'ivr', label: 'IVR', w: '0.6fr', align: 'right' },
+  { key: 'oi', label: 'OI', w: '0.8fr', align: 'right' },
+  { key: 'spread', label: 'Spread', w: '1fr', align: 'right' },
+  { key: 'promote', label: '', w: '96px', align: 'right' }
+]
+
+export const TEMPLATE = COLS.map((c) => c.w).join(' ')
+
+export function money(n) {
+  return '$' + n.toFixed(2)
+}
+
+export function SectionLabel({ children, style }) {
+  return (
+    <div
+      style={{
+        fontFamily: T.mono,
+        fontSize: '0.72rem',
+        textTransform: 'uppercase',
+        letterSpacing: '0.12em',
+        color: T.muted,
+        ...style
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
+export function Segment({ options, value, onChange, size = 'md' }) {
+  const pad = size === 'sm' ? '4px 10px' : '5px 12px'
+  return (
+    <div
+      style={{
+        display: 'inline-flex',
+        gap: 2,
+        padding: 3,
+        borderRadius: 999,
+        border: `1px solid ${T.border}`,
+        background: T.elevated
+      }}
+    >
+      {options.map((opt) => {
+        const active = value === opt.v
+        return (
+          <button
+            key={opt.v}
+            onClick={() => onChange(opt.v)}
+            style={{
+              padding: pad,
+              borderRadius: 999,
+              border: 'none',
+              cursor: 'pointer',
+              fontFamily: T.mono,
+              fontSize: '0.72rem',
+              background: active ? T.goldDim : 'transparent',
+              color: active ? T.gold : T.text2,
+              fontWeight: active ? 700 : 400
+            }}
+          >
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+export function MarketPill() {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        borderRadius: 10,
+        border: `1px solid ${T.greenBorder}`,
+        background: T.greenDim,
+        padding: '2px 8px 2px 6px',
+        fontFamily: T.mono,
+        fontSize: '0.6rem',
+        fontWeight: 700,
+        letterSpacing: '0.1em',
+        color: T.green
+      }}
+    >
+      <span style={{ width: 6, height: 6, borderRadius: 999, background: T.green, flexShrink: 0 }} />
+      LIVE
+    </span>
+  )
+}
+
+export function NavRow({ icon, label, active }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '7px 12px',
+        borderRadius: T.r,
+        fontSize: '0.8125rem',
+        cursor: 'pointer',
+        background: active ? T.goldSub : 'transparent',
+        color: active ? T.gold : T.text2,
+        fontWeight: active ? 600 : 400
+      }}
+    >
+      <span style={{ fontFamily: T.mono, width: 14, textAlign: 'center' }}>{icon}</span>
+      {label}
+    </div>
+  )
+}
+
+export function CriteriaButton({ onClick, dirty }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '4px 11px',
+        borderRadius: T.r,
+        border: `1px solid ${dirty ? T.goldBorder : T.border}`,
+        background: dirty ? T.goldDim : T.elevated,
+        color: dirty ? T.gold : T.text2,
+        fontFamily: T.mono,
+        fontSize: '0.68rem',
+        fontWeight: 600,
+        letterSpacing: '0.04em',
+        cursor: 'pointer'
+      }}
+    >
+      <span>⚙</span>
+      Criteria
+    </button>
+  )
+}
+
+export function Shell({ children, sheet, onOpenSheet, sheetOpen }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        height: 720,
+        border: `1px solid ${T.border}`,
+        borderRadius: 10,
+        overflow: 'hidden',
+        background: T.base,
+        boxShadow: '0 30px 80px rgba(0,0,0,0.45)',
+        position: 'relative'
+      }}
+    >
+      <aside
+        style={{
+          width: 200,
+          flexShrink: 0,
+          background: T.surface,
+          borderRight: `1px solid ${T.border}`,
+          display: 'flex',
+          flexDirection: 'column',
+          position: 'relative',
+          zIndex: 60
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '16px',
+            borderBottom: `1px solid ${T.border}`
+          }}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: 999, background: T.gold, boxShadow: `0 0 6px ${T.gold}` }} />
+          <span
+            style={{
+              fontFamily: T.mono,
+              fontWeight: 700,
+              fontSize: '0.75rem',
+              letterSpacing: '0.15em',
+              textTransform: 'uppercase',
+              color: T.text
+            }}
+          >
+            Wheelbase
+          </span>
+        </div>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '16px 8px', flex: 1 }}>
+          <SectionLabel style={{ fontSize: '0.65rem', padding: '6px 12px' }}>Trading</SectionLabel>
+          <NavRow icon="◈" label="Positions" />
+          <NavRow icon="+" label="Open Wheel" />
+          <NavRow icon="☰" label="Watchlist" />
+          <NavRow icon="⌕" label="Screener" active />
+          <NavRow icon="▦" label="Calendar" />
+          <SectionLabel style={{ fontSize: '0.65rem', padding: '6px 12px', marginTop: 12 }}>System</SectionLabel>
+          <NavRow icon="⚙" label="Settings" />
+        </nav>
+        <div
+          style={{
+            padding: '12px 16px',
+            borderTop: `1px solid ${T.border}`,
+            fontFamily: T.mono,
+            fontSize: '0.65rem',
+            color: T.muted
+          }}
+        >
+          Wheel Strategy
+        </div>
+      </aside>
+
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <header
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 24px',
+            borderBottom: `1px solid ${T.border}`,
+            background: T.surface
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <SectionLabel>Screener</SectionLabel>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minWidth: 20,
+                padding: '1px 6px',
+                borderRadius: 999,
+                background: T.goldDim,
+                color: T.gold,
+                fontFamily: T.mono,
+                fontSize: '0.65rem',
+                fontWeight: 700
+              }}
+            >
+              3
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <CriteriaButton onClick={onOpenSheet} dirty={sheetOpen} />
+            <span
+              style={{
+                fontFamily: T.mono,
+                fontSize: '0.65rem',
+                letterSpacing: '0.08em',
+                color: T.text2,
+                border: `1px solid ${T.border}`,
+                borderRadius: 4,
+                padding: '2px 8px'
+              }}
+            >
+              PAPER
+            </span>
+            <MarketPill />
+          </div>
+        </header>
+        <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>{children}</div>
+      </div>
+      {sheet}
+    </div>
+  )
+}
+
+export function SummaryStrip({ criteria, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        flexWrap: 'wrap',
+        width: '100%',
+        textAlign: 'left',
+        padding: '9px 14px',
+        borderRadius: T.r,
+        border: `1px solid ${T.border}`,
+        background: T.surface,
+        cursor: 'pointer'
+      }}
+    >
+      <SectionLabel style={{ fontSize: '0.6rem' }}>Criteria</SectionLabel>
+      {criteria.map((c) => (
+        <span
+          key={c}
+          style={{
+            fontFamily: T.mono,
+            fontSize: '0.7rem',
+            color: T.text2,
+            padding: '2px 8px',
+            borderRadius: 4,
+            background: T.elevated,
+            border: `1px solid ${T.borderSub}`,
+            whiteSpace: 'nowrap'
+          }}
+        >
+          {c}
+        </span>
+      ))}
+      <span style={{ marginLeft: 'auto', fontFamily: T.mono, fontSize: '0.68rem', color: T.gold }}>Edit →</span>
+    </button>
+  )
+}
+
+export function HeaderRow() {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: TEMPLATE,
+        gap: 12,
+        padding: '10px 16px',
+        borderBottom: `1px solid ${T.border}`
+      }}
+    >
+      {COLS.map((c) => (
+        <div
+          key={c.key}
+          style={{
+            fontFamily: T.mono,
+            fontSize: '0.62rem',
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            color: T.muted,
+            textAlign: c.align
+          }}
+        >
+          {c.label}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function CandidateRow({ row, first }) {
+  const cell = { fontFamily: T.mono, fontSize: '0.8125rem', color: T.text, textAlign: 'right' }
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: TEMPLATE,
+        gap: 12,
+        alignItems: 'center',
+        padding: '11px 16px',
+        borderTop: first ? 'none' : `1px solid ${T.borderSub}`
+      }}
+    >
+      <div style={{ textAlign: 'left' }}>
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 20,
+            height: 20,
+            borderRadius: 5,
+            background: T.goldDim,
+            color: T.gold,
+            fontFamily: T.mono,
+            fontSize: '0.68rem',
+            fontWeight: 700
+          }}
+        >
+          {row.rank}
+        </span>
+      </div>
+      <span style={{ fontFamily: T.mono, fontWeight: 700, fontSize: '0.85rem', color: T.gold, letterSpacing: '0.02em' }}>
+        {row.ticker}
+      </span>
+      <div style={cell}>{money(row.strike)}</div>
+      <div style={{ ...cell, color: T.text2 }}>{row.exp}</div>
+      <div style={{ ...cell, color: T.text2 }}>{row.dte}d</div>
+      <div style={cell}>{money(row.mark)}</div>
+      <div style={{ ...cell, color: T.green, fontWeight: 600 }}>{row.ann}</div>
+      <div style={cell}>{row.delta.toFixed(2)}</div>
+      <div style={{ ...cell, color: row.ivr == null ? T.muted : T.text }}>{row.ivr == null ? 'n/a' : row.ivr}</div>
+      <div style={{ ...cell, color: T.text2 }}>{row.oi}</div>
+      <div style={{ ...cell, color: T.text2 }}>{row.spread}</div>
+      <div style={{ textAlign: 'right' }}>
+        <button
+          style={{
+            padding: '5px 10px',
+            borderRadius: T.r,
+            border: `1px solid ${T.goldBorder}`,
+            background: 'transparent',
+            color: T.gold,
+            fontFamily: T.mono,
+            fontSize: '0.68rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          Promote →
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export function ResultsTable({ rows }) {
+  return (
+    <div style={{ border: `1px solid ${T.border}`, borderRadius: T.r, overflow: 'hidden', background: T.surface }}>
+      <HeaderRow />
+      {rows.map((row, i) => (
+        <CandidateRow key={row.ticker} row={row} first={i === 0} />
+      ))}
+    </div>
+  )
+}
+
+export function SavedBanner() {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '10px 14px',
+        borderRadius: T.r,
+        border: `1px solid ${T.greenBorder}`,
+        background: T.greenSub
+      }}
+    >
+      <span
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: 999,
+          background: T.greenDim,
+          color: T.green,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontFamily: T.mono,
+          fontSize: '0.7rem',
+          fontWeight: 700,
+          flexShrink: 0
+        }}
+      >
+        ✓
+      </span>
+      <span style={{ fontSize: '0.8125rem', color: T.green, fontWeight: 600 }}>Screening criteria saved</span>
+      <span style={{ fontFamily: T.mono, fontSize: '0.7rem', color: T.text2 }}>
+        · re-screened 8 watchlist tickers · 3 candidates · 7 excluded
+      </span>
+    </div>
+  )
+}
+
+export function ExcludedBar({ count }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '10px 16px',
+        border: `1px solid ${T.border}`,
+        borderRadius: T.r,
+        background: T.surface
+      }}
+    >
+      <SectionLabel>Excluded ({count})</SectionLabel>
+      <span style={{ fontFamily: T.mono, fontSize: '0.72rem', color: T.muted }}>▸</span>
+    </div>
+  )
+}
+
+export function TitleBar({ count }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+      <div style={{ fontSize: '1.15rem', fontWeight: 600, color: T.text }}>Candidate Results</div>
+      <span style={{ fontFamily: T.mono, fontSize: '0.72rem', color: T.text2 }}>{count}</span>
+    </div>
+  )
+}
+
+export function FieldLabel({ children }) {
+  return <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: T.text }}>{children}</div>
+}
+
+export function Caption({ children }) {
+  return <div style={{ fontSize: '0.7rem', color: T.muted, marginTop: 3, lineHeight: 1.5 }}>{children}</div>
+}
+
+export function NumInput({ value, suffix, prefix, error, disabled, w = 88 }) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        border: `1px solid ${error ? RED_BORDER : T.border}`,
+        background: disabled ? T.surface : T.base,
+        borderRadius: T.r,
+        padding: '7px 10px',
+        width: w,
+        opacity: disabled ? 0.5 : 1
+      }}
+    >
+      {prefix ? <span style={{ fontFamily: T.mono, fontSize: '0.8rem', color: T.muted }}>{prefix}</span> : null}
+      <span style={{ fontFamily: T.mono, fontSize: '0.85rem', color: T.text, flex: 1 }}>{value}</span>
+      {suffix ? <span style={{ fontFamily: T.mono, fontSize: '0.78rem', color: T.muted }}>{suffix}</span> : null}
+    </span>
+  )
+}
+
+export function ErrorText({ children }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, color: T.red, fontSize: '0.7rem' }}>
+      <span style={{ fontFamily: T.mono, fontWeight: 700 }}>!</span>
+      {children}
+    </div>
+  )
+}
+
+export function SheetGroup({ label, children }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <SectionLabel style={{ fontSize: '0.62rem' }}>{label}</SectionLabel>
+      {children}
+    </div>
+  )
+}
+
+export function SheetField({ label, caption, children, error }) {
+  return (
+    <div>
+      <FieldLabel>{label}</FieldLabel>
+      <Caption>{caption}</Caption>
+      <div style={{ marginTop: 9 }}>{children}</div>
+      {error ? <ErrorText>{error}</ErrorText> : null}
+    </div>
+  )
+}
+
+export function Divider() {
+  return <div style={{ height: 1, background: T.borderSub, margin: '4px 0' }} />
+}
+
+export function CriteriaSheet({ state, onClose }) {
+  const invalid = state === 'invalid'
+  const optional = state === 'optional'
+  const earnings = optional ? 'flag' : 'exclude'
+
+  return (
+    <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 200, zIndex: 50 }}>
+      <div
+        onClick={onClose}
+        style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.45)', cursor: 'pointer' }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: 460,
+          background: T.surface,
+          borderLeft: `1px solid ${T.border}`,
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: '-16px 0 48px rgba(0,0,0,0.5)',
+          fontFamily: T.mono,
+          color: T.text
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            borderBottom: `1px solid ${T.border}`,
+            padding: '20px 24px'
+          }}
+        >
+          <div>
+            <span style={{ fontSize: '0.62rem', fontWeight: 600, letterSpacing: '0.08em', color: T.gold, textTransform: 'uppercase' }}>
+              Screener
+            </span>
+            <div style={{ fontSize: '1rem', fontWeight: 600, marginTop: 4 }}>Screening Criteria</div>
+            <div style={{ fontSize: '0.72rem', color: T.muted, marginTop: 2 }}>
+              Applies to all 8 watchlist tickers · Classic Wheel · CSP
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close sheet"
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: T.r,
+              border: `1px solid ${T.border}`,
+              background: T.elevated,
+              color: T.muted,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '1rem',
+              lineHeight: 1,
+              cursor: 'pointer',
+              flexShrink: 0
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        <div style={{ padding: 24, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 22, flex: 1 }}>
+          <div style={{ fontSize: '0.75rem', color: T.text2, lineHeight: 1.6, fontFamily: 'inherit' }}>
+            Filters disqualify a strike; ranking inputs order what survives. Saving re-screens immediately.
+          </div>
+
+          <SheetGroup label="Filters (hard)">
+            <SheetField
+              label="Delta band"
+              caption="Assignment-probability band for the short put."
+              error={invalid ? 'Minimum delta must be less than maximum delta' : null}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <NumInput value={invalid ? '0.30' : '0.20'} error={invalid} w={86} />
+                <span style={{ color: T.muted }}>–</span>
+                <NumInput value={invalid ? '0.20' : '0.30'} error={invalid} w={86} />
+                <span style={{ fontSize: '0.72rem', color: T.muted }}>Δ</span>
+              </div>
+            </SheetField>
+
+            <SheetField
+              label="DTE window"
+              caption="Days to expiration to include."
+              error={invalid ? 'Minimum DTE must be less than maximum DTE' : null}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <NumInput value={invalid ? '45' : '30'} error={invalid} w={86} />
+                <span style={{ color: T.muted }}>–</span>
+                <NumInput value={invalid ? '30' : '45'} error={invalid} w={86} />
+                <span style={{ fontSize: '0.72rem', color: T.muted }}>days</span>
+              </div>
+            </SheetField>
+
+            <SheetField
+              label="Price ceiling"
+              caption="Off by default — an optional per-account buying-power limit. On by default would silently hide large-cap names."
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <Segment
+                  size="sm"
+                  value={optional ? 'on' : 'off'}
+                  onChange={() => {}}
+                  options={[
+                    { v: 'off', label: 'Off' },
+                    { v: 'on', label: 'On' }
+                  ]}
+                />
+                <NumInput value="75" prefix="$" disabled={!optional} w={104} />
+              </div>
+            </SheetField>
+          </SheetGroup>
+
+          <Divider />
+
+          <SheetGroup label="Liquidity (hard gate)">
+            <SheetField label="Minimum open interest" caption="Contracts you can reliably enter and exit.">
+              <NumInput value="500" w={104} />
+            </SheetField>
+            <SheetField label="Max bid-ask spread" caption="of mark; a tight absolute spread (≤ $0.10) also passes.">
+              <NumInput value="10" suffix="%" w={104} />
+            </SheetField>
+          </SheetGroup>
+
+          <Divider />
+
+          <SheetGroup label="Ranking inputs (soft)">
+            <SheetField label="IV-rank floor" caption="Off by default so a low-vol market doesn't empty results.">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <Segment
+                  size="sm"
+                  value={optional ? 'on' : 'off'}
+                  onChange={() => {}}
+                  options={[
+                    { v: 'off', label: 'Off' },
+                    { v: 'on', label: 'On' }
+                  ]}
+                />
+                <NumInput value="30" suffix="IVR" disabled={!optional} w={104} />
+              </div>
+            </SheetField>
+          </SheetGroup>
+
+          <Divider />
+
+          <SheetGroup label="Policy">
+            <SheetField
+              label="Earnings handling"
+              caption="Exclude drops candidates with earnings on/before expiry; Flag keeps them with a warning."
+            >
+              <Segment
+                value={earnings}
+                onChange={() => {}}
+                options={[
+                  { v: 'exclude', label: 'Exclude' },
+                  { v: 'flag', label: 'Flag only' }
+                ]}
+              />
+            </SheetField>
+          </SheetGroup>
+        </div>
+
+        <div
+          style={{
+            padding: '16px 24px',
+            borderTop: `1px solid ${T.border}`,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            flexShrink: 0
+          }}
+        >
+          <button
+            disabled={invalid}
+            style={{
+              padding: '9px 16px',
+              borderRadius: T.r,
+              border: 'none',
+              background: invalid ? T.elevated : T.gold,
+              color: invalid ? T.muted : '#1a1204',
+              fontFamily: T.mono,
+              fontSize: '0.76rem',
+              fontWeight: 700,
+              cursor: invalid ? 'not-allowed' : 'pointer'
+            }}
+          >
+            Save &amp; re-screen
+          </button>
+          <button
+            onClick={onClose}
+            style={{
+              padding: '9px 16px',
+              borderRadius: T.r,
+              border: `1px solid ${T.border}`,
+              background: 'transparent',
+              color: T.text2,
+              fontFamily: T.mono,
+              fontSize: '0.76rem',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            Cancel
+          </button>
+          {invalid ? (
+            <span style={{ fontSize: '0.7rem', color: T.muted, marginLeft: 'auto' }}>Fix the highlighted fields.</span>
+          ) : (
+            <button
+              style={{
+                marginLeft: 'auto',
+                border: 'none',
+                background: 'transparent',
+                color: T.muted,
+                fontFamily: T.mono,
+                fontSize: '0.7rem',
+                cursor: 'pointer',
+                textDecoration: 'underline'
+              }}
+            >
+              Reset to defaults
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [state, setState] = useState('entry')
+
+  const sheetOpen = state === 'default' || state === 'invalid' || state === 'optional'
+  const saved = state === 'saved'
+  const rows = saved ? RESCREENED : CANDIDATES
+  const chips = saved
+    ? ['Δ 0.15–0.20', 'DTE 40–45', 'OI ≥ 500', 'Spread ≤ 10%', 'Earnings Exclude']
+    : ['Δ 0.20–0.30', 'DTE 30–45', 'OI ≥ 500', 'Spread ≤ 10%', 'Earnings Exclude']
+
+  return (
+    <div style={{ fontFamily: 'inherit', color: T.text }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
+        <SectionLabel>State</SectionLabel>
+        <Segment
+          value={state}
+          onChange={setState}
+          options={[
+            { v: 'entry', label: 'entry' },
+            { v: 'default', label: 'default' },
+            { v: 'invalid', label: 'invalid' },
+            { v: 'optional', label: 'optional' },
+            { v: 'saved', label: 'saved' }
+          ]}
+        />
+      </div>
+
+      <Shell
+        onOpenSheet={() => setState('default')}
+        sheetOpen={sheetOpen}
+        sheet={sheetOpen ? <CriteriaSheet state={state} onClose={() => setState('entry')} /> : null}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {saved ? <SavedBanner /> : null}
+          <SummaryStrip criteria={chips} onClick={() => setState('default')} />
+          <TitleBar count={saved ? '3 candidates · 7 excluded' : '3 candidates · 4 excluded'} />
+          <ResultsTable rows={rows} />
+          <ExcludedBar count={saved ? 7 : 4} />
+          <div style={{ fontFamily: T.mono, fontSize: '0.7rem', color: T.muted, lineHeight: 1.7 }}>
+            {saved
+              ? 'Tightening to Δ 0.15–0.20 / DTE 40–45 pushed the previous three strikes out and pulled further-OTM ones in. Ranked by yield-per-delta — KO 0.56 · MSFT 0.51 · AAPL 0.47. Three more tickers fell to the delta band, so Excluded rose 4 → 7.'
+              : 'Ranked by yield-per-delta — annualized return-if-flat ÷ delta. KO 0.71 · AAPL 0.53 · MSFT 0.50. The criteria strip above is the second entry point into the sheet; the ⚙ Criteria button in the header is the first.'}
+          </div>
+        </div>
+      </Shell>
+    </div>
+  )
+}
+
+<Mockup />

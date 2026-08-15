@@ -63,7 +63,9 @@
       "Bash(npx prettier *)",
       "Skill(code-review)",
       "Bash(git -c core.excludesfile=/dev/null add -N docs/us-61-implementation.md e2e/expiring-soon-flags.spec.ts plans/us-61/ src/renderer/src/components/ExpiringSoonFlag.test.tsx src/renderer/src/components/ExpiringSoonFlag.tsx)",
-      "Bash(git reset *)"
+      "Bash(git reset *)",
+      "Bash(git -C /Users/johnteague/my-stuff/wb-64-option-chain show --stat 6ffa254c6054a0465fd9fd0df2551ec8bed0cf6e)",
+      "Bash(git -C /Users/johnteague/my-stuff/wb-64-option-chain log --oneline -3)"
     ]
   },
   "enableAllProjectMcpServers": true,
