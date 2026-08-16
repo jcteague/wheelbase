@@ -3,7 +3,7 @@
 // yield-per-delta. No DB, provider, or logger imports: plain values in, plain
 // results out.
 import Decimal from 'decimal.js'
-import { compareAsc, parseISO, startOfDay } from 'date-fns'
+import { compareAsc, format, parseISO, startOfDay } from 'date-fns'
 import type { CandidateStrike } from './candidate-chain'
 import { computeDte } from './dte'
 
@@ -24,6 +24,7 @@ export type ScreeningCriteria = {
   maxSpreadPercent: string // percent of mark, e.g. '10'
   maxSpreadAbsolute: string // dollars, e.g. '0.10'
   maxUnderlyingPrice: string | null // null = ceiling disabled
+  minIvRank: string | null // null = floor disabled
   earningsHandling: EarningsHandling
 }
 
@@ -36,6 +37,7 @@ export const DEFAULT_SCREENING_CRITERIA: ScreeningCriteria = {
   maxSpreadPercent: '10',
   maxSpreadAbsolute: '0.10',
   maxUnderlyingPrice: null,
+  minIvRank: null,
   earningsHandling: 'exclude'
 }
 
@@ -88,6 +90,7 @@ export type ScoredCandidate = {
 
 export type ExclusionCode =
   | 'price_ceiling'
+  | 'iv_rank_floor'
   | 'earnings_in_window'
   | 'dte_window'
   | 'delta_unavailable'
@@ -143,6 +146,15 @@ function formatMoney(amount: string): string {
   return `$${new Decimal(amount).toFixed(2)}`
 }
 
+// [US-67] The day an IV rank was observed. IV rank became a hard filter with the
+// iv_rank_floor entry below, and the collector writes at most one reading a day, so
+// the calendar day is the resolution that matters — a trader needs to see that a
+// candidate was dropped on a months-old reading. The renderer's `fmtIvr` stamps the
+// same 'MMM d' shape on the IVR column; keep the two in step.
+function formatObservedOn(observedAt: string): string {
+  return format(parseISO(observedAt), 'MMM d')
+}
+
 /** Whether an earnings print lands inside the holding window — on or after the
  *  trader's current calendar day, and on or before the strike's expiry. A print
  *  already in the past is history, not gap risk, even if the feed still reports it. */
@@ -164,6 +176,7 @@ export type FilterInput = {
   strike: CandidateStrike
   dte: number | null
   underlyingPrice: string | null
+  ivRank: IvRank | null
   earningsDate: string | null
   currentDate: Date
 }
@@ -182,11 +195,11 @@ type FilterDefinition = {
 
 // ---------------------------------------------------------------------------
 // Hard-filter registry — ordered, first failure wins. The order is the funnel a
-// trader would describe: whole-ticker disqualifiers (too expensive, earnings in
-// the window) before per-strike ones (wrong expiry, wrong delta, too illiquid,
-// too wide). It is also load-bearing downstream: US-66 shows one representative
-// reason per ticker, and that reason is chosen by how far a strike got through
-// this list.
+// trader would describe: whole-ticker disqualifiers (too expensive, IV too low
+// in its own range, earnings in the window) before per-strike ones (wrong
+// expiry, wrong delta, too illiquid, too wide). It is also load-bearing
+// downstream: US-66 shows one representative reason per ticker, and that reason
+// is chosen by how far a strike got through this list.
 // ---------------------------------------------------------------------------
 
 const FILTERS: FilterDefinition[] = [
@@ -197,6 +210,14 @@ const FILTERS: FilterDefinition[] = [
     test: (ctx, criteria) => new Decimal(ctx.underlyingPrice!).gt(criteria.maxUnderlyingPrice!),
     reason: (ctx, criteria) =>
       `underlying ${formatMoney(ctx.underlyingPrice!)} above ${formatMoney(criteria.maxUnderlyingPrice!)} ceiling`
+  },
+  {
+    code: 'iv_rank_floor',
+    // An unknown IV rank is a gap in the data, not a low reading, so it passes.
+    applies: (ctx, criteria) => criteria.minIvRank !== null && ctx.ivRank !== null,
+    test: (ctx, criteria) => new Decimal(ctx.ivRank!.value).lt(criteria.minIvRank!),
+    reason: (ctx, criteria) =>
+      `IV rank ${ctx.ivRank!.value} (${formatObservedOn(ctx.ivRank!.observedAt)}) below ${criteria.minIvRank}`
   },
   {
     code: 'earnings_in_window',
@@ -342,6 +363,7 @@ function judgeStrike(
       strike,
       dte,
       underlyingPrice: input.underlyingPrice,
+      ivRank: input.ivRank,
       earningsDate: input.earningsDate,
       currentDate
     },

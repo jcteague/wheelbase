@@ -9,6 +9,7 @@ import { makeTestDb, seedIvr } from '../test-utils'
 import { pullWatchlistChains, type TickerChainResult } from './candidate-chains'
 import { getLatestIvrByUnderlying } from './ivr-snapshots'
 import { screenWatchlistCandidates } from './screener'
+import { saveScreeningCriteria } from './screening-criteria'
 
 vi.mock('../logger', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
@@ -98,6 +99,17 @@ function makeProvider(
 
 function criteriaWith(overrides: Partial<ScreeningCriteria>): ScreeningCriteria {
   return { ...DEFAULT_SCREENING_CRITERIA, ...overrides }
+}
+
+/** [US-67] Persist criteria the way the sheet does, so the screen picks them up
+ *  through the real read path rather than a hand-written app_settings row. */
+function persistCriteria(
+  db: ReturnType<typeof makeTestDb>,
+  overrides: Partial<ScreeningCriteria>
+): void {
+  // The save payload omits maxSpreadAbsolute; passing the full document is fine —
+  // the service supplies that field itself.
+  saveScreeningCriteria(db, criteriaWith(overrides))
 }
 
 describe('screenWatchlistCandidates', () => {
@@ -229,6 +241,37 @@ describe('screenWatchlistCandidates', () => {
     expect(getStockQuotes).not.toHaveBeenCalled()
   })
 
+  it('lets a ticker the provider quoted no price for through the ceiling untouched', async () => {
+    const db = makeTestDb()
+    // The provider answers, but without a row for AAPL — an unknown price, not a high
+    // one, so the ceiling cannot judge it and must not drop it.
+    const { provider } = makeProvider(() => new Map())
+    mockChains({ status: 'ok', tickers: [AAPL_OK] })
+
+    const result = await screenWatchlistCandidates(() => provider, db, {
+      criteria: criteriaWith({ maxUnderlyingPrice: '75' }),
+      currentDate: CURRENT_DATE
+    })
+
+    expect(result.ranked.map((candidate) => candidate.ticker)).toEqual(['AAPL'])
+    expect(result.excluded).toEqual([])
+  })
+
+  it('defaults currentDate to now when the caller supplies none', async () => {
+    const db = makeTestDb()
+    const { provider } = makeProvider()
+    mockChains({ status: 'ok', tickers: [] })
+
+    await screenWatchlistCandidates(() => provider, db)
+
+    // The DTE window still reaches the chain pull, dated from the real clock rather
+    // than an injected instant.
+    expect(pullWatchlistChains).toHaveBeenCalledWith(provider, db, {
+      window: { min: DEFAULT_SCREENING_CRITERIA.dteMin, max: DEFAULT_SCREENING_CRITERIA.dteMax },
+      currentDate: expect.any(Date)
+    })
+  })
+
   it('fetches underlying quotes and excludes a ticker above the price ceiling', async () => {
     const db = makeTestDb()
     const { provider, getStockQuotes } = makeProvider(
@@ -310,6 +353,32 @@ describe('screenWatchlistCandidates', () => {
     expect(result.excluded).toEqual([
       { ticker: 'XYZ', code: 'data_unavailable', reason: 'market data unavailable' }
     ])
+  })
+
+  it('isolates a ticker whose stored IV rank is corrupt so the others still rank', async () => {
+    const db = makeTestDb()
+    const { provider } = makeProvider()
+    // `wellFormedStrikes` validates the quote, but not the ticker-level values joined
+    // in alongside it. A non-numeric IVR row makes the [US-67] iv_rank_floor filter's
+    // Decimal math throw — the backstop the per-ticker catch exists for.
+    seedIvr(db, [['AAPL', '2026-07-23T12:00:00Z', 'not-a-number']])
+    mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
+
+    const result = await screenWatchlistCandidates(() => provider, db, {
+      criteria: criteriaWith({ minIvRank: '30' }),
+      currentDate: CURRENT_DATE
+    })
+
+    // The healthy ticker is unaffected; the corrupt one degrades to a row of its own
+    // rather than taking the whole run down.
+    expect(result.ranked.map((candidate) => candidate.ticker)).toEqual(['KO'])
+    expect(result.excluded).toEqual([
+      { ticker: 'AAPL', code: 'data_unavailable', reason: 'market data unavailable' }
+    ])
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ ticker: 'AAPL' }),
+      'screen_ticker_failed'
+    )
   })
 
   it('contributes one excluded row carrying the representative reason when a ticker has no survivor', async () => {
@@ -523,5 +592,67 @@ describe('screenWatchlistCandidates', () => {
       { status: 'ok', rankedCount: 2, excludedCount: 1 },
       expect.any(String)
     )
+  })
+
+  // [US-67] With no explicit criteria the screen must read the trader's saved
+  // criteria, not the shipped defaults — this is what makes a save re-screen.
+  describe('persisted criteria', () => {
+    it('screens against the persisted criteria when none are supplied', async () => {
+      const db = makeTestDb()
+      persistCriteria(db, { deltaMin: '0.15', deltaMax: '0.20' })
+      const { provider } = makeProvider()
+      mockChains({ status: 'ok', tickers: [AAPL_OK] })
+
+      const result = await screenWatchlistCandidates(() => provider, db, {
+        currentDate: CURRENT_DATE
+      })
+
+      expect(result.ranked).toEqual([])
+      expect(result.excluded).toEqual([
+        { ticker: 'AAPL', code: 'delta_band', reason: 'delta 0.28 outside 0.15–0.20' }
+      ])
+    })
+
+    it('still screens against the shipped defaults when nothing has been persisted', async () => {
+      const db = makeTestDb()
+      const { provider } = makeProvider()
+      mockChains({ status: 'ok', tickers: [AAPL_OK] })
+
+      const result = await screenWatchlistCandidates(() => provider, db, {
+        currentDate: CURRENT_DATE
+      })
+
+      // 0.28 delta sits inside the default 0.20–0.30 band.
+      expect(result.ranked.map((c) => c.ticker)).toEqual(['AAPL'])
+      expect(result.excluded).toEqual([])
+    })
+
+    it('lets an explicit opts.criteria override the persisted criteria', async () => {
+      const db = makeTestDb()
+      persistCriteria(db, { deltaMin: '0.15', deltaMax: '0.20' })
+      const { provider } = makeProvider()
+      mockChains({ status: 'ok', tickers: [AAPL_OK] })
+
+      const result = await screenWatchlistCandidates(() => provider, db, {
+        criteria: DEFAULT_SCREENING_CRITERIA,
+        currentDate: CURRENT_DATE
+      })
+
+      expect(result.ranked.map((c) => c.ticker)).toEqual(['AAPL'])
+    })
+
+    it('bounds the chain pull by the persisted DTE window', async () => {
+      const db = makeTestDb()
+      persistCriteria(db, { dteMin: 40, dteMax: 45 })
+      const { provider } = makeProvider()
+      mockChains({ status: 'ok', tickers: [] })
+
+      await screenWatchlistCandidates(() => provider, db, { currentDate: CURRENT_DATE })
+
+      expect(pullWatchlistChains).toHaveBeenCalledWith(provider, db, {
+        window: { min: 40, max: 45 },
+        currentDate: CURRENT_DATE
+      })
+    })
   })
 })

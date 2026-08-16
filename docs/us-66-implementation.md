@@ -18,15 +18,15 @@ empty/unavailable state cards.
 Seven pure helpers converting the IPC payload's decimal strings into the
 mockup's pinned display strings:
 
-| Helper            | Input → Output                                    | Notes                                                 |
-| ----------------- | ------------------------------------------------- | ----------------------------------------------------- |
-| `fmtYieldPercent` | `"0.0150"` → `"1.5%"`                             | `Decimal` ×100, 2dp, trailing zeros trimmed           |
-| `fmtScore`        | `"0.5286"` → `"0.53"`                             | fixed 2dp, zeros kept                                 |
-| `fmtSpread`       | `("0.06", "2.22")` → `"$0.06 (2%)"`               | reuses `fmtMoney` + `fmtPct` from `format.ts`         |
-| `fmtDelta`        | `"0.2800"` → `"0.28"`                             | fixed 2dp                                             |
-| `fmtIvr`          | `{ value: '44.0', … }` → `"44"`; `null` → `"n/a"` | zeros trimmed via `Decimal`                           |
-| `fmtOpenInterest` | `4200` → `"4,200"`; `null` → `"—"`                | `toLocaleString('en-US')`                             |
-| `fmtQuoteTime`    | ISO → local `HH:mm:ss`                            | `date-fns` `format(parseISO(...))`, no string slicing |
+| Helper            | Input → Output                                            | Notes                                                         |
+| ----------------- | --------------------------------------------------------- | ------------------------------------------------------------- |
+| `fmtYieldPercent` | `"0.0150"` → `"1.5%"`                                     | `Decimal` ×100, 2dp, trailing zeros trimmed                   |
+| `fmtScore`        | `"0.5286"` → `"0.53"`                                     | fixed 2dp, zeros kept                                         |
+| `fmtSpread`       | `("0.06", "2.22")` → `"$0.06 (2%)"`                       | reuses `fmtMoney` + `fmtPct` from `format.ts`                 |
+| `fmtDelta`        | `"0.2800"` → `"0.28"`                                     | fixed 2dp                                                     |
+| `fmtIvr`          | `{ value: '44.0', … }` → `"44 (Aug 7)"`; `null` → `"n/a"` | zeros trimmed via `Decimal`; US-67 added the observation date |
+| `fmtOpenInterest` | `4200` → `"4,200"`; `null` → `"—"`                        | `toLocaleString('en-US')`                                     |
+| `fmtQuoteTime`    | ISO → local `HH:mm:ss`                                    | `date-fns` `format(parseISO(...))`, no string slicing         |
 
 All money-adjacent math goes through `decimal.js`; helpers take narrow
 primitive inputs, never whole candidate objects.

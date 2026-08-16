@@ -1,5 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+import { format, parseISO } from 'date-fns'
 import type { ScreenerCandidate } from '../api/screener'
 import { ScreenerResultsTable } from './ScreenerResultsTable'
 
@@ -124,7 +125,10 @@ describe('ScreenerResultsTable cell formatting', () => {
     expect(within(row).getByText('1.5%')).toBeInTheDocument()
     expect(within(row).getByText('14.8%/yr')).toBeInTheDocument()
     expect(within(row).getByText('0.28')).toBeInTheDocument()
-    expect(within(row).getByText('44')).toBeInTheDocument()
+    // [US-67] The IVR cell carries the observation date, since the floor can now
+    // exclude on this reading and a stale one must not look current.
+    const observed = format(parseISO('2026-08-07T16:00:02-04:00'), 'MMM d')
+    expect(within(row).getByText(`44 (${observed})`)).toBeInTheDocument()
     expect(within(row).getByText('4,200')).toBeInTheDocument()
     expect(within(row).getByText('$0.06 (2%)')).toBeInTheDocument()
     expect(within(row).getByText('37d')).toBeInTheDocument()

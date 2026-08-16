@@ -21,6 +21,8 @@ type ScreenerStateCardProps = {
   body: string
   actionLabel?: string
   onAction?: () => void
+  /** Keeps the action visible but inert when it cannot do anything yet. */
+  actionDisabled?: boolean
   caption?: string
   'data-testid'?: string
 }
@@ -31,6 +33,7 @@ export function ScreenerStateCard({
   body,
   actionLabel,
   onAction,
+  actionDisabled = false,
   caption,
   'data-testid': testId
 }: ScreenerStateCardProps): React.JSX.Element {
@@ -56,7 +59,8 @@ export function ScreenerStateCard({
           <button
             type="button"
             onClick={onAction}
-            className="mt-1.5 cursor-pointer rounded-lg border border-wb-border bg-wb-bg-elevated px-4 py-[7px] font-wb-mono text-[0.72rem] text-wb-text-primary"
+            disabled={actionDisabled}
+            className="mt-1.5 cursor-pointer rounded-lg border border-wb-border bg-wb-bg-elevated px-4 py-[7px] font-wb-mono text-[0.72rem] text-wb-text-primary disabled:cursor-not-allowed disabled:opacity-50"
           >
             {actionLabel}
           </button>

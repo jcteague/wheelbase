@@ -64,7 +64,13 @@ Scenario: Toggle earnings handling between exclude and flag
   Given earnings handling is "Exclude"
   When the trader changes earnings handling to "Flag only"
   And saves
-  Then candidates with earnings inside the DTE window are shown with a warning instead of excluded
+  Then the criteria are persisted with earnings handling "flag"
+  And the criteria summary strip reads "Earnings Flag only"
+  And reopening the sheet shows "Flag only" selected
+  # What the screener then DOES with that choice — excluding vs flagging a candidate
+  # whose earnings fall on or before expiry — is US-70. Until US-70 wires the
+  # earnings calendar into the screener the toggle is persisted but behaviourally
+  # inert; US-67 owns only the setting.
 
 Scenario: Reject an inverted delta band
   When the trader sets the delta band to 0.30–0.20
@@ -136,6 +142,8 @@ Scenario: Settings does not own screening criteria
 - **US-66 copy changes.** The empty card currently reads "Loosen your delta band or DTE window in Screener settings" with no action; this story replaces that with an in-place **Adjust criteria** button (`ScreenerPage.tsx` / `ScreenerStateCard`). The dangling reference to a settings destination goes away.
 - The scorer (US-65) reads these persisted criteria; a single criteria object flows to the engine so the settings, the results, and the promote pre-fill never drift. The `criteria` override on `screenWatchlistCandidates` (defaulting to `DEFAULT_SCREENING_CRITERIA`) is the seam this story fills.
 - **Assumption — dismissal discards silently.** Cancel / close / scrim throw away unsaved edits with no confirmation, consistent with every existing sheet. If criteria editing should warn on dirty dismissal, that is a deliberate divergence from the established pattern and needs to be called out before build.
+- **Earnings handling is persisted here, applied in US-70.** `src/main/services/screener.ts` passes `earningsDate: null` into the engine, so the engine's `earnings_in_window` filter cannot fire regardless of the enum's value. US-67 ships the control and its persistence; wiring an earnings calendar into the screener and rendering the warning/caution is US-70's whole job. Do not pull that forward — US-70's ACs already cover exclude, flag-with-warning, unknown-date caution, and calendar outage.
+- **The IV-rank floor does not exist in the engine yet.** `ScreeningCriteria` has no IV-rank field and `FILTERS` has no IV-rank entry, so US-67 adds both — no other story owns it. Follow the established precedent that a missing IV rank never excludes a candidate (US-65): with the floor enabled, a candidate whose IVR is unknown still passes.
 
 ---
 

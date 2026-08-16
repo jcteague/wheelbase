@@ -5,6 +5,9 @@ import { ipcMain } from 'electron'
 import type Database from 'better-sqlite3'
 import type { MarketDataProvider } from '../integrations/market-data-provider'
 import { screenWatchlistCandidates } from '../services/screener'
+import { getScreeningCriteria, saveScreeningCriteria } from '../services/screening-criteria'
+import { SaveScreeningCriteriaPayloadSchema } from '../schemas'
+import { logger } from '../logger'
 import { handleIpcCall } from './utils'
 
 export function registerScreenerIpc({
@@ -19,5 +22,21 @@ export function registerScreenerIpc({
   // the modelled provider_unavailable state, not a generic internal_error.
   ipcMain.handle('screener:results', () =>
     handleIpcCall('screener_results_error', () => screenWatchlistCandidates(getProvider, db))
+  )
+
+  // [US-67] No payload — the read path degrades to the shipped defaults rather than
+  // erroring, so there is nothing to validate. See contracts/screener-get-criteria.md.
+  ipcMain.handle('screener:get-criteria', () =>
+    handleIpcCall('screener_get_criteria_error', () => ({ criteria: getScreeningCriteria(db) }))
+  )
+
+  // The schema covers per-field bounds; the delta/DTE band rules are the service's,
+  // which raises them with the `inverted_band` code the contract pins.
+  ipcMain.handle('screener:save-criteria', (_, payload: unknown) =>
+    handleIpcCall('screener_save_criteria_error', () => {
+      const parsed = SaveScreeningCriteriaPayloadSchema.parse(payload)
+      logger.debug(parsed, 'screener_save_criteria_requested')
+      return { criteria: saveScreeningCriteria(db, parsed) }
+    })
   )
 }

@@ -1,5 +1,6 @@
 // [US-65] screener — screening criteria, yield math, hard filters, and ranking
 import { describe, expect, it } from 'vitest'
+import { format, parseISO } from 'date-fns'
 import type { CandidateStrike } from './candidate-chain'
 import {
   DEFAULT_SCREENING_CRITERIA,
@@ -8,13 +9,25 @@ import {
   scoreCandidate,
   screenTicker,
   type FilterInput,
+  type IvRank,
   type ScreeningCriteria,
   type TickerScreeningInput
 } from './screener'
 
 // A known IV rank always travels with the time it was observed, so downstream
 // surfaces can judge whether it is still worth acting on.
-const IVR_44 = { value: '44.0', observedAt: '2026-08-05T20:00:00.000Z' }
+const IVR_OBSERVED_AT = '2026-08-05T20:00:00.000Z'
+const IVR_44 = { value: '44.0', observedAt: IVR_OBSERVED_AT }
+
+// Derived rather than hardcoded, so the expectation holds in any machine's zone —
+// the same technique the renderer's fmtQuoteTime test uses.
+const IVR_OBSERVED_LABEL = format(parseISO(IVR_OBSERVED_AT), 'MMM d')
+
+// [US-67] IV rank is stored at 1dp and the floor's exclusion reason renders the
+// stored value verbatim, so the fixtures carry the same 1dp shape the collector writes.
+function ivRank(value: string): IvRank {
+  return { value, observedAt: IVR_OBSERVED_AT }
+}
 
 function strike(overrides: Partial<CandidateStrike> = {}): CandidateStrike {
   return {
@@ -43,8 +56,15 @@ describe('DEFAULT_SCREENING_CRITERIA', () => {
       maxSpreadPercent: '10',
       maxSpreadAbsolute: '0.10',
       maxUnderlyingPrice: null,
+      minIvRank: null,
       earningsHandling: 'exclude'
     })
+  })
+
+  // [US-67] The floor is a ranking input the trader opts into — shipping it on would
+  // silently empty results in a low-volatility market.
+  it('leaves the IV-rank floor off', () => {
+    expect(DEFAULT_SCREENING_CRITERIA.minIvRank).toBe(null)
   })
 })
 
@@ -147,6 +167,7 @@ function filterInput(overrides: Partial<FilterInput> = {}): FilterInput {
     strike: strike(),
     dte: 37,
     underlyingPrice: null,
+    ivRank: null,
     earningsDate: null,
     currentDate: CURRENT_DATE,
     ...overrides
@@ -303,6 +324,42 @@ describe('evaluateFilters — price ceiling', () => {
   })
 })
 
+// [US-67] The floor is optional and sits immediately after the price ceiling — both
+// are whole-ticker disqualifiers, judged before any per-strike criterion.
+describe('evaluateFilters — IV-rank floor', () => {
+  it('excludes a ticker whose IV rank sits below the floor', () => {
+    const failure = evaluateFilters(
+      filterInput({ ivRank: ivRank('22.0') }),
+      criteria({ minIvRank: '30' })
+    )
+
+    expect(failure).toMatchObject({
+      code: 'iv_rank_floor',
+      reason: `IV rank 22.0 (${IVR_OBSERVED_LABEL}) below 30`
+    })
+  })
+
+  it('does not fire on a ticker whose IV rank clears the floor', () => {
+    expect(
+      evaluateFilters(filterInput({ ivRank: ivRank('38.0') }), criteria({ minIvRank: '30' }))
+    ).toBe(null)
+  })
+
+  it('treats the floor as inclusive — an IV rank exactly at it survives', () => {
+    expect(
+      evaluateFilters(filterInput({ ivRank: ivRank('30.0') }), criteria({ minIvRank: '30' }))
+    ).toBe(null)
+  })
+
+  it('does not exclude a ticker whose IV rank is unknown — a gap is not a low reading', () => {
+    expect(evaluateFilters(filterInput({ ivRank: null }), criteria({ minIvRank: '30' }))).toBe(null)
+  })
+
+  it('does not fire when the floor is disabled', () => {
+    expect(evaluateFilters(filterInput({ ivRank: ivRank('5.0') }), criteria())).toBe(null)
+  })
+})
+
 describe('evaluateFilters — earnings', () => {
   // CURRENT_DATE is 2026-08-06; earnings land between now and the 2026-08-21 expiry.
   const beforeExpiry = filterInput({
@@ -357,6 +414,18 @@ describe('evaluateFilters — ordering', () => {
     )
 
     expect(failure?.code).toBe('delta_band')
+  })
+
+  it('reports the ticker-level IV-rank floor ahead of a per-strike delta breach', () => {
+    const offBand = strike({ delta: '-0.4200' })
+    const failure = evaluateFilters(
+      filterInput({ strike: offBand, ivRank: ivRank('22.0') }),
+      criteria({ minIvRank: '30' })
+    )
+    const deltaOnly = evaluateFilters(filterInput({ strike: offBand }), criteria())
+
+    expect(failure?.code).toBe('iv_rank_floor')
+    expect(failure!.index).toBeLessThan(deltaOnly!.index)
   })
 })
 
@@ -455,6 +524,33 @@ describe('screenTicker', () => {
     )
 
     expect(result.best?.ivRank).toEqual(IVR_44)
+  })
+
+  it('drops every strike of a ticker sitting below the IV-rank floor', () => {
+    const result = screenTicker(
+      tickerInput({ ticker: 'PEP', ivRank: ivRank('22.0') }),
+      criteria({ minIvRank: '30' }),
+      CURRENT_DATE
+    )
+
+    expect(result.best).toBe(null)
+    expect(result.excluded).toEqual([
+      expect.objectContaining({
+        code: 'iv_rank_floor',
+        reason: `IV rank 22.0 (${IVR_OBSERVED_LABEL}) below 30`
+      })
+    ])
+  })
+
+  it('still scores a ticker whose IV rank clears the floor', () => {
+    const result = screenTicker(
+      tickerInput({ ticker: 'KO', ivRank: ivRank('38.0') }),
+      criteria({ minIvRank: '30' }),
+      CURRENT_DATE
+    )
+
+    expect(result.best?.ticker).toBe('KO')
+    expect(result.excluded).toEqual([])
   })
 
   it('flags a survivor whose expiry straddles earnings when the trader chose flag mode', () => {

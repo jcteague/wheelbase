@@ -40,6 +40,7 @@ export type ScreenerExclusion = {
   ticker: string
   code:
     | 'price_ceiling'
+    | 'iv_rank_floor'
     | 'earnings_in_window'
     | 'dte_window'
     | 'delta_unavailable'

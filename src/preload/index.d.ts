@@ -430,6 +430,7 @@ interface IpcScreenerExclusion {
   ticker: string
   code:
     | 'price_ceiling'
+    | 'iv_rank_floor'
     | 'earnings_in_window'
     | 'dte_window'
     | 'delta_unavailable'
@@ -449,6 +450,23 @@ type IpcScreenerResultsResult = IpcResult<{
   excluded: IpcScreenerExclusion[]
   quoteTimestamp: string | null
 }>
+
+/** Mirrors `ScreeningCriteria` in `src/main/core/screener.ts` — the full stored
+ *  document both criteria channels return. */
+interface IpcScreeningCriteria {
+  deltaMin: string // absolute delta, e.g. '0.20'
+  deltaMax: string // absolute delta, e.g. '0.30'
+  dteMin: number // calendar days, inclusive
+  dteMax: number // calendar days, inclusive
+  minOpenInterest: number // inclusive floor
+  maxSpreadPercent: string // percent of mark, e.g. '10'
+  maxSpreadAbsolute: string // dollars, e.g. '0.10' — read-only, no input in the sheet
+  maxUnderlyingPrice: string | null // null = ceiling disabled
+  minIvRank: string | null // null = floor disabled
+  earningsHandling: 'exclude' | 'flag'
+}
+
+type IpcScreeningCriteriaResult = IpcResult<{ criteria: IpcScreeningCriteria }>
 
 interface IpcGetOptionSnapshotsPayload {
   symbols: string[]
@@ -661,6 +679,10 @@ declare global {
       }
       screener: {
         results: () => Promise<IpcScreenerResultsResult>
+        getCriteria: () => Promise<IpcScreeningCriteriaResult>
+        saveCriteria: (
+          payload: Omit<IpcScreeningCriteria, 'maxSpreadAbsolute'>
+        ) => Promise<IpcScreeningCriteriaResult>
       }
       ivr: {
         collectNow: () => Promise<IpcCollectIvrNowResult>

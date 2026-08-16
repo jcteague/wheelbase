@@ -1,3 +1,4 @@
 export const screenerQueryKeys = {
-  results: ['screener', 'results'] as const
+  results: ['screener', 'results'] as const,
+  criteria: ['screener', 'criteria'] as const
 }

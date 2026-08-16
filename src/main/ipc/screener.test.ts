@@ -1,10 +1,11 @@
 // [US-65] screener:results IPC — the delivery surface US-66 consumes. The handler is
 // thin by contract: no payload, no branching, one service call wrapped in the envelope.
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type Database from 'better-sqlite3'
 import type { MarketDataProvider } from '../integrations/market-data-provider'
-import type { ScoredCandidate } from '../core/screener'
+import { DEFAULT_SCREENING_CRITERIA, type ScoredCandidate } from '../core/screener'
 import type { ScreenerExclusion, ScreenerResults } from '../services/screener'
+import { makeTestDb } from '../test-utils'
 
 const screenWatchlistCandidates = vi.fn()
 
@@ -29,15 +30,19 @@ function getProvider(): MarketDataProvider {
   return provider
 }
 
-/** Registers the module and hands back its only channel's handler. */
-async function registerAndGetHandler(): Promise<IpcHandler> {
+/** Registers the module and hands back one channel's handler. `registerScreenerIpc`
+ *  still takes only `{ db, getProvider }` — the criteria channels ride the same seam. */
+async function registerAndGetHandler(
+  channel: string,
+  database: Database.Database = db
+): Promise<IpcHandler> {
   const { ipcMain } = await import('electron')
   const { registerScreenerIpc } = await import('./screener')
-  registerScreenerIpc({ db, getProvider })
+  registerScreenerIpc({ db: database, getProvider })
 
   const calls = vi.mocked(ipcMain.handle).mock.calls as Array<[string, IpcHandler]>
-  const entry = calls.find(([channel]) => channel === 'screener:results')
-  if (!entry) throw new Error('screener:results handler was not registered')
+  const entry = calls.find(([name]) => name === channel)
+  if (!entry) throw new Error(`${channel} handler was not registered`)
   return entry[1]
 }
 
@@ -92,7 +97,7 @@ describe('registerScreenerIpc', () => {
   it('screener:results returns { ok: true, status, ranked, excluded, quoteTimestamp }', async () => {
     screenWatchlistCandidates.mockResolvedValue(SAMPLE_RESULTS)
 
-    const handler = await registerAndGetHandler()
+    const handler = await registerAndGetHandler('screener:results')
     const result = await handler(null)
 
     expect(result).toEqual({ ok: true, ...SAMPLE_RESULTS })
@@ -101,7 +106,7 @@ describe('registerScreenerIpc', () => {
   it('screener:results takes no payload and passes getProvider + db straight through', async () => {
     screenWatchlistCandidates.mockResolvedValue(SAMPLE_RESULTS)
 
-    const handler = await registerAndGetHandler()
+    const handler = await registerAndGetHandler('screener:results')
     await handler(null)
 
     expect(screenWatchlistCandidates).toHaveBeenCalledTimes(1)
@@ -113,7 +118,7 @@ describe('registerScreenerIpc', () => {
   it('screener:results forwards a provider_unavailable screen unchanged', async () => {
     screenWatchlistCandidates.mockResolvedValue(OUTAGE_RESULTS)
 
-    const handler = await registerAndGetHandler()
+    const handler = await registerAndGetHandler('screener:results')
     const result = await handler(null)
 
     expect(result).toEqual({ ok: true, ...OUTAGE_RESULTS })
@@ -122,10 +127,164 @@ describe('registerScreenerIpc', () => {
   it('screener:results maps a service throw to { ok: false, errors } without rejecting', async () => {
     screenWatchlistCandidates.mockRejectedValue(new Error('SQLITE_BUSY'))
 
-    const handler = await registerAndGetHandler()
+    const handler = await registerAndGetHandler('screener:results')
     const result = await handler(null)
 
     expect(result).toEqual({
+      ok: false,
+      errors: [
+        { field: '__root__', code: 'internal_error', message: 'An unexpected error occurred' }
+      ]
+    })
+  })
+})
+
+// [US-67] screener:get-criteria / screener:save-criteria — the transport for the
+// criteria sheet. Both handlers are thin (Zod parse + one service call inside
+// handleIpcCall), so these tests run the real persistence service against a real
+// in-memory DB and assert only the envelope the renderer sees.
+// Contracts: plans/us-67/contracts/screener-get-criteria.md, screener-save-criteria.md
+describe('registerScreenerIpc — screening criteria', () => {
+  let criteriaDb: Database.Database
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    criteriaDb = makeTestDb()
+  })
+
+  afterEach(() => {
+    if (criteriaDb.open) criteriaDb.close()
+  })
+
+  /** The save payload from `contracts/screener-save-criteria.md` — the full criteria
+   *  minus `maxSpreadAbsolute`, which the service supplies from the defaults. */
+  function savePayload(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      deltaMin: '0.15',
+      deltaMax: '0.20',
+      dteMin: 40,
+      dteMax: 45,
+      minOpenInterest: 750,
+      maxSpreadPercent: '8',
+      maxUnderlyingPrice: '75',
+      minIvRank: '30',
+      earningsHandling: 'flag',
+      ...overrides
+    }
+  }
+
+  async function readCriteria(): Promise<unknown> {
+    const handler = await registerAndGetHandler('screener:get-criteria', criteriaDb)
+    return handler(null, undefined)
+  }
+
+  it('screener:get-criteria returns { ok: true, criteria } with the shipped defaults on a fresh DB', async () => {
+    const handler = await registerAndGetHandler('screener:get-criteria', criteriaDb)
+
+    const result = await handler(null, undefined)
+
+    expect(result).toEqual({ ok: true, criteria: DEFAULT_SCREENING_CRITERIA })
+  })
+
+  it('screener:save-criteria returns { ok: true, criteria } reflecting the saved values', async () => {
+    const handler = await registerAndGetHandler('screener:save-criteria', criteriaDb)
+
+    const result = await handler(null, savePayload())
+
+    expect(result).toEqual({
+      ok: true,
+      criteria: {
+        deltaMin: '0.15',
+        deltaMax: '0.20',
+        dteMin: 40,
+        dteMax: 45,
+        minOpenInterest: 750,
+        maxSpreadPercent: '8',
+        // Not in the payload — the service fills it from the shipped defaults.
+        maxSpreadAbsolute: DEFAULT_SCREENING_CRITERIA.maxSpreadAbsolute,
+        maxUnderlyingPrice: '75',
+        minIvRank: '30',
+        earningsHandling: 'flag'
+      }
+    })
+  })
+
+  it('screener:save-criteria persists the saved criteria for the next read', async () => {
+    const save = await registerAndGetHandler('screener:save-criteria', criteriaDb)
+    await save(null, savePayload())
+
+    expect(await readCriteria()).toMatchObject({
+      ok: true,
+      criteria: { deltaMin: '0.15', deltaMax: '0.20', dteMin: 40, dteMax: 45 }
+    })
+  })
+
+  it('screener:save-criteria rejects an inverted delta band with code inverted_band on deltaMax', async () => {
+    const handler = await registerAndGetHandler('screener:save-criteria', criteriaDb)
+
+    const result = await handler(null, savePayload({ deltaMin: '0.30', deltaMax: '0.20' }))
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        {
+          field: 'deltaMax',
+          code: 'inverted_band',
+          message: 'Minimum delta must be less than maximum delta'
+        }
+      ]
+    })
+  })
+
+  it('screener:save-criteria rejects an out-of-range deltaMax at the boundary, before the service runs', async () => {
+    const handler = await registerAndGetHandler('screener:save-criteria', criteriaDb)
+
+    const result = await handler(null, savePayload({ deltaMax: '1.5' }))
+
+    expect(result).toMatchObject({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          field: 'deltaMax',
+          message: 'Delta must be between 0.01 and 0.99'
+        })
+      ]
+    })
+    // Nothing reached the service, so nothing was written.
+    expect(await readCriteria()).toEqual({ ok: true, criteria: DEFAULT_SCREENING_CRITERIA })
+  })
+
+  it('screener:save-criteria returns ok:false for a payload missing earningsHandling instead of throwing', async () => {
+    const handler = await registerAndGetHandler('screener:save-criteria', criteriaDb)
+    const withoutEarnings = savePayload()
+    delete withoutEarnings.earningsHandling
+
+    const result = await handler(null, withoutEarnings)
+
+    expect(result).toMatchObject({
+      ok: false,
+      errors: [expect.objectContaining({ field: 'earningsHandling' })]
+    })
+    expect(await readCriteria()).toEqual({ ok: true, criteria: DEFAULT_SCREENING_CRITERIA })
+  })
+
+  it('screener:get-criteria maps an internal failure to __root__ / internal_error without rejecting', async () => {
+    const handler = await registerAndGetHandler('screener:get-criteria', criteriaDb)
+    criteriaDb.close()
+
+    await expect(handler(null, undefined)).resolves.toEqual({
+      ok: false,
+      errors: [
+        { field: '__root__', code: 'internal_error', message: 'An unexpected error occurred' }
+      ]
+    })
+  })
+
+  it('screener:save-criteria maps an internal failure to __root__ / internal_error without rejecting', async () => {
+    const handler = await registerAndGetHandler('screener:save-criteria', criteriaDb)
+    criteriaDb.close()
+
+    await expect(handler(null, savePayload())).resolves.toEqual({
       ok: false,
       errors: [
         { field: '__root__', code: 'internal_error', message: 'An unexpected error occurred' }

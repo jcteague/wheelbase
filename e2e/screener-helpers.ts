@@ -1,4 +1,5 @@
-// Shared helpers for the US-66 screener-results e2e spec.
+// Shared helpers for the screener e2e specs — US-66's ranked results and US-67's
+// criteria sheet.
 //
 // The suite stays offline: put chains come from the FakeMarketDataProvider's
 // OCC-keyed WHEELBASE_MOCK_OPTION_SNAPSHOTS fixtures, IVR rows from the US-44
@@ -23,7 +24,7 @@ export const QUOTE_TIMESTAMP = '2026-08-07T20:00:02Z'
 
 /** When the fake IVR scrape is recorded as having happened. Display never shows it;
  *  it only has to be a parseable ISO instant for the snapshot row. */
-const IVR_OBSERVED_AT = '2026-08-07T21:00:00Z'
+export const IVR_OBSERVED_AT = '2026-08-07T21:00:00Z'
 
 /** One put strike as the provider would quote it. `mid` is what the engine screens
  *  on (it becomes `mark`), so it is stated rather than derived from bid/ask. */
@@ -98,13 +99,77 @@ export const TSLA_PUT: PutFixtureSpec = {
   dteOffset: 37
 }
 
+/** [US-67] mid 1.78 / 150 = 1.1867% period, 11.71%/yr over 37 DTE, ÷ 0.26 ⇒ score 0.45
+ *  (rank 4, behind MSFT's 0.50). Paired with a seeded IV rank of 22 — the only fixture
+ *  below an IV-rank floor of 30, since KO 38 / AAPL 44 / MSFT n/a all clear it. */
+export const PEP_PUT: PutFixtureSpec = {
+  ticker: 'PEP',
+  strike: 150,
+  bid: '1.73',
+  ask: '1.83',
+  mid: '1.78',
+  delta: '-0.26',
+  openInterest: 3000,
+  dteOffset: 37
+}
+
+/** [US-67] mid 1.10 / 90 = 1.2222% period, 10.62%/yr over 42 DTE, ÷ 0.18 ⇒ score 0.59.
+ *  Deliberately outside the default 0.20–0.30 delta band and inside a conservative
+ *  0.15–0.20 / 40–45 one, so a save flips it from excluded to the only ranked row. */
+export const SBUX_PUT: PutFixtureSpec = {
+  ticker: 'SBUX',
+  strike: 90,
+  bid: '1.06',
+  ask: '1.14',
+  mid: '1.10',
+  delta: '-0.18',
+  openInterest: 1500,
+  dteOffset: 42
+}
+
 /** The three tickers that rank, in expected rank order. */
 export const RANKED_PUTS: PutFixtureSpec[] = [KO_PUT, AAPL_PUT, MSFT_PUT]
 
 /** IV ranks the collector persists for the ranked fixtures. MSFT is absent on purpose. */
 export const RANKED_IVR: Record<string, number> = { KO: 38, AAPL: 44 }
 
+/** [US-67] Underlying quotes for the ranked fixtures. Only `price` is read (by the
+ *  price-ceiling filter); the rest of the shape is filled so the fixture is a real
+ *  `StockQuote`. A $75 ceiling leaves KO and drops AAPL and MSFT. */
+export const STOCK_QUOTES: Record<string, StockQuoteFixture> = {
+  KO: stockQuote('62.00'),
+  AAPL: stockQuote('185.00'),
+  MSFT: stockQuote('420.00')
+}
+
 // ── Fixture construction ──────────────────────────────────────────────────────
+
+/** One underlying quote as the provider would serve it — the `StockQuote` shape the
+ *  WHEELBASE_MOCK_STOCK_QUOTES seam parses. */
+type StockQuoteFixture = {
+  price: string
+  bid: string
+  ask: string
+  change: string
+  changePercent: string
+  prevClose: string
+  volume: number
+  timestamp: string
+}
+
+/** A flat quote at `price` — the screener only ever reads `price`. */
+function stockQuote(price: string): StockQuoteFixture {
+  return {
+    price,
+    bid: price,
+    ask: price,
+    change: '0.00',
+    changePercent: '0.00',
+    prevClose: price,
+    volume: 1_000_000,
+    timestamp: QUOTE_TIMESTAMP
+  }
+}
 
 type OptionSnapshotFixture = {
   bid: string
@@ -194,9 +259,23 @@ export type ScreenerLaunchOpts = {
   fixtures?: PutFixtureSpec[]
   /** IV ranks to persist, keyed by ticker. Tickers omitted here render `n/a`. */
   ivr?: Record<string, number>
+  /** Underlying quotes, keyed by ticker. Only read once a price ceiling is set. */
+  stockQuotes?: Record<string, StockQuoteFixture>
   marketStatus?: MarketStatusFixture
   /** MarketDataErrorCode that makes every provider call throw — the outage scenario. */
   marketDataError?: string
+}
+
+function screenerLaunchEnv(dbPath: string, opts: ScreenerLaunchOpts): Record<string, string> {
+  // buildIvrLaunchEnv supplies the shared keys plus the WHEELBASE_FAKE_IVR seam this
+  // suite seeds IV ranks through; only the market-data fixtures are ours.
+  const env = buildIvrLaunchEnv(dbPath, { marketStatus: opts.marketStatus })
+  env.WHEELBASE_MOCK_OPTION_SNAPSHOTS = JSON.stringify(
+    buildPutFixtures(opts.fixtures ?? RANKED_PUTS)
+  )
+  if (opts.stockQuotes) env.WHEELBASE_MOCK_STOCK_QUOTES = JSON.stringify(opts.stockQuotes)
+  if (opts.marketDataError) env.FAKE_MARKET_DATA_ERROR = opts.marketDataError
+  return env
 }
 
 /**
@@ -210,13 +289,7 @@ export async function launchScreener(
 ): Promise<{ app: ElectronApplication; page: Page }> {
   const fixtures = opts.fixtures ?? RANKED_PUTS
 
-  // buildIvrLaunchEnv supplies the shared keys plus the WHEELBASE_FAKE_IVR seam this
-  // suite seeds IV ranks through; only the option chains and the outage flag are ours.
-  const env = buildIvrLaunchEnv(dbPath, { marketStatus: opts.marketStatus })
-  env.WHEELBASE_MOCK_OPTION_SNAPSHOTS = JSON.stringify(buildPutFixtures(fixtures))
-  if (opts.marketDataError) env.FAKE_MARKET_DATA_ERROR = opts.marketDataError
-
-  const app = await launchElectron(env)
+  const app = await launchElectron(screenerLaunchEnv(dbPath, opts))
   const page = await getPage(app)
 
   await seedWatchlist(
@@ -229,6 +302,25 @@ export async function launchScreener(
   return { app, page }
 }
 
+/**
+ * [US-67] Restart against the same database file — the persistence AC. Nothing is
+ * re-seeded: the watchlist, IV-rank snapshots, and saved criteria all live in
+ * `dbPath`, which survives the close because `cleanupDb` is a separate step.
+ */
+export async function relaunchScreener(
+  app: ElectronApplication,
+  dbPath: string,
+  opts: ScreenerLaunchOpts = {}
+): Promise<{ app: ElectronApplication; page: Page }> {
+  await app.close()
+
+  const relaunched = await launchElectron(screenerLaunchEnv(dbPath, opts))
+  const page = await getPage(relaunched)
+  await goToScreener(page)
+
+  return { app: relaunched, page }
+}
+
 // ── Page queries ──────────────────────────────────────────────────────────────
 
 /** Ranked tickers in rendered row order. */
@@ -239,6 +331,14 @@ export async function rankedTickers(page: Page): Promise<string[]> {
   return testids.map((testid) => testid.replace('screener-row-', ''))
 }
 
+/** Resolves once exactly `count` ranked rows are rendered — i.e. a re-screen has landed. */
+export async function waitForRankedRowCount(page: Page, count: number): Promise<void> {
+  await page.waitForFunction(
+    (expected) => document.querySelectorAll('[data-testid^="screener-row-"]').length === expected,
+    count
+  )
+}
+
 /** The cell texts of one ranked row, in column order. */
 export function rowCells(page: Page, ticker: string): Promise<string[]> {
   return page.locator(`[data-testid="screener-row-${ticker}"] td`).allTextContents()
@@ -247,4 +347,115 @@ export function rowCells(page: Page, ticker: string): Promise<string[]> {
 /** The `data-yield-per-delta` score a ranked row exposes for machine verification. */
 export function rowScore(page: Page, ticker: string): Promise<string | null> {
   return page.getAttribute(`[data-testid="screener-row-${ticker}"]`, 'data-yield-per-delta')
+}
+
+// ── [US-67] Criteria sheet ────────────────────────────────────────────────────
+
+/** Criteria field → the `aria-label` its input carries in the sheet. */
+const CRITERIA_LABELS = {
+  deltaMin: 'Minimum delta',
+  deltaMax: 'Maximum delta',
+  dteMin: 'Minimum DTE',
+  dteMax: 'Maximum DTE',
+  minOpenInterest: 'Minimum open interest',
+  maxSpreadPercent: 'Max bid-ask spread',
+  maxUnderlyingPrice: 'Price ceiling',
+  minIvRank: 'IV-rank floor'
+} as const
+
+export type CriteriaField = keyof typeof CRITERIA_LABELS
+
+/** Fill order, so a two-ended edit passes through a valid intermediate band —
+ *  lowering the minimum before the maximum, and vice versa. */
+const CRITERIA_FILL_ORDER: CriteriaField[] = [
+  'deltaMin',
+  'deltaMax',
+  'dteMin',
+  'dteMax',
+  'minOpenInterest',
+  'maxSpreadPercent',
+  'maxUnderlyingPrice',
+  'minIvRank'
+]
+
+function criteriaInput(page: Page, field: CriteriaField): string {
+  return `input[aria-label="${CRITERIA_LABELS[field]}"]`
+}
+
+/** The three entry points the ACs name, each opening the same sheet. */
+export type CriteriaEntryPoint = 'header' | 'strip' | 'empty'
+
+const ENTRY_POINT_SELECTOR: Record<CriteriaEntryPoint, string> = {
+  // The only *button* carrying ⚙ — the sidebar's Settings item is an anchor. Matching on
+  // its "Criteria" label instead would also hit the empty state's "Adjust criteria",
+  // since `:has-text()` is a case-insensitive substring match.
+  header: 'button:has-text("⚙")',
+  strip: '[data-testid="screener-criteria-strip"]',
+  empty: '[data-testid="screener-empty"] button'
+}
+
+/** Open the criteria sheet and wait for its form to mount. */
+export async function openCriteriaSheet(page: Page, via: CriteriaEntryPoint): Promise<void> {
+  await page.click(ENTRY_POINT_SELECTOR[via])
+  await page.waitForSelector(criteriaInput(page, 'deltaMin'))
+}
+
+/** The dismissals the AC lists — all three discard unsaved edits. */
+export type CriteriaDismissal = 'cancel' | 'close' | 'scrim'
+
+const DISMISSAL_SELECTOR: Record<CriteriaDismissal, string> = {
+  cancel: 'button:has-text("Cancel")',
+  close: 'button[aria-label="Close sheet"]',
+  scrim: '[data-testid="sheet-scrim"]'
+}
+
+export async function dismissCriteriaSheet(page: Page, via: CriteriaDismissal): Promise<void> {
+  await page.click(DISMISSAL_SELECTOR[via])
+  await waitForCriteriaSheetClosed(page)
+}
+
+/** Resolves once the sheet has unmounted; throws if it stays open. */
+export async function waitForCriteriaSheetClosed(page: Page): Promise<void> {
+  await page.waitForSelector(criteriaInput(page, 'deltaMin'), { state: 'detached' })
+}
+
+/** The sheet's primary action — also what the validation ACs assert is disabled. */
+export const SAVE_CRITERIA_BUTTON = 'button:has-text("Save & re-screen")'
+
+/** Click the sheet's primary action. The caller asserts what the save produced. */
+export async function saveCriteria(page: Page): Promise<void> {
+  await page.click(SAVE_CRITERIA_BUTTON)
+}
+
+/** Every criteria input's current value — what "pre-filled from the persisted
+ *  criteria" means in one assertable object. A disabled optional reads `''`. */
+export async function criteriaValues(page: Page): Promise<Record<CriteriaField, string>> {
+  const entries = await Promise.all(
+    CRITERIA_FILL_ORDER.map(
+      async (field) => [field, await page.inputValue(criteriaInput(page, field))] as const
+    )
+  )
+  return Object.fromEntries(entries) as Record<CriteriaField, string>
+}
+
+/** Type new values into the sheet, in the fill order above. */
+export async function setCriteriaValues(
+  page: Page,
+  values: Partial<Record<CriteriaField, string>>
+): Promise<void> {
+  for (const field of CRITERIA_FILL_ORDER) {
+    const value = values[field]
+    if (value !== undefined) await page.fill(criteriaInput(page, field), value)
+  }
+}
+
+/** Whether an Off/On or Exclude/Flag segment is the selected one. */
+export async function segmentPressed(page: Page, testId: string): Promise<boolean> {
+  return (await page.getAttribute(`[data-testid="${testId}"]`, 'aria-pressed')) === 'true'
+}
+
+/** The criteria summary strip's chips, without its `Criteria` label or `Edit →`. */
+export async function criteriaChips(page: Page): Promise<string[]> {
+  const spans = await page.locator('[data-testid="screener-criteria-strip"] span').allTextContents()
+  return spans.slice(1, -1)
 }

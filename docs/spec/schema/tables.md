@@ -334,14 +334,15 @@ Generic encrypted credential storage for external vendors. US-37 writes Alpaca r
 
 <!-- /generated -->
 
-<!-- generated:from us-37,us-35 -->
+<!-- generated:from us-37,us-35,us-57-58,us-67 -->
 
 ## `app_settings`
 
 Lightweight key/value persistence for non-secret application settings. US-37
 introduced the table to remember the active broker environment across launches;
 US-35 consumes the same table to persist per-environment assignment-detection
-poll watermarks.
+poll watermarks, US-57/58 the global alert thresholds, and US-67 the screening
+criteria.
 
 ### Columns
 
@@ -353,16 +354,28 @@ poll watermarks.
 
 ### Known keys
 
-| Key                              | Owner | Values                           | Purpose                                                                                                                |
-| -------------------------------- | ----- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `active_broker_environment`      | US-37 | `'paper'`, `'live'`, or `'none'` | Trader-selected broker environment. Effective value collapses to `'none'` if the stored environment lacks credentials. |
-| `assignments_last_poll_at:paper` | US-35 | ISO-8601 timestamp               | High-water mark passed as `since` to `BrokerProvider.getActivities()` on the paper-env assignment poll.                |
-| `assignments_last_poll_at:live`  | US-35 | ISO-8601 timestamp               | Same as above for the live environment.                                                                                |
+| Key                                   | Owner    | Values                            | Purpose                                                                                                                                  |
+| ------------------------------------- | -------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `active_broker_environment`           | US-37    | `'paper'`, `'live'`, or `'none'`  | Trader-selected broker environment. Effective value collapses to `'none'` if the stored environment lacks credentials.                   |
+| `assignments_last_poll_at:paper`      | US-35    | ISO-8601 timestamp                | High-water mark passed as `since` to `BrokerProvider.getActivities()` on the paper-env assignment poll.                                  |
+| `assignments_last_poll_at:live`       | US-35    | ISO-8601 timestamp                | Same as above for the live environment.                                                                                                  |
+| `alert_default_profit_target_percent` | US-57/58 | Integer 1–99 as text              | Global profit-target default; a position's `profit_target_percent` overrides it.                                                         |
+| `alert_default_management_window_dte` | US-57/58 | Integer 6–45 as text              | Global management-window default; a position's `management_window_dte_override` overrides it.                                            |
+| `screening_criteria`                  | US-67    | JSON `ScreeningCriteria` document | The whole screener criteria object — delta band, DTE window, liquidity gates, optional price ceiling and IV-rank floor, earnings policy. |
 
 ### Semantics
 
-- The table is owned by US-37 (migration 006); US-35 consumes it without
-  schema changes — only the set of recognised keys grows.
+- The table is owned by US-37 (migration 006); US-35, US-57/58, and US-67 consume
+  it without schema changes — only the set of recognised keys grows.
+- **US-67 stores one JSON document, not nine scalar rows.** `appSettings.set`
+  writes one key per call and is not transactional, so nine sequential writes could
+  half-apply and leave the screener running a delta band from one save with a DTE
+  window from another. The criteria are read back through a Zod schema whose every
+  field carries a `.default()`, so a missing key, a corrupt value, or a document
+  written before a field existed all resolve to the shipped default. Any parse
+  failure — or a band that fails an `isAscending` re-check after parsing — falls
+  back to the **whole** defaults object rather than a half-merged one. See
+  [us-67 — Configure screening criteria](../features/us-67-configure-screening-criteria.md).
 - Watermark keys follow the convention `<feature>_last_poll_at:<env>` so
   paper and live state never collide. Watermarks are captured at **poll
   start** (not poll end) — see

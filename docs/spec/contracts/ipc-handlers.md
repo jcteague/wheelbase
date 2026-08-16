@@ -1678,15 +1678,17 @@ postEarningsOnly?, coreHolding? }` (parsed by `WatchlistAddPayloadSchema`; ticke
 
 <!-- /generated -->
 
-<!-- generated:from us-65 -->
+<!-- generated:from us-65,us-67 -->
 
 ## `screener:*` namespace
 
-The candidate-screener read surface, registered by
-`registerScreenerIpc({ db, getProvider })` in `src/main/ipc/screener.ts` and wired from
-`src/main/index.ts` with the same `getProvider` accessor `registerMarketDataHandlers`
-receives. Introduced by
-[us-65 — Score wheel candidates](../features/us-65-score-wheel-candidates.md).
+The candidate-screener surface, registered by `registerScreenerIpc({ db, getProvider })` in
+`src/main/ipc/screener.ts` and wired from `src/main/index.ts` with the same `getProvider`
+accessor `registerMarketDataHandlers` receives. Introduced by
+[us-65 — Score wheel candidates](../features/us-65-score-wheel-candidates.md); the two
+criteria channels were added by
+[us-67 — Configure screening criteria](../features/us-67-configure-screening-criteria.md),
+which did **not** change `registerScreenerIpc`'s signature.
 
 ### `screener:results`
 
@@ -1699,8 +1701,9 @@ receives. Introduced by
   wrapped in `handleIpcCall`. The provider **thunk** is passed through and resolved
   inside the service, so a never-configured provider (no API key) surfaces as
   `status: 'provider_unavailable'` rather than the generic error row. Criteria come from
-  `DEFAULT_SCREENING_CRITERIA` until US-67 persists overrides (the service already
-  accepts a `criteria` option for that seam).
+  `getScreeningCriteria(db)` as of US-67 — the service resolves the trader's persisted
+  document itself, falling back to `DEFAULT_SCREENING_CRITERIA` when nothing is stored.
+  The `criteria` option remains as an explicit override seam.
 - **Response (success):** `{ ok: true, status, ranked, excluded, quoteTimestamp }` where:
   - `status` is `'ok' | 'provider_unavailable'`
   - `ranked: ScoredCandidate[]` — rank order (`yieldPerDelta` desc, ties by ticker asc);
@@ -1716,7 +1719,8 @@ receives. Introduced by
   `annualizedYield` / `yieldPerDelta` (4dp fractions), `earningsFlagged` (boolean —
   `true` only in `earningsHandling: 'flag'` mode when an earnings print lands inside the
   holding window; latent until US-70 supplies earnings dates), `timestamp`.
-- **`ScreenerExclusion.code`:** the seven engine codes — `price_ceiling`,
+- **`ScreenerExclusion.code`:** the eight engine codes — `price_ceiling`, `iv_rank_floor`
+  (added by US-67, positioned immediately after `price_ceiling` in the ordered registry),
   `earnings_in_window`, `dte_window`, `delta_unavailable`, `delta_band`,
   `open_interest`, `spread` — plus two chain-level codes, `no_options_listed` and
   `data_unavailable`. `reason` is a rendered human string that the renderer shows
@@ -1736,6 +1740,51 @@ receives. Introduced by
 - **Source:** `src/main/ipc/screener.ts`, `src/main/services/screener.ts`
   (`screenWatchlistCandidates`), `src/main/core/screener.ts` (`screenTicker`,
   `rankCandidates`), `src/preload/index.ts`
+
+### `screener:get-criteria`
+
+- **Purpose:** return the trader's persisted screening criteria, falling back to the shipped
+  defaults when nothing has been saved or the stored document is unreadable.
+- **Request:** none — no payload, therefore no Zod request schema, matching `screener:results`.
+- **Response (success):** `{ ok: true, criteria }` where `criteria` is the full stored
+  `ScreeningCriteria`: `deltaMin` / `deltaMax` (string), `dteMin` / `dteMax` /
+  `minOpenInterest` (number), `maxSpreadPercent` / `maxSpreadAbsolute` (string),
+  `maxUnderlyingPrice` / `minIvRank` (`string | null`, `null` = that optional filter is off),
+  and `earningsHandling` (`'exclude' | 'flag'`).
+- **Never absent, never partial:** an unsaved, missing, corrupt, schema-invalid, or
+  internally-inconsistent document all resolve to the whole `DEFAULT_SCREENING_CRITERIA`
+  rather than to a half-merged object.
+- **Error:** only `__root__` / `internal_error`. There is no payload to reject, and every
+  storage failure mode degrades to the defaults rather than erroring.
+- **Source:** `src/main/ipc/screener.ts`, `src/main/services/screening-criteria.ts`
+  (`getScreeningCriteria`), `src/preload/index.ts`
+
+### `screener:save-criteria`
+
+- **Purpose:** validate and persist a full replacement set of screening criteria, returning
+  the stored document so the renderer renders persisted truth rather than form state.
+- **Request:** `SaveScreeningCriteriaPayloadSchema` (`src/main/schemas.ts`). Identical to the
+  `criteria` shape above **minus `maxSpreadAbsolute`** — the sheet has no input for it and the
+  service supplies it from the defaults. `deltaMin` / `deltaMax` `'0.01'`–`'0.99'`; `dteMin` /
+  `dteMax` integers 1–365; `minOpenInterest` integer ≥ 0; `maxSpreadPercent` `'1'`–`'50'`;
+  `maxUnderlyingPrice` `> 0` when non-null; `minIvRank` `'0'`–`'100'` when non-null.
+- **Response (success):** `{ ok: true, criteria }` — identical in shape to
+  `screener:get-criteria`, so both feed one renderer type and one form `reset`.
+- **Errors:** per-field `out_of_range` rows for each bound, plus `inverted_band` on `deltaMax`
+  (`Minimum delta must be less than maximum delta`) and on `dteMax`
+  (`Minimum DTE must be less than maximum DTE`). Every message is pinned verbatim by an e2e
+  test. A rejected payload persists **nothing** — validation runs before the single
+  `appSettings.set`, so the results behind the sheet are unchanged.
+- **Note on `code`:** per-field bounds are enforced twice, at the Zod boundary and again in the
+  service. Zod parses first and `handleIpcCall` maps a Zod issue's `code` verbatim, so a bound
+  caught at the boundary reaches the renderer as `custom` rather than `out_of_range`; only the
+  service's `ValidationError` path emits `out_of_range` literally. The two `inverted_band` rows
+  are service-only (Zod v4 cannot emit a custom issue code) and always carry that exact code.
+  `field` and `message` are identical on both paths, and the sheet binds errors by `field` — so
+  a consumer must not switch on `out_of_range`.
+- **Source:** `src/main/ipc/screener.ts`, `src/main/schemas.ts`,
+  `src/main/services/screening-criteria.ts` (`saveScreeningCriteria`),
+  `src/main/core/screening-criteria.ts` (bounds and messages), `src/preload/index.ts`
 
 <!-- /generated -->
 

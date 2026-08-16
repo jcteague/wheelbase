@@ -7,7 +7,6 @@ import { compareAsc, parseISO } from 'date-fns'
 import type { MarketDataProvider } from '../integrations/market-data-provider'
 import { isWellFormedStrike } from '../core/candidate-chain'
 import {
-  DEFAULT_SCREENING_CRITERIA,
   rankCandidates,
   screenTicker,
   type ExclusionCode,
@@ -19,6 +18,7 @@ import {
 import { mapWithConcurrency } from '../concurrency'
 import { logger } from '../logger'
 import { pullWatchlistChains, type TickerChainResult } from './candidate-chains'
+import { getScreeningCriteria } from './screening-criteria'
 import { getLatestIvrByUnderlying } from './ivr-snapshots'
 
 // One stock-snapshot request per ticker — bounded for the same 429 hazard the
@@ -213,7 +213,7 @@ export async function screenWatchlistCandidates(
   db: Database.Database,
   opts: ScreenOptions = {}
 ): Promise<ScreenerResults> {
-  const criteria = opts.criteria ?? DEFAULT_SCREENING_CRITERIA
+  const criteria = opts.criteria ?? getScreeningCriteria(db)
   const currentDate = opts.currentDate ?? new Date()
 
   // An unconfigured provider (no API key yet) is the same trader-facing state as an

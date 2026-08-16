@@ -8,6 +8,22 @@ import {
   PROFIT_TARGET_MIN,
   PROFIT_TARGET_RANGE_MESSAGE
 } from './core/alert-thresholds'
+import {
+  DELTA_RANGE_MESSAGE,
+  DTE_MAX,
+  DTE_MAX_MESSAGE,
+  DTE_MIN,
+  DTE_MIN_MESSAGE,
+  IV_RANK_MESSAGE,
+  OPEN_INTEREST_MESSAGE,
+  PRICE_CEILING_MESSAGE,
+  SPREAD_PERCENT_MESSAGE,
+  isDeltaInRange,
+  isIvRankFloorInRange,
+  isOpenInterestInRange,
+  isPriceCeilingInRange,
+  isSpreadPercentInRange
+} from './core/screening-criteria'
 import type {
   LegAction,
   LegRole,
@@ -533,6 +549,33 @@ export interface WatchlistEntryRecord {
   coreHolding: boolean
   addedAt: string
 }
+
+// ---------------------------------------------------------------------------
+// Screening criteria (US-67)
+// ---------------------------------------------------------------------------
+
+// Per-field bounds only. The two cross-field rules (delta band, DTE band) are
+// deliberately left to `saveScreeningCriteria`, which raises them as
+// `ValidationError('deltaMax' | 'dteMax', 'inverted_band', ...)` — Zod restricts
+// `ctx.addIssue` to its own issue codes, so a superRefine here could only ever
+// reach the renderer as `code: 'custom'`.
+export const SaveScreeningCriteriaPayloadSchema = z.object({
+  deltaMin: z.string().refine(isDeltaInRange, DELTA_RANGE_MESSAGE),
+  deltaMax: z.string().refine(isDeltaInRange, DELTA_RANGE_MESSAGE),
+  // Split into `.min`/`.max` rather than one `isDteInRange` refine so each end of
+  // the window reports its own half of the range: a `dteMin` of 400 is "at most
+  // 365", not "at least 1". Matches `dteMessage` in services/screening-criteria.ts.
+  dteMin: z.number().int().min(DTE_MIN, DTE_MIN_MESSAGE).max(DTE_MAX, DTE_MAX_MESSAGE),
+  dteMax: z.number().int().min(DTE_MIN, DTE_MIN_MESSAGE).max(DTE_MAX, DTE_MAX_MESSAGE),
+  minOpenInterest: z.number().int().refine(isOpenInterestInRange, OPEN_INTEREST_MESSAGE),
+  maxSpreadPercent: z.string().refine(isSpreadPercentInRange, SPREAD_PERCENT_MESSAGE),
+  // `.nullable()` wraps the refined string, so a disabled (null) ceiling or floor
+  // skips the bound instead of guarding for it inside the predicate.
+  maxUnderlyingPrice: z.string().refine(isPriceCeilingInRange, PRICE_CEILING_MESSAGE).nullable(),
+  minIvRank: z.string().refine(isIvRankFloorInRange, IV_RANK_MESSAGE).nullable(),
+  earningsHandling: z.enum(['exclude', 'flag'])
+})
+export type SaveScreeningCriteriaPayload = z.infer<typeof SaveScreeningCriteriaPayloadSchema>
 
 // ---------------------------------------------------------------------------
 // Alerts (US-50)

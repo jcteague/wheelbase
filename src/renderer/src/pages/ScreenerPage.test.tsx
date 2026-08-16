@@ -1,16 +1,25 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { format, parseISO } from 'date-fns'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ScreenerCandidate, ScreenerExclusion } from '../api/screener'
+import type { ScreeningCriteria } from '../api/screening-criteria'
 import type { MarketStatusDisplay } from '../components/MarketStatusPill'
 import { useMarketStatusDisplay } from '../hooks/useMarketStatusDisplay'
+import { useSaveScreeningCriteria, useScreeningCriteria } from '../hooks/useScreeningCriteria'
 import { ScreenerPage } from './ScreenerPage'
 
 vi.mock('../hooks/useMarketStatusDisplay')
+// [US-67] Both criteria hooks are mocked here: the page reads the criteria with
+// one and the sheet it renders saves with the other, and neither should reach IPC.
+vi.mock('../hooks/useScreeningCriteria')
 
 const mockUseMarketStatusDisplay = vi.mocked(useMarketStatusDisplay)
+const mockUseScreeningCriteria = vi.mocked(useScreeningCriteria)
+const mockUseSaveScreeningCriteria = vi.mocked(useSaveScreeningCriteria)
 const mockResults = vi.fn()
+const mockSaveMutate = vi.fn()
 
 // Quote time from the mockup's fixtures — 16:00:02 in the market's own zone.
 // Assertions format it locally with date-fns so they hold in any TZ.
@@ -61,6 +70,116 @@ const EXCLUDED: ScreenerExclusion[] = [
   { ticker: 'SOFI', code: 'no_options_listed', reason: 'no options listed' }
 ]
 
+// The story's Background: delta 0.20–0.30, DTE 30–45, OI 500, spread 10%,
+// price ceiling off, IV-rank floor off, earnings "Exclude".
+const PERSISTED_CRITERIA: ScreeningCriteria = {
+  deltaMin: '0.20',
+  deltaMax: '0.30',
+  dteMin: 30,
+  dteMax: 45,
+  minOpenInterest: 500,
+  maxSpreadPercent: '10',
+  maxSpreadAbsolute: '0.10',
+  maxUnderlyingPrice: null,
+  minIvRank: null,
+  earningsHandling: 'exclude'
+}
+
+// What "Save & re-screen" persists in the save scenario.
+const SAVED_CRITERIA: ScreeningCriteria = {
+  ...PERSISTED_CRITERIA,
+  deltaMin: '0.15',
+  deltaMax: '0.20',
+  dteMin: 40
+}
+
+// Regex, not the bare string: the banner's ✓ glyph may or may not share the
+// text node with the copy.
+const SAVED_CONFIRMATION = /Screening criteria saved/
+
+type SaveOptions = Parameters<typeof useSaveScreeningCriteria>[0]
+type MutateOptions = { onSuccess?: (criteria: ScreeningCriteria) => void }
+
+/** `undefined` puts the criteria query in its loading state. */
+function setCriteria(criteria: ScreeningCriteria | undefined): void {
+  const isLoading = criteria === undefined
+  mockUseScreeningCriteria.mockReturnValue({
+    data: criteria,
+    isLoading,
+    isPending: isLoading,
+    isFetching: isLoading,
+    isSuccess: !isLoading,
+    isError: false,
+    error: null,
+    status: isLoading ? 'pending' : 'success',
+    refetch: vi.fn()
+  } as unknown as ReturnType<typeof useScreeningCriteria>)
+}
+
+/** Puts the criteria query in its error state — the rejected `screener.getCriteria`. */
+function setCriteriaError(): void {
+  mockUseScreeningCriteria.mockReturnValue({
+    data: undefined,
+    isLoading: false,
+    isPending: false,
+    isFetching: false,
+    isSuccess: false,
+    isError: true,
+    error: new Error('An unexpected error occurred'),
+    status: 'error',
+    refetch: vi.fn()
+  } as unknown as ReturnType<typeof useScreeningCriteria>)
+}
+
+/** A background refetch that failed after the query had already succeeded: TanStack
+ *  keeps serving the last good `data` alongside the raised error flag. */
+function setCriteriaStaleError(criteria: ScreeningCriteria): void {
+  mockUseScreeningCriteria.mockReturnValue({
+    data: criteria,
+    isLoading: false,
+    isPending: false,
+    isFetching: false,
+    isSuccess: false,
+    isError: true,
+    error: new Error('An unexpected error occurred'),
+    status: 'error',
+    refetch: vi.fn()
+  } as unknown as ReturnType<typeof useScreeningCriteria>)
+}
+
+/**
+ * Fires the save mutation's success callbacks the way TanStack Query would:
+ * only the hook instance that actually ran `mutate` gets its callbacks called,
+ * plus the per-call options handed to that `mutate`. A second, non-mutating
+ * `useSaveScreeningCriteria()` instance never fires in production, so it must
+ * not fire here either — the saved banner has to hang off the mutation that runs.
+ */
+async function fireSaveSuccess(saved: ScreeningCriteria): Promise<void> {
+  const call = mockSaveMutate.mock.calls.at(-1)
+  expect(call, 'the save mutation was never invoked').toBeDefined()
+
+  const callbacks = [
+    (call?.[1] as MutateOptions | undefined)?.onSuccess,
+    (call?.[2] as SaveOptions)?.onSuccess
+  ].filter((cb): cb is (criteria: ScreeningCriteria) => void => typeof cb === 'function')
+  expect(callbacks.length, 'no onSuccess callback was wired to the save mutation').toBeGreaterThan(
+    0
+  )
+
+  await act(async () => {
+    callbacks.forEach((cb) => cb(saved))
+  })
+}
+
+/** The nearest element containing both nodes — proves header co-location. */
+function commonAncestor(a: HTMLElement, b: HTMLElement): HTMLElement | null {
+  let node: HTMLElement | null = a.parentElement
+  while (node && !node.contains(b)) node = node.parentElement
+  return node
+}
+
+const criteriaButton = (): HTMLElement => screen.getByRole('button', { name: /^⚙?\s*Criteria$/ })
+
 function setMarketDisplay(display: MarketStatusDisplay): void {
   mockUseMarketStatusDisplay.mockReturnValue({
     settingsQuery: {} as ReturnType<typeof useMarketStatusDisplay>['settingsQuery'],
@@ -70,18 +189,39 @@ function setMarketDisplay(display: MarketStatusDisplay): void {
   })
 }
 
-function renderPage(): void {
+/** Returns a `rerender` bound to the same client, for re-reading a changed hook mock. */
+function renderPage(): { rerender: () => void } {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(
+  // A fresh element each time — React bails out of re-rendering an identical
+  // element reference, which would hide a changed hook mock.
+  const ui = (): React.JSX.Element => (
     <QueryClientProvider client={queryClient}>
       <ScreenerPage />
     </QueryClientProvider>
   )
+  const { rerender } = render(ui())
+  return { rerender: () => rerender(ui()) }
 }
 
 beforeEach(() => {
   mockResults.mockReset()
+  mockSaveMutate.mockReset()
   setMarketDisplay('LIVE')
+  setCriteria(PERSISTED_CRITERIA)
+  mockUseSaveScreeningCriteria.mockReset()
+  mockUseSaveScreeningCriteria.mockImplementation(
+    (hookOptions: SaveOptions) =>
+      ({
+        mutate: (payload: unknown, mutateOptions?: MutateOptions) =>
+          mockSaveMutate(payload, mutateOptions, hookOptions),
+        isPending: false,
+        isSuccess: false,
+        isError: false,
+        data: undefined,
+        error: null,
+        reset: vi.fn()
+      }) as unknown as ReturnType<typeof useSaveScreeningCriteria>
+  )
   Object.assign(window, {
     api: {
       ...(window.api ?? {}),
@@ -187,6 +327,20 @@ describe('ScreenerPage — provider outage', () => {
     expect(screen.queryByTestId('screener-row-AAPL')).not.toBeInTheDocument()
   })
 
+  // An outage empties ranked and excluded without emptying the watchlist, so the
+  // sheet must not claim the criteria apply to zero tickers.
+  it('omits the watchlist count from the sheet subtitle during an outage', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByTestId('screener-unavailable')
+    await user.click(criteriaButton())
+
+    const subtitle = await screen.findByTestId('sheet-subtitle')
+    expect(subtitle).toHaveTextContent('Classic Wheel · CSP')
+    expect(subtitle).not.toHaveTextContent('0 watchlist tickers')
+  })
+
   it('re-invokes the screener IPC when the outage card retry is clicked', async () => {
     renderPage()
 
@@ -233,5 +387,343 @@ describe('ScreenerPage — stale snapshot', () => {
     expect(screen.queryByTestId('screener-stale-badge')).not.toBeInTheDocument()
     expect(screen.queryByTestId('screener-stale-caption')).not.toBeInTheDocument()
     expect(screen.getByTestId('screener-count')).toHaveTextContent('3 candidates · 4 excluded')
+  })
+})
+
+// [US-67] Three entry points, one sheet: the header button, the summary strip,
+// and the empty card's action all open the same screening-criteria sheet.
+describe('ScreenerPage — criteria entry points', () => {
+  beforeEach(() => {
+    mockResults.mockResolvedValue({
+      ok: true,
+      status: 'ok',
+      ranked: RANKED,
+      excluded: EXCLUDED,
+      quoteTimestamp: QUOTE_TIMESTAMP
+    })
+  })
+
+  it('renders the ⚙ Criteria button in the page header alongside the market-status pill', async () => {
+    renderPage()
+
+    await screen.findByTestId('screener-row-KO')
+    const button = criteriaButton()
+    const pill = screen.getByTestId('market-status-pill')
+
+    // The pill is untouched by this story — still LIVE/EXT/CLOSED only.
+    expect(pill).toHaveTextContent('LIVE')
+    // Button first, then the pill.
+    expect(button.compareDocumentPosition(pill) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // Grouped together in the header, not merely both somewhere on the page.
+    expect(commonAncestor(button, pill)).not.toContainElement(screen.getByTestId('screener-row-KO'))
+  })
+
+  it('does not render the criteria sheet until an entry point is used', async () => {
+    renderPage()
+
+    await screen.findByTestId('screener-row-KO')
+    // Both entry points are on screen…
+    expect(criteriaButton()).toBeInTheDocument()
+    expect(screen.getByTestId('screener-criteria-strip')).toBeInTheDocument()
+    // …but neither has been used, so the sheet is not mounted.
+    expect(screen.queryByText('Screening Criteria')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('sheet-scrim')).not.toBeInTheDocument()
+  })
+
+  it('opens the criteria sheet when the header ⚙ Criteria button is clicked', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByTestId('screener-row-KO')
+    await user.click(criteriaButton())
+
+    expect(await screen.findByText('Screening Criteria')).toBeInTheDocument()
+    expect(screen.getByLabelText('Minimum delta')).toHaveValue('0.20')
+    expect(screen.getByLabelText('Maximum delta')).toHaveValue('0.30')
+  })
+
+  it('opens the same criteria sheet when the summary strip is clicked', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByTestId('screener-row-KO')
+    await user.click(screen.getByTestId('screener-criteria-strip'))
+
+    expect(await screen.findByText('Screening Criteria')).toBeInTheDocument()
+  })
+
+  it('renders the criteria summary strip above the results table, not below it', async () => {
+    renderPage()
+
+    const firstRow = await screen.findByTestId('screener-row-KO')
+    const strip = screen.getByTestId('screener-criteria-strip')
+
+    expect(strip.compareDocumentPosition(firstRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('tells the sheet how many watchlist tickers the criteria apply to', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByTestId('screener-row-KO')
+    await user.click(criteriaButton())
+
+    // One row per watchlist ticker: 3 ranked + 4 excluded.
+    expect(
+      await screen.findByText('Applies to all 7 watchlist tickers · Classic Wheel · CSP')
+    ).toBeInTheDocument()
+  })
+})
+
+// [US-67] The empty card loses its dangling "Screener settings" pointer (US-66)
+// and gains the third entry point into the sheet.
+describe('ScreenerPage — empty state adjusts criteria in place', () => {
+  beforeEach(() => {
+    mockResults.mockResolvedValue({
+      ok: true,
+      status: 'ok',
+      ranked: [],
+      excluded: EXCLUDED,
+      quoteTimestamp: null
+    })
+  })
+
+  it('no longer points at Screener settings in the empty card body', async () => {
+    renderPage()
+
+    const empty = await screen.findByTestId('screener-empty')
+    expect(empty).not.toHaveTextContent('Screener settings')
+    expect(empty).toHaveTextContent(
+      'Every strike on your watchlist was filtered out. Loosen your delta band or DTE window.'
+    )
+  })
+
+  it('opens the criteria sheet from the empty card Adjust criteria action', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    const empty = await screen.findByTestId('screener-empty')
+    const adjust = screen.getByRole('button', { name: 'Adjust criteria' })
+    expect(empty).toContainElement(adjust)
+
+    await user.click(adjust)
+
+    expect(await screen.findByText('Screening Criteria')).toBeInTheDocument()
+  })
+})
+
+// [US-67] "Save & re-screen" closes the sheet and confirms on the page itself.
+describe('ScreenerPage — saved confirmation', () => {
+  beforeEach(() => {
+    mockResults.mockResolvedValue({
+      ok: true,
+      status: 'ok',
+      ranked: RANKED,
+      excluded: EXCLUDED,
+      quoteTimestamp: QUOTE_TIMESTAMP
+    })
+  })
+
+  async function saveFromSheet(): Promise<void> {
+    const user = userEvent.setup()
+    await screen.findByTestId('screener-row-KO')
+    await user.click(criteriaButton())
+    await screen.findByText('Screening Criteria')
+
+    await user.click(screen.getByRole('button', { name: 'Save & re-screen' }))
+    await waitFor(() => expect(mockSaveMutate).toHaveBeenCalled())
+    await fireSaveSuccess(SAVED_CRITERIA)
+  }
+
+  it('shows "Screening criteria saved" and closes the sheet after a successful save', async () => {
+    renderPage()
+
+    expect(screen.queryByText(SAVED_CONFIRMATION)).not.toBeInTheDocument()
+    await saveFromSheet()
+
+    expect(screen.getByText(SAVED_CONFIRMATION)).toBeInTheDocument()
+    expect(screen.queryByText('Screening Criteria')).not.toBeInTheDocument()
+  })
+
+  it('clears the saved confirmation when the sheet is reopened for a second edit', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await saveFromSheet()
+    expect(screen.getByText(SAVED_CONFIRMATION)).toBeInTheDocument()
+
+    await user.click(criteriaButton())
+
+    expect(await screen.findByText('Screening Criteria')).toBeInTheDocument()
+    expect(screen.queryByText(SAVED_CONFIRMATION)).not.toBeInTheDocument()
+  })
+})
+
+// [US-67] The criteria query resolves independently of the results query.
+describe('ScreenerPage — criteria still loading', () => {
+  beforeEach(() => {
+    setCriteria(undefined)
+    mockResults.mockResolvedValue({
+      ok: true,
+      status: 'ok',
+      ranked: RANKED,
+      excluded: EXCLUDED,
+      quoteTimestamp: QUOTE_TIMESTAMP
+    })
+  })
+
+  it('renders the results without the summary strip while the criteria are still loading', async () => {
+    const { rerender } = renderPage()
+
+    expect(await screen.findByTestId('screener-row-KO')).toBeInTheDocument()
+    expect(screen.queryByTestId('screener-criteria-strip')).not.toBeInTheDocument()
+    expect(screen.queryByText('Screening Criteria')).not.toBeInTheDocument()
+
+    // …and the strip appears as soon as the criteria land, so the absence above
+    // is the loading guard rather than a missing strip.
+    setCriteria(PERSISTED_CRITERIA)
+    act(() => rerender())
+
+    expect(await screen.findByTestId('screener-criteria-strip')).toBeInTheDocument()
+  })
+
+  // Pending is not an error: the button stays live, and the click it takes while
+  // the query is in flight is honoured the moment the criteria land. This is the
+  // behaviour that distinguishes the loading state from the error state below.
+  it('honours a click made while the criteria are still loading, without a second click', async () => {
+    const user = userEvent.setup()
+    const { rerender } = renderPage()
+
+    const button = await screen.findByRole('button', { name: /Criteria/ })
+    expect(button).toBeEnabled()
+    await user.click(button)
+
+    expect(screen.queryByText('Screening Criteria')).not.toBeInTheDocument()
+
+    setCriteria(PERSISTED_CRITERIA)
+    act(() => rerender())
+
+    expect(await screen.findByText('Screening Criteria')).toBeInTheDocument()
+  })
+})
+
+// [US-67] A failed criteria query must not leave the entry points as dead
+// buttons: the trader gets an explanation, and nothing invites a click that
+// cannot open the sheet.
+describe('ScreenerPage — criteria query fails', () => {
+  beforeEach(() => {
+    setCriteriaError()
+  })
+
+  it('renders a visible error alert explaining the criteria could not be loaded', async () => {
+    mockResults.mockResolvedValue({
+      ok: true,
+      status: 'ok',
+      ranked: RANKED,
+      excluded: EXCLUDED,
+      quoteTimestamp: QUOTE_TIMESTAMP
+    })
+    renderPage()
+
+    // The results query succeeded, so the only alert on the page is the
+    // criteria one — the results-query message must not be what surfaces.
+    await screen.findByTestId('screener-row-KO')
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent(/screening criteria/i)
+    expect(alert).not.toHaveTextContent('Failed to screen the watchlist')
+    // The strip still has no criteria to summarise.
+    expect(screen.queryByTestId('screener-criteria-strip')).not.toBeInTheDocument()
+  })
+
+  it('leaves no dead click on the header ⚙ Criteria button when the criteria cannot load', async () => {
+    const user = userEvent.setup()
+    mockResults.mockResolvedValue({
+      ok: true,
+      status: 'ok',
+      ranked: RANKED,
+      excluded: EXCLUDED,
+      quoteTimestamp: QUOTE_TIMESTAMP
+    })
+    renderPage()
+
+    await screen.findByTestId('screener-row-KO')
+    const button = criteriaButton()
+    expect(button).toBeDisabled()
+
+    await user.click(button)
+
+    // Still no sheet — and the button never went gold as though one had opened.
+    expect(screen.queryByText('Screening Criteria')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('sheet-scrim')).not.toBeInTheDocument()
+    expect(button.className).not.toContain('bg-wb-gold-dim')
+  })
+
+  it('leaves no dead click on the empty card Adjust criteria action either', async () => {
+    const user = userEvent.setup()
+    mockResults.mockResolvedValue({
+      ok: true,
+      status: 'ok',
+      ranked: [],
+      excluded: EXCLUDED,
+      quoteTimestamp: null
+    })
+    renderPage()
+
+    await screen.findByTestId('screener-empty')
+    const adjust = screen.getByRole('button', { name: 'Adjust criteria' })
+    expect(adjust).toBeDisabled()
+
+    await user.click(adjust)
+
+    expect(screen.queryByText('Screening Criteria')).not.toBeInTheDocument()
+  })
+
+  it('recovers every entry point once a refetch lands the criteria', async () => {
+    const user = userEvent.setup()
+    mockResults.mockResolvedValue({
+      ok: true,
+      status: 'ok',
+      ranked: RANKED,
+      excluded: EXCLUDED,
+      quoteTimestamp: QUOTE_TIMESTAMP
+    })
+    const { rerender } = renderPage()
+
+    await screen.findByTestId('screener-row-KO')
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+
+    setCriteria(PERSISTED_CRITERIA)
+    act(() => rerender())
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(criteriaButton()).toBeEnabled()
+    await user.click(criteriaButton())
+    expect(await screen.findByText('Screening Criteria')).toBeInTheDocument()
+  })
+
+  // A query that succeeded once keeps serving its data when a later refetch fails,
+  // and the client refetches on window focus. The trader is still looking at
+  // usable criteria, so a raised error flag alone must not strand them.
+  it('keeps the entry points live when a background refetch fails over good criteria', async () => {
+    const user = userEvent.setup()
+    setCriteriaStaleError(PERSISTED_CRITERIA)
+    mockResults.mockResolvedValue({
+      ok: true,
+      status: 'ok',
+      ranked: RANKED,
+      excluded: EXCLUDED,
+      quoteTimestamp: QUOTE_TIMESTAMP
+    })
+    renderPage()
+
+    await screen.findByTestId('screener-row-KO')
+
+    // No false alarm, and the strip is still showing the criteria it claims are unloadable.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByTestId('screener-criteria-strip')).toBeInTheDocument()
+
+    expect(criteriaButton()).toBeEnabled()
+    await user.click(criteriaButton())
+    expect(await screen.findByText('Screening Criteria')).toBeInTheDocument()
   })
 })

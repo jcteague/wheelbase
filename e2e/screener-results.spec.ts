@@ -10,6 +10,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { format, parseISO } from 'date-fns'
 import { CLOSED_SESSION, cleanupDb, tmpDb } from './assignment-helpers'
 import {
+  IVR_OBSERVED_AT,
   QUOTE_TIMESTAMP,
   RANKED_IVR,
   RANKED_PUTS,
@@ -23,6 +24,10 @@ import {
 
 // Column order of the ranked table: #, Ticker, Strike, Exp, DTE, Mark, Yield, Ann.,
 // Δ, IVR, OI, Spread.
+// [US-67] The IVR cell stamps the observation date. Derived, not hardcoded, so the
+// expectation holds in any machine's zone — same technique as the stale-caption test.
+const IVR_OBSERVED_LABEL = format(parseISO(IVR_OBSERVED_AT), 'MMM d')
+
 const RANK = 0
 const IVR = 9
 const COLUMN_COUNT = 12
@@ -78,7 +83,7 @@ describe('US-66: display ranked screener results', () => {
         '1.5%', // period yield
         '14.8%/yr', // annualized yield
         '0.28', // delta, unsigned
-        '44', // IV rank, seeded
+        `44 (${IVR_OBSERVED_LABEL})`, // IV rank, seeded, with its observation date
         '4,200', // open interest
         '$0.06 (2%)' // bid/ask spread
       ])

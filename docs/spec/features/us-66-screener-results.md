@@ -56,7 +56,9 @@ _Background: the watchlist has been screened, and the market status pill reads L
 that turn the payload's decimal strings into the exact strings the ACs pin:
 `fmtYieldPercent` (×100, up to 2dp with trailing zeros trimmed, so `"0.0150"` → `1.5%` and
 annualized renders as `14.8%/yr`), `fmtScore` (fixed 2dp), `fmtSpread`, `fmtDelta`,
-`fmtIvr` (`n/a` when null), `fmtOpenInterest` (`—` when null), and `fmtQuoteTime`. They
+`fmtIvr` (`n/a` when null; US-67 added the `(MMM d)` observation date once the IV-rank
+floor made the reading a hard filter), `fmtOpenInterest` (`—` when null), and
+`fmtQuoteTime`. They
 take narrow primitive inputs, never whole candidate objects; money-adjacent math goes
 through `decimal.js` and `fmtQuoteTime` uses `date-fns` `format(parseISO(...))` rather than
 slicing a timestamp. Trailing-zero trimming deliberately mirrors the US-65 engine's own
