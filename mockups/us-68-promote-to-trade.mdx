@@ -1,7 +1,7 @@
 ---
 title: 'US-68: Promote to Trade'
 story: 'As a wheel trader, I want one click to open the new-wheel form pre-filled from a screener result, confirmed against a fresh quote, so I don''t re-key the trade.'
-states: ['prefilled', 'moved', 'stale', 'edited']
+states: ['prefilled', 'moved', 'stale', 'offline', 'edited']
 ---
 
 import { useState } from 'react'
@@ -13,11 +13,12 @@ _As a wheel trader, I want one click to open the new-wheel form pre-filled from 
 ## Acceptance Criteria States
 
 - **prefilled** — promoting an AAPL screener result opens the New Wheel form with ticker `AAPL`, strike `180`, expiration `2026-08-21`, contracts `1`, and premium `2.70` filled in. The thesis is seeded from the watchlist note. A neutral note confirms the fresh quote still matches the promoted mark ($2.70). Nothing is recorded until the trader clicks **Record wheel**.
-- **moved** — the form re-fetched on open and the mark drifted past the $0.05 / 5% threshold, so a non-blocking gold banner reads _"Price moved: quoted $2.70 → now $2.50 — review before submitting."_ The premium input still holds the editable `2.70`; submit stays enabled.
-- **stale** — the market is `CLOSED`, so the pre-filled mark is an after-hours snapshot. A gold banner warns the mark is stale and to verify before recording. Submit stays enabled.
+- **moved** — the form re-fetched on open and the mark drifted past the price-moved threshold (more than **both** $0.05 and 5% of the promoted mark), so a non-blocking gold banner reads _"Price moved: quoted $2.70 → now $2.50 — review before submitting."_ The premium input still holds the editable `2.70`; submit stays enabled.
+- **stale** — the market is `CLOSED` (an `EXT` session shows the same warning — equity options don't trade extended hours), so the pre-filled mark is an after-hours snapshot. A gold banner warns the mark is stale and to verify before recording. Submit stays enabled.
+- **offline** — the fresh-quote fetch failed, so the form degrades to the promoted snapshot: a gold banner reads _"Couldn't refresh quote — showing screener snapshot from 10:42:15."_ The form stays fully usable and submit stays enabled.
 - **edited** — the trader overrode the premium to `2.65`; the derived yield recomputes (1.47% period · 14.5%/yr) while capital stays $18,000. A muted note confirms the recorded trade uses the entered price, not the screener snapshot.
 
-Structural fields (ticker, strike, expiration) are stable choices; the premium is an **editable default**, never locked. Promote pre-fills and lands the trader in the form — it never places or records a trade on its own. Colors and chrome are driven by the app's `--wb-*` design tokens; the market-status pill mirrors `MarketStatusPill` (LIVE / CLOSED).
+Every field stays editable, exactly like the normal new-wheel form — promote pre-fills, it never locks. The premium is an **editable default** that the re-fetch never overwrites. Promote lands the trader in the form — it never places or records a trade on its own. Colors and chrome are driven by the app's `--wb-*` design tokens; the market-status pill mirrors `MarketStatusPill` (LIVE / EXT / CLOSED).
 
 ---
 
@@ -50,6 +51,7 @@ export const STATES = [
   { v: 'prefilled', label: 'Prefilled' },
   { v: 'moved', label: 'Price moved' },
   { v: 'stale', label: 'Market closed' },
+  { v: 'offline', label: 'Fetch failed' },
   { v: 'edited', label: 'Edited' }
 ]
 
@@ -80,8 +82,12 @@ export function SectionLabel({ children, style }) {
   )
 }
 
-export function MarketPill({ closed }) {
-  const color = closed ? T.text2 : T.green
+export function MarketPill({ status = 'live' }) {
+  const variant = {
+    live: { color: T.green, border: 'rgba(63,185,80,0.3)', background: 'rgba(63,185,80,0.1)', label: 'LIVE' },
+    ext: { color: T.gold, border: 'rgba(210,153,34,0.3)', background: 'rgba(210,153,34,0.1)', label: 'EXT' },
+    closed: { color: T.text2, border: 'rgba(139,148,158,0.3)', background: 'rgba(139,148,158,0.1)', label: 'CLOSED' }
+  }[status]
   return (
     <span
       style={{
@@ -89,18 +95,18 @@ export function MarketPill({ closed }) {
         alignItems: 'center',
         gap: 5,
         borderRadius: 10,
-        border: `1px solid ${closed ? 'rgba(139,148,158,0.3)' : 'rgba(63,185,80,0.3)'}`,
-        background: closed ? 'rgba(139,148,158,0.1)' : 'rgba(63,185,80,0.1)',
+        border: `1px solid ${variant.border}`,
+        background: variant.background,
         padding: '2px 8px 2px 6px',
         fontFamily: T.mono,
         fontSize: '0.6rem',
         fontWeight: 700,
         letterSpacing: '0.1em',
-        color
+        color: variant.color
       }}
     >
-      <span style={{ width: 6, height: 6, borderRadius: 999, background: color, flexShrink: 0 }} />
-      {closed ? 'CLOSED' : 'LIVE'}
+      <span style={{ width: 6, height: 6, borderRadius: 999, background: variant.color, flexShrink: 0 }} />
+      {variant.label}
     </span>
   )
 }
@@ -127,7 +133,7 @@ export function NavRow({ icon, label, active }) {
   )
 }
 
-export function Shell({ closed, children }) {
+export function Shell({ status, children }) {
   return (
     <div
       style={{
@@ -222,7 +228,7 @@ export function Shell({ closed, children }) {
             >
               PAPER
             </span>
-            <MarketPill closed={closed} />
+            <MarketPill status={status} />
           </div>
         </header>
         <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>{children}</div>
@@ -308,26 +314,24 @@ export function Field({ label, children, hint }) {
   )
 }
 
-export function Input({ value, locked, accent }) {
+export function Input({ value, placeholder, accent }) {
   return (
     <div
       style={{
         padding: '9px 12px',
         borderRadius: T.r,
         border: `1px solid ${accent ? T.goldBorder : T.border}`,
-        background: locked ? T.surface : T.elevated,
+        background: T.elevated,
         fontFamily: T.mono,
         fontSize: '0.85rem',
-        color: locked ? T.text2 : T.text,
+        color: value ? T.text : T.muted,
         display: 'flex',
         alignItems: 'center',
         gap: 8
       }}
     >
-      {value}
-      {locked ? (
-        <span style={{ marginLeft: 'auto', fontSize: '0.62rem', color: T.muted }}>🔒</span>
-      ) : accent ? (
+      {value || placeholder}
+      {accent ? (
         <span style={{ marginLeft: 'auto', width: 6, height: 6, borderRadius: 999, background: T.gold }} />
       ) : null}
     </div>
@@ -386,6 +390,11 @@ export function PromoteForm({ state }) {
           <strong>Price moved:</strong> quoted $2.70 → now $2.50 — review before submitting.
         </Banner>
       ) : null}
+      {state === 'offline' ? (
+        <Banner tone="gold">
+          <strong>Couldn't refresh quote</strong> — showing screener snapshot from 10:42:15. Verify before recording.
+        </Banner>
+      ) : null}
       {state === 'stale' ? (
         <Banner tone="gold">
           <strong>Market closed</strong> — the pre-filled mark is a stale after-hours snapshot (quoted 16:00:02). Verify
@@ -400,14 +409,14 @@ export function PromoteForm({ state }) {
       ) : null}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-        <Field label="Ticker" hint="from watchlist">
-          <Input value="AAPL" locked />
+        <Field label="Ticker" hint="from screener — editable">
+          <Input value="AAPL" />
         </Field>
         <Field label="Strike" hint="capital = strike × 100">
-          <Input value="180" locked />
+          <Input value="180" />
         </Field>
         <Field label="Expiration" hint="37 DTE">
-          <Input value="2026-08-21" locked />
+          <Input value="2026-08-21" />
         </Field>
         <Field label="Contracts">
           <Input value="1" />
@@ -415,8 +424,8 @@ export function PromoteForm({ state }) {
         <Field label="Premium / contract" hint="editable — override with the price you'll work">
           <Input value={premiumStr} accent />
         </Field>
-        <Field label="Fill date" hint="optional">
-          <Input value="2026-07-15" />
+        <Field label="Fill date" hint="optional — left for you">
+          <Input placeholder="YYYY-MM-DD" />
         </Field>
       </div>
 
@@ -528,7 +537,7 @@ export function Mockup() {
         <Segment value={state} onChange={setState} options={STATES} />
       </div>
 
-      <Shell closed={state === 'stale'}>
+      <Shell status={state === 'stale' ? 'closed' : 'live'}>
         <PromoteForm state={state} />
       </Shell>
     </div>

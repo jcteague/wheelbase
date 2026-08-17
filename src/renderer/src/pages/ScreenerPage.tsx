@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import type { ScreenerResults } from '../api/screener'
+import { useLocation } from 'wouter'
+import type { ScreenerCandidate, ScreenerResults } from '../api/screener'
 import { MarketStatusPill } from '../components/MarketStatusPill'
 import { PageHeader, PageLayout } from '../components/PageLayout'
 import { ScreenerCriteriaStrip } from '../components/ScreenerCriteriaStrip'
@@ -13,6 +14,8 @@ import { LoadingState } from '../components/ui/LoadingState'
 import { useMarketStatusDisplay } from '../hooks/useMarketStatusDisplay'
 import { useScreenerResults } from '../hooks/useScreenerResults'
 import { useScreeningCriteria } from '../hooks/useScreeningCriteria'
+import { useWatchlist } from '../hooks/useWatchlist'
+import { buildPromoteSearch } from '../lib/promote'
 import { fmtQuoteTime } from '../lib/screener-format'
 
 export const SCREENER_PAGE_TITLE = 'Screener'
@@ -65,6 +68,7 @@ type ScreenerResultsBodyProps = {
   onAdjustCriteria: () => void
   /** The criteria sheet cannot open, so its entry point must not invite a click. */
   adjustDisabled: boolean
+  onPromote: (candidate: ScreenerCandidate) => void
 }
 
 function ScreenerResultsBody({
@@ -72,7 +76,8 @@ function ScreenerResultsBody({
   staleQuoteTime,
   onRetry,
   onAdjustCriteria,
-  adjustDisabled
+  adjustDisabled,
+  onPromote
 }: ScreenerResultsBodyProps): React.JSX.Element {
   if (results.status === 'provider_unavailable') {
     return (
@@ -123,7 +128,7 @@ function ScreenerResultsBody({
               stale snapshot.
             </p>
           )}
-          <ScreenerResultsTable candidates={ranked} />
+          <ScreenerResultsTable candidates={ranked} onPromote={onPromote} />
         </>
       )}
       <ScreenerExcludedSection exclusions={excluded} />
@@ -135,8 +140,17 @@ export function ScreenerPage(): React.JSX.Element {
   const { data, isLoading, isError, refetch } = useScreenerResults()
   const { display } = useMarketStatusDisplay()
   const { data: criteria, isError: isCriteriaError } = useScreeningCriteria()
+  const { data: watchlist } = useWatchlist()
+  const [, navigate] = useLocation()
   const [sheetOpen, setSheetOpen] = useState(false)
   const [savedConfirmed, setSavedConfirmed] = useState(false)
+
+  // [US-68] The note is a nicety, so promote never waits on the watchlist query:
+  // an unresolved (or note-less) entry simply omits the thesis.
+  function handlePromote(candidate: ScreenerCandidate): void {
+    const note = watchlist?.find((entry) => entry.ticker === candidate.ticker)?.notes
+    navigate(`/new?${buildPromoteSearch(candidate, note)}`)
+  }
 
   // Both conditions, not just the flag: a query that has succeeded once keeps
   // serving its data when a later refetch fails, and the client refetches on every
@@ -215,6 +229,7 @@ export function ScreenerPage(): React.JSX.Element {
             onRetry={() => void refetch()}
             onAdjustCriteria={openSheet}
             adjustDisabled={criteriaUnloadable}
+            onPromote={handlePromote}
           />
         )}
       </div>

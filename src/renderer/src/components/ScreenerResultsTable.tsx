@@ -12,6 +12,8 @@ import { TableCell, TableHeader } from './ui/TablePrimitives'
 
 type ScreenerResultsTableProps = {
   candidates: ScreenerCandidate[]
+  /** [US-68] Raised with the clicked row's candidate. The page owns the navigation. */
+  onPromote: (candidate: ScreenerCandidate) => void
 }
 
 const NUMERIC = 'text-right'
@@ -20,7 +22,10 @@ const MUTED = `${NUMERIC} text-wb-text-muted`
 const YIELD = `${NUMERIC} text-wb-green font-medium`
 const ANNUALIZED_YIELD = `${NUMERIC} text-wb-green font-semibold`
 
-export function ScreenerResultsTable({ candidates }: ScreenerResultsTableProps): React.JSX.Element {
+export function ScreenerResultsTable({
+  candidates,
+  onPromote
+}: ScreenerResultsTableProps): React.JSX.Element {
   return (
     <div className="flex flex-col gap-4">
       <div className="border border-wb-border rounded-md bg-wb-bg-surface overflow-hidden">
@@ -39,11 +44,19 @@ export function ScreenerResultsTable({ candidates }: ScreenerResultsTableProps):
               <TableHeader className={NUMERIC}>IVR</TableHeader>
               <TableHeader className={NUMERIC}>OI</TableHeader>
               <TableHeader className={NUMERIC}>Spread</TableHeader>
+              {/* [US-68] The promote action's column — unlabelled, and last so the
+                  metric columns keep the positions US-66 pinned. */}
+              <TableHeader />
             </tr>
           </thead>
           <tbody>
             {candidates.map((candidate, index) => (
-              <CandidateRow key={candidate.contractId} candidate={candidate} rank={index + 1} />
+              <CandidateRow
+                key={candidate.contractId}
+                candidate={candidate}
+                rank={index + 1}
+                onPromote={onPromote}
+              />
             ))}
           </tbody>
         </table>
@@ -58,9 +71,10 @@ export function ScreenerResultsTable({ candidates }: ScreenerResultsTableProps):
 type CandidateRowProps = {
   candidate: ScreenerCandidate
   rank: number
+  onPromote: (candidate: ScreenerCandidate) => void
 }
 
-function CandidateRow({ candidate, rank }: CandidateRowProps): React.JSX.Element {
+function CandidateRow({ candidate, rank, onPromote }: CandidateRowProps): React.JSX.Element {
   const score = fmtScore(candidate.yieldPerDelta)
 
   return (
@@ -91,6 +105,17 @@ function CandidateRow({ candidate, rank }: CandidateRowProps): React.JSX.Element
       <TableCell className={SECONDARY}>{fmtOpenInterest(candidate.openInterest)}</TableCell>
       <TableCell className={SECONDARY}>
         {fmtSpread(candidate.spreadAbsolute, candidate.spreadPercent)}
+      </TableCell>
+      <TableCell className={NUMERIC}>
+        <button
+          type="button"
+          aria-label="Promote to trade"
+          data-testid={`screener-promote-${candidate.ticker}`}
+          onClick={() => onPromote(candidate)}
+          className="inline-flex cursor-pointer items-center gap-1 whitespace-nowrap rounded-md border border-wb-gold-border bg-wb-gold-dim px-[9px] py-[3px] font-wb-mono text-[0.65rem] font-semibold tracking-[0.04em] text-wb-gold"
+        >
+          Promote →
+        </button>
       </TableCell>
     </tr>
   )

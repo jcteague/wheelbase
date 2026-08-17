@@ -6,15 +6,25 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ScreenerCandidate, ScreenerExclusion } from '../api/screener'
 import type { ScreeningCriteria } from '../api/screening-criteria'
 import type { MarketStatusDisplay } from '../components/MarketStatusPill'
+import type { WatchlistEntry } from '../api/watchlist'
 import { useMarketStatusDisplay } from '../hooks/useMarketStatusDisplay'
 import { useSaveScreeningCriteria, useScreeningCriteria } from '../hooks/useScreeningCriteria'
+import { useWatchlist } from '../hooks/useWatchlist'
+import { parsePromotedParams } from '../lib/promote'
 import { ScreenerPage } from './ScreenerPage'
 
 vi.mock('../hooks/useMarketStatusDisplay')
 // [US-67] Both criteria hooks are mocked here: the page reads the criteria with
 // one and the sheet it renders saves with the other, and neither should reach IPC.
 vi.mock('../hooks/useScreeningCriteria')
+// [US-68] The promote click reads the ticker's watchlist note to seed the thesis,
+// and navigates to the pre-filled new-wheel form.
+vi.mock('../hooks/useWatchlist')
+// Hoisted so the factory can close over the spy — `vi.mock` runs before module init.
+const { mockNavigate } = vi.hoisted(() => ({ mockNavigate: vi.fn() }))
+vi.mock('wouter', () => ({ useLocation: () => ['/screener', mockNavigate] }))
 
+const mockUseWatchlist = vi.mocked(useWatchlist)
 const mockUseMarketStatusDisplay = vi.mocked(useMarketStatusDisplay)
 const mockUseScreeningCriteria = vi.mocked(useScreeningCriteria)
 const mockUseSaveScreeningCriteria = vi.mocked(useSaveScreeningCriteria)
@@ -203,11 +213,35 @@ function renderPage(): { rerender: () => void } {
   return { rerender: () => rerender(ui()) }
 }
 
+/** `undefined` leaves the watchlist query unresolved — promote must not wait on it. */
+function setWatchlist(entries: WatchlistEntry[] | undefined): void {
+  mockUseWatchlist.mockReturnValue({
+    data: entries,
+    isLoading: entries === undefined,
+    isError: false,
+    error: null
+  } as unknown as ReturnType<typeof useWatchlist>)
+}
+
+function watchlistEntry(ticker: string, notes: string | null): WatchlistEntry {
+  return {
+    ticker,
+    notes,
+    ownBelowPrice: null,
+    ivrTrigger: null,
+    postEarningsOnly: false,
+    coreHolding: false,
+    addedAt: '2026-08-01T12:00:00Z'
+  }
+}
+
 beforeEach(() => {
   mockResults.mockReset()
   mockSaveMutate.mockReset()
+  mockNavigate.mockReset()
   setMarketDisplay('LIVE')
   setCriteria(PERSISTED_CRITERIA)
+  setWatchlist([])
   mockUseSaveScreeningCriteria.mockReset()
   mockUseSaveScreeningCriteria.mockImplementation(
     (hookOptions: SaveOptions) =>
@@ -725,5 +759,92 @@ describe('ScreenerPage — criteria query fails', () => {
     expect(criteriaButton()).toBeEnabled()
     await user.click(criteriaButton())
     expect(await screen.findByText('Screening Criteria')).toBeInTheDocument()
+  })
+})
+
+// [US-68] Promote hands the candidate to the new-wheel form as query-string
+// defaults, seeding the thesis from the ticker's watchlist note when there is one.
+describe('ScreenerPage — promote to trade', () => {
+  const NOTE = 'Would own below $170; waiting for IV to lift'
+
+  beforeEach(() => {
+    mockResults.mockResolvedValue({
+      ok: true,
+      status: 'ok',
+      ranked: RANKED,
+      excluded: EXCLUDED,
+      quoteTimestamp: QUOTE_TIMESTAMP
+    })
+  })
+
+  async function promoteAapl(): Promise<void> {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByTestId('screener-row-AAPL')
+    await user.click(screen.getByTestId('screener-promote-AAPL'))
+  }
+
+  /** The promoted payload the navigation carries, decoded through the codec. */
+  function promotedFromNavigation(): ReturnType<typeof parsePromotedParams> {
+    expect(mockNavigate).toHaveBeenCalledTimes(1)
+    const [path] = mockNavigate.mock.calls[0] as [string]
+    expect(path.startsWith('/new?')).toBe(true)
+    return parsePromotedParams(path.slice('/new?'.length))
+  }
+
+  it('navigates to the new-wheel form carrying the clicked candidate', async () => {
+    await promoteAapl()
+
+    expect(promotedFromNavigation()).toMatchObject({
+      ticker: 'AAPL',
+      strike: '180',
+      expiration: '2026-08-21',
+      premium: '2.70',
+      quotedAt: QUOTE_TIMESTAMP
+    })
+  })
+
+  it('seeds the thesis from the ticker’s watchlist note', async () => {
+    setWatchlist([watchlistEntry('AAPL', NOTE), watchlistEntry('KO', 'unrelated')])
+
+    await promoteAapl()
+
+    expect(promotedFromNavigation()?.thesis).toBe(NOTE)
+  })
+
+  it('omits the thesis when the ticker has no watchlist note', async () => {
+    setWatchlist([watchlistEntry('AAPL', null), watchlistEntry('KO', NOTE)])
+
+    await promoteAapl()
+
+    expect(promotedFromNavigation()?.thesis).toBeUndefined()
+  })
+
+  it('omits the thesis when the note is empty rather than sending a blank one', async () => {
+    setWatchlist([watchlistEntry('AAPL', '   ')])
+
+    await promoteAapl()
+
+    expect(promotedFromNavigation()?.thesis).toBeUndefined()
+  })
+
+  it('is never blocked by an unresolved watchlist query', async () => {
+    setWatchlist(undefined)
+
+    await promoteAapl()
+
+    const promoted = promotedFromNavigation()
+    expect(promoted?.ticker).toBe('AAPL')
+    expect(promoted?.thesis).toBeUndefined()
+  })
+
+  it('creates no position — it only navigates', async () => {
+    const createPosition = vi.fn()
+    Object.assign(window, { api: { ...(window.api ?? {}), createPosition } })
+
+    await promoteAapl()
+
+    expect(createPosition).not.toHaveBeenCalled()
+    expect(mockNavigate).toHaveBeenCalledTimes(1)
   })
 })

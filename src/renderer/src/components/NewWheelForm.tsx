@@ -1,12 +1,16 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useEffect, useState } from 'react'
-import { useForm, Controller } from 'react-hook-form'
+import { useForm, useWatch, Controller } from 'react-hook-form'
 
 import { DatePicker } from '@/components/ui/date-picker'
 
 import { newWheelSchema, type NewWheelFormValues } from '@/schemas/new-wheel'
 import type { ApiError, ApiFieldError } from '../api/positions'
 import { useCreatePosition } from '../hooks/useCreatePosition'
+import { computeDteFromInput } from '../lib/format'
+import { isPremiumOverridden, type PromotedCandidate } from '../lib/promote'
+import { NewWheelDerivedRow } from './NewWheelDerivedRow'
+import { PromotedFormChrome } from './PromotedFormChrome'
 import { ErrorAlert } from './ui/ErrorAlert'
 import { Field } from './ui/FormField'
 import { FormButton } from './ui/FormButton'
@@ -20,16 +24,52 @@ const API_TO_FORM_FIELD: Record<string, keyof NewWheelFormValues> = {
   fill_date: 'fillDate'
 }
 
+const EMPTY_DEFAULTS: NewWheelFormValues = {
+  ticker: '',
+  strike: '',
+  expiration: '',
+  contracts: '',
+  premiumPerContract: '',
+  fillDate: undefined,
+  thesis: undefined,
+  notes: undefined
+}
+
+/** [US-68] Promoted values are editable defaults, never locks. Contracts starts at 1
+ *  and the thesis carries the watchlist note; fill date stays the trader's. */
+function promotedDefaults(promoted: PromotedCandidate): NewWheelFormValues {
+  return {
+    ...EMPTY_DEFAULTS,
+    ticker: promoted.ticker,
+    strike: promoted.strike,
+    expiration: promoted.expiration,
+    contracts: '1',
+    premiumPerContract: promoted.premium,
+    thesis: promoted.thesis
+  }
+}
+
+/** `37 DTE` under the expiration field, or nothing while the date is unusable. */
+function dteHint(expiration: string | undefined): string | undefined {
+  const dte = computeDteFromInput(expiration)
+  return dte === null ? undefined : `${dte} DTE`
+}
+
 type NewWheelFormProps = {
   navigate?: (path: string) => void
   defaultTicker?: string
+  /** [US-68] Present only when the trader arrived from a screener promote. */
+  promoted?: PromotedCandidate
 }
 
 export function NewWheelForm({
   navigate = () => {},
-  defaultTicker
+  defaultTicker,
+  promoted
 }: NewWheelFormProps): React.JSX.Element {
-  const [advancedOpen, setAdvancedOpen] = useState(false)
+  // The seeded thesis lives in the Advanced section, so promoted mode opens it —
+  // a pre-filled field the trader cannot see is worse than no pre-fill at all.
+  const [advancedOpen, setAdvancedOpen] = useState(Boolean(promoted))
   const mutation = useCreatePosition()
   useEffect(() => {
     if (!mutation.isSuccess || !mutation.data) return
@@ -46,17 +86,23 @@ export function NewWheelForm({
   } = useForm<NewWheelFormValues>({
     resolver: zodResolver(newWheelSchema),
     mode: 'onBlur',
-    defaultValues: {
-      ticker: defaultTicker ?? '',
-      strike: '',
-      expiration: '',
-      contracts: '',
-      premiumPerContract: '',
-      fillDate: undefined,
-      thesis: undefined,
-      notes: undefined
-    }
+    defaultValues: promoted
+      ? promotedDefaults(promoted)
+      : { ...EMPTY_DEFAULTS, ticker: defaultTicker ?? '' }
   })
+
+  // [US-68] The derived row and the banner track the live inputs, so an override
+  // shows its consequence before the trader submits. The fresh quote is never
+  // written back into form state — the pre-filled premium stays the trader's.
+  const [premiumValue, strikeValue, contractsValue, expirationValue] = useWatch({
+    control,
+    name: ['premiumPerContract', 'strike', 'contracts', 'expiration']
+  })
+
+  // A property of the form, not of the banner: the derived row must say so whenever
+  // the yield genuinely came from the trader's price, including while a
+  // higher-precedence banner (offline / stale / moved) holds the one banner slot.
+  const premiumOverridden = promoted ? isPremiumOverridden(premiumValue, promoted.premium) : false
 
   function mapFieldErrors(error: ApiError): void {
     if (error.status !== 400) return
@@ -126,9 +172,15 @@ export function NewWheelForm({
     <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-6">
       {isServerError && <ErrorAlert message="Something went wrong. Please try again." />}
 
+      {promoted && <PromotedFormChrome promoted={promoted} currentPremium={premiumValue} />}
+
       {/* Primary fields — 2 column grid */}
       <div className="grid grid-cols-2 gap-5">
-        <Field label="Ticker" error={errors.ticker?.message}>
+        <Field
+          label="Ticker"
+          error={errors.ticker?.message}
+          hint={promoted ? 'from screener — editable' : undefined}
+        >
           <NumberInput
             {...register('ticker')}
             id="ticker"
@@ -160,7 +212,11 @@ export function NewWheelForm({
           />
         </Field>
 
-        <Field label="Premium / Contract" error={errors.premiumPerContract?.message}>
+        <Field
+          label="Premium / Contract"
+          error={errors.premiumPerContract?.message}
+          hint={promoted ? "editable — override with the price you'll work" : undefined}
+        >
           <NumberInput
             {...register('premiumPerContract')}
             id="premiumPerContract"
@@ -172,7 +228,11 @@ export function NewWheelForm({
         </Field>
       </div>
 
-      <Field label="Expiration" error={errors.expiration?.message}>
+      <Field
+        label="Expiration"
+        error={errors.expiration?.message}
+        hint={promoted ? dteHint(expirationValue) : undefined}
+      >
         <Controller
           control={control}
           name="expiration"
@@ -190,6 +250,16 @@ export function NewWheelForm({
           )}
         />
       </Field>
+
+      {promoted && (
+        <NewWheelDerivedRow
+          strike={strikeValue}
+          contracts={contractsValue}
+          premium={premiumValue}
+          expiration={expirationValue}
+          edited={premiumOverridden}
+        />
+      )}
 
       {/* Advanced section */}
       <div>
