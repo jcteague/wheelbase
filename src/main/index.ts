@@ -36,6 +36,9 @@ import type { BrokerProvider } from './integrations/broker-provider'
 
 let mainWindow: BrowserWindow | null = null
 
+// E2E runs show the window without activating the app, so tests don't steal focus
+const isE2eRun = process.env.WHEELBASE_E2E === 'true'
+
 type MockSettingsConnectionConfig = {
   massive?: TestConnectionResult
   alpaca?: Partial<Record<'paper' | 'live', TestConnectionResult>>
@@ -55,7 +58,11 @@ function createWindow(): void {
   })
 
   win.on('ready-to-show', () => {
-    win.show()
+    if (isE2eRun) {
+      win.showInactive()
+    } else {
+      win.show()
+    }
   })
 
   win.webContents.setWindowOpenHandler((details) => {
@@ -74,6 +81,12 @@ function createWindow(): void {
 
 if (is.dev) {
   app.commandLine.appendSwitch('remote-debugging-port', '9222')
+}
+
+// Hiding the dock icon keeps macOS from activating the app on launch,
+// which is what yanks keyboard focus away from whatever the user is doing
+if (isE2eRun && process.platform === 'darwin') {
+  app.dock?.hide()
 }
 
 function runSettingsConnectionTest(

@@ -3,6 +3,10 @@ import path from 'node:path'
 
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
 
+// Every spec spreads process.env into electron.launch's env; the main process
+// reads this flag to show windows without activating the app (no focus steal)
+process.env.WHEELBASE_E2E = 'true'
+
 if (!fs.existsSync(APP_PATH)) {
   throw new Error(
     [
