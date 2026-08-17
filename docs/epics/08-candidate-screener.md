@@ -20,12 +20,12 @@ A trader can maintain a watchlist of tickers they're evaluating, screen them aga
 
 ## Vertical Slice
 
-| Layer       | What ships                                                                                                                                                                                                  |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Integration | Massive adapter: option-chain snapshots (bid/ask/mark, Greeks, OI/volume) via `MarketDataProvider` (US-39); IV rank from the volatility service (US-45); earnings dates from a separate calendar dependency |
-| Core engine | `src/main/core/screener.ts`: score and rank candidates against criteria (pure, no I/O)                                                                                                                      |
-| IPC         | `watchlist:list/add/remove/update`, `screener:results`                                                                                                                                                      |
-| Frontend    | Watchlist manager, screener results table with ranking, criteria settings, promote-to-trade button                                                                                                          |
+| Layer       | What ships                                                                                                                                                                                                                                          |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Integration | Massive adapter: option-chain snapshots (bid/ask/mark, Greeks, OI/volume) via `MarketDataProvider` (US-39); IV rank from the volatility service (US-45); earnings dates from the Finnhub auxiliary feed (`finnhub-earnings.ts`, shipped with US-56) |
+| Core engine | `src/main/core/screener.ts`: score and rank candidates against criteria (pure, no I/O)                                                                                                                                                              |
+| IPC         | `watchlist:list/add/remove/update`, `screener:results`                                                                                                                                                                                              |
+| Frontend    | Watchlist manager, screener results table with ranking, criteria settings, promote-to-trade button                                                                                                                                                  |
 
 ## Stories
 
@@ -52,7 +52,7 @@ A trader can maintain a watchlist of tickers they're evaluating, screen them aga
 - Epic 06: Live Market Data (Massive provider adapter for option chains — US-39; IVR service — US-45)
 - Epic 12: Volatility Analytics (IVR/IVP data feed — Alpaca does not provide historical IV; the screener's IV rank column and filter consume the volatility service rather than computing rank inline)
 - Epic 01: Open and Track a CSP (trade entry form to promote into)
-- **External (unowned):** an earnings-calendar data source for US-70 — Massive supplies chains/quotes only, not earnings dates. Needs an owner before US-70 can ship.
+- **Epic 07: Management Alerts (US-56)** — supplies the earnings-calendar feed US-70 consumes. Massive gates earnings behind a paid Benzinga add-on and Alpaca does not serve it, so earnings dates come from the **Finnhub free tier** via the auxiliary integration module `src/main/integrations/finnhub-earnings.ts` shipped with US-56. US-70 must widen that module (longer lookahead, outage-vs-no-event result) rather than introduce a second source — see US-70's Technical Notes.
 
 ## Strategy
 
