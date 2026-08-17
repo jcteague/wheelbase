@@ -1,7 +1,8 @@
 import { twMerge } from 'tailwind-merge'
 
 type TableHeaderProps = {
-  children: React.ReactNode
+  /** Optional — an action column carries no label. */
+  children?: React.ReactNode
   className?: string
   style?: React.CSSProperties
 }

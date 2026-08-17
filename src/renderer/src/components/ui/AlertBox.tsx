@@ -23,15 +23,22 @@ const VARIANT_STYLES: Record<AlertBoxVariant, { bg: string; border: string; colo
   }
 }
 
+// Deliberately not `ComponentProps<'div'>`: the component owns its className and
+// style, so advertising them and then dropping them would be a lie. Only the hooks
+// tests and e2e specs need are passed through.
 type AlertBoxProps = {
   variant: AlertBoxVariant
   children: React.ReactNode
+  'data-testid'?: string
+  'data-kind'?: string
+  'data-tone'?: string
 }
 
-export function AlertBox({ variant, children }: AlertBoxProps): React.JSX.Element {
+export function AlertBox({ variant, children, ...rest }: AlertBoxProps): React.JSX.Element {
   const { bg, border, color } = VARIANT_STYLES[variant]
   return (
     <div
+      {...rest}
       className="py-3 px-4 rounded-md text-[0.8125rem] font-wb-mono"
       style={{ background: bg, border: `1px solid ${border}`, color }}
     >

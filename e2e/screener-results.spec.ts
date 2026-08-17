@@ -30,6 +30,8 @@ const IVR_OBSERVED_LABEL = format(parseISO(IVR_OBSERVED_AT), 'MMM d')
 
 const RANK = 0
 const IVR = 9
+/** The metric columns this story pins. [US-68] appended a trailing promote-action
+ *  cell after them, which is why the row's cell count is one higher. */
 const COLUMN_COUNT = 12
 
 describe('US-66: display ranked screener results', () => {
@@ -62,8 +64,11 @@ describe('US-66: display ranked screener results', () => {
 
     // Every decision column carries a value — strike, exp, DTE, mark, period yield,
     // annualized yield, delta, IV rank, open interest, spread.
-    const cells = await rowCells(page, 'KO')
-    expect(cells).toHaveLength(COLUMN_COUNT)
+    const allCells = await rowCells(page, 'KO')
+    // Still pinned as a total, so a stray column cannot slip in unnoticed: the metric
+    // columns plus [US-68]'s single trailing promote-action cell.
+    expect(allCells).toHaveLength(COLUMN_COUNT + 1)
+    const cells = allCells.slice(0, COLUMN_COUNT)
     expect(cells.every((cell) => cell.trim().length > 0)).toBe(true)
   })
 

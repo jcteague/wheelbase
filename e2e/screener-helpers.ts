@@ -39,7 +39,13 @@ export type PutFixtureSpec = {
   openInterest: number
   /** Calendar days from today, so DTE lands in the 30–45 default window on any run date. */
   dteOffset: number
+  /** [US-68] Overrides QUOTE_TIMESTAMP — how a re-served quote reads as newer. */
+  quotedAt?: string
 }
+
+/** [US-68] When the promoted form's re-fetch is served, later than QUOTE_TIMESTAMP so
+ *  the provenance strip visibly changes once the fresh quote lands. */
+export const FRESH_QUOTE_TIMESTAMP = '2026-08-07T20:11:40Z'
 
 // ── Canonical fixtures ────────────────────────────────────────────────────────
 //
@@ -62,7 +68,7 @@ const KO_PUT: PutFixtureSpec = {
 
 /** mid 2.70 / 180 = 1.5% period, 14.8%/yr over 37 DTE, ÷ 0.28 ⇒ score 0.53 (rank 2).
  *  Spread 0.06 on a 2.70 mark ⇒ the AC's `$0.06 (2%)`. */
-const AAPL_PUT: PutFixtureSpec = {
+export const AAPL_PUT: PutFixtureSpec = {
   ticker: 'AAPL',
   strike: 180,
   bid: '2.67',
@@ -202,7 +208,7 @@ function putSnapshot(spec: PutFixtureSpec): OptionSnapshotFixture {
     volume: 500,
     greeks: { delta: spec.delta, gamma: '0.02', theta: '-0.03', vega: '0.10' },
     impliedVolatility: '0.28',
-    timestamp: QUOTE_TIMESTAMP
+    timestamp: spec.quotedAt ?? QUOTE_TIMESTAMP
   }
 }
 
@@ -212,14 +218,22 @@ function buildPutFixtures(specs: PutFixtureSpec[]): Record<string, OptionSnapsho
 
 // ── Seeding ───────────────────────────────────────────────────────────────────
 
-/** Add each ticker through the production watchlist IPC — never a direct DB write. */
-async function seedWatchlist(page: Page, tickers: string[]): Promise<void> {
-  await page.evaluate(async (list) => {
-    for (const ticker of list) {
-      const result = await window.api.watchlist.add({ ticker })
-      if (!result.ok) throw new Error(`watchlist.add failed: ${JSON.stringify(result)}`)
-    }
-  }, tickers)
+/** Add each ticker through the production watchlist IPC — never a direct DB write.
+ *  [US-68] A ticker's note is seeded the same way, since promote reads it back out. */
+async function seedWatchlist(
+  page: Page,
+  tickers: string[],
+  notes: Record<string, string> = {}
+): Promise<void> {
+  await page.evaluate(
+    async ({ list, byTicker }) => {
+      for (const ticker of list) {
+        const result = await window.api.watchlist.add({ ticker, notes: byTicker[ticker] })
+        if (!result.ok) throw new Error(`watchlist.add failed: ${JSON.stringify(result)}`)
+      }
+    },
+    { list: tickers, byTicker: notes }
+  )
 }
 
 /**
@@ -264,6 +278,8 @@ export type ScreenerLaunchOpts = {
   marketStatus?: MarketStatusFixture
   /** MarketDataErrorCode that makes every provider call throw — the outage scenario. */
   marketDataError?: string
+  /** [US-68] Watchlist notes by ticker; promote seeds the form's thesis from them. */
+  watchlistNotes?: Record<string, string>
 }
 
 function screenerLaunchEnv(dbPath: string, opts: ScreenerLaunchOpts): Record<string, string> {
@@ -294,7 +310,8 @@ export async function launchScreener(
 
   await seedWatchlist(
     page,
-    fixtures.map((fixture) => fixture.ticker)
+    fixtures.map((fixture) => fixture.ticker),
+    opts.watchlistNotes
   )
   if (opts.ivr) await seedIvr(page, opts.ivr)
   await goToScreener(page)
@@ -347,6 +364,58 @@ export function rowCells(page: Page, ticker: string): Promise<string[]> {
 /** The `data-yield-per-delta` score a ranked row exposes for machine verification. */
 export function rowScore(page: Page, ticker: string): Promise<string | null> {
   return page.getAttribute(`[data-testid="screener-row-${ticker}"]`, 'data-yield-per-delta')
+}
+
+// ── [US-68] Promote to trade ──────────────────────────────────────────────────
+//
+// The story's temporal split — the screener saw one quote, the form's re-fetch sees
+// another — is produced by mutating the fake provider's env between the two calls.
+// `FakeMarketDataProvider` re-reads `process.env` on every call (`buildMockMap` /
+// `maybeThrow`), so no new test seam is needed; `ElectronApplication.evaluate` runs
+// in the main process, which is where that env lives.
+
+/** Re-serve the option chain, replacing what the screener run was quoted. */
+export async function setOptionSnapshotFixtures(
+  app: ElectronApplication,
+  specs: PutFixtureSpec[]
+): Promise<void> {
+  await app.evaluate(
+    async (_electron, fixtures) => {
+      process.env.WHEELBASE_MOCK_OPTION_SNAPSHOTS = fixtures
+    },
+    JSON.stringify(buildPutFixtures(specs))
+  )
+}
+
+/** Make every provider call throw the given MarketDataErrorCode; `null` clears it. */
+export async function setMarketDataError(
+  app: ElectronApplication,
+  code: string | null
+): Promise<void> {
+  await app.evaluate(async (_electron, value) => {
+    if (value === null) delete process.env.FAKE_MARKET_DATA_ERROR
+    else process.env.FAKE_MARKET_DATA_ERROR = value
+  }, code)
+}
+
+/** Click a ranked row's promote action and wait for the promoted form to mount. */
+export async function promoteRow(page: Page, ticker: string): Promise<void> {
+  await page.click(`[data-testid="screener-promote-${ticker}"]`)
+  await page.waitForSelector('[data-testid="promote-provenance"]')
+}
+
+/** The kind of banner the promoted form is showing, once one is shown. */
+export async function promoteBannerKind(page: Page): Promise<string | null> {
+  const banner = page.locator('[data-testid="promote-banner"]')
+  await banner.waitFor()
+  return banner.getAttribute('data-kind')
+}
+
+/** Every active position, through the production read path. */
+export function listPositions(
+  page: Page
+): Promise<{ ticker: string; entryPremiumPerContract: string | null }[]> {
+  return page.evaluate(() => window.api.listPositions())
 }
 
 // ── [US-67] Criteria sheet ────────────────────────────────────────────────────

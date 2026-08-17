@@ -1,5 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it, vi } from 'vitest'
 import { format, parseISO } from 'date-fns'
 import type { ScreenerCandidate } from '../api/screener'
 import { ScreenerResultsTable } from './ScreenerResultsTable'
@@ -79,7 +80,7 @@ const CANDIDATES = [KO, AAPL, MSFT]
 
 describe('ScreenerResultsTable row order and rank badges', () => {
   it('renders rows in the given array order with rank badges 1, 2, 3', () => {
-    render(<ScreenerResultsTable candidates={CANDIDATES} />)
+    render(<ScreenerResultsTable candidates={CANDIDATES} onPromote={vi.fn()} />)
 
     const rows = screen.getAllByTestId(/^screener-row-/)
     expect(rows).toHaveLength(3)
@@ -95,7 +96,7 @@ describe('ScreenerResultsTable row order and rank badges', () => {
 
 describe('ScreenerResultsTable header row', () => {
   it('shows exactly the mockup column set', () => {
-    render(<ScreenerResultsTable candidates={CANDIDATES} />)
+    render(<ScreenerResultsTable candidates={CANDIDATES} onPromote={vi.fn()} />)
 
     const headers = screen.getAllByRole('columnheader').map((h) => h.textContent)
     expect(headers).toEqual([
@@ -110,14 +111,17 @@ describe('ScreenerResultsTable header row', () => {
       'Δ',
       'IVR',
       'OI',
-      'Spread'
+      'Spread',
+      // [US-68] The promote action's column; unlabelled, and appended last so the
+      // metric columns keep the positions US-66 pinned.
+      ''
     ])
   })
 })
 
 describe('ScreenerResultsTable cell formatting', () => {
   it('renders the AAPL row cells through the display formatters', () => {
-    render(<ScreenerResultsTable candidates={CANDIDATES} />)
+    render(<ScreenerResultsTable candidates={CANDIDATES} onPromote={vi.fn()} />)
 
     const row = screen.getByTestId('screener-row-AAPL')
     expect(within(row).getByText('$180.00')).toBeInTheDocument()
@@ -135,14 +139,14 @@ describe('ScreenerResultsTable cell formatting', () => {
   })
 
   it('carries the formatted score in data-yield-per-delta', () => {
-    render(<ScreenerResultsTable candidates={CANDIDATES} />)
+    render(<ScreenerResultsTable candidates={CANDIDATES} onPromote={vi.fn()} />)
 
     const row = screen.getByTestId('screener-row-AAPL')
     expect(row.getAttribute('data-yield-per-delta')).toBe('0.53')
   })
 
   it('renders n/a in a muted IVR cell when ivRank is null, keeping the rank badge', () => {
-    render(<ScreenerResultsTable candidates={CANDIDATES} />)
+    render(<ScreenerResultsTable candidates={CANDIDATES} onPromote={vi.fn()} />)
 
     const row = screen.getByTestId('screener-row-MSFT')
     const ivr = within(row).getByText('n/a')
@@ -154,7 +158,7 @@ describe('ScreenerResultsTable cell formatting', () => {
 
 describe('ScreenerResultsTable visual treatment', () => {
   it('renders yield cells green, the rank badge gold, and the ticker gold mono', () => {
-    render(<ScreenerResultsTable candidates={CANDIDATES} />)
+    render(<ScreenerResultsTable candidates={CANDIDATES} onPromote={vi.fn()} />)
 
     const row = screen.getByTestId('screener-row-AAPL')
     expect(within(row).getByText('1.5%').className).toContain('text-wb-green')
@@ -172,10 +176,62 @@ describe('ScreenerResultsTable visual treatment', () => {
 
 describe('ScreenerResultsTable score legend', () => {
   it('renders a legend below the table naming yield-per-delta', () => {
-    render(<ScreenerResultsTable candidates={CANDIDATES} />)
+    render(<ScreenerResultsTable candidates={CANDIDATES} onPromote={vi.fn()} />)
 
     expect(
       screen.getByText(/Ranked by yield-per-delta — annualized return-if-flat ÷ delta/)
     ).toBeInTheDocument()
+  })
+})
+
+// [US-68] The promote entry point. The table stays presentation-only — it raises
+// the candidate and the page owns the navigation, matching the split US-66 set.
+describe('ScreenerResultsTable promote action', () => {
+  const DATA_COLUMN_COUNT = 12
+
+  it('offers a promote action on every ranked row', () => {
+    render(<ScreenerResultsTable candidates={CANDIDATES} onPromote={vi.fn()} />)
+
+    expect(screen.getByTestId('screener-promote-KO')).toBeInTheDocument()
+    expect(screen.getByTestId('screener-promote-AAPL')).toBeInTheDocument()
+    expect(screen.getByTestId('screener-promote-MSFT')).toBeInTheDocument()
+  })
+
+  it('labels the action so it is reachable by name', () => {
+    render(<ScreenerResultsTable candidates={[AAPL]} onPromote={vi.fn()} />)
+
+    expect(screen.getByRole('button', { name: 'Promote to trade' })).toBe(
+      screen.getByTestId('screener-promote-AAPL')
+    )
+  })
+
+  it('raises the clicked row’s full candidate rather than navigating itself', async () => {
+    const user = userEvent.setup()
+    const onPromote = vi.fn()
+    render(<ScreenerResultsTable candidates={CANDIDATES} onPromote={onPromote} />)
+
+    await user.click(screen.getByTestId('screener-promote-AAPL'))
+
+    expect(onPromote).toHaveBeenCalledTimes(1)
+    expect(onPromote).toHaveBeenCalledWith(AAPL)
+  })
+
+  it('appends the action as the last cell, leaving the metric cells in place', () => {
+    render(<ScreenerResultsTable candidates={CANDIDATES} onPromote={vi.fn()} />)
+
+    const row = screen.getByTestId('screener-row-AAPL')
+    const cells = within(row).getAllByRole('cell')
+    expect(cells).toHaveLength(DATA_COLUMN_COUNT + 1)
+    // Rank chip still first; the promote button lives only in the trailing cell.
+    expect(cells[0]).toHaveTextContent('2')
+    expect(cells[DATA_COLUMN_COUNT]).toContainElement(screen.getByTestId('screener-promote-AAPL'))
+  })
+
+  it('wears the gold action treatment the criteria entry point uses', () => {
+    render(<ScreenerResultsTable candidates={[AAPL]} onPromote={vi.fn()} />)
+
+    const button = screen.getByTestId('screener-promote-AAPL')
+    expect(button.className).toContain('border-wb-gold-border')
+    expect(button.className).toContain('text-wb-gold')
   })
 })
