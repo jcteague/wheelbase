@@ -13,6 +13,7 @@ import {
   type OptionSnapshot,
   type StockQuote
 } from '../integrations/market-data-provider'
+import type { EarningsLookup } from '../core/screener'
 import { buildOccSymbol } from '../../shared/option-symbol'
 import type { FetchEarnings } from './evaluate-alerts'
 
@@ -194,13 +195,13 @@ export function inertProvider(): MarketDataProvider {
 }
 
 // ---------------------------------------------------------------------------
-// Earnings fetchers (US-56)
+// Earnings store readers (US-56, restated against US-70's lookup shape)
 // ---------------------------------------------------------------------------
 
-/** fetchEarnings stub resolving the supplied ticker → 'YYYY-MM-DD' map verbatim;
+/** fetchEarnings stub resolving the supplied ticker → lookup map verbatim;
  *  tickers absent from the map are simply omitted (the missing-data path). */
-export function stubEarnings(earningsByTicker: Record<string, string>): FetchEarnings {
-  return vi.fn(async () => earningsByTicker)
+export function stubEarnings(lookupByTicker: Record<string, EarningsLookup>): FetchEarnings {
+  return vi.fn(async () => new Map(Object.entries(lookupByTicker)))
 }
 
 /**
@@ -209,8 +210,14 @@ export function stubEarnings(earningsByTicker: Record<string, string>): FetchEar
  * nor skips — the earnings analogue of `inertProvider`.
  */
 export function inertEarnings(): FetchEarnings {
-  return vi.fn(async (tickers: string[], opts?: { now?: Date }) =>
-    Object.fromEntries(tickers.map((t) => [t, format(addDays(opts?.now ?? NOW, 45), 'yyyy-MM-dd')]))
+  return vi.fn(
+    async (tickers: string[], opts: { now: Date }) =>
+      new Map(
+        tickers.map((t): [string, EarningsLookup] => [
+          t,
+          { status: 'found', date: format(addDays(opts.now ?? NOW, 45), 'yyyy-MM-dd') }
+        ])
+      )
   )
 }
 

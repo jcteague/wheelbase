@@ -32,11 +32,12 @@ import {
   stubProvider
 } from './evaluate-alerts-test-utils'
 
-// Default-fetcher guard: tests that don't inject `fetchEarnings` must never
-// reach the real Finnhub module (which would hit the network whenever a key is
-// present in the shell env). The mock mirrors the no-key behavior: empty record.
+// Default-reader guard: tests that don't inject `fetchEarnings` read through the
+// real `earnings_date` store, which must never reach the live Finnhub module
+// (that would hit the network whenever a key is present in the shell env). The
+// mock mirrors the no-key behavior: an empty record, i.e. nothing known.
 vi.mock('../integrations/finnhub-earnings', () => ({
-  fetchNextEarningsDates: vi.fn(async () => ({}))
+  fetchNextEarnings: vi.fn(async () => ({}))
 }))
 
 /**
@@ -542,7 +543,7 @@ describe('US-56 acceptance — EARNINGS_PROXIMITY', () => {
       db,
       now: parseISO('2026-08-08'),
       provider: inertProvider(),
-      fetchEarnings: stubEarnings({ NVDA: '2026-08-14' })
+      fetchEarnings: stubEarnings({ NVDA: { status: 'found', date: '2026-08-14' } })
     })
 
     const earnings = listOpenAlerts(db).filter((a) => a.ruleCode === 'EARNINGS_PROXIMITY')
@@ -565,7 +566,7 @@ describe('US-56 acceptance — EARNINGS_PROXIMITY', () => {
       db,
       now: parseISO('2026-08-08'),
       provider: inertProvider(),
-      fetchEarnings: stubEarnings({ NVDA: '2026-08-21' })
+      fetchEarnings: stubEarnings({ NVDA: { status: 'found', date: '2026-08-21' } })
     })
 
     expect(listOpenAlerts(db).some((a) => a.ruleCode === 'EARNINGS_PROXIMITY')).toBe(false)
@@ -579,7 +580,7 @@ describe('US-56 acceptance — EARNINGS_PROXIMITY', () => {
       db,
       now: parseISO('2026-08-10'),
       provider: inertProvider(),
-      fetchEarnings: stubEarnings({ NVDA: '2026-08-18' })
+      fetchEarnings: stubEarnings({ NVDA: { status: 'found', date: '2026-08-18' } })
     })
 
     const codes = listOpenAlerts(db).map((a) => a.ruleCode)

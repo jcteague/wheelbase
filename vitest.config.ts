@@ -19,7 +19,12 @@ export default defineConfig({
         'src/preload/**',
         'src/main/index.ts',
         'src/renderer/src/main.tsx',
-        'src/renderer/src/test-setup.ts'
+        'src/renderer/src/test-setup.ts',
+        // Shared fixture builders. They import `vi`, so they are test infrastructure
+        // rather than production code — measured only incidentally, by whichever
+        // suites happen to use which builders. `test-setup.ts` above is the same
+        // category; this generalises it to the `*test-utils.ts` modules.
+        'src/**/*test-utils.ts'
       ]
     },
     projects: [

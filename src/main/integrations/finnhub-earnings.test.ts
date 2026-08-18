@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { makeSpyLogger } from '../test-utils'
-import { clearEarningsCache, fetchNextEarningsDates } from './finnhub-earnings'
+import { fetchNextEarnings, resetEarningsFeedState } from './finnhub-earnings'
 
 const mockFetch = vi.fn()
 
@@ -40,7 +40,7 @@ describe('finnhub-earnings', () => {
     vi.clearAllMocks()
     vi.stubGlobal('fetch', mockFetch)
     process.env.FINNHUB_API_KEY = 'test-key'
-    clearEarningsCache()
+    resetEarningsFeedState()
   })
 
   afterEach(() => {
@@ -48,14 +48,14 @@ describe('finnhub-earnings', () => {
     delete process.env.FINNHUB_API_KEY
   })
 
-  describe('fetchNextEarningsDates — happy path', () => {
-    it('resolves ticker to its upcoming earnings date', async () => {
+  describe('fetchNextEarnings — happy path', () => {
+    it('resolves ticker to a found lookup carrying its upcoming earnings date', async () => {
       mockFetch.mockResolvedValueOnce(fetchOk(calendarBody(['2026-08-14'])))
       const logger = makeSpyLogger()
 
-      const result = await fetchNextEarningsDates(['NVDA'], { now: NOW, logger })
+      const result = await fetchNextEarnings(['NVDA'], { now: NOW, logger })
 
-      expect(result).toEqual({ NVDA: '2026-08-14' })
+      expect(result).toEqual({ NVDA: { status: 'found', date: '2026-08-14' } })
       expect(mockFetch).toHaveBeenCalledTimes(1)
     })
 
@@ -63,7 +63,7 @@ describe('finnhub-earnings', () => {
       mockFetch.mockResolvedValueOnce(fetchOk(calendarBody(['2026-08-14'])))
       const logger = makeSpyLogger()
 
-      await fetchNextEarningsDates(['NVDA'], { now: NOW, logger })
+      await fetchNextEarnings(['NVDA'], { now: NOW, logger })
 
       const url = requestUrl(0)
       expect(url).toContain('https://finnhub.io/api/v1/calendar/earnings')
@@ -77,9 +77,9 @@ describe('finnhub-earnings', () => {
       mockFetch.mockResolvedValueOnce(fetchOk(calendarBody(['2026-08-14'])))
       const logger = makeSpyLogger()
 
-      const result = await fetchNextEarningsDates(['nvda', 'NVDA'], { now: NOW, logger })
+      const result = await fetchNextEarnings(['nvda', 'NVDA'], { now: NOW, logger })
 
-      expect(result).toEqual({ NVDA: '2026-08-14' })
+      expect(result).toEqual({ NVDA: { status: 'found', date: '2026-08-14' } })
       expect(mockFetch).toHaveBeenCalledTimes(1)
       expect(requestUrl(0)).toContain('symbol=NVDA')
     })
@@ -87,10 +87,39 @@ describe('finnhub-earnings', () => {
     it('returns {} for an empty ticker list without fetching', async () => {
       const logger = makeSpyLogger()
 
-      const result = await fetchNextEarningsDates([], { now: NOW, logger })
+      const result = await fetchNextEarnings([], { now: NOW, logger })
 
       expect(result).toEqual({})
       expect(mockFetch).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('lookahead window', () => {
+    it('lookaheadDays: 50 puts `to` 50 days past now', async () => {
+      mockFetch.mockResolvedValueOnce(fetchOk(calendarBody(['2026-09-07'])))
+      const logger = makeSpyLogger()
+
+      await fetchNextEarnings(['NVDA'], { now: NOW, logger, lookaheadDays: 50 })
+
+      expect(requestUrl(0)).toContain('to=2026-09-20')
+    })
+
+    it('defaults `to` to 30 days past now when lookaheadDays is omitted', async () => {
+      mockFetch.mockResolvedValueOnce(fetchOk(calendarBody(['2026-08-14'])))
+      const logger = makeSpyLogger()
+
+      await fetchNextEarnings(['NVDA'], { now: NOW, logger })
+
+      expect(requestUrl(0)).toContain('to=2026-08-31')
+    })
+
+    it('returns an event beyond the default 30-day horizon when the lookahead is widened', async () => {
+      mockFetch.mockResolvedValueOnce(fetchOk(calendarBody(['2026-09-07'])))
+      const logger = makeSpyLogger()
+
+      const result = await fetchNextEarnings(['NVDA'], { now: NOW, logger, lookaheadDays: 50 })
+
+      expect(result).toEqual({ NVDA: { status: 'found', date: '2026-09-07' } })
     })
   })
 
@@ -101,18 +130,18 @@ describe('finnhub-earnings', () => {
       )
       const logger = makeSpyLogger()
 
-      const result = await fetchNextEarningsDates(['NVDA'], { now: NOW, logger })
+      const result = await fetchNextEarnings(['NVDA'], { now: NOW, logger })
 
-      expect(result).toEqual({ NVDA: '2026-08-14' })
+      expect(result).toEqual({ NVDA: { status: 'found', date: '2026-08-14' } })
     })
 
     it('picks the most recent past date when only past events exist', async () => {
       mockFetch.mockResolvedValueOnce(fetchOk(calendarBody(['2026-07-20', '2026-07-28'])))
       const logger = makeSpyLogger()
 
-      const result = await fetchNextEarningsDates(['NVDA'], { now: NOW, logger })
+      const result = await fetchNextEarnings(['NVDA'], { now: NOW, logger })
 
-      expect(result).toEqual({ NVDA: '2026-07-28' })
+      expect(result).toEqual({ NVDA: { status: 'found', date: '2026-07-28' } })
     })
 
     it('ignores rows with a null date instead of letting them displace a valid past date', async () => {
@@ -126,129 +155,162 @@ describe('finnhub-earnings', () => {
       )
       const logger = makeSpyLogger()
 
-      const result = await fetchNextEarningsDates(['NVDA'], { now: NOW, logger })
+      const result = await fetchNextEarnings(['NVDA'], { now: NOW, logger })
 
-      expect(result).toEqual({ NVDA: '2026-07-28' })
+      expect(result).toEqual({ NVDA: { status: 'found', date: '2026-07-28' } })
     })
 
     it('ignores rows whose date is not a YYYY-MM-DD string', async () => {
       mockFetch.mockResolvedValueOnce(fetchOk(calendarBody(['TBD', '2026-08-14'])))
       const logger = makeSpyLogger()
 
-      const result = await fetchNextEarningsDates(['NVDA'], { now: NOW, logger })
+      const result = await fetchNextEarnings(['NVDA'], { now: NOW, logger })
 
-      expect(result).toEqual({ NVDA: '2026-08-14' })
+      expect(result).toEqual({ NVDA: { status: 'found', date: '2026-08-14' } })
     })
   })
 
-  describe('empty calendar', () => {
-    it('omits the ticker from the result', async () => {
+  describe('empty calendar — none, not a missing key', () => {
+    it('returns { status: "none" } for an empty earningsCalendar array', async () => {
       mockFetch.mockResolvedValueOnce(fetchOk(calendarBody([])))
       const logger = makeSpyLogger()
 
-      const result = await fetchNextEarningsDates(['NVDA'], { now: NOW, logger })
+      const result = await fetchNextEarnings(['NVDA'], { now: NOW, logger })
 
-      expect(result).toEqual({})
+      expect(result).toEqual({ NVDA: { status: 'none' } })
       expect(logger.debug).toHaveBeenCalledWith(
         expect.objectContaining({ ticker: 'NVDA' }),
         'earnings_no_event_in_window'
       )
     })
 
-    it('caches the negative result — no new fetch within TTL', async () => {
-      mockFetch.mockResolvedValueOnce(fetchOk(calendarBody([])))
+    it('returns { status: "none" } when every row has a null or malformed date', async () => {
+      mockFetch.mockResolvedValueOnce(
+        fetchOk({
+          earningsCalendar: [
+            { date: null, symbol: 'NVDA' },
+            { date: 'TBD', symbol: 'NVDA' }
+          ]
+        })
+      )
       const logger = makeSpyLogger()
 
-      await fetchNextEarningsDates(['NVDA'], { now: NOW, logger })
-      const second = await fetchNextEarningsDates(['NVDA'], { now: NOW, logger })
+      const result = await fetchNextEarnings(['NVDA'], { now: NOW, logger })
 
-      expect(second).toEqual({})
-      expect(mockFetch).toHaveBeenCalledTimes(1)
+      expect(result).toEqual({ NVDA: { status: 'none' } })
     })
   })
 
-  describe('cache', () => {
-    it('serves a second call for the same ticker from cache within 12h', async () => {
-      mockFetch.mockResolvedValueOnce(fetchOk(calendarBody(['2026-08-14'])))
-      const logger = makeSpyLogger()
-
-      const first = await fetchNextEarningsDates(['NVDA'], { now: NOW, logger })
-      const second = await fetchNextEarningsDates(['NVDA'], { now: NOW, logger })
-
-      expect(first).toEqual({ NVDA: '2026-08-14' })
-      expect(second).toEqual({ NVDA: '2026-08-14' })
-      expect(mockFetch).toHaveBeenCalledTimes(1)
-    })
-
-    it('refetches after the 12h TTL has elapsed', async () => {
+  describe('no success caching — freshness is the store’s job', () => {
+    it('issues an HTTP request on both of two successive calls for the same ticker', async () => {
       mockFetch
         .mockResolvedValueOnce(fetchOk(calendarBody(['2026-08-14'])))
         .mockResolvedValueOnce(fetchOk(calendarBody(['2026-08-15'])))
       const logger = makeSpyLogger()
-      const later = new Date(NOW.getTime() + 12 * 60 * 60 * 1000 + 1)
 
-      await fetchNextEarningsDates(['NVDA'], { now: NOW, logger })
-      const second = await fetchNextEarningsDates(['NVDA'], { now: later, logger })
+      const first = await fetchNextEarnings(['NVDA'], { now: NOW, logger })
+      const second = await fetchNextEarnings(['NVDA'], { now: NOW, logger })
 
-      expect(second).toEqual({ NVDA: '2026-08-15' })
+      expect(first).toEqual({ NVDA: { status: 'found', date: '2026-08-14' } })
+      expect(second).toEqual({ NVDA: { status: 'found', date: '2026-08-15' } })
       expect(mockFetch).toHaveBeenCalledTimes(2)
     })
 
-    it('clearEarningsCache forces a refetch', async () => {
+    it('does not cache a { status: "none" } answer either', async () => {
       mockFetch
-        .mockResolvedValueOnce(fetchOk(calendarBody(['2026-08-14'])))
-        .mockResolvedValueOnce(fetchOk(calendarBody(['2026-08-14'])))
+        .mockResolvedValueOnce(fetchOk(calendarBody([])))
+        .mockResolvedValueOnce(fetchOk(calendarBody([])))
       const logger = makeSpyLogger()
 
-      await fetchNextEarningsDates(['NVDA'], { now: NOW, logger })
-      clearEarningsCache()
-      await fetchNextEarningsDates(['NVDA'], { now: NOW, logger })
+      await fetchNextEarnings(['NVDA'], { now: NOW, logger })
+      await fetchNextEarnings(['NVDA'], { now: NOW, logger })
 
       expect(mockFetch).toHaveBeenCalledTimes(2)
     })
   })
 
-  describe('per-ticker failure isolation', () => {
-    it('returns the healthy ticker when another ticker fetch rejects', async () => {
+  describe('every requested ticker gets an entry', () => {
+    it('returns one entry per requested ticker on a mixed found/none/failed batch', async () => {
       mockFetch.mockImplementation((url: string) => {
-        if (String(url).includes('symbol=NVDA')) {
+        const target = String(url)
+        if (target.includes('symbol=NVDA')) {
           return Promise.resolve(fetchOk(calendarBody(['2026-08-14'])))
         }
-        return Promise.reject(new TypeError('fetch failed'))
+        if (target.includes('symbol=KO')) return Promise.resolve(fetchOk(calendarBody([])))
+        return Promise.resolve(fetchErr(429))
+      })
+      const logger = makeSpyLogger()
+      const tickers = ['NVDA', 'KO', 'AAPL']
+
+      const result = await fetchNextEarnings(tickers, { now: NOW, logger })
+
+      expect(Object.keys(result)).toHaveLength(tickers.length)
+      expect(result).toEqual({
+        NVDA: { status: 'found', date: '2026-08-14' },
+        KO: { status: 'none' },
+        AAPL: { status: 'unavailable' }
+      })
+    })
+  })
+
+  describe('per-ticker failure isolation', () => {
+    it('never rejects — one ticker throwing leaves every other ticker’s result intact', async () => {
+      mockFetch.mockImplementation((url: string) => {
+        if (String(url).includes('symbol=AAPL')) {
+          return Promise.reject(new TypeError('fetch failed'))
+        }
+        return Promise.resolve(fetchOk(calendarBody(['2026-08-14'])))
       })
       const logger = makeSpyLogger()
 
-      const result = await fetchNextEarningsDates(['NVDA', 'AAPL'], { now: NOW, logger })
+      const result = await fetchNextEarnings(['NVDA', 'AAPL', 'KO'], { now: NOW, logger })
 
-      expect(result).toEqual({ NVDA: '2026-08-14' })
+      expect(result).toEqual({
+        NVDA: { status: 'found', date: '2026-08-14' },
+        AAPL: { status: 'unavailable' },
+        KO: { status: 'found', date: '2026-08-14' }
+      })
       expect(logger.warn).toHaveBeenCalledWith(
         expect.objectContaining({ ticker: 'AAPL', code: 'network_error' }),
         'earnings_fetch_failed'
       )
     })
 
-    it('omits the ticker on HTTP 429 with WARN code rate_limited, without throwing', async () => {
+    it('returns unavailable on HTTP 429 with WARN code rate_limited, without throwing', async () => {
       mockFetch.mockResolvedValueOnce(fetchErr(429))
       const logger = makeSpyLogger()
 
-      const result = await fetchNextEarningsDates(['NVDA'], { now: NOW, logger })
+      const result = await fetchNextEarnings(['NVDA'], { now: NOW, logger })
 
-      expect(result).toEqual({})
+      expect(result).toEqual({ NVDA: { status: 'unavailable' } })
       expect(logger.warn).toHaveBeenCalledWith(
         expect.objectContaining({ ticker: 'NVDA', code: 'rate_limited' }),
         'earnings_fetch_failed'
       )
     })
 
-    it('omits the ticker on HTTP 401 with WARN code auth_failed, without throwing', async () => {
+    it('returns unavailable on HTTP 401 with WARN code auth_failed, without throwing', async () => {
       mockFetch.mockResolvedValueOnce(fetchErr(401))
       const logger = makeSpyLogger()
 
-      const result = await fetchNextEarningsDates(['NVDA'], { now: NOW, logger })
+      const result = await fetchNextEarnings(['NVDA'], { now: NOW, logger })
 
-      expect(result).toEqual({})
+      expect(result).toEqual({ NVDA: { status: 'unavailable' } })
       expect(logger.warn).toHaveBeenCalledWith(
         expect.objectContaining({ ticker: 'NVDA', code: 'auth_failed' }),
+        'earnings_fetch_failed'
+      )
+    })
+
+    it('returns unavailable on a thrown network error with WARN code network_error', async () => {
+      mockFetch.mockRejectedValueOnce(new TypeError('fetch failed'))
+      const logger = makeSpyLogger()
+
+      const result = await fetchNextEarnings(['NVDA'], { now: NOW, logger })
+
+      expect(result).toEqual({ NVDA: { status: 'unavailable' } })
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ ticker: 'NVDA', code: 'network_error' }),
         'earnings_fetch_failed'
       )
     })
@@ -257,14 +319,31 @@ describe('finnhub-earnings', () => {
       mockFetch.mockResolvedValueOnce(fetchErr(429))
       const logger = makeSpyLogger()
 
-      const first = await fetchNextEarningsDates(['NVDA'], { now: NOW, logger })
+      const first = await fetchNextEarnings(['NVDA'], { now: NOW, logger })
       // One scheduler tick (60s) later, still inside the failure TTL.
       const oneTickLater = new Date(NOW.getTime() + 60 * 1000)
-      const second = await fetchNextEarningsDates(['NVDA'], { now: oneTickLater, logger })
+      const second = await fetchNextEarnings(['NVDA'], { now: oneTickLater, logger })
 
-      expect(first).toEqual({})
-      expect(second).toEqual({})
+      expect(first).toEqual({ NVDA: { status: 'unavailable' } })
+      expect(second).toEqual({ NVDA: { status: 'unavailable' } })
       expect(mockFetch).toHaveBeenCalledTimes(1)
+    })
+
+    it('writes the negative cache entry for a rate-limited ticker inside a capped batch', async () => {
+      mockFetch.mockImplementation((url: string) =>
+        String(url).includes('symbol=AAPL')
+          ? Promise.resolve(fetchErr(429))
+          : Promise.resolve(fetchOk(calendarBody(['2026-08-14'])))
+      )
+      const logger = makeSpyLogger()
+      const batch = ['NVDA', 'AAPL', 'KO', 'MSFT', 'TSLA', 'AMD']
+
+      await fetchNextEarnings(batch, { now: NOW, logger })
+      const callsAfterFirstBatch = mockFetch.mock.calls.length
+      const retry = await fetchNextEarnings(['AAPL'], { now: NOW, logger })
+
+      expect(retry).toEqual({ AAPL: { status: 'unavailable' } })
+      expect(mockFetch).toHaveBeenCalledTimes(callsAfterFirstBatch)
     })
 
     it('refetches a failed ticker after the 5-minute failure TTL elapses', async () => {
@@ -274,23 +353,35 @@ describe('finnhub-earnings', () => {
       const logger = makeSpyLogger()
       const afterFailureTtl = new Date(NOW.getTime() + 5 * 60 * 1000 + 1)
 
-      const first = await fetchNextEarningsDates(['NVDA'], { now: NOW, logger })
-      const second = await fetchNextEarningsDates(['NVDA'], { now: afterFailureTtl, logger })
+      const first = await fetchNextEarnings(['NVDA'], { now: NOW, logger })
+      const second = await fetchNextEarnings(['NVDA'], { now: afterFailureTtl, logger })
 
-      expect(first).toEqual({})
-      expect(second).toEqual({ NVDA: '2026-08-14' })
+      expect(first).toEqual({ NVDA: { status: 'unavailable' } })
+      expect(second).toEqual({ NVDA: { status: 'found', date: '2026-08-14' } })
       expect(mockFetch).toHaveBeenCalledTimes(2)
+    })
+
+    it('returns unavailable when the body is missing its earningsCalendar array', async () => {
+      mockFetch.mockResolvedValueOnce(fetchOk({ notACalendar: true }))
+      const logger = makeSpyLogger()
+
+      const result = await fetchNextEarnings(['NVDA'], { now: NOW, logger })
+
+      expect(result).toEqual({ NVDA: { status: 'unavailable' } })
     })
   })
 
   describe('missing API key', () => {
-    it('returns {} immediately with a single WARN and zero fetch calls', async () => {
+    it('returns unavailable for every requested ticker with a single WARN and zero fetch calls', async () => {
       delete process.env.FINNHUB_API_KEY
       const logger = makeSpyLogger()
 
-      const result = await fetchNextEarningsDates(['NVDA'], { now: NOW, logger })
+      const result = await fetchNextEarnings(['NVDA', 'AAPL'], { now: NOW, logger })
 
-      expect(result).toEqual({})
+      expect(result).toEqual({
+        NVDA: { status: 'unavailable' },
+        AAPL: { status: 'unavailable' }
+      })
       expect(mockFetch).not.toHaveBeenCalled()
       expect(logger.warn).toHaveBeenCalledTimes(1)
       expect(logger.warn).toHaveBeenCalledWith('earnings_fetch_no_api_key')
@@ -300,10 +391,26 @@ describe('finnhub-earnings', () => {
       delete process.env.FINNHUB_API_KEY
       const logger = makeSpyLogger()
 
-      await fetchNextEarningsDates(['NVDA'], { now: NOW, logger })
-      await fetchNextEarningsDates(['AAPL'], { now: NOW, logger })
+      await fetchNextEarnings(['NVDA'], { now: NOW, logger })
+      await fetchNextEarnings(['AAPL'], { now: NOW, logger })
 
       expect(logger.warn).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('resetEarningsFeedState', () => {
+    it('clears the failure backoff so a failed ticker is retried immediately', async () => {
+      mockFetch
+        .mockResolvedValueOnce(fetchErr(429))
+        .mockResolvedValueOnce(fetchOk(calendarBody(['2026-08-14'])))
+      const logger = makeSpyLogger()
+
+      await fetchNextEarnings(['NVDA'], { now: NOW, logger })
+      resetEarningsFeedState()
+      const second = await fetchNextEarnings(['NVDA'], { now: NOW, logger })
+
+      expect(second).toEqual({ NVDA: { status: 'found', date: '2026-08-14' } })
+      expect(mockFetch).toHaveBeenCalledTimes(2)
     })
   })
 })

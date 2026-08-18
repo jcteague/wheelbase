@@ -399,6 +399,14 @@ interface IpcIvRank {
   observedAt: string // ISO timestamp of the scrape that produced it
 }
 
+/** Mirrors `CandidateEarnings` in `src/main/core/screener.ts` — the engine's earnings
+ *  verdict for one candidate. `flagged` only occurs under `earningsHandling: 'flag'`. */
+type IpcCandidateEarnings =
+  | { status: 'clear' } // known date, falls after expiry (or already past)
+  | { status: 'flagged'; date: string; daysBeforeExpiry: number } // 'YYYY-MM-DD' + calendar days
+  | { status: 'unknown' } // calendar read, no event
+  | { status: 'unavailable' } // calendar could not be read
+
 /** Mirrors `ScoredCandidate` in `src/main/core/screener.ts` — one surviving strike,
  *  fully scored. Delta is absolute. */
 interface IpcScoredCandidate {
@@ -420,7 +428,7 @@ interface IpcScoredCandidate {
   periodYield: string // 4dp fraction
   annualizedYield: string // 4dp fraction
   yieldPerDelta: string // 4dp — the rank score
-  earningsFlagged: boolean // 'flag' mode only: earnings land inside the holding window
+  earnings: IpcCandidateEarnings
   timestamp: string // ISO
 }
 

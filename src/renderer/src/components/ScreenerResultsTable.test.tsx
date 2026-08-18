@@ -26,7 +26,7 @@ const KO: ScreenerCandidate = {
   periodYield: '0.0158',
   annualizedYield: '0.1560',
   yieldPerDelta: '0.7100',
-  earningsFlagged: false,
+  earnings: { status: 'clear' },
   timestamp: '2026-08-07T16:00:02-04:00'
 }
 
@@ -49,7 +49,7 @@ const AAPL: ScreenerCandidate = {
   periodYield: '0.0150',
   annualizedYield: '0.1480',
   yieldPerDelta: '0.5286',
-  earningsFlagged: false,
+  earnings: { status: 'clear' },
   timestamp: '2026-08-07T16:00:02-04:00'
 }
 
@@ -72,7 +72,7 @@ const MSFT: ScreenerCandidate = {
   periodYield: '0.0151',
   annualizedYield: '0.1250',
   yieldPerDelta: '0.5018',
-  earningsFlagged: false,
+  earnings: { status: 'clear' },
   timestamp: '2026-08-07T16:00:02-04:00'
 }
 
@@ -91,6 +91,91 @@ describe('ScreenerResultsTable row order and rank badges', () => {
     expect(within(rows[0]).getByText('1')).toBeInTheDocument()
     expect(within(rows[1]).getByText('2')).toBeInTheDocument()
     expect(within(rows[2]).getByText('3')).toBeInTheDocument()
+  })
+})
+
+// [US-70] A candidate whose earnings verdict is anything but `clear` is demoted, so it
+// carries a caution badge and gives up its rank number — matching the mockup's
+// `rank: null` rows. The table itself still never re-sorts.
+describe('ScreenerResultsTable earnings badges', () => {
+  const FLAGGED: ScreenerCandidate = {
+    ...AAPL,
+    earnings: { status: 'flagged', date: '2026-07-31', daysBeforeExpiry: 21 }
+  }
+  const UNKNOWN: ScreenerCandidate = { ...AAPL, earnings: { status: 'unknown' } }
+  const UNAVAILABLE: ScreenerCandidate = { ...AAPL, earnings: { status: 'unavailable' } }
+
+  function rowFor(candidate: ScreenerCandidate): HTMLElement {
+    render(<ScreenerResultsTable candidates={[candidate]} onPromote={vi.fn()} />)
+    return screen.getByTestId(`screener-row-${candidate.ticker}`)
+  }
+
+  it('shows the numeric rank and no badge on a clear row', () => {
+    const row = rowFor(KO)
+
+    expect(within(row).getByText('1')).toBeInTheDocument()
+    expect(within(row).queryByTestId('earnings-badge')).toBeNull()
+  })
+
+  it('replaces the rank with an em dash on a flagged row', () => {
+    const row = rowFor(FLAGGED)
+
+    expect(within(row).queryByText('1')).toBeNull()
+    expect(within(row).getByText('—')).toBeInTheDocument()
+  })
+
+  it('replaces the rank with an em dash on an unknown row', () => {
+    expect(within(rowFor(UNKNOWN)).getByText('—')).toBeInTheDocument()
+  })
+
+  it('replaces the rank with an em dash on an unavailable row', () => {
+    expect(within(rowFor(UNAVAILABLE)).getByText('—')).toBeInTheDocument()
+  })
+
+  it('renders the flagged warning copy', () => {
+    expect(within(rowFor(FLAGGED)).getByTestId('earnings-badge').textContent).toContain(
+      '21d before expiry'
+    )
+  })
+
+  it('renders the unknown caution copy', () => {
+    expect(within(rowFor(UNKNOWN)).getByTestId('earnings-badge').textContent).toBe(
+      '? Earnings date unknown'
+    )
+  })
+
+  it('renders the unavailable caution copy', () => {
+    expect(within(rowFor(UNAVAILABLE)).getByTestId('earnings-badge').textContent).toBe(
+      '? Earnings date unavailable'
+    )
+  })
+
+  it('puts the badge in the ticker cell, not a column of its own', () => {
+    const row = rowFor(FLAGGED)
+    const cells = within(row).getAllByRole('cell')
+    const tickerCell = cells.find((cell) => cell.textContent?.includes('AAPL'))
+
+    expect(tickerCell).toBeDefined()
+    expect(within(tickerCell!).getByTestId('earnings-badge')).toBeInTheDocument()
+    // The badge adds no column — the header set US-66 pinned is unchanged.
+    expect(cells).toHaveLength(13)
+  })
+
+  it('renders rows in the order given, never re-sorting a demoted row upward', () => {
+    const demotedFirst: ScreenerCandidate[] = [
+      FLAGGED,
+      KO,
+      { ...MSFT, earnings: { status: 'unknown' } }
+    ]
+    render(<ScreenerResultsTable candidates={demotedFirst} onPromote={vi.fn()} />)
+
+    expect(
+      screen.getAllByTestId(/^screener-row-/).map((row) => row.getAttribute('data-testid'))
+    ).toEqual(['screener-row-AAPL', 'screener-row-KO', 'screener-row-MSFT'])
+  })
+
+  it('keeps the score reachable on a demoted row rather than dropping it with the rank pill', () => {
+    expect(rowFor(FLAGGED).getAttribute('data-yield-per-delta')).toBe('0.53')
   })
 })
 

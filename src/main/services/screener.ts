@@ -3,12 +3,13 @@
 // screening engine per ticker, and returns a ranked candidate list plus one explained
 // exclusion for every ticker that did not make it.
 import type Database from 'better-sqlite3'
-import { compareAsc, parseISO } from 'date-fns'
+import { addDays, compareAsc, parseISO } from 'date-fns'
 import type { MarketDataProvider } from '../integrations/market-data-provider'
 import { isWellFormedStrike } from '../core/candidate-chain'
 import {
   rankCandidates,
   screenTicker,
+  type EarningsLookup,
   type ExclusionCode,
   type IvRank,
   type ScoredCandidate,
@@ -18,12 +19,29 @@ import {
 import { mapWithConcurrency } from '../concurrency'
 import { logger } from '../logger'
 import { pullWatchlistChains, type TickerChainResult } from './candidate-chains'
+import { getEarnings } from './earnings-dates'
 import { getScreeningCriteria } from './screening-criteria'
 import { getLatestIvrByUnderlying } from './ivr-snapshots'
 
 // One stock-snapshot request per ticker — bounded for the same 429 hazard the
 // chain pull caps against.
 const QUOTE_FETCH_CONCURRENCY = 4
+
+// [US-70] Days past the furthest expiry the earnings calendar is read through.
+//
+// Deciding *whether* earnings land in the window only needs coverage through expiry.
+// This buffer exists for the other half of the judgement: telling `clear` ("we found
+// the next print and it is after expiry") apart from `unknown` ("we did not look far
+// enough to say"). Earnings are quarterly, so a buffer that merely clears `dteMax`
+// would report `unknown` for most genuinely-clear candidates — whenever the next print
+// happens to fall past the horizon — burying the real cautions in noise. Sized to a
+// full earnings cycle instead: with the default 45-day `dteMax` this reads ~90 days
+// out, so a print anywhere in the current quarter is found rather than missed.
+//
+// Widening costs nothing per run: it is still one request per ticker, `selectEventDate`
+// still returns the first event on or after today, and a deeper `checked_through` row
+// also satisfies US-56's shallower 30-day question.
+const LOOKAHEAD_BUFFER_DAYS = 45
 
 export type ScreenerExclusionCode = ExclusionCode | 'no_options_listed' | 'data_unavailable'
 
@@ -50,6 +68,7 @@ type TickerOutcome = { screened: TickerScreeningResult } | { exclusion: Screener
 type ScreenContext = {
   ivRanks: Map<string, IvRank>
   prices: Map<string, string>
+  earnings: Map<string, EarningsLookup>
   criteria: ScreeningCriteria
   currentDate: Date
 }
@@ -71,6 +90,32 @@ function readIvRanks(db: Database.Database, tickers: string[]): Map<string, IvRa
     return getLatestIvrByUnderlying(db, tickers)
   } catch (err) {
     logger.warn({ err, tickers }, 'screener_ivr_read_failed')
+    return new Map()
+  }
+}
+
+/**
+ * [US-70] Next earnings date per ticker, read through the persisted store. A read
+ * failure degrades to "unavailable for everyone" rather than sinking the run: an
+ * earnings gap is a caution the trader reads on each row, never grounds to suppress
+ * the other results, and never grounds to exclude — per the failure-isolation ADR.
+ *
+ * This is the one place the trader's DTE window becomes a horizon *date*; the store
+ * takes a date, not a day count.
+ */
+async function readEarnings(
+  db: Database.Database,
+  tickers: string[],
+  criteria: ScreeningCriteria,
+  currentDate: Date
+): Promise<Map<string, EarningsLookup>> {
+  try {
+    return await getEarnings(db, tickers, {
+      horizon: addDays(currentDate, criteria.dteMax + LOOKAHEAD_BUFFER_DAYS),
+      now: currentDate
+    })
+  } catch (err) {
+    logger.warn({ err, tickers }, 'screener_earnings_read_failed')
     return new Map()
   }
 }
@@ -139,6 +184,10 @@ function screenChain(chain: TickerChainResult, ctx: ScreenContext): TickerOutcom
     return { exclusion: chainStatusExclusion(chain, ctx.criteria) }
   }
 
+  // A ticker the store said nothing about is `unavailable`, never "no earnings" —
+  // absence of an answer must not read as absence of risk.
+  const earnings = ctx.earnings.get(chain.ticker) ?? { status: 'unavailable' }
+
   try {
     const screened = screenTicker(
       {
@@ -146,8 +195,7 @@ function screenChain(chain: TickerChainResult, ctx: ScreenContext): TickerOutcom
         strikes: wellFormedStrikes(chain),
         ivRank: ctx.ivRanks.get(chain.ticker) ?? null,
         underlyingPrice: ctx.prices.get(chain.ticker) ?? null,
-        // US-70 supplies the earnings calendar; until then the gate cannot fire.
-        earningsDate: null
+        earnings
       },
       ctx.criteria,
       ctx.currentDate
@@ -156,7 +204,8 @@ function screenChain(chain: TickerChainResult, ctx: ScreenContext): TickerOutcom
       {
         ticker: chain.ticker,
         scored: screened.best !== null,
-        excludedCount: screened.excluded.length
+        excludedCount: screened.excluded.length,
+        earnings: earnings.status
       },
       'screen_ticker_outcome'
     )
@@ -242,9 +291,14 @@ export async function screenWatchlistCandidates(
   )
   logger.debug({ tickers: screenable, criteria }, 'screen_watchlist_candidates_request')
 
+  const [prices, earnings] = await Promise.all([
+    readUnderlyingPrices(provider, screenable, criteria),
+    readEarnings(db, screenable, criteria, currentDate)
+  ])
   const ctx: ScreenContext = {
     ivRanks: readIvRanks(db, screenable),
-    prices: await readUnderlyingPrices(provider, screenable, criteria),
+    prices,
+    earnings,
     criteria,
     currentDate
   }

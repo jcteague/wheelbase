@@ -1,12 +1,19 @@
 // [US-65] screener service — orchestration across the chain pull, the IVR join, the
 // optional quote fetch and the pure engine, with every boundary isolated.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { addDays } from 'date-fns'
 import type { MarketDataProvider, StockQuote } from '../integrations/market-data-provider'
 import type { CandidateStrike } from '../core/candidate-chain'
-import { DEFAULT_SCREENING_CRITERIA, type ScreeningCriteria } from '../core/screener'
+import {
+  DEFAULT_SCREENING_CRITERIA,
+  type EarningsLookup,
+  type ScreeningCriteria
+} from '../core/screener'
+import { fetchNextEarnings } from '../integrations/finnhub-earnings'
 import { logger } from '../logger'
 import { makeTestDb, seedIvr } from '../test-utils'
 import { pullWatchlistChains, type TickerChainResult } from './candidate-chains'
+import { getEarnings } from './earnings-dates'
 import { getLatestIvrByUnderlying } from './ivr-snapshots'
 import { screenWatchlistCandidates } from './screener'
 import { saveScreeningCriteria } from './screening-criteria'
@@ -17,6 +24,11 @@ vi.mock('../logger', () => ({
 
 vi.mock('./candidate-chains', () => ({ pullWatchlistChains: vi.fn() }))
 
+// [US-70] The Finnhub HTTP boundary is the only thing stubbed, so the store's
+// read-through, its write-back, and the migration's schema are all exercised for real
+// — which is what lets the "second run issues no fetch" assertion mean anything.
+vi.mock('../integrations/finnhub-earnings', () => ({ fetchNextEarnings: vi.fn() }))
+
 // The read path stays real so a seeded DB drives the join; individual tests swap in
 // a throwing implementation to exercise the degrade-to-empty path.
 vi.mock('./ivr-snapshots', async (importOriginal) => {
@@ -24,9 +36,33 @@ vi.mock('./ivr-snapshots', async (importOriginal) => {
   return { ...actual, getLatestIvrByUnderlying: vi.fn(actual.getLatestIvrByUnderlying) }
 })
 
+vi.mock('./earnings-dates', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./earnings-dates')>()
+  return { ...actual, getEarnings: vi.fn(actual.getEarnings) }
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
+  // Default: the calendar answers, and holds nothing for anyone. Tests that care
+  // override per ticker.
+  vi.mocked(fetchNextEarnings).mockImplementation(async (tickers) =>
+    Object.fromEntries(
+      tickers.map((ticker): [string, EarningsLookup] => [ticker, { status: 'none' }])
+    )
+  )
 })
+
+/** The calendar's answer per ticker, for the run under test. */
+function mockEarnings(byTicker: Record<string, EarningsLookup>): void {
+  vi.mocked(fetchNextEarnings).mockImplementation(async (tickers) =>
+    Object.fromEntries(
+      tickers.map((ticker): [string, EarningsLookup] => [
+        ticker,
+        byTicker[ticker] ?? { status: 'none' }
+      ])
+    )
+  )
+}
 
 // 2026-07-23; the strikes below expire 2026-08-29, i.e. 37 DTE.
 const CURRENT_DATE = new Date(2026, 6, 23)
@@ -653,6 +689,216 @@ describe('screenWatchlistCandidates', () => {
         window: { min: 40, max: 45 },
         currentDate: CURRENT_DATE
       })
+    })
+  })
+
+  // [US-70] The earnings verdict reaches the engine through the persisted store, and
+  // every way the calendar can fail degrades to a per-candidate caution rather than a
+  // suppressed run.
+  describe('earnings', () => {
+    // CURRENT_DATE is 2026-07-23 and the fixture strikes expire 2026-08-29.
+    const IN_WINDOW = '2026-08-10'
+    const AFTER_EXPIRY = '2026-09-15'
+
+    it('carries the store’s verdict onto the candidate instead of the old always-null stub', async () => {
+      const db = makeTestDb()
+      const { provider } = makeProvider()
+      mockChains({ status: 'ok', tickers: [AAPL_OK] })
+      mockEarnings({ AAPL: { status: 'found', date: AFTER_EXPIRY } })
+
+      const result = await screenWatchlistCandidates(() => provider, db, {
+        currentDate: CURRENT_DATE
+      })
+
+      expect(result.ranked[0].earnings).toEqual({ status: 'clear' })
+    })
+
+    it('excludes an in-window candidate in the default exclude mode', async () => {
+      const db = makeTestDb()
+      const { provider } = makeProvider()
+      mockChains({ status: 'ok', tickers: [AAPL_OK] })
+      mockEarnings({ AAPL: { status: 'found', date: IN_WINDOW } })
+
+      const result = await screenWatchlistCandidates(() => provider, db, {
+        currentDate: CURRENT_DATE
+      })
+
+      expect(result.ranked).toEqual([])
+      expect(result.excluded).toEqual([
+        {
+          ticker: 'AAPL',
+          code: 'earnings_in_window',
+          reason: 'earnings 2026-08-10 falls on or before expiry'
+        }
+      ])
+    })
+
+    it('flags rather than excludes an in-window candidate in flag mode', async () => {
+      const db = makeTestDb()
+      const { provider } = makeProvider()
+      mockChains({ status: 'ok', tickers: [AAPL_OK] })
+      mockEarnings({ AAPL: { status: 'found', date: IN_WINDOW } })
+
+      const result = await screenWatchlistCandidates(() => provider, db, {
+        criteria: criteriaWith({ earningsHandling: 'flag' }),
+        currentDate: CURRENT_DATE
+      })
+
+      expect(result.ranked[0].earnings).toEqual({
+        status: 'flagged',
+        date: IN_WINDOW,
+        daysBeforeExpiry: 19
+      })
+      expect(result.excluded).toEqual([])
+    })
+
+    it('asks the store for a horizon past the criteria dteMax', async () => {
+      const db = makeTestDb()
+      const { provider } = makeProvider()
+      mockChains({ status: 'ok', tickers: [AAPL_OK] })
+
+      await screenWatchlistCandidates(() => provider, db, { currentDate: CURRENT_DATE })
+
+      const { horizon } = vi.mocked(getEarnings).mock.calls[0][2]
+      // Default dteMax is 45, so the calendar must be read past the furthest expiry.
+      expect(horizon.getTime()).toBeGreaterThanOrEqual(
+        addDays(CURRENT_DATE, DEFAULT_SCREENING_CRITERIA.dteMax).getTime()
+      )
+    })
+
+    it('widens the horizon with a custom DTE window', async () => {
+      const db = makeTestDb()
+      const { provider } = makeProvider()
+      mockChains({ status: 'ok', tickers: [AAPL_OK] })
+
+      await screenWatchlistCandidates(() => provider, db, {
+        criteria: criteriaWith({ dteMin: 50, dteMax: 60 }),
+        currentDate: CURRENT_DATE
+      })
+
+      const { horizon } = vi.mocked(getEarnings).mock.calls[0][2]
+      expect(horizon.getTime()).toBeGreaterThanOrEqual(addDays(CURRENT_DATE, 60).getTime())
+    })
+
+    it('issues no second fetch once the date is stored, and screens identically', async () => {
+      const db = makeTestDb()
+      const { provider } = makeProvider()
+      mockChains({ status: 'ok', tickers: [AAPL_OK] })
+      mockEarnings({ AAPL: { status: 'found', date: AFTER_EXPIRY } })
+
+      const first = await screenWatchlistCandidates(() => provider, db, {
+        currentDate: CURRENT_DATE
+      })
+      expect(fetchNextEarnings).toHaveBeenCalledTimes(1)
+
+      const second = await screenWatchlistCandidates(() => provider, db, {
+        currentDate: CURRENT_DATE
+      })
+
+      expect(fetchNextEarnings).toHaveBeenCalledTimes(1)
+      expect(second).toEqual(first)
+    })
+
+    it('leaves every candidate unavailable — and nothing excluded — when the store rejects', async () => {
+      const db = makeTestDb()
+      const { provider } = makeProvider()
+      mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
+      vi.mocked(getEarnings).mockRejectedValueOnce(new Error('database is locked'))
+
+      const result = await screenWatchlistCandidates(() => provider, db, {
+        currentDate: CURRENT_DATE
+      })
+
+      expect(result.status).toBe('ok')
+      expect(result.ranked.map((c) => [c.ticker, c.earnings])).toEqual([
+        ['KO', { status: 'unavailable' }],
+        ['AAPL', { status: 'unavailable' }]
+      ])
+      expect(result.excluded).toEqual([])
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ tickers: ['AAPL', 'KO'] }),
+        'screener_earnings_read_failed'
+      )
+    })
+
+    it('defaults a ticker the store omitted to unavailable', async () => {
+      const db = makeTestDb()
+      const { provider } = makeProvider()
+      mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
+      vi.mocked(getEarnings).mockResolvedValueOnce(
+        new Map([['KO', { status: 'found', date: AFTER_EXPIRY }]])
+      )
+
+      const result = await screenWatchlistCandidates(() => provider, db, {
+        currentDate: CURRENT_DATE
+      })
+
+      expect(result.ranked.map((c) => [c.ticker, c.earnings.status])).toEqual([
+        ['KO', 'clear'],
+        ['AAPL', 'unavailable']
+      ])
+    })
+
+    it('tells an empty calendar apart from an unreadable one in the same run', async () => {
+      const db = makeTestDb()
+      const { provider } = makeProvider()
+      mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
+      mockEarnings({ AAPL: { status: 'unavailable' }, KO: { status: 'none' } })
+
+      const result = await screenWatchlistCandidates(() => provider, db, {
+        currentDate: CURRENT_DATE
+      })
+
+      expect(result.ranked.map((c) => [c.ticker, c.earnings.status])).toEqual([
+        ['KO', 'unknown'],
+        ['AAPL', 'unavailable']
+      ])
+    })
+
+    it('never excludes an unknown or unavailable date, even in exclude mode', async () => {
+      const db = makeTestDb()
+      const { provider } = makeProvider()
+      mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
+      mockEarnings({ AAPL: { status: 'unavailable' }, KO: { status: 'none' } })
+
+      const result = await screenWatchlistCandidates(() => provider, db, {
+        criteria: criteriaWith({ earningsHandling: 'exclude' }),
+        currentDate: CURRENT_DATE
+      })
+
+      expect(result.ranked).toHaveLength(2)
+      expect(result.excluded).toEqual([])
+    })
+
+    it('asks only for tickers whose chain pull succeeded', async () => {
+      const db = makeTestDb()
+      const { provider } = makeProvider()
+      mockChains({
+        status: 'ok',
+        tickers: [AAPL_OK, { ticker: 'XYZ', status: 'no_options_listed' }]
+      })
+
+      await screenWatchlistCandidates(() => provider, db, { currentDate: CURRENT_DATE })
+
+      expect(vi.mocked(getEarnings).mock.calls[0][1]).toEqual(['AAPL'])
+    })
+
+    it('demotes a flagged candidate below a clear one that scores lower', async () => {
+      const db = makeTestDb()
+      const { provider } = makeProvider()
+      // KO outscores AAPL (0.7892 vs 0.5285), so only the tier can invert them.
+      mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
+      mockEarnings({
+        KO: { status: 'found', date: IN_WINDOW },
+        AAPL: { status: 'found', date: AFTER_EXPIRY }
+      })
+
+      const result = await screenWatchlistCandidates(() => provider, db, {
+        criteria: criteriaWith({ earningsHandling: 'flag' }),
+        currentDate: CURRENT_DATE
+      })
+
+      expect(result.ranked.map((c) => c.ticker)).toEqual(['AAPL', 'KO'])
     })
   })
 })
