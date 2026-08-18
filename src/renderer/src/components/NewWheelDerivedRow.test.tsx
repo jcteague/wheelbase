@@ -2,24 +2,24 @@
 // live from whatever is in the inputs, so the trader sees the consequence of an
 // override before submitting. The AC pins the capital figure ($18,000 for 180 × 100 × 1).
 import { render, screen } from '@testing-library/react'
+import { addDays, format } from 'date-fns'
 import { describe, expect, it } from 'vitest'
 import { NewWheelDerivedRow } from './NewWheelDerivedRow'
 
 /**
- * The UTC calendar date `days` from today. `computeDte` measures against the UTC
- * day, so deriving the expiration the same way keeps the DTE exact in any zone.
+ * The **local** calendar date `days` from today.
+ *
+ * The basis has to match `computeDte`, which is `differenceInCalendarDays` over a
+ * `parseISO`'d date-only string — and both of those resolve to *local* midnight, not UTC.
+ * Deriving the fixture from the UTC day instead put the DTE off by one whenever the two
+ * calendars disagree, so these yield assertions failed every evening west of UTC (and
+ * every morning east of it) and passed the rest of the day.
  */
-function utcDatePlusDays(days: number): string {
-  const now = new Date()
-  const target = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + days)
-  )
-  const month = String(target.getUTCMonth() + 1).padStart(2, '0')
-  const day = String(target.getUTCDate()).padStart(2, '0')
-  return `${target.getUTCFullYear()}-${month}-${day}`
+function localDatePlusDays(days: number): string {
+  return format(addDays(new Date(), days), 'yyyy-MM-dd')
 }
 
-const EXPIRATION_37_DTE = utcDatePlusDays(37)
+const EXPIRATION_37_DTE = localDatePlusDays(37)
 
 const PROMOTED = {
   strike: '180',
@@ -101,7 +101,7 @@ describe('NewWheelDerivedRow', () => {
   })
 
   it('renders a placeholder rather than dividing by a zero-DTE expiration', () => {
-    render(<NewWheelDerivedRow {...PROMOTED} expiration={utcDatePlusDays(0)} />)
+    render(<NewWheelDerivedRow {...PROMOTED} expiration={localDatePlusDays(0)} />)
 
     expect(yieldCell()).toHaveTextContent('—')
     expect(yieldCell()).not.toHaveTextContent('Infinity')
