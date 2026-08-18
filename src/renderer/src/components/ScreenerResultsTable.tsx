@@ -8,6 +8,7 @@ import {
   fmtSpread,
   fmtYieldPercent
 } from '../lib/screener-format'
+import { EarningsBadge } from './EarningsBadge'
 import { TableCell, TableHeader } from './ui/TablePrimitives'
 
 type ScreenerResultsTableProps = {
@@ -21,6 +22,9 @@ const SECONDARY = `${NUMERIC} text-wb-text-secondary`
 const MUTED = `${NUMERIC} text-wb-text-muted`
 const YIELD = `${NUMERIC} text-wb-green font-medium`
 const ANNUALIZED_YIELD = `${NUMERIC} text-wb-green font-semibold`
+const RANK_PILL =
+  'inline-flex items-center justify-center w-5 h-5 rounded-[5px] bg-wb-gold-dim text-wb-gold text-[0.68rem] font-bold'
+const DEMOTED_RANK = 'font-wb-mono text-[0.72rem] text-wb-text-muted'
 
 export function ScreenerResultsTable({
   candidates,
@@ -74,21 +78,39 @@ type CandidateRowProps = {
   onPromote: (candidate: ScreenerCandidate) => void
 }
 
+type RankCellProps = {
+  rank: number
+  /** Yield-per-delta, shown as the tooltip on both treatments. */
+  score: string
+  /** [US-70] True when the candidate's earnings verdict is anything but `clear`. */
+  demoted: boolean
+}
+
+/** [US-70] A demoted candidate gives up its rank number — the number would claim a
+ *  standing among the clean candidates that its earnings tier explicitly denies it —
+ *  and shows an em dash in the muted treatment instead. The score stays reachable
+ *  through the same tooltip either way, so nothing is lost with the pill. */
+function RankCell({ rank, score, demoted }: RankCellProps): React.JSX.Element {
+  return (
+    <TableCell>
+      <span title={score} className={demoted ? DEMOTED_RANK : RANK_PILL}>
+        {demoted ? '—' : rank}
+      </span>
+    </TableCell>
+  )
+}
+
 function CandidateRow({ candidate, rank, onPromote }: CandidateRowProps): React.JSX.Element {
   const score = fmtScore(candidate.yieldPerDelta)
 
   return (
     <tr data-testid={`screener-row-${candidate.ticker}`} data-yield-per-delta={score}>
+      <RankCell rank={rank} score={score} demoted={candidate.earnings.status !== 'clear'} />
       <TableCell>
-        <span
-          title={score}
-          className="inline-flex items-center justify-center w-5 h-5 rounded-[5px] bg-wb-gold-dim text-wb-gold text-[0.68rem] font-bold"
-        >
-          {rank}
-        </span>
-      </TableCell>
-      <TableCell>
-        <span className="font-bold text-wb-gold tracking-wide">{candidate.ticker}</span>
+        <div className="flex flex-col gap-1">
+          <span className="font-bold text-wb-gold tracking-wide">{candidate.ticker}</span>
+          <EarningsBadge earnings={candidate.earnings} />
+        </div>
       </TableCell>
       <TableCell className={NUMERIC}>{fmtMoney(candidate.strike)}</TableCell>
       <TableCell className={SECONDARY}>{fmtDate(candidate.expiration)}</TableCell>

@@ -116,7 +116,8 @@ describe('runMigrations', () => {
       '009_create_alerts.sql',
       '010_add_management_window_dte_override.sql',
       '011_add_alerts_dismissal.sql',
-      '012_create_watchlist.sql'
+      '012_create_watchlist.sql',
+      '013_create_earnings_date.sql'
     ])
   })
 

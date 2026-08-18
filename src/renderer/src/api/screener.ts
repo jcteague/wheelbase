@@ -10,6 +10,14 @@ export type ScreenerIvRank = {
   observedAt: string // ISO timestamp of the scrape that produced it
 }
 
+// Field-for-field mirror of IpcCandidateEarnings (src/preload/index.d.ts).
+// `flagged` only occurs when the saved criteria set earningsHandling: 'flag'.
+export type ScreenerCandidateEarnings =
+  | { status: 'clear' } // known date, falls after expiry (or already past)
+  | { status: 'flagged'; date: string; daysBeforeExpiry: number } // 'YYYY-MM-DD' + calendar days
+  | { status: 'unknown' } // calendar read, no event
+  | { status: 'unavailable' } // calendar could not be read
+
 // Field-for-field mirror of IpcScoredCandidate (src/preload/index.d.ts).
 // Money/ratio fields are decimal.js output strings — formatted, never parsed.
 export type ScreenerCandidate = {
@@ -31,7 +39,7 @@ export type ScreenerCandidate = {
   periodYield: string // 4dp fraction
   annualizedYield: string // 4dp fraction
   yieldPerDelta: string // 4dp — the rank score
-  earningsFlagged: boolean // carried on the type, not rendered until US-70
+  earnings: ScreenerCandidateEarnings
   timestamp: string // ISO quote time
 }
 

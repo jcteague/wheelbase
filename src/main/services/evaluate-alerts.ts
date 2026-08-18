@@ -4,6 +4,7 @@
 // No Electron or broker imports here.
 
 import Database from 'better-sqlite3'
+import { addDays } from 'date-fns'
 import {
   DEFAULT_MANAGEMENT_WINDOW_DTE,
   evaluatePosition,
@@ -12,8 +13,8 @@ import {
 } from '../core/alerts'
 import { DEFAULT_PROFIT_TARGET_PERCENT } from '../core/profit-target'
 import { computeDte } from '../core/dte'
+import type { EarningsLookup } from '../core/screener'
 import type { WheelPhase } from '../core/types'
-import { fetchNextEarningsDates } from '../integrations/finnhub-earnings'
 import { marketDataFactory } from '../integrations/market-data-factory'
 import type { MarketDataProvider, OptionSnapshot } from '../integrations/market-data-provider'
 import { logger as defaultLogger, type LoggerLike } from '../logger'
@@ -21,9 +22,15 @@ import type { EvaluateAlertsResult } from '../schemas'
 import { buildOccSymbol } from '../../shared/option-symbol'
 import { activeLegSubquery } from './active-leg-sql'
 import { alertKey, clearStaleDismissals, resolveAlertsNotIn, upsertOpenAlert } from './alerts'
+import { getEarnings } from './earnings-dates'
 import { fetchOptionSnapshots, fetchStockQuotes, type IpcStockQuote } from './market-data'
 
 export const ALERT_EVAL_JOB_NAME = 'alert-evaluation'
+
+/** How far ahead the earnings store is asked to answer. EARNINGS_PROXIMITY only
+ *  warns inside 10 days, but US-56 has always looked 30 days out; [US-70]
+ *  persistence changed where the answer comes from, not how far ahead it looks. */
+const EARNINGS_HORIZON_DAYS = 30
 
 // ---------------------------------------------------------------------------
 // Evaluable-position selection — positions with an active short option leg.
@@ -97,7 +104,19 @@ interface ToEvaluationInputParams {
   occ: string | null
   priceByTicker: Record<string, IpcStockQuote>
   midByOccSymbol: Record<string, OptionSnapshot>
-  earningsDateByTicker: Record<string, string>
+  earningsByTicker: Map<string, EarningsLookup>
+}
+
+/** The plain nullable date the pure EARNINGS_PROXIMITY rule takes — the store's
+ *  lookup union stays out of `src/main/core/`. A ticker the store had no answer
+ *  for (`none`/`unavailable`, or absent entirely) reads as unknown, which the
+ *  rule's own missing-data guard already skips on. */
+function earningsDateFor(
+  earningsByTicker: Map<string, EarningsLookup>,
+  ticker: string
+): string | null {
+  const lookup = earningsByTicker.get(ticker)
+  return lookup?.status === 'found' ? lookup.date : null
 }
 
 function toEvaluationInput({
@@ -108,7 +127,7 @@ function toEvaluationInput({
   occ,
   priceByTicker,
   midByOccSymbol,
-  earningsDateByTicker
+  earningsByTicker
 }: ToEvaluationInputParams): AlertEvaluationInput {
   return {
     positionId: row.position_id,
@@ -124,16 +143,17 @@ function toEvaluationInput({
     profitTargetPercentOverride: row.profit_target_percent,
     profitTargetPercentDefault,
     currentUnderlyingPrice: priceByTicker[row.ticker]?.price ?? null,
-    daysToEarnings: computeDte(earningsDateByTicker[row.ticker] ?? null, now),
+    daysToEarnings: computeDte(earningsDateFor(earningsByTicker, row.ticker), now),
     expiration: row.expiration
   }
 }
 
-/** Injection seam for the earnings feed (defaults to the real Finnhub batch). */
+/** Injection seam for the earnings read (defaults to the read-through
+ *  `earnings_date` store, which owns when the Finnhub feed is actually called). */
 export type FetchEarnings = (
   tickers: string[],
-  opts?: { now?: Date; logger?: LoggerLike }
-) => Promise<Record<string, string>>
+  opts: { horizon: Date; now: Date }
+) => Promise<Map<string, EarningsLookup>>
 
 type EvaluateAlertsInput = {
   db: Database.Database
@@ -168,7 +188,7 @@ export async function evaluateAlerts({
   managementWindowDte = DEFAULT_MANAGEMENT_WINDOW_DTE,
   profitTargetPercentDefault = DEFAULT_PROFIT_TARGET_PERCENT,
   logger = defaultLogger,
-  fetchEarnings = fetchNextEarningsDates
+  fetchEarnings = (tickers, opts) => getEarnings(db, tickers, opts)
 }: EvaluateAlertsInput): Promise<EvaluateAlertsResult> {
   const nowIso = now.toISOString()
   logger.debug({ now: nowIso, managementWindowDte }, 'alert_evaluation_start')
@@ -188,7 +208,7 @@ export async function evaluateAlerts({
   // transaction, so US-50 write atomicity is unchanged.
   const tickers = [...new Set(rows.map((row) => row.ticker))]
   const symbols = [...new Set([...occByPositionId.values()].filter((s): s is string => s !== null))]
-  const [priceByTicker, { snapshots: midByOccSymbol }, earningsDateByTicker] = await Promise.all([
+  const [priceByTicker, { snapshots: midByOccSymbol }, earningsByTicker] = await Promise.all([
     fetchOrDegrade(
       () => fetchStockQuotes(provider, tickers),
       {} as Record<string, IpcStockQuote>,
@@ -202,8 +222,8 @@ export async function evaluateAlerts({
       'alert_evaluation_option_snapshots_unavailable'
     ),
     fetchOrDegrade(
-      () => fetchEarnings(tickers, { now, logger }),
-      {} as Record<string, string>,
+      () => fetchEarnings(tickers, { horizon: addDays(now, EARNINGS_HORIZON_DAYS), now }),
+      new Map<string, EarningsLookup>(),
       logger,
       'alert_evaluation_earnings_unavailable'
     )
@@ -228,7 +248,7 @@ export async function evaluateAlerts({
           occ: occByPositionId.get(row.position_id) ?? null,
           priceByTicker,
           midByOccSymbol,
-          earningsDateByTicker
+          earningsByTicker
         })
       )
       evaluation.matches.forEach((match) => matches.push({ positionId: row.position_id, match }))

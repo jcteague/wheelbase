@@ -3,7 +3,7 @@
 // yield-per-delta. No DB, provider, or logger imports: plain values in, plain
 // results out.
 import Decimal from 'decimal.js'
-import { compareAsc, format, parseISO, startOfDay } from 'date-fns'
+import { compareAsc, differenceInCalendarDays, format, parseISO, startOfDay } from 'date-fns'
 import type { CandidateStrike } from './candidate-chain'
 import { computeDte } from './dte'
 
@@ -53,13 +53,42 @@ export type IvRank = {
   observedAt: string // ISO timestamp of the scrape that produced it
 }
 
+/**
+ * [US-70] What an earnings calendar knows about one ticker over the window the
+ * caller asked about. `none` is positive knowledge — the calendar was read and
+ * holds no event — while `unavailable` means it could not be read at all.
+ * Collapsing the two would let one free-tier gap or an expired API key read as
+ * "no earnings risk", which is the silent pass US-70 exists to prevent.
+ *
+ * The engine declares this so it stays free of `integrations/` imports; the
+ * Finnhub feed conforms to it, the same way `ivr-snapshots` conforms to `IvRank`.
+ */
+export type EarningsLookup =
+  | { status: 'found'; date: string }
+  | { status: 'none' }
+  | { status: 'unavailable' }
+
+/**
+ * [US-70] What the engine decided about one candidate's earnings exposure.
+ * `daysBeforeExpiry` travels with a `flagged` verdict so the badge copy
+ * ("21d before expiry") never redoes date math in the renderer.
+ *
+ * `flagged` can only exist under `earningsHandling: 'flag'` — in `exclude` mode
+ * the same input becomes an `ExcludedCandidate` and never reaches a score.
+ */
+export type CandidateEarnings =
+  | { status: 'clear' } // known date, falls after expiry (or already past)
+  | { status: 'flagged'; date: string; daysBeforeExpiry: number }
+  | { status: 'unknown' } // calendar read, no event
+  | { status: 'unavailable' } // calendar could not be read
+
 /** Everything the engine needs for one ticker. `null` means unknown, never zero. */
 export type TickerScreeningInput = {
   ticker: string
   strikes: CandidateStrike[]
   ivRank: IvRank | null
   underlyingPrice: string | null
-  earningsDate: string | null
+  earnings: EarningsLookup
 }
 
 /** One surviving strike, fully scored. Delta is absolute. */
@@ -82,9 +111,9 @@ export type ScoredCandidate = {
   periodYield: string
   annualizedYield: string
   yieldPerDelta: string
-  // True only in 'flag' mode, when an earnings print lands inside the holding
-  // window — the candidate still ranks, carrying the warning for US-66 to render.
-  earningsFlagged: boolean
+  // The earnings verdict US-66 renders as a badge, and the outer key `rankCandidates`
+  // sorts on. Anything but `clear` still ranks — it is demoted, never dropped.
+  earnings: CandidateEarnings
   timestamp: string
 }
 
@@ -170,6 +199,37 @@ function earningsWithinHolding(
   )
 }
 
+/**
+ * [US-70] The verdict a surviving strike carries. Only a `found` date can flag, and
+ * only in `flag` mode — under `exclude` an in-window date was already caught by the
+ * `earnings_in_window` filter, so a survivor there is `clear` by construction.
+ * `none` and `unavailable` demote but never exclude: a gap in the feed is not
+ * evidence of safety, and it is not evidence of risk either.
+ */
+function candidateEarnings(
+  earnings: EarningsLookup,
+  handling: EarningsHandling,
+  expiration: string,
+  currentDate: Date
+): CandidateEarnings {
+  switch (earnings.status) {
+    case 'none':
+      return { status: 'unknown' }
+    case 'unavailable':
+      return { status: 'unavailable' }
+    case 'found': {
+      if (handling !== 'flag' || !earningsWithinHolding(earnings.date, expiration, currentDate)) {
+        return { status: 'clear' }
+      }
+      return {
+        status: 'flagged',
+        date: earnings.date,
+        daysBeforeExpiry: differenceInCalendarDays(parseISO(expiration), parseISO(earnings.date))
+      }
+    }
+  }
+}
+
 /** Everything one strike is judged against: the quote itself plus the ticker-level
  *  context (price, earnings, today's date) the per-strike chain doesn't carry. */
 export type FilterInput = {
@@ -177,7 +237,7 @@ export type FilterInput = {
   dte: number | null
   underlyingPrice: string | null
   ivRank: IvRank | null
-  earningsDate: string | null
+  earnings: EarningsLookup
   currentDate: Date
 }
 
@@ -202,6 +262,13 @@ type FilterDefinition = {
 // is chosen by how far a strike got through this list.
 // ---------------------------------------------------------------------------
 
+/** The date the `earnings_in_window` filter judges. Its `applies` guard has already
+ *  established the lookup is `found`, so this asserts that once rather than in both
+ *  `test` and `reason` — the same shape as the other filters' `ctx.underlyingPrice!`. */
+function earningsDateOf(ctx: FilterContext): string {
+  return (ctx.earnings as Extract<EarningsLookup, { status: 'found' }>).date
+}
+
 const FILTERS: FilterDefinition[] = [
   {
     code: 'price_ceiling',
@@ -221,11 +288,15 @@ const FILTERS: FilterDefinition[] = [
   },
   {
     code: 'earnings_in_window',
+    // Only a date we actually read can exclude. An unknown or unreadable calendar is
+    // a gap in the data, not evidence of safety — hard-excluding on it would let one
+    // free-tier gap or an expired API key silently empty the results table.
     applies: (ctx, criteria) =>
-      criteria.earningsHandling === 'exclude' && ctx.earningsDate !== null,
+      criteria.earningsHandling === 'exclude' && ctx.earnings.status === 'found',
     // An earnings print between now and expiry is a gap risk the trader would hold.
-    test: (ctx) => earningsWithinHolding(ctx.earningsDate!, ctx.strike.expiration, ctx.currentDate),
-    reason: (ctx) => `earnings ${ctx.earningsDate} falls on or before expiry`
+    test: (ctx) =>
+      earningsWithinHolding(earningsDateOf(ctx), ctx.strike.expiration, ctx.currentDate),
+    reason: (ctx) => `earnings ${earningsDateOf(ctx)} falls on or before expiry`
   },
   {
     code: 'dte_window',
@@ -302,7 +373,7 @@ export function scoreCandidate(
   ticker: string,
   dte: number,
   ivRank: IvRank | null,
-  earningsFlagged = false
+  earnings: CandidateEarnings = { status: 'clear' }
 ): ScoredCandidate {
   const { absDelta, spread } = computeStrikeMetrics(strike)
   const delta = absDelta ?? new Decimal(0)
@@ -328,7 +399,7 @@ export function scoreCandidate(
     periodYield: periodYield.toFixed(4),
     annualizedYield: annualizedYield.toFixed(4),
     yieldPerDelta: annualizedYield.dividedBy(delta).toFixed(4),
-    earningsFlagged,
+    earnings,
     timestamp: strike.timestamp
   }
 }
@@ -344,6 +415,22 @@ export type TickerScreeningResult = {
 type StrikeVerdict =
   | { survived: true; candidate: ScoredCandidate }
   | { survived: false; excluded: ExcludedCandidate; index: number }
+
+/** [US-70] 0 = clear, 1 = unknown/unavailable, 2 = earnings in window. Sorts ahead of
+ *  yield-per-delta: pre-earnings IV inflation is precisely what lifts these candidates
+ *  up the score, so a high score must never rescue a tier. `unknown` and `unavailable`
+ *  share a tier — the trader's next move is the same for both, go look it up. */
+function earningsTier(candidate: ScoredCandidate): 0 | 1 | 2 {
+  switch (candidate.earnings.status) {
+    case 'clear':
+      return 0
+    case 'unknown':
+    case 'unavailable':
+      return 1
+    case 'flagged':
+      return 2
+  }
+}
 
 /** Higher yield-per-delta first. The single comparison both the best-of-ticker
  *  pick and the cross-ticker rank sort on. */
@@ -364,7 +451,7 @@ function judgeStrike(
       dte,
       underlyingPrice: input.underlyingPrice,
       ivRank: input.ivRank,
-      earningsDate: input.earningsDate,
+      earnings: input.earnings,
       currentDate
     },
     criteria
@@ -385,17 +472,16 @@ function judgeStrike(
     }
   }
 
-  // In 'flag' mode an in-window earnings print never excludes, but the survivor
-  // must carry the warning the trader asked for.
-  const earningsFlagged =
-    criteria.earningsHandling === 'flag' &&
-    input.earningsDate !== null &&
-    earningsWithinHolding(input.earningsDate, strike.expiration, currentDate)
-
   // A survivor cleared `dte_window`, so its DTE is a usable positive number.
   return {
     survived: true,
-    candidate: scoreCandidate(strike, input.ticker, dte!, input.ivRank, earningsFlagged)
+    candidate: scoreCandidate(
+      strike,
+      input.ticker,
+      dte!,
+      input.ivRank,
+      candidateEarnings(input.earnings, criteria.earningsHandling, strike.expiration, currentDate)
+    )
   }
 }
 
@@ -412,11 +498,23 @@ export function screenTicker(
 ): TickerScreeningResult {
   const verdicts = input.strikes.map((strike) => judgeStrike(strike, input, criteria, currentDate))
 
-  // Best first: highest yield-per-delta, ties going to the lower strike — the more
-  // conservative entry.
+  // Best first: earnings certainty, then highest yield-per-delta, ties going to the
+  // lower strike — the more conservative entry.
+  //
+  // [US-70] The tier leads here for the same reason it leads `rankCandidates`, and it is
+  // not redundant with it: a ticker's chain spans the whole DTE window, so earnings
+  // status varies *between its own expiries*. A print falling between two of them leaves
+  // the earlier strike clear and the later one flagged, and the flagged one carries the
+  // richer premium precisely because pre-earnings IV inflates it. Sorting on score alone
+  // would hand the ticker its riskiest expiry and hide the clean one entirely.
   const survivors = verdicts
     .flatMap((verdict) => (verdict.survived ? [verdict.candidate] : []))
-    .sort((a, b) => compareYieldPerDelta(a, b) || new Decimal(a.strike).cmp(b.strike))
+    .sort(
+      (a, b) =>
+        earningsTier(a) - earningsTier(b) ||
+        compareYieldPerDelta(a, b) ||
+        new Decimal(a.strike).cmp(b.strike)
+    )
   const best = survivors[0] ?? null
 
   const excluded = verdicts
@@ -427,10 +525,16 @@ export function screenTicker(
   return { ticker: input.ticker, best, excluded }
 }
 
-/** Every ticker's best strike in rank order — highest yield-per-delta first,
- *  ties broken by ticker. The array order is the rank; no rank field is emitted. */
+/** Every ticker's best strike in rank order — earnings certainty first, then highest
+ *  yield-per-delta, ties broken by ticker. The array order is the rank; no rank field
+ *  is emitted. */
 export function rankCandidates(results: TickerScreeningResult[]): ScoredCandidate[] {
   return results
     .flatMap((result) => (result.best === null ? [] : [result.best]))
-    .sort((a, b) => compareYieldPerDelta(a, b) || a.ticker.localeCompare(b.ticker))
+    .sort(
+      (a, b) =>
+        earningsTier(a) - earningsTier(b) ||
+        compareYieldPerDelta(a, b) ||
+        a.ticker.localeCompare(b.ticker)
+    )
 }

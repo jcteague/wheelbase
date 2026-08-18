@@ -56,7 +56,7 @@ function candidate(overrides: Partial<ScreenerCandidate> = {}): ScreenerCandidat
     periodYield: '0.0150',
     annualizedYield: '0.1480',
     yieldPerDelta: '0.5286',
-    earningsFlagged: false,
+    earnings: { status: 'clear' },
     timestamp: QUOTE_TIMESTAMP,
     ...overrides
   }

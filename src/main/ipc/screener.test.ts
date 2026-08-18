@@ -3,7 +3,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type Database from 'better-sqlite3'
 import type { MarketDataProvider } from '../integrations/market-data-provider'
-import { DEFAULT_SCREENING_CRITERIA, type ScoredCandidate } from '../core/screener'
+import {
+  DEFAULT_SCREENING_CRITERIA,
+  type CandidateEarnings,
+  type ScoredCandidate
+} from '../core/screener'
 import type { ScreenerExclusion, ScreenerResults } from '../services/screener'
 import { makeTestDb } from '../test-utils'
 
@@ -65,8 +69,14 @@ const SAMPLE_CANDIDATE: ScoredCandidate = {
   periodYield: '0.0150',
   annualizedYield: '0.1480',
   yieldPerDelta: '0.5285',
-  earningsFlagged: false,
+  earnings: { status: 'clear' },
   timestamp: '2026-07-15T19:59:00.000Z'
+}
+
+// [US-70] Each ranked candidate carries a structured earnings verdict, so the
+// transport has to be exercised with more than the `clear` case.
+function candidateWith(ticker: string, earnings: CandidateEarnings): ScoredCandidate {
+  return { ...SAMPLE_CANDIDATE, ticker, earnings }
 }
 
 const SAMPLE_EXCLUSION: ScreenerExclusion = {
@@ -122,6 +132,31 @@ describe('registerScreenerIpc', () => {
     const result = await handler(null)
 
     expect(result).toEqual({ ok: true, ...OUTAGE_RESULTS })
+  })
+
+  // [US-70] `earningsFlagged` is gone, not deprecated alongside `earnings` — the
+  // renderer reads the verdict object and nothing else.
+  it('screener:results carries the structured earnings verdict on every ranked candidate', async () => {
+    const ranked = [
+      candidateWith('AAPL', { status: 'clear' }),
+      candidateWith('MSFT', { status: 'flagged', date: '2026-08-07', daysBeforeExpiry: 14 }),
+      candidateWith('KO', { status: 'unknown' }),
+      candidateWith('SOFI', { status: 'unavailable' })
+    ]
+    screenWatchlistCandidates.mockResolvedValue({ ...SAMPLE_RESULTS, ranked })
+
+    const handler = await registerAndGetHandler('screener:results')
+    const result = (await handler(null)) as { ranked: ScoredCandidate[] }
+
+    expect(result.ranked.map((candidate) => candidate.earnings)).toEqual([
+      { status: 'clear' },
+      { status: 'flagged', date: '2026-08-07', daysBeforeExpiry: 14 },
+      { status: 'unknown' },
+      { status: 'unavailable' }
+    ])
+    result.ranked.forEach((candidate) => {
+      expect(candidate).not.toHaveProperty('earningsFlagged')
+    })
   })
 
   it('screener:results maps a service throw to { ok: false, errors } without rejecting', async () => {

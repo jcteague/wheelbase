@@ -280,17 +280,106 @@ export type ScreenerLaunchOpts = {
   marketDataError?: string
   /** [US-68] Watchlist notes by ticker; promote seeds the form's thesis from them. */
   watchlistNotes?: Record<string, string>
+  /** [US-70] Earnings the fake calendar holds, keyed by ticker. A ticker omitted from a
+   *  supplied record reads as a genuinely empty calendar (`unknown`); pass `null` for a
+   *  ticker whose own request failed (`unavailable`). Omit the option entirely and every
+   *  fixture ticker gets a clear date well past its expiry — see
+   *  `CLEAR_EARNINGS_DAY_OFFSET`. */
+  earnings?: Record<string, EarningsFixture>
+  /** [US-70] Make the whole earnings request fail — the outage scenario, distinct from
+   *  a per-ticker gap. */
+  earningsUnreachable?: boolean
+}
+
+/** [US-70] An earnings date as a day offset from today, so a fixture lands the same
+ *  number of days out on any run date — the same technique as `dteOffset`. `null` is
+ *  a failed request for that ticker. */
+export type EarningsFixture = { dayOffset: number } | null
+
+/** Day offsets → the `EarningsLookup` record the fake calendar reads. */
+function buildEarningsFixtures(
+  byTicker: Record<string, EarningsFixture>
+): Record<string, { status: 'found'; date: string } | { status: 'unavailable' }> {
+  return Object.fromEntries(
+    Object.entries(byTicker).map(([ticker, fixture]) => [
+      ticker.toUpperCase(),
+      fixture === null
+        ? ({ status: 'unavailable' } as const)
+        : ({ status: 'found', date: localDate(fixture.dayOffset) } as const)
+    ])
+  )
+}
+
+/**
+ * [US-70] Days out the default earnings fixture sits — past every fixture's expiry (the
+ * furthest is 44 DTE) and inside the screener's lookahead, so an ordinary candidate
+ * screens `clear` and keeps its rank number.
+ *
+ * This is why the default exists at all: with no calendar the store answers
+ * `unavailable` for every ticker, which correctly demotes every row to `—`. That is the
+ * right production behaviour but the wrong premise for the specs that predate this story
+ * — US-66's ranked table, US-67's criteria saves, US-68's promote flow all describe
+ * ordinary candidates, which now implies a readable calendar.
+ *
+ * Two bounds constrain the value, both checked by `assertClearOffsetUsable` below:
+ * it must exceed the furthest fixture expiry (or the row would be flagged, not clear),
+ * and it must stay inside the screener's horizon of `dteMax + LOOKAHEAD_BUFFER_DAYS`
+ * (or the fake reads it as out-of-window and the row goes `unknown`). A spec that saves
+ * a very narrow `dteMax` shrinks that horizon, which is why the lower bound is asserted
+ * rather than left to be discovered as a puzzling `—` three files away.
+ */
+const CLEAR_EARNINGS_DAY_OFFSET = 60
+
+/** The screener's `LOOKAHEAD_BUFFER_DAYS` and `DEFAULT_SCREENING_CRITERIA.dteMax`.
+ *  Mirrored, not imported — e2e drives the packaged app and shares no module graph
+ *  with it. */
+const LOOKAHEAD_BUFFER_DAYS = 45
+const DEFAULT_DTE_MAX = 45
+
+/** Fails loudly if the all-clear default cannot actually read as clear for `fixtures`
+ *  under `dteMax`, rather than letting every row silently lose its rank number. */
+function assertClearOffsetUsable(fixtures: PutFixtureSpec[], dteMax: number): void {
+  const furthestExpiry = Math.max(...fixtures.map((fixture) => fixture.dteOffset))
+  if (CLEAR_EARNINGS_DAY_OFFSET <= furthestExpiry) {
+    throw new Error(
+      `CLEAR_EARNINGS_DAY_OFFSET (${CLEAR_EARNINGS_DAY_OFFSET}) must exceed the furthest ` +
+        `fixture expiry (${furthestExpiry} DTE), or those rows screen flagged, not clear.`
+    )
+  }
+  const horizon = dteMax + LOOKAHEAD_BUFFER_DAYS
+  if (CLEAR_EARNINGS_DAY_OFFSET > horizon) {
+    throw new Error(
+      `CLEAR_EARNINGS_DAY_OFFSET (${CLEAR_EARNINGS_DAY_OFFSET}) is past the screener's ` +
+        `${horizon}-day horizon for dteMax ${dteMax}, so every row would read "unknown". ` +
+        `Pass an explicit \`earnings\` fixture for this spec.`
+    )
+  }
+}
+
+/** Every fixture ticker's earnings safely after its expiry — the "nothing to see here"
+ *  calendar a spec that is not about earnings wants. */
+function clearEarningsFor(fixtures: PutFixtureSpec[]): Record<string, EarningsFixture> {
+  assertClearOffsetUsable(fixtures, DEFAULT_DTE_MAX)
+  return Object.fromEntries(
+    fixtures.map((fixture) => [fixture.ticker, { dayOffset: CLEAR_EARNINGS_DAY_OFFSET }])
+  )
 }
 
 function screenerLaunchEnv(dbPath: string, opts: ScreenerLaunchOpts): Record<string, string> {
   // buildIvrLaunchEnv supplies the shared keys plus the WHEELBASE_FAKE_IVR seam this
   // suite seeds IV ranks through; only the market-data fixtures are ours.
+  const fixtures = opts.fixtures ?? RANKED_PUTS
   const env = buildIvrLaunchEnv(dbPath, { marketStatus: opts.marketStatus })
-  env.WHEELBASE_MOCK_OPTION_SNAPSHOTS = JSON.stringify(
-    buildPutFixtures(opts.fixtures ?? RANKED_PUTS)
-  )
+  env.WHEELBASE_MOCK_OPTION_SNAPSHOTS = JSON.stringify(buildPutFixtures(fixtures))
   if (opts.stockQuotes) env.WHEELBASE_MOCK_STOCK_QUOTES = JSON.stringify(opts.stockQuotes)
   if (opts.marketDataError) env.FAKE_MARKET_DATA_ERROR = opts.marketDataError
+  // [US-70] The seam is always armed so e2e never reaches the live Finnhub API. Passing
+  // `earnings` explicitly — including `{}`, which leaves every ticker `unknown` — opts
+  // out of the all-clear default.
+  env.WHEELBASE_MOCK_EARNINGS = JSON.stringify(
+    buildEarningsFixtures(opts.earnings ?? clearEarningsFor(fixtures))
+  )
+  if (opts.earningsUnreachable) env.WHEELBASE_MOCK_EARNINGS_UNREACHABLE = '1'
   return env
 }
 
@@ -364,6 +453,49 @@ export function rowCells(page: Page, ticker: string): Promise<string[]> {
 /** The `data-yield-per-delta` score a ranked row exposes for machine verification. */
 export function rowScore(page: Page, ticker: string): Promise<string | null> {
   return page.getAttribute(`[data-testid="screener-row-${ticker}"]`, 'data-yield-per-delta')
+}
+
+// ── [US-70] Earnings ──────────────────────────────────────────────────────────
+
+/** The earnings badge text on a ranked row, or null when the row carries none — i.e.
+ *  the candidate's earnings are `clear`. */
+export async function earningsBadge(page: Page, ticker: string): Promise<string | null> {
+  const badge = page.locator(
+    `[data-testid="screener-row-${ticker}"] [data-testid="earnings-badge"]`
+  )
+  return (await badge.count()) === 0 ? null : badge.textContent()
+}
+
+/** The rank cell of a ranked row — a number when the candidate is clear, `—` when its
+ *  earnings verdict demoted it. */
+export async function rowRank(page: Page, ticker: string): Promise<string> {
+  const cells = await rowCells(page, ticker)
+  return cells[0].trim()
+}
+
+/** The reason cell of an excluded ticker, after opening the Excluded section. Null when
+ *  the ticker is not in that list at all. */
+export async function excludedReason(page: Page, ticker: string): Promise<string | null> {
+  const toggle = page.locator('[data-testid="screener-excluded-toggle"]')
+  if ((await toggle.count()) === 0) return null
+  await toggle.click()
+  const row = page.locator(`[data-testid="screener-excluded-row-${ticker}"]`)
+  if ((await row.count()) === 0) return null
+  return (await row.textContent())?.replace(ticker, '') ?? null
+}
+
+/** [US-70] Persist the earnings-handling mode through the criteria sheet, then wait for
+ *  the re-screen it triggers. Driven as a trader would — no direct IPC write. */
+export async function setEarningsHandling(
+  page: Page,
+  mode: 'exclude' | 'flag',
+  expectedRowCount: number
+): Promise<void> {
+  await openCriteriaSheet(page, 'header')
+  await page.click(`[data-testid="earnings-${mode}"]`)
+  await saveCriteria(page)
+  await waitForCriteriaSheetClosed(page)
+  await waitForRankedRowCount(page, expectedRowCount)
 }
 
 // ── [US-68] Promote to trade ──────────────────────────────────────────────────

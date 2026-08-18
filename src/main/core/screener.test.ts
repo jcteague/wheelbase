@@ -8,6 +8,7 @@ import {
   rankCandidates,
   scoreCandidate,
   screenTicker,
+  type EarningsLookup,
   type FilterInput,
   type IvRank,
   type ScreeningCriteria,
@@ -136,8 +137,8 @@ describe('scoreCandidate', () => {
     expect(scored.periodYield).toBe('0.0150')
   })
 
-  it('defaults earningsFlagged to false when no flag is supplied', () => {
-    expect(scoreCandidate(strike(), 'AAPL', 37, null).earningsFlagged).toBe(false)
+  it('defaults earnings to clear when no verdict is supplied', () => {
+    expect(scoreCandidate(strike(), 'AAPL', 37, null).earnings).toEqual({ status: 'clear' })
   })
 
   it('carries the identity, liquidity, and quote fields straight through', () => {
@@ -162,13 +163,18 @@ describe('scoreCandidate', () => {
 // 2026-09-12 is 37 DTE from here; 2026-09-05 is 30.
 const CURRENT_DATE = new Date(2026, 7, 6)
 
+/** A date the feed found. Sugar so the earnings fixtures read as dates, not unions. */
+function found(date: string): EarningsLookup {
+  return { status: 'found', date }
+}
+
 function filterInput(overrides: Partial<FilterInput> = {}): FilterInput {
   return {
     strike: strike(),
     dte: 37,
     underlyingPrice: null,
     ivRank: null,
-    earningsDate: null,
+    earnings: { status: 'none' },
     currentDate: CURRENT_DATE,
     ...overrides
   }
@@ -364,7 +370,7 @@ describe('evaluateFilters — earnings', () => {
   // CURRENT_DATE is 2026-08-06; earnings land between now and the 2026-08-21 expiry.
   const beforeExpiry = filterInput({
     strike: strike({ expiration: '2026-08-21' }),
-    earningsDate: '2026-08-12'
+    earnings: found('2026-08-12')
   })
 
   it('excludes a strike whose expiry straddles an earnings report', () => {
@@ -374,9 +380,26 @@ describe('evaluateFilters — earnings', () => {
     })
   })
 
+  // [US-70] AC-1's own dates: today 2026-07-15, earnings 2026-07-31, expiry 2026-08-21.
+  it('excludes the story’s AAPL candidate with the AC’s verbatim reason', () => {
+    expect(
+      evaluateFilters(
+        {
+          ...beforeExpiry,
+          earnings: found('2026-07-31'),
+          currentDate: new Date(2026, 6, 15)
+        },
+        criteria()
+      )
+    ).toMatchObject({
+      code: 'earnings_in_window',
+      reason: 'earnings 2026-07-31 falls on or before expiry'
+    })
+  })
+
   it('excludes a strike whose earnings land exactly on the expiry date', () => {
     expect(
-      evaluateFilters({ ...beforeExpiry, earningsDate: '2026-08-21' }, criteria())
+      evaluateFilters({ ...beforeExpiry, earnings: found('2026-08-21') }, criteria())
     ).toMatchObject({
       code: 'earnings_in_window',
       reason: 'earnings 2026-08-21 falls on or before expiry'
@@ -384,16 +407,20 @@ describe('evaluateFilters — earnings', () => {
   })
 
   it('does not fire when earnings land after the expiry', () => {
-    expect(evaluateFilters({ ...beforeExpiry, earningsDate: '2026-09-04' }, criteria())).toBe(null)
+    expect(evaluateFilters({ ...beforeExpiry, earnings: found('2026-09-04') }, criteria())).toBe(
+      null
+    )
   })
 
   it('does not fire on an already-past earnings date — last quarter’s print is not gap risk', () => {
-    expect(evaluateFilters({ ...beforeExpiry, earningsDate: '2026-07-28' }, criteria())).toBe(null)
+    expect(evaluateFilters({ ...beforeExpiry, earnings: found('2026-07-28') }, criteria())).toBe(
+      null
+    )
   })
 
   it('fires on an earnings print landing today — the trader would hold across it', () => {
     expect(
-      evaluateFilters({ ...beforeExpiry, earningsDate: '2026-08-06' }, criteria())
+      evaluateFilters({ ...beforeExpiry, earnings: found('2026-08-06') }, criteria())
     ).toMatchObject({ code: 'earnings_in_window' })
   })
 
@@ -401,8 +428,16 @@ describe('evaluateFilters — earnings', () => {
     expect(evaluateFilters(beforeExpiry, criteria({ earningsHandling: 'flag' }))).toBe(null)
   })
 
-  it('does not fire when no earnings date is known', () => {
-    expect(evaluateFilters({ ...beforeExpiry, earningsDate: null }, criteria())).toBe(null)
+  it('never excludes an empty calendar, even in exclude mode', () => {
+    expect(evaluateFilters({ ...beforeExpiry, earnings: { status: 'none' } }, criteria())).toBe(
+      null
+    )
+  })
+
+  it('never excludes an unreadable calendar, even in exclude mode', () => {
+    expect(
+      evaluateFilters({ ...beforeExpiry, earnings: { status: 'unavailable' } }, criteria())
+    ).toBe(null)
   })
 })
 
@@ -435,7 +470,9 @@ function tickerInput(overrides: Partial<TickerScreeningInput> = {}): TickerScree
     strikes: [strike()],
     ivRank: null,
     underlyingPrice: null,
-    earningsDate: null,
+    // Well past every fixture expiry, so an unremarkable ticker screens `clear` and
+    // the tier assertions below read against a real baseline rather than all-unknown.
+    earnings: found('2026-12-01'),
     ...overrides
   }
 }
@@ -553,41 +590,144 @@ describe('screenTicker', () => {
     expect(result.excluded).toEqual([])
   })
 
+  const FLAG_MODE: ScreeningCriteria = {
+    ...DEFAULT_SCREENING_CRITERIA,
+    earningsHandling: 'flag'
+  }
+
   it('flags a survivor whose expiry straddles earnings when the trader chose flag mode', () => {
     const result = screenTicker(
-      tickerInput({ earningsDate: '2026-08-27' }),
-      { ...DEFAULT_SCREENING_CRITERIA, earningsHandling: 'flag' },
+      tickerInput({ earnings: found('2026-08-27') }),
+      FLAG_MODE,
       CURRENT_DATE
     )
 
-    expect(result.best?.earningsFlagged).toBe(true)
+    expect(result.best?.earnings).toEqual({
+      status: 'flagged',
+      date: '2026-08-27',
+      daysBeforeExpiry: 16
+    })
+  })
+
+  // [US-70] AC-2's own dates: today 2026-07-15, earnings 2026-07-31, expiry 2026-08-21 —
+  // the 21 days the badge copy renders verbatim.
+  it('reports daysBeforeExpiry as 21 for the story’s Jul 31 → Aug 21 case', () => {
+    const result = screenTicker(
+      tickerInput({
+        strikes: [strike({ expiration: '2026-08-21' })],
+        earnings: found('2026-07-31')
+      }),
+      FLAG_MODE,
+      new Date(2026, 6, 15)
+    )
+
+    expect(result.best?.earnings).toEqual({
+      status: 'flagged',
+      date: '2026-07-31',
+      daysBeforeExpiry: 21
+    })
   })
 
   it('does not flag a survivor whose earnings land outside the holding window', () => {
     const afterExpiry = screenTicker(
-      tickerInput({ earningsDate: '2026-10-01' }),
-      { ...DEFAULT_SCREENING_CRITERIA, earningsHandling: 'flag' },
+      tickerInput({ earnings: found('2026-10-01') }),
+      FLAG_MODE,
       CURRENT_DATE
     )
     const alreadyPast = screenTicker(
-      tickerInput({ earningsDate: '2026-07-28' }),
-      { ...DEFAULT_SCREENING_CRITERIA, earningsHandling: 'flag' },
+      tickerInput({ earnings: found('2026-07-28') }),
+      FLAG_MODE,
       CURRENT_DATE
     )
 
-    expect(afterExpiry.best?.earningsFlagged).toBe(false)
-    expect(alreadyPast.best?.earningsFlagged).toBe(false)
+    expect(afterExpiry.best?.earnings).toEqual({ status: 'clear' })
+    expect(alreadyPast.best?.earnings).toEqual({ status: 'clear' })
   })
 
   it('never flags in exclude mode — an in-window earnings strike is excluded instead', () => {
     const result = screenTicker(
-      tickerInput({ earningsDate: '2026-08-27' }),
+      tickerInput({ earnings: found('2026-08-27') }),
       DEFAULT_SCREENING_CRITERIA,
       CURRENT_DATE
     )
 
     expect(result.best).toBe(null)
     expect(result.excluded[0].code).toBe('earnings_in_window')
+  })
+
+  it('carries an empty calendar onto the survivor as unknown, in either handling mode', () => {
+    const excludeMode = screenTicker(
+      tickerInput({ earnings: { status: 'none' } }),
+      DEFAULT_SCREENING_CRITERIA,
+      CURRENT_DATE
+    )
+    const flagMode = screenTicker(
+      tickerInput({ earnings: { status: 'none' } }),
+      FLAG_MODE,
+      CURRENT_DATE
+    )
+
+    expect(excludeMode.best?.earnings).toEqual({ status: 'unknown' })
+    expect(flagMode.best?.earnings).toEqual({ status: 'unknown' })
+  })
+
+  // [US-70] A ticker's chain spans the whole DTE window, not one expiry, so earnings
+  // status varies *within* a ticker: an earlier expiry can clear the print while a later
+  // one straddles it. The representative strike must respect that, or the ticker is
+  // judged on its riskiest expiry while the clean one is never surfaced.
+  it('represents a ticker with its clear expiry, not its higher-scoring flagged one', () => {
+    // Both expiries sit inside the default 30–45 DTE window from 2026-08-06, and the
+    // print at 2026-09-10 falls between them: the 09-05 strike clears it, the 09-20 one
+    // straddles it. The flagged strike carries the richer premium — exactly the
+    // pre-earnings IV inflation the story warns about — so only the tier picks correctly.
+    const result = screenTicker(
+      tickerInput({
+        strikes: [
+          strike({ contractId: 'flagged-rich', expiration: '2026-09-20', mark: '3.60' }),
+          strike({ contractId: 'clear-lean', expiration: '2026-09-05', mark: '1.40' })
+        ],
+        earnings: found('2026-09-10')
+      }),
+      FLAG_MODE,
+      CURRENT_DATE
+    )
+
+    expect(result.best?.contractId).toBe('clear-lean')
+    expect(result.best?.earnings).toEqual({ status: 'clear' })
+  })
+
+  it('still falls back to a flagged strike when no expiry of the ticker clears earnings', () => {
+    const result = screenTicker(
+      tickerInput({
+        strikes: [
+          strike({ contractId: 'later', expiration: '2026-09-20', mark: '3.60' }),
+          strike({ contractId: 'earlier', expiration: '2026-09-12', mark: '1.40' })
+        ],
+        earnings: found('2026-09-10')
+      }),
+      FLAG_MODE,
+      CURRENT_DATE
+    )
+
+    // Both straddle the print, so the tier ties and yield-per-delta decides as before.
+    expect(result.best?.contractId).toBe('later')
+    expect(result.best?.earnings).toMatchObject({ status: 'flagged' })
+  })
+
+  it('carries an unreadable calendar onto the survivor as unavailable, in either mode', () => {
+    const excludeMode = screenTicker(
+      tickerInput({ earnings: { status: 'unavailable' } }),
+      DEFAULT_SCREENING_CRITERIA,
+      CURRENT_DATE
+    )
+    const flagMode = screenTicker(
+      tickerInput({ earnings: { status: 'unavailable' } }),
+      FLAG_MODE,
+      CURRENT_DATE
+    )
+
+    expect(excludeMode.best?.earnings).toEqual({ status: 'unavailable' })
+    expect(flagMode.best?.earnings).toEqual({ status: 'unavailable' })
   })
 })
 
@@ -646,5 +786,98 @@ describe('rankCandidates', () => {
     )
 
     expect(rankCandidates([noSurvivor, screen(candidateA)]).map((c) => c.ticker)).toEqual(['KO'])
+  })
+})
+
+// [US-70] Earnings certainty is the outer sort key: pre-earnings IV inflation is
+// exactly what lifts a risky candidate up the yield-per-delta score, so a high
+// score must never rescue a tier.
+describe('rankCandidates — earnings tiers', () => {
+  const FLAG_MODE: ScreeningCriteria = {
+    ...DEFAULT_SCREENING_CRITERIA,
+    earningsHandling: 'flag'
+  }
+
+  /** One ticker whose single strike scores to `mark`/`delta`, priced off a $100
+   *  strike at 37 DTE so yield-per-delta is the only thing that varies. */
+  function tierCandidate(
+    ticker: string,
+    mark: string,
+    delta: string,
+    earnings: EarningsLookup
+  ): TickerScreeningInput {
+    const cents = (offset: number): string => (Number(mark) + offset).toFixed(2)
+    return tickerInput({
+      ticker,
+      earnings,
+      strikes: [
+        strike({
+          contractId: `${ticker}-1`,
+          strike: '100.0000',
+          expiration: '2026-09-12',
+          bid: cents(-0.05),
+          ask: cents(0.05),
+          mark,
+          delta
+        })
+      ]
+    })
+  }
+
+  const screenFlagged = (input: TickerScreeningInput): ReturnType<typeof screenTicker> =>
+    screenTicker(input, FLAG_MODE, CURRENT_DATE)
+
+  // AC-3's four-candidate fixture. NVDA outscores MSFT and still ranks below it.
+  const KO = tierCandidate('KO', '2.00', '-0.2800', found('2026-10-01'))
+  const MSFT = tierCandidate('MSFT', '1.50', '-0.3000', found('2026-10-01'))
+  const NVDA = tierCandidate('NVDA', '1.96', '-0.2800', { status: 'none' })
+  const AAPL = tierCandidate('AAPL', '1.50', '-0.2800', found('2026-08-27'))
+
+  it('orders the story’s fixture KO, MSFT, NVDA, AAPL — tier before score', () => {
+    const ranked = rankCandidates([NVDA, AAPL, KO, MSFT].map(screenFlagged))
+
+    expect(ranked.map((c) => c.ticker)).toEqual(['KO', 'MSFT', 'NVDA', 'AAPL'])
+  })
+
+  it('demotes NVDA below MSFT despite NVDA carrying the higher yield per delta', () => {
+    const ranked = rankCandidates([NVDA, MSFT].map(screenFlagged))
+
+    expect(ranked.map((c) => [c.ticker, c.yieldPerDelta])).toEqual([
+      ['MSFT', '0.4932'],
+      ['NVDA', '0.6905']
+    ])
+  })
+
+  it('puts unknown and unavailable in the same tier, ordered by yield per delta', () => {
+    const ranked = rankCandidates(
+      [
+        tierCandidate('LOW', '1.50', '-0.2800', { status: 'unavailable' }),
+        tierCandidate('HIGH', '2.00', '-0.2800', { status: 'none' })
+      ].map(screenFlagged)
+    )
+
+    expect(ranked.map((c) => c.ticker)).toEqual(['HIGH', 'LOW'])
+  })
+
+  it('ranks a flagged candidate below every unknown one regardless of score', () => {
+    const ranked = rankCandidates(
+      [
+        tierCandidate('RICH', '2.00', '-0.2800', found('2026-08-27')),
+        tierCandidate('THIN', '1.50', '-0.2800', { status: 'unavailable' })
+      ].map(screenFlagged)
+    )
+
+    expect(ranked.map((c) => c.ticker)).toEqual(['THIN', 'RICH'])
+  })
+
+  it('still breaks a within-tier tie by ticker ascending', () => {
+    const ranked = rankCandidates(
+      [
+        tierCandidate('ZTS', '1.50', '-0.2800', { status: 'none' }),
+        tierCandidate('AMD', '1.50', '-0.2800', { status: 'unavailable' })
+      ].map(screenFlagged)
+    )
+
+    expect(ranked.map((c) => c.ticker)).toEqual(['AMD', 'ZTS'])
   })
 })

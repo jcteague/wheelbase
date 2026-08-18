@@ -4,8 +4,10 @@
 
 import { randomUUID } from 'node:crypto'
 import Database from 'better-sqlite3'
-import { addDays } from 'date-fns'
+import { addDays, format } from 'date-fns'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fetchNextEarnings } from '../integrations/finnhub-earnings'
+import type { MarketDataProvider } from '../integrations/market-data-provider'
 import { makeSpyLogger, makeTestDb } from '../test-utils'
 import { dismissAlert, listOpenAlerts } from './alerts'
 import { evaluateAlerts } from './evaluate-alerts'
@@ -23,15 +25,17 @@ import {
   readAlertRows,
   seedPosition,
   seedShortOptionAtPremium,
+  seedShortOptionWithOcc,
   stubEarnings,
   stubProvider
 } from './evaluate-alerts-test-utils'
 
-// Default-fetcher guard: tests that don't inject `fetchEarnings` must never
-// reach the real Finnhub module (which would hit the network whenever a key is
-// present in the shell env). The mock mirrors the no-key behavior: empty record.
+// Default-reader guard: tests that don't inject `fetchEarnings` read through the
+// real `earnings_date` store, which must never reach the live Finnhub module
+// (that would hit the network whenever a key is present in the shell env). The
+// mock mirrors the no-key behavior: an empty record, i.e. nothing known.
 vi.mock('../integrations/finnhub-earnings', () => ({
-  fetchNextEarningsDates: vi.fn(async () => ({}))
+  fetchNextEarnings: vi.fn(async () => ({}))
 }))
 
 // ---------------------------------------------------------------------------
@@ -889,7 +893,7 @@ describe('evaluateAlerts — earnings boundary fetch (US-56)', () => {
       db,
       now: NOW,
       provider: inertProvider(),
-      fetchEarnings: stubEarnings({ NVDA: expirationForDte(6) })
+      fetchEarnings: stubEarnings({ NVDA: { status: 'found', date: expirationForDte(6) } })
     })
 
     const earnings = listOpenAlerts(db).find((a) => a.ruleCode === 'EARNINGS_PROXIMITY')
@@ -985,7 +989,7 @@ describe('evaluateAlerts — earnings boundary fetch (US-56)', () => {
       db,
       now: NOW,
       provider: inertProvider(),
-      fetchEarnings: stubEarnings({ NVDA: expirationForDte(6) })
+      fetchEarnings: stubEarnings({ NVDA: { status: 'found', date: expirationForDte(6) } })
     })
     expect(listOpenAlerts(db).some((a) => a.ruleCode === 'EARNINGS_PROXIMITY')).toBe(true)
 
@@ -1020,7 +1024,7 @@ describe('evaluateAlerts — earnings boundary fetch (US-56)', () => {
       db,
       now: NOW,
       provider: inertProvider(),
-      fetchEarnings: stubEarnings({ NVDA: expirationForDte(6) })
+      fetchEarnings: stubEarnings({ NVDA: { status: 'found', date: expirationForDte(6) } })
     })
     expect(listOpenAlerts(db).some((a) => a.ruleCode === 'EARNINGS_PROXIMITY')).toBe(true)
 
@@ -1032,7 +1036,7 @@ describe('evaluateAlerts — earnings boundary fetch (US-56)', () => {
       db,
       now: LATER,
       provider: inertProvider(),
-      fetchEarnings: stubEarnings({ NVDA: 'TBD' }),
+      fetchEarnings: stubEarnings({ NVDA: { status: 'found', date: 'TBD' } }),
       logger
     })
 
@@ -1067,7 +1071,7 @@ describe('evaluateAlerts — earnings boundary fetch (US-56)', () => {
       db,
       now: NOW,
       provider: inertProvider(),
-      fetchEarnings: stubEarnings({ NVDA: earningsDate })
+      fetchEarnings: stubEarnings({ NVDA: { status: 'found', date: earningsDate } })
     })
     expect(listOpenAlerts(db).some((a) => a.ruleCode === 'EARNINGS_PROXIMITY')).toBe(true)
 
@@ -1078,7 +1082,7 @@ describe('evaluateAlerts — earnings boundary fetch (US-56)', () => {
       db,
       now: afterEarnings,
       provider: inertProvider(),
-      fetchEarnings: stubEarnings({ NVDA: earningsDate })
+      fetchEarnings: stubEarnings({ NVDA: { status: 'found', date: earningsDate } })
     })
 
     const row = readAlertRows(db).find((r) => r.rule_code === 'EARNINGS_PROXIMITY')
@@ -1087,7 +1091,7 @@ describe('evaluateAlerts — earnings boundary fetch (US-56)', () => {
     )
   })
 
-  it('calls the batch earnings fetch once per run with the deduped ticker set', async () => {
+  it('calls the batch earnings read once per run with the deduped ticker set and US-56’s 30-day horizon', async () => {
     const expiration = expirationForDte(13)
     for (const [id, ticker] of [
       ['pos-nvda-1', 'NVDA'],
@@ -1111,12 +1115,182 @@ describe('evaluateAlerts — earnings boundary fetch (US-56)', () => {
 
     expect(fetchEarnings).toHaveBeenCalledTimes(1)
     const [calledTickers, calledOpts] = (fetchEarnings as ReturnType<typeof vi.fn>).mock
-      .calls[0] as [string[], { now?: Date }]
+      .calls[0] as [string[], { now?: Date; horizon?: Date }]
     expect(calledTickers).toHaveLength(2)
     expect(new Set(calledTickers)).toEqual(new Set(['NVDA', 'AAPL']))
-    // The run's injected logger is forwarded so the earnings feed logs through
-    // it like the quote/snapshot feeds do, not through the global pino logger.
-    expect(calledOpts).toEqual({ now: NOW, logger })
+    // [US-70] Persistence changed where the answer comes from, not how far ahead
+    // the alert looks: the store is asked for exactly US-56's 30-day horizon, as
+    // a date (the store takes a date, never a day count).
+    expect(calledOpts).toEqual({ now: NOW, horizon: addDays(NOW, 30) })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// [US-70] Earnings read through the persisted `earnings_date` store. The feed's
+// four-state lookup replaces the bare date, and a stored row answers the alert
+// run with no HTTP call — the cross-consumer win the old process-local success
+// cache lost on every restart.
+// ---------------------------------------------------------------------------
+
+describe('evaluateAlerts — earnings read through the persisted store (US-70)', () => {
+  let db: Database.Database
+
+  beforeEach(() => {
+    db = makeTestDb()
+    vi.mocked(fetchNextEarnings).mockClear()
+  })
+
+  /** A row the store can answer from: checked through the alert's 30-day horizon,
+   *  as of `now`, so none of the refresh triggers fire. */
+  function seedEarningsRow(ticker: string, nextEarnings: string | null): void {
+    db.prepare(
+      `INSERT INTO earnings_date (ticker, next_earnings, checked_through, checked_at, source)
+       VALUES (?, ?, ?, ?, 'finnhub')`
+    ).run(ticker, nextEarnings, format(addDays(NOW, 30), 'yyyy-MM-dd'), NOW_ISO)
+  }
+
+  /**
+   * Two positions in one run: AAPL, whose earnings land inside the window, and
+   * NVDA at 6 DTE with a mid and a near-the-money price, so its MANAGEMENT_WINDOW,
+   * PROFIT_TARGET and STRIKE_PROXIMITY rules all fire. Whatever the earnings
+   * lookup says about NVDA, those three and AAPL's alert must survive it.
+   */
+  function seedIsolationFixture(): { provider: MarketDataProvider; aaplExpiration: string } {
+    const aaplExpiration = expirationForDte(13)
+    const aaplOcc = seedShortOptionWithOcc(db, {
+      id: 'pos-aapl',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      strike: '180.0000',
+      contracts: 1,
+      entryPremium: '3.5000',
+      expiration: aaplExpiration
+    })
+    const nvdaOcc = seedShortOptionWithOcc(db, {
+      id: 'pos-nvda',
+      ticker: 'NVDA',
+      phase: 'CSP_OPEN',
+      strike: '500.0000',
+      contracts: 1,
+      entryPremium: '4.0000',
+      expiration: expirationForDte(6)
+    })
+
+    return {
+      aaplExpiration,
+      // AAPL: mid == entry (0% captured) and price far from strike, so only its
+      // earnings rule fires. NVDA: 52.5% captured and 0.4% above strike.
+      provider: stubProvider({
+        midBySymbol: { [aaplOcc]: '3.5000', [nvdaOcc]: '1.9000' },
+        priceByTicker: { AAPL: '200.00', NVDA: '502.00' }
+      })
+    }
+  }
+
+  it('serves a stored earnings date to the alert run without asking the feed', async () => {
+    const expiration = expirationForDte(13)
+    seedShortOptionAtPremium(db, {
+      id: 'pos-nvda',
+      ticker: 'NVDA',
+      phase: 'CC_OPEN',
+      strike: '500.0000',
+      contracts: 1,
+      entryPremium: '3.5000',
+      expiration
+    })
+    seedEarningsRow('NVDA', expirationForDte(6))
+
+    // No injected reader — the run goes through the real store.
+    await evaluateAlerts({ db, now: NOW, provider: inertProvider() })
+
+    expect(listOpenAlerts(db).find((a) => a.ruleCode === 'EARNINGS_PROXIMITY')).toEqual(
+      expect.objectContaining({
+        positionId: 'pos-nvda',
+        urgency: 'medium',
+        summary: `Earnings in 6 days before your ${expiration} expiration`,
+        status: 'open'
+      })
+    )
+    expect(vi.mocked(fetchNextEarnings)).not.toHaveBeenCalled()
+  })
+
+  it('skips EARNINGS_PROXIMITY for an unavailable lookup while every other rule and ticker still evaluates', async () => {
+    const { provider, aaplExpiration } = seedIsolationFixture()
+    const logger = makeSpyLogger()
+
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider,
+      fetchEarnings: stubEarnings({
+        NVDA: { status: 'unavailable' },
+        AAPL: { status: 'found', date: expirationForDte(6) }
+      }),
+      logger
+    })
+
+    const open = listOpenAlerts(db)
+    const nvdaCodes = open.filter((a) => a.positionId === 'pos-nvda').map((a) => a.ruleCode)
+    // Unavailable behaves exactly as a missing ticker did: the rule skips…
+    expect(nvdaCodes).not.toContain('EARNINGS_PROXIMITY')
+    expect(logger.debug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        positionId: 'pos-nvda',
+        ruleCode: 'EARNINGS_PROXIMITY',
+        reason: 'missing_earnings_date'
+      }),
+      'alert_rule_skipped'
+    )
+    // …and suppresses nothing else — neither NVDA's other rules…
+    expect(nvdaCodes).toEqual(
+      expect.arrayContaining(['MANAGEMENT_WINDOW', 'PROFIT_TARGET', 'STRIKE_PROXIMITY'])
+    )
+    // …nor the other ticker's earnings answer.
+    expect(open.find((a) => a.ruleCode === 'EARNINGS_PROXIMITY')).toEqual(
+      expect.objectContaining({
+        positionId: 'pos-aapl',
+        summary: `Earnings in 6 days before your ${aaplExpiration} expiration`
+      })
+    )
+    expect(logger.error).not.toHaveBeenCalled()
+  })
+
+  it('skips EARNINGS_PROXIMITY without error for a none lookup while every other rule and ticker still evaluates', async () => {
+    const { provider, aaplExpiration } = seedIsolationFixture()
+    const logger = makeSpyLogger()
+
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider,
+      fetchEarnings: stubEarnings({
+        NVDA: { status: 'none' },
+        AAPL: { status: 'found', date: expirationForDte(6) }
+      }),
+      logger
+    })
+
+    const open = listOpenAlerts(db)
+    const nvdaCodes = open.filter((a) => a.positionId === 'pos-nvda').map((a) => a.ruleCode)
+    expect(nvdaCodes).not.toContain('EARNINGS_PROXIMITY')
+    expect(logger.debug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        positionId: 'pos-nvda',
+        ruleCode: 'EARNINGS_PROXIMITY',
+        reason: 'missing_earnings_date'
+      }),
+      'alert_rule_skipped'
+    )
+    expect(nvdaCodes).toEqual(
+      expect.arrayContaining(['MANAGEMENT_WINDOW', 'PROFIT_TARGET', 'STRIKE_PROXIMITY'])
+    )
+    expect(open.find((a) => a.ruleCode === 'EARNINGS_PROXIMITY')).toEqual(
+      expect.objectContaining({
+        positionId: 'pos-aapl',
+        summary: `Earnings in 6 days before your ${aaplExpiration} expiration`
+      })
+    )
+    expect(logger.error).not.toHaveBeenCalled()
   })
 })
 
