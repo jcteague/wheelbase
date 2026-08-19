@@ -1,6 +1,6 @@
 # US-66: Display ranked screener results with key metrics
 
-<!-- generated:from us-66 -->
+<!-- generated:from us-66,us-70 -->
 
 ## Summary
 
@@ -178,11 +178,17 @@ read rendered cells. See the fixtures ADR below for why the numbers are what the
 ### Out-of-scope mockup elements are omitted, seams intact
 
 - **Decision:** No Promote button (US-68), no earnings badge or row demotion (US-70 —
-  `earningsFlagged` is on the renderer type but unused), no criteria-editing affordance
+  `earningsFlagged` was on the renderer type but unused), no criteria-editing affordance
   (US-67 — the empty card is copy-only).
 - **Why:** The story names all three as out of scope, and Simplicity First forbids
-  speculative rendering. Keeping `earningsFlagged` on the type means US-70 adds a badge
-  without touching the adapter.
+  speculative rendering. Keeping the earnings field on the type meant US-70 could add a
+  badge without reshaping the adapter.
+- **Since shipped:** all three landed. [us-68](./us-68-promote-result-to-new-wheel.md)
+  added the Promote action, [us-67](./us-67-configure-screening-criteria.md) the criteria
+  sheet, and [us-70](./us-70-earnings-in-window-warning.md) the `EarningsBadge` under the
+  ticker plus the `—` rank cell on demoted rows — replacing `earningsFlagged: boolean`
+  with the four-state `earnings: ScreenerCandidateEarnings`. The table still never
+  re-sorts; the engine's order now leads with earnings tier.
 
 ### Route paths stay stated in three places
 

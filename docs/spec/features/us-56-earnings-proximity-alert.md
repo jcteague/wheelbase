@@ -1,10 +1,10 @@
 # US-56: Earnings Proximity Alert
 
-<!-- generated:from us-56 -->
+<!-- generated:from us-56,us-70 -->
 
 ## Summary
 
-Adds the `EARNINGS_PROXIMITY` rule to the pure alert registry (see [alerts](../domain/alerts.md)): a medium-urgency alert fires when a position's next earnings event is within 10 calendar days **and** falls on or before the active leg's expiration. The earnings-date feed it depends on is a new Finnhub integration (free tier, one calendar query per ticker, 12 h in-module cache) consumed by `evaluateAlerts` as a third concurrent degradeable boundary fetch alongside stock quotes and option snapshots (see [market-data](../domain/market-data.md)). Missing earnings data skips the rule cleanly with a DEBUG log; no schema, IPC, or renderer change was needed — the [US-51 management queue](us-51-management-queue-dashboard.md) displays the new rule code transparently.
+Adds the `EARNINGS_PROXIMITY` rule to the pure alert registry (see [alerts](../domain/alerts.md)): a medium-urgency alert fires when a position's next earnings event is within 10 calendar days **and** falls on or before the active leg's expiration. The earnings-date feed it depends on is a new Finnhub integration (free tier, one calendar query per ticker) consumed by `evaluateAlerts` as a third concurrent degradeable boundary fetch alongside stock quotes and option snapshots (see [market-data](../domain/market-data.md)). Missing earnings data skips the rule cleanly with a DEBUG log; no schema, IPC, or renderer change was needed — the [US-51 management queue](us-51-management-queue-dashboard.md) displays the new rule code transparently.
 
 ## Acceptance criteria
 
@@ -27,13 +27,15 @@ Comparing two `computeDte` results is equivalent to `earningsDate <= expirationD
 
 **Engine input.** `AlertEvaluationInput` gained `daysToEarnings: number | null` (precomputed in the service via the shared `computeDte(nextEarningsDate, now)` — the engine is pure and has no `now`) and `expiration: string | null` (raw leg expiration, needed by the summary template). "No earnings event", "feed failed", and "unparseable date" all flatten to `null → skip`, matching every existing rule input — `computeDte` returns `null` (never `NaN`) for a non-ISO date string, so a malformed feed date skips the rule instead of silently resolving a still-valid open alert.
 
-**Earnings feed.** `src/main/integrations/finnhub-earnings.ts` exposes a batch `fetchNextEarningsDates(tickers) → Promise<Record<ticker, isoDate>>` against Finnhub's earnings-calendar endpoint, one request per ticker. It queries a window of 7 days back to 30 days forward, drops calendar rows whose `date` is not a `YYYY-MM-DD` string (unvalidated vendor JSON — a null/`TBD` row must not displace a valid event), and selects the earliest event with `date >= today`, falling back to the most recent past event — the lookback exists so a just-passed earnings date yields negative `daysToEarnings`, the predicate goes false, and an open alert resolves instead of freezing on a skip. A module-level per-ticker cache (12 h TTL for results, negative results cached too; failures cached for 5 min) keeps the 60 s evaluation cadence to roughly one Finnhub burst per half-day and stops a rate-limited ticker from being re-hammered on every scheduler run. Failures are isolated per ticker and never thrown to the batch caller.
+**Earnings feed.** `src/main/integrations/finnhub-earnings.ts` exposes a batch `fetchNextEarnings(tickers, { lookaheadDays }) → Promise<Record<ticker, EarningsLookup>>` against Finnhub's earnings-calendar endpoint, one request per ticker. This alert passes a 30-day lookahead. It queries a window of 7 days back to `lookaheadDays` forward, drops calendar rows whose `date` is not a `YYYY-MM-DD` string (unvalidated vendor JSON — a null/`TBD` row must not displace a valid event), and selects the earliest event with `date >= today`, falling back to the most recent past event — the lookback exists so a just-passed earnings date yields negative `daysToEarnings`, the predicate goes false, and an open alert resolves instead of freezing on a skip. Failures are isolated per ticker and never thrown to the batch caller; a failing or rate-limited ticker backs off for 5 minutes in an in-memory failure cache.
+
+> **Changed by [us-70](./us-70-earnings-in-window-warning.md).** As originally shipped the batch was `fetchNextEarningsDates(tickers) → Record<ticker, isoDate>` with a fixed 30-day lookahead and a module-level 12 h success cache. US-70 made the lookahead caller-supplied, widened the result to a four-state `EarningsLookup` (`found` / `none` / `unavailable` — the old shape omitted the ticker for both an eventless calendar and a caught error), and replaced the success cache with the persisted [`earnings_date`](../schema/tables.md#earnings_date) table. **This rule's behaviour and its 30-day horizon are unchanged**; only where the answer comes from changed.
 
 **Boundary wiring.** `evaluateAlerts` (`src/main/services/evaluate-alerts.ts`) pre-fetches earnings dates as a third concurrent `fetchOrDegrade` via an injectable `FetchEarnings` seam owned and exported by the service. A whole-feed outage degrades to an empty record (WARN `alert_evaluation_earnings_unavailable`), per the [alert-evaluation-failure-isolation ADR](../architecture/02-adrs/alert-evaluation-failure-isolation.md).
 
 **Credentials.** `loadFinnhubApiKey()` (`src/main/integrations/finnhub-credentials.ts`) reads `import.meta.env.MAIN_VITE_FINNHUB_API_KEY` with a `process.env.FINNHUB_API_KEY` runtime fallback, mirroring the Massive credentials pattern. A missing key logs one WARN and returns empty — the rule skips everywhere and every other rule is unaffected.
 
-**Accepted limitations.** Post-earnings skip-freeze tail: if earnings pass, the next event is beyond the 30-day window, and the 7-day lookback has rolled off, the input goes null → skip and an open alert would freeze; in practice the lookback covers the resolution window. Finnhub's free calendar has no confirmed-vs-projected distinction — every returned date is treated as actionable. No Playwright e2e or `WHEELBASE_FAKE_EARNINGS` env seam in v1; AC coverage lives in the vitest e2e suite with an injected earnings stub, as [US-53/54/55](us-53-54-55-market-data-alert-rules.md) did.
+**Accepted limitations.** Post-earnings skip-freeze tail: if earnings pass, the next event is beyond the 30-day window, and the 7-day lookback has rolled off, the input goes null → skip and an open alert would freeze; in practice the lookback covers the resolution window. Finnhub's free calendar has no confirmed-vs-projected distinction — every returned date is treated as actionable. No Playwright e2e or env seam in v1; AC coverage lives in the vitest e2e suite with an injected earnings stub, as [US-53/54/55](us-53-54-55-market-data-alert-rules.md) did. ([us-70](./us-70-earnings-in-window-warning.md) later added a `WHEELBASE_MOCK_EARNINGS` seam in `src/main/integrations/fake-earnings.ts` for the screener's Playwright specs.)
 
 ## Architecture decisions
 
@@ -47,12 +49,13 @@ Comparing two `computeDte` results is equivalent to `earningsDate <= expirationD
 - **Decision:** New `src/main/integrations/finnhub-earnings.ts`; **not** added to the `MarketDataProvider` type or the market-data factory.
 - **Why:** `MarketDataProvider` is the Massive vendor seam — Massive cannot serve earnings on the current plan, so the method would force every provider (including the fake) to implement a capability the primary vendor lacks. The [Barchart IVR scraper (US-43)](us-43-barchart-ivr-scraper.md) is the precedent for a vendor-specific auxiliary feed in its own integration module. See [market-data](../domain/market-data.md).
 
-### Transient per-run boundary fetch with an in-module TTL cache — no SQLite table, no collector job
+### Per-run boundary fetch, cached outside the process
 
-- **Decision:** Third concurrent `fetchOrDegrade` in `evaluateAlerts`; module-level per-ticker cache with 12 h TTL (negative results cached too; failures cached with a 5 min TTL). No `earnings_snapshot` table, no scheduled job.
-- **Why:** Matches the market-data invariant ("market data is transient — no SQLite rows") and the enrichment shape US-53/54/55 established. The IVR-style persisted snapshot exists because IVR needs _history_; earnings proximity needs only the _next_ date. Uncached per-run fetching would cost ~4k Finnhub calls per market day for near-static data.
+- **Decision:** Third concurrent `fetchOrDegrade` in `evaluateAlerts`, and no scheduled collector job. **As originally shipped** the cache was a module-level per-ticker `Map` with a 12 h TTL and no SQLite table; [us-70](./us-70-earnings-in-window-warning.md) replaced it with the persisted [`earnings_date`](../schema/tables.md#earnings_date) table (migration 013), leaving only the 5 min failure backoff in memory.
+- **Why the original call was reasonable:** it matched the market-data invariant ("market data is transient — no SQLite rows") and the enrichment shape US-53/54/55 established. The IVR-style persisted snapshot exists because IVR needs _history_; earnings proximity needs only the _next_ date. Uncached per-run fetching would cost ~4k Finnhub calls per market day.
+- **Why it changed:** a process-local cache dies on every restart, which for a desktop app is the common case, so the real hit rate was far below what a 12 h TTL implies. US-70 needed the same dates on a deeper horizon, and the watchlist's `post_earnings_only` condition needs to know whether a ticker has already reported — unanswerable from a cache that does not survive a restart. See [earnings-persisted-per-ticker](../architecture/02-adrs/earnings-persisted-per-ticker.md).
 
-### Query window spans 7 days back to 30 days forward; prefer the next upcoming event
+### Query window spans 7 days back to the caller's lookahead (30 days here); prefer the next upcoming event
 
 - **Decision:** `from = now − 7d`, `to = now + 30d`; select the earliest event with `date >= today`, else the most recent past event.
 - **Why:** 30-day lookahead comfortably covers the 10-day rule inside Finnhub's free-tier window. The 7-day lookback exists purely for alert resolution — a recent-past event produces negative `daysToEarnings` so the open alert resolves on the next run rather than freezing open on a skip. A tri-state "no event vs feed failed" input was rejected: AC 4 treats both uniformly as a skip.
@@ -84,7 +87,7 @@ External vendor contract — no new IPC handler; the renderer reads new alerts t
 interface FinnhubEarningsRequest {
   symbol: string // uppercased ticker, e.g. 'NVDA'
   from: string // 'YYYY-MM-DD' — now − EARNINGS_LOOKBACK_DAYS (7)
-  to: string // 'YYYY-MM-DD' — now + EARNINGS_LOOKAHEAD_DAYS (30)
+  to: string // 'YYYY-MM-DD' — now + lookaheadDays (30 for this rule)
   token: string // loadFinnhubApiKey()
 }
 
@@ -100,16 +103,17 @@ interface FinnhubEarningsResponse {
     epsActual?: number | null
   }>
 }
-// Empty earningsCalendar array = no events in the window (valid; cached as null → rule skips).
+// Empty earningsCalendar array = no events in the window — a valid result, reported as
+// { status: 'none' } and persisted as a NULL next_earnings row (positive knowledge).
 
 // Internal batch wrapper:
-export async function fetchNextEarningsDates(
+export async function fetchNextEarnings(
   tickers: string[],
-  opts?: { now?: Date; logger?: LoggerLike }
-): Promise<Record<string, string>> // ticker → selected event date; failed/eventless tickers absent
+  opts?: { now?: Date; logger?: LoggerLike; lookaheadDays?: number }
+): Promise<Record<string, EarningsLookup>> // every requested ticker gets an entry
 ```
 
-Error behavior (isolated per ticker, never thrown to the batch caller): missing key → `{}` + WARN `earnings_fetch_no_api_key` (once per process); 401/403 → WARN `earnings_fetch_failed` code `auth_failed`; 429 → `rate_limited`; network/other → `network_error` / `unknown`; empty calendar → DEBUG `earnings_no_event_in_window`, null cached. Any per-ticker failure is negatively cached for 5 minutes (`EARNINGS_FAILURE_TTL_MS`), so an exhausted rate limit backs off instead of refiring on every 60 s run. A whole-feed outage degrades to an empty record; `evaluateAlerts` additionally wraps the batch call in `fetchOrDegrade` (WARN `alert_evaluation_earnings_unavailable`).
+Error behavior (isolated per ticker, never thrown to the batch caller): missing key → `{}` + WARN `earnings_fetch_no_api_key` (once per process); 401/403 → WARN `earnings_fetch_failed` code `auth_failed`; 429 → `rate_limited`; network/other → `network_error` / `unknown`; empty calendar → DEBUG `earnings_no_event_in_window`, reported as `{ status: 'none' }`. Any per-ticker failure is negatively cached for 5 minutes (`EARNINGS_FAILURE_TTL_MS`), so an exhausted rate limit backs off instead of refiring on every 60 s run. A whole-feed outage degrades to an empty record; `evaluateAlerts` additionally wraps the batch call in `fetchOrDegrade` (WARN `alert_evaluation_earnings_unavailable`).
 
 ### Schema
 

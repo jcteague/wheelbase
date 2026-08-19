@@ -115,3 +115,14 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [configurable-alert-thresholds](./configurable-alert-thresholds.md) — Shared override→global-default→constant resolution precedence for both alert thresholds.
 
 <!-- /generated -->
+
+<!-- generated:from us-70 -->
+
+## Candidate screening
+
+- [earnings-four-state-lookup](./earnings-four-state-lookup.md) — `EarningsLookup` / `CandidateEarnings` unions replace a nullable date and a boolean flag; the pure engine owns the types and the Finnhub module re-exports them.
+- [earnings-persisted-per-ticker](./earnings-persisted-per-ticker.md) — One current `earnings_date` row per ticker in SQLite is the cache; only failure backoff stays in memory. Supersedes US-56's transient per-run cache.
+- [earnings-tier-before-score](./earnings-tier-before-score.md) — Earnings certainty is the outer ranking key in both `rankCandidates` and `screenTicker`; score never rescues a tier.
+- [unknown-earnings-never-excludes](./unknown-earnings-never-excludes.md) — A data gap is not a risk verdict; unknown/unavailable caution and demote but never exclude, in either handling mode.
+
+<!-- /generated -->

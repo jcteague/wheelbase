@@ -1,15 +1,18 @@
 # Market Data
 
-<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56,us-70 -->
 
 ## Overview
 
 **Market data** is the real-time view of what underlyings and option contracts
 are doing right now: live equity prices, option mid-prices, greeks/IV, and the
-trading session the market is currently in. It is the only domain in Wheelbase
-that is fully transient — no SQLite rows, no migrations, no persistent state.
-Every value is fetched from a `MarketDataProvider`, held in renderer memory via
-TanStack Query, and discarded on app close.
+trading session the market is currently in. Quotes and snapshots are fully
+transient — no SQLite rows, no migrations, no persistent state: every such value
+is fetched from a `MarketDataProvider`, held in renderer memory via TanStack
+Query, and discarded on app close. Two auxiliary feeds persist deliberately
+because what they carry is not a quote — `ivr_snapshot` (a daily IV-rank time
+series) and `earnings_date` (one current earnings date per ticker). See
+"Architectural invariant: market data is transient" below for where the line sits.
 
 Alongside the primary quote/option feed, the domain carries **auxiliary
 vendor feeds** — standalone integration modules for data the primary vendor
@@ -728,7 +731,7 @@ components subscribe to the same ticker list.
 
 <!-- /generated -->
 
-<!-- generated:from us-56 -->
+<!-- generated:from us-56,us-70 -->
 
 ## Auxiliary feed: Finnhub earnings calendar
 
@@ -756,39 +759,58 @@ the only field consumed. An empty array means no events in the window — a
 valid result, cached as null so the rule skips.
 
 The batch wrapper is
-`fetchNextEarningsDates(tickers) → Promise<Record<ticker, isoDate>>`; failed
-or eventless tickers are simply absent from the returned record — never an
-error to the caller.
+`fetchNextEarnings(tickers, { lookaheadDays }) → Promise<Record<ticker, EarningsLookup>>`.
+Every requested ticker gets an entry — a missing key is never a valid outcome. Each entry
+is one of `{ status: 'found', date }`, `{ status: 'none' }` (read successfully, no event in
+the window), or `{ status: 'unavailable' }` (could not read). Never an error to the caller.
+
+US-70 replaced the earlier `fetchNextEarningsDates(tickers) → Record<ticker, isoDate>`,
+which omitted the ticker for **both** an eventless calendar and a caught error — collapsing
+two states that have to be distinguishable. See
+[earnings-four-state-lookup](../architecture/02-adrs/earnings-four-state-lookup.md).
 
 ### Query window and event selection
 
-The query spans `from = now − 7d` to `to = now + 30d`
-(`EARNINGS_LOOKBACK_DAYS` / `EARNINGS_LOOKAHEAD_DAYS`). Per ticker the module
+The query spans `from = now − 7d` (`EARNINGS_LOOKBACK_DAYS`) to
+`to = now + lookaheadDays`, **supplied by the caller** — the earnings-proximity alert
+passes 30, the screener passes `criteria.dteMax + 45` (~90 on the defaults, sized to a full
+quarterly cycle so a `clear` verdict means "we found the next print" rather than "we did not
+look far enough"). Per ticker the module
 drops calendar rows whose `date` is not a `YYYY-MM-DD` string (the payload is
 unvalidated vendor JSON — a null/`TBD` row must not displace a valid event),
 then selects the **earliest event with `date >= today`**, falling back to the
-most recent past event when no upcoming event exists in the window. The 30-day
-lookahead comfortably covers the rule's 10-day threshold; the 7-day lookback
+most recent past event when no upcoming event exists in the window. The 7-day lookback
 exists purely for **alert resolution** — a recent-past event yields negative
 `daysToEarnings`, the predicate returns false, and an open alert resolves on
-the next run instead of freezing open on a skip. (Accepted limitation: if the
-lookback has rolled off and the next event is beyond the window, the input
-goes null and an open alert would freeze; in practice the lookback covers the
-resolution window.)
+the next run instead of freezing open on a skip.
 
-### Caching: 12 h module-level TTL, no SQLite
+That past-date fallback is also why the store never serves a `found` date that has since
+passed: it says nothing about the _next_ print, and the screener's engine would read it as
+`clear`. See
+[unknown-earnings-never-excludes](../architecture/02-adrs/unknown-earnings-never-excludes.md).
 
-The module holds a per-ticker in-memory cache with a **12 h TTL — negative
-results (no event) are cached too** — so the 60 s alert-evaluation cadence
-produces roughly one Finnhub burst per half-day, not one per run
-(uncached, that would be ~4k calls per market day for near-static data).
-Per-ticker **failures are negatively cached for 5 minutes**
-(`EARNINGS_FAILURE_TTL_MS`) so a rate-limited or failing ticker backs off
-instead of refiring against an exhausted quota on every scheduler run.
-There is no `earnings_snapshot` table and no scheduled collector job: the
-IVR-style persisted snapshot exists because IVR needs _history_; earnings
-proximity needs only the _next_ date, so the feed honors the transient-market-
-data invariant below.
+### Caching: the `earnings_date` table, not the module
+
+**US-70 moved the cache into SQLite.** The
+[`earnings_date`](../schema/tables.md#earnings_date) table (migration 013) holds one
+current row per ticker and is now the cache; the module's former 12 h in-memory success
+`Map` is gone. Reads go through `src/main/services/earnings-dates.ts`, which fetches only
+when no row exists, when a NULL row is shallower than the caller's horizon, or when the
+row's answer has stood longer than its refresh interval (short for a passed or near-term
+date, weekly for a distant one).
+
+This is the one auxiliary market-data feed that **does** persist, and it is a deliberate
+exception to the transient-market-data invariant below — a scheduled earnings date is a
+durable fact about a calendar event, not a decaying quote, and the alert scheduler and the
+screener need to share it across restarts. It persists differently from `ivr_snapshot`,
+though: IVR is a time series because its history _is_ the product, while earnings is a
+point-in-time lookup where a stale value is simply wrong. See
+[earnings-persisted-per-ticker](../architecture/02-adrs/earnings-persisted-per-ticker.md).
+
+Per-ticker **failures are still held in memory only, negatively cached for 5 minutes**
+(`EARNINGS_FAILURE_TTL_MS`), so a rate-limited or failing ticker backs off instead of
+refiring against an exhausted quota — and a restart correctly retries it. A failure is not
+knowledge about the ticker, so it is never written to the table.
 
 ### Failure isolation
 
@@ -821,21 +843,25 @@ storage, no migration — the app remains fully functional without the key
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56,us-70 -->
 
 ## Architectural invariant: market data is transient
 
-There are no migrations, no SQLite tables, and no persistent state for market
-data. Every value:
+**Quotes and snapshots** have no migrations, no SQLite tables, and no persistent state.
+Every such value:
 
 - Originates from the `MarketDataProvider` (REST snapshot or WebSocket frame)
-  or an auxiliary integration module (Finnhub earnings dates, held in a
-  module-level 12 h TTL cache — deliberately no SQLite table; see
-  [us-56](../features/us-56-earnings-proximity-alert.md)).
+  or an auxiliary integration module.
 - Crosses the IPC boundary as a flat shape (`IpcStockQuote`, `IpcOptionSnapshot`,
   `IpcMarketStatus`).
 - Lives in renderer memory inside TanStack Query.
 - Is discarded on app close.
+
+**Two auxiliary feeds are deliberate exceptions**, because what they carry is not a quote:
+`ivr_snapshot` (migration 007) keeps a daily IV-rank time series because IVR's _history_ is
+the product, and `earnings_date` (migration 013) keeps one current row per ticker because a
+scheduled earnings date is a durable calendar fact that two consumers share across restarts.
+Neither stores a price.
 
 This is enforced by convention:
 

@@ -1,6 +1,6 @@
 # US-65: Score wheel candidates against configurable screening criteria
 
-<!-- generated:from us-65 -->
+<!-- generated:from us-65,us-70 -->
 
 ## Summary
 
@@ -107,9 +107,13 @@ shape this follows.
 on or after the trader's current calendar day and on or before expiry. A past earnings
 date still present in a feed never excludes (that is precisely the post-earnings entry a
 wheel trader wants). Two modes: `exclude` (default) drops the strike with the reason
-above; `flag` lets it rank normally carrying `ScoredCandidate.earningsFlagged: true` for
-US-66 to render as a warning. Both are latent in production until US-70 supplies earnings
-dates (`earningsDate` is always `null` today).
+above; `flag` lets it rank carrying an earnings verdict for US-66 to render as a warning.
+Both were latent in production until [us-70](./us-70-earnings-in-window-warning.md) wired
+the Finnhub calendar in — until then the service passed `earningsDate: null`. US-70 also
+replaced the boolean flag with `ScoredCandidate.earnings: CandidateEarnings`, a four-state
+verdict (`clear` / `flagged` / `unknown` / `unavailable`), so an unreadable calendar is
+distinguishable from a genuinely empty one and neither can exclude. See
+[earnings-four-state-lookup](../architecture/02-adrs/earnings-four-state-lookup.md).
 
 **Selection and ranking.** `screenTicker` folds a chain into
 `{ ticker, best, excluded }` — `best` is the highest-`yieldPerDelta` survivor (ties going
@@ -163,7 +167,8 @@ request and per-ticker outcomes, exactly one `info` on completion with
 request schema, because the channel takes no payload — as a single service call wrapped in
 `handleIpcCall`; the provider thunk passes through untouched, keeping the handler thin.
 The preload adds `screener: { results }` and the ambient renderer types mirror
-`ScoredCandidate` field-for-field (including `earningsFlagged`). See
+`ScoredCandidate` field-for-field (including `earnings`, which replaced the original
+`earningsFlagged` boolean in us-70). See
 [IPC Handlers](../contracts/ipc-handlers.md).
 
 **Tests.** `screener.integration.test.ts` runs the real `screenWatchlistCandidates`
@@ -215,7 +220,7 @@ unconfigured-provider state, earnings window bounds, and flag mode).
 - **The earnings gate is bounded to the holding window, and `flag` mode really flags** —
   without the lower bound a feed reporting last quarter's (past) print would permanently
   exclude every strike; and `flag` was previously declared with no implementation, so
-  survivors now carry `earningsFlagged` instead of the mode silently doing nothing.
+  survivors now carry an earnings verdict instead of the mode silently doing nothing.
 - **The spread gate needs both thresholds breached** — a `0.08 / 0.15` quote is 58% of
   mark but only 7¢ wide, a real fillable market. A percent-only gate would delete every
   low-priced underlying from the screener.
@@ -240,7 +245,8 @@ unconfigured-provider state, earnings window bounds, and flag mode).
 
 - `screener:results` — new IPC channel; no request payload, returns
   `{ ok, status, ranked, excluded, quoteTimestamp }`. `ScoredCandidate` carries
-  `earningsFlagged: boolean`. See [IPC Handlers](../contracts/ipc-handlers.md).
+  `earnings: CandidateEarnings` (us-70; originally `earningsFlagged: boolean`). See
+  [IPC Handlers](../contracts/ipc-handlers.md).
 - `screenWatchlistCandidates(getProvider, db, opts?)` → `ScreenerResults` — in-process
   service contract; the provider argument is a thunk, and `opts` carries the `criteria`
   and `currentDate` seams.

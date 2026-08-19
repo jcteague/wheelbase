@@ -1678,7 +1678,7 @@ postEarningsOnly?, coreHolding? }` (parsed by `WatchlistAddPayloadSchema`; ticke
 
 <!-- /generated -->
 
-<!-- generated:from us-65,us-67 -->
+<!-- generated:from us-65,us-67,us-70 -->
 
 ## `screener:*` namespace
 
@@ -1716,9 +1716,20 @@ which did **not** change `registerScreenerIpc`'s signature.
   `dte`, `bid` / `ask` / `mark` (2dp), `spreadAbsolute` / `spreadPercent` (2dp), `delta`
   (4dp, **absolute**), `openInterest`, `volume`, `ivRank` (`{ value, observedAt }` or
   `null` → the renderer shows "n/a"), `capitalSecured` (2dp), `periodYield` /
-  `annualizedYield` / `yieldPerDelta` (4dp fractions), `earningsFlagged` (boolean —
-  `true` only in `earningsHandling: 'flag'` mode when an earnings print lands inside the
-  holding window; latent until US-70 supplies earnings dates), `timestamp`.
+  `annualizedYield` / `yieldPerDelta` (4dp fractions), `earnings`
+  (`IpcCandidateEarnings` — see below), `timestamp`.
+- **`IpcCandidateEarnings`** (US-70, replacing the earlier `earningsFlagged: boolean`):
+  a four-state union — `{ status: 'clear' }`, `{ status: 'flagged', date,
+daysBeforeExpiry }` (only under `earningsHandling: 'flag'`),
+  `{ status: 'unknown' }` (calendar read, no event), `{ status: 'unavailable' }`
+  (calendar could not be read). `daysBeforeExpiry` travels on the payload so the renderer
+  never redoes date math. **Breaking change** — `earningsFlagged` was removed, not
+  deprecated alongside the new field. `ranked` order is authoritative (earnings tier, then
+  `yieldPerDelta`, then ticker) and the renderer must not re-sort; only `clear` candidates
+  display a rank number. An earnings-feed outage surfaces here as
+  `{ status: 'unavailable' }` per candidate — never as an envelope error and never as
+  `status: 'provider_unavailable'`, which stays reserved for a Massive chain outage. See
+  [us-70](../features/us-70-earnings-in-window-warning.md).
 - **`ScreenerExclusion.code`:** the eight engine codes — `price_ceiling`, `iv_rank_floor`
   (added by US-67, positioned immediately after `price_ceiling` in the ordered registry),
   `earnings_in_window`, `dte_window`, `delta_unavailable`, `delta_band`,

@@ -584,6 +584,23 @@ for the column catalogue.
 
 <!-- /generated -->
 
+<!-- generated:from us-70 -->
+
+## Migration 013 — `earnings_date`
+
+`migrations/013_create_earnings_date.sql` (introduced by
+[us-70](../features/us-70-earnings-in-window-warning.md)) creates the `earnings_date`
+table keyed by `ticker TEXT PRIMARY KEY`. One row per ticker, overwritten on each
+successful fetch — no history, unlike `ivr_snapshot` (migration 007). Follows the
+keyed-table convention from migration `006`; the runner auto-applies it at startup.
+
+The table replaces a process-local in-memory cache inside the Finnhub earnings
+integration, so answers survive a restart and the alert scheduler and the screener share
+them. See [`schema/tables.md`](./tables.md#earnings_date) for the column catalogue and
+the `checked_through` semantics that let one row answer two callers' horizons.
+
+<!-- /generated -->
+
 <!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50,us-59 -->
 
 ## See also

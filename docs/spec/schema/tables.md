@@ -632,6 +632,62 @@ is independent of `positions`; removing a ticker never touches trade history.
 
 <!-- /generated -->
 
+<!-- generated:from us-70 -->
+
+## `earnings_date`
+
+Created by `migrations/013_create_earnings_date.sql` ([us-70](../features/us-70-earnings-in-window-warning.md)).
+The persisted earnings-calendar store: one current row per ticker, overwritten on each
+successful fetch via `INSERT … ON CONFLICT (ticker) DO UPDATE`. **No history** — a
+deliberate contrast with `ivr_snapshot`, whose composite `(underlying, observed_at)` key
+exists because IVR's history _is_ the product. An earnings date is a point-in-time
+lookup where a stale value is simply wrong.
+
+### Columns
+
+| Column            | Type   | Notes                                                              |
+| ----------------- | ------ | ------------------------------------------------------------------ |
+| `ticker`          | `TEXT` | PRIMARY KEY, upper-cased on write                                  |
+| `next_earnings`   | `TEXT` | `YYYY-MM-DD`, **nullable** — see the three-state table below       |
+| `checked_through` | `TEXT` | `YYYY-MM-DD`, the `to` bound of the request that produced this row |
+| `checked_at`      | `TEXT` | ISO timestamp of that request; drives the refresh interval         |
+| `source`          | `TEXT` | NOT NULL DEFAULT `'finnhub'`                                       |
+
+### Three distinguishable states
+
+The whole point of the table is that these read differently:
+
+| Row state                     | Meaning                                    |
+| ----------------------------- | ------------------------------------------ |
+| no row                        | never successfully checked                 |
+| row, `next_earnings` NOT NULL | a date is scheduled                        |
+| row, `next_earnings` IS NULL  | checked, nothing scheduled through horizon |
+
+A NULL date is **positive knowledge**, not absence — it is what stops a refetch loop.
+"Could not read the calendar" is never a persisted state; a failed fetch writes no row
+and is produced at read time instead.
+
+### `checked_through` lets one row answer two horizons
+
+Two consumers ask different questions of the same table: the earnings-proximity alert
+looks ~30 days out, the screener ~90. A stored NULL from a 30-day request does not answer
+the 90-day question — there may be an event at day 40. Recording the `to` bound the row
+was built from lets a shallow row be reused when it carries a date, and re-fetched only
+when its NULL is too shallow for the caller. This replaced a composite
+`${ticker}:${lookaheadDays}` cache key, which would have split the two consumers into
+separate slots and doubled request volume.
+
+### How rows change
+
+Written only by the read-through store, `src/main/services/earnings-dates.ts` — nothing
+else inserts or updates. A ticker is re-fetched when no row exists, when a NULL row is
+shallower than the caller's horizon, or when the row's answer has stood longer than its
+refresh interval (short for a passed or near-term date, weekly for a distant one). No
+foreign keys — the store is keyed by ticker symbol and is independent of `positions` and
+`watchlist`.
+
+<!-- /generated -->
+
 ## See also
 
 - [Migrations](./migrations.md) — chronological change log for the schema

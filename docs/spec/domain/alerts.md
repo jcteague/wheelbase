@@ -1,6 +1,6 @@
 # Management Alerts
 
-<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56,us-59,us-62 -->
+<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56,us-59,us-62,us-70 -->
 
 ## Overview
 
@@ -30,10 +30,13 @@ prices at the boundary and passes plain values into the still-pure engine.
 US-56 adds `EARNINGS_PROXIMITY`: a medium-urgency, phase-agnostic rule that fires
 when a position's next earnings event is within 10 calendar days and on/before
 the active leg's expiration. It brings a new earnings-date feed — a standalone
-Finnhub integration (free tier, per-ticker calendar query, 12 h in-module cache)
-consumed by `evaluateAlerts` as a **third** concurrent degradeable boundary
-fetch. No schema, IPC, or renderer change was needed; the US-51 queue displays
-the new rule code transparently.
+Finnhub integration (free tier, per-ticker calendar query) consumed by
+`evaluateAlerts` as a **third** concurrent degradeable boundary fetch. No schema,
+IPC, or renderer change was needed; the US-51 queue displays the new rule code
+transparently. US-70 later moved that feed's cache from an in-module 12 h TTL into
+the persisted [`earnings_date`](../schema/tables.md#earnings_date) table and widened
+its result to a four-state lookup; the alert rule's behaviour and its 30-day horizon
+are unchanged.
 
 US-51 adds the read/display half: a `listManagementQueue` read path that enriches
 the persisted open alerts with their position's `ticker` and `phase` and sorts
@@ -246,7 +249,7 @@ already does for an open one.
 
 <!-- /generated -->
 
-<!-- generated:from us-53-54-55,us-56,us-62 -->
+<!-- generated:from us-53-54-55,us-56,us-62,us-70 -->
 
 ## Skip reasons & missing-data handling
 
@@ -280,7 +283,7 @@ flat `null → skip` matches every existing rule input. The earnings fetch windo
 
 <!-- /generated -->
 
-<!-- generated:from us-53-54-55,us-56,us-62 -->
+<!-- generated:from us-53-54-55,us-56,us-62,us-70 -->
 
 ## Live market-data enrichment & failure isolation
 
@@ -292,18 +295,24 @@ needs the next earnings date, but the engine must stay pure — so the service
 into the engine. Per run, the compute phase builds each evaluable leg's OCC
 symbol once, then issues one batched `fetchStockQuotes` for the distinct
 tickers, one batched `fetchOptionSnapshots` for the distinct OCC symbols, and
-one batched `fetchNextEarningsDates` for the distinct tickers (the Finnhub
-integration, injectable via the `FetchEarnings` seam). All three fetches run
+one batched earnings read for the distinct tickers (`getEarnings`, the
+`earnings_date` read-through store, injectable via the `FetchEarnings` seam).
+All three fetches run
 **concurrently** under `Promise.all`, and each is wrapped (`fetchOrDegrade`) so
 that on failure it **degrades to empty** rather than rejecting — DTE rules,
 which need no market data, always evaluate. OCC-symbol building is non-throwing:
 a leg that cannot form a valid symbol yields `null` (that leg's `PROFIT_TARGET`
 skips) without aborting the batch.
 
-The earnings feed (`src/main/integrations/finnhub-earnings.ts`) is itself
-isolated per ticker and holds a module-level 12 h TTL cache (negative results
-cached too), so the 60 s evaluation cadence produces roughly one Finnhub burst
-per half-day. Its own log events: `earnings_fetch_no_api_key` (WARN, once per
+The alert path reads earnings through the persisted
+[`earnings_date`](../schema/tables.md#earnings_date) store
+(`src/main/services/earnings-dates.ts`), which reaches the Finnhub feed
+(`src/main/integrations/finnhub-earnings.ts`) only when the stored row cannot answer.
+US-56 keeps its 30-day horizon; what changed in US-70 is where the answer comes from, not
+how far ahead the rule looks. The store refreshes a passed or near-term date on a 12-hour
+interval and a distant one weekly, which is what keeps the 60 s evaluation cadence off the
+free tier's 60 calls/minute now that the feed no longer caches successes itself. The feed
+remains isolated per ticker. Its own log events: `earnings_fetch_no_api_key` (WARN, once per
 process — missing key returns an empty record so the rule skips everywhere),
 `earnings_fetch_failed` (WARN, with a code such as `auth_failed`,
 `rate_limited`, `network_error`, or `unknown`), and
@@ -335,7 +344,7 @@ their log events:
 
 <!-- /generated -->
 
-<!-- generated:from us-50,us-51,us-53-54-55,us-56,us-59,us-62 -->
+<!-- generated:from us-50,us-51,us-53-54-55,us-56,us-59,us-62,us-70 -->
 
 ## Key decisions
 
@@ -481,7 +490,7 @@ their log events:
 
 ### Earnings dates come from a standalone Finnhub integration, not `MarketDataProvider`
 
-- **Decision:** `fetchNextEarningsDates(tickers)` lives in its own module
+- **Decision:** `fetchNextEarnings(tickers, { lookaheadDays })` lives in its own module
   (`src/main/integrations/finnhub-earnings.ts`, key loader
   `finnhub-credentials.ts`); it is **not** a `MarketDataProvider` method and not
   in the market-data factory. Finnhub's free earnings-calendar endpoint is the
@@ -492,17 +501,28 @@ their log events:
   vendor-specific auxiliary feed in its own module.
 - **Driven by:** [us-56](../features/us-56-earnings-proximity-alert.md)
 
-### Earnings data is transient — per-run boundary fetch with a 12 h TTL cache
+### Earnings data is a per-run boundary fetch, cached in SQLite
 
-- **Decision:** No SQLite table and no scheduled collector job: `evaluateAlerts`
-  pre-fetches earnings dates as a third concurrent `fetchOrDegrade`, and the
-  integration's module-level per-ticker cache (12 h TTL, negative results
-  included) absorbs the 60 s cadence.
-- **Why:** Matches the market-data invariant ("market data is transient — no
-  SQLite rows") and the US-53/54/55 enrichment shape; earnings proximity needs
-  only the _next_ date, not history (which is what justifies the IVR snapshot
-  table), and an uncached fetch would cost ~4k Finnhub calls per market day.
-- **Driven by:** [us-56](../features/us-56-earnings-proximity-alert.md)
+> **Superseded by [us-70](../features/us-70-earnings-in-window-warning.md).** The original
+> US-56 decision was "no SQLite table and no scheduled collector job", with a
+> module-level 12 h TTL cache absorbing the 60 s cadence. US-70 moved the cache into the
+> [`earnings_date`](../schema/tables.md#earnings_date) table (migration 013).
+
+- **Decision:** `evaluateAlerts` still pre-fetches earnings dates as a third concurrent
+  `fetchOrDegrade` at the boundary, and there is still no scheduled collector job — but the
+  fetch now goes through the `earnings_date` read-through store rather than an in-memory
+  cache. Only per-ticker **failure** backoff remains in memory.
+- **Why the original call was reasonable:** earnings proximity needs only the _next_ date,
+  not history (which is what justifies the IVR snapshot table), and an uncached fetch would
+  cost ~4k Finnhub calls per market day.
+- **Why it changed:** a process-local cache dies on every restart, which for a desktop app
+  is the common case — so the effective hit rate was far below what a 12 h TTL suggests.
+  The screener (US-70) needed the same dates on a deeper horizon, and the watchlist's
+  `post_earnings_only` condition needs to know whether a ticker has already reported, which
+  is unanswerable from a cache that does not survive a restart. See
+  [earnings-persisted-per-ticker](../architecture/02-adrs/earnings-persisted-per-ticker.md).
+- **Driven by:** [us-56](../features/us-56-earnings-proximity-alert.md),
+  [us-70](../features/us-70-earnings-in-window-warning.md)
 
 ### Dismissal reuses the open/resolved state machine rather than a parallel "cleared" concept
 
