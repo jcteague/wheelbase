@@ -2,10 +2,11 @@
 
 Each ADR captures one architectural choice that emerged from a plan/story. Decisions are grouped below by theme; many ADRs are referenced by multiple feature pages.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,us-53-54-55,us-57-58,missing-ac -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,us-53-54-55,us-57-58,us-97,missing-ac -->
 
 ## Engine & architecture
 
+- [ivr-collector-per-ticker-failure-isolation](./ivr-collector-per-ticker-failure-isolation.md) — Each ticker's fetch-and-persist is wrapped in `try/catch` (pacing stays outside it), because the scraper _throws_ on a non-JSON body and a rejected handler aborts the run — so one bad ticker used to lose every ticker after it. Logged under `err`, the only key pino serializes an Error for.
 - [pure-core-engines](./pure-core-engines.md) — Lifecycle and cost-basis engines are pure functions with no DB/broker imports.
 - [named-lifecycle-functions](./named-lifecycle-functions.md) — One named pure function per wheel-phase transition; same shape for cost basis.
 - [single-step-phase-transitions](./single-step-phase-transitions.md) — No synthetic `*_PENDING` / `*_EXPIRED` intermediate phases.
@@ -32,7 +33,8 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [shared-massive-app-configuration](./shared-massive-app-configuration.md) — Massive credentials stay in shared app configuration; settings store Alpaca only.
 - [fill-migration-gap-with-007](./fill-migration-gap-with-007.md) — Use migration `007_create_ivr_snapshot.sql` to fill the open numbering gap between `006` and `008`.
 - [ivr-same-day-overwrite-delete-then-insert](./ivr-same-day-overwrite-delete-then-insert.md) — Same-day IVR refreshes delete the prior UTC-day row, then insert the fresh snapshot.
-- [active-ivr-targets-from-positions](./active-ivr-targets-from-positions.md) — IVR collection targets come from distinct active `positions.ticker` values, not renderer list projections.
+- [active-ivr-targets-from-positions](./active-ivr-targets-from-positions.md) — **Superseded by union-ivr-targets-positions-and-watchlist (US-97).** IVR collection targets come from distinct active `positions.ticker` values, not renderer list projections.
+- [union-ivr-targets-positions-and-watchlist](./union-ivr-targets-positions-and-watchlist.md) — IVR collection targets are the `UNION` of open-position tickers and every watchlist row, superseding the positions-only rule; the existing uppercase/`Set`/sort pipeline is what makes a held-and-watchlisted ticker fetch exactly once.
 
 ## IPC contracts
 

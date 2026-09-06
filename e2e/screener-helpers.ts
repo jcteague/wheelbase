@@ -14,7 +14,7 @@ import {
   buildIvrLaunchEnv,
   collectIvrNow,
   okOutcome,
-  seedActivePosition,
+  seedWatchlist,
   setIvrOutcomes
 } from './ivr-helpers'
 
@@ -218,34 +218,36 @@ function buildPutFixtures(specs: PutFixtureSpec[]): Record<string, OptionSnapsho
 
 // ── Seeding ───────────────────────────────────────────────────────────────────
 
-/** Add each ticker through the production watchlist IPC — never a direct DB write.
- *  [US-68] A ticker's note is seeded the same way, since promote reads it back out. */
-async function seedWatchlist(
-  page: Page,
-  tickers: string[],
-  notes: Record<string, string> = {}
-): Promise<void> {
-  await page.evaluate(
-    async ({ list, byTicker }) => {
-      for (const ticker of list) {
-        const result = await window.api.watchlist.add({ ticker, notes: byTicker[ticker] })
-        if (!result.ok) throw new Error(`watchlist.add failed: ${JSON.stringify(result)}`)
-      }
-    },
-    { list: tickers, byTicker: notes }
-  )
+/** Fails loudly if an `ivr` key is not a fixture ticker. [US-97] The collector reaches
+ *  a ticker only if it is on the watchlist, and `launchScreener` seeds the watchlist
+ *  from `fixtures` — so programming an outcome for anything else persists nothing at
+ *  all, silently. Before US-97 such a ticker got a throwaway position and an unread
+ *  row; now it gets neither, and the next spec to rely on it would chase a missing
+ *  value across three files. */
+function assertIvrTickersCollectible(tickers: string[], fixtureTickers: string[]): void {
+  const orphans = tickers.filter((ticker) => !fixtureTickers.includes(ticker))
+  if (orphans.length > 0) {
+    throw new Error(
+      `seedIvr: [${orphans.join(', ')}] are not fixture tickers, so they are never on the ` +
+        `watchlist and will never be collected. Pass only tickers in \`fixtures\` ` +
+        `(${fixtureTickers.join(', ')}).`
+    )
+  }
 }
 
 /**
- * Persist an IVR snapshot per ticker through the real collector. The collector reads
- * its targets from open positions, so each ticker gets a throwaway active CSP first —
- * the screener itself only ever reads the watchlist, so these positions are inert.
+ * Persist an IVR snapshot per ticker through the real collector. [US-97] The collector
+ * targets the union of open positions and the watchlist, and `launchScreener` has
+ * already seeded these tickers onto the watchlist — so the bench names are collected
+ * with no position in the database at all.
  */
-async function seedIvr(page: Page, ivr: Record<string, number>): Promise<void> {
+async function seedIvr(
+  page: Page,
+  ivr: Record<string, number>,
+  fixtureTickers: string[]
+): Promise<void> {
   const tickers = Object.keys(ivr)
-  for (const ticker of tickers) {
-    await seedActivePosition(page, ticker)
-  }
+  assertIvrTickersCollectible(tickers, fixtureTickers)
   await setIvrOutcomes(
     page,
     Object.fromEntries(
@@ -255,7 +257,14 @@ async function seedIvr(page: Page, ivr: Record<string, number>): Promise<void> {
       ])
     )
   )
-  await collectIvrNow(page)
+  const batch = await collectIvrNow(page)
+  if (batch.successCount !== tickers.length) {
+    throw new Error(
+      `seedIvr: programmed ${tickers.length} ok outcomes but the collector persisted ` +
+        `${batch.successCount} — batch ${JSON.stringify(batch)}. A run that persists ` +
+        `nothing (e.g. skippedReason "market_closed") must fail here, not three files away.`
+    )
+  }
 }
 
 async function goToScreener(page: Page): Promise<void> {
@@ -394,15 +403,13 @@ export async function launchScreener(
 ): Promise<{ app: ElectronApplication; page: Page }> {
   const fixtures = opts.fixtures ?? RANKED_PUTS
 
+  const fixtureTickers = fixtures.map((fixture) => fixture.ticker)
+
   const app = await launchElectron(screenerLaunchEnv(dbPath, opts))
   const page = await getPage(app)
 
-  await seedWatchlist(
-    page,
-    fixtures.map((fixture) => fixture.ticker),
-    opts.watchlistNotes
-  )
-  if (opts.ivr) await seedIvr(page, opts.ivr)
+  await seedWatchlist(page, fixtureTickers, opts.watchlistNotes)
+  if (opts.ivr) await seedIvr(page, opts.ivr, fixtureTickers)
   await goToScreener(page)
 
   return { app, page }

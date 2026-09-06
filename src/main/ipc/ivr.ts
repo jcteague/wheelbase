@@ -7,10 +7,14 @@ import { handleIpcCall } from './utils'
 export function registerIvrIpc({ scheduler }: { scheduler: PollingScheduler }): void {
   ipcMain.handle('ivr:collect-now', () =>
     handleIpcCall('ivr_collect_now_error', async () => {
-      // Validate the scheduler's result: when the job handler throws, the scheduler
-      // swallows the error and resolves `undefined`, so parsing guards against a
-      // silent { ok: true, batch: undefined } reaching the renderer.
-      const batch = CollectIvrNowBatchSchema.parse(await scheduler.runNow(IVR_COLLECT_JOB_NAME))
+      const result = await scheduler.runNow(IVR_COLLECT_JOB_NAME)
+      // When the job handler throws, the scheduler swallows the error (already
+      // logged) and resolves `undefined`. Surface that as a run-level failure
+      // rather than letting the Zod parse report a confusing type error.
+      if (result === undefined) {
+        throw new Error('IVR collection failed before producing a batch summary')
+      }
+      const batch = CollectIvrNowBatchSchema.parse(result)
       return { batch }
     })
   )

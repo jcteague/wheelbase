@@ -17,26 +17,32 @@ export type CollectIVRSnapshotsResult = {
 
 type Clock = {
   now(): Date
-  sleep(ms: number): Promise<void>
 }
 
 type CollectIVRSnapshotsInput = {
   db: Database.Database
-  brokerProvider: BrokerProvider
+  /** null when no broker is configured — Barchart needs none, so collection proceeds
+   *  on the assumption that today is a trading day. */
+  brokerProvider: BrokerProvider | null
   logger?: Pick<Logger, 'info' | 'debug' | 'warn' | 'error'>
   fetchIvr?: (ticker: string) => Promise<IVRResult>
   clock?: Clock
+  /** Aborts the run at the next ticker boundary — set by the app's before-quit hook so
+   *  a watchlist-sized batch does not stall shutdown for the scheduler's drain timeout. */
+  signal?: AbortSignal
 }
 
-const ACTIVE_UNDERLYINGS_QUERY = `
+const COLLECTION_TARGETS_QUERY = `
   SELECT ticker
   FROM positions
   WHERE status != 'CLOSED'
+  UNION
+  SELECT ticker
+  FROM watchlist
 `
 
 const DEFAULT_CLOCK: Clock = {
-  now: () => new Date(),
-  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  now: () => new Date()
 }
 
 function isTradingDay(now: Date, session: MarketStatus['session']): boolean {
@@ -46,8 +52,28 @@ function isTradingDay(now: Date, session: MarketStatus['session']): boolean {
   return day !== 0 && day !== 6
 }
 
-function listActiveUnderlyings(db: Database.Database): string[] {
-  const rows = db.prepare(ACTIVE_UNDERLYINGS_QUERY).all() as Array<{ ticker: string }>
+/** Boundary I/O degrades rather than rejects (CLAUDE.md batch-job rule): with no
+ *  broker configured or the clock endpoint down, the run assumes a trading day —
+ *  Barchart itself needs no broker, and a wasted weekend fetch beats a lost batch. */
+async function fetchMarketStatusOrNull(
+  brokerProvider: BrokerProvider | null,
+  logger: Pick<Logger, 'warn' | 'debug'>
+): Promise<MarketStatus | null> {
+  if (brokerProvider === null) {
+    logger.debug('ivr_collection_no_broker_assuming_trading_day')
+    return null
+  }
+
+  try {
+    return await brokerProvider.getMarketStatus()
+  } catch (err) {
+    logger.warn({ err }, 'IVR collection could not read market status; assuming trading day')
+    return null
+  }
+}
+
+function listCollectionTargets(db: Database.Database): string[] {
+  const rows = db.prepare(COLLECTION_TARGETS_QUERY).all() as Array<{ ticker: string }>
 
   return [...new Set(rows.map((row) => row.ticker.toUpperCase()))].sort((a, b) =>
     a.localeCompare(b)
@@ -95,23 +121,18 @@ function persistSnapshot(
   })()
 }
 
-async function sleepBetweenRequests(clock: Clock, index: number, total: number): Promise<void> {
-  if (index < total - 1) {
-    await clock.sleep(1000)
-  }
-}
-
 export async function collectIVRSnapshots({
   db,
   brokerProvider,
   logger = defaultLogger,
   fetchIvr = fetchIVR,
-  clock = DEFAULT_CLOCK
+  clock = DEFAULT_CLOCK,
+  signal
 }: CollectIVRSnapshotsInput): Promise<CollectIVRSnapshotsResult> {
   logger.debug('ivr_collection_market_status_start')
-  const marketStatus = await brokerProvider.getMarketStatus()
+  const marketStatus = await fetchMarketStatusOrNull(brokerProvider, logger)
 
-  if (!isTradingDay(clock.now(), marketStatus.session)) {
+  if (marketStatus !== null && !isTradingDay(clock.now(), marketStatus.session)) {
     logger.info({ marketStatus }, 'Skipping IVR collection because market is closed')
     return {
       successCount: 0,
@@ -121,15 +142,39 @@ export async function collectIVRSnapshots({
     }
   }
 
-  const underlyings = listActiveUnderlyings(db)
+  const underlyings = listCollectionTargets(db)
   logger.debug({ underlyings }, 'ivr_collection_targets_loaded')
 
   let successCount = 0
   let errorCount = 0
   let skippedCount = 0
 
-  for (const [index, ticker] of underlyings.entries()) {
-    const result = await fetchIvr(ticker)
+  // Request pacing is the scraper's job: `fetchIVR` awaits its own 1 req/s rate
+  // limiter before every Barchart call, so the loop adds no sleep of its own.
+  for (const ticker of underlyings) {
+    if (signal?.aborted) {
+      logger.info(
+        { successCount, errorCount, skippedCount, remaining: underlyings.length },
+        'IVR snapshot collection aborted before completion'
+      )
+      break
+    }
+
+    // Per-ticker isolation is mandatory for the fetch: `fetchIvr` rejects on a
+    // non-JSON response body, and an unguarded throw would abort the run and lose
+    // every ticker after the offending one. `persistSnapshot` stays OUTSIDE the
+    // try on purpose — a DB write failing is systemic (read-only file, bad
+    // migration), and downgrading it to per-ticker warns would report a broken
+    // run as "completed with N errors".
+    let result: IVRResult
+    try {
+      result = await fetchIvr(ticker)
+    } catch (err) {
+      // `err`, not `error`: pino's Error serializer is bound to the `err` key.
+      errorCount++
+      logger.warn({ ticker, err }, 'IVR collection threw for ticker')
+      continue
+    }
 
     switch (result.status) {
       case 'ok':
@@ -148,8 +193,6 @@ export async function collectIVRSnapshots({
         logger.warn({ ticker, error: result.error }, 'IVR collection failed for ticker')
         break
     }
-
-    await sleepBetweenRequests(clock, index, underlyings.length)
   }
 
   logger.info({ successCount, errorCount, skippedCount }, 'IVR snapshot collection completed')

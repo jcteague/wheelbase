@@ -9,4 +9,8 @@ const configuredLevel =
   (import.meta.env.MAIN_VITE_LOG_LEVEL as string) || process.env.LOG_LEVEL || 'info'
 const level = process.env.VITEST ? 'silent' : configuredLevel
 
-export const logger = pino({ level })
+// pino applies its Error serializer only to configured keys (plus the default
+// `err`). Several call sites log caught exceptions under `error`; without this,
+// a thrown Error under that key stringifies to `{}` because `message` and
+// `stack` are non-enumerable. Non-Error values pass through unchanged.
+export const logger = pino({ level, serializers: { error: pino.stdSerializers.err } })

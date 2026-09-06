@@ -1,6 +1,6 @@
 # US-67: Configure screening criteria
 
-<!-- generated:from us-67 -->
+<!-- generated:from us-67, us-97 -->
 
 ## Summary
 
@@ -324,6 +324,18 @@ would empty results in a low-vol regime.
   shared-bounds-module pattern this follows
 - [IPC handlers](../contracts/ipc-handlers.md) · [Tables](../schema/tables.md) ·
   [Design system](../architecture/03-design-system.md)
+
+## Update: the IV-rank floor now applies to bench names (US-97)
+
+<!-- from us-97 -->
+
+`iv_rank_floor` applies only when a reading exists (`ctx.ivRank !== null`) — an unknown IV rank is
+a gap in the data, not a low reading, so it passes. Until
+[US-97](./us-97-collect-ivr-for-watchlist-underlyings.md), IVR was collected only for open-position
+underlyings, so a watchlist-only candidate _always_ read `null` and the floor could never exclude it
+in practice. Now that collection covers the watchlist, a bench name with a thin IVR does drop out of
+the ranked list when the floor is enabled — the intended behaviour, and covered by a US-97
+acceptance criterion. The guard itself is unchanged.
 
 <!-- /generated -->
 

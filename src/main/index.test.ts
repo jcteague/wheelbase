@@ -219,9 +219,53 @@ describe('main process bootstrap', () => {
       expect.objectContaining({
         db: expect.anything(),
         brokerProvider,
-        logger: expect.anything()
+        logger: expect.anything(),
+        signal: expect.any(AbortSignal)
       })
     )
+  })
+
+  it('ivr-collect handler collects with a null broker when broker creation throws', async () => {
+    // The watchlist-only trader has no Alpaca credentials; Barchart needs none, so
+    // the handler must degrade to a broker-less run instead of dying before the
+    // collector is entered (which would also leave the afterClose job un-rearmed).
+    await triggerBootstrap()
+
+    const registration = mockSchedulerRegister.mock.calls
+      .map(([job]) => job)
+      .find((job) => job.name === 'ivr-collect') as { handler: () => Promise<unknown> } | undefined
+    expect(registration).toBeDefined()
+
+    const { collectIVRSnapshots } = await import('./services/ivr-collector')
+    const { brokerFactory } = await import('./integrations/broker-factory')
+    vi.mocked(brokerFactory.create).mockImplementationOnce(() => {
+      throw new Error('Alpaca credentials not configured')
+    })
+
+    await expect(registration!.handler()).resolves.toBeDefined()
+    expect(vi.mocked(collectIVRSnapshots)).toHaveBeenCalledWith(
+      expect.objectContaining({ brokerProvider: null })
+    )
+  })
+
+  it('before-quit aborts an in-flight IVR collection before draining the scheduler', async () => {
+    const { appOnHandlers } = await triggerBootstrap()
+
+    const registration = mockSchedulerRegister.mock.calls
+      .map(([job]) => job)
+      .find((job) => job.name === 'ivr-collect') as { handler: () => Promise<unknown> } | undefined
+    expect(registration).toBeDefined()
+
+    await registration!.handler()
+    const { collectIVRSnapshots } = await import('./services/ivr-collector')
+    const call = vi.mocked(collectIVRSnapshots).mock.calls.at(-1)?.[0] as { signal?: AbortSignal }
+    expect(call.signal).toBeDefined()
+    expect(call.signal?.aborted).toBe(false)
+
+    const beforeQuitHandler = appOnHandlers.get('before-quit')
+    await beforeQuitHandler!({ preventDefault: vi.fn() })
+
+    expect(call.signal?.aborted).toBe(true)
   })
 
   it('registers the alert-evaluation scheduler job with an interval cadence', async () => {

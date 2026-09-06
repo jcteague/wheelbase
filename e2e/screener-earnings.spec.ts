@@ -63,7 +63,7 @@ describe('US-70: warn when a candidate has earnings within the DTE window', () =
   it('excludes a candidate with earnings before expiration by default', async () => {
     const page = await launch('wb-e2e-us70-exclude', {
       fixtures: [AAPL_PUT],
-      ivr: RANKED_IVR,
+      ivr: { AAPL: RANKED_IVR.AAPL },
       earnings: { AAPL: { dayOffset: EARNINGS_BEFORE_EXPIRY } }
     })
 
@@ -77,7 +77,7 @@ describe('US-70: warn when a candidate has earnings within the DTE window', () =
   it('flags a candidate with earnings before expiration when flag mode is on', async () => {
     const page = await launch('wb-e2e-us70-flag', {
       fixtures: [AAPL_PUT],
-      ivr: RANKED_IVR,
+      ivr: { AAPL: RANKED_IVR.AAPL },
       earnings: { AAPL: { dayOffset: EARNINGS_BEFORE_EXPIRY } }
     })
 
@@ -114,7 +114,7 @@ describe('US-70: warn when a candidate has earnings within the DTE window', () =
   it('treats earnings on the expiration date as in the window', async () => {
     const page = await launch('wb-e2e-us70-boundary', {
       fixtures: [AAPL_PUT],
-      ivr: RANKED_IVR,
+      ivr: { AAPL: RANKED_IVR.AAPL },
       earnings: { AAPL: { dayOffset: EARNINGS_ON_EXPIRY } }
     })
 
@@ -127,7 +127,7 @@ describe('US-70: warn when a candidate has earnings within the DTE window', () =
   it('shows no earnings warning when earnings fall after expiration', async () => {
     const page = await launch('wb-e2e-us70-after', {
       fixtures: [AAPL_PUT],
-      ivr: RANKED_IVR,
+      ivr: { AAPL: RANKED_IVR.AAPL },
       earnings: { AAPL: { dayOffset: EARNINGS_AFTER_EXPIRY } }
     })
 
@@ -144,7 +144,7 @@ describe('US-70: warn when a candidate has earnings within the DTE window', () =
     const beyondAlertHorizon = 37
     const page = await launch('wb-e2e-us70-horizon', {
       fixtures: [{ ...AAPL_PUT, dteOffset: 44 }],
-      ivr: RANKED_IVR,
+      ivr: { AAPL: RANKED_IVR.AAPL },
       earnings: { AAPL: { dayOffset: beyondAlertHorizon } }
     })
 
@@ -171,7 +171,7 @@ describe('US-70: warn when a candidate has earnings within the DTE window', () =
     // sort must put it below KO even though nothing was found against it.
     const page = await launch('wb-e2e-us70-unknown-kept', {
       fixtures: [{ ...RANKED_PUTS[0] }, XYZ_PUT],
-      ivr: RANKED_IVR,
+      ivr: { KO: RANKED_IVR.KO },
       earnings: { KO: { dayOffset: EARNINGS_AFTER_EXPIRY } }
     })
 

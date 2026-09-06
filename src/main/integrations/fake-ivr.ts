@@ -10,7 +10,6 @@ import type { IVRResult } from './barchart-ivr-scraper'
 
 type Clock = {
   now(): Date
-  sleep(ms: number): Promise<void>
 }
 
 type FakeIvrCollaborators = {
@@ -52,9 +51,7 @@ export function createFakeIvrCollaborators(): FakeIvrCollaborators {
   return {
     fetchIvr: fakeFetchIvr,
     clock: {
-      now: () => (fakeNowIso ? new Date(fakeNowIso) : new Date()),
-      // Skip the collector's 1 req/sec spacing so e2e runs stay fast.
-      sleep: () => Promise.resolve()
+      now: () => (fakeNowIso ? new Date(fakeNowIso) : new Date())
     }
   }
 }
