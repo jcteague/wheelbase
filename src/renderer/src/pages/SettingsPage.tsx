@@ -594,9 +594,10 @@ export function SettingsPage(): React.JSX.Element {
                   <button
                     type="button"
                     onClick={() => void handleCollectIvrNow()}
-                    className="rounded-md border border-wb-border px-3 py-2 font-wb-mono text-xs font-semibold tracking-[0.06em] text-wb-text-secondary"
+                    disabled={collectIvrNow.isPending}
+                    className="rounded-md border border-wb-border px-3 py-2 font-wb-mono text-xs font-semibold tracking-[0.06em] text-wb-text-secondary disabled:opacity-40"
                   >
-                    Refresh IVR now
+                    {collectIvrNow.isPending ? 'Refreshing IVR…' : 'Refresh IVR now'}
                   </button>
                   <button
                     type="button"

@@ -113,7 +113,25 @@ it('renders a Refresh IVR now button in the Market Data section', () => {
   render(<SettingsPage />)
 
   const section = screen.getByRole('region', { name: /market data/i })
-  expect(within(section).getByRole('button', { name: /refresh ivr now/i })).toBeInTheDocument()
+  expect(within(section).getByRole('button', { name: /refresh ivr now/i })).toBeEnabled()
+})
+
+it('disables Refresh IVR now while a collection is in flight', () => {
+  // [US-97] The run now covers every watchlist name at ~1s each, so the manual trigger
+  // is where a human waits. (`scheduler.runNow` also joins an in-flight run, so even a
+  // click from a fresh mount cannot launch a concurrent batch.)
+  mockUseCollectIvrNow.mockReturnValue({
+    mutateAsync: vi.fn(),
+    isPending: true
+  } as unknown as ReturnType<typeof useCollectIvrNow>)
+
+  render(<SettingsPage />)
+
+  const section = screen.getByRole('region', { name: /market data/i })
+  expect(within(section).getByRole('button', { name: /refreshing ivr/i })).toBeDisabled()
+  expect(
+    within(section).queryByRole('button', { name: /refresh ivr now/i })
+  ).not.toBeInTheDocument()
 })
 
 it('clicking Refresh IVR now surfaces the returned success and error counts', async () => {

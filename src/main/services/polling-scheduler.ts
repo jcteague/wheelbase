@@ -88,6 +88,11 @@ type JobState = {
   config: JobConfig
   timerId: TimerId | null
   invocations: number
+  /** The in-flight handler promise, or null when idle. A scheduled tick firing while
+   *  a run is in flight is skipped, and runNow() joins the run instead of starting a
+   *  concurrent one — overlapping runs would double-hit the provider and leave two
+   *  live reschedules racing to arm timers. */
+  running: Promise<unknown> | null
 }
 
 /**
@@ -107,7 +112,24 @@ export function createPollingScheduler(
 
   function scheduleTick(state: JobState, delayMs: number): void {
     if (stopped) return
-    state.timerId = clock.setTimeout(() => void tick(state), delayMs)
+    // Never orphan a live timer: two racing reschedules must collapse to one firing.
+    if (state.timerId !== null) clock.clearTimeout(state.timerId)
+    state.timerId = clock.setTimeout(() => {
+      state.timerId = null
+      void tick(state)
+    }, delayMs)
+  }
+
+  async function runTracked(state: JobState): Promise<unknown> {
+    const p = runHandler(state)
+    state.running = p
+    inFlight.add(p)
+    try {
+      return await p
+    } finally {
+      state.running = null
+      inFlight.delete(p)
+    }
   }
 
   async function runHandler(state: JobState): Promise<unknown> {
@@ -171,13 +193,8 @@ export function createPollingScheduler(
   }
 
   async function tick(state: JobState): Promise<void> {
-    const p = runHandler(state)
-    inFlight.add(p)
-    try {
-      await p
-    } finally {
-      inFlight.delete(p)
-    }
+    if (state.running !== null) return
+    await runTracked(state)
     await reschedule(state)
   }
 
@@ -213,7 +230,7 @@ export function createPollingScheduler(
       if (jobs.has(config.name)) {
         throw new SchedulerError('already_registered', `Job already registered: ${config.name}`)
       }
-      const state: JobState = { config, timerId: null, invocations: 0 }
+      const state: JobState = { config, timerId: null, invocations: 0, running: null }
       jobs.set(config.name, state)
       if (started && !stopped) autoStart(state)
     },
@@ -254,20 +271,17 @@ export function createPollingScheduler(
         throw new SchedulerError('job_not_found', `Job not found: ${jobName}`)
       }
 
+      // A run is already in flight (e.g. the scheduled after-close tick): join it.
+      // Its completion path reschedules, so starting a second run here would both
+      // double-hit the provider and leave two reschedules racing to arm timers.
+      if (state.running !== null) return state.running
+
       if (state.timerId !== null) {
         clock.clearTimeout(state.timerId)
         state.timerId = null
       }
 
-      const p = runHandler(state)
-      inFlight.add(p)
-      let result: unknown
-      try {
-        result = await p
-      } finally {
-        inFlight.delete(p)
-      }
-
+      const result = await runTracked(state)
       await reschedule(state)
       return result
     },

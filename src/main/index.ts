@@ -226,12 +226,30 @@ app.whenReady().then(() => {
   // In production this resolves to `{}` so the real Barchart scraper is used; e2e
   // runs set WHEELBASE_FAKE_IVR to inject a deterministic offline fetcher + clock.
   const ivrCollaborators = createFakeIvrCollaborators()
+  // Aborts an in-flight IVR batch at the next ticker boundary on quit — a
+  // watchlist-sized run cannot drain inside scheduler.stop()'s 5s timeout.
+  const ivrAbort = new AbortController()
   scheduler.register({
     name: IVR_COLLECT_JOB_NAME,
     cadence: { kind: 'afterClose', offsetMinutes: 60 },
     handler: async () => {
-      const brokerProvider = brokerFactory.create()
-      return collectIVRSnapshots({ db, brokerProvider, logger, ...ivrCollaborators })
+      // Barchart needs no broker, so missing Alpaca credentials must not kill the
+      // watchlist-only trader's collection: the collector treats a null provider
+      // as "assume trading day" and proceeds.
+      let brokerProvider: BrokerProvider | null
+      try {
+        brokerProvider = brokerFactory.create()
+      } catch (err) {
+        logger.warn({ err }, 'ivr-collect: broker provider unavailable; collecting anyway')
+        brokerProvider = null
+      }
+      return collectIVRSnapshots({
+        db,
+        brokerProvider,
+        logger,
+        signal: ivrAbort.signal,
+        ...ivrCollaborators
+      })
     }
   })
 
@@ -288,6 +306,7 @@ app.whenReady().then(() => {
 
   app.on('before-quit', async (e) => {
     e.preventDefault()
+    ivrAbort.abort()
     await Promise.all([scheduler.stop(), marketDataFactory.disconnect()])
     app.exit(0)
   })

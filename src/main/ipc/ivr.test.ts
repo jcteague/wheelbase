@@ -78,9 +78,18 @@ describe('registerIvrIpc', () => {
       'ivr:collect-now'
     )
 
-    const result = (await handler(null)) as { ok: boolean }
+    const result = await handler(null)
 
-    expect(result.ok).toBe(false)
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        {
+          field: '__root__',
+          code: 'internal_error',
+          message: 'An unexpected error occurred'
+        }
+      ]
+    })
   })
 
   it('ivr:collect-now returns a standard ipc error envelope when scheduler.runNow rejects', async () => {

@@ -332,6 +332,39 @@ describe('runNow()', () => {
     await scheduler.stop()
   })
 
+  it('joins an in-flight run instead of starting a second concurrent one', async () => {
+    // Without the guard, "Refresh IVR now" during the scheduled after-close run
+    // starts a second concurrent collection AND leaves two completed reschedules
+    // racing to arm timers — from then on the job double-fires every close.
+    const resolvers: Array<(value: string) => void> = []
+    const handler = vi.fn().mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          resolvers.push(resolve)
+        })
+    )
+    const scheduler = makeStartedScheduler(handler as unknown as () => Promise<void>)
+
+    await vi.advanceTimersByTimeAsync(0) // initial tick fires; run is in flight
+    expect(handler).toHaveBeenCalledTimes(1)
+
+    // Manual trigger while the tick's run is still in flight: no second run starts,
+    // and the caller receives the in-flight run's result.
+    const joined = scheduler.runNow('job')
+    expect(handler).toHaveBeenCalledTimes(1)
+
+    resolvers[0]('batch')
+    await expect(joined).resolves.toBe('batch')
+
+    // Exactly one next tick was armed — the overlap must not double-fire the cadence.
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(handler).toHaveBeenCalledTimes(2)
+
+    resolvers[1]('second')
+    await vi.advanceTimersByTimeAsync(0)
+    await scheduler.stop()
+  })
+
   it('returns the registered handler result for ivr-collect callers', async () => {
     const broker = makeBroker()
     const scheduler = createPollingScheduler(() => broker)

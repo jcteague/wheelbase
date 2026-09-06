@@ -107,6 +107,44 @@ export async function seedActivePosition(
   return seedCsp(page, activeCspFixture(ticker, strike))
 }
 
+/** Add each ticker through the production watchlist IPC — never a direct DB write.
+ *  [US-68] A ticker's note is seeded the same way, since promote reads it back out. */
+export async function seedWatchlist(
+  page: Page,
+  tickers: string[],
+  notes: Record<string, string> = {}
+): Promise<void> {
+  await page.evaluate(
+    async ({ list, byTicker }) => {
+      for (const ticker of list) {
+        const result = await window.api.watchlist.add({ ticker, notes: byTicker[ticker] })
+        if (!result.ok) throw new Error(`watchlist.add failed: ${JSON.stringify(result)}`)
+      }
+    },
+    { list: tickers, byTicker: notes }
+  )
+}
+
+/** [US-97] Drop a ticker through the production watchlist IPC — the collector must
+ *  stop targeting it on the next run. */
+export async function removeFromWatchlist(page: Page, ticker: string): Promise<void> {
+  await page.evaluate(async (symbol) => {
+    const result = await window.api.watchlist.remove({ ticker: symbol })
+    if (!result.ok) throw new Error(`watchlist.remove failed: ${JSON.stringify(result)}`)
+  }, ticker)
+}
+
+/** [US-97] Seed a position and close it, so the ticker's only position is CLOSED —
+ *  the discriminating case for the positions∪watchlist union. */
+export async function seedClosedPosition(page: Page, ticker: string): Promise<string> {
+  const positionId = await seedActivePosition(page, ticker)
+  await page.evaluate(async (id) => {
+    const result = await window.api.closePosition({ positionId: id, closePricePerContract: 0.05 })
+    if (!result.ok) throw new Error(`closePosition failed: ${JSON.stringify(result)}`)
+  }, positionId)
+  return positionId
+}
+
 export type IvrSnapshotRow = {
   underlying: string
   observed_at: string
