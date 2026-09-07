@@ -15,16 +15,30 @@ import { fakeStockTickSubject } from '../integrations/fake-market-data'
 import {
   fetchStockQuotes,
   fetchOptionSnapshots,
+  restartStockQuoteStream,
   subscribeToStockQuotes,
-  newStreamState
+  newStreamState,
+  type IpcStockQuote
 } from '../services/market-data'
 import { handleIpcCall } from './utils'
+
+export type MarketDataHandlers = {
+  /** Rebuilds the stock-quote socket after the active broker credentials change. */
+  restartStockQuoteStream: () => Promise<void>
+}
 
 export function registerMarketDataHandlers(
   getProvider: () => MarketDataProvider,
   getWindow: () => BrowserWindow | null
-): void {
+): MarketDataHandlers {
   const streamState = newStreamState()
+
+  const onTick = (ticker: string, quote: IpcStockQuote): void => {
+    getWindow()?.webContents.send('market-data:stock-quote', { ticker, quote })
+  }
+  const onError = (err: StreamError): void => {
+    getWindow()?.webContents.send('market-data:stream-error', err)
+  }
 
   ipcMain.handle('market-data:stock-quotes', (_, payload: unknown) =>
     handleIpcCall('market_data_stock_quotes_unhandled_error', async () => {
@@ -41,9 +55,8 @@ export function registerMarketDataHandlers(
         streamState,
         getProvider(),
         tickers,
-        (ticker, quote) =>
-          getWindow()?.webContents.send('market-data:stock-quote', { ticker, quote }),
-        (err) => getWindow()?.webContents.send('market-data:stream-error', err)
+        onTick,
+        onError
       )
       return { subscribedTickers }
     })
@@ -87,8 +100,12 @@ export function registerMarketDataHandlers(
   })
 
   ipcMain.handle('test:trigger-stream-error', (_, payload: unknown) => {
-    const err = payload as StreamError
-    getWindow()?.webContents.send('market-data:stream-error', err)
+    onError(payload as StreamError)
     return { ok: true }
   })
+
+  return {
+    restartStockQuoteStream: () =>
+      restartStockQuoteStream(streamState, getProvider(), onTick, onError)
+  }
 }

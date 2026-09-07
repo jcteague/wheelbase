@@ -84,7 +84,7 @@ function ShellHeader(): React.JSX.Element {
   const [location] = useLocation()
   const { data } = useSettingsStatus()
   const activeBrokerEnv = data?.activeBrokerEnv ?? 'none'
-  const massive = data?.massive ?? 'missing'
+  const marketData = data?.marketData ?? 'missing'
   const title = PAGE_TITLES[location] ?? 'Dashboard'
 
   return (
@@ -94,7 +94,7 @@ function ShellHeader(): React.JSX.Element {
       </div>
       <div className="flex items-center gap-3">
         <EnvironmentBadge activeBrokerEnv={activeBrokerEnv} />
-        <MarketDataStatusDot massive={massive} />
+        <MarketDataStatusDot marketData={marketData} />
       </div>
     </div>
   )

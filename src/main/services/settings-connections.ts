@@ -1,4 +1,5 @@
 import { logger } from '../logger'
+import { ALPACA_TRADING_BASE_URLS } from '../integrations/alpaca-hosts'
 
 export type BrokerEnvironment = 'paper' | 'live'
 
@@ -10,7 +11,6 @@ export type ConnectionErrorCode =
   | 'unknown'
 
 export type TestConnectionResult =
-  | { ok: true; vendor: 'massive'; status: 'connected' }
   | {
       ok: true
       vendor: 'alpaca'
@@ -25,21 +25,12 @@ export type TestConnectionResult =
 
 type ConnectionFailure = Extract<TestConnectionResult, { ok: false }>
 
-type TestMassiveConnectionOptions = {
-  loadMassiveApiKey: () => string
-}
-
 type TestAlpacaConnectionInput = {
   environment: BrokerEnvironment
   keyId: string
   secret: string
 }
 
-const MASSIVE_BASE_URL = 'https://api.syncswimmer.com'
-const ALPACA_BASE_URLS: Record<BrokerEnvironment, string> = {
-  paper: 'https://paper-api.alpaca.markets',
-  live: 'https://api.alpaca.markets'
-}
 const AUTH_FAILED_MESSAGE = 'Authentication failed (401)'
 const RATE_LIMITED_MESSAGE = 'Rate limited — please try again'
 const PAPER_LIVE_KEY_MISMATCH_MESSAGE = 'Environment mismatch — these are LIVE keys, not paper keys'
@@ -98,49 +89,12 @@ function isLikelyPaperKey(keyId: string): boolean {
   return keyId.trim().startsWith('PK')
 }
 
-export async function testMassiveConnection({
-  loadMassiveApiKey
-}: TestMassiveConnectionOptions): Promise<TestConnectionResult> {
-  const apiKey = trimRequired(loadMassiveApiKey(), 'Massive API key')
-  logger.debug({ vendor: 'massive' }, 'settings_connection_test_started')
-
-  let response: Response
-  try {
-    response = await fetch(`${MASSIVE_BASE_URL}/v3/reference/tickers/AAPL`, {
-      headers: { Authorization: `Bearer ${apiKey}` }
-    })
-  } catch (err) {
-    return networkFailure(err)
-  }
-
-  const httpFailure = knownHttpFailure(response.status)
-  if (httpFailure) {
-    logger.debug(
-      { vendor: 'massive', status: response.status, errorCode: httpFailure.errorCode },
-      'settings_connection_test_failed'
-    )
-    return httpFailure
-  }
-
-  if (!response.ok) {
-    const failure = unknownHttpStatus(response.status)
-    logger.debug(
-      { vendor: 'massive', status: response.status, errorCode: failure.errorCode },
-      'settings_connection_test_failed'
-    )
-    return failure
-  }
-
-  logger.info({ vendor: 'massive' }, 'settings_connection_verified')
-  return { ok: true, vendor: 'massive', status: 'connected' }
-}
-
 export async function testAlpacaConnection(
   input: TestAlpacaConnectionInput
 ): Promise<TestConnectionResult> {
   const keyId = trimRequired(input.keyId, 'keyId')
   const secret = trimRequired(input.secret, 'secret')
-  const url = `${ALPACA_BASE_URLS[input.environment]}/v2/account`
+  const url = `${ALPACA_TRADING_BASE_URLS[input.environment]}/v2/account`
   logger.debug(
     { vendor: 'alpaca', environment: input.environment, keyPrefix: keyId.slice(0, 2) },
     'settings_connection_test_started'

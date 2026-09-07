@@ -20,10 +20,13 @@ export type IpcStockQuote = {
 export type StreamState = {
   connected: boolean
   activeSub: Subscription | null
+  // Last ticker set the renderer asked for, replayed by restartStockQuoteStream when the
+  // credentials behind the socket change.
+  tickers: string[]
 }
 
 export function newStreamState(): StreamState {
-  return { connected: false, activeSub: null }
+  return { connected: false, activeSub: null, tickers: [] }
 }
 
 function flattenStockQuote(q: StockQuote): IpcStockQuote {
@@ -93,7 +96,13 @@ export async function subscribeToStockQuotes(
 ): Promise<string[]> {
   state.activeSub?.unsubscribe()
   state.activeSub = null
-  if (tickers.length === 0) return []
+  state.tickers = tickers
+  if (tickers.length === 0) {
+    // Dropping our rxjs subscription does not release the provider's: the socket holds its
+    // per-symbol subscriptions against the plan's symbol cap until told to let them go.
+    if (state.connected) provider.stream('stockQuotes', [])
+    return []
+  }
   if (!state.connected) {
     try {
       await provider.connect(['stockQuotes'])
@@ -110,4 +119,29 @@ export async function subscribeToStockQuotes(
     error: (err: unknown) => onError(err as StreamError)
   })
   return tickers
+}
+
+/**
+ * Rebuilds the stock-quote stream against whatever credentials the provider now resolves.
+ *
+ * Alpaca authenticates once per socket, so a credential change (save, remove, or a paper↔live
+ * switch) only takes effect after a full teardown and reconnect. The remembered ticker set is
+ * replayed so the renderer never has to re-issue `set-stock-quote-tickers`.
+ */
+export async function restartStockQuoteStream(
+  state: StreamState,
+  provider: MarketDataProvider,
+  onTick: (ticker: string, quote: IpcStockQuote) => void,
+  onError: (err: StreamError) => void
+): Promise<void> {
+  state.activeSub?.unsubscribe()
+  state.activeSub = null
+  await provider.disconnect()
+  state.connected = false
+
+  const tickers = state.tickers
+  if (tickers.length === 0) return
+
+  await subscribeToStockQuotes(state, provider, tickers, onTick, onError)
+  logger.info({ tickers }, 'stock_quote_stream_restarted')
 }

@@ -29,11 +29,10 @@ beforeEach(() => {
   window.location.hash = '#/'
   mockUseSettingsStatus.mockReturnValue({
     data: {
-      massive: 'configured',
+      marketData: 'configured',
       alpacaPaper: 'configured',
       alpacaLive: 'configured',
       activeBrokerEnv: 'paper',
-      massiveLastCheckedAt: null,
       alpacaPaperAccountNumberMasked: 'PA…ABC',
       alpacaLiveAccountNumberMasked: 'AL…XYZ'
     },
@@ -62,6 +61,24 @@ describe('App — portal mount point', () => {
 
     expect(screen.getByText('PAPER')).toBeInTheDocument()
     expect(screen.getByTestId('market-data-status-dot')).toBeInTheDocument()
+  })
+
+  // [US-99] The status query is empty on first paint; the dot must say "not connected"
+  // rather than render an undefined state.
+  it('falls back to a missing market-data status while the settings query is loading', () => {
+    mockUseSettingsStatus.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null
+    } as ReturnType<typeof useSettingsStatus>)
+
+    render(<App />)
+
+    expect(screen.getByTestId('market-data-status-dot')).toHaveAttribute(
+      'title',
+      'Market data: connect Alpaca in Settings'
+    )
   })
 
   it('renders SettingsPage at #/settings under the hash router', () => {

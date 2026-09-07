@@ -488,17 +488,12 @@ export const SaveAlertOverridesPayloadSchema = z.object({
 })
 export type SaveAlertOverridesPayload = z.infer<typeof SaveAlertOverridesPayloadSchema>
 
-export const TestConnectionPayloadSchema = z.discriminatedUnion('vendor', [
-  z.object({
-    vendor: z.literal('massive')
-  }),
-  z.object({
-    vendor: z.literal('alpaca'),
-    environment: BrokerEnvironmentSchema,
-    keyId: NonEmptyTrimmedStringSchema,
-    secret: NonEmptyTrimmedStringSchema
-  })
-])
+export const TestConnectionPayloadSchema = z.object({
+  vendor: z.literal('alpaca'),
+  environment: BrokerEnvironmentSchema,
+  keyId: NonEmptyTrimmedStringSchema,
+  secret: NonEmptyTrimmedStringSchema
+})
 export type TestConnectionPayload = z.infer<typeof TestConnectionPayloadSchema>
 
 // ---------------------------------------------------------------------------

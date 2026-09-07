@@ -276,11 +276,10 @@ beforeEach(() => {
   mockUseDismissAlert.mockReturnValue(makeDismissMutationResult())
   mockUseSettingsStatus.mockReturnValue({
     data: {
-      massive: 'configured',
+      marketData: 'configured',
       alpacaPaper: 'configured',
       alpacaLive: 'missing',
       activeBrokerEnv: 'paper',
-      massiveLastCheckedAt: null,
       alpacaPaperAccountNumberMasked: 'PA…ABC',
       alpacaLiveAccountNumberMasked: null
     },
@@ -660,15 +659,14 @@ it('does not render a pulsing indicator on any row when there are no pending ass
 
 // ── US-37: settings + auth banners ───────────────────────────────────────────
 
-it('shows the setup banner when Massive is app-provided and Alpaca is not configured', () => {
+it('shows the Connect Alpaca banner and no legacy vendor copy when no broker is active', () => {
   mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1]))
   mockUseSettingsStatus.mockReturnValue({
     data: {
-      massive: 'missing',
+      marketData: 'missing',
       alpacaPaper: 'missing',
       alpacaLive: 'missing',
       activeBrokerEnv: 'none',
-      massiveLastCheckedAt: null,
       alpacaPaperAccountNumberMasked: null,
       alpacaLiveAccountNumberMasked: null
     },
@@ -680,19 +678,21 @@ it('shows the setup banner when Massive is app-provided and Alpaca is not config
 
   render(<PositionsListPage />)
 
-  expect(screen.getByText(/massive is app-provided/i)).toBeInTheDocument()
+  expect(
+    screen.getByText(/connect alpaca to enable market data, broker activity and buying power\./i)
+  ).toBeInTheDocument()
+  expect(screen.queryByText(/app-provided/i)).not.toBeInTheDocument()
   expect(screen.getByRole('link', { name: /alpaca setup/i })).toHaveAttribute('href', '#/settings')
 })
 
-it('shows setup and broker banners even when there are no positions yet', () => {
+it('shows the Connect Alpaca banner even when there are no positions yet', () => {
   mockUsePositions.mockReturnValue(makePositionsResult([]))
   mockUseSettingsStatus.mockReturnValue({
     data: {
-      massive: 'missing',
+      marketData: 'missing',
       alpacaPaper: 'missing',
       alpacaLive: 'missing',
       activeBrokerEnv: 'none',
-      massiveLastCheckedAt: null,
       alpacaPaperAccountNumberMasked: null,
       alpacaLiveAccountNumberMasked: null
     },
@@ -704,13 +704,13 @@ it('shows setup and broker banners even when there are no positions yet', () => 
   render(<PositionsListPage />)
 
   expect(screen.getByText(/no positions yet/i)).toBeInTheDocument()
-  expect(screen.getByText(/massive is app-provided/i)).toBeInTheDocument()
+  expect(screen.queryByText(/app-provided/i)).not.toBeInTheDocument()
   expect(
-    screen.getByText(/connect alpaca to enable broker activity and buying power/i)
+    screen.getByText(/connect alpaca to enable market data, broker activity and buying power\./i)
   ).toBeInTheDocument()
 })
 
-it('shows auth prompts even when there are no positions yet', () => {
+it('shows a single Alpaca auth prompt when both market data and the broker reject the keys', () => {
   mockUsePositions.mockReturnValue(makePositionsResult([]))
   mockUseStockQuotes.mockReturnValue(
     makeStockQuotesResult({
@@ -730,19 +730,20 @@ it('shows auth prompts even when there are no positions yet', () => {
 
   render(<PositionsListPage />)
 
-  expect(screen.getByText(/massive authentication failed/i)).toBeInTheDocument()
-  expect(screen.getByText(/alpaca authentication failed/i)).toBeInTheDocument()
+  expect(
+    screen.getAllByText('Alpaca authentication failed — check your key in Settings')
+  ).toHaveLength(1)
+  expect(screen.queryByText(/app-provided/i)).not.toBeInTheDocument()
 })
 
-it('continues to render live prices and mids from Massive when no Alpaca credentials are configured', () => {
+it('continues to render live prices and mids when no Alpaca credentials are configured', () => {
   mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1]))
   mockUseSettingsStatus.mockReturnValue({
     data: {
-      massive: 'configured',
+      marketData: 'configured',
       alpacaPaper: 'missing',
       alpacaLive: 'missing',
       activeBrokerEnv: 'none',
-      massiveLastCheckedAt: null,
       alpacaPaperAccountNumberMasked: null,
       alpacaLiveAccountNumberMasked: null
     },
@@ -758,7 +759,9 @@ it('continues to render live prices and mids from Massive when no Alpaca credent
 
   expect(screen.getByTestId('mock-quote-AAPL')).toHaveTextContent('182.45')
   expect(screen.getByTestId('mock-snapshot-AAPL')).toHaveTextContent('1.30')
-  expect(screen.getByText(/connect alpaca to enable/i)).toBeInTheDocument()
+  expect(
+    screen.getByText(/connect alpaca to enable market data, broker activity and buying power\./i)
+  ).toBeInTheDocument()
 })
 
 // ── US-51: management queue placement ─────────────────────────────────────────

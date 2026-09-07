@@ -11,11 +11,10 @@ vi.mock('../logger', () => ({
 }))
 
 const STATUS: CredentialStatus = {
-  massive: 'configured',
+  marketData: 'configured',
   alpacaPaper: 'configured',
   alpacaLive: 'missing',
   activeBrokerEnv: 'paper',
-  massiveLastCheckedAt: null,
   alpacaPaperAccountNumberMasked: 'PA…ABC',
   alpacaLiveAccountNumberMasked: null
 }
@@ -86,8 +85,9 @@ describe('registerSettingsHandlers', () => {
     settings.setActiveBrokerEnvironment.mockReturnValue(STATUS)
     testConnection.mockResolvedValue({
       ok: true,
-      vendor: 'massive',
-      status: 'connected'
+      vendor: 'alpaca',
+      environment: 'paper',
+      accountNumberMasked: 'PA…ABC'
     })
   })
 
@@ -230,6 +230,25 @@ describe('registerSettingsHandlers', () => {
         expect.objectContaining({ field: 'secret' })
       ])
     })
+  })
+
+  it('settings:test-connection rejects an unrecognised vendor payload', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerSettingsHandlers } = await import('./settings')
+
+    registerSettingsHandlers({ settings, alertDefaults, testConnection, onBrokerProviderChanged })
+    const handler = getHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'settings:test-connection'
+    )
+
+    const result = await handler(null, { vendor: 'not-a-vendor' })
+
+    expect(result).toMatchObject({
+      ok: false,
+      errors: expect.arrayContaining([expect.objectContaining({ field: 'vendor' })])
+    })
+    expect(testConnection).not.toHaveBeenCalled()
   })
 
   it('settings:save-alpaca-credentials converts probe exceptions into ok:false errors', async () => {

@@ -6,8 +6,8 @@ import { initDb } from './db/index'
 import { registerPingHandler } from './ipc/ping'
 import { registerPositionsHandlers } from './ipc/positions'
 import { marketDataFactory } from './integrations/market-data-factory'
+import { loadAlpacaCredentialsFromEnv } from './integrations/alpaca-credentials'
 import { brokerFactory } from './integrations/broker-factory'
-import { loadMassiveApiKey } from './integrations/massive-credentials'
 import { registerMarketDataHandlers } from './ipc/market-data'
 import { registerBrokerHandlers } from './ipc/broker'
 import { registerAssignmentsIpc } from './ipc/assignments'
@@ -26,11 +26,7 @@ import { scheduler } from './services/scheduler-instance'
 import { registerSettingsHandlers } from './ipc/settings'
 import type { TestConnectionPayload } from './schemas'
 import { createSettingsService } from './services/settings'
-import {
-  testAlpacaConnection,
-  testMassiveConnection,
-  type TestConnectionResult
-} from './services/settings-connections'
+import { testAlpacaConnection, type TestConnectionResult } from './services/settings-connections'
 import { logger } from './logger'
 import type { BrokerProvider } from './integrations/broker-provider'
 
@@ -40,7 +36,6 @@ let mainWindow: BrowserWindow | null = null
 const isE2eRun = process.env.WHEELBASE_E2E === 'true'
 
 type MockSettingsConnectionConfig = {
-  massive?: TestConnectionResult
   alpaca?: Partial<Record<'paper' | 'live', TestConnectionResult>>
 }
 
@@ -91,14 +86,10 @@ if (isE2eRun && process.platform === 'darwin') {
 
 function runSettingsConnectionTest(
   payload: TestConnectionPayload
-): ReturnType<typeof testMassiveConnection> {
+): ReturnType<typeof testAlpacaConnection> {
   const mockConfig = process.env.WHEELBASE_MOCK_SETTINGS_CONNECTIONS
   if (mockConfig) {
     return Promise.resolve(runMockSettingsConnectionTest(payload, mockConfig))
-  }
-
-  if (payload.vendor === 'massive') {
-    return testMassiveConnection({ loadMassiveApiKey })
   }
 
   return testAlpacaConnection({
@@ -113,10 +104,6 @@ function runMockSettingsConnectionTest(
   rawConfig: string
 ): TestConnectionResult {
   const parsed = JSON.parse(rawConfig) as MockSettingsConnectionConfig
-
-  if (payload.vendor === 'massive') {
-    return parsed.massive ?? { ok: true, vendor: 'massive', status: 'connected' }
-  }
 
   if (payload.environment === 'paper' && payload.keyId.trim().startsWith('AK')) {
     return {
@@ -147,24 +134,31 @@ app.whenReady().then(() => {
   const settings = createSettingsService({
     db,
     safeStorage,
-    loadMassiveApiKey,
     // Route the save-flow credential verification through the same mock-aware
     // dispatcher used by the explicit "Test connection" IPC. In production the
     // mock branch is dormant (env var absent) and behavior is identical to
     // calling testAlpacaConnection directly; in e2e it lets WHEELBASE_MOCK_SETTINGS_CONNECTIONS
     // intercept save-time verification the same way it intercepts the test button.
-    testAlpacaConnection: (input) => runSettingsConnectionTest({ vendor: 'alpaca', ...input })
+    testAlpacaConnection: (input) => runSettingsConnectionTest({ vendor: 'alpaca', ...input }),
+    hasFallbackCredentials: () => loadAlpacaCredentialsFromEnv() !== null
   })
 
-  marketDataFactory.configure({ loadMassiveApiKey })
+  // Market data and broker share the one set of Alpaca credentials the trader saves.
+  // Saved credentials win; .env is the documented dev/CI fallback (see .env.example) and
+  // is what the retired vendor's key used to come from, so it has to keep working.
+  marketDataFactory.configure({
+    loadActiveAlpacaCredentials: () =>
+      settings.loadActiveAlpacaCredentials() ?? loadAlpacaCredentialsFromEnv()
+  })
   brokerFactory.configure({
-    loadActiveAlpacaCredentials: () => settings.loadActiveAlpacaCredentials()
+    loadActiveAlpacaCredentials: () =>
+      settings.loadActiveAlpacaCredentials() ?? loadAlpacaCredentialsFromEnv()
   })
 
   registerPingHandler()
   registerPositionsHandlers(db)
 
-  registerMarketDataHandlers(
+  const marketData = registerMarketDataHandlers(
     () => marketDataFactory.create(),
     () => mainWindow
   )
@@ -187,6 +181,12 @@ app.whenReady().then(() => {
       // detection.
       void scheduler.runNow(DETECT_ASSIGNMENTS_JOB_NAME).catch((err) => {
         logger.warn({ err }, 'failed to resume detect-assignments after broker change')
+      })
+      // Alpaca authenticates the market-data socket once at connect, so the stream has to
+      // be rebuilt for the new keys to take effect. REST calls resolve credentials per
+      // request and need no nudge.
+      void marketData.restartStockQuoteStream().catch((err) => {
+        logger.warn({ err }, 'failed to restart stock quote stream after broker change')
       })
     }
   })

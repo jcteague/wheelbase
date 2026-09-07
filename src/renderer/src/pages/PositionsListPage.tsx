@@ -189,16 +189,13 @@ export function PositionsListPage(): React.JSX.Element {
   )
 
   const { stale, minutesAgo } = quotesQuery
-  const showMassiveSetupBanner =
-    settingsQuery.data?.massive === 'missing' && settingsQuery.data?.activeBrokerEnv === 'none'
   const showNoBrokerBanner = settingsQuery.data?.activeBrokerEnv === 'none'
-  const marketAuthPrompt =
-    quotesQuery.streamError?.code === 'auth_failed'
-      ? 'Massive authentication failed — check your key in Settings'
-      : null
-  // Only surface an auth error when credentials ARE configured but rejected — not when none are saved
-  const brokerAuthPrompt =
-    hasBroker && getErrorCode(statusQuery.error) === 'auth_failed'
+  // Market data and the broker share one set of Alpaca keys, so a rejection from either
+  // source is the same problem and gets a single prompt.
+  // Only surface a broker auth error when credentials ARE configured but rejected — not when none are saved
+  const authPrompt =
+    quotesQuery.streamError?.code === 'auth_failed' ||
+    (hasBroker && getErrorCode(statusQuery.error) === 'auth_failed')
       ? 'Alpaca authentication failed — check your key in Settings'
       : null
 
@@ -232,28 +229,17 @@ export function PositionsListPage(): React.JSX.Element {
         </div>
       )}
 
-      {showMassiveSetupBanner && (
-        <div className="mx-[24px] mt-[16px] rounded-md border border-wb-gold-border bg-wb-gold-dim px-4 py-3 font-wb-mono text-[0.74rem] text-wb-text-primary">
-          Massive is app-provided, and this workspace has not configured it yet. Visit{' '}
-          <a href="#/settings" className="text-wb-gold">
-            Alpaca setup
-          </a>{' '}
-          to connect your broker once market data is available.
-        </div>
-      )}
       {showNoBrokerBanner && (
         <div className="mx-[24px] mt-[16px] rounded-md border border-wb-blue/25 bg-wb-blue-dim px-4 py-3 font-wb-mono text-[0.74rem] text-wb-text-primary">
-          Connect Alpaca to enable broker activity and buying power.
+          <span>Connect Alpaca to enable market data, broker activity and buying power.</span>{' '}
+          <a href="#/settings" className="text-wb-gold">
+            Alpaca setup
+          </a>
         </div>
       )}
-      {marketAuthPrompt && (
+      {authPrompt && (
         <div className="mx-[24px] mt-[16px] rounded-md border border-wb-red/25 bg-wb-red/10 px-4 py-3 font-wb-mono text-[0.74rem] text-wb-red">
-          {marketAuthPrompt}
-        </div>
-      )}
-      {brokerAuthPrompt && (
-        <div className="mx-[24px] mt-[16px] rounded-md border border-wb-red/25 bg-wb-red/10 px-4 py-3 font-wb-mono text-[0.74rem] text-wb-red">
-          {brokerAuthPrompt}
+          {authPrompt}
         </div>
       )}
 

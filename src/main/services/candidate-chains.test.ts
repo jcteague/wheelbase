@@ -134,6 +134,21 @@ describe('pullWatchlistChains', () => {
     )
   })
 
+  // [US-99] With no Alpaca credentials saved, every chain pull raises auth_failed. That has
+  // to roll up to the screener's outage card rather than an empty result set.
+  it('reports provider_unavailable when every ticker fails with auth_failed', async () => {
+    const db = makeTestDb()
+    seedWatchlist(db, ['AAPL', 'MSFT'])
+    const { provider } = makeProvider(() => {
+      throw new MarketDataError('auth_failed', 'Alpaca credentials not configured')
+    })
+
+    const result = await pullWatchlistChains(provider, db, { currentDate: CURRENT_DATE })
+
+    expect(result.status).toBe('provider_unavailable')
+    expect(result.tickers.every((t) => t.status === 'data_unavailable')).toBe(true)
+  })
+
   it('reports provider_unavailable even when one ticker fails at ticker level (delisted 404)', async () => {
     const db = makeTestDb()
     seedWatchlist(db, ['AAPL', 'MSFT', 'XYZ'])

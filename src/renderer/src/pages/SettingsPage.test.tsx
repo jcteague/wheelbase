@@ -46,11 +46,10 @@ const mockUseAlertDefaults = vi.mocked(useAlertDefaults)
 const mockUseSaveAlertDefaults = vi.mocked(useSaveAlertDefaults)
 
 const statusFixture = {
-  massive: 'configured' as const,
+  marketData: 'configured' as const,
   alpacaPaper: 'configured' as const,
   alpacaLive: 'missing' as const,
   activeBrokerEnv: 'paper' as const,
-  massiveLastCheckedAt: '2026-05-28T14:14:00.000Z',
   alpacaPaperAccountNumberMasked: 'PA…ABC',
   alpacaLiveAccountNumberMasked: null
 }
@@ -97,16 +96,52 @@ beforeEach(() => {
   } as unknown as ReturnType<typeof useSaveAlertDefaults>)
 })
 
-it('renders Market Data (Massive) as shared app status with a Test connection button and no key input', () => {
+it('names Alpaca as the market-data source with no key input and no Test connection button', () => {
   render(<SettingsPage />)
 
   const section = screen.getByRole('region', { name: /market data/i })
-  expect(within(section).getByText(/shared app configuration/i)).toBeInTheDocument()
-  expect(within(section).getByRole('button', { name: /test connection/i })).toBeInTheDocument()
-  expect(within(section).queryByLabelText(/api key id/i)).not.toBeInTheDocument()
+  expect(within(section).getByText('Market Data — Alpaca')).toBeInTheDocument()
   expect(
-    within(section).queryByPlaceholderText(/paste your massive api key/i)
+    within(section).getByText(
+      "Stock prices (IEX, real-time), option quotes (indicative) and Greeks come from Alpaca's free data feeds using your active broker credentials."
+    )
+  ).toBeInTheDocument()
+  expect(
+    within(section).queryByRole('button', { name: /test connection/i })
   ).not.toBeInTheDocument()
+  expect(within(section).queryByLabelText(/api key id/i)).not.toBeInTheDocument()
+  expect(within(section).queryByText(/shared app configuration/i)).not.toBeInTheDocument()
+})
+
+it('reports the active broker environment as the market-data credential source', () => {
+  render(<SettingsPage />)
+
+  const section = screen.getByRole('region', { name: /market data/i })
+  expect(within(section).getByText('Using paper credentials')).toBeInTheDocument()
+})
+
+it('prompts to connect Alpaca for market data when no broker environment is active', () => {
+  mockUseSettingsStatus.mockReturnValue({
+    data: {
+      marketData: 'missing' as const,
+      alpacaPaper: 'missing' as const,
+      alpacaLive: 'missing' as const,
+      activeBrokerEnv: 'none' as const,
+      alpacaPaperAccountNumberMasked: null,
+      alpacaLiveAccountNumberMasked: null
+    },
+    isLoading: false,
+    isError: false,
+    error: null
+  } as ReturnType<typeof useSettingsStatus>)
+
+  render(<SettingsPage />)
+
+  const section = screen.getByRole('region', { name: /market data/i })
+  expect(
+    within(section).getByText('Connect Alpaca below to enable market data')
+  ).toBeInTheDocument()
+  expect(within(section).queryByText(/^Using \w+ credentials$/)).not.toBeInTheDocument()
 })
 
 it('renders a Refresh IVR now button in the Market Data section', () => {
@@ -207,14 +242,13 @@ it('renders Broker (Alpaca) with Paper and Live credential cards and the active 
   expect(within(brokerSection).getAllByRole('button', { name: /test connection/i })).toHaveLength(2)
 })
 
-it('empty state banner explains Massive is app-provided and Alpaca setup is optional', () => {
+it('empty state banner asks the trader to connect Alpaca when neither environment is saved', () => {
   mockUseSettingsStatus.mockReturnValue({
     data: {
-      massive: 'missing',
+      marketData: 'missing',
       alpacaPaper: 'missing',
       alpacaLive: 'missing',
       activeBrokerEnv: 'none',
-      massiveLastCheckedAt: null,
       alpacaPaperAccountNumberMasked: null,
       alpacaLiveAccountNumberMasked: null
     },
@@ -226,19 +260,39 @@ it('empty state banner explains Massive is app-provided and Alpaca setup is opti
   render(<SettingsPage />)
 
   expect(
-    screen.getByText(/massive provides data; alpaca provides your account/i)
+    screen.getByText('Connect Alpaca to enable market data, buying power and broker activities.')
   ).toBeInTheDocument()
-  expect(screen.getByText(/both are optional/i)).toBeInTheDocument()
+})
+
+it('hides the empty state banner once either Alpaca environment is configured', () => {
+  mockUseSettingsStatus.mockReturnValue({
+    data: {
+      marketData: 'missing',
+      alpacaPaper: 'missing',
+      alpacaLive: 'configured',
+      activeBrokerEnv: 'none',
+      alpacaPaperAccountNumberMasked: null,
+      alpacaLiveAccountNumberMasked: 'AL…XYZ'
+    },
+    isLoading: false,
+    isError: false,
+    error: null
+  } as ReturnType<typeof useSettingsStatus>)
+
+  render(<SettingsPage />)
+
+  expect(
+    screen.queryByText('Connect Alpaca to enable market data, buying power and broker activities.')
+  ).not.toBeInTheDocument()
 })
 
 it('leaves PAPER unchecked when no broker environment is active so first-time setup can promote paper', () => {
   mockUseSettingsStatus.mockReturnValue({
     data: {
-      massive: 'missing',
+      marketData: 'missing',
       alpacaPaper: 'configured',
       alpacaLive: 'missing',
       activeBrokerEnv: 'none',
-      massiveLastCheckedAt: null,
       alpacaPaperAccountNumberMasked: 'PA…ABC',
       alpacaLiveAccountNumberMasked: null
     },
@@ -251,33 +305,6 @@ it('leaves PAPER unchecked when no broker environment is active so first-time se
 
   expect(screen.getByRole('radio', { name: /paper/i })).not.toBeChecked()
   expect(screen.getByRole('radio', { name: /live/i })).not.toBeChecked()
-})
-
-it('renders exact Massive auth and rate-limit messages in red', async () => {
-  const testConnection = vi
-    .fn()
-    .mockResolvedValueOnce({
-      ok: false,
-      errorCode: 'auth_failed',
-      message: 'Authentication failed (401)'
-    })
-    .mockResolvedValueOnce({
-      ok: false,
-      errorCode: 'rate_limited',
-      message: 'Rate limited — please try again'
-    })
-  mockUseTestSettingsConnection.mockReturnValue({
-    mutateAsync: testConnection
-  } as unknown as ReturnType<typeof useTestSettingsConnection>)
-
-  render(<SettingsPage />)
-
-  const section = screen.getByRole('region', { name: /market data/i })
-  fireEvent.click(within(section).getByRole('button', { name: /^test connection$/i }))
-  expect(await screen.findByText('Authentication failed (401)')).toHaveClass('text-wb-red')
-
-  fireEvent.click(within(section).getByRole('button', { name: /^test connection$/i }))
-  expect(await screen.findByText('Rate limited — please try again')).toHaveClass('text-wb-red')
 })
 
 it('renders the exact Alpaca verified result for paper credentials', async () => {
@@ -431,24 +458,6 @@ it('surfaces save failures from the Alpaca credential form', async () => {
   expect(await within(paperCard).findByText('Authentication failed (401)')).toHaveClass(
     'text-wb-red'
   )
-})
-
-it('Massive Test Connection surfaces IPC-level failures when mutateAsync rejects', async () => {
-  const testConnection = vi.fn().mockRejectedValue(
-    apiError(502, {
-      detail: [{ field: '__root__', code: 'unknown', message: 'IPC channel unavailable' }]
-    })
-  )
-  mockUseTestSettingsConnection.mockReturnValue({
-    mutateAsync: testConnection
-  } as unknown as ReturnType<typeof useTestSettingsConnection>)
-
-  render(<SettingsPage />)
-
-  const section = screen.getByRole('region', { name: /market data/i })
-  fireEvent.click(within(section).getByRole('button', { name: /^test connection$/i }))
-
-  expect(await within(section).findByText('IPC channel unavailable')).toHaveClass('text-wb-red')
 })
 
 it('Alpaca paper Test Connection (unsaved credentials) surfaces IPC-level failures', async () => {

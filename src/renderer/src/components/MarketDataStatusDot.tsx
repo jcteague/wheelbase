@@ -1,14 +1,16 @@
 type MarketDataStatusDotProps = {
-  massive: 'configured' | 'missing'
+  marketData: 'configured' | 'missing'
 }
 
-export function MarketDataStatusDot({ massive }: MarketDataStatusDotProps): React.JSX.Element {
-  const connected = massive === 'configured'
+export function MarketDataStatusDot({ marketData }: MarketDataStatusDotProps): React.JSX.Element {
+  const connected = marketData === 'configured'
 
   return (
     <span
       data-testid="market-data-status-dot"
-      title={connected ? 'Massive: connected' : 'Massive: not configured'}
+      title={
+        connected ? 'Market data: connected via Alpaca' : 'Market data: connect Alpaca in Settings'
+      }
       className="inline-flex items-center gap-[5px] font-wb-mono text-[0.58rem] tracking-[0.1em] text-wb-text-muted"
     >
       <span

@@ -138,6 +138,38 @@ describe('US-66: display ranked screener results', () => {
     expect(await page.locator('[data-testid^="screener-row-"]').count()).toBe(0)
   })
 
+  // [US-99 AC9] With credentials saved, a failed refresh is a genuine outage and the card
+  // names the vendor that failed.
+  it('Screener outage card names Alpaca', async () => {
+    // The launch harness preseeds an active paper environment, so credentials are present
+    // and a failed refresh is a genuine outage.
+    const page = await launch('wb-e2e-us99-outage-copy', { marketDataError: 'auth_failed' })
+
+    const card = page.locator('[data-testid="screener-unavailable"]')
+    await card.waitFor()
+    expect(await card.textContent()).toContain(
+      "Alpaca market data couldn't be reached on the last refresh. Candidates can't be scored until chain data is available."
+    )
+  })
+
+  // [US-99] Without credentials Alpaca was never contacted, so the card must send the
+  // trader to Settings rather than report an outage.
+  it('Screener names the missing connection when Alpaca is not configured', async () => {
+    const page = await launch('wb-e2e-us99-not-connected', {
+      marketDataError: 'auth_failed',
+      withoutBrokerCredentials: true
+    })
+
+    const card = page.locator('[data-testid="screener-unavailable"]')
+    await card.waitFor()
+    const text = await card.textContent()
+    expect(text).toContain('Market data not connected')
+    expect(text).toContain(
+      'Connect Alpaca in Settings to score candidates — no market-data credentials are saved yet.'
+    )
+    expect(text).not.toContain("couldn't be reached")
+  })
+
   it('stale marks are flagged', async () => {
     const page = await launch('wb-e2e-us66-stale', { marketStatus: CLOSED_SESSION })
 

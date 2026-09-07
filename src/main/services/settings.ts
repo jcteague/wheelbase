@@ -9,11 +9,10 @@ export type ActiveBrokerEnvironment = BrokerEnvironment | 'none'
 export type CredentialState = 'configured' | 'missing'
 
 export type CredentialStatus = {
-  massive: CredentialState
+  marketData: CredentialState
   alpacaPaper: CredentialState
   alpacaLive: CredentialState
   activeBrokerEnv: ActiveBrokerEnvironment
-  massiveLastCheckedAt: string | null
   alpacaPaperAccountNumberMasked: string | null
   alpacaLiveAccountNumberMasked: string | null
 }
@@ -70,9 +69,11 @@ type SafeStorageLike = {
 type SettingsServiceOptions = {
   db: Database.Database
   safeStorage: SafeStorageLike
-  loadMassiveApiKey: () => string
   testAlpacaConnection: (input: AlpacaCredentials) => Promise<TestConnectionResult>
   now?: () => string
+  /** Whether credentials exist outside the database (the documented .env dev fallback).
+   *  Keeps this service DB-facing: the caller owns where "outside" is. */
+  hasFallbackCredentials?: () => boolean
 }
 
 type CredentialRow = {
@@ -150,9 +151,9 @@ function getEffectiveActiveEnvironment(db: Database.Database): ActiveBrokerEnvir
 export function createSettingsService({
   db,
   safeStorage,
-  loadMassiveApiKey,
   testAlpacaConnection,
-  now = () => new Date().toISOString()
+  now = () => new Date().toISOString(),
+  hasFallbackCredentials = () => false
 }: SettingsServiceOptions): SettingsService {
   function getCredentialStatus(): CredentialStatus {
     const paper = getCredentialRow(db, 'paper')
@@ -160,11 +161,12 @@ export function createSettingsService({
     const activeBrokerEnv = getEffectiveActiveEnvironment(db)
 
     return {
-      massive: loadMassiveApiKey().trim() ? 'configured' : 'missing',
+      // Market data runs on the active saved credentials, or on the .env fallback the
+      // main process supplies — reporting 'missing' while quotes flow would be a lie.
+      marketData: activeBrokerEnv !== 'none' || hasFallbackCredentials() ? 'configured' : 'missing',
       alpacaPaper: configured(paper),
       alpacaLive: configured(live),
       activeBrokerEnv,
-      massiveLastCheckedAt: null,
       alpacaPaperAccountNumberMasked: paper?.account_number_masked ?? null,
       alpacaLiveAccountNumberMasked: live?.account_number_masked ?? null
     }

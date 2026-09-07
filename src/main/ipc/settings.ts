@@ -104,9 +104,7 @@ export function registerSettingsHandlers({
     handleIpcCall('settings_test_connection_unhandled_error', async () => {
       const parsed = TestConnectionPayloadSchema.parse(payload)
       logger.debug(
-        parsed.vendor === 'alpaca'
-          ? { vendor: parsed.vendor, environment: parsed.environment }
-          : { vendor: parsed.vendor },
+        { vendor: parsed.vendor, environment: parsed.environment },
         'settings_test_connection_requested'
       )
       return { test: await testConnection(parsed) }

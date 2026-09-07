@@ -14,7 +14,7 @@ function createSafeStorageMock(): SafeStorageLike {
   }
 }
 
-function createService(options: { massiveApiKey?: string } = {}): {
+function createService(overrides: { hasFallbackCredentials?: () => boolean } = {}): {
   db: ReturnType<typeof makeTestDb>
   safeStorage: SafeStorageLike
   service: SettingsService
@@ -24,7 +24,7 @@ function createService(options: { massiveApiKey?: string } = {}): {
   const service = createSettingsService({
     db,
     safeStorage,
-    loadMassiveApiKey: () => options.massiveApiKey ?? 'shared-massive-key',
+    ...overrides,
     testAlpacaConnection: vi.fn().mockResolvedValue({
       ok: true,
       vendor: 'alpaca',
@@ -56,7 +56,6 @@ describe('settings service — Alpaca credential persistence', () => {
     const status = service.getCredentialStatus()
 
     expect(status).toMatchObject({
-      massive: 'configured',
       alpacaPaper: 'configured',
       alpacaLive: 'configured',
       alpacaPaperAccountNumberMasked: 'PA…ABC',
@@ -127,7 +126,6 @@ describe('settings service — Alpaca credential persistence', () => {
       createSettingsService({
         db,
         safeStorage,
-        loadMassiveApiKey: () => 'shared-massive-key',
         testAlpacaConnection: vi.fn().mockResolvedValue({
           ok: true,
           vendor: 'alpaca',
@@ -150,12 +148,66 @@ describe('settings service — Alpaca credential persistence', () => {
     expect(second.getCredentialStatus().activeBrokerEnv).toBe('paper')
   })
 
-  it('reads Massive status from shared app configuration without creating a credential row', () => {
-    const { db, service } = createService({ massiveApiKey: 'shared-massive-key' })
+  it('reports marketData as configured when the active broker environment has credentials', () => {
+    const { service } = createService()
 
-    expect(service.getCredentialStatus().massive).toBe('configured')
+    service.saveAlpacaCredentials({
+      environment: 'paper',
+      keyId: 'PKPAPER123',
+      secret: 'paper-secret',
+      accountNumberMasked: 'PA…ABC'
+    })
+    service.setActiveBrokerEnvironment({ environment: 'paper' })
 
-    const rows = db.prepare(`SELECT vendor FROM credential_settings WHERE vendor = 'massive'`).all()
-    expect(rows).toHaveLength(0)
+    expect(service.getCredentialStatus().marketData).toBe('configured')
+  })
+
+  it('reports marketData as missing when no broker environment is active', () => {
+    const { service } = createService()
+
+    service.saveAlpacaCredentials({
+      environment: 'paper',
+      keyId: 'PKPAPER123',
+      secret: 'paper-secret',
+      accountNumberMasked: 'PA…ABC'
+    })
+
+    const status = service.getCredentialStatus()
+    expect(status.activeBrokerEnv).toBe('none')
+    expect(status.marketData).toBe('missing')
+  })
+
+  // [US-99] .env credentials are a real, documented source, so a status that ignored them
+  // would report "not connected" while quotes were flowing.
+  it('reports marketData configured when only fallback credentials exist', () => {
+    const { service } = createService({ hasFallbackCredentials: () => true })
+
+    const status = service.getCredentialStatus()
+
+    expect(status.activeBrokerEnv).toBe('none')
+    expect(status.marketData).toBe('configured')
+  })
+
+  it('reports marketData missing when there are no saved and no fallback credentials', () => {
+    const { service } = createService({ hasFallbackCredentials: () => false })
+
+    expect(service.getCredentialStatus().marketData).toBe('missing')
+  })
+
+  // [US-99] Alpaca is the only vendor: the status document must carry no per-vendor
+  // market-data field beyond the derived `marketData` flag.
+  it('exposes exactly the Alpaca-only credential status fields', () => {
+    const { service } = createService()
+
+    const status = service.getCredentialStatus()
+
+    expect(Object.keys(status).sort()).toEqual([
+      'activeBrokerEnv',
+      'alpacaLive',
+      'alpacaLiveAccountNumberMasked',
+      'alpacaPaper',
+      'alpacaPaperAccountNumberMasked',
+      'marketData'
+    ])
   })
 })

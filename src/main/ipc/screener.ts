@@ -18,8 +18,9 @@ export function registerScreenerIpc({
   getProvider: () => MarketDataProvider
 }): void {
   // No payload, so no Zod request schema — see plans/us-65/contracts/screener-results.md.
-  // The provider resolves inside the service so an unconfigured provider surfaces as
-  // the modelled provider_unavailable state, not a generic internal_error.
+  // [US-99] Construction never fails now: with no Alpaca credentials the chain pull raises
+  // auth_failed per ticker, which rolls up to the modelled provider_unavailable state rather
+  // than a generic internal_error.
   ipcMain.handle('screener:results', () =>
     handleIpcCall('screener_results_error', () => screenWatchlistCandidates(getProvider, db))
   )

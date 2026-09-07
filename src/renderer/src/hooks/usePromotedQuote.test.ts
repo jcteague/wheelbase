@@ -89,7 +89,9 @@ describe('usePromotedQuote', () => {
     const queryClient = newClient()
     mockGetOptionSnapshots.mockResolvedValue({
       ok: false,
-      errors: [{ field: '__root__', code: 'provider_unavailable', message: 'Massive is down' }]
+      errors: [
+        { field: '__root__', code: 'provider_unavailable', message: 'Alpaca market data is down' }
+      ]
     })
 
     const { result } = renderHook(() => usePromotedQuote(AAPL), {

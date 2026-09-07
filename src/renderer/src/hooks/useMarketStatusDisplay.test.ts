@@ -13,7 +13,7 @@ const mockUseSettingsStatus = vi.mocked(useSettingsStatus)
 describe('useMarketStatusDisplay', () => {
   beforeEach(() => {
     mockUseSettingsStatus.mockReturnValue({
-      data: { activeBrokerEnv: 'alpaca_paper', massive: 'missing' },
+      data: { activeBrokerEnv: 'alpaca_paper', marketData: 'configured' },
       isLoading: false,
       isError: false
     } as unknown as ReturnType<typeof useSettingsStatus>)
@@ -32,7 +32,7 @@ describe('useMarketStatusDisplay', () => {
 
   it('passes hasBroker=false to useMarketStatus when no broker is configured', () => {
     mockUseSettingsStatus.mockReturnValue({
-      data: { activeBrokerEnv: 'none', massive: 'missing' },
+      data: { activeBrokerEnv: 'none', marketData: 'missing' },
       isLoading: false,
       isError: false
     } as unknown as ReturnType<typeof useSettingsStatus>)
@@ -64,7 +64,7 @@ describe('useMarketStatusDisplay', () => {
   it('exposes the underlying settings and status queries', () => {
     const { result } = renderHook(() => useMarketStatusDisplay())
 
-    expect(result.current.settingsQuery.data?.massive).toBe('missing')
+    expect(result.current.settingsQuery.data?.marketData).toBe('configured')
     expect(result.current.statusQuery.data?.session).toBe('regular')
   })
 })

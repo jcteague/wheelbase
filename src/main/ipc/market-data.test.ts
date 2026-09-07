@@ -579,6 +579,87 @@ describe('registerMarketDataHandlers', () => {
     expect(result).toMatchObject({ ok: true, snapshots: [AAPL_SNAPSHOT], nextCursor: null })
   })
 
+  // --- credential-change restart (US-99) ---
+
+  it('returns a restartStockQuoteStream hook', async () => {
+    const { registerMarketDataHandlers } = await import('./market-data')
+
+    const registered = registerMarketDataHandlers(() => provider, getWindow)
+
+    expect(typeof registered.restartStockQuoteStream).toBe('function')
+  })
+
+  it('restartStockQuoteStream re-drives provider.stream with the last ticker set', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerMarketDataHandlers } = await import('./market-data')
+
+    const subject = new Subject<StreamEvent<StockQuote | OptionSnapshot>>()
+    provider.stream.mockReturnValue(subject.asObservable())
+
+    const registered = registerMarketDataHandlers(() => provider, getWindow)
+    const handler = getHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'market-data:set-stock-quote-tickers'
+    )
+    await handler(null, { tickers: ['AAPL'] })
+    provider.stream.mockClear()
+
+    await registered.restartStockQuoteStream()
+
+    expect(provider.disconnect).toHaveBeenCalled()
+    expect(provider.stream).toHaveBeenCalledWith('stockQuotes', ['AAPL'])
+  })
+
+  it('ticks still reach the renderer after a restart', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerMarketDataHandlers } = await import('./market-data')
+
+    const subject = new Subject<StreamEvent<StockQuote | OptionSnapshot>>()
+    provider.stream.mockReturnValue(subject.asObservable())
+
+    const registered = registerMarketDataHandlers(() => provider, getWindow)
+    const handler = getHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'market-data:set-stock-quote-tickers'
+    )
+    await handler(null, { tickers: ['AAPL'] })
+    await registered.restartStockQuoteStream()
+    mockWebContents.send.mockClear()
+
+    subject.next({
+      feed: 'stockQuotes',
+      symbol: 'AAPL',
+      data: AAPL_QUOTE,
+      timestamp: AAPL_QUOTE.timestamp
+    })
+
+    expect(mockWebContents.send).toHaveBeenCalledWith(
+      'market-data:stock-quote',
+      expect.objectContaining({ ticker: 'AAPL' })
+    )
+  })
+
+  it('test:trigger-stream-error forwards the payload to the renderer', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerMarketDataHandlers } = await import('./market-data')
+
+    registerMarketDataHandlers(() => provider, getWindow)
+    const handler = getHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'test:trigger-stream-error'
+    )
+
+    const streamError = {
+      feed: 'stockQuotes',
+      code: 'auth_failed',
+      message: 'Alpaca authentication failed — check your key in Settings',
+      reconnectable: false
+    }
+    await handler(null, streamError)
+
+    expect(mockWebContents.send).toHaveBeenCalledWith('market-data:stream-error', streamError)
+  })
+
   // --- guard: broker channels must NOT be registered here ---
 
   it('market-data namespace does not register :activities, :account, or :market-status handlers', async () => {

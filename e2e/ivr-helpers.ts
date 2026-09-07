@@ -58,6 +58,8 @@ export type IvrLaunchOpts = {
   marketStatus?: MarketStatusFixture
   /** ISO timestamp the collector's trading-day check should treat as "now". */
   fakeNow?: string
+  /** Launch with no Alpaca credentials — see LaunchOpts. */
+  withoutBrokerCredentials?: boolean
 }
 
 export function buildIvrLaunchEnv(
@@ -67,7 +69,10 @@ export function buildIvrLaunchEnv(
   // Reuse the shared launch-env builder for the common keys (DB path, FAKE_BROKER,
   // FAKE_MARKET_DATA, NODE_ENV, PRESEED, FAKE_MARKET_STATUS), then layer on the
   // IVR-specific seam vars.
-  const env = buildLaunchEnv(dbPath, { marketStatus: opts.marketStatus ?? REGULAR_SESSION })
+  const env = buildLaunchEnv(dbPath, {
+    marketStatus: opts.marketStatus ?? REGULAR_SESSION,
+    withoutBrokerCredentials: opts.withoutBrokerCredentials
+  })
   // Presence (not value) switches the ivr-collect handler to the injected fake
   // fetcher; per-ticker outcomes are set later via _test:ivr-set-outcomes.
   env.WHEELBASE_FAKE_IVR = '{}'

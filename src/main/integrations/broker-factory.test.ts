@@ -4,6 +4,7 @@ import { AlpacaBrokerProvider } from './alpaca-broker'
 import { FakeBrokerProvider } from './fake-broker'
 import { BrokerError } from './broker-provider'
 import { marketDataFactory } from './market-data-factory'
+import { loadAlpacaCredentialsFromEnv } from './alpaca-credentials'
 
 describe('brokerFactory', () => {
   beforeEach(() => {
@@ -12,18 +13,8 @@ describe('brokerFactory', () => {
     delete process.env.ALPACA_PAPER
     delete process.env.FAKE_BROKER
     brokerFactory.recreate()
-    brokerFactory.configure({
-      loadActiveAlpacaCredentials: () => {
-        const keyId = process.env.ALPACA_KEY_ID
-        const secret = process.env.ALPACA_SECRET_KEY
-        if (!keyId || !secret) return null
-        return {
-          keyId,
-          secret,
-          environment: process.env.ALPACA_PAPER === 'true' ? 'paper' : 'live'
-        }
-      }
-    })
+    // Restores the factory's own default loader, which per-test configure() calls replace.
+    brokerFactory.configure({ loadActiveAlpacaCredentials: loadAlpacaCredentialsFromEnv })
   })
 
   it('returns AlpacaBrokerProvider for persisted active paper credentials', () => {

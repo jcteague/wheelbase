@@ -81,7 +81,7 @@ describe('US-64 pullWatchlistChains — acceptance criteria', () => {
       expect(strike.delta).toBe('-0.3200')
       expect(strike.openInterest).toBe(4211)
       expect(strike.volume).toBe(875)
-      // And each strike carries the quote timestamp from Massive.
+      // And each strike carries the quote timestamp from the provider.
       expect(strike.timestamp).toBe('2026-07-23T15:30:00Z')
     }
   })
@@ -110,7 +110,7 @@ describe('US-64 pullWatchlistChains — acceptance criteria', () => {
     const db = makeTestDb()
     seedWatchlist(db, ['AAPL', 'MSFT', 'XYZ'])
     const provider = scriptProvider(() => {
-      throw new MarketDataError('network_error', 'Massive unreachable')
+      throw new MarketDataError('network_error', 'market data unreachable')
     })
 
     const result = await pullWatchlistChains(provider, db, { currentDate: CURRENT_DATE })

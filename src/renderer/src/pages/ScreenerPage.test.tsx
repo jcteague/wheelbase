@@ -8,6 +8,7 @@ import type { ScreeningCriteria } from '../api/screening-criteria'
 import type { MarketStatusDisplay } from '../components/MarketStatusPill'
 import type { WatchlistEntry } from '../api/watchlist'
 import { useMarketStatusDisplay } from '../hooks/useMarketStatusDisplay'
+import { useSettingsStatus } from '../hooks/useSettings'
 import { useSaveScreeningCriteria, useScreeningCriteria } from '../hooks/useScreeningCriteria'
 import { useWatchlist } from '../hooks/useWatchlist'
 import { parsePromotedParams } from '../lib/promote'
@@ -20,6 +21,8 @@ vi.mock('../hooks/useScreeningCriteria')
 // [US-68] The promote click reads the ticker's watchlist note to seed the thesis,
 // and navigates to the pre-filled new-wheel form.
 vi.mock('../hooks/useWatchlist')
+// [US-99] The outage card distinguishes "Alpaca not connected yet" from "Alpaca is down".
+vi.mock('../hooks/useSettings')
 // Hoisted so the factory can close over the spy — `vi.mock` runs before module init.
 const { mockNavigate } = vi.hoisted(() => ({ mockNavigate: vi.fn() }))
 vi.mock('wouter', () => ({ useLocation: () => ['/screener', mockNavigate] }))
@@ -28,6 +31,7 @@ const mockUseWatchlist = vi.mocked(useWatchlist)
 const mockUseMarketStatusDisplay = vi.mocked(useMarketStatusDisplay)
 const mockUseScreeningCriteria = vi.mocked(useScreeningCriteria)
 const mockUseSaveScreeningCriteria = vi.mocked(useSaveScreeningCriteria)
+const mockUseSettingsStatus = vi.mocked(useSettingsStatus)
 const mockResults = vi.fn()
 const mockSaveMutate = vi.fn()
 
@@ -239,6 +243,13 @@ beforeEach(() => {
   mockResults.mockReset()
   mockSaveMutate.mockReset()
   mockNavigate.mockReset()
+  // Credentials present by default; the two US-99 cases override to 'missing'.
+  mockUseSettingsStatus.mockReturnValue({
+    data: { marketData: 'configured' },
+    isLoading: false,
+    isError: false,
+    error: null
+  } as ReturnType<typeof useSettingsStatus>)
   setMarketDisplay('LIVE')
   setCriteria(PERSISTED_CRITERIA)
   setWatchlist([])
@@ -356,9 +367,48 @@ describe('ScreenerPage — provider outage', () => {
     const unavailable = await screen.findByTestId('screener-unavailable')
     expect(unavailable).toHaveAttribute('data-tone', 'error')
     expect(unavailable).toHaveTextContent('Market data unavailable')
+    expect(unavailable).toHaveTextContent(
+      "Alpaca market data couldn't be reached on the last refresh. Candidates can't be scored until chain data is available."
+    )
     expect(screen.queryByTestId('screener-empty')).not.toBeInTheDocument()
     expect(screen.queryByTestId('screener-excluded-toggle')).not.toBeInTheDocument()
     expect(screen.queryByTestId('screener-row-AAPL')).not.toBeInTheDocument()
+  })
+
+  // [US-99] With no keys saved the vendor was never contacted, so "couldn't be reached"
+  // would be a lie — and it points the trader at an outage instead of at Settings.
+  it('tells the trader to connect Alpaca when no credentials are configured', async () => {
+    mockUseSettingsStatus.mockReturnValue({
+      data: { marketData: 'missing' },
+      isLoading: false,
+      isError: false,
+      error: null
+    } as ReturnType<typeof useSettingsStatus>)
+
+    renderPage()
+
+    const unavailable = await screen.findByTestId('screener-unavailable')
+    expect(unavailable).toHaveTextContent('Market data not connected')
+    expect(unavailable).toHaveTextContent(
+      'Connect Alpaca in Settings to score candidates — no market-data credentials are saved yet.'
+    )
+    expect(unavailable).not.toHaveTextContent("couldn't be reached")
+  })
+
+  it('offers Retry refresh only when credentials exist to retry with', async () => {
+    mockUseSettingsStatus.mockReturnValue({
+      data: { marketData: 'missing' },
+      isLoading: false,
+      isError: false,
+      error: null
+    } as ReturnType<typeof useSettingsStatus>)
+
+    renderPage()
+
+    await screen.findByTestId('screener-unavailable')
+    expect(screen.queryByRole('button', { name: 'Retry refresh' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Open Settings' }))
+    expect(mockNavigate).toHaveBeenCalledWith('/settings')
   })
 
   // An outage empties ranked and excluded without emptying the watchlist, so the

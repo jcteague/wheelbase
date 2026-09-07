@@ -493,16 +493,14 @@ export function SettingsPage(): React.JSX.Element {
   const setActiveBrokerEnvironment = useSetActiveBrokerEnvironment()
   const testConnection = useTestSettingsConnection()
   const testStoredAlpacaConnection = useTestStoredAlpacaConnection()
-  const [massiveMessage, setMassiveMessage] = useState<ConnectionMessage | null>(null)
   const [ivrMessage, setIvrMessage] = useState<ConnectionMessage | null>(null)
   const [showLiveDialog, setShowLiveDialog] = useState(false)
 
   const activeStatus = status ?? {
-    massive: 'missing' as CredentialState,
+    marketData: 'missing' as CredentialState,
     alpacaPaper: 'missing' as CredentialState,
     alpacaLive: 'missing' as CredentialState,
     activeBrokerEnv: 'none' as const,
-    massiveLastCheckedAt: null,
     alpacaPaperAccountNumberMasked: null,
     alpacaLiveAccountNumberMasked: null
   }
@@ -510,26 +508,8 @@ export function SettingsPage(): React.JSX.Element {
   const openPositionCount =
     positions?.filter((position) => position.status === 'ACTIVE').length ?? 0
   const isEmptyState =
-    activeStatus.massive === 'missing' &&
-    activeStatus.alpacaPaper === 'missing' &&
-    activeStatus.alpacaLive === 'missing'
+    activeStatus.alpacaPaper === 'missing' && activeStatus.alpacaLive === 'missing'
   const hasLiveCredentials = activeStatus.alpacaLive === 'configured'
-
-  async function handleMassiveTestConnection(): Promise<void> {
-    try {
-      const result = await testConnection.mutateAsync({ vendor: 'massive' })
-      if (result.ok && result.vendor === 'massive') {
-        setMassiveMessage({ tone: 'success', text: 'Connected' })
-        return
-      }
-      if (result.ok) {
-        return
-      }
-      setMassiveMessage({ tone: 'error', text: result.message })
-    } catch (error) {
-      setMassiveMessage({ tone: 'error', text: getApiErrorMessage(error) })
-    }
-  }
 
   async function handleCollectIvrNow(): Promise<void> {
     try {
@@ -563,10 +543,7 @@ export function SettingsPage(): React.JSX.Element {
         <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-5 px-6 py-6">
           {isEmptyState && (
             <AlertBox variant="warning">
-              Connect <strong>Massive</strong> to enable live market prices, Greeks, and option
-              chains. Connect <strong>Alpaca</strong> to track buying power and broker activities.
-              <strong> Massive provides data; Alpaca provides your account.</strong> Both are
-              optional — only Massive is required to view market data.
+              Connect Alpaca to enable market data, buying power and broker activities.
             </AlertBox>
           )}
 
@@ -577,18 +554,19 @@ export function SettingsPage(): React.JSX.Element {
           >
             <div className="border-b border-wb-border px-5 py-4">
               <div className="font-wb-mono text-[0.74rem] font-semibold uppercase tracking-[0.12em] text-wb-text-secondary">
-                Market Data — Massive
+                Market Data — Alpaca
               </div>
             </div>
             <div className="flex flex-col gap-4 px-5 py-5">
               <p className="m-0 font-wb-mono text-[0.72rem] leading-6 text-wb-text-secondary">
-                Shared app configuration — Massive is app-provided and not stored in settings.
+                Stock prices (IEX, real-time), option quotes (indicative) and Greeks come from
+                Alpaca&apos;s free data feeds using your active broker credentials.
               </p>
               <div className="flex items-center justify-between gap-4">
                 <span className="font-wb-mono text-[0.68rem] text-wb-text-muted">
-                  {activeStatus.massiveLastCheckedAt
-                    ? 'Last verified via shared Massive configuration'
-                    : 'Shared market-data credentials are configured outside this page'}
+                  {activeStatus.activeBrokerEnv === 'none'
+                    ? 'Connect Alpaca below to enable market data'
+                    : `Using ${activeStatus.activeBrokerEnv} credentials`}
                 </span>
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   <button
@@ -599,17 +577,9 @@ export function SettingsPage(): React.JSX.Element {
                   >
                     {collectIvrNow.isPending ? 'Refreshing IVR…' : 'Refresh IVR now'}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleMassiveTestConnection()}
-                    className="rounded-md border border-wb-border px-3 py-2 font-wb-mono text-xs font-semibold tracking-[0.06em] text-wb-text-secondary"
-                  >
-                    Test connection
-                  </button>
                 </div>
               </div>
               {ivrMessage && <MessageText message={ivrMessage} />}
-              {massiveMessage && <MessageText message={massiveMessage} />}
             </div>
           </section>
 

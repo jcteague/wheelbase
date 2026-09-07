@@ -14,6 +14,7 @@ import { LoadingState } from '../components/ui/LoadingState'
 import { useMarketStatusDisplay } from '../hooks/useMarketStatusDisplay'
 import { useScreenerResults } from '../hooks/useScreenerResults'
 import { useScreeningCriteria } from '../hooks/useScreeningCriteria'
+import { useSettingsStatus } from '../hooks/useSettings'
 import { useWatchlist } from '../hooks/useWatchlist'
 import { buildPromoteSearch } from '../lib/promote'
 import { fmtQuoteTime } from '../lib/screener-format'
@@ -69,6 +70,9 @@ type ScreenerResultsBodyProps = {
   /** The criteria sheet cannot open, so its entry point must not invite a click. */
   adjustDisabled: boolean
   onPromote: (candidate: ScreenerCandidate) => void
+  /** Drives which unavailable card the outage state shows. */
+  marketDataConfigured: boolean
+  onOpenSettings: () => void
 }
 
 function ScreenerResultsBody({
@@ -77,17 +81,30 @@ function ScreenerResultsBody({
   onRetry,
   onAdjustCriteria,
   adjustDisabled,
-  onPromote
+  onPromote,
+  marketDataConfigured,
+  onOpenSettings
 }: ScreenerResultsBodyProps): React.JSX.Element {
   if (results.status === 'provider_unavailable') {
-    return (
+    // With no credentials saved, Alpaca was never contacted — telling the trader it
+    // "couldn't be reached" would point them at an outage instead of at Settings.
+    return marketDataConfigured ? (
       <ScreenerStateCard
         data-testid="screener-unavailable"
         tone="error"
         title="Market data unavailable"
-        body="Massive couldn't be reached on the last refresh. Candidates can't be scored until chain data is available."
+        body="Alpaca market data couldn't be reached on the last refresh. Candidates can't be scored until chain data is available."
         actionLabel="Retry refresh"
         onAction={onRetry}
+      />
+    ) : (
+      <ScreenerStateCard
+        data-testid="screener-unavailable"
+        tone="error"
+        title="Market data not connected"
+        body="Connect Alpaca in Settings to score candidates — no market-data credentials are saved yet."
+        actionLabel="Open Settings"
+        onAction={onOpenSettings}
       />
     )
   }
@@ -141,6 +158,8 @@ export function ScreenerPage(): React.JSX.Element {
   const { display } = useMarketStatusDisplay()
   const { data: criteria, isError: isCriteriaError } = useScreeningCriteria()
   const { data: watchlist } = useWatchlist()
+  const { data: credentialStatus } = useSettingsStatus()
+  const marketDataConfigured = credentialStatus?.marketData === 'configured'
   const [, navigate] = useLocation()
   const [sheetOpen, setSheetOpen] = useState(false)
   const [savedConfirmed, setSavedConfirmed] = useState(false)
@@ -225,6 +244,8 @@ export function ScreenerPage(): React.JSX.Element {
         {data && (
           <ScreenerResultsBody
             results={data}
+            marketDataConfigured={marketDataConfigured}
+            onOpenSettings={() => navigate('/settings')}
             staleQuoteTime={staleQuoteTime}
             onRetry={() => void refetch()}
             onAdjustCriteria={openSheet}

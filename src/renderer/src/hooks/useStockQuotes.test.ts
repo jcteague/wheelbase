@@ -372,7 +372,7 @@ describe('useStockQuotes', () => {
       onStreamErrorCallback?.({
         feed: 'stockQuotes',
         code: 'auth_failed',
-        message: 'Massive authentication failed — check your key in Settings',
+        message: 'Alpaca authentication failed — check your key in Settings',
         reconnectable: false
       })
     })

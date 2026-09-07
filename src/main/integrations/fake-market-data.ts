@@ -1,5 +1,6 @@
 import { Observable, Subject } from 'rxjs'
 import { filter } from 'rxjs/operators'
+import { parseOccSymbol } from '../core/option-symbol'
 import {
   MarketDataError,
   type MarketDataErrorCode,
@@ -25,32 +26,6 @@ function buildMockMap<T>(envVar: string, keys: string[]): Map<string, T> {
     if (all[key]) result.set(key, all[key])
   }
   return result
-}
-
-// OCC symbol: <root><YY><MM><DD><P|C><strike × 1000, 8 digits> — e.g. AAPL260620P00180000.
-const OCC_SYMBOL = /^([A-Z]+)(\d{2})(\d{2})(\d{2})([PC])(\d{8})$/
-
-type OccIdentity = {
-  underlying: string
-  quoteFields: Omit<OptionChainQuote, keyof OptionSnapshot>
-}
-
-// Fixtures are keyed by OCC symbol and may hold bare OptionSnapshots — every e2e spec
-// predating the chain endpoint seeds them that way — so per-strike identity is derived
-// from the key rather than assumed present on the value.
-function parseOccSymbol(symbol: string): OccIdentity | null {
-  const match = symbol.match(OCC_SYMBOL)
-  if (!match) return null
-  const [, underlying, year, month, day, type, strikeThousandths] = match
-  return {
-    underlying,
-    quoteFields: {
-      contractId: symbol,
-      strike: (Number(strikeThousandths) / 1000).toFixed(4),
-      expiration: `20${year}-${month}-${day}`,
-      contractType: type === 'P' ? 'put' : 'call'
-    }
-  }
 }
 
 /**
@@ -87,9 +62,14 @@ export class FakeMarketDataProvider implements MarketDataProvider {
     if (!raw) return []
     const all = JSON.parse(raw) as Record<string, OptionSnapshot | Partial<OptionChainQuote>>
     return Object.entries(all).flatMap(([symbol, snapshot]) => {
-      const occ = parseOccSymbol(symbol)
-      if (!occ || occ.underlying !== filter.underlying) return []
-      const quote: OptionChainQuote = { ...occ.quoteFields, ...(snapshot as OptionChainQuote) }
+      // Fixtures are keyed by OCC symbol and may hold bare OptionSnapshots — every e2e spec
+      // predating the chain endpoint seeds them that way — so per-strike identity is derived
+      // from the key rather than assumed present on the value.
+      const identity = parseOccSymbol(symbol)
+      if (!identity) return []
+      const { underlying, ...quoteFields } = identity
+      if (underlying !== filter.underlying) return []
+      const quote: OptionChainQuote = { ...quoteFields, ...(snapshot as OptionChainQuote) }
       if (filter.type && quote.contractType !== filter.type) return []
       if (filter.expirationFrom && quote.expiration < filter.expirationFrom) return []
       if (filter.expirationTo && quote.expiration > filter.expirationTo) return []

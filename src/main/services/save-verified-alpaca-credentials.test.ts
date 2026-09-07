@@ -5,11 +5,10 @@ import type { AlpacaCredentials, CredentialStatus } from './settings'
 import type { TestConnectionResult } from './settings-connections'
 
 const STATUS: CredentialStatus = {
-  massive: 'configured',
+  marketData: 'missing',
   alpacaPaper: 'configured',
   alpacaLive: 'missing',
   activeBrokerEnv: 'none',
-  massiveLastCheckedAt: null,
   alpacaPaperAccountNumberMasked: 'PA…ABC',
   alpacaLiveAccountNumberMasked: null
 }

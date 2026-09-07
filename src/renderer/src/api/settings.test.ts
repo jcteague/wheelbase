@@ -20,11 +20,10 @@ const mockGetAlertDefaults = vi.fn()
 const mockSaveAlertDefaults = vi.fn()
 
 const STATUS_FIXTURE = {
-  massive: 'configured' as const,
+  marketData: 'configured' as const,
   alpacaPaper: 'configured' as const,
   alpacaLive: 'missing' as const,
   activeBrokerEnv: 'paper' as const,
-  massiveLastCheckedAt: null,
   alpacaPaperAccountNumberMasked: 'PA…ABC',
   alpacaLiveAccountNumberMasked: null
 }

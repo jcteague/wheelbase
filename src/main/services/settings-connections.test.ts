@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { testAlpacaConnection, testMassiveConnection } from './settings-connections'
+import { testAlpacaConnection } from './settings-connections'
 
 const mockFetch = vi.fn()
 
@@ -31,47 +31,6 @@ describe('settings connection probes', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
-  })
-
-  describe('testMassiveConnection', () => {
-    it('calls the fixed AAPL reference probe with the shared configured app key', async () => {
-      mockFetch.mockResolvedValue(fetchOk({ ticker: 'AAPL' }))
-
-      const result = await testMassiveConnection({
-        loadMassiveApiKey: () => 'shared-massive-key'
-      })
-
-      expect(result).toEqual({ ok: true, vendor: 'massive', status: 'connected' })
-      expect(mockFetch).toHaveBeenCalledTimes(1)
-      const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit]
-      expect(url).toContain('/v3/reference/tickers/AAPL')
-      expect(url).not.toContain('MSFT')
-      expect(init.headers).toMatchObject({ Authorization: 'Bearer shared-massive-key' })
-    })
-
-    it('maps Massive HTTP 401 to Authentication failed (401)', async () => {
-      mockFetch.mockResolvedValue(fetchErr(401, 'Unauthorized'))
-
-      await expect(
-        testMassiveConnection({ loadMassiveApiKey: () => 'shared-massive-key' })
-      ).resolves.toEqual({
-        ok: false,
-        errorCode: 'auth_failed',
-        message: 'Authentication failed (401)'
-      })
-    })
-
-    it('maps Massive HTTP 429 to Rate limited — please try again', async () => {
-      mockFetch.mockResolvedValue(fetchErr(429, 'Too Many Requests'))
-
-      await expect(
-        testMassiveConnection({ loadMassiveApiKey: () => 'shared-massive-key' })
-      ).resolves.toEqual({
-        ok: false,
-        errorCode: 'rate_limited',
-        message: 'Rate limited — please try again'
-      })
-    })
   })
 
   describe('testAlpacaConnection', () => {

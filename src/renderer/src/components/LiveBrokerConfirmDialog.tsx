@@ -55,7 +55,7 @@ export function LiveBrokerConfirmDialog(
         )}
 
         <p className="m-0 font-wb-mono text-[0.7rem] leading-6 text-wb-text-muted">
-          Market data is unaffected — Massive continues to supply prices.
+          Market data reconnects with your live keys — same Alpaca feeds, same prices.
         </p>
 
         <div className="mt-5 flex justify-end gap-3">

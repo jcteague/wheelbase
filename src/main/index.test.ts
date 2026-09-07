@@ -44,7 +44,10 @@ vi.mock('./db/index', () => ({
 
 vi.mock('./ipc/ping', () => ({ registerPingHandler: vi.fn() }))
 vi.mock('./ipc/positions', () => ({ registerPositionsHandlers: vi.fn() }))
-vi.mock('./ipc/market-data', () => ({ registerMarketDataHandlers: vi.fn() }))
+const restartStockQuoteStream = vi.fn(async () => {})
+vi.mock('./ipc/market-data', () => ({
+  registerMarketDataHandlers: vi.fn(() => ({ restartStockQuoteStream }))
+}))
 vi.mock('./ipc/broker', () => ({ registerBrokerHandlers: vi.fn() }))
 vi.mock('./ipc/assignments', () => ({ registerAssignmentsIpc: vi.fn() }))
 vi.mock('./ipc/ivr', () => ({ registerIvrIpc: vi.fn() }))
@@ -69,10 +72,6 @@ vi.mock('./integrations/broker-factory', () => ({
   }
 }))
 
-vi.mock('./integrations/massive-credentials', () => ({
-  loadMassiveApiKey: vi.fn()
-}))
-
 vi.mock('./services/settings', () => ({
   createSettingsService: vi.fn(() => ({
     getCredentialStatus: vi.fn().mockReturnValue({ activeBrokerEnv: 'paper' }),
@@ -81,8 +80,7 @@ vi.mock('./services/settings', () => ({
 }))
 
 vi.mock('./services/settings-connections', () => ({
-  testAlpacaConnection: vi.fn(),
-  testMassiveConnection: vi.fn()
+  testAlpacaConnection: vi.fn()
 }))
 
 vi.mock('./logger', () => ({
@@ -369,6 +367,66 @@ describe('main process bootstrap', () => {
 
     expect(vi.mocked(brokerFactory.recreate)).toHaveBeenCalled()
     expect(mockSchedulerRunNow).toHaveBeenCalledWith('detect-assignments')
+    // [US-99] Alpaca authenticates the market-data socket once at connect, so new keys
+    // only take effect if the stream is rebuilt too.
+    expect(restartStockQuoteStream).toHaveBeenCalled()
+  })
+
+  // [US-99] Market data previously read its key from the environment (the retired vendor's
+  // loader did). Saved credentials still win, but .env has to keep working for dev and CI —
+  // it is what .env.example documents.
+  it('falls back to environment credentials for market data when none are saved', async () => {
+    vi.stubEnv('ALPACA_KEY_ID', 'PKENV')
+    vi.stubEnv('ALPACA_SECRET_KEY', 'env-secret')
+    vi.stubEnv('ALPACA_PAPER', 'true')
+
+    await triggerBootstrap()
+
+    const { marketDataFactory } = await import('./integrations/market-data-factory')
+    const config = vi.mocked(marketDataFactory.configure).mock.calls[0]?.[0]
+    expect(config?.loadActiveAlpacaCredentials()).toEqual({
+      keyId: 'PKENV',
+      secret: 'env-secret',
+      environment: 'paper'
+    })
+    vi.unstubAllEnvs()
+  })
+
+  it('prefers saved credentials over the environment for market data', async () => {
+    vi.stubEnv('ALPACA_KEY_ID', 'PKENV')
+    vi.stubEnv('ALPACA_SECRET_KEY', 'env-secret')
+    const saved = { keyId: 'PKSAVED', secret: 'saved-secret', environment: 'live' as const }
+    const { createSettingsService } = await import('./services/settings')
+    vi.mocked(createSettingsService).mockReturnValueOnce({
+      getCredentialStatus: vi.fn().mockReturnValue({ activeBrokerEnv: 'live' }),
+      loadActiveAlpacaCredentials: vi.fn().mockReturnValue(saved)
+    } as unknown as ReturnType<typeof createSettingsService>)
+
+    await triggerBootstrap()
+
+    const { marketDataFactory } = await import('./integrations/market-data-factory')
+    const config = vi.mocked(marketDataFactory.configure).mock.calls[0]?.[0]
+    expect(config?.loadActiveAlpacaCredentials()).toEqual(saved)
+    vi.unstubAllEnvs()
+  })
+
+  // The same keys serve both subsystems, and .env.example says so — market data reading
+  // the fallback while the broker ignored it would be an arbitrary split.
+  it('falls back to environment credentials for the broker when none are saved', async () => {
+    vi.stubEnv('ALPACA_KEY_ID', 'PKENV')
+    vi.stubEnv('ALPACA_SECRET_KEY', 'env-secret')
+    vi.stubEnv('ALPACA_PAPER', 'true')
+
+    await triggerBootstrap()
+
+    const { brokerFactory } = await import('./integrations/broker-factory')
+    const config = vi.mocked(brokerFactory.configure).mock.calls[0]?.[0]
+    expect(config?.loadActiveAlpacaCredentials()).toEqual({
+      keyId: 'PKENV',
+      secret: 'env-secret',
+      environment: 'paper'
+    })
+    vi.unstubAllEnvs()
   })
 
   it('registers IVR IPC handlers', async () => {

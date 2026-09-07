@@ -69,7 +69,6 @@ const LIVE_ACCOUNT = {
   accountNumberMasked: 'AL…XYZ'
 }
 const DEFAULT_CONNECTION_MOCKS = {
-  massive: { ok: true, vendor: 'massive', status: 'connected' },
   alpaca: {
     paper: { ok: true, vendor: 'alpaca', environment: 'paper', accountNumberMasked: 'PA…ABC' },
     live: { ok: true, vendor: 'alpaca', environment: 'live', accountNumberMasked: 'AL…XYZ' }
@@ -77,7 +76,6 @@ const DEFAULT_CONNECTION_MOCKS = {
 }
 
 type LaunchOptions = {
-  massiveApiKey?: string
   stockQuotes?: Record<string, object>
   optionSnapshots?: Record<string, object>
   mockSettingsConnections?: object
@@ -100,10 +98,13 @@ function cleanupDb(dbPath: string): void {
 function buildEnv(dbPath: string, options: LaunchOptions): Record<string, string> {
   return {
     ...(process.env as Record<string, string>),
+    // See buildLaunchEnv: an inlined or exported Alpaca key would otherwise decide the
+    // empty-state assertions for us.
+    ALPACA_KEY_ID: '',
+    ALPACA_SECRET_KEY: '',
     WHEELBASE_DB_PATH: dbPath,
     FAKE_MARKET_DATA: 'true',
     FAKE_BROKER: 'true',
-    MASSIVE_API_KEY: options.massiveApiKey ?? '',
     WHEELBASE_MOCK_STOCK_QUOTES: JSON.stringify(options.stockQuotes ?? {}),
     WHEELBASE_MOCK_OPTION_SNAPSHOTS: JSON.stringify(options.optionSnapshots ?? {}),
     WHEELBASE_MOCK_SETTINGS_CONNECTIONS: JSON.stringify(
@@ -260,9 +261,10 @@ describe('US-37 Layer 5 e2e coverage', () => {
     dbPath = ''
   })
 
-  it('Settings page surfaces Massive status and Alpaca credentials independently', async () => {
+  // [US-99 AC9] Alpaca is the only market-data vendor named anywhere in Settings.
+  it('Settings names Alpaca as the market-data source', async () => {
     dbPath = tmpDb()
-    app = await launchApp(dbPath, { massiveApiKey: 'shared-massive-key' })
+    app = await launchApp(dbPath)
     const page = await getPage(app)
 
     await openSettings(page)
@@ -270,8 +272,13 @@ describe('US-37 Layer 5 e2e coverage', () => {
     const marketSection = page.getByRole('region', { name: 'Market Data' })
     const brokerSection = page.getByRole('region', { name: 'Broker' })
 
-    expect(await marketSection.textContent()).toContain('Shared app configuration')
+    const marketText = await marketSection.textContent()
+    expect(marketText).toContain('Market Data — Alpaca')
+    expect(marketText).toContain('Connect Alpaca below to enable market data')
+    expect(marketText).toContain('Refresh IVR now')
+    expect(await marketSection.getByRole('button', { name: 'Test connection' }).count()).toBe(0)
     expect(await marketSection.locator('input').count()).toBe(0)
+
     expect(await brokerSection.textContent()).toContain('Paper credentials')
     expect(await brokerSection.textContent()).toContain('Live credentials')
     expect(await page.textContent('body')).toContain('Active Broker Environment')
@@ -279,10 +286,25 @@ describe('US-37 Layer 5 e2e coverage', () => {
     expect(await page.getByLabel('Live').isVisible()).toBe(true)
   })
 
-  it('Shared Massive configuration enables market data', async () => {
+  // [US-99 AC9] Once the active environment has keys, the region says which ones are in use.
+  it('Settings reports the active credentials once Alpaca is connected', async () => {
+    dbPath = tmpDb()
+    app = await launchApp(dbPath)
+    const page = await getPage(app)
+
+    await saveAlpacaViaApi(page, 'paper', 'PKPAPER123', 'paper-secret')
+    await setActiveEnvironmentViaApi(page, 'paper')
+    await openSettings(page)
+
+    const marketText = await page.getByRole('region', { name: 'Market Data' }).textContent()
+    expect(marketText).toContain('Using paper credentials')
+    expect(marketText).not.toContain('Connect Alpaca below to enable market data')
+  })
+
+  // [US-99 AC10] The FAKE_MARKET_DATA path is untouched by the vendor swap.
+  it('Market data is enabled by the active Alpaca credentials', async () => {
     dbPath = tmpDb()
     app = await launchApp(dbPath, {
-      massiveApiKey: 'shared-massive-key',
       stockQuotes: STOCK_QUOTES,
       optionSnapshots: OPTION_SNAPSHOTS
     })
@@ -295,25 +317,9 @@ describe('US-37 Layer 5 e2e coverage', () => {
     expect(await page.getByTestId('position-card-AAPL-opt-mid').textContent()).toContain('$3.60')
   })
 
-  it('Test connection for Massive uses a fixed reference probe', async () => {
-    dbPath = tmpDb()
-    app = await launchApp(dbPath, {
-      massiveApiKey: 'shared-massive-key',
-      mockSettingsConnections: DEFAULT_CONNECTION_MOCKS
-    })
-    const page = await getPage(app)
-
-    await openSettings(page)
-    await page.getByRole('button', { name: 'Test connection' }).first().click()
-    await page.waitForSelector('text=Connected')
-
-    expect(await page.textContent('body')).toContain('Connected')
-  })
-
   it('Test connection for Alpaca surfaces the account identifier and environment', async () => {
     dbPath = tmpDb()
     app = await launchApp(dbPath, {
-      massiveApiKey: 'shared-massive-key',
       mockSettingsConnections: DEFAULT_CONNECTION_MOCKS
     })
     const page = await getPage(app)
@@ -335,7 +341,6 @@ describe('US-37 Layer 5 e2e coverage', () => {
   it('Test connection detects environment mismatch', async () => {
     dbPath = tmpDb()
     app = await launchApp(dbPath, {
-      massiveApiKey: 'shared-massive-key',
       mockSettingsConnections: DEFAULT_CONNECTION_MOCKS
     })
     const page = await getPage(app)
@@ -356,7 +361,7 @@ describe('US-37 Layer 5 e2e coverage', () => {
 
   it('Switching broker environment to LIVE requires confirmation', async () => {
     dbPath = tmpDb()
-    app = await launchApp(dbPath, { massiveApiKey: 'shared-massive-key' })
+    app = await launchApp(dbPath)
     const page = await getPage(app)
 
     await saveAlpacaViaApi(page, 'paper', 'PKPAPER123', 'paper-secret')
@@ -376,7 +381,9 @@ describe('US-37 Layer 5 e2e coverage', () => {
     expect(text).toContain('Buying power, cash, activities — all switch to your live account')
     expect(text).toContain('Positions in Wheelbase are not synchronized')
     expect(text).toContain('Phase 4 order execution will route to live when enabled')
-    expect(text).toContain('Market data is unaffected — Massive continues to supply prices.')
+    expect(text).toContain(
+      'Market data reconnects with your live keys — same Alpaca feeds, same prices.'
+    )
     expect(
       await dialog.getByRole('button', { name: 'Switch to LIVE' }).getAttribute('class')
     ).toContain('bg-wb-gold')
@@ -384,7 +391,7 @@ describe('US-37 Layer 5 e2e coverage', () => {
 
   it('LIVE confirmation includes position-reconciliation warning when positions exist', async () => {
     dbPath = tmpDb()
-    app = await launchApp(dbPath, { massiveApiKey: 'shared-massive-key' })
+    app = await launchApp(dbPath)
     const page = await getPage(app)
 
     await saveAlpacaViaApi(page, 'paper', 'PKPAPER123', 'paper-secret')
@@ -404,7 +411,6 @@ describe('US-37 Layer 5 e2e coverage', () => {
   it('Confirming the switch reinitialises only the BrokerProvider', async () => {
     dbPath = tmpDb()
     app = await launchApp(dbPath, {
-      massiveApiKey: 'shared-massive-key',
       stockQuotes: STOCK_QUOTES,
       optionSnapshots: OPTION_SNAPSHOTS,
       brokerAccountPaper: PAPER_ACCOUNT,
@@ -434,9 +440,40 @@ describe('US-37 Layer 5 e2e coverage', () => {
     expect(await page.getByTestId('position-card-AAPL-price').textContent()).toContain('$182.45')
   })
 
+  // [US-99 AC5] A credential change tears down and rebuilds the market-data socket. The
+  // observable guarantee is that prices survive the switch — the renderer never re-issues
+  // set-stock-quote-tickers, so a restart that dropped the ticker set would blank the cell.
+  it('Switching broker environment restarts market data with the new keys', async () => {
+    dbPath = tmpDb()
+    app = await launchApp(dbPath, {
+      stockQuotes: STOCK_QUOTES,
+      optionSnapshots: OPTION_SNAPSHOTS,
+      brokerAccountPaper: PAPER_ACCOUNT,
+      brokerAccountLive: LIVE_ACCOUNT
+    })
+    const page = await getPage(app)
+
+    await saveAlpacaViaApi(page, 'paper', 'PKPAPER123', 'paper-secret')
+    await saveAlpacaViaApi(page, 'live', 'AKLIVE456', 'live-secret')
+    await setActiveEnvironmentViaApi(page, 'paper')
+    await seedPosition(page)
+    await openPositions(page)
+    expect(await page.getByTestId('position-card-AAPL-price').textContent()).toContain('$182.45')
+
+    await openSettings(page)
+    await clickBrokerEnvironmentToggle(page, 'live')
+    await page.getByRole('button', { name: 'Switch to LIVE' }).click()
+    await page.waitForSelector('text=LIVE')
+
+    await openPositions(page)
+    expect(await page.getByTestId('position-card-AAPL-price').textContent()).toContain('$182.45')
+    expect(await page.getByTestId('position-card-AAPL-opt-mid').textContent()).toContain('$3.60')
+    expect(await page.textContent('body')).not.toContain('NO BROKER')
+  })
+
   it('Switching back to Paper is immediate', async () => {
     dbPath = tmpDb()
-    app = await launchApp(dbPath, { massiveApiKey: 'shared-massive-key' })
+    app = await launchApp(dbPath)
     const page = await getPage(app)
 
     await saveAlpacaViaApi(page, 'paper', 'PKPAPER123', 'paper-secret')
@@ -453,7 +490,7 @@ describe('US-37 Layer 5 e2e coverage', () => {
 
   it('Broker environment badge is always visible and clearly distinguished', async () => {
     dbPath = tmpDb()
-    app = await launchApp(dbPath, { massiveApiKey: 'shared-massive-key' })
+    app = await launchApp(dbPath)
     const page = await getPage(app)
 
     await saveAlpacaViaApi(page, 'paper', 'PKPAPER123', 'paper-secret')
@@ -470,10 +507,9 @@ describe('US-37 Layer 5 e2e coverage', () => {
     expect(await badge.isVisible()).toBe(true)
   })
 
-  it('Market data is independent of broker configuration', async () => {
+  it('Market data fixtures render without a broker account', async () => {
     dbPath = tmpDb()
     app = await launchApp(dbPath, {
-      massiveApiKey: 'shared-massive-key',
       stockQuotes: STOCK_QUOTES,
       optionSnapshots: OPTION_SNAPSHOTS
     })
@@ -483,7 +519,7 @@ describe('US-37 Layer 5 e2e coverage', () => {
     await openPositions(page)
 
     expect(await page.textContent('body')).toContain(
-      'Connect Alpaca to enable broker activity and buying power.'
+      'Connect Alpaca to enable market data, broker activity and buying power.'
     )
     expect(await page.textContent('body')).toContain('NO BROKER')
     expect(await page.getByTestId('position-card-AAPL-price').textContent()).toContain('$182.45')
@@ -492,7 +528,7 @@ describe('US-37 Layer 5 e2e coverage', () => {
 
   it('Alpaca credentials are stored securely per environment', async () => {
     dbPath = tmpDb()
-    app = await launchApp(dbPath, { massiveApiKey: 'shared-massive-key' })
+    app = await launchApp(dbPath)
     const page = await getPage(app)
 
     await saveAlpacaViaApi(page, 'paper', '  PKPAPER123  ', '  paper-secret  ')
@@ -506,7 +542,7 @@ describe('US-37 Layer 5 e2e coverage', () => {
     expect(sqliteContents).not.toContain('AKLIVE456')
     expect(sqliteContents).not.toContain('live-secret')
 
-    app = await launchApp(dbPath, { massiveApiKey: 'shared-massive-key' })
+    app = await launchApp(dbPath)
     const relaunchedPage = await getPage(app)
     await openSettings(relaunchedPage)
     await relaunchedPage.waitForSelector(
@@ -539,7 +575,7 @@ describe('US-37 Layer 5 e2e coverage', () => {
 
   it('App remembers the last active broker environment between launches', async () => {
     dbPath = tmpDb()
-    app = await launchApp(dbPath, { massiveApiKey: 'shared-massive-key' })
+    app = await launchApp(dbPath)
     const page = await getPage(app)
 
     await saveAlpacaViaApi(page, 'paper', 'PKPAPER123', 'paper-secret')
@@ -547,14 +583,15 @@ describe('US-37 Layer 5 e2e coverage', () => {
     await app.close()
     app = undefined
 
-    app = await launchApp(dbPath, { massiveApiKey: 'shared-massive-key' })
+    app = await launchApp(dbPath)
     const relaunchedPage = await getPage(app)
     await relaunchedPage.waitForSelector('text=PAPER')
 
     expect(await relaunchedPage.textContent('body')).toContain('PAPER')
   })
 
-  it('Empty-state on first launch', async () => {
+  // [US-99 AC4] No credentials: the app runs, names Alpaca once, and dashes the prices.
+  it('Empty-state on first launch shows the Connect Alpaca banner and dashes', async () => {
     dbPath = tmpDb()
     app = await launchApp(dbPath)
     const page = await getPage(app)
@@ -563,8 +600,12 @@ describe('US-37 Layer 5 e2e coverage', () => {
     await openPositions(page)
 
     const body = await page.textContent('body')
-    expect(body).toContain('Massive is app-provided, and this workspace has not configured it yet.')
-    expect(body).toContain('Connect Alpaca to enable broker activity and buying power.')
+    expect(body).toContain(
+      'Connect Alpaca to enable market data, broker activity and buying power.'
+    )
+    // Guards the retired vendor's banner by its distinctive phrase rather than its name,
+    // so the AC9 repo-wide grep for the retired vendor's name stays empty.
+    expect(body).not.toContain('app-provided')
     expect(await page.getByRole('link', { name: 'Alpaca setup' }).getAttribute('href')).toBe(
       '#/settings'
     )
@@ -572,10 +613,10 @@ describe('US-37 Layer 5 e2e coverage', () => {
     expect(await page.getByTestId('position-card-AAPL-opt-mid').textContent()).toContain('—')
   })
 
-  it('Shared Massive auth failure disables market data with stale fallback', async () => {
+  // [US-99 AC9] The stream auth prompt names Alpaca and renders exactly once.
+  it('Positions auth prompt names Alpaca', async () => {
     dbPath = tmpDb()
     app = await launchApp(dbPath, {
-      massiveApiKey: 'shared-massive-key',
       stockQuotes: STOCK_QUOTES,
       optionSnapshots: OPTION_SNAPSHOTS
     })
@@ -589,17 +630,17 @@ describe('US-37 Layer 5 e2e coverage', () => {
       await window.api.triggerStreamError({
         feed: 'stockQuotes',
         code: 'auth_failed',
-        message: 'Massive authentication failed — check your key in Settings',
+        message: 'Alpaca authentication failed — check your key in Settings',
         reconnectable: false
       })
     })
     await page.waitForSelector('[data-testid="stale-data-banner"]')
     expect(await page.textContent('body')).toContain(
-      'Massive authentication failed — check your key in Settings'
+      'Alpaca authentication failed — check your key in Settings'
     )
 
     await app.close()
-    app = await launchApp(dbPath, { massiveApiKey: 'shared-massive-key' })
+    app = await launchApp(dbPath)
     const relaunchedPage = await getPage(app)
     await openPositions(relaunchedPage)
 
@@ -608,10 +649,9 @@ describe('US-37 Layer 5 e2e coverage', () => {
     )
   })
 
-  it('Expired Massive or Alpaca credentials surface a re-entry prompt', async () => {
+  it('Expired Alpaca credentials surface a re-entry prompt', async () => {
     dbPath = tmpDb()
     app = await launchApp(dbPath, {
-      massiveApiKey: 'shared-massive-key',
       stockQuotes: STOCK_QUOTES,
       optionSnapshots: OPTION_SNAPSHOTS
     })
@@ -626,18 +666,17 @@ describe('US-37 Layer 5 e2e coverage', () => {
       await window.api.triggerStreamError({
         feed: 'stockQuotes',
         code: 'auth_failed',
-        message: 'Massive authentication failed — check your key in Settings',
+        message: 'Alpaca authentication failed — check your key in Settings',
         reconnectable: false
       })
     })
-    await page.waitForSelector('text=Massive authentication failed — check your key in Settings')
+    await page.waitForSelector('text=Alpaca authentication failed — check your key in Settings')
     expect(await page.textContent('body')).toContain(
-      'Massive authentication failed — check your key in Settings'
+      'Alpaca authentication failed — check your key in Settings'
     )
 
     await app.close()
     app = await launchApp(dbPath, {
-      massiveApiKey: 'shared-massive-key',
       fakeBrokerError: 'auth_failed'
     })
     const relaunchedPage = await getPage(app)

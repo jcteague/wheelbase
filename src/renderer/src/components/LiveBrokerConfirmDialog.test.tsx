@@ -25,7 +25,7 @@ it('renders the exact LIVE confirmation title, body, bullets, and footer', () =>
     screen.getByText('Phase 4 order execution will route to live when enabled')
   ).toBeInTheDocument()
   expect(
-    screen.getByText('Market data is unaffected — Massive continues to supply prices.')
+    screen.getByText('Market data reconnects with your live keys — same Alpaca feeds, same prices.')
   ).toBeInTheDocument()
 })
 

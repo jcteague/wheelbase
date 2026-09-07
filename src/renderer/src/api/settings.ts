@@ -6,11 +6,10 @@ export type CredentialState = 'configured' | 'missing'
 export type ActiveBrokerEnvironment = 'paper' | 'live' | 'none'
 
 export type CredentialStatus = {
-  massive: CredentialState
+  marketData: CredentialState
   alpacaPaper: CredentialState
   alpacaLive: CredentialState
   activeBrokerEnv: ActiveBrokerEnvironment
-  massiveLastCheckedAt: string | null
   alpacaPaperAccountNumberMasked: string | null
   alpacaLiveAccountNumberMasked: string | null
 }
@@ -38,12 +37,14 @@ export type TestStoredAlpacaConnectionPayload = {
   environment: 'paper' | 'live'
 }
 
-export type TestSettingsConnectionPayload =
-  | { vendor: 'massive' }
-  | { vendor: 'alpaca'; environment: 'paper' | 'live'; keyId: string; secret: string }
+export type TestSettingsConnectionPayload = {
+  vendor: 'alpaca'
+  environment: 'paper' | 'live'
+  keyId: string
+  secret: string
+}
 
 export type TestSettingsConnectionResult =
-  | { ok: true; vendor: 'massive'; status: 'connected' }
   | {
       ok: true
       vendor: 'alpaca'

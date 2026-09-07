@@ -287,6 +287,8 @@ export type ScreenerLaunchOpts = {
   marketStatus?: MarketStatusFixture
   /** MarketDataErrorCode that makes every provider call throw — the outage scenario. */
   marketDataError?: string
+  /** [US-99] Launch with no Alpaca credentials, for the "not connected" card. */
+  withoutBrokerCredentials?: boolean
   /** [US-68] Watchlist notes by ticker; promote seeds the form's thesis from them. */
   watchlistNotes?: Record<string, string>
   /** [US-70] Earnings the fake calendar holds, keyed by ticker. A ticker omitted from a
@@ -378,7 +380,10 @@ function screenerLaunchEnv(dbPath: string, opts: ScreenerLaunchOpts): Record<str
   // buildIvrLaunchEnv supplies the shared keys plus the WHEELBASE_FAKE_IVR seam this
   // suite seeds IV ranks through; only the market-data fixtures are ours.
   const fixtures = opts.fixtures ?? RANKED_PUTS
-  const env = buildIvrLaunchEnv(dbPath, { marketStatus: opts.marketStatus })
+  const env = buildIvrLaunchEnv(dbPath, {
+    marketStatus: opts.marketStatus,
+    withoutBrokerCredentials: opts.withoutBrokerCredentials
+  })
   env.WHEELBASE_MOCK_OPTION_SNAPSHOTS = JSON.stringify(buildPutFixtures(fixtures))
   if (opts.stockQuotes) env.WHEELBASE_MOCK_STOCK_QUOTES = JSON.stringify(opts.stockQuotes)
   if (opts.marketDataError) env.FAKE_MARKET_DATA_ERROR = opts.marketDataError

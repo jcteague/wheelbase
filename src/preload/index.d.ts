@@ -298,11 +298,10 @@ type IpcCredentialState = 'configured' | 'missing'
 type IpcActiveBrokerEnvironment = 'paper' | 'live' | 'none'
 
 interface IpcCredentialStatus {
-  massive: IpcCredentialState
+  marketData: IpcCredentialState
   alpacaPaper: IpcCredentialState
   alpacaLive: IpcCredentialState
   activeBrokerEnv: IpcActiveBrokerEnvironment
-  massiveLastCheckedAt: string | null
   alpacaPaperAccountNumberMasked: string | null
   alpacaLiveAccountNumberMasked: string | null
 }
@@ -321,12 +320,14 @@ interface IpcSetActiveBrokerEnvironmentPayload {
   environment: 'paper' | 'live'
 }
 
-type IpcTestConnectionPayload =
-  | { vendor: 'massive' }
-  | { vendor: 'alpaca'; environment: 'paper' | 'live'; keyId: string; secret: string }
+type IpcTestConnectionPayload = {
+  vendor: 'alpaca'
+  environment: 'paper' | 'live'
+  keyId: string
+  secret: string
+}
 
 type IpcTestConnectionResult =
-  | { ok: true; vendor: 'massive'; status: 'connected' }
   | {
       ok: true
       vendor: 'alpaca'

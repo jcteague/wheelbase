@@ -8,7 +8,7 @@ describe('ScreenerStateCard', () => {
       <ScreenerStateCard
         tone="error"
         title="Market data unavailable"
-        body="Massive couldn't be reached on the last refresh."
+        body="Alpaca market data couldn't be reached on the last refresh."
         actionLabel="Retry refresh"
         onAction={() => {}}
         data-testid="screener-unavailable"

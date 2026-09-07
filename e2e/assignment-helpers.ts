@@ -49,6 +49,9 @@ export type LaunchOpts = {
   marketStatus?: MarketStatusFixture
   brokerError?: string
   testJobs?: TestJobFixture[]
+  /** Launch with no Alpaca credentials at all — no preseeded rows and no env fallback.
+   *  For specs asserting the "not connected" states. */
+  withoutBrokerCredentials?: boolean
 }
 
 export const REGULAR_SESSION: MarketStatusFixture = {
@@ -118,6 +121,12 @@ export function cleanupDb(dbPath: string): void {
 export function buildLaunchEnv(dbPath: string, opts: LaunchOpts): Record<string, string> {
   const env: Record<string, string> = {
     ...(process.env as Record<string, string>),
+    // `electron-vite build` inlines MAIN_VITE_ALPACA_* from whatever .env the build machine
+    // had, and the spread above would re-import any exported ALPACA_*. An explicit empty
+    // string beats both (see loadAlpacaCredentialsFromEnv), keeping a spec's credential
+    // state a property of the test rather than of the machine running it.
+    ALPACA_KEY_ID: '',
+    ALPACA_SECRET_KEY: '',
     WHEELBASE_DB_PATH: dbPath,
     FAKE_MARKET_DATA: 'true',
     FAKE_BROKER: 'true',
@@ -130,6 +139,11 @@ export function buildLaunchEnv(dbPath: string, opts: LaunchOpts): Record<string,
   if (opts.marketStatus) env.FAKE_MARKET_STATUS = JSON.stringify(opts.marketStatus)
   if (opts.brokerError) env.FAKE_BROKER_ERROR = opts.brokerError
   if (opts.testJobs) env.WHEELBASE_TEST_JOBS = JSON.stringify(opts.testJobs)
+  if (opts.withoutBrokerCredentials) {
+    // The preseed writes real credential rows and activates them, which is what makes
+    // CredentialStatus.marketData read 'configured' in every other spec.
+    delete env.WHEELBASE_PRESEED_ACTIVE_ENV
+  }
   return env
 }
 

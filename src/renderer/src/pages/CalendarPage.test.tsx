@@ -68,7 +68,7 @@ describe('CalendarPage', () => {
       isError: false
     } as unknown as ReturnType<typeof useMarketStatus>)
     mockUseSettingsStatus.mockReturnValue({
-      data: { activeBrokerEnv: 'none', massive: 'missing' },
+      data: { activeBrokerEnv: 'none', marketData: 'missing' },
       isLoading: false,
       isError: false
     } as unknown as ReturnType<typeof useSettingsStatus>)

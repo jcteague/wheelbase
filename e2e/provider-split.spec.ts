@@ -1,7 +1,7 @@
-// [US-31, US-39, US-40] Provider Split + Massive + Alpaca Broker — E2E tests
+// [US-31, US-40, US-99] Provider Split + Alpaca market data + Alpaca Broker — E2E tests
 //
-// Covers every AC from US-31 (interface separation), US-39 (MassiveMarketDataProvider),
-// and US-40 (AlpacaBrokerProvider).
+// Covers every AC from US-31 (interface separation), US-40 (AlpacaBrokerProvider) and
+// US-99 (AlpacaMarketDataProvider replacing the retired vendor).
 //
 // Uses FakeMarketDataProvider (FAKE_MARKET_DATA=true) and FakeBrokerProvider
 // (FAKE_BROKER=true) so no real API credentials are required.
@@ -445,7 +445,8 @@ describe('US-39: Market data behaviors via IPC', () => {
     expect(tickers).toContain('AAPL')
   })
 
-  it('Missing API key surfaces a typed error', async () => {
+  // [US-99 AC7] Missing or rejected Alpaca credentials both map to auth_failed.
+  it('Market-data auth failure surfaces a typed error', async () => {
     ;({ app, page, dbPath } = await relaunchWithError(app, dbPath, {
       marketDataError: 'auth_failed'
     }))
@@ -458,26 +459,8 @@ describe('US-39: Market data behaviors via IPC', () => {
     expect(errorCode).toBe('auth_failed')
   })
 
-  it('Massive 401/403 surfaces auth error', async () => {
-    // Both missing-key and 401/403 map to auth_failed via the same error injection path.
-    ;({ app, page, dbPath } = await relaunchWithError(app, dbPath, {
-      marketDataError: 'auth_failed'
-    }))
-    const { ok, errorCode } = await page.evaluate(async () => {
-      const result = await window.api.marketData.stockQuotes({ tickers: ['AAPL'] })
-      if (result.ok) return { ok: true as const, errorCode: null }
-      return { ok: false as const, errorCode: result.errors[0]?.code ?? null }
-    })
-    expect(ok).toBe(false)
-    expect(errorCode).toBe('auth_failed')
-  })
-
-  // Covered by unit tests in massive-market-data.test.ts:
-  // retry logic requires network-level mocking not feasible in Electron e2e.
-  it.todo('Massive 429 rate limit response is retried with backoff, then succeeds')
-
-  // Covered by unit tests: spy on safeStorage decrypt requires internal process hooks.
-  it.todo('API key is loaded once per process and reused')
+  // HTTP status mapping, retry/backoff and the websocket handshake are pinned by
+  // src/main/integrations/alpaca-market-data.test.ts — none are reachable offline.
 })
 
 // ── US-40: Broker behaviors via IPC ──────────────────────────────────────────
