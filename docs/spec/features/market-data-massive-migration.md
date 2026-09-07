@@ -1,6 +1,19 @@
-# Market-Data Provider Migration: Alpaca → Massive
+# Market-Data Provider Migration: Alpaca → Massive (superseded)
 
-<!-- generated:from market-data-massive-migration -->
+<!-- generated:from market-data-massive-migration,us-99 -->
+
+> **Superseded by [US-99 — Alpaca as the sole market-data provider](./us-99-alpaca-market-data-provider.md) (2026-09-06).**
+> Massive has been removed: `MassiveMarketDataProvider`, `massive-credentials.ts`, the
+> `MASSIVE_API_KEY` / `MAIN_VITE_MASSIVE_API_KEY` configuration, the Settings "shared app
+> configuration" surface and every Massive-named e2e scenario are gone, and
+> `AlpacaMarketDataProvider` serves the whole `MarketDataProvider` interface from Alpaca's free
+> data plan. Everything below records the **Massive-era** state (June–September 2026) for
+> history. What is still true today: the provider-agnostic `MarketDataProvider` type, the
+> `marketDataFactory` object (now `configure({ loadActiveAlpacaCredentials })` and never
+> throwing), the `BrokerProvider` / `broker:*` split, the `market-data:*` channel set, the
+> six-member `MarketDataErrorCode`, and `buildOccSymbol` as a shared pure leaf. For the current
+> vendor surface see [domain/market-data](../domain/market-data.md) and
+> [contracts/alpaca-integration](../contracts/alpaca-integration.md).
 
 ## Summary
 

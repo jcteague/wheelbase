@@ -1,6 +1,6 @@
-# ADR: Use Alpaca SDK for REST only; bypass it for streaming
+# ADR: Use the Alpaca SDK for broker REST only; market data and streaming bypass it
 
-<!-- generated:from us-31,market-data-massive-migration -->
+<!-- generated:from us-31,market-data-massive-migration,us-99 -->
 
 ## Original decision (us-31)
 
@@ -15,17 +15,18 @@ The SDK is a Deno-to-Node transpile via `dnt`, marked unmaintained, with known b
 - **Replace the SDK entirely with raw `fetch`** — judged too much work for endpoints that already function.
 - **`alpaca-trade-api-js`** — older, callback-based, weaker TypeScript support.
 
-## Current state (market-data-massive-migration)
+## Current state (US-99)
 
-This ADR now applies **only to the broker side**. The market-data layer was migrated off Alpaca onto **Massive** (a Polygon-compatible delayed-data vendor), and in the same change Alpaca's market-data and SDK usage were split out:
+Alpaca is once again the market-data vendor, but the SDK boundary did not move back:
 
-- **Market data — no Alpaca SDK at all.** `MassiveMarketDataProvider` (`src/main/integrations/massive-market-data.ts`) talks to Massive's REST API over the global `fetch` (key appended as an `?apiKey=` query param, `BASE_URL` `https://api.massive.com`) and streams from a single JSON WebSocket (`wss://delayed.massive.com/stocks`) via the `ws` package. There is no Alpaca REST quotes call (`getStocksQuotesLatest` was never wired up), no `AlpacaMarketDataProvider`, and no MessagePack/two-socket path.
-- **Broker — still the Alpaca SDK, REST only.** The only surviving `Alpaca*` class is `AlpacaBrokerProvider` (`src/main/integrations/alpaca-broker.ts`), implementing the separate `BrokerProvider` interface on the `broker:*` IPC namespace. It uses the SDK for `getAccount`, `getClock`, and `getActivity` only — exactly the REST endpoints this ADR endorsed. The broker has no streaming, so the "bypass for streaming" half of the decision no longer has an Alpaca consumer.
-- **Stale comment to clean up.** `src/main/integrations/alpaca.ts` is still retained and `@deprecated`, but its JSDoc points callers at `createMarketDataProvider()` — a function that no longer exists (provider construction is now the env-switched `marketDataFactory` object). The comment is stale and not load-bearing.
+- **Broker — the Alpaca SDK, REST only.** `AlpacaBrokerProvider` (`src/main/integrations/alpaca-broker.ts`) is the only module permitted to import `@alpacahq/typescript-sdk`, using it for `getAccount`, `getClock`, and `getActivity` — exactly the endpoints this ADR endorsed.
+- **Market data — raw `fetch` and raw `ws`, no SDK.** `AlpacaMarketDataProvider` (`src/main/integrations/alpaca-market-data.ts`) calls `https://data.alpaca.markets` (`/v2/stocks/snapshots`, `/v1beta1/options/snapshots…`) and the trading host's `/v2/options/contracts` over the global `fetch` with `APCA-API-KEY-ID` / `APCA-API-SECRET-KEY` headers, and streams from `wss://stream.data.alpaca.markets/v2/iex` via the `ws` package. The very SDK bugs listed above (`getStocksSnapshots` path, `getOptionsSnapshots` typing) are the endpoints market data needs, so the SDK is not used for them. The Massive-era interlude (`massive-market-data.ts`, `?apiKey=` query auth, `wss://delayed.massive.com`) is gone.
+- **Settings probes** (`src/main/services/settings-connections.ts`) call `GET {ALPACA_TRADING_BASE_URLS[env]}/v2/account` over `fetch` as before; the host map is now shared from `src/main/integrations/alpaca-hosts.ts`.
+- **`src/main/integrations/alpaca.ts`** remains `@deprecated`; its comments now point at `AlpacaMarketDataProvider` / `brokerFactory` rather than the long-gone `createMarketDataProvider()`.
 
 ## Source
 
-- `docs/spec/.extracts/us-31.md`
-- `plans/market-data-massive-migration/research.md`
-- Feature page: [`../../features/us-31-market-data-provider-adapter.md`](../../features/us-31-market-data-provider-adapter.md)
+- `docs/spec/.extracts/us-31.md`, `docs/spec/.extracts/us-99.md`
+- `plans/market-data-massive-migration/research.md` (historical), `plans/us-99/contracts/alpaca-market-data.md`
+- Feature pages: [us-31](../../features/us-31-market-data-provider-adapter.md), [us-99](../../features/us-99-alpaca-market-data-provider.md)
 <!-- /generated -->

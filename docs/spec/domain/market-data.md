@@ -1,6 +1,6 @@
 # Market Data
 
-<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56,us-70 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56,us-70,us-99 -->
 
 ## Overview
 
@@ -26,16 +26,17 @@ The primary feed has four moving parts:
 
 - A **provider type** (`MarketDataProvider`, declared as a TypeScript `type`)
   that abstracts every vendor-specific quote/option call.
-  `MassiveMarketDataProvider` is the concrete adapter; a factory
+  `AlpacaMarketDataProvider` is the concrete adapter
+  ([US-99](../features/us-99-alpaca-market-data-provider.md)); a factory
   (`marketDataFactory`) decides which adapter is instantiated.
 - A **REST request/response surface** for snapshots — stock quotes and option
   snapshots (with greeks/IV), single-contract and full-chain. Promise-returning.
   (The market clock, broker activities, and account info are **not** on this
-  type — they moved to a separate `BrokerProvider` on the `broker:*` IPC
+  type — they live on a separate `BrokerProvider` on the `broker:*` IPC
   namespace.)
-- A **WebSocket streaming surface** for push updates — stock quotes over a
-  single JSON socket (options are REST-only) — exposed as RxJS
-  `Observable<StreamEvent<T>>`.
+- A **WebSocket streaming surface** for push updates — stock minute bars over a
+  single JSON socket with per-symbol subscriptions (options are REST-only) —
+  exposed as RxJS `Observable<StreamEvent<T>>`.
 - A **renderer cache** (TanStack Query) that merges both transports under a
   single freshness clock and feeds the UI (price cells, P&L cells, market-status
   pill, position cockpit).
@@ -45,24 +46,28 @@ The contract details for the IPC channels that surface this data
 `-option-snapshot` / `-option-chain`, plus the `stock-quote` / `stream-error`
 push events) live in [`contracts/ipc-handlers.md`](../contracts/ipc-handlers.md).
 Market session/clock is served separately by `broker:market-status`. The
-vendor-specific field-by-field translation lives in
+vendor endpoints, websocket handshake and error tables live in
 [`contracts/alpaca-integration.md`](../contracts/alpaca-integration.md).
-(Alpaca remains the broker for account, activities, and clock data; the live
-quote/option feed is now the **Massive** provider described below.)
+Alpaca is both the broker (account, activities, clock) and, since US-99, the
+market-data vendor (quotes, options, stream) — two interfaces, two factories,
+one set of credentials. The vendor history is Alpaca (US-31/32) → Massive
+(`market-data-massive-migration`, now superseded) → Alpaca's free data plan
+(US-99); the interface, IPC layer, hooks and UI did not change across either
+swap.
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56,us-64 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56,us-64,us-99 -->
 
 ## Provider interface
 
 `MarketDataProvider` is the single seam between the rest of the app and any
 specific quote/option vendor. It is declared as a TypeScript `type` (not an
 `interface`) and is intentionally minimal — stock quotes, option snapshot,
-option chain, and streaming — so adding a second provider (Polygon, IBKR, a
-recorded fixture for tests) requires no changes to the IPC layer, the hooks, or
-the UI. Account, market clock/session, and broker activities are **not** on
-this type; they live on a separate `BrokerProvider` (`broker:*` IPC).
+option chain, and streaming — so swapping the vendor (which has now happened
+twice) requires no changes to the IPC layer, the hooks, or the UI. Account,
+market clock/session, and broker activities are **not** on this type; they live
+on a separate `BrokerProvider` (`broker:*` IPC).
 
 ```typescript
 type MarketDataFeed = 'stockQuotes' | 'optionQuotes' | 'optionTrades'
@@ -86,31 +91,36 @@ type MarketDataProvider = {
 
 `getOptionChainSnapshot(filter)` takes a single `OptionChainFilter` object
 (the `underlying` lives inside it, alongside optional `expirationFrom/To`,
-`type: 'put' | 'call'`, `strikeFrom/To`, `limit`, `cursor`) and follows
-Massive's `next_url` cursor pagination until exhausted (or `filter.limit`).
-It returns `OptionChainQuote[]` — a strict superset of `OptionSnapshot` (see
+`type: 'put' | 'call'`, `strikeFrom/To`, `limit`, `cursor`). With no `limit`
+the adapter walks Alpaca's `next_page_token` pagination at `limit=1000` until
+exhausted; with a `limit` it fetches one page (`min(limit, 1000)`, `cursor` as
+`page_token`) — the semantics pinned by US-64's contract. It returns
+`OptionChainQuote[]` — a strict superset of `OptionSnapshot` (see
 [Option chain quotes](#option-chain-quotes) below) — while the single-contract
 `getOptionSnapshot` returns a plain `OptionSnapshot`.
 
 ### Adapter rules
 
 - **Every vendor call lives behind the adapter.** The concrete adapter is
-  `MassiveMarketDataProvider` in
-  `src/main/integrations/massive-market-data.ts` — a REST + WebSocket client
-  against Massive. `src/main/integrations/market-data-provider.ts` holds only
-  the `MarketDataProvider` type, the shared data types, and the
+  `AlpacaMarketDataProvider` in
+  `src/main/integrations/alpaca-market-data.ts` (I/O: HTTP, retry, websocket,
+  subscription state) with its pure mappers, URL builders and frame parsers in
+  `alpaca-market-data-mappers.ts`. `src/main/integrations/market-data-provider.ts`
+  holds only the `MarketDataProvider` type, the shared data types, and the
   `MarketDataError` class. The IPC handlers (`src/main/ipc/market-data.ts`)
   consume the type, never the vendor client.
 - **Errors normalise to `MarketDataError`.** The adapter wraps any vendor-
   specific exception in a `MarketDataError` whose `code` (`MarketDataErrorCode`)
   is drawn from a fixed set of six: `auth_failed`, `network_error`,
   `not_found`, `rate_limited`, `streaming_unsupported`, `unknown`. Codes are
-  mapped from Massive's HTTP status: `401/403 → auth_failed`, `404 →
-not_found`, `429 → rate_limited` (after `MAX_RETRIES` honouring `Retry-After`),
-  other non-ok / unexpected → `unknown`. IPC handlers catch and convert to the
-  `{ ok: false, errors: [...] }` envelope; the stream-error push channel uses
-  the same codes. Services can pattern-match on `error.code` without parsing
-  message strings.
+  mapped from HTTP status (`401/403 → auth_failed`, `404 → not_found`, `429 →
+rate_limited` after `MAX_RETRIES` honouring `Retry-After`, other non-ok →
+  `unknown`) or from websocket error codes (402 → `auth_failed`, 409 →
+  `streaming_unsupported`) — never from message text. IPC handlers catch and
+  convert to the `{ ok: false, errors: [...] }` envelope; the stream-error push
+  channel uses `StreamError` codes (`symbol_limit`, `connection_limit`,
+  `unknown`). See
+  [marketdataerror-structured-codes](../architecture/02-adrs/marketdataerror-structured-codes.md).
 - **The factory is the only place that picks an adapter.** The factory is the
   object `marketDataFactory` in
   `src/main/integrations/market-data-factory.ts`, with `.configure(...)`,
@@ -121,16 +131,18 @@ not_found`, `429 → rate_limited` (after `MAX_RETRIES` honouring `Retry-After`)
   `MarketDataProvider` interface only — never the concrete provider class.
   (When `FAKE_MARKET_DATA=true`, the factory returns a
   `FakeMarketDataProvider` instead.)
-- **The provider is REST-first with raw WebSocket streaming.** Massive's REST
-  endpoints supply stock snapshots and option snapshots (greeks/IV); streaming
-  stock quotes use a raw `ws` WebSocket client. There is no vendor SDK — the
-  adapter talks to Massive's HTTP and WS APIs directly.
-- **The type stays scoped to what the primary vendor serves.** Data Massive
-  cannot supply on the current plan (IVR, earnings dates) is deliberately
-  **not** added to `MarketDataProvider` — doing so would force every provider
-  (including the fake) to implement a capability the primary vendor lacks.
-  Such data lives in standalone auxiliary integration modules instead: the
-  Barchart IVR scraper
+- **The provider is REST-first with raw WebSocket streaming.** Alpaca's data
+  REST endpoints supply stock snapshots and option snapshots (greeks/IV); the
+  trading API supplies open interest; streaming stock bars use a raw `ws`
+  WebSocket client. There is no vendor SDK on the market-data side — the
+  `@alpacahq/typescript-sdk` is used only by the broker provider (see
+  [alpaca-sdk-rest-only](../architecture/02-adrs/alpaca-sdk-rest-only.md)).
+- **The type stays scoped to what the primary vendor serves.** Data the
+  primary vendor cannot supply on the current plan (IVR, earnings dates) is
+  deliberately **not** added to `MarketDataProvider` — doing so would force
+  every provider (including the fake) to implement a capability the primary
+  vendor lacks. Such data lives in standalone auxiliary integration modules
+  instead: the Barchart IVR scraper
   ([us-43](../features/us-43-barchart-ivr-scraper.md)) and the Finnhub
   earnings-calendar feed
   ([us-56](../features/us-56-earnings-proximity-alert.md); see "Auxiliary
@@ -138,42 +150,60 @@ not_found`, `429 → rate_limited` (after `MAX_RETRIES` honouring `Retry-After`)
 
 ### Configuration
 
-The factory takes a small config that supplies the Massive API key lazily; the
-provider itself takes just the resolved key:
+The factory takes a credential loader; the provider takes the same loader and
+calls it on **every** REST request and inside `connect()` — credentials are
+never cached on the instance:
 
 ```typescript
 // market-data-factory.ts
 type MarketDataFactoryConfig = {
-  loadMassiveApiKey: () => string
+  loadActiveAlpacaCredentials: () => AlpacaCredentials | null
 }
 
-// massive-market-data.ts
-type MassiveMarketDataConfig = { apiKey: string }
+// alpaca-market-data.ts
+type AlpacaMarketDataConfig = {
+  loadCredentials: () => AlpacaCredentials | null
+}
 ```
 
-`src/main/index.ts` calls `marketDataFactory.configure({ loadMassiveApiKey })`
-at startup; the key is resolved lazily on first `marketDataFactory.create()`.
-With no key (and `FAKE_MARKET_DATA` unset) `create()` throws — the provider is
-not constructed until live data is actually requested.
+`src/main/index.ts` calls
+`marketDataFactory.configure({ loadActiveAlpacaCredentials: () => settings.loadActiveAlpacaCredentials() })`
+at startup — the same encrypted Alpaca credentials the broker uses. The default
+loader is `loadAlpacaCredentialsFromEnv()` (`process.env` only; see
+[alpaca-credentials-runtime-env-only](../architecture/02-adrs/alpaca-credentials-runtime-env-only.md)).
+`create()` **never throws**: with no credentials the provider is still built and
+each call fails with `MarketDataError('auth_failed', 'Alpaca credentials not
+configured')`, which is what lets Positions show its "Connect Alpaca" banner and
+the screener its "not connected" card instead of crashing. A credential change
+does not recreate the provider — REST picks the new key up on the next request,
+and the stock stream is restarted (see "Provider lifecycle" below).
 
 For the full extracted contract (US-31 scope and per-method semantics) see
-[`features/us-31-market-data-provider-adapter.md`](../features/us-31-market-data-provider-adapter.md).
+[`features/us-31-market-data-provider-adapter.md`](../features/us-31-market-data-provider-adapter.md);
+for the Alpaca vendor seam see
+[`features/us-99-alpaca-market-data-provider.md`](../features/us-99-alpaca-market-data-provider.md).
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-99 -->
 
 ## REST surface
 
 REST is request/response and returns `Promise`s. Every money field is a
 `decimal.js`-formatted string (2dp for prices, 4dp for greeks/IV) — never a
-float. The base URL is `https://api.massive.com`; the key travels as an
-`apiKey` query param (no Bearer header, no SDK). Stock reads use the v2
-snapshot endpoint; option reads use v3 snapshot/chain endpoints.
+float. The data base URL is `https://data.alpaca.markets`; requests
+authenticate with `APCA-API-KEY-ID` / `APCA-API-SECRET-KEY` headers (never
+logged). Stock reads use `/v2/stocks/snapshots` with `feed=iex`; option reads
+use `/v1beta1/options/snapshots` with `feed=indicative`; open interest comes
+from the **trading** host's `/v2/options/contracts`. `feed=sip` and
+`feed=opra` are never requested (both 403 on the free plan). The exact
+endpoint table lives in
+[`contracts/alpaca-integration.md`](../contracts/alpaca-integration.md).
 
 ### Stock quote snapshot
 
-`getStockQuotes(tickers)` returns a `Map<ticker, StockQuote>`:
+`getStockQuotes(tickers)` issues **one** batched request for the whole ticker
+list and returns a `Map<ticker, StockQuote>`:
 
 ```typescript
 {
@@ -188,14 +218,19 @@ snapshot endpoint; option reads use v3 snapshot/chain endpoints.
 }
 ```
 
-Massive's stock snapshot is an **aggregate bar**, not a live quote — there is
-no real bid/ask. The adapter therefore sets `price`, `bid`, and `ask` all to
-the last-minute close (`min.c`). `prevClose` is sourced from Massive's
-`prevDay.c` and is the per-day baseline used to compute the signed change
-displayed in `PriceCell`. `change` / `changePercent` are filled on the REST
-path from Massive's `todaysChange` / `todaysChangePerc`; the renderer
-recomputes the displayed change per render from `(price, prevClose)`. Unknown
-tickers are simply absent from the returned map — never an error.
+Alpaca's stock snapshot carries a real latest trade and a real latest quote:
+`price = latestTrade.p`, `bid = latestQuote.bp`, `ask = latestQuote.ap`
+(falling back to `price` when the quote block is absent), `prevClose =
+prevDailyBar.c`, `change = price − prevClose`, `changePercent = change /
+prevClose × 100` (4dp, `ROUND_HALF_UP`; `''` when there is no previous bar),
+`volume = dailyBar.v`, `timestamp = latestTrade.t` normalised to millisecond
+ISO. Only `price` and `prevClose` are rendered (`PriceCell`, `useStockQuotes`);
+`bid`/`ask` are carried honestly rather than faked, even though IEX's
+after-hours quotes can be wide. Unknown tickers are simply absent from the
+returned map — never an error — and so is a snapshot with no `latestTrade`
+(there is no price to anchor on; skipped with a debug log rather than reported
+as `$0.00`). The renderer recomputes the displayed change per render from
+`(price, prevClose)`.
 
 ### Option snapshot
 
@@ -212,7 +247,7 @@ results return the `OptionChainQuote` superset described in the next section:
   mid: string // (bid + ask) / 2, 2dp — computed by adapter
   lastTrade: string // 2dp
   openInterest: number | null // null on the single-contract snapshot
-  volume: number | null // null on the single-contract snapshot
+  volume: number | null // dailyBar.v; null when absent
   greeks?: {
     delta: string // 4dp
     gamma: string // 4dp
@@ -224,15 +259,19 @@ results return the `OptionChainQuote` superset described in the next section:
 }
 ```
 
-`mid` is computed by the adapter (`Decimal(bid + ask) / 2`) — never read from
-the API directly. Greeks and IV come from the REST snapshot **only**; there is
-no option streaming feed. That is the practical reason option data is
-polled (60 s) rather than streamed. `greeks` and `impliedVolatility` are each
-optional and omitted entirely when the snapshot has no greeks (e.g. illiquid
-contracts). The bulk `market-data:option-snapshots` IPC channel (and a
+`mid` is computed by the adapter (`Decimal(bid + ask) / 2`, `ROUND_HALF_UP`,
+2dp) — never read from the API directly. Greeks and IV come from the REST
+snapshot **only**; there is no option streaming feed. That is the practical
+reason option data is polled (60 s) rather than streamed. `greeks` is emitted
+only when `delta`, `gamma`, `theta` and `vega` are **all** numbers — Alpaca
+sends `greeks: {}` on deep-OTM strikes and a `rho` the app never surfaces, and
+a half-filled greek set would mislead the screener, which ranks on delta.
+`impliedVolatility` is emitted only when numeric. Both are omitted entirely
+otherwise. The bulk `market-data:option-snapshots` IPC channel (and a
 service-level batch over `getOptionSnapshot`) is what the renderer's
 `useOptionSnapshots` hook polls; singular `market-data:option-snapshot` and
-`market-data:option-chain` channels exist alongside it.
+`market-data:option-chain` channels exist alongside it. A `?symbols=` response
+that omits the requested contract is `MarketDataError('not_found')`.
 
 ### Option chain quotes
 
@@ -243,7 +282,7 @@ first consumer that needs to screen across strikes):
 
 ```typescript
 type OptionChainQuote = OptionSnapshot & {
-  contractId: string // OCC symbol, `O:` prefix stripped
+  contractId: string // bare OCC symbol
   strike: string // 4dp decimal string
   expiration: string // "YYYY-MM-DD"
   contractType: 'put' | 'call'
@@ -251,18 +290,30 @@ type OptionChainQuote = OptionSnapshot & {
 ```
 
 Identity fields are **required** rather than optional-everywhere, so screening
-consumers never null-check a field that is always present on a chain entry. For
-chain results `openInterest` and `volume` are populated from Massive's
-`open_interest` / `day.volume`; `strike` is 4 dp to match the codebase-wide TEXT
-money convention (`legs.strike`, `watchlist.own_below_price`). The money and
-Greeks mapping is shared with the single-contract path, so `mid` rounding lives
-in exactly one place.
+consumers never null-check a field that is always present on a chain entry.
+Alpaca's chain snapshots carry **no** strike or expiration fields — the map is
+keyed by bare OCC symbol — so identity comes from `parseOccSymbol` (see
+[OCC option symbols](#occ-option-symbols)); an unparseable key is skipped with a
+debug log rather than costing the whole ticker. `openInterest` is **not** in
+the snapshot at all: after a non-empty chain the adapter fetches
+`/v2/options/contracts` on the trading host for the same filters and joins the
+string `open_interest` by symbol (`number`, or `null` when absent). That call
+is isolated in its own `try/catch` — a contracts outage degrades every strike
+to `openInterest: null` with a warning, never failing the chain pull — because
+the screener's OI rule skips on `null` and would otherwise go silently blind
+([open-interest-from-contracts-endpoint](../architecture/02-adrs/open-interest-from-contracts-endpoint.md)).
+`volume` is `dailyBar.v`. `strike` is 4 dp to match the codebase-wide TEXT money
+convention (`legs.strike`, `watchlist.own_below_price`). The money and Greeks
+mapping is shared with the single-contract path (`mapOptionQuote`), so `mid`
+rounding lives in exactly one place.
 
 Every optional block in the vendor payload is guarded. A strike that has never
-traded (or is never quoted) omits `last_trade`, `last_quote`, or `greeks`
-entirely, and a zero-match chain response omits `results` altogether — these
-map to a zeroed quote and an empty chain respectively, never an error. One
-illiquid strike must not discard an entire underlying's chain.
+traded (or is never quoted) omits `latestTrade`, `latestQuote`, or has an empty
+`greeks`, and an unknown underlying returns an empty `snapshots` map — these
+map to a zeroed quote (epoch-0 timestamp = "never quoted") and an empty chain
+respectively, never an error. One illiquid strike must not discard an entire
+underlying's chain; a zeroed strike is dropped downstream by
+`isTradeableStrike`.
 
 The renderer-facing `market-data:option-chain` channel widens to match
 (`IpcOptionChainQuote`); the singular snapshot channels are unaffected.
@@ -270,21 +321,22 @@ The renderer-facing `market-data:option-chain` channel widens to match
 ### Market clock, account, and activities (broker, not market-data)
 
 The market clock/session, account info, and broker activities are **not** part
-of `MarketDataProvider`. They moved onto a separate `BrokerProvider`
+of `MarketDataProvider`. They live on a separate `BrokerProvider`
 (`AlpacaBrokerProvider`) served by the `broker:market-status`,
 `broker:account`, and `broker:activities` IPC channels — there is no
 `market-data:market-status` channel. `MarketStatus` (`{ isOpen, nextOpen,
-nextClose, session: 'regular' | 'pre' | 'post' | 'closed' }`) is still derived
+nextClose, session: 'regular' | 'pre' | 'post' | 'closed' }`) is derived
 client-side by the broker adapter from the broker clock + extended-hours
 windows (pre-market 4:00–9:30 AM ET, regular 9:30 AM–4:00 PM ET when open,
-post-market 4:00–8:00 PM ET, otherwise `closed`). The broker remains Alpaca;
-only the quote/option vendor changed to Massive. See
+post-market 4:00–8:00 PM ET, otherwise `closed`). Both stacks are Alpaca today,
+but the split is kept: the broker side goes through the SDK and `BrokerError`,
+the market-data side through raw `fetch` and `MarketDataError`. See
 [`contracts/ipc-handlers.md`](../contracts/ipc-handlers.md) for the broker
 channel contracts.
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-99 -->
 
 ## OCC option symbols
 
@@ -300,14 +352,20 @@ supports up to four decimal places. Example: AAPL 2026-05-16 $180.00 PUT →
 `AAPL260516P00180000`.
 
 The symbol is constructed by `buildOccSymbol({ ticker, expiration, strike,
-instrumentType })`, defined in `src/shared/option-symbol.ts` — a pure leaf
-module that imports only `decimal.js`. `src/main/core/option-symbol.ts`
-re-exports it for main-process callers. Because it is pure with no DB/Electron
-imports, the renderer imports it directly (from the shared module).
+instrumentType })` and parsed back by `parseOccSymbol(symbol): OccIdentity |
+null` (`{ underlying, contractId, strike (4dp), expiration, contractType }`),
+both defined in `src/shared/option-symbol.ts` — a pure leaf module that imports
+only `decimal.js`. `src/main/core/option-symbol.ts` re-exports them for
+main-process callers. Because it is pure with no DB/Electron imports, the
+renderer imports it directly (from the shared module). `parseOccSymbol` was
+promoted out of the fake provider in US-99 so the Alpaca mapper and the fake
+share one parser: Alpaca keys its chain snapshots by bare OCC symbol with no
+identity fields, so parsing the key is how a chain entry learns its strike,
+expiration and type.
 
 Validation rules: non-empty ticker, ISO date `YYYY-MM-DD`, strike strictly
 positive and finite, `instrumentType ∈ {'PUT', 'CALL'}`. Each invariant violation
-throws.
+throws. `parseOccSymbol` returns `null` (never throws) on a non-matching string.
 
 **No `contract_id` column on legs.** The OCC symbol is derived on demand from
 the fields the leg already carries. Storing it would duplicate state and create
@@ -315,55 +373,77 @@ a drift surface.
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-99 -->
 
 ## Streaming surface
 
-Streaming covers stock quotes over a single Massive WebSocket connection.
-Options are **REST-only** (greeks/IV are not streamed), so there is no option
-WebSocket feed.
+Streaming covers stock minute bars over a single Alpaca IEX WebSocket
+connection. Options are **REST-only** (greeks/IV are not streamed), so there is
+no option WebSocket feed; `supportsStreaming` is `true` only for `stockQuotes`.
 
-| Feed          | URL                                | Frame format |
-| ------------- | ---------------------------------- | ------------ |
-| `stockQuotes` | `wss://delayed.massive.com/stocks` | JSON text    |
+| Feed          | URL                                       | Frame format                              |
+| ------------- | ----------------------------------------- | ----------------------------------------- |
+| `stockQuotes` | `wss://stream.data.alpaca.markets/v2/iex` | JSON — an **array** of frames per message |
 
-REST base URL is `https://api.massive.com`. The adapter uses the `ws` npm
-package directly (there is no vendor SDK). Massive's WebSocket messages are
-Polygon-compatible JSON (`status` and `AM` aggregate-bar frames); options
-tickers are prefixed with `O:` (e.g. `O:SPY260604P00750000`) at the REST
-boundary.
+The adapter uses the `ws` npm package directly (there is no vendor SDK for
+streaming). The free plan allows one connection and **30 streamed symbols**;
+there is no wildcard subscription, so the provider subscribes per symbol.
 
 ### Wire protocol
 
 ```
-1. Client connects                          → WS open
-2. Client: {"action":"auth","params":"<apiKey>"}
-3. Server: {"ev":"status","status":"auth_success"}
-4. Client: {"action":"subscribe","params":"AM.*"}
-5. Server: {"ev":"status","status":"success"}
-6. Server pushes aggregate-bar frames        → {"ev":"AM","sym":"AAPL","c":...,"v":...}
+1. Client connects                                    → WS open
+2. Server: [{"T":"success","msg":"connected"}]
+3. Client: {"action":"auth","key":"<keyId>","secret":"<secret>"}
+4. Server: [{"T":"success","msg":"authenticated"}]    → connect() resolves
+5. Client: {"action":"subscribe","bars":["AAPL","NVDA"]}   (per stream() call, diff only)
+6. Server: [{"T":"subscription","bars":["AAPL","NVDA"]}]
+7. Server pushes minute bars                          → [{"T":"b","S":"AAPL","o":…,"h":…,"l":…,"c":…,"v":…,"t":"…"}]
 ```
 
-Auth failure surfaces as `{"ev":"status","status":"auth_failed"}`, mapped to a
-`MarketDataError('auth_failed', ...)`.
+`connect()` sends **no** subscribe. Each `stream('stockQuotes', symbols)` call
+reconciles the provider's `subscribed` set against `symbols` and sends only
+`{action:'unsubscribe', bars:[removed]}` then `{action:'subscribe',
+bars:[added]}`; an identical set sends nothing, and an empty set unsubscribes
+everything (dropping the renderer's rxjs subscription does not release Alpaca's,
+and leaked symbols count against the 30 cap). Bar frames map to
+`StockQuote { price = bid = ask = c, volume = v, timestamp = t, change /
+changePercent / prevClose = '' }`.
+
+Auth failure at connect surfaces as `[{"T":"error","code":402,"msg":"auth
+failed"}]` → `MarketDataError('auth_failed')`; `409 insufficient subscription`
+→ `streaming_unsupported`; no `authenticated` frame within 10 s →
+`network_error`. `subscribeToStockQuotes` catches any connect failure, logs a
+warning and continues REST-only — an entitlement problem never blocks prices.
+After connect, `405 symbol limit exceeded` / `406 connection limit exceeded`
+reach the Observable's error channel as `StreamError` (`symbol_limit` /
+`connection_limit`), which the renderer shows as the stale banner. See
+[per-symbol-ws-subscription-reconciliation](../architecture/02-adrs/per-symbol-ws-subscription-reconciliation.md).
 
 ### Observable model
 
 `stream(feed, symbols)` returns `Observable<StreamEvent<T>>` — not a callback
 registry. RxJS gives the layer above:
 
-- First-class unsubscription via `Subscription.unsubscribe()` — teardown sends
-  the WebSocket unsubscribe frame and removes the per-symbol filter.
-- Built-in error/completion channels — disconnects flow through `error`
+- First-class unsubscription via `Subscription.unsubscribe()`. Teardown sends
+  nothing to the socket; the **next** `stream()` call owns the subscription
+  reconciliation, which is correct because the service always tears down the
+  old subscription before calling `stream()` again.
+- Built-in error/completion channels — stream faults flow through `error`
   callbacks as `StreamError`, not a separate `onStreamError` callback.
 - Operators downstream stories need: `retry`/`retryWhen` for reconnection,
   `share`/`shareReplay` for multicasting, `distinctUntilChanged` and
   `debounceTime` for throttling.
 
-Each socket exposes one `Subject<StreamEvent>` that bridges raw WebSocket
-events to subscribers; each `stream()` call filters by symbol from the shared
-Subject. `disconnect()` closes both sockets, completes all subscribers, and
-nulls internal references so closed resources cannot be reused.
+The socket exposes one `Subject<StreamEvent>` that bridges raw WebSocket
+frames to subscribers; each `stream()` call is wrapped in `defer()` and filters
+by symbol from whichever subject is live (an empty `symbols` list receives
+everything). Because an rxjs `Subject` is permanently stopped once it errors,
+a stream fault swaps in a fresh subject before erroring the old one — otherwise
+a single 405 would end streaming for the life of the process. `disconnect()`
+closes the socket, nulls the reference and clears the subscribed set; the
+`close` handler is guarded by socket identity so a closing socket cannot clear
+state belonging to its replacement after a credential-change restart.
 
 ```typescript
 interface StreamEvent<T> {
@@ -375,15 +455,16 @@ interface StreamEvent<T> {
 
 interface StreamError {
   feed: MarketDataFeed
-  code: string // e.g. 'stream_disconnected'
+  code: string // 'symbol_limit' | 'connection_limit' | 'unknown'
   message: string
-  reconnectable: boolean
+  reconnectable: boolean // always false today
 }
 ```
 
 **Reconnection is the consumer's responsibility.** `StreamError.reconnectable`
-is a hint, not a behavior — `retry`/`retryWhen` is composed by callers (or by
-a future reconnection story).
+is a hint, not a behavior — the provider has no auto-reconnect; the next
+`set-stock-quote-tickers` call or a credential change re-establishes the stream.
+`retry`/`retryWhen` is composed by callers (or by a future reconnection story).
 
 <!-- /generated -->
 
@@ -410,27 +491,28 @@ and `refetchOnWindowFocus: true`. The hook builds OCC symbols inside a
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-99 -->
 
 ## Stream-first transport for stocks
 
 Live equity quotes use a **stream-first** transport: a one-shot REST snapshot
 seeds the cache, and every subsequent update arrives over WebSocket. Both
 paths terminate in the same TanStack Query cache so there is a single
-freshness clock and a single source of truth for any consumer.
+freshness clock and a single source of truth for any consumer. Both paths come
+from the **same feed (IEX)** so the first tick does not jump against the seed.
 
 ```
 Renderer                            Main process                       Provider
 --------                            ------------                       --------
 useStockQuotes(tickers)
   │
-  ├── queryFn → IPC invoke ────────► getStockQuotes()        ────────► REST  Massive v2 snapshot
-  │                                  (snapshot, with                   (min.c + prevDay.c)
+  ├── queryFn → IPC invoke ────────► getStockQuotes()        ────────► REST  GET /v2/stocks/snapshots?feed=iex
+  │                                  (one batched snapshot,           (latestTrade.p + prevDailyBar.c)
   │   ◄────────── snapshot ──────── prevClose computed)
   │
   ├── effect → IPC invoke ─────────► setStockQuoteTickers()  ────────► stream('stockQuotes', tickers)
-  │                                  (tear down prev sub,             (Observable<StreamEvent>)
-  │                                  subscribe new)
+  │                                  (tear down prev sub,             (reconcile per-symbol `bars` subs;
+  │                                  subscribe new)                    Observable<StreamEvent>)
   │
   │   ◄─── push: stock-quote ─────── tick (prevClose: null)
   │   ◄─── push: stream-error ────── on Observable error
@@ -441,12 +523,13 @@ useStockQuotes(tickers)
 
 ### Why both paths
 
-Massive's stream frames are aggregate bars (`AM`) carrying only the latest
-bar fields (`c` / `v` / timestamps) — **no previous-close field**. Without a
-REST seed, the price column would be empty until the first tick arrived (which
-during low-liquidity hours can be a long wait), and the daily `change` value
-could not be computed at all. The REST snapshot gives a per-day baseline
-(`prevDay.c`) and an initial price; the stream takes over from there.
+The stream frames are minute bars (`T: 'b'`) carrying only the bar fields
+(`o`/`h`/`l`/`c`/`v`/`t`) — **no previous-close field**. Without a REST seed,
+the price column would be empty until the first bar arrived (which during
+low-liquidity hours can be a long wait), and the daily `change` value could
+not be computed at all. The REST snapshot gives a per-day baseline
+(`prevDailyBar.c`) and an initial price (`latestTrade.p`); the stream takes over
+from there.
 
 The seed fires whenever the active-ticker list changes (positions added,
 closed, or initial mount). The stream subscription is then torn down and
@@ -457,13 +540,24 @@ call.
 
 The provider is created via `marketDataFactory.create()` (cached) once at app
 startup in `src/main/index.ts`. `provider.connect(['stockQuotes'])` is **not**
-called at startup — it
-fires on the **first non-empty** `setStockQuoteTickers` invocation, from inside
-the `subscribeToStockQuotes` service (`src/main/services/market-data.ts`). A
-`connected` flag on the handler's `StreamState` (created by `newStreamState()`
-in `registerMarketDataHandlers` and flipped inside that service) guards the call
-so the WebSocket is opened exactly once per app session. On `before-quit`,
-`marketDataFactory.disconnect()` closes it cleanly.
+called at startup — it fires on the **first non-empty** `setStockQuoteTickers`
+invocation, from inside the `subscribeToStockQuotes` service
+(`src/main/services/market-data.ts`). A `connected` flag on the handler's
+`StreamState` (created by `newStreamState()` in `registerMarketDataHandlers`
+and flipped inside that service) guards the call so the WebSocket is opened
+once per app session. On `before-quit`, `marketDataFactory.disconnect()` closes
+it cleanly.
+
+**Credential changes restart the stream (US-99).** The websocket authenticates
+once at connect, so when the trader saves, removes or switches Alpaca
+credentials, `onBrokerProviderChanged` in `index.ts` calls
+`restartStockQuoteStream()` (returned by `registerMarketDataHandlers`): the
+provider disconnects, `connected` is cleared, and — only if `StreamState.tickers`
+remembers a subscription — it reconnects with the new keys and replays the same
+tickers. REST needs no restart because the provider resolves credentials on
+every request. A connect failure during the restart logs a warning and leaves
+REST working. See
+[market-data-lazy-credentials-stream-restart](../architecture/02-adrs/market-data-lazy-credentials-stream-restart.md).
 
 This connect-on-demand pattern matches user intent: the WebSocket only opens
 when the renderer has decided it wants live data, not when the user is on the
@@ -476,8 +570,11 @@ it derives that list from `usePositions()` and calls
 `window.api.setStockQuoteTickers(tickers)` whenever it changes. The handler:
 
 1. Tears down the previous Observable subscription (`prevSubscription?.unsubscribe()`).
-2. Returns `{ ok: true, subscribedTickers: [] }` early if the new list is empty.
-3. Calls `provider.connect()` if `connected === false`, then flips the flag.
+2. Records the ticker set on `StreamState.tickers`; if the new list is empty,
+   asks the provider to unsubscribe everything and returns
+   `{ ok: true, subscribedTickers: [] }`.
+3. Calls `provider.connect()` if `connected === false`, then flips the flag
+   (a connect failure is logged and the handler continues REST-only).
 4. Subscribes to `provider.stream('stockQuotes', tickers)`.
 5. For each `StreamEvent<StockQuote>`, emits `market-data:stock-quote` via
    `webContents.send(...)`.
@@ -493,12 +590,12 @@ that produce the same ticker set do not retrigger the subscription churn.
 `change` and `changePercent` are split across two compute sites because the
 stream frame does not carry a previous-close field:
 
-- **REST snapshot path** — the adapter fills `change` / `changePercent` from
-  Massive's `todaysChange` / `todaysChangePerc` inside `getStockQuotes()`, and
-  sets `prevClose` to `Decimal(prevDay.c).toFixed(2)`; all three travel in the
-  snapshot.
-- **Stream tick path** — the adapter cannot compute change (no prev_close in
-  the frame). The IPC layer forwards the tick with `prevClose: null`. The
+- **REST snapshot path** — the adapter computes `change = price − prevClose`
+  and `changePercent = change / prevClose × 100` (4dp) inside
+  `getStockQuotes()`, and sets `prevClose` to `Decimal(prevDailyBar.c).toFixed(2)`;
+  all three travel in the snapshot (`''` when there is no previous bar).
+- **Stream tick path** — the adapter cannot compute change (no prev close in
+  the bar frame). The IPC layer forwards the tick with `prevClose: null`. The
   renderer carries `prevClose` forward from the cached snapshot value:
   `prevClose: event.quote.prevClose ?? prev?.[event.ticker]?.prevClose ?? null`.
 
@@ -731,16 +828,15 @@ components subscribe to the same ticker list.
 
 <!-- /generated -->
 
-<!-- generated:from us-56,us-70 -->
+<!-- generated:from us-56,us-70,us-99 -->
 
 ## Auxiliary feed: Finnhub earnings calendar
 
 Next-earnings dates power the `EARNINGS_PROXIMITY` alert rule
-([US-56](../features/us-56-earnings-proximity-alert.md)). Neither Massive
-(earnings is a $99/mo Benzinga add-on) nor Alpaca serves earnings data, so the
-feed comes from **Finnhub's free tier** — an official, keyed, JSON-over-HTTPS
-calendar endpoint whose query-param auth matches the Massive adapter
-conventions.
+([US-56](../features/us-56-earnings-proximity-alert.md)). Alpaca's data plans
+do not serve earnings dates (nor did Massive — a $99/mo Benzinga add-on), so
+the feed comes from **Finnhub's free tier** — an official, keyed, JSON-over-HTTPS
+calendar endpoint.
 
 ### Standalone integration module, not a provider method
 
@@ -834,12 +930,15 @@ and never suppresses other rules' results.
 
 ### Credentials
 
-`loadFinnhubApiKey()` in `src/main/integrations/finnhub-credentials.ts`
-mirrors the `massive-credentials.ts` pattern: it reads
+`loadFinnhubApiKey()` in `src/main/integrations/finnhub-credentials.ts` reads
 `import.meta.env.MAIN_VITE_FINNHUB_API_KEY` with a
-`process.env.FINNHUB_API_KEY` runtime fallback. No settings UI, no encrypted
-storage, no migration — the app remains fully functional without the key
-(the rule skips everywhere; every other rule is unaffected).
+`process.env.FINNHUB_API_KEY` runtime fallback — the env-loader pattern the
+retired Massive loader also used. Note that the Alpaca credential loader
+deliberately does **not** read `import.meta.env` (see
+[alpaca-credentials-runtime-env-only](../architecture/02-adrs/alpaca-credentials-runtime-env-only.md));
+the Finnhub key predates that decision and is unchanged by US-99. No settings
+UI, no encrypted storage, no migration — the app remains fully functional
+without the key (the rule skips everywhere; every other rule is unaffected).
 
 <!-- /generated -->
 
@@ -892,24 +991,53 @@ and [`features/us-56-earnings-proximity-alert.md`](../features/us-56-earnings-pr
 
 <!-- /generated -->
 
-<!-- generated:from us-37,market-data-massive-migration -->
+<!-- generated:from us-37,market-data-massive-migration,us-99 -->
 
-## Shared market data vs broker state
+## Market data and broker state share one credential
 
-US-37 makes an explicit product distinction that matters to the live-data domain:
+US-37 drew a product line between **shared market-data infrastructure** (then a
+Massive key baked into app configuration) and **user-specific broker state**
+(Alpaca paper/live credentials), and split the UI status indicators
+accordingly. US-99 collapsed the vendor side of that line — market data is now
+served by Alpaca using the very same saved credentials — while keeping the
+surfaces distinct:
 
-- **Market data is shared app infrastructure.** Massive status and market-data degraded states are tied to shared application configuration, not to user-managed broker credentials.
-- **Broker state is user-specific.** Alpaca paper/live credentials and the active broker environment are stored per user in settings and affect account/activity/buying-power surfaces only.
-- **Settings actions do not restart quote flows.** Switching broker environments or saving/removing Alpaca credentials refreshes broker-prefixed queries only; `['market', ...]` queries continue running.
-- **UI status indicators are intentionally split.**
+- **One credential story.** Saving Alpaca keys in Settings (or exporting
+  `ALPACA_KEY_ID` / `ALPACA_SECRET_KEY` for the process in dev) enables broker
+  surfaces **and** market data. `CredentialStatus.marketData` is
+  `'configured'` when a broker environment is active or the env fallback is
+  present, else `'missing'`; there is no separate market-data key, status or
+  connection test. The Settings "Market Data — Alpaca" region explains the
+  feeds and which environment is in use.
+- **Settings actions restart the stock stream.** Switching broker environments
+  or saving/removing the active Alpaca credentials recreates the broker
+  provider **and** restarts the market-data websocket with the new keys
+  (REST needs nothing). Broker-prefixed queries (`['broker', ...]`) are
+  invalidated; `['market', ...]` caches are refreshed by the stream restart.
+  The `LiveBrokerConfirmDialog` says so: "Market data reconnects with your live
+  keys — same Alpaca feeds, same prices."
+- **UI status indicators stay split.**
   - `EnvironmentBadge` reflects broker environment only: `PAPER`, `LIVE`, `NO BROKER`
-  - `MarketDataStatusDot` reflects Massive market-data state only
+  - `MarketDataStatusDot` reflects `CredentialStatus.marketData` ("Market data:
+    connected via Alpaca" / "Market data: connect Alpaca in Settings")
 
 ### Degraded-state consequences
 
-- Massive auth/config failures keep cached quotes briefly, surface a stale-data banner, then fall back to unavailable quote cells.
-- Missing or failed Alpaca credentials do not prevent shared market data from rendering; instead broker-only surfaces prompt the user to connect Alpaca in Settings.
+- With no credentials the app starts normally; every market-data call fails
+  with `auth_failed`, Positions shows "Connect Alpaca to enable market data,
+  broker activity and buying power." with an `Alpaca setup` link, price and
+  opt-mid cells render `—`, and the screener shows "Market data not
+  connected…" with **Open Settings** (distinct from the "Alpaca market data
+  couldn't be reached on the last refresh…" outage card with **Retry
+  refresh**).
+- An `auth_failed` from either the stream or the broker renders one shared
+  prompt — "Alpaca authentication failed — check your key in Settings" — and
+  the stream error also raises the stale banner.
+- A streaming entitlement problem (409 at connect, 405 symbol limit later)
+  degrades to REST-only quotes plus the stale banner; it never blocks prices.
 
-This split is why US-37 belongs partly in the market-data spec even though the story is primarily a settings/broker workflow: the user-facing quote domain now stays healthy or degraded independently from the broker environment toggle.
+Under `FAKE_MARKET_DATA=true` the fake provider is credential-agnostic, so e2e
+specs can stream fixture prices without saving credentials and separately
+assert the no-credential copy.
 
 <!-- /generated -->

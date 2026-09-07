@@ -1,6 +1,14 @@
-# US-39: Massive Market Data Provider
+# US-39: Massive Market Data Provider (superseded)
 
-<!-- generated:from us-39,market-data-massive-migration -->
+<!-- generated:from us-39,market-data-massive-migration,us-99 -->
+
+> **Superseded by [US-99 — Alpaca as the sole market-data provider](./us-99-alpaca-market-data-provider.md) (2026-09-06).**
+> `MassiveMarketDataProvider` and its credential loader were deleted; `AlpacaMarketDataProvider`
+> now backs every `market-data:*` channel using the trader's Alpaca broker credentials. The
+> broker/market-data interface split, the `broker:*` namespace, the singular
+> `market-data:option-snapshot` and `market-data:option-chain` channels, and optional `greeks`
+> on `IpcOptionSnapshot` — all introduced here — remain current. The Massive-specific details
+> below (base URL, `?apiKey=` auth, `wss://delayed.massive.com`, `AM.*` wildcard) are history.
 
 ## Summary
 

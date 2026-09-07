@@ -2,7 +2,7 @@
 
 Each ADR captures one architectural choice that emerged from a plan/story. Decisions are grouped below by theme; many ADRs are referenced by multiple feature pages.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,us-53-54-55,us-57-58,us-97,missing-ac -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,us-53-54-55,us-57-58,us-97,us-99,missing-ac -->
 
 ## Engine & architecture
 
@@ -13,8 +13,8 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [standalone-service-per-operation](./standalone-service-per-operation.md) — One service file per mutation operation under `src/main/services/`.
 - [save-verified-alpaca-service](./save-verified-alpaca-service.md) — Test-then-save orchestration for Alpaca credentials lives in its own service, not in the IPC handler.
 - [decimal-money-math](./decimal-money-math.md) — `decimal.js` with `ROUND_HALF_UP` at 4 dp; stored as TEXT.
-- [runtime-broker-provider-refresh](./runtime-broker-provider-refresh.md) — Broker settings changes recreate only broker state at runtime; market data stays untouched.
-- [occ-symbol-pure-leaf](./occ-symbol-pure-leaf.md) — Build OCC symbols in a pure `src/main/core/option-symbol.ts` leaf; no `contract_id` column.
+- [runtime-broker-provider-refresh](./runtime-broker-provider-refresh.md) — Broker settings changes recreate broker state at runtime without an app restart; amended by US-99 so the same change also restarts the stock-quote stream (shared Alpaca credentials).
+- [occ-symbol-pure-leaf](./occ-symbol-pure-leaf.md) — Build (and, since US-99, parse) OCC symbols in the pure `src/shared/option-symbol.ts` leaf; no `contract_id` column.
 - [pnl-math-in-costbasis](./pnl-math-in-costbasis.md) — `computeUnrealizedPnl` lives in `costbasis.ts`; 4 dp decimal strings; pnlPercent on 0–100 scale.
 - [spread-no-bid-renderer-predicates](./spread-no-bid-renderer-predicates.md) — `isWideSpread` and `hasNoBid` as pure renderer predicates.
 - [verdict-pure-compute](./verdict-pure-compute.md) — Verdict routing as a pure function in `src/renderer/src/lib/verdict.ts`.
@@ -30,7 +30,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [active-leg-resolution](./active-leg-resolution.md) — Phase-aware `activeLegSubquery()` shared by list and detail queries.
 - [profit-target-nullable-column](./profit-target-nullable-column.md) — Nullable `profit_target_percent` column + hard-coded default constant.
 - [active-leg-metadata-via-positions-list](./active-leg-metadata-via-positions-list.md) — `PositionListItem` extended with active-leg metadata via the existing subquery.
-- [shared-massive-app-configuration](./shared-massive-app-configuration.md) — Massive credentials stay in shared app configuration; settings store Alpaca only.
+- [shared-massive-app-configuration](./shared-massive-app-configuration.md) — **Superseded by alpaca-sole-market-data-vendor (US-99).** Massive credentials stayed in shared app configuration; settings stored Alpaca only.
 - [fill-migration-gap-with-007](./fill-migration-gap-with-007.md) — Use migration `007_create_ivr_snapshot.sql` to fill the open numbering gap between `006` and `008`.
 - [ivr-same-day-overwrite-delete-then-insert](./ivr-same-day-overwrite-delete-then-insert.md) — Same-day IVR refreshes delete the prior UTC-day row, then insert the fresh snapshot.
 - [active-ivr-targets-from-positions](./active-ivr-targets-from-positions.md) — **Superseded by union-ivr-targets-positions-and-watchlist (US-97).** IVR collection targets come from distinct active `positions.ticker` values, not renderer list projections.
@@ -75,19 +75,25 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [market-data-tanstack-cache](./market-data-tanstack-cache.md) — Single TanStack Query cache merges REST seeds and stream ticks via `setQueryData`.
 - [market-status-pill](./market-status-pill.md) — LIVE/EXT/CLOSED/DELAYED pill polled at 60 s; `deriveMarketStatusDisplay` is pure.
 - [market-data-stale-detection](./market-data-stale-detection.md) — `Date.now() - dataUpdatedAt > 5 min` → DELAYED banner + pill override.
-- [alpaca-sdk-rest-only](./alpaca-sdk-rest-only.md) — Alpaca SDK for working REST endpoints; bypassed entirely for streaming.
+- [alpaca-sdk-rest-only](./alpaca-sdk-rest-only.md) — Alpaca SDK for the working broker REST endpoints only; market data (REST + websocket) uses raw `fetch` and `ws`.
 - [ws-package-streaming](./ws-package-streaming.md) — Raw `ws` package; two dedicated sockets (stock JSON / option MessagePack).
 - [rxjs-observables-for-streaming](./rxjs-observables-for-streaming.md) — `stream()` returns RxJS `Observable<StreamEvent<…>>`; REST stays on Promises.
 - [msgpack-option-streaming](./msgpack-option-streaming.md) — `@msgpack/msgpack` `decodeMulti()` for Alpaca option frames.
-- [marketdataerror-structured-codes](./marketdataerror-structured-codes.md) — `MarketDataError` with discriminating `code`; thrown not returned.
+- [marketdataerror-structured-codes](./marketdataerror-structured-codes.md) — `MarketDataError` with discriminating `code`; thrown not returned; HTTP-status and websocket-code mapping, never message text.
 - [market-session-derivation](./market-session-derivation.md) — `session` derived client-side from clock + calendar.
 - [option-data-availability](./option-data-availability.md) — Greeks/IV REST-only; `openInterest`/`volume` always null from Alpaca.
-- [market-data-provider-interface](./market-data-provider-interface.md) — Provider-agnostic interface + `createMarketDataProvider` factory.
+- [market-data-provider-interface](./market-data-provider-interface.md) — Provider-agnostic `MarketDataProvider` type + `marketDataFactory`; has survived two vendor swaps unchanged.
 - [option-snapshots-rest-polling](./option-snapshots-rest-polling.md) — REST polling at 60 s, disabled when market closed; no stream bridge.
 - [renderer-builds-occ-symbols](./renderer-builds-occ-symbols.md) — Renderer builds OCC symbols from active legs; no server-side building.
 - [ipc-returns-full-option-snapshot](./ipc-returns-full-option-snapshot.md) — `market-data:option-snapshots` returns the full `OptionSnapshot` shape.
 - [barchart-as-canonical-ivr-source](./barchart-as-canonical-ivr-source.md) — IVR collection builds on the existing Barchart scraper and persists `source='barchart'`.
 - [ivr-collector-throttle-boundary](./ivr-collector-throttle-boundary.md) — The IVR collector enforces the 1 request/second batch throttle, even though the scraper also rate-limits.
+- [alpaca-sole-market-data-vendor](./alpaca-sole-market-data-vendor.md) — Alpaca's free data plan is the only market-data vendor (US-99); Massive removed; supersedes shared-massive-app-configuration.
+- [market-data-lazy-credentials-stream-restart](./market-data-lazy-credentials-stream-restart.md) — One provider instance resolving credentials on every call; the factory never throws; a broker-credential change restarts only the stock stream.
+- [iex-feed-for-seed-and-stream](./iex-feed-for-seed-and-stream.md) — One batched IEX snapshot seeds; the IEX `bars` websocket streams; same feed for both so ticks never jump against the seed; real bid/ask carried, not faked.
+- [per-symbol-ws-subscription-reconciliation](./per-symbol-ws-subscription-reconciliation.md) — `stream()` sends only the unsubscribe/subscribe diff against a remembered set; 405/406 surface as `StreamError`s; socket-identity guard and a fresh `Subject` per fault.
+- [open-interest-from-contracts-endpoint](./open-interest-from-contracts-endpoint.md) — OI joined from the trading API's contracts endpoint by symbol, degrading to `null` with a warning so the screener's OI floor stays honest.
+- [alpaca-credentials-runtime-env-only](./alpaca-credentials-runtime-env-only.md) — The shared dev-fallback loader reads `process.env` only; `.env` can never configure keys because `electron-vite` inlines `MAIN_VITE_*` into the bundle.
 
 ## Background polling & assignment detection
 

@@ -672,11 +672,11 @@ The confirm and dismiss error envelopes carry an extra top-level `code` field (`
 
 <!-- /generated -->
 
-<!-- generated:from us-37 -->
+<!-- generated:from us-37,us-99 -->
 
 ## Settings payloads and result shapes
 
-US-37 adds broker/settings-specific schemas to `src/main/schemas.ts`.
+US-37 added broker/settings-specific schemas to `src/main/schemas.ts`; US-99 narrowed the connection-test payload to Alpaca and reshaped `CredentialStatus` when Massive was retired.
 
 ### Payload schemas
 
@@ -701,128 +701,59 @@ export const TestStoredAlpacaConnectionPayloadSchema = z.object({
   environment: BrokerEnvironmentSchema
 })
 
-export const TestConnectionPayloadSchema = z.discriminatedUnion('vendor', [
-  z.object({ vendor: z.literal('massive') }),
-  z.object({
-    vendor: z.literal('alpaca'),
-    environment: BrokerEnvironmentSchema,
-    keyId: NonEmptyTrimmedStringSchema,
-    secret: NonEmptyTrimmedStringSchema
-  })
-])
-```
-
-- `BrokerEnvironmentSchema` is the shared `'paper' | 'live'` enum used across save/remove/switch/test payloads.
-- All user-entered credential fields are trimmed before validation.
-- `settings:test-stored-alpaca-connection` validates only the target environment because secrets are loaded from encrypted persistence in the main process.
-
-### Result shapes
-
-```ts
-type CredentialStatus = {
-  massive: 'configured' | 'missing'
-  alpacaPaper: 'configured' | 'missing'
-  alpacaLive: 'configured' | 'missing'
-  activeBrokerEnv: 'paper' | 'live' | 'none'
-  massiveLastCheckedAt: string | null
-  alpacaPaperAccountNumberMasked: string | null
-  alpacaLiveAccountNumberMasked: string | null
-}
-
-type TestSettingsConnectionResult =
-  | { ok: true; vendor: 'massive'; status: 'connected' }
-  | {
-      ok: true
-      vendor: 'alpaca'
-      environment: 'paper' | 'live'
-      accountNumberMasked: string
-    }
-  | { ok: false; errorCode: string; message: string }
-
-type SaveAlpacaCredentialsResult = {
-  status: CredentialStatus
-  test: Extract<TestSettingsConnectionResult, { ok: true; vendor: 'alpaca' }>
-}
-```
-
-These shapes back the renderer settings API in `src/renderer/src/api/settings.ts` and are returned by the `settings:*` IPC handlers documented in [contracts/ipc-handlers.md](./ipc-handlers.md).
-
-<!-- /generated -->
-
-<!-- generated:from us-37 -->
-
-## Settings payloads and result shapes
-
-US-37 adds broker/settings-specific schemas to `src/main/schemas.ts`.
-
-### Payload schemas
-
-```ts
-const NonEmptyTrimmedStringSchema = z.string().trim().min(1, 'Required')
-
-export const SaveAlpacaCredentialsPayloadSchema = z.object({
+// US-99: a plain object with a single vendor literal. The former
+// z.discriminatedUnion('vendor', [{ vendor: 'massive' }, { vendor: 'alpaca', … }]) is gone;
+// a payload carrying vendor: 'massive' now fails validation (invalid_literal on `vendor`).
+export const TestConnectionPayloadSchema = z.object({
+  vendor: z.literal('alpaca'),
   environment: BrokerEnvironmentSchema,
   keyId: NonEmptyTrimmedStringSchema,
   secret: NonEmptyTrimmedStringSchema
 })
-
-export const RemoveAlpacaCredentialsPayloadSchema = z.object({
-  environment: BrokerEnvironmentSchema
-})
-
-export const SetActiveBrokerEnvironmentPayloadSchema = z.object({
-  environment: BrokerEnvironmentSchema
-})
-
-export const TestStoredAlpacaConnectionPayloadSchema = z.object({
-  environment: BrokerEnvironmentSchema
-})
-
-export const TestConnectionPayloadSchema = z.discriminatedUnion('vendor', [
-  z.object({ vendor: z.literal('massive') }),
-  z.object({
-    vendor: z.literal('alpaca'),
-    environment: BrokerEnvironmentSchema,
-    keyId: NonEmptyTrimmedStringSchema,
-    secret: NonEmptyTrimmedStringSchema
-  })
-])
 ```
 
 - `BrokerEnvironmentSchema` is the shared `'paper' | 'live'` enum used across save/remove/switch/test payloads.
 - All user-entered credential fields are trimmed before validation.
 - `settings:test-stored-alpaca-connection` validates only the target environment because secrets are loaded from encrypted persistence in the main process.
+- The `vendor` literal is kept (rather than dropping the field) so the renderer's discriminant and the `TestConnectionResult.vendor` tag stay aligned.
 
 ### Result shapes
 
 ```ts
 type CredentialStatus = {
-  massive: 'configured' | 'missing'
+  marketData: 'configured' | 'missing' // US-99 — activeBrokerEnv !== 'none' || hasFallbackCredentials()
   alpacaPaper: 'configured' | 'missing'
   alpacaLive: 'configured' | 'missing'
   activeBrokerEnv: 'paper' | 'live' | 'none'
-  massiveLastCheckedAt: string | null
   alpacaPaperAccountNumberMasked: string | null
   alpacaLiveAccountNumberMasked: string | null
+  // removed by US-99: massive, massiveLastCheckedAt
 }
 
 type TestSettingsConnectionResult =
-  | { ok: true; vendor: 'massive'; status: 'connected' }
   | {
       ok: true
       vendor: 'alpaca'
       environment: 'paper' | 'live'
       accountNumberMasked: string
     }
-  | { ok: false; errorCode: string; message: string }
+  | { ok: false; errorCode: ConnectionErrorCode; message: string }
+// removed by US-99: { ok: true; vendor: 'massive'; status: 'connected' }
+
+type ConnectionErrorCode =
+  | 'auth_failed'
+  | 'rate_limited'
+  | 'environment_mismatch'
+  | 'network_error'
+  | 'unknown'
 
 type SaveAlpacaCredentialsResult = {
   status: CredentialStatus
-  test: Extract<TestSettingsConnectionResult, { ok: true; vendor: 'alpaca' }>
+  test: Extract<TestSettingsConnectionResult, { ok: true }>
 }
 ```
 
-These shapes back the renderer settings API in `src/renderer/src/api/settings.ts` and are returned by the `settings:*` IPC handlers documented in [contracts/ipc-handlers.md](./ipc-handlers.md).
+These shapes back the renderer settings API in `src/renderer/src/api/settings.ts` (and `src/preload/index.d.ts`), and are returned by the `settings:*` IPC handlers documented in [contracts/ipc-handlers.md](./ipc-handlers.md). The e2e mock surface `WHEELBASE_MOCK_SETTINGS_CONNECTIONS` (`MockSettingsConnectionConfig` in `src/main/index.ts`) mirrors the result union and has only an `alpaca` key since US-99.
 
 <!-- /generated -->
 

@@ -2,7 +2,7 @@
 
 This directory is a generated source-of-truth wiki for the Wheelbase application. Pages are synthesized from the per-story plan dirs under `plans/` via the `/build-spec` (initial) and `/update-spec` (incremental) skills; each page's body sits between `<!-- generated:from <plan-list> -->` markers and is re-generated when any listed plan changes. Browse by topic (architecture, domain, contracts, schema) for cross-cutting concerns, or by feature (US-N) for story-level behaviour.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-16,us-17,us-31,us-32,us-33,us-34,us-35,us-37,us-39,us-43,us-44,us-50,us-51,us-52,us-53-54-55,us-56,us-57-58,us-59,us-60,us-62,us-63,us-64,us-65,us-66,us-67,us-68,us-70,us-97,market-data-massive-migration,missing-ac,design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-16,us-17,us-31,us-32,us-33,us-34,us-35,us-37,us-39,us-43,us-44,us-50,us-51,us-52,us-53-54-55,us-56,us-57-58,us-59,us-60,us-62,us-63,us-64,us-65,us-66,us-67,us-68,us-70,us-97,us-99,market-data-massive-migration,missing-ac,design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse -->
 
 ## Maintenance
 
@@ -23,13 +23,13 @@ Generated regions are bounded by `<!-- generated:from ... -->` / `<!-- /generate
 
 - [Wheel Lifecycle](domain/wheel-lifecycle.md) — phases, valid transitions, and the lifecycle engine's rejection rules
 - [Cost Basis](domain/cost-basis.md) — how `assignment_strike − premiums + roll_debits − roll_credits` is recalculated after every leg event
-- [Market Data](domain/market-data.md) — live underlying prices, polling cadence, market-status pill, and adapter pattern for data providers
+- [Market Data](domain/market-data.md) — live underlying prices, option snapshots/chains, stream-first transport, market-status pill, and the `MarketDataProvider` adapter (Alpaca free data plan since US-99)
 - [Management Alerts](domain/alerts.md) — built-in alert rules, the open→resolved alert lifecycle, and the scheduled evaluation engine
 
 ## Contracts
 
 - [IPC Handlers](contracts/ipc-handlers.md) — handler catalogue, request/response envelope, Zod validation pattern
-- [Alpaca Integration](contracts/alpaca-integration.md) — broker SDK isolation, read-only Phase 2/3 calls, error handling
+- [Alpaca Integration](contracts/alpaca-integration.md) — broker SDK isolation, the raw-`fetch`/`ws` market-data adapter, shared credentials and the credential-change restart, error handling
 - [Zod Schemas](contracts/zod-schemas.md) — payload validation conventions, inferred types, schema reuse across IPC and forms
 
 ## Schema
@@ -77,7 +77,8 @@ Generated regions are bounded by `<!-- generated:from ... -->` / `<!-- /generate
 - [US-46 — Polling Scheduler](features/us-46-polling-scheduler.md) — generic market-session-aware setTimeout-chain job runner; foundation for all background poll jobs
 - [US-47/49 — Broker AC Hardening + Scheduler Park-Wake Resume](features/us-47-49-broker-ac-hardening.md) — `BrokerError.deeplink`, 4dp money normalization, two-direction key-mismatch detection, IPC deeplink envelope, park-wake self-resume at `nextOpen`
 - [US-48 — Scheduler + Settings Fixes](features/us-48-scheduler-settings-fixes.md) — broker getter injection, `stop()` timer cleanup, Settings Test Connection rejection handling
-- [Market-Data Provider Migration: Alpaca → Massive](features/market-data-massive-migration.md) — **retro plan / migration** capturing the swap of the live market-data provider from Alpaca to Massive (provider-agnostic interface + `marketDataFactory` + `MassiveMarketDataProvider`; broker concerns split onto `broker:*`); supersedes the market-data portions of US-31/US-32/US-39
+- [Market-Data Provider Migration: Alpaca → Massive](features/market-data-massive-migration.md) — **superseded by US-99.** Retro plan capturing the interim swap of the live market-data provider from Alpaca to Massive (provider-agnostic interface + `marketDataFactory` + `MassiveMarketDataProvider`; broker concerns split onto `broker:*`); the interface, factory and broker split it records are still current, the Massive vendor surface is not
+- [US-99 — Alpaca as the sole market-data provider](features/us-99-alpaca-market-data-provider.md) — retires Massive: `AlpacaMarketDataProvider` serves the whole `MarketDataProvider` interface from Alpaca's **free** data plan (one batched IEX stock snapshot for REST seeds, an IEX websocket with per-symbol `bars` subscriptions, indicative option chains/snapshots with real bid/ask + greeks, open interest joined from the trading API's contracts endpoint) using the trader's saved Alpaca broker credentials, resolved on every call. The factory never throws; a credential save/remove/switch restarts only the stock stream. `CredentialStatus.marketData` replaces `massive`, `settings:test-connection` is Alpaca-only, and Settings/Positions/Screener copy names Alpaca. No schema or IPC-channel change; `grep -rni massive src e2e .env.example` prints nothing
 
 ### Epic 07 — Management alerts
 

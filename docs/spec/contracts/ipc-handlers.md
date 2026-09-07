@@ -1,6 +1,6 @@
 # IPC Handlers
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39,us-99 -->
 
 ## Overview
 
@@ -10,7 +10,9 @@ Every interaction between the renderer and the main process flows through `ipcMa
 
 Two transport patterns are in use. Most handlers are request/response (`ipcRenderer.invoke` ↔ `ipcMain.handle`) and carry a Zod-validated payload from the renderer through to a service function. The market-data subsystem additionally uses **fire-and-forget push events** (`webContents.send` ↔ `ipcRenderer.on`) for stream ticks (`market-data:stock-quote`) and stream failures (`market-data:stream-error`); these are one-way, main → renderer, and have no response envelope. Payload validation happens twice: the renderer adapter (`src/renderer/src/api/*.ts`) maps snake_case form state to camelCase IPC fields, and the main-process handler re-validates via the matching `*PayloadSchema` from `src/main/schemas.ts` before calling the service.
 
-**Broker / market-data namespace split (us-39).** US-39 separated broker concerns from market-data concerns at the IPC layer. The old `AlpacaMarketDataProvider` (which handled both quote data and broker calls) was replaced by two separate providers: `MassiveMarketDataProvider` (market data) and `AlpacaBrokerProvider` (broker). Three new `broker:*` channels (`broker:account`, `broker:market-status`, `broker:activities`) now route to `AlpacaBrokerProvider` via `src/main/ipc/broker.ts`. All `market-data:*` channels route to `MassiveMarketDataProvider` via `src/main/ipc/market-data.ts`. The `market-data:market-status` channel (which previously forwarded to Alpaca) is now served by `broker:market-status`; the old channel name is still registered for backward compatibility but the canonical broker path is the `broker:*` namespace.
+**Broker / market-data namespace split (us-39).** US-39 separated broker concerns from market-data concerns at the IPC layer. The old `AlpacaMarketDataProvider` (which handled both quote data and broker calls) was replaced by two separate providers: `MassiveMarketDataProvider` (market data) and `AlpacaBrokerProvider` (broker). Three new `broker:*` channels (`broker:account`, `broker:market-status`, `broker:activities`) now route to `AlpacaBrokerProvider` via `src/main/ipc/broker.ts`. All `market-data:*` channels routed to `MassiveMarketDataProvider` via `src/main/ipc/market-data.ts`. The `market-data:market-status` channel (which previously forwarded to Alpaca) is now served by `broker:market-status`; the old channel name is still registered for backward compatibility but the canonical broker path is the `broker:*` namespace.
+
+**Market data back on Alpaca (us-99).** US-99 retired Massive: every `market-data:*` channel now routes to `AlpacaMarketDataProvider` (`src/main/integrations/alpaca-market-data.ts`), which serves Alpaca's free data plan using the same Alpaca credentials the broker uses. **No channel was added, removed or reshaped** — the namespace split above still stands. Two settings shapes changed: `CredentialStatus` (returned by `settings:get-credential-status` and the credential mutations) gained `marketData` and lost `massive` / `massiveLastCheckedAt`, and `settings:test-connection` accepts only `{ vendor: 'alpaca', … }`. `registerMarketDataHandlers` now returns `{ restartStockQuoteStream }`, which `src/main/index.ts` calls from `onBrokerProviderChanged` so a credential change re-authenticates the stock stream. Where a handler entry below says a channel "routes to `MassiveMarketDataProvider`", read `AlpacaMarketDataProvider`; the provider is selected by `marketDataFactory` and the handler files are unchanged.
 
 **Leg shape (`instrumentType`, not `optionType`).** us-6 renamed the leg field `optionType` → `instrumentType` across every handler that returns a leg and added `'STOCK'` as a third enum value (`PUT | CALL | STOCK`). The DB column was renamed from `option_type` to `instrument_type` via `migrations/003_rename_option_type_to_instrument_type.sql`, and the CHECK constraint was expanded accordingly. All handler responses below use `instrumentType`; older plan extracts that still reference `optionType` are stale.
 
@@ -22,7 +24,7 @@ Two transport patterns are in use. Most handlers are request/response (`ipcRende
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39,us-44,us-51,us-57-58,us-59 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39,us-44,us-51,us-57-58,us-59,us-99 -->
 
 ## Handler reference
 
@@ -742,9 +744,9 @@ Handlers are grouped by namespace. Each subsection documents the request payload
   | (zod path) | (zod code)       | zod issue message        |
 
 - **Note:** the renderer adapter throws `apiError(502, { detail: result.errors })` on `ok: false` so TanStack Query sets `isError`. `change` / `changePercent` are intentionally NOT included in `IpcStockQuote` — the renderer derives them from `(price, prevClose)`.
-- **us-39 routing change:** as of us-39, this channel routes to `MassiveMarketDataProvider` (not Alpaca). The handler file is unchanged (`src/main/ipc/market-data.ts`) but the provider instance is now `MassiveMarketDataProvider` from `src/main/integrations/massive-market-data.ts`. Auth failures from a missing or empty Massive API key surface as `auth_failed`.
+- **Routing history:** us-39 moved this channel from the original Alpaca provider to `MassiveMarketDataProvider`; us-99 moved it back to Alpaca (`AlpacaMarketDataProvider`, one batched `GET /v2/stocks/snapshots?feed=iex` per call). The handler file is unchanged (`src/main/ipc/market-data.ts`). Missing Alpaca credentials surface as `auth_failed` / `Alpaca credentials not configured` without any request being made; tickers Alpaca does not know (or returns without a `latestTrade`) are simply absent from `quotes`.
 - **Source:** `src/main/ipc/market-data.ts`, `src/main/schemas.ts`
-- **Driven by:** [us-32 — Live Position Prices](../features/us-32-live-position-prices.md), [us-39 — Massive Market Data Provider](../features/us-39-massive-market-data-provider.md)
+- **Driven by:** [us-32 — Live Position Prices](../features/us-32-live-position-prices.md), [us-39 — Massive Market Data Provider](../features/us-39-massive-market-data-provider.md), [us-99 — Alpaca as the sole market-data provider](../features/us-99-alpaca-market-data-provider.md)
 
 ### `market-data:set-stock-quote-tickers`
 
@@ -774,9 +776,9 @@ Handlers are grouped by namespace. Each subsection documents the request payload
   | `__root__` | `internal_error`        | uncaught error                      |
   | (zod path) | (zod code)              | zod issue message                   |
 
-- **Lifecycle:** module-scoped `connected` flag inside `registerMarketDataHandlers` ensures `provider.connect()` runs at most once per app session; `app.on('before-quit', () => provider.disconnect())` closes the socket on shutdown. Empty array tears down without reconnecting.
-- **Source:** `src/main/ipc/market-data.ts`
-- **Driven by:** [us-32 — Live Position Prices](../features/us-32-live-position-prices.md)
+- **Lifecycle:** a `StreamState` (`{ connected, activeSub, tickers }`, created by `newStreamState()` in `registerMarketDataHandlers`) ensures `provider.connect()` runs once per app session — or once per credential change: `registerMarketDataHandlers` returns `{ restartStockQuoteStream }`, and `onBrokerProviderChanged` (`src/main/index.ts`) calls it after a credential save/remove/switch to disconnect, clear `connected`, and replay the remembered `tickers` against the new keys (us-99). `app.on('before-quit')` disconnects via `marketDataFactory.disconnect()`. An empty array tears down the subscription, unsubscribes every symbol on the socket, and returns `subscribedTickers: []` without reconnecting. A `connect()` failure (auth, entitlement, network) is logged and the app continues REST-only — the `streaming_unsupported` row above is the Alpaca 409 "insufficient subscription" case.
+- **Source:** `src/main/ipc/market-data.ts`, `src/main/services/market-data.ts`
+- **Driven by:** [us-32 — Live Position Prices](../features/us-32-live-position-prices.md), [us-99 — Alpaca as the sole market-data provider](../features/us-99-alpaca-market-data-provider.md)
 
 ### `market-data:market-status`
 
@@ -811,13 +813,13 @@ Handlers are grouped by namespace. Each subsection documents the request payload
 
 - **Superseded by us-39.** This channel (plural bulk OCC symbol lookup) was introduced by us-33 and is replaced by two purpose-fit channels: `market-data:option-snapshot` (singular, single-contract lookup) and `market-data:option-chain` (filtered + paginated chain). Callers that used the old bulk endpoint must migrate to one of those two channels.
 - **Purpose (historical):** REST-style snapshot of the full option chain shape (bid/ask/mid, last trade, open interest, volume, Greeks) for a list of OCC option symbols. Polled every 60 s via `useOptionSnapshots(legs, { session })` to drive the `Opt Mid` / `P&L` list columns and the position-detail Open Leg stats. Symbols built renderer-side via `buildOccSymbol()` in `src/main/core/option-symbol.ts`.
-- **Breaking change (us-39):** `greeks` is now **optional** on `IpcOptionSnapshot`. When the Massive provider does not include Greeks (e.g. deep ITM, missing data), `greeks` is `undefined` rather than zero-filled — renderer code reading `snapshot.greeks.delta` must be updated to `snapshot.greeks?.delta` to avoid runtime errors.
+- **Breaking change (us-39):** `greeks` is now **optional** on `IpcOptionSnapshot`. When the provider does not include Greeks (Massive then; Alpaca now sends `greeks: {}` on deep-OTM strikes, which the mapper treats as absent), `greeks` is `undefined` rather than zero-filled — renderer code reading `snapshot.greeks.delta` must be updated to `snapshot.greeks?.delta` to avoid runtime errors.
 - **Source (historical):** `src/main/ipc/market-data.ts`, `src/main/services/market-data.ts`, `src/main/schemas.ts`
 - **Driven by:** [us-33 — Option Mid + Unrealized P&L](../features/us-33-option-mid-pnl.md)
 
 ### `market-data:option-snapshot`
 
-- **Purpose:** single-contract lookup returning the full snapshot (bid/ask/mid, last trade, open interest, volume, optional Greeks) for one OCC option symbol. Replaces the bulk `market-data:option-snapshots` channel for single-leg pricing. Routes to `MassiveMarketDataProvider`.
+- **Purpose:** single-contract lookup returning the full snapshot (bid/ask/mid, last trade, open interest, volume, optional Greeks) for one OCC option symbol. Replaces the bulk `market-data:option-snapshots` channel for single-leg pricing. Routes to the market-data provider (`AlpacaMarketDataProvider` since us-99: `GET /v1beta1/options/snapshots?symbols={contract}&feed=indicative`; `openInterest` is always `null` on this path).
 - **Request:**
   ```typescript
   // Zod validated
@@ -841,7 +843,7 @@ Handlers are grouped by namespace. Each subsection documents the request payload
     lastTrade: string          // 4 dp TEXT
     openInterest: number | null
     volume: number | null
-    greeks?: {                 // optional — absent when Massive does not return Greeks
+    greeks?: {                 // optional — absent when the provider returns no/partial Greeks
       delta: string            // 4 dp TEXT
       gamma: string            // 4 dp TEXT
       theta: string            // 4 dp TEXT
@@ -856,19 +858,19 @@ Handlers are grouped by namespace. Each subsection documents the request payload
 
   | field      | code             | message                                              |
   | ---------- | ---------------- | ---------------------------------------------------- |
-  | `__root__` | `auth_failed`    | provider auth rejected (missing/invalid Massive key) |
+  | `__root__` | `auth_failed`    | provider auth rejected (missing/invalid Alpaca keys) |
   | `__root__` | `network_error`  | upstream network failure                             |
   | `__root__` | `rate_limited`   | provider rate limit hit                              |
   | `__root__` | `internal_error` | uncaught error                                       |
   | (zod path) | (zod code)       | zod issue message                                    |
 
-- **Notes:** `null` snapshot is a normal non-error response — the renderer renders `—` for absent symbols. `greeks` is optional: when Massive omits Greeks for a contract (e.g. deep ITM, expiry edge cases), the field is absent rather than zero-filled. Renderer code must use `snapshot.greeks?.delta` rather than `snapshot.greeks.delta`.
+- **Notes:** `null` snapshot is a normal non-error response — the renderer renders `—` for absent symbols. `greeks` is optional: when the provider omits Greeks for a contract (Alpaca sends an empty `greeks: {}` on deep-OTM strikes and the mapper requires all four of delta/gamma/theta/vega), the field is absent rather than zero-filled. Renderer code must use `snapshot.greeks?.delta` rather than `snapshot.greeks.delta`.
 - **Source:** `src/main/ipc/market-data.ts`
-- **Driven by:** [us-39 — Massive Market Data Provider](../features/us-39-massive-market-data-provider.md), [us-33 — Option Mid + Unrealized P&L](../features/us-33-option-mid-pnl.md)
+- **Driven by:** [us-39 — Massive Market Data Provider](../features/us-39-massive-market-data-provider.md), [us-33 — Option Mid + Unrealized P&L](../features/us-33-option-mid-pnl.md), [us-99 — Alpaca as the sole market-data provider](../features/us-99-alpaca-market-data-provider.md)
 
 ### `market-data:option-chain`
 
-- **Purpose:** filtered and paginated option chain lookup — returns all option snapshots for an underlying that match the supplied filter criteria. Intended for the option screener and chain explorer UI. Routes to `MassiveMarketDataProvider`.
+- **Purpose:** filtered and paginated option chain lookup — returns all option snapshots for an underlying that match the supplied filter criteria. Intended for the option screener and chain explorer UI. Routes to the market-data provider (`AlpacaMarketDataProvider` since us-99: `GET /v1beta1/options/snapshots/{underlying}?feed=indicative…`, joined with open interest from the trading API's `/v2/options/contracts`; a contracts failure degrades `openInterest` to `null` rather than failing the call).
 - **Request:**
   ```typescript
   // Zod validated
@@ -1313,7 +1315,7 @@ These channels do **not** follow the `{ ok, errors }` envelope — they return a
 - **Source:** `src/main/ipc/test-scheduler.ts`.
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39,us-99 -->
 
 ## Push events
 
@@ -1422,16 +1424,17 @@ Renderer adapters in `src/renderer/src/api/*.ts` translate IPC camelCase field n
 - [us-35 — Assignment Detection & Auto-Transition](../features/us-35-assignment-detection.md)
 - [us-37 — Paper/Live Broker Environment Toggle](../features/us-37-paper-live-broker-environment-toggle.md)
 - [us-39 — Massive Market Data Provider](../features/us-39-massive-market-data-provider.md)
+- [us-99 — Alpaca as the sole market-data provider](../features/us-99-alpaca-market-data-provider.md)
 - [us-44 — IVR snapshot store and scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md)
 - [us-51 — Management Queue Dashboard](../features/us-51-management-queue-dashboard.md)
 - [us-57-58 — Configurable alert thresholds](../features/us-57-58-configurable-alert-thresholds.md)
 - [us-59 — Dismiss an alert with a record of the dismissal](../features/us-59-dismiss-alert.md)
 
-(us-2 was authored as a FastAPI `GET /api/positions` HTTP endpoint; the surviving Electron equivalent is `src/main/services/list-positions.ts` and the IPC channel name `positions:list` documented above is derived rather than authoritative. us-12-refactor introduced no new IPC handlers; it centralised the active-leg SQL into `src/main/services/active-leg-sql.ts` which is consumed by both `positions:get` and `positions:list`. us-6 introduced the global `optionType` → `instrumentType` rename across all leg-returning handlers and the `instrument_type` DB migration; us-5, us-6, and us-10 added `'EXPIRE'`, `'ASSIGN'`, and `'EXERCISE'` respectively to the `LegAction` enum. us-8 and us-9 both deliberately omit a new `cost_basis_snapshots` insert — us-8 because the existing CC_OPEN snapshot already captures the CC premium and the wheel is still open, us-9 because CC expiration is not a financial event (the premium was captured at CC open in us-7). us-10 introduced the new `positions:record-call-away` channel, the `'CALLED_AWAY'` `legRole` value, and the `WHEEL_COMPLETE` terminal phase. us-11 widened the `positions:get` response with an `allSnapshots` array (used by the renderer's `deriveRunningBasis()` pure helper to attach a running cost basis to every row in `LegHistoryTable`) and split previously-overloaded role values into distinct terminal-event values: `'CALLED_AWAY'` (now written by `positions:record-call-away` instead of `'CC_CLOSE'`) and `'CC_EXPIRED'` (now written by `positions:expire-cc` instead of a generic `'EXPIRE'`). us-13 is **plan-only** — the plan directory has no `tasks.md` or `refactor-phase-results.md` yet; both its planned changes (adding `rollCount` to `positions:get` and relaxing `positions:roll-csp` validation to allow same-expiration strike-only rolls) are documented as planned above. us-14 introduced the new `positions:roll-cc` channel — a mirror of `positions:roll-csp` for the CC leg with two intentional behaviour differences (`>=` expiration instead of `>`, plus an explicit `no_change` lifecycle guard on the sentinel field `__roll__`); the refactor phase consolidated `RollCspPayloadSchema` / `RollCcPayloadSchema` into a shared `RollPayloadBaseSchema` and `RollCspResult` / `RollCcResult` onto a shared `RollResultBase` interface — `calculateRollBasis()` is reused unchanged. us-15 added the `rollChainId: string | null` field to every entry in `positions:get`'s `legs[]` payload (the underlying `legs.roll_chain_id` column already existed from migration 001; us-15 only exposed it through `GET_LEGS_QUERY` + `mapLegRow`) and added the same field to the `LegRecord` TypeScript interface — all non-roll write-paths set `rollChainId: null` explicitly while the two roll services pass the shared UUID. The `activeLeg` payload deliberately still surfaces `rollChainId: null`. us-33 introduced the `market-data:option-snapshots` request/response channel (full provider `OptionSnapshot` shape including `greeks`, 1:1 with the provider — not flattened like `IpcStockQuote`) and extended `positions:list` with four nullable active-leg fields (`instrumentType`, `contracts`, `entryPremiumPerContract`, `profitTargetPercent`) sourced from the existing active-leg subquery plus the new `positions.profit_target_percent` column from migration `005`. us-31 (the market-data provider/foundation story) shipped **no** new IPC handlers — it landed the `MarketDataProvider` interface and `getOptionSnapshots(symbols)` adapter method that this channel consumes; us-34 (Greeks display) ships **no** new IPC handlers either, re-using the existing option-snapshots channel and reading `snapshots[symbol].greeks` directly. us-39 introduced the broker/market-data namespace split: `AlpacaMarketDataProvider` was removed entirely and replaced by `MassiveMarketDataProvider` (all `market-data:*` channels) and `AlpacaBrokerProvider` (all `broker:*` channels); the old plural `market-data:option-snapshots` channel was superseded by `market-data:option-snapshot` (singular) and `market-data:option-chain`; three new `broker:*` channels (`broker:account`, `broker:market-status`, `broker:activities`) now route to `AlpacaBrokerProvider` via `src/main/ipc/broker.ts`; `market-data:stock-quotes` now routes to `MassiveMarketDataProvider`; `greeks` on `IpcOptionSnapshot` became optional (absent rather than zero-filled when the provider omits them). us-39 introduced no DB migrations. us-35 introduced the four `assignments:*` channels (`assignments:list-pending`, `assignments:confirm`, `assignments:dismiss`, `assignments:run-detection-now`) plus four dev-only `_test:scheduler-*` channels (`_test:scheduler-registry`, `_test:scheduler-run-now`, `_test:scheduler-register`, `_test:scheduler-simulate-wake`) registered only when `NODE_ENV === 'test'`. `assignments:confirm` and `assignments:dismiss` are the only handlers in this document that deviate from the canonical `{ ok, errors }` envelope — they add a top-level `code` field (`NOT_FOUND` / `NOT_PENDING` / `TRANSITION_REJECTED`) sourced from `PendingAssignmentError.code` because `handleIpcCall` cannot express a top-level discriminator alongside the field-error array. us-35 also added migration `008_create_pending_assignments.sql` (with a compound `UNIQUE(activity_id, position_id)` index to support multi-CSP collisions on a single OPASN activity) and consumes the `app_settings` key/value table introduced by us-37's migration `006_add_credential_settings.sql` (per-environment watermark keys `assignments_last_poll_at:paper` / `:live`). us-37 introduced the six `settings:*` channels (`settings:get-credential-status`, `settings:save-alpaca-credentials`, `settings:remove-alpaca-credentials`, `settings:set-active-broker-environment`, `settings:test-connection`, `settings:test-stored-alpaca-connection`) and the migration `006_add_credential_settings.sql` that creates the `credential_settings` (encrypted Alpaca key material) and `app_settings` (active-broker-environment + general key/value) tables; broker provider refresh is runtime-scoped to broker handlers only — market-data providers continue uninterrupted across environment switches. us-44 introduced the new dedicated `ivr:*` namespace with a single handler, `ivr:collect-now` (`src/main/ipc/ivr.ts`), a manual scheduler trigger for the `ivr-collect` job that — unlike `assignments:run-detection-now` — returns the collector batch summary (`{ successCount, errorCount, skippedCount, skippedReason }`) validated through `CollectIvrNowBatchSchema` so a swallowed job-handler error becomes an honest `{ ok: false }` rather than a fake success; it also added migration `007_create_ivr_snapshot.sql` (the `ivr_snapshot` table — see [schema/tables](../schema/tables.md)) and the `ivr-collect` scheduler job registration in `src/main/index.ts`. us-51 introduced the new dedicated `alerts:*` namespace with a single handler, `alerts:list` (`src/main/ipc/alerts.ts`, `registerAlertsHandlers({ db })`), a payload-free read path that surfaces US-50's persisted open alerts as the dashboard "Management Queue"; the service `listManagementQueue(db)` (`src/main/services/alerts.ts`) INNER-JOINs open `alerts` to `positions`, sorts in SQL by urgency rank (high→medium→low) then `triggered_at ASC`, and projects into the new `ManagementQueueItem` view-model (`src/main/schemas.ts`) — deliberately a narrower shape than `AlertRecord`. us-51 added **no** migration (it reads US-50's `alerts` table from `migrations/009_create_alerts.sql`) and structurally mirrors `assignments:list-pending`. us-57-58 introduced three new channels — `settings:get-alert-defaults`, `settings:save-alert-defaults`, and `positions:save-alert-overrides` — making the alert engine's two thresholds (profit-target percent, management-window DTE) configurable at both a global (`app_settings`-backed) and per-position (`positions.management_window_dte_override`, migration `010`) level; it added no new migration for the global-defaults half (reuses the existing `app_settings` table) and one migration for the per-position half. us-59 added `alerts:dismiss` to the `alerts:*` namespace — a write channel alongside US-51's read-only `alerts:list` — transitioning an open alert to `dismissed` with a `dismissed_at` timestamp (migration `011_add_alerts_dismissal.sql`) and rejecting a non-open target with the new `NOT_OPEN` code; it follows the same `AlertError`/`handleIpcCall` dispatch pattern and the same top-level-`code` envelope deviation that `assignments:confirm` / `assignments:dismiss` established for us-35. All are tracked here for regeneration completeness.)
+(us-2 was authored as a FastAPI `GET /api/positions` HTTP endpoint; the surviving Electron equivalent is `src/main/services/list-positions.ts` and the IPC channel name `positions:list` documented above is derived rather than authoritative. us-12-refactor introduced no new IPC handlers; it centralised the active-leg SQL into `src/main/services/active-leg-sql.ts` which is consumed by both `positions:get` and `positions:list`. us-6 introduced the global `optionType` → `instrumentType` rename across all leg-returning handlers and the `instrument_type` DB migration; us-5, us-6, and us-10 added `'EXPIRE'`, `'ASSIGN'`, and `'EXERCISE'` respectively to the `LegAction` enum. us-8 and us-9 both deliberately omit a new `cost_basis_snapshots` insert — us-8 because the existing CC_OPEN snapshot already captures the CC premium and the wheel is still open, us-9 because CC expiration is not a financial event (the premium was captured at CC open in us-7). us-10 introduced the new `positions:record-call-away` channel, the `'CALLED_AWAY'` `legRole` value, and the `WHEEL_COMPLETE` terminal phase. us-11 widened the `positions:get` response with an `allSnapshots` array (used by the renderer's `deriveRunningBasis()` pure helper to attach a running cost basis to every row in `LegHistoryTable`) and split previously-overloaded role values into distinct terminal-event values: `'CALLED_AWAY'` (now written by `positions:record-call-away` instead of `'CC_CLOSE'`) and `'CC_EXPIRED'` (now written by `positions:expire-cc` instead of a generic `'EXPIRE'`). us-13 is **plan-only** — the plan directory has no `tasks.md` or `refactor-phase-results.md` yet; both its planned changes (adding `rollCount` to `positions:get` and relaxing `positions:roll-csp` validation to allow same-expiration strike-only rolls) are documented as planned above. us-14 introduced the new `positions:roll-cc` channel — a mirror of `positions:roll-csp` for the CC leg with two intentional behaviour differences (`>=` expiration instead of `>`, plus an explicit `no_change` lifecycle guard on the sentinel field `__roll__`); the refactor phase consolidated `RollCspPayloadSchema` / `RollCcPayloadSchema` into a shared `RollPayloadBaseSchema` and `RollCspResult` / `RollCcResult` onto a shared `RollResultBase` interface — `calculateRollBasis()` is reused unchanged. us-15 added the `rollChainId: string | null` field to every entry in `positions:get`'s `legs[]` payload (the underlying `legs.roll_chain_id` column already existed from migration 001; us-15 only exposed it through `GET_LEGS_QUERY` + `mapLegRow`) and added the same field to the `LegRecord` TypeScript interface — all non-roll write-paths set `rollChainId: null` explicitly while the two roll services pass the shared UUID. The `activeLeg` payload deliberately still surfaces `rollChainId: null`. us-33 introduced the `market-data:option-snapshots` request/response channel (full provider `OptionSnapshot` shape including `greeks`, 1:1 with the provider — not flattened like `IpcStockQuote`) and extended `positions:list` with four nullable active-leg fields (`instrumentType`, `contracts`, `entryPremiumPerContract`, `profitTargetPercent`) sourced from the existing active-leg subquery plus the new `positions.profit_target_percent` column from migration `005`. us-31 (the market-data provider/foundation story) shipped **no** new IPC handlers — it landed the `MarketDataProvider` interface and `getOptionSnapshots(symbols)` adapter method that this channel consumes; us-34 (Greeks display) ships **no** new IPC handlers either, re-using the existing option-snapshots channel and reading `snapshots[symbol].greeks` directly. us-39 introduced the broker/market-data namespace split: `AlpacaMarketDataProvider` was removed entirely and replaced by `MassiveMarketDataProvider` (all `market-data:*` channels) and `AlpacaBrokerProvider` (all `broker:*` channels); the old plural `market-data:option-snapshots` channel was superseded by `market-data:option-snapshot` (singular) and `market-data:option-chain`; three new `broker:*` channels (`broker:account`, `broker:market-status`, `broker:activities`) now route to `AlpacaBrokerProvider` via `src/main/ipc/broker.ts`; `market-data:stock-quotes` now routes to `MassiveMarketDataProvider`; `greeks` on `IpcOptionSnapshot` became optional (absent rather than zero-filled when the provider omits them). us-39 introduced no DB migrations. us-35 introduced the four `assignments:*` channels (`assignments:list-pending`, `assignments:confirm`, `assignments:dismiss`, `assignments:run-detection-now`) plus four dev-only `_test:scheduler-*` channels (`_test:scheduler-registry`, `_test:scheduler-run-now`, `_test:scheduler-register`, `_test:scheduler-simulate-wake`) registered only when `NODE_ENV === 'test'`. `assignments:confirm` and `assignments:dismiss` are the only handlers in this document that deviate from the canonical `{ ok, errors }` envelope — they add a top-level `code` field (`NOT_FOUND` / `NOT_PENDING` / `TRANSITION_REJECTED`) sourced from `PendingAssignmentError.code` because `handleIpcCall` cannot express a top-level discriminator alongside the field-error array. us-35 also added migration `008_create_pending_assignments.sql` (with a compound `UNIQUE(activity_id, position_id)` index to support multi-CSP collisions on a single OPASN activity) and consumes the `app_settings` key/value table introduced by us-37's migration `006_add_credential_settings.sql` (per-environment watermark keys `assignments_last_poll_at:paper` / `:live`). us-37 introduced the six `settings:*` channels (`settings:get-credential-status`, `settings:save-alpaca-credentials`, `settings:remove-alpaca-credentials`, `settings:set-active-broker-environment`, `settings:test-connection`, `settings:test-stored-alpaca-connection`) and the migration `006_add_credential_settings.sql` that creates the `credential_settings` (encrypted Alpaca key material) and `app_settings` (active-broker-environment + general key/value) tables; broker provider refresh is runtime-scoped to broker handlers only — market-data providers continue uninterrupted across environment switches. us-44 introduced the new dedicated `ivr:*` namespace with a single handler, `ivr:collect-now` (`src/main/ipc/ivr.ts`), a manual scheduler trigger for the `ivr-collect` job that — unlike `assignments:run-detection-now` — returns the collector batch summary (`{ successCount, errorCount, skippedCount, skippedReason }`) validated through `CollectIvrNowBatchSchema` so a swallowed job-handler error becomes an honest `{ ok: false }` rather than a fake success; it also added migration `007_create_ivr_snapshot.sql` (the `ivr_snapshot` table — see [schema/tables](../schema/tables.md)) and the `ivr-collect` scheduler job registration in `src/main/index.ts`. us-51 introduced the new dedicated `alerts:*` namespace with a single handler, `alerts:list` (`src/main/ipc/alerts.ts`, `registerAlertsHandlers({ db })`), a payload-free read path that surfaces US-50's persisted open alerts as the dashboard "Management Queue"; the service `listManagementQueue(db)` (`src/main/services/alerts.ts`) INNER-JOINs open `alerts` to `positions`, sorts in SQL by urgency rank (high→medium→low) then `triggered_at ASC`, and projects into the new `ManagementQueueItem` view-model (`src/main/schemas.ts`) — deliberately a narrower shape than `AlertRecord`. us-51 added **no** migration (it reads US-50's `alerts` table from `migrations/009_create_alerts.sql`) and structurally mirrors `assignments:list-pending`. us-57-58 introduced three new channels — `settings:get-alert-defaults`, `settings:save-alert-defaults`, and `positions:save-alert-overrides` — making the alert engine's two thresholds (profit-target percent, management-window DTE) configurable at both a global (`app_settings`-backed) and per-position (`positions.management_window_dte_override`, migration `010`) level; it added no new migration for the global-defaults half (reuses the existing `app_settings` table) and one migration for the per-position half. us-59 added `alerts:dismiss` to the `alerts:*` namespace — a write channel alongside US-51's read-only `alerts:list` — transitioning an open alert to `dismissed` with a `dismissed_at` timestamp (migration `011_add_alerts_dismissal.sql`) and rejecting a non-open target with the new `NOT_OPEN` code; it follows the same `AlertError`/`handleIpcCall` dispatch pattern and the same top-level-`code` envelope deviation that `assignments:confirm` / `assignments:dismiss` established for us-35. us-99 retired Massive and pointed every `market-data:*` channel at `AlpacaMarketDataProvider` without adding, removing or reshaping any channel; it changed two settings shapes (`CredentialStatus.marketData` replacing `massive`/`massiveLastCheckedAt`; `TestConnectionPayloadSchema` Alpaca-only) and made broker-credential changes restart the stock stream via `registerMarketDataHandlers().restartStockQuoteStream`. All are tracked here for regeneration completeness.)
 
 <!-- /generated -->
 
-<!-- generated:from us-37,us-57-58 -->
+<!-- generated:from us-37,us-57-58,us-99 -->
 
 ## Settings handlers
 
@@ -1439,24 +1442,23 @@ US-37 adds a dedicated `settings:*` namespace for credential status, Alpaca cred
 
 ### `settings:get-credential-status`
 
-- **Purpose:** hydrate the settings page, the app-shell broker badge, and vendor-specific degraded-state UI with shared Massive status plus Alpaca paper/live status.
+- **Purpose:** hydrate the settings page, the app-shell broker badge and `MarketDataStatusDot`, and the degraded-state UI (Positions "Connect Alpaca" banner, screener "not connected" card) with Alpaca paper/live status and the derived market-data status.
 - **Request:** none.
 - **Response (success):**
   ```ts
   {
     ok: true,
     status: {
-      massive: 'configured' | 'missing'
+      marketData: 'configured' | 'missing'        // us-99: activeBrokerEnv !== 'none' || hasFallbackCredentials()
       alpacaPaper: 'configured' | 'missing'
       alpacaLive: 'configured' | 'missing'
       activeBrokerEnv: 'paper' | 'live' | 'none'
-      massiveLastCheckedAt: string | null
       alpacaPaperAccountNumberMasked: string | null
       alpacaLiveAccountNumberMasked: string | null
     }
   }
   ```
-- **Notes:** Massive status is derived from shared app configuration and does not create a `credential_settings` row. `massiveLastCheckedAt` is currently always `null`.
+- **Notes:** `marketData` is derived, not stored — market data runs on the active saved Alpaca credentials or on the `process.env` dev fallback (`hasFallbackCredentials`, a required `createSettingsService` option wired in `src/main/index.ts` to `loadAlpacaCredentialsFromEnv() !== null`). The us-37 fields `massive` and `massiveLastCheckedAt` were **removed** by us-99; the same `CredentialStatus` type is mirrored in `src/preload/index.d.ts` and `src/renderer/src/api/settings.ts`.
 
 ### `settings:save-alpaca-credentials`
 
@@ -1524,29 +1526,33 @@ US-37 adds a dedicated `settings:*` namespace for credential status, Alpaca cred
   | ------------- | --------------------- | -------------------------------------------------------------------------------------------- |
   | `environment` | `missing_credentials` | `Alpaca paper credentials are not configured` / `Alpaca live credentials are not configured` |
 
-- **Behavior:** persists `active_broker_environment`, recreates only the broker provider, and leaves market-data providers untouched.
+- **Behavior:** persists `active_broker_environment`, recreates the broker provider, and (us-99) restarts the stock-quote stream so the market-data websocket re-authenticates with the newly active keys; the market-data provider instance itself is not recreated (it resolves credentials per call).
 
 ### `settings:test-connection`
 
-- **Purpose:** run a vendor-specific probe without saving credentials.
+- **Purpose:** probe a set of candidate Alpaca credentials without saving them. Alpaca is the only vendor left to test (us-99).
 - **Request:**
   ```ts
-  | { vendor: 'massive' }
-  | { vendor: 'alpaca', environment: 'paper' | 'live', keyId: string, secret: string }
+  // Zod: TestConnectionPayloadSchema — a plain z.object; the former discriminatedUnion with { vendor: 'massive' } is gone
+  { vendor: 'alpaca', environment: 'paper' | 'live', keyId: string, secret: string }
   ```
 - **Response (success):**
   ```ts
   {
     ok: true,
     test:
-      | { ok: true, vendor: 'massive', status: 'connected' }
       | { ok: true, vendor: 'alpaca', environment: 'paper' | 'live', accountNumberMasked: string }
-      | { ok: false, errorCode: string, message: string }
+      | { ok: false, errorCode: 'auth_failed' | 'rate_limited' | 'environment_mismatch' | 'network_error' | 'unknown', message: string }
   }
   ```
+- **Error codes:**
+
+  | field    | code              | message                                                      |
+  | -------- | ----------------- | ------------------------------------------------------------ |
+  | `vendor` | `invalid_literal` | a payload with `vendor: 'massive'` is rejected by the schema |
+
 - **Vendor specifics:**
-  - Massive probes `GET /v3/reference/tickers/AAPL` with the shared configured key.
-  - Alpaca probes `GET /v2/account` against paper or live and does not import activities.
+  - Alpaca probes `GET {ALPACA_TRADING_BASE_URLS[environment]}/v2/account` against paper or live and does not import activities. The e2e mock surface `WHEELBASE_MOCK_SETTINGS_CONNECTIONS` (`MockSettingsConnectionConfig`) now has only an `alpaca` key.
   - Mismatch detection is bidirectional (heuristic by key prefix): live keys (`AK…`) in the paper card → `environment_mismatch` / `Environment mismatch — these are LIVE keys, not paper keys`; paper keys (`PK…`) in the live card → `environment_mismatch` / `Environment mismatch — these are PAPER keys, not live keys`.
 
 ### `settings:test-stored-alpaca-connection`
@@ -1678,7 +1684,7 @@ postEarningsOnly?, coreHolding? }` (parsed by `WatchlistAddPayloadSchema`; ticke
 
 <!-- /generated -->
 
-<!-- generated:from us-65,us-67,us-70 -->
+<!-- generated:from us-65,us-67,us-70,us-99 -->
 
 ## `screener:*` namespace
 
@@ -1728,7 +1734,7 @@ daysBeforeExpiry }` (only under `earningsHandling: 'flag'`),
   `yieldPerDelta`, then ticker) and the renderer must not re-sort; only `clear` candidates
   display a rank number. An earnings-feed outage surfaces here as
   `{ status: 'unavailable' }` per candidate — never as an envelope error and never as
-  `status: 'provider_unavailable'`, which stays reserved for a Massive chain outage. See
+  `status: 'provider_unavailable'`, which covers both an Alpaca chain outage and missing Alpaca credentials (per-ticker `auth_failed` from the chain pull rolls up to it; the renderer distinguishes the two via `CredentialStatus.marketData`). See
   [us-70](../features/us-70-earnings-in-window-warning.md).
 - **`ScreenerExclusion.code`:** the eight engine codes — `price_ceiling`, `iv_rank_floor`
   (added by US-67, positioned immediately after `price_ceiling` in the ordered registry),

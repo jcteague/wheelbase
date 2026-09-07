@@ -297,5 +297,5 @@ Reference documents: `plan.md` (areas + derived ACs), `research.md` (ADRs), `dat
 - [ ] `grep -rni massive src e2e .env.example` prints nothing
 - [ ] `pnpm test && pnpm lint && pnpm typecheck && pnpm format` — all clean (run `pnpm test` only with no `pnpm dev` session open)
 - [ ] Manual live smoke per `quickstart.md`; request counts and websocket handshake lines recorded in the PR description
-- [ ] `/update-spec us-99` run; `shared-massive-app-configuration` ADR superseded, `runtime-broker-provider-refresh` amended, `market-data-massive-migration` feature page marked superseded
+- [x] `/update-spec us-99` run (2026-09-07); `shared-massive-app-configuration` ADR superseded, `runtime-broker-provider-refresh` amended, `market-data-massive-migration` feature page marked superseded
 - [ ] Massive subscriptions cancelled
