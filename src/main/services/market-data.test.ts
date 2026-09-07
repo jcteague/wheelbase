@@ -86,6 +86,28 @@ describe('subscribeToStockQuotes', () => {
     expect(provider.stream).toHaveBeenCalledWith('stockQuotes', [])
   })
 
+  // Without this the socket is dead but `connected` stays true, so the next
+  // set-stock-quote-tickers skips connect() and subscribes to a stream nothing feeds.
+  it('clears connected when the stream errors, so the next call reconnects', async () => {
+    const provider = createProvider()
+    await subscribeToStockQuotes(state, provider, ['AAPL'], onTick, onError)
+    expect(state.connected).toBe(true)
+
+    provider.ticks.error({
+      feed: 'stockQuotes',
+      code: 'connection_lost',
+      message: 'socket closed',
+      reconnectable: true
+    })
+
+    expect(state.connected).toBe(false)
+    expect(onError).toHaveBeenCalled()
+
+    provider.connect.mockClear()
+    await subscribeToStockQuotes(state, provider, ['AAPL'], onTick, onError)
+    expect(provider.connect).toHaveBeenCalledTimes(1)
+  })
+
   it('remembers an empty ticker set', async () => {
     const provider = createProvider()
     await subscribeToStockQuotes(state, provider, ['AAPL'], onTick, onError)

@@ -25,7 +25,7 @@ import { getAlertDefaults, saveAlertDefaults } from './services/alert-defaults'
 import { scheduler } from './services/scheduler-instance'
 import { registerSettingsHandlers } from './ipc/settings'
 import type { TestConnectionPayload } from './schemas'
-import { createSettingsService } from './services/settings'
+import { createSettingsService, type AlpacaCredentials } from './services/settings'
 import { testAlpacaConnection, type TestConnectionResult } from './services/settings-connections'
 import { logger } from './logger'
 import type { BrokerProvider } from './integrations/broker-provider'
@@ -143,17 +143,17 @@ app.whenReady().then(() => {
     hasFallbackCredentials: () => loadAlpacaCredentialsFromEnv() !== null
   })
 
+  // One resolver for both factories and for the status flag that describes them. Written
+  // three times, these drifted apart once already — market data honoured the environment
+  // fallback while the broker silently did not.
+  const resolveAlpacaCredentials = (): AlpacaCredentials | null =>
+    settings.loadActiveAlpacaCredentials() ?? loadAlpacaCredentialsFromEnv()
+
   // Market data and broker share the one set of Alpaca credentials the trader saves.
   // Saved credentials win; .env is the documented dev/CI fallback (see .env.example) and
   // is what the retired vendor's key used to come from, so it has to keep working.
-  marketDataFactory.configure({
-    loadActiveAlpacaCredentials: () =>
-      settings.loadActiveAlpacaCredentials() ?? loadAlpacaCredentialsFromEnv()
-  })
-  brokerFactory.configure({
-    loadActiveAlpacaCredentials: () =>
-      settings.loadActiveAlpacaCredentials() ?? loadAlpacaCredentialsFromEnv()
-  })
+  marketDataFactory.configure({ loadActiveAlpacaCredentials: resolveAlpacaCredentials })
+  brokerFactory.configure({ loadActiveAlpacaCredentials: resolveAlpacaCredentials })
 
   registerPingHandler()
   registerPositionsHandlers(db)

@@ -395,6 +395,24 @@ describe('ScreenerPage — provider outage', () => {
     expect(unavailable).not.toHaveTextContent("couldn't be reached")
   })
 
+  // While the status query is pending (or has errored) `data` is undefined. Defaulting that
+  // to "not connected" would offer Open Settings to a trader whose keys are fine and whose
+  // actual problem is an outage they should retry.
+  it('falls back to the outage card while the credential status is unknown', async () => {
+    mockUseSettingsStatus.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null
+    } as ReturnType<typeof useSettingsStatus>)
+
+    renderPage()
+
+    const unavailable = await screen.findByTestId('screener-unavailable')
+    expect(unavailable).toHaveTextContent("couldn't be reached")
+    expect(screen.getByRole('button', { name: 'Retry refresh' })).toBeInTheDocument()
+  })
+
   it('offers Retry refresh only when credentials exist to retry with', async () => {
     mockUseSettingsStatus.mockReturnValue({
       data: { marketData: 'missing' },

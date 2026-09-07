@@ -1386,10 +1386,57 @@ describe('AlpacaMarketDataProvider degraded payloads', () => {
       })
     })
 
-    it('ignores a socket error raised after connect has already resolved', async () => {
+    // A socket that dies after connect must reach the error channel. Staying silent left
+    // the renderer with a green "connected" dot and a stream that never emitted again.
+    it('surfaces a socket that closes after connect as a stream error', async () => {
+      const { provider, ws } = await connected()
+      let errored: unknown = null
+      provider.stream('stockQuotes', ['AAPL']).subscribe({
+        next: () => {},
+        error: (err) => {
+          errored = err
+        }
+      })
+
+      ws.emit('close')
+
+      expect(errored).toMatchObject({
+        feed: 'stockQuotes',
+        code: 'connection_lost',
+        reconnectable: true
+      })
+    })
+
+    it('does not throw on a socket error raised after connect has resolved', async () => {
       const { ws } = await connected()
 
       expect(() => ws.emit('error', new Error('late failure'))).not.toThrow()
+    })
+
+    it('rejects connect when the socket closes mid-handshake', async () => {
+      const { provider } = createProvider()
+      const connecting = provider.connect().catch((e: unknown) => e)
+      mockWsInstances[0].emit('close')
+
+      expect((await connecting) as MarketDataError).toMatchObject({ code: 'network_error' })
+    })
+
+    // failStream leaves the socket's subscription record behind unless it is cleared, so a
+    // 405 at the symbol cap would make every later subscribe a no-op diff.
+    it('forgets its subscriptions when the stream fails', async () => {
+      const { provider, ws } = await connected()
+      provider.stream('stockQuotes', ['AAPL', 'NVDA']).subscribe({
+        next: () => {},
+        error: () => {}
+      })
+      serverSends(ws, [{ T: 'error', code: 405, msg: 'symbol limit exceeded' }])
+      ws.send.mockClear()
+
+      provider.stream('stockQuotes', ['AAPL'])
+
+      expect(ws.send.mock.calls.map((c) => JSON.parse(String(c[0])))).toEqual([
+        { action: 'subscribe', bars: ['AAPL'] }
+      ])
     })
 
     // An rxjs Subject is permanently stopped once it errors. A symbol-limit rejection must

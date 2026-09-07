@@ -159,7 +159,9 @@ export function ScreenerPage(): React.JSX.Element {
   const { data: criteria, isError: isCriteriaError } = useScreeningCriteria()
   const { data: watchlist } = useWatchlist()
   const { data: credentialStatus } = useSettingsStatus()
-  const marketDataConfigured = credentialStatus?.marketData === 'configured'
+  // `!== 'missing'`, not `=== 'configured'`: an unresolved status must not claim the trader
+  // has no credentials, since that swaps a usable Retry for a pointless trip to Settings.
+  const marketDataConfigured = credentialStatus?.marketData !== 'missing'
   const [, navigate] = useLocation()
   const [sheetOpen, setSheetOpen] = useState(false)
   const [savedConfirmed, setSavedConfirmed] = useState(false)

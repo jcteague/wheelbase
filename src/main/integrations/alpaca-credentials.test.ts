@@ -62,38 +62,20 @@ describe('loadAlpacaCredentialsFromEnv', () => {
     expect(loadAlpacaCredentialsFromEnv()).toBeNull()
   })
 
-  // electron-vite does not copy .env into process.env: for the main process it exposes
-  // only MAIN_VITE_-prefixed vars through import.meta.env, baked in at build time. A
-  // real process env var still wins, which is how CI and e2e force configuration.
-  it('reads MAIN_VITE_-prefixed values when no process env vars are set', () => {
+  // Regression guard for a build-time secret leak: reading import.meta.env here made Vite
+  // inline every MAIN_VITE_* value — the Alpaca secret included — into out/main/index.js.
+  it('ignores MAIN_VITE_-prefixed values entirely', () => {
     vi.stubEnv('MAIN_VITE_ALPACA_KEY_ID', 'PKVITE')
     vi.stubEnv('MAIN_VITE_ALPACA_SECRET_KEY', 'vite-secret')
     vi.stubEnv('MAIN_VITE_ALPACA_PAPER', 'true')
 
-    expect(loadAlpacaCredentialsFromEnv()).toEqual({
-      keyId: 'PKVITE',
-      secret: 'vite-secret',
-      environment: 'paper'
-    })
-  })
-
-  // The bundle may carry an inlined key from whatever .env the build machine had; an
-  // explicit empty process env var is how a test run says "pretend there are none".
-  it('treats an explicitly empty process env var as not configured', () => {
-    vi.stubEnv('ALPACA_KEY_ID', '')
-    vi.stubEnv('ALPACA_SECRET_KEY', '')
-    vi.stubEnv('MAIN_VITE_ALPACA_KEY_ID', 'PKVITE')
-    vi.stubEnv('MAIN_VITE_ALPACA_SECRET_KEY', 'vite-secret')
-
     expect(loadAlpacaCredentialsFromEnv()).toBeNull()
   })
 
-  it('prefers a real process env var over the MAIN_VITE_ fallback', () => {
-    vi.stubEnv('ALPACA_KEY_ID', 'PKPROCESS')
-    vi.stubEnv('ALPACA_SECRET_KEY', 'process-secret')
-    vi.stubEnv('MAIN_VITE_ALPACA_KEY_ID', 'PKVITE')
-    vi.stubEnv('MAIN_VITE_ALPACA_SECRET_KEY', 'vite-secret')
+  it('treats an explicitly empty process env var as not configured', () => {
+    vi.stubEnv('ALPACA_KEY_ID', '')
+    vi.stubEnv('ALPACA_SECRET_KEY', '')
 
-    expect(loadAlpacaCredentialsFromEnv()?.keyId).toBe('PKPROCESS')
+    expect(loadAlpacaCredentialsFromEnv()).toBeNull()
   })
 })

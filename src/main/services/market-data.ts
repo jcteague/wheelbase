@@ -116,7 +116,12 @@ export async function subscribeToStockQuotes(
   state.activeSub = provider.stream('stockQuotes', tickers).subscribe({
     next: (event) =>
       onTick(event.symbol, { ...flattenStockQuote(event.data as StockQuote), prevClose: null }),
-    error: (err: unknown) => onError(err as StreamError)
+    error: (err: unknown) => {
+      // The stream is finished either way, so the next ticker change must reconnect rather
+      // than assume the socket is still up and subscribe to a subject nothing feeds.
+      state.connected = false
+      onError(err as StreamError)
+    }
   })
   return tickers
 }

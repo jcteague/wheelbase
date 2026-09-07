@@ -24,6 +24,7 @@ function createService(overrides: { hasFallbackCredentials?: () => boolean } = {
   const service = createSettingsService({
     db,
     safeStorage,
+    hasFallbackCredentials: () => false,
     ...overrides,
     testAlpacaConnection: vi.fn().mockResolvedValue({
       ok: true,
@@ -126,6 +127,7 @@ describe('settings service — Alpaca credential persistence', () => {
       createSettingsService({
         db,
         safeStorage,
+        hasFallbackCredentials: () => false,
         testAlpacaConnection: vi.fn().mockResolvedValue({
           ok: true,
           vendor: 'alpaca',
@@ -189,7 +191,7 @@ describe('settings service — Alpaca credential persistence', () => {
   })
 
   it('reports marketData missing when there are no saved and no fallback credentials', () => {
-    const { service } = createService({ hasFallbackCredentials: () => false })
+    const { service } = createService()
 
     expect(service.getCredentialStatus().marketData).toBe('missing')
   })

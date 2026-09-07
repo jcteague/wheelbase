@@ -72,8 +72,10 @@ type SettingsServiceOptions = {
   testAlpacaConnection: (input: AlpacaCredentials) => Promise<TestConnectionResult>
   now?: () => string
   /** Whether credentials exist outside the database (the documented .env dev fallback).
-   *  Keeps this service DB-facing: the caller owns where "outside" is. */
-  hasFallbackCredentials?: () => boolean
+   *  Required rather than defaulted: market data and the broker each resolve credentials
+   *  through their own factory, and a silent default is how those two drifted apart once
+   *  already. Keeps this service DB-facing — the caller owns where "outside" is. */
+  hasFallbackCredentials: () => boolean
 }
 
 type CredentialRow = {
@@ -153,7 +155,7 @@ export function createSettingsService({
   safeStorage,
   testAlpacaConnection,
   now = () => new Date().toISOString(),
-  hasFallbackCredentials = () => false
+  hasFallbackCredentials
 }: SettingsServiceOptions): SettingsService {
   function getCredentialStatus(): CredentialStatus {
     const paper = getCredentialRow(db, 'paper')

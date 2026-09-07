@@ -300,12 +300,25 @@ export class AlpacaMarketDataProvider implements MarketDataProvider {
 
       ws.on('close', () => {
         logger.info('alpaca_ws_closed')
+        // A close that arrives before the handshake finishes would otherwise leave connect()
+        // pending until the auth timeout.
+        settle(() => reject(new MarketDataError('network_error', 'socket closed')))
+
         // A socket's close event lands after the closing handshake, by which time a
         // reconnect may already have installed its replacement. Clearing state here
         // unconditionally would null out the live socket and silence the stream.
         if (this.ws !== ws) return
         this.ws = null
-        this.subscribed.clear()
+
+        // Alpaca closes without an error frame on a transport drop or a server-side
+        // shutdown. Silence here left the renderer showing a connected dot over a stream
+        // that would never emit again, so the fault is surfaced for the service to act on.
+        this.failStream({
+          feed: 'stockQuotes',
+          code: 'connection_lost',
+          message: 'Alpaca market data stream closed',
+          reconnectable: true
+        })
       })
     })
   }
@@ -339,6 +352,9 @@ export class AlpacaMarketDataProvider implements MarketDataProvider {
   private failStream(streamError: StreamError): void {
     const failing = this.tickSubject
     this.tickSubject = new Subject<StreamEvent<StockQuote>>()
+    // The socket's subscription record dies with the stream. Keeping it would make the next
+    // stream() call compute an empty "added" diff and silently subscribe to nothing.
+    this.subscribed.clear()
     logger.warn(streamError, 'alpaca_ws_stream_error')
     failing.error(streamError)
   }
