@@ -4,6 +4,10 @@
 
 set -u
 
+# Codex may run hooks without the interactive shell's PATH. Keep the package
+# manager and Python JSON parser available in that environment.
+export PATH="/Users/johnteague/Library/pnpm:/opt/homebrew/bin:/usr/bin:/bin:${PATH:-}"
+
 INPUT=$(cat)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
