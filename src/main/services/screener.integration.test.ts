@@ -7,7 +7,8 @@ import type {
   OptionChainFilter,
   OptionChainQuote
 } from '../integrations/market-data-provider'
-import { makeTestDb, seedIvr, seedWatchlist } from '../test-utils'
+import type Database from 'better-sqlite3'
+import { makeTestDb, seedIvr, seedTradingCalendar, seedWatchlist } from '../test-utils'
 import { screenWatchlistCandidates } from './screener'
 
 vi.mock('../logger', () => ({
@@ -21,6 +22,15 @@ beforeEach(() => {
 // "Today" for every scenario. The default 30–45 DTE window resolves to expirations in
 // [2026-08-22, 2026-09-06]; the two expirations below sit inside it.
 const CURRENT_DATE = new Date(2026, 6, 23)
+
+/** A DB with the exchange calendar already cached, which is the state every screen
+ *  runs in: the collector refreshes it daily. Freshness assessment reports "unknown"
+ *  without one, so a screener test that did not seed it would be testing the outage. */
+function makeScreenerDb(): Database.Database {
+  const db = makeTestDb()
+  seedTradingCalendar(db, '2026-05-01', '2026-12-31')
+  return db
+}
 const EXP_37_DTE = '2026-08-29'
 const EXP_36_DTE = '2026-08-28'
 const TIMESTAMP = '2026-07-23T15:30:00Z'
@@ -61,7 +71,7 @@ function scriptChains(chains: Record<string, OptionChainQuote[]>): MarketDataPro
 
 describe('US-65 screenWatchlistCandidates — acceptance criteria', () => {
   it('premium yield is computed on capital secured', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     seedWatchlist(db, ['AAPL'])
     // AAPL 37-DTE put at the $180 strike, mark $2.70.
     const provider = scriptChains({ AAPL: [chainStrike()] })
@@ -78,7 +88,7 @@ describe('US-65 screenWatchlistCandidates — acceptance criteria', () => {
   })
 
   it('rank is annualized yield per unit of delta', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     seedWatchlist(db, ['TSLA', 'MSFT'])
     const provider = scriptChains({
       // Candidate A — 0.30 delta yielding 30.0% annualized (10.80 / 365 × 365 / 36).
@@ -118,7 +128,7 @@ describe('US-65 screenWatchlistCandidates — acceptance criteria', () => {
   })
 
   it('a strike outside the delta band is excluded', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     seedWatchlist(db, ['AMD'])
     const provider = scriptChains({
       // 0.42 delta with a fat 4% period yield — the yield must not rescue it.
@@ -145,7 +155,7 @@ describe('US-65 screenWatchlistCandidates — acceptance criteria', () => {
   })
 
   it('an illiquid strike is excluded', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     seedWatchlist(db, ['KO'])
     const provider = scriptChains({
       KO: [
@@ -172,7 +182,7 @@ describe('US-65 screenWatchlistCandidates — acceptance criteria', () => {
   })
 
   it('a wide-spread strike is excluded', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     seedWatchlist(db, ['AAPL'])
     // bid 2.40 / ask 3.00 on a 2.70 mark — $0.60 wide, 22% of mark.
     const provider = scriptChains({ AAPL: [chainStrike({ bid: '2.40', ask: '3.00' })] })
@@ -188,7 +198,7 @@ describe('US-65 screenWatchlistCandidates — acceptance criteria', () => {
   })
 
   it('a narrow absolute spread on a cheap option is not excluded', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     seedWatchlist(db, ['XYZ'])
     const provider = scriptChains({
       // bid 0.08 / ask 0.15 — 58% of mark, but only $0.07 to cross.
@@ -214,12 +224,12 @@ describe('US-65 screenWatchlistCandidates — acceptance criteria', () => {
   })
 
   it('missing IV rank does not exclude a candidate', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     seedWatchlist(db, ['KO', 'AAPL', 'MSFT'])
     // IVR observed for KO and AAPL — deliberately none for MSFT.
     seedIvr(db, [
-      ['KO', '2026-07-23T12:00:00Z', '38.0'],
-      ['AAPL', '2026-07-23T12:00:00Z', '44.0']
+      ['KO', '2026-07-22T20:00:00Z', '38.0'],
+      ['AAPL', '2026-07-22T20:00:00Z', '44.0']
     ])
     const provider = scriptChains({
       KO: [
@@ -255,12 +265,17 @@ describe('US-65 screenWatchlistCandidates — acceptance criteria', () => {
     // MSFT still ranks; its IV rank reads "n/a" rather than excluding or zeroing it.
     expect(msft.ivRank).toBeNull()
     expect(msft.yieldPerDelta).toBe('1.0000')
-    expect(ko.ivRank).toEqual({ value: '38.0', observedAt: '2026-07-23T12:00:00Z' })
+    expect(ko.ivRank).toEqual({
+      value: '38.0',
+      observedAt: '2026-07-22T20:00:00Z',
+      ageTradingDays: 0,
+      state: 'fresh'
+    })
     expect(result.excluded).toEqual([])
   })
 
   it('the best strike per ticker is selected', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     seedWatchlist(db, ['AAPL'])
     const provider = scriptChains({
       AAPL: [

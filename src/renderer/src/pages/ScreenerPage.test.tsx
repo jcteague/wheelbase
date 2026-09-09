@@ -55,7 +55,12 @@ function candidate(overrides: Partial<ScreenerCandidate> = {}): ScreenerCandidat
     delta: '0.2800',
     openInterest: 4200,
     volume: null,
-    ivRank: { value: '44.0', observedAt: QUOTE_TIMESTAMP },
+    ivRank: {
+      value: '44.0',
+      observedAt: QUOTE_TIMESTAMP,
+      ageTradingDays: 0,
+      state: 'fresh'
+    },
     capitalSecured: '18000.00',
     periodYield: '0.0150',
     annualizedYield: '0.1480',

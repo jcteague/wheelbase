@@ -3,7 +3,9 @@ import { addDays, parseISO } from 'date-fns'
 import Decimal from 'decimal.js'
 import type { Logger } from 'pino'
 import { fetchIVR, type IVRResult } from '../integrations/barchart-ivr-scraper'
-import type { BrokerProvider, MarketStatus } from '../integrations/broker-provider'
+import { etDateOf, getTradingSession } from '../core/trading-calendar'
+import type { BrokerProvider } from '../integrations/broker-provider'
+import { readTradingCalendar, refreshTradingCalendar } from './trading-calendar-store'
 import { logger as defaultLogger } from '../logger'
 
 export const IVR_COLLECT_JOB_NAME = 'ivr-collect'
@@ -21,12 +23,12 @@ type Clock = {
 
 type CollectIVRSnapshotsInput = {
   db: Database.Database
-  /** null when no broker is configured — Barchart needs none, so collection proceeds
-   *  on the assumption that today is a trading day. */
-  brokerProvider: BrokerProvider | null
   logger?: Pick<Logger, 'info' | 'debug' | 'warn' | 'error'>
   fetchIvr?: (ticker: string) => Promise<IVRResult>
   clock?: Clock
+  /** Refreshes the cached exchange calendar before the run reads it. Absent when no
+   *  broker is configured, in which case the run uses whatever is already cached. */
+  brokerProvider?: BrokerProvider
   /** Aborts the run at the next ticker boundary — set by the app's before-quit hook so
    *  a watchlist-sized batch does not stall shutdown for the scheduler's drain timeout. */
   signal?: AbortSignal
@@ -43,33 +45,6 @@ const COLLECTION_TARGETS_QUERY = `
 
 const DEFAULT_CLOCK: Clock = {
   now: () => new Date()
-}
-
-function isTradingDay(now: Date, session: MarketStatus['session']): boolean {
-  if (session !== 'closed') return true
-
-  const day = now.getUTCDay()
-  return day !== 0 && day !== 6
-}
-
-/** Boundary I/O degrades rather than rejects (CLAUDE.md batch-job rule): with no
- *  broker configured or the clock endpoint down, the run assumes a trading day —
- *  Barchart itself needs no broker, and a wasted weekend fetch beats a lost batch. */
-async function fetchMarketStatusOrNull(
-  brokerProvider: BrokerProvider | null,
-  logger: Pick<Logger, 'warn' | 'debug'>
-): Promise<MarketStatus | null> {
-  if (brokerProvider === null) {
-    logger.debug('ivr_collection_no_broker_assuming_trading_day')
-    return null
-  }
-
-  try {
-    return await brokerProvider.getMarketStatus()
-  } catch (err) {
-    logger.warn({ err }, 'IVR collection could not read market status; assuming trading day')
-    return null
-  }
 }
 
 function listCollectionTargets(db: Database.Database): string[] {
@@ -123,17 +98,30 @@ function persistSnapshot(
 
 export async function collectIVRSnapshots({
   db,
-  brokerProvider,
   logger = defaultLogger,
   fetchIvr = fetchIVR,
   clock = DEFAULT_CLOCK,
+  brokerProvider,
   signal
 }: CollectIVRSnapshotsInput): Promise<CollectIVRSnapshotsResult> {
-  logger.debug('ivr_collection_market_status_start')
-  const marketStatus = await fetchMarketStatusOrNull(brokerProvider, logger)
+  const now = clock.now()
+  // Best effort, and deliberately before the read: this daily job is the only thing
+  // that keeps the cached calendar ahead of today, but a broker outage must leave the
+  // batch to run on whatever is already cached rather than skip it.
+  if (brokerProvider !== undefined) {
+    await refreshTradingCalendar(db, brokerProvider, now)
+  }
 
-  if (marketStatus !== null && !isTradingDay(clock.now(), marketStatus.session)) {
-    logger.info({ marketStatus }, 'Skipping IVR collection because market is closed')
+  const etDate = etDateOf(now)
+  const session = getTradingSession(readTradingCalendar(db, now), etDate)
+  logger.debug({ etDate, calendarStatus: session.status }, 'ivr_collection_calendar_verdict')
+
+  if (session.status === 'unavailable') {
+    logger.warn({ etDate }, 'IVR collection calendar coverage unavailable; continuing best effort')
+  }
+
+  if (session.status === 'closed') {
+    logger.info({ etDate }, 'Skipping IVR collection because market is closed')
     return {
       successCount: 0,
       errorCount: 0,

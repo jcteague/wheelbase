@@ -9,12 +9,13 @@ import {
   type EarningsLookup,
   type ScreeningCriteria
 } from '../core/screener'
-import { fetchNextEarnings } from '../integrations/finnhub-earnings'
 import { logger } from '../logger'
-import { makeTestDb, seedIvr } from '../test-utils'
+import type Database from 'better-sqlite3'
+import { makeTestDb, seedIvr, seedTradingCalendar } from '../test-utils'
 import { pullWatchlistChains, type TickerChainResult } from './candidate-chains'
-import { getEarnings } from './earnings-dates'
-import { getLatestIvrByUnderlying } from './ivr-snapshots'
+import { getEarningsCalendar } from './earnings-dates'
+import { getAssessedIvrByUnderlying, getLatestIvrByUnderlying } from './ivr-snapshots'
+import { fetchEarningsCalendar } from '../integrations/finnhub-earnings'
 import { screenWatchlistCandidates } from './screener'
 import { saveScreeningCriteria } from './screening-criteria'
 
@@ -24,48 +25,73 @@ vi.mock('../logger', () => ({
 
 vi.mock('./candidate-chains', () => ({ pullWatchlistChains: vi.fn() }))
 
-// [US-70] The Finnhub HTTP boundary is the only thing stubbed, so the store's
-// read-through, its write-back, and the migration's schema are all exercised for real
-// — which is what lets the "second run issues no fetch" assertion mean anything.
-vi.mock('../integrations/finnhub-earnings', () => ({ fetchNextEarnings: vi.fn() }))
-
-// The read path stays real so a seeded DB drives the join; individual tests swap in
-// a throwing implementation to exercise the degrade-to-empty path.
+// The IVR read path stays real so a seeded DB drives the join; individual tests swap
+// in a throwing implementation to exercise the degrade-to-empty path.
 vi.mock('./ivr-snapshots', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./ivr-snapshots')>()
-  return { ...actual, getLatestIvrByUnderlying: vi.fn(actual.getLatestIvrByUnderlying) }
+  return {
+    ...actual,
+    getLatestIvrByUnderlying: vi.fn(actual.getLatestIvrByUnderlying),
+    getAssessedIvrByUnderlying: vi.fn(actual.getAssessedIvrByUnderlying)
+  }
 })
 
+// [US-70] The earnings *store* is stubbed here so each test can state a ticker's
+// verdict directly; `earnings-dates.test.ts` covers the store itself. The one test
+// that has to prove the screener's own horizon reaches the cache restores the real
+// implementation and stubs the Finnhub HTTP boundary instead — see
+// 'issues no second fetch once the date is stored'.
 vi.mock('./earnings-dates', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./earnings-dates')>()
-  return { ...actual, getEarnings: vi.fn(actual.getEarnings) }
+  return { ...actual, getEarningsCalendar: vi.fn() }
+})
+
+vi.mock('../integrations/finnhub-earnings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../integrations/finnhub-earnings')>()
+  return { ...actual, fetchEarningsCalendar: vi.fn() }
 })
 
 beforeEach(() => {
   vi.clearAllMocks()
   // Default: the calendar answers, and holds nothing for anyone. Tests that care
-  // override per ticker.
-  vi.mocked(fetchNextEarnings).mockImplementation(async (tickers) =>
-    Object.fromEntries(
-      tickers.map((ticker): [string, EarningsLookup] => [ticker, { status: 'none' }])
-    )
+  // override per ticker. The screener consumes the shared calendar service once.
+  vi.mocked(getEarningsCalendar).mockImplementation(
+    async (_db, tickers) =>
+      new Map(tickers.map((ticker) => [ticker, { next: { status: 'none' as const }, last: null }]))
   )
 })
 
 /** The calendar's answer per ticker, for the run under test. */
 function mockEarnings(byTicker: Record<string, EarningsLookup>): void {
-  vi.mocked(fetchNextEarnings).mockImplementation(async (tickers) =>
-    Object.fromEntries(
-      tickers.map((ticker): [string, EarningsLookup] => [
-        ticker,
-        byTicker[ticker] ?? { status: 'none' }
-      ])
-    )
+  vi.mocked(getEarningsCalendar).mockImplementation(
+    async (_db, tickers) =>
+      new Map(
+        tickers.map((ticker) => {
+          const lookup = byTicker[ticker]
+          return [
+            ticker,
+            lookup === undefined || lookup.status === 'none'
+              ? { next: { status: 'none' as const }, last: null }
+              : lookup.status === 'unavailable'
+                ? { next: lookup, last: undefined }
+                : { next: { status: 'found' as const, date: lookup.date }, last: null }
+          ]
+        })
+      )
   )
 }
 
 // 2026-07-23; the strikes below expire 2026-08-29, i.e. 37 DTE.
 const CURRENT_DATE = new Date(2026, 6, 23)
+
+/** A DB with the exchange calendar already cached, which is the state every screen
+ *  runs in: the collector refreshes it daily. Freshness assessment reports "unknown"
+ *  without one, so a screener test that did not seed it would be testing the outage. */
+function makeScreenerDb(): Database.Database {
+  const db = makeTestDb()
+  seedTradingCalendar(db, '2026-05-01', '2026-12-31')
+  return db
+}
 const EXPIRATION = '2026-08-29'
 const TIMESTAMP = '2026-07-23T15:30:00Z'
 
@@ -150,7 +176,7 @@ function persistCriteria(
 
 describe('screenWatchlistCandidates', () => {
   it('pulls chains with the DTE window derived from the criteria and the supplied currentDate', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     const { provider } = makeProvider()
     mockChains({ status: 'ok', tickers: [] })
 
@@ -166,7 +192,7 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('falls back to the default criteria when none are supplied', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     const { provider } = makeProvider()
     mockChains({ status: 'ok', tickers: [] })
 
@@ -179,7 +205,7 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('short-circuits a provider outage without touching the IVR read or the quote fetch', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     const { provider, getStockQuotes } = makeProvider()
     mockChains({
       status: 'provider_unavailable',
@@ -202,7 +228,7 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('ranks one row per ticker in yield-per-delta order', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     const { provider } = makeProvider()
     mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
 
@@ -217,10 +243,10 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('joins the latest IVR reading onto each ranked candidate', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     seedIvr(db, [
-      ['AAPL', '2026-07-20T12:00:00Z', '31.5'],
-      ['AAPL', '2026-07-23T12:00:00Z', '44.0']
+      ['AAPL', '2026-07-20T20:00:00Z', '31.5'],
+      ['AAPL', '2026-07-22T20:00:00Z', '44.0']
     ])
     const { provider } = makeProvider()
     mockChains({ status: 'ok', tickers: [AAPL_OK] })
@@ -229,12 +255,20 @@ describe('screenWatchlistCandidates', () => {
       currentDate: CURRENT_DATE
     })
 
-    expect(getLatestIvrByUnderlying).toHaveBeenCalledWith(db, ['AAPL'])
-    expect(result.ranked[0].ivRank).toEqual({ value: '44.0', observedAt: '2026-07-23T12:00:00Z' })
+    expect(getAssessedIvrByUnderlying).toHaveBeenCalledWith(
+      db,
+      ['AAPL'],
+      expect.objectContaining({ now: CURRENT_DATE })
+    )
+    expect(result.ranked[0].ivRank).toMatchObject({
+      value: '44.0',
+      observedAt: '2026-07-22T20:00:00Z',
+      state: 'fresh'
+    })
   })
 
   it('still ranks a ticker with no IVR snapshot, carrying a null IV rank', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     seedIvr(db, [['AAPL', '2026-07-23T12:00:00Z', '44.0']])
     const { provider } = makeProvider()
     mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
@@ -249,8 +283,9 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('degrades a failing IVR read to an empty map, warns, and still ranks every candidate', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     seedIvr(db, [['AAPL', '2026-07-23T12:00:00Z', '44.0']])
+    // The snapshot query itself fails — the boundary that actually owns the degrade.
     vi.mocked(getLatestIvrByUnderlying).mockImplementationOnce(() => {
       throw new Error('ivr_snapshot read failed')
     })
@@ -267,7 +302,7 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('skips the quote fetch entirely when the price ceiling is disabled', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     const { provider, getStockQuotes } = makeProvider()
     mockChains({ status: 'ok', tickers: [AAPL_OK] })
 
@@ -278,7 +313,7 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('lets a ticker the provider quoted no price for through the ceiling untouched', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     // The provider answers, but without a row for AAPL — an unknown price, not a high
     // one, so the ceiling cannot judge it and must not drop it.
     const { provider } = makeProvider(() => new Map())
@@ -294,7 +329,7 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('defaults currentDate to now when the caller supplies none', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     const { provider } = makeProvider()
     mockChains({ status: 'ok', tickers: [] })
 
@@ -309,7 +344,7 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('fetches underlying quotes and excludes a ticker above the price ceiling', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     const { provider, getStockQuotes } = makeProvider(
       () => new Map([['AAPL', stockQuote('412.00')]])
     )
@@ -332,7 +367,7 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('degrades a failing quote fetch to an empty map, warns, and does not fire the ceiling', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     const { provider } = makeProvider(() => {
       throw new Error('quotes unavailable')
     })
@@ -349,7 +384,7 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('maps a ticker with no listed options into the excluded list', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     const { provider } = makeProvider()
     mockChains({ status: 'ok', tickers: [{ ticker: 'XYZ', status: 'no_options_listed' }] })
 
@@ -365,7 +400,7 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('words the no-options reason with the criteria DTE window actually screened', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     const { provider } = makeProvider()
     mockChains({ status: 'ok', tickers: [{ ticker: 'XYZ', status: 'no_options_listed' }] })
 
@@ -378,7 +413,7 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('maps a ticker whose data could not be fetched into the excluded list', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     const { provider } = makeProvider()
     mockChains({ status: 'ok', tickers: [{ ticker: 'XYZ', status: 'data_unavailable' }] })
 
@@ -392,7 +427,7 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('isolates a ticker whose stored IV rank is corrupt so the others still rank', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     const { provider } = makeProvider()
     // `wellFormedStrikes` validates the quote, but not the ticker-level values joined
     // in alongside it. A non-numeric IVR row makes the [US-67] iv_rank_floor filter's
@@ -407,18 +442,13 @@ describe('screenWatchlistCandidates', () => {
 
     // The healthy ticker is unaffected; the corrupt one degrades to a row of its own
     // rather than taking the whole run down.
-    expect(result.ranked.map((candidate) => candidate.ticker)).toEqual(['KO'])
-    expect(result.excluded).toEqual([
-      { ticker: 'AAPL', code: 'data_unavailable', reason: 'market data unavailable' }
-    ])
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ ticker: 'AAPL' }),
-      'screen_ticker_failed'
-    )
+    expect(result.ranked.map((candidate) => candidate.ticker)).toEqual(['KO', 'AAPL'])
+    expect(result.ranked.find((candidate) => candidate.ticker === 'AAPL')?.ivRank).toBeNull()
+    expect(result.excluded).toEqual([])
   })
 
   it('contributes one excluded row carrying the representative reason when a ticker has no survivor', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     const { provider } = makeProvider()
     mockChains({
       status: 'ok',
@@ -445,7 +475,7 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('keeps the excluded list in watchlist order', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     const { provider } = makeProvider()
     mockChains({
       status: 'ok',
@@ -464,7 +494,7 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('drops only the malformed strike, logging at warn, and still screens the ticker’s other strikes', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     const { provider } = makeProvider()
     mockChains({
       status: 'ok',
@@ -496,7 +526,7 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('marks a ticker unavailable — never dropping it from both lists — when every strike is malformed', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     const { provider } = makeProvider()
     mockChains({
       status: 'ok',
@@ -522,7 +552,7 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('reports provider_unavailable when the provider cannot be constructed (no API key yet)', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
 
     const result = await screenWatchlistCandidates(
       () => {
@@ -543,7 +573,7 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('loses the price ceiling only for the ticker whose quote fetch failed, not the whole screen', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     const { provider, getStockQuotes } = makeProvider((tickers) => {
       if (tickers.includes('KO')) throw new Error('rate limited')
       return new Map([['AAPL', stockQuote('412.00')]])
@@ -570,7 +600,7 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('reports the newest quote timestamp across the ranked candidates', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     const { provider } = makeProvider()
     mockChains({
       status: 'ok',
@@ -602,7 +632,7 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('reports a null quote timestamp when nothing ranks', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     const { provider } = makeProvider()
     mockChains({ status: 'ok', tickers: [{ ticker: 'XYZ', status: 'no_options_listed' }] })
 
@@ -614,7 +644,7 @@ describe('screenWatchlistCandidates', () => {
   })
 
   it('logs a single completion summary', async () => {
-    const db = makeTestDb()
+    const db = makeScreenerDb()
     const { provider } = makeProvider()
     mockChains({
       status: 'ok',
@@ -634,7 +664,7 @@ describe('screenWatchlistCandidates', () => {
   // criteria, not the shipped defaults — this is what makes a save re-screen.
   describe('persisted criteria', () => {
     it('screens against the persisted criteria when none are supplied', async () => {
-      const db = makeTestDb()
+      const db = makeScreenerDb()
       persistCriteria(db, { deltaMin: '0.15', deltaMax: '0.20' })
       const { provider } = makeProvider()
       mockChains({ status: 'ok', tickers: [AAPL_OK] })
@@ -650,7 +680,7 @@ describe('screenWatchlistCandidates', () => {
     })
 
     it('still screens against the shipped defaults when nothing has been persisted', async () => {
-      const db = makeTestDb()
+      const db = makeScreenerDb()
       const { provider } = makeProvider()
       mockChains({ status: 'ok', tickers: [AAPL_OK] })
 
@@ -664,7 +694,7 @@ describe('screenWatchlistCandidates', () => {
     })
 
     it('lets an explicit opts.criteria override the persisted criteria', async () => {
-      const db = makeTestDb()
+      const db = makeScreenerDb()
       persistCriteria(db, { deltaMin: '0.15', deltaMax: '0.20' })
       const { provider } = makeProvider()
       mockChains({ status: 'ok', tickers: [AAPL_OK] })
@@ -678,7 +708,7 @@ describe('screenWatchlistCandidates', () => {
     })
 
     it('bounds the chain pull by the persisted DTE window', async () => {
-      const db = makeTestDb()
+      const db = makeScreenerDb()
       persistCriteria(db, { dteMin: 40, dteMax: 45 })
       const { provider } = makeProvider()
       mockChains({ status: 'ok', tickers: [] })
@@ -701,7 +731,7 @@ describe('screenWatchlistCandidates', () => {
     const AFTER_EXPIRY = '2026-09-15'
 
     it('carries the store’s verdict onto the candidate instead of the old always-null stub', async () => {
-      const db = makeTestDb()
+      const db = makeScreenerDb()
       const { provider } = makeProvider()
       mockChains({ status: 'ok', tickers: [AAPL_OK] })
       mockEarnings({ AAPL: { status: 'found', date: AFTER_EXPIRY } })
@@ -714,7 +744,7 @@ describe('screenWatchlistCandidates', () => {
     })
 
     it('excludes an in-window candidate in the default exclude mode', async () => {
-      const db = makeTestDb()
+      const db = makeScreenerDb()
       const { provider } = makeProvider()
       mockChains({ status: 'ok', tickers: [AAPL_OK] })
       mockEarnings({ AAPL: { status: 'found', date: IN_WINDOW } })
@@ -734,7 +764,7 @@ describe('screenWatchlistCandidates', () => {
     })
 
     it('flags rather than excludes an in-window candidate in flag mode', async () => {
-      const db = makeTestDb()
+      const db = makeScreenerDb()
       const { provider } = makeProvider()
       mockChains({ status: 'ok', tickers: [AAPL_OK] })
       mockEarnings({ AAPL: { status: 'found', date: IN_WINDOW } })
@@ -753,13 +783,13 @@ describe('screenWatchlistCandidates', () => {
     })
 
     it('asks the store for a horizon past the criteria dteMax', async () => {
-      const db = makeTestDb()
+      const db = makeScreenerDb()
       const { provider } = makeProvider()
       mockChains({ status: 'ok', tickers: [AAPL_OK] })
 
       await screenWatchlistCandidates(() => provider, db, { currentDate: CURRENT_DATE })
 
-      const { horizon } = vi.mocked(getEarnings).mock.calls[0][2]
+      const { horizon } = vi.mocked(getEarningsCalendar).mock.calls[0][2]
       // Default dteMax is 45, so the calendar must be read past the furthest expiry.
       expect(horizon.getTime()).toBeGreaterThanOrEqual(
         addDays(CURRENT_DATE, DEFAULT_SCREENING_CRITERIA.dteMax).getTime()
@@ -767,7 +797,7 @@ describe('screenWatchlistCandidates', () => {
     })
 
     it('widens the horizon with a custom DTE window', async () => {
-      const db = makeTestDb()
+      const db = makeScreenerDb()
       const { provider } = makeProvider()
       mockChains({ status: 'ok', tickers: [AAPL_OK] })
 
@@ -776,34 +806,42 @@ describe('screenWatchlistCandidates', () => {
         currentDate: CURRENT_DATE
       })
 
-      const { horizon } = vi.mocked(getEarnings).mock.calls[0][2]
+      const { horizon } = vi.mocked(getEarningsCalendar).mock.calls[0][2]
       expect(horizon.getTime()).toBeGreaterThanOrEqual(addDays(CURRENT_DATE, 60).getTime())
     })
 
+    // The real store runs here, so the assertion is on the *feed*: a second screen at
+    // the same horizon must be answered from `earnings_date` without another request.
+    // Counting calls to the mocked store instead would prove nothing at all.
     it('issues no second fetch once the date is stored, and screens identically', async () => {
-      const db = makeTestDb()
+      const db = makeScreenerDb()
       const { provider } = makeProvider()
       mockChains({ status: 'ok', tickers: [AAPL_OK] })
-      mockEarnings({ AAPL: { status: 'found', date: AFTER_EXPIRY } })
+
+      const actual = await vi.importActual<typeof import('./earnings-dates')>('./earnings-dates')
+      vi.mocked(getEarningsCalendar).mockImplementation(actual.getEarningsCalendar)
+      vi.mocked(fetchEarningsCalendar).mockResolvedValue({
+        AAPL: { status: 'read', next: AFTER_EXPIRY, last: null }
+      })
 
       const first = await screenWatchlistCandidates(() => provider, db, {
         currentDate: CURRENT_DATE
       })
-      expect(fetchNextEarnings).toHaveBeenCalledTimes(1)
+      expect(fetchEarningsCalendar).toHaveBeenCalledTimes(1)
 
       const second = await screenWatchlistCandidates(() => provider, db, {
         currentDate: CURRENT_DATE
       })
 
-      expect(fetchNextEarnings).toHaveBeenCalledTimes(1)
+      expect(fetchEarningsCalendar).toHaveBeenCalledTimes(1)
       expect(second).toEqual(first)
     })
 
     it('leaves every candidate unavailable — and nothing excluded — when the store rejects', async () => {
-      const db = makeTestDb()
+      const db = makeScreenerDb()
       const { provider } = makeProvider()
       mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
-      vi.mocked(getEarnings).mockRejectedValueOnce(new Error('database is locked'))
+      vi.mocked(getEarningsCalendar).mockRejectedValueOnce(new Error('database is locked'))
 
       const result = await screenWatchlistCandidates(() => provider, db, {
         currentDate: CURRENT_DATE
@@ -822,11 +860,11 @@ describe('screenWatchlistCandidates', () => {
     })
 
     it('defaults a ticker the store omitted to unavailable', async () => {
-      const db = makeTestDb()
+      const db = makeScreenerDb()
       const { provider } = makeProvider()
       mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
-      vi.mocked(getEarnings).mockResolvedValueOnce(
-        new Map([['KO', { status: 'found', date: AFTER_EXPIRY }]])
+      vi.mocked(getEarningsCalendar).mockResolvedValueOnce(
+        new Map([['KO', { next: { status: 'found', date: AFTER_EXPIRY }, last: null }]])
       )
 
       const result = await screenWatchlistCandidates(() => provider, db, {
@@ -840,7 +878,7 @@ describe('screenWatchlistCandidates', () => {
     })
 
     it('tells an empty calendar apart from an unreadable one in the same run', async () => {
-      const db = makeTestDb()
+      const db = makeScreenerDb()
       const { provider } = makeProvider()
       mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
       mockEarnings({ AAPL: { status: 'unavailable' }, KO: { status: 'none' } })
@@ -856,7 +894,7 @@ describe('screenWatchlistCandidates', () => {
     })
 
     it('never excludes an unknown or unavailable date, even in exclude mode', async () => {
-      const db = makeTestDb()
+      const db = makeScreenerDb()
       const { provider } = makeProvider()
       mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
       mockEarnings({ AAPL: { status: 'unavailable' }, KO: { status: 'none' } })
@@ -871,7 +909,7 @@ describe('screenWatchlistCandidates', () => {
     })
 
     it('asks only for tickers whose chain pull succeeded', async () => {
-      const db = makeTestDb()
+      const db = makeScreenerDb()
       const { provider } = makeProvider()
       mockChains({
         status: 'ok',
@@ -880,11 +918,11 @@ describe('screenWatchlistCandidates', () => {
 
       await screenWatchlistCandidates(() => provider, db, { currentDate: CURRENT_DATE })
 
-      expect(vi.mocked(getEarnings).mock.calls[0][1]).toEqual(['AAPL'])
+      expect(vi.mocked(getEarningsCalendar).mock.calls[0][1]).toEqual(['AAPL'])
     })
 
     it('demotes a flagged candidate below a clear one that scores lower', async () => {
-      const db = makeTestDb()
+      const db = makeScreenerDb()
       const { provider } = makeProvider()
       // KO outscores AAPL (0.7892 vs 0.5285), so only the tier can invert them.
       mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })

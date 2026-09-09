@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import Database from 'better-sqlite3'
 import { addDays, format } from 'date-fns'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchNextEarnings } from '../integrations/finnhub-earnings'
+import { fetchEarningsCalendar } from '../integrations/finnhub-earnings'
 import type { MarketDataProvider } from '../integrations/market-data-provider'
 import { makeSpyLogger, makeTestDb } from '../test-utils'
 import { dismissAlert, listOpenAlerts } from './alerts'
@@ -35,7 +35,7 @@ import {
 // (that would hit the network whenever a key is present in the shell env). The
 // mock mirrors the no-key behavior: an empty record, i.e. nothing known.
 vi.mock('../integrations/finnhub-earnings', () => ({
-  fetchNextEarnings: vi.fn(async () => ({}))
+  fetchEarningsCalendar: vi.fn(async () => ({}))
 }))
 
 // ---------------------------------------------------------------------------
@@ -1137,7 +1137,7 @@ describe('evaluateAlerts — earnings read through the persisted store (US-70)',
 
   beforeEach(() => {
     db = makeTestDb()
-    vi.mocked(fetchNextEarnings).mockClear()
+    vi.mocked(fetchEarningsCalendar).mockClear()
   })
 
   /** A row the store can answer from: checked through the alert's 30-day horizon,
@@ -1211,7 +1211,7 @@ describe('evaluateAlerts — earnings read through the persisted store (US-70)',
         status: 'open'
       })
     )
-    expect(vi.mocked(fetchNextEarnings)).not.toHaveBeenCalled()
+    expect(vi.mocked(fetchEarningsCalendar)).not.toHaveBeenCalled()
   })
 
   it('skips EARNINGS_PROXIMITY for an unavailable lookup while every other rule and ticker still evaluates', async () => {

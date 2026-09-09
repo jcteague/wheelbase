@@ -244,7 +244,7 @@ describe('US-97: IVR collection covers watchlist underlyings', () => {
     await expectNoPositions(page)
     const cells = await rowCells(page, 'KO')
 
-    // The cell reads `38 (MMM d)` — the observation date follows the rank.
+    // A fresh IVR cell reads as the bare rank; observation metadata stays in its tooltip.
     expect(cells[IVR].trim()).toMatch(/^38\b/)
   })
 

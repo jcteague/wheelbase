@@ -1,7 +1,7 @@
-import { addDays, format } from 'date-fns'
+import { addDays, format, parseISO } from 'date-fns'
 
 import { mapWithConcurrency } from '../concurrency'
-import type { EarningsLookup } from '../core/screener'
+import { etDateOf, isIsoDay } from '../core/trading-calendar'
 import { logger as defaultLogger, type LoggerLike } from '../logger'
 import { loadFinnhubApiKey } from './finnhub-credentials'
 import { isNetworkError } from './integration-errors'
@@ -10,21 +10,19 @@ const API_URL = 'https://finnhub.io/api/v1/calendar/earnings'
 // Failures are backed off briefly so a rate-limited or failing ticker is not
 // re-hammered on every 60-second scheduler run against an exhausted quota.
 const EARNINGS_FAILURE_TTL_MS = 5 * 60 * 1000
-const EARNINGS_LOOKBACK_DAYS = 7
+const EARNINGS_LOOKBACK_DAYS = 30
 const EARNINGS_LOOKAHEAD_DAYS = 30
 // One request per ticker against a 60 req/min free tier — the same 429 hazard the
 // screener's quote and chain reads already cap for.
 const EARNINGS_FETCH_CONCURRENCY = 4
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
-
-// The engine owns `EarningsLookup` — it is the shape `core/screener.ts` consumes, and
-// the engine must not import from `integrations/`. Re-exported here so callers of the
-// feed can name its return type without reaching past it.
-export type { EarningsLookup }
 
 /** A calendar we successfully read can only say "here it is" or "there isn't one" —
  *  `unavailable` is produced by the caller's catch, never by parsing a live body. */
-type ReadCalendar = Exclude<EarningsLookup, { status: 'unavailable' }>
+export type EarningsCalendarRead =
+  | { status: 'read'; next: string | null; last: string | null }
+  | { status: 'unavailable' }
+
+type ReadCalendar = Extract<EarningsCalendarRead, { status: 'read' }>
 
 /** The invariants every ticker in one batch reads against, bundled so they are not
  *  threaded positionally through each layer of the fetch. */
@@ -36,7 +34,7 @@ type EarningsRequest = {
 }
 
 // Payload rows are unvalidated JSON: `date` is routinely null or a "TBD"
-// placeholder, so it is only trusted after the ISO check in `selectEventDate`.
+// placeholder, so it is only trusted after the ISO check in `selectEventDates`.
 type CalendarRow = { date?: unknown }
 
 // Successful answers are persisted by `services/earnings-dates.ts`, whose
@@ -54,28 +52,43 @@ export function resetEarningsFeedState(): void {
   noApiKeyWarned = false
 }
 
+/** The bounded ET window one batch reads against — the same bounds are sent to
+ *  Finnhub and applied to the rows it answers with. */
+function calendarWindow(
+  now: Date,
+  lookaheadDays: number
+): { today: string; from: string; to: string } {
+  const today = etDateOf(now)
+  const parsed = parseISO(today)
+  return {
+    today,
+    from: format(addDays(parsed, -EARNINGS_LOOKBACK_DAYS), 'yyyy-MM-dd'),
+    to: format(addDays(parsed, lookaheadDays), 'yyyy-MM-dd')
+  }
+}
+
 function buildRequestUrl(ticker: string, { apiKey, now, lookaheadDays }: EarningsRequest): string {
-  const params = new URLSearchParams({
-    symbol: ticker,
-    from: format(addDays(now, -EARNINGS_LOOKBACK_DAYS), 'yyyy-MM-dd'),
-    to: format(addDays(now, lookaheadDays), 'yyyy-MM-dd'),
-    token: apiKey
-  })
+  const { from, to } = calendarWindow(now, lookaheadDays)
+  const params = new URLSearchParams({ symbol: ticker, from, to, token: apiKey })
 
   return `${API_URL}?${params.toString()}`
 }
 
-function selectEventDate(rows: CalendarRow[], now: Date): ReadCalendar {
-  const today = format(now, 'yyyy-MM-dd')
-  // Drop anything that isn't a YYYY-MM-DD string so a null/TBD date can't
-  // displace a valid event.
+function selectEventDates(rows: CalendarRow[], now: Date, lookaheadDays: number): ReadCalendar {
+  const { today, from, to } = calendarWindow(now, lookaheadDays)
+  // Drop anything that isn't a real YYYY-MM-DD day so a null/TBD date can't
+  // displace a valid event, and anything outside the window we asked for.
   const dates = rows
     .map((row) => row.date)
-    .filter((date): date is string => typeof date === 'string' && ISO_DATE_RE.test(date))
+    .filter((date): date is string => typeof date === 'string' && isIsoDay(date))
+    .filter((date) => date >= from && date <= to)
     .sort()
-  const date = dates.find((candidate) => candidate >= today) ?? dates.at(-1)
 
-  return date === undefined ? { status: 'none' } : { status: 'found', date }
+  return {
+    status: 'read',
+    next: dates.find((date) => date >= today) ?? null,
+    last: dates.filter((date) => date < today).at(-1) ?? null
+  }
 }
 
 type FailureCode = 'auth_failed' | 'rate_limited' | 'network_error' | 'unknown'
@@ -117,10 +130,13 @@ async function fetchCalendar(ticker: string, request: EarningsRequest): Promise<
     throw new Error('Expected earningsCalendar array in Finnhub response')
   }
 
-  return selectEventDate(body.earningsCalendar, now)
+  return selectEventDates(body.earningsCalendar, now, request.lookaheadDays)
 }
 
-async function resolveTicker(ticker: string, request: EarningsRequest): Promise<EarningsLookup> {
+async function resolveTicker(
+  ticker: string,
+  request: EarningsRequest
+): Promise<EarningsCalendarRead> {
   const { logger, now } = request
 
   const failedAt = failureBackoff.get(ticker)
@@ -131,17 +147,19 @@ async function resolveTicker(ticker: string, request: EarningsRequest): Promise<
 
   const lookup = await fetchCalendar(ticker, request)
 
-  if (lookup.status === 'none') {
-    logger.debug({ ticker }, 'earnings_no_event_in_window')
-  } else {
-    logger.debug({ ticker, date: lookup.date }, 'earnings_fetch_result')
-  }
+  logger.debug(
+    { ticker, next: lookup.next, last: lookup.last },
+    lookup.next === null && lookup.last === null
+      ? 'earnings_no_event_in_window'
+      : 'earnings_fetch_result'
+  )
 
   return lookup
 }
 
 /**
- * The next earnings event per requested ticker, within `lookaheadDays` of `now`.
+ * The earnings dates on either side of today per requested ticker — the next event
+ * within `lookaheadDays`, and the most recent print inside the lookback window.
  *
  * Returns an entry for **every** requested ticker — a missing key is never a valid
  * outcome. Never rejects: a single ticker's failure is caught inside the mapped
@@ -149,16 +167,14 @@ async function resolveTicker(ticker: string, request: EarningsRequest): Promise<
  * failure code. `mapWithConcurrency` joins its workers with `Promise.all`, so an
  * escaping throw would take the whole batch down with it.
  */
-export async function fetchNextEarnings(
+export async function fetchEarningsCalendar(
   tickers: string[],
   opts: { now?: Date; logger?: LoggerLike; lookaheadDays?: number } = {}
-): Promise<Record<string, EarningsLookup>> {
+): Promise<Record<string, EarningsCalendarRead>> {
   const { now = new Date(), logger = defaultLogger, lookaheadDays = EARNINGS_LOOKAHEAD_DAYS } = opts
 
   const uniqueTickers = [...new Set(tickers.map((ticker) => ticker.toUpperCase()))]
-  if (uniqueTickers.length === 0) {
-    return {}
-  }
+  if (uniqueTickers.length === 0) return {}
 
   const apiKey = loadFinnhubApiKey()
   if (apiKey === '') {
@@ -168,7 +184,10 @@ export async function fetchNextEarnings(
     }
     // A missing key is a can't-ask, so every ticker is unavailable rather than absent.
     return Object.fromEntries(
-      uniqueTickers.map((ticker): [string, EarningsLookup] => [ticker, { status: 'unavailable' }])
+      uniqueTickers.map((ticker): [string, EarningsCalendarRead] => [
+        ticker,
+        { status: 'unavailable' }
+      ])
     )
   }
 
@@ -176,13 +195,13 @@ export async function fetchNextEarnings(
   const entries = await mapWithConcurrency(
     uniqueTickers,
     EARNINGS_FETCH_CONCURRENCY,
-    async (ticker): Promise<[string, EarningsLookup]> => {
+    async (ticker): Promise<[string, EarningsCalendarRead]> => {
       try {
         return [ticker, await resolveTicker(ticker, request)]
       } catch (error) {
+        const code = failureCode(error)
         failureBackoff.set(ticker, now.getTime())
-        const message = error instanceof Error ? error.message : String(error)
-        logger.warn({ ticker, code: failureCode(error), message }, 'earnings_fetch_failed')
+        logger.warn({ ticker, code, err: error }, 'earnings_fetch_failed')
         return [ticker, { status: 'unavailable' }]
       }
     }

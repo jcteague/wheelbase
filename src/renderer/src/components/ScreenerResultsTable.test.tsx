@@ -1,7 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { format, parseISO } from 'date-fns'
 import type { ScreenerCandidate } from '../api/screener'
 import { ScreenerResultsTable } from './ScreenerResultsTable'
 
@@ -21,7 +20,12 @@ const KO: ScreenerCandidate = {
   delta: '0.2200',
   openInterest: 1800,
   volume: null,
-  ivRank: { value: '38.0', observedAt: '2026-08-07T16:00:02-04:00' },
+  ivRank: {
+    value: '38.0',
+    observedAt: '2026-08-07T16:00:02-04:00',
+    ageTradingDays: 0,
+    state: 'fresh'
+  },
   capitalSecured: '6000.00',
   periodYield: '0.0158',
   annualizedYield: '0.1560',
@@ -44,7 +48,12 @@ const AAPL: ScreenerCandidate = {
   delta: '0.2800',
   openInterest: 4200,
   volume: null,
-  ivRank: { value: '44.0', observedAt: '2026-08-07T16:00:02-04:00' },
+  ivRank: {
+    value: '44.0',
+    observedAt: '2026-08-07T16:00:02-04:00',
+    ageTradingDays: 0,
+    state: 'fresh'
+  },
   capitalSecured: '18000.00',
   periodYield: '0.0150',
   annualizedYield: '0.1480',
@@ -214,10 +223,7 @@ describe('ScreenerResultsTable cell formatting', () => {
     expect(within(row).getByText('1.5%')).toBeInTheDocument()
     expect(within(row).getByText('14.8%/yr')).toBeInTheDocument()
     expect(within(row).getByText('0.28')).toBeInTheDocument()
-    // [US-67] The IVR cell carries the observation date, since the floor can now
-    // exclude on this reading and a stale one must not look current.
-    const observed = format(parseISO('2026-08-07T16:00:02-04:00'), 'MMM d')
-    expect(within(row).getByText(`44 (${observed})`)).toBeInTheDocument()
+    expect(within(row).getByText('44')).toBeInTheDocument()
     expect(within(row).getByText('4,200')).toBeInTheDocument()
     expect(within(row).getByText('$0.06 (2%)')).toBeInTheDocument()
     expect(within(row).getByText('37d')).toBeInTheDocument()

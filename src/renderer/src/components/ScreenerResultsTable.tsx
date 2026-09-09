@@ -2,13 +2,13 @@ import type { ScreenerCandidate } from '../api/screener'
 import { fmtDate, fmtMoney } from '../lib/format'
 import {
   fmtDelta,
-  fmtIvr,
   fmtOpenInterest,
   fmtScore,
   fmtSpread,
   fmtYieldPercent
 } from '../lib/screener-format'
 import { EarningsBadge } from './EarningsBadge'
+import { IvrCell } from './IvrCell'
 import { TableCell, TableHeader } from './ui/TablePrimitives'
 
 type ScreenerResultsTableProps = {
@@ -122,7 +122,7 @@ function CandidateRow({ candidate, rank, onPromote }: CandidateRowProps): React.
       </TableCell>
       <TableCell className={NUMERIC}>{fmtDelta(candidate.delta)}</TableCell>
       <TableCell className={candidate.ivRank === null ? MUTED : NUMERIC}>
-        {fmtIvr(candidate.ivRank)}
+        <IvrCell ivRank={candidate.ivRank} />
       </TableCell>
       <TableCell className={SECONDARY}>{fmtOpenInterest(candidate.openInterest)}</TableCell>
       <TableCell className={SECONDARY}>

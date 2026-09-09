@@ -196,7 +196,7 @@ describe('main process bootstrap', () => {
     )
   })
 
-  it('ivr-collect job handler delegates to collectIVRSnapshots with db, brokerProvider, and logger', async () => {
+  it('ivr-collect job handler delegates to collectIVRSnapshots with db, logger, and abort signal', async () => {
     await triggerBootstrap()
 
     const registration = mockSchedulerRegister.mock.calls
@@ -206,43 +206,14 @@ describe('main process bootstrap', () => {
     expect(registration).toBeDefined()
 
     const { collectIVRSnapshots } = await import('./services/ivr-collector')
-    const { brokerFactory } = await import('./integrations/broker-factory')
-    const brokerProvider = { getMarketStatus: vi.fn(), getActivities: vi.fn() }
-    vi.mocked(brokerFactory.create).mockReturnValue(brokerProvider as never)
-
     await registration!.handler()
 
-    expect(vi.mocked(brokerFactory.create)).toHaveBeenCalledTimes(1)
     expect(vi.mocked(collectIVRSnapshots)).toHaveBeenCalledWith(
       expect.objectContaining({
         db: expect.anything(),
-        brokerProvider,
         logger: expect.anything(),
         signal: expect.any(AbortSignal)
       })
-    )
-  })
-
-  it('ivr-collect handler collects with a null broker when broker creation throws', async () => {
-    // The watchlist-only trader has no Alpaca credentials; Barchart needs none, so
-    // the handler must degrade to a broker-less run instead of dying before the
-    // collector is entered (which would also leave the afterClose job un-rearmed).
-    await triggerBootstrap()
-
-    const registration = mockSchedulerRegister.mock.calls
-      .map(([job]) => job)
-      .find((job) => job.name === 'ivr-collect') as { handler: () => Promise<unknown> } | undefined
-    expect(registration).toBeDefined()
-
-    const { collectIVRSnapshots } = await import('./services/ivr-collector')
-    const { brokerFactory } = await import('./integrations/broker-factory')
-    vi.mocked(brokerFactory.create).mockImplementationOnce(() => {
-      throw new Error('Alpaca credentials not configured')
-    })
-
-    await expect(registration!.handler()).resolves.toBeDefined()
-    expect(vi.mocked(collectIVRSnapshots)).toHaveBeenCalledWith(
-      expect.objectContaining({ brokerProvider: null })
     )
   })
 

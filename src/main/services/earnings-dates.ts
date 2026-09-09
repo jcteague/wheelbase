@@ -4,32 +4,25 @@
 // this caller's question. `unavailable` is produced here at read time and never
 // persisted: a failed request is not knowledge about the ticker.
 import type Database from 'better-sqlite3'
-import {
-  addDays,
-  addHours,
-  differenceInCalendarDays,
-  format,
-  isAfter,
-  isBefore,
-  parseISO,
-  startOfDay
-} from 'date-fns'
+import { addDays, addHours, differenceInCalendarDays, format, isAfter, parseISO } from 'date-fns'
+import { etDateOf } from '../core/trading-calendar'
 import type { EarningsLookup } from '../core/screener'
-import { fakeEarningsFetcher } from '../integrations/fake-earnings'
-import { fetchNextEarnings } from '../integrations/finnhub-earnings'
+import { fakeEarningsCalendarFetcher } from '../integrations/fake-earnings'
+import { fetchEarningsCalendar, type EarningsCalendarRead } from '../integrations/finnhub-earnings'
 import { logger } from '../logger'
 
 const EARNINGS_ROW_QUERY = `
-  SELECT ticker, next_earnings, checked_through, checked_at
+  SELECT ticker, next_earnings, last_earnings, checked_through, checked_at
   FROM earnings_date
   WHERE ticker = ?
 `
 
 const UPSERT_EARNINGS_ROW = `
-  INSERT INTO earnings_date (ticker, next_earnings, checked_through, checked_at, source)
-  VALUES (?, ?, ?, ?, 'finnhub')
+  INSERT INTO earnings_date (ticker, next_earnings, last_earnings, checked_through, checked_at, source)
+  VALUES (?, ?, ?, ?, ?, 'finnhub')
   ON CONFLICT (ticker) DO UPDATE SET
     next_earnings   = excluded.next_earnings,
+    last_earnings   = excluded.last_earnings,
     checked_through = excluded.checked_through,
     checked_at      = excluded.checked_at,
     source          = excluded.source
@@ -58,35 +51,54 @@ const MIN_REFETCH_HOURS = 12
  *  the weekly backstop — comfortably wider than US-56's 10-day alert threshold. */
 const NEAR_EARNINGS_DAYS = 14
 
-export type EarningsFetcher = (
+export type EarningsCalendarFetcher = (
   tickers: string[],
   opts: { now: Date; lookaheadDays: number }
-) => Promise<Record<string, EarningsLookup>>
+) => Promise<Record<string, EarningsCalendarRead>>
+
+export type EarningsCalendarKnowledge = {
+  next: EarningsLookup
+  last: string | null | undefined
+}
 
 export type GetEarningsOptions = {
   /** The furthest date the caller needs answered — a date, not a day count. The
    *  DTE-window conversion belongs to the caller (`services/screener.ts`). */
   horizon: Date
   now: Date
-  fetch?: EarningsFetcher
+  fetch?: EarningsCalendarFetcher
 }
 
 /** The live Finnhub feed, or the offline fixture fetcher when an e2e run has armed it.
  *  Resolved per call rather than at import time so a test seam set after module load
  *  still takes effect, and so production pays nothing for it. */
-function defaultFetcher(): EarningsFetcher {
-  return fakeEarningsFetcher() ?? fetchNextEarnings
+function defaultFetcher(): EarningsCalendarFetcher {
+  return fakeEarningsCalendarFetcher() ?? fetchEarningsCalendar
 }
 
 type EarningsRow = {
   ticker: string
   next_earnings: string | null
+  last_earnings: string | null
   checked_through: string
   checked_at: string
 }
 
-/** Anything the feed positively knew — the only two states worth persisting. */
-type KnownLookup = Exclude<EarningsLookup, { status: 'unavailable' }>
+type KnownCalendar = Extract<EarningsCalendarRead, { status: 'read' }>
+
+/**
+ * The Eastern day `days` after the Eastern day an instant falls on.
+ *
+ * Every stored date came out of the feed bucketed by Eastern day, so every comparison
+ * against one has to use the same basis. A host-local midnight is a *different* day
+ * for part of every evening, which on a UTC host silently rejected each print-day read
+ * as already-past and threw away the last-print knowledge that came with it.
+ */
+function etDayPlus(instant: Date, days: number): string {
+  const today = etDateOf(instant)
+  if (today === '' || days === 0) return today
+  return format(addDays(parseISO(today), days), 'yyyy-MM-dd')
+}
 
 /**
  * How long a row's answer stands before it is worth re-asking. A date that has already
@@ -97,11 +109,9 @@ type KnownLookup = Exclude<EarningsLookup, { status: 'unavailable' }>
 function refreshIntervalHours(row: EarningsRow, now: Date): number {
   if (row.next_earnings === null) return STALE_AFTER_HOURS
 
-  const earnings = parseISO(row.next_earnings)
-  const alreadyPassed = isBefore(earnings, startOfDay(now))
-  const nearTerm = isBefore(earnings, addDays(startOfDay(now), NEAR_EARNINGS_DAYS))
-
-  return alreadyPassed || nearTerm ? MIN_REFETCH_HOURS : STALE_AFTER_HOURS
+  // Near-term subsumes already-passed: both are strictly before the horizon day.
+  const nearTerm = row.next_earnings < etDayPlus(now, NEAR_EARNINGS_DAYS)
+  return nearTerm ? MIN_REFETCH_HOURS : STALE_AFTER_HOURS
 }
 
 /** A ticker is refetched when, and only when, one of these holds. */
@@ -110,32 +120,16 @@ function needsRefresh(row: EarningsRow | undefined, horizon: Date, now: Date): b
   if (row === undefined) return true
   // 2. a null date only answers questions no deeper than it looked — a coverage
   //    question, not a freshness one, so no interval gates it
-  if (row.next_earnings === null && isBefore(parseISO(row.checked_through), startOfDay(horizon)))
-    return true
+  if (row.next_earnings === null && row.checked_through < etDateOf(horizon)) return true
   // 3. the answer has stood long enough to be worth re-asking. This subsumes the
   //    already-passed case: a stale print is re-read on the short interval rather than
   //    on every call, which is what keeps a 60-second scheduler off the rate limit.
   return isAfter(now, addHours(parseISO(row.checked_at), refreshIntervalHours(row, now)))
 }
 
-/**
- * Whether a verdict actually answers "when is the next earnings print?".
- *
- * A `found` date that has **already happened** does not. The feed returns one as an
- * ordinary outcome — its window opens at `now - EARNINGS_LOOKBACK_DAYS` and
- * `selectEventDate` falls back to the latest past date — so for the week after every
- * print this is the normal reply, and on the alert path's shallow horizon it is the
- * dominant one, since the next print sits a quarter away. Passed through, the engine
- * reads a past date as "history, not gap risk", scores it `clear`, and hands the ticker a
- * rank number with no badge and no exclusion — while the real next print may land inside
- * the expiry. That is the silent pass this story exists to prevent.
- *
- * Applied to the fetched value and the stored row alike: the invariant belongs to the
- * verdict, not to the path it arrived by, and gating only one path had the two disagree
- * on identical data.
- */
-function answersNextPrint(lookup: KnownLookup, now: Date): boolean {
-  return lookup.status === 'none' || !isBefore(parseISO(lookup.date), startOfDay(now))
+/** Whether a calendar verdict still answers the caller's next-print question. */
+function answersNextPrint(lookup: KnownCalendar, now: Date): boolean {
+  return lookup.next === null || lookup.next >= etDateOf(now)
 }
 
 /**
@@ -154,12 +148,35 @@ function answersNextPrint(lookup: KnownLookup, now: Date): boolean {
  *
  * Both fall through to `unavailable`, which is honest and carries the tier-1 demotion.
  */
-function storedVerdict(row: EarningsRow, horizon: Date, now: Date): KnownLookup | null {
+function storedVerdict(row: EarningsRow, horizon: Date, now: Date): KnownCalendar | null {
   if (row.next_earnings === null) {
-    return isBefore(parseISO(row.checked_through), startOfDay(horizon)) ? null : { status: 'none' }
+    return row.checked_through < etDateOf(horizon)
+      ? null
+      : { status: 'read', next: null, last: row.last_earnings }
   }
-  const lookup: KnownLookup = { status: 'found', date: row.next_earnings }
+  const lookup: KnownCalendar = {
+    status: 'read',
+    next: row.next_earnings,
+    last: row.last_earnings
+  }
   return answersNextPrint(lookup, now) ? lookup : null
+}
+
+/**
+ * The most recent print the row evidences, independent of whether it can still answer
+ * the *next*-print question.
+ *
+ * A `next_earnings` that has already passed is exactly that: a print we know happened.
+ * Dropping it — which is what returning only `storedVerdict`'s `last` did — left the
+ * freshness engine judging a pre-print reading on age alone, so a stale high IVR read
+ * as usable on the morning after the print. Recovering it costs no fetch.
+ */
+function storedLastPrint(row: EarningsRow, now: Date): string | null {
+  const today = etDateOf(now)
+  const passed = row.next_earnings !== null && row.next_earnings < today ? row.next_earnings : null
+  if (passed === null) return row.last_earnings
+  if (row.last_earnings === null) return passed
+  return passed > row.last_earnings ? passed : row.last_earnings
 }
 
 /** Degrades to "no rows" on a read failure so the run refetches every ticker
@@ -184,7 +201,7 @@ function readRows(db: Database.Database, tickers: string[]): Map<string, Earning
  *  earnings for anyone" at the caller's degrade path. */
 function persistRows(
   db: Database.Database,
-  entries: Array<[string, KnownLookup]>,
+  entries: Array<[string, KnownCalendar]>,
   checkedThrough: string,
   checkedAt: string
 ): void {
@@ -193,12 +210,7 @@ function persistRows(
 
     db.transaction(() => {
       for (const [ticker, lookup] of entries) {
-        upsert.run(
-          ticker,
-          lookup.status === 'found' ? lookup.date : null,
-          checkedThrough,
-          checkedAt
-        )
+        upsert.run(ticker, lookup.next, lookup.last, checkedThrough, checkedAt)
       }
     })()
   } catch (err) {
@@ -215,7 +227,7 @@ async function refresh(
   db: Database.Database,
   tickers: string[],
   { horizon, now, fetch }: Required<GetEarningsOptions>
-): Promise<Map<string, EarningsLookup>> {
+): Promise<Map<string, EarningsCalendarRead>> {
   if (tickers.length === 0) return new Map()
 
   const fetched = await fetch(tickers, {
@@ -223,7 +235,7 @@ async function refresh(
     lookaheadDays: differenceInCalendarDays(horizon, now)
   })
 
-  const known = tickers.flatMap((ticker): Array<[string, KnownLookup]> => {
+  const known = tickers.flatMap((ticker): Array<[string, KnownCalendar]> => {
     const lookup = fetched[ticker]
     return lookup === undefined || lookup.status === 'unavailable' ? [] : [[ticker, lookup]]
   })
@@ -232,23 +244,23 @@ async function refresh(
   }
 
   return new Map(
-    tickers.map((ticker): [string, EarningsLookup] => [
+    tickers.map((ticker): [string, EarningsCalendarRead] => [
       ticker,
       fetched[ticker] ?? { status: 'unavailable' }
     ])
   )
 }
 
-/**
- * What we know about each requested ticker's next earnings date through `horizon`,
- * keyed by upper-cased ticker. Rows that can still answer the question are served
- * from the table with no HTTP call; the rest are refreshed through the feed.
- */
-export async function getEarnings(
+function nextLookup(calendar: KnownCalendar): EarningsLookup {
+  return calendar.next === null ? { status: 'none' } : { status: 'found', date: calendar.next }
+}
+
+/** Shared cache/read-through path for next earnings and IVR last-print knowledge. */
+export async function getEarningsCalendar(
   db: Database.Database,
   tickers: string[],
   { horizon, now, fetch = defaultFetcher() }: GetEarningsOptions
-): Promise<Map<string, EarningsLookup>> {
+): Promise<Map<string, EarningsCalendarKnowledge>> {
   const requested = [...new Set(tickers.map((ticker) => ticker.toUpperCase()))]
   if (requested.length === 0) return new Map()
 
@@ -261,24 +273,36 @@ export async function getEarnings(
     'earnings_date_read'
   )
 
-  // Resolved per requested ticker rather than by merging partial maps, so every ticker
-  // gets exactly one verdict and none can be dropped. A refresh wins when it learned
-  // something; otherwise the row answers if it honestly can — the store exists to carry
-  // the trader through an outage — and failing that the honest answer is `unavailable`.
+  // Resolve each ticker independently. A successful refresh wins, while an unavailable
+  // refresh may retain the prior next date but must not reuse its last-print knowledge.
   return new Map(
-    requested.map((ticker): [string, EarningsLookup] => {
+    requested.map((ticker): [string, EarningsCalendarKnowledge] => {
       const learned = refreshed.get(ticker)
-      if (
-        learned !== undefined &&
-        learned.status !== 'unavailable' &&
-        answersNextPrint(learned, now)
-      ) {
-        return [ticker, learned]
+      if (learned?.status === 'read' && answersNextPrint(learned, now)) {
+        return [ticker, { next: nextLookup(learned), last: learned.last }]
       }
 
       const row = rows.get(ticker)
       const fallback = row === undefined ? null : storedVerdict(row, horizon, now)
-      return [ticker, fallback ?? { status: 'unavailable' }]
+      // `learned` is present for exactly the tickers this run refreshed, so its
+      // presence here means the refresh failed and its stored history is suspect.
+      return [
+        ticker,
+        {
+          next: fallback === null ? { status: 'unavailable' } : nextLookup(fallback),
+          last: learned !== undefined || row === undefined ? undefined : storedLastPrint(row, now)
+        }
+      ]
     })
   )
+}
+
+/** Existing next-only contract, projected from the shared resolver. */
+export async function getEarnings(
+  db: Database.Database,
+  tickers: string[],
+  options: GetEarningsOptions
+): Promise<Map<string, EarningsLookup>> {
+  const calendar = await getEarningsCalendar(db, tickers, options)
+  return new Map([...calendar].map(([ticker, knowledge]) => [ticker, knowledge.next]))
 }

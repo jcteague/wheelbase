@@ -12,7 +12,8 @@ vi.mock('../logger', () => ({
 const provider = {
   getAccountInfo: vi.fn(),
   getActivities: vi.fn(),
-  getMarketStatus: vi.fn()
+  getMarketStatus: vi.fn(),
+  getMarketCalendar: vi.fn().mockResolvedValue([])
 }
 
 function getHandler(

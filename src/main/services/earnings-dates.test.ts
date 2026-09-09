@@ -4,10 +4,11 @@
 import type Database from 'better-sqlite3'
 import { parseISO, subDays, subHours } from 'date-fns'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import type { EarningsLookup } from '../integrations/finnhub-earnings'
+import type { EarningsLookup } from '../core/screener'
+import type { EarningsCalendarRead } from '../integrations/finnhub-earnings'
 import { logger } from '../logger'
 import { makeTestDb } from '../test-utils'
-import { getEarnings, type EarningsFetcher } from './earnings-dates'
+import { getEarnings, getEarningsCalendar, type EarningsCalendarFetcher } from './earnings-dates'
 
 vi.mock('../logger', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
@@ -41,6 +42,7 @@ function seedEarnings(db: Database.Database, rows: SeedRow[]): void {
 type StoredRow = {
   ticker: string
   next_earnings: string | null
+  last_earnings: string | null
   checked_through: string
   checked_at: string
   source: string
@@ -50,12 +52,28 @@ function readAllRows(db: Database.Database): StoredRow[] {
   return db.prepare('SELECT * FROM earnings_date ORDER BY ticker').all() as StoredRow[]
 }
 
-/** Stubs the feed with a fixed verdict per ticker, mirroring `fetchNextEarnings`'s
- *  contract that every requested ticker gets an entry. */
-function stubFetch(result: Record<string, EarningsLookup>): Mock<EarningsFetcher> {
-  return vi.fn<EarningsFetcher>(async (tickers) =>
+function stubCalendarFetch(
+  result: Record<string, EarningsCalendarRead>
+): Mock<EarningsCalendarFetcher> {
+  return vi.fn<EarningsCalendarFetcher>(async (tickers) =>
     Object.fromEntries(
       tickers.map((ticker) => [ticker, result[ticker] ?? { status: 'unavailable' }])
+    )
+  )
+}
+
+/** Stubs the feed with a next-only verdict per ticker — the shape most of these cases
+ *  care about — mirroring the feed's contract that every requested ticker gets an entry. */
+function stubFetch(result: Record<string, EarningsLookup>): Mock<EarningsCalendarFetcher> {
+  return stubCalendarFetch(
+    Object.fromEntries(
+      Object.entries(result).map(([ticker, lookup]): [string, EarningsCalendarRead] => {
+        if (lookup.status === 'unavailable') return [ticker, lookup]
+        return [
+          ticker,
+          { status: 'read', next: lookup.status === 'found' ? lookup.date : null, last: null }
+        ]
+      })
     )
   )
 }
@@ -185,6 +203,7 @@ describe('getEarnings', () => {
       {
         ticker: 'AAPL',
         next_earnings: null,
+        last_earnings: null,
         checked_through: '2026-10-06',
         checked_at: NOW.toISOString(),
         source: 'finnhub'
@@ -255,6 +274,83 @@ describe('getEarnings', () => {
     await getEarnings(db, ['AAPL'], { horizon: HORIZON, now: NOW, fetch })
 
     expect(fetch).toHaveBeenCalledWith(['AAPL'], { now: NOW, lookaheadDays: 50 })
+  })
+})
+
+describe('getEarningsCalendar', () => {
+  it('stores and returns next plus last in one read-through request', async () => {
+    const db = makeTestDb()
+    const fetch = stubCalendarFetch({
+      AAPL: { status: 'read', next: '2026-09-04', last: '2026-07-28' }
+    })
+
+    const result = await getEarningsCalendar(db, ['AAPL'], {
+      horizon: HORIZON,
+      now: NOW,
+      fetch
+    })
+
+    expect(result.get('AAPL')).toEqual({
+      next: { status: 'found', date: '2026-09-04' },
+      last: '2026-07-28'
+    })
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(readAllRows(db)[0]).toMatchObject({
+      next_earnings: '2026-09-04',
+      last_earnings: '2026-07-28'
+    })
+
+    const projected = await getEarnings(db, ['AAPL'], {
+      horizon: HORIZON,
+      now: NOW,
+      fetch
+    })
+    expect(projected.get('AAPL')).toEqual({ status: 'found', date: '2026-09-04' })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns fetched last knowledge even when persistence fails', async () => {
+    const db = makeTestDb()
+    const realPrepare = db.prepare.bind(db)
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('INSERT INTO earnings_date')) throw new Error('database is locked')
+      return realPrepare(sql)
+    })
+    const fetch = stubCalendarFetch({
+      AAPL: { status: 'read', next: null, last: '2026-08-14' }
+    })
+
+    const result = await getEarningsCalendar(db, ['AAPL'], {
+      horizon: HORIZON,
+      now: NOW,
+      fetch
+    })
+
+    expect(result.get('AAPL')).toEqual({ next: { status: 'none' }, last: '2026-08-14' })
+  })
+
+  it('retains a cached next date but degrades last knowledge on unavailable refresh', async () => {
+    const db = makeTestDb()
+    seedEarnings(db, [
+      {
+        ticker: 'AAPL',
+        nextEarnings: '2026-09-04',
+        checkedThrough: '2026-10-06',
+        checkedAt: subDays(NOW, 8).toISOString()
+      }
+    ])
+    const fetch = stubCalendarFetch({ AAPL: { status: 'unavailable' } })
+
+    const result = await getEarningsCalendar(db, ['AAPL'], {
+      horizon: HORIZON,
+      now: NOW,
+      fetch
+    })
+
+    expect(result.get('AAPL')).toEqual({
+      next: { status: 'found', date: '2026-09-04' },
+      last: undefined
+    })
   })
 })
 

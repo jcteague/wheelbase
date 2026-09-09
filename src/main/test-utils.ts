@@ -1,8 +1,10 @@
 import Database from 'better-sqlite3'
 import path from 'node:path'
+import { eachDayOfInterval, format, parseISO } from 'date-fns'
 import { vi, type Mock } from 'vitest'
 import { localDate } from './dates'
 import { runMigrations } from './db/migrate'
+import { etInstantAt, type TradingCalendar } from './core/trading-calendar'
 import { addWatchlistEntry } from './services/watchlist'
 
 export const MIGRATIONS_DIR = path.join(process.cwd(), 'migrations')
@@ -34,6 +36,56 @@ export function seedIvr(db: Database.Database, rows: IvrSeedRow[]): void {
     'INSERT INTO ivr_snapshot (underlying, observed_at, ivr) VALUES (?, ?, ?)'
   )
   for (const [underlying, observedAt, ivr] of rows) insert.run(underlying, observedAt, ivr)
+}
+
+const NORMAL_CLOSE = '16:00'
+
+/**
+ * A trading calendar over `[firstDay, lastDay]` holding a session on every weekday
+ * except `closures`, each closing at 16:00 ET unless `earlyCloses` says otherwise.
+ *
+ * Weekday-derived on purpose: tests that care about a specific holiday name it, and
+ * everything else gets an ordinary calendar without restating one.
+ */
+export function makeTradingCalendar(
+  firstDay: string,
+  lastDay: string,
+  {
+    closures = [],
+    earlyCloses = {}
+  }: { closures?: string[]; earlyCloses?: Record<string, string> } = {}
+): TradingCalendar {
+  const closed = new Set(closures)
+  const sessions = eachDayOfInterval({ start: parseISO(firstDay), end: parseISO(lastDay) })
+    .map((day) => format(day, 'yyyy-MM-dd'))
+    .filter((date) => {
+      const weekday = parseISO(date).getDay()
+      return weekday !== 0 && weekday !== 6 && !closed.has(date)
+    })
+    .map((date) => ({ date, closeAt: etInstantAt(date, earlyCloses[date] ?? NORMAL_CLOSE)! }))
+
+  return { firstDay, lastDay, sessions }
+}
+
+/** The same calendar, written into the table `readTradingCalendar` reads. Every day in
+ *  the window gets a row so stored coverage matches the intended window. */
+export function seedTradingCalendar(
+  db: Database.Database,
+  firstDay: string,
+  lastDay: string,
+  opts: { closures?: string[]; earlyCloses?: Record<string, string> } = {}
+): void {
+  const { sessions } = makeTradingCalendar(firstDay, lastDay, opts)
+  const closeByDate = new Map(sessions.map((session) => [session.date, session.closeAt]))
+  const insert = db.prepare(
+    `INSERT INTO trading_session (date, close_at, source) VALUES (?, ?, 'test')
+     ON CONFLICT (date) DO UPDATE SET close_at = excluded.close_at`
+  )
+
+  for (const day of eachDayOfInterval({ start: parseISO(firstDay), end: parseISO(lastDay) })) {
+    const date = format(day, 'yyyy-MM-dd')
+    insert.run(date, closeByDate.get(date) ?? null)
+  }
 }
 
 /** LoggerLike-compatible spy for asserting log events in tests. */

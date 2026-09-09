@@ -92,6 +92,7 @@ const api = {
   testSchedulerRegister: (job: unknown) => invoke('_test:scheduler-register', job),
   testSchedulerSimulateWake: (payload: unknown) => invoke('_test:scheduler-simulate-wake', payload),
   testIvrSetOutcomes: (outcomes: unknown) => invoke('_test:ivr-set-outcomes', outcomes),
+  testIvrSetNow: (nowIso: unknown) => invoke('_test:ivr-set-now', nowIso),
   testIvrSnapshots: () => invoke('_test:ivr-snapshots')
 }
 

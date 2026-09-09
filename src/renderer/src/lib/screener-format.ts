@@ -1,6 +1,5 @@
 import { format, parseISO } from 'date-fns'
 import Decimal from 'decimal.js'
-import type { ScreenerIvRank } from '../api/screener'
 import type { ScreeningCriteria } from '../api/screening-criteria'
 import { fmtMoney, fmtPct } from './format'
 
@@ -24,14 +23,8 @@ export function fmtDelta(value: string): string {
   return new Decimal(value).toFixed(2)
 }
 
-// [US-67] The reading travels with the day it was taken. IV rank is a hard filter
-// now that the floor exists, and the collector writes at most one reading a day, so
-// a months-old snapshot must not read as today's. Mirrors the shape the engine's
-// iv_rank_floor exclusion reason uses (`src/main/core/screener.ts`).
-export function fmtIvr(ivRank: ScreenerIvRank | null): string {
-  if (ivRank === null) return 'n/a'
-  const observedOn = format(parseISO(ivRank.observedAt), 'MMM d')
-  return `${new Decimal(ivRank.value).toString()} (${observedOn})`
+export function formatIvrValue(value: string): string {
+  return new Decimal(value).toString()
 }
 
 export function fmtOpenInterest(openInterest: number | null): string {

@@ -6,6 +6,8 @@ import {
   type ActivityFilter,
   type BrokerActivity,
   type BrokerProvider,
+  type MarketCalendarDay,
+  type MarketCalendarRange,
   type MarketStatus
 } from './broker-provider'
 import { isNetworkError } from './integration-errors'
@@ -32,6 +34,12 @@ type AlpacaActivity = {
   price?: string
   transaction_time?: string
   date?: string
+}
+
+type AlpacaCalendarDay = {
+  date: string
+  open: string
+  close: string
 }
 
 const DEFAULT_ET_OFFSET_MINUTES = -240
@@ -205,6 +213,24 @@ export class AlpacaBrokerProvider implements BrokerProvider {
       }
     } catch (err) {
       throw this.wrapError(err, 'getMarketStatus')
+    }
+  }
+
+  async getMarketCalendar(range: MarketCalendarRange): Promise<MarketCalendarDay[]> {
+    this.requireCredentials()
+    try {
+      const days = (await this.lazyClient.getCalendar({
+        start: range.start,
+        end: range.end
+      })) as AlpacaCalendarDay[]
+
+      // Alpaca lists only days the exchange traded, so anything absent is a closure.
+      // `close` already reflects early closes, which is why none are derived here.
+      return days
+        .filter((day) => typeof day.date === 'string' && typeof day.close === 'string')
+        .map((day) => ({ date: day.date, close: day.close }))
+    } catch (err) {
+      throw this.wrapError(err, 'getMarketCalendar')
     }
   }
 }

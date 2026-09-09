@@ -394,10 +394,14 @@ type IpcWatchlistListResult = IpcResult<{ entries: IpcWatchlistEntry[] }>
 type IpcWatchlistAddResult = IpcResult<{ entry: IpcWatchlistEntry }>
 type IpcWatchlistRemoveResult = IpcResult<{ ticker: string }>
 
-/** Mirrors `IvRank` in `src/main/core/screener.ts`. */
+/** Mirrors `AssessedIvRank` in `src/main/core/ivr-freshness.ts` — the reading plus the
+ *  freshness verdict. Whether a state is fit to score on is derived at each end
+ *  (`isUsableState` in main, the tone rule in `IvrCell`) rather than carried here. */
 interface IpcIvRank {
   value: string // 1dp
   observedAt: string // ISO timestamp of the scrape that produced it
+  ageTradingDays: number
+  state: 'fresh' | 'aging' | 'stale' | 'predates_earnings'
 }
 
 /** Mirrors `CandidateEarnings` in `src/main/core/screener.ts` — the engine's earnings
@@ -696,6 +700,9 @@ declare global {
       ivr: {
         collectNow: () => Promise<IpcCollectIvrNowResult>
       }
+      testIvrSetOutcomes: (outcomes: unknown) => Promise<{ ok: boolean }>
+      testIvrSetNow: (nowIso: unknown) => Promise<{ ok: true } | { ok: false; error: string }>
+      testIvrSnapshots: () => Promise<unknown[]>
     }
   }
 }

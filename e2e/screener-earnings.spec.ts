@@ -14,7 +14,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ElectronApplication, Page } from 'playwright'
 import { cleanupDb, tmpDb } from './assignment-helpers'
-import { localDate } from './dates'
 import { fmtBadgeDate } from './earnings-format'
 import {
   AAPL_PUT,
@@ -25,6 +24,7 @@ import {
   launchScreener,
   rankedTickers,
   rowRank,
+  screenerDate,
   setEarningsHandling,
   type PutFixtureSpec,
   type ScreenerLaunchOpts
@@ -69,7 +69,7 @@ describe('US-70: warn when a candidate has earnings within the DTE window', () =
 
     await page.waitForSelector('[data-testid="screener-excluded-toggle"]')
     expect(await excludedReason(page, 'AAPL')).toBe(
-      `earnings ${localDate(EARNINGS_BEFORE_EXPIRY)} falls on or before expiry`
+      `earnings ${screenerDate(EARNINGS_BEFORE_EXPIRY)} falls on or before expiry`
     )
     expect(await page.locator('[data-testid="screener-row-AAPL"]').count()).toBe(0)
   })
@@ -86,7 +86,7 @@ describe('US-70: warn when a candidate has earnings within the DTE window', () =
     await setEarningsHandling(page, 'flag', 1)
 
     expect(await earningsBadge(page, 'AAPL')).toBe(
-      `⚠ Earnings ${fmtBadgeDate(localDate(EARNINGS_BEFORE_EXPIRY))} · ${DAYS_BEFORE_EXPIRY}d before expiry`
+      `⚠ Earnings ${fmtBadgeDate(screenerDate(EARNINGS_BEFORE_EXPIRY))} · ${DAYS_BEFORE_EXPIRY}d before expiry`
     )
   })
 
@@ -120,7 +120,7 @@ describe('US-70: warn when a candidate has earnings within the DTE window', () =
 
     await page.waitForSelector('[data-testid="screener-excluded-toggle"]')
     expect(await excludedReason(page, 'AAPL')).toBe(
-      `earnings ${localDate(EARNINGS_ON_EXPIRY)} falls on or before expiry`
+      `earnings ${screenerDate(EARNINGS_ON_EXPIRY)} falls on or before expiry`
     )
   })
 
@@ -151,7 +151,7 @@ describe('US-70: warn when a candidate has earnings within the DTE window', () =
     await setEarningsHandling(page, 'flag', 1)
 
     const badge = await earningsBadge(page, 'AAPL')
-    expect(badge).toContain(fmtBadgeDate(localDate(beyondAlertHorizon)))
+    expect(badge).toContain(fmtBadgeDate(screenerDate(beyondAlertHorizon)))
     expect(badge).not.toContain('unknown')
   })
 

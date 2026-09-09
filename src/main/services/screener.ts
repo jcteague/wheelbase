@@ -16,12 +16,14 @@ import {
   type ScreeningCriteria,
   type TickerScreeningResult
 } from '../core/screener'
+import { isUsableState, type AssessedIvRank } from '../core/ivr-freshness'
 import { mapWithConcurrency } from '../concurrency'
 import { logger } from '../logger'
 import { pullWatchlistChains, type TickerChainResult } from './candidate-chains'
-import { getEarnings } from './earnings-dates'
+import { getEarningsCalendar, type EarningsCalendarKnowledge } from './earnings-dates'
 import { getScreeningCriteria } from './screening-criteria'
-import { getLatestIvrByUnderlying } from './ivr-snapshots'
+import { getAssessedIvrByUnderlying } from './ivr-snapshots'
+import { readTradingCalendar } from './trading-calendar-store'
 
 // One stock-snapshot request per ticker — bounded for the same 429 hazard the
 // chain pull caps against.
@@ -38,9 +40,9 @@ const QUOTE_FETCH_CONCURRENCY = 4
 // full earnings cycle instead: with the default 45-day `dteMax` this reads ~90 days
 // out, so a print anywhere in the current quarter is found rather than missed.
 //
-// Widening costs nothing per run: it is still one request per ticker, `selectEventDate`
-// still returns the first event on or after today, and a deeper `checked_through` row
-// also satisfies US-56's shallower 30-day question.
+// Widening costs nothing per run: it is still one request per ticker; the calendar
+// returns the first event on or after today, and a deeper `checked_through` row also
+// satisfies US-56's shallower 30-day question.
 const LOOKAHEAD_BUFFER_DAYS = 45
 
 export type ScreenerExclusionCode = ExclusionCode | 'no_options_listed' | 'data_unavailable'
@@ -51,9 +53,13 @@ export type ScreenerExclusion = {
   reason: string
 }
 
+export type RankedCandidate = Omit<ScoredCandidate, 'ivRank'> & {
+  ivRank: AssessedIvRank | null
+}
+
 export type ScreenerResults = {
   status: 'ok' | 'provider_unavailable'
-  ranked: ScoredCandidate[] // rank order; empty = nothing survived
+  ranked: RankedCandidate[] // rank order; empty = nothing survived
   excluded: ScreenerExclusion[] // one row per non-ranking ticker, watchlist order
   quoteTimestamp: string | null // newest ranked strike timestamp, for the stale badge
 }
@@ -81,20 +87,6 @@ function dataUnavailable(ticker: string): ScreenerExclusion {
 }
 
 /**
- * Latest IV rank per ticker. A read failure degrades to "unknown for everyone"
- * rather than sinking the run: IVR is display-only and never a hard filter, so
- * losing it must not cost the trader the whole screen.
- */
-function readIvRanks(db: Database.Database, tickers: string[]): Map<string, IvRank> {
-  try {
-    return getLatestIvrByUnderlying(db, tickers)
-  } catch (err) {
-    logger.warn({ err, tickers }, 'screener_ivr_read_failed')
-    return new Map()
-  }
-}
-
-/**
  * [US-70] Next earnings date per ticker, read through the persisted store. A read
  * failure degrades to "unavailable for everyone" rather than sinking the run: an
  * earnings gap is a caution the trader reads on each row, never grounds to suppress
@@ -108,9 +100,9 @@ async function readEarnings(
   tickers: string[],
   criteria: ScreeningCriteria,
   currentDate: Date
-): Promise<Map<string, EarningsLookup>> {
+): Promise<Map<string, EarningsCalendarKnowledge>> {
   try {
-    return await getEarnings(db, tickers, {
+    return await getEarningsCalendar(db, tickers, {
       horizon: addDays(currentDate, criteria.dteMax + LOOKAHEAD_BUFFER_DAYS),
       now: currentDate
     })
@@ -143,6 +135,41 @@ async function readUnderlyingPrices(
     }
   })
   return new Map(entries.filter((entry) => entry !== null))
+}
+
+/**
+ * Freshness-assessed IV rank per ticker, judged against the cached exchange calendar
+ * and what the earnings store knows about each ticker's last print.
+ *
+ * Both reads degrade internally to "unknown for everyone" rather than sinking the run:
+ * IVR is display-only and never a hard filter, so losing it must not cost the trader
+ * the whole screen. That is why there is no catch here — a second one could only ever
+ * be reached by a test mock, and would hide a genuine defect if one appeared.
+ */
+function readAssessedIvr(
+  db: Database.Database,
+  tickers: string[],
+  currentDate: Date,
+  earnings: Map<string, EarningsCalendarKnowledge>
+): Map<string, AssessedIvRank | null> {
+  return getAssessedIvrByUnderlying(db, tickers, {
+    now: currentDate,
+    calendar: readTradingCalendar(db, currentDate),
+    lastEarnings: new Map([...earnings].map(([ticker, known]) => [ticker, known.last]))
+  })
+}
+
+/** Only a reading the freshness engine judged usable is scored. The rest still reach
+ *  the trader through `RankedCandidate.ivRank`, marked rather than silently priced in. */
+function usableIvRanks(assessed: Map<string, AssessedIvRank | null>): Map<string, IvRank> {
+  return new Map(
+    [...assessed].flatMap(
+      ([ticker, reading]): Array<[string, IvRank]> =>
+        reading !== null && isUsableState(reading.state)
+          ? [[ticker, { value: reading.value, observedAt: reading.observedAt }]]
+          : []
+    )
+  )
 }
 
 // A chain that never made it far enough to screen. Excluding the `ok` case here is what
@@ -295,10 +322,11 @@ export async function screenWatchlistCandidates(
     readUnderlyingPrices(provider, screenable, criteria),
     readEarnings(db, screenable, criteria, currentDate)
   ])
+  const assessedIvRanks = readAssessedIvr(db, screenable, currentDate, earnings)
   const ctx: ScreenContext = {
-    ivRanks: readIvRanks(db, screenable),
+    ivRanks: usableIvRanks(assessedIvRanks),
     prices,
-    earnings,
+    earnings: new Map([...earnings].map(([ticker, known]) => [ticker, known.next])),
     criteria,
     currentDate
   }
@@ -307,6 +335,11 @@ export async function screenWatchlistCandidates(
 
   const ranked = rankCandidates(
     outcomes.flatMap((outcome) => ('screened' in outcome ? [outcome.screened] : []))
+  ).map(
+    (candidate): RankedCandidate => ({
+      ...candidate,
+      ivRank: assessedIvRanks.get(candidate.ticker) ?? null
+    })
   )
   const excluded = outcomes.flatMap((outcome) =>
     'screened' in outcome ? representativeExclusion(outcome.screened) : [outcome.exclusion]

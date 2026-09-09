@@ -15,7 +15,36 @@ import {
   type CspFixture,
   type MarketStatusFixture
 } from './assignment-helpers'
+import { addDays, format } from 'date-fns'
 import { localDate } from './dates'
+
+/**
+ * The Eastern calendar day the offline fixtures are built around: the most recent
+ * weekday on or before today.
+ *
+ * Derived rather than pinned. The screener runs on this fake clock while position
+ * creation validates expirations against the real one, so a fixed base guarantees a
+ * date on which every promoted-expiration fixture turns into a past date and the
+ * promote specs start failing — a deadline baked into the suite. Anchoring to the real
+ * date keeps the two clocks in step for good.
+ */
+export const FAKE_NOW_DAY = mostRecentWeekday()
+
+/** 21:00Z on that day: 17:00 EDT or 16:00 EST, either way at or after the 16:00 ET
+ *  close, so the session counts as complete and the collector runs. */
+export const DEFAULT_FAKE_NOW = `${FAKE_NOW_DAY}T21:00:00.000Z`
+
+/** An instant on the fixture day, for quote and observation stamps that must read as
+ *  same-session rather than stale. */
+export function fakeNowAt(time: string): string {
+  return `${FAKE_NOW_DAY}T${time}`
+}
+
+function mostRecentWeekday(): string {
+  let day = new Date()
+  while (day.getDay() === 0 || day.getDay() === 6) day = addDays(day, -1)
+  return format(day, 'yyyy-MM-dd')
+}
 
 /** Subset of the scraper's IVRResult union that the e2e tests program. */
 export type IvrOutcome =
@@ -76,7 +105,7 @@ export function buildIvrLaunchEnv(
   // Presence (not value) switches the ivr-collect handler to the injected fake
   // fetcher; per-ticker outcomes are set later via _test:ivr-set-outcomes.
   env.WHEELBASE_FAKE_IVR = '{}'
-  if (opts.fakeNow) env.WHEELBASE_FAKE_NOW = opts.fakeNow
+  env.WHEELBASE_FAKE_NOW = opts.fakeNow ?? DEFAULT_FAKE_NOW
   return env
 }
 
@@ -169,6 +198,7 @@ export type IvrBatch = {
 type IvrTestApi = {
   testIvrSnapshots: () => Promise<IvrSnapshotRow[]>
   testIvrSetOutcomes: (outcomes: Record<string, IvrOutcome>) => Promise<{ ok: boolean }>
+  testIvrSetNow: (nowIso: string) => Promise<{ ok: boolean; error?: string }>
 }
 
 type IvrApi = { ivr: { collectNow: () => Promise<unknown> } }
@@ -182,6 +212,15 @@ export async function setIvrOutcomes(
     const api = window.api as unknown as IvrTestApi
     await api.testIvrSetOutcomes(next)
   }, outcomes)
+}
+
+/** Advance the shared fake clock without restarting the Electron app. */
+export async function setIvrNow(page: Page, nowIso: string): Promise<void> {
+  await page.evaluate(async (next) => {
+    const api = window.api as unknown as IvrTestApi
+    const result = await api.testIvrSetNow(next)
+    if (!result.ok) throw new Error(result.error ?? 'invalid fake IVR clock')
+  }, nowIso)
 }
 
 /** Read every persisted ivr_snapshot row, ordered by underlying. */

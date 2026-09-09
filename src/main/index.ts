@@ -194,7 +194,15 @@ app.whenReady().then(() => {
   registerAssignmentsIpc({ db, scheduler })
   registerAlertsHandlers({ db })
   registerWatchlistIpc({ db })
-  registerScreenerIpc({ db, getProvider: () => marketDataFactory.create() })
+  // In production this resolves to `{}` so the real Barchart scraper and wall clock
+  // are used; e2e runs set WHEELBASE_FAKE_IVR to inject a deterministic offline
+  // fetcher + clock. Resolved once so the collector and the screener share it.
+  const ivrCollaborators = createFakeIvrCollaborators()
+  registerScreenerIpc({
+    db,
+    getProvider: () => marketDataFactory.create(),
+    getCurrentDate: ivrCollaborators.clock?.now
+  })
   registerIvrIpc({ scheduler })
 
   // Detect-assignments job: looks up the current broker provider and active
@@ -223,31 +231,31 @@ app.whenReady().then(() => {
     }
   })
 
-  // In production this resolves to `{}` so the real Barchart scraper is used; e2e
-  // runs set WHEELBASE_FAKE_IVR to inject a deterministic offline fetcher + clock.
-  const ivrCollaborators = createFakeIvrCollaborators()
   // Aborts an in-flight IVR batch at the next ticker boundary on quit — a
   // watchlist-sized run cannot drain inside scheduler.stop()'s 5s timeout.
   const ivrAbort = new AbortController()
+
+  /** The broker, or nothing when none is configured. Resolved per tick so credentials
+   *  added after launch take effect without a restart. */
+  const tryCreateBroker = (): BrokerProvider | undefined => {
+    try {
+      return brokerFactory.create()
+    } catch (err) {
+      logger.debug({ err }, 'ivr_collect_broker_unavailable')
+      return undefined
+    }
+  }
   scheduler.register({
     name: IVR_COLLECT_JOB_NAME,
     cadence: { kind: 'afterClose', offsetMinutes: 60 },
     handler: async () => {
-      // Barchart needs no broker, so missing Alpaca credentials must not kill the
-      // watchlist-only trader's collection: the collector treats a null provider
-      // as "assume trading day" and proceeds.
-      let brokerProvider: BrokerProvider | null
-      try {
-        brokerProvider = brokerFactory.create()
-      } catch (err) {
-        logger.warn({ err }, 'ivr-collect: broker provider unavailable; collecting anyway')
-        brokerProvider = null
-      }
       return collectIVRSnapshots({
         db,
-        brokerProvider,
         logger,
         signal: ivrAbort.signal,
+        // Best effort: the collector refreshes the cached exchange calendar when a
+        // broker is configured, and runs on the existing cache when one is not.
+        brokerProvider: tryCreateBroker(),
         ...ivrCollaborators
       })
     }

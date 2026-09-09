@@ -28,6 +28,13 @@ export function setFakeIvrOutcomes(next: Record<string, IVRResult>): void {
   outcomes = next
 }
 
+export function setFakeIvrNow(next: string | null): void {
+  if (next !== null && Number.isNaN(new Date(next).getTime())) {
+    throw new Error('Fake IVR clock must be a valid ISO timestamp')
+  }
+  fakeNowIso = next
+}
+
 const fakeFetchIvr = async (ticker: string): Promise<IVRResult> => {
   const key = ticker.toUpperCase()
   return (
@@ -46,7 +53,7 @@ export function createFakeIvrCollaborators(): FakeIvrCollaborators {
   } catch {
     outcomes = {}
   }
-  fakeNowIso = process.env.WHEELBASE_FAKE_NOW ?? null
+  setFakeIvrNow(process.env.WHEELBASE_FAKE_NOW ?? null)
 
   return {
     fetchIvr: fakeFetchIvr,

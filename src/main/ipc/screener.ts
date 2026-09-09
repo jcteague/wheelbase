@@ -12,17 +12,21 @@ import { handleIpcCall } from './utils'
 
 export function registerScreenerIpc({
   db,
-  getProvider
+  getProvider,
+  getCurrentDate = () => new Date()
 }: {
   db: Database.Database
   getProvider: () => MarketDataProvider
+  getCurrentDate?: () => Date
 }): void {
   // No payload, so no Zod request schema — see plans/us-65/contracts/screener-results.md.
   // [US-99] Construction never fails now: with no Alpaca credentials the chain pull raises
   // auth_failed per ticker, which rolls up to the modelled provider_unavailable state rather
   // than a generic internal_error.
   ipcMain.handle('screener:results', () =>
-    handleIpcCall('screener_results_error', () => screenWatchlistCandidates(getProvider, db))
+    handleIpcCall('screener_results_error', () =>
+      screenWatchlistCandidates(getProvider, db, { currentDate: getCurrentDate() })
+    )
   )
 
   // [US-67] No payload — the read path degrades to the shipped defaults rather than

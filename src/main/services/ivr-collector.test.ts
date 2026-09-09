@@ -1,9 +1,9 @@
 import type Database from 'better-sqlite3'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { BrokerProvider, MarketStatus } from '../integrations/broker-provider'
 import type { IVRResult } from '../integrations/barchart-ivr-scraper'
+import type { BrokerProvider } from '../integrations/broker-provider'
 import { logger } from '../logger'
-import { makeTestDb, seedWatchlist } from '../test-utils'
+import { makeTestDb, seedTradingCalendar, seedWatchlist } from '../test-utils'
 import { removeWatchlistEntry } from './watchlist'
 import { collectIVRSnapshots } from './ivr-collector'
 
@@ -17,18 +17,19 @@ type TestClock = {
 
 type FetchIvr = ReturnType<typeof vi.fn<(ticker: string) => Promise<IVRResult>>>
 
-function makeBroker(status: MarketStatus): BrokerProvider {
-  return {
-    getAccountInfo: vi.fn(),
-    getActivities: vi.fn(),
-    getMarketStatus: vi.fn().mockResolvedValue(status)
-  } as unknown as BrokerProvider
-}
-
 function makeClock(now = '2026-05-29T21:30:00.000Z'): TestClock {
   return {
     now: () => new Date(now)
   }
+}
+
+/** A DB whose exchange calendar is already cached for 2026 — the state a scheduled run
+ *  normally finds, since the previous run refreshed it. Anything outside 2026 is
+ *  deliberately uncovered, which is how the coverage-gap case is exercised. */
+function makeCollectorDb(): Database.Database {
+  const db = makeTestDb()
+  seedTradingCalendar(db, '2026-01-01', '2026-12-31', { closures: ['2026-11-26'] })
+  return db
 }
 
 function insertPosition(
@@ -66,20 +67,6 @@ function listSnapshots(db: Database.Database): Array<Record<string, unknown>> {
     .all() as Array<Record<string, unknown>>
 }
 
-const CLOSED_WEEKEND_STATUS: MarketStatus = {
-  isOpen: false,
-  session: 'closed',
-  nextOpen: '2026-06-01T13:30:00.000Z',
-  nextClose: '2026-06-01T20:00:00.000Z'
-}
-
-const REGULAR_MARKET_STATUS: MarketStatus = {
-  isOpen: true,
-  session: 'regular',
-  nextOpen: '2026-05-29T13:30:00.000Z',
-  nextClose: '2026-05-29T20:00:00.000Z'
-}
-
 const NOT_AVAILABLE_RESULT: IVRResult = {
   status: 'not_available',
   error: { code: 'TICKER_NOT_COVERED', message: 'missing' }
@@ -107,14 +94,12 @@ function runCollector(
   db: Database.Database,
   fetchIvr: FetchIvr,
   opts: {
-    brokerProvider?: BrokerProvider | null
     clock?: TestClock
     signal?: AbortSignal
   } = {}
 ): ReturnType<typeof collectIVRSnapshots> {
   return collectIVRSnapshots({
     db,
-    brokerProvider: opts.brokerProvider ?? makeBroker(REGULAR_MARKET_STATUS),
     logger,
     fetchIvr,
     clock: opts.clock ?? makeClock(),
@@ -127,12 +112,11 @@ describe('collectIVRSnapshots', () => {
     vi.clearAllMocks()
   })
 
-  it('returns early and logs skip when BrokerProvider reports a non-trading day', async () => {
-    const db = makeTestDb()
+  it('returns early and logs skip for a weekend without broker market status', async () => {
+    const db = makeCollectorDb()
     const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>()
 
     const result = await runCollector(db, fetchIvr, {
-      brokerProvider: makeBroker(CLOSED_WEEKEND_STATUS),
       clock: makeClock('2026-05-30T15:00:00.000Z')
     })
 
@@ -146,43 +130,97 @@ describe('collectIVRSnapshots', () => {
     expect(vi.mocked(logger.info)).toHaveBeenCalled()
   })
 
-  it('assumes a trading day and still collects when getMarketStatus rejects', async () => {
-    // Boundary I/O must degrade + log rather than reject the whole run (CLAUDE.md
-    // batch-job rule): a broker clock outage must not suppress the entire batch.
-    const db = makeTestDb()
+  it('continues collecting on a normal weekday without broker market status', async () => {
+    const db = makeCollectorDb()
     seedWatchlist(db, ['KO'])
-
-    const brokerProvider = {
-      getAccountInfo: vi.fn(),
-      getActivities: vi.fn(),
-      getMarketStatus: vi.fn().mockRejectedValue(new Error('alpaca 503'))
-    } as unknown as BrokerProvider
     const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
 
-    const result = await runCollector(db, fetchIvr, { brokerProvider })
+    const result = await runCollector(db, fetchIvr)
+
+    expect(fetchIvr).toHaveBeenCalledWith('KO')
+    expect(result.successCount).toBe(1)
+  })
+
+  it('skips a recognised weekday holiday without making Barchart calls', async () => {
+    const db = makeCollectorDb()
+    seedWatchlist(db, ['KO'])
+    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
+
+    const result = await runCollector(db, fetchIvr, {
+      clock: makeClock('2026-11-26T19:00:00.000Z')
+    })
+
+    expect(fetchIvr).not.toHaveBeenCalled()
+    expect(result.skippedReason).toBe('market_closed')
+  })
+
+  it('logs unknown calendar coverage and continues best effort', async () => {
+    const db = makeCollectorDb()
+    seedWatchlist(db, ['KO'])
+    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
+
+    const result = await runCollector(db, fetchIvr, {
+      clock: makeClock('2029-01-02T15:00:00.000Z')
+    })
 
     expect(fetchIvr).toHaveBeenCalledWith('KO')
     expect(result.successCount).toBe(1)
     expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
-      expect.objectContaining({ err: expect.any(Error) }),
-      expect.stringContaining('assuming trading day')
+      { etDate: '2029-01-02' },
+      expect.stringContaining('calendar coverage unavailable')
     )
   })
 
-  it('assumes a trading day and still collects when no broker is configured', async () => {
-    // The watchlist-only trader has no Alpaca credentials at all; Barchart needs none.
+  it('refreshes the cached calendar from the broker before reading it', async () => {
     const db = makeTestDb()
     seedWatchlist(db, ['KO'])
     const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
+    const brokerProvider = {
+      getAccountInfo: vi.fn(),
+      getActivities: vi.fn(),
+      getMarketStatus: vi.fn(),
+      getMarketCalendar: vi.fn().mockResolvedValue([{ date: '2026-05-29', close: '16:00' }])
+    } as unknown as BrokerProvider
 
-    const result = await runCollector(db, fetchIvr, { brokerProvider: null })
+    // No calendar cached at all, so without the refresh the run could not tell that
+    // 2026-05-29 was a trading day.
+    const result = await collectIVRSnapshots({
+      db,
+      logger,
+      fetchIvr,
+      clock: makeClock(),
+      brokerProvider
+    })
 
+    expect(brokerProvider.getMarketCalendar).toHaveBeenCalled()
+    expect(result.skippedReason).toBeNull()
     expect(fetchIvr).toHaveBeenCalledWith('KO')
+  })
+
+  it('still collects on the cached calendar when the broker calendar fetch fails', async () => {
+    const db = makeCollectorDb()
+    seedWatchlist(db, ['KO'])
+    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
+    const brokerProvider = {
+      getAccountInfo: vi.fn(),
+      getActivities: vi.fn(),
+      getMarketStatus: vi.fn(),
+      getMarketCalendar: vi.fn().mockRejectedValue(new Error('network error'))
+    } as unknown as BrokerProvider
+
+    const result = await collectIVRSnapshots({
+      db,
+      logger,
+      fetchIvr,
+      clock: makeClock(),
+      brokerProvider
+    })
+
     expect(result.successCount).toBe(1)
   })
 
   it('collects the union of open-position and watchlist tickers, distinct and sorted', async () => {
-    const db = makeTestDb()
+    const db = makeCollectorDb()
     insertPosition(db, { id: 'pos-spy-1', ticker: 'SPY' })
     insertPosition(db, { id: 'pos-spy-2', ticker: 'spy' })
     insertPosition(db, { id: 'pos-aapl-1', ticker: 'AAPL' })
@@ -200,7 +238,7 @@ describe('collectIVRSnapshots', () => {
   })
 
   it('collects a watchlist ticker whose only position is CLOSED, and never a closed ticker off the watchlist', async () => {
-    const db = makeTestDb()
+    const db = makeCollectorDb()
     insertPosition(db, { id: 'pos-ko-closed', ticker: 'KO', status: 'CLOSED' })
     seedWatchlist(db, ['KO'])
     // The discriminating row: CLOSED and NOT watchlisted. A plain
@@ -217,7 +255,7 @@ describe('collectIVRSnapshots', () => {
   })
 
   it('fetches a ticker that is both held and watchlisted exactly once and writes one row', async () => {
-    const db = makeTestDb()
+    const db = makeCollectorDb()
     insertPosition(db, { id: 'pos-aapl', ticker: 'AAPL' })
     seedWatchlist(db, ['AAPL'])
 
@@ -232,7 +270,7 @@ describe('collectIVRSnapshots', () => {
   })
 
   it('stops collecting a ticker removed from the watchlist and keeps its prior snapshot', async () => {
-    const db = makeTestDb()
+    const db = makeCollectorDb()
     seedWatchlist(db, ['KO'])
 
     const fetchIvr = vi
@@ -262,7 +300,7 @@ describe('collectIVRSnapshots', () => {
   })
 
   it('counts an uncovered watchlist ticker as skipped and still succeeds for the others', async () => {
-    const db = makeTestDb()
+    const db = makeCollectorDb()
     insertPosition(db, { id: 'pos-msft', ticker: 'MSFT' })
     seedWatchlist(db, ['KO', 'XYZ'])
 
@@ -287,7 +325,7 @@ describe('collectIVRSnapshots', () => {
   })
 
   it('isolates a network_error on one watchlist ticker from the rest of the batch', async () => {
-    const db = makeTestDb()
+    const db = makeCollectorDb()
     insertPosition(db, { id: 'pos-msft', ticker: 'MSFT' })
     seedWatchlist(db, ['KO', 'AAPL', 'XYZ'])
 
@@ -324,7 +362,7 @@ describe('collectIVRSnapshots', () => {
     // response body outside a try, so a non-JSON body (interstitial, captcha, HTML
     // error) rejects. Without per-ticker isolation that rejection aborts the run and
     // loses every ticker after the bad one.
-    const db = makeTestDb()
+    const db = makeCollectorDb()
     insertPosition(db, { id: 'pos-msft', ticker: 'MSFT' })
     seedWatchlist(db, ['KO', 'AAPL'])
 
@@ -355,7 +393,7 @@ describe('collectIVRSnapshots', () => {
     // Fetch failures are per-ticker and isolated; a persistSnapshot throw is systemic
     // (read-only DB, bad migration) and must abort the run as a run-level failure, not
     // resolve as "completed with N errors".
-    const db = makeTestDb()
+    const db = makeCollectorDb()
     seedWatchlist(db, ['AAPL', 'KO'])
     db.exec('DROP TABLE ivr_snapshot')
 
@@ -369,7 +407,7 @@ describe('collectIVRSnapshots', () => {
   })
 
   it('stops at the next ticker boundary when the abort signal fires mid-run', async () => {
-    const db = makeTestDb()
+    const db = makeCollectorDb()
     seedWatchlist(db, ['AAPL', 'KO', 'MSFT'])
 
     const controller = new AbortController()
@@ -392,7 +430,7 @@ describe('collectIVRSnapshots', () => {
   })
 
   it('persists a successful Barchart snapshot as decimal strings', async () => {
-    const db = makeTestDb()
+    const db = makeCollectorDb()
     insertPosition(db, { id: 'pos-spy', ticker: 'SPY' })
 
     const fetchIvr = vi
@@ -414,7 +452,7 @@ describe('collectIVRSnapshots', () => {
   })
 
   it('re-running on the same UTC calendar day deletes the older row before inserting the fresh row', async () => {
-    const db = makeTestDb()
+    const db = makeCollectorDb()
     insertPosition(db, { id: 'pos-spy', ticker: 'SPY' })
 
     db.prepare(
@@ -441,7 +479,7 @@ describe('collectIVRSnapshots', () => {
   })
 
   it('uses the UTC calendar day instead of slicing the timestamp string when overwriting', async () => {
-    const db = makeTestDb()
+    const db = makeCollectorDb()
     insertPosition(db, { id: 'pos-spy', ticker: 'SPY' })
 
     db.prepare(
@@ -468,7 +506,7 @@ describe('collectIVRSnapshots', () => {
   })
 
   it('does not persist not_available results and logs the uncovered symbol at INFO', async () => {
-    const db = makeTestDb()
+    const db = makeCollectorDb()
     insertPosition(db, { id: 'pos-spy', ticker: 'SPY' })
 
     const fetchIvr = vi
@@ -491,7 +529,7 @@ describe('collectIVRSnapshots', () => {
   })
 
   it('logs parse_error and continues to the next ticker without aborting the batch', async () => {
-    const db = makeTestDb()
+    const db = makeCollectorDb()
     insertPosition(db, { id: 'pos-aapl', ticker: 'AAPL' })
     insertPosition(db, { id: 'pos-spy', ticker: 'SPY' })
 

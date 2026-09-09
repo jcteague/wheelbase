@@ -3,12 +3,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type Database from 'better-sqlite3'
 import type { MarketDataProvider } from '../integrations/market-data-provider'
-import {
-  DEFAULT_SCREENING_CRITERIA,
-  type CandidateEarnings,
-  type ScoredCandidate
-} from '../core/screener'
-import type { ScreenerExclusion, ScreenerResults } from '../services/screener'
+import { DEFAULT_SCREENING_CRITERIA, type CandidateEarnings } from '../core/screener'
+import type { RankedCandidate, ScreenerExclusion, ScreenerResults } from '../services/screener'
 import { makeTestDb } from '../test-utils'
 
 const screenWatchlistCandidates = vi.fn()
@@ -38,11 +34,16 @@ function getProvider(): MarketDataProvider {
  *  still takes only `{ db, getProvider }` — the criteria channels ride the same seam. */
 async function registerAndGetHandler(
   channel: string,
-  database: Database.Database = db
+  database: Database.Database = db,
+  currentDate?: Date
 ): Promise<IpcHandler> {
   const { ipcMain } = await import('electron')
   const { registerScreenerIpc } = await import('./screener')
-  registerScreenerIpc({ db: database, getProvider })
+  registerScreenerIpc({
+    db: database,
+    getProvider,
+    ...(currentDate === undefined ? {} : { getCurrentDate: () => currentDate })
+  })
 
   const calls = vi.mocked(ipcMain.handle).mock.calls as Array<[string, IpcHandler]>
   const entry = calls.find(([name]) => name === channel)
@@ -50,7 +51,7 @@ async function registerAndGetHandler(
   return entry[1]
 }
 
-const SAMPLE_CANDIDATE: ScoredCandidate = {
+const SAMPLE_CANDIDATE: RankedCandidate = {
   ticker: 'AAPL',
   contractId: 'AAPL260821P00180000',
   strike: '180.0000',
@@ -64,7 +65,12 @@ const SAMPLE_CANDIDATE: ScoredCandidate = {
   delta: '0.2800',
   openInterest: 1200,
   volume: 340,
-  ivRank: { value: '44.0', observedAt: '2026-07-15T20:00:00.000Z' },
+  ivRank: {
+    value: '44.0',
+    observedAt: '2026-07-15T20:00:00.000Z',
+    ageTradingDays: 0,
+    state: 'fresh'
+  },
   capitalSecured: '18000.00',
   periodYield: '0.0150',
   annualizedYield: '0.1480',
@@ -75,7 +81,7 @@ const SAMPLE_CANDIDATE: ScoredCandidate = {
 
 // [US-70] Each ranked candidate carries a structured earnings verdict, so the
 // transport has to be exercised with more than the `clear` case.
-function candidateWith(ticker: string, earnings: CandidateEarnings): ScoredCandidate {
+function candidateWith(ticker: string, earnings: CandidateEarnings): RankedCandidate {
   return { ...SAMPLE_CANDIDATE, ticker, earnings }
 }
 
@@ -113,7 +119,7 @@ describe('registerScreenerIpc', () => {
     expect(result).toEqual({ ok: true, ...SAMPLE_RESULTS })
   })
 
-  it('screener:results takes no payload and passes getProvider + db straight through', async () => {
+  it('screener:results takes no payload and passes the provider, db, and clock to the service', async () => {
     screenWatchlistCandidates.mockResolvedValue(SAMPLE_RESULTS)
 
     const handler = await registerAndGetHandler('screener:results')
@@ -122,7 +128,19 @@ describe('registerScreenerIpc', () => {
     expect(screenWatchlistCandidates).toHaveBeenCalledTimes(1)
     // The thunk itself goes through — the service resolves it, so an unconfigured
     // provider surfaces as the modelled provider_unavailable state.
-    expect(screenWatchlistCandidates).toHaveBeenCalledWith(getProvider, db)
+    expect(screenWatchlistCandidates).toHaveBeenCalledWith(getProvider, db, {
+      currentDate: expect.any(Date)
+    })
+  })
+
+  it('passes the shared composition clock into the service', async () => {
+    const currentDate = new Date('2026-08-10T14:00:00.000Z')
+    screenWatchlistCandidates.mockResolvedValue(SAMPLE_RESULTS)
+
+    const handler = await registerAndGetHandler('screener:results', db, currentDate)
+    await handler(null)
+
+    expect(screenWatchlistCandidates).toHaveBeenCalledWith(getProvider, db, { currentDate })
   })
 
   it('screener:results forwards a provider_unavailable screen unchanged', async () => {
@@ -146,7 +164,7 @@ describe('registerScreenerIpc', () => {
     screenWatchlistCandidates.mockResolvedValue({ ...SAMPLE_RESULTS, ranked })
 
     const handler = await registerAndGetHandler('screener:results')
-    const result = (await handler(null)) as { ranked: ScoredCandidate[] }
+    const result = (await handler(null)) as { ranked: RankedCandidate[] }
 
     expect(result.ranked.map((candidate) => candidate.earnings)).toEqual([
       { status: 'clear' },

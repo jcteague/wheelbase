@@ -10,7 +10,6 @@ import { format, parseISO } from 'date-fns'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CLOSED_SESSION, POST_SESSION, cleanupDb, tmpDb } from './assignment-helpers'
-import { localDate } from './dates'
 import {
   AAPL_PUT,
   FRESH_QUOTE_TIMESTAMP,
@@ -21,13 +20,14 @@ import {
   promoteRow,
   setMarketDataError,
   setOptionSnapshotFixtures,
+  screenerDate,
   type ScreenerLaunchOpts
 } from './screener-helpers'
 
 // The Background candidate: AAPL $180 put, mark $2.70, Δ0.28, 37 DTE, quoted at
 // QUOTE_TIMESTAMP. Only AAPL is seeded so the promote click is unambiguous.
 const FIXTURES = [AAPL_PUT]
-const EXPIRATION = localDate(AAPL_PUT.dteOffset)
+const EXPIRATION = screenerDate(AAPL_PUT.dteOffset)
 const NOTE = 'Would own below $170; waiting for IV to lift'
 
 // Local-zone renderings of the two quote instants, derived the same way

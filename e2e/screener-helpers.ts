@@ -8,23 +8,26 @@
 // fixtures — nothing stubs the IPC — so the spec proves the renderer formats what
 // the screener actually emits.
 import type { ElectronApplication, Page } from 'playwright'
+import { addDays, format } from 'date-fns'
 import { getPage, launchElectron, type MarketStatusFixture } from './assignment-helpers'
-import { localDate } from './dates'
 import {
   buildIvrLaunchEnv,
   collectIvrNow,
+  DEFAULT_FAKE_NOW,
+  fakeNowAt,
   okOutcome,
   seedWatchlist,
   setIvrOutcomes
 } from './ivr-helpers'
 
 /** Every fixture quote carries the same stamp so `quoteTimestamp` (the newest ranked
- *  strike's timestamp) is deterministic for the stale-caption assertion. */
-export const QUOTE_TIMESTAMP = '2026-08-07T20:00:02Z'
+ *  strike's timestamp) is deterministic for the stale-caption assertion. Pinned to the
+ *  fixture day rather than a fixed date — see DEFAULT_FAKE_NOW. */
+export const QUOTE_TIMESTAMP = fakeNowAt('20:00:02Z')
 
 /** When the fake IVR scrape is recorded as having happened. Display never shows it;
  *  it only has to be a parseable ISO instant for the snapshot row. */
-export const IVR_OBSERVED_AT = '2026-08-07T21:00:00Z'
+export const IVR_OBSERVED_AT = fakeNowAt('21:00:00Z')
 
 /** One put strike as the provider would quote it. `mid` is what the engine screens
  *  on (it becomes `mark`), so it is stated rather than derived from bid/ask. */
@@ -45,7 +48,11 @@ export type PutFixtureSpec = {
 
 /** [US-68] When the promoted form's re-fetch is served, later than QUOTE_TIMESTAMP so
  *  the provenance strip visibly changes once the fresh quote lands. */
-export const FRESH_QUOTE_TIMESTAMP = '2026-08-07T20:11:40Z'
+export const FRESH_QUOTE_TIMESTAMP = fakeNowAt('20:11:40Z')
+
+export function screenerDate(offsetDays: number): string {
+  return format(addDays(new Date(DEFAULT_FAKE_NOW), offsetDays), 'yyyy-MM-dd')
+}
 
 // ── Canonical fixtures ────────────────────────────────────────────────────────
 //
@@ -191,7 +198,7 @@ type OptionSnapshotFixture = {
 
 /** OCC symbol: <root><YYMMDD><P|C><strike × 1000, 8 digits>. */
 function occPutSymbol(spec: PutFixtureSpec): string {
-  const [year, month, day] = localDate(spec.dteOffset).split('-')
+  const [year, month, day] = screenerDate(spec.dteOffset).split('-')
   const strikeThousandths = String(Math.round(spec.strike * 1000)).padStart(8, '0')
   return `${spec.ticker}${year.slice(2)}${month}${day}P${strikeThousandths}`
 }
@@ -316,7 +323,7 @@ function buildEarningsFixtures(
       ticker.toUpperCase(),
       fixture === null
         ? ({ status: 'unavailable' } as const)
-        : ({ status: 'found', date: localDate(fixture.dayOffset) } as const)
+        : ({ status: 'found', date: screenerDate(fixture.dayOffset) } as const)
     ])
   )
 }

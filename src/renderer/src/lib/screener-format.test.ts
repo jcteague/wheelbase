@@ -5,7 +5,6 @@ import type { ScreeningCriteria } from '../api/screening-criteria'
 import {
   fmtCriteriaSummary,
   fmtDelta,
-  fmtIvr,
   fmtOpenInterest,
   fmtQuoteTime,
   fmtScore,
@@ -66,32 +65,6 @@ describe('fmtDelta', () => {
 
   it('keeps a non-zero second decimal', () => {
     expect(fmtDelta('0.2200')).toBe('0.22')
-  })
-})
-
-describe('fmtIvr', () => {
-  // IV rank is a hard filter as of US-67, so the reading's age travels with it —
-  // a months-old snapshot must not silently look like today's.
-  const OBSERVED_AT = '2026-08-07T16:00:00Z'
-  const observedLabel = format(parseISO(OBSERVED_AT), 'MMM d')
-
-  it('trims trailing zeros from a whole-number rank and stamps the observation date', () => {
-    expect(fmtIvr({ value: '44.0', observedAt: OBSERVED_AT })).toBe(`44 (${observedLabel})`)
-  })
-
-  it('keeps a meaningful decimal', () => {
-    expect(fmtIvr({ value: '38.5', observedAt: OBSERVED_AT })).toBe(`38.5 (${observedLabel})`)
-  })
-
-  it('renders the date in the local zone, like every other timestamp the screener shows', () => {
-    // -04:00 and the equivalent Z instant must render identically.
-    expect(fmtIvr({ value: '30', observedAt: '2026-08-07T16:00:02-04:00' })).toBe(
-      fmtIvr({ value: '30', observedAt: '2026-08-07T20:00:02Z' })
-    )
-  })
-
-  it('renders n/a for a null rank, with no date to stamp', () => {
-    expect(fmtIvr(null)).toBe('n/a')
   })
 })
 

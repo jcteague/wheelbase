@@ -175,11 +175,12 @@ function formatMoney(amount: string): string {
   return `$${new Decimal(amount).toFixed(2)}`
 }
 
-// [US-67] The day an IV rank was observed. IV rank became a hard filter with the
-// iv_rank_floor entry below, and the collector writes at most one reading a day, so
-// the calendar day is the resolution that matters — a trader needs to see that a
-// candidate was dropped on a months-old reading. The renderer's `fmtIvr` stamps the
-// same 'MMM d' shape on the IVR column; keep the two in step.
+// [US-67] The day an IV rank was observed. IV rank is a hard filter through the
+// iv_rank_floor entry below, and the collector writes at most one reading a day, so the
+// calendar day is the resolution that matters: a trader needs to see which day's
+// reading dropped a candidate. Age no longer runs unbounded — [US-98] withholds any
+// reading past STALE_MAX_AGE — but the exclusion reason still names the day, and the
+// IVR cell carries the freshness state alongside it.
 function formatObservedOn(observedAt: string): string {
   return format(parseISO(observedAt), 'MMM d')
 }

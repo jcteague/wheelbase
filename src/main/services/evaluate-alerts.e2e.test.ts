@@ -37,7 +37,7 @@ import {
 // (that would hit the network whenever a key is present in the shell env). The
 // mock mirrors the no-key behavior: an empty record, i.e. nothing known.
 vi.mock('../integrations/finnhub-earnings', () => ({
-  fetchNextEarnings: vi.fn(async () => ({}))
+  fetchEarningsCalendar: vi.fn(async () => ({}))
 }))
 
 /**

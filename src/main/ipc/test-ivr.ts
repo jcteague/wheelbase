@@ -3,11 +3,19 @@
 import { ipcMain } from 'electron'
 import type Database from 'better-sqlite3'
 import type { IVRResult } from '../integrations/barchart-ivr-scraper'
-import { setFakeIvrOutcomes } from '../integrations/fake-ivr'
+import { setFakeIvrNow, setFakeIvrOutcomes } from '../integrations/fake-ivr'
 
 export function registerTestIvrIpc(db: Database.Database): void {
   ipcMain.handle('_test:ivr-set-outcomes', (_, outcomes: Record<string, IVRResult>) => {
     setFakeIvrOutcomes(outcomes)
+    return { ok: true }
+  })
+
+  ipcMain.handle('_test:ivr-set-now', (_, nowIso: unknown) => {
+    if (typeof nowIso !== 'string' || Number.isNaN(new Date(nowIso).getTime())) {
+      return { ok: false, error: 'Fake IVR clock must be a valid ISO timestamp' }
+    }
+    setFakeIvrNow(nowIso)
     return { ok: true }
   })
 

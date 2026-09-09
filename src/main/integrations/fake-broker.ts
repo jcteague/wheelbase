@@ -1,3 +1,4 @@
+import { addDays, format, parseISO } from 'date-fns'
 import {
   BrokerError,
   type AccountInfo,
@@ -5,6 +6,8 @@ import {
   type BrokerActivity,
   type BrokerErrorCode,
   type BrokerProvider,
+  type MarketCalendarDay,
+  type MarketCalendarRange,
   type MarketStatus
 } from './broker-provider'
 
@@ -21,6 +24,24 @@ const DEFAULT_MARKET_STATUS: MarketStatus = {
   nextOpen: '2026-05-30T13:30:00Z',
   nextClose: '2026-05-29T20:00:00Z',
   session: 'regular'
+}
+
+const FAKE_CLOSE_TIME = '16:00'
+
+/** Every weekday in the range as a normal 16:00 session. Offline runs need a calendar
+ *  that is correct *relative to whatever day the suite runs on*, so this is generated
+ *  rather than fixtured; a spec that needs a holiday or early close sets
+ *  FAKE_BROKER_CALENDAR explicitly. */
+function weekdaySessions(range: MarketCalendarRange): MarketCalendarDay[] {
+  const end = parseISO(range.end)
+  const days: MarketCalendarDay[] = []
+
+  for (let day = parseISO(range.start); day <= end; day = addDays(day, 1)) {
+    const weekday = day.getDay()
+    if (weekday === 0 || weekday === 6) continue
+    days.push({ date: format(day, 'yyyy-MM-dd'), close: FAKE_CLOSE_TIME })
+  }
+  return days
 }
 
 function parseEnv<T>(envVar: string): T | null {
@@ -66,5 +87,13 @@ export class FakeBrokerProvider implements BrokerProvider {
   async getMarketStatus(): Promise<MarketStatus> {
     this.maybeThrow()
     return parseEnv<MarketStatus>('FAKE_MARKET_STATUS') ?? DEFAULT_MARKET_STATUS
+  }
+
+  async getMarketCalendar(range: MarketCalendarRange): Promise<MarketCalendarDay[]> {
+    this.maybeThrow()
+    const fixture = parseEnv<MarketCalendarDay[]>('FAKE_BROKER_CALENDAR')
+    if (fixture === null) return weekdaySessions(range)
+
+    return fixture.filter((day) => day.date >= range.start && day.date <= range.end)
   }
 }

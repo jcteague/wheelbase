@@ -12,7 +12,8 @@ const closedMarketStatus: MarketStatus = {
 const fallbackBroker: BrokerProvider = {
   getAccountInfo: () => Promise.reject(new Error('Broker not configured')),
   getActivities: () => Promise.resolve([]),
-  getMarketStatus: () => Promise.resolve(closedMarketStatus)
+  getMarketStatus: () => Promise.resolve(closedMarketStatus),
+  getMarketCalendar: () => Promise.resolve([])
 }
 
 function getSafeBroker(): BrokerProvider {

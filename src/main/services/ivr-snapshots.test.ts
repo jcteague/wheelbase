@@ -1,12 +1,20 @@
 // [US-65] ivr-snapshots — read path for the latest IVR per underlying
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type Database from 'better-sqlite3'
-import { makeTestDb } from '../test-utils'
-import { getLatestIvrByUnderlying } from './ivr-snapshots'
+import { makeTestDb, makeTradingCalendar } from '../test-utils'
+import { logger } from '../logger'
+import { getAssessedIvrByUnderlying, getLatestIvrByUnderlying } from './ivr-snapshots'
 
 vi.mock('../logger', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
 }))
+
+const NOW = new Date('2026-09-23T14:00:00.000Z')
+const CALENDAR = makeTradingCalendar('2026-08-24', '2026-09-24', { closures: ['2026-09-07'] })
+
+beforeEach(() => {
+  vi.clearAllMocks()
+})
 
 function insertSnapshot(
   db: Database.Database,
@@ -65,5 +73,82 @@ describe('getLatestIvrByUnderlying', () => {
 
     expect(getLatestIvrByUnderlying(db, [])).toEqual(new Map())
     expect(prepare).not.toHaveBeenCalled()
+  })
+})
+
+describe('getAssessedIvrByUnderlying', () => {
+  it('assesses the latest raw row with supplied clock, calendar and earnings knowledge', () => {
+    const db = makeTestDb()
+    insertSnapshot(db, 'KO', '2026-09-18T21:00:00.000Z', '58.0')
+
+    expect(
+      getAssessedIvrByUnderlying(db, ['KO'], {
+        now: NOW,
+        calendar: CALENDAR,
+        lastEarnings: new Map([['KO', undefined]])
+      }).get('KO')
+    ).toMatchObject({ state: 'aging', ageTradingDays: 2 })
+  })
+
+  it('preserves a zero reading and reports a ticker with no snapshot as unknown', () => {
+    const db = makeTestDb()
+    insertSnapshot(db, 'KO', '2026-09-22T21:00:00.000Z', '0.0')
+
+    const result = getAssessedIvrByUnderlying(db, ['KO', 'MSFT'], {
+      now: NOW,
+      calendar: CALENDAR,
+      lastEarnings: new Map()
+    })
+
+    expect(result.get('KO')).toMatchObject({ value: '0.0', state: 'fresh' })
+    expect(result.get('MSFT')).toBeNull()
+    expect(logger.warn).not.toHaveBeenCalled()
+  })
+
+  it('warns rather than silently dropping a row it holds but cannot read', () => {
+    const db = makeTestDb()
+    insertSnapshot(db, 'KO', '2026-09-22T21:00:00.000Z', 'not-a-number')
+
+    const result = getAssessedIvrByUnderlying(db, ['KO'], {
+      now: NOW,
+      calendar: CALENDAR,
+      lastEarnings: new Map()
+    })
+
+    expect(result.get('KO')).toBeNull()
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ ticker: 'KO' }),
+      'ivr_assessment_unreadable_snapshot'
+    )
+  })
+
+  it('treats a reading the calendar cannot reach as unreadable, not as absent', () => {
+    const db = makeTestDb()
+    insertSnapshot(db, 'KO', '2026-05-01T20:00:00.000Z', '58.0')
+
+    expect(
+      getAssessedIvrByUnderlying(db, ['KO'], {
+        now: NOW,
+        calendar: CALENDAR,
+        lastEarnings: new Map()
+      }).get('KO')
+    ).toBeNull()
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ ticker: 'KO' }),
+      'ivr_assessment_unreadable_snapshot'
+    )
+  })
+
+  it('does not perform any scraper or earnings I/O', () => {
+    const db = makeTestDb()
+    insertSnapshot(db, 'KO', '2026-09-22T21:00:00.000Z', '58.0')
+
+    expect(
+      getAssessedIvrByUnderlying(db, ['KO'], {
+        now: NOW,
+        calendar: CALENDAR,
+        lastEarnings: new Map([['KO', '2026-09-01']])
+      }).get('KO')
+    ).toMatchObject({ state: 'fresh' })
   })
 })

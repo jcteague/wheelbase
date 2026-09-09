@@ -4,6 +4,7 @@ import {
   type BrokerProvider,
   type AccountInfo,
   type BrokerActivity,
+  type MarketCalendarDay,
   type MarketStatus,
   type BrokerErrorCode
 } from './broker-provider'
@@ -30,12 +31,16 @@ describe('BrokerProvider interface', () => {
           nextClose: '2026-05-30T20:00:00Z',
           session: 'closed'
         }
+      },
+      async getMarketCalendar(): Promise<MarketCalendarDay[]> {
+        return [{ date: '2026-05-29', close: '16:00' }]
       }
     } satisfies BrokerProvider
 
     expect(typeof fixture.getAccountInfo).toBe('function')
     expect(typeof fixture.getActivities).toBe('function')
     expect(typeof fixture.getMarketStatus).toBe('function')
+    expect(typeof fixture.getMarketCalendar).toBe('function')
   })
 })
 

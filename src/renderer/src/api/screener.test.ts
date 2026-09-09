@@ -33,7 +33,12 @@ const CANDIDATE: ScreenerCandidate = {
   delta: '0.2800',
   openInterest: 4200,
   volume: 310,
-  ivRank: { value: '44.0', observedAt: '2026-08-08T16:00:00.000Z' },
+  ivRank: {
+    value: '44.0',
+    observedAt: '2026-08-08T16:00:00.000Z',
+    ageTradingDays: 0,
+    state: 'fresh'
+  },
   capitalSecured: '18000.00',
   periodYield: '0.0150',
   annualizedYield: '0.1369',
