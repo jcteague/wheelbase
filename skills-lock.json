@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "caveman": {
+      "source": "juliusbrussee/caveman",
+      "sourceType": "github",
+      "skillPath": "skills/caveman/SKILL.md",
+      "computedHash": "fa7c0951349ae3782a20e55c6d1e72e4c23585b7932bb5e021c17c4f8f055a07"
+    },
     "database-schema-design": {
       "source": "supercent-io/skills-template",
       "sourceType": "github",
@@ -10,6 +16,12 @@
       "source": "erichowens/some_claude_skills",
       "sourceType": "github",
       "computedHash": "40dc9c500397d1a7f63eb44a62484bf31bfc53ad8382d72d4b8699e49b4ada10"
+    },
+    "ponytail": {
+      "source": "dietrichgebert/ponytail",
+      "sourceType": "github",
+      "skillPath": "skills/ponytail/SKILL.md",
+      "computedHash": "210fa0831f649ce9f8a305f7b7c8cf2a0dd09ac4dd53067109941b96e7811d4e"
     },
     "vercel-react-best-practices": {
       "source": "vercel-labs/agent-skills",
