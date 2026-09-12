@@ -120,5 +120,83 @@ describe('settings connection probes', () => {
         message: 'Environment mismatch — these are PAPER keys, not live keys'
       })
     })
+
+    it('reports the fetch failure message as a network_error', async () => {
+      mockFetch.mockRejectedValue(new Error('ECONNREFUSED'))
+
+      await expect(
+        testAlpacaConnection({ environment: 'paper', keyId: 'PKPAPER123', secret: 'paper-secret' })
+      ).resolves.toEqual({ ok: false, errorCode: 'network_error', message: 'ECONNREFUSED' })
+    })
+
+    it('falls back to a generic network_error message for non-Error rejections', async () => {
+      mockFetch.mockRejectedValue('socket hang up')
+
+      await expect(
+        testAlpacaConnection({ environment: 'paper', keyId: 'PKPAPER123', secret: 'paper-secret' })
+      ).resolves.toEqual({ ok: false, errorCode: 'network_error', message: 'Network error' })
+    })
+
+    it('maps 401 with a matching key prefix to auth_failed', async () => {
+      mockFetch.mockResolvedValue(fetchErr(401, 'Unauthorized'))
+
+      await expect(
+        testAlpacaConnection({ environment: 'paper', keyId: 'PKPAPER123', secret: 'paper-secret' })
+      ).resolves.toEqual({
+        ok: false,
+        errorCode: 'auth_failed',
+        message: 'Authentication failed (401)'
+      })
+    })
+
+    it('maps 403 on the live endpoint with live keys to auth_failed', async () => {
+      mockFetch.mockResolvedValue(fetchErr(403, 'Forbidden'))
+
+      await expect(
+        testAlpacaConnection({ environment: 'live', keyId: 'AKLIVE456', secret: 'live-secret' })
+      ).resolves.toMatchObject({ ok: false, errorCode: 'auth_failed' })
+    })
+
+    it('maps 429 to rate_limited', async () => {
+      mockFetch.mockResolvedValue(fetchErr(429))
+
+      await expect(
+        testAlpacaConnection({ environment: 'paper', keyId: 'PKPAPER123', secret: 'paper-secret' })
+      ).resolves.toEqual({
+        ok: false,
+        errorCode: 'rate_limited',
+        message: 'Rate limited — please try again'
+      })
+    })
+
+    it('maps any other non-OK status to unknown with the HTTP status in the message', async () => {
+      mockFetch.mockResolvedValue(fetchErr(500))
+
+      await expect(
+        testAlpacaConnection({ environment: 'paper', keyId: 'PKPAPER123', secret: 'paper-secret' })
+      ).resolves.toEqual({ ok: false, errorCode: 'unknown', message: 'HTTP 500' })
+    })
+
+    it('returns short account numbers unmasked and tolerates a missing account_number', async () => {
+      mockFetch.mockResolvedValueOnce(fetchOk({ account_number: 'AB12' }))
+      await expect(
+        testAlpacaConnection({ environment: 'paper', keyId: 'PKPAPER123', secret: 'paper-secret' })
+      ).resolves.toMatchObject({ ok: true, accountNumberMasked: 'AB12' })
+
+      mockFetch.mockResolvedValueOnce(fetchOk({}))
+      await expect(
+        testAlpacaConnection({ environment: 'paper', keyId: 'PKPAPER123', secret: 'paper-secret' })
+      ).resolves.toMatchObject({ ok: true, accountNumberMasked: '' })
+    })
+
+    it('rejects a blank keyId or secret before calling Alpaca', async () => {
+      await expect(
+        testAlpacaConnection({ environment: 'paper', keyId: '   ', secret: 'paper-secret' })
+      ).rejects.toThrow('keyId is required')
+      await expect(
+        testAlpacaConnection({ environment: 'paper', keyId: 'PKPAPER123', secret: ' ' })
+      ).rejects.toThrow('secret is required')
+      expect(mockFetch).not.toHaveBeenCalled()
+    })
   })
 })

@@ -788,3 +788,90 @@ it('renders the management queue even when there are no positions', () => {
 
   expect(screen.getByText('No positions need attention right now')).toBeInTheDocument()
 })
+
+// ── error state, broker-only auth failures, snapshot lookups ─────────────────
+
+const AUTH_PROMPT = 'Alpaca authentication failed — check your key in Settings'
+
+function makeBrokerErrorResult(error: unknown): ReturnType<typeof useMarketStatus> {
+  return {
+    data: undefined,
+    isLoading: false,
+    isError: true,
+    error,
+    refetch: vi.fn()
+  } as unknown as ReturnType<typeof useMarketStatus>
+}
+
+it('shows an error alert when the positions query fails', () => {
+  mockUsePositions.mockReturnValue({
+    isLoading: false,
+    data: undefined,
+    isError: true,
+    error: new Error('db locked')
+  } as unknown as ReturnType<typeof usePositions>)
+
+  render(<PositionsListPage />)
+
+  expect(
+    screen.getByText('Failed to load positions — check that the database is accessible.')
+  ).toBeInTheDocument()
+})
+
+it('prompts to check the Alpaca key when only the broker status call rejects the credentials', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([]))
+  mockUseMarketStatus.mockReturnValue(
+    makeBrokerErrorResult({ body: { detail: [{ code: 'auth_failed' }] } })
+  )
+
+  render(<PositionsListPage />)
+
+  expect(screen.getAllByText(AUTH_PROMPT)).toHaveLength(1)
+})
+
+it('does not show the auth prompt for broker errors without an auth_failed detail', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([]))
+  mockUseMarketStatus.mockReturnValue(makeBrokerErrorResult(new Error('offline')))
+
+  const { rerender } = render(<PositionsListPage />)
+  expect(screen.queryByText(AUTH_PROMPT)).not.toBeInTheDocument()
+
+  mockUseMarketStatus.mockReturnValue(makeBrokerErrorResult({ body: { detail: [] } }))
+  rerender(<PositionsListPage />)
+  expect(screen.queryByText(AUTH_PROMPT)).not.toBeInTheDocument()
+})
+
+it('renders rows without option mids while snapshots have not loaded', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1]))
+  mockUseOptionSnapshots.mockReturnValue({
+    data: undefined,
+    unavailable: false,
+    isLoading: true,
+    isError: false,
+    error: null
+  } as unknown as ReturnType<typeof useOptionSnapshots>)
+
+  render(<PositionsListPage />)
+
+  expect(screen.getByTestId('mock-snapshot-AAPL')).toHaveTextContent('NO_SNAPSHOT')
+})
+
+it('skips the snapshot lookup for option legs missing an expiration', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([{ ...ITEM_1, expiration: null }]))
+  mockUseOptionSnapshots.mockReturnValue(
+    makeOptionSnapshotsResult({ AAPL260417P00180000: makeOptionSnapshot('1.30') })
+  )
+
+  render(<PositionsListPage />)
+
+  expect(screen.getByTestId('mock-snapshot-AAPL')).toHaveTextContent('NO_SNAPSHOT')
+})
+
+it('renders without pending-assignment indicators while pending assignments are loading', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1]))
+  mockUsePendingAssignments.mockReturnValue({ data: undefined, isLoading: true, isError: false })
+
+  render(<PositionsListPage />)
+
+  expect(screen.queryByTestId('pending-assignment-indicator-aaa')).not.toBeInTheDocument()
+})

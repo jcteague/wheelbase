@@ -73,4 +73,10 @@ describe('brokerFactory', () => {
     expect((caught as BrokerError).code).toBe('auth_failed')
     expect((caught as BrokerError).message).toMatch(/not configured/i)
   })
+
+  it('returns the cached provider on repeated create() calls', () => {
+    process.env.FAKE_BROKER = 'true'
+    const first = brokerFactory.create()
+    expect(brokerFactory.create()).toBe(first)
+  })
 })

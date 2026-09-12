@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { ValidationError } from '../core/lifecycle'
 import { makeTestDb } from '../test-utils'
 import { createSettingsService, type SettingsService } from './settings'
 
@@ -211,5 +212,141 @@ describe('settings service — Alpaca credential persistence', () => {
       'alpacaPaperAccountNumberMasked',
       'marketData'
     ])
+  })
+
+  it('rejects a blank keyId or secret with a ValidationError', () => {
+    const { service } = createService()
+
+    expect(() =>
+      service.saveAlpacaCredentials({ environment: 'paper', keyId: '   ', secret: 'paper-secret' })
+    ).toThrow(ValidationError)
+    expect(() =>
+      service.saveAlpacaCredentials({ environment: 'paper', keyId: 'PKPAPER123', secret: '' })
+    ).toThrow('secret is required')
+  })
+
+  it('stores a null masked account number when none is supplied and stamps the current time by default', () => {
+    const db = makeTestDb()
+    const service = createSettingsService({
+      db,
+      safeStorage: createSafeStorageMock(),
+      hasFallbackCredentials: () => false,
+      testAlpacaConnection: vi.fn()
+    })
+
+    const status = service.saveAlpacaCredentials({
+      environment: 'paper',
+      keyId: 'PKPAPER123',
+      secret: 'paper-secret'
+    })
+
+    expect(status.alpacaPaperAccountNumberMasked).toBeNull()
+    const row = db
+      .prepare(`SELECT updated_at FROM credential_settings WHERE environment = 'paper'`)
+      .get() as { updated_at: string }
+    expect(Number.isNaN(Date.parse(row.updated_at))).toBe(false)
+  })
+
+  it('removing an inactive environment keeps the active one', () => {
+    const { service } = createService()
+    service.saveAlpacaCredentials({
+      environment: 'paper',
+      keyId: 'PKPAPER123',
+      secret: 'paper-secret'
+    })
+    service.saveAlpacaCredentials({
+      environment: 'live',
+      keyId: 'AKLIVE456',
+      secret: 'live-secret'
+    })
+    service.setActiveBrokerEnvironment({ environment: 'paper' })
+
+    const status = service.removeAlpacaCredentials({ environment: 'live' })
+
+    expect(status).toMatchObject({ alpacaLive: 'missing', activeBrokerEnv: 'paper' })
+  })
+
+  it('reports none when the stored active environment no longer has credentials', () => {
+    const { db, service } = createService()
+    service.saveAlpacaCredentials({
+      environment: 'paper',
+      keyId: 'PKPAPER123',
+      secret: 'paper-secret'
+    })
+    service.setActiveBrokerEnvironment({ environment: 'paper' })
+    db.prepare(`DELETE FROM credential_settings`).run()
+
+    expect(service.getCredentialStatus().activeBrokerEnv).toBe('none')
+    expect(service.loadActiveAlpacaCredentials()).toBeNull()
+  })
+
+  it('refuses to activate an environment without saved credentials', () => {
+    const { service } = createService()
+
+    expect(() => service.setActiveBrokerEnvironment({ environment: 'live' })).toThrow(
+      ValidationError
+    )
+    expect(() => service.setActiveBrokerEnvironment({ environment: 'live' })).toThrow(
+      'Alpaca live credentials are not configured'
+    )
+  })
+
+  it('loads decrypted credentials for a saved environment and null otherwise', () => {
+    const { service } = createService()
+    service.saveAlpacaCredentials({
+      environment: 'paper',
+      keyId: 'PKPAPER123',
+      secret: 'paper-secret'
+    })
+
+    expect(service.loadAlpacaCredentials('paper')).toEqual({
+      environment: 'paper',
+      keyId: 'PKPAPER123',
+      secret: 'paper-secret'
+    })
+    expect(service.loadAlpacaCredentials('live')).toBeNull()
+  })
+
+  it('loads the active environment credentials, or null when none is active', () => {
+    const { service } = createService()
+    service.saveAlpacaCredentials({
+      environment: 'paper',
+      keyId: 'PKPAPER123',
+      secret: 'paper-secret'
+    })
+
+    expect(service.loadActiveAlpacaCredentials()).toBeNull()
+
+    service.setActiveBrokerEnvironment({ environment: 'paper' })
+
+    expect(service.loadActiveAlpacaCredentials()).toEqual({
+      environment: 'paper',
+      keyId: 'PKPAPER123',
+      secret: 'paper-secret'
+    })
+  })
+
+  it('saveVerifiedAlpacaCredentials probes Alpaca, persists the verified account, and reports whether the broker needs a refresh', async () => {
+    const { service } = createService()
+
+    const result = await service.saveVerifiedAlpacaCredentials({
+      environment: 'paper',
+      keyId: ' PKPAPER123 ',
+      secret: ' paper-secret '
+    })
+
+    expect(result.test).toEqual({
+      ok: true,
+      vendor: 'alpaca',
+      environment: 'paper',
+      accountNumberMasked: 'PA…ABC'
+    })
+    expect(result.status.alpacaPaperAccountNumberMasked).toBe('PA…ABC')
+    expect(result.refreshBroker).toBe(false)
+    expect(service.loadAlpacaCredentials('paper')).toEqual({
+      environment: 'paper',
+      keyId: 'PKPAPER123',
+      secret: 'paper-secret'
+    })
   })
 })

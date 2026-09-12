@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { FakeMarketDataProvider } from './fake-market-data'
-import type { OptionChainQuote, OptionSnapshot } from './market-data-provider'
+import { FakeMarketDataProvider, fakeStockTickSubject } from './fake-market-data'
+import {
+  MarketDataError,
+  type OptionChainQuote,
+  type OptionSnapshot,
+  type StockQuote
+} from './market-data-provider'
 
 describe('FakeMarketDataProvider — interface shape', () => {
   it('no longer exposes broker methods (getAccountInfo, getActivities, getMarketStatus)', () => {
@@ -200,5 +205,108 @@ describe('FakeMarketDataProvider.getOptionChainSnapshot (US-64)', () => {
     const result = await provider.getOptionChainSnapshot({ underlying: 'AAPL', type: 'put' })
 
     expect(result).toEqual([])
+  })
+})
+
+describe('FakeMarketDataProvider — stock quotes, forced errors and streaming', () => {
+  const STOCK_QUOTE: StockQuote = {
+    price: '182.45',
+    bid: '182.44',
+    ask: '182.46',
+    change: '1.45',
+    changePercent: '0.0080',
+    prevClose: '181.00',
+    volume: 1000,
+    timestamp: '2026-04-28T10:00:00Z'
+  }
+
+  afterEach(() => {
+    delete process.env.WHEELBASE_MOCK_STOCK_QUOTES
+    delete process.env.WHEELBASE_MOCK_OPTION_SNAPSHOTS
+    delete process.env.FAKE_MARKET_DATA_ERROR
+  })
+
+  it('getStockQuotes returns only the requested tickers from WHEELBASE_MOCK_STOCK_QUOTES', async () => {
+    process.env.WHEELBASE_MOCK_STOCK_QUOTES = JSON.stringify({
+      AAPL: STOCK_QUOTE,
+      MSFT: STOCK_QUOTE
+    })
+
+    const result = await new FakeMarketDataProvider().getStockQuotes(['AAPL', 'TSLA'])
+
+    expect([...result.keys()]).toEqual(['AAPL'])
+    expect(result.get('AAPL')).toEqual(STOCK_QUOTE)
+  })
+
+  it('getStockQuotes returns an empty map when no fixtures are configured', async () => {
+    const result = await new FakeMarketDataProvider().getStockQuotes(['AAPL'])
+
+    expect(result.size).toBe(0)
+  })
+
+  it('every REST call throws the MarketDataError named by FAKE_MARKET_DATA_ERROR', async () => {
+    process.env.FAKE_MARKET_DATA_ERROR = 'auth_failed'
+    const provider = new FakeMarketDataProvider()
+
+    await expect(provider.getStockQuotes(['AAPL'])).rejects.toMatchObject({ code: 'auth_failed' })
+    await expect(provider.getOptionSnapshot('AAPL260516P00180000')).rejects.toMatchObject({
+      code: 'auth_failed'
+    })
+    await expect(provider.getOptionChainSnapshot({ underlying: 'AAPL' })).rejects.toMatchObject({
+      code: 'auth_failed'
+    })
+  })
+
+  it('getOptionChainSnapshot drops contracts expiring before expirationFrom', async () => {
+    process.env.WHEELBASE_MOCK_OPTION_SNAPSHOTS = JSON.stringify({ AAPL260905P00190000: SNAPSHOT })
+
+    const result = await new FakeMarketDataProvider().getOptionChainSnapshot({
+      underlying: 'AAPL',
+      expirationFrom: '2026-09-10'
+    })
+
+    expect(result).toEqual([])
+  })
+
+  it('supports streaming only for the stockQuotes feed', () => {
+    const provider = new FakeMarketDataProvider()
+
+    expect(provider.supportsStreaming('stockQuotes')).toBe(true)
+    expect(provider.supportsStreaming('optionQuotes')).toBe(false)
+  })
+
+  it('stream() rejects non-stock feeds with streaming_unsupported', () => {
+    let caught: unknown
+    try {
+      new FakeMarketDataProvider().stream('optionQuotes', ['AAPL'])
+    } catch (err) {
+      caught = err
+    }
+
+    expect(caught).toBeInstanceOf(MarketDataError)
+    expect((caught as MarketDataError).code).toBe('streaming_unsupported')
+  })
+
+  it('stream() forwards only ticks for the subscribed symbols', () => {
+    const received: string[] = []
+    const subscription = new FakeMarketDataProvider()
+      .stream('stockQuotes', ['AAPL'])
+      .subscribe((event) => received.push(event.symbol))
+
+    fakeStockTickSubject.next({
+      feed: 'stockQuotes',
+      symbol: 'MSFT',
+      data: STOCK_QUOTE,
+      timestamp: '2026-04-28T10:00:01Z'
+    })
+    fakeStockTickSubject.next({
+      feed: 'stockQuotes',
+      symbol: 'AAPL',
+      data: STOCK_QUOTE,
+      timestamp: '2026-04-28T10:00:02Z'
+    })
+    subscription.unsubscribe()
+
+    expect(received).toEqual(['AAPL'])
   })
 })

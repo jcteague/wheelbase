@@ -450,4 +450,84 @@ describe('registerSettingsHandlers', () => {
     })
     expect(alertDefaults.saveAlertDefaults).not.toHaveBeenCalled()
   })
+
+  it('settings:save-alpaca-credentials leaves the broker alone when the saved environment is not active', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerSettingsHandlers } = await import('./settings')
+
+    registerSettingsHandlers({ settings, alertDefaults, testConnection, onBrokerProviderChanged })
+    const handler = getHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'settings:save-alpaca-credentials'
+    )
+
+    const result = await handler(null, {
+      environment: 'live',
+      keyId: 'AK123',
+      secret: 'SECRET123'
+    })
+
+    expect(result).toMatchObject({ ok: true, status: STATUS })
+    expect(onBrokerProviderChanged).not.toHaveBeenCalled()
+  })
+
+  it('settings:remove-alpaca-credentials refreshes the broker when the active environment is removed', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerSettingsHandlers } = await import('./settings')
+
+    const afterRemoval: CredentialStatus = {
+      ...STATUS,
+      alpacaPaper: 'missing',
+      activeBrokerEnv: 'none',
+      alpacaPaperAccountNumberMasked: null
+    }
+    settings.removeAlpacaCredentials.mockReturnValue(afterRemoval)
+
+    registerSettingsHandlers({ settings, alertDefaults, testConnection, onBrokerProviderChanged })
+    const handler = getHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'settings:remove-alpaca-credentials'
+    )
+
+    const result = await handler(null, { environment: 'paper' })
+
+    expect(settings.removeAlpacaCredentials).toHaveBeenCalledWith({ environment: 'paper' })
+    expect(onBrokerProviderChanged).toHaveBeenCalledOnce()
+    expect(result).toEqual({ ok: true, status: afterRemoval })
+  })
+
+  it('settings:remove-alpaca-credentials leaves the broker alone when an inactive environment is removed', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerSettingsHandlers } = await import('./settings')
+
+    registerSettingsHandlers({ settings, alertDefaults, testConnection, onBrokerProviderChanged })
+    const handler = getHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'settings:remove-alpaca-credentials'
+    )
+
+    const result = await handler(null, { environment: 'live' })
+
+    expect(onBrokerProviderChanged).not.toHaveBeenCalled()
+    expect(result).toEqual({ ok: true, status: STATUS })
+  })
+
+  it('settings:remove-alpaca-credentials rejects an unknown environment', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerSettingsHandlers } = await import('./settings')
+
+    registerSettingsHandlers({ settings, alertDefaults, testConnection, onBrokerProviderChanged })
+    const handler = getHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'settings:remove-alpaca-credentials'
+    )
+
+    const result = await handler(null, { environment: 'demo' })
+
+    expect(result).toMatchObject({
+      ok: false,
+      errors: expect.arrayContaining([expect.objectContaining({ field: 'environment' })])
+    })
+    expect(settings.removeAlpacaCredentials).not.toHaveBeenCalled()
+  })
 })

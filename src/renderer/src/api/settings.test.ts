@@ -214,3 +214,46 @@ describe('saveAlertDefaults', () => {
     })
   })
 })
+
+describe('credential operations surface IPC failures as 502 errors', () => {
+  const errors = [{ field: '__root__', code: 'internal_error', message: 'boom' }]
+
+  it('getCredentialStatus', async () => {
+    mockSettingsStatus.mockResolvedValue({ ok: false, errors })
+
+    await expect(getCredentialStatus()).rejects.toMatchObject({
+      status: 502,
+      body: { detail: errors }
+    })
+  })
+
+  it('saveAlpacaCredentials', async () => {
+    mockSettingsSaveAlpaca.mockResolvedValue({ ok: false, errors })
+
+    await expect(
+      saveAlpacaCredentials({ environment: 'paper', keyId: 'KEY123', secret: 'SECRET123' })
+    ).rejects.toMatchObject({ status: 502, body: { detail: errors } })
+  })
+
+  it('testSettingsConnection', async () => {
+    mockSettingsTestConnection.mockResolvedValue({ ok: false, errors })
+
+    await expect(
+      testSettingsConnection({
+        vendor: 'alpaca',
+        environment: 'paper',
+        keyId: 'KEY123',
+        secret: 'SECRET123'
+      })
+    ).rejects.toMatchObject({ status: 502, body: { detail: errors } })
+  })
+
+  it('testStoredAlpacaConnection', async () => {
+    mockSettingsTestStoredAlpacaConnection.mockResolvedValue({ ok: false, errors })
+
+    await expect(testStoredAlpacaConnection({ environment: 'paper' })).rejects.toMatchObject({
+      status: 502,
+      body: { detail: errors }
+    })
+  })
+})

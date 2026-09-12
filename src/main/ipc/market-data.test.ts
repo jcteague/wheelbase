@@ -673,4 +673,26 @@ describe('registerMarketDataHandlers', () => {
     expect(channels).not.toContain('market-data:account')
     expect(channels).not.toContain('market-data:market-status')
   })
+
+  it('test:trigger-stock-tick pushes a synthetic tick into the fake provider stream', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerMarketDataHandlers } = await import('./market-data')
+    const { fakeStockTickSubject } = await import('../integrations/fake-market-data')
+
+    registerMarketDataHandlers(() => provider, getWindow)
+    const handler = getHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'test:trigger-stock-tick'
+    )
+
+    const received: StreamEvent<StockQuote>[] = []
+    const subscription = fakeStockTickSubject.subscribe((event) => received.push(event))
+    const result = await handler(null, { ticker: 'AAPL', quote: AAPL_QUOTE })
+    subscription.unsubscribe()
+
+    expect(result).toEqual({ ok: true })
+    expect(received).toEqual([
+      { feed: 'stockQuotes', symbol: 'AAPL', data: AAPL_QUOTE, timestamp: expect.any(String) }
+    ])
+  })
 })

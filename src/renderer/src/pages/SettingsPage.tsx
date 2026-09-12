@@ -156,14 +156,11 @@ function AlpacaCredentialCard({
       if (!result) {
         return
       }
-      if (result.ok && result.vendor === 'alpaca') {
+      if (result.ok) {
         setMessage({
           tone: 'success',
           text: `✓ Verified — Account ${result.accountNumberMasked} (${result.environment})`
         })
-        return
-      }
-      if (result.ok) {
         return
       }
       setMessage({
@@ -198,14 +195,11 @@ function AlpacaCredentialCard({
       if (!result) {
         return
       }
-      if (result.ok && result.vendor === 'alpaca') {
+      if (result.ok) {
         setMessage({
           tone: 'success',
           text: `✓ Verified — Account ${result.accountNumberMasked} (${result.environment})`
         })
-        return
-      }
-      if (result.ok) {
         return
       }
       setMessage({
@@ -627,11 +621,7 @@ export function SettingsPage(): React.JSX.Element {
                       name="active-broker-environment"
                       disabled={!hasLiveCredentials}
                       checked={activeStatus.activeBrokerEnv === 'live'}
-                      onChange={() => {
-                        if (hasLiveCredentials) {
-                          setShowLiveDialog(true)
-                        }
-                      }}
+                      onChange={() => setShowLiveDialog(true)}
                     />
                     <span
                       className={[

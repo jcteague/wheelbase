@@ -27,21 +27,21 @@ Alpaca is the broker integration (read-only through Phase 3, order execution in 
 
 ## Tech Stack
 
-| Concern                | Choice                                                                              |
-| ---------------------- | ----------------------------------------------------------------------------------- |
-| App shell              | Electron + electron-vite                                                            |
-| Renderer framework     | React 19 + TypeScript                                                               |
-| Routing                | wouter (hash-based — required for Electron `file://` URLs)                          |
-| Server state / polling | TanStack Query                                                                      |
-| Forms                  | React Hook Form + Zod resolver                                                      |
-| Schema validation      | **Zod v4** (IPC payload validation + inferred TS types)                             |
-| UI components          | shadcn/ui                                                                           |
-| Main process           | TypeScript (Node)                                                                   |
-| Database               | SQLite via `better-sqlite3`; custom migration runner in `src/main/db/migrate.ts`    |
-| Money math             | `decimal.js` with `ROUND_HALF_UP`, stored as TEXT (4 dp)                            |
-| Logging                | `pino` (`silent` in Vitest, `info` in production)                                   |
-| Broker                 | `@alpacahq/typescript-sdk`, all calls isolated in `src/main/integrations/alpaca.ts` |
-| Testing                | Vitest (unit + integration), Playwright `_electron` (E2E)                           |
+| Concern                | Choice                                                                           |
+| ---------------------- | -------------------------------------------------------------------------------- |
+| App shell              | Electron + electron-vite                                                         |
+| Renderer framework     | React 19 + TypeScript                                                            |
+| Routing                | wouter (hash-based — required for Electron `file://` URLs)                       |
+| Server state / polling | TanStack Query                                                                   |
+| Forms                  | React Hook Form + Zod resolver                                                   |
+| Schema validation      | **Zod v4** (IPC payload validation + inferred TS types)                          |
+| UI components          | shadcn/ui                                                                        |
+| Main process           | TypeScript (Node)                                                                |
+| Database               | SQLite via `better-sqlite3`; custom migration runner in `src/main/db/migrate.ts` |
+| Money math             | `decimal.js` with `ROUND_HALF_UP`, stored as TEXT (4 dp)                         |
+| Logging                | `pino` (`silent` in Vitest, `info` in production)                                |
+| Broker                 | Alpaca REST/WebSocket, isolated in `src/main/integrations/alpaca-*.ts`           |
+| Testing                | Vitest (unit + integration), Playwright `_electron` (E2E)                        |
 
 ---
 
@@ -53,7 +53,7 @@ Alpaca is the broker integration (read-only through Phase 3, order execution in 
 | IPC handlers              | `src/main/ipc/`                     |
 | Service layer (DB + core) | `src/main/services/`                |
 | Core engines (pure)       | `src/main/core/`                    |
-| Alpaca integration        | `src/main/integrations/alpaca.ts`   |
+| Alpaca integration        | `src/main/integrations/alpaca-*.ts` |
 | DB init + migrations      | `src/main/db/`                      |
 | Preload / contextBridge   | `src/preload/index.ts`              |
 | Renderer entry            | `src/renderer/src/main.tsx`         |
@@ -112,7 +112,7 @@ Library: `pino`. Configured in `src/main/logger.ts`.
 ## Architecture Rules
 
 - `src/main/core/` engines (`lifecycle.ts`, `costbasis.ts`) have **no DB or broker imports** — they take plain values and return results
-- All `@alpacahq/typescript-sdk` calls live exclusively in `src/main/integrations/alpaca.ts`
+- All Alpaca HTTP/WebSocket calls live exclusively in `src/main/integrations/alpaca-*.ts` (`alpaca-broker.ts`, `alpaca-market-data.ts`); nothing else talks to Alpaca directly
 - IPC handlers never throw to the renderer — always return `{ ok: true, ...result } | { ok: false, errors: [...] }`
 - IPC handlers must be thin: Zod parse + single service call, wrapped in `handleIpcCall` (from `src/main/ipc/utils.ts`). No business logic, orchestration, or branching in handler files — push it into the service layer. `handleIpcCall` is the only path that produces the `{ ok, errors }` envelope; bypassing it leaks `ZodError`/`ValidationError`/`BrokerError` to the renderer
 - Rolls are **always** stored as linked leg pairs, never in-place updates
