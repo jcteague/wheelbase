@@ -19,6 +19,18 @@ args = ["-y", "@modelcontextprotocol/server-postgres", "postgresql://wheel:wheel
 command = "npx"
 args = ["@playwright/mcp@latest", "--headless"]
 
+[mcp_servers.playwright.tools.browser_resize]
+approval_mode = "approve"
+
+[mcp_servers.playwright.tools.browser_click]
+approval_mode = "approve"
+
+[mcp_servers.playwright.tools.browser_run_code_unsafe]
+approval_mode = "approve"
+
+[mcp_servers.playwright.tools.browser_evaluate]
+approval_mode = "approve"
+
 [mcp_servers.electron]
 command = "npx"
 args = ["-y", "electron-mcp-server"]
