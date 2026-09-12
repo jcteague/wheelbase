@@ -237,7 +237,7 @@ app.whenReady().then(() => {
 
   /** The broker, or nothing when none is configured. Resolved per tick so credentials
    *  added after launch take effect without a restart. */
-  const tryCreateBroker = (): BrokerProvider | undefined => {
+  function tryCreateBroker(): BrokerProvider | undefined {
     try {
       return brokerFactory.create()
     } catch (err) {

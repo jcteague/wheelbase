@@ -632,7 +632,7 @@ is independent of `positions`; removing a ticker never touches trade history.
 
 <!-- /generated -->
 
-<!-- generated:from us-70 -->
+<!-- generated:from us-70,us-98 -->
 
 ## `earnings_date`
 
@@ -645,13 +645,14 @@ lookup where a stale value is simply wrong.
 
 ### Columns
 
-| Column            | Type   | Notes                                                              |
-| ----------------- | ------ | ------------------------------------------------------------------ |
-| `ticker`          | `TEXT` | PRIMARY KEY, upper-cased on write                                  |
-| `next_earnings`   | `TEXT` | `YYYY-MM-DD`, **nullable** — see the three-state table below       |
-| `checked_through` | `TEXT` | `YYYY-MM-DD`, the `to` bound of the request that produced this row |
-| `checked_at`      | `TEXT` | ISO timestamp of that request; drives the refresh interval         |
-| `source`          | `TEXT` | NOT NULL DEFAULT `'finnhub'`                                       |
+| Column            | Type   | Notes                                                                                                                                |
+| ----------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `ticker`          | `TEXT` | PRIMARY KEY, upper-cased on write                                                                                                    |
+| `next_earnings`   | `TEXT` | `YYYY-MM-DD`, **nullable** — see the three-state table below                                                                         |
+| `last_earnings`   | `TEXT` | `YYYY-MM-DD`, **nullable** — latest print strictly before today ([us-98](../features/us-98-ivr-staleness-tiers.md), migration `014`) |
+| `checked_through` | `TEXT` | `YYYY-MM-DD`, the `to` bound of the request that produced this row                                                                   |
+| `checked_at`      | `TEXT` | ISO timestamp of that request; drives the refresh interval                                                                           |
+| `source`          | `TEXT` | NOT NULL DEFAULT `'finnhub'`                                                                                                         |
 
 ### Three distinguishable states
 
@@ -685,6 +686,70 @@ shallower than the caller's horizon, or when the row's answer has stood longer t
 refresh interval (short for a passed or near-term date, weekly for a distant one). No
 foreign keys — the store is keyed by ticker symbol and is independent of `positions` and
 `watchlist`.
+
+### `last_earnings` — history, added by US-98
+
+[us-98](../features/us-98-ivr-staleness-tiers.md) needs the _last_ print, not the next
+one, to decide whether an IV-rank reading predates it. The Finnhub request was widened to
+30 days back and now selects `next` and `last` independently; both are written in the same
+upsert. `getEarningsCalendar` is the shared read-through resolver and `getEarnings` is a
+next-only projection of it, so [us-70](../features/us-70-earnings-in-window-warning.md)
+and the alert callers are unchanged and no ticker is fetched twice.
+
+Two subtleties:
+
+- A **legacy NULL** `last_earnings` (any row written before migration `014`) is
+  indistinguishable from a checked-empty lookback. It therefore means "no known print" and
+  is never treated as proof that 30 days were checked. There is no backfill and no cadence
+  change — rows are enriched on their normal refresh.
+- A stored `next_earnings` that has since **passed** is itself evidence of a print. The
+  store recovers it as last-print knowledge, taking the later of it and `last_earnings`;
+  dropping it left a pre-print reading judged on age alone.
+
+In the read model, `null` last means "the feed answered, and there was nothing";
+`undefined` means the knowledge is missing or the refresh was unavailable. Both fall back
+to the freshness time tiers alone.
+
+<!-- /generated -->
+
+<!-- generated:from us-98 -->
+
+## `trading_session`
+
+Created by `migrations/015_create_trading_session.sql` ([us-98](../features/us-98-ivr-staleness-tiers.md)).
+The cached exchange calendar behind IV-rank freshness — sessions are exchange facts we
+fetch and cache, not rules we derive.
+
+### Columns
+
+| Column     | Type   | Notes                                                               |
+| ---------- | ------ | ------------------------------------------------------------------- |
+| `date`     | `TEXT` | PRIMARY KEY, `YYYY-MM-DD`, the **Eastern** calendar day             |
+| `close_at` | `TEXT` | ISO instant the session ended; **NULL means the exchange was shut** |
+| `source`   | `TEXT` | NOT NULL DEFAULT `'alpaca'`                                         |
+
+### One row per calendar day, not per trading day
+
+Closures are stored explicitly. That is the whole design: coverage is derived as
+`MIN(date)..MAX(date)`, so a day inside the window with no session was a closure, and a
+day outside the window is **unknown** — a different answer, and one that must stay
+distinguishable. Certifying a reading as fresh against a window that was never fetched is
+exactly the failure this shape prevents.
+
+`close_at` already reflects early closes, so there is no separate half-day concept: a
+13:00 ET close is just an earlier instant than a 16:00 one.
+
+### How rows change
+
+Written only by `refreshTradingCalendar` in
+`src/main/services/trading-calendar-store.ts`, which upserts the whole fetched range in
+one transaction. Reads (`readTradingCalendar`) never fetch — a screen must not hang on the
+broker. The daily IVR collector is what keeps the cache ahead of today: it refreshes at
+most weekly, over 120 days back through 400 ahead, and a broker outage leaves the previous
+rows untouched. The store warns 30 days before coverage runs out, because an exhausted
+calendar silently disables every freshness judgement.
+
+No foreign keys — keyed by date, independent of every other table.
 
 <!-- /generated -->
 

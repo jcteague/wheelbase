@@ -121,6 +121,12 @@ export function etInstantAt(day: string, time: string): string | null {
   return new Date(guess.getTime() - offsetMinutesAt(guess) * 60_000).toISOString()
 }
 
+/** Whether the session was already over at `instant` — the one comparison every
+ *  age question here is built on. */
+function hasClosedBy(session: TradingSession, instant: Date): boolean {
+  return new Date(session.closeAt) <= instant
+}
+
 function covers(calendar: TradingCalendar, day: string): boolean {
   return (
     calendar.firstDay !== '' && isIsoDay(day) && day >= calendar.firstDay && day <= calendar.lastDay
@@ -147,7 +153,7 @@ export function getMostRecentCompletedSession(
 ): TradingSession | null {
   if (!isValid(instant) || !coversInstant(calendar, instant)) return null
 
-  return calendar.sessions.findLast((session) => new Date(session.closeAt) <= instant) ?? null
+  return calendar.sessions.findLast((session) => hasClosedBy(session, instant)) ?? null
 }
 
 /**
@@ -164,9 +170,9 @@ export function countCompletedSessionsAfter(
 
   const known = getTradingSession(calendar, session.date)
   if (known.status !== 'open' || known.session.closeAt !== session.closeAt) return null
-  if (new Date(session.closeAt) > now) return null
+  if (!hasClosedBy(session, now)) return null
 
   return calendar.sessions.filter(
-    (candidate) => candidate.date > session.date && new Date(candidate.closeAt) <= now
+    (candidate) => candidate.date > session.date && hasClosedBy(candidate, now)
   ).length
 }

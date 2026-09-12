@@ -34,6 +34,9 @@ export function IvrCell({ ivRank }: IvrCellProps): React.JSX.Element {
   // never looks like one the rank was built on.
   const scored = ivRank.state === 'fresh' || ivRank.state === 'aging'
   const toneClass = scored ? 'text-wb-text-primary' : 'text-wb-text-muted'
+  // Age earns its place on the row only once it is old enough to change a decision;
+  // a fresh reading would just repeat the same small number on every line.
+  const showsAge = ivRank.state === 'aging' || ivRank.state === 'stale'
   const value = formatIvrValue(ivRank.value)
 
   return (
@@ -46,7 +49,7 @@ export function IvrCell({ ivRank }: IvrCellProps): React.JSX.Element {
     >
       <span>
         {value}
-        {ivRank.state === 'aging' || ivRank.state === 'stale' ? ` · ${ivRank.ageTradingDays}d` : ''}
+        {showsAge ? ` · ${ivRank.ageTradingDays}d` : ''}
       </span>
       {ivRank.state === 'predates_earnings' && (
         <span className="text-[0.62rem] text-wb-text-muted">predates earnings</span>

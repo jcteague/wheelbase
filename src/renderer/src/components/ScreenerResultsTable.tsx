@@ -19,7 +19,6 @@ type ScreenerResultsTableProps = {
 
 const NUMERIC = 'text-right'
 const SECONDARY = `${NUMERIC} text-wb-text-secondary`
-const MUTED = `${NUMERIC} text-wb-text-muted`
 const YIELD = `${NUMERIC} text-wb-green font-medium`
 const ANNUALIZED_YIELD = `${NUMERIC} text-wb-green font-semibold`
 const RANK_PILL =
@@ -121,7 +120,7 @@ function CandidateRow({ candidate, rank, onPromote }: CandidateRowProps): React.
         {fmtYieldPercent(candidate.annualizedYield)}/yr
       </TableCell>
       <TableCell className={NUMERIC}>{fmtDelta(candidate.delta)}</TableCell>
-      <TableCell className={candidate.ivRank === null ? MUTED : NUMERIC}>
+      <TableCell className={NUMERIC}>
         <IvrCell ivRank={candidate.ivRank} />
       </TableCell>
       <TableCell className={SECONDARY}>{fmtOpenInterest(candidate.openInterest)}</TableCell>

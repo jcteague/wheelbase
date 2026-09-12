@@ -58,7 +58,7 @@ export function createFakeIvrCollaborators(): FakeIvrCollaborators {
   return {
     fetchIvr: fakeFetchIvr,
     clock: {
-      now: () => (fakeNowIso ? new Date(fakeNowIso) : new Date())
+      now: () => (fakeNowIso === null ? new Date() : new Date(fakeNowIso))
     }
   }
 }

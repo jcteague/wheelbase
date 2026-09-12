@@ -15,7 +15,7 @@ import {
   type CspFixture,
   type MarketStatusFixture
 } from './assignment-helpers'
-import { addDays, format } from 'date-fns'
+import { addDays, format, isWeekend } from 'date-fns'
 import { localDate } from './dates'
 
 /**
@@ -42,7 +42,7 @@ export function fakeNowAt(time: string): string {
 
 function mostRecentWeekday(): string {
   let day = new Date()
-  while (day.getDay() === 0 || day.getDay() === 6) day = addDays(day, -1)
+  while (isWeekend(day)) day = addDays(day, -1)
   return format(day, 'yyyy-MM-dd')
 }
 
@@ -89,6 +89,11 @@ export type IvrLaunchOpts = {
   fakeNow?: string
   /** Launch with no Alpaca credentials — see LaunchOpts. */
   withoutBrokerCredentials?: boolean
+  /** [US-98] The exchange calendar `FakeBrokerProvider.getMarketCalendar` publishes, and
+   *  so what the collector caches into `trading_session`. Omit and the fake generates
+   *  every weekday in range as a normal 16:00 ET session; supply one to make a specific
+   *  day a *recognised* closure rather than a day that was simply never fetched. */
+  brokerCalendar?: Array<{ date: string; close: string }>
 }
 
 export function buildIvrLaunchEnv(
@@ -106,6 +111,7 @@ export function buildIvrLaunchEnv(
   // fetcher; per-ticker outcomes are set later via _test:ivr-set-outcomes.
   env.WHEELBASE_FAKE_IVR = '{}'
   env.WHEELBASE_FAKE_NOW = opts.fakeNow ?? DEFAULT_FAKE_NOW
+  if (opts.brokerCalendar) env.FAKE_BROKER_CALENDAR = JSON.stringify(opts.brokerCalendar)
   return env
 }
 

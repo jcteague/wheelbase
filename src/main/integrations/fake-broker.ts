@@ -1,4 +1,4 @@
-import { addDays, format, parseISO } from 'date-fns'
+import { eachDayOfInterval, format, isWeekend, parseISO } from 'date-fns'
 import {
   BrokerError,
   type AccountInfo,
@@ -33,15 +33,9 @@ const FAKE_CLOSE_TIME = '16:00'
  *  rather than fixtured; a spec that needs a holiday or early close sets
  *  FAKE_BROKER_CALENDAR explicitly. */
 function weekdaySessions(range: MarketCalendarRange): MarketCalendarDay[] {
-  const end = parseISO(range.end)
-  const days: MarketCalendarDay[] = []
-
-  for (let day = parseISO(range.start); day <= end; day = addDays(day, 1)) {
-    const weekday = day.getDay()
-    if (weekday === 0 || weekday === 6) continue
-    days.push({ date: format(day, 'yyyy-MM-dd'), close: FAKE_CLOSE_TIME })
-  }
-  return days
+  return eachDayOfInterval({ start: parseISO(range.start), end: parseISO(range.end) })
+    .filter((day) => !isWeekend(day))
+    .map((day) => ({ date: format(day, 'yyyy-MM-dd'), close: FAKE_CLOSE_TIME }))
 }
 
 function parseEnv<T>(envVar: string): T | null {

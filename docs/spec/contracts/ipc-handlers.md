@@ -1684,11 +1684,11 @@ postEarningsOnly?, coreHolding? }` (parsed by `WatchlistAddPayloadSchema`; ticke
 
 <!-- /generated -->
 
-<!-- generated:from us-65,us-67,us-70,us-99 -->
+<!-- generated:from us-65,us-67,us-70,us-99,us-98 -->
 
 ## `screener:*` namespace
 
-The candidate-screener surface, registered by `registerScreenerIpc({ db, getProvider })` in
+The candidate-screener surface, registered by `registerScreenerIpc({ db, getProvider, getCurrentDate })` in
 `src/main/ipc/screener.ts` and wired from `src/main/index.ts` with the same `getProvider`
 accessor `registerMarketDataHandlers` receives. Introduced by
 [us-65 — Score wheel candidates](../features/us-65-score-wheel-candidates.md); the two
@@ -1712,16 +1712,16 @@ which did **not** change `registerScreenerIpc`'s signature.
   The `criteria` option remains as an explicit override seam.
 - **Response (success):** `{ ok: true, status, ranked, excluded, quoteTimestamp }` where:
   - `status` is `'ok' | 'provider_unavailable'`
-  - `ranked: ScoredCandidate[]` — rank order (`yieldPerDelta` desc, ties by ticker asc);
-    `[]` means nothing survived the filters
+  - `ranked: RankedCandidate[]` — rank order (`yieldPerDelta` desc, ties by ticker asc);
+    `[]` means nothing survived the filters. `RankedCandidate` is `ScoredCandidate` with
+    its `ivRank` replaced by the assessed reading below (US-98)
   - `excluded: ScreenerExclusion[]` — one row per non-ranking ticker, watchlist order,
     each `{ ticker, code, reason }`
   - `quoteTimestamp: string | null` — the newest ranked strike's ISO quote time, for the
     stale badge; `null` when `ranked` is empty
 - **`ScoredCandidate` fields:** `ticker`, `contractId`, `strike` (4dp), `expiration`,
   `dte`, `bid` / `ask` / `mark` (2dp), `spreadAbsolute` / `spreadPercent` (2dp), `delta`
-  (4dp, **absolute**), `openInterest`, `volume`, `ivRank` (`{ value, observedAt }` or
-  `null` → the renderer shows "n/a"), `capitalSecured` (2dp), `periodYield` /
+  (4dp, **absolute**), `openInterest`, `volume`, `ivRank` (`IpcIvRank` or `null` — see below), `capitalSecured` (2dp), `periodYield` /
   `annualizedYield` / `yieldPerDelta` (4dp fractions), `earnings`
   (`IpcCandidateEarnings` — see below), `timestamp`.
 - **`IpcCandidateEarnings`** (US-70, replacing the earlier `earningsFlagged: boolean`):
@@ -1736,6 +1736,24 @@ daysBeforeExpiry }` (only under `earningsHandling: 'flag'`),
   `{ status: 'unavailable' }` per candidate — never as an envelope error and never as
   `status: 'provider_unavailable'`, which covers both an Alpaca chain outage and missing Alpaca credentials (per-ticker `auth_failed` from the chain pull rolls up to it; the renderer distinguishes the two via `CredentialStatus.marketData`). See
   [us-70](../features/us-70-earnings-in-window-warning.md).
+- **`IpcIvRank`** (US-98, widening the earlier `{ value, observedAt }`):
+  `{ value, observedAt, ageTradingDays, state }` where `state` is
+  `'fresh' | 'aging' | 'stale' | 'predates_earnings'`. `ageTradingDays` is a non-negative
+  count of **completed exchange sessions** since the reading's own session closed, not
+  calendar days. `ivRank` is `null` for an absent reading, one older than ten sessions,
+  and one the cached calendar cannot reach — all three render as `n/a` and are
+  indistinguishable to the trader. Earnings invalidation takes precedence over expiry, so
+  a `predates_earnings` reading survives on the payload however old it is, carrying its
+  explanation. There is deliberately **no `usable` field**: usability is derived from
+  `state` at each end (`isUsableState` in main, the tone rule in `IvrCell`) so one rule
+  cannot drift into two. Mirrored in `src/preload/index.d.ts` and as `ScreenerIvRank` in
+  `src/renderer/src/api/screener.ts`. See
+  [us-98](../features/us-98-ivr-staleness-tiers.md).
+- **Unusable readings never gate:** only `fresh` and `aging` readings are fed to the
+  engine, so `iv_rank_floor` is never applied to a stale, earnings-invalid or expired
+  one — such a candidate ranks exactly as it would with no IVR at all, at the same
+  `yieldPerDelta` and the same position. The muted value still reaches the trader on the
+  row. See [ADR usable-ivr-only-reaches-the-engine](../architecture/02-adrs/usable-ivr-only-reaches-the-engine.md).
 - **`ScreenerExclusion.code`:** the eight engine codes — `price_ceiling`, `iv_rank_floor`
   (added by US-67, positioned immediately after `price_ceiling` in the ordered registry),
   `earnings_in_window`, `dte_window`, `delta_unavailable`, `delta_band`,
@@ -1751,12 +1769,16 @@ daysBeforeExpiry }` (only under `earningsHandling: 'flag'`),
   request payload to validate, and every expected failure mode is modelled **inside** the
   success payload rather than thrown: a provider outage or unconfigured provider becomes
   `status: 'provider_unavailable'`, per-ticker provider failures become
-  `data_unavailable` exclusions, and an IVR or per-ticker quote-fetch failure degrades to
-  missing soft data. `handleIpcCall` catches anything genuinely unexpected (e.g. a SQLite
+  `data_unavailable` exclusions, and an IVR, calendar or per-ticker quote-fetch failure degrades to
+  missing soft data (a snapshot, calendar or earnings read that fails becomes "unknown
+  for everyone" rather than sinking the screen). `handleIpcCall` catches anything genuinely unexpected (e.g. a SQLite
   failure) into that row.
 - **Source:** `src/main/ipc/screener.ts`, `src/main/services/screener.ts`
   (`screenWatchlistCandidates`), `src/main/core/screener.ts` (`screenTicker`,
-  `rankCandidates`), `src/preload/index.ts`
+  `rankCandidates`), `src/main/core/ivr-freshness.ts` (`assessIvRank`),
+  `src/main/services/ivr-snapshots.ts` (`getAssessedIvrByUnderlying`),
+  `src/main/services/trading-calendar-store.ts` (`readTradingCalendar`),
+  `src/preload/index.ts`
 
 ### `screener:get-criteria`
 

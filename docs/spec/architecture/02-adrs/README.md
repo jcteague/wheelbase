@@ -2,7 +2,7 @@
 
 Each ADR captures one architectural choice that emerged from a plan/story. Decisions are grouped below by theme; many ADRs are referenced by multiple feature pages.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,us-53-54-55,us-57-58,us-97,us-99,missing-ac -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,us-53-54-55,us-57-58,us-97,us-98,us-99,missing-ac -->
 
 ## Engine & architecture
 
@@ -88,6 +88,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [ipc-returns-full-option-snapshot](./ipc-returns-full-option-snapshot.md) — `market-data:option-snapshots` returns the full `OptionSnapshot` shape.
 - [barchart-as-canonical-ivr-source](./barchart-as-canonical-ivr-source.md) — IVR collection builds on the existing Barchart scraper and persists `source='barchart'`.
 - [ivr-collector-throttle-boundary](./ivr-collector-throttle-boundary.md) — The IVR collector enforces the 1 request/second batch throttle, even though the scraper also rate-limits.
+- [trading-calendar-fetched-and-cached](./trading-calendar-fetched-and-cached.md) — Exchange sessions are facts fetched through `BrokerProvider.getMarketCalendar` and cached in `trading_session`; closures stored explicitly so an unfetched day reads as unknown, not closed.
 - [alpaca-sole-market-data-vendor](./alpaca-sole-market-data-vendor.md) — Alpaca's free data plan is the only market-data vendor (US-99); Massive removed; supersedes shared-massive-app-configuration.
 - [market-data-lazy-credentials-stream-restart](./market-data-lazy-credentials-stream-restart.md) — One provider instance resolving credentials on every call; the factory never throws; a broker-credential change restarts only the stock stream.
 - [iex-feed-for-seed-and-stream](./iex-feed-for-seed-and-stream.md) — One batched IEX snapshot seeds; the IEX `bars` websocket streams; same feed for both so ticks never jump against the seed; real bid/ask carried, not faked.
@@ -107,7 +108,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [park-wake-reuses-scheduletick](./park-wake-reuses-scheduletick.md) — Park-wake timer reuses `scheduleTick`; stale `nextOpen` falls back to `marketOpenMs` (US-49).
 - [consolidated-before-quit](./consolidated-before-quit.md) — Single `before-quit` handler awaits scheduler + market-data shutdown concurrently.
 - [dev-only-test-scheduler-ipc](./dev-only-test-scheduler-ipc.md) — `_test:scheduler-*` channels guarded by `NODE_ENV === 'test'` for e2e introspection.
-- [ivr-non-trading-day-guard-in-collector](./ivr-non-trading-day-guard-in-collector.md) — The collector owns the weekend/holiday guard so scheduled and manual runs share one skip path.
+- [ivr-non-trading-day-guard-in-collector](./ivr-non-trading-day-guard-in-collector.md) — The collector owns the weekend/holiday guard so scheduled and manual runs share one skip path; amended by US-98 so the verdict comes from the cached exchange calendar, not the broker clock.
 - [alert-evaluation-job-cadence](./alert-evaluation-job-cadence.md) — `alert-evaluation` reuses the US-46 scheduler with a 60 s / 5 min interval cadence; parked overnight; not broker-gated.
 
 ## Management alerts
@@ -132,5 +133,9 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [earnings-persisted-per-ticker](./earnings-persisted-per-ticker.md) — One current `earnings_date` row per ticker in SQLite is the cache; only failure backoff stays in memory. Supersedes US-56's transient per-run cache.
 - [earnings-tier-before-score](./earnings-tier-before-score.md) — Earnings certainty is the outer ranking key in both `rankCandidates` and `screenTicker`; score never rescues a tier.
 - [unknown-earnings-never-excludes](./unknown-earnings-never-excludes.md) — A data gap is not a risk verdict; unknown/unavailable caution and demote but never exclude, in either handling mode.
+- [ivr-freshness-in-completed-sessions](./ivr-freshness-in-completed-sessions.md) — An IV rank ages in completed exchange sessions, not calendar days; four tiers with usability derived from the state, not carried beside it.
+- [earnings-invalidates-ivr-before-expiry](./earnings-invalidates-ivr-before-expiry.md) — A known print after the reading's session makes it unusable however new it is; date-only feeds cannot order a same-day print, and absence of an override is never a safety claim.
+- [usable-ivr-only-reaches-the-engine](./usable-ivr-only-reaches-the-engine.md) — Only fresh/aging readings are fed to `screenTicker`, so `iv_rank_floor` never fires on data the app cannot vouch for; the assessed reading is overlaid on ranked rows afterwards.
+- [ivr-assessment-three-state-result](./ivr-assessment-three-state-result.md) — `assessIvRank` returns assessed/expired/unreadable so a corrupt row is logged rather than rendering as an ordinary absent reading.
 
 <!-- /generated -->

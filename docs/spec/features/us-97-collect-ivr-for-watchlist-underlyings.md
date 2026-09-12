@@ -1,6 +1,6 @@
 # US-97: Collect IVR snapshots for watchlist underlyings
 
-<!-- generated:from us-97 -->
+<!-- generated:from us-97,us-98 -->
 
 ## Summary
 
@@ -115,6 +115,11 @@ loudly, in the manner of the file's existing `assertClearOffsetUsable`. `seedWat
 - **Staleness handling.** `getLatestIvrByUnderlying` returns the newest row regardless of age, so
   a ticker that stopped being collected still reports its last known IVR with no age signal. More
   likely with bench names; deciding the tolerance and UI treatment is its own story.
+  **Taken up by [us-98](./us-98-ivr-staleness-tiers.md)**, which adds
+  `getAssessedIvrByUnderlying` alongside the raw read and ages every reading against
+  completed exchange sessions. US-98 also replaced this collector's broker-clock
+  non-trading-day guard with the cached exchange calendar, so a holiday no longer
+  overwrites a good reading and the guard works with no broker configured.
 - **Backfilling IVR history** for tickers already on the watchlist — the first run after this
   ships produces the first snapshot.
 - Changing the collection cadence, the 1 second rate limit, or the scraper itself

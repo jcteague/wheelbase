@@ -18,7 +18,7 @@ For the `MarketDataProvider` interface, the REST/stream model and the renderer c
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39,market-data-massive-migration,us-99 -->
+<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39,market-data-massive-migration,us-99,us-98 -->
 
 ## Boundary layout
 
@@ -31,6 +31,7 @@ Provider-agnostic contract every broker implementation satisfies. Defined in `sr
 - `getAccountInfo(): Promise<AccountInfo>`
 - `getMarketStatus(): Promise<MarketStatus>`
 - `getActivities(filter: ActivityFilter): Promise<BrokerActivity[]>`
+- `getMarketCalendar(range: MarketCalendarRange): Promise<MarketCalendarDay[]>` (US-98)
 
 ### `AlpacaBrokerProvider` implementation
 
@@ -52,7 +53,7 @@ Only `src/main/integrations/alpaca-broker.ts` may `import` from `@alpacahq/types
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39,market-data-massive-migration,us-99 -->
+<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39,market-data-massive-migration,us-99,us-98 -->
 
 ## SDK usage and bypass
 
@@ -63,6 +64,7 @@ The broker provider uses `@alpacahq/typescript-sdk` (v0.0.32-preview) selectivel
 | `client.getAccount`  | `getAccountInfo()`                                                         |
 | `client.getClock`    | `getMarketStatus()` (session derived client-side from `is_open` + windows) |
 | `client.getActivity` | `getActivities(filter)` (with manual query-param construction)             |
+| `client.getCalendar` | `getMarketCalendar(range)` (US-98)                                         |
 
 **Market data bypasses the SDK entirely.** The SDK's market-data surface is where its known bugs live (`getStocksSnapshots` hits the wrong path; the options-snapshot type omits `greeks`/`impliedVolatility`; no websocket support), so `AlpacaMarketDataProvider` talks to `https://data.alpaca.markets` and `wss://stream.data.alpaca.markets` directly. See [ADR alpaca-sdk-rest-only](../architecture/02-adrs/alpaca-sdk-rest-only.md).
 
@@ -98,6 +100,17 @@ Each REST method is wrapped in a `try` / `wrapError(err, opLabel)` block that no
 - **Returns:** `{ isOpen, nextOpen, nextClose, session: 'regular' | 'pre' | 'post' | 'closed' }`. Alpaca's `/v2/clock` only returns `is_open`, `next_open`, `next_close` — `session` is **derived client-side** by comparing the clock timestamp against calendar windows (pre: 4:00–9:30 AM ET, regular: 9:30 AM–4:00 PM ET when `is_open`, post: 4:00–8:00 PM ET, closed: otherwise).
 - **Why poll instead of stream?** Alpaca offers no streaming option for clock/session changes; transitions are predictable boundaries (4 AM, 9:30 AM, 4 PM, 8 PM ET, weekends/holidays) so a 60 s poll catches them within a minute.
 - **Why broker, not market-data?** The clock is an account-side concern and the authoritative session signal used across the UI and scheduler; it has stayed on `BrokerProvider` through both market-data vendor changes.
+
+### `getMarketCalendar(range): Promise<MarketCalendarDay[]>` (US-98)
+
+- **SDK method:** `client.getCalendar`.
+- **Request:** `MarketCalendarRange = { start: 'YYYY-MM-DD'; end: 'YYYY-MM-DD' }`, inclusive.
+- **Returns:** `MarketCalendarDay[]` — `{ date: 'YYYY-MM-DD'; close: 'HH:MM' }`, the close as **Eastern wall clock**, so an early close is simply `'13:00'`. Days the exchange was shut are **absent** from the response; the adapter derives nothing and filters out entries missing `date` or `close`.
+- **Used by:** `refreshTradingCalendar` in `src/main/services/trading-calendar-store.ts`, called by the daily IVR collector. Nothing else calls it, and no IPC channel exposes it.
+- **Why broker, not market-data?** Same reasoning as `getMarketStatus` — the exchange calendar is a venue fact reached through the trading API, not a quote.
+- **Why cache it?** Sessions are facts, not derivable rules: observed-holiday conventions have exceptions and unscheduled closures happen. Reads come from the `trading_session` cache so a screen never hangs on the broker and a brokerless install still has answers. See [ADR trading-calendar-fetched-and-cached](../architecture/02-adrs/trading-calendar-fetched-and-cached.md).
+- **Failure:** wrapped by the shared `wrapError` into a `BrokerError`; `refreshTradingCalendar` catches it, leaves the cached rows untouched, and reports `failed` so the batch it gates still runs.
+- **Fakes:** `FakeBrokerProvider.getMarketCalendar` generates every weekday in the range as a normal 16:00 session — correct relative to whatever day the suite runs on — unless `FAKE_BROKER_CALENDAR` supplies an explicit fixture (how a spec asserts a holiday or an early close). The scheduler's `fallbackBroker` in `src/main/services/scheduler-instance.ts` returns `[]`.
 
 ### `getActivities(filter): Promise<BrokerActivity[]>`
 
@@ -293,8 +306,8 @@ The broker adapter records **no explicit retry policy, no exponential backoff, a
 
 ## Source files
 
-- `src/main/integrations/broker-provider.ts` — `BrokerProvider` interface; `AccountInfo`, `MarketStatus`, `BrokerActivity`, `ActivityFilter` types; `BrokerError` class.
-- `src/main/integrations/alpaca-broker.ts` — `AlpacaBrokerProvider` implementation. The only file in the repo permitted to import `@alpacahq/typescript-sdk`. Owns lazy SDK client construction, REST mapping for `getAccountInfo` / `getMarketStatus` / `getActivities`, and `wrapError` normalisation.
+- `src/main/integrations/broker-provider.ts` — `BrokerProvider` interface; `AccountInfo`, `MarketStatus`, `BrokerActivity`, `ActivityFilter`, `MarketCalendarDay`, `MarketCalendarRange` types; `BrokerError` class.
+- `src/main/integrations/alpaca-broker.ts` — `AlpacaBrokerProvider` implementation. The only file in the repo permitted to import `@alpacahq/typescript-sdk`. Owns lazy SDK client construction, REST mapping for `getAccountInfo` / `getMarketStatus` / `getActivities` / `getMarketCalendar`, and `wrapError` normalisation.
 - `src/main/integrations/broker-factory.ts` — `brokerFactory` object with `configure()`, `create()`, and `recreate()`. Resolves the active environment via `src/main/services/settings.ts`; default env loader `loadAlpacaCredentialsFromEnv`.
 - `src/main/integrations/fake-broker.ts` — `FakeBrokerProvider` for e2e and dev; env-driven canned responses.
 - `src/main/integrations/alpaca-market-data.ts` — `AlpacaMarketDataProvider`: HTTP + 429 retry, websocket lifecycle, per-symbol subscription state (US-99).

@@ -1,6 +1,6 @@
 # US-66: Display ranked screener results with key metrics
 
-<!-- generated:from us-66,us-70 -->
+<!-- generated:from us-66,us-70,us-98 -->
 
 ## Summary
 
@@ -56,9 +56,12 @@ _Background: the watchlist has been screened, and the market status pill reads L
 that turn the payload's decimal strings into the exact strings the ACs pin:
 `fmtYieldPercent` (×100, up to 2dp with trailing zeros trimmed, so `"0.0150"` → `1.5%` and
 annualized renders as `14.8%/yr`), `fmtScore` (fixed 2dp), `fmtSpread`, `fmtDelta`,
-`fmtIvr` (`n/a` when null; US-67 added the `(MMM d)` observation date once the IV-rank
-floor made the reading a hard filter), `fmtOpenInterest` (`—` when null), and
-`fmtQuoteTime`. They
+`formatIvrValue` (plain Decimal normalisation), `fmtOpenInterest` (`—` when null), and
+`fmtQuoteTime`. The IVR column is no longer a formatter at all: **US-98** replaced
+`fmtIvr` — which rendered `44 (Aug 7)` — with the shared
+[`IvrCell`](./us-98-ivr-staleness-tiers.md) component, which renders the value plus a
+freshness qualifier (`· 2d`), mutes readings too old to score on, and moves the
+observation date into the tooltip. They
 take narrow primitive inputs, never whole candidate objects; money-adjacent math goes
 through `decimal.js` and `fmtQuoteTime` uses `date-fns` `format(parseISO(...))` rather than
 slicing a timestamp. Trailing-zero trimming deliberately mirrors the US-65 engine's own

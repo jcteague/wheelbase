@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import path from 'node:path'
-import { eachDayOfInterval, format, parseISO } from 'date-fns'
+import { eachDayOfInterval, format, isWeekend, parseISO } from 'date-fns'
 import { vi, type Mock } from 'vitest'
 import { localDate } from './dates'
 import { runMigrations } from './db/migrate'
@@ -40,6 +40,13 @@ export function seedIvr(db: Database.Database, rows: IvrSeedRow[]): void {
 
 const NORMAL_CLOSE = '16:00'
 
+/** Every calendar day from `firstDay` to `lastDay` inclusive, as YYYY-MM-DD. */
+function eachIsoDay(firstDay: string, lastDay: string): string[] {
+  return eachDayOfInterval({ start: parseISO(firstDay), end: parseISO(lastDay) }).map((day) =>
+    format(day, 'yyyy-MM-dd')
+  )
+}
+
 /**
  * A trading calendar over `[firstDay, lastDay]` holding a session on every weekday
  * except `closures`, each closing at 16:00 ET unless `earlyCloses` says otherwise.
@@ -56,12 +63,8 @@ export function makeTradingCalendar(
   }: { closures?: string[]; earlyCloses?: Record<string, string> } = {}
 ): TradingCalendar {
   const closed = new Set(closures)
-  const sessions = eachDayOfInterval({ start: parseISO(firstDay), end: parseISO(lastDay) })
-    .map((day) => format(day, 'yyyy-MM-dd'))
-    .filter((date) => {
-      const weekday = parseISO(date).getDay()
-      return weekday !== 0 && weekday !== 6 && !closed.has(date)
-    })
+  const sessions = eachIsoDay(firstDay, lastDay)
+    .filter((date) => !isWeekend(parseISO(date)) && !closed.has(date))
     .map((date) => ({ date, closeAt: etInstantAt(date, earlyCloses[date] ?? NORMAL_CLOSE)! }))
 
   return { firstDay, lastDay, sessions }
@@ -82,8 +85,7 @@ export function seedTradingCalendar(
      ON CONFLICT (date) DO UPDATE SET close_at = excluded.close_at`
   )
 
-  for (const day of eachDayOfInterval({ start: parseISO(firstDay), end: parseISO(lastDay) })) {
-    const date = format(day, 'yyyy-MM-dd')
+  for (const date of eachIsoDay(firstDay, lastDay)) {
     insert.run(date, closeByDate.get(date) ?? null)
   }
 }

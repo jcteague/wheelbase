@@ -1,6 +1,6 @@
 # US-70: Warn when a candidate has earnings within the DTE window
 
-<!-- generated:from us-70 -->
+<!-- generated:from us-70,us-98 -->
 
 ## Summary
 
@@ -155,9 +155,18 @@ took — the union does not leak into `src/main/core/`.
   [IPC Handlers](../contracts/ipc-handlers.md).
 - **`fetchNextEarnings`** (was `fetchNextEarningsDates`) — returns
   `Record<ticker, EarningsLookup>` with an entry for **every** requested ticker, and takes
-  a `lookaheadDays` option.
+  a `lookaheadDays` option. **Renamed to `fetchEarningsCalendar` by
+  [US-98](./us-98-ivr-staleness-tiers.md)**, which widened the request to 30 days back and
+  changed the return to `EarningsCalendarRead` — `{ status: 'read', next, last }` or
+  `{ status: 'unavailable' }` — so the _last_ print is selected independently of the next
+  one. Concurrency and failure backoff are unchanged.
 - **`getEarnings(db, tickers, { horizon, now })`** — new read-through store. `horizon` is
   a date, not a day count; the DTE-window conversion happens once, in the screener service.
+  **US-98** made this a projection of a shared `getEarningsCalendar` resolver, which
+  returns `{ next, last }` per ticker. This story's callers are untouched — same signature,
+  same `found`/`none`/`unavailable` semantics, and still one request per ticker.
+  `earnings_date` gained a nullable `last_earnings` column (migration `014`); a cached
+  `next_earnings` that has since passed is also recovered as last-print knowledge.
 
 ## Source files
 

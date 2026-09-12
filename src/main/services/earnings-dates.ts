@@ -127,9 +127,10 @@ function needsRefresh(row: EarningsRow | undefined, horizon: Date, now: Date): b
   return isAfter(now, addHours(parseISO(row.checked_at), refreshIntervalHours(row, now)))
 }
 
-/** Whether a calendar verdict still answers the caller's next-print question. */
-function answersNextPrint(lookup: KnownCalendar, now: Date): boolean {
-  return lookup.next === null || lookup.next >= etDateOf(now)
+/** Whether a next-print date still answers the caller's next-print question. The same
+ *  rule gates a freshly fetched verdict and a stored one, so the two cannot drift. */
+function answersNextPrint(next: string | null, now: Date): boolean {
+  return next === null || next >= etDateOf(now)
 }
 
 /**
@@ -149,17 +150,12 @@ function answersNextPrint(lookup: KnownCalendar, now: Date): boolean {
  * Both fall through to `unavailable`, which is honest and carries the tier-1 demotion.
  */
 function storedVerdict(row: EarningsRow, horizon: Date, now: Date): KnownCalendar | null {
-  if (row.next_earnings === null) {
-    return row.checked_through < etDateOf(horizon)
-      ? null
-      : { status: 'read', next: null, last: row.last_earnings }
-  }
-  const lookup: KnownCalendar = {
-    status: 'read',
-    next: row.next_earnings,
-    last: row.last_earnings
-  }
-  return answersNextPrint(lookup, now) ? lookup : null
+  const answers =
+    row.next_earnings === null
+      ? row.checked_through >= etDateOf(horizon)
+      : answersNextPrint(row.next_earnings, now)
+
+  return answers ? { status: 'read', next: row.next_earnings, last: row.last_earnings } : null
 }
 
 /**
@@ -278,7 +274,7 @@ export async function getEarningsCalendar(
   return new Map(
     requested.map((ticker): [string, EarningsCalendarKnowledge] => {
       const learned = refreshed.get(ticker)
-      if (learned?.status === 'read' && answersNextPrint(learned, now)) {
+      if (learned?.status === 'read' && answersNextPrint(learned.next, now)) {
         return [ticker, { next: nextLookup(learned), last: learned.last }]
       }
 

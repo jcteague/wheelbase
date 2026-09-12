@@ -601,6 +601,43 @@ the `checked_through` semantics that let one row answer two callers' horizons.
 
 <!-- /generated -->
 
+<!-- generated:from us-98 -->
+
+## Migration 014 — `earnings_date.last_earnings`
+
+`migrations/014_add_last_earnings.sql` (introduced by
+[us-98](../features/us-98-ivr-staleness-tiers.md)) adds a single nullable column:
+
+```sql
+ALTER TABLE earnings_date ADD COLUMN last_earnings TEXT;
+```
+
+An additive `ALTER TABLE` on a post-ship table, per the authoring policy above — no
+table rebuild, no backfill, and no change to the refresh cadence. Existing rows keep a
+NULL `last_earnings`, which reads as "no known print" and never as proof that a lookback
+was checked; they are enriched on their next normal refresh. See
+[`schema/tables.md`](./tables.md#earnings_date) for the semantics.
+
+<!-- /generated -->
+
+<!-- generated:from us-98 -->
+
+## Migration 015 — `trading_session`
+
+`migrations/015_create_trading_session.sql` (introduced by
+[us-98](../features/us-98-ivr-staleness-tiers.md)) creates the cached exchange calendar
+behind IV-rank freshness, keyed by `date TEXT PRIMARY KEY` (the Eastern calendar day).
+Follows the keyed-table convention from migration `006`; the runner auto-applies it at
+startup.
+
+The table holds one row per calendar day in the fetched range, **not** one per trading
+day: a NULL `close_at` records "we asked, the exchange was closed". That is what lets
+coverage be derived from the rows themselves, so an unfetched day reads as unknown rather
+than as a closure. No index beyond the primary key — every query is a point lookup or a
+bounded range scan on `date`. See [`schema/tables.md`](./tables.md#trading_session).
+
+<!-- /generated -->
+
 <!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50,us-59 -->
 
 ## See also

@@ -25,6 +25,7 @@ import {
   seedActivePosition,
   setIvrOutcomes
 } from './ivr-helpers'
+import { BASE_DAY, afterCloseOn, sessionsBefore, weekdayCalendar } from './trading-day-fixtures'
 
 // A guaranteed weekend so the trading-day guard treats a closed session as a
 // genuine non-trading day regardless of when the suite runs.
@@ -206,5 +207,71 @@ describe('US-44: IVR collector — scheduling and persistence', () => {
     await page.waitForSelector('text=IVR refresh skipped: market closed on a non-trading day.')
     const rows = await readIvrSnapshots(page)
     expect(rows).toHaveLength(0)
+  })
+
+  // [US-98] The guard now reads the cached exchange calendar instead of the broker's
+  // clock. A weekday holiday is the case the old heuristic got wrong: a missing or
+  // failing broker meant "assume trading day", so the run fetched anyway and its empty
+  // holiday reading overwrote the previous good one.
+  it('AC: A recognised weekday holiday skips collection with no fetch', async () => {
+    dbPath = tmpDb('wb-e2e-ivr-holiday')
+    const holiday = BASE_DAY
+    app = await launchIvrApp(dbPath, {
+      fakeNow: afterCloseOn(holiday),
+      brokerCalendar: weekdayCalendar([holiday])
+    })
+    const page = await getPage(app)
+
+    await seedActivePosition(page, 'SPY')
+    // A successful outcome is programmed on purpose: any fetch at all would persist.
+    await setIvrOutcomes(page, {
+      SPY: okOutcome('SPY', { ivr: 99, observedAt: afterCloseOn(holiday) })
+    })
+
+    const batch = await collectIvrNow(page)
+
+    expect(batch.skippedReason).toBe('market_closed')
+    expect(batch.successCount).toBe(0)
+    expect(await readIvrSnapshots(page)).toHaveLength(0)
+  })
+
+  it('AC: The holiday guard still holds with no broker configured', async () => {
+    dbPath = tmpDb('wb-e2e-ivr-holiday-brokerless')
+    const holiday = BASE_DAY
+    const openDay = sessionsBefore(holiday, 1)
+    const calendar = weekdayCalendar([holiday])
+
+    // Run once with a broker, on an open day, purely to populate the calendar cache —
+    // the collector is the only thing that refreshes it.
+    app = await launchIvrApp(dbPath, {
+      fakeNow: afterCloseOn(openDay),
+      brokerCalendar: calendar
+    })
+    let page = await getPage(app)
+    await seedActivePosition(page, 'SPY')
+    await setIvrOutcomes(page, {
+      SPY: okOutcome('SPY', { ivr: 55, observedAt: afterCloseOn(openDay) })
+    })
+    expect((await collectIvrNow(page)).successCount).toBe(1)
+
+    // Now the same database with no credentials at all: nothing can refresh the
+    // calendar, but what is already cached is enough to recognise the closure.
+    await app.close()
+    app = await launchIvrApp(dbPath, {
+      fakeNow: afterCloseOn(holiday),
+      withoutBrokerCredentials: true
+    })
+    page = await getPage(app)
+    await setIvrOutcomes(page, {
+      SPY: okOutcome('SPY', { ivr: 99, observedAt: afterCloseOn(holiday) })
+    })
+
+    const batch = await collectIvrNow(page)
+
+    expect(batch.skippedReason).toBe('market_closed')
+    expect(batch.successCount).toBe(0)
+    // The open day's reading survives — the holiday run never overwrote it.
+    const rows = await readIvrSnapshots(page)
+    expect(rows.map((row) => row.ivr)).toEqual(['55.0'])
   })
 })

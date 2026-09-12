@@ -8,12 +8,12 @@
 // fixtures — nothing stubs the IPC — so the spec proves the renderer formats what
 // the screener actually emits.
 import type { ElectronApplication, Page } from 'playwright'
-import { addDays, format } from 'date-fns'
+import { addDays, format, parseISO } from 'date-fns'
 import { getPage, launchElectron, type MarketStatusFixture } from './assignment-helpers'
 import {
   buildIvrLaunchEnv,
   collectIvrNow,
-  DEFAULT_FAKE_NOW,
+  FAKE_NOW_DAY,
   fakeNowAt,
   okOutcome,
   seedWatchlist,
@@ -22,7 +22,7 @@ import {
 
 /** Every fixture quote carries the same stamp so `quoteTimestamp` (the newest ranked
  *  strike's timestamp) is deterministic for the stale-caption assertion. Pinned to the
- *  fixture day rather than a fixed date — see DEFAULT_FAKE_NOW. */
+ *  fixture day rather than a fixed date — see FAKE_NOW_DAY. */
 export const QUOTE_TIMESTAMP = fakeNowAt('20:00:02Z')
 
 /** When the fake IVR scrape is recorded as having happened. Display never shows it;
@@ -50,8 +50,10 @@ export type PutFixtureSpec = {
  *  the provenance strip visibly changes once the fresh quote lands. */
 export const FRESH_QUOTE_TIMESTAMP = fakeNowAt('20:11:40Z')
 
+/** A calendar day relative to the fixture day the screener's fake clock runs on —
+ *  the offline counterpart of `localDate`, which is anchored to the real clock. */
 export function screenerDate(offsetDays: number): string {
-  return format(addDays(new Date(DEFAULT_FAKE_NOW), offsetDays), 'yyyy-MM-dd')
+  return format(addDays(parseISO(FAKE_NOW_DAY), offsetDays), 'yyyy-MM-dd')
 }
 
 // ── Canonical fixtures ────────────────────────────────────────────────────────
@@ -62,7 +64,7 @@ export function screenerDate(offsetDays: number): string {
 // score = annualized / |delta|.
 
 /** mid 0.95 / 60 = 1.58% period, 15.62%/yr over 37 DTE, ÷ 0.22 ⇒ score 0.71 (rank 1). */
-const KO_PUT: PutFixtureSpec = {
+export const KO_PUT: PutFixtureSpec = {
   ticker: 'KO',
   strike: 60,
   bid: '0.92',
@@ -243,6 +245,20 @@ function assertIvrTickersCollectible(tickers: string[], fixtureTickers: string[]
 }
 
 /**
+ * [US-98] An IV rank to persist. A bare number is collected "just now" — the case every
+ * spec that is not about staleness wants. Supplying `observedAt` is how a spec ages a
+ * reading: the collector stores the timestamp verbatim, so the freshness engine counts
+ * real sessions between it and the clock. See `e2e/trading-day-fixtures.ts`.
+ */
+export type IvrFixture = number | { ivr: number; observedAt: string }
+
+function ivrOutcomeFor(ticker: string, fixture: IvrFixture): ReturnType<typeof okOutcome> {
+  return typeof fixture === 'number'
+    ? okOutcome(ticker, { ivr: fixture, observedAt: IVR_OBSERVED_AT })
+    : okOutcome(ticker, fixture)
+}
+
+/**
  * Persist an IVR snapshot per ticker through the real collector. [US-97] The collector
  * targets the union of open positions and the watchlist, and `launchScreener` has
  * already seeded these tickers onto the watchlist — so the bench names are collected
@@ -250,19 +266,14 @@ function assertIvrTickersCollectible(tickers: string[], fixtureTickers: string[]
  */
 async function seedIvr(
   page: Page,
-  ivr: Record<string, number>,
+  ivr: Record<string, IvrFixture>,
   fixtureTickers: string[]
 ): Promise<void> {
   const tickers = Object.keys(ivr)
   assertIvrTickersCollectible(tickers, fixtureTickers)
   await setIvrOutcomes(
     page,
-    Object.fromEntries(
-      tickers.map((ticker) => [
-        ticker,
-        okOutcome(ticker, { ivr: ivr[ticker], observedAt: IVR_OBSERVED_AT })
-      ])
-    )
+    Object.fromEntries(tickers.map((ticker) => [ticker, ivrOutcomeFor(ticker, ivr[ticker])]))
   )
   const batch = await collectIvrNow(page)
   if (batch.successCount !== tickers.length) {
@@ -288,7 +299,13 @@ export type ScreenerLaunchOpts = {
    *  Defaults to the three ranking fixtures. */
   fixtures?: PutFixtureSpec[]
   /** IV ranks to persist, keyed by ticker. Tickers omitted here render `n/a`. */
-  ivr?: Record<string, number>
+  ivr?: Record<string, IvrFixture>
+  /** [US-98] The instant the shared fake clock starts at — what the collector treats as
+   *  "now" and what the screener ages readings against. Defaults to DEFAULT_FAKE_NOW. */
+  fakeNow?: string
+  /** [US-98] The exchange calendar the fake broker publishes. Omit and every weekday in
+   *  range is a normal session; supply one to make a specific day a recognised closure. */
+  brokerCalendar?: Array<{ date: string; close: string }>
   /** Underlying quotes, keyed by ticker. Only read once a price ceiling is set. */
   stockQuotes?: Record<string, StockQuoteFixture>
   marketStatus?: MarketStatusFixture
@@ -311,19 +328,35 @@ export type ScreenerLaunchOpts = {
 
 /** [US-70] An earnings date as a day offset from today, so a fixture lands the same
  *  number of days out on any run date — the same technique as `dteOffset`. `null` is
- *  a failed request for that ticker. */
-export type EarningsFixture = { dayOffset: number } | null
+ *  a failed request for that ticker.
+ *
+ *  [US-98] `{ next, last }` states both sides explicitly, for the specs that care which
+ *  side of an observation a print fell on. `dayOffset` cannot express that: it is one
+ *  date the fake reads as answering whichever side of today it lands on. */
+export type EarningsFixture =
+  | { dayOffset: number }
+  | { next: string | null; last: string | null }
+  | null
 
 /** Day offsets → the `EarningsLookup` record the fake calendar reads. */
+type EarningsFeedFixture =
+  | { status: 'found'; date: string }
+  | { status: 'read'; next: string | null; last: string | null }
+  | { status: 'unavailable' }
+
+function toFeedFixture(fixture: EarningsFixture): EarningsFeedFixture {
+  if (fixture === null) return { status: 'unavailable' }
+  if ('dayOffset' in fixture) return { status: 'found', date: screenerDate(fixture.dayOffset) }
+  return { status: 'read', next: fixture.next, last: fixture.last }
+}
+
 function buildEarningsFixtures(
   byTicker: Record<string, EarningsFixture>
-): Record<string, { status: 'found'; date: string } | { status: 'unavailable' }> {
+): Record<string, EarningsFeedFixture> {
   return Object.fromEntries(
     Object.entries(byTicker).map(([ticker, fixture]) => [
       ticker.toUpperCase(),
-      fixture === null
-        ? ({ status: 'unavailable' } as const)
-        : ({ status: 'found', date: screenerDate(fixture.dayOffset) } as const)
+      toFeedFixture(fixture)
     ])
   )
 }
@@ -389,7 +422,9 @@ function screenerLaunchEnv(dbPath: string, opts: ScreenerLaunchOpts): Record<str
   const fixtures = opts.fixtures ?? RANKED_PUTS
   const env = buildIvrLaunchEnv(dbPath, {
     marketStatus: opts.marketStatus,
-    withoutBrokerCredentials: opts.withoutBrokerCredentials
+    withoutBrokerCredentials: opts.withoutBrokerCredentials,
+    fakeNow: opts.fakeNow,
+    brokerCalendar: opts.brokerCalendar
   })
   env.WHEELBASE_MOCK_OPTION_SNAPSHOTS = JSON.stringify(buildPutFixtures(fixtures))
   if (opts.stockQuotes) env.WHEELBASE_MOCK_STOCK_QUOTES = JSON.stringify(opts.stockQuotes)
@@ -444,6 +479,16 @@ export async function relaunchScreener(
   await goToScreener(page)
 
   return { app: relaunched, page }
+}
+
+/**
+ * [US-98] Re-mount the screener against the same running app, so the next screen runs
+ * at the shared fake clock's current value. Used by the specs that move the clock after
+ * seeding — a hash that is already `#/screener` would not remount on its own.
+ */
+export async function reloadScreener(page: Page): Promise<void> {
+  await page.reload()
+  await page.waitForSelector('h1:has-text("Screener")')
 }
 
 // ── Page queries ──────────────────────────────────────────────────────────────

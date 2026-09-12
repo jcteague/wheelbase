@@ -1,6 +1,6 @@
 # US-67: Configure screening criteria
 
-<!-- generated:from us-67, us-97 -->
+<!-- generated:from us-67, us-97, us-98 -->
 
 ## Summary
 
@@ -172,6 +172,10 @@ IPC — never a direct `app_settings` write.
   visible without enforcing a threshold the story never defined.
 - **Rejected:** a hover tooltip (a staleness signal invisible until hovered, and to keyboard users);
   tinting past a staleness cutoff (invents a threshold, and a wrong one silently re-filters results).
+- **Superseded by [US-98](./us-98-ivr-staleness-tiers.md).** The permanent `(Aug 7)` suffix in the
+  screener's IVR column is gone: the threshold this ADR declined to invent now exists, so the cell
+  shows a trading-day age qualifier instead and keeps the observation date in a tooltip. The
+  `iv_rank_floor` exclusion reason's date stamp is unchanged.
 
 ### Bound predicates fail closed against `decimal.js`
 
@@ -336,6 +340,20 @@ underlyings, so a watchlist-only candidate _always_ read `null` and the floor co
 in practice. Now that collection covers the watchlist, a bench name with a thin IVR does drop out of
 the ranked list when the floor is enabled — the intended behaviour, and covered by a US-97
 acceptance criterion. The guard itself is unchanged.
+
+## Update: the floor sees only readings fresh enough to trust (US-98)
+
+<!-- from us-98 -->
+
+The guard is still `ctx.ivRank !== null`, but the service now decides what the engine gets to see.
+[US-98](./us-98-ivr-staleness-tiers.md) ages every reading against completed exchange sessions and
+feeds `screenTicker` only the `fresh` and `aging` ones — so a stale, expired or earnings-invalidated
+reading reaches the engine as `null` and passes the floor exactly as a never-collected ticker does.
+
+This extends the ADR above rather than contradicting it: a reading the app cannot vouch for is a gap
+in the data, not a low reading, so converting it into a trading verdict would be the same mistake.
+The trader still sees the number — muted, with its age — on the ranked row. Rank order and
+`yieldPerDelta` are identical whether a candidate's IVR is stale, expired or absent.
 
 <!-- /generated -->
 
