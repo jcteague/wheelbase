@@ -1,0 +1,4 @@
+@import '../../src/renderer/src/index.css';
+
+@source '../../mockups';
+@source '../../src/renderer/src/components';

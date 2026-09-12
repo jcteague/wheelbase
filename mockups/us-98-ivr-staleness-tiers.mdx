@@ -1,0 +1,668 @@
+---
+title: 'US-98: IVR Freshness Ring'
+story: 'As a wheel trader, I want an IV rank to show how old it is, and to stop counting as met once it is too old, so a stale-rich reading never sells me premium that is not there.'
+states: ['fresh', 'aging', 'stale', 'expired', 'earnings', 'floor']
+---
+
+import { useState } from 'react'
+
+# US-98: IVR Freshness Ring
+
+_As a wheel trader, I want an IV rank to show how old it is, and to stop counting as met once it is too old, so a stale-rich reading never sells me premium that is not there._
+
+> **Surfaces covered:** the treatment has no screen of its own — it lands in the **IVR cell** of the US-66 screener results row and the US-96 watchlist row, and in the watchlist **Signal** chip. Both surfaces are shown together so one verdict is visibly shared. The age is carried by a small **ring** beside the number. The ring is full when the reading is fresh and empties a quarter at a time as the reading ages; hovering it opens a tooltip that says exactly what the state means. The KO tooltip is pinned open in every state so the copy can be reviewed without hovering — hover any other ring to see the live behaviour.
+
+## Acceptance Criteria States
+
+- **fresh** — 0 trading days old. Full green ring. `58` renders as today. Signal `Entry ready`.
+- **aging** — 2 trading days old. Ring three-quarters full. `58` keeps its color and still meets `IVR ≥ 40`.
+- **stale** — 6 trading days old. Ring half full, muted number. Cannot satisfy `IVR ≥ 40`; Signal `IV too old`. KO still ranks in the screener.
+- **expired** — 12 trading days old. The cell reads `exp` beside a quarter ring. Signal `IV unknown`. `exp` with a quarter ring means a reading existed and aged out (a collection-health hint); MSFT's `n/a` with no ring means nothing was ever collected. Both are unusable and behave identically in the engine.
+- **earnings** — 1 trading day old but KO reported between observation and now. The ring is drawn empty in gold: unusable regardless of age. Signal `IV too old`.
+- **floor** — IV-rank floor of 50 active. Stale KO `22` is not excluded; fresh AAPL `44` is.
+
+Ring fill is a step function of the tier, not of the raw day count — a two-day-old and a three-day-old reading look the same, because they are treated the same. Colors, fonts, and chrome use the app's `--wb-*` tokens; the tooltip mirrors the shadcn `Tooltip` primitive (`src/renderer/src/components/ui/tooltip.tsx`).
+
+---
+
+export const T = {
+  base: 'var(--wb-bg-base)',
+  surface: 'var(--wb-bg-surface)',
+  elevated: 'var(--wb-bg-elevated)',
+  hover: 'var(--wb-bg-hover)',
+  border: 'var(--wb-border)',
+  borderSub: 'var(--wb-border-subtle)',
+  text: 'var(--wb-text-primary)',
+  text2: 'var(--wb-text-secondary)',
+  muted: 'var(--wb-text-muted)',
+  gold: 'var(--wb-gold)',
+  goldDim: 'var(--wb-gold-dim)',
+  goldBorder: 'var(--wb-gold-border)',
+  goldSub: 'var(--wb-gold-subtle)',
+  green: 'var(--wb-green)',
+  greenDim: 'var(--wb-green-dim)',
+  greenBorder: 'var(--wb-green-border)',
+  red: 'var(--wb-red)',
+  redDim: 'var(--wb-red-dim)',
+  mono: 'var(--font-wb-mono)',
+  r: 6
+}
+
+export const STATES = ['fresh', 'aging', 'stale', 'expired', 'earnings', 'floor']
+
+export const SCENARIOS = {
+  fresh: { obs: 4, now: 8, er: null, value: 58, floor: null, note: 'Friday’s close viewed Tuesday morning after Labor Day: 0 trading days old. Full ring, no other change to the row.' },
+  aging: { obs: 4, now: 10, er: null, value: 58, floor: null, note: 'Two closes have passed. The ring loses a quarter; the number keeps its color and still counts toward conditions and the floor.' },
+  stale: { obs: 4, now: 16, er: null, value: 58, floor: null, note: 'Six closes have passed. Half ring, muted number. The reading is an unknown: it cannot satisfy IVR ≥ 40 and the Signal says so. The screener still ranks KO.' },
+  expired: { obs: 4, now: 24, er: null, value: 58, floor: null, note: 'Twelve closes have passed. The value is gone — exp — and only a quarter ring remains to say the collector has been failing for KO. MSFT, never collected, reads n/a with no ring at all.' },
+  earnings: { obs: 2, now: 4, er: 3, value: 62, floor: null, note: 'Observed Wed Sep 2 at the close; KO reported Thu Sep 3. One trading day old, but the print sits between observation and now, so the ring is drawn empty in gold and the reading is unusable.' },
+  floor: { obs: 4, now: 16, er: null, value: 22, floor: 50, note: 'Screening criteria set an IV-rank floor of 50. KO’s stale 22 is treated as absent and stays ranked; AAPL’s fresh 44 is excluded by the same floor.' }
+}
+
+export const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+export function dow(day) {
+  // September 2026: the 1st is a Tuesday.
+  return (day + 1) % 7
+}
+
+export function isTradingDay(day) {
+  // Weekends plus Labor Day (Sep 7) are the only non-sessions in the window.
+  const d = dow(day)
+  return d !== 0 && d !== 6 && day !== 7
+}
+
+export function ageOf(s) {
+  // Session closes strictly after the observed session and at or before now.
+  // Now is mid-session, so today's close is not counted.
+  let n = 0
+  for (let d = s.obs + 1; d < s.now; d++) if (isTradingDay(d)) n += 1
+  return n
+}
+
+export function tierOf(age, predates) {
+  if (predates) return 'earnings'
+  if (age <= 1) return 'fresh'
+  if (age <= 3) return 'aging'
+  if (age <= 10) return 'stale'
+  return 'expired'
+}
+
+export function readingOf(s) {
+  const age = ageOf(s)
+  const predates = s.er != null && s.er > s.obs && s.er <= s.now
+  const tier = tierOf(age, predates)
+  return {
+    value: s.value,
+    age,
+    tier,
+    usable: tier === 'fresh' || tier === 'aging',
+    observed: DOW[dow(s.obs)] + ' Sep ' + s.obs,
+    erLabel: predates ? DOW[dow(s.er)] + ' Sep ' + s.er : null
+  }
+}
+
+export const FILL = { fresh: 1, aging: 0.75, stale: 0.5, expired: 0.25, earnings: 0 }
+
+export function ringColor(tier) {
+  if (tier === 'fresh') return T.green
+  if (tier === 'aging') return T.text2
+  if (tier === 'earnings') return T.gold
+  return T.muted
+}
+
+export function Ring({ tier, size }) {
+  const px = size ?? 14
+  const stroke = 2.25
+  const r = (px - stroke) / 2
+  const c = 2 * Math.PI * r
+  const frac = FILL[tier]
+  const color = ringColor(tier)
+  return (
+    <svg width={px} height={px} viewBox={`0 0 ${px} ${px}`} style={{ display: 'block', flexShrink: 0 }} aria-hidden="true">
+      <circle cx={px / 2} cy={px / 2} r={r} fill="none" stroke={tier === 'earnings' ? T.gold : T.border} strokeWidth={stroke} strokeOpacity={tier === 'earnings' ? 0.45 : 1} />
+      {frac > 0 ? (
+        <circle
+          cx={px / 2}
+          cy={px / 2}
+          r={r}
+          fill="none"
+          stroke={color}
+          strokeWidth={stroke}
+          strokeLinecap="butt"
+          strokeDasharray={`${frac * c} ${c}`}
+          transform={`rotate(-90 ${px / 2} ${px / 2})`}
+        />
+      ) : null}
+      {tier === 'earnings' ? <circle cx={px / 2} cy={px / 2} r={1.6} fill={T.gold} /> : null}
+    </svg>
+  )
+}
+
+export function tooltipCopy(ticker, reading) {
+  const days = reading.age === 1 ? '1 trading day' : reading.age + ' trading days'
+  if (reading.tier === 'earnings') {
+    return {
+      title: 'Predates earnings',
+      body: `Observed ${reading.observed} at the close. ${ticker} reported earnings ${reading.erLabel}, after that reading. IV re-prices through a print, so this reading is unusable regardless of age — it cannot satisfy an IV condition or the IV-rank floor.`
+    }
+  }
+  if (reading.tier === 'expired') {
+    return {
+      title: 'Expired',
+      body: `Last reading ${days} ago (${reading.observed}). Treated as no reading: shows exp, never decides a condition, never applies the IV-rank floor. Age this old means collection has been failing for ${ticker}.`
+    }
+  }
+  if (reading.tier === 'stale') {
+    return {
+      title: 'Stale',
+      body: `IV rank ${reading.value}, observed ${reading.observed} — ${days} old. Too old to trust: shown for context but cannot satisfy an IV condition or the IV-rank floor. ${ticker} still ranks on yield-per-delta.`
+    }
+  }
+  if (reading.tier === 'aging') {
+    return {
+      title: 'Aging',
+      body: `IV rank ${reading.value}, observed ${reading.observed} — ${days} old. Still decision-usable and still counts toward conditions and the floor; expect it to have drifted a few points.`
+    }
+  }
+  return {
+    title: 'Fresh',
+    body: `IV rank ${reading.value}, observed ${reading.observed} at the close — ${days} old. Current as of the last session close.`
+  }
+}
+
+export function Tooltip({ title, body, tier, pinned }) {
+  const accent = ringColor(tier)
+  return (
+    <div
+      role="tooltip"
+      style={{
+        position: 'absolute',
+        right: 0,
+        bottom: 'calc(100% + 8px)',
+        width: 250,
+        zIndex: 5,
+        background: T.elevated,
+        border: `1px solid ${T.border}`,
+        borderRadius: T.r,
+        padding: '8px 10px 9px',
+        boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+        textAlign: 'left'
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5 }}>
+        <Ring tier={tier} size={12} />
+        <span style={{ fontFamily: T.mono, fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: accent }}>{title}</span>
+        {pinned ? <span style={{ marginLeft: 'auto', fontFamily: T.mono, fontSize: '0.56rem', color: T.muted, letterSpacing: '0.06em' }}>PINNED FOR REVIEW</span> : null}
+      </div>
+      <div style={{ fontSize: '0.72rem', lineHeight: 1.5, color: T.text2 }}>{body}</div>
+      <span
+        style={{
+          position: 'absolute',
+          right: 4,
+          bottom: -5,
+          width: 8,
+          height: 8,
+          background: T.elevated,
+          borderRight: `1px solid ${T.border}`,
+          borderBottom: `1px solid ${T.border}`,
+          transform: 'rotate(45deg)'
+        }}
+      />
+    </div>
+  )
+}
+
+export function IvrCell({ ticker, reading, baseColor, size, pinned }) {
+  // The shared cell. baseColor is the surface's own color for a usable value:
+  // T.text on the screener, the threshold color on the watchlist.
+  const [hover, setHover] = useState(false)
+  const numeral = { fontFamily: T.mono, fontSize: size ?? '0.8125rem', fontWeight: 600, lineHeight: 1 }
+  if (reading == null) {
+    return (
+      <div style={{ ...numeral, color: T.muted, fontWeight: 400, textAlign: 'right' }} title="No IV rank collected">
+        n/a
+      </div>
+    )
+  }
+  const expired = reading.tier === 'expired'
+  const color = reading.usable ? baseColor : T.muted
+  const tip = tooltipCopy(ticker, reading)
+  const open = pinned || hover
+  return (
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 7, width: '100%', cursor: 'default' }}
+    >
+      <span style={{ ...numeral, color, fontWeight: expired ? 400 : 600 }}>{expired ? 'exp' : reading.value}</span>
+      <Ring tier={reading.tier} />
+      {open ? <Tooltip title={tip.title} body={tip.body} tier={reading.tier} pinned={pinned && !hover} /> : null}
+    </div>
+  )
+}
+
+export function SectionLabel({ children, style }) {
+  return (
+    <div style={{ fontFamily: T.mono, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.12em', color: T.muted, ...style }}>
+      {children}
+    </div>
+  )
+}
+
+export function MarketPill() {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        borderRadius: 10,
+        border: `1px solid ${T.greenBorder}`,
+        background: T.greenDim,
+        padding: '2px 8px 2px 6px',
+        fontFamily: T.mono,
+        fontSize: '0.6rem',
+        fontWeight: 700,
+        letterSpacing: '0.1em',
+        color: T.green
+      }}
+    >
+      <span style={{ width: 6, height: 6, borderRadius: 999, background: T.green, flexShrink: 0 }} />
+      LIVE
+    </span>
+  )
+}
+
+export function Panel({ label, right, children }) {
+  return (
+    <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, background: T.base, boxShadow: '0 20px 60px rgba(0,0,0,0.35)' }}>
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 20px',
+          borderBottom: `1px solid ${T.border}`,
+          background: T.surface,
+          borderRadius: '10px 10px 0 0'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <SectionLabel>{label}</SectionLabel>
+          {right}
+        </div>
+        <MarketPill />
+      </header>
+      <div style={{ padding: '110px 20px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>{children}</div>
+    </div>
+  )
+}
+
+export function GridHeader({ cols, template, gap }) {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: template,
+        gap,
+        padding: '10px 16px',
+        borderBottom: `1px solid ${T.border}`,
+        borderRadius: `${T.r}px ${T.r}px 0 0`
+      }}
+    >
+      {cols.map((c) => (
+        <div key={c.key} style={{ fontFamily: T.mono, fontSize: '0.62rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: T.muted, textAlign: c.align }}>
+          {c.label}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export const SCREENER_COLS = [
+  { key: 'rank', label: '#', w: '36px', align: 'left' },
+  { key: 'ticker', label: 'Ticker', w: '1fr', align: 'left' },
+  { key: 'strike', label: 'Strike', w: '0.8fr', align: 'right' },
+  { key: 'exp', label: 'Exp', w: '0.9fr', align: 'right' },
+  { key: 'dte', label: 'DTE', w: '54px', align: 'right' },
+  { key: 'mark', label: 'Mark', w: '0.8fr', align: 'right' },
+  { key: 'ann', label: 'Ann.', w: '0.9fr', align: 'right' },
+  { key: 'delta', label: 'Δ', w: '0.6fr', align: 'right' },
+  { key: 'ivr', label: 'IVR', w: '0.9fr', align: 'right' },
+  { key: 'score', label: 'Score', w: '0.7fr', align: 'right' },
+  { key: 'promote', label: '', w: '96px', align: 'right' }
+]
+
+export const SCREENER_TEMPLATE = SCREENER_COLS.map((c) => c.w).join(' ')
+
+export const FRESH_AAPL = { value: 44, age: 0, tier: 'fresh', usable: true, observed: 'Fri Sep 4', erLabel: null }
+
+export const SCREENER_ROWS = [
+  { ticker: 'KO', strike: 60, exp: 'Oct 16', dte: 38, mark: 0.95, ann: '15.2%/yr', delta: 0.22, score: '0.69' },
+  { ticker: 'AAPL', strike: 180, exp: 'Oct 16', dte: 38, mark: 2.7, ann: '14.4%/yr', delta: 0.28, score: '0.51' },
+  { ticker: 'MSFT', strike: 410, exp: 'Oct 23', dte: 45, mark: 6.2, ann: '12.3%/yr', delta: 0.25, score: '0.49' }
+]
+
+export function money(n) {
+  return '$' + n.toFixed(2)
+}
+
+export function ScreenerTable({ koReading, floor }) {
+  const readings = { KO: koReading, AAPL: FRESH_AAPL, MSFT: null }
+  const excluded = floor != null ? SCREENER_ROWS.filter((r) => {
+    const rd = readings[r.ticker]
+    return rd != null && rd.usable && rd.value < floor
+  }) : []
+  const ranked = SCREENER_ROWS.filter((r) => !excluded.includes(r))
+  const cell = { fontFamily: T.mono, fontSize: '0.8125rem', color: T.text, textAlign: 'right' }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ border: `1px solid ${T.border}`, borderRadius: T.r, background: T.surface }}>
+        <GridHeader cols={SCREENER_COLS} template={SCREENER_TEMPLATE} gap={12} />
+        {ranked.map((row, i) => (
+          <div
+            key={row.ticker}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: SCREENER_TEMPLATE,
+              gap: 12,
+              alignItems: 'center',
+              padding: '12px 16px',
+              borderTop: i === 0 ? 'none' : `1px solid ${T.borderSub}`,
+              background: row.ticker === 'KO' ? T.hover : 'transparent',
+              borderRadius: i === ranked.length - 1 ? `0 0 ${T.r}px ${T.r}px` : 0
+            }}
+          >
+            <div>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 20,
+                  height: 20,
+                  borderRadius: 5,
+                  background: T.goldDim,
+                  color: T.gold,
+                  fontFamily: T.mono,
+                  fontSize: '0.68rem',
+                  fontWeight: 700
+                }}
+              >
+                {i + 1}
+              </span>
+            </div>
+            <span style={{ fontFamily: T.mono, fontWeight: 700, fontSize: '0.85rem', color: T.gold, letterSpacing: '0.02em' }}>{row.ticker}</span>
+            <div style={cell}>{money(row.strike)}</div>
+            <div style={{ ...cell, color: T.text2 }}>{row.exp}</div>
+            <div style={{ ...cell, color: T.text2 }}>{row.dte}d</div>
+            <div style={cell}>{money(row.mark)}</div>
+            <div style={{ ...cell, color: T.green, fontWeight: 600 }}>{row.ann}</div>
+            <div style={cell}>{row.delta.toFixed(2)}</div>
+            <IvrCell ticker={row.ticker} reading={readings[row.ticker]} baseColor={T.text} pinned={row.ticker === 'KO'} />
+            <div style={{ ...cell, color: T.text2 }}>{row.score}</div>
+            <div style={{ textAlign: 'right' }}>
+              <button
+                style={{
+                  padding: '5px 10px',
+                  borderRadius: T.r,
+                  border: `1px solid ${T.goldBorder}`,
+                  background: 'transparent',
+                  color: T.gold,
+                  fontFamily: T.mono,
+                  fontSize: '0.68rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                Promote →
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {excluded.length > 0 ? (
+        <div style={{ border: `1px solid ${T.border}`, borderRadius: T.r, background: T.surface }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: `1px solid ${T.border}` }}>
+            <SectionLabel>Excluded ({excluded.length})</SectionLabel>
+            <span style={{ fontFamily: T.mono, fontSize: '0.72rem', color: T.muted }}>▾</span>
+          </div>
+          {excluded.map((e) => (
+            <div key={e.ticker} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px' }}>
+              <span style={{ fontFamily: T.mono, fontWeight: 700, fontSize: '0.8rem', color: T.text2, width: 60 }}>{e.ticker}</span>
+              <span
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: '0.72rem',
+                  color: T.muted,
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  background: T.redDim,
+                  border: '1px solid rgba(248,113,113,0.25)'
+                }}
+              >
+                IV rank {readings[e.ticker].value} (Sep 8) below {floor}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+export function FloorChip({ floor }) {
+  return (
+    <span style={{ fontFamily: T.mono, fontSize: '0.62rem', color: T.text2, border: `1px solid ${T.borderSub}`, borderRadius: 4, padding: '1px 7px', letterSpacing: '0.02em' }}>
+      {floor == null ? 'IVR floor off' : 'IVR floor ≥ ' + floor}
+    </span>
+  )
+}
+
+export const WATCH_COLS = [
+  { key: 'ticker', label: 'Ticker', w: '84px', align: 'left' },
+  { key: 'signal', label: 'Signal', w: '150px', align: 'left' },
+  { key: 'price', label: 'Price', w: '92px', align: 'right' },
+  { key: 'ivr', label: 'IVR', w: '84px', align: 'right' },
+  { key: 'thesis', label: 'Thesis', w: '1fr', align: 'left' },
+  { key: 'added', label: 'Added', w: '68px', align: 'right' }
+]
+
+export const WATCH_TEMPLATE = WATCH_COLS.map((c) => c.w).join(' ')
+
+export const WATCH_ROWS = [
+  { ticker: 'KO', note: 'Core wheel — always willing to own', added: 'May 11', tags: ['IVR ≥ 40', 'core'], ivrTrigger: 40, price: 68.9, chg1d: 0.3 },
+  { ticker: 'AAPL', note: 'Would own below $170; waiting for IV to lift', added: 'Jul 2', tags: ['≤ $170', 'IVR ≥ 50'], ivrTrigger: 50, price: 178.4, chg1d: 0.8 }
+]
+
+export const FRESH_AAPL_WATCH = { value: 34, age: 0, tier: 'fresh', usable: true, observed: 'Fri Sep 4', erLabel: null }
+
+export function ivrColor(v) {
+  if (v >= 50) return T.green
+  if (v >= 30) return T.gold
+  return T.muted
+}
+
+export function watchSignal(row, reading) {
+  if (row.ticker === 'AAPL') return { label: '4.9% away', tone: 'watching', secondary: 'IV low' }
+  if (reading.tier === 'expired') return { label: 'IV unknown', tone: 'none', secondary: 'no usable reading' }
+  if (reading.tier === 'earnings') return { label: 'IV too old', tone: 'watching', secondary: 'predates ER ' + reading.erLabel.slice(4) }
+  if (reading.tier === 'stale') return { label: 'IV too old', tone: 'watching', secondary: 'reading ' + reading.age + 'd old' }
+  if (reading.value >= row.ivrTrigger) return { label: 'Entry ready', tone: 'ready', secondary: null }
+  return { label: 'IV low', tone: 'watching', secondary: null }
+}
+
+export function SignalChip({ label, tone }) {
+  const color = { ready: T.green, watching: T.text2, caution: T.gold, none: T.muted }[tone]
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '2px 9px',
+        borderRadius: 999,
+        border: `1px solid ${tone === 'none' ? T.border : color}`,
+        color,
+        fontFamily: T.mono,
+        fontSize: '0.68rem',
+        letterSpacing: '0.03em',
+        fontWeight: 600,
+        whiteSpace: 'nowrap'
+      }}
+    >
+      {tone === 'ready' ? <span style={{ width: 6, height: 6, borderRadius: 999, background: T.green }} /> : null}
+      {label}
+    </span>
+  )
+}
+
+export function WatchlistTable({ koReading }) {
+  return (
+    <div style={{ border: `1px solid ${T.border}`, borderRadius: T.r, background: T.surface }}>
+      <GridHeader cols={WATCH_COLS} template={WATCH_TEMPLATE} gap={16} />
+      {WATCH_ROWS.map((row, i) => {
+        const reading = row.ticker === 'KO' ? koReading : FRESH_AAPL_WATCH
+        const s = watchSignal(row, reading)
+        return (
+          <div
+            key={row.ticker}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: WATCH_TEMPLATE,
+              gap: 16,
+              alignItems: 'center',
+              padding: '12px 16px',
+              borderTop: i === 0 ? 'none' : `1px solid ${T.borderSub}`,
+              background: row.ticker === 'KO' ? T.hover : 'transparent',
+              borderRadius: i === WATCH_ROWS.length - 1 ? `0 0 ${T.r}px ${T.r}px` : 0
+            }}
+          >
+            <span style={{ fontFamily: T.mono, fontWeight: 700, fontSize: '0.85rem', color: T.gold, letterSpacing: '0.03em' }}>{row.ticker}</span>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+              <SignalChip label={s.label} tone={s.tone} />
+              {s.secondary ? <span style={{ fontFamily: T.mono, fontSize: '0.64rem', color: T.muted }}>+ {s.secondary}</span> : null}
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontFamily: T.mono, fontSize: '0.8rem', color: T.text }}>{money(row.price)}</div>
+              <div style={{ fontFamily: T.mono, fontSize: '0.66rem', color: T.green, marginTop: 2 }}>▲ {row.chg1d.toFixed(1)}%</div>
+            </div>
+            <IvrCell ticker={row.ticker} reading={reading} baseColor={ivrColor(reading.value)} size="0.82rem" pinned={row.ticker === 'KO'} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={{ fontSize: '0.8125rem', color: T.text2, lineHeight: 1.5 }}>{row.note}</span>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {row.tags.map((t) => (
+                  <span key={t} style={{ fontFamily: T.mono, fontSize: '0.62rem', color: T.text2, border: `1px solid ${T.borderSub}`, borderRadius: 4, padding: '1px 6px', letterSpacing: '0.02em' }}>
+                    {t}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div style={{ fontFamily: T.mono, fontSize: '0.78rem', color: T.muted, textAlign: 'right' }}>{row.added}</div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+export function RingLegend({ active }) {
+  const items = [
+    { tier: 'fresh', label: 'Fresh', range: '0–1 sessions' },
+    { tier: 'aging', label: 'Aging', range: '2–3 sessions' },
+    { tier: 'stale', label: 'Stale', range: '4–10 sessions' },
+    { tier: 'expired', label: 'Expired', range: 'over 10' },
+    { tier: 'earnings', label: 'Predates earnings', range: 'any age' }
+  ]
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {items.map((it) => {
+        const on = it.tier === active
+        return (
+          <div
+            key={it.tier}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 10px',
+              border: `1px solid ${on ? T.gold : T.border}`,
+              background: on ? T.goldSub : T.surface,
+              borderRadius: T.r,
+              opacity: on ? 1 : 0.75
+            }}
+          >
+            <Ring tier={it.tier} size={16} />
+            <span style={{ fontFamily: T.mono, fontSize: '0.68rem', fontWeight: 700, color: on ? T.gold : T.text }}>{it.label}</span>
+            <span style={{ fontFamily: T.mono, fontSize: '0.62rem', color: T.muted }}>{it.range}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+export function Segment({ value, onChange }) {
+  return (
+    <div style={{ display: 'inline-flex', gap: 2, padding: 3, borderRadius: 999, border: `1px solid ${T.border}`, background: T.elevated }}>
+      {STATES.map((s) => {
+        const active = value === s
+        return (
+          <button
+            key={s}
+            onClick={() => onChange(s)}
+            style={{
+              padding: '5px 12px',
+              borderRadius: 999,
+              border: 'none',
+              cursor: 'pointer',
+              fontFamily: T.mono,
+              fontSize: '0.72rem',
+              background: active ? T.goldDim : 'transparent',
+              color: active ? T.gold : T.text2,
+              fontWeight: active ? 700 : 400
+            }}
+          >
+            {s}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [state, setState] = useState('fresh')
+  const scenario = SCENARIOS[state]
+  const reading = readingOf(scenario)
+
+  return (
+    <div style={{ fontFamily: 'inherit', color: T.text, display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <SectionLabel>State</SectionLabel>
+        <Segment value={state} onChange={setState} />
+      </div>
+
+      <RingLegend active={reading.tier} />
+
+      <div style={{ fontFamily: T.mono, fontSize: '0.72rem', color: T.text2, lineHeight: 1.7, padding: '0 4px' }}>{scenario.note}</div>
+
+      <Panel label="Screener · Candidate Results" right={<FloorChip floor={scenario.floor} />}>
+        <ScreenerTable koReading={reading} floor={scenario.floor} />
+      </Panel>
+
+      <Panel label="Watchlist">
+        <WatchlistTable koReading={reading} />
+      </Panel>
+
+      <div style={{ fontFamily: T.mono, fontSize: '0.7rem', color: T.muted, lineHeight: 1.7, padding: '0 4px' }}>
+        The legend row and the pinned KO tooltip are review annotations. In the app the trader sees only the number, the ring,
+        and the tooltip on hover — plus the Signal verdict on the watchlist.
+      </div>
+    </div>
+  )
+}
+
+<Mockup />

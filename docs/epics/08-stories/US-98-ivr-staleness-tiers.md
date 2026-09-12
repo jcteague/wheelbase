@@ -50,26 +50,30 @@ Scenario: An exchange holiday does not age a reading
 Scenario: An aging reading shows its age but stays usable
   Given KO's IV rank of 38.0 was observed 2 trading days ago
   When the trader views the screener results
-  Then the KO row shows an IV rank of 38.0 with an age of 2 days
+  Then the KO row shows an IV rank of 38.0 beside a three-quarter freshness ring
+  And hovering the ring reads "2 trading days old" and says the reading is still usable
 
 Scenario: A stale reading is muted and cannot satisfy an IV condition
   Given KO's IV rank of 58.0 was observed 6 trading days ago
   And KO has the entry condition "IVR >= 50"
   When the trader views the watchlist
-  Then the KO IV rank is shown muted with its age
+  Then the KO IV rank is shown muted beside a half-full freshness ring
+  And hovering the ring reads "6 trading days old" and says it cannot satisfy an IV condition
   And the Signal does not report the IV condition as met
 
-Scenario: An expired reading is indistinguishable from no reading
+Scenario: An expired reading shows "exp" and behaves as no reading
   Given KO's IV rank was observed 12 trading days ago
   When the trader views the screener results
-  Then the KO row shows "n/a" for IV rank
+  Then the KO row shows "exp" for IV rank beside a quarter-full freshness ring
+  And hovering the ring reads "12 trading days old" and says it is treated as no reading
+  And a ticker that was never collected still shows "n/a" with no ring
 
 Scenario: An earnings print invalidates a reading regardless of age
   Given KO's IV rank of 62.0 was observed 1 trading day ago
   And the earnings store records KO's last print as the day after that observation
   When the trader views the screener results
-  Then the KO IV rank is not shown as current
-  And the row explains that the reading predates the earnings report
+  Then the KO IV rank is shown muted beside an empty gold freshness ring
+  And hovering the ring explains that the reading predates the earnings report
 
 Scenario: A print before the observation does not invalidate the reading
   Given KO's IV rank of 62.0 was observed 1 trading day ago
@@ -99,7 +103,7 @@ Scenario: The IV-rank floor is not applied to a stale reading
   When the trader runs the screener
   Then KO is not excluded for its IV rank
   And the KO candidate appears in the ranked results
-  And its IV rank is shown muted with its age
+  And its IV rank is shown muted beside a half-full freshness ring
 
 Scenario: The IV-rank floor is not applied to an expired reading
   Given the screening criteria set an IV-rank floor of 50
@@ -107,7 +111,7 @@ Scenario: The IV-rank floor is not applied to an expired reading
   And KO has a surviving strike within the delta band
   When the trader runs the screener
   Then KO is not excluded for its IV rank
-  And the KO row shows "n/a" for IV rank
+  And the KO row shows "exp" for IV rank
 
 Scenario: Signal refuses to claim entry readiness on an unusable reading
   Given KO's only unmet gate is "IVR >= 40"
@@ -126,14 +130,17 @@ Scenario: Signal refuses to claim entry readiness on an unusable reading
 - This needs the same trading-calendar capability that `docs/epics/06-stories/followup-ivr-trading-day-calendar.md` recommends — the collector's current `isTradingDay` only rejects weekends, so weekday holidays are misclassified. **Build the two together**; a staleness threshold on top of the existing heuristic is wrong every Thanksgiving.
 - Proposed tiers against `ivRank.observedAt` (**validate against real screening habits before building** — see below):
 
-  | Age (trading days) | State   | Behaviour                                                          |
-  | ------------------ | ------- | ------------------------------------------------------------------ |
-  | 0–1                | Fresh   | Show normally                                                      |
-  | 2–3                | Aging   | Show with age; still decision-usable                               |
-  | 4–10               | Stale   | Show muted with age; cannot satisfy an IV condition or Signal gate |
-  | > 10               | Expired | Render `n/a`                                                       |
+  | Age (trading days) | State             | Ring        | Behaviour                                                 |
+  | ------------------ | ----------------- | ----------- | --------------------------------------------------------- |
+  | 0–1                | Fresh             | full        | Show normally                                             |
+  | 2–3                | Aging             | ¾           | Show normally; still decision-usable                      |
+  | 4–10               | Stale             | ½           | Show muted; cannot satisfy an IV condition or Signal gate |
+  | > 10               | Expired           | ¼           | Render `exp` (muted); treated as no reading               |
+  | any                | Predates earnings | empty, gold | Show muted; overrides the time tiers (see below)          |
 
-- **Earnings invalidation overrides the table.** If the ticker's most recent earnings print falls after the reading's session close and at or before now, the reading is unusable regardless of age — rendered muted with an "predates earnings" caption on the watchlist and screener rows. This is the read-path twin of Epic 12's US-91 (flag earnings proximity on IVR display surfaces).
+- **Freshness ring.** A small ring sits beside the IV-rank number on both surfaces. Its fill is a step function of the **tier**, not the raw day count — a two-day-old and a three-day-old reading look the same because they are treated the same. Hovering the ring opens a tooltip naming the tier, the value, the observed session, the age in trading days, and what the reading can and cannot decide. A ticker that was **never collected** shows `n/a` with **no ring**; an **expired** reading shows `exp` with a ¼ ring. The two are deliberately distinguishable — `exp` is the collection-health hint that the scraper has been failing for that ticker — but behave identically in the engine (neither satisfies a condition, neither triggers the floor). Mockup: `mockups/us-98-ivr-staleness-tiers.mdx`.
+
+- **Earnings invalidation overrides the table.** If the ticker's most recent earnings print falls after the reading's session close and at or before now, the reading is unusable regardless of age — rendered muted beside an empty gold ring whose tooltip says the reading predates the earnings report, on both the watchlist and screener rows. This is the read-path twin of Epic 12's US-91 (flag earnings proximity on IVR display surfaces).
 - **The earnings store must learn the last print, not just the next.** US-70's `earnings_date` table (`migrations/013_create_earnings_date.sql`) holds one row per ticker with `next_earnings` only, overwritten on each fetch, so a print that has passed is forgotten — the invalidation question is unanswerable from it today. This story amends the store:
   - **Migration:** add `last_earnings TEXT` (`'YYYY-MM-DD'`, NULL = checked, no print inside the lookback window — positive knowledge, mirroring `next_earnings` NULL). Still one row per ticker, still overwritten; the [earnings-persisted-per-ticker ADR](../../spec/architecture/02-adrs/earnings-persisted-per-ticker.md) shape is unchanged.
   - **Fetcher:** `src/main/integrations/finnhub-earnings.ts` already requests a window of `EARNINGS_LOOKBACK_DAYS` (7) back to 30 ahead, so the past rows are on the wire — but the parser collapses them to a single `{ status: 'found', date }` that is the next date if one exists, else the latest past one, which makes a `found` date ambiguous. Widen the lookback to **30 days** and return `last` and `next` as separate fields (both nullable). 30 days is enough because a reading older than 10 trading days is Expired regardless, so only a print inside roughly the last two calendar weeks can ever change a verdict. One request per ticker as before — no new traffic against the 60 req/min free tier.
@@ -143,7 +150,7 @@ Scenario: Signal refuses to claim entry readiness on an unusable reading
 - **Degradation.** If the store has no row for a ticker or the feed is `unavailable`, the time tiers apply alone and the row must **not** claim the reading survived earnings (no "current through earnings" affirmation — absence of a caption, not a green mark). Per the failure-isolation rule, an earnings-store failure degrades that ticker's verdict, never the run.
 - **The IVR snapshot history cannot substitute.** `ivr_snapshot` stores `iv30`, so an earnings crush would show as a drop between consecutive rows — but a stale reading has, by definition, no newer row to compare against. The earnings calendar is the only source that can catch a print behind a stale reading.
 - **One rule for both surfaces: an unusable reading is an unknown, and an unknown never decides anything.** It cannot satisfy a positive gate (a watchlist `IVR ≥ N` condition, the Signal's "Entry ready"), and it cannot trigger a negative filter (US-67's `iv_rank_floor` exclusion). Concretely, the screener service maps a Stale or Expired reading to `ivRank: null` before the engine sees it, so the floor's existing `applies` guard (`criteria.minIvRank !== null && ctx.ivRank !== null`) skips it — the same path a never-collected ticker already takes under US-65's "a missing IVR never excludes". Fresh and Aging readings reach the engine unchanged and the floor applies to them normally.
-- **Stated consequence of that rule:** a thin bench name that the floor was excluding will _reappear_ in ranked results once its reading ages past the Stale boundary, showing `n/a` or a muted age instead of a number. That is intended — the trader can see the gap, and the age indicator is the collection-health signal called out below. The alternative (excluding on an unknown reading) was considered and rejected because it contradicts "a stale IV rank never blocks a candidate from ranking" and turns a collector outage into an empty screen.
+- **Stated consequence of that rule:** a thin bench name that the floor was excluding will _reappear_ in ranked results once its reading ages past the Stale boundary, showing `exp` or a muted number beside a half ring. That is intended — the trader can see the gap, and the age indicator is the collection-health signal called out below. The alternative (excluding on an unknown reading) was considered and rejected because it contradicts "a stale IV rank never blocks a candidate from ranking" and turns a collector outage into an empty screen.
 - Tiering is a **pure function** of `observedAt` + now + the trading calendar → a state. It belongs in `src/main/core/`, not in a component, so both the screener and the watchlist derive the same verdict.
 - **Two different unreliability flags, don't conflate them.** Epic 12's US-87 introduces a data-completeness flag for an IVR computed on a partial 52-week window. That is a different defect from a stale reading and needs its own treatment in the UI.
 - `observedAt` is the scrape time (`new Date().toISOString()` in the Barchart scraper), not a Barchart-reported observation time. It is an **upper bound** on freshness: if the source ever serves a cached page, `observedAt` looks fresh while the value isn't. Undetectable from our side; worth knowing, not worth engineering around.
@@ -187,4 +194,4 @@ The tier boundaries above are a practitioner's default, not a measured preferenc
 
 ## Mockup
 
-Deferred — the treatment lands inside the existing US-66 ranked-results and US-96 watchlist mockups (age qualifier, muted state, `n/a`, and the Signal's too-old verdict) rather than in a screen of its own. Update both once the tiers are validated.
+`mockups/us-98-ivr-staleness-tiers.mdx` — the KO reading in each tier (`fresh` / `aging` / `stale` / `expired` / `earnings` / `floor`) on both the US-66 screener row and the US-96 watchlist row + Signal, with the freshness ring and its tooltip. The KO tooltip is pinned open for review; the legend row is annotation and does not ship. Fold the cell treatment into the US-66 and US-96 mockups once the tiers are validated.
