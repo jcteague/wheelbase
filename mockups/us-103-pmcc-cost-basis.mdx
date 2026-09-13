@@ -1,0 +1,368 @@
+---
+title: 'US-103: PMCC cost basis'
+story: 'Show what the LEAPS still costs after every short-call credit, roll, and fee — and how close the position is to paying for itself.'
+states: ['entry', 'short-expired', 'new-short', 'short-roll', 'leaps-roll', 'free']
+---
+
+import { useState } from 'react'
+import { FormButton } from '../src/renderer/src/components/ui/FormButton'
+import { SectionCard } from '../src/renderer/src/components/ui/SectionCard'
+import { SummaryRow } from '../src/renderer/src/components/ui/SummaryRow'
+import { Badge } from '../src/renderer/src/components/ui/Badge'
+
+# US-103: PMCC cost basis
+
+Open the **XYZ** PMCC detail page. The **Cost basis** panel sits below the two leg panels from US-101 and reconciles in one line of arithmetic: LEAPS cost to date minus short-call credits to date. Step the lifecycle control to watch it move as each leg event lands — and to watch the effective share cost re-anchor to the new strike after the LEAPS roll.
+
+## Where this appears
+
+- **PMCC detail page** — the Cost basis panel and the per-event history below it.
+- **Positions list** — US-101's "Initial net debit" cell becomes the running **Cost basis** total.
+- Wheel positions are untouched: no PMCC panel, no effective share cost.
+
+## Acceptance Criteria States
+
+- **entry**: the two opening legs give $23.00 per share; the $200.00 credit is listed as open, not as profit.
+- **short-expired**: the credit becomes realized and cost basis does not move.
+- **new-short**: a subsequent short call at $1.80 drops cost basis to $21.20.
+- **short-roll**: a roll at a $0.60 net debit lifts it to $21.80 and posts one net line, not two gross lines.
+- **leaps-roll**: a $2.50 net credit drops it to $19.30, and the effective share cost re-anchors to the new $85.00 strike.
+- **free**: credits exceed the LEAPS cost, so cost basis reads -$0.40 and the position shows as fully paid for.
+
+Prototype controls at the bottom switch between one and three contracts and add US-101's $1.00 per-leg opening fees, covering the quantity and fee criteria.
+
+---
+
+export const SHARES_PER_CONTRACT = 100
+
+export const EVENTS = [
+  {
+    id: 'entry',
+    date: '2026-09-14',
+    leg: 'long',
+    label: 'LEAPS purchase',
+    detail: 'Buy to open · XYZ $80.00 CALL exp 2027-09-17 @ $25.00',
+    perShare: 25.0,
+    fee: 1.0,
+    strikeAfter: 80
+  },
+  {
+    id: 'short-1',
+    date: '2026-09-14',
+    leg: 'short',
+    label: 'Short call #1 credit',
+    detail: 'Sell to open · XYZ $110.00 CALL exp 2026-10-16 @ $2.00',
+    perShare: -2.0,
+    fee: 1.0
+  },
+  {
+    id: 'expire-1',
+    date: '2026-10-16',
+    leg: 'none',
+    label: 'Short call #1 expired worthless',
+    detail: 'Credit realized · cost basis unchanged',
+    perShare: 0
+  },
+  {
+    id: 'short-2',
+    date: '2026-10-19',
+    leg: 'short',
+    label: 'Short call #2 credit',
+    detail: 'Sell to open · XYZ $108.00 CALL exp 2026-11-20 @ $1.80',
+    perShare: -1.8
+  },
+  {
+    id: 'short-roll-1',
+    date: '2026-11-16',
+    leg: 'short',
+    label: 'Short-call roll #1 debit',
+    detail: 'Close $108.00 @ $3.00 → sell XYZ $112.00 CALL exp 2026-12-18 @ $2.40',
+    perShare: 0.6,
+    net: true
+  },
+  {
+    id: 'leaps-roll-1',
+    date: '2026-12-07',
+    leg: 'long',
+    label: 'LEAPS roll #1 credit',
+    detail: 'Close $80.00 @ $26.00 → buy XYZ $85.00 CALL exp 2028-01-21 @ $23.50',
+    perShare: -2.5,
+    net: true,
+    strikeAfter: 85
+  },
+  {
+    id: 'cycles',
+    date: '2027-11-19',
+    leg: 'short',
+    label: 'Short-call cycles #4–#9',
+    detail: 'Six cycles 2026-12-18 → 2027-11-19 · net credits $19.70',
+    perShare: -19.7,
+    net: true
+  }
+]
+
+export const STAGES = [
+  { key: 'entry', step: '1 · Entry', through: 'short-1', openShort: 'XYZ $110.00 CALL exp 2026-10-16', phase: 'LEAPS + short call open' },
+  { key: 'short-expired', step: '2 · Short expired', through: 'expire-1', openShort: null, phase: 'LEAPS open · no short call' },
+  { key: 'new-short', step: '3 · New short call', through: 'short-2', openShort: 'XYZ $108.00 CALL exp 2026-11-20', phase: 'LEAPS + short call open' },
+  { key: 'short-roll', step: '4 · Short-call roll', through: 'short-roll-1', openShort: 'XYZ $112.00 CALL exp 2026-12-18', phase: 'LEAPS + short call open' },
+  { key: 'leaps-roll', step: '5 · LEAPS roll', through: 'leaps-roll-1', openShort: 'XYZ $112.00 CALL exp 2026-12-18', phase: 'LEAPS + short call open' },
+  { key: 'free', step: '6 · Free position', through: 'cycles', openShort: null, phase: 'LEAPS open · no short call' }
+]
+
+export const signed = (value, places) =>
+  `${value < 0 ? '-' : ''}$${Math.abs(value).toFixed(places)}`
+
+export const money = (value) => signed(value, 2)
+
+export const perShareText = (value) => {
+  const rounded = Math.round(value * 100) / 100
+  return Math.abs(value - rounded) < 1e-9 ? signed(value, 2) : signed(value, 4)
+}
+
+export function ledgerThrough(stageKey, contracts, withFees) {
+  const stage = STAGES.find((entry) => entry.key === stageKey)
+  const cut = EVENTS.findIndex((event) => event.id === stage.through)
+  const applied = EVENTS.slice(0, cut + 1)
+  const shares = SHARES_PER_CONTRACT * contracts
+  const fee = (event) => (withFees ? (event.fee ?? 0) : 0)
+
+  const longCost = applied
+    .filter((event) => event.leg === 'long')
+    .reduce((sum, event) => sum + event.perShare * shares + fee(event), 0)
+  const credits = applied
+    .filter((event) => event.leg === 'short')
+    .reduce((sum, event) => sum - event.perShare * shares - fee(event), 0)
+  const strike = applied.reduce((current, event) => event.strikeAfter ?? current, 0)
+  const basis = longCost - credits
+
+  return {
+    stage,
+    applied,
+    shares,
+    longCost,
+    credits,
+    basis,
+    strike,
+    basisPerShare: basis / shares,
+    longCostPerShare: longCost / shares,
+    creditsPerShare: credits / shares,
+    effectiveShareCost: strike + basis / shares,
+    recovered: (credits / longCost) * 100,
+    free: basis <= 0
+  }
+}
+
+export function Mockup() {
+  const [stageKey, setStageKey] = useState('entry')
+  const [contracts, setContracts] = useState(1)
+  const [withFees, setWithFees] = useState(false)
+  const view = ledgerThrough(stageKey, contracts, withFees)
+  const accent = view.free ? 'text-wb-green' : 'text-wb-gold'
+
+  return (
+    <div className="flex flex-col gap-4 font-wb-mono text-wb-text-primary">
+      <div className="relative isolate h-[900px] transform-gpu overflow-hidden rounded-lg border border-wb-border bg-wb-bg-base">
+        <aside className="absolute inset-y-0 left-0 flex w-[200px] flex-col gap-6 border-r border-wb-border bg-wb-bg-surface p-5">
+          <div className="text-lg font-bold tracking-widest text-wb-gold">WHEELBASE</div>
+          <div className="flex flex-col gap-5 text-xs text-wb-text-secondary">
+            <span className="font-semibold text-wb-gold">Positions</span>
+            <span>Management queue</span>
+            <span>Calendar</span>
+            <span>Screener</span>
+            <span>Watchlist</span>
+          </div>
+          <div className="mt-auto text-xs text-wb-text-muted">PAPER ACCOUNT</div>
+        </aside>
+
+        <main className="ml-[200px] h-full overflow-auto">
+          <div className="flex items-start justify-between border-b border-wb-border px-6 py-4">
+            <div>
+              <div className="text-xs text-wb-text-muted">
+                Positions / <span className="text-wb-text-primary">XYZ</span>
+              </div>
+              <h2 className="mt-1 text-xl font-semibold">XYZ</h2>
+              <div className="mt-1 flex items-center gap-2 text-xs text-wb-text-secondary">
+                <Badge>PMCC</Badge>
+                <span>{view.stage.phase}</span>
+                <span className="text-wb-text-muted">· {contracts} contract{contracts > 1 ? 's' : ''}</span>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-[0.65rem] uppercase tracking-[0.1em] text-wb-text-muted">Cost basis</div>
+              <div className={`text-2xl font-semibold ${accent}`}>{perShareText(view.basisPerShare)}</div>
+              <div className="text-xs text-wb-text-secondary">{money(view.basis)} total</div>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-4 p-6">
+            <SectionCard header="Cost basis" headerVariant="emphasized">
+              <div className="grid gap-4 p-4 lg:grid-cols-2">
+                <div className="flex flex-col gap-2 rounded-lg border border-wb-border bg-wb-bg-elevated p-4">
+                  <SummaryRow
+                    label="LEAPS cost to date"
+                    value={`${perShareText(view.longCostPerShare)} / share · ${money(view.longCost)}`}
+                  />
+                  <SummaryRow
+                    label="Short-call credits to date"
+                    value={`-${perShareText(view.creditsPerShare)} / share · -${money(view.credits)}`}
+                  />
+                  <div className="my-1 border-t border-wb-border" />
+                  <SummaryRow
+                    label="= Cost basis"
+                    value={`${perShareText(view.basisPerShare)} / share · ${money(view.basis)}`}
+                    highlight
+                  />
+                  <p className="pt-1 text-[10px] leading-relaxed text-wb-text-muted">
+                    Per-share amounts are per share of contract — {SHARES_PER_CONTRACT} shares × {contracts} contract{contracts > 1 ? 's' : ''}. Recorded fills only; no quote is used.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-2 rounded-lg border border-wb-border bg-wb-bg-elevated p-4">
+                  <SummaryRow
+                    label="Effective share cost if exercised"
+                    value={`${money(view.effectiveShareCost)}`}
+                  />
+                  <p className="text-[10px] leading-relaxed text-wb-text-muted">
+                    ${view.strike.toFixed(2)} LEAPS strike + {perShareText(view.basisPerShare)} basis. What shares would cost through the LEAPS — not a guaranteed breakeven.
+                  </p>
+                  <div className="my-1 border-t border-wb-border" />
+                  <SummaryRow label="Premium recovered" value={`${view.recovered.toFixed(1)}% of LEAPS cost to date`} />
+                  <div className="h-2 overflow-hidden rounded-full bg-wb-bg-base">
+                    <div
+                      className={`h-full rounded-full ${view.free ? 'bg-wb-green' : 'bg-wb-gold'}`}
+                      style={{ width: `${Math.min(100, Math.max(0, view.recovered))}%` }}
+                    />
+                  </div>
+                  {view.free ? (
+                    <p className="pt-1 text-xs text-wb-green">LEAPS fully paid for by credits — the remaining cost basis is negative.</p>
+                  ) : (
+                    <p className="pt-1 text-xs text-wb-text-secondary">
+                      {money(view.basis)} still invested in the LEAPS.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </SectionCard>
+
+            <SectionCard header="Cost-basis history">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px] text-left text-xs">
+                  <thead className="text-[0.65rem] uppercase tracking-[0.1em] text-wb-text-muted">
+                    <tr className="border-b border-wb-border">
+                      <th className="px-4 py-2 font-semibold">Date</th>
+                      <th className="px-4 py-2 font-semibold">Event</th>
+                      <th className="px-4 py-2 text-right font-semibold">Per share</th>
+                      <th className="px-4 py-2 text-right font-semibold">Total</th>
+                      <th className="px-4 py-2 text-right font-semibold">Cost basis after</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {view.applied.map((event, index) => {
+                      const runningBasis = view.applied
+                        .slice(0, index + 1)
+                        .reduce(
+                          (sum, applied) =>
+                            sum + applied.perShare * view.shares + (withFees ? (applied.fee ?? 0) : 0),
+                          0
+                        )
+                      const lastShort = view.applied.map((applied) => applied.leg).lastIndexOf('short')
+                      const isOpenCredit = Boolean(view.stage.openShort) && index === lastShort
+                      return (
+                        <tr key={event.id} className="border-b border-wb-border-subtle align-top">
+                          <td className="px-4 py-3 text-wb-text-secondary">{event.date}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold">{event.label}</span>
+                              {event.net ? <Badge color="#58a6ff">net</Badge> : null}
+                              {event.leg === 'short' ? (
+                                isOpenCredit ? <Badge color="#e6a817">open</Badge> : <Badge color="#3fb950">realized</Badge>
+                              ) : null}
+                            </div>
+                            <div className="mt-1 text-[11px] text-wb-text-muted">{event.detail}</div>
+                            {withFees && event.fee ? (
+                              <div className="mt-1 text-[11px] text-wb-text-muted">Fees {money(event.fee)} on this leg</div>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-3 text-right">{event.perShare === 0 ? '—' : perShareText(event.perShare)}</td>
+                          <td className="px-4 py-3 text-right">
+                            {event.perShare === 0 && !(withFees && event.fee)
+                              ? '—'
+                              : money(event.perShare * view.shares + (withFees ? (event.fee ?? 0) : 0))}
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold">{money(runningBasis)}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="px-4 py-3 text-[11px] leading-relaxed text-wb-text-muted">
+                A roll posts one net line, never separate gross close and open lines. One snapshot is written per leg event, so the chain stays auditable even when an event does not move the basis.
+              </p>
+            </SectionCard>
+
+            <SectionCard header="Positions list · the same number in the row">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[640px] text-left text-xs">
+                  <thead className="text-[0.65rem] uppercase tracking-[0.1em] text-wb-text-muted">
+                    <tr className="border-b border-wb-border">
+                      <th className="px-4 py-2 font-semibold">Ticker</th>
+                      <th className="px-4 py-2 font-semibold">Strategy</th>
+                      <th className="px-4 py-2 font-semibold">Legs</th>
+                      <th className="px-4 py-2 text-right font-semibold">Cost basis</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b border-wb-border-subtle bg-wb-bg-elevated">
+                      <td className="px-4 py-3 font-semibold">XYZ</td>
+                      <td className="px-4 py-3"><Badge>PMCC</Badge></td>
+                      <td className="px-4 py-3 text-wb-text-secondary">
+                        Long ${view.strike.toFixed(2)} · {view.stage.openShort ?? 'no short call open'}
+                      </td>
+                      <td className={`px-4 py-3 text-right font-semibold ${accent}`}>{money(view.basis)}</td>
+                    </tr>
+                    <tr className="border-b border-wb-border-subtle">
+                      <td className="px-4 py-3 font-semibold">ACME</td>
+                      <td className="px-4 py-3"><Badge color="#2dd4bf">WHEEL</Badge></td>
+                      <td className="px-4 py-3 text-wb-text-secondary">100 shares · CC $52.00 exp 2026-10-16</td>
+                      <td className="px-4 py-3 text-right font-semibold">$46.50 / share</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p className="px-4 py-3 text-[11px] leading-relaxed text-wb-text-muted">
+                The wheel row keeps its share cost basis and its own panel. No PMCC figures appear on it.
+              </p>
+            </SectionCard>
+          </div>
+        </main>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-wb-border p-3">
+        {STAGES.map((stage) => (
+          <FormButton
+            key={stage.key}
+            label={stage.step}
+            variant={stage.key === stageKey ? 'primary' : 'secondary'}
+            onClick={() => setStageKey(stage.key)}
+          />
+        ))}
+      </div>
+
+      <details className="rounded-lg border border-wb-border p-3 text-xs text-wb-text-secondary">
+        <summary className="cursor-pointer">Quantity and fee states · prototype controls</summary>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <FormButton label="1 contract" variant={contracts === 1 ? 'primary' : 'secondary'} onClick={() => setContracts(1)} />
+          <FormButton label="3 contracts" variant={contracts === 3 ? 'primary' : 'secondary'} onClick={() => setContracts(3)} />
+          <FormButton label={withFees ? 'Opening fees on' : 'Opening fees off'} variant={withFees ? 'primary' : 'secondary'} onClick={() => setWithFees(!withFees)} />
+        </div>
+        <p className="mt-3 leading-relaxed">
+          Quantity scales the totals and leaves the per-share basis at $23.00 at entry. Turning on US-101's $1.00 per-leg opening fees moves the one-contract entry to $23.02 per share and $2,302.00 total — each fee counted once, on the leg that incurred it. With three contracts the same $2.00 of fees spreads to four decimal places, matching the stored precision.
+        </p>
+      </details>
+    </div>
+  )
+}
+
+<Mockup />
