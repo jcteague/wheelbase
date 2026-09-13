@@ -20,6 +20,19 @@ scheduler.register({
 
 That is once per market day, 60 minutes after close. A ticker added at any other time reads `n/a` until that window comes round. Research doesn't happen on the market's schedule — it happens in the evening and at weekends, which is exactly when this gap is widest.
 
+> **Amended 2026-09-13, after US-98 shipped.** The `isTradingDay` helper quoted below **no
+> longer exists** — US-98 deleted it along with `fetchMarketStatusOrNull`, and replaced the
+> weekend/holiday heuristic with a lookup against the cached exchange calendar
+> (`getTradingSession(readTradingCalendar(db, now), etDate)`). The gap this story describes
+> is unchanged and still real: a `closed` session still exits with
+> `skippedReason: 'market_closed'`, and the manual trigger still inherits it. Only the
+> mechanism to split by trigger has moved. The holiday half of the follow-up is now handled
+> by the calendar itself, which narrows this story to **weekends, explicit triggers, and the
+> observation-date question**.
+>
+> Two further amendments below: an **on-position-add trigger** (previously deferred, now
+> confirmed real) and a **prerequisite on US-104**.
+
 A second guard closes the door the rest of the way:
 
 ```ts
@@ -104,6 +117,25 @@ Scenario: A ticker Barchart does not cover is added without an IV rank
   Then XYZ appears on the watchlist
   And XYZ shows an IV rank of "n/a" on the screener
 
+Scenario: Opening a position collects its IVR immediately
+  Given the trader has no position and no watchlist entry for TSLA
+  And TSLA has no ivr_snapshot
+  When the trader manually enters a wheel position on TSLA
+  Then IVR is fetched for TSLA
+  And a TSLA IV rank is readable without waiting for the scheduled run
+
+Scenario: Opening a position for an already-collected ticker does not refetch
+  Given KO has an ivr_snapshot recorded for the current trading day
+  When the trader manually enters a wheel position on KO
+  Then no IVR request is made for KO
+
+Scenario: The position is created even when the IVR fetch fails
+  Given the IVR fetch for TSLA fails with a network error
+  When the trader manually enters a wheel position on TSLA
+  Then the position is created
+  And the failure is logged at warn level
+  And no error is surfaced to the trader
+
 Scenario: Manual refresh works on a weekend
   Given today is Sunday
   When the trader triggers IVR collection manually
@@ -154,7 +186,11 @@ Scenario: The scheduled run still fires after hours on a weekday
 
 - **Changing the scheduled cadence itself.** `afterClose + 60min` stays; this story adds triggers, it does not re-time the existing one.
 - **Backfilling IVR history.** Tickers already on the watchlist get their first reading from the next run, scheduled or manual.
-- Collecting IVR for a ticker when a _position_ is opened — same shape as this story, but positions already imply a prior watchlist add in the common flow. Worth its own story if the gap proves real.
+- ~~Collecting IVR for a ticker when a _position_ is opened~~ — **now in scope.** The gap
+  proved real: a manually entered position is a first-class way a ticker enters the app, and
+  the assumption that it implies a prior watchlist add does not hold. It reuses the same
+  single-ticker path as the watchlist-add trigger, so splitting it out would leave a story
+  that cannot be built independently.
 - The Barchart scraper itself (US-43), its rate limiting, or its session handling.
 - IVR staleness display and tiering (US-98) — this story changes when rows are written, not how their age is presented. If option 1 is chosen, US-98's inputs get _more_ trustworthy, not different.
 - Any IV rank derived from Alpaca option snapshots. Alpaca serves per-contract implied volatility but publishes no rank or percentile, and building one requires a year of accumulated history; Barchart remains the IVR source.
@@ -169,6 +205,10 @@ Scenario: The scheduled run still fires after hours on a weekday
 - **US-97:** established the watchlist as a collection target; this story makes that collection timely
 - **Reconciles / likely closes:** `followup-ivr-trading-day-calendar.md` — the shared trading-day calendar helper is the overlap, and `isTradingDay` must not be changed by both independently
 - **Improves US-98:** staleness tiers become meaningful only if a row's date is the trading day it reflects
+- **Requires US-104 to be user-visible:** this story makes readings _exist_; US-104 makes them
+  _legible_. On a fresh install the trading calendar is empty, so a reading collected here
+  still assesses as unreadable and renders `n/a`. Landing this alone would look like it had
+  not worked
 
 ---
 
