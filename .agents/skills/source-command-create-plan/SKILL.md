@@ -11,13 +11,24 @@ Use this skill when the user asks to run the migrated source command `create-pla
 
 ## User Input
 
-Treat any user-provided text, file path, or story identifier as the command input. If the user includes a file path, read that story first. If the user does not provide input, inspect the stories under `docs/epics/` and pick the most clearly relevant one, asking only if the target story is still ambiguous.
+Treat any user-provided text or story identifier (e.g. `us-69`, `US-116`) as the command input.
+
+**Stories live in Linear, not in files.** Find the issue for the story you were given:
+`list_issues` with `query: "US-<N>"` (or filter by the `Epic NN — …` project), then
+`get_issue` for the full body — user story, Gherkin acceptance criteria, technical notes,
+out of scope, dependencies. Issue titles are prefixed `US-<N>: `, so a bare story ID finds it.
+
+The markdown files under `docs/epics/*-stories/` are an archive of stories that shipped
+before the move to Linear. Read one only when the story is genuinely not in Linear, and never
+edit one to change a story. See "Where User Stories Live" in `CLAUDE.md`.
+
+If the user gives no input, list the team's Backlog issues and pick the most clearly relevant, asking only if the target story is still ambiguous.
 
 ## Outline
 
-1. **Setup**: Carefully read the user story file provided by user input. If no file is provided, review the stories in `docs/epics/` subdirectories. If it is unclear which user story should be used, ask the user.
+1. **Setup**: Read the Linear issue for the story named in the input (see above). If it is unclear which story is meant, ask the user rather than guessing.
 
-2. **Mockup check**: After identifying the user story file, check whether a mockup file exists in the `mockups/` directory at the project root. The convention is `{story-id-kebab-case}.mdx` (e.g., story `US-6-record-csp-assignment.md` → `mockups/us-6-record-csp-assignment.mdx`). If found, read it now and extract:
+2. **Mockup check**: After identifying the story, check whether a mockup exists in the `mockups/` directory at the project root. The convention is `{story-id-kebab-case}.mdx`, derived from the issue title (e.g. `US-6: Record CSP assignment` → `mockups/us-6-record-csp-assignment.mdx`). The issue's own Mockup section may name it directly. If found, read it now and extract:
    - Screen names and descriptions
    - Component layout and interaction patterns (e.g. right-side sheet, inline form, overlay)
    - Visible data fields and labels on each screen
@@ -42,7 +53,7 @@ Treat any user-provided text, file path, or story identifier as the command inpu
 
 ## Output Directory
 
-Write all artifacts to `plans/{story-id}/` where `{story-id}` is derived from the story filename (e.g., story `US-2-list-positions.md` → `plans/us-2/`). Use absolute paths for all file writes.
+Write all artifacts to `plans/{story-id}/` where `{story-id}` is the lower-cased US number from the issue title (e.g. `US-2: List positions` → `plans/us-2/`). Use absolute paths for all file writes.
 
 ## Phases
 
@@ -116,7 +127,7 @@ Write `plans/{story-id}/plan.md` — the primary artifact that `/plan-tasks` wil
 
 Read these before starting implementation — they contain the decisions, data model, and API contract:
 
-- **User Story & Acceptance Criteria:** `docs/epics/01-stories/{story-file}.md`
+- **User Story & Acceptance Criteria:** the Linear issue (e.g. `OPT-5` / `US-69`) — link it by URL
 - **Research & Design Decisions:** `plans/{story-id}/research.md`
 - **Data Model & Selection Logic:** `plans/{story-id}/data-model.md`
 - **API Contract(s):** `plans/{story-id}/contracts/{endpoint}.md`

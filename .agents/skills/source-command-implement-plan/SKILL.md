@@ -64,10 +64,13 @@ cannot satisfy the AC or coverage gates.
 1. Read the plan file. If it does not exist, stop: "File not found: `<path>`"
 2. Read `tasks.md`. If it does not exist, stop:
    > "No tasks file found. Run `/plan-tasks <plan-file>` first to generate it."
-3. Locate the user story the plan implements (the plan header links it; otherwise
-   search `docs/epics/*/`). Read it and extract the full AC list **now** — the
+3. Locate the user story the plan implements. **Stories live in Linear**: the plan header
+   should link the issue; otherwise `list_issues` with `query: "US-<N>"` and `get_issue`
+   for the body. Extract the full AC list **now** — the
    verification loop needs it, and finding it late is the usual cause of a missed gate.
-   If no story file can be found, stop and ask the user for its path.
+   If no Linear issue can be found, stop and ask the user which story this implements.
+   Do not fall back to a `docs/epics/*-stories/` file without saying so — those are an
+   archive and may describe a surface that no longer exists.
 
 Parse the tasks file to build the execution list:
 
@@ -308,7 +311,7 @@ so implementation rationale cannot paper over a real defect.
 Use the Agent tool with `subagent_type: "pr-review-toolkit:code-reviewer"`. The prompt
 contains **only** artifacts the reviewer can read for itself:
 
-- The story file path and its verbatim AC list
+- The Linear issue URL and its verbatim AC list
 - The plan file path
 - The exact diff scope: `git diff main...HEAD` plus any uncommitted changes
 - `CLAUDE.md` as the standards reference

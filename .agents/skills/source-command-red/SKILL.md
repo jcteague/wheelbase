@@ -22,7 +22,7 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
 ### Phase 1: Setup and Prerequisites
 
 1. **Locate Feature Artifacts**
-   - Find the relevant user story file(s) — check `phase-1-stories/`, `docs/epics/`, or any path provided in the user input
+   - Find the relevant user story **in Linear** — `list_issues` with `query: "US-<N>"`, then `get_issue`. The files under `docs/epics/*-stories/` are an archive of shipped stories, not the current source
    - Find the feature plan under `plans/<feature-dir>/` — look for `plan.md` or `tasks.md`
    - Read and internalise all available artifacts before writing any tests
 
@@ -101,7 +101,7 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
 
 10. **Document Test Results**
     - Create `plans/<feature-dir>/red-phase-results.md` with:
-      - Feature directory path and linked artifacts (story file, plan file)
+      - Feature directory path and linked artifacts (Linear issue URL, plan file)
       - List of all test files created/modified (absolute paths)
       - Summary of what behaviours are tested
       - Key function/class signatures being tested (so green phase can create the right interfaces)

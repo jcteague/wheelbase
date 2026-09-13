@@ -22,7 +22,7 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
 ### Phase 1: Setup and Prerequisites
 
 1. **Locate Feature Artifacts**
-   - Find the relevant user story — check `phase-1-stories/`, `docs/epics/`, or any path provided in the user input
+   - Find the relevant user story **in Linear** — `list_issues` with `query: "US-<N>"`, then `get_issue`. The files under `docs/epics/*-stories/` are an archive of shipped stories, not the current source
    - Find the feature plan under `plans/<feature-dir>/`
    - Required: `plans/<feature-dir>/red-phase-results.md` — if missing, run `/red` first
    - If `red-phase-results.md` is missing, locate failing tests directly in the repo
@@ -120,7 +120,7 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
 
 10. **Document Results**
     - Create `plans/<feature-dir>/green-phase-results.md` with:
-      - Feature directory path and linked artifacts (story file, plan file, red-phase-results)
+      - Feature directory path and linked artifacts (Linear issue URL, plan file, red-phase-results)
       - List of files created/modified (exact paths, purpose of each)
       - Key public interfaces implemented (function signatures, endpoints, component props)
       - Implementation approach summary
@@ -211,7 +211,7 @@ After completing the green phase, create `plans/<feature-dir>/green-phase-result
 ## Feature Context
 
 - **Feature directory**: `plans/<feature-dir>/`
-- **User story**: `<path to user story file>`
+- **User story**: the Linear issue URL
 - **Plan file**: `plans/<feature-dir>/plan.md`
 - **Red phase results**: `plans/<feature-dir>/red-phase-results.md`
 

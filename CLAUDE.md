@@ -63,6 +63,54 @@ Alpaca is the broker integration (read-only through Phase 3, order execution in 
 
 ---
 
+---
+
+## Where User Stories Live
+
+**User stories live in Linear. That is where you read them, and the only place you edit
+them.** Do not write a story's acceptance criteria into a markdown file and do not edit a
+story by editing a file — an edit that is not in Linear is invisible to everyone else.
+
+|              |                                                                     |
+| ------------ | ------------------------------------------------------------------- |
+| Workspace    | `linear.app/optionswheel`                                           |
+| Team         | **Optionswheel** (issue prefix `OPT-`)                              |
+| Epics        | Linear **projects**, named `Epic NN — <title>`                      |
+| Story issues | titled `US-<N>: <title>`, so a story ID is searchable as plain text |
+
+Use the Linear MCP tools: `list_issues` (filter by `project`, or `query` the title),
+`get_issue` for the full body, and `save_issue` to create or update one. A skill that needs a
+story's acceptance criteria reads the Linear issue, not a file.
+
+### The markdown files under `docs/epics/*-stories/` are an archive
+
+72 story files predate the move; only the unstarted ones were ported. Treat the rest as a
+**historical record of stories that already shipped** — useful for understanding why
+something was built, and still linked from the epic documents and the spec wiki.
+
+Two rules follow:
+
+- **Never change a story by editing its markdown file.** If the story is still live work, it
+  is in Linear; edit it there. If it is not in Linear, it has already shipped and its
+  behaviour is now described by `docs/spec/`, not by the story.
+- **When a story exists in both places, Linear wins.** Several archived files describe
+  surfaces that no longer exist — US-69's criteria named a watchlist table that US-96
+  replaced with cards. The ported Linear issue carries the reconciled version.
+
+### Numbering a new story
+
+Linear assigns its own `OPT-` identifier, but the `US-<N>` prefix is still the shared
+vocabulary across plans, mockups, spec pages and e2e test names. Before claiming a number,
+check **both** places, because neither alone is sufficient:
+
+```bash
+grep -rho "US-[0-9]*" docs/epics/ | sort -u -t- -k2 -n | tail
+```
+
+plus a Linear search. Numbers can be reserved in prose without a file ever existing — epic 09
+reserves US-101 through US-115 for PMCC in its story list, which is why the next free number
+after US-100 was US-116.
+
 ## Engineering Standards
 
 ### Test-Driven Development (required)

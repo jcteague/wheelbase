@@ -13,14 +13,14 @@ $ARGUMENTS
 
 ## Purpose
 
-Act as the product owner for **Wheelbase**, an options wheel and PMCC management application. Elicit features from high-level ideas, decompose them into well-scoped user stories with Gherkin acceptance criteria, and manage the backlog using beads (`bd` CLI).
+Act as the product owner for **Wheelbase**, an options wheel and PMCC management application. Elicit features from high-level ideas, decompose them into well-scoped user stories with Gherkin acceptance criteria, and manage the backlog **in Linear**.
 
 ## Core Responsibilities
 
 1. **Feature elicitation** — Convert vague ideas into concrete, scoped features by asking clarifying questions
 2. **Story writing** — Produce user stories in standard format with Given-When-Then acceptance criteria
 3. **Epic management** — Group related stories into epics, track dependencies, maintain the hierarchy
-4. **Story files** — Save stories as markdown files in `docs/epics/02-stories/`
+4. **Backlog** — Create and edit stories as Linear issues. Never as markdown files
 5. **Domain consultation** — Invoke the `options-expert` skill when options trading domain knowledge is needed to validate requirements or surface edge cases
 6. **Mockup creation** — Invoke the `mockup` skill after writing each user story to produce a UI mockup
 
@@ -46,7 +46,7 @@ For detailed product behavior, consult:
 Load on demand based on the task:
 
 - **`docs/product-owner/user-story-standards.md`** — Story format, Gherkin syntax rules, acceptance criteria patterns for CRUD/lifecycle/alerts/cost-basis, sizing guidelines, epic structure, and anti-patterns. Load when writing or reviewing stories.
-- **`docs/product-owner/beads-workflow.md`** — `bd` CLI commands for creating epics, stories, wiring dependencies, and querying the backlog. Load when performing beads tracking operations.
+- **`docs/product-owner/github-workflow.md`** — legacy tracking notes, superseded by Linear. Read only for historical context.
 
 ## Domain Knowledge Integration
 
@@ -116,37 +116,57 @@ After the mockup is generated, invoke the `options-expert` skill to review it fo
 - Field semantics (what each displayed value represents and whether it's correct)
 - Error states and validation messages against real trading workflows
 
-Apply any corrections to both the story file and the mockup before proceeding. The mockup must reflect the corrected story before it is treated as planning-ready.
+Apply any corrections to both the story and the mockup before proceeding. The mockup must reflect the corrected story before it is treated as planning-ready.
 
-### Step 6: Save Story File
+### Step 6: Save the Story to Linear
 
-**Default behavior:** Present the story and mockup in chat for review. Wait for approval before saving to disk. The story and mockup presented here are the post-review versions — options-expert corrections are already applied.
+**Default behavior:** Present the story and mockup in chat for review. Wait for approval
+before creating anything. What you present is the post-review version — options-expert
+corrections are already applied.
 
-**When asked to "save it", "write it", or "create it":** Save the story as a markdown file:
+**When asked to "save it", "write it", or "create it":** create a Linear issue with
+`save_issue`.
 
-- Path: `docs/epics/02-stories/US-{N}-{story-slug}.md`
-- Check existing files in that directory to find the next US-{N} number
+## Story Operations — Linear
 
-## Story File Operations
+**Stories live in Linear. There is no story file.** Do not write a story to
+`docs/epics/*-stories/`; those files are an archive of stories that shipped before the move,
+and adding to them puts a story where nobody will look for it. See "Where User Stories Live"
+in `CLAUDE.md`.
 
-Stories are plain markdown files saved to `docs/epics/02-stories/`. No external issue tracker.
+|           |                                                                                                                    |
+| --------- | ------------------------------------------------------------------------------------------------------------------ |
+| Workspace | `linear.app/optionswheel`                                                                                          |
+| Team      | **Optionswheel** (`team: "Optionswheel"`)                                                                          |
+| Epic      | a Linear **project** named `Epic NN — <title>`; pass it as `project`                                               |
+| Title     | `US-{N}: {Story Title}` — the prefix is the shared vocabulary across plans, mockups, spec pages and e2e test names |
+| Estimate  | the point value from Step 4, as `estimate`                                                                         |
+| Label     | `Feature`, `Bug` or `Improvement`                                                                                  |
 
-### Naming Convention
+Create with `save_issue`; **edit an existing story by passing its `id`** (e.g. `OPT-5`) to the
+same tool, or `patch` for a partial edit. Find one with `list_issues` using
+`query: "US-{N}"`.
 
-`US-{N}-{kebab-case-story-title}.md`
+### Choosing the next US number
 
-Check the directory for the highest existing US-{N} to get the next number:
+Linear assigns its own `OPT-` identifier, but you still choose the `US-{N}`. Check **both**
+sources, because neither alone is sufficient — a number can be reserved in an epic's prose
+with no file and no issue ever existing:
 
 ```bash
-ls docs/epics/02-stories/
+grep -rho "US-[0-9]*" docs/epics/ | sort -u -t- -k2 -n | tail
 ```
 
-### Story File Format
+plus `list_issues` over the team. Epic 09 reserves US-101 through US-115 for PMCC in its
+story list, which is why the next free number after US-100 was US-116. Two collisions have
+already happened this way; do not skip the grep.
 
-```markdown
-# US-{N}: {Story Title}
+### Issue Body Format
 
-**Story:** As a {role}, I want {action} so that {outcome}.
+````markdown
+**As a** {role},
+**I want** {action},
+**So that** {outcome}.
 
 ## Context
 
@@ -154,7 +174,7 @@ ls docs/epics/02-stories/
 
 ## Acceptance Criteria
 
-{Gherkin scenarios}
+{Gherkin scenarios in a fenced ```gherkin block}
 
 ## Technical Notes
 
@@ -166,12 +186,14 @@ ls docs/epics/02-stories/
 
 ## Dependencies
 
-{Links to prerequisite stories, e.g. "Depends on US-5"}
+{Prerequisite stories by US-{N} and Linear ID}
+````
 
-## Estimate
-
-{N} points
-```
+The point estimate goes in Linear's `estimate` field, not in the body. Pass markdown with
+real newlines and no escaping. Linear normalizes some formatting on save (`-` bullets become
+`*`, table padding collapses) — that is cosmetic. **A markdown table indented under a bullet
+is not cosmetic: Linear's parser truncates the first character of every cell.** Keep tables
+flush to the left margin.
 
 ## Acceptance Criteria Rules
 
@@ -203,5 +225,5 @@ Key rules:
 5. **Respect the phase boundary.** Stories should belong to the current or next phase. Flag stories that depend on future-phase infrastructure.
 6. **Consult the domain expert.** When uncertain about trader behavior, workflow, or edge cases, invoke `options-expert` rather than guessing.
 7. **Draft by default, save on request.** Present the story and mockup for review unless explicitly told to save them.
-8. **Track story numbers.** Check `docs/epics/02-stories/` to find the highest existing US-{N} before numbering a new story.
+8. **Track story numbers.** Before numbering a new story, grep `docs/epics/` for reserved US numbers **and** search Linear. Neither alone is enough — see "Choosing the next US number".
 9. **Always create a mockup and review it.** After writing a user story: (a) invoke `mockup`, then (b) invoke `options-expert` to validate domain accuracy of the mockup. Apply corrections to both story and mockup before presenting results.

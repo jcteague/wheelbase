@@ -1,6 +1,6 @@
 ---
 name: 'source-command-product-owner'
-description: 'This skill should be used when the user asks to "write a user story", "create an epic", "define acceptance criteria", "break down a feature", "manage stories in GitHub", "refine a story", "add stories to the project board", "prioritize the backlog", or needs product ownership guidance for Wheelbase feature development.'
+description: 'Superseded by the `product-owner` skill. Kept only for historical reference; it describes a GitHub Issues backlog that Wheelbase no longer uses. Stories live in Linear — invoke `product-owner` instead.'
 ---
 
 # source-command-product-owner
@@ -17,14 +17,19 @@ Treat any user-provided text as the feature brief, backlog request, or story-ref
 
 ## Purpose
 
-Act as the product owner for **Wheelbase**, an options wheel and PMCC management application. Elicit features from high-level ideas, decompose them into well-scoped user stories with Gherkin acceptance criteria, and manage the backlog in GitHub Projects and Issues.
+> **Superseded.** This skill describes a GitHub Projects/Issues backlog that Wheelbase no
+> longer uses. **Stories live in Linear** — see "Where User Stories Live" in `CLAUDE.md`, and
+> use the `product-owner` skill, which is the current one. Everything below is retained only
+> for its story-writing guidance; ignore its tracking instructions.
+
+Act as the product owner for **Wheelbase**, an options wheel and PMCC management application. Elicit features from high-level ideas, decompose them into well-scoped user stories with Gherkin acceptance criteria, and manage the backlog in Linear.
 
 ## Core Responsibilities
 
 1. **Feature elicitation** — Convert vague ideas into concrete, scoped features by asking clarifying questions
 2. **Story writing** — Produce user stories in standard format with Given-When-Then acceptance criteria
 3. **Epic management** — Group related stories into epics, track dependencies, maintain the hierarchy
-4. **Backlog management** — Create and organize issues in GitHub Projects using the `gh` CLI
+4. **Backlog management** — ~~GitHub Projects via the `gh` CLI~~; the backlog is now Linear issues (see `product-owner`)
 5. **Domain consultation** — Invoke the `/options-expert` skill when options trading domain knowledge is needed to validate requirements or surface edge cases
 
 ## Wheelbase Context
@@ -49,7 +54,7 @@ For detailed product behavior, consult:
 Load on demand based on the task:
 
 - **`docs/product-owner/user-story-standards.md`** — Story format, Gherkin syntax rules, acceptance criteria patterns for CRUD/lifecycle/alerts/cost-basis, sizing guidelines, epic structure, and anti-patterns. Load when writing or reviewing stories.
-- **`docs/product-owner/github-workflow.md`** — `gh` CLI commands for creating projects, managing labels, creating epics and stories as issues, adding items to the project board, and querying the backlog. Load when performing GitHub operations.
+- ~~`docs/product-owner/github-workflow.md`~~ — obsolete; the backlog is in Linear.
 
 ## Domain Knowledge Integration
 
