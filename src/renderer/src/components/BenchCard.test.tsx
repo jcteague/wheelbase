@@ -131,7 +131,46 @@ describe('BenchCard', () => {
 
     await userEvent.click(screen.getByTestId('watchlist-ticker'))
 
+    expect(onSelect).toHaveBeenCalledTimes(1)
     expect(onSelect).toHaveBeenCalledWith('KO')
+  })
+
+  // The whole card is the target, not just the ticker: a trader reading a card's reason
+  // or its price has already pointed at the stock they mean, and making them travel back
+  // to a small link to open it is friction with nothing behind it.
+  it.each([
+    ['the contract line', 'watchlist-contract'],
+    ['the price', 'watchlist-price'],
+    ['the rank pill', 'watchlist-rank']
+  ])('raises onSelect when %s is clicked', async (_label, testId) => {
+    const onSelect = vi.fn()
+    render(<BenchCard stock={meets()} selected={false} onSelect={onSelect} onRemove={noop} />)
+
+    await userEvent.click(screen.getByTestId(testId))
+
+    expect(onSelect).toHaveBeenCalledWith('KO')
+  })
+
+  it('raises onSelect when the card body itself is clicked', async () => {
+    const onSelect = vi.fn()
+    render(<BenchCard stock={meets()} selected={false} onSelect={onSelect} onRemove={noop} />)
+
+    await userEvent.click(screen.getByTestId('watchlist-row-KO'))
+
+    expect(onSelect).toHaveBeenCalledWith('KO')
+  })
+
+  // Remove is the one control on the card that means something else. Selecting a stock on
+  // the way to deleting it would leave the detail panel showing a stock that is gone.
+  it('does not select the stock when the remove button is clicked', async () => {
+    const onSelect = vi.fn()
+    const onRemove = vi.fn()
+    render(<BenchCard stock={meets()} selected={false} onSelect={onSelect} onRemove={onRemove} />)
+
+    await userEvent.click(screen.getByTestId('watchlist-remove-KO'))
+
+    expect(onRemove).toHaveBeenCalledWith('KO')
+    expect(onSelect).not.toHaveBeenCalled()
   })
 
   it('rings the selected card in gold', () => {

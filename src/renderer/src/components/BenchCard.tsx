@@ -13,6 +13,13 @@ import { Button } from './ui/button'
 // (`watchlist-row-{t}`, `watchlist-ticker`, `watchlist-remove-{t}`) so the specs written
 // against the table keep working, and adds what the table never had — a price, an IV
 // reading with its age, and either the put on offer or the reason there is none.
+//
+// The whole card selects the stock, not just the ticker. The card is deliberately *not*
+// a button or given `role="button"`: it contains real buttons, and nesting interactive
+// roles is invalid ARIA that leaves a screen reader unsure what it is announcing. The
+// ticker button stays the keyboard path — it carries the accessible name and
+// `aria-pressed`, and its click bubbles here like any other — so pointer users get the
+// whole surface without costing keyboard users the semantics.
 
 /** [US-70] The rank pill, and the muted treatment a demoted candidate falls back to. */
 const RANK_PILL =
@@ -49,13 +56,19 @@ export function BenchCard({
       <div
         data-testid={`watchlist-row-${ticker}`}
         data-bench-section={meets ? 'meets' : 'waiting'}
-        className="relative flex flex-col gap-2 p-4"
+        onClick={() => onSelect(ticker)}
+        className="relative flex cursor-pointer flex-col gap-2 p-4"
       >
         <button
           type="button"
           title="Remove"
           data-testid={`watchlist-remove-${ticker}`}
-          onClick={() => onRemove(ticker)}
+          // Remove is the one control here that means something else. Without this the
+          // click would also select, leaving the detail panel on a stock just deleted.
+          onClick={(event) => {
+            event.stopPropagation()
+            onRemove(ticker)
+          }}
           className="absolute right-3 top-3 h-6 w-6 rounded-md border border-wb-border bg-transparent text-wb-text-muted"
         >
           ✕
@@ -72,12 +85,14 @@ export function BenchCard({
                 {demoted ? '—' : `#${rank}`}
               </span>
             )}
+            {/* No `onClick` of its own: the click it raises — by pointer, or by Enter or
+                Space from the keyboard — bubbles to the card, which owns selection. One
+                handler, so the two paths cannot drift apart. */}
             <Button
               data-testid="watchlist-ticker"
               variant="link"
               size="sm"
               aria-pressed={selected}
-              onClick={() => onSelect(ticker)}
               className="h-auto p-0 font-bold tracking-[0.03em] text-wb-gold"
             >
               {ticker} →
