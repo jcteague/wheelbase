@@ -31,7 +31,7 @@ A trader can open, manage, and close Poor Man's Covered Call positions with the 
 
 ## Stories
 
-- [ ] US-58: Open a PMCC position with dual chain selector and safety validation
+- [ ] [US-101: Open a PMCC position with two linked opening legs](09-stories/US-101-open-pmcc-position.md) — dual contract selection, entry validation, debit preview, and minimal two-leg display
 - [ ] US-59: Enforce long DTE > short DTE constraint on entry and all rolls
 - [ ] US-60: Calculate and display PMCC cost basis (LEAPS debit minus short call credits)
 - [ ] US-61: Roll the PMCC short call with net credit/debit preview

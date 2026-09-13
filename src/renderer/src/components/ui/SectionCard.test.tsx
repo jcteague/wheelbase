@@ -50,4 +50,17 @@ describe('SectionCard', () => {
     expect(style).toContain('border-radius: 8px;')
     expect(style).toContain('overflow: hidden;')
   })
+
+  it('supports an emphasized header', () => {
+    render(
+      <SectionCard header="Leg details" headerVariant="emphasized">
+        <div>Body content</div>
+      </SectionCard>
+    )
+
+    const style = screen.getByText('Leg details').getAttribute('style') ?? ''
+
+    expect(style).toContain('background: var(--wb-bg-elevated);')
+    expect(style).toContain('color: var(--wb-text-primary);')
+  })
 })
