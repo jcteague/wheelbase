@@ -1,4 +1,4 @@
-# US-105: A position's implied volatility is a real number or an honest dash, never NaN
+# US-117: A position's implied volatility is a real number or an honest dash, never NaN
 
 **As a** trader looking at an open position's context strip to judge whether the premium is rich,
 **I want** the IV figure to show the contract's actual implied volatility,
@@ -189,7 +189,7 @@ Scenario Outline: No Greek renders as NaN
 - **US-39 / US-99:** the Alpaca option-snapshot adapter that already carries
   `impliedVolatility` as far as the mapper
 - **Position cockpit (Epic 12 surfaces):** the Context strip this renders in
-- **Independent of US-100 and US-104.** Those concern Barchart IV _rank_ and its calendar;
+- **Independent of US-100 and US-116.** Those concern Barchart IV _rank_ and its calendar;
   this is per-contract implied volatility and needs no collector run
 
 ---

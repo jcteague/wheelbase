@@ -31,7 +31,7 @@ That is once per market day, 60 minutes after close. A ticker added at any other
 > observation-date question**.
 >
 > Two further amendments below: an **on-position-add trigger** (previously deferred, now
-> confirmed real) and a **prerequisite on US-104**.
+> confirmed real) and a **prerequisite on US-116**.
 
 A second guard closes the door the rest of the way:
 
@@ -205,7 +205,7 @@ Scenario: The scheduled run still fires after hours on a weekday
 - **US-97:** established the watchlist as a collection target; this story makes that collection timely
 - **Reconciles / likely closes:** `followup-ivr-trading-day-calendar.md` — the shared trading-day calendar helper is the overlap, and `isTradingDay` must not be changed by both independently
 - **Improves US-98:** staleness tiers become meaningful only if a row's date is the trading day it reflects
-- **Requires US-104 to be user-visible:** this story makes readings _exist_; US-104 makes them
+- **Requires US-116 to be user-visible:** this story makes readings _exist_; US-116 makes them
   _legible_. On a fresh install the trading calendar is empty, so a reading collected here
   still assesses as unreadable and renders `n/a`. Landing this alone would look like it had
   not worked
