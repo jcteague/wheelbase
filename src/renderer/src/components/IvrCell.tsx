@@ -1,59 +1,79 @@
-import { formatIvrValue } from '../lib/screener-format'
 import type { ScreenerIvRank } from '../api/screener'
+import {
+  isUsableIvrState,
+  ivrTooltipCopy,
+  observedDayLabel,
+  tradingDaysLabel
+} from '../lib/ivr-tooltip'
+import { formatIvrValue } from '../lib/screener-format'
+import { FreshnessRing } from './FreshnessRing'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
 
 type IvrCellProps = {
   ivRank: ScreenerIvRank | null
 }
 
-// Built once: constructing an Intl formatter is comparatively expensive and this
-// renders on every row of every screen.
-const easternDay = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'America/New_York',
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric'
-})
-
-function observedInEasternTime(observedAt: string): string {
-  return easternDay.format(new Date(observedAt))
+const TIER_TEXT: Record<ScreenerIvRank['state'], string> = {
+  fresh: 'text-wb-green',
+  aging: 'text-wb-text-secondary',
+  stale: 'text-wb-text-muted',
+  expired: 'text-wb-text-muted',
+  predates_earnings: 'text-wb-gold'
 }
 
 export function IvrCell({ ivRank }: IvrCellProps): React.JSX.Element {
   if (ivRank === null) {
     return (
-      <span data-ivr-state="empty" className="text-wb-text-muted">
+      <span data-ivr-state="empty" className="text-wb-text-muted" title="No IV rank collected">
         n/a
       </span>
     )
   }
 
-  const ageLabel = `${ivRank.ageTradingDays} trading ${ivRank.ageTradingDays === 1 ? 'day' : 'days'} old`
-  const observedLabel = `Observed ${observedInEasternTime(ivRank.observedAt)}`
-  const title = `${ageLabel}; ${observedLabel}`
   // A reading the screener refused to score reads muted, so the number on screen
   // never looks like one the rank was built on.
-  const scored = ivRank.state === 'fresh' || ivRank.state === 'aging'
-  const toneClass = scored ? 'text-wb-text-primary' : 'text-wb-text-muted'
+  const toneClass = isUsableIvrState(ivRank.state) ? 'text-wb-text-primary' : 'text-wb-text-muted'
   // Age earns its place on the row only once it is old enough to change a decision;
   // a fresh reading would just repeat the same small number on every line.
   const showsAge = ivRank.state === 'aging' || ivRank.state === 'stale'
-  const value = formatIvrValue(ivRank.value)
+  // An aged-out number would read as current. `exp` says the reading exists but has
+  // gone past use, which "n/a" — never collected at all — does not.
+  const expired = ivRank.state === 'expired'
+  const value = expired ? 'exp' : formatIvrValue(ivRank.value)
+  // The ring and the tooltip are sighted-only, so the label carries the whole reading.
+  const ariaLabel = `IV rank ${value}, ${tradingDaysLabel(ivRank.ageTradingDays)} old; Observed ${observedDayLabel(ivRank.observedAt)}`
+  const { title, body } = ivrTooltipCopy(ivRank)
 
   return (
-    <span
-      data-testid="ivr-cell"
-      data-ivr-state={ivRank.state}
-      title={title}
-      aria-label={`IV rank ${value}, ${title}`}
-      className={`inline-flex flex-col items-end ${toneClass}`}
-    >
-      <span>
-        {value}
-        {showsAge ? ` · ${ivRank.ageTradingDays}d` : ''}
-      </span>
-      {ivRank.state === 'predates_earnings' && (
-        <span className="text-[0.62rem] text-wb-text-muted">predates earnings</span>
-      )}
-    </span>
+    <TooltipProvider delayDuration={0}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            data-testid="ivr-cell"
+            data-ivr-state={ivRank.state}
+            tabIndex={0}
+            aria-label={ariaLabel}
+            className={`inline-flex cursor-default items-center gap-1.5 ${toneClass}`}
+          >
+            <span className={expired ? 'font-normal' : ''}>
+              {value}
+              {showsAge ? ` · ${ivRank.ageTradingDays}d` : ''}
+            </span>
+            <FreshnessRing state={ivRank.state} />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent data-testid="ivr-tooltip">
+          <span className="mb-1 flex items-center gap-2">
+            <FreshnessRing state={ivRank.state} size={12} />
+            <span
+              className={`font-wb-mono text-[0.62rem] font-bold uppercase tracking-widest ${TIER_TEXT[ivRank.state]}`}
+            >
+              {title}
+            </span>
+          </span>
+          <p className="text-xs leading-relaxed text-wb-text-secondary">{body}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }

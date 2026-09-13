@@ -13,7 +13,12 @@ export const FRESH_MAX_AGE = 1
 export const AGING_MAX_AGE = 3
 export const STALE_MAX_AGE = 10
 
-export type IvRankState = 'fresh' | 'aging' | 'stale' | 'predates_earnings'
+/** The states age alone decides. */
+export type IvRankAgeTier = 'fresh' | 'aging' | 'stale' | 'expired'
+
+/** `predates_earnings` is the one state age does not decide — a reading of any tier
+ *  can be overridden by a print that landed after it. */
+export type IvRankState = IvRankAgeTier | 'predates_earnings'
 
 export type AssessedIvRank = {
   value: string
@@ -29,16 +34,16 @@ export function isUsableState(state: IvRankState): boolean {
 }
 
 /**
- * Why a reading did or did not produce a verdict.
+ * Whether a reading could be read at all.
  *
- * `expired` and `unreadable` both render as "no IV rank", but they are not the same
- * event: one is an ordinary consequence of a reading ageing out, the other means a
- * corrupt value or a calendar that cannot reach the observation. Collapsing them to
- * `null` is what let a corrupt row degrade the screen in silence.
+ * Ageing out is not a failure to read: an expired reading is assessed like any other,
+ * carrying its value and age so the trader sees a marked stale number rather than the
+ * same blank a never-collected ticker shows. `unreadable` is the only absence, and it
+ * means a corrupt value or a calendar that cannot reach the observation — degradation
+ * the operator should hear about rather than a row quietly turning into `null`.
  */
 export type IvRankAssessment =
   | { status: 'assessed'; reading: AssessedIvRank }
-  | { status: 'expired' }
   | { status: 'unreadable' }
 
 export type AssessContext = {
@@ -49,7 +54,7 @@ export type AssessContext = {
   calendar: TradingCalendar
 }
 
-export function tierForAge(age: number): 'fresh' | 'aging' | 'stale' | 'expired' {
+export function tierForAge(age: number): IvRankAgeTier {
   if (age < 0 || !Number.isInteger(age)) return 'expired'
   if (age <= FRESH_MAX_AGE) return 'fresh'
   if (age <= AGING_MAX_AGE) return 'aging'
@@ -89,7 +94,6 @@ export function assessIvRank(reading: IvRank, ctx: AssessContext): IvRankAssessm
   const state = predatesKnownEarnings(ctx.lastEarnings, observation.date, ctx.now)
     ? 'predates_earnings'
     : tierForAge(ageTradingDays)
-  if (state === 'expired') return { status: 'expired' }
 
   return {
     status: 'assessed',

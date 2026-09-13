@@ -29,7 +29,7 @@ export function newStreamState(): StreamState {
   return { connected: false, activeSub: null, tickers: [] }
 }
 
-function flattenStockQuote(q: StockQuote): IpcStockQuote {
+export function flattenStockQuote(q: StockQuote): IpcStockQuote {
   return {
     price: q.price,
     bid: q.bid,

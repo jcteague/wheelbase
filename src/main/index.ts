@@ -193,11 +193,16 @@ app.whenReady().then(() => {
 
   registerAssignmentsIpc({ db, scheduler })
   registerAlertsHandlers({ db })
-  registerWatchlistIpc({ db })
   // In production this resolves to `{}` so the real Barchart scraper and wall clock
   // are used; e2e runs set WHEELBASE_FAKE_IVR to inject a deterministic offline
-  // fetcher + clock. Resolved once so the collector and the screener share it.
+  // fetcher + clock. Resolved once so the collector, the watchlist snapshot and the
+  // screener all share it — the two halves of the bench must be judged at one clock.
   const ivrCollaborators = createFakeIvrCollaborators()
+  registerWatchlistIpc({
+    db,
+    getProvider: () => marketDataFactory.create(),
+    getCurrentDate: ivrCollaborators.clock?.now
+  })
   registerScreenerIpc({
     db,
     getProvider: () => marketDataFactory.create(),

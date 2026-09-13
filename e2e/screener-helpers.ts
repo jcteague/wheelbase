@@ -1,5 +1,11 @@
-// Shared helpers for the screener e2e specs — US-66's ranked results and US-67's
-// criteria sheet.
+// Shared helpers for the bench e2e specs — US-66's ranked results, US-67's criteria
+// sheet, US-68's promote flow, US-70's earnings tiers and US-98's staleness tiers.
+//
+// [US-96] The Screener page is gone: everything these specs drive now lives on
+// `/watchlist`, where each watchlist stock is a card in one of two sections — Meets
+// criteria and Stocks of interest — beside a sticky detail panel. The file keeps its
+// name because every spec that imports it would otherwise have to change for a rename
+// alone; the queries below are the bench's, not the retired table's.
 //
 // The suite stays offline: put chains come from the FakeMarketDataProvider's
 // OCC-keyed WHEELBASE_MOCK_OPTION_SNAPSHOTS fixtures, IVR rows from the US-44
@@ -17,8 +23,10 @@ import {
   fakeNowAt,
   okOutcome,
   seedWatchlist,
-  setIvrOutcomes
+  setIvrOutcomes,
+  type WatchlistConditions
 } from './ivr-helpers'
+import { BASE_DAY, observedSessionsAgo, sessionsBefore } from './trading-day-fixtures'
 
 /** Every fixture quote carries the same stamp so `quoteTimestamp` (the newest ranked
  *  strike's timestamp) is deterministic for the stale-caption assertion. Pinned to the
@@ -90,7 +98,7 @@ export const AAPL_PUT: PutFixtureSpec = {
 
 /** mid 6.20 / 410 = 1.51% period, 12.54%/yr over 44 DTE, ÷ 0.25 ⇒ score 0.50 (rank 3).
  *  Deliberately gets no IVR outcome, so its IV rank cell must read `n/a`. */
-const MSFT_PUT: PutFixtureSpec = {
+export const MSFT_PUT: PutFixtureSpec = {
   ticker: 'MSFT',
   strike: 410,
   bid: '6.05',
@@ -170,6 +178,20 @@ type StockQuoteFixture = {
   prevClose: string
   volume: number
   timestamp: string
+}
+
+/** [US-96] What a fixture ticker is quoted at when a spec does not state a price.
+ *
+ *  Every bench row reads a quote now, not only the ones under a price ceiling: with no
+ *  quote a stock carrying a price condition falls to Stocks of interest with `Price
+ *  unavailable`, which would silently change the subject of every spec that is not about
+ *  price. A flat default keeps the price gate at `none`/`met`, never `unknown`. */
+const DEFAULT_UNDERLYING_PRICE = '100.00'
+
+/** [US-96] A quote that moved on the day: the bench reads `prevClose` to derive the day
+ *  change, which a flat fixture would render as an unhelpful `0.0%`. */
+function movingQuote(price: string, prevClose: string): StockQuoteFixture {
+  return { ...stockQuote(price), prevClose }
 }
 
 /** A flat quote at `price` — the screener only ever reads `price`. */
@@ -285,11 +307,12 @@ async function seedIvr(
   }
 }
 
-async function goToScreener(page: Page): Promise<void> {
+/** [US-96] The bench lives on the Watchlist page — there is no `#/screener` any more. */
+async function goToBench(page: Page): Promise<void> {
   await page.evaluate(() => {
-    location.hash = '#/screener'
+    location.hash = '#/watchlist'
   })
-  await page.waitForSelector('h1:has-text("Screener")')
+  await page.waitForSelector('h1:has-text("Watchlist")')
 }
 
 // ── Launch ────────────────────────────────────────────────────────────────────
@@ -306,8 +329,11 @@ export type ScreenerLaunchOpts = {
   /** [US-98] The exchange calendar the fake broker publishes. Omit and every weekday in
    *  range is a normal session; supply one to make a specific day a recognised closure. */
   brokerCalendar?: Array<{ date: string; close: string }>
-  /** Underlying quotes, keyed by ticker. Only read once a price ceiling is set. */
+  /** Underlying quotes, keyed by ticker. [US-96] Every bench row reads one, so omitting
+   *  this seeds a flat DEFAULT_UNDERLYING_PRICE quote for each fixture rather than none. */
   stockQuotes?: Record<string, StockQuoteFixture>
+  /** [US-96] Entry conditions to seed per ticker, through the real `watchlist.add`. */
+  conditions?: Record<string, WatchlistConditions>
   marketStatus?: MarketStatusFixture
   /** MarketDataErrorCode that makes every provider call throw — the outage scenario. */
   marketDataError?: string
@@ -416,6 +442,167 @@ function clearEarningsFor(fixtures: PutFixtureSpec[]): Record<string, EarningsFi
   )
 }
 
+/** Every fixture ticker quoted flat, so no bench row is missing a price. */
+function flatQuotesFor(fixtures: PutFixtureSpec[]): Record<string, StockQuoteFixture> {
+  return Object.fromEntries(
+    fixtures.map((fixture) => [fixture.ticker, stockQuote(DEFAULT_UNDERLYING_PRICE)])
+  )
+}
+
+// ── [US-96] The canonical bench ───────────────────────────────────────────────
+//
+// One watchlist of nine stocks, chosen so that every verdict the bench can reach is on
+// screen at once: two names that meet criteria, and seven held back for seven different
+// reasons — an unmet price target, an unmet IV trigger, an earnings gate, a stale
+// reading, a reading a print invalidated, an expired reading, a reading that was never
+// collected, and the screener's own exclusion.
+//
+// Like the fixtures above, every number here is the real engine's: see the
+// "US-96 bench fixtures" tests in `src/main/core/screener.test.ts`, which run these
+// contracts through `screenTicker` and pin the strings the ACs quote.
+
+/** mid 0.65 / 50 = 1.3% period, 12.82%/yr over 37 DTE, ÷ 0.24 ⇒ score 0.53 — below KO's
+ *  0.71, which is what makes the Meets-criteria order KO then XLF. Spread 0.06 stays under
+ *  the $0.10 absolute ceiling, so the 9.23% percentage never bites. */
+export const XLF_PUT: PutFixtureSpec = {
+  ticker: 'XLF',
+  strike: 50,
+  bid: '0.62',
+  ask: '0.68',
+  mid: '0.65',
+  delta: '-0.24',
+  openInterest: 8610,
+  dteOffset: 37
+}
+
+/** Spread 0.42 on a 3.00 mark is exactly 14%, and 0.42 also clears the $0.10 absolute
+ *  ceiling — both limits must break for the filter to fire — so the engine emits the AC's
+ *  literal `spread 14% exceeds 10%`. Everything else about the strike qualifies. */
+export const AMD_PUT: PutFixtureSpec = {
+  ticker: 'AMD',
+  strike: 150,
+  bid: '2.79',
+  ask: '3.21',
+  mid: '3.00',
+  delta: '-0.25',
+  openInterest: 1000,
+  dteOffset: 37
+}
+
+/** An unremarkable qualifying put. DIS, ORCL and XYZ are held back by their IV readings,
+ *  never by their chains, so each needs a strike that clears every hard filter — a stock
+ *  with no chain at all would be waiting for the wrong reason. */
+export const DIS_PUT: PutFixtureSpec = {
+  ticker: 'DIS',
+  strike: 100,
+  bid: '1.47',
+  ask: '1.53',
+  mid: '1.50',
+  delta: '-0.25',
+  openInterest: 2000,
+  dteOffset: 37
+}
+
+export const ORCL_PUT: PutFixtureSpec = {
+  ticker: 'ORCL',
+  strike: 120,
+  bid: '1.76',
+  ask: '1.84',
+  mid: '1.80',
+  delta: '-0.26',
+  openInterest: 2500,
+  dteOffset: 37
+}
+
+export const XYZ_PUT: PutFixtureSpec = {
+  ticker: 'XYZ',
+  strike: 40,
+  bid: '0.48',
+  ask: '0.52',
+  mid: '0.50',
+  delta: '-0.23',
+  openInterest: 900,
+  dteOffset: 37
+}
+
+/** The bench, in the order the story's Background names it. */
+export const BENCH_PUTS: PutFixtureSpec[] = [
+  KO_PUT,
+  XLF_PUT,
+  PEP_PUT,
+  DIS_PUT,
+  ORCL_PUT,
+  AAPL_PUT,
+  MSFT_PUT,
+  AMD_PUT,
+  XYZ_PUT
+]
+
+/** The entry conditions each bench stock carries. XLF is deliberately absent: a stock with
+ *  no personal conditions must still reach Meets criteria on the screening defaults. */
+export const BENCH_CONDITIONS: Record<string, WatchlistConditions> = {
+  KO: { ivrTrigger: 40 },
+  PEP: { ivrTrigger: 45 },
+  DIS: { ivrTrigger: 40 },
+  ORCL: { ivrTrigger: 50 },
+  AAPL: { ownBelowPrice: 170, ivrTrigger: 50 },
+  MSFT: { postEarningsOnly: true },
+  AMD: { ivrTrigger: 50 },
+  XYZ: { ivrTrigger: 40 }
+}
+
+/**
+ * One reading per freshness tier, aged by moving the observation back through sessions —
+ * never by moving the clock, which would also move every fixture's DTE.
+ *
+ * XYZ is omitted on purpose: it is the never-collected ticker, whose cell must read `n/a`
+ * with no ring rather than borrow another stock's tier.
+ */
+export const BENCH_IVR: Record<string, IvrFixture> = {
+  KO: { ivr: 58, observedAt: observedSessionsAgo(0) }, // fresh
+  XLF: { ivr: 46, observedAt: observedSessionsAgo(0) }, // fresh
+  AAPL: { ivr: 34, observedAt: observedSessionsAgo(0) }, // fresh, but below AAPL's trigger
+  MSFT: { ivr: 41, observedAt: observedSessionsAgo(2) }, // aging
+  ORCL: { ivr: 62, observedAt: observedSessionsAgo(2) }, // aging on time, but see ORCL_LAST_PRINT
+  PEP: { ivr: 58, observedAt: observedSessionsAgo(6) }, // stale
+  DIS: { ivr: 47, observedAt: observedSessionsAgo(12) }, // expired
+  AMD: { ivr: 52, observedAt: observedSessionsAgo(0) } // fresh
+}
+
+/**
+ * The print that invalidates ORCL's reading — the session after the one it was observed in.
+ *
+ * Both bounds are tight. `assessIvRank` only counts a print that is strictly *after* the
+ * observation's session, and the fake calendar only reports a `last` print strictly before
+ * today, so the print has to sit in the one session between them. That is why ORCL is
+ * observed two sessions ago rather than one: with a one-session-old reading there is no
+ * such session to put the print in on four weekdays out of five.
+ */
+export const ORCL_LAST_PRINT = sessionsBefore(BASE_DAY, 1)
+
+/** The session PEP's stale reading was taken in — what its tooltip names. */
+export const PEP_OBSERVED_SESSION = sessionsBefore(BASE_DAY, 6)
+
+/**
+ * What the earnings calendar holds for the bench. A ticker omitted here is a calendar that
+ * was read and holds nothing, which demotes its rank but never excludes it — see
+ * `buildEarningsFixtures`. XYZ is omitted so its detail line reads as genuinely unknown.
+ */
+export const BENCH_EARNINGS: Record<string, EarningsFixture> = {
+  KO: { dayOffset: 40 }, // past KO's 37-DTE expiry, so KO screens clear
+  MSFT: { dayOffset: 3 }, // inside the row window and before expiry: the post-earnings gate
+  AMD: { dayOffset: 5 }, // inside the row window, for the caution every stock gets
+  ORCL: { next: null, last: ORCL_LAST_PRINT }
+}
+
+/** Quotes for the bench. Only AAPL and MSFT move — the day-change ACs name them — and the
+ *  rest stay flat so no other scenario is quietly also a price scenario. */
+export const BENCH_QUOTES: Record<string, StockQuoteFixture> = {
+  ...flatQuotesFor(BENCH_PUTS),
+  AAPL: movingQuote('178.40', '176.98'), // +0.8% on the day
+  MSFT: movingQuote('505.10', '511.24') // −1.2% on the day
+}
+
 function screenerLaunchEnv(dbPath: string, opts: ScreenerLaunchOpts): Record<string, string> {
   // buildIvrLaunchEnv supplies the shared keys plus the WHEELBASE_FAKE_IVR seam this
   // suite seeds IV ranks through; only the market-data fixtures are ours.
@@ -427,7 +614,7 @@ function screenerLaunchEnv(dbPath: string, opts: ScreenerLaunchOpts): Record<str
     brokerCalendar: opts.brokerCalendar
   })
   env.WHEELBASE_MOCK_OPTION_SNAPSHOTS = JSON.stringify(buildPutFixtures(fixtures))
-  if (opts.stockQuotes) env.WHEELBASE_MOCK_STOCK_QUOTES = JSON.stringify(opts.stockQuotes)
+  env.WHEELBASE_MOCK_STOCK_QUOTES = JSON.stringify(opts.stockQuotes ?? flatQuotesFor(fixtures))
   if (opts.marketDataError) env.FAKE_MARKET_DATA_ERROR = opts.marketDataError
   // [US-70] The seam is always armed so e2e never reaches the live Finnhub API. Passing
   // `earnings` explicitly — including `{}`, which leaves every ticker `unknown` — opts
@@ -455,9 +642,9 @@ export async function launchScreener(
   const app = await launchElectron(screenerLaunchEnv(dbPath, opts))
   const page = await getPage(app)
 
-  await seedWatchlist(page, fixtureTickers, opts.watchlistNotes)
+  await seedWatchlist(page, fixtureTickers, opts.watchlistNotes, opts.conditions)
   if (opts.ivr) await seedIvr(page, opts.ivr, fixtureTickers)
-  await goToScreener(page)
+  await goToBench(page)
 
   return { app, page }
 }
@@ -476,76 +663,211 @@ export async function relaunchScreener(
 
   const relaunched = await launchElectron(screenerLaunchEnv(dbPath, opts))
   const page = await getPage(relaunched)
-  await goToScreener(page)
+  await goToBench(page)
 
   return { app: relaunched, page }
 }
 
 /**
- * [US-98] Re-mount the screener against the same running app, so the next screen runs
- * at the shared fake clock's current value. Used by the specs that move the clock after
- * seeding — a hash that is already `#/screener` would not remount on its own.
+ * [US-98] Re-mount the bench against the same running app, so the next screen runs at
+ * the shared fake clock's current value. Used by the specs that move the clock after
+ * seeding — a hash that is already `#/watchlist` would not remount on its own.
  */
-export async function reloadScreener(page: Page): Promise<void> {
+export async function reloadBench(page: Page): Promise<void> {
   await page.reload()
-  await page.waitForSelector('h1:has-text("Screener")')
+  await page.waitForSelector('h1:has-text("Watchlist")')
 }
 
-// ── Page queries ──────────────────────────────────────────────────────────────
+// ── [US-96] Bench queries ─────────────────────────────────────────────────────
+//
+// Every card carries `data-testid="watchlist-row-{ticker}"` and the section it landed
+// in, so which half of the bench a stock is on is read off the card itself rather than
+// by walking the DOM up to a heading.
 
-/** Ranked tickers in rendered row order. */
-export async function rankedTickers(page: Page): Promise<string[]> {
+type BenchSection = 'meets' | 'waiting'
+
+function benchCard(ticker: string): string {
+  return `[data-testid="watchlist-row-${ticker}"]`
+}
+
+async function sectionTickers(page: Page, section: BenchSection): Promise<string[]> {
   const testids = await page
-    .locator('[data-testid^="screener-row-"]')
-    .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-testid') ?? ''))
-  return testids.map((testid) => testid.replace('screener-row-', ''))
+    .locator(`[data-bench-section="${section}"]`)
+    .evaluateAll((cards) => cards.map((card) => card.getAttribute('data-testid') ?? ''))
+  return testids.map((testid) => testid.replace('watchlist-row-', ''))
 }
 
-/** Resolves once exactly `count` ranked rows are rendered — i.e. a re-screen has landed. */
-export async function waitForRankedRowCount(page: Page, count: number): Promise<void> {
+/** The Meets-criteria cards in rendered order — the screener's own rank order. */
+export function meetsTickers(page: Page): Promise<string[]> {
+  return sectionTickers(page, 'meets')
+}
+
+/** The Stocks-of-interest cards in rendered order — the trader's watchlist order. */
+export function waitingTickers(page: Page): Promise<string[]> {
+  return sectionTickers(page, 'waiting')
+}
+
+/**
+ * Resolves once `ticker` has a card on the bench, and — when a section is named — once it
+ * has landed in that half.
+ *
+ * Naming the section is how a spec waits for the *screen* rather than the watchlist: the
+ * card itself is rendered from the watchlist snapshot, which resolves first, so waiting on
+ * the bare card would let an assertion about ranking run before the screener answered.
+ */
+export async function waitForBenchCard(
+  page: Page,
+  ticker: string,
+  section?: BenchSection
+): Promise<void> {
+  const inSection = section === undefined ? '' : `[data-bench-section="${section}"]`
+  await page.waitForSelector(`${benchCard(ticker)}${inSection}`)
+}
+
+/** Resolves once exactly `count` cards sit in Meets criteria — i.e. a re-screen landed. */
+export async function waitForMeetsCardCount(page: Page, count: number): Promise<void> {
   await page.waitForFunction(
-    (expected) => document.querySelectorAll('[data-testid^="screener-row-"]').length === expected,
+    (expected) => document.querySelectorAll('[data-bench-section="meets"]').length === expected,
     count
   )
 }
 
-/** The cell texts of one ranked row, in column order. */
-export function rowCells(page: Page, ticker: string): Promise<string[]> {
-  return page.locator(`[data-testid="screener-row-${ticker}"] td`).allTextContents()
+/** The text of an element that a card carries only sometimes — null when the card omits
+ *  it, and null when the ticker is not on the bench at all. Which of the two it was is
+ *  never the question a spec is asking: both mean "the card is not saying this". */
+async function cardText(page: Page, ticker: string, testId: string): Promise<string | null> {
+  const element = page.locator(`${benchCard(ticker)} [data-testid="${testId}"]`)
+  if ((await element.count()) === 0) return null
+  return (await element.textContent())?.trim() ?? null
 }
 
-/** The `data-yield-per-delta` score a ranked row exposes for machine verification. */
-export function rowScore(page: Page, ticker: string): Promise<string | null> {
-  return page.getAttribute(`[data-testid="screener-row-${ticker}"]`, 'data-yield-per-delta')
+/** The rank pill on a card — `#1` when the candidate is clear, `—` when its earnings
+ *  verdict demoted it, and null for a waiting card, which carries no rank at all. */
+export function cardRank(page: Page, ticker: string): Promise<string | null> {
+  return cardText(page, ticker, 'watchlist-rank')
+}
+
+/** The yield-per-delta score a ranked card exposes for machine verification — it sits on
+ *  the rank pill's title, since the card has no column to spend on it. */
+export function cardScore(page: Page, ticker: string): Promise<string | null> {
+  return page.getAttribute(`${benchCard(ticker)} [data-testid="watchlist-rank"]`, 'title')
+}
+
+/** Why a stock is waiting, verbatim. Null when the card meets criteria (and so shows the
+ *  put on offer instead) or when the ticker is not on the bench at all. */
+export function cardReason(page: Page, ticker: string): Promise<string | null> {
+  return cardText(page, ticker, 'watchlist-reason')
+}
+
+/** Open a stock's detail panel, as a trader would — by clicking its ticker. */
+export async function selectCard(page: Page, ticker: string): Promise<void> {
+  await page.click(`${benchCard(ticker)} [data-testid="watchlist-ticker"]`)
+  await page.waitForFunction(
+    (expected) =>
+      document.querySelector('[data-testid="bench-detail-ticker"]')?.textContent?.trim() ===
+      expected,
+    ticker
+  )
+}
+
+/** The header lines of the matching-put card, keyed apart from the metric list. */
+export const PUT_CONTRACT = 'Contract'
+export const PUT_EXPIRATION = 'Expiration'
+export const PUT_CAPTION = 'Caption'
+
+/**
+ * The selected stock's matching put as one assertable object: the contract and expiry
+ * lines, every `dt` → `dd` metric, and the cash-to-secure caption.
+ *
+ * A Map rather than an array, because the panel states each metric beside its own label —
+ * pinning a value to a position would re-introduce the retired table's column indexes.
+ */
+export async function detailPutMetrics(page: Page): Promise<Map<string, string>> {
+  const card = page.locator('[data-testid="bench-detail-put"]')
+  await card.waitFor()
+  const entries = await card.evaluate(
+    (node, keys) => {
+      const read = (el: Element | null | undefined): string =>
+        el?.textContent?.replace(/\s+/g, ' ').trim() ?? ''
+      const [contract, expiration] = node.querySelectorAll(':scope > div > span')
+      const pairs: [string, string][] = [
+        [keys.contract, read(contract)],
+        [keys.expiration, read(expiration)]
+      ]
+      node
+        .querySelectorAll('dt')
+        .forEach((dt) => pairs.push([read(dt), read(dt.nextElementSibling)]))
+      pairs.push([keys.caption, read(node.querySelector(':scope > p'))])
+      return pairs
+    },
+    { contract: PUT_CONTRACT, expiration: PUT_EXPIRATION, caption: PUT_CAPTION }
+  )
+  return new Map(entries)
+}
+
+/** The selected stock's day change, with the direction that drives its colour. */
+export async function detailDayChange(
+  page: Page
+): Promise<{ percent: string; direction: string | null }> {
+  const cell = page.locator('[data-testid="bench-day-change"]')
+  return {
+    percent: (await cell.textContent())?.trim() ?? '',
+    direction: await cell.getAttribute('data-direction')
+  }
+}
+
+/** The selected stock's earnings line, with the tone that marks it as a caution. */
+export async function detailEarnings(page: Page): Promise<{ text: string; tone: string | null }> {
+  const line = page.locator('[data-testid="bench-detail-earnings"]')
+  return {
+    text: (await line.textContent())?.trim() ?? '',
+    tone: await line.getAttribute('data-tone')
+  }
+}
+
+/** [US-98] The rendered IV-rank cell on a card: what a trader sees, the state the engine
+ *  assigned, the tier its ring draws, and the accessible label carrying the age. */
+export type IvrCellReading = {
+  text: string
+  state: string | null
+  /** Null when no ring is drawn — a ticker that was never collected. */
+  ring: string | null
+  /** Null for a never-collected ticker, which has no reading to describe. */
+  label: string | null
+}
+
+export async function ivrCell(page: Page, ticker: string): Promise<IvrCellReading> {
+  const cell = page.locator(`${benchCard(ticker)} [data-testid="ivr-cell"]`)
+  if ((await cell.count()) === 0) {
+    const empty = page.locator(`${benchCard(ticker)} [data-ivr-state="empty"]`)
+    return {
+      text: (await empty.textContent())?.trim() ?? '',
+      state: 'empty',
+      ring: null,
+      label: null
+    }
+  }
+  const ring = cell.locator('[data-testid="freshness-ring"]')
+  return {
+    text: (await cell.textContent())?.trim() ?? '',
+    state: await cell.getAttribute('data-ivr-state'),
+    ring: (await ring.count()) === 0 ? null : await ring.getAttribute('data-state'),
+    label: await cell.getAttribute('aria-label')
+  }
+}
+
+/** [US-96] Hover a card's IV reading and wait for the tier tooltip it opens. */
+export async function hoverIvrRing(page: Page, ticker: string): Promise<void> {
+  await page.hover(`${benchCard(ticker)} [data-testid="ivr-cell"]`)
+  await page.waitForSelector('[data-testid="ivr-tooltip"]')
 }
 
 // ── [US-70] Earnings ──────────────────────────────────────────────────────────
 
-/** The earnings badge text on a ranked row, or null when the row carries none — i.e.
+/** The earnings badge text on a card, or null when the card carries none — i.e.
  *  the candidate's earnings are `clear`. */
-export async function earningsBadge(page: Page, ticker: string): Promise<string | null> {
-  const badge = page.locator(
-    `[data-testid="screener-row-${ticker}"] [data-testid="earnings-badge"]`
-  )
-  return (await badge.count()) === 0 ? null : badge.textContent()
-}
-
-/** The rank cell of a ranked row — a number when the candidate is clear, `—` when its
- *  earnings verdict demoted it. */
-export async function rowRank(page: Page, ticker: string): Promise<string> {
-  const cells = await rowCells(page, ticker)
-  return cells[0].trim()
-}
-
-/** The reason cell of an excluded ticker, after opening the Excluded section. Null when
- *  the ticker is not in that list at all. */
-export async function excludedReason(page: Page, ticker: string): Promise<string | null> {
-  const toggle = page.locator('[data-testid="screener-excluded-toggle"]')
-  if ((await toggle.count()) === 0) return null
-  await toggle.click()
-  const row = page.locator(`[data-testid="screener-excluded-row-${ticker}"]`)
-  if ((await row.count()) === 0) return null
-  return (await row.textContent())?.replace(ticker, '') ?? null
+export function earningsBadge(page: Page, ticker: string): Promise<string | null> {
+  return cardText(page, ticker, 'earnings-badge')
 }
 
 /** [US-70] Persist the earnings-handling mode through the criteria sheet, then wait for
@@ -559,7 +881,7 @@ export async function setEarningsHandling(
   await page.click(`[data-testid="earnings-${mode}"]`)
   await saveCriteria(page)
   await waitForCriteriaSheetClosed(page)
-  await waitForRankedRowCount(page, expectedRowCount)
+  await waitForMeetsCardCount(page, expectedRowCount)
 }
 
 // ── [US-68] Promote to trade ──────────────────────────────────────────────────
@@ -594,9 +916,11 @@ export async function setMarketDataError(
   }, code)
 }
 
-/** Click a ranked row's promote action and wait for the promoted form to mount. */
-export async function promoteRow(page: Page, ticker: string): Promise<void> {
-  await page.click(`[data-testid="screener-promote-${ticker}"]`)
+/** [US-96] Promote a bench candidate: the handoff moved onto the detail panel, so the
+ *  stock has to be selected before its Review trade action exists to click. */
+export async function promoteCard(page: Page, ticker: string): Promise<void> {
+  await selectCard(page, ticker)
+  await page.click(`[data-testid="bench-review-${ticker}"]`)
   await page.waitForSelector('[data-testid="promote-provenance"]')
 }
 
@@ -651,11 +975,12 @@ function criteriaInput(page: Page, field: CriteriaField): string {
 export type CriteriaEntryPoint = 'header' | 'strip' | 'empty'
 
 const ENTRY_POINT_SELECTOR: Record<CriteriaEntryPoint, string> = {
-  // The only *button* carrying ⚙ — the sidebar's Settings item is an anchor. Matching on
-  // its "Criteria" label instead would also hit the empty state's "Adjust criteria",
-  // since `:has-text()` is a case-insensitive substring match.
-  header: 'button:has-text("⚙")',
+  // [US-96] The bench header names the action outright ("Screening criteria") instead of
+  // the Screener page's ⚙ glyph, so the button carries its own test id.
+  header: '[data-testid="bench-criteria"]',
   strip: '[data-testid="screener-criteria-strip"]',
+  // The empty state now sits *inside* the Meets-criteria section, but its card and its
+  // "Adjust criteria" action are the same ones the Screener page showed.
   empty: '[data-testid="screener-empty"] button'
 }
 

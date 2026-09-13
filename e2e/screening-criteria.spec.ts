@@ -4,8 +4,12 @@
 // docs/epics/08-stories/US-67-configure-screening-defaults.md; the names mirror the
 // Gherkin. Every criteria write goes through the real sheet — never a direct
 // `app_settings` write — so each test proves the whole path: form → Zod → IPC →
-// service → `app_settings` → engine → re-rendered table. Only the market-data
+// service → `app_settings` → engine → re-screened bench. Only the market-data
 // provider and the IVR scrape are faked, through the existing e2e seams.
+//
+// [US-96] The criteria live on the Watchlist page now: the header button, the summary
+// strip and the empty Meets-criteria state are the same three entry points, and a save
+// re-screens the bench in place rather than a table.
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ElectronApplication, Page } from 'playwright'
 import { cleanupDb, tmpDb } from './assignment-helpers'
@@ -21,14 +25,15 @@ import {
   criteriaValues,
   dismissCriteriaSheet,
   launchScreener,
+  meetsTickers,
   openCriteriaSheet,
-  rankedTickers,
   relaunchScreener,
   saveCriteria,
   segmentPressed,
   setCriteriaValues,
+  waitForBenchCard,
   waitForCriteriaSheetClosed,
-  waitForRankedRowCount,
+  waitForMeetsCardCount,
   type ScreenerLaunchOpts
 } from './screener-helpers'
 
@@ -65,12 +70,12 @@ describe('US-67: configure screening criteria', () => {
 
   it('opens the criteria sheet from the page header', async () => {
     const page = await launch('wb-e2e-us67-header', { ivr: RANKED_IVR })
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
     await openCriteriaSheet(page, 'header')
 
-    // The sheet opens *over* the results — the table is still mounted behind it.
-    expect(await page.locator('[data-testid="screener-row-KO"]').count()).toBe(1)
+    // The sheet opens *over* the results — the bench is still mounted behind it.
+    expect(await page.locator('[data-testid="watchlist-row-KO"]').count()).toBe(1)
 
     // Every field is pre-filled from the persisted criteria.
     expect(await criteriaValues(page)).toEqual(DEFAULT_FIELDS)
@@ -79,16 +84,17 @@ describe('US-67: configure screening criteria', () => {
     expect(await segmentPressed(page, 'earnings-exclude')).toBe(true)
 
     // The sidebar navigation remains visible and clickable — SheetOverlay starts at
-    // left-[200px], so nothing covers the 200px rail.
-    const navItem = page.locator('a[href="#/watchlist"]')
+    // left-[200px], so nothing covers the 200px rail. [US-96] Positions is the item to
+    // click now: the Watchlist entry is the page the sheet is already open on.
+    const navItem = page.locator('a[href="#/"]')
     expect(await navItem.isVisible()).toBe(true)
     await navItem.click()
-    await page.waitForFunction(() => location.hash === '#/watchlist')
+    await page.waitForFunction(() => location.hash === '#/')
   })
 
   it('opens the criteria sheet from the criteria summary strip', async () => {
     const page = await launch('wb-e2e-us67-strip', { ivr: RANKED_IVR })
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
     expect(await criteriaChips(page)).toEqual(DEFAULT_CHIPS)
 
@@ -107,8 +113,8 @@ describe('US-67: configure screening criteria', () => {
     await openCriteriaSheet(page, 'empty')
 
     expect(await criteriaValues(page)).toEqual(DEFAULT_FIELDS)
-    // The trader is not navigated away from the Screener.
-    expect(await page.evaluate(() => location.hash)).toBe('#/screener')
+    // The trader is not navigated away from the bench.
+    expect(await page.evaluate(() => location.hash)).toBe('#/watchlist')
   })
 
   it('saves new screening criteria and re-screens', async () => {
@@ -116,9 +122,9 @@ describe('US-67: configure screening criteria', () => {
       fixtures: [...RANKED_PUTS, SBUX_PUT],
       ivr: RANKED_IVR
     })
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
     // SBUX sits below the default delta band, so it starts out excluded.
-    expect(await rankedTickers(page)).toEqual(['KO', 'AAPL', 'MSFT'])
+    expect(await meetsTickers(page)).toEqual(['KO', 'AAPL', 'MSFT'])
 
     await openCriteriaSheet(page, 'header')
     await setCriteriaValues(page, {
@@ -134,8 +140,8 @@ describe('US-67: configure screening criteria', () => {
     await page.waitForSelector('text=Screening criteria saved')
 
     // The results refresh: only SBUX (0.18Δ, 42 DTE) is inside the new band.
-    await page.waitForSelector('[data-testid="screener-row-SBUX"]')
-    expect(await rankedTickers(page)).toEqual(['SBUX'])
+    await waitForBenchCard(page, 'SBUX', 'meets')
+    expect(await meetsTickers(page)).toEqual(['SBUX'])
 
     expect(await criteriaChips(page)).toEqual([
       'Δ 0.15–0.20',
@@ -149,7 +155,7 @@ describe('US-67: configure screening criteria', () => {
   it('saved criteria survive a restart', async () => {
     const opts: ScreenerLaunchOpts = { ivr: RANKED_IVR }
     const page = await launch('wb-e2e-us67-restart', opts)
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
     await openCriteriaSheet(page, 'header')
     await setCriteriaValues(page, { deltaMin: '0.15', deltaMax: '0.20' })
@@ -170,7 +176,7 @@ describe('US-67: configure screening criteria', () => {
   it('toggles earnings handling between exclude and flag', async () => {
     // Persistence only — what the screener DOES with the choice is US-70.
     const page = await launch('wb-e2e-us67-earnings', { ivr: RANKED_IVR })
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
     await openCriteriaSheet(page, 'header')
     await page.click('[data-testid="earnings-flag"]')
@@ -187,7 +193,7 @@ describe('US-67: configure screening criteria', () => {
 
   it('rejects an inverted delta band', async () => {
     const page = await launch('wb-e2e-us67-inverted-delta', { ivr: RANKED_IVR })
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
     await openCriteriaSheet(page, 'header')
     await setCriteriaValues(page, { deltaMin: '0.30', deltaMax: '0.20' })
@@ -198,7 +204,7 @@ describe('US-67: configure screening criteria', () => {
 
   it('rejects an inverted DTE window', async () => {
     const page = await launch('wb-e2e-us67-inverted-dte', { ivr: RANKED_IVR })
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
     await openCriteriaSheet(page, 'header')
     await setCriteriaValues(page, { dteMin: '45', dteMax: '30' })
@@ -221,8 +227,8 @@ describe('US-67: configure screening criteria', () => {
     ] as const
 
     const page = await launch('wb-e2e-us67-out-of-range', { ivr: RANKED_IVR })
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
-    const rankedBefore = await rankedTickers(page)
+    await waitForBenchCard(page, 'KO', 'meets')
+    const rankedBefore = await meetsTickers(page)
 
     for (const example of examples) {
       await openCriteriaSheet(page, 'header')
@@ -235,7 +241,7 @@ describe('US-67: configure screening criteria', () => {
 
       // No criteria are saved, and the results behind the sheet are unchanged.
       expect(await criteriaChips(page)).toEqual(DEFAULT_CHIPS)
-      expect(await rankedTickers(page)).toEqual(rankedBefore)
+      expect(await meetsTickers(page)).toEqual(rankedBefore)
     }
   })
 
@@ -244,10 +250,10 @@ describe('US-67: configure screening criteria', () => {
       fixtures: [...RANKED_PUTS, PEP_PUT],
       ivr: { ...RANKED_IVR, PEP: 22 }
     })
-    await page.waitForSelector('[data-testid="screener-row-PEP"]')
+    await waitForBenchCard(page, 'PEP', 'meets')
 
     // Floor off: nothing is excluded for low IV rank.
-    expect(await rankedTickers(page)).toEqual(['KO', 'AAPL', 'MSFT', 'PEP'])
+    expect(await meetsTickers(page)).toEqual(['KO', 'AAPL', 'MSFT', 'PEP'])
 
     await openCriteriaSheet(page, 'header')
     await page.click('[data-testid="iv-rank-floor-on"]')
@@ -256,8 +262,8 @@ describe('US-67: configure screening criteria', () => {
     await waitForCriteriaSheetClosed(page)
 
     // PEP (IVR 22) drops out; MSFT's IV rank is unknown, which never excludes.
-    await waitForRankedRowCount(page, 3)
-    expect(await rankedTickers(page)).toEqual(['KO', 'AAPL', 'MSFT'])
+    await waitForMeetsCardCount(page, 3)
+    expect(await meetsTickers(page)).toEqual(['KO', 'AAPL', 'MSFT'])
     expect(await criteriaChips(page)).toContain('IVR ≥ 30')
   })
 
@@ -266,10 +272,10 @@ describe('US-67: configure screening criteria', () => {
       ivr: RANKED_IVR,
       stockQuotes: STOCK_QUOTES
     })
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
     // Ceiling off: MSFT ($420 underlying) still ranks.
-    expect(await rankedTickers(page)).toEqual(['KO', 'AAPL', 'MSFT'])
+    expect(await meetsTickers(page)).toEqual(['KO', 'AAPL', 'MSFT'])
 
     await openCriteriaSheet(page, 'header')
     await page.click('[data-testid="price-ceiling-on"]')
@@ -278,15 +284,15 @@ describe('US-67: configure screening criteria', () => {
     await waitForCriteriaSheetClosed(page)
 
     // Only KO ($62) trades below the ceiling.
-    await waitForRankedRowCount(page, 1)
-    expect(await rankedTickers(page)).toEqual(['KO'])
+    await waitForMeetsCardCount(page, 1)
+    expect(await meetsTickers(page)).toEqual(['KO'])
     expect(await criteriaChips(page)).toContain('Price ≤ $75')
   })
 
   it('discards unsaved edits when the sheet is dismissed', async () => {
     const page = await launch('wb-e2e-us67-discard', { ivr: RANKED_IVR })
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
-    const rankedBefore = await rankedTickers(page)
+    await waitForBenchCard(page, 'KO', 'meets')
+    const rankedBefore = await meetsTickers(page)
 
     // The AC lists all three dismissals, so all three are exercised here.
     for (const via of ['cancel', 'close', 'scrim'] as const) {
@@ -297,7 +303,7 @@ describe('US-67: configure screening criteria', () => {
 
       // Nothing persisted, nothing re-screened.
       expect(await criteriaChips(page)).toEqual(DEFAULT_CHIPS)
-      expect(await rankedTickers(page)).toEqual(rankedBefore)
+      expect(await meetsTickers(page)).toEqual(rankedBefore)
 
       // Reopening shows the persisted band, not the discarded edit.
       await openCriteriaSheet(page, 'header')
@@ -310,7 +316,7 @@ describe('US-67: configure screening criteria', () => {
 
   it('resets to defaults without persisting', async () => {
     const page = await launch('wb-e2e-us67-reset', { ivr: RANKED_IVR })
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
     await openCriteriaSheet(page, 'header')
     await setCriteriaValues(page, { deltaMin: '0.15', deltaMax: '0.20' })
@@ -334,7 +340,7 @@ describe('US-67: configure screening criteria', () => {
 
   it('does not show screening criteria in Settings', async () => {
     const page = await launch('wb-e2e-us67-settings', { ivr: RANKED_IVR })
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
     await page.evaluate(() => {
       location.hash = '#/settings'

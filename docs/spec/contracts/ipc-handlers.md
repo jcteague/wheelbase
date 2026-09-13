@@ -1641,25 +1641,39 @@ US-37 adds a dedicated `settings:*` namespace for credential status, Alpaca cred
 
 <!-- /generated -->
 
-<!-- generated:from us-63 -->
+<!-- generated:from us-63,us-96 -->
 
 ## `watchlist:*` namespace
 
-The candidate-screener watchlist handlers, registered by `registerWatchlistIpc({ db })`
-in `src/main/ipc/watchlist.ts` and wired from `src/main/index.ts`. Each is thin —
-a Zod parse plus a single service call in `src/main/services/watchlist.ts`, wrapped in
-`handleIpcCall`. All use the canonical `{ ok, errors }` envelope. Introduced by
-[us-63 — Manage watchlist tickers](../features/us-63-manage-watchlist.md).
+The bench's watchlist handlers, registered by
+`registerWatchlistIpc({ db, getProvider, getCurrentDate })` in `src/main/ipc/watchlist.ts`
+and wired from `src/main/index.ts`. Each is thin — a Zod parse plus a single service call,
+wrapped in `handleIpcCall`. All use the canonical `{ ok, errors }` envelope. Introduced by
+[us-63 — Manage watchlist tickers](../features/us-63-manage-watchlist.md); the snapshot
+channel and the widened registration signature come from
+[us-96 — One live bench](../features/us-96-one-live-bench.md).
 
-### `watchlist:list`
+### `watchlist:snapshot`
 
-- **Purpose:** hydrate the Watchlist page, newest-first.
-- **Request:** none.
-- **Response (success):** `{ ok: true, entries: WatchlistEntryRecord[] }` ordered by
-  `added_at DESC`. `WatchlistEntryRecord = { ticker, notes: string | null,
-ownBelowPrice: string | null, ivrTrigger: number | null, postEarningsOnly: boolean,
-coreHolding: boolean, addedAt: string }` (`ownBelowPrice` is 4dp TEXT money).
-- **Source:** `src/main/ipc/watchlist.ts`, `src/main/services/watchlist.ts` (`listWatchlist`)
+- **Purpose:** one bench row per watchlist entry — the quote, the freshness-assessed IV
+  reading, the earnings display, and a per-gate verdict — all computed at a single request
+  clock. Pulls no option chains; `screener:results` stays a separate, heavier query.
+- **Request:** none — no payload, therefore no Zod request schema.
+- **Response (success):** `{ ok: true, rows: IpcWatchlistSnapshotRow[], asOf: string }`
+  in watchlist order (`added_at DESC`), where a row is
+  `{ entry, quote: IpcSnapshotQuote | null, ivRank: IpcIvRank | null,
+earnings: IpcEarningsDisplay, verdict: IpcEntryVerdict }`. A gate is
+  `{ verdict: 'met' | 'unmet' | 'unknown' | 'none', label: string | null }`; `asOf` is the
+  ISO instant every verdict was judged at.
+- **Degradation:** every expected failure is modelled inside the success payload, never as
+  an error envelope. The provider failing to construct yields `quote: null` on every row
+  with price gates `unknown`; one ticker's quote rejecting nulls only that row; an
+  earnings-read failure yields `{ kind: 'unknown' }` everywhere; an IVR-read failure yields
+  `ivRank: null` everywhere with IV gates `unknown`; an empty watchlist returns
+  `{ rows: [], asOf }` without constructing the provider at all.
+- **Error:** only the standard `__root__` / `internal_error` envelope.
+- **Source:** `src/main/ipc/watchlist.ts`, `src/main/services/watchlist-snapshot.ts`,
+  `src/main/core/watchlist-signal.ts`
 
 ### `watchlist:add`
 
@@ -1684,7 +1698,7 @@ postEarningsOnly?, coreHolding? }` (parsed by `WatchlistAddPayloadSchema`; ticke
 
 <!-- /generated -->
 
-<!-- generated:from us-65,us-67,us-70,us-99,us-98 -->
+<!-- generated:from us-65,us-67,us-70,us-99,us-98,us-96 -->
 
 ## `screener:*` namespace
 

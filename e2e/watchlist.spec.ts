@@ -3,6 +3,11 @@
 // Drives the real add form end to end (renderer → IPC → sqlite → refetch). Prior
 // tickers are seeded through the UI, never by direct DB writes. Selectors match the
 // ids/testids introduced by the Watchlist page (Layer 5).
+//
+// [US-96] The page became the bench: each entry is a card instead of a table row, the
+// add form sits behind `+ Add stock` once anything is saved, and the thesis and entry
+// conditions a card no longer has room for are shown in the detail panel beside it. Every
+// scenario is unchanged — only where each value is read from has moved.
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ElectronApplication, Page } from 'playwright'
 import { cleanupDb, getPage, launchApp, tmpDb } from './assignment-helpers'
@@ -11,6 +16,13 @@ async function goToWatchlist(page: Page): Promise<void> {
   await page.evaluate(() => {
     location.hash = '#/watchlist'
   })
+  // [US-96] The add form is revealed by `+ Add stock` and shown unconditionally only
+  // while the bench is empty — so opening it here is what keeps it mounted once the
+  // first ticker lands and the empty state goes away.
+  await page.waitForSelector('[data-testid="bench-add-toggle"]')
+  if ((await page.getAttribute('[data-testid="bench-add-toggle"]', 'aria-expanded')) !== 'true') {
+    await page.click('[data-testid="bench-add-toggle"]')
+  }
   await page.waitForSelector('[data-testid="watchlist-add-submit"]')
 }
 
@@ -39,6 +51,13 @@ async function addTicker(page: Page, opts: AddTickerOpts): Promise<void> {
 async function seedTicker(page: Page, ticker: string): Promise<void> {
   await addTicker(page, { ticker })
   await page.waitForSelector(`[data-testid="watchlist-row-${ticker}"]`)
+}
+
+/** The tickers on the bench, in card order. The ticker is a button that carries a `→`
+ *  affordance into the detail panel, which is not part of the symbol. */
+async function tickerTexts(page: Page): Promise<string[]> {
+  const labels = await page.locator('[data-testid="watchlist-ticker"]').allTextContents()
+  return labels.map((label) => label.replace('→', '').trim())
 }
 
 function rowCount(page: Page): Promise<number> {
@@ -81,8 +100,7 @@ describe('US-63: create and remove watchlist entries', () => {
     await addTicker(page, { ticker: 'NVDA' })
     await page.waitForSelector('[data-testid="watchlist-row-NVDA"]')
 
-    const tickers = await page.locator('[data-testid="watchlist-ticker"]').allTextContents()
-    expect(tickers[0]).toBe('NVDA')
+    expect((await tickerTexts(page))[0]).toBe('NVDA')
   })
 
   it('creates an entry with a thesis and entry conditions', async () => {
@@ -96,10 +114,15 @@ describe('US-63: create and remove watchlist entries', () => {
     })
     await page.waitForSelector('[data-testid="watchlist-row-PLTR"]')
 
-    const rowText = await page.locator('[data-testid="watchlist-row-PLTR"]').textContent()
-    expect(rowText).toContain('Would own below $38 after the run-up')
-    expect(rowText).toContain('≤ $38')
-    expect(rowText).toContain('IVR ≥ 50')
+    // [US-96] The card carries the live read on the stock; the thesis and the conditions
+    // it was saved with are stated in full in the detail panel, which opens on the only
+    // stock on the bench.
+    expect(await page.textContent('[data-testid="bench-detail-ticker"]')).toBe('PLTR')
+    expect(await page.textContent('[data-testid="bench-detail-thesis"]')).toBe(
+      'Would own below $38 after the run-up'
+    )
+    expect(await page.textContent('[data-testid="bench-gate-price"]')).toContain('≤ $38')
+    expect(await page.textContent('[data-testid="bench-gate-iv"]')).toContain('IVR ≥ 50')
   })
 
   it('creates an entry with no thesis and no conditions', async () => {
@@ -120,8 +143,7 @@ describe('US-63: create and remove watchlist entries', () => {
     await addTicker(page, { ticker: 'nvda' })
     await page.waitForSelector('[data-testid="watchlist-row-NVDA"]')
 
-    const tickers = await page.locator('[data-testid="watchlist-ticker"]').allTextContents()
-    expect(tickers).toContain('NVDA')
+    expect(await tickerTexts(page)).toContain('NVDA')
   })
 
   it('rejects a duplicate ticker', async () => {

@@ -2,13 +2,18 @@
 
 <!-- generated:from us-98 -->
 
-> **Status: in progress — 11 of 13 acceptance criteria shipped and verified.** The
-> freshness engine, the exchange-calendar cache, the earnings split and the screener
-> surface are implemented, refactored, and covered end to end by
-> `e2e/ivr-staleness.spec.ts`. The watchlist Signal integration (**AC5** and **AC13**) is
-> blocked on **US-96**, which has not landed — the section marked **(planned)** below is
-> specified but not wired, and those two ACs have no coverage. The tier boundaries below
-> are also still the _proposed_ values: trader validation is an open prerequisite.
+> **Status: shipped.** The freshness engine, the exchange-calendar cache, the earnings
+> split and the screener surface are implemented, refactored, and covered end to end by
+> `e2e/ivr-staleness.spec.ts`.
+>
+> **All 13 acceptance criteria are covered**, one verbatim-named test each.
+> AC5 and AC13 had no surface to assert on until [US-96](./us-96-one-live-bench.md) folded
+> the screener into the Watchlist page; both landed with it and are now tested here. US-96
+> also carried `expired` to the renderer as a visible reading, which changes what AC6 can
+> claim — see the note on that row below.
+>
+> The tier boundaries are still the _proposed_ values: trader validation is an open
+> prerequisite.
 
 ## Summary
 
@@ -45,10 +50,25 @@ holiday does not age anything, and an early close is a whole session.
 | AC12 | The IV-rank floor is not applied to an expired reading         |
 | AC13 | Signal refuses to claim entry readiness on an unusable reading |
 
-Each AC is one verbatim-named test in `e2e/ivr-staleness.spec.ts`. **AC1–AC4 and
-AC6–AC12 pass**; **AC5 and AC13 are absent, not skipped** — both assert on the watchlist
-Signal, so they wait on US-96. `e2e/ivr-collector.spec.ts` additionally carries the
-recognised-holiday no-fetch regression, including the brokerless case.
+Each AC is one verbatim-named test in `e2e/ivr-staleness.spec.ts`; all 13 pass.
+
+**AC5 and AC13 were added once [US-96](./us-96-one-live-bench.md) shipped the bench.**
+Both assert on a verdict the app could not render before then. US-98 wrote them against a
+"Signal" reporting "Entry ready"; that concept shipped as the per-gate verdict and the
+"Meets criteria" section, so the tests read the vocabulary that exists while asserting
+exactly what the scenarios describe — a stale reading muted beside a half-full ring whose
+tooltip says it cannot satisfy an IV condition, and a stock whose only obstacle is that
+reading held out of Meets criteria.
+
+**AC6 was superseded.** "An expired reading is indistinguishable from no reading" was
+true only while an expired reading collapsed to `null`. US-96 carries it to the renderer
+with its value and age, so it now shows `exp` where a never-collected ticker shows `n/a`.
+The decision rule the AC protected is unchanged — an expired reading is still unusable and
+still never applies the IV-rank floor — so the test was renamed "An expired reading shows
+exp and behaves as no reading" and asserts both halves.
+
+`e2e/ivr-collector.spec.ts` additionally carries the recognised-holiday no-fetch
+regression, including the brokerless case.
 
 ## What was built
 

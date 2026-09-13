@@ -5,32 +5,34 @@
 // Gherkin scenarios. Every assertion runs against the real app: the fake market-data
 // provider serves the put chains, the US-65 engine scores them, and the renderer
 // formats what it emits — nothing between the two is stubbed.
+//
+// [US-96] The ranked table is gone. The same results are now the Meets-criteria half of
+// the bench on the Watchlist page: rank, ticker and price on the card, and the strike's
+// full metric set in the detail panel beside it. The scenarios below are unchanged —
+// only where each number is read from has moved.
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ElectronApplication, Page } from 'playwright'
 import { format, parseISO } from 'date-fns'
 import { CLOSED_SESSION, cleanupDb, tmpDb } from './assignment-helpers'
 import {
+  PUT_CONTRACT,
+  PUT_EXPIRATION,
   QUOTE_TIMESTAMP,
   RANKED_IVR,
   RANKED_PUTS,
   TSLA_PUT,
+  cardRank,
+  cardReason,
+  cardScore,
+  detailPutMetrics,
+  ivrCell,
   launchScreener,
-  rankedTickers,
-  rowCells,
-  rowScore,
+  meetsTickers,
+  selectCard,
+  waitForBenchCard,
+  waitingTickers,
   type ScreenerLaunchOpts
 } from './screener-helpers'
-
-// Column order of the ranked table: #, Ticker, Strike, Exp, DTE, Mark, Yield, Ann.,
-// Δ, IVR, OI, Spread.
-// [US-98] Fresh IVR is intentionally a bare value; observation metadata stays in the
-// cell tooltip/accessibility metadata rather than permanently occupying the table.
-
-const RANK = 0
-const IVR = 9
-/** The metric columns this story pins. [US-68] appended a trailing promote-action
- *  cell after them, which is why the row's cell count is one higher. */
-const COLUMN_COUNT = 12
 
 describe('US-66: display ranked screener results', () => {
   let app: ElectronApplication
@@ -53,57 +55,62 @@ describe('US-66: display ranked screener results', () => {
 
     // Background: the market status pill reads LIVE.
     await page.waitForSelector('[data-testid="market-status-pill"]:has-text("LIVE")')
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
-    expect(await rankedTickers(page)).toEqual(['KO', 'AAPL', 'MSFT'])
-    expect(await rowScore(page, 'KO')).toBe('0.71')
-    expect(await rowScore(page, 'AAPL')).toBe('0.53')
-    expect(await rowScore(page, 'MSFT')).toBe('0.50')
+    expect(await meetsTickers(page)).toEqual(['KO', 'AAPL', 'MSFT'])
+    expect(await cardScore(page, 'KO')).toBe('0.71')
+    expect(await cardScore(page, 'AAPL')).toBe('0.53')
+    expect(await cardScore(page, 'MSFT')).toBe('0.50')
 
-    // Every decision column carries a value — strike, exp, DTE, mark, period yield,
-    // annualized yield, delta, IV rank, open interest, spread.
-    const allCells = await rowCells(page, 'KO')
-    // Still pinned as a total, so a stray column cannot slip in unnoticed: the metric
-    // columns plus [US-68]'s single trailing promote-action cell.
-    expect(allCells).toHaveLength(COLUMN_COUNT + 1)
-    const cells = allCells.slice(0, COLUMN_COUNT)
-    expect(cells.every((cell) => cell.trim().length > 0)).toBe(true)
+    // The rank each card shows is the standing the score bought it.
+    expect(await cardRank(page, 'KO')).toBe('#1')
+    expect(await cardRank(page, 'AAPL')).toBe('#2')
+    expect(await cardRank(page, 'MSFT')).toBe('#3')
+
+    // Every card states the contract it is ranked on, so no card ranks on nothing.
+    for (const ticker of ['KO', 'AAPL', 'MSFT']) {
+      const contract = await page.textContent(
+        `[data-testid="watchlist-row-${ticker}"] [data-testid="watchlist-contract"]`
+      )
+      expect(contract?.trim().length).toBeGreaterThan(0)
+    }
   })
 
   it('a row shows the metrics for its recommended strike', async () => {
     const page = await launch('wb-e2e-us66-metrics', { ivr: RANKED_IVR })
 
-    await page.waitForSelector('[data-testid="screener-row-AAPL"]')
+    await waitForBenchCard(page, 'AAPL', 'meets')
+    await selectCard(page, 'AAPL')
 
     // The strings the AC pins for AAPL's recommended strike; the fixture math that
     // produces them is documented on AAPL_PUT in screener-helpers.ts.
-    const cells = await rowCells(page, 'AAPL')
-    expect(cells).toEqual(
-      expect.arrayContaining([
-        '$180.00', // strike
-        '37d', // DTE
-        '$2.70', // mark
-        '1.5%', // period yield
-        '14.8%/yr', // annualized yield
-        '0.28', // delta, unsigned
-        '44', // IV rank, seeded and fresh
-        '4,200', // open interest
-        '$0.06 (2%)' // bid/ask spread
-      ])
-    )
-    expect(await rowScore(page, 'AAPL')).toBe('0.53')
+    const metrics = await detailPutMetrics(page)
+    expect(metrics.get(PUT_CONTRACT)).toBe('$180.00 PUT')
+    expect(metrics.get(PUT_EXPIRATION)).toContain('37 DTE')
+    expect(metrics.get('Mark / share')).toBe('$2.70')
+    expect(metrics.get('Period yield')).toBe('1.5%')
+    expect(metrics.get('Annualized')).toBe('14.8%/yr')
+    expect(metrics.get('Delta')).toBe('0.28')
+    expect(metrics.get('Open interest')).toBe('4,200')
+    expect(metrics.get('Spread')).toBe('$0.06 (2%)')
+
+    // IV rank stays on the card, beside the ticker it belongs to.
+    expect((await ivrCell(page, 'AAPL')).text).toBe('44')
+    expect(await cardScore(page, 'AAPL')).toBe('0.53')
   })
 
   it('IV rank unavailable is shown, not blank', async () => {
     // MSFT is deliberately absent from the seeded IV ranks.
     const page = await launch('wb-e2e-us66-no-ivr', { ivr: RANKED_IVR })
 
-    await page.waitForSelector('[data-testid="screener-row-MSFT"]')
+    await waitForBenchCard(page, 'MSFT', 'meets')
 
-    const cells = await rowCells(page, 'MSFT')
-    expect(cells[IVR].trim()).toBe('n/a')
+    const cell = await ivrCell(page, 'MSFT')
+    expect(cell.text).toBe('n/a')
+    // [US-98] Nothing was ever read, so there is no freshness tier to draw.
+    expect(cell.ring).toBeNull()
     // Still ranked, third by yield-per-delta.
-    expect(cells[RANK].trim()).toBe('3')
+    expect(await cardRank(page, 'MSFT')).toBe('#3')
   })
 
   it('excluded candidates are listed with a reason', async () => {
@@ -112,15 +119,14 @@ describe('US-66: display ranked screener results', () => {
       ivr: RANKED_IVR
     })
 
-    await page.waitForSelector('[data-testid="screener-excluded-toggle"]:has-text("Excluded (1)")')
-    await page.click('[data-testid="screener-excluded-toggle"]')
+    await waitForBenchCard(page, 'TSLA', 'waiting')
 
-    const row = page.locator('[data-testid="screener-excluded-row-TSLA"]')
-    await row.waitFor()
-    // Ticker cell followed by the reason cell, as textContent() concatenates them.
-    expect(await row.textContent()).toBe('TSLAspread 22% exceeds 10%')
+    // The engine's own wording reaches the card verbatim.
+    expect(await cardReason(page, 'TSLA')).toBe('spread 22% exceeds 10%')
+    expect(await waitingTickers(page)).toContain('TSLA')
     // No yield-per-delta rank is shown for an excluded ticker.
-    expect(await page.locator('[data-testid="screener-row-TSLA"]').count()).toBe(0)
+    expect(await meetsTickers(page)).not.toContain('TSLA')
+    expect(await cardRank(page, 'TSLA')).toBeNull()
   })
 
   it('provider outage is distinguished from no results', async () => {
@@ -131,9 +137,11 @@ describe('US-66: display ranked screener results', () => {
     expect(await card.textContent()).toContain('Market data unavailable')
     expect(await card.locator('button:has-text("Retry refresh")').count()).toBe(1)
 
-    // Distinct from the "no candidates match your criteria" state, and no table.
-    expect(await page.locator('[data-testid="screener-empty"]').count()).toBe(0)
-    expect(await page.locator('[data-testid^="screener-row-"]').count()).toBe(0)
+    // Distinct from "no candidates match your criteria": nothing was judged, and every
+    // card says so rather than claiming its criteria were checked and missed.
+    await waitForBenchCard(page, 'KO', 'waiting')
+    expect(await meetsTickers(page)).toEqual([])
+    expect(await cardReason(page, 'KO')).toBe('Data unavailable · not evaluated')
   })
 
   // [US-99 AC9] With credentials saved, a failed refresh is a genuine outage and the card
@@ -172,12 +180,15 @@ describe('US-66: display ranked screener results', () => {
     const page = await launch('wb-e2e-us66-stale', { marketStatus: CLOSED_SESSION })
 
     await page.waitForSelector('[data-testid="market-status-pill"]:has-text("CLOSED")')
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
     await page.waitForSelector('[data-testid="screener-stale-badge"]')
     const quoteTime = format(parseISO(QUOTE_TIMESTAMP), 'HH:mm:ss')
+    // [US-96] The caption sits beside the criteria strip now, so the warning sentence it
+    // used to carry moved into the header's own `Stale snapshot` badge; the caption states
+    // only the mark's age.
     expect(await page.textContent('[data-testid="screener-stale-caption"]')).toContain(
-      `Quoted ${quoteTime}`
+      `quoted ${quoteTime}`
     )
   })
 })

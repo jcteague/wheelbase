@@ -73,7 +73,7 @@ const api = {
     dismiss: (payload: { alertId: string }) => invoke('alerts:dismiss', payload)
   },
   watchlist: {
-    list: () => invoke('watchlist:list'),
+    snapshot: () => invoke('watchlist:snapshot'),
     add: (payload: unknown) => invoke('watchlist:add', payload),
     remove: (payload: { ticker: string }) => invoke('watchlist:remove', payload)
   },

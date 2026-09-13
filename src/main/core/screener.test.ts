@@ -881,3 +881,88 @@ describe('rankCandidates — earnings tiers', () => {
     expect(ranked.map((c) => c.ticker)).toEqual(['AMD', 'ZTS'])
   })
 })
+
+// [US-96] The two bench fixtures US-96's e2e suite pins strings to, run through the real
+// engine here first.
+//
+// The US-66 ADR ("E2E fixtures reproduce AC numbers through the real engine") forbids an
+// e2e expectation that was arrived at with a calculator: the offline suite drives the
+// packaged app, so a fixture whose arithmetic the engine disagrees with would fail three
+// files away with no hint that the fixture, not the renderer, was wrong. These two cases
+// exist purely to fail *here* instead — change `XLF_PUT` or `AMD_PUT` in
+// `e2e/screener-helpers.ts` and this is the test that says so.
+describe('US-96 bench fixtures — the engine’s own output', () => {
+  /** The bench fixture day is 37 calendar days out, the same offset `KO_PUT` uses. */
+  const BENCH_EXPIRATION = '2026-09-12'
+
+  function benchStrike(overrides: Partial<CandidateStrike>): CandidateStrike {
+    return strike({ expiration: BENCH_EXPIRATION, volume: 500, ...overrides })
+  }
+
+  const KO = benchStrike({
+    contractId: 'KO260912P00060000',
+    strike: '60.0000',
+    bid: '0.92',
+    ask: '0.98',
+    mark: '0.95',
+    delta: '-0.2200',
+    openInterest: 1800
+  })
+
+  const XLF = benchStrike({
+    contractId: 'XLF260912P00050000',
+    strike: '50.0000',
+    bid: '0.62',
+    ask: '0.68',
+    mark: '0.65',
+    delta: '-0.2400',
+    openInterest: 8610
+  })
+
+  const AMD = benchStrike({
+    contractId: 'AMD260912P00150000',
+    strike: '150.0000',
+    bid: '2.79',
+    ask: '3.21',
+    mark: '3.00',
+    delta: '-0.2500',
+    openInterest: 1000
+  })
+
+  const screen = (ticker: string, candidate: CandidateStrike): ReturnType<typeof screenTicker> =>
+    screenTicker(
+      tickerInput({ ticker, strikes: [candidate] }),
+      DEFAULT_SCREENING_CRITERIA,
+      CURRENT_DATE
+    )
+
+  it('gives XLF a 1.3% period yield the renderer can print verbatim', () => {
+    const best = screen('XLF', XLF).best
+
+    // fmtYieldPercent trims to `1.3%`; `1.30%` would be a different string on screen.
+    expect(best?.periodYield).toBe('0.0130')
+    expect(best?.annualizedYield).toBe('0.1282')
+  })
+
+  it('ranks XLF below KO, so the Meets-criteria order is KO then XLF', () => {
+    const ranked = rankCandidates([screen('KO', KO), screen('XLF', XLF)])
+
+    expect(ranked.map((candidate) => candidate.ticker)).toEqual(['KO', 'XLF'])
+    // The two scores the cards' rank pills carry, at the renderer's 2dp.
+    expect(ranked.map((candidate) => Number(candidate.yieldPerDelta).toFixed(2))).toEqual([
+      '0.71',
+      '0.53'
+    ])
+  })
+
+  it('excludes AMD for a 14% spread, in the words the card shows', () => {
+    const result = screen('AMD', AMD)
+
+    expect(result.best).toBeNull()
+    // AMD clears delta, DTE and open interest, so `spread` is the filter it dies at and
+    // its wording is what reaches the bench card.
+    expect(result.excluded).toEqual([
+      expect.objectContaining({ code: 'spread', reason: 'spread 14% exceeds 10%' })
+    ])
+  })
+})

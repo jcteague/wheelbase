@@ -9,7 +9,7 @@ export type ScreenerIvRank = {
   value: string // 1dp
   observedAt: string // ISO timestamp of the scrape that produced it
   ageTradingDays: number
-  state: 'fresh' | 'aging' | 'stale' | 'predates_earnings'
+  state: 'fresh' | 'aging' | 'stale' | 'expired' | 'predates_earnings'
 }
 
 // Field-for-field mirror of IpcCandidateEarnings (src/preload/index.d.ts).

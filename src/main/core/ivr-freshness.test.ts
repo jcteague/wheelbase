@@ -9,7 +9,8 @@ import {
   assessIvRank,
   isUsableState,
   tierForAge,
-  type IvRankAssessment
+  type IvRankAssessment,
+  type IvRankState
 } from './ivr-freshness'
 
 const now = new Date('2026-09-23T14:00:00.000Z')
@@ -25,7 +26,7 @@ const assess = (
 ): IvRankAssessment => assessIvRank(reading(observedAt, value), { now, calendar, lastEarnings })
 
 describe('IVR freshness', () => {
-  it.each([
+  it.each<[string, number, IvRankState, boolean]>([
     ['2026-09-22T21:00:00.000Z', 0, 'fresh', true],
     ['2026-09-21T21:00:00.000Z', 1, 'fresh', true],
     ['2026-09-18T21:00:00.000Z', 2, 'aging', true],
@@ -33,18 +34,32 @@ describe('IVR freshness', () => {
     ['2026-09-16T21:00:00.000Z', 4, 'stale', false],
     ['2026-09-14T21:00:00.000Z', 6, 'stale', false],
     ['2026-09-08T21:00:00.000Z', 10, 'stale', false],
-    ['2026-09-04T21:00:00.000Z', 11, null, null]
+    ['2026-09-04T21:00:00.000Z', 11, 'expired', false],
+    ['2026-09-03T21:00:00.000Z', 12, 'expired', false]
   ])('assesses %s as age %s / %s', (observedAt, age, state, usable) => {
-    const assessment = assess(observedAt as string)
-    if (state === null) {
-      expect(assessment).toEqual({ status: 'expired' })
-    } else {
-      expect(assessment).toMatchObject({
-        status: 'assessed',
-        reading: { ageTradingDays: age, state }
-      })
-      expect(isUsableState(state as never)).toBe(usable)
-    }
+    expect(assess(observedAt)).toMatchObject({
+      status: 'assessed',
+      reading: { ageTradingDays: age, state }
+    })
+    expect(isUsableState(state)).toBe(usable)
+  })
+
+  // [US-96] An aged-out reading is still a reading: the trader sees `exp` rather than
+  // the same "n/a" a ticker we have never collected shows.
+  it('reports a reading past the stale boundary as an expired reading, not an absence', () => {
+    expect(assess('2026-09-03T21:00:00.000Z', undefined, '47.0')).toEqual({
+      status: 'assessed',
+      reading: {
+        value: '47.0',
+        observedAt: '2026-09-03T21:00:00.000Z',
+        ageTradingDays: 12,
+        state: 'expired'
+      }
+    })
+  })
+
+  it('keeps an expired reading out of scoring', () => {
+    expect(isUsableState('expired')).toBe(false)
   })
 
   it('keeps the tier boundaries explicit', () => {
@@ -58,6 +73,35 @@ describe('IVR freshness', () => {
     expect(tierForAge(4)).toBe('stale')
     expect(tierForAge(10)).toBe('stale')
     expect(tierForAge(11)).toBe('expired')
+  })
+
+  // An age that is negative or fractional is not a young reading — it means the caller's
+  // session arithmetic broke. Tiering it `expired` keeps a nonsense age out of the usable
+  // set, which is the one thing that must not happen: `isUsableState` gates scoring.
+  it('treats an impossible age as expired rather than as fresh', () => {
+    expect(tierForAge(-1)).toBe('expired')
+    expect(tierForAge(0.5)).toBe('expired')
+    expect(tierForAge(Number.NaN)).toBe('expired')
+    expect(isUsableState(tierForAge(-1))).toBe(false)
+  })
+
+  it('cannot read a value that is absent or blank', () => {
+    expect(assess('2026-09-22T21:00:00.000Z', undefined, '')).toEqual({ status: 'unreadable' })
+    expect(assess('2026-09-22T21:00:00.000Z', undefined, '   ')).toEqual({ status: 'unreadable' })
+  })
+
+  // The calendar is the only thing that can date a reading. One that does not reach the
+  // observation yields an unknown age, never a guessed one.
+  it('cannot read an observation the calendar does not cover', () => {
+    const short = makeTradingCalendar('2026-09-21', '2026-09-24')
+
+    expect(
+      assessIvRank(reading('2026-08-10T21:00:00.000Z'), {
+        now,
+        calendar: short,
+        lastEarnings: null
+      })
+    ).toEqual({ status: 'unreadable' })
   })
 
   it('lets a later known print override time freshness, but not a prior print', () => {
@@ -96,6 +140,12 @@ describe('IVR freshness', () => {
   })
 
   it('separates an unreadable reading from one that merely aged out', () => {
+    // Simply too old — an ordinary outcome that still yields a reading, not a degradation.
+    expect(assess('2026-09-04T21:00:00.000Z')).toMatchObject({
+      status: 'assessed',
+      reading: { state: 'expired' }
+    })
+
     // Corrupt or impossible input — the operator should hear about these.
     expect(assess('invalid')).toEqual({ status: 'unreadable' })
     expect(assess('2026-09-23T15:00:00.000Z')).toEqual({ status: 'unreadable' })
@@ -111,7 +161,5 @@ describe('IVR freshness', () => {
     ).toEqual({ status: 'unreadable' })
     // Older than the calendar can reach: also unknown, and also worth saying so.
     expect(assess('2024-12-31T21:00:00.000Z')).toEqual({ status: 'unreadable' })
-    // Simply too old — an ordinary outcome, not a degradation.
-    expect(assess('2026-09-04T21:00:00.000Z')).toEqual({ status: 'expired' })
   })
 })

@@ -44,4 +44,25 @@ describe('useAddToWatchlist', () => {
 
     expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['watchlist'] })
   })
+
+  // [US-96] Adding a stock changes the bench: it needs a quote and a verdict, and the
+  // screener has to re-run so the new ticker can rank. Both are invalidated alongside
+  // the plain list so the card appears complete rather than blank until the next focus.
+  it('invalidates the watchlist snapshot on success', () => {
+    useAddToWatchlist()
+
+    const [options] = mockUseMutation.mock.calls[0] as [{ onSuccess?: () => void }]
+    options.onSuccess?.()
+
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['watchlist', 'snapshot'] })
+  })
+
+  it('invalidates the screener results on success', () => {
+    useAddToWatchlist()
+
+    const [options] = mockUseMutation.mock.calls[0] as [{ onSuccess?: () => void }]
+    options.onSuccess?.()
+
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['screener', 'results'] })
+  })
 })

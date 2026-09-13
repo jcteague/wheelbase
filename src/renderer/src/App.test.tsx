@@ -23,6 +23,13 @@ vi.mock('./pages/SettingsPage', () => ({
   SettingsPage: () => <div data-testid="settings-page" />
 }))
 
+// [US-96] The combined bench reaches for the snapshot and screener queries on mount;
+// the shell only needs to know the route resolves to it.
+vi.mock('./pages/WatchlistPage', () => ({
+  WATCHLIST_PAGE_TITLE: 'Watchlist',
+  WatchlistPage: () => <div data-testid="watchlist-page" />
+}))
+
 const mockUseSettingsStatus = vi.mocked(useSettingsStatus)
 
 beforeEach(() => {
@@ -87,5 +94,33 @@ describe('App — portal mount point', () => {
     render(<App />)
 
     expect(screen.getByTestId('settings-page')).toBeInTheDocument()
+  })
+})
+
+// [US-96] The screener moved onto the Watchlist page, so /screener is gone: no nav
+// item, no route, and no shell title of its own.
+describe('App — the screener lives on the Watchlist page', () => {
+  it('offers no Screener nav link', () => {
+    render(<App />)
+
+    expect(document.querySelector('a[href="#/screener"]')).toBeNull()
+    expect(screen.queryByText('Screener')).not.toBeInTheDocument()
+  })
+
+  it('renders the combined watchlist page at #/watchlist', () => {
+    window.location.hash = '#/watchlist'
+
+    render(<App />)
+
+    expect(screen.getByTestId('watchlist-page')).toBeInTheDocument()
+  })
+
+  // PAGE_TITLES no longer maps /screener, so the retired hash gets the shell default.
+  it('falls back to the Dashboard title for the retired /screener hash', () => {
+    window.location.hash = '#/screener'
+
+    render(<App />)
+
+    expect(screen.getByText('Dashboard')).toBeInTheDocument()
   })
 })

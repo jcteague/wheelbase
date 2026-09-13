@@ -105,6 +105,52 @@ describe('getAssessedIvrByUnderlying', () => {
     expect(logger.warn).not.toHaveBeenCalled()
   })
 
+  // [US-96] Only `unreadable` still collapses to null: an aged-out row keeps its value
+  // so the renderer can show `exp` instead of the "never collected" n/a.
+  it('passes an expired row through as an expired reading rather than as no reading', () => {
+    const db = makeTestDb()
+    insertSnapshot(db, 'DIS', '2026-09-03T21:00:00.000Z', '47.0')
+
+    const result = getAssessedIvrByUnderlying(db, ['DIS'], {
+      now: NOW,
+      calendar: CALENDAR,
+      lastEarnings: new Map()
+    })
+
+    expect(result.get('DIS')).toEqual({
+      value: '47.0',
+      observedAt: '2026-09-03T21:00:00.000Z',
+      ageTradingDays: 12,
+      state: 'expired'
+    })
+    expect(logger.warn).not.toHaveBeenCalled()
+  })
+
+  // IV rank is display-only and never a hard filter, so losing the whole read must cost
+  // the caller its IVR column and nothing else — not the screen, and not the bench.
+  it('degrades a failed snapshot read to unknown for everyone instead of throwing', () => {
+    const db = {
+      prepare: () => {
+        throw new Error('database disk image is malformed')
+      }
+    } as unknown as Database.Database
+
+    const result = getAssessedIvrByUnderlying(db, ['KO', 'AAPL'], {
+      now: NOW,
+      calendar: CALENDAR,
+      lastEarnings: new Map()
+    })
+
+    expect([...result.entries()]).toEqual([
+      ['KO', null],
+      ['AAPL', null]
+    ])
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ tickers: ['KO', 'AAPL'] }),
+      'ivr_assessment_snapshot_read_failed'
+    )
+  })
+
   it('warns rather than silently dropping a row it holds but cannot read', () => {
     const db = makeTestDb()
     insertSnapshot(db, 'KO', '2026-09-22T21:00:00.000Z', 'not-a-number')

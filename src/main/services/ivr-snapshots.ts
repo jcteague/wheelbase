@@ -79,8 +79,9 @@ export function getAssessedIvrByUnderlying(
       })
       if (assessment.status === 'unreadable') {
         logger.warn({ ticker, reading }, 'ivr_assessment_unreadable_snapshot')
+        return [ticker, null]
       }
-      return [ticker, assessment.status === 'assessed' ? assessment.reading : null]
+      return [ticker, assessment.reading]
     })
   )
 }

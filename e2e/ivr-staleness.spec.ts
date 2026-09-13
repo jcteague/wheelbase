@@ -3,8 +3,13 @@
 // Each `it()` maps to exactly one acceptance criterion from
 // docs/epics/08-stories/US-98-ivr-staleness-tiers.md, named verbatim. The suite boots
 // the real Electron app, seeds IV ranks through the production collector over the
-// US-44 fake-scraper seam, and reads the rendered screener — so every verdict on
+// US-44 fake-scraper seam, and reads the rendered bench — so every verdict on
 // screen is one the real freshness engine produced from a real persisted row.
+//
+// [US-96] The readings moved onto the Watchlist page's cards, where each one draws its
+// tier as a ring beside the numeral. The tier is read off `freshness-ring[data-state]`
+// and the age off the cell's accessible label, which is where the retired `title`
+// attribute's wording went when the hover tooltip replaced it.
 //
 // Ages come from moving the *observation* back through sessions, not from moving the
 // clock forward: advancing `now` would also shift every fixture's DTE, which is how a
@@ -12,27 +17,31 @@
 // clock (AC2's morning, AC3's holiday) keep the fixture day fixed so DTE stays inside
 // the default 30–45 window either way.
 //
-// AC5 ("A stale reading is muted and cannot satisfy an IV condition") and AC13
-// ("Signal refuses to claim entry readiness on an unusable reading") are absent, not
-// skipped: both assert on the watchlist Signal, which is US-96, and US-96 is not in
-// this checkout. They are the story's remaining coverage, not coverage this file
-// silently claims.
+// AC5 and AC13 assert on the bench's own verdicts, which had no surface until US-96
+// folded the screener into the Watchlist page. Both are covered here now. US-98 wrote
+// them against a "Signal" that reported "Entry ready"; that concept shipped as the
+// per-gate verdict and the "Meets criteria" section, so the tests read the vocabulary
+// that exists while asserting exactly what the scenarios describe.
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ElectronApplication, Page } from 'playwright'
 import { cleanupDb, tmpDb } from './assignment-helpers'
 import { setIvrNow } from './ivr-helpers'
 import {
   KO_PUT,
-  excludedReason,
+  cardReason,
+  cardScore,
+  hoverIvrRing,
+  ivrCell,
   launchScreener,
+  meetsTickers,
   openCriteriaSheet,
-  rankedTickers,
-  reloadScreener,
-  rowScore,
+  reloadBench,
   saveCriteria,
   screenerDate,
   setCriteriaValues,
+  waitForBenchCard,
   waitForCriteriaSheetClosed,
+  waitingTickers,
   type PutFixtureSpec
 } from './screener-helpers'
 import {
@@ -46,25 +55,6 @@ import {
 } from './trading-day-fixtures'
 
 const KO_ONLY = [KO_PUT]
-
-/** The rendered IV-rank cell of a ranked row: what a trader sees, plus the state the
- *  engine assigned and the accessible age text. */
-async function ivrCell(
-  page: Page,
-  ticker: string
-): Promise<{ text: string; state: string | null; title: string | null }> {
-  const row = `[data-testid="screener-row-${ticker}"]`
-  const cell = page.locator(`${row} [data-testid="ivr-cell"]`)
-  if ((await cell.count()) === 0) {
-    const empty = page.locator(`${row} [data-ivr-state="empty"]`)
-    return { text: (await empty.textContent())?.trim() ?? '', state: 'empty', title: null }
-  }
-  return {
-    text: (await cell.textContent())?.trim() ?? '',
-    state: await cell.getAttribute('data-ivr-state'),
-    title: await cell.getAttribute('title')
-  }
-}
 
 /** A clear next-earnings date — past every fixture's expiry, inside the screener's
  *  horizon — so an earnings-focused spec controls `last` without US-70's next-print
@@ -89,14 +79,15 @@ describe('US-98: IV-rank staleness tiers', () => {
     })
     app = launched.app
     const { page } = launched
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
     const cell = await ivrCell(page, 'KO')
     expect(cell.state).toBe('fresh')
+    expect(cell.ring).toBe('fresh')
     expect(cell.text).toBe('38')
     // No age and no observation date on the face of a current reading.
     expect(cell.text).not.toMatch(/d$/)
-    expect(cell.title).toContain('0 trading days old')
+    expect(cell.label).toContain('0 trading days old')
   })
 
   it("Friday's close is still fresh on Monday morning", async () => {
@@ -111,12 +102,13 @@ describe('US-98: IV-rank staleness tiers', () => {
     })
     app = launched.app
     const { page } = launched
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
     // Monday's session has not closed, so Friday's close is still the last one.
     const cell = await ivrCell(page, 'KO')
     expect(cell.state).toBe('fresh')
-    expect(cell.title).toContain('0 trading days old')
+    expect(cell.ring).toBe('fresh')
+    expect(cell.label).toContain('0 trading days old')
     expect(cell.text).toBe('38')
   })
 
@@ -137,13 +129,14 @@ describe('US-98: IV-rank staleness tiers', () => {
     const { page } = launched
 
     await setIvrNow(page, afterCloseOn(holiday))
-    await reloadScreener(page)
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await reloadBench(page)
+    await waitForBenchCard(page, 'KO', 'meets')
 
     // A day the exchange never opened closes no session, so nothing has aged.
     const cell = await ivrCell(page, 'KO')
     expect(cell.state).toBe('fresh')
-    expect(cell.title).toContain('0 trading days old')
+    expect(cell.ring).toBe('fresh')
+    expect(cell.label).toContain('0 trading days old')
     expect(cell.text).toBe('38')
   })
 
@@ -156,15 +149,47 @@ describe('US-98: IV-rank staleness tiers', () => {
     })
     app = launched.app
     const { page } = launched
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
     const cell = await ivrCell(page, 'KO')
     expect(cell.state).toBe('aging')
+    expect(cell.ring).toBe('aging')
     expect(cell.text).toBe('38 · 2d')
-    expect(cell.title).toContain('2 trading days old')
+    expect(cell.label).toContain('2 trading days old')
   })
 
-  it('An expired reading is indistinguishable from no reading', async () => {
+  // [US-96] The bench is where an IV condition is judged, so this is the first release
+  // in which the scenario has a surface at all.
+  it('A stale reading is muted and cannot satisfy an IV condition', async () => {
+    dbPath = tmpDb('wb-e2e-us98-ac5')
+    const launched = await launchScreener(dbPath, {
+      fixtures: KO_ONLY,
+      fakeNow: afterCloseOn(BASE_DAY),
+      conditions: { KO: { ivrTrigger: 50 } },
+      ivr: { KO: { ivr: 58, observedAt: observedSessionsAgo(6) } }
+    })
+    app = launched.app
+    const { page } = launched
+    await waitForBenchCard(page, 'KO', 'waiting')
+
+    // Muted, with its age on the face and a half-full ring.
+    const cell = await ivrCell(page, 'KO')
+    expect(cell.state).toBe('stale')
+    expect(cell.ring).toBe('stale')
+    expect(cell.text).toBe('58 · 6d')
+
+    // 58 clears 50 on the arithmetic alone. The reading is simply not fit to decide it,
+    // so the condition reads unknown rather than met — and KO is held back.
+    expect(await meetsTickers(page)).toEqual([])
+    expect(await cardReason(page, 'KO')).toBe('IV too old to judge')
+
+    await hoverIvrRing(page, 'KO')
+    const tooltip = await page.locator('[data-testid="ivr-tooltip"]').textContent()
+    expect(tooltip).toContain('6 trading days old')
+    expect(tooltip).toContain('cannot satisfy an IV condition')
+  })
+
+  it('An expired reading shows exp and behaves as no reading', async () => {
     dbPath = tmpDb('wb-e2e-us98-ac6')
     const expired: PutFixtureSpec = { ...KO_PUT, ticker: 'KO' }
     const never: PutFixtureSpec = { ...KO_PUT, ticker: 'MSFT' }
@@ -177,13 +202,20 @@ describe('US-98: IV-rank staleness tiers', () => {
     })
     app = launched.app
     const { page } = launched
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
     const twelveSessionsOld = await ivrCell(page, 'KO')
     const neverCollected = await ivrCell(page, 'MSFT')
 
-    expect(twelveSessionsOld.text).toBe('n/a')
-    expect(twelveSessionsOld).toEqual(neverCollected)
+    // [US-96] The reading exists but has aged out of use, which `n/a` — never collected
+    // at all — cannot say. It still *decides* nothing, which is the AC's real claim.
+    expect(twelveSessionsOld.text).toBe('exp')
+    expect(twelveSessionsOld.state).toBe('expired')
+    expect(twelveSessionsOld.ring).toBe('expired')
+    expect(neverCollected.text).toBe('n/a')
+    expect(neverCollected.ring).toBeNull()
+    // Neither reading blocks its candidate, and neither satisfies anything.
+    expect(await meetsTickers(page)).toEqual(['KO', 'MSFT'])
   })
 
   it('An earnings print invalidates a reading regardless of age', async () => {
@@ -199,13 +231,14 @@ describe('US-98: IV-rank staleness tiers', () => {
     })
     app = launched.app
     const { page } = launched
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
     // Two sessions old is `aging` on time alone; the print outranks that.
     const cell = await ivrCell(page, 'KO')
     expect(cell.state).toBe('predates_earnings')
+    // [US-96] The verdict is the gold ring now, not a caption beside the number.
+    expect(cell.ring).toBe('predates_earnings')
     expect(cell.text).toContain('62')
-    expect(cell.text).toContain('predates earnings')
   })
 
   it('A print before the observation does not invalidate the reading', async () => {
@@ -221,12 +254,12 @@ describe('US-98: IV-rank staleness tiers', () => {
     })
     app = launched.app
     const { page } = launched
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
     const cell = await ivrCell(page, 'KO')
     expect(cell.state).toBe('fresh')
+    expect(cell.ring).toBe('fresh')
     expect(cell.text).toBe('62')
-    expect(cell.text).not.toContain('predates earnings')
   })
 
   it('Missing earnings knowledge falls back to the time tiers alone', async () => {
@@ -239,14 +272,14 @@ describe('US-98: IV-rank staleness tiers', () => {
     })
     app = launched.app
     const { page } = launched
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
     // An unreadable calendar is not evidence of a print, so the time tier stands —
-    // and nothing on the row claims the reading survived one.
+    // and nothing on the card claims the reading survived one.
     const cell = await ivrCell(page, 'KO')
     expect(cell.state).toBe('fresh')
+    expect(cell.ring).toBe('fresh')
     expect(cell.text).toBe('62')
-    expect(cell.text).not.toContain('predates earnings')
   })
 
   it('A stale IV rank never blocks a candidate from ranking', async () => {
@@ -270,12 +303,14 @@ describe('US-98: IV-rank staleness tiers', () => {
     })
     app = launched.app
     const { page } = launched
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
-    expect(await rankedTickers(page)).toEqual(['AAPL', 'KO', 'MSFT'])
-    const scores = await Promise.all(['KO', 'AAPL', 'MSFT'].map((ticker) => rowScore(page, ticker)))
+    expect(await meetsTickers(page)).toEqual(['AAPL', 'KO', 'MSFT'])
+    const scores = await Promise.all(
+      ['KO', 'AAPL', 'MSFT'].map((ticker) => cardScore(page, ticker))
+    )
     expect(new Set(scores).size).toBe(1)
-    expect(await excludedReason(page, 'KO')).toBeNull()
+    expect(await cardReason(page, 'KO')).toBeNull()
   })
 
   it('The IV-rank floor is not applied to a stale reading', async () => {
@@ -287,16 +322,17 @@ describe('US-98: IV-rank staleness tiers', () => {
     })
     app = launched.app
     const { page } = launched
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
     await setIvRankFloor(page, '50')
 
     // A *fresh* 22 would be excluded by this floor; a stale one is not measured
     // against it at all — but the trader still sees the number, muted, with its age.
-    expect(await rankedTickers(page)).toEqual(['KO'])
-    expect(await excludedReason(page, 'KO')).toBeNull()
+    expect(await meetsTickers(page)).toEqual(['KO'])
+    expect(await cardReason(page, 'KO')).toBeNull()
     const cell = await ivrCell(page, 'KO')
     expect(cell.state).toBe('stale')
+    expect(cell.ring).toBe('stale')
     expect(cell.text).toBe('22 · 6d')
   })
 
@@ -309,13 +345,36 @@ describe('US-98: IV-rank staleness tiers', () => {
     })
     app = launched.app
     const { page } = launched
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
 
     await setIvRankFloor(page, '50')
 
-    expect(await rankedTickers(page)).toEqual(['KO'])
-    expect(await excludedReason(page, 'KO')).toBeNull()
-    expect((await ivrCell(page, 'KO')).text).toBe('n/a')
+    expect(await meetsTickers(page)).toEqual(['KO'])
+    expect(await cardReason(page, 'KO')).toBeNull()
+    expect((await ivrCell(page, 'KO')).text).toBe('exp')
+  })
+
+  // [US-96] "Signal" and "Entry ready" shipped as the per-gate verdict and the "Meets
+  // criteria" section. The scenario's claim is unchanged: a stock whose only obstacle is
+  // an IV condition no usable reading can judge must not be presented as ready to sell.
+  it('Signal refuses to claim entry readiness on an unusable reading', async () => {
+    dbPath = tmpDb('wb-e2e-us98-ac13')
+    const launched = await launchScreener(dbPath, {
+      fixtures: KO_ONLY,
+      fakeNow: afterCloseOn(BASE_DAY),
+      // The IV condition is KO's only gate: no price target, no earnings gate.
+      conditions: { KO: { ivrTrigger: 40 } },
+      ivr: { KO: { ivr: 58, observedAt: observedSessionsAgo(6) } }
+    })
+    app = launched.app
+    const { page } = launched
+    await waitForBenchCard(page, 'KO', 'waiting')
+
+    // A qualifying put exists and every other gate passes, so only the unusable reading
+    // is keeping KO out. It must keep it out.
+    expect(await meetsTickers(page)).toEqual([])
+    expect(await waitingTickers(page)).toEqual(['KO'])
+    expect(await cardReason(page, 'KO')).toBe('IV too old to judge')
   })
 })
 

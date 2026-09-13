@@ -6,6 +6,9 @@
 // the AAPL fixture through the fake provider, the US-65 engine scores it, and the
 // promoted form re-fetches over the production option-snapshots IPC. Nothing between
 // the IPC and the DOM is stubbed.
+//
+// [US-96] The handoff moved onto the bench's detail panel: `promoteCard` now selects the
+// stock's card and clicks its `Review trade →` action. Every scenario below is unchanged.
 import { format, parseISO } from 'date-fns'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -17,10 +20,11 @@ import {
   launchScreener,
   listPositions,
   promoteBannerKind,
-  promoteRow,
+  promoteCard,
   setMarketDataError,
   setOptionSnapshotFixtures,
   screenerDate,
+  waitForBenchCard,
   type ScreenerLaunchOpts
 } from './screener-helpers'
 
@@ -55,14 +59,14 @@ describe('US-68: promote a screener result to the new wheel form', () => {
     dbPath = tmpDb(prefix)
     const launched = await launchScreener(dbPath, { fixtures: FIXTURES, ...opts })
     app = launched.app
-    await launched.page.waitForSelector('[data-testid="screener-row-AAPL"]')
+    await waitForBenchCard(launched.page, 'AAPL', 'meets')
     return launched.page
   }
 
   it('promote pre-fills the new-wheel form', async () => {
     const page = await launch('wb-e2e-us68-prefill', { watchlistNotes: { AAPL: NOTE } })
 
-    await promoteRow(page, 'AAPL')
+    await promoteCard(page, 'AAPL')
 
     expect(await page.inputValue('#ticker')).toBe('AAPL')
     expect(await page.inputValue('#strike')).toBe('180')
@@ -78,7 +82,7 @@ describe('US-68: promote a screener result to the new wheel form', () => {
   it('pre-filled premium is editable, not locked', async () => {
     const page = await launch('wb-e2e-us68-editable')
 
-    await promoteRow(page, 'AAPL')
+    await promoteCard(page, 'AAPL')
     await page.fill('#premiumPerContract', '2.65')
     await page.locator('#premiumPerContract').blur()
 
@@ -90,7 +94,7 @@ describe('US-68: promote a screener result to the new wheel form', () => {
   it('submitting records the edited premium', async () => {
     const page = await launch('wb-e2e-us68-records-edit')
 
-    await promoteRow(page, 'AAPL')
+    await promoteCard(page, 'AAPL')
     await page.fill('#premiumPerContract', '2.65')
     await page.click(SUBMIT)
     await page.waitForSelector(SUCCESS_CARD)
@@ -107,7 +111,7 @@ describe('US-68: promote a screener result to the new wheel form', () => {
 
     // The screener was quoted at 2.70; the form's re-fetch sees 2.68, later.
     await setOptionSnapshotFixtures(app, reQuotedAapl('2.68'))
-    await promoteRow(page, 'AAPL')
+    await promoteCard(page, 'AAPL')
 
     await page.waitForSelector(
       `[data-testid="promote-provenance"]:has-text("Quoted ${quotedTime(FRESH_QUOTE_TIMESTAMP)}")`
@@ -122,7 +126,7 @@ describe('US-68: promote a screener result to the new wheel form', () => {
     const page = await launch('wb-e2e-us68-moved')
 
     await setOptionSnapshotFixtures(app, reQuotedAapl('2.50'))
-    await promoteRow(page, 'AAPL')
+    await promoteCard(page, 'AAPL')
 
     expect(await promoteBannerKind(page)).toBe('moved')
     expect(await page.textContent('[data-testid="promote-banner"]')).toContain(
@@ -141,7 +145,7 @@ describe('US-68: promote a screener result to the new wheel form', () => {
     const page = await launch('wb-e2e-us68-closed', { marketStatus: CLOSED_SESSION })
     await page.waitForSelector('[data-testid="market-status-pill"]:has-text("CLOSED")')
 
-    await promoteRow(page, 'AAPL')
+    await promoteCard(page, 'AAPL')
 
     expect(await promoteBannerKind(page)).toBe('stale')
     expect(await page.textContent('[data-testid="promote-banner"]')).toContain(
@@ -157,7 +161,7 @@ describe('US-68: promote a screener result to the new wheel form', () => {
     const page = await launch('wb-e2e-us68-ext', { marketStatus: POST_SESSION })
     await page.waitForSelector('[data-testid="market-status-pill"]:has-text("EXT")')
 
-    await promoteRow(page, 'AAPL')
+    await promoteCard(page, 'AAPL')
 
     expect(await promoteBannerKind(page)).toBe('stale')
     const banner = await page.textContent('[data-testid="promote-banner"]')
@@ -174,7 +178,7 @@ describe('US-68: promote a screener result to the new wheel form', () => {
 
     // The provider goes down between the screener run and the form's re-fetch.
     await setMarketDataError(app, 'unavailable')
-    await promoteRow(page, 'AAPL')
+    await promoteCard(page, 'AAPL')
 
     // Promoted values are all still pre-filled.
     expect(await page.inputValue('#ticker')).toBe('AAPL')
@@ -198,7 +202,7 @@ describe('US-68: promote a screener result to the new wheel form', () => {
   it('a promote does not leak into the next plain visit to the form', async () => {
     const page = await launch('wb-e2e-us68-no-leak')
 
-    await promoteRow(page, 'AAPL')
+    await promoteCard(page, 'AAPL')
 
     // Walk away without submitting, then open the form the ordinary way.
     await page.evaluate(() => {
@@ -219,7 +223,7 @@ describe('US-68: promote a screener result to the new wheel form', () => {
   it('promote never auto-submits', async () => {
     const page = await launch('wb-e2e-us68-no-auto-submit')
 
-    await promoteRow(page, 'AAPL')
+    await promoteCard(page, 'AAPL')
 
     // The form is open and filled, but nothing has been recorded.
     expect(await listPositions(page)).toHaveLength(0)

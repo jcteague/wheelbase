@@ -10,7 +10,6 @@ import { CALENDAR_PAGE_TITLE, CalendarPage } from './pages/CalendarPage'
 import { NewWheelPage } from './pages/NewWheelPage'
 import { PositionDetailPage } from './pages/PositionDetailPage'
 import { PositionsListPage } from './pages/PositionsListPage'
-import { SCREENER_PAGE_TITLE, ScreenerPage } from './pages/ScreenerPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { WATCHLIST_PAGE_TITLE, WatchlistPage } from './pages/WatchlistPage'
 
@@ -21,8 +20,7 @@ const PAGE_TITLES: Record<string, string | undefined> = {
   '/settings': 'Settings',
   '/new': 'Open Wheel',
   '/calendar': CALENDAR_PAGE_TITLE,
-  '/watchlist': WATCHLIST_PAGE_TITLE,
-  '/screener': SCREENER_PAGE_TITLE
+  '/watchlist': WATCHLIST_PAGE_TITLE
 }
 
 function Sidebar(): React.JSX.Element {
@@ -59,12 +57,6 @@ function Sidebar(): React.JSX.Element {
           label={WATCHLIST_PAGE_TITLE}
           icon="☰"
           active={location === '/watchlist'}
-        />
-        <NavItem
-          href="/screener"
-          label={SCREENER_PAGE_TITLE}
-          icon="⌕"
-          active={location === '/screener'}
         />
         <div className="px-[12px] py-[6px] mb-[4px] mt-[12px] text-[0.65rem] font-semibold tracking-[0.1em] uppercase text-wb-text-muted font-wb-mono">
           System
@@ -112,7 +104,6 @@ function AppShell(): React.JSX.Element {
           <Route path="/settings" component={SettingsPage} />
           <Route path="/calendar" component={CalendarPage} />
           <Route path="/watchlist" component={WatchlistPage} />
-          <Route path="/screener" component={ScreenerPage} />
           <Route path="/positions/:id" component={PositionDetailPage} />
         </Switch>
       </main>

@@ -11,6 +11,11 @@
 // Earnings fixtures are day offsets from today, and the fake honours the requested
 // lookahead window the way the live calendar does, so `finds earnings beyond the alert
 // horizon` is a genuine regression test for the 30-day hard-coded lookahead.
+//
+// [US-96] The ranked table and its Excluded drawer are gone: a clear candidate is a card
+// in Meets criteria carrying its rank and badge, and an excluded one is a card in Stocks
+// of interest carrying the engine's reason. The scenarios are unchanged — only where each
+// verdict is read from has moved.
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ElectronApplication, Page } from 'playwright'
 import { cleanupDb, tmpDb } from './assignment-helpers'
@@ -19,13 +24,15 @@ import {
   AAPL_PUT,
   RANKED_IVR,
   RANKED_PUTS,
+  cardRank,
+  cardReason,
   earningsBadge,
-  excludedReason,
   launchScreener,
-  rankedTickers,
-  rowRank,
+  meetsTickers,
   screenerDate,
   setEarningsHandling,
+  waitForBenchCard,
+  waitingTickers,
   type PutFixtureSpec,
   type ScreenerLaunchOpts
 } from './screener-helpers'
@@ -67,11 +74,11 @@ describe('US-70: warn when a candidate has earnings within the DTE window', () =
       earnings: { AAPL: { dayOffset: EARNINGS_BEFORE_EXPIRY } }
     })
 
-    await page.waitForSelector('[data-testid="screener-excluded-toggle"]')
-    expect(await excludedReason(page, 'AAPL')).toBe(
+    await waitForBenchCard(page, 'AAPL', 'waiting')
+    expect(await cardReason(page, 'AAPL')).toBe(
       `earnings ${screenerDate(EARNINGS_BEFORE_EXPIRY)} falls on or before expiry`
     )
-    expect(await page.locator('[data-testid="screener-row-AAPL"]').count()).toBe(0)
+    expect(await meetsTickers(page)).not.toContain('AAPL')
   })
 
   it('flags a candidate with earnings before expiration when flag mode is on', async () => {
@@ -105,10 +112,10 @@ describe('US-70: warn when a candidate has earnings within the DTE window', () =
 
     await setEarningsHandling(page, 'flag', 3)
 
-    expect(await rankedTickers(page)).toEqual(['KO', 'MSFT', 'AAPL'])
-    expect(await rowRank(page, 'KO')).toBe('1')
-    expect(await rowRank(page, 'MSFT')).toBe('—')
-    expect(await rowRank(page, 'AAPL')).toBe('—')
+    expect(await meetsTickers(page)).toEqual(['KO', 'MSFT', 'AAPL'])
+    expect(await cardRank(page, 'KO')).toBe('#1')
+    expect(await cardRank(page, 'MSFT')).toBe('—')
+    expect(await cardRank(page, 'AAPL')).toBe('—')
   })
 
   it('treats earnings on the expiration date as in the window', async () => {
@@ -118,8 +125,8 @@ describe('US-70: warn when a candidate has earnings within the DTE window', () =
       earnings: { AAPL: { dayOffset: EARNINGS_ON_EXPIRY } }
     })
 
-    await page.waitForSelector('[data-testid="screener-excluded-toggle"]')
-    expect(await excludedReason(page, 'AAPL')).toBe(
+    await waitForBenchCard(page, 'AAPL', 'waiting')
+    expect(await cardReason(page, 'AAPL')).toBe(
       `earnings ${screenerDate(EARNINGS_ON_EXPIRY)} falls on or before expiry`
     )
   })
@@ -131,10 +138,10 @@ describe('US-70: warn when a candidate has earnings within the DTE window', () =
       earnings: { AAPL: { dayOffset: EARNINGS_AFTER_EXPIRY } }
     })
 
-    await page.waitForSelector('[data-testid="screener-row-AAPL"]')
+    await waitForBenchCard(page, 'AAPL', 'meets')
     expect(await earningsBadge(page, 'AAPL')).toBeNull()
     // A clear candidate keeps its numeric rank.
-    expect(await rowRank(page, 'AAPL')).toBe('1')
+    expect(await cardRank(page, 'AAPL')).toBe('#1')
   })
 
   it('finds earnings beyond the alert horizon', async () => {
@@ -162,7 +169,7 @@ describe('US-70: warn when a candidate has earnings within the DTE window', () =
       earnings: {}
     })
 
-    await page.waitForSelector('[data-testid="screener-row-XYZ"]')
+    await waitForBenchCard(page, 'XYZ', 'meets')
     expect(await earningsBadge(page, 'XYZ')).toBe('? Earnings date unknown')
   })
 
@@ -175,11 +182,11 @@ describe('US-70: warn when a candidate has earnings within the DTE window', () =
       earnings: { KO: { dayOffset: EARNINGS_AFTER_EXPIRY } }
     })
 
-    await page.waitForSelector('[data-testid="screener-row-XYZ"]')
-    expect(await rankedTickers(page)).toEqual(['KO', 'XYZ'])
-    expect(await excludedReason(page, 'XYZ')).toBeNull()
-    expect(await rowRank(page, 'KO')).toBe('1')
-    expect(await rowRank(page, 'XYZ')).toBe('—')
+    await waitForBenchCard(page, 'XYZ', 'meets')
+    expect(await meetsTickers(page)).toEqual(['KO', 'XYZ'])
+    expect(await cardReason(page, 'XYZ')).toBeNull()
+    expect(await cardRank(page, 'KO')).toBe('#1')
+    expect(await cardRank(page, 'XYZ')).toBe('—')
   })
 
   it('keeps scoring and ranking when the earnings calendar is unreachable', async () => {
@@ -189,13 +196,14 @@ describe('US-70: warn when a candidate has earnings within the DTE window', () =
       earningsUnreachable: true
     })
 
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
     // Every candidate still scores and ranks; none is excluded for earnings.
-    expect(await rankedTickers(page)).toEqual(['KO', 'AAPL', 'MSFT'])
+    expect(await meetsTickers(page)).toEqual(['KO', 'AAPL', 'MSFT'])
     for (const ticker of ['KO', 'AAPL', 'MSFT']) {
       expect(await earningsBadge(page, ticker)).toBe('? Earnings date unavailable')
     }
-    expect(await page.locator('[data-testid="screener-excluded-toggle"]').count()).toBe(0)
+    // Nothing is left waiting, which is where an excluded candidate would have landed.
+    expect(await waitingTickers(page)).toEqual([])
   })
 
   it('distinguishes an outage from a genuinely empty calendar', async () => {
@@ -206,8 +214,8 @@ describe('US-70: warn when a candidate has earnings within the DTE window', () =
       earnings: { ABC: null }
     })
 
-    await page.waitForSelector('[data-testid="screener-row-XYZ"]')
-    await page.waitForSelector('[data-testid="screener-row-ABC"]')
+    await waitForBenchCard(page, 'XYZ', 'meets')
+    await waitForBenchCard(page, 'ABC', 'meets')
     expect(await earningsBadge(page, 'XYZ')).toBe('? Earnings date unknown')
     expect(await earningsBadge(page, 'ABC')).toBe('? Earnings date unavailable')
   })

@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import type { ScreenerIvRank } from '../api/screener'
 import { IvrCell } from './IvrCell'
@@ -24,7 +25,7 @@ describe('IvrCell', () => {
 
     expect(screen.getByText('38 · 2d')).toBeInTheDocument()
     expect(screen.getByTestId('ivr-cell')).toHaveAttribute(
-      'title',
+      'aria-label',
       expect.stringContaining('2 trading days old')
     )
   })
@@ -37,25 +38,59 @@ describe('IvrCell', () => {
     expect(cell.className).toContain('text-wb-text-muted')
   })
 
-  it('labels readings that predate earnings', () => {
-    render(<IvrCell ivRank={{ ...BASE, state: 'predates_earnings', ageTradingDays: 1 }} />)
+  // [US-96] `exp` distinguishes a reading that aged out from `n/a`, which means the
+  // ticker was never collected at all.
+  it('renders an expired reading as a muted exp beside an expired ring', () => {
+    render(<IvrCell ivRank={{ ...BASE, state: 'expired', ageTradingDays: 12 }} />)
 
-    expect(screen.getByText('predates earnings')).toBeInTheDocument()
-    expect(screen.getByTestId('ivr-cell')).toHaveAttribute('data-ivr-state', 'predates_earnings')
+    const cell = screen.getByTestId('ivr-cell')
+    expect(screen.getByText('exp')).toBeInTheDocument()
+    expect(cell).toHaveAttribute('data-ivr-state', 'expired')
+    expect(cell.className).toContain('text-wb-text-muted')
+    expect(screen.getByTestId('freshness-ring')).toHaveAttribute('data-state', 'expired')
   })
 
-  it('renders missing readings as muted n/a', () => {
+  // [US-96] The caption is gone: the gold ring carries "predates earnings" now.
+  it('marks readings that predate earnings with the gold ring', () => {
+    render(<IvrCell ivRank={{ ...BASE, state: 'predates_earnings', ageTradingDays: 1 }} />)
+
+    expect(screen.queryByText('predates earnings')).toBeNull()
+    expect(screen.getByTestId('ivr-cell')).toHaveAttribute('data-ivr-state', 'predates_earnings')
+    expect(screen.getByTestId('freshness-ring')).toHaveAttribute('data-state', 'predates_earnings')
+  })
+
+  it('renders missing readings as muted n/a with no ring', () => {
     render(<IvrCell ivRank={null} />)
 
     expect(screen.getByText('n/a')).toHaveAttribute('data-ivr-state', 'empty')
+    expect(screen.queryByTestId('freshness-ring')).toBeNull()
   })
 
-  it('formats observation dates in Eastern Time in the accessible title', () => {
+  it('formats observation dates in Eastern Time in the accessible label', () => {
     render(<IvrCell ivRank={{ ...BASE, observedAt: '2026-08-08T02:00:00.000Z' }} />)
 
     expect(screen.getByTestId('ivr-cell')).toHaveAttribute(
-      'title',
+      'aria-label',
       expect.stringContaining('Observed Aug 7, 2026')
     )
+  })
+
+  it('explains the reading in a tooltip on hover', async () => {
+    const user = userEvent.setup()
+    render(<IvrCell ivRank={{ ...BASE, state: 'stale', ageTradingDays: 6 }} />)
+
+    await user.hover(screen.getByTestId('ivr-cell'))
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Stale')
+  })
+
+  it('opens the same tooltip for keyboard focus', async () => {
+    const user = userEvent.setup()
+    render(<IvrCell ivRank={{ ...BASE, state: 'aging', ageTradingDays: 2 }} />)
+
+    await user.tab()
+
+    expect(screen.getByTestId('ivr-cell')).toHaveFocus()
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Aging')
   })
 })

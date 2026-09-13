@@ -1,18 +1,40 @@
-import { format, parseISO } from 'date-fns'
+import { useState } from 'react'
+import { useLocation } from 'wouter'
 
 import { firstErrorMessage } from '../api/error'
-import type { WatchlistEntry } from '../api/watchlist'
-import { PageHeader, PageLayout } from '../components/PageLayout'
+import type { ScreenerCandidate } from '../api/screener'
+import { BenchGrid } from '../components/BenchGrid'
+import { BenchHeader } from '../components/BenchHeader'
+import { MarketDataOutage } from '../components/MarketDataOutage'
+import { PageLayout } from '../components/PageLayout'
+import { ScreeningCriteriaSheet } from '../components/ScreeningCriteriaSheet'
 import { WatchlistAddForm } from '../components/WatchlistAddForm'
-import { Badge } from '../components/ui/Badge'
 import { ErrorAlert } from '../components/ui/ErrorAlert'
 import { LoadingState } from '../components/ui/LoadingState'
-import { TableCell, TableHeader } from '../components/ui/TablePrimitives'
-import { buildConditionTags } from '../lib/watchlistConditionTags'
+import { useMarketStatusDisplay } from '../hooks/useMarketStatusDisplay'
 import { useRemoveFromWatchlist } from '../hooks/useRemoveFromWatchlist'
-import { useWatchlist } from '../hooks/useWatchlist'
+import { useScreenerResults } from '../hooks/useScreenerResults'
+import { useScreeningCriteria } from '../hooks/useScreeningCriteria'
+import { useSettingsStatus } from '../hooks/useSettings'
+import { useWatchlistSnapshot } from '../hooks/useWatchlistSnapshot'
+import { type Bench, buildBench } from '../lib/bench'
+import { buildPromoteSearch } from '../lib/promote'
+import { fmtQuoteTime } from '../lib/screener-format'
+
+// [US-96] One live bench. The watchlist and the screener answer halves of the same
+// question — "what am I watching?" and "what is worth selling today?" — so they share
+// one page: two sections of cards on the left, the selected stock's detail on the right.
+//
+// The page itself only holds the sheet/add/selection state and decides which of the
+// bench's states to show; the header, the grid and the outage state each own their own
+// markup and copy.
 
 export const WATCHLIST_PAGE_TITLE = 'Watchlist'
+
+const EMPTY_BENCH: Bench = { meets: [], waiting: [] }
+
+const FOOTER_COPY =
+  'Meets criteria = saved stock conditions pass on a usable IV reading + a qualifying put. Aging readings (2–3 sessions) still count; a stale, earnings-predating, or missing reading is unknown and never satisfies a condition. Stocks without personal conditions use screening defaults.'
 
 function EmptyGuidance(): React.JSX.Element {
   return (
@@ -29,134 +51,158 @@ function EmptyGuidance(): React.JSX.Element {
   )
 }
 
-type WatchlistRowProps = {
-  entry: WatchlistEntry
-  onRemove: (ticker: string) => void
-}
-
-function WatchlistRow({ entry, onRemove }: WatchlistRowProps): React.JSX.Element {
-  const tags = buildConditionTags(entry)
-
+/** Confirms a save on the page itself — the sheet closes, so it cannot confirm its own success. */
+function SavedBanner(): React.JSX.Element {
   return (
-    <tr data-testid={`watchlist-row-${entry.ticker}`} className="hover:bg-wb-bg-hover">
-      <TableCell data-testid={`watchlist-ticker-${entry.ticker}`}>
-        <span data-testid="watchlist-ticker" className="font-bold tracking-[0.03em] text-wb-gold">
-          {entry.ticker}
-        </span>
-      </TableCell>
-      <TableCell>
-        <div className="flex flex-col gap-1.5">
-          {entry.notes && <span className="text-wb-text-secondary">{entry.notes}</span>}
-          {tags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {tags.map((tag) => (
-                <span
-                  key={tag}
-                  data-testid="watchlist-tag"
-                  className="rounded border border-wb-border-subtle px-1.5 py-px text-[0.62rem] text-wb-text-secondary"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      </TableCell>
-      <TableCell className="text-right text-wb-text-muted">
-        {format(parseISO(entry.addedAt), 'MMM d')}
-      </TableCell>
-      <TableCell className="text-right">
-        <button
-          type="button"
-          title="Remove"
-          data-testid={`watchlist-remove-${entry.ticker}`}
-          onClick={() => onRemove(entry.ticker)}
-          className="h-6 w-6 rounded-md border border-wb-border bg-transparent text-wb-text-muted"
-        >
-          ✕
-        </button>
-      </TableCell>
-    </tr>
-  )
-}
-
-type WatchlistTableProps = {
-  entries: WatchlistEntry[]
-  onRemove: (ticker: string) => void
-}
-
-function WatchlistTable({ entries, onRemove }: WatchlistTableProps): React.JSX.Element {
-  return (
-    <table className="w-full border-collapse text-[0.8125rem]">
-      <thead>
-        <tr className="border-b border-wb-border bg-wb-bg-surface">
-          <TableHeader>Ticker</TableHeader>
-          <TableHeader>Thesis</TableHeader>
-          <TableHeader className="text-right">Added</TableHeader>
-          <TableHeader className="text-right"> </TableHeader>
-        </tr>
-      </thead>
-      <tbody>
-        {entries.map((entry) => (
-          <WatchlistRow key={entry.ticker} entry={entry} onRemove={onRemove} />
-        ))}
-      </tbody>
-    </table>
-  )
-}
-
-type WatchlistHeaderProps = {
-  count: number
-}
-
-function WatchlistHeader({ count }: WatchlistHeaderProps): React.JSX.Element {
-  return (
-    <PageHeader
-      left={
-        <div className="flex items-center gap-[10px]">
-          <h1 className="m-0 text-sm font-semibold text-wb-text-primary">{WATCHLIST_PAGE_TITLE}</h1>
-          {count > 0 && <Badge>{count}</Badge>}
-        </div>
-      }
-    />
+    <div className="flex items-center gap-[10px] rounded-md border border-wb-green-border bg-wb-green-subtle px-[14px] py-[10px]">
+      <span className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-wb-green-dim font-wb-mono text-[0.7rem] font-bold text-wb-green">
+        ✓
+      </span>
+      <span className="text-[0.8125rem] font-semibold text-wb-green">Screening criteria saved</span>
+    </div>
   )
 }
 
 export function WatchlistPage(): React.JSX.Element {
-  const { data, isLoading, isError } = useWatchlist()
+  const snapshotQuery = useWatchlistSnapshot()
+  const screenerQuery = useScreenerResults()
+  const { data: criteria, isError: isCriteriaError } = useScreeningCriteria()
+  const { data: credentialStatus } = useSettingsStatus()
+  const { display } = useMarketStatusDisplay()
   const removeMutation = useRemoveFromWatchlist()
-  const entries = data ?? []
+  const [, navigate] = useLocation()
+
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [savedConfirmed, setSavedConfirmed] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
+  const [selected, setSelected] = useState<string | null>(null)
+
+  const snapshot = snapshotQuery.data
+  const rows = snapshot?.rows ?? []
+  const results = screenerQuery.data
+  const bench = snapshot === undefined ? EMPTY_BENCH : buildBench(snapshot, results)
+
+  // Both conditions, not just the flag: a query that has succeeded once keeps serving its
+  // data when a later refetch fails, so `isError` alone would call usable criteria
+  // unloadable and disable every entry point into the sheet.
+  const criteriaUnloadable = isCriteriaError && criteria === undefined
+  // `!== 'missing'`, not `=== 'configured'`: an unresolved status must not claim the trader
+  // has no credentials, since that swaps a usable Retry for a pointless trip to Settings.
+  const marketDataConfigured = credentialStatus?.marketData !== 'missing'
+  // Marks are only badged stale when the market is closed and something was actually marked.
+  const staleQuoteTime =
+    display === 'CLOSED' && bench.meets.length > 0 && results?.quoteTimestamp
+      ? fmtQuoteTime(results.quoteTimestamp)
+      : null
+
+  // Every entry point opens the same sheet, and re-opening it retires the confirmation
+  // from the previous edit session.
+  function openSheet(): void {
+    setSavedConfirmed(false)
+    setSheetOpen(true)
+  }
+
+  function refreshBench(): void {
+    void snapshotQuery.refetch()
+    void screenerQuery.refetch()
+  }
+
+  // Saving re-screens through the criteria mutation's own invalidation; the snapshot is
+  // refetched here because its verdicts are read against the same refreshed marks.
+  function handleSaved(): void {
+    setSavedConfirmed(true)
+    void snapshotQuery.refetch()
+  }
+
+  function handleReview(candidate: ScreenerCandidate): void {
+    const notes = rows.find((row) => row.entry.ticker === candidate.ticker)?.entry.notes
+    navigate(`/new?${buildPromoteSearch(candidate, notes)}`)
+  }
 
   return (
-    <PageLayout header={<WatchlistHeader count={entries.length} />}>
-      <div className="flex flex-col gap-4 p-6">
-        {isLoading && <LoadingState message="Loading watchlist…" />}
+    <PageLayout
+      header={
+        <BenchHeader
+          title={WATCHLIST_PAGE_TITLE}
+          watchlistCount={rows.length}
+          criteria={criteria}
+          criteriaUnloadable={criteriaUnloadable}
+          staleQuoteTime={staleQuoteTime}
+          marketStatus={display}
+          addOpen={addOpen}
+          onOpenCriteria={openSheet}
+          onRefresh={refreshBench}
+          onToggleAdd={() => setAddOpen((open) => !open)}
+        />
+      }
+    >
+      <div className="flex flex-col gap-5 p-6">
+        {savedConfirmed && <SavedBanner />}
 
-        {isError && (
+        {(addOpen || rows.length === 0) && <WatchlistAddForm />}
+
+        {criteriaUnloadable && (
+          <ErrorAlert message="Failed to load your screening criteria — the criteria sheet can't be opened until they load." />
+        )}
+
+        {(snapshotQuery.isLoading || screenerQuery.isLoading) && (
+          <LoadingState message="Loading watchlist…" />
+        )}
+
+        {snapshotQuery.isError && (
           <ErrorAlert message="Failed to load the watchlist — check that the database is accessible." />
         )}
 
-        {!isLoading && !isError && (
-          <>
-            {removeMutation.isError && (
-              <ErrorAlert
-                message={firstErrorMessage(
-                  removeMutation.error,
-                  'Failed to remove the ticker — please try again.'
-                )}
-              />
+        {screenerQuery.isError && (
+          <ErrorAlert message="Failed to screen the watchlist — check that market data is reachable." />
+        )}
+
+        {removeMutation.isError && (
+          <ErrorAlert
+            message={firstErrorMessage(
+              removeMutation.error,
+              'Failed to remove the ticker — please try again.'
             )}
-            {entries.length === 0 && <EmptyGuidance />}
-            <WatchlistAddForm />
-            {entries.length > 0 && (
-              <WatchlistTable
-                entries={entries}
-                onRemove={(ticker) => removeMutation.mutate(ticker)}
-              />
-            )}
-          </>
+          />
+        )}
+
+        {results?.status === 'provider_unavailable' && (
+          <MarketDataOutage
+            marketDataConfigured={marketDataConfigured}
+            onRetry={() => void screenerQuery.refetch()}
+            onOpenSettings={() => navigate('/settings')}
+          />
+        )}
+
+        {rows.length === 0 && snapshot !== undefined && <EmptyGuidance />}
+
+        {rows.length > 0 && (
+          <BenchGrid
+            bench={bench}
+            selected={selected}
+            onSelect={setSelected}
+            onRemove={(ticker) => removeMutation.mutate(ticker)}
+            onReview={handleReview}
+            onAdjustCriteria={openSheet}
+            criteriaUnloadable={criteriaUnloadable}
+            screened={results?.status === 'ok'}
+          />
         )}
       </div>
+
+      <footer className="border-t border-wb-border px-6 py-3 text-xs text-wb-text-muted">
+        {FOOTER_COPY}
+      </footer>
+
+      {criteria && (
+        <ScreeningCriteriaSheet
+          open={sheetOpen}
+          criteria={criteria}
+          watchlistCount={rows.length}
+          onClose={() => setSheetOpen(false)}
+          onSaved={handleSaved}
+        />
+      )}
     </PageLayout>
   )
 }

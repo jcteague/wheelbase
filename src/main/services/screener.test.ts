@@ -282,6 +282,30 @@ describe('screenWatchlistCandidates', () => {
     expect(result.ranked[0].yieldPerDelta).toBe('0.7892')
   })
 
+  // [US-96] An expired reading reaches the trader as a marked reading, but still never
+  // reaches the engine: the IV-rank floor cannot be judged on a reading this old.
+  it('carries an expired IVR reading onto the candidate without applying the IV-rank floor', async () => {
+    const db = makeScreenerDb()
+    // Over twenty sessions before 2026-07-23 — past the stale boundary, but still
+    // inside the window the calendar read reaches, so this is expired, not unreadable.
+    seedIvr(db, [['KO', '2026-06-19T21:00:00Z', '10.0']])
+    const { provider } = makeProvider()
+    mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
+
+    const result = await screenWatchlistCandidates(() => provider, db, {
+      criteria: criteriaWith({ minIvRank: '30' }),
+      currentDate: CURRENT_DATE
+    })
+
+    expect(result.ranked.map((c) => c.ticker)).toEqual(['KO', 'AAPL'])
+    expect(result.excluded).toEqual([])
+    expect(result.ranked[0].ivRank).toMatchObject({
+      value: '10.0',
+      observedAt: '2026-06-19T21:00:00Z',
+      state: 'expired'
+    })
+  })
+
   it('degrades a failing IVR read to an empty map, warns, and still ranks every candidate', async () => {
     const db = makeScreenerDb()
     seedIvr(db, [['AAPL', '2026-07-23T12:00:00Z', '44.0']])
@@ -595,7 +619,7 @@ describe('screenWatchlistCandidates', () => {
     ])
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ ticker: 'KO' }),
-      'screener_quote_fetch_failed'
+      'underlying_quote_fetch_failed'
     )
   })
 

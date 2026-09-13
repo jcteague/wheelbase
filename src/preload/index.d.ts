@@ -390,7 +390,6 @@ interface IpcWatchlistEntry {
   addedAt: string
 }
 
-type IpcWatchlistListResult = IpcResult<{ entries: IpcWatchlistEntry[] }>
 type IpcWatchlistAddResult = IpcResult<{ entry: IpcWatchlistEntry }>
 type IpcWatchlistRemoveResult = IpcResult<{ ticker: string }>
 
@@ -401,8 +400,52 @@ interface IpcIvRank {
   value: string // 1dp
   observedAt: string // ISO timestamp of the scrape that produced it
   ageTradingDays: number
-  state: 'fresh' | 'aging' | 'stale' | 'predates_earnings'
+  state: 'fresh' | 'aging' | 'stale' | 'expired' | 'predates_earnings'
 }
+
+/** [US-96] Mirrors `SnapshotQuote` in `src/main/services/watchlist-snapshot.ts` — the
+ *  slice of the underlying quote the bench renders. */
+interface IpcSnapshotQuote {
+  price: string // 2dp decimal string from the provider
+  prevClose: string | null
+  timestamp: string // ISO
+}
+
+/** Mirrors `Gate` in `src/main/core/watchlist-signal.ts`. `unknown` is never a pass:
+ *  a missing quote or an untrustworthy reading refuses to decide rather than clearing. */
+interface IpcGate {
+  verdict: 'met' | 'unmet' | 'unknown' | 'none'
+  label: string | null // reason text for unmet/unknown; null otherwise
+}
+
+/** Mirrors `EntryVerdict` — one gate per personal entry condition. */
+interface IpcEntryVerdict {
+  price: IpcGate
+  iv: IpcGate
+  earnings: IpcGate
+}
+
+/** Mirrors `EarningsDisplay` — the earnings line every bench row renders. A past or
+ *  missing date reads as `unknown`, never as clear. */
+type IpcEarningsDisplay =
+  | { kind: 'date'; date: string; daysUntil: number; withinWindow: boolean } // 'YYYY-MM-DD'
+  | { kind: 'unknown' }
+
+/** Mirrors `WatchlistSnapshotRow` — one watchlist entry judged at the request clock. */
+interface IpcWatchlistSnapshotRow {
+  entry: IpcWatchlistEntry
+  quote: IpcSnapshotQuote | null // null → the quote fetch failed for this ticker
+  ivRank: IpcIvRank | null // null → never collected or unreadable
+  earnings: IpcEarningsDisplay
+  verdict: IpcEntryVerdict
+}
+
+// Every expected failure is modelled inside the payload — `quote: null`, `ivRank: null`,
+// `{ kind: 'unknown' }` — so an `ok: false` envelope only ever means something unexpected.
+type IpcWatchlistSnapshotResult = IpcResult<{
+  rows: IpcWatchlistSnapshotRow[] // watchlist order (added_at DESC)
+  asOf: string // ISO request clock the verdicts were computed at
+}>
 
 /** Mirrors `CandidateEarnings` in `src/main/core/screener.ts` — the engine's earnings
  *  verdict for one candidate. `flagged` only occurs under `earningsHandling: 'flag'`. */
@@ -686,7 +729,7 @@ declare global {
         >
       }
       watchlist: {
-        list: () => Promise<IpcWatchlistListResult>
+        snapshot: () => Promise<IpcWatchlistSnapshotResult>
         add: (payload: IpcWatchlistAddPayload) => Promise<IpcWatchlistAddResult>
         remove: (payload: { ticker: string }) => Promise<IpcWatchlistRemoveResult>
       }

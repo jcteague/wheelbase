@@ -147,21 +147,38 @@ export async function seedActivePosition(
   return seedCsp(page, activeCspFixture(ticker, strike))
 }
 
+/**
+ * [US-96] The entry conditions a seeded stock carries, exactly as `watchlist.add` takes
+ * them. Stated rather than typed off the preload payload because e2e drives the packaged
+ * app and shares no module graph with it.
+ */
+export type WatchlistConditions = {
+  ownBelowPrice?: number
+  ivrTrigger?: number
+  postEarningsOnly?: boolean
+}
+
 /** Add each ticker through the production watchlist IPC — never a direct DB write.
- *  [US-68] A ticker's note is seeded the same way, since promote reads it back out. */
+ *  [US-68] A ticker's note is seeded the same way, since promote reads it back out.
+ *  [US-96] So are its entry conditions, since the bench's verdicts are read off them. */
 export async function seedWatchlist(
   page: Page,
   tickers: string[],
-  notes: Record<string, string> = {}
+  notes: Record<string, string> = {},
+  conditions: Record<string, WatchlistConditions> = {}
 ): Promise<void> {
   await page.evaluate(
-    async ({ list, byTicker }) => {
+    async ({ list, byTicker, conditionsByTicker }) => {
       for (const ticker of list) {
-        const result = await window.api.watchlist.add({ ticker, notes: byTicker[ticker] })
+        const result = await window.api.watchlist.add({
+          ticker,
+          notes: byTicker[ticker],
+          ...conditionsByTicker[ticker]
+        })
         if (!result.ok) throw new Error(`watchlist.add failed: ${JSON.stringify(result)}`)
       }
     },
-    { list: tickers, byTicker: notes }
+    { list: tickers, byTicker: notes, conditionsByTicker: conditions }
   )
 }
 

@@ -39,7 +39,7 @@ A trader can maintain a watchlist of tickers they're evaluating, screen them aga
 - [ ] US-68: Promote a screener result to the new wheel form with pre-filled fields
 - [ ] US-69: Edit a watchlist entry (thesis + entry conditions in the shared form)
 - [ ] US-70: Warn when a candidate has earnings within the DTE window
-- [ ] US-96: View the watchlist with live prices, IV-rank, earnings, and a Signal verdict
+- [ ] US-96: One live bench — fold the screener into the Watchlist page (live price, aged IV rank with freshness ring, Meets criteria / Stocks of interest, stock detail with Review trade); retires the standalone Screener page
 - [ ] US-97: Collect IVR snapshots for watchlist underlyings (not just held positions)
 - [ ] US-98: Age an IV-rank reading so a stale one can't pass as current
 

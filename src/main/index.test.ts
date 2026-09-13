@@ -52,6 +52,18 @@ vi.mock('./ipc/broker', () => ({ registerBrokerHandlers: vi.fn() }))
 vi.mock('./ipc/assignments', () => ({ registerAssignmentsIpc: vi.fn() }))
 vi.mock('./ipc/ivr', () => ({ registerIvrIpc: vi.fn() }))
 vi.mock('./ipc/settings', () => ({ registerSettingsHandlers: vi.fn() }))
+vi.mock('./ipc/watchlist', () => ({ registerWatchlistIpc: vi.fn() }))
+vi.mock('./ipc/screener', () => ({ registerScreenerIpc: vi.fn() }))
+
+// [US-96] The bench reads the watchlist snapshot and the screener at one clock, so the
+// fake-IVR collaborators are stubbed here to prove both registrations receive it.
+const fakeIvrNow = vi.fn(() => new Date('2026-07-23T15:30:00Z'))
+vi.mock('./integrations/fake-ivr', () => ({
+  createFakeIvrCollaborators: vi.fn(() => ({ clock: { now: fakeIvrNow } })),
+  isFakeIvrEnabled: vi.fn(() => false),
+  setFakeIvrNow: vi.fn(),
+  setFakeIvrOutcomes: vi.fn()
+}))
 
 vi.mock('./integrations/market-data-factory', () => ({
   marketDataFactory: {
@@ -176,6 +188,27 @@ describe('main process bootstrap', () => {
 
     return { appOnHandlers }
   }
+
+  it('gives the watchlist snapshot channel the market-data provider factory', async () => {
+    await triggerBootstrap()
+
+    const { registerWatchlistIpc } = await import('./ipc/watchlist')
+    expect(vi.mocked(registerWatchlistIpc)).toHaveBeenCalledWith(
+      expect.objectContaining({ db: expect.anything(), getProvider: expect.any(Function) })
+    )
+  })
+
+  it('judges the watchlist snapshot and the screener on the same clock', async () => {
+    await triggerBootstrap()
+
+    const { registerWatchlistIpc } = await import('./ipc/watchlist')
+    const { registerScreenerIpc } = await import('./ipc/screener')
+    const watchlistDeps = vi.mocked(registerWatchlistIpc).mock.calls[0]?.[0]
+    const screenerDeps = vi.mocked(registerScreenerIpc).mock.calls[0]?.[0]
+
+    expect(watchlistDeps?.getCurrentDate).toBe(fakeIvrNow)
+    expect(screenerDeps?.getCurrentDate).toBe(fakeIvrNow)
+  })
 
   it('bootstrap registers detect-assignments job on the scheduler', async () => {
     await triggerBootstrap()

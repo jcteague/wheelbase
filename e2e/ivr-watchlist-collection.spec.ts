@@ -6,7 +6,8 @@
 // and positions through production IPC only, and drives the real `ivr-collect` job via
 // the manual-trigger channel — so no live Barchart request ever leaves the process.
 // The screener half proves the payoff: a bench name with no position at all now has a
-// real IV rank on the ranked row, and the US-67 floor can act on it.
+// real IV rank on its card, and the US-67 floor can act on it. [US-96] That card lives
+// on the Watchlist page; nothing about the collector changed with it.
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ElectronApplication, Page } from 'playwright'
 import { cleanupDb, getPage, tmpDb } from './assignment-helpers'
@@ -26,23 +27,20 @@ import {
 } from './ivr-helpers'
 import {
   RANKED_PUTS,
-  excludedReason,
+  cardReason,
+  ivrCell,
   launchScreener,
   listPositions,
   openCriteriaSheet,
-  rowCells,
   saveCriteria,
   setCriteriaValues,
+  waitForBenchCard,
   waitForCriteriaSheetClosed,
-  waitForRankedRowCount
+  waitForMeetsCardCount
 } from './screener-helpers'
 
 const SAME_DAY_AFTERNOON = '2026-05-29T20:55:00Z'
 const YESTERDAY_AFTERNOON = '2026-05-28T20:55:00Z'
-
-/** The IV-rank column index in the ranked table — mirrors `const IVR = 9` in
- *  `e2e/screener-results.spec.ts`, which is where the full column map lives. */
-const IVR = 9
 
 /** Just the KO chain, so the screener scenarios have exactly one bench candidate. */
 const KO_ONLY = RANKED_PUTS.filter((fixture) => fixture.ticker === 'KO')
@@ -240,12 +238,11 @@ describe('US-97: IVR collection covers watchlist underlyings', () => {
     app = launched.app
     const page = launched.page
 
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
     await expectNoPositions(page)
-    const cells = await rowCells(page, 'KO')
 
     // A fresh IVR cell reads as the bare rank; observation metadata stays in its tooltip.
-    expect(cells[IVR].trim()).toMatch(/^38\b/)
+    expect((await ivrCell(page, 'KO')).text).toMatch(/^38\b/)
   })
 
   it("AC: A populated IV rank lets the screener's IV floor apply to a bench name", async () => {
@@ -254,7 +251,7 @@ describe('US-97: IVR collection covers watchlist underlyings', () => {
     app = launched.app
     const page = launched.page
 
-    await page.waitForSelector('[data-testid="screener-row-KO"]')
+    await waitForBenchCard(page, 'KO', 'meets')
     await expectNoPositions(page)
 
     await openCriteriaSheet(page, 'header')
@@ -263,8 +260,8 @@ describe('US-97: IVR collection covers watchlist underlyings', () => {
     await saveCriteria(page)
     await waitForCriteriaSheetClosed(page)
 
-    await waitForRankedRowCount(page, 0)
-    const reason = await excludedReason(page, 'KO')
+    await waitForMeetsCardCount(page, 0)
+    const reason = await cardReason(page, 'KO')
     // The reason embeds the observation date between the two halves
     // (`IV rank 22.0 (May 29) below 30`), so each half is matched separately.
     expect(reason).toContain('IV rank 22.0')
