@@ -3,6 +3,7 @@ import { MONO } from '../../lib/tokens'
 
 type SectionCardProps = {
   header?: string
+  headerVariant?: 'default' | 'emphasized'
   children: ReactNode
   className?: string
 }
@@ -14,7 +15,7 @@ const cardStyle: CSSProperties = {
   overflow: 'hidden'
 }
 
-const headerStyle: CSSProperties = {
+const headerStyle = (headerVariant: SectionCardProps['headerVariant']): CSSProperties => ({
   padding: '10px 20px',
   borderBottom: '1px solid var(--wb-border)',
   fontSize: '0.7rem',
@@ -22,13 +23,21 @@ const headerStyle: CSSProperties = {
   letterSpacing: '0.1em',
   textTransform: 'uppercase',
   color: 'var(--wb-text-muted)',
-  fontFamily: MONO
-}
+  fontFamily: MONO,
+  ...(headerVariant === 'emphasized'
+    ? { background: 'var(--wb-bg-elevated)', color: 'var(--wb-text-primary)' }
+    : {})
+})
 
-export function SectionCard({ header, children, className }: SectionCardProps): React.JSX.Element {
+export function SectionCard({
+  header,
+  headerVariant,
+  children,
+  className
+}: SectionCardProps): React.JSX.Element {
   return (
     <section style={cardStyle} className={className}>
-      {header ? <div style={headerStyle}>{header}</div> : null}
+      {header ? <div style={headerStyle(headerVariant)}>{header}</div> : null}
       {children}
     </section>
   )

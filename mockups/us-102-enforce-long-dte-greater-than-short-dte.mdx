@@ -1,0 +1,290 @@
+---
+title: 'US-102: PMCC expiration safety'
+story: 'Prevent a PMCC roll or a new short call from leaving the short leg open on or after the long LEAPS expiration.'
+states: ['short-roll-valid', 'short-roll-invalid', 'leaps-roll-valid', 'leaps-roll-invalid', 'new-short-valid', 'new-short-invalid', 'leaps-roll-no-short']
+---
+
+import { useState, useRef, useEffect } from 'react'
+import { Field } from '../src/renderer/src/components/ui/FormField'
+import { NumberInput } from '../src/renderer/src/components/ui/NumberInput'
+import { FormButton } from '../src/renderer/src/components/ui/FormButton'
+import { SectionCard } from '../src/renderer/src/components/ui/SectionCard'
+import { SummaryRow } from '../src/renderer/src/components/ui/SummaryRow'
+import {
+  SheetOverlay,
+  SheetPanel,
+  SheetHeader,
+  SheetBody,
+  SheetFooter
+} from '../src/renderer/src/components/ui/Sheet'
+
+# US-102: PMCC long-expiration safety check
+
+Open the **XYZ** position detail page, then use **Roll Short Call**, **Roll LEAPS**, or **Sell Short Call** in the page header — the same right-hand sheet the wheel's existing roll flows use. Each sheet shows the opposite open leg as read-only coverage context and blocks confirmation while the proposed expiration would leave the short call uncovered.
+
+## Where this appears
+
+- **Position detail header** (`PositionDetailActions`, beside the wheel's existing Roll actions) — PMCC actions: Roll Short Call, Roll LEAPS, Sell Short Call.
+- **Roll Short Call sheet** (US-104) — open LEAPS expiration as coverage context; error beside the new expiration.
+- **Roll LEAPS sheet** (US-105) — open short-call expiration as coverage context; the inverse error.
+- **Sell Short Call sheet** (US-115) — open LEAPS expiration as coverage context; the same short-call error.
+
+## Acceptance Criteria States
+
+- **short-roll-valid**: replacement short 2027-02-19 lands before the 2027-09-17 LEAPS; confirmation is available.
+- **short-roll-invalid**: replacement short 2027-10-15 outlasts the LEAPS; confirmation is blocked and the existing short call stays open.
+- **leaps-roll-valid**: replacement LEAPS 2028-01-21 rolls coverage further out; confirmation is available.
+- **leaps-roll-invalid**: replacement LEAPS 2026-10-16 expires with the short call; confirmation is blocked.
+- **new-short-valid**: after the old short expires, a new 2026-11-20 short call is covered by the open LEAPS.
+- **new-short-invalid**: a new 2027-10-15 short call outlasts the LEAPS; the PMCC keeps no open short call.
+- **leaps-roll-no-short**: with no short call open, a LEAPS roll has nothing to cover and the check is skipped.
+
+---
+
+export const VALUATION = '2026-09-14'
+export const LEAPS_EXPIRATION = '2027-09-17'
+export const SHORT_EXPIRATION = '2026-10-16'
+
+export const dte = (expiration) =>
+  Math.round((Date.parse(expiration) - Date.parse(VALUATION)) / 86400000)
+
+export const withDte = (expiration) => `${expiration} (${dte(expiration)} DTE)`
+
+export const FLOWS = {
+  'short-roll': {
+    action: 'Roll Short Call',
+    title: 'Roll Short Call',
+    eyebrow: 'ROLL OUT',
+    subtitle: `XYZ CALL $110.00 · exp ${SHORT_EXPIRATION}`,
+    currentHeader: 'Current short call',
+    proposedLabel: 'New expiration',
+    confirm: 'Confirm Roll',
+    error: 'Short call must expire before the LEAPS call.',
+    candidates: ['2027-02-19', '2026-11-20', '2027-09-17', '2027-10-15'],
+    rejected: 'The existing short call stays open at 2026-10-16. No close or replacement leg is recorded.'
+  },
+  'leaps-roll': {
+    action: 'Roll LEAPS',
+    title: 'Roll LEAPS Call',
+    eyebrow: 'ROLL OUT',
+    subtitle: `XYZ CALL $80.00 · exp ${LEAPS_EXPIRATION}`,
+    currentHeader: 'Current LEAPS call',
+    proposedLabel: 'New expiration',
+    confirm: 'Confirm Roll',
+    error: 'LEAPS call must expire after the short call.',
+    candidates: ['2028-01-21', '2027-09-17', '2026-10-16', '2026-10-02'],
+    rejected: 'The existing LEAPS stays open at 2027-09-17. No close or replacement leg is recorded.'
+  },
+  'new-short': {
+    action: 'Sell Short Call',
+    title: 'Sell Short Call',
+    eyebrow: 'SELL TO OPEN',
+    subtitle: 'XYZ · covered by the open LEAPS',
+    currentHeader: 'Covering LEAPS call',
+    proposedLabel: 'Expiration',
+    confirm: 'Record Short Call',
+    error: 'Short call must expire before the LEAPS call.',
+    candidates: ['2026-11-20', '2026-12-18', '2027-09-17', '2027-10-15'],
+    rejected: 'The PMCC still has no open short call. Nothing is recorded.'
+  }
+}
+
+export function Mockup() {
+  const [shortOpen, setShortOpen] = useState(true)
+  const [flow, setFlow] = useState(null)
+  const [candidate, setCandidate] = useState(0)
+  const [recorded, setRecorded] = useState(null)
+  const dialog = useRef(null)
+  const config = flow ? FLOWS[flow] : null
+  const proposed = config ? config.candidates[candidate] : null
+  const rollingLeaps = flow === 'leaps-roll'
+  const coverageExpiration = rollingLeaps ? SHORT_EXPIRATION : LEAPS_EXPIRATION
+  const checked = !rollingLeaps || shortOpen
+  const safe = !checked || (rollingLeaps ? proposed > SHORT_EXPIRATION : proposed < LEAPS_EXPIRATION)
+  const open = (next) => { setFlow(next); setCandidate(0); setRecorded(null) }
+  const close = () => setFlow(null)
+  const confirm = () => { setRecorded({ flow, proposed }); if (flow === 'new-short') setShortOpen(true); setFlow(null) }
+
+  useEffect(() => { if (flow) dialog.current?.focus() }, [flow])
+
+  const actions = [shortOpen ? 'short-roll' : 'new-short', 'leaps-roll']
+
+  return (
+    <div className="flex flex-col gap-4 font-wb-mono text-wb-text-primary">
+      <div className="relative isolate h-[820px] transform-gpu overflow-hidden rounded-lg border border-wb-border bg-wb-bg-base">
+        <aside className="absolute inset-y-0 left-0 flex w-[200px] flex-col gap-6 border-r border-wb-border bg-wb-bg-surface p-5">
+          <div className="text-lg font-bold tracking-widest text-wb-gold">WHEELBASE</div>
+          <div className="flex flex-col gap-5 text-xs text-wb-text-secondary">
+            <span className="font-semibold text-wb-gold">Positions</span>
+            <span>Management queue</span>
+            <span>Calendar</span>
+            <span>Screener</span>
+            <span>Watchlist</span>
+          </div>
+          <div className="mt-auto text-xs text-wb-text-muted">PAPER ACCOUNT</div>
+        </aside>
+
+        <main className={`ml-[200px] h-full overflow-auto ${flow ? 'pointer-events-none opacity-40 blur-[1px]' : ''}`}>
+          <div className="flex items-start justify-between border-b border-wb-border px-6 py-4">
+            <div>
+              <div className="text-xs text-wb-text-muted">Positions / <span className="text-wb-text-primary">XYZ</span></div>
+              <h2 className="mt-1 text-xl font-semibold">XYZ</h2>
+              <div className="mt-1 flex items-center gap-2 text-xs text-wb-text-secondary">
+                <span className="rounded bg-wb-gold-dim px-2 py-0.5 font-semibold text-wb-gold">PMCC</span>
+                <span>{shortOpen ? 'LEAPS + short call open' : 'LEAPS open · no short call'}</span>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              {actions.map((key) => (
+                <FormButton
+                  key={key}
+                  label={FLOWS[key].action}
+                  variant={key === 'leaps-roll' ? 'secondary' : 'primary'}
+                  onClick={() => open(key)}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-4 p-6">
+            {recorded ? (
+              <div role="status" className="rounded-md border border-wb-border bg-wb-green-dim p-4 text-sm text-wb-green">
+                Recorded — {FLOWS[recorded.flow].title} · new expiration {withDte(recorded.proposed)}
+              </div>
+            ) : null}
+
+            <SectionCard header="Open legs">
+              <div className="grid gap-4 p-4 sm:grid-cols-2">
+                <div className="flex flex-col gap-2 rounded-lg border border-wb-border bg-wb-bg-elevated p-4">
+                  <div className="text-xs font-semibold uppercase tracking-widest text-wb-green">Long LEAPS call</div>
+                  <SummaryRow label="Contract" value="XYZ $80.00 CALL" />
+                  <SummaryRow label="Expiration" value={withDte(LEAPS_EXPIRATION)} />
+                  <SummaryRow label="Opening debit" value="$2,500.00" highlight />
+                </div>
+                <div className="flex flex-col gap-2 rounded-lg border border-wb-border bg-wb-bg-elevated p-4">
+                  <div className="text-xs font-semibold uppercase tracking-widest text-wb-gold">Short call</div>
+                  {shortOpen ? (
+                    <>
+                      <SummaryRow label="Contract" value="XYZ $110.00 CALL" />
+                      <SummaryRow label="Expiration" value={withDte(SHORT_EXPIRATION)} />
+                      <SummaryRow label="Credit collected" value="$200.00" highlight />
+                    </>
+                  ) : (
+                    <p className="text-xs leading-relaxed text-wb-text-secondary">
+                      Expired worthless on {SHORT_EXPIRATION}. Sell the next short call against the open LEAPS to resume income.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </SectionCard>
+
+            <SectionCard header="Coverage">
+              <div className="flex flex-col gap-2 p-4 text-xs">
+                <p className="text-wb-text-secondary">
+                  The LEAPS is the coverage for the short call. Every roll and every new short call is checked so the short leg always expires first — matching expirations are rejected too.
+                </p>
+                {shortOpen ? (
+                  <p className="text-wb-green">Covered: the LEAPS outlives the short call by {dte(LEAPS_EXPIRATION) - dte(SHORT_EXPIRATION)} days.</p>
+                ) : (
+                  <p className="text-wb-text-muted">No short call open — nothing to cover.</p>
+                )}
+              </div>
+            </SectionCard>
+          </div>
+        </main>
+
+        {flow ? (
+          <SheetOverlay onClose={close}>
+            <SheetPanel width={420}>
+              <div
+                ref={dialog}
+                role="dialog"
+                aria-label={config.title}
+                tabIndex={-1}
+                className="flex h-full min-h-0 flex-col outline-none"
+                onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}
+              >
+                <SheetHeader eyebrow={config.eyebrow} title={config.title} subtitle={config.subtitle} onClose={close} />
+                <SheetBody>
+                  {checked ? (
+                    <SectionCard header={config.currentHeader} headerVariant="emphasized">
+                      <div className="flex flex-col gap-2 px-4 py-3">
+                        <SummaryRow label={rollingLeaps ? 'Short call expiration' : 'LEAPS expiration'} value={withDte(coverageExpiration)} />
+                        <SummaryRow
+                          label="Requirement"
+                          value={rollingLeaps ? 'New LEAPS must expire later' : 'New short must expire earlier'}
+                          highlight
+                        />
+                      </div>
+                    </SectionCard>
+                  ) : (
+                    <div className="rounded border border-wb-border bg-wb-bg-elevated p-3 text-xs text-wb-text-secondary">
+                      No short call is open, so this roll has nothing to cover and the expiration check does not apply.
+                    </div>
+                  )}
+
+                  <SectionCard header="New leg">
+                    <div className="flex flex-col gap-3 px-[14px] py-4">
+                      <Field
+                        label={config.proposedLabel}
+                        htmlFor="pmcc-proposed-expiration"
+                        hint={safe ? `${dte(proposed)} DTE` : undefined}
+                        error={safe ? undefined : config.error}
+                      >
+                        <NumberInput id="pmcc-proposed-expiration" value={proposed} readOnly hasError={!safe} />
+                      </Field>
+                      <div className="flex flex-wrap gap-2">
+                        {config.candidates.map((expiration, index) => (
+                          <FormButton
+                            key={expiration}
+                            label={expiration}
+                            variant={index === candidate ? 'primary' : 'secondary'}
+                            onClick={() => setCandidate(index)}
+                          />
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-wb-text-muted">
+                        Prototype: these stand in for the date picker in the implemented sheet.
+                      </p>
+                      <Field label={rollingLeaps ? 'New strike' : 'Strike'} htmlFor="pmcc-strike">
+                        <NumberInput id="pmcc-strike" value={rollingLeaps ? '80.00' : '110.00'} readOnly />
+                      </Field>
+                    </div>
+                  </SectionCard>
+                </SheetBody>
+                <SheetFooter>
+                  <div className="flex w-full flex-col gap-3">
+                    {safe ? null : (
+                      <p className="text-[11px] leading-relaxed text-wb-red">{config.rejected}</p>
+                    )}
+                    <div className="grid grid-cols-2 gap-3">
+                      <FormButton label="Cancel" variant="secondary" onClick={close} />
+                      {/* FormButton styles isPending but not disabled, so the wrapper carries the dimming. */}
+                      <div className={safe ? undefined : 'cursor-not-allowed opacity-40'}>
+                        <FormButton label={config.confirm} disabled={!safe} onClick={confirm} />
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-wb-text-secondary">Your draft is kept until the expiration is safe. No order is placed.</span>
+                  </div>
+                </SheetFooter>
+              </div>
+            </SheetPanel>
+          </SheetOverlay>
+        ) : null}
+      </div>
+
+      <details className="rounded-lg border border-wb-border p-3 text-xs text-wb-text-secondary">
+        <summary className="cursor-pointer">Review states · prototype controls</summary>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <FormButton label="short call open" variant={shortOpen ? 'primary' : 'secondary'} onClick={() => { setShortOpen(true); setFlow(null); setRecorded(null) }} />
+          <FormButton label="short call expired" variant={shortOpen ? 'secondary' : 'primary'} onClick={() => { setShortOpen(false); setFlow(null); setRecorded(null) }} />
+        </div>
+        <p className="mt-3">
+          With the short call open, the header offers Roll Short Call and Roll LEAPS. Once it expires, Roll Short Call is replaced by Sell Short Call, and a LEAPS roll skips the check entirely. In each sheet the last two candidate dates are the rejected cases — one equal to the opposite leg, one past it — and Escape, Cancel, or clicking outside dismisses without recording.
+        </p>
+      </details>
+    </div>
+  )
+}
+
+<Mockup />

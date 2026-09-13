@@ -31,6 +31,9 @@ approval_mode = "approve"
 [mcp_servers.playwright.tools.browser_evaluate]
 approval_mode = "approve"
 
+[mcp_servers.playwright.tools.browser_navigate]
+approval_mode = "approve"
+
 [mcp_servers.electron]
 command = "npx"
 args = ["-y", "electron-mcp-server"]
