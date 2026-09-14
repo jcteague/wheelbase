@@ -1,0 +1,777 @@
+---
+title: 'US-105: Roll the PMCC LEAPS'
+story: 'Roll the PMCC LEAPS to a later expiration and optionally a new strike, with the net debit or credit and the re-anchored effective share cost visible before confirming.'
+states:
+  [
+    'entry',
+    'roll-up-out',
+    'roll-out-debit',
+    'too-much-time',
+    'strike-above-short',
+    'uncovers-short',
+    'shortens-coverage',
+    'no-change',
+    'zero-proceeds',
+    'recorded',
+    'no-short-call'
+  ]
+---
+
+import { useState, useRef, useEffect } from 'react'
+import { Field } from '../src/renderer/src/components/ui/FormField'
+import { NumberInput } from '../src/renderer/src/components/ui/NumberInput'
+import { FormButton } from '../src/renderer/src/components/ui/FormButton'
+import { SectionCard } from '../src/renderer/src/components/ui/SectionCard'
+import { SummaryRow } from '../src/renderer/src/components/ui/SummaryRow'
+import { AlertBox } from '../src/renderer/src/components/ui/AlertBox'
+import { StatGrid } from '../src/renderer/src/components/ui/Stat'
+import {
+  SheetOverlay,
+  SheetPanel,
+  SheetHeader,
+  SheetBody,
+  SheetFooter
+} from '../src/renderer/src/components/ui/Sheet'
+
+# US-105: Roll the PMCC LEAPS
+
+_Open the **XYZ** PMCC detail page, then use **Roll LEAPS**. Same right-hand sheet as US-104's short-call roll, with the legs inverted: the trader **sells to close** the current LEAPS and **buys to open** a replacement further out. Two numbers move in opposite directions and both are on the sheet — the net cash (usually a debit, because time value is being bought) and the effective share cost, which re-anchors to the replacement strike._
+
+## Where this appears
+
+- **Position detail header** — the Roll LEAPS action, beside Roll Short Call.
+- **Roll LEAPS sheet** — current LEAPS, open short call as coverage context, replacement inputs, live net preview.
+- **Cost-basis panel and history** (US-103) — receives one net line per roll and re-anchors the effective share cost; this mockup shows the resulting row, it does not redefine the panel.
+
+## The coverage ruler, inverted
+
+US-104's ruler asked "does the LEAPS still cover the replacement short?" This one asks the mirror question: "does the replacement LEAPS still cover the open short?" Today, the short, the current LEAPS, and the replacement sit on one axis. The replacement may land before the current LEAPS (coverage shortens — advisory) but never on or before the short (US-102 — blocked).
+
+## Acceptance Criteria States
+
+- **entry**: the sheet opens with the current LEAPS at 70 DTE, the $112 short at 7 DTE as read-only coverage, cost basis $21.80, effective share cost $101.80. No preview until proceeds and debit are filled.
+- **roll-up-out**: $85 replacement, Jan 21 2028, $26.00 proceeds, $23.50 debit. Net Credit $2.50 per share ($250.00), Roll Up & Out, 196 DTE. Cost basis after $19.30; effective share cost after $104.30, up $2.50 — the cash came out, the strike moved up more.
+- **roll-out-debit**: same $80 strike, Jan 21 2028, $29.20 debit. Net Debit $3.20 ($320.00), Roll Out. Basis $25.00, effective $105.00. Confirm stays available — paying to extend coverage is the normal case.
+- **too-much-time**: same $80 strike rolled to Jan 19 2029 at $37.00. Net Debit $11.00. Effective share cost after $112.80 sits above the $112 short strike — advisory warning, roughly $0.80 per share of loss if assigned. Confirm stays available.
+- **strike-above-short**: $112 replacement. Blocked: the LEAPS strike must stay below the open short strike or the position is no longer a PMCC.
+- **uncovers-short**: a Jul 16 2027 replacement expires with the short call. Blocked by the US-102 comparator, ruler goes red, nothing is recorded.
+- **shortens-coverage**: an Aug 20 2027 replacement is 42 DTE, 28 days shorter than the current LEAPS, but still past the short. Allowed, with an advisory note.
+- **no-change**: same strike, same expiration. Blocked.
+- **zero-proceeds**: $0.00 proceeds from close. Blocked at the field.
+- **recorded**: the linked leg pair is written (SELL CALL $80 → BUY CALL $85), cost basis moves $21.80 to $19.30, LEAPS cost to date $25.00 to $22.50, one net history line, effective share cost re-anchored to $85 + $19.30.
+- **no-short-call**: the short expired on Jul 16. The coverage and strike checks are skipped — an uncovered LEAPS has no naked-call risk — and the roll records normally.
+
+---
+
+export const LEAPS = { strike: 80, expiration: '2027-09-17', debit: 25.0 }
+export const SHORT = { strike: 112, expiration: '2027-07-16', premium: 2.4 }
+export const CONTRACTS = 1
+export const BASIS = 21.8
+
+export const dte = (expiration, today) =>
+  Math.round((Date.parse(expiration) - Date.parse(today)) / 86400000)
+
+export const money = (value) =>
+  `${value < 0 ? '-' : ''}$${Math.abs(value).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}`
+
+export const monthOf = (expiration) =>
+  ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][
+    Number(expiration.slice(5, 7)) - 1
+  ]
+
+export const monthYearOf = (expiration) => `${monthOf(expiration)} ${expiration.slice(0, 4)}`
+
+export const PRESETS = [
+  { key: 'entry', label: 'entry', proceeds: '', strike: '', expiration: '', debit: '' },
+  {
+    key: 'roll-up-out',
+    label: 'roll up & out (credit)',
+    proceeds: '26.00',
+    strike: '85',
+    expiration: '2028-01-21',
+    debit: '23.50'
+  },
+  {
+    key: 'roll-out-debit',
+    label: 'roll out (debit)',
+    proceeds: '26.00',
+    strike: '80',
+    expiration: '2028-01-21',
+    debit: '29.20'
+  },
+  {
+    key: 'too-much-time',
+    label: 'too much time',
+    proceeds: '26.00',
+    strike: '80',
+    expiration: '2029-01-19',
+    debit: '37.00'
+  },
+  {
+    key: 'strike-above-short',
+    label: 'strike above short',
+    proceeds: '26.00',
+    strike: '112',
+    expiration: '2028-01-21',
+    debit: '9.00'
+  },
+  {
+    key: 'uncovers-short',
+    label: 'uncovers short',
+    proceeds: '26.00',
+    strike: '85',
+    expiration: '2027-07-16',
+    debit: '20.20'
+  },
+  {
+    key: 'shortens-coverage',
+    label: 'shortens coverage',
+    proceeds: '26.00',
+    strike: '80',
+    expiration: '2027-08-20',
+    debit: '26.60'
+  },
+  {
+    key: 'no-change',
+    label: 'no change',
+    proceeds: '26.00',
+    strike: '80',
+    expiration: '2027-09-17',
+    debit: '26.00'
+  },
+  {
+    key: 'zero-proceeds',
+    label: 'zero proceeds',
+    proceeds: '0.00',
+    strike: '85',
+    expiration: '2028-01-21',
+    debit: '23.50'
+  }
+]
+
+export function evaluate(draft, shortOpen, today) {
+  const proceeds = draft.proceeds === '' ? null : Number(draft.proceeds)
+  const debit = draft.debit === '' ? null : Number(draft.debit)
+  const strike = draft.strike === '' ? null : Number(draft.strike)
+  const expiration = draft.expiration === '' ? null : draft.expiration
+  const errors = {}
+
+  if (shortOpen && expiration !== null && expiration <= SHORT.expiration) {
+    errors.expiration = 'LEAPS call must expire after the short call.'
+  }
+  if (shortOpen && strike !== null && strike >= SHORT.strike) {
+    errors.strike = `LEAPS strike must be below the short-call strike ($${SHORT.strike.toFixed(2)}).`
+  }
+  if (proceeds !== null && proceeds <= 0) {
+    errors.proceeds = 'Proceeds from close must be greater than zero'
+  }
+  if (debit !== null && debit <= 0) {
+    errors.debit = 'Replacement debit must be greater than zero'
+  }
+  if (strike === LEAPS.strike && expiration === LEAPS.expiration) {
+    errors.form = 'Roll must change the strike, the expiration, or both'
+  }
+
+  const priced = proceeds !== null && debit !== null && proceeds > 0 && debit > 0
+  const net = priced ? proceeds - debit : null
+  const postBasis = priced ? BASIS - net : null
+  const effectiveAfter = priced && strike !== null ? strike + postBasis : null
+  const effectiveBefore = LEAPS.strike + BASIS
+  const complete = proceeds !== null && debit !== null && strike !== null && expiration !== null
+  const valid = complete && Object.keys(errors).length === 0
+  const shortfall =
+    valid && shortOpen && effectiveAfter > SHORT.strike ? effectiveAfter - SHORT.strike : null
+  const shortened =
+    valid && expiration < LEAPS.expiration
+      ? dte(LEAPS.expiration, today) - dte(expiration, today)
+      : null
+
+  return {
+    proceeds,
+    debit,
+    strike,
+    expiration,
+    errors,
+    net,
+    postBasis,
+    effectiveBefore,
+    effectiveAfter,
+    valid,
+    shortfall,
+    shortened
+  }
+}
+
+export function rollLabel(strike, expiration) {
+  const direction = strike > LEAPS.strike ? 'Up' : strike < LEAPS.strike ? 'Down' : null
+  const timing =
+    expiration > LEAPS.expiration ? 'Out' : expiration < LEAPS.expiration ? 'In' : null
+  const parts = [direction, timing].filter(Boolean)
+  if (parts.length === 0) return null
+  const strikeText =
+    direction === null
+      ? `same $${LEAPS.strike} strike`
+      : `$${LEAPS.strike} to $${strike} strike`
+  const dateText =
+    timing === null
+      ? `same ${monthYearOf(LEAPS.expiration)} expiration`
+      : `${monthYearOf(LEAPS.expiration)} to ${monthYearOf(expiration)} expiration`
+  return `Roll ${parts.join(' & ')}: ${strikeText}, ${dateText}`
+}
+
+export function LegendItem({ swatch, swatchStyle, label, value, tone }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="flex w-2 shrink-0 justify-center">
+        <span className={swatch} style={swatchStyle} />
+      </span>
+      <span className="text-wb-text-secondary">{label}</span>
+      <span className={`ml-auto ${tone ?? ''}`}>{value}</span>
+    </div>
+  )
+}
+
+export function CoverageRuler({ proposed, blocked, shortOpen, today }) {
+  const currentDte = dte(LEAPS.expiration, today)
+  const proposedDte = proposed === null ? null : dte(proposed, today)
+  const span = Math.max(currentDte, proposedDte ?? 0)
+  const pct = (days) => `${Math.max(0, Math.min((days / span) * 100, 100))}%`
+  const tone = blocked ? 'var(--wb-red)' : 'var(--wb-gold)'
+
+  return (
+    <div className="flex flex-col gap-3 px-4 py-4">
+      <div className="relative h-10">
+        <div className="absolute inset-x-0 top-4 h-px bg-wb-border" />
+        <div
+          className="absolute top-4 h-px"
+          style={{ left: 0, width: pct(proposedDte ?? currentDte), background: tone }}
+        />
+        <div className="absolute top-2.5 h-3 w-px bg-wb-text-muted" style={{ left: 0 }} />
+        {shortOpen ? (
+          <div
+            className="absolute top-2.5 h-3 w-px bg-wb-text-secondary"
+            style={{ left: pct(dte(SHORT.expiration, today)) }}
+          />
+        ) : null}
+        <div
+          className="absolute top-2.5 h-3 w-0.5 bg-wb-green opacity-60"
+          style={{ left: pct(currentDte) }}
+        />
+        {proposedDte === null ? null : (
+          <div
+            className="absolute top-1 h-6 w-0.5"
+            style={{ left: pct(proposedDte), background: tone }}
+          />
+        )}
+      </div>
+      <div className="flex flex-col gap-1.5 text-[10px] text-wb-text-muted">
+        <LegendItem swatch="h-3 w-px bg-wb-text-muted" label="Today" value={today} />
+        {shortOpen ? (
+          <LegendItem
+            swatch="h-3 w-px bg-wb-text-secondary"
+            label="Open short call"
+            value={`${SHORT.expiration} · ${dte(SHORT.expiration, today)} DTE`}
+          />
+        ) : (
+          <LegendItem swatch="h-3 w-px bg-transparent" label="Open short call" value="none" />
+        )}
+        <LegendItem
+          swatch="h-3 w-0.5 bg-wb-green opacity-60"
+          label="Current LEAPS (selling)"
+          value={`${LEAPS.expiration} · ${currentDte} DTE`}
+        />
+        <LegendItem
+          swatch="h-4 w-0.5"
+          swatchStyle={{ background: tone }}
+          label="Replacement LEAPS (buying)"
+          value={proposedDte === null ? 'not entered' : `${proposed} · ${proposedDte} DTE`}
+          tone={blocked ? 'text-wb-red' : undefined}
+        />
+      </div>
+      {proposedDte === null ? (
+        <p className="text-[11px] text-wb-text-secondary">
+          Current LEAPS expires in {currentDte} days — inside the window where its time value starts
+          to decay fast.
+          {shortOpen ? ` The open short call needs cover past ${SHORT.expiration}.` : ''}
+        </p>
+      ) : blocked ? (
+        <p className="text-[11px] text-wb-red">
+          The replacement LEAPS expires on or before the short call. Past this point the short call
+          is naked.
+        </p>
+      ) : (
+        <p className="text-[11px] text-wb-text-secondary">
+          Replacement LEAPS at {proposedDte} DTE
+          {shortOpen ? `, ${proposedDte - dte(SHORT.expiration, today)} days past the short call` : ''}
+          .
+        </p>
+      )}
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [presetKey, setPresetKey] = useState('roll-up-out')
+  const [shortOpen, setShortOpen] = useState(true)
+  const [sheetOpen, setSheetOpen] = useState(true)
+  const [recorded, setRecorded] = useState(false)
+  const dialog = useRef(null)
+
+  const today = shortOpen ? '2027-07-09' : '2027-07-19'
+  const preset = PRESETS.find((entry) => entry.key === presetKey) ?? PRESETS[0]
+  const model = evaluate(preset, shortOpen, today)
+  const label = model.valid ? rollLabel(model.strike, model.expiration) : null
+  const blockedByCoverage = model.errors.expiration !== undefined
+  const isDebit = model.net !== null && model.net < 0
+  const effectiveDelta =
+    model.effectiveAfter === null ? null : model.effectiveAfter - model.effectiveBefore
+
+  const close = () => setSheetOpen(false)
+  const openSheet = () => {
+    setSheetOpen(true)
+    setRecorded(false)
+  }
+  const confirm = () => {
+    setRecorded(true)
+    setSheetOpen(false)
+  }
+  const choose = (key) => {
+    setPresetKey(key)
+    setRecorded(false)
+    setSheetOpen(true)
+  }
+
+  useEffect(() => {
+    if (sheetOpen) dialog.current?.focus()
+  }, [sheetOpen, presetKey])
+
+  const openLeaps = recorded
+    ? { strike: 85, expiration: '2028-01-21', costToDate: 22.5, basis: 19.3 }
+    : { strike: LEAPS.strike, expiration: LEAPS.expiration, costToDate: 25.0, basis: BASIS }
+
+  return (
+    <div className="flex flex-col gap-4 font-wb-mono text-wb-text-primary">
+      <div className="relative isolate h-[920px] transform-gpu overflow-hidden rounded-lg border border-wb-border bg-wb-bg-base">
+        <aside className="absolute inset-y-0 left-0 flex w-[200px] flex-col gap-6 border-r border-wb-border bg-wb-bg-surface p-5">
+          <div className="text-lg font-bold tracking-widest text-wb-gold">WHEELBASE</div>
+          <div className="flex flex-col gap-5 text-xs text-wb-text-secondary">
+            <span className="font-semibold text-wb-gold">Positions</span>
+            <span>Management queue</span>
+            <span>Calendar</span>
+            <span>Screener</span>
+            <span>Watchlist</span>
+          </div>
+          <div className="mt-auto text-xs text-wb-text-muted">PAPER ACCOUNT</div>
+        </aside>
+
+        <main
+          className={`ml-[200px] h-full overflow-auto ${sheetOpen ? 'pointer-events-none opacity-40 blur-[1px]' : ''}`}
+        >
+          <div className="flex items-start justify-between border-b border-wb-border px-6 py-4">
+            <div>
+              <div className="text-xs text-wb-text-muted">
+                Positions / <span className="text-wb-text-primary">XYZ</span>
+              </div>
+              <h2 className="mt-1 text-xl font-semibold">XYZ</h2>
+              <div className="mt-1 flex items-center gap-2 text-xs text-wb-text-secondary">
+                <span className="rounded bg-wb-gold-dim px-2 py-0.5 font-semibold text-wb-gold">
+                  PMCC
+                </span>
+                <span>{shortOpen ? 'LEAPS + short call open' : 'LEAPS open · no short call'}</span>
+                {!recorded && dte(LEAPS.expiration, today) < 90 ? (
+                  <span className="rounded border border-wb-gold px-2 py-0.5 text-wb-gold">
+                    LEAPS {dte(LEAPS.expiration, today)} DTE
+                  </span>
+                ) : null}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <FormButton
+                label={shortOpen ? 'Roll Short Call' : 'Sell Short Call'}
+                variant="secondary"
+              />
+              <FormButton label="Roll LEAPS" onClick={openSheet} />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-4 p-6">
+            {recorded ? (
+              <AlertBox variant="success">
+                Rolled — sold to close XYZ $80.00 CALL {LEAPS.expiration} at $26.00, bought to open
+                XYZ $85.00 CALL 2028-01-21 at $23.50. Net credit $2.50 per share ($250.00). Both legs
+                share one roll chain.
+              </AlertBox>
+            ) : null}
+
+            {shortOpen ? null : (
+              <AlertBox variant="info">
+                No short call is open. The LEAPS can still be rolled — with nothing to cover, the
+                expiration and strike checks are skipped. Sell the next short call to resume income
+                (US-115).
+              </AlertBox>
+            )}
+
+            <SectionCard header="Open legs">
+              <div className="grid gap-4 p-4 sm:grid-cols-2">
+                <div className="flex flex-col gap-2 rounded-lg border border-wb-border bg-wb-bg-elevated p-4">
+                  <div className="text-xs font-semibold uppercase tracking-widest text-wb-green">
+                    Long LEAPS call
+                  </div>
+                  <SummaryRow label="Contract" value={`XYZ $${openLeaps.strike.toFixed(2)} CALL`} />
+                  <SummaryRow
+                    label="Expiration"
+                    value={`${openLeaps.expiration} (${dte(openLeaps.expiration, today)} DTE)`}
+                  />
+                  <SummaryRow
+                    label="LEAPS cost to date"
+                    value={`$${openLeaps.costToDate.toFixed(2)} / share`}
+                    highlight
+                  />
+                </div>
+                <div className="flex flex-col gap-2 rounded-lg border border-wb-border bg-wb-bg-elevated p-4">
+                  <div className="text-xs font-semibold uppercase tracking-widest text-wb-gold">
+                    Short call
+                  </div>
+                  {shortOpen ? (
+                    <>
+                      <SummaryRow label="Contract" value={`XYZ $${SHORT.strike.toFixed(2)} CALL`} />
+                      <SummaryRow
+                        label="Expiration"
+                        value={`${SHORT.expiration} (${dte(SHORT.expiration, today)} DTE)`}
+                      />
+                      <SummaryRow label="Credit collected" value="$240.00" highlight />
+                    </>
+                  ) : (
+                    <p className="text-xs leading-relaxed text-wb-text-secondary">
+                      Expired worthless on {SHORT.expiration}.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </SectionCard>
+
+            <SectionCard header="Cost basis · owned by US-103">
+              <StatGrid
+                minWidth={150}
+                items={[
+                  { label: 'Cost basis', value: `$${openLeaps.basis.toFixed(2)} / share` },
+                  {
+                    label: 'Effective share cost',
+                    value: `$${(openLeaps.strike + openLeaps.basis).toFixed(2)}`
+                  },
+                  { label: 'LEAPS cost to date', value: `$${openLeaps.costToDate.toFixed(2)} / share` },
+                  { label: 'LEAPS roll nets', value: recorded ? '+$2.50 / share' : '—' }
+                ]}
+              />
+              <div className="flex flex-col gap-2 border-t border-wb-border p-4 text-xs">
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-wb-text-muted">
+                  History
+                </div>
+                <SummaryRow label="Opening legs" value="$23.00 / share" />
+                <SummaryRow label="Short-call cycles and roll (earlier events)" value="$21.80 / share" />
+                {recorded ? (
+                  <SummaryRow label="LEAPS roll #1 credit $2.50" value="$19.30 / share" highlight />
+                ) : null}
+                <p className="mt-1 text-[11px] text-wb-text-muted">
+                  {recorded
+                    ? 'Effective share cost re-anchored: $85.00 strike + $19.30 basis = $104.30. No strike-delta adjustment is applied to the basis.'
+                    : 'A LEAPS roll lands as one net line, never as separate gross close and open rows.'}
+                </p>
+              </div>
+            </SectionCard>
+          </div>
+        </main>
+
+        {sheetOpen ? (
+          <SheetOverlay onClose={close}>
+            <SheetPanel width={440}>
+              <div
+                ref={dialog}
+                role="dialog"
+                aria-label="Roll LEAPS"
+                tabIndex={-1}
+                className="flex h-full min-h-0 flex-col outline-none"
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.stopPropagation()
+                    close()
+                  }
+                }}
+              >
+                <SheetHeader
+                  eyebrow="ROLL LEAPS"
+                  title="Roll LEAPS Call"
+                  subtitle={`XYZ CALL $${LEAPS.strike.toFixed(2)} · exp ${LEAPS.expiration} · ${dte(LEAPS.expiration, today)} DTE`}
+                  onClose={close}
+                />
+                <SheetBody>
+                  <SectionCard header="Coverage" headerVariant="emphasized">
+                    <CoverageRuler
+                      proposed={model.expiration}
+                      blocked={blockedByCoverage}
+                      shortOpen={shortOpen}
+                      today={today}
+                    />
+                  </SectionCard>
+
+                  <SectionCard header="Current LEAPS">
+                    <div className="flex flex-col gap-2 px-4 py-3">
+                      <SummaryRow label="Contract" value={`XYZ $${LEAPS.strike.toFixed(2)} CALL`} />
+                      <SummaryRow
+                        label="Expiration"
+                        value={`${LEAPS.expiration} (${dte(LEAPS.expiration, today)} DTE)`}
+                      />
+                      <SummaryRow label="Bought at" value={`$${LEAPS.debit.toFixed(2)} / share`} />
+                      <SummaryRow label="Cost basis" value={`$${BASIS.toFixed(2)} / share`} />
+                      <SummaryRow
+                        label="Effective share cost"
+                        value={`$${model.effectiveBefore.toFixed(2)}`}
+                        highlight
+                      />
+                      <p className="text-[11px] leading-relaxed text-wb-text-muted">
+                        What shares would cost you through the LEAPS — the $80.00 strike plus $21.80
+                        of basis. Re-anchors to the replacement strike after this roll.
+                      </p>
+                    </div>
+                  </SectionCard>
+
+                  <SectionCard header="Open short call">
+                    <div className="flex flex-col gap-2 px-4 py-3">
+                      {shortOpen ? (
+                        <>
+                          <SummaryRow label="Contract" value={`XYZ $${SHORT.strike.toFixed(2)} CALL`} />
+                          <SummaryRow
+                            label="Expiration"
+                            value={`${SHORT.expiration} (${dte(SHORT.expiration, today)} DTE)`}
+                          />
+                          <p className="text-[11px] leading-relaxed text-wb-text-muted">
+                            Read-only. The replacement LEAPS must expire after it and strike below it.
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-[11px] leading-relaxed text-wb-text-secondary">
+                          No short call open — nothing to cover, so the expiration and strike checks
+                          are skipped.
+                        </p>
+                      )}
+                    </div>
+                  </SectionCard>
+
+                  <SectionCard header="Replacement LEAPS">
+                    <div className="flex flex-col gap-3 px-[14px] py-4">
+                      <Field
+                        label="Proceeds from close (sell to close)"
+                        htmlFor="leaps-proceeds"
+                        error={model.errors.proceeds}
+                      >
+                        <NumberInput
+                          id="leaps-proceeds"
+                          prefix="$"
+                          value={preset.proceeds}
+                          placeholder="0.00"
+                          readOnly
+                          hasError={model.errors.proceeds !== undefined}
+                        />
+                      </Field>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="Strike" htmlFor="leaps-strike" error={model.errors.strike}>
+                          <NumberInput
+                            id="leaps-strike"
+                            prefix="$"
+                            value={preset.strike}
+                            placeholder="0.00"
+                            readOnly
+                            hasError={model.errors.strike !== undefined}
+                          />
+                        </Field>
+                        <Field
+                          label="Debit (buy to open)"
+                          htmlFor="leaps-debit"
+                          error={model.errors.debit}
+                        >
+                          <NumberInput
+                            id="leaps-debit"
+                            prefix="$"
+                            value={preset.debit}
+                            placeholder="0.00"
+                            readOnly
+                            hasError={model.errors.debit !== undefined}
+                          />
+                        </Field>
+                      </div>
+                      <Field
+                        label="Expiration"
+                        htmlFor="leaps-expiration"
+                        hint={
+                          model.expiration !== null && model.errors.expiration === undefined
+                            ? `${dte(model.expiration, today)} DTE`
+                            : undefined
+                        }
+                        error={model.errors.expiration}
+                      >
+                        <NumberInput
+                          id="leaps-expiration"
+                          value={preset.expiration}
+                          placeholder="yyyy-mm-dd"
+                          readOnly
+                          hasError={model.errors.expiration !== undefined}
+                        />
+                      </Field>
+                      <Field label="Fill date" htmlFor="leaps-fill-date">
+                        <NumberInput id="leaps-fill-date" value={today} readOnly />
+                      </Field>
+                      <p className="text-[10px] text-wb-text-muted">
+                        Prototype: fields are read-only here. Use the review controls below the
+                        frame to load each case.
+                      </p>
+                    </div>
+                  </SectionCard>
+
+                  {model.net === null ? (
+                    <div className="rounded border border-dashed border-wb-border p-4 text-center text-xs text-wb-text-muted">
+                      Enter the proceeds from close and the replacement debit to preview the net.
+                    </div>
+                  ) : (
+                    <SectionCard header="Net" headerVariant="emphasized">
+                      <div className="flex flex-col gap-3 px-4 py-4">
+                        <div className="flex items-baseline justify-between">
+                          <span className="text-xs uppercase tracking-widest text-wb-text-muted">
+                            {isDebit ? 'Net Debit' : 'Net Credit'}
+                          </span>
+                          <span
+                            className={`text-xl font-semibold ${isDebit ? 'text-wb-red' : 'text-wb-green'}`}
+                          >
+                            {money(Math.abs(model.net))}
+                            <span className="ml-1 text-xs text-wb-text-muted">/ share</span>
+                          </span>
+                        </div>
+                        <SummaryRow
+                          label="Total"
+                          value={`${money(Math.abs(model.net) * 100 * CONTRACTS)} (${CONTRACTS} contract)`}
+                        />
+                        {label ? (
+                          <div className="rounded bg-wb-bg-elevated px-3 py-2 text-[11px] text-wb-text-secondary">
+                            {label}
+                          </div>
+                        ) : null}
+                        <SummaryRow
+                          label="Cost basis after roll"
+                          value={`$${model.postBasis.toFixed(2)} / share`}
+                        />
+                        {model.effectiveAfter === null ? null : (
+                          <>
+                            <SummaryRow
+                              label="Effective share cost after roll"
+                              value={`$${model.effectiveAfter.toFixed(2)}`}
+                              highlight
+                            />
+                            <p className="text-[11px] leading-relaxed text-wb-text-muted">
+                              {`$${model.strike.toFixed(2)} strike + $${model.postBasis.toFixed(2)} basis · ${
+                                effectiveDelta === 0
+                                  ? 'unchanged'
+                                  : `${effectiveDelta > 0 ? 'up' : 'down'} ${money(Math.abs(effectiveDelta))} from $${model.effectiveBefore.toFixed(2)}`
+                              }. ${
+                                isDebit
+                                  ? 'You are buying time value; it lands in the basis.'
+                                  : 'Cash came out, but the strike moved up more than the credit.'
+                              }`}
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    </SectionCard>
+                  )}
+
+                  {model.shortfall !== null ? (
+                    <AlertBox variant="warning">
+                      {`Open short strike $${SHORT.strike.toFixed(2)} is below your effective share cost of $${model.effectiveAfter.toFixed(2)} after this roll. If assigned, covering from the LEAPS realizes roughly $${model.shortfall.toFixed(2)} per share of loss. You can still record it.`}
+                    </AlertBox>
+                  ) : null}
+
+                  {model.shortened !== null ? (
+                    <AlertBox variant="info">
+                      {`Replacement LEAPS is ${dte(model.expiration, today)} DTE, ${model.shortened} days shorter than the current LEAPS.${shortOpen ? ' It still covers the open short call.' : ''}`}
+                    </AlertBox>
+                  ) : null}
+
+                  {model.errors.form ? (
+                    <AlertBox variant="error">{model.errors.form}</AlertBox>
+                  ) : null}
+                </SheetBody>
+                <SheetFooter>
+                  <div className="flex w-full flex-col gap-3">
+                    {blockedByCoverage || model.errors.strike ? (
+                      <p className="text-[11px] leading-relaxed text-wb-red">
+                        The XYZ $80.00 LEAPS stays open at {LEAPS.expiration}. No close or replacement
+                        leg is recorded.
+                      </p>
+                    ) : null}
+                    <div className="grid grid-cols-2 gap-3">
+                      <FormButton label="Cancel" variant="secondary" onClick={close} />
+                      <div className={model.valid ? undefined : 'cursor-not-allowed opacity-40'}>
+                        <FormButton
+                          label="Confirm roll"
+                          disabled={!model.valid}
+                          onClick={confirm}
+                        />
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-wb-text-secondary">
+                      Your draft is kept until the roll is valid. No order is placed.
+                    </span>
+                  </div>
+                </SheetFooter>
+              </div>
+            </SheetPanel>
+          </SheetOverlay>
+        ) : null}
+      </div>
+
+      <details className="rounded-lg border border-wb-border p-3 text-xs text-wb-text-secondary">
+        <summary className="cursor-pointer">Review states · prototype controls</summary>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {PRESETS.map((entry) => (
+            <FormButton
+              key={entry.key}
+              label={entry.label}
+              variant={entry.key === presetKey && sheetOpen ? 'primary' : 'secondary'}
+              onClick={() => choose(entry.key)}
+            />
+          ))}
+          <FormButton
+            label="recorded"
+            variant={recorded ? 'primary' : 'secondary'}
+            onClick={() => {
+              setPresetKey('roll-up-out')
+              setRecorded(true)
+              setSheetOpen(false)
+            }}
+          />
+          <FormButton
+            label="no short call"
+            variant={shortOpen ? 'secondary' : 'primary'}
+            onClick={() => {
+              setShortOpen(!shortOpen)
+              setPresetKey('roll-up-out')
+              setSheetOpen(true)
+              setRecorded(false)
+            }}
+          />
+        </div>
+        <p className="mt-3">
+          Every number in the sheet is derived, not hardcoded: the net is proceeds minus debit, the
+          post-roll basis is $21.80 less that net, and the effective share cost is the replacement
+          strike plus the post-roll basis. DTE counts from the {today} valuation date. Blocking
+          cases dim confirm; the ruler turns red only when coverage is the problem. With no short
+          call open the valuation moves to 2027-07-19 and the coverage and strike checks disappear.
+          Escape, Cancel, or clicking outside dismisses without recording.
+        </p>
+      </details>
+    </div>
+  )
+}
+
+<Mockup />
