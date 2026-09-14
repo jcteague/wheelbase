@@ -20,6 +20,9 @@ except Exception:
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# Hooks run with a minimal PATH; make sure pnpm (installed under ~/Library/pnpm) is reachable.
+command -v pnpm >/dev/null 2>&1 || export PATH="$HOME/Library/pnpm/bin:$HOME/Library/pnpm:$PATH"
+
 # ── Run quality checks ─────────────────────────────────────────────────────────
 FAILED=0
 
