@@ -13,14 +13,14 @@ stories live and how they are numbered.
 
 ## Destination
 
-| | |
-| --- | --- |
-| Workspace | `linear.app/optionswheel` |
-| Team | **Optionswheel** (`team: "Optionswheel"`, issues get an `OPT-` prefix) |
-| Epic | a Linear **project** named `Epic NN — <title>`; create it if the batch is the first from that epic |
-| Title | `US-{N}: {story title}` — verbatim from the file's H1, prefix included |
-| Estimate | the points from the file's `## Estimate` section, into Linear's `estimate` field |
-| Label | `Feature`, `Bug`, or `Improvement` |
+|           |                                                                                                    |
+| --------- | -------------------------------------------------------------------------------------------------- |
+| Workspace | `linear.app/optionswheel`                                                                          |
+| Team      | **Optionswheel** (`team: "Optionswheel"`, issues get an `OPT-` prefix)                             |
+| Epic      | a Linear **project** named `Epic NN — <title>`; create it if the batch is the first from that epic |
+| Title     | `US-{N}: {story title}` — verbatim from the file's H1, prefix included                             |
+| Estimate  | the points from the file's `## Estimate` section, into Linear's `estimate` field                   |
+| Label     | `Feature`, `Bug`, or `Improvement`                                                                 |
 
 Tools: `list_issues`, `get_issue`, `save_issue`, `list_projects`, `save_project`.
 
@@ -42,7 +42,7 @@ Tools: `list_issues`, `get_issue`, `save_issue`, `list_projects`, `save_project`
    ```
 
    A combined spec page (`us-53-54-55-…`) or a combined plan dir (`us-57-58`) counts. A bare
-   mention of the story as a *dependency* in someone else's spec does not.
+   mention of the story as a _dependency_ in someone else's spec does not.
 
    Set `state` accordingly — shipped stories go straight to the team's Done state.
 
