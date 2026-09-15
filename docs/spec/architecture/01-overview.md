@@ -1,6 +1,6 @@
 # Architecture Overview
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-32,us-35,us-37,missing-ac -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-32,us-35,us-37,missing-ac,us-116 -->
 
 Wheelbase is a single-user Electron desktop application for managing the options wheel strategy. This page summarises the cross-cutting architecture patterns that every shipped story has adhered to so far. Feature-specific details live on the per-story pages under `../features/`; deep dives on individual subsystems live on the topic pages cited inline.
 
@@ -43,7 +43,7 @@ Field naming conventions, established across the lifecycle stories, are stable:
 
 Two IPC transports are used:
 
-1. **Request/response** (`ipcRenderer.invoke` / `ipcMain.handle`) for every position mutation and query: `positions:list`, `positions:get`, `positions:create`, `positions:close-csp`, `positions:expire-csp`, `positions:assign-csp`, `positions:open-cc`, `positions:close-cc-early`, `positions:expire-cc`, `positions:record-call-away`, `positions:roll-csp`, `positions:roll-cc`, `market-data:stock-quotes`, `market-data:set-stock-quote-tickers`, `market-data:option-snapshots`, `market-data:option-snapshot`, `market-data:option-chain`, and `broker:market-status`. The renderer awaits a response envelope.
+1. **Request/response** (`ipcRenderer.invoke` / `ipcMain.handle`) for every position mutation and query: `positions:list`, `positions:get`, `positions:create`, `positions:close-csp`, `positions:expire-csp`, `positions:assign-csp`, `positions:open-cc`, `positions:close-cc-early`, `positions:expire-cc`, `positions:record-call-away`, `positions:roll-csp`, `positions:roll-cc`, `market-data:stock-quotes`, `market-data:set-stock-quote-tickers`, `market-data:option-snapshots`, `market-data:option-snapshot`, `market-data:option-chain`, and `market-data:market-status`. The renderer awaits a response envelope.
 2. **Push events** (`webContents.send`) for fire-and-forget streams from main to renderer. The market-data subsystem uses this for `market-data:stock-quote` (per-tick price updates) and `market-data:stream-error` (WebSocket failures); the renderer subscribes via `onStockQuote(cb)` / `onStreamError(cb)` helpers that return an `unsubscribe` function.
 
 A complete handler-by-handler reference lives in `../contracts/ipc-handlers.md`.
@@ -89,7 +89,7 @@ US-31 introduced a `MarketDataProvider` interface in `src/main/integrations/mark
 - A REST seed via `market-data:stock-quotes` populates the renderer's TanStack Query cache with `price`, `bid`, `ask`, `prevClose`, and `volume` for each ticker; the renderer derives `change` and `changePercent` client-side from `(price, prevClose)` so the math lives in one place.
 - A WebSocket stream, multiplexed across all active position tickers, pushes per-tick updates over `market-data:stock-quote`. The renderer merges each tick into the TanStack Query cache via `setQueryData`, carrying `prevClose` forward from the seed because stream frames don't carry it.
 
-A separate `useMarketStatus()` hook polls `broker:market-status` every 60s. The pill (`<MarketStatusPill>`) derives `LIVE` / `EXT` / `CLOSED` / `DELAYED` from market session + `dataUpdatedAt` freshness + stream error state; the same pill is intended for reuse on list and detail headers (no "POLL" or timing copy — the pill is the status indicator). When no quotes have arrived for >5 minutes, `<StaleDataBanner>` renders above the table and the pill flips to `DELAYED`.
+A separate `useMarketStatus()` hook polls `market-data:market-status` every 60s (US-116 moved it off the broker namespace — the exchange session is a market fact, so the pill works with no broker attached). The pill (`<MarketStatusPill>`) derives `LIVE` / `EXT` / `CLOSED` / `DELAYED` from market session + `dataUpdatedAt` freshness + stream error state; the same pill is intended for reuse on list and detail headers (no "POLL" or timing copy — the pill is the status indicator). When no quotes have arrived for >5 minutes, `<StaleDataBanner>` renders above the table and the pill flips to `DELAYED`.
 
 The full price-column flow lives on `../features/us-32-live-position-prices.md`.
 

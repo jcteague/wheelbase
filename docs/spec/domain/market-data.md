@@ -1,6 +1,6 @@
 # Market Data
 
-<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56,us-70,us-99 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56,us-70,us-99,us-116 -->
 
 ## Overview
 
@@ -45,7 +45,7 @@ The contract details for the IPC channels that surface this data
 (`market-data:stock-quotes`, `market-data:option-snapshots` /
 `-option-snapshot` / `-option-chain`, plus the `stock-quote` / `stream-error`
 push events) live in [`contracts/ipc-handlers.md`](../contracts/ipc-handlers.md).
-Market session/clock is served separately by `broker:market-status`. The
+[US-116] Market session/clock is served by `market-data:market-status`. The
 vendor endpoints, websocket handshake and error tables live in
 [`contracts/alpaca-integration.md`](../contracts/alpaca-integration.md).
 Alpaca is both the broker (account, activities, clock) and, since US-99, the
@@ -318,15 +318,26 @@ underlying's chain; a zeroed strike is dropped downstream by
 The renderer-facing `market-data:option-chain` channel widens to match
 (`IpcOptionChainQuote`); the singular snapshot channels are unaffected.
 
-### Market clock, account, and activities (broker, not market-data)
+### Market clock and calendar (market-data); account and activities (broker)
 
-The market clock/session, account info, and broker activities are **not** part
-of `MarketDataProvider`. They live on a separate `BrokerProvider`
-(`AlpacaBrokerProvider`) served by the `broker:market-status`,
-`broker:account`, and `broker:activities` IPC channels — there is no
-`market-data:market-status` channel. `MarketStatus` (`{ isOpen, nextOpen,
-nextClose, session: 'regular' | 'pre' | 'post' | 'closed' }`) is derived
-client-side by the broker adapter from the broker clock + extended-hours
+[US-116] The market clock/session **and** the exchange calendar are part of
+`MarketDataProvider` — `getMarketStatus()` and `getMarketCalendar(range)`,
+served by `market-data:market-status` and consumed directly by the
+trading-calendar store. Account info and broker activities stay on
+`BrokerProvider` (`AlpacaBrokerProvider`), which is now exactly
+`getAccountInfo` + `getActivities`, served by `broker:account` and
+`broker:activities`. There is no `broker:market-status` channel.
+
+The split is by _what the fact is about_, not by which host answers: "is the
+exchange open" and "which days were sessions" are facts about the market, so
+gating them on an optional broker relationship left IV rank and the
+market-status pill dead on any journal-only install. Alpaca serves both from
+the same trading host and key pair the market-data provider already uses for
+open interest.
+
+`MarketStatus` (`{ isOpen, nextOpen, nextClose, session: 'regular' | 'pre' |
+'post' | 'closed' }`) is derived
+client-side by the market-data adapter from the vendor clock + extended-hours
 windows (pre-market 4:00–9:30 AM ET, regular 9:30 AM–4:00 PM ET when open,
 post-market 4:00–8:00 PM ET, otherwise `closed`). Both stacks are Alpaca today,
 but the split is kept: the broker side goes through the SDK and `BrokerError`,
@@ -474,10 +485,10 @@ is a hint, not a behavior — the provider has no auto-reconnect; the next
 
 Two REST surfaces are on a fixed-interval poll, both at **60 s**:
 
-| Channel                        | Interval                                    | Notes                                                                                                                                                                      |
-| ------------------------------ | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `broker:market-status`         | 60 s                                        | Session boundaries shift ~6 times per day; 60 s catches every transition within a minute. No streaming option exists for the clock. (Broker channel, not `market-data:*`.) |
-| `market-data:option-snapshots` | 60 s (disabled when `session === 'closed'`) | Greeks/IV only available via REST snapshot — there is no option streaming feed at all.                                                                                     |
+| Channel                        | Interval                                    | Notes                                                                                                                                                                                                         |
+| ------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `market-data:market-status`    | 60 s                                        | Session boundaries shift ~6 times per day; 60 s catches every transition within a minute. No streaming option exists for the clock. [US-116] Polled only when `CredentialStatus.marketData === 'configured'`. |
+| `market-data:option-snapshots` | 60 s (disabled when `session === 'closed'`) | Greeks/IV only available via REST snapshot — there is no option streaming feed at all.                                                                                                                        |
 
 Stock quotes are **not** on a fixed poll — a one-shot REST snapshot seeds the
 cache and every subsequent update arrives over the WebSocket stream (see
@@ -629,9 +640,9 @@ positions-list header and on the position-detail header.
 | `DELAYED` | Stream has stalled or errored — last update is >5 min ago, or a `market-data:stream-error` event has been emitted. | Amber, no pulse |
 
 The session enum has four values — `'regular' | 'pre' | 'post' | 'closed'` —
-derived client-side by the broker adapter (see "Market clock, account, and
-activities" above) and fetched via `broker:market-status` on a 60 s
-`refetchInterval`. There is no `market-data:market-status` channel.
+derived client-side by the market-data adapter (see "Market clock and calendar"
+above) and fetched via `market-data:market-status` on a 60 s
+`refetchInterval`. There is no `broker:market-status` channel.
 
 ### Display derivation
 
@@ -680,12 +691,18 @@ safe to call unconditionally before data has loaded.
 
 ### `useMarketStatus()` — polling
 
-Polls the broker clock via `window.api.broker.marketStatus()` (the
-`broker:market-status` channel) on a 60 s `refetchInterval`, with
+[US-116] Polls the exchange clock via `window.api.marketData.marketStatus()`
+(the `market-data:market-status` channel) on a 60 s `refetchInterval`, with
 `staleTime: 30_000` and `refetchOnWindowFocus: true`. Its query key is
-broker-prefixed (`['broker', ...]`) so a broker-environment switch refreshes it
-without churning the stock/option quote caches (see "Shared market data vs
-broker state" below).
+market-prefixed (`['market', 'status']`), alongside the quote and snapshot
+keys. `useSettings`' invalidation predicate therefore matches `'broker'` **or**
+`'market'`, so a credential change still refreshes the pill — and correctly
+also refreshes every other vendor-backed read.
+
+The query is enabled only when `CredentialStatus.marketData === 'configured'`,
+so a journal-only install with no broker still polls and still resolves. When
+it is disabled there is no error state: `deriveMarketStatusDisplay` falls back
+to `computeNYSESession()`, the renderer's own weekday/hours calendar.
 
 ### `useOptionSnapshots(legs, { session })` — option polling
 

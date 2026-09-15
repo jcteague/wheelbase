@@ -1,6 +1,6 @@
 # ADR: Provider-agnostic `MarketDataProvider` interface + factory
 
-<!-- generated:from us-31,market-data-massive-migration,us-99 -->
+<!-- generated:from us-31,market-data-massive-migration,us-99,us-116 -->
 
 ## Decision
 
@@ -20,7 +20,7 @@ Keeping every service on the interface means a provider can be swapped without c
 
 ## Current state (US-99)
 
-The concrete adapter is `AlpacaMarketDataProvider` (`src/main/integrations/alpaca-market-data.ts`, pure mappers in `alpaca-market-data-mappers.ts`), serving the whole interface from Alpaca's free data plan. Alpaca is therefore both the broker (behind `BrokerProvider` / `AlpacaBrokerProvider` on `broker:*`) and the market-data vendor (behind `MarketDataProvider` on `market-data:*`) — two interfaces, two factories, one set of credentials. Account info, market status/clock, and broker activities remain on `BrokerProvider` only (there is no `market-data:market-status` channel).
+The concrete adapter is `AlpacaMarketDataProvider` (`src/main/integrations/alpaca-market-data.ts`, pure mappers in `alpaca-market-data-mappers.ts`), serving the whole interface from Alpaca's free data plan. Alpaca is therefore both the broker (behind `BrokerProvider` / `AlpacaBrokerProvider` on `broker:*`) and the market-data vendor (behind `MarketDataProvider` on `market-data:*`) — two interfaces, two factories, one set of credentials. [US-116] `BrokerProvider` is exactly `getAccountInfo` + `getActivities` — facts about _your account_. The exchange clock (`getMarketStatus`) and its session calendar (`getMarketCalendar`) are facts about _the market_ and belong to `MarketDataProvider`, served on `market-data:market-status` and consumed directly by the trading-calendar store. There is no `broker:market-status` channel. The port is defined by what the consumer needs, not by which host answers — Alpaca happens to serve both from its trading host, which is the adapter's problem to hide.
 
 `marketDataFactory` (`src/main/integrations/market-data-factory.ts`) exposes `configure({ loadActiveAlpacaCredentials })` (resets the cache; default loader `loadAlpacaCredentialsFromEnv`), `create()` (cached), `recreate()` (resets the cache, returns `void`), and `disconnect()`. `create()` returns `FakeMarketDataProvider` when `process.env.FAKE_MARKET_DATA === 'true'`, otherwise `new AlpacaMarketDataProvider({ loadCredentials: config.loadActiveAlpacaCredentials })` — it **never throws**. A missing credential surfaces per call as `MarketDataError('auth_failed', 'Alpaca credentials not configured')`; see [market-data-lazy-credentials-stream-restart](./market-data-lazy-credentials-stream-restart.md). The Massive-era `MassiveMarketDataConfig = { apiKey }`, `loadMassiveApiKey`, and the "Market data provider not configured. Set MASSIVE_API_KEY or FAKE_MARKET_DATA=true." throw no longer exist.
 

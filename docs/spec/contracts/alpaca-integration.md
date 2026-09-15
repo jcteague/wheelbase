@@ -1,6 +1,6 @@
 # Alpaca Integration
 
-<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39,market-data-massive-migration,us-99 -->
+<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39,market-data-massive-migration,us-99,us-116 -->
 
 ## Overview
 
@@ -96,7 +96,7 @@ Each REST method is wrapped in a `try` / `wrapError(err, opLabel)` block that no
 ### `getMarketStatus(): Promise<MarketStatus>`
 
 - **SDK method:** `client.getClock`.
-- **Used by:** `broker:market-status` IPC handler, polled by the renderer's `useMarketStatus()` hook every 60 s. Drives the `MarketStatusPill` (`LIVE` / `EXT` / `CLOSED` / `DELAYED`). Also queried by the `PollingScheduler` per tick to decide the next-tick cadence (see [Activity polling pattern](#activity-polling-pattern-us-35) below).
+- **Used by:** [US-116] the `market-data:market-status` IPC handler, served by `AlpacaMarketDataProvider` from `{tradingBase}/v2/clock`, polled by the renderer's `useMarketStatus()` hook every 60 s. Drives the `MarketStatusPill` (`LIVE` / `EXT` / `CLOSED` / `DELAYED`). Also queried by the `PollingScheduler` per tick to decide the next-tick cadence (see [Activity polling pattern](#activity-polling-pattern-us-35) below).
 - **Returns:** `{ isOpen, nextOpen, nextClose, session: 'regular' | 'pre' | 'post' | 'closed' }`. Alpaca's `/v2/clock` only returns `is_open`, `next_open`, `next_close` — `session` is **derived client-side** by comparing the clock timestamp against calendar windows (pre: 4:00–9:30 AM ET, regular: 9:30 AM–4:00 PM ET when `is_open`, post: 4:00–8:00 PM ET, closed: otherwise).
 - **Why poll instead of stream?** Alpaca offers no streaming option for clock/session changes; transitions are predictable boundaries (4 AM, 9:30 AM, 4 PM, 8 PM ET, weekends/holidays) so a 60 s poll catches them within a minute.
 - **Why broker, not market-data?** The clock is an account-side concern and the authoritative session signal used across the UI and scheduler; it has stayed on `BrokerProvider` through both market-data vendor changes.
@@ -316,7 +316,7 @@ The broker adapter records **no explicit retry policy, no exponential backoff, a
 - `src/main/integrations/alpaca-hosts.ts` — `ALPACA_TRADING_BASE_URLS` per-environment trading host map (US-99).
 - `src/main/integrations/market-data-factory.ts` — `marketDataFactory` (`configure({ loadActiveAlpacaCredentials })`, `create()`, `recreate()`, `disconnect()`); fake under `FAKE_MARKET_DATA=true`; never throws.
 - `src/main/integrations/alpaca.ts` — pre-existing helper marked `@deprecated`; kept available, no new code uses it.
-- `src/main/ipc/broker.ts` — `broker:account`, `broker:market-status`, `broker:activities` IPC handlers (US-39 split namespace).
+- `src/main/ipc/broker.ts` — `broker:account`, `broker:activities` IPC handlers. [US-116] `broker:market-status` was removed; the clock (`/v2/clock`) and the exchange calendar (`/v2/calendar`) are market facts served by `AlpacaMarketDataProvider` on `market-data:market-status` and `MarketDataProvider.getMarketCalendar`. `BrokerProvider` is now exactly `getAccountInfo` + `getActivities`.
 - `src/main/ipc/market-data.ts` — `market-data:*` handlers; returns `{ restartStockQuoteStream }` for the credential-change path.
 - `src/main/services/settings.ts` — encrypted `credential_settings` persistence; `getCredentialStatus()` (including `marketData`); `loadActiveAlpacaCredentials()`.
 - `src/main/services/settings-connections.ts` — Alpaca probe helpers with typed error mapping. The probes (`settings:test-connection`, `settings:test-stored-alpaca-connection`) are deliberately separate from regular `BrokerProvider` reads.

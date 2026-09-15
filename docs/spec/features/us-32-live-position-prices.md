@@ -1,6 +1,6 @@
 # US-32: Live Position Prices
 
-<!-- generated:from us-32,market-data-massive-migration -->
+<!-- generated:from us-32,market-data-massive-migration,us-116 -->
 
 ## Summary
 
@@ -17,14 +17,14 @@ Adds a live `Price` column to the Positions list (between `Phase` and `Strike`) 
 
 ## What was built
 
-A stream-first market-data pipeline for stock quotes. The main process owns a single `MarketDataProvider` instance — today a `MassiveMarketDataProvider` built lazily via `marketDataFactory.create()` and connected on first subscription request. `src/main/ipc/market-data.ts` exposes two request/response handlers (`stock-quotes`, `set-stock-quote-tickers`) plus two fire-and-forget push events (`stock-quote`, `stream-error`); market-status is served separately by the broker handler `broker:market-status`. On every active-ticker change the renderer calls `setStockQuoteTickers`, which tears down the prior subscription, subscribes to the provider's RxJS `Observable` (`provider.stream('stockQuotes', tickers)`, fed by Massive's single JSON WebSocket aggregate-minute frames), and forwards each frame as a `market-data:stock-quote` event.
+A stream-first market-data pipeline for stock quotes. The main process owns a single `MarketDataProvider` instance — today a `MassiveMarketDataProvider` built lazily via `marketDataFactory.create()` and connected on first subscription request. `src/main/ipc/market-data.ts` exposes two request/response handlers (`stock-quotes`, `set-stock-quote-tickers`) plus two fire-and-forget push events (`stock-quote`, `stream-error`); [US-116] market-status is served by `market-data:market-status` in the same handler module. On every active-ticker change the renderer calls `setStockQuoteTickers`, which tears down the prior subscription, subscribes to the provider's RxJS `Observable` (`provider.stream('stockQuotes', tickers)`, fed by Massive's single JSON WebSocket aggregate-minute frames), and forwards each frame as a `market-data:stock-quote` event.
 
-The renderer's `useStockQuotes` hook uses TanStack Query as the single cache: a REST seed (via `queryFn`) populates `prevClose` once per ticker from Massive's stock snapshot endpoint; subsequent stream ticks merge into the cache via `setQueryData`, carrying `prevClose` forward. `change` and `changePercent` are computed at render time from `(price, prevClose)`. Staleness is detected from `dataUpdatedAt` against `STALE_THRESHOLD_MS` (5 min → `DELAYED`), and `useMarketStatus` polls `broker:market-status` every 60s for session boundaries. Three new presentational components — `MarketStatusPill`, `PriceCell`, `StaleDataBanner` — plus changes to `PositionCard` and `PositionsListPage` deliver the UI.
+The renderer's `useStockQuotes` hook uses TanStack Query as the single cache: a REST seed (via `queryFn`) populates `prevClose` once per ticker from Massive's stock snapshot endpoint; subsequent stream ticks merge into the cache via `setQueryData`, carrying `prevClose` forward. `change` and `changePercent` are computed at render time from `(price, prevClose)`. Staleness is detected from `dataUpdatedAt` against `STALE_THRESHOLD_MS` (5 min → `DELAYED`), and `useMarketStatus` polls `market-data:market-status` every 60s for session boundaries ([US-116] moved it off the broker namespace). Three new presentational components — `MarketStatusPill`, `PriceCell`, `StaleDataBanner` — plus changes to `PositionCard` and `PositionsListPage` deliver the UI.
 
 ## Revisions
 
 - **us-32** (original): shipped the live Price column, market-status pill, and stale-data banner against the Alpaca-era `MarketDataProvider` — REST seed via Alpaca `getStocksSnapshots` (`prev_daily_bar.c`) and the Alpaca streaming socket.
-- **market-data-massive-migration**: re-pointed the whole pipeline at the Massive provider. `getStockQuotes` now returns `Promise<Map<string, StockQuote>>` from `MassiveMarketDataProvider`; the REST seed reads Massive's snapshot endpoint (`/v2/snapshot/locale/us/markets/stocks/tickers/{ticker}`) for `prevClose`; streaming is a single JSON WebSocket (`wss://delayed.massive.com/stocks`, aggregate-minute `AM` frames) exposed as an RxJS `Observable`; the provider is built via `marketDataFactory.create()` (not `createMarketDataProvider`); and market status moved off `market-data:*` onto the broker namespace as `broker:market-status` — there is no `market-data:market-status` channel.
+- **market-data-massive-migration**: re-pointed the whole pipeline at the Massive provider. `getStockQuotes` now returns `Promise<Map<string, StockQuote>>` from `MassiveMarketDataProvider`; the REST seed reads Massive's snapshot endpoint (`/v2/snapshot/locale/us/markets/stocks/tickers/{ticker}`) for `prevClose`; streaming is a single JSON WebSocket (`wss://delayed.massive.com/stocks`, aggregate-minute `AM` frames) exposed as an RxJS `Observable`; the provider is built via `marketDataFactory.create()` (not `createMarketDataProvider`); and market status moved off `market-data:*` onto the broker namespace as `broker:market-status`. **[US-116] reversed that**: Massive is gone (US-99) and the exchange session is a market fact, so the channel is `market-data:market-status` again and there is no `broker:market-status`.
 
 ## Architecture decisions
 
@@ -41,7 +41,7 @@ The renderer's `useStockQuotes` hook uses TanStack Query as the single cache: a 
 
 - `market-data:stock-quotes` — REST snapshot handler returning the envelope `{ quotes: Record<string, IpcStockQuote> }` (keyed by ticker; the renderer adapter unwraps `result.quotes`), not a bare record → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
 - `market-data:set-stock-quote-tickers` — subscription mutation; manages stream lifecycle and connects the provider on demand → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
-- `broker:market-status` — request/response for session info, polled every 60 s by `useMarketStatus`; there is no `market-data:market-status` channel → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
+- `market-data:market-status` — request/response for session info, polled every 60 s by `useMarketStatus`; [US-116] there is no `broker:market-status` channel → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
 - `market-data:stock-quote` (push event) — per-tick delta forwarded from the Observable; `prevClose` always `null` → [domain/market-data.md](../domain/market-data.md)
 - `market-data:stream-error` (push event) — relays provider `StreamError`; renderer surfaces the banner immediately → [domain/market-data.md](../domain/market-data.md)
 - `GetStockQuotesPayloadSchema` / `SetStockQuoteTickersPayloadSchema` — Zod: `tickers: TickerListSchema` = `z.array(z.string().min(1).max(MAX_TICKER_LENGTH)).max(MAX_TICKERS_PER_REQUEST)`, where the constants are `MAX_TICKER_LENGTH = 10` and `MAX_TICKERS_PER_REQUEST = 50` → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
@@ -55,7 +55,7 @@ The renderer's `useStockQuotes` hook uses TanStack Query as the single cache: a 
 - `src/main/integrations/market-data-provider.ts` — provider-agnostic interface; `StockQuote` carries `prevClose`; `getStockQuotes` returns `Promise<Map<string, StockQuote>>`
 - `src/main/integrations/massive-market-data.ts` — `MassiveMarketDataProvider`: REST snapshot seed (`prevClose` from previous-day bar) + single-JSON-WebSocket stream bridge
 - `src/main/integrations/market-data-factory.ts` — `marketDataFactory` (`configure`/`create`/`recreate`/`disconnect`)
-- `src/main/ipc/broker.ts` — serves `broker:market-status` (no `market-data:market-status` channel)
+- `src/main/ipc/market-data.ts` — [US-116] serves `market-data:market-status`; `src/main/ipc/broker.ts` keeps only `broker:account` and `broker:activities`
 - `src/main/schemas.ts` — added `GetStockQuotesPayloadSchema`, `SetStockQuoteTickersPayloadSchema`
 - `src/main/ipc/market-data.ts` — new: `registerMarketDataHandlers` + stream-to-push bridge
 - `src/main/index.ts` — provider singleton, `before-quit` disconnect

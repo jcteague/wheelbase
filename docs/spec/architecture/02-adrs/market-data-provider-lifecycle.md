@@ -1,6 +1,6 @@
 # ADR: MarketDataProvider connect-on-demand lifecycle
 
-<!-- generated:from us-32,market-data-massive-migration,us-99 -->
+<!-- generated:from us-32,market-data-massive-migration,us-99,us-116 -->
 
 ## Decision
 
@@ -41,7 +41,7 @@ Credentials are resolved by the provider on every REST call and inside `connect(
 
 ## Consequences
 
-- The main process exposes the stock-quote IPC handlers `market-data:stock-quotes` (REST snapshot) and `market-data:set-stock-quote-tickers` (subscription mutation) — alongside the option-data handlers `market-data:option-snapshots`, `market-data:option-snapshot`, and `market-data:option-chain` — plus two push event channels (`market-data:stock-quote` per tick, `market-data:stream-error` for WebSocket failures). There is no `market-data:market-status` handler; market status is served only on `broker:market-status`.
+- The main process exposes the stock-quote IPC handlers `market-data:stock-quotes` (REST snapshot) and `market-data:set-stock-quote-tickers` (subscription mutation) — alongside the option-data handlers `market-data:option-snapshots`, `market-data:option-snapshot`, and `market-data:option-chain` — plus two push event channels (`market-data:stock-quote` per tick, `market-data:stream-error` for WebSocket failures). [US-116] Market status is served on `market-data:market-status`; there is no `broker:market-status` handler.
 - `setStockQuoteTickers([])` is valid — it tears down any prior subscription, sends an unsubscribe for every symbol (so the free plan's 30-symbol cap is not leaked against), and returns `{ ok: true, subscribedTickers: [] }`.
 - `MarketDataError('auth_failed' | 'network_error' | 'rate_limited' | 'streaming_unsupported')` is the canonical provider error and maps to `__root__` with the matching `code` in the IPC envelope — see ADR [ipc-envelope-contract](./ipc-envelope-contract.md).
 - Historical: a red-phase bug fix in US-32 made the original Alpaca provider's SDK client a lazy getter so construction never threw in e2e. The current provider has no SDK client; the equivalent guarantee is that the factory never throws.
