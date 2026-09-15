@@ -1,15 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { addWatchlistEntry, getWatchlistSnapshot, removeWatchlistEntry } from './watchlist'
+import {
+  addWatchlistEntry,
+  getWatchlistSnapshot,
+  removeWatchlistEntry,
+  updateWatchlistEntry
+} from './watchlist'
 
 const mockList = vi.fn()
 const mockAdd = vi.fn()
 const mockRemove = vi.fn()
+const mockUpdate = vi.fn()
 const mockSnapshot = vi.fn()
 
 beforeEach(() => {
   mockList.mockReset()
   mockAdd.mockReset()
   mockRemove.mockReset()
+  mockUpdate.mockReset()
   mockSnapshot.mockReset()
   Object.assign(window, {
     api: {
@@ -18,6 +25,7 @@ beforeEach(() => {
         list: mockList,
         add: mockAdd,
         remove: mockRemove,
+        update: mockUpdate,
         snapshot: mockSnapshot
       }
     }
@@ -34,12 +42,55 @@ const ENTRY = {
   addedAt: '2026-07-19T12:00:00.000Z'
 }
 
+// [US-69] The edit adapter sends every editable field, so a save cannot silently keep a
+// value the trader cleared.
+describe('updateWatchlistEntry', () => {
+  const FULL_PAYLOAD = {
+    ticker: 'AAPL',
+    notes: 'Would own below $165 after the split',
+    ownBelowPrice: 165,
+    ivrTrigger: null,
+    postEarningsOnly: false,
+    coreHolding: false
+  }
+
+  it('returns the updated entry and forwards the full payload', async () => {
+    mockUpdate.mockResolvedValue({ ok: true, entry: ENTRY })
+
+    await expect(updateWatchlistEntry(FULL_PAYLOAD)).resolves.toEqual(ENTRY)
+    expect(mockUpdate).toHaveBeenCalledWith(FULL_PAYLOAD)
+  })
+
+  it('throws a mapped ApiError (status 400) when the entry is gone', async () => {
+    mockUpdate.mockResolvedValue({
+      ok: false,
+      errors: [{ field: 'ticker', code: 'not_found', message: 'AAPL is not on the watchlist' }]
+    })
+
+    await expect(updateWatchlistEntry(FULL_PAYLOAD)).rejects.toMatchObject({
+      status: 400,
+      body: {
+        detail: [{ field: 'ticker', code: 'not_found', message: 'AAPL is not on the watchlist' }]
+      }
+    })
+  })
+})
+
 describe('addWatchlistEntry', () => {
+  const BARE_PAYLOAD = {
+    ticker: 'AAPL',
+    notes: null,
+    ownBelowPrice: null,
+    ivrTrigger: null,
+    postEarningsOnly: false,
+    coreHolding: false
+  }
+
   it('returns the created entry on a successful response', async () => {
     mockAdd.mockResolvedValue({ ok: true, entry: ENTRY })
 
-    await expect(addWatchlistEntry({ ticker: 'AAPL' })).resolves.toEqual(ENTRY)
-    expect(mockAdd).toHaveBeenCalledWith({ ticker: 'AAPL' })
+    await expect(addWatchlistEntry(BARE_PAYLOAD)).resolves.toEqual(ENTRY)
+    expect(mockAdd).toHaveBeenCalledWith(BARE_PAYLOAD)
   })
 
   it('throws a mapped ApiError (status 400) preserving the ticker field on a duplicate', async () => {
@@ -48,7 +99,7 @@ describe('addWatchlistEntry', () => {
       errors: [{ field: 'ticker', code: 'duplicate', message: 'AAPL is already on the watchlist' }]
     })
 
-    await expect(addWatchlistEntry({ ticker: 'AAPL' })).rejects.toMatchObject({
+    await expect(addWatchlistEntry(BARE_PAYLOAD)).rejects.toMatchObject({
       status: 400,
       body: {
         detail: [

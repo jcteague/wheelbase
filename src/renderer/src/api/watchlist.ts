@@ -15,17 +15,30 @@ export type WatchlistEntry = {
   addedAt: string
 }
 
-export type AddWatchlistPayload = {
+/** What the entry form submits, for both add and update. Every field is required so a
+ *  caller cannot accidentally patch: an edit replaces the entry's editable half outright,
+ *  and a cleared value has to arrive as an explicit `null` rather than as an omission. */
+export type WatchlistEntryPayload = {
   ticker: string
-  notes?: string
-  ownBelowPrice?: number | null
-  ivrTrigger?: number | null
-  postEarningsOnly?: boolean
-  coreHolding?: boolean
+  notes: string | null
+  ownBelowPrice: number | null
+  ivrTrigger: number | null
+  postEarningsOnly: boolean
+  coreHolding: boolean
 }
 
-export async function addWatchlistEntry(payload: AddWatchlistPayload): Promise<WatchlistEntry> {
+export async function addWatchlistEntry(payload: WatchlistEntryPayload): Promise<WatchlistEntry> {
   const result = await window.api.watchlist.add(payload)
+  if (!result.ok) {
+    throwMappedIpcErrors(result.errors)
+  }
+  return result.entry
+}
+
+export async function updateWatchlistEntry(
+  payload: WatchlistEntryPayload
+): Promise<WatchlistEntry> {
+  const result = await window.api.watchlist.update(payload)
   if (!result.ok) {
     throwMappedIpcErrors(result.errors)
   }

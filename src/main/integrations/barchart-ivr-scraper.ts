@@ -1,11 +1,36 @@
+import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
 
 import { logger } from '../logger'
 import { isNetworkError } from './integration-errors'
 
 const require = createRequire(import.meta.url)
-const pkg = require('../../../package.json') as { version: string }
+
+/** The app's own version, for the User-Agent.
+ *
+ *  Walked up to rather than named by a fixed `../../..`: this module sits at
+ *  `src/main/integrations/` in source but is bundled into `out/main/index.js`, so no one
+ *  relative depth reaches the root package.json from both — and the wrong one throws at
+ *  import time, taking the whole main process down with it. */
+function readAppVersion(): string {
+  let dir = dirname(fileURLToPath(import.meta.url))
+
+  while (!existsSync(join(dir, 'package.json'))) {
+    const parent = dirname(dir)
+    // `dirname('/')` is `'/'`, so without this the walk would spin forever at module
+    // import and take the main process down with no diagnostic. A layout with no
+    // package.json above this module should not exist; if one ever does, say so loudly.
+    if (parent === dir) throw new Error('No package.json found above barchart-ivr-scraper')
+    dir = parent
+  }
+
+  return (require(join(dir, 'package.json')) as { version: string }).version
+}
+
+const pkg = { version: readAppVersion() }
 
 const SESSION_URL = 'https://www.barchart.com/stocks/quotes/SPY/options'
 const API_URL = 'https://www.barchart.com/proxies/core-api/v1/options/get'

@@ -1,9 +1,9 @@
-// [US-63] Watchlist service — add / list / remove
+// [US-63] Watchlist service — add / list / remove; update is [US-69]
 import Database from 'better-sqlite3'
 import Decimal from 'decimal.js'
 import { ValidationError } from '../core/lifecycle'
 import { logger } from '../logger'
-import type { WatchlistAddPayload, WatchlistEntryRecord } from '../schemas'
+import type { WatchlistEntryPayload, WatchlistEntryRecord } from '../schemas'
 
 interface WatchlistRow {
   ticker: string
@@ -31,6 +31,18 @@ const LIST_QUERY = `
 
 const DELETE_QUERY = 'DELETE FROM watchlist WHERE ticker = ?'
 
+const UPDATE_QUERY = `
+  UPDATE watchlist
+  SET notes = ?, own_below_price = ?, ivr_trigger = ?, post_earnings_only = ?, core_holding = ?
+  WHERE ticker = ?
+`
+
+const SELECT_ONE_QUERY = `
+  SELECT ticker, notes, own_below_price, ivr_trigger, post_earnings_only, core_holding, added_at
+  FROM watchlist
+  WHERE ticker = ?
+`
+
 function normalizeTicker(ticker: string): string {
   return ticker.trim().toUpperCase()
 }
@@ -47,9 +59,29 @@ function mapRow(row: WatchlistRow): WatchlistEntryRecord {
   }
 }
 
+/** The editable columns in their stored encoding. Add and update share it so a bound or
+ *  a normalisation can only ever be changed in one place. An empty thesis stores NULL:
+ *  the detail panel reads `null` as "No thesis yet." but would render '' as a blank line. */
+function toStoredFields(payload: WatchlistEntryPayload): {
+  notes: string | null
+  ownBelowPrice: string | null
+  ivrTrigger: number | null
+  postEarningsOnly: 0 | 1
+  coreHolding: 0 | 1
+} {
+  return {
+    notes: payload.notes ? payload.notes : null,
+    ownBelowPrice:
+      payload.ownBelowPrice == null ? null : new Decimal(payload.ownBelowPrice).toFixed(4),
+    ivrTrigger: payload.ivrTrigger ?? null,
+    postEarningsOnly: payload.postEarningsOnly ? 1 : 0,
+    coreHolding: payload.coreHolding ? 1 : 0
+  }
+}
+
 export function addWatchlistEntry(
   db: Database.Database,
-  payload: WatchlistAddPayload
+  payload: WatchlistEntryPayload
 ): WatchlistEntryRecord {
   const ticker = normalizeTicker(payload.ticker)
 
@@ -57,10 +89,8 @@ export function addWatchlistEntry(
     throw new ValidationError('ticker', 'duplicate', `${ticker} is already on the watchlist`)
   }
 
-  const notes = payload.notes ?? null
-  const ownBelowPrice =
-    payload.ownBelowPrice == null ? null : new Decimal(payload.ownBelowPrice).toFixed(4)
-  const ivrTrigger = payload.ivrTrigger ?? null
+  const { notes, ownBelowPrice, ivrTrigger, postEarningsOnly, coreHolding } =
+    toStoredFields(payload)
   const addedAt = new Date().toISOString()
 
   logger.debug({ ticker, ownBelowPrice, ivrTrigger }, 'watchlist_add_input')
@@ -70,8 +100,8 @@ export function addWatchlistEntry(
     notes,
     ownBelowPrice,
     ivrTrigger,
-    payload.postEarningsOnly ? 1 : 0,
-    payload.coreHolding ? 1 : 0,
+    postEarningsOnly,
+    coreHolding,
     addedAt
   )
 
@@ -86,6 +116,32 @@ export function addWatchlistEntry(
     coreHolding: payload.coreHolding,
     addedAt
   }
+}
+
+/** [US-69] Replaces every editable field of an existing entry. `added_at` is not in the
+ *  SET list and the ticker is only the key, so an edit cannot reorder the bench or
+ *  rename a row — renaming is remove + re-add. */
+export function updateWatchlistEntry(
+  db: Database.Database,
+  payload: WatchlistEntryPayload
+): WatchlistEntryRecord {
+  const ticker = normalizeTicker(payload.ticker)
+  const { notes, ownBelowPrice, ivrTrigger, postEarningsOnly, coreHolding } =
+    toStoredFields(payload)
+
+  logger.debug({ ticker, ownBelowPrice, ivrTrigger }, 'watchlist_update_input')
+
+  const result = db
+    .prepare(UPDATE_QUERY)
+    .run(notes, ownBelowPrice, ivrTrigger, postEarningsOnly, coreHolding, ticker)
+
+  if (result.changes === 0) {
+    throw new ValidationError('ticker', 'not_found', `${ticker} is not on the watchlist`)
+  }
+
+  logger.info({ ticker }, 'watchlist_entry_updated')
+
+  return mapRow(db.prepare(SELECT_ONE_QUERY).get(ticker) as WatchlistRow)
 }
 
 export function listWatchlist(db: Database.Database): WatchlistEntryRecord[] {

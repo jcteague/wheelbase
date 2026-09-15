@@ -92,7 +92,9 @@ type MarketDataErrorCode =
   | 'rate_limited'
   | 'streaming_unsupported'
   | 'unknown'
-class MarketDataError extends Error { readonly code: MarketDataErrorCode }
+class MarketDataError extends Error {
+  readonly code: MarketDataErrorCode
+}
 type MarketDataFeed = 'stockQuotes' | 'optionQuotes' | 'optionTrades'
 type MarketDataProvider = {
   getStockQuotes(tickers: string[]): Promise<Map<string, StockQuote>>
@@ -101,7 +103,10 @@ type MarketDataProvider = {
   supportsStreaming(feed: MarketDataFeed): boolean
   connect(feeds?: MarketDataFeed[]): Promise<void>
   disconnect(): Promise<void>
-  stream(feed: MarketDataFeed, symbols: string[]): Observable<StreamEvent<StockQuote | OptionSnapshot>>
+  stream(
+    feed: MarketDataFeed,
+    symbols: string[]
+  ): Observable<StreamEvent<StockQuote | OptionSnapshot>>
 }
 ```
 

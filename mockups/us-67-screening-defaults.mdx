@@ -206,7 +206,8 @@ export function Shell({ children }) {
         <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>{children}</div>
       </div>
     </div>
-  )
+
+)
 }
 
 export function Segment({ options, value, onChange, size = 'md' }) {
@@ -249,11 +250,19 @@ export function Segment({ options, value, onChange, size = 'md' }) {
 }
 
 export function FieldLabel({ children }) {
-  return <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: T.text, marginBottom: 3 }}>{children}</div>
+  return (
+    <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: T.text, marginBottom: 3 }}>
+      {children}
+    </div>
+  )
 }
 
 export function Caption({ children }) {
-  return <div style={{ fontSize: '0.72rem', color: T.muted, marginTop: 6, lineHeight: 1.5 }}>{children}</div>
+  return (
+    <div style={{ fontSize: '0.72rem', color: T.muted, marginTop: 6, lineHeight: 1.5 }}>
+      {children}
+    </div>
+  )
 }
 
 export function NumInput({ value, suffix, prefix, error, disabled, w = 90 }) {
@@ -271,16 +280,31 @@ export function NumInput({ value, suffix, prefix, error, disabled, w = 90 }) {
         opacity: disabled ? 0.5 : 1
       }}
     >
-      {prefix ? <span style={{ fontFamily: T.mono, fontSize: '0.8rem', color: T.muted }}>{prefix}</span> : null}
-      <span style={{ fontFamily: T.mono, fontSize: '0.85rem', color: T.text, flex: 1 }}>{value}</span>
-      {suffix ? <span style={{ fontFamily: T.mono, fontSize: '0.8rem', color: T.muted }}>{suffix}</span> : null}
+      {prefix ? (
+        <span style={{ fontFamily: T.mono, fontSize: '0.8rem', color: T.muted }}>{prefix}</span>
+      ) : null}
+      <span style={{ fontFamily: T.mono, fontSize: '0.85rem', color: T.text, flex: 1 }}>
+        {value}
+      </span>
+      {suffix ? (
+        <span style={{ fontFamily: T.mono, fontSize: '0.8rem', color: T.muted }}>{suffix}</span>
+      ) : null}
     </span>
   )
 }
 
 export function ErrorText({ children }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, color: T.red, fontSize: '0.72rem' }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 6,
+        color: T.red,
+        fontSize: '0.72rem'
+      }}
+    >
       <span style={{ fontFamily: T.mono, fontWeight: 700 }}>!</span>
       {children}
     </div>
@@ -345,7 +369,9 @@ export function Banner() {
       >
         ✓
       </span>
-      <span style={{ fontSize: '0.8125rem', color: T.green, fontWeight: 600 }}>Screening criteria saved</span>
+      <span style={{ fontSize: '0.8125rem', color: T.green, fontWeight: 600 }}>
+        Screening criteria saved
+      </span>
     </div>
   )
 }
@@ -371,7 +397,9 @@ export function SaveButton({ disabled }) {
         Save screening criteria
       </button>
       {disabled ? (
-        <span style={{ fontSize: '0.72rem', color: T.muted }}>Fix the highlighted fields to save.</span>
+        <span style={{ fontSize: '0.72rem', color: T.muted }}>
+          Fix the highlighted fields to save.
+        </span>
       ) : null}
     </div>
   )
@@ -384,15 +412,16 @@ export function CriteriaForm({ state }) {
   const ivrOn = flag
   const ceilingOn = flag
 
-  return (
-    <div style={{ maxWidth: 720 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
-        <div style={{ fontSize: '1.15rem', fontWeight: 600, color: T.text }}>Screening Criteria</div>
-        <span style={{ fontFamily: T.mono, fontSize: '0.7rem', color: T.text2 }}>Classic Wheel · CSP</span>
-      </div>
-      <div style={{ fontSize: '0.8rem', color: T.text2, marginBottom: 8, lineHeight: 1.6 }}>
-        Defaults the scorer applies to every watchlist ticker. Filters disqualify; ranking inputs order what survives.
-      </div>
+return (
+
+<div style={{ maxWidth: 720 }}>
+<div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
+<div style={{ fontSize: '1.15rem', fontWeight: 600, color: T.text }}>Screening Criteria</div>
+<span style={{ fontFamily: T.mono, fontSize: '0.7rem', color: T.text2 }}>Classic Wheel · CSP</span>
+</div>
+<div style={{ fontSize: '0.8rem', color: T.text2, marginBottom: 8, lineHeight: 1.6 }}>
+Defaults the scorer applies to every watchlist ticker. Filters disqualify; ranking inputs order what survives.
+</div>
 
       {state === 'saved' ? <Banner /> : null}
 
@@ -524,33 +553,36 @@ export function CriteriaForm({ state }) {
 
       <SaveButton disabled={invalid} />
     </div>
-  )
+
+)
 }
 
 export function Mockup() {
   const [state, setState] = useState('default')
 
-  return (
-    <div style={{ fontFamily: 'inherit', color: T.text }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
-        <SectionLabel>State</SectionLabel>
-        <Segment
-          value={state}
-          onChange={setState}
-          options={[
-            { v: 'default', label: 'Default' },
-            { v: 'saved', label: 'Saved' },
-            { v: 'invalid', label: 'Invalid' },
-            { v: 'flag', label: 'Flag + IVR floor' }
-          ]}
-        />
-      </div>
+return (
+
+<div style={{ fontFamily: 'inherit', color: T.text }}>
+<div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
+<SectionLabel>State</SectionLabel>
+<Segment
+value={state}
+onChange={setState}
+options={[
+{ v: 'default', label: 'Default' },
+{ v: 'saved', label: 'Saved' },
+{ v: 'invalid', label: 'Invalid' },
+{ v: 'flag', label: 'Flag + IVR floor' }
+]}
+/>
+</div>
 
       <Shell>
         <CriteriaForm state={state} />
       </Shell>
     </div>
-  )
+
+)
 }
 
 <Mockup />

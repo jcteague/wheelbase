@@ -181,7 +181,11 @@ export function MarketStatusPill() {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
       <span style={{ width: 7, height: 7, borderRadius: 999, background: T.green }} />
-      <span style={{ fontFamily: T.mono, fontSize: '0.65rem', letterSpacing: '0.08em', color: T.green }}>LIVE</span>
+      <span
+        style={{ fontFamily: T.mono, fontSize: '0.65rem', letterSpacing: '0.08em', color: T.green }}
+      >
+        LIVE
+      </span>
     </span>
   )
 }
@@ -286,12 +290,21 @@ export function Shell({ children }) {
         <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>{children}</div>
       </div>
     </div>
-  )
+
+)
 }
 
 export function TickerCell({ ticker }) {
   return (
-    <span style={{ fontFamily: T.mono, fontWeight: 700, fontSize: '0.85rem', color: T.gold, letterSpacing: '0.03em' }}>
+    <span
+      style={{
+        fontFamily: T.mono,
+        fontWeight: 700,
+        fontSize: '0.85rem',
+        color: T.gold,
+        letterSpacing: '0.03em'
+      }}
+    >
       {ticker}
     </span>
   )
@@ -335,7 +348,9 @@ export function SignalChip({ label, tone }) {
         fontWeight: 600
       }}
     >
-      {tone === 'ready' ? <span style={{ width: 6, height: 6, borderRadius: 999, background: T.green }} /> : null}
+      {tone === 'ready' ? (
+        <span style={{ width: 6, height: 6, borderRadius: 999, background: T.green }} />
+      ) : null}
       {label}
     </span>
   )
@@ -353,7 +368,9 @@ export function PriceCell({ row }) {
   const arrow = c > 0 ? '▲' : c < 0 ? '▼' : '·'
   return (
     <div style={{ textAlign: 'right' }}>
-      <div style={{ fontFamily: T.mono, fontSize: '0.8rem', color: T.text }}>{fmtPrice(row.price)}</div>
+      <div style={{ fontFamily: T.mono, fontSize: '0.8rem', color: T.text }}>
+        {fmtPrice(row.price)}
+      </div>
       <div style={{ fontFamily: T.mono, fontSize: '0.66rem', color, marginTop: 2 }}>
         {arrow} {Math.abs(c).toFixed(1)}%
       </div>
@@ -364,7 +381,13 @@ export function PriceCell({ row }) {
 export function IvrCell({ row }) {
   return (
     <div
-      style={{ textAlign: 'right', fontFamily: T.mono, fontSize: '0.82rem', fontWeight: 600, color: ivrColor(row.ivr) }}
+      style={{
+        textAlign: 'right',
+        fontFamily: T.mono,
+        fontSize: '0.82rem',
+        fontWeight: 600,
+        color: ivrColor(row.ivr)
+      }}
     >
       {row.ivr}
     </div>
@@ -378,10 +401,14 @@ export function SignalCell({ row }) {
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
       <SignalChip label={s.label} tone={s.tone} />
       {s.secondary ? (
-        <span style={{ fontFamily: T.mono, fontSize: '0.64rem', color: T.muted }}>+ {s.secondary}</span>
+        <span style={{ fontFamily: T.mono, fontSize: '0.64rem', color: T.muted }}>
+          + {s.secondary}
+        </span>
       ) : null}
       {erWarn ? (
-        <span style={{ fontFamily: T.mono, fontSize: '0.64rem', color: T.gold }}>⚠ ER {row.erDays}d</span>
+        <span style={{ fontFamily: T.mono, fontSize: '0.64rem', color: T.gold }}>
+          ⚠ ER {row.erDays}d
+        </span>
       ) : null}
     </div>
   )
@@ -424,7 +451,9 @@ export function ParamInput({ prefix, value, width }) {
         padding: '4px 8px'
       }}
     >
-      {prefix ? <span style={{ fontFamily: T.mono, fontSize: '0.72rem', color: T.text2 }}>{prefix}</span> : null}
+      {prefix ? (
+        <span style={{ fontFamily: T.mono, fontSize: '0.72rem', color: T.text2 }}>{prefix}</span>
+      ) : null}
       <input
         readOnly
         value={value}
@@ -484,7 +513,9 @@ export function ConditionRow({ label, children }) {
         background: T.goldDim
       }}
     >
-      <span style={{ fontFamily: T.mono, fontSize: '0.72rem', fontWeight: 700, color: T.gold }}>{label}</span>
+      <span style={{ fontFamily: T.mono, fontSize: '0.72rem', fontWeight: 700, color: T.gold }}>
+        {label}
+      </span>
       {children}
       <button
         title="Remove condition"
@@ -643,7 +674,8 @@ export function AddEntryPanel({ mode = 'add', ticker, error, target, ivrTrigger,
         </div>
       </div>
     </div>
-  )
+
+)
 }
 
 export function AddTrigger() {
@@ -769,7 +801,8 @@ export function WatchlistTable({ editingTicker }) {
         )
       })}
     </div>
-  )
+
+)
 }
 
 export const ADD_DEMO = {
@@ -823,7 +856,8 @@ export function ListView({ state }) {
           : 'This list is the screener’s universe. The Signal chip compares each entry’s conditions against live price, IV-rank, and earnings so a shifting thesis is visible at a glance.'}
       </div>
     </div>
-  )
+
+)
 }
 
 export function EmptyView() {
@@ -861,8 +895,8 @@ export function EmptyView() {
         </div>
         <div style={{ fontSize: '1rem', fontWeight: 600, color: T.text }}>No tickers yet</div>
         <div style={{ fontSize: '0.85rem', color: T.text2, maxWidth: 420, lineHeight: 1.6 }}>
-          Add tickers you&rsquo;d consider selling puts on, with the conditions you&rsquo;re waiting for. The screener pulls
-          option chains for every name and ranks the best entries.
+          Add tickers you&rsquo;d consider selling puts on, with the conditions you&rsquo;re waiting
+          for. The screener pulls option chains for every name and ranks the best entries.
         </div>
       </div>
       <AddEntryPanel ticker="" error={null} thesis="" />
@@ -911,26 +945,28 @@ export function Segment({ options, value, onChange }) {
 export function Mockup() {
   const [state, setState] = useState('list')
 
-  return (
-    <div style={{ fontFamily: 'inherit', color: T.text }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
-        <SectionLabel>State</SectionLabel>
-        <Segment
-          value={state}
-          onChange={setState}
-          options={[
-            { v: 'list', label: 'List' },
-            { v: 'add', label: 'Add entry' },
-            { v: 'duplicate', label: 'Add (duplicate)' },
-            { v: 'edit', label: 'Edit entry' },
-            { v: 'empty', label: 'Empty' }
-          ]}
-        />
-      </div>
+return (
+
+<div style={{ fontFamily: 'inherit', color: T.text }}>
+<div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
+<SectionLabel>State</SectionLabel>
+<Segment
+value={state}
+onChange={setState}
+options={[
+{ v: 'list', label: 'List' },
+{ v: 'add', label: 'Add entry' },
+{ v: 'duplicate', label: 'Add (duplicate)' },
+{ v: 'edit', label: 'Edit entry' },
+{ v: 'empty', label: 'Empty' }
+]}
+/>
+</div>
 
       <Shell>{state === 'empty' ? <EmptyView /> : <ListView state={state} />}</Shell>
     </div>
-  )
+
+)
 }
 
 <Mockup />

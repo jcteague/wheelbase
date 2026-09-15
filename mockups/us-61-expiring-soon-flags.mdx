@@ -45,16 +45,63 @@ export const DTE_URGENT_THRESHOLD = 7
 export const isDteUrgent = (dte) => dte !== null && dte !== undefined && dte <= DTE_URGENT_THRESHOLD
 
 export const PHASE = {
-  CSP_OPEN: { color: 'var(--wb-gold)', bg: 'var(--wb-gold-dim)', border: 'var(--wb-gold-border)', label: 'CSP Open' },
-  CC_OPEN: { color: 'var(--wb-violet)', bg: 'var(--wb-violet-dim)', border: 'rgba(210,168,255,0.25)', label: 'CC Open' },
-  HOLDING_SHARES: { color: 'var(--wb-sky)', bg: 'rgba(121,192,255,0.12)', border: 'rgba(121,192,255,0.25)', label: 'Shares' }
+  CSP_OPEN: {
+    color: 'var(--wb-gold)',
+    bg: 'var(--wb-gold-dim)',
+    border: 'var(--wb-gold-border)',
+    label: 'CSP Open'
+  },
+  CC_OPEN: {
+    color: 'var(--wb-violet)',
+    bg: 'var(--wb-violet-dim)',
+    border: 'rgba(210,168,255,0.25)',
+    label: 'CC Open'
+  },
+  HOLDING_SHARES: {
+    color: 'var(--wb-sky)',
+    bg: 'rgba(121,192,255,0.12)',
+    border: 'rgba(121,192,255,0.25)',
+    label: 'Shares'
+  }
 }
 
 export const POSITIONS = [
-  { ticker: 'AAPL', phase: 'CSP_OPEN', price: 181.2, strike: 180, exp: 'Jul 20', dte: 7, premium: 210 },
-  { ticker: 'MSFT', phase: 'CC_OPEN', price: 418.9, strike: 420, exp: 'Jul 17', dte: 4, premium: 340 },
-  { ticker: 'NVDA', phase: 'CC_OPEN', price: 118.4, strike: 120, exp: 'Jul 21', dte: 8, premium: 180 },
-  { ticker: 'TSLA', phase: 'HOLDING_SHARES', price: 250.1, strike: null, exp: null, dte: null, premium: 0 },
+  {
+    ticker: 'AAPL',
+    phase: 'CSP_OPEN',
+    price: 181.2,
+    strike: 180,
+    exp: 'Jul 20',
+    dte: 7,
+    premium: 210
+  },
+  {
+    ticker: 'MSFT',
+    phase: 'CC_OPEN',
+    price: 418.9,
+    strike: 420,
+    exp: 'Jul 17',
+    dte: 4,
+    premium: 340
+  },
+  {
+    ticker: 'NVDA',
+    phase: 'CC_OPEN',
+    price: 118.4,
+    strike: 120,
+    exp: 'Jul 21',
+    dte: 8,
+    premium: 180
+  },
+  {
+    ticker: 'TSLA',
+    phase: 'HOLDING_SHARES',
+    price: 250.1,
+    strike: null,
+    exp: null,
+    dte: null,
+    premium: 0
+  },
   { ticker: 'KO', phase: 'CC_OPEN', price: 61.3, strike: 62, exp: 'Jul 31', dte: 18, premium: 95 }
 ]
 
@@ -85,7 +132,15 @@ export function dayHasSoon(items) {
 
 export function PhaseDot({ p, size = 5 }) {
   return (
-    <span style={{ width: size, height: size, borderRadius: 999, background: PHASE[p].color, flexShrink: 0 }} />
+    <span
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 999,
+        background: PHASE[p].color,
+        flexShrink: 0
+      }}
+    />
   )
 }
 
@@ -282,7 +337,8 @@ export function Shell({ surface, children }) {
         <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>{children}</div>
       </div>
     </div>
-  )
+
+)
 }
 
 export const DASH_COLS = [
@@ -392,7 +448,8 @@ export function DashboardView({ flags }) {
           : 'Flags off: this is how NVDA (8 DTE) and the holding-shares TSLA row already render — no extra emphasis.'}
       </div>
     </div>
-  )
+
+)
 }
 
 export function MonthNav({ label }) {
@@ -630,7 +687,8 @@ export function CalendarView({ flags, selected, onSelect }) {
         </div>
       </div>
     </div>
-  )
+
+)
 }
 
 export function Segment({ options, value, onChange }) {
@@ -676,32 +734,33 @@ export function Mockup() {
   const [flags, setFlags] = useState(true)
   const [selected, setSelected] = useState(17)
 
-  return (
-    <div style={{ fontFamily: 'inherit', color: T.text }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap', marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <SectionLabel>Surface</SectionLabel>
-          <Segment
-            value={surface}
-            onChange={setSurface}
-            options={[
-              { v: 'dashboard', label: 'Dashboard' },
-              { v: 'calendar', label: 'Calendar' }
-            ]}
-          />
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <SectionLabel>Flags</SectionLabel>
-          <Segment
-            value={flags ? 'on' : 'off'}
-            onChange={(v) => setFlags(v === 'on')}
-            options={[
-              { v: 'on', label: 'On' },
-              { v: 'off', label: 'Off (clean)' }
-            ]}
-          />
-        </div>
-      </div>
+return (
+
+<div style={{ fontFamily: 'inherit', color: T.text }}>
+<div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap', marginBottom: 20 }}>
+<div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+<SectionLabel>Surface</SectionLabel>
+<Segment
+value={surface}
+onChange={setSurface}
+options={[
+{ v: 'dashboard', label: 'Dashboard' },
+{ v: 'calendar', label: 'Calendar' }
+]}
+/>
+</div>
+<div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+<SectionLabel>Flags</SectionLabel>
+<Segment
+value={flags ? 'on' : 'off'}
+onChange={(v) => setFlags(v === 'on')}
+options={[
+{ v: 'on', label: 'On' },
+{ v: 'off', label: 'Off (clean)' }
+]}
+/>
+</div>
+</div>
 
       <Shell surface={surface}>
         {surface === 'dashboard' ? (
@@ -711,7 +770,8 @@ export function Mockup() {
         )}
       </Shell>
     </div>
-  )
+
+)
 }
 
 <Mockup />

@@ -1,7 +1,16 @@
 ---
 title: 'US-102: PMCC expiration safety'
 story: 'Prevent a PMCC roll or a new short call from leaving the short leg open on or after the long LEAPS expiration.'
-states: ['short-roll-valid', 'short-roll-invalid', 'leaps-roll-valid', 'leaps-roll-invalid', 'new-short-valid', 'new-short-invalid', 'leaps-roll-no-short']
+states:
+  [
+    'short-roll-valid',
+    'short-roll-invalid',
+    'leaps-roll-valid',
+    'leaps-roll-invalid',
+    'new-short-valid',
+    'new-short-invalid',
+    'leaps-roll-no-short'
+  ]
 ---
 
 import { useState, useRef, useEffect } from 'react'
@@ -61,7 +70,8 @@ export const FLOWS = {
     confirm: 'Confirm Roll',
     error: 'Short call must expire before the LEAPS call.',
     candidates: ['2027-02-19', '2026-11-20', '2027-09-17', '2027-10-15'],
-    rejected: 'The existing short call stays open at 2026-10-16. No close or replacement leg is recorded.'
+    rejected:
+      'The existing short call stays open at 2026-10-16. No close or replacement leg is recorded.'
   },
   'leaps-roll': {
     action: 'Roll LEAPS',
@@ -73,7 +83,8 @@ export const FLOWS = {
     confirm: 'Confirm Roll',
     error: 'LEAPS call must expire after the short call.',
     candidates: ['2028-01-21', '2027-09-17', '2026-10-16', '2026-10-02'],
-    rejected: 'The existing LEAPS stays open at 2027-09-17. No close or replacement leg is recorded.'
+    rejected:
+      'The existing LEAPS stays open at 2027-09-17. No close or replacement leg is recorded.'
   },
   'new-short': {
     action: 'Sell Short Call',
@@ -105,24 +116,25 @@ export function Mockup() {
   const close = () => setFlow(null)
   const confirm = () => { setRecorded({ flow, proposed }); if (flow === 'new-short') setShortOpen(true); setFlow(null) }
 
-  useEffect(() => { if (flow) dialog.current?.focus() }, [flow])
+useEffect(() => { if (flow) dialog.current?.focus() }, [flow])
 
-  const actions = [shortOpen ? 'short-roll' : 'new-short', 'leaps-roll']
+const actions = [shortOpen ? 'short-roll' : 'new-short', 'leaps-roll']
 
-  return (
-    <div className="flex flex-col gap-4 font-wb-mono text-wb-text-primary">
-      <div className="relative isolate h-[820px] transform-gpu overflow-hidden rounded-lg border border-wb-border bg-wb-bg-base">
-        <aside className="absolute inset-y-0 left-0 flex w-[200px] flex-col gap-6 border-r border-wb-border bg-wb-bg-surface p-5">
-          <div className="text-lg font-bold tracking-widest text-wb-gold">WHEELBASE</div>
-          <div className="flex flex-col gap-5 text-xs text-wb-text-secondary">
-            <span className="font-semibold text-wb-gold">Positions</span>
-            <span>Management queue</span>
-            <span>Calendar</span>
-            <span>Screener</span>
-            <span>Watchlist</span>
-          </div>
-          <div className="mt-auto text-xs text-wb-text-muted">PAPER ACCOUNT</div>
-        </aside>
+return (
+
+<div className="flex flex-col gap-4 font-wb-mono text-wb-text-primary">
+<div className="relative isolate h-[820px] transform-gpu overflow-hidden rounded-lg border border-wb-border bg-wb-bg-base">
+<aside className="absolute inset-y-0 left-0 flex w-[200px] flex-col gap-6 border-r border-wb-border bg-wb-bg-surface p-5">
+<div className="text-lg font-bold tracking-widest text-wb-gold">WHEELBASE</div>
+<div className="flex flex-col gap-5 text-xs text-wb-text-secondary">
+<span className="font-semibold text-wb-gold">Positions</span>
+<span>Management queue</span>
+<span>Calendar</span>
+<span>Screener</span>
+<span>Watchlist</span>
+</div>
+<div className="mt-auto text-xs text-wb-text-muted">PAPER ACCOUNT</div>
+</aside>
 
         <main className={`ml-[200px] h-full overflow-auto ${flow ? 'pointer-events-none opacity-40 blur-[1px]' : ''}`}>
           <div className="flex items-start justify-between border-b border-wb-border px-6 py-4">
@@ -284,7 +296,8 @@ export function Mockup() {
         </p>
       </details>
     </div>
-  )
+
+)
 }
 
 <Mockup />

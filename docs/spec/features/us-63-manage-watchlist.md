@@ -17,8 +17,8 @@ screener.
 
 Creating and removing entries is US-63. The live Price / IV-rank / earnings columns
 and the derived **Signal** chip are [US-96]; editing an existing entry reuses the
-same add form and is [US-69]. The add form is built to support that future edit mode
-(ticker fixed) without a rewrite, but edit mode is not implemented here.
+same form and is [US-69], which renamed it `WatchlistEntryForm` and added its edit
+mode (ticker fixed). Edit mode is not described here.
 
 ## Acceptance criteria
 
@@ -67,9 +67,10 @@ remapping). `watchlistQueryKeys.all = ['watchlist']` keys the `useWatchlist` lis
 query; `useAddToWatchlist` / `useRemoveFromWatchlist` invalidate that key on success.
 
 **UI.** `WatchlistPage` renders the header + count badge, the always-visible
-`WatchlistAddForm`, and either the entries table or the empty-state guidance card.
+`WatchlistEntryForm` in its add mode, and either the entries table or the empty-state
+guidance card.
 The table columns are **Ticker · Thesis (+ condition tags) · Added · ✕** only — no
-Price/IVR/Signal (US-96). `WatchlistAddForm` is React Hook Form + `zodResolver`
+Price/IVR/Signal (US-96). `WatchlistEntryForm` is React Hook Form + `zodResolver`
 (`src/renderer/src/schemas/watchlist.ts`): a ticker input with client-side symbol
 validation, quick-pick condition chips (own-below `$` field, high-IV `IVR ≥` field
 with 30/50/70 presets, post-earnings and core toggles), and a thesis textarea with a
@@ -86,8 +87,9 @@ reused by the page and available to US-96.
   explicit existence check give friendly duplicate rejection.
 - **Conditions stored but informational only** — persisted as columns; they drive the
   US-96 Signal, never a screener ranking input.
-- **Shared add/edit form** — `WatchlistAddForm` is built for [US-69] to reuse in edit
-  mode; edit mode not built here. See [React Hook Form + Zod](../architecture/02-adrs/react-hook-form-zod.md).
+- **Shared add/edit form** — the form was built so [US-69] could reuse it in edit mode;
+  US-69 did, renaming it `WatchlistEntryForm`. Edit mode is not described here. See
+  [React Hook Form + Zod](../architecture/02-adrs/react-hook-form-zod.md).
 - **RHF input/output typing + reset-on-`onSuccess`** — the schema's `.default(false)`
   booleans make Zod input ≠ output, so the form uses the 3-generic `useForm` form;
   reset runs in the mutation's per-call `onSuccess` to avoid the
@@ -120,7 +122,8 @@ See [IPC Handlers](../contracts/ipc-handlers.md) for full envelopes.
 - `src/renderer/src/hooks/watchlistQueryKeys.ts`, `useWatchlist.ts`,
   `useAddToWatchlist.ts`, `useRemoveFromWatchlist.ts`
 - `src/renderer/src/lib/watchlistConditionTags.ts`
-- `src/renderer/src/components/WatchlistAddForm.tsx`
+- `src/renderer/src/components/WatchlistEntryForm.tsx` (named `WatchlistAddForm.tsx` in
+  US-63; renamed by [US-69])
 - `src/renderer/src/pages/WatchlistPage.tsx`
 - `src/renderer/src/App.tsx` — route/nav/header wiring
 - `e2e/watchlist.spec.ts` — one scenario per AC (11 cases)

@@ -520,15 +520,25 @@ const WatchlistTickerSchema = z
   .toUpperCase()
   .regex(/^[A-Z]{1,5}$/, 'Enter a valid ticker symbol')
 
-export const WatchlistAddPayloadSchema = z.object({
-  ticker: WatchlistTickerSchema,
-  notes: z.string().trim().max(500).optional(),
+// [US-69] The editable half of an entry, shared by add and update so the two writes
+// cannot drift apart on a bound. Only the ticker differs between them in intent — on
+// add it names a new row, on update it is the immutable key of an existing one.
+const WatchlistEntryFieldsSchema = z.object({
+  notes: z.string().trim().max(500, 'Note must be 500 characters or fewer').nullable().optional(),
   ownBelowPrice: z.number().positive().nullable().optional(),
   ivrTrigger: z.number().int().min(0).max(100).nullable().optional(),
   postEarningsOnly: z.boolean().optional().default(false),
   coreHolding: z.boolean().optional().default(false)
 })
-export type WatchlistAddPayload = z.infer<typeof WatchlistAddPayloadSchema>
+
+// Add and update take the same payload — the editable fields keyed by the ticker — so
+// they parse through one schema rather than two that have to be kept identical. The
+// ticker names a new row on add and keys an existing one on update; the shape is the same
+// either way, and `toStoredFields` normalises `undefined`, `null` and `''` alike.
+export const WatchlistEntryPayloadSchema = WatchlistEntryFieldsSchema.extend({
+  ticker: WatchlistTickerSchema
+})
+export type WatchlistEntryPayload = z.infer<typeof WatchlistEntryPayloadSchema>
 
 export const WatchlistRemovePayloadSchema = z.object({
   ticker: WatchlistTickerSchema

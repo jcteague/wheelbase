@@ -770,6 +770,36 @@ export async function selectCard(page: Page, ticker: string): Promise<void> {
   )
 }
 
+/** [US-69] Open the selected stock's entry form, as a trader would — select the card,
+ *  then press Edit on its detail panel. */
+export async function openEdit(page: Page, ticker: string): Promise<void> {
+  await selectCard(page, ticker)
+  await page.click('[data-testid="bench-detail-edit"]')
+  await page.waitForSelector('[data-testid="watchlist-edit-submit"]')
+}
+
+/** [US-69] Save the open entry form and wait for the panel to return to the read view.
+ *
+ *  Returning to the read view is not the same as the panel being current: the save's
+ *  `invalidateQueries` is not awaited, so `bench-detail-thesis` reappears carrying the
+ *  cached entry a beat before the refetch lands. Assert what the save changed with
+ *  `waitForDetail` rather than reading the panel straight after this resolves. */
+export async function saveEdit(page: Page): Promise<void> {
+  await page.click('[data-testid="watchlist-edit-submit"]')
+  await page.waitForSelector('[data-testid="bench-detail-thesis"]')
+}
+
+/** [US-69] Wait until a detail-panel element actually carries `expected`, so an assertion
+ *  cannot read the pre-refetch panel. Returns its settled text. */
+export async function waitForDetail(page: Page, testId: string, expected: string): Promise<string> {
+  await page.waitForFunction(
+    ({ id, text }) =>
+      document.querySelector(`[data-testid="${id}"]`)?.textContent?.includes(text) ?? false,
+    { id: testId, text: expected }
+  )
+  return (await page.locator(`[data-testid="${testId}"]`).innerText()).trim()
+}
+
 /** The header lines of the matching-put card, keyed apart from the metric list. */
 export const PUT_CONTRACT = 'Contract'
 export const PUT_EXPIRATION = 'Expiration'

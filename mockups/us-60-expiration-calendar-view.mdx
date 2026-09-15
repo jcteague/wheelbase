@@ -343,7 +343,8 @@ export function Shell({ children }) {
         <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>{children}</div>
       </div>
     </div>
-  )
+
+)
 }
 
 export function MonthNav({ label }) {
@@ -603,7 +604,8 @@ export function GridView({ empty, selected, onSelect }) {
         </div>
       </div>
     </div>
-  )
+
+)
 }
 
 export const WEEKS = [
@@ -753,7 +755,9 @@ export function AgendaView({ empty }) {
                     >
                       {day.d}
                     </div>
-                    <div style={{ fontFamily: T.mono, fontSize: '0.6rem', color: T.muted }}>AUG</div>
+                    <div style={{ fontFamily: T.mono, fontSize: '0.6rem', color: T.muted }}>
+                      AUG
+                    </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {EXP[day.d].map((e) => (
@@ -905,7 +909,8 @@ export function HeatmapView({ empty }) {
         </div>
       )}
     </div>
-  )
+
+)
 }
 
 export function Segment({ options, value, onChange }) {
@@ -951,41 +956,41 @@ export function Mockup() {
   const [empty, setEmpty] = useState(false)
   const [selected, setSelected] = useState(14)
 
-  return (
-    <div style={{ fontFamily: 'inherit', color: T.text }}>
-      <div
-        style={{
+return (
+
+<div style={{ fontFamily: 'inherit', color: T.text }}>
+<div
+style={{
           display: 'flex',
           alignItems: 'center',
           gap: 20,
           flexWrap: 'wrap',
           marginBottom: 20
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <SectionLabel>Layout</SectionLabel>
-          <Segment
-            value={view}
-            onChange={setView}
-            options={[
-              { v: 'grid', label: 'A · Month Grid' },
-              { v: 'agenda', label: 'B · Agenda' },
-              { v: 'heatmap', label: 'C · Heatmap' }
-            ]}
-          />
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <SectionLabel>Data</SectionLabel>
-          <Segment
-            value={empty ? 'empty' : 'pop'}
-            onChange={(v) => setEmpty(v === 'empty')}
-            options={[
-              { v: 'pop', label: 'Populated' },
-              { v: 'empty', label: 'Empty' }
-            ]}
-          />
-        </div>
-      </div>
+        }} >
+<div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+<SectionLabel>Layout</SectionLabel>
+<Segment
+value={view}
+onChange={setView}
+options={[
+{ v: 'grid', label: 'A · Month Grid' },
+{ v: 'agenda', label: 'B · Agenda' },
+{ v: 'heatmap', label: 'C · Heatmap' }
+]}
+/>
+</div>
+<div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+<SectionLabel>Data</SectionLabel>
+<Segment
+value={empty ? 'empty' : 'pop'}
+onChange={(v) => setEmpty(v === 'empty')}
+options={[
+{ v: 'pop', label: 'Populated' },
+{ v: 'empty', label: 'Empty' }
+]}
+/>
+</div>
+</div>
 
       <Shell>
         {view === 'grid' ? (
@@ -997,7 +1002,8 @@ export function Mockup() {
         )}
       </Shell>
     </div>
-  )
+
+)
 }
 
 <Mockup />

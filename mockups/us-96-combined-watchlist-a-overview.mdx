@@ -1,7 +1,16 @@
 ---
 title: 'US-96 concept A · Overview'
 story: 'Combine watchlist management, entry conditions, and screened contracts in one view.'
-states: ['typical day', 'no matches', 'data unavailable', 'add stock', 'duplicate ticker', 'stock detail', 'trade handoff']
+states:
+  [
+    'typical day',
+    'no matches',
+    'data unavailable',
+    'add stock',
+    'duplicate ticker',
+    'stock detail',
+    'trade handoff'
+  ]
 ---
 
 import { useState } from 'react'
@@ -23,30 +32,163 @@ Compare qualifying contracts across stocks, with the rest of your watchlist dire
 **Design proposal · fictional sample data as of September 9, 2026.** Both alternatives use the same stocks and screening defaults. Use the preview controls for no matches and an outage; add a stock, try a duplicate ticker, select stock details, or preview the trade handoff. No data is saved outside this mockup.
 
 export const STOCKS = [
-  { ticker: 'KO', name: 'Coca-Cola', price: '$68.90', change: '+0.3%', ivr: '58', ready: true, reason: 'All conditions met', note: 'Core wheel. Comfortable owning through a full cycle.', conditions: ['IVR 58 ≥ 40', 'Core holding'], earnings: 'Nov 3 · after expiration', strike: '$67.50', expiry: 'Oct 16', dte: '37', mark: '$1.05', period: '1.56%', annual: '15.35%', delta: '0.25', oi: '4,820', spread: '$0.06 · 5.7%', cash: '$6,750' },
-  { ticker: 'XLF', name: 'Financial Select Sector ETF', price: '$51.20', change: '+0.6%', ivr: '46', ready: true, reason: 'Screening criteria met', note: 'Broad financial exposure. No personal entry conditions.', conditions: ['No personal conditions'], earnings: 'Not applicable · ETF', strike: '$50.00', expiry: 'Oct 16', dte: '37', mark: '$0.65', period: '1.30%', annual: '12.82%', delta: '0.24', oi: '8,610', spread: '$0.04 · 6.2%', cash: '$5,000' },
-  { ticker: 'AAPL', name: 'Apple', price: '$178.40', change: '+0.8%', ivr: '34', ready: false, reason: 'Price above target · IV low', note: 'Would own below $170. Waiting for a better entry.', conditions: ['Price $178.40 > $170 target', 'IVR 34 < 50 target'], earnings: 'Oct 29 · after screen window' },
-  { ticker: 'MSFT', name: 'Microsoft', price: '$505.10', change: '−1.2%', ivr: '41', ready: false, reason: 'Earnings in 3 days', note: 'Wait until after the earnings report.', conditions: ['Post-earnings only'], earnings: 'Sep 12 · inside screen window' },
-  { ticker: 'AMD', name: 'AMD', price: '$156.20', change: '+1.1%', ivr: '52', ready: false, reason: 'No qualifying contract', note: 'Stock conditions pass. Waiting for a more liquid put.', conditions: ['IVR 52 ≥ 50', 'Best spread 14% > 10% limit'], earnings: 'Nov 3 · after screen window' },
-  { ticker: 'XYZ', name: 'Example thin-history stock', price: '$24.10', change: '—', ivr: '—', ready: false, reason: 'IVR unavailable · not evaluated', note: 'Research name. Needs sufficient IV history.', conditions: ['IVR ≥ 40 · awaiting data'], earnings: 'Unknown · needs verification' }
+  {
+    ticker: 'KO',
+    name: 'Coca-Cola',
+    price: '$68.90',
+    change: '+0.3%',
+    ivr: '58',
+    ready: true,
+    reason: 'All conditions met',
+    note: 'Core wheel. Comfortable owning through a full cycle.',
+    conditions: ['IVR 58 ≥ 40', 'Core holding'],
+    earnings: 'Nov 3 · after expiration',
+    strike: '$67.50',
+    expiry: 'Oct 16',
+    dte: '37',
+    mark: '$1.05',
+    period: '1.56%',
+    annual: '15.35%',
+    delta: '0.25',
+    oi: '4,820',
+    spread: '$0.06 · 5.7%',
+    cash: '$6,750'
+  },
+  {
+    ticker: 'XLF',
+    name: 'Financial Select Sector ETF',
+    price: '$51.20',
+    change: '+0.6%',
+    ivr: '46',
+    ready: true,
+    reason: 'Screening criteria met',
+    note: 'Broad financial exposure. No personal entry conditions.',
+    conditions: ['No personal conditions'],
+    earnings: 'Not applicable · ETF',
+    strike: '$50.00',
+    expiry: 'Oct 16',
+    dte: '37',
+    mark: '$0.65',
+    period: '1.30%',
+    annual: '12.82%',
+    delta: '0.24',
+    oi: '8,610',
+    spread: '$0.04 · 6.2%',
+    cash: '$5,000'
+  },
+  {
+    ticker: 'AAPL',
+    name: 'Apple',
+    price: '$178.40',
+    change: '+0.8%',
+    ivr: '34',
+    ready: false,
+    reason: 'Price above target · IV low',
+    note: 'Would own below $170. Waiting for a better entry.',
+    conditions: ['Price $178.40 > $170 target', 'IVR 34 < 50 target'],
+    earnings: 'Oct 29 · after screen window'
+  },
+  {
+    ticker: 'MSFT',
+    name: 'Microsoft',
+    price: '$505.10',
+    change: '−1.2%',
+    ivr: '41',
+    ready: false,
+    reason: 'Earnings in 3 days',
+    note: 'Wait until after the earnings report.',
+    conditions: ['Post-earnings only'],
+    earnings: 'Sep 12 · inside screen window'
+  },
+  {
+    ticker: 'AMD',
+    name: 'AMD',
+    price: '$156.20',
+    change: '+1.1%',
+    ivr: '52',
+    ready: false,
+    reason: 'No qualifying contract',
+    note: 'Stock conditions pass. Waiting for a more liquid put.',
+    conditions: ['IVR 52 ≥ 50', 'Best spread 14% > 10% limit'],
+    earnings: 'Nov 3 · after screen window'
+  },
+  {
+    ticker: 'XYZ',
+    name: 'Example thin-history stock',
+    price: '$24.10',
+    change: '—',
+    ivr: '—',
+    ready: false,
+    reason: 'IVR unavailable · not evaluated',
+    note: 'Research name. Needs sufficient IV history.',
+    conditions: ['IVR ≥ 40 · awaiting data'],
+    earnings: 'Unknown · needs verification'
+  }
 ]
 
-export const addSchema = z.object({ ticker: z.string().trim().toUpperCase().regex(/^[A-Z]{1,5}$/, 'Enter a ticker of 1–5 letters'), note: z.string().trim().max(500) })
+export const addSchema = z.object({
+  ticker: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{1,5}$/, 'Enter a ticker of 1–5 letters'),
+  note: z.string().trim().max(500)
+})
 
 export function AddStock({ entries, onAdd, onCancel }) {
-  const { register, handleSubmit, setError, formState: { errors } } = useForm({ resolver: zodResolver(addSchema), defaultValues: { ticker: '', note: '' } })
+  const {
+    register,
+    handleSubmit,
+    setError,
+    formState: { errors }
+  } = useForm({ resolver: zodResolver(addSchema), defaultValues: { ticker: '', note: '' } })
   return (
     <SectionCard header="Add a stock to watch">
-      <form className="flex flex-col gap-4 p-5" onSubmit={handleSubmit(values => {
-        if (entries.some(s => s.ticker === values.ticker)) { setError('ticker', { message: values.ticker + ' is already on your watchlist' }); return }
-        onAdd({ ticker: values.ticker, name: 'New stock', price: '—', change: '—', ivr: '—', ready: false, reason: 'Not screened yet', note: values.note || 'No thesis yet.', conditions: ['No personal conditions'], earnings: 'Not checked' })
-      })}>
+      <form
+        className="flex flex-col gap-4 p-5"
+        onSubmit={handleSubmit((values) => {
+          if (entries.some((s) => s.ticker === values.ticker)) {
+            setError('ticker', { message: values.ticker + ' is already on your watchlist' })
+            return
+          }
+          onAdd({
+            ticker: values.ticker,
+            name: 'New stock',
+            price: '—',
+            change: '—',
+            ivr: '—',
+            ready: false,
+            reason: 'Not screened yet',
+            note: values.note || 'No thesis yet.',
+            conditions: ['No personal conditions'],
+            earnings: 'Not checked'
+          })
+        })}
+      >
         <div className="grid gap-4 md:grid-cols-[160px_1fr]">
-          <Field label="Ticker" htmlFor="add-ticker" error={errors.ticker?.message}><Input id="add-ticker" placeholder="e.g. AMZN" {...register('ticker')} /></Field>
-          <Field label="Why are you interested?" htmlFor="add-note" error={errors.note?.message}><Input id="add-note" placeholder="Optional thesis or research note" {...register('note')} /></Field>
+          <Field label="Ticker" htmlFor="add-ticker" error={errors.ticker?.message}>
+            <Input id="add-ticker" placeholder="e.g. AMZN" {...register('ticker')} />
+          </Field>
+          <Field label="Why are you interested?" htmlFor="add-note" error={errors.note?.message}>
+            <Input
+              id="add-note"
+              placeholder="Optional thesis or research note"
+              {...register('note')}
+            />
+          </Field>
         </div>
-        <p className="text-xs text-wb-text-muted">New stocks start in Stocks of interest until screened. Entry-condition editing is a separate interaction in this concept.</p>
-        <div className="flex gap-2"><Button type="submit" size="sm">Add to watchlist</Button><Button type="button" variant="ghost" size="sm" onClick={onCancel}>Cancel</Button></div>
+        <p className="text-xs text-wb-text-muted">
+          New stocks start in Stocks of interest until screened. Entry-condition editing is a
+          separate interaction in this concept.
+        </p>
+        <div className="flex gap-2">
+          <Button type="submit" size="sm">
+            Add to watchlist
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
       </form>
     </SectionCard>
   )
@@ -56,25 +198,84 @@ export function StockDetail({ stock, onReview }) {
   return (
     <div className="flex flex-col gap-5 p-5">
       <div className="flex items-start justify-between gap-3">
-        <div><p className="font-wb-mono text-xs tracking-widest text-wb-text-muted">STOCK DETAIL</p><h3 className="mt-2 font-wb-mono text-3xl font-semibold text-wb-gold">{stock.ticker}</h3><p className="mt-1 text-sm text-wb-text-secondary">{stock.name}</p></div>
-        <Badge color={stock.ready ? 'var(--wb-green)' : undefined}>{stock.ready ? 'Meets criteria' : 'Watching'}</Badge>
+        <div>
+          <p className="font-wb-mono text-xs tracking-widest text-wb-text-muted">STOCK DETAIL</p>
+          <h3 className="mt-2 font-wb-mono text-3xl font-semibold text-wb-gold">{stock.ticker}</h3>
+          <p className="mt-1 text-sm text-wb-text-secondary">{stock.name}</p>
+        </div>
+        <Badge color={stock.ready ? 'var(--wb-green)' : undefined}>
+          {stock.ready ? 'Meets criteria' : 'Watching'}
+        </Badge>
       </div>
       <div className="grid grid-cols-3 gap-3 rounded-md bg-wb-bg-elevated p-4">
-        {[['Last price', stock.price], ['Day change', stock.change], ['IV rank', stock.ivr]].map(([label, value]) => <div key={label}><p className="text-xs text-wb-text-muted">{label}</p><p className="mt-1 font-wb-mono text-lg">{value}</p></div>)}
+        {[
+          ['Last price', stock.price],
+          ['Day change', stock.change],
+          ['IV rank', stock.ivr]
+        ].map(([label, value]) => (
+          <div key={label}>
+            <p className="text-xs text-wb-text-muted">{label}</p>
+            <p className="mt-1 font-wb-mono text-lg">{value}</p>
+          </div>
+        ))}
       </div>
-      <div><h4 className="mb-2 text-xs font-semibold uppercase tracking-widest text-wb-text-muted">Your thesis</h4><p className="text-sm leading-relaxed text-wb-text-secondary">{stock.note}</p></div>
-      <div><h4 className="mb-2 text-xs font-semibold uppercase tracking-widest text-wb-text-muted">Entry conditions</h4><div className="flex flex-wrap gap-2">{stock.conditions.map(c => <Badge key={c}>{c}</Badge>)}</div></div>
-      <div className="flex justify-between gap-3 text-xs"><span className="text-wb-text-muted">Earnings</span><span>{stock.earnings}</span></div>
+      <div>
+        <h4 className="mb-2 text-xs font-semibold uppercase tracking-widest text-wb-text-muted">
+          Your thesis
+        </h4>
+        <p className="text-sm leading-relaxed text-wb-text-secondary">{stock.note}</p>
+      </div>
+      <div>
+        <h4 className="mb-2 text-xs font-semibold uppercase tracking-widest text-wb-text-muted">
+          Entry conditions
+        </h4>
+        <div className="flex flex-wrap gap-2">
+          {stock.conditions.map((c) => (
+            <Badge key={c}>{c}</Badge>
+          ))}
+        </div>
+      </div>
+      <div className="flex justify-between gap-3 text-xs">
+        <span className="text-wb-text-muted">Earnings</span>
+        <span>{stock.earnings}</span>
+      </div>
       {stock.ready ? (
         <SectionCard header="Matching put · best score for this stock">
           <div className="flex flex-col gap-4 p-4">
-            <div className="flex items-center justify-between"><span className="font-wb-mono text-xl">{stock.strike} PUT</span><span className="text-sm text-wb-text-secondary">{stock.expiry} · {stock.dte} DTE</span></div>
-            <dl className="grid grid-cols-3 gap-4">{[['Mark / share', stock.mark], ['Period yield', stock.period], ['Annualized', stock.annual], ['Delta', stock.delta], ['Open interest', stock.oi], ['Spread', stock.spread]].map(([label, value]) => <div key={label}><dt className="text-xs text-wb-text-muted">{label}</dt><dd className="mt-1 font-wb-mono text-sm">{value}</dd></div>)}</dl>
-            <p className="text-xs text-wb-text-muted">Cash to secure 1 contract: {stock.cash}. Yield uses mark ÷ strike, before fees.</p>
-            <Button size="sm" onClick={() => onReview(stock)}>Review trade →</Button>
+            <div className="flex items-center justify-between">
+              <span className="font-wb-mono text-xl">{stock.strike} PUT</span>
+              <span className="text-sm text-wb-text-secondary">
+                {stock.expiry} · {stock.dte} DTE
+              </span>
+            </div>
+            <dl className="grid grid-cols-3 gap-4">
+              {[
+                ['Mark / share', stock.mark],
+                ['Period yield', stock.period],
+                ['Annualized', stock.annual],
+                ['Delta', stock.delta],
+                ['Open interest', stock.oi],
+                ['Spread', stock.spread]
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <dt className="text-xs text-wb-text-muted">{label}</dt>
+                  <dd className="mt-1 font-wb-mono text-sm">{value}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="text-xs text-wb-text-muted">
+              Cash to secure 1 contract: {stock.cash}. Yield uses mark ÷ strike, before fees.
+            </p>
+            <Button size="sm" onClick={() => onReview(stock)}>
+              Review trade →
+            </Button>
           </div>
         </SectionCard>
-      ) : <AlertBox variant="warning">{stock.reason}. This stock stays on your watchlist while you wait.</AlertBox>}
+      ) : (
+        <AlertBox variant="warning">
+          {stock.reason}. This stock stays on your watchlist while you wait.
+        </AlertBox>
+      )}
     </div>
   )
 }
@@ -87,37 +288,289 @@ export function Mockup() {
   const [selected, setSelected] = useState('KO')
   const [expanded, setExpanded] = useState(null)
   const [notice, setNotice] = useState('')
-  const ready = mode === 'normal' ? entries.filter(s => s.ready) : []
-  const watching = mode === 'normal' ? entries.filter(s => !s.ready) : entries.map(s => ({ ...s, ready: false, reason: mode === 'outage' ? 'Data unavailable · not evaluated' : s.ready ? 'No contract meets current filters' : s.reason }))
-  const current = [...ready, ...watching].find(s => s.ticker === selected) || watching[0]
-  function review(stock) { setNotice('Trade-entry preview: ' + stock.ticker + ' ' + stock.strike + ' put, ' + stock.expiry + ', mark ' + stock.mark + '/share. In the app this opens a pre-filled new-wheel form. No trade has been created.') }
+  const ready = mode === 'normal' ? entries.filter((s) => s.ready) : []
+  const watching =
+    mode === 'normal'
+      ? entries.filter((s) => !s.ready)
+      : entries.map((s) => ({
+          ...s,
+          ready: false,
+          reason:
+            mode === 'outage'
+              ? 'Data unavailable · not evaluated'
+              : s.ready
+                ? 'No contract meets current filters'
+                : s.reason
+        }))
+  const current = [...ready, ...watching].find((s) => s.ticker === selected) || watching[0]
+  function review(stock) {
+    setNotice(
+      'Trade-entry preview: ' +
+        stock.ticker +
+        ' ' +
+        stock.strike +
+        ' put, ' +
+        stock.expiry +
+        ', mark ' +
+        stock.mark +
+        '/share. In the app this opens a pre-filled new-wheel form. No trade has been created.'
+    )
+  }
   return (
     <div className="my-6 flex flex-col gap-4 text-wb-text-primary">
-      <div className="flex flex-wrap items-center gap-2 text-xs text-wb-text-muted"><span className="mr-2 font-wb-mono uppercase tracking-widest">Preview state</span>{[['normal', 'Typical day'], ['empty', 'No matches'], ['outage', 'Data unavailable']].map(([value, label]) => <Button key={value} size="sm" variant={mode === value ? 'secondary' : 'ghost'} aria-pressed={mode === value} onClick={() => { setMode(value); setNotice('') }}>{label}</Button>)}</div>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-wb-text-muted">
+        <span className="mr-2 font-wb-mono uppercase tracking-widest">Preview state</span>
+        {[
+          ['normal', 'Typical day'],
+          ['empty', 'No matches'],
+          ['outage', 'Data unavailable']
+        ].map(([value, label]) => (
+          <Button
+            key={value}
+            size="sm"
+            variant={mode === value ? 'secondary' : 'ghost'}
+            aria-pressed={mode === value}
+            onClick={() => {
+              setMode(value)
+              setNotice('')
+            }}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
       <div className="overflow-hidden rounded-xl border border-wb-border bg-wb-bg-base">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-wb-border bg-wb-bg-surface px-6 py-5">
-          <div><div className="mb-2 font-wb-mono text-[10px] uppercase tracking-[0.2em] text-wb-text-muted">Wheelbase / Research</div><div className="flex items-center gap-3"><h2 className="text-2xl font-semibold tracking-tight">Watchlist</h2><Badge>{entries.length} stocks</Badge></div><p className="mt-1 text-sm text-wb-text-secondary">Your next wheel starts here.</p></div>
-          <div className="flex flex-wrap items-center gap-2"><Button size="sm" variant="outline" onClick={() => setCriteria(v => !v)} aria-expanded={criteria}>Screening criteria</Button><Button size="sm" variant="outline" onClick={() => { setMode('normal'); setNotice('Sample snapshot refreshed. New stocks remain unscreened in this prototype.') }}>↻ Refresh</Button><Button size="sm" onClick={() => setAdding(v => !v)} aria-expanded={adding}>+ Add stock</Button></div>
+          <div>
+            <div className="mb-2 font-wb-mono text-[10px] uppercase tracking-[0.2em] text-wb-text-muted">
+              Wheelbase / Research
+            </div>
+            <div className="flex items-center gap-3">
+              <h2 className="text-2xl font-semibold tracking-tight">Watchlist</h2>
+              <Badge>{entries.length} stocks</Badge>
+            </div>
+            <p className="mt-1 text-sm text-wb-text-secondary">Your next wheel starts here.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setCriteria((v) => !v)}
+              aria-expanded={criteria}
+            >
+              Screening criteria
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setMode('normal')
+                setNotice(
+                  'Sample snapshot refreshed. New stocks remain unscreened in this prototype.'
+                )
+              }}
+            >
+              ↻ Refresh
+            </Button>
+            <Button size="sm" onClick={() => setAdding((v) => !v)} aria-expanded={adding}>
+              + Add stock
+            </Button>
+          </div>
         </header>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-wb-border px-6 py-3 text-xs"><div className="flex flex-wrap gap-4 text-wb-text-secondary"><span>δ 0.20–0.30</span><span>30–45 DTE</span><span>Yield ≥ 1%</span><span>OI ≥ 500</span><span>Spread ≤ 10%</span><span>Exclude earnings</span></div><span className="font-wb-mono text-wb-text-muted">{mode === 'outage' ? 'Refresh failed' : 'Sep 9, 2026 · 10:42 CT'}</span></div>
-        <div className="flex flex-col gap-5 p-6">
-          {criteria && <AlertBox variant="info">Screening defaults apply to option contracts: delta 0.20–0.30, 30–45 DTE, period yield at least 1%, open interest at least 500, spread at most 10%, and earnings excluded through expiration. Per-stock entry conditions are shown separately. Editing defaults is not simulated.</AlertBox>}
-          {adding && <AddStock entries={entries} onCancel={() => setAdding(false)} onAdd={stock => { setEntries(prev => [...prev, stock]); setAdding(false); setSelected(stock.ticker); setNotice(stock.ticker + ' added to Stocks of interest.') }} />}
-          {notice && <div role="status"><AlertBox variant="info">{notice}</AlertBox></div>}
-          {mode === 'outage' && <AlertBox variant="warning">Market data is unavailable. Saved stocks and theses are still here. Last-known figures below are stale; no stocks are marked as meeting criteria.</AlertBox>}
-          <section aria-label="Meets criteria" className="flex flex-col gap-3">
-  <div className="flex items-center justify-between"><div className="flex items-center gap-2"><h3 className="text-lg font-semibold">Meets criteria</h3><Badge color="var(--wb-green)">{ready.length}</Badge></div><span className="text-xs text-wb-text-muted">Ranked by annualized yield ÷ delta</span></div>
-  <p className="text-xs text-wb-text-secondary">Your conditions line up. Review the matching put before opening a wheel.</p>
-  {ready.length ? <SectionCard><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{['Stock', 'Price / IVR', 'Matching put', 'Mark', 'Yield / annual', 'Delta / OI', ''].map(label => <TableHeader key={label}>{label}</TableHeader>)}</tr></thead><tbody>{ready.map(stock => <tr key={stock.ticker} className="hover:bg-wb-bg-hover"><TableCell><Button variant="link" size="sm" onClick={() => setExpanded(expanded === stock.ticker ? null : stock.ticker)}>{stock.ticker} ↗</Button><p className="text-[11px] text-wb-text-muted">{stock.conditions[0]}</p></TableCell><TableCell>{stock.price}<p className="mt-1 text-xs text-wb-text-muted">IVR {stock.ivr}</p></TableCell><TableCell>{stock.strike} P<p className="mt-1 text-xs text-wb-text-muted">{stock.expiry} · {stock.dte}d</p></TableCell><TableCell>{stock.mark}</TableCell><TableCell><span className="text-wb-green">{stock.period}</span><p className="mt-1 text-xs text-wb-text-muted">{stock.annual}/yr</p></TableCell><TableCell>{stock.delta}<p className="mt-1 text-xs text-wb-text-muted">{stock.oi} OI</p></TableCell><TableCell><Button variant="outline" size="sm" onClick={() => review(stock)}>Review trade</Button></TableCell></tr>)}</tbody></table></div></SectionCard> : <AlertBox variant="info">{mode === 'outage' ? 'Matching candidates will return when data is available.' : 'No matches on this screen. Your stocks of interest remain below.'}</AlertBox>}
-</section>
-<section aria-label="Stocks of interest" className="mt-3 flex flex-col gap-3">
-  <div className="flex items-center gap-2"><h3 className="text-lg font-semibold">Stocks of interest</h3><Badge>{watching.length}</Badge></div>
-  <p className="text-xs text-wb-text-secondary">Keep the thesis. See what you are waiting for.</p>
-  <SectionCard><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{['Stock', 'Price', 'IVR', 'Waiting for', 'Your thesis'].map(label => <TableHeader key={label}>{label}</TableHeader>)}</tr></thead><tbody>{watching.map(stock => <tr key={stock.ticker} className="hover:bg-wb-bg-hover"><TableCell><Button variant="link" size="sm" onClick={() => { setSelected(stock.ticker); setExpanded(expanded === stock.ticker ? null : stock.ticker) }}>{stock.ticker} ↗</Button></TableCell><TableCell>{stock.price}</TableCell><TableCell>{stock.ivr}</TableCell><TableCell><Badge>{stock.reason}</Badge></TableCell><TableCell className="max-w-64 font-sans text-xs leading-relaxed text-wb-text-secondary">{stock.note}</TableCell></tr>)}</tbody></table></div></SectionCard>
-</section>
-{expanded && <SectionCard header="Expanded stock"><StockDetail stock={[...ready, ...watching].find(s => s.ticker === expanded)} onReview={review} /><div className="px-5 pb-5"><Button variant="ghost" size="sm" onClick={() => setExpanded(null)}>Close details</Button></div></SectionCard>}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-wb-border px-6 py-3 text-xs">
+          <div className="flex flex-wrap gap-4 text-wb-text-secondary">
+            <span>δ 0.20–0.30</span>
+            <span>30–45 DTE</span>
+            <span>Yield ≥ 1%</span>
+            <span>OI ≥ 500</span>
+            <span>Spread ≤ 10%</span>
+            <span>Exclude earnings</span>
+          </div>
+          <span className="font-wb-mono text-wb-text-muted">
+            {mode === 'outage' ? 'Refresh failed' : 'Sep 9, 2026 · 10:42 CT'}
+          </span>
         </div>
-        <footer className="border-t border-wb-border px-6 py-3 text-xs text-wb-text-muted">Meets criteria = saved stock conditions pass + a qualifying put. Stocks without personal conditions use screening defaults.</footer>
+        <div className="flex flex-col gap-5 p-6">
+          {criteria && (
+            <AlertBox variant="info">
+              Screening defaults apply to option contracts: delta 0.20–0.30, 30–45 DTE, period yield
+              at least 1%, open interest at least 500, spread at most 10%, and earnings excluded
+              through expiration. Per-stock entry conditions are shown separately. Editing defaults
+              is not simulated.
+            </AlertBox>
+          )}
+          {adding && (
+            <AddStock
+              entries={entries}
+              onCancel={() => setAdding(false)}
+              onAdd={(stock) => {
+                setEntries((prev) => [...prev, stock])
+                setAdding(false)
+                setSelected(stock.ticker)
+                setNotice(stock.ticker + ' added to Stocks of interest.')
+              }}
+            />
+          )}
+          {notice && (
+            <div role="status">
+              <AlertBox variant="info">{notice}</AlertBox>
+            </div>
+          )}
+          {mode === 'outage' && (
+            <AlertBox variant="warning">
+              Market data is unavailable. Saved stocks and theses are still here. Last-known figures
+              below are stale; no stocks are marked as meeting criteria.
+            </AlertBox>
+          )}
+          <section aria-label="Meets criteria" className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold">Meets criteria</h3>
+                <Badge color="var(--wb-green)">{ready.length}</Badge>
+              </div>
+              <span className="text-xs text-wb-text-muted">Ranked by annualized yield ÷ delta</span>
+            </div>
+            <p className="text-xs text-wb-text-secondary">
+              Your conditions line up. Review the matching put before opening a wheel.
+            </p>
+            {ready.length ? (
+              <SectionCard>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr>
+                        {[
+                          'Stock',
+                          'Price / IVR',
+                          'Matching put',
+                          'Mark',
+                          'Yield / annual',
+                          'Delta / OI',
+                          ''
+                        ].map((label) => (
+                          <TableHeader key={label}>{label}</TableHeader>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ready.map((stock) => (
+                        <tr key={stock.ticker} className="hover:bg-wb-bg-hover">
+                          <TableCell>
+                            <Button
+                              variant="link"
+                              size="sm"
+                              onClick={() =>
+                                setExpanded(expanded === stock.ticker ? null : stock.ticker)
+                              }
+                            >
+                              {stock.ticker} ↗
+                            </Button>
+                            <p className="text-[11px] text-wb-text-muted">{stock.conditions[0]}</p>
+                          </TableCell>
+                          <TableCell>
+                            {stock.price}
+                            <p className="mt-1 text-xs text-wb-text-muted">IVR {stock.ivr}</p>
+                          </TableCell>
+                          <TableCell>
+                            {stock.strike} P
+                            <p className="mt-1 text-xs text-wb-text-muted">
+                              {stock.expiry} · {stock.dte}d
+                            </p>
+                          </TableCell>
+                          <TableCell>{stock.mark}</TableCell>
+                          <TableCell>
+                            <span className="text-wb-green">{stock.period}</span>
+                            <p className="mt-1 text-xs text-wb-text-muted">{stock.annual}/yr</p>
+                          </TableCell>
+                          <TableCell>
+                            {stock.delta}
+                            <p className="mt-1 text-xs text-wb-text-muted">{stock.oi} OI</p>
+                          </TableCell>
+                          <TableCell>
+                            <Button variant="outline" size="sm" onClick={() => review(stock)}>
+                              Review trade
+                            </Button>
+                          </TableCell>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </SectionCard>
+            ) : (
+              <AlertBox variant="info">
+                {mode === 'outage'
+                  ? 'Matching candidates will return when data is available.'
+                  : 'No matches on this screen. Your stocks of interest remain below.'}
+              </AlertBox>
+            )}
+          </section>
+          <section aria-label="Stocks of interest" className="mt-3 flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-semibold">Stocks of interest</h3>
+              <Badge>{watching.length}</Badge>
+            </div>
+            <p className="text-xs text-wb-text-secondary">
+              Keep the thesis. See what you are waiting for.
+            </p>
+            <SectionCard>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr>
+                      {['Stock', 'Price', 'IVR', 'Waiting for', 'Your thesis'].map((label) => (
+                        <TableHeader key={label}>{label}</TableHeader>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {watching.map((stock) => (
+                      <tr key={stock.ticker} className="hover:bg-wb-bg-hover">
+                        <TableCell>
+                          <Button
+                            variant="link"
+                            size="sm"
+                            onClick={() => {
+                              setSelected(stock.ticker)
+                              setExpanded(expanded === stock.ticker ? null : stock.ticker)
+                            }}
+                          >
+                            {stock.ticker} ↗
+                          </Button>
+                        </TableCell>
+                        <TableCell>{stock.price}</TableCell>
+                        <TableCell>{stock.ivr}</TableCell>
+                        <TableCell>
+                          <Badge>{stock.reason}</Badge>
+                        </TableCell>
+                        <TableCell className="max-w-64 font-sans text-xs leading-relaxed text-wb-text-secondary">
+                          {stock.note}
+                        </TableCell>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </SectionCard>
+          </section>
+          {expanded && (
+            <SectionCard header="Expanded stock">
+              <StockDetail
+                stock={[...ready, ...watching].find((s) => s.ticker === expanded)}
+                onReview={review}
+              />
+              <div className="px-5 pb-5">
+                <Button variant="ghost" size="sm" onClick={() => setExpanded(null)}>
+                  Close details
+                </Button>
+              </div>
+            </SectionCard>
+          )}
+        </div>
+        <footer className="border-t border-wb-border px-6 py-3 text-xs text-wb-text-muted">
+          Meets criteria = saved stock conditions pass + a qualifying put. Stocks without personal
+          conditions use screening defaults.
+        </footer>
       </div>
     </div>
   )

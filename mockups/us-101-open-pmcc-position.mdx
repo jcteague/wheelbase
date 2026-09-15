@@ -8,7 +8,13 @@ import { Field } from '../src/renderer/src/components/ui/FormField'
 import { NumberInput } from '../src/renderer/src/components/ui/NumberInput'
 import { FormButton } from '../src/renderer/src/components/ui/FormButton'
 import { SectionCard } from '../src/renderer/src/components/ui/SectionCard'
-import { SheetOverlay, SheetPanel, SheetHeader, SheetBody, SheetFooter } from '../src/renderer/src/components/ui/Sheet'
+import {
+  SheetOverlay,
+  SheetPanel,
+  SheetHeader,
+  SheetBody,
+  SheetFooter
+} from '../src/renderer/src/components/ui/Sheet'
 import { TableHeader, TableCell } from '../src/renderer/src/components/ui/TablePrimitives'
 
 # US-101: One entry point, two strategies
@@ -16,7 +22,11 @@ import { TableHeader, TableCell } from '../src/renderer/src/components/ui/TableP
 Click **Open Wheel**, then toggle **Standard / PMCC** in the right-hand panel. The positions screen stays underneath. Field values are fixed fictional examples; panel opening, strategy switching, dismissal, and sample recording work.
 
 export function SampleField({ id, label, value, hint, error }) {
-  return <Field label={label} htmlFor={id} hint={hint} error={error}><NumberInput id={id} value={value} readOnly hasError={Boolean(error)} /></Field>
+  return (
+    <Field label={label} htmlFor={id} hint={hint} error={error}>
+      <NumberInput id={id} value={value} readOnly hasError={Boolean(error)} />
+    </Field>
+  )
 }
 
 export function Mockup() {
@@ -32,80 +42,381 @@ export function Mockup() {
   const fees = state === 'fees'
   const blank = state === 'entry'
   const debit = blank ? '—' : fees ? '$2,302.00' : '$2,300.00'
-  const notices = { loading: 'Loading call contracts…', empty: 'No matching calls. Adjust filters or enter manually.', offline: 'Quotes unavailable. Enter your filled trade manually.', stale: 'Quote is stale. Verify against your actual fill.', 'save-error': 'Could not record PMCC. Your entries are preserved. Try again.' }
-  const close = () => { if (!pending) { setOpen(false); trigger.current?.querySelector('button')?.focus() } }
-  const start = () => { setMode('Standard'); setState('ready'); setOpen(true) }
-  const save = () => { setRecorded({ mode, debit }); setOpen(false); trigger.current?.querySelector('button')?.focus() }
+  const notices = {
+    loading: 'Loading call contracts…',
+    empty: 'No matching calls. Adjust filters or enter manually.',
+    offline: 'Quotes unavailable. Enter your filled trade manually.',
+    stale: 'Quote is stale. Verify against your actual fill.',
+    'save-error': 'Could not record PMCC. Your entries are preserved. Try again.'
+  }
+  const close = () => {
+    if (!pending) {
+      setOpen(false)
+      trigger.current?.querySelector('button')?.focus()
+    }
+  }
+  const start = () => {
+    setMode('Standard')
+    setState('ready')
+    setOpen(true)
+  }
+  const save = () => {
+    setRecorded({ mode, debit })
+    setOpen(false)
+    trigger.current?.querySelector('button')?.focus()
+  }
   const legs = [
-    { key: 'long', title: 'Buy LEAPS call', action: 'BUY TO OPEN', strike: '80.00', expiration: '2027-09-17', dte: '368 DTE', delta: '0.80', fill: '25.00', bid: '24.80', ask: '25.20', filters: '180+ DTE · Δ 0.70–0.85', label: 'Actual purchase / share' },
-    { key: 'short', title: 'Sell short call', action: 'SELL TO OPEN', strike: '110.00', expiration: invalid ? '2027-09-17' : '2026-10-16', dte: invalid ? '368 DTE' : '32 DTE', delta: invalid ? '—' : '0.30', fill: '2.00', bid: '1.90', ask: '2.10', filters: '20–45 DTE · Δ 0.25–0.35', label: 'Actual sale / share' }
+    {
+      key: 'long',
+      title: 'Buy LEAPS call',
+      action: 'BUY TO OPEN',
+      strike: '80.00',
+      expiration: '2027-09-17',
+      dte: '368 DTE',
+      delta: '0.80',
+      fill: '25.00',
+      bid: '24.80',
+      ask: '25.20',
+      filters: '180+ DTE · Δ 0.70–0.85',
+      label: 'Actual purchase / share'
+    },
+    {
+      key: 'short',
+      title: 'Sell short call',
+      action: 'SELL TO OPEN',
+      strike: '110.00',
+      expiration: invalid ? '2027-09-17' : '2026-10-16',
+      dte: invalid ? '368 DTE' : '32 DTE',
+      delta: invalid ? '—' : '0.30',
+      fill: '2.00',
+      bid: '1.90',
+      ask: '2.10',
+      filters: '20–45 DTE · Δ 0.25–0.35',
+      label: 'Actual sale / share'
+    }
   ]
-  useEffect(() => { if (open) dialog.current?.focus() }, [open])
+  useEffect(() => {
+    if (open) dialog.current?.focus()
+  }, [open])
   return (
     <div className="flex flex-col gap-4 font-wb-mono text-wb-text-primary">
       <div className="relative isolate h-[880px] transform-gpu overflow-hidden rounded-lg border border-wb-border bg-wb-bg-base">
         <aside className="absolute inset-y-0 left-0 flex w-[200px] flex-col gap-6 border-r border-wb-border bg-wb-bg-surface p-5">
           <div className="text-lg font-bold tracking-widest text-wb-gold">WHEELBASE</div>
-          <div className="flex flex-col gap-5 text-xs text-wb-text-secondary"><span className="font-semibold text-wb-gold">Positions</span><span>Management queue</span><span>Calendar</span><span>Screener</span><span>Watchlist</span></div>
-          <div ref={trigger}><FormButton label="Open Wheel" onClick={start} /></div>
+          <div className="flex flex-col gap-5 text-xs text-wb-text-secondary">
+            <span className="font-semibold text-wb-gold">Positions</span>
+            <span>Management queue</span>
+            <span>Calendar</span>
+            <span>Screener</span>
+            <span>Watchlist</span>
+          </div>
+          <div ref={trigger}>
+            <FormButton label="Open Wheel" onClick={start} />
+          </div>
           <div className="mt-auto text-xs text-wb-text-muted">PAPER ACCOUNT</div>
         </aside>
-        <main className={`ml-[200px] h-full overflow-auto p-6 ${open ? 'pointer-events-none opacity-40 blur-[1px]' : ''}`}>
-          <div className="mb-6 flex items-center justify-between"><h2 className="text-xl font-semibold">Positions</h2><span className="text-xs text-wb-text-secondary">All strategies · Active</span></div>
-          {recorded ? <div role="status" className="mb-5 rounded-md border border-wb-border bg-wb-green-dim p-4 text-sm text-wb-green">{recorded.mode === 'PMCC' ? 'PMCC recorded — XYZ · LEAPS + short call open' : 'Wheel recorded — XYZ · CSP open'}</div> : null}
+        <main
+          className={`ml-[200px] h-full overflow-auto p-6 ${open ? 'pointer-events-none opacity-40 blur-[1px]' : ''}`}
+        >
+          <div className="mb-6 flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Positions</h2>
+            <span className="text-xs text-wb-text-secondary">All strategies · Active</span>
+          </div>
+          {recorded ? (
+            <div
+              role="status"
+              className="mb-5 rounded-md border border-wb-border bg-wb-green-dim p-4 text-sm text-wb-green"
+            >
+              {recorded.mode === 'PMCC'
+                ? 'PMCC recorded — XYZ · LEAPS + short call open'
+                : 'Wheel recorded — XYZ · CSP open'}
+            </div>
+          ) : null}
           <SectionCard header="Active positions">
-            <table className="w-full text-left text-sm"><thead><tr>{['Ticker', 'Strategy / phase', 'Expiration', 'Position'].map((heading) => <TableHeader key={heading}>{heading}</TableHeader>)}</tr></thead><tbody>
-              <tr><TableCell>ABC</TableCell><TableCell>Standard · CSP</TableCell><TableCell>Oct 16, 2026</TableCell><TableCell>1 put</TableCell></tr>
-              <tr><TableCell>DEF</TableCell><TableCell>Standard · Shares</TableCell><TableCell>—</TableCell><TableCell>100 shares</TableCell></tr>
-              {recorded ? <tr><TableCell>XYZ</TableCell><TableCell>{recorded.mode === 'PMCC' ? 'PMCC · Both calls open' : 'Standard · CSP'}</TableCell><TableCell>{recorded.mode === 'PMCC' ? <div className="flex flex-col gap-1"><span>LEAPS · Sep 17, 2027 · 368d</span><span>Short · Oct 16, 2026 · 32d</span></div> : 'Oct 16, 2026'}</TableCell><TableCell>{recorded.mode === 'PMCC' ? `${recorded.debit} net debit` : '1 put'}</TableCell></tr> : null}
-            </tbody></table>
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr>
+                  {['Ticker', 'Strategy / phase', 'Expiration', 'Position'].map((heading) => (
+                    <TableHeader key={heading}>{heading}</TableHeader>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <TableCell>ABC</TableCell>
+                  <TableCell>Standard · CSP</TableCell>
+                  <TableCell>Oct 16, 2026</TableCell>
+                  <TableCell>1 put</TableCell>
+                </tr>
+                <tr>
+                  <TableCell>DEF</TableCell>
+                  <TableCell>Standard · Shares</TableCell>
+                  <TableCell>—</TableCell>
+                  <TableCell>100 shares</TableCell>
+                </tr>
+                {recorded ? (
+                  <tr>
+                    <TableCell>XYZ</TableCell>
+                    <TableCell>
+                      {recorded.mode === 'PMCC' ? 'PMCC · Both calls open' : 'Standard · CSP'}
+                    </TableCell>
+                    <TableCell>
+                      {recorded.mode === 'PMCC' ? (
+                        <div className="flex flex-col gap-1">
+                          <span>LEAPS · Sep 17, 2027 · 368d</span>
+                          <span>Short · Oct 16, 2026 · 32d</span>
+                        </div>
+                      ) : (
+                        'Oct 16, 2026'
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {recorded.mode === 'PMCC' ? `${recorded.debit} net debit` : '1 put'}
+                    </TableCell>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
           </SectionCard>
         </main>
         {open ? (
           <SheetOverlay onClose={close}>
             <SheetPanel width={460}>
-              <div ref={dialog} role="dialog" aria-label="New position" tabIndex={-1} className="flex h-full min-h-0 flex-col outline-none" onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}>
-                <SheetHeader eyebrow="OPEN WHEEL" title="New position" subtitle="Record a completed trade" onClose={close} />
+              <div
+                ref={dialog}
+                role="dialog"
+                aria-label="New position"
+                tabIndex={-1}
+                className="flex h-full min-h-0 flex-col outline-none"
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.stopPropagation()
+                    close()
+                  }
+                }}
+              >
+                <SheetHeader
+                  eyebrow="OPEN WHEEL"
+                  title="New position"
+                  subtitle="Record a completed trade"
+                  onClose={close}
+                />
                 <div className="border-b border-wb-border px-6 py-4">
-                  <div role="group" aria-label="Position strategy" className="grid grid-cols-2 gap-1 rounded-lg border border-wb-border bg-wb-bg-elevated p-1">
-                    {['Standard', 'PMCC'].map((choice) => <FormButton key={choice} label={choice} aria-label={`${choice}${mode === choice ? ' selected' : ''}`} variant={mode === choice ? 'primary' : 'secondary'} disabled={pending} onClick={() => setMode(choice)} />)}
+                  <div
+                    role="group"
+                    aria-label="Position strategy"
+                    className="grid grid-cols-2 gap-1 rounded-lg border border-wb-border bg-wb-bg-elevated p-1"
+                  >
+                    {['Standard', 'PMCC'].map((choice) => (
+                      <FormButton
+                        key={choice}
+                        label={choice}
+                        aria-label={`${choice}${mode === choice ? ' selected' : ''}`}
+                        variant={mode === choice ? 'primary' : 'secondary'}
+                        disabled={pending}
+                        onClick={() => setMode(choice)}
+                      />
+                    ))}
                   </div>
-                  <p className="mt-3 text-xs text-wb-text-secondary">{pmcc ? 'Long LEAPS call + a shorter-dated short call.' : 'Start the wheel with a cash-secured put.'}</p>
+                  <p className="mt-3 text-xs text-wb-text-secondary">
+                    {pmcc
+                      ? 'Long LEAPS call + a shorter-dated short call.'
+                      : 'Start the wheel with a cash-secured put.'}
+                  </p>
                 </div>
                 <SheetBody>
-                  {pmcc && notices[state] ? <div role={state === 'save-error' ? 'alert' : 'status'} className="rounded border border-wb-border bg-wb-gold-dim p-3 text-xs text-wb-gold">{notices[state]}</div> : null}
-                  <div className="grid grid-cols-2 gap-4"><SampleField id="new-position-ticker" label="Ticker" value="XYZ" /><SampleField id="new-position-quantity" label={pmcc ? 'Contracts per leg' : 'Contracts'} value="1" /></div>
+                  {pmcc && notices[state] ? (
+                    <div
+                      role={state === 'save-error' ? 'alert' : 'status'}
+                      className="rounded border border-wb-border bg-wb-gold-dim p-3 text-xs text-wb-gold"
+                    >
+                      {notices[state]}
+                    </div>
+                  ) : null}
+                  <div className="grid grid-cols-2 gap-4">
+                    <SampleField id="new-position-ticker" label="Ticker" value="XYZ" />
+                    <SampleField
+                      id="new-position-quantity"
+                      label={pmcc ? 'Contracts per leg' : 'Contracts'}
+                      value="1"
+                    />
+                  </div>
                   {pmcc ? (
                     <>
-                      {legs.map((leg) => <SectionCard key={leg.key} header={leg.title} headerVariant="emphasized" className="shrink-0"><div className="flex flex-col gap-3 p-4">
-                        <div className="flex items-center justify-between text-[10px]"><span className="rounded bg-wb-gold-dim px-2 py-1 text-xs font-bold tracking-wide text-wb-gold">{leg.action}</span><span className="text-wb-text-secondary">{leg.filters}</span></div>
-                        <details><summary className="cursor-pointer text-xs text-wb-text-secondary">Choose contract / enter manually</summary><p className="mt-2 text-xs text-wb-text-secondary">The call-chain selector opens here, within this panel. Contract fields below also support manual entry in the implemented form.</p></details>
-                        <div className="grid grid-cols-2 gap-3"><SampleField id={`${leg.key}-strike`} label="Strike" value={leg.strike} /><SampleField id={`${leg.key}-expiration`} label="Expiration" value={leg.expiration} hint={leg.dte} error={invalid && leg.key === 'short' ? 'Must expire before the LEAPS.' : undefined} /></div>
-                        <div className="border-l-2 border-wb-gold pl-3 text-[11px] leading-relaxed text-wb-text-secondary"><div className="font-semibold uppercase tracking-wider text-wb-text-muted">Quote</div><div>{state === 'offline' || invalid && leg.key === 'short' ? 'Quote / delta: —' : `Bid $${leg.bid} · Ask $${leg.ask} · Mid $${leg.fill} · Δ ${leg.delta}`}</div><div>{state === 'offline' || invalid && leg.key === 'short' ? 'No quote available' : state === 'stale' ? 'Sep 11, 2026 · 16:00 ET · Stale' : 'Sep 14, 2026 · 10:42 ET'}</div></div>
-                        <div className="grid grid-cols-2 gap-3"><SampleField id={`${leg.key}-fill`} label={leg.label} value={blank ? '' : leg.fill} /><SampleField id={`${leg.key}-fees`} label="Total leg fees" value={fees ? '1.00' : '0.00'} /></div>
-                        <SampleField id={`${leg.key}-fill-date`} label="Fill date" value="2026-09-14" />
-                      </div></SectionCard>)}
+                      {legs.map((leg) => (
+                        <SectionCard
+                          key={leg.key}
+                          header={leg.title}
+                          headerVariant="emphasized"
+                          className="shrink-0"
+                        >
+                          <div className="flex flex-col gap-3 p-4">
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="rounded bg-wb-gold-dim px-2 py-1 text-xs font-bold tracking-wide text-wb-gold">
+                                {leg.action}
+                              </span>
+                              <span className="text-wb-text-secondary">{leg.filters}</span>
+                            </div>
+                            <details>
+                              <summary className="cursor-pointer text-xs text-wb-text-secondary">
+                                Choose contract / enter manually
+                              </summary>
+                              <p className="mt-2 text-xs text-wb-text-secondary">
+                                The call-chain selector opens here, within this panel. Contract
+                                fields below also support manual entry in the implemented form.
+                              </p>
+                            </details>
+                            <div className="grid grid-cols-2 gap-3">
+                              <SampleField
+                                id={`${leg.key}-strike`}
+                                label="Strike"
+                                value={leg.strike}
+                              />
+                              <SampleField
+                                id={`${leg.key}-expiration`}
+                                label="Expiration"
+                                value={leg.expiration}
+                                hint={leg.dte}
+                                error={
+                                  invalid && leg.key === 'short'
+                                    ? 'Must expire before the LEAPS.'
+                                    : undefined
+                                }
+                              />
+                            </div>
+                            <div className="border-l-2 border-wb-gold pl-3 text-[11px] leading-relaxed text-wb-text-secondary">
+                              <div className="font-semibold uppercase tracking-wider text-wb-text-muted">
+                                Quote
+                              </div>
+                              <div>
+                                {state === 'offline' || (invalid && leg.key === 'short')
+                                  ? 'Quote / delta: —'
+                                  : `Bid $${leg.bid} · Ask $${leg.ask} · Mid $${leg.fill} · Δ ${leg.delta}`}
+                              </div>
+                              <div>
+                                {state === 'offline' || (invalid && leg.key === 'short')
+                                  ? 'No quote available'
+                                  : state === 'stale'
+                                    ? 'Sep 11, 2026 · 16:00 ET · Stale'
+                                    : 'Sep 14, 2026 · 10:42 ET'}
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <SampleField
+                                id={`${leg.key}-fill`}
+                                label={leg.label}
+                                value={blank ? '' : leg.fill}
+                              />
+                              <SampleField
+                                id={`${leg.key}-fees`}
+                                label="Total leg fees"
+                                value={fees ? '1.00' : '0.00'}
+                              />
+                            </div>
+                            <SampleField
+                              id={`${leg.key}-fill-date`}
+                              label="Fill date"
+                              value="2026-09-14"
+                            />
+                          </div>
+                        </SectionCard>
+                      ))}
                       <div className="rounded-lg border border-wb-border p-4 text-xs">
-                        <div className="mb-3 font-semibold uppercase tracking-widest text-wb-text-secondary">Opening cash flows</div>
-                        <div className="flex flex-col gap-2">{[['LEAPS purchase cost', blank ? '—' : '$2,500.00'], ['Short-call credit', blank ? '—' : '$200.00'], ['Fees', fees ? '$2.00' : '$0.00']].map(([label, value]) => <div key={label} className="flex justify-between"><span className="text-wb-text-secondary">{label}</span><span>{value}</span></div>)}</div>
-                        <p className="mt-3 text-wb-text-secondary">Strike width / share: $30.00<br />Debit / width before fees: {blank ? '—' : '76.67%'}</p>
-                        <p className="mt-2 text-wb-text-muted">Opening credit is not yet realized profit.</p>
+                        <div className="mb-3 font-semibold uppercase tracking-widest text-wb-text-secondary">
+                          Opening cash flows
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          {[
+                            ['LEAPS purchase cost', blank ? '—' : '$2,500.00'],
+                            ['Short-call credit', blank ? '—' : '$200.00'],
+                            ['Fees', fees ? '$2.00' : '$0.00']
+                          ].map(([label, value]) => (
+                            <div key={label} className="flex justify-between">
+                              <span className="text-wb-text-secondary">{label}</span>
+                              <span>{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="mt-3 text-wb-text-secondary">
+                          Strike width / share: $30.00
+                          <br />
+                          Debit / width before fees: {blank ? '—' : '76.67%'}
+                        </p>
+                        <p className="mt-2 text-wb-text-muted">
+                          Opening credit is not yet realized profit.
+                        </p>
                       </div>
                     </>
                   ) : (
                     <>
-                      <div className="grid grid-cols-2 gap-4"><SampleField id="standard-strike" label="Strike price" value="95.00" /><SampleField id="standard-premium" label="Premium / contract" value="2.50" hint="Quoted per share · $250 total" /></div>
-                      <SampleField id="standard-expiration" label="Expiration" value="2026-10-16" hint="32 DTE" />
-                      <div className="rounded-lg border border-wb-border bg-wb-bg-elevated p-4 text-xs"><div className="flex justify-between"><span className="text-wb-text-secondary">Cash secured</span><span>$9,500.00</span></div><div className="mt-3 flex justify-between"><span className="text-wb-text-secondary">Opening premium</span><span className="text-wb-green">$250.00</span></div></div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <SampleField id="standard-strike" label="Strike price" value="95.00" />
+                        <SampleField
+                          id="standard-premium"
+                          label="Premium / contract"
+                          value="2.50"
+                          hint="Quoted per share · $250 total"
+                        />
+                      </div>
+                      <SampleField
+                        id="standard-expiration"
+                        label="Expiration"
+                        value="2026-10-16"
+                        hint="32 DTE"
+                      />
+                      <div className="rounded-lg border border-wb-border bg-wb-bg-elevated p-4 text-xs">
+                        <div className="flex justify-between">
+                          <span className="text-wb-text-secondary">Cash secured</span>
+                          <span>$9,500.00</span>
+                        </div>
+                        <div className="mt-3 flex justify-between">
+                          <span className="text-wb-text-secondary">Opening premium</span>
+                          <span className="text-wb-green">$250.00</span>
+                        </div>
+                      </div>
                     </>
                   )}
-                  <details className="text-xs text-wb-text-secondary"><summary className="cursor-pointer">Advanced · {pmcc ? 'Thesis and notes' : 'Fill date, thesis and notes'}</summary><div className="mt-3 flex flex-col gap-3">{!pmcc ? <SampleField id="standard-fill-date" label="Fill date" value="2026-09-14" /> : null}<SampleField id={`${mode}-thesis`} label="Thesis" value="" /><SampleField id={`${mode}-notes`} label="Notes" value="" /></div></details>
+                  <details className="text-xs text-wb-text-secondary">
+                    <summary className="cursor-pointer">
+                      Advanced · {pmcc ? 'Thesis and notes' : 'Fill date, thesis and notes'}
+                    </summary>
+                    <div className="mt-3 flex flex-col gap-3">
+                      {!pmcc ? (
+                        <SampleField id="standard-fill-date" label="Fill date" value="2026-09-14" />
+                      ) : null}
+                      <SampleField id={`${mode}-thesis`} label="Thesis" value="" />
+                      <SampleField id={`${mode}-notes`} label="Notes" value="" />
+                    </div>
+                  </details>
                 </SheetBody>
                 <SheetFooter>
                   <div className="flex w-full flex-col gap-3">
-                    {pmcc ? <div className="flex justify-between text-sm"><span className="text-wb-text-secondary">Initial net debit</span><strong className="text-wb-gold">{debit}</strong></div> : null}
-                    <div className="grid grid-cols-2 gap-3"><FormButton label="Cancel" variant="secondary" disabled={pending} onClick={close} /><FormButton label={pmcc ? 'Record PMCC' : 'Open Wheel'} pendingLabel="Recording…" isPending={pending} disabled={invalid || pmcc && blank} onClick={save} /></div>
-                    {pmcc ? <span className="text-[10px] text-wb-text-secondary">Uses your actual fills. No order is placed.</span> : null}
+                    {pmcc ? (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-wb-text-secondary">Initial net debit</span>
+                        <strong className="text-wb-gold">{debit}</strong>
+                      </div>
+                    ) : null}
+                    <div className="grid grid-cols-2 gap-3">
+                      <FormButton
+                        label="Cancel"
+                        variant="secondary"
+                        disabled={pending}
+                        onClick={close}
+                      />
+                      <FormButton
+                        label={pmcc ? 'Record PMCC' : 'Open Wheel'}
+                        pendingLabel="Recording…"
+                        isPending={pending}
+                        disabled={invalid || (pmcc && blank)}
+                        onClick={save}
+                      />
+                    </div>
+                    {pmcc ? (
+                      <span className="text-[10px] text-wb-text-secondary">
+                        Uses your actual fills. No order is placed.
+                      </span>
+                    ) : null}
                   </div>
                 </SheetFooter>
               </div>
@@ -115,8 +426,37 @@ export function Mockup() {
       </div>
       <details className="rounded-lg border border-wb-border p-3 text-xs text-wb-text-secondary">
         <summary className="cursor-pointer">Review PMCC states · prototype controls</summary>
-        <div className="mt-3 flex flex-wrap gap-2">{['ready', 'entry', 'fees', 'invalid', 'loading', 'empty', 'offline', 'stale', 'saving', 'save-error'].map((value) => <FormButton key={value} label={value} variant="secondary" onClick={() => { setMode('PMCC'); setState(value); setOpen(true) }} />)}</div>
-        <p className="mt-3">Ready: $2,300 debit. Fees: $2,302 debit. Invalid: short expiration equals LEAPS expiration. Loading, empty, offline, and stale: retain entered fills. Saving: footer and strategy toggle disabled. Save error: keep the panel open for retry. Cancel, close, Escape, and clicking outside dismiss the panel.</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {[
+            'ready',
+            'entry',
+            'fees',
+            'invalid',
+            'loading',
+            'empty',
+            'offline',
+            'stale',
+            'saving',
+            'save-error'
+          ].map((value) => (
+            <FormButton
+              key={value}
+              label={value}
+              variant="secondary"
+              onClick={() => {
+                setMode('PMCC')
+                setState(value)
+                setOpen(true)
+              }}
+            />
+          ))}
+        </div>
+        <p className="mt-3">
+          Ready: $2,300 debit. Fees: $2,302 debit. Invalid: short expiration equals LEAPS
+          expiration. Loading, empty, offline, and stale: retain entered fills. Saving: footer and
+          strategy toggle disabled. Save error: keep the panel open for retry. Cancel, close,
+          Escape, and clicking outside dismiss the panel.
+        </p>
       </details>
     </div>
   )

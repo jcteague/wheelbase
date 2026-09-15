@@ -1,7 +1,22 @@
 ---
 title: 'US-96 concept B · Focus'
 story: 'Combine watchlist management, entry conditions, and screened contracts in one view, with IV-rank age (US-98) deciding whether an IV condition can be judged.'
-states: ['typical day', 'no matches', 'data unavailable', 'add stock', 'duplicate ticker', 'stock detail', 'trade handoff', 'aging reading', 'stale reading', 'expired reading', 'predates earnings', 'no reading', 'ring tooltip']
+states:
+  [
+    'typical day',
+    'no matches',
+    'data unavailable',
+    'add stock',
+    'duplicate ticker',
+    'stock detail',
+    'trade handoff',
+    'aging reading',
+    'stale reading',
+    'expired reading',
+    'predates earnings',
+    'no reading',
+    'ring tooltip'
+  ]
 ---
 
 import { useRef, useState } from 'react'
@@ -25,17 +40,46 @@ Keep both watchlist sections in a compact left column and review one stock in de
 
 **Implementation note.** The shipped `IvrCell` (US-98) renders `· Nd` text and a "predates earnings" caption and collapses an expired reading to `n/a`; it has no ring, no tooltip, and no `exp`. US-96 must extend that cell (and the IPC reading shape, which currently drops `expired`) so both the screener and this page draw the same ring from the same assessed reading. The ring and tooltip below are the target treatment.
 
-export const SESSION_CLOSE = { sep8: '2026-09-08T20:00:00Z', sep4: '2026-09-04T20:00:00Z', sep3: '2026-09-03T20:00:00Z', aug28: '2026-08-28T20:00:00Z', aug20: '2026-08-20T20:00:00Z' }
+export const SESSION_CLOSE = {
+  sep8: '2026-09-08T20:00:00Z',
+  sep4: '2026-09-04T20:00:00Z',
+  sep3: '2026-09-03T20:00:00Z',
+  aug28: '2026-08-28T20:00:00Z',
+  aug20: '2026-08-20T20:00:00Z'
+}
 
 export const RING_FILL = { fresh: 1, aging: 0.75, stale: 0.5, expired: 0.25, predates_earnings: 0 }
 
-export const RING_COLOR = { fresh: 'var(--wb-green)', aging: 'var(--wb-text-secondary)', stale: 'var(--wb-text-muted)', expired: 'var(--wb-text-muted)', predates_earnings: 'var(--wb-gold)' }
+export const RING_COLOR = {
+  fresh: 'var(--wb-green)',
+  aging: 'var(--wb-text-secondary)',
+  stale: 'var(--wb-text-muted)',
+  expired: 'var(--wb-text-muted)',
+  predates_earnings: 'var(--wb-gold)'
+}
 
-export const TIER_TEXT = { fresh: 'text-wb-green', aging: 'text-wb-text-secondary', stale: 'text-wb-text-muted', expired: 'text-wb-text-muted', predates_earnings: 'text-wb-gold' }
+export const TIER_TEXT = {
+  fresh: 'text-wb-green',
+  aging: 'text-wb-text-secondary',
+  stale: 'text-wb-text-muted',
+  expired: 'text-wb-text-muted',
+  predates_earnings: 'text-wb-gold'
+}
 
-export const TIER_TITLE = { fresh: 'Fresh', aging: 'Aging', stale: 'Stale', expired: 'Expired', predates_earnings: 'Predates earnings' }
+export const TIER_TITLE = {
+  fresh: 'Fresh',
+  aging: 'Aging',
+  stale: 'Stale',
+  expired: 'Expired',
+  predates_earnings: 'Predates earnings'
+}
 
-export const easternSession = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', month: 'short', day: 'numeric' })
+export const easternSession = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  weekday: 'short',
+  month: 'short',
+  day: 'numeric'
+})
 
 export function isUsable(state) {
   return state === 'fresh' || state === 'aging'
@@ -50,9 +94,34 @@ export function FreshnessRing({ state, size }) {
   const frac = RING_FILL[state]
   const earnings = state === 'predates_earnings'
   return (
-    <svg width={px} height={px} viewBox={`0 0 ${px} ${px}`} className="block shrink-0" aria-hidden="true">
-      <circle cx={px / 2} cy={px / 2} r={r} fill="none" stroke={earnings ? 'var(--wb-gold)' : 'var(--wb-border)'} strokeWidth={stroke} strokeOpacity={earnings ? 0.45 : 1} />
-      {frac > 0 && <circle cx={px / 2} cy={px / 2} r={r} fill="none" stroke={RING_COLOR[state]} strokeWidth={stroke} strokeDasharray={`${frac * c} ${c}`} transform={`rotate(-90 ${px / 2} ${px / 2})`} />}
+    <svg
+      width={px}
+      height={px}
+      viewBox={`0 0 ${px} ${px}`}
+      className="block shrink-0"
+      aria-hidden="true"
+    >
+      <circle
+        cx={px / 2}
+        cy={px / 2}
+        r={r}
+        fill="none"
+        stroke={earnings ? 'var(--wb-gold)' : 'var(--wb-border)'}
+        strokeWidth={stroke}
+        strokeOpacity={earnings ? 0.45 : 1}
+      />
+      {frac > 0 && (
+        <circle
+          cx={px / 2}
+          cy={px / 2}
+          r={r}
+          fill="none"
+          stroke={RING_COLOR[state]}
+          strokeWidth={stroke}
+          strokeDasharray={`${frac * c} ${c}`}
+          transform={`rotate(-90 ${px / 2} ${px / 2})`}
+        />
+      )}
       {earnings && <circle cx={px / 2} cy={px / 2} r={1.6} fill="var(--wb-gold)" />}
     </svg>
   )
@@ -61,11 +130,16 @@ export function FreshnessRing({ state, size }) {
 export function tooltipCopy(ticker, reading) {
   const value = Number(reading.value)
   const observed = easternSession.format(new Date(reading.observedAt))
-  const days = reading.ageTradingDays === 1 ? '1 trading day' : reading.ageTradingDays + ' trading days'
-  if (reading.state === 'predates_earnings') return `Observed ${observed} at the close. ${ticker} reported earnings after that reading. IV re-prices through a print, so this reading is unusable regardless of age — it cannot satisfy an IV condition or the IV-rank floor.`
-  if (reading.state === 'expired') return `Last reading ${days} ago (${observed}). Treated as no reading: shows exp, never decides a condition, never applies the IV-rank floor. Age this old means collection has been failing for ${ticker}.`
-  if (reading.state === 'stale') return `IV rank ${value}, observed ${observed} — ${days} old. Too old to trust: shown for context but cannot satisfy an IV condition or the IV-rank floor. ${ticker} still ranks on yield-per-delta.`
-  if (reading.state === 'aging') return `IV rank ${value}, observed ${observed} — ${days} old. Still decision-usable and still counts toward conditions and the floor; expect it to have drifted a few points.`
+  const days =
+    reading.ageTradingDays === 1 ? '1 trading day' : reading.ageTradingDays + ' trading days'
+  if (reading.state === 'predates_earnings')
+    return `Observed ${observed} at the close. ${ticker} reported earnings after that reading. IV re-prices through a print, so this reading is unusable regardless of age — it cannot satisfy an IV condition or the IV-rank floor.`
+  if (reading.state === 'expired')
+    return `Last reading ${days} ago (${observed}). Treated as no reading: shows exp, never decides a condition, never applies the IV-rank floor. Age this old means collection has been failing for ${ticker}.`
+  if (reading.state === 'stale')
+    return `IV rank ${value}, observed ${observed} — ${days} old. Too old to trust: shown for context but cannot satisfy an IV condition or the IV-rank floor. ${ticker} still ranks on yield-per-delta.`
+  if (reading.state === 'aging')
+    return `IV rank ${value}, observed ${observed} — ${days} old. Still decision-usable and still counts toward conditions and the floor; expect it to have drifted a few points.`
   return `IV rank ${value}, observed ${observed} at the close — ${days} old. Current as of the last session close.`
 }
 
@@ -75,7 +149,12 @@ export function IvrReading({ ticker, reading, large }) {
   const anchor = useRef(null)
   const [pos, setPos] = useState(null)
   const numeral = large ? 'font-wb-mono text-lg' : 'font-wb-mono text-[11px] font-semibold'
-  if (reading === null) return <span className={numeral + ' font-normal text-wb-text-muted'} title="No IV rank collected">n/a</span>
+  if (reading === null)
+    return (
+      <span className={numeral + ' font-normal text-wb-text-muted'} title="No IV rank collected">
+        n/a
+      </span>
+    )
   const expired = reading.state === 'expired'
   const tone = isUsable(reading.state) ? 'text-wb-text-primary' : 'text-wb-text-muted'
   const body = tooltipCopy(ticker, reading)
@@ -83,15 +162,44 @@ export function IvrReading({ ticker, reading, large }) {
     const box = anchor.current.getBoundingClientRect()
     setPos({ top: box.top - 8, right: window.innerWidth - box.right })
   }
-  function hide() { setPos(null) }
+  function hide() {
+    setPos(null)
+  }
   return (
-    <span ref={anchor} className="relative inline-flex cursor-default items-center gap-1.5" tabIndex={0} aria-label={TIER_TITLE[reading.state] + '. ' + body} onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}>
-      <span className={numeral + ' ' + tone + (expired ? ' font-normal' : '')}>{expired ? 'exp' : Number(reading.value)}</span>
+    <span
+      ref={anchor}
+      className="relative inline-flex cursor-default items-center gap-1.5"
+      tabIndex={0}
+      aria-label={TIER_TITLE[reading.state] + '. ' + body}
+      onMouseEnter={show}
+      onMouseLeave={hide}
+      onFocus={show}
+      onBlur={hide}
+    >
+      <span className={numeral + ' ' + tone + (expired ? ' font-normal' : '')}>
+        {expired ? 'exp' : Number(reading.value)}
+      </span>
       <FreshnessRing state={reading.state} size={large ? 18 : 14} />
       {pos && (
-        <span role="tooltip" className="fixed z-50 w-64 -translate-y-full rounded-md border border-wb-border bg-wb-bg-elevated p-2.5 text-left shadow-lg" style={{ top: pos.top, right: pos.right }}>
-          <span className="mb-1 flex items-center gap-2"><FreshnessRing state={reading.state} size={12} /><span className={'font-wb-mono text-[0.62rem] font-bold uppercase tracking-widest ' + TIER_TEXT[reading.state]}>{TIER_TITLE[reading.state]}</span></span>
-          <span className="block text-xs font-normal normal-case leading-relaxed tracking-normal text-wb-text-secondary">{body}</span>
+        <span
+          role="tooltip"
+          className="fixed z-50 w-64 -translate-y-full rounded-md border border-wb-border bg-wb-bg-elevated p-2.5 text-left shadow-lg"
+          style={{ top: pos.top, right: pos.right }}
+        >
+          <span className="mb-1 flex items-center gap-2">
+            <FreshnessRing state={reading.state} size={12} />
+            <span
+              className={
+                'font-wb-mono text-[0.62rem] font-bold uppercase tracking-widest ' +
+                TIER_TEXT[reading.state]
+              }
+            >
+              {TIER_TITLE[reading.state]}
+            </span>
+          </span>
+          <span className="block text-xs font-normal normal-case leading-relaxed tracking-normal text-wb-text-secondary">
+            {body}
+          </span>
         </span>
       )}
     </span>
@@ -101,23 +209,213 @@ export function IvrReading({ ticker, reading, large }) {
 export function RingLegend() {
   return (
     <div className="flex flex-wrap items-center gap-4 text-[11px] text-wb-text-muted">
-      <span className="font-wb-mono uppercase tracking-widest">Ring legend · annotation, does not ship</span>
-      {[['fresh', '0–1 sessions'], ['aging', '2–3'], ['stale', '4–10 · muted'], ['expired', 'over 10 · exp'], ['predates_earnings', 'any age']].map(([state, range]) => <span key={state} className="inline-flex items-center gap-1.5"><FreshnessRing state={state} size={12} /><span className="text-wb-text-secondary">{TIER_TITLE[state]}</span><span>{range}</span></span>)}
-      <span className="inline-flex items-center gap-1.5"><span className="font-wb-mono">n/a</span><span>never collected · no ring</span></span>
+      <span className="font-wb-mono uppercase tracking-widest">
+        Ring legend · annotation, does not ship
+      </span>
+      {[
+        ['fresh', '0–1 sessions'],
+        ['aging', '2–3'],
+        ['stale', '4–10 · muted'],
+        ['expired', 'over 10 · exp'],
+        ['predates_earnings', 'any age']
+      ].map(([state, range]) => (
+        <span key={state} className="inline-flex items-center gap-1.5">
+          <FreshnessRing state={state} size={12} />
+          <span className="text-wb-text-secondary">{TIER_TITLE[state]}</span>
+          <span>{range}</span>
+        </span>
+      ))}
+      <span className="inline-flex items-center gap-1.5">
+        <span className="font-wb-mono">n/a</span>
+        <span>never collected · no ring</span>
+      </span>
     </div>
   )
 }
 
 export const STOCKS = [
-  { ticker: 'KO', name: 'Coca-Cola', price: '$68.90', change: '+0.3%', ivRank: { value: '58.0', observedAt: SESSION_CLOSE.sep8, ageTradingDays: 0, state: 'fresh' }, ivrMin: 40, blocker: null, note: 'Core wheel. Comfortable owning through a full cycle.', conditions: ['Core holding'], earnings: 'Nov 3 · after expiration', contract: { strike: '$67.50', expiry: 'Oct 16', dte: '37', mark: '$1.05', period: '1.56%', annual: '15.35%', delta: '0.25', oi: '4,820', spread: '$0.06 · 5.7%', cash: '$6,750' } },
-  { ticker: 'XLF', name: 'Financial Select Sector ETF', price: '$51.20', change: '+0.6%', ivRank: { value: '46.0', observedAt: SESSION_CLOSE.sep8, ageTradingDays: 0, state: 'fresh' }, ivrMin: null, blocker: null, note: 'Broad financial exposure. No personal entry conditions.', conditions: [], earnings: 'Not applicable · ETF', contract: { strike: '$50.00', expiry: 'Oct 16', dte: '37', mark: '$0.65', period: '1.30%', annual: '12.82%', delta: '0.24', oi: '8,610', spread: '$0.04 · 6.2%', cash: '$5,000' } },
-  { ticker: 'PEP', name: 'PepsiCo', price: '$171.30', change: '+0.2%', ivRank: { value: '58.0', observedAt: SESSION_CLOSE.aug28, ageTradingDays: 6, state: 'stale' }, ivrMin: 45, blocker: null, note: 'Second staple. Only when premium is rich; the collector has not refreshed this name since Aug 28.', conditions: [], earnings: 'Oct 6 · after expiration', contract: { strike: '$165.00', expiry: 'Oct 16', dte: '37', mark: '$2.10', period: '1.27%', annual: '12.55%', delta: '0.23', oi: '2,140', spread: '$0.08 · 3.8%', cash: '$16,500' } },
-  { ticker: 'DIS', name: 'Walt Disney', price: '$112.40', change: '+0.5%', ivRank: { value: '47.0', observedAt: SESSION_CLOSE.aug20, ageTradingDays: 12, state: 'expired' }, ivrMin: 40, blocker: null, note: 'Media exposure at a discount. Collector has not produced a reading for this name in nearly three weeks.', conditions: [], earnings: 'Nov 12 · after expiration', contract: { strike: '$105.00', expiry: 'Oct 16', dte: '37', mark: '$1.40', period: '1.33%', annual: '13.15%', delta: '0.22', oi: '3,260', spread: '$0.05 · 3.6%', cash: '$10,500' } },
-  { ticker: 'ORCL', name: 'Oracle', price: '$243.60', change: '−4.1%', ivRank: { value: '62.0', observedAt: SESSION_CLOSE.sep4, ageTradingDays: 1, state: 'predates_earnings' }, ivrMin: 50, blocker: null, note: 'Sell the post-earnings vol crush, not the run-up. Reported Sep 8 after the close.', conditions: [], earnings: 'Sep 8 · reported', contract: { strike: '$230.00', expiry: 'Oct 16', dte: '37', mark: '$4.35', period: '1.89%', annual: '18.66%', delta: '0.26', oi: '1,910', spread: '$0.15 · 3.4%', cash: '$23,000' } },
-  { ticker: 'AAPL', name: 'Apple', price: '$178.40', change: '+0.8%', ivRank: { value: '34.0', observedAt: SESSION_CLOSE.sep8, ageTradingDays: 0, state: 'fresh' }, ivrMin: 50, blocker: 'Price $178.40 above $170 target', note: 'Would own below $170. Waiting for a better entry.', conditions: ['Would own ≤ $170'], earnings: 'Oct 29 · after screen window', contract: null },
-  { ticker: 'MSFT', name: 'Microsoft', price: '$505.10', change: '−1.2%', ivRank: { value: '41.0', observedAt: SESSION_CLOSE.sep3, ageTradingDays: 2, state: 'aging' }, ivrMin: null, blocker: 'Earnings in 3 days', note: 'Wait until after the earnings report.', conditions: ['Post-earnings only'], earnings: 'Sep 12 · inside screen window', contract: null },
-  { ticker: 'AMD', name: 'AMD', price: '$156.20', change: '+1.1%', ivRank: { value: '52.0', observedAt: SESSION_CLOSE.sep8, ageTradingDays: 0, state: 'fresh' }, ivrMin: 50, blocker: null, note: 'Stock conditions pass. Waiting for a more liquid put.', conditions: ['Best spread 14% > 10% limit'], earnings: 'Nov 3 · after screen window', contract: null },
-  { ticker: 'XYZ', name: 'Example thin-history stock', price: '$24.10', change: '—', ivRank: null, ivrMin: 40, blocker: null, note: 'Research name. Needs sufficient IV history before the collector can produce a rank.', conditions: [], earnings: 'Unknown · needs verification', contract: null }
+  {
+    ticker: 'KO',
+    name: 'Coca-Cola',
+    price: '$68.90',
+    change: '+0.3%',
+    ivRank: { value: '58.0', observedAt: SESSION_CLOSE.sep8, ageTradingDays: 0, state: 'fresh' },
+    ivrMin: 40,
+    blocker: null,
+    note: 'Core wheel. Comfortable owning through a full cycle.',
+    conditions: ['Core holding'],
+    earnings: 'Nov 3 · after expiration',
+    contract: {
+      strike: '$67.50',
+      expiry: 'Oct 16',
+      dte: '37',
+      mark: '$1.05',
+      period: '1.56%',
+      annual: '15.35%',
+      delta: '0.25',
+      oi: '4,820',
+      spread: '$0.06 · 5.7%',
+      cash: '$6,750'
+    }
+  },
+  {
+    ticker: 'XLF',
+    name: 'Financial Select Sector ETF',
+    price: '$51.20',
+    change: '+0.6%',
+    ivRank: { value: '46.0', observedAt: SESSION_CLOSE.sep8, ageTradingDays: 0, state: 'fresh' },
+    ivrMin: null,
+    blocker: null,
+    note: 'Broad financial exposure. No personal entry conditions.',
+    conditions: [],
+    earnings: 'Not applicable · ETF',
+    contract: {
+      strike: '$50.00',
+      expiry: 'Oct 16',
+      dte: '37',
+      mark: '$0.65',
+      period: '1.30%',
+      annual: '12.82%',
+      delta: '0.24',
+      oi: '8,610',
+      spread: '$0.04 · 6.2%',
+      cash: '$5,000'
+    }
+  },
+  {
+    ticker: 'PEP',
+    name: 'PepsiCo',
+    price: '$171.30',
+    change: '+0.2%',
+    ivRank: { value: '58.0', observedAt: SESSION_CLOSE.aug28, ageTradingDays: 6, state: 'stale' },
+    ivrMin: 45,
+    blocker: null,
+    note: 'Second staple. Only when premium is rich; the collector has not refreshed this name since Aug 28.',
+    conditions: [],
+    earnings: 'Oct 6 · after expiration',
+    contract: {
+      strike: '$165.00',
+      expiry: 'Oct 16',
+      dte: '37',
+      mark: '$2.10',
+      period: '1.27%',
+      annual: '12.55%',
+      delta: '0.23',
+      oi: '2,140',
+      spread: '$0.08 · 3.8%',
+      cash: '$16,500'
+    }
+  },
+  {
+    ticker: 'DIS',
+    name: 'Walt Disney',
+    price: '$112.40',
+    change: '+0.5%',
+    ivRank: {
+      value: '47.0',
+      observedAt: SESSION_CLOSE.aug20,
+      ageTradingDays: 12,
+      state: 'expired'
+    },
+    ivrMin: 40,
+    blocker: null,
+    note: 'Media exposure at a discount. Collector has not produced a reading for this name in nearly three weeks.',
+    conditions: [],
+    earnings: 'Nov 12 · after expiration',
+    contract: {
+      strike: '$105.00',
+      expiry: 'Oct 16',
+      dte: '37',
+      mark: '$1.40',
+      period: '1.33%',
+      annual: '13.15%',
+      delta: '0.22',
+      oi: '3,260',
+      spread: '$0.05 · 3.6%',
+      cash: '$10,500'
+    }
+  },
+  {
+    ticker: 'ORCL',
+    name: 'Oracle',
+    price: '$243.60',
+    change: '−4.1%',
+    ivRank: {
+      value: '62.0',
+      observedAt: SESSION_CLOSE.sep4,
+      ageTradingDays: 1,
+      state: 'predates_earnings'
+    },
+    ivrMin: 50,
+    blocker: null,
+    note: 'Sell the post-earnings vol crush, not the run-up. Reported Sep 8 after the close.',
+    conditions: [],
+    earnings: 'Sep 8 · reported',
+    contract: {
+      strike: '$230.00',
+      expiry: 'Oct 16',
+      dte: '37',
+      mark: '$4.35',
+      period: '1.89%',
+      annual: '18.66%',
+      delta: '0.26',
+      oi: '1,910',
+      spread: '$0.15 · 3.4%',
+      cash: '$23,000'
+    }
+  },
+  {
+    ticker: 'AAPL',
+    name: 'Apple',
+    price: '$178.40',
+    change: '+0.8%',
+    ivRank: { value: '34.0', observedAt: SESSION_CLOSE.sep8, ageTradingDays: 0, state: 'fresh' },
+    ivrMin: 50,
+    blocker: 'Price $178.40 above $170 target',
+    note: 'Would own below $170. Waiting for a better entry.',
+    conditions: ['Would own ≤ $170'],
+    earnings: 'Oct 29 · after screen window',
+    contract: null
+  },
+  {
+    ticker: 'MSFT',
+    name: 'Microsoft',
+    price: '$505.10',
+    change: '−1.2%',
+    ivRank: { value: '41.0', observedAt: SESSION_CLOSE.sep3, ageTradingDays: 2, state: 'aging' },
+    ivrMin: null,
+    blocker: 'Earnings in 3 days',
+    note: 'Wait until after the earnings report.',
+    conditions: ['Post-earnings only'],
+    earnings: 'Sep 12 · inside screen window',
+    contract: null
+  },
+  {
+    ticker: 'AMD',
+    name: 'AMD',
+    price: '$156.20',
+    change: '+1.1%',
+    ivRank: { value: '52.0', observedAt: SESSION_CLOSE.sep8, ageTradingDays: 0, state: 'fresh' },
+    ivrMin: 50,
+    blocker: null,
+    note: 'Stock conditions pass. Waiting for a more liquid put.',
+    conditions: ['Best spread 14% > 10% limit'],
+    earnings: 'Nov 3 · after screen window',
+    contract: null
+  },
+  {
+    ticker: 'XYZ',
+    name: 'Example thin-history stock',
+    price: '$24.10',
+    change: '—',
+    ivRank: null,
+    ivrMin: 40,
+    blocker: null,
+    note: 'Research name. Needs sufficient IV history before the collector can produce a rank.',
+    conditions: [],
+    earnings: 'Unknown · needs verification',
+    contract: null
+  }
 ]
 
 export function ivGate(stock) {
@@ -126,18 +424,29 @@ export function ivGate(stock) {
   if (stock.ivrMin === null) return { verdict: 'none', label: null }
   const reading = stock.ivRank
   const condition = 'IVR ≥ ' + stock.ivrMin
-  if (reading === null || reading.state === 'expired') return { verdict: 'unknown', label: 'IV unavailable', condition }
-  if (reading.state === 'stale') return { verdict: 'unknown', label: 'IV too old to judge', condition }
-  if (reading.state === 'predates_earnings') return { verdict: 'unknown', label: 'IV predates earnings', condition }
+  if (reading === null || reading.state === 'expired')
+    return { verdict: 'unknown', label: 'IV unavailable', condition }
+  if (reading.state === 'stale')
+    return { verdict: 'unknown', label: 'IV too old to judge', condition }
+  if (reading.state === 'predates_earnings')
+    return { verdict: 'unknown', label: 'IV predates earnings', condition }
   if (Number(reading.value) >= stock.ivrMin) return { verdict: 'met', label: null, condition }
   return { verdict: 'unmet', label: 'IV low', condition }
 }
 
 export function evaluate(stock) {
   const gate = ivGate(stock)
-  const reasons = [stock.blocker, gate.label, stock.contract === null && stock.blocker === null ? 'No qualifying contract' : null].filter(Boolean)
+  const reasons = [
+    stock.blocker,
+    gate.label,
+    stock.contract === null && stock.blocker === null ? 'No qualifying contract' : null
+  ].filter(Boolean)
   const ready = stock.contract !== null && reasons.length === 0
-  const reason = ready ? (gate.verdict === 'met' ? 'All conditions met' : 'Screening criteria met') : reasons.join(' · ')
+  const reason = ready
+    ? gate.verdict === 'met'
+      ? 'All conditions met'
+      : 'Screening criteria met'
+    : reasons.join(' · ')
   return { ...stock, gate, ready, reason }
 }
 
@@ -151,29 +460,106 @@ export function GateBadge({ gate }) {
 export function ReadingNote({ stock }) {
   // What the current reading can and cannot decide; only the unusable states earn a note.
   const reading = stock.ivRank
-  if (reading === null) return <AlertBox variant="info">No IV rank has been collected for {stock.ticker}. Until one exists, an IV condition cannot be judged and this stock cannot reach Meets criteria on it.</AlertBox>
-  if (reading.state === 'expired') return <AlertBox variant="warning">The last IV rank for {stock.ticker} is {reading.ageTradingDays} trading days old and has expired. It is treated as no reading: it cannot satisfy “IVR ≥ {stock.ivrMin}” and the IV-rank floor does not apply. Age this old means the collector has been failing for this name — check the snapshot diagnostics.</AlertBox>
-  if (reading.state === 'stale') return <AlertBox variant="warning">IV rank {Number(reading.value)} is {reading.ageTradingDays} trading days old. It is shown for context but is treated as unknown: it cannot satisfy “IVR ≥ {stock.ivrMin}” even though the value is above the threshold. A reading older than one session in steady state means collection has been failing for {stock.ticker}.</AlertBox>
-  if (reading.state === 'predates_earnings') return <AlertBox variant="warning">IV rank {Number(reading.value)} was observed before {stock.ticker} reported earnings. IV re-prices through a print, so this reading is unusable regardless of age and cannot satisfy an IV condition. It will clear after the next collection.</AlertBox>
+  if (reading === null)
+    return (
+      <AlertBox variant="info">
+        No IV rank has been collected for {stock.ticker}. Until one exists, an IV condition cannot
+        be judged and this stock cannot reach Meets criteria on it.
+      </AlertBox>
+    )
+  if (reading.state === 'expired')
+    return (
+      <AlertBox variant="warning">
+        The last IV rank for {stock.ticker} is {reading.ageTradingDays} trading days old and has
+        expired. It is treated as no reading: it cannot satisfy “IVR ≥ {stock.ivrMin}” and the
+        IV-rank floor does not apply. Age this old means the collector has been failing for this
+        name — check the snapshot diagnostics.
+      </AlertBox>
+    )
+  if (reading.state === 'stale')
+    return (
+      <AlertBox variant="warning">
+        IV rank {Number(reading.value)} is {reading.ageTradingDays} trading days old. It is shown
+        for context but is treated as unknown: it cannot satisfy “IVR ≥ {stock.ivrMin}” even though
+        the value is above the threshold. A reading older than one session in steady state means
+        collection has been failing for {stock.ticker}.
+      </AlertBox>
+    )
+  if (reading.state === 'predates_earnings')
+    return (
+      <AlertBox variant="warning">
+        IV rank {Number(reading.value)} was observed before {stock.ticker} reported earnings. IV
+        re-prices through a print, so this reading is unusable regardless of age and cannot satisfy
+        an IV condition. It will clear after the next collection.
+      </AlertBox>
+    )
   return null
 }
 
-export const addSchema = z.object({ ticker: z.string().trim().toUpperCase().regex(/^[A-Z]{1,5}$/, 'Enter a ticker of 1–5 letters'), note: z.string().trim().max(500) })
+export const addSchema = z.object({
+  ticker: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{1,5}$/, 'Enter a ticker of 1–5 letters'),
+  note: z.string().trim().max(500)
+})
 
 export function AddStock({ entries, onAdd, onCancel }) {
-  const { register, handleSubmit, setError, formState: { errors } } = useForm({ resolver: zodResolver(addSchema), defaultValues: { ticker: '', note: '' } })
+  const {
+    register,
+    handleSubmit,
+    setError,
+    formState: { errors }
+  } = useForm({ resolver: zodResolver(addSchema), defaultValues: { ticker: '', note: '' } })
   return (
     <SectionCard header="Add a stock to watch">
-      <form className="flex flex-col gap-4 p-5" onSubmit={handleSubmit(values => {
-        if (entries.some(s => s.ticker === values.ticker)) { setError('ticker', { message: values.ticker + ' is already on your watchlist' }); return }
-        onAdd({ ticker: values.ticker, name: 'New stock', price: '—', change: '—', ivRank: null, ivrMin: null, blocker: 'Not screened yet', note: values.note || 'No thesis yet.', conditions: [], earnings: 'Not checked', contract: null })
-      })}>
+      <form
+        className="flex flex-col gap-4 p-5"
+        onSubmit={handleSubmit((values) => {
+          if (entries.some((s) => s.ticker === values.ticker)) {
+            setError('ticker', { message: values.ticker + ' is already on your watchlist' })
+            return
+          }
+          onAdd({
+            ticker: values.ticker,
+            name: 'New stock',
+            price: '—',
+            change: '—',
+            ivRank: null,
+            ivrMin: null,
+            blocker: 'Not screened yet',
+            note: values.note || 'No thesis yet.',
+            conditions: [],
+            earnings: 'Not checked',
+            contract: null
+          })
+        })}
+      >
         <div className="grid gap-4 md:grid-cols-[160px_1fr]">
-          <Field label="Ticker" htmlFor="add-ticker" error={errors.ticker?.message}><Input id="add-ticker" placeholder="e.g. AMZN" {...register('ticker')} /></Field>
-          <Field label="Why are you interested?" htmlFor="add-note" error={errors.note?.message}><Input id="add-note" placeholder="Optional thesis or research note" {...register('note')} /></Field>
+          <Field label="Ticker" htmlFor="add-ticker" error={errors.ticker?.message}>
+            <Input id="add-ticker" placeholder="e.g. AMZN" {...register('ticker')} />
+          </Field>
+          <Field label="Why are you interested?" htmlFor="add-note" error={errors.note?.message}>
+            <Input
+              id="add-note"
+              placeholder="Optional thesis or research note"
+              {...register('note')}
+            />
+          </Field>
         </div>
-        <p className="text-xs text-wb-text-muted">New stocks start in Stocks of interest until screened. Their IV rank reads n/a until the next collection runs. Entry-condition editing is a separate interaction in this concept.</p>
-        <div className="flex gap-2"><Button type="submit" size="sm">Add to watchlist</Button><Button type="button" variant="ghost" size="sm" onClick={onCancel}>Cancel</Button></div>
+        <p className="text-xs text-wb-text-muted">
+          New stocks start in Stocks of interest until screened. Their IV rank reads n/a until the
+          next collection runs. Entry-condition editing is a separate interaction in this concept.
+        </p>
+        <div className="flex gap-2">
+          <Button type="submit" size="sm">
+            Add to watchlist
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
       </form>
     </SectionCard>
   )
@@ -183,31 +569,98 @@ export function StockDetail({ stock, onReview }) {
   return (
     <div className="flex flex-col gap-5 p-5">
       <div className="flex items-start justify-between gap-3">
-        <div><p className="font-wb-mono text-xs tracking-widest text-wb-text-muted">STOCK DETAIL</p><h3 className="mt-2 font-wb-mono text-3xl font-semibold text-wb-gold">{stock.ticker}</h3><p className="mt-1 text-sm text-wb-text-secondary">{stock.name}</p></div>
-        <Badge color={stock.ready ? 'var(--wb-green)' : undefined}>{stock.ready ? 'Meets criteria' : 'Watching'}</Badge>
+        <div>
+          <p className="font-wb-mono text-xs tracking-widest text-wb-text-muted">STOCK DETAIL</p>
+          <h3 className="mt-2 font-wb-mono text-3xl font-semibold text-wb-gold">{stock.ticker}</h3>
+          <p className="mt-1 text-sm text-wb-text-secondary">{stock.name}</p>
+        </div>
+        <Badge color={stock.ready ? 'var(--wb-green)' : undefined}>
+          {stock.ready ? 'Meets criteria' : 'Watching'}
+        </Badge>
       </div>
       <div className="grid grid-cols-3 gap-3 rounded-md bg-wb-bg-elevated p-4">
-        <div><p className="text-xs text-wb-text-muted">Last price</p><p className="mt-1 font-wb-mono text-lg">{stock.price}</p></div>
-        <div><p className="text-xs text-wb-text-muted">Day change</p><p className="mt-1 font-wb-mono text-lg">{stock.change}</p></div>
-        <div><p className="text-xs text-wb-text-muted">IV rank</p><p className="mt-1"><IvrReading ticker={stock.ticker} reading={stock.ivRank} large /></p></div>
+        <div>
+          <p className="text-xs text-wb-text-muted">Last price</p>
+          <p className="mt-1 font-wb-mono text-lg">{stock.price}</p>
+        </div>
+        <div>
+          <p className="text-xs text-wb-text-muted">Day change</p>
+          <p className="mt-1 font-wb-mono text-lg">{stock.change}</p>
+        </div>
+        <div>
+          <p className="text-xs text-wb-text-muted">IV rank</p>
+          <p className="mt-1">
+            <IvrReading ticker={stock.ticker} reading={stock.ivRank} large />
+          </p>
+        </div>
       </div>
       <ReadingNote stock={stock} />
-      <div><h4 className="mb-2 text-xs font-semibold uppercase tracking-widest text-wb-text-muted">Your thesis</h4><p className="text-sm leading-relaxed text-wb-text-secondary">{stock.note}</p></div>
-      <div><h4 className="mb-2 text-xs font-semibold uppercase tracking-widest text-wb-text-muted">Entry conditions</h4><div className="flex flex-wrap gap-2"><GateBadge gate={stock.gate} />{stock.conditions.map(c => <Badge key={c}>{c}</Badge>)}</div></div>
-      <div className="flex justify-between gap-3 text-xs"><span className="text-wb-text-muted">Earnings</span><span>{stock.earnings}</span></div>
+      <div>
+        <h4 className="mb-2 text-xs font-semibold uppercase tracking-widest text-wb-text-muted">
+          Your thesis
+        </h4>
+        <p className="text-sm leading-relaxed text-wb-text-secondary">{stock.note}</p>
+      </div>
+      <div>
+        <h4 className="mb-2 text-xs font-semibold uppercase tracking-widest text-wb-text-muted">
+          Entry conditions
+        </h4>
+        <div className="flex flex-wrap gap-2">
+          <GateBadge gate={stock.gate} />
+          {stock.conditions.map((c) => (
+            <Badge key={c}>{c}</Badge>
+          ))}
+        </div>
+      </div>
+      <div className="flex justify-between gap-3 text-xs">
+        <span className="text-wb-text-muted">Earnings</span>
+        <span>{stock.earnings}</span>
+      </div>
       {stock.ready ? (
         <SectionCard header="Matching put · best score for this stock">
           <div className="flex flex-col gap-4 p-4">
-            <div className="flex items-center justify-between"><span className="font-wb-mono text-xl">{stock.contract.strike} PUT</span><span className="text-sm text-wb-text-secondary">{stock.contract.expiry} · {stock.contract.dte} DTE</span></div>
-            <dl className="grid grid-cols-3 gap-4">{[['Mark / share', stock.contract.mark], ['Period yield', stock.contract.period], ['Annualized', stock.contract.annual], ['Delta', stock.contract.delta], ['Open interest', stock.contract.oi], ['Spread', stock.contract.spread]].map(([label, value]) => <div key={label}><dt className="text-xs text-wb-text-muted">{label}</dt><dd className="mt-1 font-wb-mono text-sm">{value}</dd></div>)}</dl>
-            <p className="text-xs text-wb-text-muted">Cash to secure 1 contract: {stock.contract.cash}. Yield uses mark ÷ strike, before fees.</p>
-            <Button size="sm" onClick={() => onReview(stock)}>Review trade →</Button>
+            <div className="flex items-center justify-between">
+              <span className="font-wb-mono text-xl">{stock.contract.strike} PUT</span>
+              <span className="text-sm text-wb-text-secondary">
+                {stock.contract.expiry} · {stock.contract.dte} DTE
+              </span>
+            </div>
+            <dl className="grid grid-cols-3 gap-4">
+              {[
+                ['Mark / share', stock.contract.mark],
+                ['Period yield', stock.contract.period],
+                ['Annualized', stock.contract.annual],
+                ['Delta', stock.contract.delta],
+                ['Open interest', stock.contract.oi],
+                ['Spread', stock.contract.spread]
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <dt className="text-xs text-wb-text-muted">{label}</dt>
+                  <dd className="mt-1 font-wb-mono text-sm">{value}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="text-xs text-wb-text-muted">
+              Cash to secure 1 contract: {stock.contract.cash}. Yield uses mark ÷ strike, before
+              fees.
+            </p>
+            <Button size="sm" onClick={() => onReview(stock)}>
+              Review trade →
+            </Button>
           </div>
         </SectionCard>
       ) : (
         <div className="flex flex-col gap-3">
-          <AlertBox variant="warning">{stock.reason}. This stock stays on your watchlist while you wait.</AlertBox>
-          {stock.contract !== null && <p className="text-xs leading-relaxed text-wb-text-muted">A qualifying put exists ({stock.contract.strike} · {stock.contract.expiry} · {stock.contract.period} yield) but is held back until the IV condition can be judged on a usable reading.</p>}
+          <AlertBox variant="warning">
+            {stock.reason}. This stock stays on your watchlist while you wait.
+          </AlertBox>
+          {stock.contract !== null && (
+            <p className="text-xs leading-relaxed text-wb-text-muted">
+              A qualifying put exists ({stock.contract.strike} · {stock.contract.expiry} ·{' '}
+              {stock.contract.period} yield) but is held back until the IV condition can be judged
+              on a usable reading.
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -222,43 +675,225 @@ export function Mockup() {
   const [selected, setSelected] = useState('KO')
   const [notice, setNotice] = useState('')
   const evaluated = entries.map(evaluate)
-  const ready = mode === 'normal' ? evaluated.filter(s => s.ready) : []
-  const watching = mode === 'normal' ? evaluated.filter(s => !s.ready) : evaluated.map(s => ({ ...s, ready: false, reason: mode === 'outage' ? 'Data unavailable · not evaluated' : s.ready ? 'No contract meets current filters' : s.reason }))
-  const current = [...ready, ...watching].find(s => s.ticker === selected) || watching[0]
-  function review(stock) { setNotice('Trade-entry preview: ' + stock.ticker + ' ' + stock.contract.strike + ' put, ' + stock.contract.expiry + ', mark ' + stock.contract.mark + '/share. In the app this opens a pre-filled new-wheel form. No trade has been created.') }
+  const ready = mode === 'normal' ? evaluated.filter((s) => s.ready) : []
+  const watching =
+    mode === 'normal'
+      ? evaluated.filter((s) => !s.ready)
+      : evaluated.map((s) => ({
+          ...s,
+          ready: false,
+          reason:
+            mode === 'outage'
+              ? 'Data unavailable · not evaluated'
+              : s.ready
+                ? 'No contract meets current filters'
+                : s.reason
+        }))
+  const current = [...ready, ...watching].find((s) => s.ticker === selected) || watching[0]
+  function review(stock) {
+    setNotice(
+      'Trade-entry preview: ' +
+        stock.ticker +
+        ' ' +
+        stock.contract.strike +
+        ' put, ' +
+        stock.contract.expiry +
+        ', mark ' +
+        stock.contract.mark +
+        '/share. In the app this opens a pre-filled new-wheel form. No trade has been created.'
+    )
+  }
   return (
     <div className="my-6 flex flex-col gap-4 text-wb-text-primary">
-      <div className="flex flex-wrap items-center gap-2 text-xs text-wb-text-muted"><span className="mr-2 font-wb-mono uppercase tracking-widest">Preview state</span>{[['normal', 'Typical day'], ['empty', 'No matches'], ['outage', 'Data unavailable']].map(([value, label]) => <Button key={value} size="sm" variant={mode === value ? 'secondary' : 'ghost'} aria-pressed={mode === value} onClick={() => { setMode(value); setNotice('') }}>{label}</Button>)}</div>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-wb-text-muted">
+        <span className="mr-2 font-wb-mono uppercase tracking-widest">Preview state</span>
+        {[
+          ['normal', 'Typical day'],
+          ['empty', 'No matches'],
+          ['outage', 'Data unavailable']
+        ].map(([value, label]) => (
+          <Button
+            key={value}
+            size="sm"
+            variant={mode === value ? 'secondary' : 'ghost'}
+            aria-pressed={mode === value}
+            onClick={() => {
+              setMode(value)
+              setNotice('')
+            }}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
       <RingLegend />
       <div className="overflow-hidden rounded-xl border border-wb-border bg-wb-bg-base">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-wb-border bg-wb-bg-surface px-6 py-5">
-          <div><div className="mb-2 font-wb-mono text-[10px] uppercase tracking-[0.2em] text-wb-text-muted">Wheelbase / Research</div><div className="flex items-center gap-3"><h2 className="text-2xl font-semibold tracking-tight">Watchlist</h2><Badge>{entries.length} stocks</Badge></div><p className="mt-1 text-sm text-wb-text-secondary">Your next wheel starts here.</p></div>
-          <div className="flex flex-wrap items-center gap-2"><Button size="sm" variant="outline" onClick={() => setCriteria(v => !v)} aria-expanded={criteria}>Screening criteria</Button><Button size="sm" variant="outline" onClick={() => { setMode('normal'); setNotice('Sample snapshot refreshed. New stocks remain unscreened in this prototype.') }}>↻ Refresh</Button><Button size="sm" onClick={() => setAdding(v => !v)} aria-expanded={adding}>+ Add stock</Button></div>
+          <div>
+            <div className="mb-2 font-wb-mono text-[10px] uppercase tracking-[0.2em] text-wb-text-muted">
+              Wheelbase / Research
+            </div>
+            <div className="flex items-center gap-3">
+              <h2 className="text-2xl font-semibold tracking-tight">Watchlist</h2>
+              <Badge>{entries.length} stocks</Badge>
+            </div>
+            <p className="mt-1 text-sm text-wb-text-secondary">Your next wheel starts here.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setCriteria((v) => !v)}
+              aria-expanded={criteria}
+            >
+              Screening criteria
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setMode('normal')
+                setNotice(
+                  'Sample snapshot refreshed. New stocks remain unscreened in this prototype.'
+                )
+              }}
+            >
+              ↻ Refresh
+            </Button>
+            <Button size="sm" onClick={() => setAdding((v) => !v)} aria-expanded={adding}>
+              + Add stock
+            </Button>
+          </div>
         </header>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-wb-border px-6 py-3 text-xs"><div className="flex flex-wrap gap-4 text-wb-text-secondary"><span>δ 0.20–0.30</span><span>30–45 DTE</span><span>Yield ≥ 1%</span><span>OI ≥ 500</span><span>Spread ≤ 10%</span><span>Exclude earnings</span></div><span className="font-wb-mono text-wb-text-muted">{mode === 'outage' ? 'Refresh failed' : 'Sep 9, 2026 · 10:42 CT · IVR as of Sep 8 close'}</span></div>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-wb-border px-6 py-3 text-xs">
+          <div className="flex flex-wrap gap-4 text-wb-text-secondary">
+            <span>δ 0.20–0.30</span>
+            <span>30–45 DTE</span>
+            <span>Yield ≥ 1%</span>
+            <span>OI ≥ 500</span>
+            <span>Spread ≤ 10%</span>
+            <span>Exclude earnings</span>
+          </div>
+          <span className="font-wb-mono text-wb-text-muted">
+            {mode === 'outage'
+              ? 'Refresh failed'
+              : 'Sep 9, 2026 · 10:42 CT · IVR as of Sep 8 close'}
+          </span>
+        </div>
         <div className="flex flex-col gap-5 p-6">
-          {criteria && <AlertBox variant="info">Screening defaults apply to option contracts: delta 0.20–0.30, 30–45 DTE, period yield at least 1%, open interest at least 500, spread at most 10%, and earnings excluded through expiration. Per-stock entry conditions are shown separately. An IV-rank floor, when set, applies only to fresh and aging readings; stale, earnings-predating, and missing readings never exclude a candidate. Editing defaults is not simulated.</AlertBox>}
-          {adding && <AddStock entries={entries} onCancel={() => setAdding(false)} onAdd={stock => { setEntries(prev => [...prev, stock]); setAdding(false); setSelected(stock.ticker); setNotice(stock.ticker + ' added to Stocks of interest.') }} />}
-          {notice && <div role="status"><AlertBox variant="info">{notice}</AlertBox></div>}
-          {mode === 'outage' && <AlertBox variant="warning">Market data is unavailable. Saved stocks and theses are still here. Prices are last-known; IV ranks come from the local snapshot store and keep their own age. No stocks are marked as meeting criteria.</AlertBox>}
+          {criteria && (
+            <AlertBox variant="info">
+              Screening defaults apply to option contracts: delta 0.20–0.30, 30–45 DTE, period yield
+              at least 1%, open interest at least 500, spread at most 10%, and earnings excluded
+              through expiration. Per-stock entry conditions are shown separately. An IV-rank floor,
+              when set, applies only to fresh and aging readings; stale, earnings-predating, and
+              missing readings never exclude a candidate. Editing defaults is not simulated.
+            </AlertBox>
+          )}
+          {adding && (
+            <AddStock
+              entries={entries}
+              onCancel={() => setAdding(false)}
+              onAdd={(stock) => {
+                setEntries((prev) => [...prev, stock])
+                setAdding(false)
+                setSelected(stock.ticker)
+                setNotice(stock.ticker + ' added to Stocks of interest.')
+              }}
+            />
+          )}
+          {notice && (
+            <div role="status">
+              <AlertBox variant="info">{notice}</AlertBox>
+            </div>
+          )}
+          {mode === 'outage' && (
+            <AlertBox variant="warning">
+              Market data is unavailable. Saved stocks and theses are still here. Prices are
+              last-known; IV ranks come from the local snapshot store and keep their own age. No
+              stocks are marked as meeting criteria.
+            </AlertBox>
+          )}
           <div className="grid items-start gap-5 xl:grid-cols-[minmax(300px,0.85fr)_minmax(420px,1.15fr)]">
-  <div className="flex flex-col gap-6">
-    {[["Meets criteria", ready], ["Stocks of interest", watching]].map(([title, stocks]) => <section key={title} aria-label={title} className="flex flex-col gap-3">
-      <div className="flex items-center gap-2"><h3 className="text-base font-semibold">{title}</h3><Badge color={title === 'Meets criteria' ? 'var(--wb-green)' : undefined}>{stocks.length}</Badge></div>
-      {stocks.length === 0 && <AlertBox variant="info">{mode === 'outage' ? 'Waiting for market data.' : 'No matches on this screen.'}</AlertBox>}
-      {stocks.map(stock => <SectionCard key={stock.ticker} className={selected === stock.ticker ? 'ring-1 ring-wb-gold' : ''}>
-        <div className="flex flex-col gap-2 p-4">
-          <div className="flex items-center justify-between"><Button variant="link" size="sm" aria-pressed={selected === stock.ticker} onClick={() => setSelected(stock.ticker)}>{stock.ticker} →</Button><span className="font-wb-mono text-sm">{stock.price}</span></div>
-          <p className="text-xs text-wb-text-secondary">{stock.ready ? stock.contract.strike + ' put · ' + stock.contract.expiry + ' · ' + stock.contract.period + ' yield' : stock.reason}</p>
-          <div className="flex items-center justify-between gap-2 text-[11px] text-wb-text-muted"><span>{stock.ready && stock.gate.condition ? stock.gate.condition : stock.name}</span><span className="inline-flex shrink-0 items-center gap-1.5 font-wb-mono">IVR <IvrReading ticker={stock.ticker} reading={stock.ivRank} /></span></div>
+            <div className="flex flex-col gap-6">
+              {[
+                ['Meets criteria', ready],
+                ['Stocks of interest', watching]
+              ].map(([title, stocks]) => (
+                <section key={title} aria-label={title} className="flex flex-col gap-3">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-semibold">{title}</h3>
+                    <Badge color={title === 'Meets criteria' ? 'var(--wb-green)' : undefined}>
+                      {stocks.length}
+                    </Badge>
+                  </div>
+                  {stocks.length === 0 && (
+                    <AlertBox variant="info">
+                      {mode === 'outage'
+                        ? 'Waiting for market data.'
+                        : 'No matches on this screen.'}
+                    </AlertBox>
+                  )}
+                  {stocks.map((stock) => (
+                    <SectionCard
+                      key={stock.ticker}
+                      className={selected === stock.ticker ? 'ring-1 ring-wb-gold' : ''}
+                    >
+                      <div className="flex flex-col gap-2 p-4">
+                        <div className="flex items-center justify-between">
+                          <Button
+                            variant="link"
+                            size="sm"
+                            aria-pressed={selected === stock.ticker}
+                            onClick={() => setSelected(stock.ticker)}
+                          >
+                            {stock.ticker} →
+                          </Button>
+                          <span className="font-wb-mono text-sm">{stock.price}</span>
+                        </div>
+                        <p className="text-xs text-wb-text-secondary">
+                          {stock.ready
+                            ? stock.contract.strike +
+                              ' put · ' +
+                              stock.contract.expiry +
+                              ' · ' +
+                              stock.contract.period +
+                              ' yield'
+                            : stock.reason}
+                        </p>
+                        <div className="flex items-center justify-between gap-2 text-[11px] text-wb-text-muted">
+                          <span>
+                            {stock.ready && stock.gate.condition
+                              ? stock.gate.condition
+                              : stock.name}
+                          </span>
+                          <span className="inline-flex shrink-0 items-center gap-1.5 font-wb-mono">
+                            IVR <IvrReading ticker={stock.ticker} reading={stock.ivRank} />
+                          </span>
+                        </div>
+                      </div>
+                    </SectionCard>
+                  ))}
+                </section>
+              ))}
+            </div>
+            <div className="xl:sticky xl:top-4">
+              <SectionCard>
+                <StockDetail stock={current} onReview={review} />
+              </SectionCard>
+              <p className="mt-3 text-xs leading-relaxed text-wb-text-muted">
+                Select a stock to see its thesis, condition checks, IV-reading status, and matching
+                contract here.
+              </p>
+            </div>
+          </div>
         </div>
-      </SectionCard>)}
-    </section>)}
-  </div>
-  <div className="xl:sticky xl:top-4"><SectionCard><StockDetail stock={current} onReview={review} /></SectionCard><p className="mt-3 text-xs leading-relaxed text-wb-text-muted">Select a stock to see its thesis, condition checks, IV-reading status, and matching contract here.</p></div>
-</div>
-        </div>
-        <footer className="border-t border-wb-border px-6 py-3 text-xs text-wb-text-muted">Meets criteria = saved stock conditions pass on a usable IV reading + a qualifying put. Aging readings (2–3 sessions) still count; a stale, earnings-predating, or missing reading is unknown and never satisfies a condition. Stocks without personal conditions use screening defaults.</footer>
+        <footer className="border-t border-wb-border px-6 py-3 text-xs text-wb-text-muted">
+          Meets criteria = saved stock conditions pass on a usable IV reading + a qualifying put.
+          Aging readings (2–3 sessions) still count; a stale, earnings-predating, or missing reading
+          is unknown and never satisfies a condition. Stocks without personal conditions use
+          screening defaults.
+        </footer>
       </div>
     </div>
   )
