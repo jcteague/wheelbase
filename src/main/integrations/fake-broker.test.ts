@@ -1,7 +1,7 @@
 // [US-31] FakeBrokerProvider — test double implementing BrokerProvider
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { AccountInfo, BrokerActivity, MarketStatus } from './broker-provider'
+import type { AccountInfo, BrokerActivity } from './broker-provider'
 
 import { FakeBrokerProvider } from './fake-broker'
 
@@ -92,43 +92,32 @@ describe('FakeBrokerProvider', () => {
     })
   })
 
-  // === getMarketStatus ===
-
-  describe('getMarketStatus', () => {
-    it('returns MarketStatus from FAKE_MARKET_STATUS env var when set', async () => {
-      const status: MarketStatus = {
-        isOpen: true,
-        nextOpen: '2026-05-30T13:30:00Z',
-        nextClose: '2026-05-29T20:00:00Z',
-        session: 'regular'
-      }
-      process.env.FAKE_MARKET_STATUS = JSON.stringify(status)
-
-      const provider = new FakeBrokerProvider()
-      const result = await provider.getMarketStatus()
-
-      expect(result).toEqual(status)
-    })
-
-    it('returns a default MarketStatus when FAKE_MARKET_STATUS env var is not set', async () => {
-      const provider = new FakeBrokerProvider()
-      const result = await provider.getMarketStatus()
-
-      expect(result).toMatchObject({
-        isOpen: expect.any(Boolean),
-        nextOpen: expect.any(String),
-        nextClose: expect.any(String),
-        session: expect.stringMatching(/^(regular|pre|post|closed)$/)
-      })
-    })
-  })
-
   // === BrokerProvider shape ===
 
-  it('implements the BrokerProvider interface (getAccountInfo, getActivities, getMarketStatus)', () => {
+  it('implements the BrokerProvider interface (getAccountInfo, getActivities)', () => {
     const provider = new FakeBrokerProvider()
     expect(typeof provider.getAccountInfo).toBe('function')
     expect(typeof provider.getActivities).toBe('function')
-    expect(typeof provider.getMarketStatus).toBe('function')
+  })
+
+  it('throws the BrokerError named by FAKE_BROKER_ERROR from every account method', async () => {
+    process.env.FAKE_BROKER_ERROR = 'auth_failed'
+    const provider = new FakeBrokerProvider()
+
+    await expect(provider.getAccountInfo()).rejects.toMatchObject({ code: 'auth_failed' })
+    await expect(provider.getActivities({ type: 'FILL' })).rejects.toMatchObject({
+      code: 'auth_failed'
+    })
+
+    delete process.env.FAKE_BROKER_ERROR
+  })
+
+  // [US-116] Both market facts moved to FakeMarketDataProvider, so FAKE_BROKER_ERROR no
+  // longer has any way to break market status or the exchange calendar.
+  it('exposes neither market fact, so FAKE_BROKER_ERROR cannot reach them', () => {
+    const provider = new FakeBrokerProvider() as unknown as Record<string, unknown>
+
+    expect(provider.getMarketStatus).toBeUndefined()
+    expect(provider.getMarketCalendar).toBeUndefined()
   })
 })

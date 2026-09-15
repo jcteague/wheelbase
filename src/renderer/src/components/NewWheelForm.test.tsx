@@ -370,7 +370,7 @@ function setPromotedQuote(quote: PromotedQuote): void {
 function setMarketDisplay(display: MarketStatusDisplay): void {
   mockUseMarketStatusDisplay.mockReturnValue({
     settingsQuery: {} as ReturnType<typeof useMarketStatusDisplay>['settingsQuery'],
-    hasBroker: true,
+    hasMarketData: true,
     statusQuery: {} as ReturnType<typeof useMarketStatusDisplay>['statusQuery'],
     display
   })
@@ -544,7 +544,7 @@ describe('NewWheelForm — promoted mode', () => {
   })
 
   // Not merely a disabled query: the market-data hooks must not mount at all, or the
-  // plain US-1 form would start `useMarketStatusDisplay`'s 60s broker-status poll on
+  // plain US-1 form would start `useMarketStatusDisplay`'s 60s market-status poll on
   // a page that makes no market calls.
   it('mounts no market-data hooks for a form that was not promoted', () => {
     render(<NewWheelForm />)

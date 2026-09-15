@@ -1,27 +1,37 @@
 import { createPollingScheduler } from './polling-scheduler'
-import { brokerFactory } from '../integrations/broker-factory'
-import type { BrokerProvider, MarketStatus } from '../integrations/broker-provider'
+import { marketDataFactory } from '../integrations/market-data-factory'
+import {
+  MarketDataError,
+  type MarketStatus,
+  type MarketStatusSource
+} from '../integrations/market-data-provider'
+import { logger } from '../logger'
 
-const closedMarketStatus: MarketStatus = {
+/** What an install with no market-data credentials reports: a closed session as of
+ *  startup. Jobs then take the scheduler's closed-market branch instead of every tick
+ *  raising an auth error. */
+const unconfiguredProviderStatus: MarketStatus = {
   isOpen: false,
   session: 'closed',
   nextOpen: new Date().toISOString(),
   nextClose: new Date().toISOString()
 }
 
-const fallbackBroker: BrokerProvider = {
-  getAccountInfo: () => Promise.reject(new Error('Broker not configured')),
-  getActivities: () => Promise.resolve([]),
-  getMarketStatus: () => Promise.resolve(closedMarketStatus),
-  getMarketCalendar: () => Promise.resolve([])
-}
-
-function getSafeBroker(): BrokerProvider {
-  try {
-    return brokerFactory.create()
-  } catch {
-    return fallbackBroker
+// Only `auth_failed` degrades: that is the unconfigured install. Every other failure — a
+// network blip, a rate limit — propagates to the scheduler's own fallback branch, which
+// keeps the job on its default cadence rather than parking it until an unknown next open.
+const statusSource: MarketStatusSource = {
+  async getMarketStatus() {
+    try {
+      return await marketDataFactory.create().getMarketStatus()
+    } catch (err) {
+      if (err instanceof MarketDataError && err.code === 'auth_failed') {
+        logger.debug({ err }, 'scheduler_market_status_unconfigured')
+        return unconfiguredProviderStatus
+      }
+      throw err
+    }
   }
 }
 
-export const scheduler = createPollingScheduler(getSafeBroker)
+export const scheduler = createPollingScheduler(() => statusSource)

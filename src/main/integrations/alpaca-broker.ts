@@ -5,10 +5,7 @@ import {
   type AccountInfo,
   type ActivityFilter,
   type BrokerActivity,
-  type BrokerProvider,
-  type MarketCalendarDay,
-  type MarketCalendarRange,
-  type MarketStatus
+  type BrokerProvider
 } from './broker-provider'
 import { isNetworkError } from './integration-errors'
 
@@ -34,38 +31,6 @@ type AlpacaActivity = {
   price?: string
   transaction_time?: string
   date?: string
-}
-
-type AlpacaCalendarDay = {
-  date: string
-  open: string
-  close: string
-}
-
-const DEFAULT_ET_OFFSET_MINUTES = -240
-const PRE_MARKET_START_HOUR = 4
-const REGULAR_MARKET_START_HOUR = 9.5
-const REGULAR_MARKET_END_HOUR = 16
-const POST_MARKET_END_HOUR = 20
-
-function parseOffsetMinutes(timestamp: string): number | null {
-  const match = timestamp.match(/([+-])(\d{2}):(\d{2})$/)
-  if (!match) return null
-  const [, sign, hours, minutes] = match
-  const direction = sign === '+' ? 1 : -1
-  return direction * (parseInt(hours, 10) * 60 + parseInt(minutes, 10))
-}
-
-function deriveSession(isOpen: boolean, timestamp: string): 'regular' | 'pre' | 'post' | 'closed' {
-  if (isOpen) return 'regular'
-  const date = new Date(timestamp)
-  const offsetMinutes = parseOffsetMinutes(timestamp) ?? DEFAULT_ET_OFFSET_MINUTES
-  const minutesSinceUtcMidnight = date.getUTCHours() * 60 + date.getUTCMinutes()
-  let etHours = (minutesSinceUtcMidnight + offsetMinutes) / 60
-  if (etHours < 0) etHours += 24
-  if (etHours >= PRE_MARKET_START_HOUR && etHours < REGULAR_MARKET_START_HOUR) return 'pre'
-  if (etHours >= REGULAR_MARKET_END_HOUR && etHours < POST_MARKET_END_HOUR) return 'post'
-  return 'closed'
 }
 
 function isAuthError(err: unknown): boolean {
@@ -198,39 +163,6 @@ export class AlpacaBrokerProvider implements BrokerProvider {
         .sort((a, b) => b.transactionTime.localeCompare(a.transactionTime))
     } catch (err) {
       throw this.wrapError(err, 'getActivities')
-    }
-  }
-
-  async getMarketStatus(): Promise<MarketStatus> {
-    this.requireCredentials()
-    try {
-      const clock = await this.lazyClient.getClock()
-      return {
-        isOpen: clock.is_open,
-        nextOpen: clock.next_open,
-        nextClose: clock.next_close,
-        session: deriveSession(clock.is_open, clock.timestamp)
-      }
-    } catch (err) {
-      throw this.wrapError(err, 'getMarketStatus')
-    }
-  }
-
-  async getMarketCalendar(range: MarketCalendarRange): Promise<MarketCalendarDay[]> {
-    this.requireCredentials()
-    try {
-      const days = (await this.lazyClient.getCalendar({
-        start: range.start,
-        end: range.end
-      })) as AlpacaCalendarDay[]
-
-      // Alpaca lists only days the exchange traded, so anything absent is a closure.
-      // `close` already reflects early closes, which is why none are derived here.
-      return days
-        .filter((day) => typeof day.date === 'string' && typeof day.close === 'string')
-        .map((day) => ({ date: day.date, close: day.close }))
-    } catch (err) {
-      throw this.wrapError(err, 'getMarketCalendar')
     }
   }
 }

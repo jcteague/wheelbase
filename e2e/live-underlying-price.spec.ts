@@ -99,6 +99,11 @@ function launchWithMocks(
       WHEELBASE_DB_PATH: dbPath,
       FAKE_MARKET_DATA: 'true',
       FAKE_BROKER: 'true',
+      // [US-116] The market-status pill polls only once market-data credentials are
+      // known to exist, so a spec asserting a live session has to have some. These are
+      // the env-fallback pair; the fake provider never sends them anywhere.
+      ALPACA_KEY_ID: 'PKE2ETESTKEYID',
+      ALPACA_SECRET_KEY: 'e2e-test-secret',
       WHEELBASE_MOCK_STOCK_QUOTES: JSON.stringify(opts.quotes ?? ALL_QUOTES),
       FAKE_MARKET_STATUS: JSON.stringify(opts.marketStatus ?? REGULAR_SESSION)
     }

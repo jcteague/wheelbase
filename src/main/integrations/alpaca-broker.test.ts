@@ -4,11 +4,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BrokerError } from './broker-provider'
 
-const { mockCreateClient, mockGetAccount, mockGetActivity, mockGetClock } = vi.hoisted(() => ({
+const { mockCreateClient, mockGetAccount, mockGetActivity } = vi.hoisted(() => ({
   mockCreateClient: vi.fn(),
   mockGetAccount: vi.fn(),
-  mockGetActivity: vi.fn(),
-  mockGetClock: vi.fn()
+  mockGetActivity: vi.fn()
 }))
 
 vi.mock('@alpacahq/typescript-sdk', () => ({
@@ -45,8 +44,7 @@ describe('AlpacaBrokerProvider', () => {
     vi.resetAllMocks()
     mockCreateClient.mockReturnValue({
       getAccount: mockGetAccount,
-      getActivity: mockGetActivity,
-      getClock: mockGetClock
+      getActivity: mockGetActivity
     })
   })
 
@@ -234,81 +232,6 @@ describe('AlpacaBrokerProvider', () => {
     })
   })
 
-  // === getMarketStatus ===
-
-  describe('getMarketStatus', () => {
-    it("parses clock response into MarketStatus with session 'regular' when market is open", async () => {
-      mockGetClock.mockResolvedValue({
-        is_open: true,
-        next_open: '2026-05-30T13:30:00Z',
-        next_close: '2026-05-29T20:00:00Z',
-        timestamp: '2026-05-29T14:00:00-04:00'
-      })
-
-      const provider = createProvider()
-      const result = await provider.getMarketStatus()
-
-      expect(result.isOpen).toBe(true)
-      expect(result.session).toBe('regular')
-      expect(typeof result.nextOpen).toBe('string')
-      expect(typeof result.nextClose).toBe('string')
-    })
-
-    it("parses clock response into MarketStatus with session 'pre' during pre-market", async () => {
-      mockGetClock.mockResolvedValue({
-        is_open: false,
-        next_open: '2026-05-29T13:30:00Z',
-        next_close: '2026-05-29T20:00:00Z',
-        timestamp: '2026-05-29T08:00:00-04:00'
-      })
-
-      const provider = createProvider()
-      const result = await provider.getMarketStatus()
-
-      expect(result.isOpen).toBe(false)
-      expect(result.session).toBe('pre')
-    })
-
-    it("parses clock response into MarketStatus with session 'post' during post-market", async () => {
-      mockGetClock.mockResolvedValue({
-        is_open: false,
-        next_open: '2026-05-30T13:30:00Z',
-        next_close: '2026-05-30T20:00:00Z',
-        timestamp: '2026-05-29T17:00:00-04:00'
-      })
-
-      const provider = createProvider()
-      const result = await provider.getMarketStatus()
-
-      expect(result.session).toBe('post')
-    })
-
-    it("parses clock response into MarketStatus with session 'closed' overnight", async () => {
-      mockGetClock.mockResolvedValue({
-        is_open: false,
-        next_open: '2026-05-29T13:30:00Z',
-        next_close: '2026-05-29T20:00:00Z',
-        timestamp: '2026-05-29T02:00:00-04:00'
-      })
-
-      const provider = createProvider()
-      const result = await provider.getMarketStatus()
-
-      expect(result.session).toBe('closed')
-    })
-
-    // A3
-    it('rejects missing credentials with auth_failed and deeplink', async () => {
-      const provider = createProvider({ keyId: '', secretKey: '' })
-      const thrown = await provider.getMarketStatus().catch((e: unknown) => e)
-
-      expect(thrown).toBeInstanceOf(BrokerError)
-      expect((thrown as BrokerError).code).toBe('auth_failed')
-      expect((thrown as BrokerError).message).toBe('Alpaca credentials not configured')
-      expect((thrown as BrokerError).deeplink).toBe('settings/credentials/alpaca')
-    })
-  })
-
   // === Error handling ===
 
   describe('error handling', () => {
@@ -346,14 +269,14 @@ describe('AlpacaBrokerProvider', () => {
 
     // A4
     it('paper environment with AK key surfaces environment_mismatch on 401', async () => {
-      mockGetClock.mockRejectedValue(Object.assign(new Error(), { status: 401 }))
+      mockGetAccount.mockRejectedValue(Object.assign(new Error(), { status: 401 }))
 
       const provider = createProvider({
         environment: 'paper',
         keyId: 'AK_LIVE_KEY',
         secretKey: 'secret'
       })
-      const thrown = await provider.getMarketStatus().catch((e: unknown) => e)
+      const thrown = await provider.getAccountInfo().catch((e: unknown) => e)
 
       expect(thrown).toBeInstanceOf(BrokerError)
       expect((thrown as BrokerError).code).toBe('environment_mismatch')
@@ -364,14 +287,14 @@ describe('AlpacaBrokerProvider', () => {
 
     // A5
     it('non-mismatch 401 on paper env with PK key stays auth_failed', async () => {
-      mockGetClock.mockRejectedValue(Object.assign(new Error(), { status: 401 }))
+      mockGetAccount.mockRejectedValue(Object.assign(new Error(), { status: 401 }))
 
       const provider = createProvider({
         environment: 'paper',
         keyId: 'PKPAPER123',
         secretKey: 'secret'
       })
-      const thrown = await provider.getMarketStatus().catch((e: unknown) => e)
+      const thrown = await provider.getAccountInfo().catch((e: unknown) => e)
 
       expect(thrown).toBeInstanceOf(BrokerError)
       expect((thrown as BrokerError).code).toBe('auth_failed')
@@ -379,15 +302,29 @@ describe('AlpacaBrokerProvider', () => {
 
     it('Alpaca JSON body error code 40110000 (no HTTP status field) maps to auth_failed', async () => {
       // Alpaca SDK sometimes throws with no .status but with a JSON body as the message
-      mockGetClock.mockRejectedValue(
+      mockGetAccount.mockRejectedValue(
         new Error(JSON.stringify({ code: 40110000, message: 'request is not authorized' }))
       )
 
       const provider = createProvider({ environment: 'live', keyId: 'AKLIVE123', secretKey: 's' })
-      const thrown = await provider.getMarketStatus().catch((e: unknown) => e)
+      const thrown = await provider.getAccountInfo().catch((e: unknown) => e)
 
       expect(thrown).toBeInstanceOf(BrokerError)
       expect((thrown as BrokerError).code).toBe('auth_failed')
     })
+  })
+})
+
+// [US-116] The exchange clock and calendar are market facts, answered by
+// AlpacaMarketDataProvider from the same trading host. The broker keeps exactly the two
+// account capabilities.
+describe('AlpacaBrokerProvider surface', () => {
+  it('exposes no market-status or market-calendar capability', () => {
+    const provider = createProvider() as unknown as Record<string, unknown>
+
+    expect(provider.getMarketStatus).toBeUndefined()
+    expect(provider.getMarketCalendar).toBeUndefined()
+    expect(typeof provider.getAccountInfo).toBe('function')
+    expect(typeof provider.getActivities).toBe('function')
   })
 })

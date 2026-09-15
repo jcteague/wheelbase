@@ -90,6 +90,19 @@ export function seedTradingCalendar(
   }
 }
 
+/**
+ * [US-116] A `getMarketCalendar` that publishes every weekday in the requested range as a
+ * normal 16:00 ET session — what a service test needs once the read paths refresh the
+ * calendar themselves, so a fetch leaves the same sessions a seeded DB would have held.
+ */
+export function weekdayCalendarFetcher(): Mock {
+  return vi.fn(async (range: { start: string; end: string }) =>
+    eachDayOfInterval({ start: parseISO(range.start), end: parseISO(range.end) })
+      .filter((day) => !isWeekend(day))
+      .map((day) => ({ date: format(day, 'yyyy-MM-dd'), close: '16:00' }))
+  )
+}
+
 /** LoggerLike-compatible spy for asserting log events in tests. */
 export type SpyLogger = { info: Mock; debug: Mock; warn: Mock; error: Mock }
 

@@ -19,6 +19,8 @@ const provider = {
   getStockQuotes: vi.fn(),
   getOptionSnapshot: vi.fn(),
   getOptionChainSnapshot: vi.fn(),
+  getMarketStatus: vi.fn(),
+  getMarketCalendar: vi.fn(),
   supportsStreaming: vi.fn(),
   connect: vi.fn(),
   disconnect: vi.fn(),
@@ -660,9 +662,9 @@ describe('registerMarketDataHandlers', () => {
     expect(mockWebContents.send).toHaveBeenCalledWith('market-data:stream-error', streamError)
   })
 
-  // --- guard: broker channels must NOT be registered here ---
+  // --- guard: account channels must NOT be registered here ---
 
-  it('market-data namespace does not register :activities, :account, or :market-status handlers', async () => {
+  it('market-data namespace does not register :activities or :account handlers', async () => {
     const { ipcMain } = await import('electron')
     const { registerMarketDataHandlers } = await import('./market-data')
 
@@ -671,7 +673,51 @@ describe('registerMarketDataHandlers', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([c]) => c as string)
     expect(channels).not.toContain('market-data:activities')
     expect(channels).not.toContain('market-data:account')
-    expect(channels).not.toContain('market-data:market-status')
+  })
+
+  // [US-116] The exchange session is a market fact, so it is served here rather than by
+  // a broker channel the app may have no credentials for.
+  describe('market-data:market-status', () => {
+    const STATUS = {
+      isOpen: true,
+      nextOpen: '2026-09-14T13:30:00Z',
+      nextClose: '2026-09-11T20:00:00Z',
+      session: 'regular' as const
+    }
+
+    async function marketStatusHandler(): Promise<(...args: unknown[]) => unknown> {
+      const { ipcMain } = await import('electron')
+      const { registerMarketDataHandlers } = await import('./market-data')
+
+      registerMarketDataHandlers(() => provider, getWindow)
+      return getHandler(
+        vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+        'market-data:market-status'
+      )
+    }
+
+    it('returns { ok: true, status } from the provider', async () => {
+      provider.getMarketStatus.mockResolvedValue(STATUS)
+
+      const handler = await marketStatusHandler()
+
+      expect(await handler(null, undefined)).toEqual({ ok: true, status: STATUS })
+    })
+
+    it('returns the { ok: false } envelope rather than throwing across the bridge', async () => {
+      const { MarketDataError } = await import('../integrations/market-data-provider')
+      provider.getMarketStatus.mockRejectedValue(
+        new MarketDataError('auth_failed', 'Alpaca credentials not configured')
+      )
+
+      const handler = await marketStatusHandler()
+      const result = await handler(null, undefined)
+
+      expect(result).toMatchObject({
+        ok: false,
+        errors: [expect.objectContaining({ field: '__root__', code: 'auth_failed' })]
+      })
+    })
   })
 
   it('test:trigger-stock-tick pushes a synthetic tick into the fake provider stream', async () => {

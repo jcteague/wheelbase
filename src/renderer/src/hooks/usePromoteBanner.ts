@@ -24,7 +24,7 @@ export type PromoteBannerState = {
  * when nothing was promoted.
  *
  * Only mounted from `PromotedFormChrome`, i.e. only when something was promoted —
- * `useMarketStatusDisplay` polls broker status on a 60s interval, which the plain
+ * `useMarketStatusDisplay` polls the market status on a 60s interval, which the plain
  * US-1 form must not start.
  */
 export function usePromoteBanner(

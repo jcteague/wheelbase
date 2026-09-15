@@ -20,11 +20,4 @@ export function registerBrokerHandlers(provider: BrokerProvider | (() => BrokerP
       return { activities }
     })
   )
-
-  ipcMain.handle('broker:market-status', () =>
-    handleIpcCall('broker_market_status_unhandled_error', async () => {
-      const status = await getProvider().getMarketStatus()
-      return { status }
-    })
-  )
 }

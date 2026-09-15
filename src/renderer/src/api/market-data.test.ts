@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getStockQuotes, getOptionSnapshots } from './market-data'
+import { getMarketStatus, getStockQuotes, getOptionSnapshots } from './market-data'
 
 const mockGetStockQuotes = vi.fn()
 const mockGetOptionSnapshots = vi.fn()
+const mockMarketStatus = vi.fn()
 
 const AAPL_QUOTE = {
   price: '182.45',
@@ -33,15 +34,52 @@ const AAPL_OPTION_SNAPSHOT = {
 beforeEach(() => {
   mockGetStockQuotes.mockReset()
   mockGetOptionSnapshots.mockReset()
+  mockMarketStatus.mockReset()
   Object.assign(window, {
     api: {
       ...(window.api ?? {}),
       marketData: {
         ...((window.api as { marketData?: unknown })?.marketData ?? {}),
-        stockQuotes: mockGetStockQuotes
+        stockQuotes: mockGetStockQuotes,
+        marketStatus: mockMarketStatus
       },
       getOptionSnapshots: mockGetOptionSnapshots
     }
+  })
+})
+
+// [US-116] The exchange session is a market fact, so it is read from the market-data
+// channel rather than from the broker's.
+describe('getMarketStatus', () => {
+  const MARKET_STATUS = {
+    isOpen: true,
+    nextOpen: '2026-09-14T13:30:00Z',
+    nextClose: '2026-09-11T20:00:00Z',
+    session: 'regular' as const
+  }
+
+  it('calls window.api.marketData.marketStatus()', async () => {
+    mockMarketStatus.mockResolvedValue({ ok: true, status: MARKET_STATUS })
+
+    await getMarketStatus()
+
+    expect(mockMarketStatus).toHaveBeenCalledOnce()
+  })
+
+  it('returns the MarketStatus on ok:true', async () => {
+    mockMarketStatus.mockResolvedValue({ ok: true, status: MARKET_STATUS })
+
+    expect(await getMarketStatus()).toEqual(MARKET_STATUS)
+  })
+
+  it('throws ApiError(502) on ok:false', async () => {
+    const errors = [{ field: '__root__', code: 'auth_failed', message: 'Unauthorized' }]
+    mockMarketStatus.mockResolvedValue({ ok: false, errors })
+
+    await expect(getMarketStatus()).rejects.toMatchObject({
+      status: 502,
+      body: { detail: errors }
+    })
   })
 })
 

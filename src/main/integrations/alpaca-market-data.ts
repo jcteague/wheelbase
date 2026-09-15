@@ -2,8 +2,11 @@ import { Subject, defer, filter, type Observable } from 'rxjs'
 import WebSocket from 'ws'
 import {
   MarketDataError,
+  type MarketCalendarDay,
+  type MarketCalendarRange,
   type MarketDataFeed,
   type MarketDataProvider,
+  type MarketStatus,
   type OptionChainFilter,
   type OptionChainQuote,
   type OptionSnapshot,
@@ -12,18 +15,24 @@ import {
   type StreamEvent
 } from './market-data-provider'
 import {
+  buildCalendarUrl,
   buildChainUrl,
+  buildClockUrl,
   buildContractsUrl,
   buildSingleSnapshotUrl,
   buildStockSnapshotsUrl,
   classifyStreamError,
   connectError,
   mapBar,
+  mapCalendarDays,
   mapChainEntry,
+  mapClock,
   mapOptionQuote,
   mapStockSnapshot,
   parseFrames,
   parseOpenInterest,
+  type AlpacaCalendarDay,
+  type AlpacaClock,
   type AlpacaContracts,
   type AlpacaOptionSnapshot,
   type AlpacaOptionSnapshots,
@@ -195,6 +204,33 @@ export class AlpacaMarketDataProvider implements MarketDataProvider {
       'Alpaca chain snapshot mapped'
     )
     return quotes
+  }
+
+  async getMarketStatus(): Promise<MarketStatus> {
+    const credentials = this.credentials()
+    const raw = (await this.apiFetch(
+      buildClockUrl(credentials.environment),
+      credentials
+    )) as AlpacaClock
+
+    const status = mapClock(raw)
+    logger.debug({ session: status.session, isOpen: status.isOpen }, 'alpaca_market_status')
+    return status
+  }
+
+  async getMarketCalendar(range: MarketCalendarRange): Promise<MarketCalendarDay[]> {
+    const credentials = this.credentials()
+    const raw = (await this.apiFetch(
+      buildCalendarUrl(credentials.environment, range),
+      credentials
+    )) as AlpacaCalendarDay[]
+
+    const days = mapCalendarDays(raw)
+    logger.debug(
+      { start: range.start, end: range.end, days: days.length },
+      'alpaca_market_calendar'
+    )
+    return days
   }
 
   // Open interest is a nice-to-have ranking input, so a contracts outage degrades the whole

@@ -1,6 +1,7 @@
 // [US-46] PollingScheduler — failing tests (Red phase)
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { BrokerProvider, MarketStatus } from '../integrations/broker-provider'
+import { MarketDataError } from '../integrations/market-data-provider'
+import type { MarketStatus, MarketStatusSource } from '../integrations/market-data-provider'
 import { logger } from '../logger'
 import {
   createPollingScheduler,
@@ -36,12 +37,8 @@ const MARKET_EXTENDED: MarketStatus = {
   nextClose: '2026-01-01T21:00:00Z'
 }
 
-function makeBroker(status: MarketStatus = MARKET_OPEN): BrokerProvider {
-  return {
-    getAccountInfo: vi.fn(),
-    getActivities: vi.fn(),
-    getMarketStatus: vi.fn().mockResolvedValue(status)
-  } as unknown as BrokerProvider
+function makeStatusSource(status: MarketStatus = MARKET_OPEN): MarketStatusSource {
+  return { getMarketStatus: vi.fn().mockResolvedValue(status) }
 }
 
 function makeStartedScheduler(
@@ -50,8 +47,8 @@ function makeStartedScheduler(
 ): PollingScheduler {
   const { marketStatus = MARKET_OPEN, cadence = { kind: 'interval', marketOpenMs: 60_000 } } =
     options
-  const broker = makeBroker(marketStatus)
-  const scheduler = createPollingScheduler(() => broker)
+  const statusSource = makeStatusSource(marketStatus)
+  const scheduler = createPollingScheduler(() => statusSource)
   scheduler.register({ name: 'job', cadence, handler })
   scheduler.start()
   return scheduler
@@ -65,8 +62,8 @@ beforeEach(() => {
 
 describe('register()', () => {
   it('adds a job to the registry without throwing', () => {
-    const broker = makeBroker()
-    const scheduler = createPollingScheduler(() => broker)
+    const statusSource = makeStatusSource()
+    const scheduler = createPollingScheduler(() => statusSource)
     expect(() => {
       scheduler.register({
         name: 'test-job',
@@ -77,8 +74,8 @@ describe('register()', () => {
   })
 
   it('throws SchedulerError("already_registered") when registering a duplicate job name', () => {
-    const broker = makeBroker()
-    const scheduler = createPollingScheduler(() => broker)
+    const statusSource = makeStatusSource()
+    const scheduler = createPollingScheduler(() => statusSource)
     scheduler.register({
       name: 'test-job',
       cadence: { kind: 'interval', marketOpenMs: 60_000 },
@@ -105,8 +102,8 @@ describe('register()', () => {
 
 describe('runNow() — unknown job', () => {
   it('throws SchedulerError("job_not_found") for an unregistered job name', async () => {
-    const broker = makeBroker()
-    const scheduler = createPollingScheduler(() => broker)
+    const statusSource = makeStatusSource()
+    const scheduler = createPollingScheduler(() => statusSource)
     scheduler.start()
     await expect(scheduler.runNow('ghost')).rejects.toBeInstanceOf(SchedulerError)
     await expect(scheduler.runNow('ghost')).rejects.toMatchObject({ code: 'job_not_found' })
@@ -123,8 +120,8 @@ describe('start() — immediate invocations', () => {
   })
 
   it('invokes every registered job handler once immediately on start()', async () => {
-    const broker = makeBroker()
-    const scheduler = createPollingScheduler(() => broker)
+    const statusSource = makeStatusSource()
+    const scheduler = createPollingScheduler(() => statusSource)
     const handler1 = vi.fn().mockResolvedValue(undefined)
     const handler2 = vi.fn().mockResolvedValue(undefined)
 
@@ -366,8 +363,8 @@ describe('runNow()', () => {
   })
 
   it('returns the registered handler result for ivr-collect callers', async () => {
-    const broker = makeBroker()
-    const scheduler = createPollingScheduler(() => broker)
+    const statusSource = makeStatusSource()
+    const scheduler = createPollingScheduler(() => statusSource)
     const batch = {
       successCount: 2,
       errorCount: 1,
@@ -442,7 +439,7 @@ describe('stop()', () => {
   })
 })
 
-describe('broker getter is resolved fresh on every reschedule', () => {
+describe('status source is resolved fresh on every reschedule', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-01-01T10:00:00Z'))
@@ -451,13 +448,13 @@ describe('broker getter is resolved fresh on every reschedule', () => {
     vi.useRealTimers()
   })
 
-  it('reschedule uses the latest broker from the getter on every call', async () => {
-    const closedBroker = makeBroker(MARKET_CLOSED)
-    const openBroker = makeBroker(MARKET_OPEN)
-    let currentBroker: BrokerProvider = closedBroker
+  it('reschedule uses the latest status source from the getter on every call', async () => {
+    const closedSource = makeStatusSource(MARKET_CLOSED)
+    const openSource = makeStatusSource(MARKET_OPEN)
+    let currentSource: MarketStatusSource = closedSource
 
     const handler = vi.fn().mockResolvedValue(undefined)
-    const scheduler = createPollingScheduler(() => currentBroker)
+    const scheduler = createPollingScheduler(() => currentSource)
     scheduler.register({
       name: 'job',
       cadence: { kind: 'interval', marketOpenMs: 60_000, marketClosedMs: null },
@@ -467,64 +464,64 @@ describe('broker getter is resolved fresh on every reschedule', () => {
 
     await vi.advanceTimersByTimeAsync(0) // initial fire
     expect(handler).toHaveBeenCalledTimes(1)
-    expect(closedBroker.getMarketStatus).toHaveBeenCalledTimes(1)
+    expect(closedSource.getMarketStatus).toHaveBeenCalledTimes(1)
 
     // Job parked because market is closed and marketClosedMs is null
     await vi.advanceTimersByTimeAsync(60_000)
     expect(handler).toHaveBeenCalledTimes(1)
 
-    // Swap to open broker — credentials change at runtime
-    currentBroker = openBroker
+    // Swap to an open status source — credentials change at runtime
+    currentSource = openSource
 
     // Manually nudge the scheduler by calling runNow (mirrors what would happen if a
     // settings change triggered a re-tick). The point is: reschedule() inside this call
-    // must hit the NEW broker, not the cached closed one.
+    // must hit the NEW status source, not the cached closed one.
     await scheduler.runNow('job')
     expect(handler).toHaveBeenCalledTimes(2)
-    expect(openBroker.getMarketStatus).toHaveBeenCalledTimes(1)
+    expect(openSource.getMarketStatus).toHaveBeenCalledTimes(1)
 
-    // Next cadence (60s) fires because new broker reports market open
+    // Next cadence (60s) fires because the new status source reports market open
     await vi.advanceTimersByTimeAsync(60_000)
     expect(handler).toHaveBeenCalledTimes(3)
-    expect(openBroker.getMarketStatus).toHaveBeenCalledTimes(2)
+    expect(openSource.getMarketStatus).toHaveBeenCalledTimes(2)
 
     await scheduler.stop()
   })
 
-  it('startAfterClose uses the latest broker from the getter', async () => {
+  it('startAfterClose uses the latest status source from the getter', async () => {
     vi.setSystemTime(new Date('2026-01-01T18:00:00Z'))
 
-    const initialBroker = makeBroker({
+    const initialSource = makeStatusSource({
       isOpen: true,
       session: 'regular',
       nextOpen: '2026-01-02T14:30:00Z',
       nextClose: '2026-01-01T21:00:00Z'
     })
-    const swappedBroker = makeBroker({
+    const swappedSource = makeStatusSource({
       isOpen: true,
       session: 'regular',
       nextOpen: '2026-01-02T14:30:00Z',
       nextClose: '2026-01-01T22:00:00Z' // 1 hour later
     })
-    let currentBroker: BrokerProvider = initialBroker
+    let currentSource: MarketStatusSource = initialSource
 
     const handler = vi.fn().mockResolvedValue(undefined)
-    const scheduler = createPollingScheduler(() => currentBroker)
+    const scheduler = createPollingScheduler(() => currentSource)
     scheduler.register({
       name: 'job',
       cadence: { kind: 'afterClose', offsetMinutes: 30 },
       handler
     })
 
-    // Swap broker BEFORE start — start() should call startAfterClose which must use the
-    // swapped broker, not anything captured at construction.
-    currentBroker = swappedBroker
+    // Swap the source BEFORE start — start() should call startAfterClose which must use
+    // the swapped source, not anything captured at construction.
+    currentSource = swappedSource
 
     scheduler.start()
     await vi.advanceTimersByTimeAsync(0)
 
-    expect(swappedBroker.getMarketStatus).toHaveBeenCalledTimes(1)
-    expect(initialBroker.getMarketStatus).not.toHaveBeenCalled()
+    expect(swappedSource.getMarketStatus).toHaveBeenCalledTimes(1)
+    expect(initialSource.getMarketStatus).not.toHaveBeenCalled()
 
     // Fire time = 22:00 + 30min = 22:30; delay from 18:00 = 4h30m = 16_200_000ms
     await vi.advanceTimersByTimeAsync(16_200_000 - 1)
@@ -604,8 +601,8 @@ describe('parked-job self-resume (US-49)', () => {
 
   it('schedules a wake timer at nextOpen when market is closed and marketClosedMs is null', async () => {
     const handler = vi.fn().mockResolvedValue(undefined)
-    const broker = makeBroker(MARKET_CLOSED)
-    const scheduler = createPollingScheduler(() => broker)
+    const statusSource = makeStatusSource(MARKET_CLOSED)
+    const scheduler = createPollingScheduler(() => statusSource)
     scheduler.register({
       name: 'job',
       cadence: { kind: 'interval', marketOpenMs: 60_000, marketClosedMs: null },
@@ -622,8 +619,8 @@ describe('parked-job self-resume (US-49)', () => {
 
   it('logs INFO when parking a job until nextOpen', async () => {
     const handler = vi.fn().mockResolvedValue(undefined)
-    const broker = makeBroker(MARKET_CLOSED)
-    const scheduler = createPollingScheduler(() => broker)
+    const statusSource = makeStatusSource(MARKET_CLOSED)
+    const scheduler = createPollingScheduler(() => statusSource)
     scheduler.register({
       name: 'job',
       cadence: { kind: 'interval', marketOpenMs: 60_000, marketClosedMs: null },
@@ -643,11 +640,11 @@ describe('parked-job self-resume (US-49)', () => {
 
   it('job resumes marketOpenMs cadence when wake fires and market is open', async () => {
     const handler = vi.fn().mockResolvedValue(undefined)
-    const closedBroker = makeBroker(MARKET_CLOSED)
-    const openBroker = makeBroker(MARKET_OPEN)
-    let currentBroker: BrokerProvider = closedBroker
+    const closedSource = makeStatusSource(MARKET_CLOSED)
+    const openSource = makeStatusSource(MARKET_OPEN)
+    let currentSource: MarketStatusSource = closedSource
 
-    const scheduler = createPollingScheduler(() => currentBroker)
+    const scheduler = createPollingScheduler(() => currentSource)
     scheduler.register({
       name: 'job',
       cadence: { kind: 'interval', marketOpenMs: 60_000, marketClosedMs: null },
@@ -658,7 +655,7 @@ describe('parked-job self-resume (US-49)', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(handler).toHaveBeenCalledTimes(1)
 
-    currentBroker = openBroker
+    currentSource = openSource
     await vi.advanceTimersByTimeAsync(WAKE_DELAY_MS)
     expect(handler).toHaveBeenCalledTimes(2)
 
@@ -670,11 +667,11 @@ describe('parked-job self-resume (US-49)', () => {
 
   it('job resumes extendedHoursMs cadence when wake fires during pre-market', async () => {
     const handler = vi.fn().mockResolvedValue(undefined)
-    const closedBroker = makeBroker(MARKET_CLOSED)
-    const extendedBroker = makeBroker(MARKET_EXTENDED)
-    let currentBroker: BrokerProvider = closedBroker
+    const closedSource = makeStatusSource(MARKET_CLOSED)
+    const extendedSource = makeStatusSource(MARKET_EXTENDED)
+    let currentSource: MarketStatusSource = closedSource
 
-    const scheduler = createPollingScheduler(() => currentBroker)
+    const scheduler = createPollingScheduler(() => currentSource)
     scheduler.register({
       name: 'job',
       cadence: {
@@ -690,7 +687,7 @@ describe('parked-job self-resume (US-49)', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(handler).toHaveBeenCalledTimes(1)
 
-    currentBroker = extendedBroker
+    currentSource = extendedSource
     await vi.advanceTimersByTimeAsync(WAKE_DELAY_MS)
     expect(handler).toHaveBeenCalledTimes(2)
 
@@ -705,8 +702,8 @@ describe('parked-job self-resume (US-49)', () => {
 
   it('launching after hours parks the job with exactly one timer pending', async () => {
     const handler = vi.fn().mockResolvedValue(undefined)
-    const broker = makeBroker(MARKET_CLOSED)
-    const scheduler = createPollingScheduler(() => broker)
+    const statusSource = makeStatusSource(MARKET_CLOSED)
+    const scheduler = createPollingScheduler(() => statusSource)
     scheduler.register({
       name: 'job',
       cadence: { kind: 'interval', marketOpenMs: 60_000, marketClosedMs: null },
@@ -723,8 +720,8 @@ describe('parked-job self-resume (US-49)', () => {
 
   it('stop() clears the park-wake timer', async () => {
     const handler = vi.fn().mockResolvedValue(undefined)
-    const broker = makeBroker(MARKET_CLOSED)
-    const scheduler = createPollingScheduler(() => broker)
+    const statusSource = makeStatusSource(MARKET_CLOSED)
+    const scheduler = createPollingScheduler(() => statusSource)
     scheduler.register({
       name: 'job',
       cadence: { kind: 'interval', marketOpenMs: 60_000, marketClosedMs: null },
@@ -743,8 +740,8 @@ describe('parked-job self-resume (US-49)', () => {
     vi.setSystemTime(new Date('2026-06-01T00:00:00Z'))
 
     const handler = vi.fn().mockResolvedValue(undefined)
-    const broker = makeBroker(MARKET_CLOSED)
-    const scheduler = createPollingScheduler(() => broker)
+    const statusSource = makeStatusSource(MARKET_CLOSED)
+    const scheduler = createPollingScheduler(() => statusSource)
     scheduler.register({
       name: 'job',
       cadence: { kind: 'interval', marketOpenMs: 60_000, marketClosedMs: null },
@@ -792,6 +789,45 @@ describe('system wake from sleep', () => {
     // Next timer was rescheduled from "now" — one more cadence fires, no burst
     await vi.runOnlyPendingTimersAsync()
     expect(handler).toHaveBeenCalledTimes(3)
+
+    await scheduler.stop()
+  })
+})
+
+// [US-116] The scheduler asks the market-data port for the session, and an outage there
+// must not stop an interval job ticking.
+describe('a failing status source falls back to the default cadence', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T10:00:00Z'))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('keeps an interval job on marketOpenMs when getMarketStatus rejects', async () => {
+    const statusSource: MarketStatusSource = {
+      getMarketStatus: vi.fn().mockRejectedValue(new MarketDataError('network_error', 'offline'))
+    }
+    const handler = vi.fn().mockResolvedValue(undefined)
+    const scheduler = createPollingScheduler(() => statusSource)
+    scheduler.register({
+      name: 'job',
+      cadence: { kind: 'interval', marketOpenMs: 60_000, marketClosedMs: null },
+      handler
+    })
+    scheduler.start()
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(handler).toHaveBeenCalledTimes(1)
+
+    // Without the fallback the job would park forever on a transient outage.
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(handler).toHaveBeenCalledTimes(2)
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ job: 'job' }),
+      expect.stringContaining('falling back to default cadence')
+    )
 
     await scheduler.stop()
   })

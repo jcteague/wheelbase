@@ -11,8 +11,8 @@ beforeEach(() => {
   Object.assign(window, {
     api: {
       ...(window.api ?? {}),
-      broker: {
-        ...((window.api as { broker?: unknown })?.broker ?? {}),
+      marketData: {
+        ...((window.api as { marketData?: unknown })?.marketData ?? {}),
         marketStatus: mockGetMarketStatus
       }
     }
@@ -54,7 +54,7 @@ describe('useMarketStatus', () => {
     await waitFor(() => expect(result.current.isError).toBe(true))
   })
 
-  it('query key is [broker, market-status]', async () => {
+  it('query key is [market, status]', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     mockGetMarketStatus.mockResolvedValue({
       ok: true,
@@ -66,9 +66,7 @@ describe('useMarketStatus', () => {
     await waitFor(() => {
       const queries = queryClient.getQueryCache().findAll()
       expect(
-        queries.some(
-          (q) => JSON.stringify(q.queryKey) === JSON.stringify(['broker', 'market-status'])
-        )
+        queries.some((q) => JSON.stringify(q.queryKey) === JSON.stringify(['market', 'status']))
       ).toBe(true)
     })
   })

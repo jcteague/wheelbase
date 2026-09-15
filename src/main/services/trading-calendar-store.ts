@@ -3,8 +3,12 @@
 // Sessions are exchange facts, not rules we can derive: observed-holiday conventions
 // have exceptions and unscheduled closures happen, so the venue's own calendar is
 // fetched and cached. `trading_session` is that cache, and this module is the only
-// thing that writes it. Reads never fetch — a screen must not hang on the broker — so
+// thing that writes it. Reads never fetch — a screen must not hang on a provider — so
 // a range we have never fetched reads as *unknown* rather than as a run of closures.
+//
+// [US-116] The calendar is a market fact, fetched through the market-data provider.
+// `ensureTradingCalendar` is the write path the bench calls on the read it serves, so a
+// fresh install does not wait for the nightly collection to make IV rank legible.
 import type Database from 'better-sqlite3'
 import { addDays, eachDayOfInterval, format, parseISO } from 'date-fns'
 import {
@@ -14,7 +18,7 @@ import {
   type TradingCalendar,
   type TradingSession
 } from '../core/trading-calendar'
-import type { BrokerProvider } from '../integrations/broker-provider'
+import type { MarketCalendarSource } from '../integrations/market-data-provider'
 import { logger } from '../logger'
 
 /**
@@ -139,7 +143,7 @@ function warnIfCoverageRunningOut(now: Date, lastDay: string): void {
 }
 
 /** True when the stored calendar no longer reaches far enough ahead to be worth
- *  trusting for another interval. Cheap enough to check on every collector run. */
+ *  trusting for another interval. Cheap enough to check on every bench open. */
 function needsRefresh(db: Database.Database, now: Date): boolean {
   const stored = db.prepare(COVERAGE_QUERY).get() as { last_day: string | null }
   if (stored.last_day === null) return true
@@ -167,13 +171,13 @@ export type RefreshTradingCalendarResult =
  *
  * Every calendar day in the range is written, closures included as a NULL close, so
  * coverage stays derivable from the rows and a closure is never confused with a day we
- * did not fetch. A broker outage leaves the previous rows untouched and reports
- * `failed`: the collector treats the calendar as best-effort, so an outage must not
- * abort the batch it gates.
+ * did not fetch. A provider outage leaves the previous rows untouched and reports
+ * `failed`: every caller treats the calendar as best-effort, so an outage must not
+ * abort the work it gates.
  */
 export async function refreshTradingCalendar(
   db: Database.Database,
-  provider: BrokerProvider,
+  provider: MarketCalendarSource,
   now: Date,
   { force = false }: { force?: boolean } = {}
 ): Promise<RefreshTradingCalendarResult> {
@@ -210,4 +214,51 @@ export async function refreshTradingCalendar(
     logger.warn({ err }, 'trading_calendar_refresh_failed')
     return { status: 'failed' }
   }
+}
+
+// The bench issues its snapshot and screener queries concurrently, and on a fresh install
+// both would otherwise race to fetch the same calendar. One in-flight promise, cleared on
+// settle, collapses them into a single fetch without caching the *result* — a later open
+// is free to retry a refresh that failed.
+let inFlight: Promise<void> | null = null
+
+/**
+ * Refreshes the cached exchange calendar if it is due, then resolves. Never throws and
+ * never rejects: an unconfigured provider, a provider error and an up-to-date cache are
+ * all "nothing more to do". Concurrent callers share one in-flight fetch.
+ *
+ * That guarantee is load-bearing, not a courtesy: both callers await this inside a
+ * `Promise.all`, so a rejection here would sink the bench — the exact failure AC 5 and
+ * AC 6 exist to prevent. It holds because `refreshTradingCalendar` wraps its whole body
+ * in a catch and reports `{ status: 'failed' }` instead of throwing; only the
+ * `getProvider()` call, which is outside that, is guarded here. Narrowing
+ * `refreshTradingCalendar`'s catch would break this, which is why the unit tests assert
+ * this function *resolves* on both a construction failure and a fetch failure.
+ */
+export function ensureTradingCalendar(
+  db: Database.Database,
+  getProvider: () => MarketCalendarSource,
+  now: Date
+): Promise<void> {
+  if (inFlight) return inFlight
+
+  const run = async (): Promise<void> => {
+    // Only resolving the provider is guarded: an unconfigured install throws here, and
+    // that is a skip rather than a fault. refreshTradingCalendar swallows and logs every
+    // outcome of its own, so anything escaping it is a programming error worth surfacing.
+    let provider: MarketCalendarSource
+    try {
+      provider = getProvider()
+    } catch (err) {
+      logger.warn({ err }, 'trading_calendar_provider_unavailable')
+      return
+    }
+
+    await refreshTradingCalendar(db, provider, now)
+  }
+
+  inFlight = run().finally(() => {
+    inFlight = null
+  })
+  return inFlight
 }

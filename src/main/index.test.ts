@@ -250,6 +250,26 @@ describe('main process bootstrap', () => {
     )
   })
 
+  // [US-116] The calendar is a market fact, so the collection job no longer reaches for
+  // the broker to fetch it.
+  it('builds the ivr-collect job from the market-data provider, never the broker', async () => {
+    await triggerBootstrap()
+
+    const registration = mockSchedulerRegister.mock.calls
+      .map(([job]) => job)
+      .find((job) => job.name === 'ivr-collect') as { handler: () => Promise<unknown> } | undefined
+
+    const { brokerFactory } = await import('./integrations/broker-factory')
+    vi.mocked(brokerFactory.create).mockClear()
+    await registration!.handler()
+
+    const { collectIVRSnapshots } = await import('./services/ivr-collector')
+    expect(vi.mocked(collectIVRSnapshots)).toHaveBeenCalledWith(
+      expect.objectContaining({ marketDataProvider: expect.anything() })
+    )
+    expect(vi.mocked(brokerFactory.create)).not.toHaveBeenCalled()
+  })
+
   it('before-quit aborts an in-flight IVR collection before draining the scheduler', async () => {
     const { appOnHandlers } = await triggerBootstrap()
 

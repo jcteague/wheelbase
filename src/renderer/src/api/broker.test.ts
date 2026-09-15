@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getBrokerAccount, getMarketStatus } from './broker'
+import * as brokerApi from './broker'
+import { getBrokerAccount } from './broker'
 
 const mockBrokerAccount = vi.fn()
-const mockBrokerMarketStatus = vi.fn()
 
 const ACCOUNT_FIXTURE = {
   buyingPower: '10000.00',
@@ -12,22 +12,13 @@ const ACCOUNT_FIXTURE = {
   accountNumberMasked: 'PA…ABC'
 }
 
-const MARKET_STATUS_FIXTURE = {
-  isOpen: true,
-  nextOpen: '2026-01-02T14:30:00Z',
-  nextClose: '2026-01-01T21:00:00Z',
-  session: 'regular' as const
-}
-
 beforeEach(() => {
   mockBrokerAccount.mockReset()
-  mockBrokerMarketStatus.mockReset()
   Object.assign(window, {
     api: {
       ...(window.api ?? {}),
       broker: {
-        account: mockBrokerAccount,
-        marketStatus: mockBrokerMarketStatus
+        account: mockBrokerAccount
       }
     }
   })
@@ -56,26 +47,9 @@ describe('getBrokerAccount', () => {
   })
 })
 
-describe('getMarketStatus', () => {
-  it('calls window.api.broker.marketStatus()', async () => {
-    mockBrokerMarketStatus.mockResolvedValue({ ok: true, status: MARKET_STATUS_FIXTURE })
-    await getMarketStatus()
-    expect(mockBrokerMarketStatus).toHaveBeenCalledOnce()
-  })
-
-  it('returns MarketStatus on ok:true', async () => {
-    mockBrokerMarketStatus.mockResolvedValue({ ok: true, status: MARKET_STATUS_FIXTURE })
-    const result = await getMarketStatus()
-    expect(result).toEqual(MARKET_STATUS_FIXTURE)
-    expect(result.session).toBe('regular')
-  })
-
-  it('throws ApiError(502) on ok:false', async () => {
-    const errors = [{ field: '__root__', code: 'network_error', message: 'Connection refused' }]
-    mockBrokerMarketStatus.mockResolvedValue({ ok: false, errors })
-    await expect(getMarketStatus()).rejects.toMatchObject({
-      status: 502,
-      body: { detail: errors }
-    })
+// [US-116] getMarketStatus moved to api/market-data.ts with the capability.
+describe('the broker API surface', () => {
+  it('no longer exposes getMarketStatus', () => {
+    expect('getMarketStatus' in brokerApi).toBe(false)
   })
 })

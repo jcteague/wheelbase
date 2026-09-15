@@ -11,7 +11,7 @@ import {
 } from '../core/screener'
 import { logger } from '../logger'
 import type Database from 'better-sqlite3'
-import { makeTestDb, seedIvr, seedTradingCalendar } from '../test-utils'
+import { makeTestDb, seedIvr, seedTradingCalendar, weekdayCalendarFetcher } from '../test-utils'
 import { pullWatchlistChains, type TickerChainResult } from './candidate-chains'
 import { getEarningsCalendar } from './earnings-dates'
 import { getAssessedIvrByUnderlying, getLatestIvrByUnderlying } from './ivr-snapshots'
@@ -89,7 +89,9 @@ const CURRENT_DATE = new Date(2026, 6, 23)
  *  without one, so a screener test that did not seed it would be testing the outage. */
 function makeScreenerDb(): Database.Database {
   const db = makeTestDb()
-  seedTradingCalendar(db, '2026-05-01', '2026-12-31')
+  // Reaches past the refresh threshold, so the screen's own ensureTradingCalendar is the
+  // no-op it is in steady state.
+  seedTradingCalendar(db, '2026-05-01', '2027-12-31')
   return db
 }
 const EXPIRATION = '2026-08-29'
@@ -154,9 +156,18 @@ function stockQuote(price: string): StockQuote {
 function makeProvider(
   quotes: (tickers: string[]) => Map<string, StockQuote> | Promise<Map<string, StockQuote>> = () =>
     new Map()
-): { provider: MarketDataProvider; getStockQuotes: ReturnType<typeof vi.fn> } {
+): {
+  provider: MarketDataProvider
+  getStockQuotes: ReturnType<typeof vi.fn>
+  getMarketCalendar: ReturnType<typeof vi.fn>
+} {
   const getStockQuotes = vi.fn(async (tickers: string[]) => quotes(tickers))
-  return { provider: { getStockQuotes } as unknown as MarketDataProvider, getStockQuotes }
+  const getMarketCalendar = weekdayCalendarFetcher()
+  return {
+    provider: { getStockQuotes, getMarketCalendar } as unknown as MarketDataProvider,
+    getStockQuotes,
+    getMarketCalendar
+  }
 }
 
 function criteriaWith(overrides: Partial<ScreeningCriteria>): ScreeningCriteria {
@@ -962,5 +973,56 @@ describe('screenWatchlistCandidates', () => {
 
       expect(result.ranked.map((c) => c.ticker)).toEqual(['AAPL', 'KO'])
     })
+  })
+})
+
+// [US-116] The screen refreshes the calendar that ages its IV ranks, and a calendar
+// failure is a freshness problem — never a market-data outage.
+describe('screenWatchlistCandidates — the calendar refresh it rides on', () => {
+  it('fetches the calendar once and assesses the seeded reading on a fresh install', async () => {
+    const db = makeTestDb()
+    seedIvr(db, [['KO', '2026-07-22T20:10:00Z', '58.0']])
+    const { provider, getMarketCalendar } = makeProvider()
+    mockChains({ status: 'ok', tickers: [KO_OK] })
+
+    const result = await screenWatchlistCandidates(() => provider, db, {
+      currentDate: CURRENT_DATE
+    })
+
+    expect(getMarketCalendar).toHaveBeenCalledTimes(1)
+    expect(result.ranked[0].ivRank).toMatchObject({ value: '58.0', state: 'fresh' })
+  })
+
+  it('still reports ok with the ranked candidates when the calendar fetch fails', async () => {
+    const db = makeTestDb()
+    seedIvr(db, [['KO', '2026-07-22T20:10:00Z', '58.0']])
+    const { provider, getMarketCalendar } = makeProvider()
+    getMarketCalendar.mockRejectedValue(new Error('calendar unavailable'))
+    mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
+
+    const result = await screenWatchlistCandidates(() => provider, db, {
+      currentDate: CURRENT_DATE
+    })
+
+    // A calendar failure costs freshness, not the screen: PROVIDER_UNAVAILABLE stays
+    // reserved for pullWatchlistChains reporting a real outage.
+    expect(result.status).toBe('ok')
+    expect(result.ranked.map((c) => c.ticker)).toEqual(['KO', 'AAPL'])
+    expect(result.ranked[0].ivRank).toBeNull()
+  })
+
+  it('short-circuits an unconfigured provider before any calendar work', async () => {
+    const db = makeTestDb()
+
+    const result = await screenWatchlistCandidates(
+      () => {
+        throw new Error('Market data provider not configured')
+      },
+      db,
+      { currentDate: CURRENT_DATE }
+    )
+
+    expect(result.status).toBe('provider_unavailable')
+    expect(pullWatchlistChains).not.toHaveBeenCalled()
   })
 })

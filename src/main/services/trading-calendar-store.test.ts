@@ -2,10 +2,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type Database from 'better-sqlite3'
 import { getTradingSession } from '../core/trading-calendar'
-import type { BrokerProvider, MarketCalendarDay } from '../integrations/broker-provider'
+import type { MarketCalendarDay, MarketCalendarSource } from '../integrations/market-data-provider'
 import { makeTestDb, seedTradingCalendar } from '../test-utils'
 import { logger } from '../logger'
-import { readTradingCalendar, refreshTradingCalendar } from './trading-calendar-store'
+import {
+  ensureTradingCalendar,
+  readTradingCalendar,
+  refreshTradingCalendar
+} from './trading-calendar-store'
 
 vi.mock('../logger', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
@@ -13,13 +17,8 @@ vi.mock('../logger', () => ({
 
 const NOW = new Date('2026-09-23T14:00:00.000Z')
 
-function brokerReturning(days: MarketCalendarDay[]): BrokerProvider {
-  return {
-    getAccountInfo: vi.fn(),
-    getActivities: vi.fn(),
-    getMarketStatus: vi.fn(),
-    getMarketCalendar: vi.fn().mockResolvedValue(days)
-  } as unknown as BrokerProvider
+function providerReturning(days: MarketCalendarDay[]): MarketCalendarSource {
+  return { getMarketCalendar: vi.fn().mockResolvedValue(days) }
 }
 
 function storedRow(db: Database.Database, date: string): { close_at: string | null } | undefined {
@@ -115,12 +114,12 @@ describe('readTradingCalendar', () => {
 describe('refreshTradingCalendar', () => {
   it('writes a row for every day, recording closures as a null close', async () => {
     const db = makeTestDb()
-    const broker = brokerReturning([
+    const provider = providerReturning([
       { date: '2026-09-22', close: '16:00' },
       { date: '2026-09-23', close: '13:00' }
     ])
 
-    const result = await refreshTradingCalendar(db, broker, NOW)
+    const result = await refreshTradingCalendar(db, provider, NOW)
 
     expect(result.status).toBe('refreshed')
     expect(storedRow(db, '2026-09-22')?.close_at).toBe('2026-09-22T20:00:00.000Z')
@@ -131,11 +130,11 @@ describe('refreshTradingCalendar', () => {
 
   it('requests a window around now and reads back through the core engine', async () => {
     const db = makeTestDb()
-    const broker = brokerReturning([{ date: '2026-09-22', close: '16:00' }])
+    const provider = providerReturning([{ date: '2026-09-22', close: '16:00' }])
 
-    await refreshTradingCalendar(db, broker, NOW)
+    await refreshTradingCalendar(db, provider, NOW)
 
-    expect(broker.getMarketCalendar).toHaveBeenCalledWith({
+    expect(provider.getMarketCalendar).toHaveBeenCalledWith({
       start: '2026-05-26',
       end: '2027-10-28'
     })
@@ -145,13 +144,13 @@ describe('refreshTradingCalendar', () => {
     })
   })
 
-  it('leaves the cache untouched and reports failure when the broker is down', async () => {
+  it('leaves the cache untouched and reports failure when the provider is down', async () => {
     const db = makeTestDb()
     seedTradingCalendar(db, '2026-09-01', '2027-09-25')
-    const broker = brokerReturning([])
-    vi.mocked(broker.getMarketCalendar).mockRejectedValue(new Error('network error'))
+    const provider = providerReturning([])
+    vi.mocked(provider.getMarketCalendar).mockRejectedValue(new Error('network error'))
 
-    expect(await refreshTradingCalendar(db, broker, NOW, { force: true })).toEqual({
+    expect(await refreshTradingCalendar(db, provider, NOW, { force: true })).toEqual({
       status: 'failed'
     })
     expect(storedRow(db, '2026-09-22')?.close_at).toBe('2026-09-22T20:00:00.000Z')
@@ -160,26 +159,117 @@ describe('refreshTradingCalendar', () => {
   it('skips the fetch while stored coverage still reaches far enough ahead', async () => {
     const db = makeTestDb()
     seedTradingCalendar(db, '2026-09-01', '2027-11-01')
-    const broker = brokerReturning([])
+    const provider = providerReturning([])
 
-    expect(await refreshTradingCalendar(db, broker, NOW)).toEqual({ status: 'skipped' })
-    expect(broker.getMarketCalendar).not.toHaveBeenCalled()
+    expect(await refreshTradingCalendar(db, provider, NOW)).toEqual({ status: 'skipped' })
+    expect(provider.getMarketCalendar).not.toHaveBeenCalled()
   })
 
   it('drops a published session it cannot parse instead of writing a bad instant', async () => {
     const db = makeTestDb()
-    const broker = brokerReturning([
+    const provider = providerReturning([
       { date: '2026-09-22', close: 'not-a-time' },
       { date: '2026-09-23', close: '16:00' }
     ])
 
-    await refreshTradingCalendar(db, broker, NOW)
+    await refreshTradingCalendar(db, provider, NOW)
 
     expect(storedRow(db, '2026-09-22')?.close_at).toBeNull()
     expect(storedRow(db, '2026-09-23')?.close_at).toBe('2026-09-23T20:00:00.000Z')
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ day: { date: '2026-09-22', close: 'not-a-time' } }),
       'trading_calendar_unparseable_session'
+    )
+  })
+})
+
+// [US-116] ensureTradingCalendar — the write path the bench calls on the read it serves,
+// so a fresh install does not wait for the nightly collection.
+describe('ensureTradingCalendar', () => {
+  it('fetches once and stores the full refresh window when the calendar is empty', async () => {
+    const db = makeTestDb()
+    const provider = providerReturning([{ date: '2026-09-22', close: '16:00' }])
+
+    await ensureTradingCalendar(db, () => provider, NOW)
+
+    expect(provider.getMarketCalendar).toHaveBeenCalledTimes(1)
+    expect(provider.getMarketCalendar).toHaveBeenCalledWith({
+      start: '2026-05-26',
+      end: '2027-10-28'
+    })
+    expect(storedRow(db, '2026-05-26')).toBeDefined()
+    expect(storedRow(db, '2027-10-28')).toBeDefined()
+    expect(storedRow(db, '2026-09-22')?.close_at).toBe('2026-09-22T20:00:00.000Z')
+  })
+
+  it('does not fetch while stored coverage still reaches far enough ahead', async () => {
+    const db = makeTestDb()
+    seedTradingCalendar(db, '2026-09-01', '2027-11-01')
+    const provider = providerReturning([])
+
+    await ensureTradingCalendar(db, () => provider, NOW)
+
+    expect(provider.getMarketCalendar).not.toHaveBeenCalled()
+  })
+
+  it('shares one in-flight fetch between concurrent callers', async () => {
+    const db = makeTestDb()
+    let release: (days: MarketCalendarDay[]) => void = () => {}
+    const pending = new Promise<MarketCalendarDay[]>((resolve) => {
+      release = resolve
+    })
+    const provider: MarketCalendarSource = { getMarketCalendar: vi.fn().mockReturnValue(pending) }
+
+    const first = ensureTradingCalendar(db, () => provider, NOW)
+    const second = ensureTradingCalendar(db, () => provider, NOW)
+    release([{ date: '2026-09-22', close: '16:00' }])
+    await Promise.all([first, second])
+
+    expect(provider.getMarketCalendar).toHaveBeenCalledTimes(1)
+  })
+
+  it('is free to fetch again once the previous attempt has settled', async () => {
+    const db = makeTestDb()
+    const provider = providerReturning([])
+    vi.mocked(provider.getMarketCalendar).mockRejectedValue(new Error('network error'))
+
+    await ensureTradingCalendar(db, () => provider, NOW)
+    await ensureTradingCalendar(db, () => provider, NOW)
+
+    expect(provider.getMarketCalendar).toHaveBeenCalledTimes(2)
+  })
+
+  it('resolves and warns when the provider cannot be constructed', async () => {
+    const db = makeTestDb()
+
+    await expect(
+      ensureTradingCalendar(
+        db,
+        () => {
+          throw new Error('Alpaca credentials not configured')
+        },
+        NOW
+      )
+    ).resolves.toBeUndefined()
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.anything() }),
+      'trading_calendar_provider_unavailable'
+    )
+  })
+
+  it('resolves, warns and leaves stored rows untouched when the fetch fails', async () => {
+    const db = makeTestDb()
+    seedTradingCalendar(db, '2026-09-01', '2026-09-25')
+    const provider = providerReturning([])
+    vi.mocked(provider.getMarketCalendar).mockRejectedValue(new Error('network error'))
+
+    await expect(ensureTradingCalendar(db, () => provider, NOW)).resolves.toBeUndefined()
+
+    expect(storedRow(db, '2026-09-22')?.close_at).toBe('2026-09-22T20:00:00.000Z')
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.anything() }),
+      'trading_calendar_refresh_failed'
     )
   })
 })

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { BrokerError, type AccountInfo, type MarketStatus } from '../integrations/broker-provider'
+import { BrokerError, type AccountInfo } from '../integrations/broker-provider'
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() }
@@ -11,9 +11,7 @@ vi.mock('../logger', () => ({
 
 const provider = {
   getAccountInfo: vi.fn(),
-  getActivities: vi.fn(),
-  getMarketStatus: vi.fn(),
-  getMarketCalendar: vi.fn().mockResolvedValue([])
+  getActivities: vi.fn()
 }
 
 function getHandler(
@@ -33,19 +31,31 @@ const ACCOUNT_FIXTURE: AccountInfo = {
   accountNumberMasked: 'PA…ABC'
 }
 
-const MARKET_STATUS_FIXTURE: MarketStatus = {
-  isOpen: true,
-  nextOpen: '2026-01-02T14:30:00Z',
-  nextClose: '2026-01-01T21:00:00Z',
-  session: 'regular'
-}
-
 describe('registerBrokerHandlers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('registers broker:account, broker:activities, and broker:market-status channels', async () => {
+  // The registrar accepts a provider or a getter; the getter form is what index.ts uses,
+  // so that credentials changed at runtime take effect without a restart.
+  it('resolves a provider getter on every call', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerBrokerHandlers } = await import('./broker')
+
+    provider.getAccountInfo.mockResolvedValue(ACCOUNT_FIXTURE)
+    const getProvider = vi.fn(() => provider)
+    registerBrokerHandlers(getProvider)
+    const handler = getHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'broker:account'
+    )
+
+    await handler(null, undefined)
+
+    expect(getProvider).toHaveBeenCalled()
+  })
+
+  it('registers the broker:account and broker:activities channels', async () => {
     const { ipcMain } = await import('electron')
     const { registerBrokerHandlers } = await import('./broker')
 
@@ -54,7 +64,6 @@ describe('registerBrokerHandlers', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([c]) => c as string)
     expect(channels).toContain('broker:account')
     expect(channels).toContain('broker:activities')
-    expect(channels).toContain('broker:market-status')
   })
 
   it('broker:account returns { ok: true, account } on success', async () => {
@@ -98,24 +107,17 @@ describe('registerBrokerHandlers', () => {
     expect(result).toMatchObject({ ok: true, activities: [] })
   })
 
-  it('broker:market-status returns { ok: true, status } on success', async () => {
+  // [US-116] The session is a market fact; it is served by market-data:market-status.
+  it('does not register broker:market-status', async () => {
     const { ipcMain } = await import('electron')
     const { registerBrokerHandlers } = await import('./broker')
 
-    provider.getMarketStatus.mockResolvedValue(MARKET_STATUS_FIXTURE)
-
     registerBrokerHandlers(provider)
-    const handler = getHandler(
-      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
-      'broker:market-status'
-    )
 
-    const result = await handler(null, undefined)
-
-    expect(result).toMatchObject({
-      ok: true,
-      status: expect.objectContaining({ isOpen: true, session: 'regular' })
-    })
+    const channels = vi.mocked(ipcMain.handle).mock.calls.map(([c]) => c as string)
+    expect(channels).toContain('broker:account')
+    expect(channels).toContain('broker:activities')
+    expect(channels).not.toContain('broker:market-status')
   })
 
   it('broker:account returns { ok: false, errors, code } on BrokerError', async () => {

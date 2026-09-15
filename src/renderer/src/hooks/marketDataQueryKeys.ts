@@ -1,4 +1,5 @@
 export const marketDataQueryKeys = {
+  marketStatus: ['market', 'status'] as const,
   stockQuotes: (tickers: string[]) =>
     ['market', 'stock-quotes', [...tickers].sort().join(',')] as const,
   optionSnapshots: (symbols: string[]) =>

@@ -89,11 +89,13 @@ export type IvrLaunchOpts = {
   fakeNow?: string
   /** Launch with no Alpaca credentials — see LaunchOpts. */
   withoutBrokerCredentials?: boolean
-  /** [US-98] The exchange calendar `FakeBrokerProvider.getMarketCalendar` publishes, and
-   *  so what the collector caches into `trading_session`. Omit and the fake generates
+  /** [US-116] Market-data credentials but no broker — see LaunchOpts. */
+  marketDataWithoutBroker?: boolean
+  /** [US-116] The exchange calendar `FakeMarketDataProvider.getMarketCalendar` publishes,
+   *  and so what a refresh caches into `trading_session`. Omit and the fake generates
    *  every weekday in range as a normal 16:00 ET session; supply one to make a specific
    *  day a *recognised* closure rather than a day that was simply never fetched. */
-  brokerCalendar?: Array<{ date: string; close: string }>
+  marketCalendar?: Array<{ date: string; close: string }>
 }
 
 export function buildIvrLaunchEnv(
@@ -105,13 +107,14 @@ export function buildIvrLaunchEnv(
   // IVR-specific seam vars.
   const env = buildLaunchEnv(dbPath, {
     marketStatus: opts.marketStatus ?? REGULAR_SESSION,
-    withoutBrokerCredentials: opts.withoutBrokerCredentials
+    withoutBrokerCredentials: opts.withoutBrokerCredentials,
+    marketDataWithoutBroker: opts.marketDataWithoutBroker
   })
   // Presence (not value) switches the ivr-collect handler to the injected fake
   // fetcher; per-ticker outcomes are set later via _test:ivr-set-outcomes.
   env.WHEELBASE_FAKE_IVR = '{}'
   env.WHEELBASE_FAKE_NOW = opts.fakeNow ?? DEFAULT_FAKE_NOW
-  if (opts.brokerCalendar) env.FAKE_BROKER_CALENDAR = JSON.stringify(opts.brokerCalendar)
+  if (opts.marketCalendar) env.FAKE_MARKET_CALENDAR = JSON.stringify(opts.marketCalendar)
   return env
 }
 
@@ -222,6 +225,26 @@ type IvrTestApi = {
   testIvrSnapshots: () => Promise<IvrSnapshotRow[]>
   testIvrSetOutcomes: (outcomes: Record<string, IvrOutcome>) => Promise<{ ok: boolean }>
   testIvrSetNow: (nowIso: string) => Promise<{ ok: boolean; error?: string }>
+  testTradingSessionCount: () => Promise<number>
+  testMarketCalendarFetchCount: () => Promise<number>
+}
+
+/** [US-116] How many rows the cached exchange calendar holds. Zero means it has never
+ *  been fetched — the fresh-install state the bench is supposed to resolve by itself. */
+export async function tradingSessionCount(page: Page): Promise<number> {
+  return await page.evaluate(async () => {
+    const api = window.api as unknown as IvrTestApi
+    return await api.testTradingSessionCount()
+  })
+}
+
+/** [US-116] How many calendar fetches the fake provider has served. The refresh throttle
+ *  lives in the store, so a skipped fetch is otherwise indistinguishable from a made one. */
+export async function marketCalendarFetches(page: Page): Promise<number> {
+  return await page.evaluate(async () => {
+    const api = window.api as unknown as IvrTestApi
+    return await api.testMarketCalendarFetchCount()
+  })
 }
 
 type IvrApi = { ivr: { collectNow: () => Promise<unknown> } }

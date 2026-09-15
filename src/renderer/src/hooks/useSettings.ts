@@ -29,8 +29,10 @@ import {
 } from '../api/settings'
 import { settingsQueryKeys } from './settingsQueryKeys'
 
-function hasBrokerQueryKey(query: Pick<Query, 'queryKey'>): boolean {
-  return query.queryKey[0] === 'broker'
+// A credential change invalidates every vendor-backed read, quotes included: the same
+// Alpaca key pair answers the account, the session and the market data behind it.
+function hasVendorQueryKey(query: Pick<Query, 'queryKey'>): boolean {
+  return query.queryKey[0] === 'broker' || query.queryKey[0] === 'market'
 }
 
 function useBrokerSettingsMutation<TResult, TPayload>(
@@ -41,7 +43,7 @@ function useBrokerSettingsMutation<TResult, TPayload>(
   return useMutation<TResult, ApiError, TPayload>({
     mutationFn,
     onSuccess: () => {
-      queryClient.invalidateQueries({ predicate: hasBrokerQueryKey })
+      queryClient.invalidateQueries({ predicate: hasVendorQueryKey })
       queryClient.invalidateQueries({ queryKey: settingsQueryKeys.status })
     }
   })

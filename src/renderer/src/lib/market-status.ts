@@ -1,5 +1,5 @@
 import type { MarketStatusDisplay } from '../components/MarketStatusPill'
-import type { MarketStatus } from '../api/broker'
+import type { MarketStatus } from '../api/market-data'
 
 type MarketSession = MarketStatus['session']
 

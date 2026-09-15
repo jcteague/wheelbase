@@ -6,6 +6,9 @@
 import Decimal from 'decimal.js'
 import {
   MarketDataError,
+  type MarketCalendarDay,
+  type MarketCalendarRange,
+  type MarketStatus,
   type OptionChainFilter,
   type OptionChainQuote,
   type OptionSnapshot,
@@ -204,6 +207,82 @@ export function buildContractsUrl(
   params.set('limit', String(CONTRACTS_PAGE_SIZE))
   if (pageToken) params.set('page_token', pageToken)
   return `${ALPACA_TRADING_BASE_URLS[environment]}/v2/options/contracts?${params.toString()}`
+}
+
+// --- Market clock and calendar ---
+
+// Both live on the trading host rather than the data host: the same pair `buildContractsUrl`
+// already authenticates against for open interest.
+
+export type AlpacaClock = {
+  timestamp: string
+  is_open: boolean
+  next_open: string
+  next_close: string
+}
+
+export type AlpacaCalendarDay = {
+  date: string
+  open: string
+  close: string
+}
+
+const DEFAULT_ET_OFFSET_MINUTES = -240
+const PRE_MARKET_START_HOUR = 4
+const REGULAR_MARKET_START_HOUR = 9.5
+const REGULAR_MARKET_END_HOUR = 16
+const POST_MARKET_END_HOUR = 20
+
+function parseOffsetMinutes(timestamp: string): number | null {
+  const match = timestamp.match(/([+-])(\d{2}):(\d{2})$/)
+  if (!match) return null
+  const [, sign, hours, minutes] = match
+  const direction = sign === '+' ? 1 : -1
+  return direction * (parseInt(hours, 10) * 60 + parseInt(minutes, 10))
+}
+
+export function deriveSession(
+  isOpen: boolean,
+  timestamp: string
+): 'regular' | 'pre' | 'post' | 'closed' {
+  if (isOpen) return 'regular'
+  const date = new Date(timestamp)
+  const offsetMinutes = parseOffsetMinutes(timestamp) ?? DEFAULT_ET_OFFSET_MINUTES
+  const minutesSinceUtcMidnight = date.getUTCHours() * 60 + date.getUTCMinutes()
+  let etHours = (minutesSinceUtcMidnight + offsetMinutes) / 60
+  if (etHours < 0) etHours += 24
+  if (etHours >= PRE_MARKET_START_HOUR && etHours < REGULAR_MARKET_START_HOUR) return 'pre'
+  if (etHours >= REGULAR_MARKET_END_HOUR && etHours < POST_MARKET_END_HOUR) return 'post'
+  return 'closed'
+}
+
+export function buildClockUrl(environment: AlpacaCredentials['environment']): string {
+  return `${ALPACA_TRADING_BASE_URLS[environment]}/v2/clock`
+}
+
+export function buildCalendarUrl(
+  environment: AlpacaCredentials['environment'],
+  range: MarketCalendarRange
+): string {
+  const params = new URLSearchParams({ start: range.start, end: range.end })
+  return `${ALPACA_TRADING_BASE_URLS[environment]}/v2/calendar?${params.toString()}`
+}
+
+export function mapClock(raw: AlpacaClock): MarketStatus {
+  return {
+    isOpen: raw.is_open,
+    nextOpen: raw.next_open,
+    nextClose: raw.next_close,
+    session: deriveSession(raw.is_open, raw.timestamp)
+  }
+}
+
+export function mapCalendarDays(raw: AlpacaCalendarDay[]): MarketCalendarDay[] {
+  // Alpaca lists only days the exchange traded, so anything absent is a closure.
+  // `close` already reflects early closes, which is why none are derived here.
+  return raw
+    .filter((day) => typeof day.date === 'string' && typeof day.close === 'string')
+    .map((day) => ({ date: day.date, close: day.close }))
 }
 
 // --- Websocket frames ---

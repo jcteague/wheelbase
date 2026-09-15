@@ -240,16 +240,6 @@ app.whenReady().then(() => {
   // watchlist-sized run cannot drain inside scheduler.stop()'s 5s timeout.
   const ivrAbort = new AbortController()
 
-  /** The broker, or nothing when none is configured. Resolved per tick so credentials
-   *  added after launch take effect without a restart. */
-  function tryCreateBroker(): BrokerProvider | undefined {
-    try {
-      return brokerFactory.create()
-    } catch (err) {
-      logger.debug({ err }, 'ivr_collect_broker_unavailable')
-      return undefined
-    }
-  }
   scheduler.register({
     name: IVR_COLLECT_JOB_NAME,
     cadence: { kind: 'afterClose', offsetMinutes: 60 },
@@ -258,9 +248,10 @@ app.whenReady().then(() => {
         db,
         logger,
         signal: ivrAbort.signal,
-        // Best effort: the collector refreshes the cached exchange calendar when a
-        // broker is configured, and runs on the existing cache when one is not.
-        brokerProvider: tryCreateBroker(),
+        // Best effort: the collector refreshes the cached exchange calendar, which is a
+        // market fact and so needs no broker. Resolved per tick so credentials added
+        // after launch take effect without a restart.
+        marketDataProvider: marketDataFactory.create(),
         ...ivrCollaborators
       })
     }

@@ -1,11 +1,12 @@
 // [US-98] Trading-session fixtures for the IV-rank staleness specs.
 //
 // The freshness engine ages a reading in *completed exchange sessions*, read from the
-// `trading_session` cache that the collector refreshes through
-// `BrokerProvider.getMarketCalendar`. Offline that provider is `FakeBrokerProvider`,
-// which serves every weekday in the requested range as a normal 16:00 ET session unless
-// FAKE_BROKER_CALENDAR names an explicit one. So the arithmetic here mirrors exactly one
-// rule — weekdays are sessions — and everything else is derived from it.
+// `trading_session` cache refreshed through `MarketDataProvider.getMarketCalendar` — a
+// market fact, so no broker is involved. Offline that provider is
+// `FakeMarketDataProvider`, which serves every weekday in the requested range as a normal
+// 16:00 ET session unless FAKE_MARKET_CALENDAR names an explicit one. So the arithmetic
+// here mirrors exactly one rule — weekdays are sessions — and everything else is derived
+// from it.
 //
 // Ages are produced by moving the *observation* back through sessions rather than by
 // moving the clock forward. Advancing the clock would also move every fixture's DTE,
@@ -13,6 +14,11 @@
 // still keeps each test about the one thing it names.
 import { addDays, format, parseISO } from 'date-fns'
 import { FAKE_NOW_DAY } from './ivr-helpers'
+
+/** `days` calendar days after BASE_DAY, as YYYY-MM-DD. */
+export function daysAfterBaseDay(days: number): string {
+  return format(addDays(parseISO(BASE_DAY), days), 'yyyy-MM-dd')
+}
 
 /** The Eastern day every fixture is anchored to — shared with the other IVR specs so
  *  chain expirations and session arithmetic cannot drift apart. */
@@ -60,7 +66,7 @@ export function observedSessionsAgo(k: number): string {
   return afterCloseOn(sessionsBefore(BASE_DAY, k))
 }
 
-/** One day of the exchange calendar, as `BrokerProvider.getMarketCalendar` reports it. */
+/** One day of the exchange calendar, as `MarketDataProvider.getMarketCalendar` reports it. */
 type CalendarDay = { date: string; close: string }
 
 // Wide enough to cover the store's refresh range (120 back / 400 ahead) so no requested
@@ -71,7 +77,7 @@ const CALENDAR_LOOKAHEAD_DAYS = 400
 /**
  * Every weekday around BASE_DAY as a normal 16:00 ET session, minus `holidays`.
  *
- * Only needed when a spec cares about a specific closure: with FAKE_BROKER_CALENDAR
+ * Only needed when a spec cares about a specific closure: with FAKE_MARKET_CALENDAR
  * unset the fake generates this same weekday calendar itself. Passing it explicitly is
  * how a holiday becomes a *recognised* closure rather than a day nobody fetched.
  */

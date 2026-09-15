@@ -3,10 +3,10 @@
 // earnings calendar, then judged by the pure verdict engine.
 //
 // Every boundary here is allowed to fail on its own: an unconfigured provider, one
-// ticker's quote, the earnings store and the IVR read each degrade to "unknown" for
-// what they feed, never to a failed snapshot. A missing answer is always modelled —
-// `quote: null`, `ivRank: null`, `{ kind: 'unknown' }` — so the gate engine can report
-// it as `unknown` rather than a quiet pass.
+// ticker's quote, the earnings store, the trading-calendar refresh and the IVR read each
+// degrade to "unknown" for what they feed, never to a failed snapshot. A missing answer
+// is always modelled — `quote: null`, `ivRank: null`, `{ kind: 'unknown' }` — so the
+// gate engine can report it as `unknown` rather than a quiet pass.
 import type Database from 'better-sqlite3'
 
 import {
@@ -25,7 +25,7 @@ import { readEarningsOrEmpty } from './earnings-horizon'
 import { getAssessedIvrByUnderlying } from './ivr-snapshots'
 import type { IpcStockQuote } from './market-data'
 import { getScreeningCriteria } from './screening-criteria'
-import { readTradingCalendar } from './trading-calendar-store'
+import { ensureTradingCalendar, readTradingCalendar } from './trading-calendar-store'
 import { fetchIsolatedStockQuotes } from './underlying-quotes'
 import { listWatchlist } from './watchlist'
 
@@ -136,7 +136,11 @@ export async function buildWatchlistSnapshot(
       criteria,
       currentDate,
       'watchlist_snapshot_earnings_read_failed'
-    )
+    ),
+    // Awaited, not fired and forgotten: the read below must see refreshed rows, or a
+    // fresh install shows `n/a` for a whole render. Self-throttling and self-logging,
+    // so in steady state this is one indexed query and never rejects.
+    ensureTradingCalendar(db, getProvider, currentDate)
   ])
   const assessed = getAssessedIvrByUnderlying(db, tickers, {
     now: currentDate,

@@ -1,14 +1,14 @@
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
-import { getMarketStatus, type MarketStatus } from '../api/broker'
+import { getMarketStatus, type MarketStatus } from '../api/market-data'
 import type { ApiError } from '../api/error'
-import { brokerQueryKeys } from './brokerQueryKeys'
+import { marketDataQueryKeys } from './marketDataQueryKeys'
 
 const REFETCH_INTERVAL_MS = 60_000
 const STALE_TIME_MS = 30_000
 
 export function useMarketStatus(enabled = true): UseQueryResult<MarketStatus, ApiError> {
   return useQuery({
-    queryKey: brokerQueryKeys.marketStatus,
+    queryKey: marketDataQueryKeys.marketStatus,
     queryFn: getMarketStatus,
     enabled,
     refetchInterval: REFETCH_INTERVAL_MS,

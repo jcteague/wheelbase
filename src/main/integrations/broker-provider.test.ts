@@ -4,13 +4,14 @@ import {
   type BrokerProvider,
   type AccountInfo,
   type BrokerActivity,
-  type MarketCalendarDay,
-  type MarketStatus,
   type BrokerErrorCode
 } from './broker-provider'
 
+// [US-116] The broker answers facts about YOUR ACCOUNT and nothing else. Market facts —
+// the exchange clock and calendar — live on MarketDataProvider, so a journal-only install
+// with no broker still gets them.
 describe('BrokerProvider interface', () => {
-  it('exports BrokerProvider interface with getAccountInfo, getActivities, getMarketStatus', () => {
+  it('is exactly getAccountInfo and getActivities', () => {
     const fixture = {
       async getAccountInfo(): Promise<AccountInfo> {
         return {
@@ -23,24 +24,10 @@ describe('BrokerProvider interface', () => {
       },
       async getActivities(): Promise<BrokerActivity[]> {
         return []
-      },
-      async getMarketStatus(): Promise<MarketStatus> {
-        return {
-          isOpen: false,
-          nextOpen: '2026-05-30T13:30:00Z',
-          nextClose: '2026-05-30T20:00:00Z',
-          session: 'closed'
-        }
-      },
-      async getMarketCalendar(): Promise<MarketCalendarDay[]> {
-        return [{ date: '2026-05-29', close: '16:00' }]
       }
     } satisfies BrokerProvider
 
-    expect(typeof fixture.getAccountInfo).toBe('function')
-    expect(typeof fixture.getActivities).toBe('function')
-    expect(typeof fixture.getMarketStatus).toBe('function')
-    expect(typeof fixture.getMarketCalendar).toBe('function')
+    expect(Object.keys(fixture).sort()).toEqual(['getAccountInfo', 'getActivities'])
   })
 })
 

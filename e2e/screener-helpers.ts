@@ -326,9 +326,10 @@ export type ScreenerLaunchOpts = {
   /** [US-98] The instant the shared fake clock starts at — what the collector treats as
    *  "now" and what the screener ages readings against. Defaults to DEFAULT_FAKE_NOW. */
   fakeNow?: string
-  /** [US-98] The exchange calendar the fake broker publishes. Omit and every weekday in
-   *  range is a normal session; supply one to make a specific day a recognised closure. */
-  brokerCalendar?: Array<{ date: string; close: string }>
+  /** [US-116] The exchange calendar the fake market-data provider publishes. Omit and
+   *  every weekday in range is a normal session; supply one to make a specific day a
+   *  recognised closure. */
+  marketCalendar?: Array<{ date: string; close: string }>
   /** Underlying quotes, keyed by ticker. [US-96] Every bench row reads one, so omitting
    *  this seeds a flat DEFAULT_UNDERLYING_PRICE quote for each fixture rather than none. */
   stockQuotes?: Record<string, StockQuoteFixture>
@@ -337,6 +338,12 @@ export type ScreenerLaunchOpts = {
   marketStatus?: MarketStatusFixture
   /** MarketDataErrorCode that makes every provider call throw — the outage scenario. */
   marketDataError?: string
+  /** [US-116] MarketDataErrorCode that fails only `getMarketCalendar`, leaving quotes and
+   *  chains serving normally — the "a calendar failure degrades IV freshness only" case,
+   *  which the global seam above cannot express. */
+  marketCalendarError?: string
+  /** [US-116] Market-data credentials saved with no broker attached — see LaunchOpts. */
+  marketDataWithoutBroker?: boolean
   /** [US-99] Launch with no Alpaca credentials, for the "not connected" card. */
   withoutBrokerCredentials?: boolean
   /** [US-68] Watchlist notes by ticker; promote seeds the form's thesis from them. */
@@ -610,12 +617,14 @@ function screenerLaunchEnv(dbPath: string, opts: ScreenerLaunchOpts): Record<str
   const env = buildIvrLaunchEnv(dbPath, {
     marketStatus: opts.marketStatus,
     withoutBrokerCredentials: opts.withoutBrokerCredentials,
+    marketDataWithoutBroker: opts.marketDataWithoutBroker,
     fakeNow: opts.fakeNow,
-    brokerCalendar: opts.brokerCalendar
+    marketCalendar: opts.marketCalendar
   })
   env.WHEELBASE_MOCK_OPTION_SNAPSHOTS = JSON.stringify(buildPutFixtures(fixtures))
   env.WHEELBASE_MOCK_STOCK_QUOTES = JSON.stringify(opts.stockQuotes ?? flatQuotesFor(fixtures))
   if (opts.marketDataError) env.FAKE_MARKET_DATA_ERROR = opts.marketDataError
+  if (opts.marketCalendarError) env.FAKE_MARKET_CALENDAR_ERROR = opts.marketCalendarError
   // [US-70] The seam is always armed so e2e never reaches the live Finnhub API. Passing
   // `earnings` explicitly — including `{}`, which leaves every ticker `unknown` — opts
   // out of the all-clear default.
@@ -903,6 +912,19 @@ export async function setOptionSnapshotFixtures(
     },
     JSON.stringify(buildPutFixtures(specs))
   )
+}
+
+/** [US-116] Fail only `getMarketCalendar` with the given MarketDataErrorCode; `null`
+ *  clears it, so a spec can start from "the calendar has never been fetched" and then
+ *  let the bench resolve it. */
+export async function setMarketCalendarError(
+  app: ElectronApplication,
+  code: string | null
+): Promise<void> {
+  await app.evaluate(async (_electron, value) => {
+    if (value === null) delete process.env.FAKE_MARKET_CALENDAR_ERROR
+    else process.env.FAKE_MARKET_CALENDAR_ERROR = value
+  }, code)
 }
 
 /** Make every provider call throw the given MarketDataErrorCode; `null` clears it. */

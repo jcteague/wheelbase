@@ -49,13 +49,17 @@ vi.mock('../api/settings', () => ({
   saveAlertDefaults: vi.fn()
 }))
 
-function expectBrokerOnlyInvalidation(
+// [US-116] A credential change invalidates every vendor-backed read. The market-status
+// key now lives in the market namespace, so a broker-only predicate would silently stop
+// refreshing the pill after a save.
+function expectVendorInvalidation(
   predicate: ((query: { queryKey: readonly unknown[] }) => boolean) | undefined
 ): void {
   expect(predicate).toEqual(expect.any(Function))
   expect(predicate?.({ queryKey: brokerQueryKeys.account })).toBe(true)
-  expect(predicate?.({ queryKey: brokerQueryKeys.marketStatus })).toBe(true)
-  expect(predicate?.({ queryKey: marketDataQueryKeys.stockQuotes(['AAPL']) })).toBe(false)
+  expect(predicate?.({ queryKey: marketDataQueryKeys.marketStatus })).toBe(true)
+  expect(predicate?.({ queryKey: marketDataQueryKeys.stockQuotes(['AAPL']) })).toBe(true)
+  expect(predicate?.({ queryKey: ['positions', 'list'] })).toBe(false)
 }
 
 describe('useSettings hooks', () => {
@@ -98,7 +102,7 @@ describe('useSettings hooks', () => {
       [{ predicate?: (query: { queryKey: readonly unknown[] }) => boolean; queryKey?: unknown }]
     >
 
-    expectBrokerOnlyInvalidation(brokerInvalidation[0].predicate)
+    expectVendorInvalidation(brokerInvalidation[0].predicate)
     expect(settingsRefresh[0]).toEqual({ queryKey: settingsQueryKeys.status })
   })
 
@@ -116,7 +120,7 @@ describe('useSettings hooks', () => {
       [{ predicate?: (query: { queryKey: readonly unknown[] }) => boolean; queryKey?: unknown }]
     >
 
-    expectBrokerOnlyInvalidation(brokerInvalidation[0].predicate)
+    expectVendorInvalidation(brokerInvalidation[0].predicate)
     expect(settingsRefresh[0]).toEqual({ queryKey: settingsQueryKeys.status })
   })
 

@@ -35,8 +35,7 @@ const api = {
   onStreamError: onIpcEvent('market-data:stream-error'),
   broker: {
     account: () => invoke('broker:account'),
-    activities: (payload: unknown) => invoke('broker:activities', payload),
-    marketStatus: () => invoke('broker:market-status')
+    activities: (payload: unknown) => invoke('broker:activities', payload)
   },
   settings: {
     status: () => invoke('settings:get-credential-status'),
@@ -53,7 +52,8 @@ const api = {
   marketData: {
     stockQuotes: (payload: unknown) => invoke('market-data:stock-quotes', payload),
     optionSnapshot: (payload: unknown) => invoke('market-data:option-snapshot', payload),
-    optionChain: (payload: unknown) => invoke('market-data:option-chain', payload)
+    optionChain: (payload: unknown) => invoke('market-data:option-chain', payload),
+    marketStatus: () => invoke('market-data:market-status')
   },
   // Test-only helpers — backed by IPC channels that are only meaningful when
   // FAKE_MARKET_DATA=true; safe to expose unconditionally (no-op in prod)
@@ -93,7 +93,9 @@ const api = {
   testSchedulerSimulateWake: (payload: unknown) => invoke('_test:scheduler-simulate-wake', payload),
   testIvrSetOutcomes: (outcomes: unknown) => invoke('_test:ivr-set-outcomes', outcomes),
   testIvrSetNow: (nowIso: unknown) => invoke('_test:ivr-set-now', nowIso),
-  testIvrSnapshots: () => invoke('_test:ivr-snapshots')
+  testIvrSnapshots: () => invoke('_test:ivr-snapshots'),
+  testTradingSessionCount: () => invoke('_test:trading-session-count'),
+  testMarketCalendarFetchCount: () => invoke('_test:market-calendar-fetch-count')
 }
 
 if (process.contextIsolated) {

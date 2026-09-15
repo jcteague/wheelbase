@@ -4,6 +4,7 @@ import { ipcMain } from 'electron'
 import type Database from 'better-sqlite3'
 import type { IVRResult } from '../integrations/barchart-ivr-scraper'
 import { setFakeIvrNow, setFakeIvrOutcomes } from '../integrations/fake-ivr'
+import { marketCalendarFetchCount } from '../integrations/fake-market-data'
 
 export function registerTestIvrIpc(db: Database.Database): void {
   ipcMain.handle('_test:ivr-set-outcomes', (_, outcomes: Record<string, IVRResult>) => {
@@ -18,6 +19,17 @@ export function registerTestIvrIpc(db: Database.Database): void {
     setFakeIvrNow(nowIso)
     return { ok: true }
   })
+
+  // [US-116] Whether the calendar was fetched, and how often, is the only observable
+  // difference between a bench that refreshed it and one that skipped the refresh.
+  ipcMain.handle('_test:trading-session-count', () => {
+    const row = db.prepare('SELECT COUNT(*) AS count FROM trading_session').get() as {
+      count: number
+    }
+    return row.count
+  })
+
+  ipcMain.handle('_test:market-calendar-fetch-count', () => marketCalendarFetchCount())
 
   ipcMain.handle('_test:ivr-snapshots', () =>
     db

@@ -42,7 +42,9 @@ import {
   meetsTickers,
   openCriteriaSheet,
   promoteCard,
+  reloadBench,
   saveCriteria,
+  setMarketDataError,
   screenerDate,
   selectCard,
   setCriteriaValues,
@@ -556,7 +558,15 @@ describe('US-96: one live bench', () => {
   })
 
   it('Market data unavailable degrades verdicts, not rows', async () => {
-    const page = await launch('wb-e2e-us96-ac30', benchOpts({ marketDataError: 'network_error' }))
+    // [US-116] The outage is injected after seeding rather than at launch. Both the IV
+    // readings and the exchange calendar are local caches an established install already
+    // holds; this scenario is about losing the live quote and chain feed, not about a
+    // fresh install that never fetched either. Setting it in the launch env would also
+    // stop the seeding collector filling `trading_session`, and the tiers asserted at the
+    // end of this test would then be reporting an empty calendar rather than an outage.
+    const page = await launchBench('wb-e2e-us96-ac30')
+    await setMarketDataError(app, 'network_error')
+    await reloadBench(page)
     await waitForBenchCard(page, 'KO', 'waiting')
 
     const card = page.locator('[data-testid="screener-unavailable"]')

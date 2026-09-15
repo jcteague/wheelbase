@@ -85,6 +85,13 @@ export function registerMarketDataHandlers(
     })
   )
 
+  ipcMain.handle('market-data:market-status', () =>
+    handleIpcCall('market_data_market_status_unhandled_error', async () => {
+      const status = await getProvider().getMarketStatus()
+      return { status }
+    })
+  )
+
   // Test-only handlers: push synthetic events into the fake provider's stream so
   // e2e tests can simulate ticks and errors without real broker connections.
   // Registered unconditionally — but only callable when the fake provider is active.

@@ -122,7 +122,7 @@ describe('US-98: IV-rank staleness tiers', () => {
     const launched = await launchScreener(dbPath, {
       fixtures: KO_ONLY,
       fakeNow: afterCloseOn(priorSession),
-      brokerCalendar: weekdayCalendar([holiday]),
+      marketCalendar: weekdayCalendar([holiday]),
       ivr: { KO: { ivr: 38, observedAt: afterCloseOn(priorSession) } }
     })
     app = launched.app

@@ -218,7 +218,7 @@ describe('US-44: IVR collector — scheduling and persistence', () => {
     const holiday = BASE_DAY
     app = await launchIvrApp(dbPath, {
       fakeNow: afterCloseOn(holiday),
-      brokerCalendar: weekdayCalendar([holiday])
+      marketCalendar: weekdayCalendar([holiday])
     })
     const page = await getPage(app)
 
@@ -245,7 +245,7 @@ describe('US-44: IVR collector — scheduling and persistence', () => {
     // the collector is the only thing that refreshes it.
     app = await launchIvrApp(dbPath, {
       fakeNow: afterCloseOn(openDay),
-      brokerCalendar: calendar
+      marketCalendar: calendar
     })
     let page = await getPage(app)
     await seedActivePosition(page, 'SPY')

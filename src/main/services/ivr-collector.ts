@@ -4,7 +4,7 @@ import Decimal from 'decimal.js'
 import type { Logger } from 'pino'
 import { fetchIVR, type IVRResult } from '../integrations/barchart-ivr-scraper'
 import { etDateOf, getTradingSession } from '../core/trading-calendar'
-import type { BrokerProvider } from '../integrations/broker-provider'
+import type { MarketCalendarSource } from '../integrations/market-data-provider'
 import { readTradingCalendar, refreshTradingCalendar } from './trading-calendar-store'
 import { logger as defaultLogger } from '../logger'
 
@@ -26,9 +26,10 @@ type CollectIVRSnapshotsInput = {
   logger?: Pick<Logger, 'info' | 'debug' | 'warn' | 'error'>
   fetchIvr?: (ticker: string) => Promise<IVRResult>
   clock?: Clock
-  /** Refreshes the cached exchange calendar before the run reads it. Absent when no
-   *  broker is configured, in which case the run uses whatever is already cached. */
-  brokerProvider?: BrokerProvider
+  /** Refreshes the cached exchange calendar before the run reads it. The market-data
+   *  factory always constructs, so in the app this is always supplied; absence is a
+   *  test shape, and the run then uses whatever is already cached. */
+  marketDataProvider?: MarketCalendarSource
   /** Aborts the run at the next ticker boundary — set by the app's before-quit hook so
    *  a watchlist-sized batch does not stall shutdown for the scheduler's drain timeout. */
   signal?: AbortSignal
@@ -101,15 +102,14 @@ export async function collectIVRSnapshots({
   logger = defaultLogger,
   fetchIvr = fetchIVR,
   clock = DEFAULT_CLOCK,
-  brokerProvider,
+  marketDataProvider,
   signal
 }: CollectIVRSnapshotsInput): Promise<CollectIVRSnapshotsResult> {
   const now = clock.now()
-  // Best effort, and deliberately before the read: this daily job is the only thing
-  // that keeps the cached calendar ahead of today, but a broker outage must leave the
+  // Best effort, and deliberately before the read: a provider outage must leave the
   // batch to run on whatever is already cached rather than skip it.
-  if (brokerProvider !== undefined) {
-    await refreshTradingCalendar(db, brokerProvider, now)
+  if (marketDataProvider !== undefined) {
+    await refreshTradingCalendar(db, marketDataProvider, now)
   }
 
   const etDate = etDateOf(now)

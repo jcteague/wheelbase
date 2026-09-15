@@ -1,20 +1,147 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { FakeMarketDataProvider, fakeStockTickSubject } from './fake-market-data'
+import {
+  FakeMarketDataProvider,
+  fakeStockTickSubject,
+  marketCalendarFetchCount
+} from './fake-market-data'
 import {
   MarketDataError,
+  type MarketCalendarDay,
+  type MarketStatus,
   type OptionChainQuote,
   type OptionSnapshot,
   type StockQuote
 } from './market-data-provider'
 
 describe('FakeMarketDataProvider — interface shape', () => {
-  it('no longer exposes broker methods (getAccountInfo, getActivities, getMarketStatus)', () => {
+  // [US-116] Account methods stay on the broker fake; market facts move here.
+  it('exposes the market facts and none of the account methods', () => {
     const provider = new FakeMarketDataProvider()
-    // These broker methods must not exist on the slimmed MarketDataProvider
+
+    expect(typeof provider.getMarketStatus).toBe('function')
+    expect(typeof provider.getMarketCalendar).toBe('function')
     expect((provider as unknown as Record<string, unknown>)['getAccountInfo']).toBeUndefined()
     expect((provider as unknown as Record<string, unknown>)['getActivities']).toBeUndefined()
-    expect((provider as unknown as Record<string, unknown>)['getMarketStatus']).toBeUndefined()
+  })
+})
+
+// [US-116] The e2e seams for market status and the exchange calendar, moved off the fake
+// broker so FAKE_BROKER_ERROR can no longer break a market fact.
+describe('FakeMarketDataProvider.getMarketStatus', () => {
+  afterEach(() => {
+    delete process.env.FAKE_MARKET_STATUS
+    delete process.env.FAKE_MARKET_DATA_ERROR
+  })
+
+  it('returns the MarketStatus named by FAKE_MARKET_STATUS when set', async () => {
+    const status: MarketStatus = {
+      isOpen: true,
+      nextOpen: '2026-05-30T13:30:00Z',
+      nextClose: '2026-05-29T20:00:00Z',
+      session: 'regular'
+    }
+    process.env.FAKE_MARKET_STATUS = JSON.stringify(status)
+
+    const result = await new FakeMarketDataProvider().getMarketStatus()
+
+    expect(result).toEqual(status)
+  })
+
+  it('returns a default MarketStatus when FAKE_MARKET_STATUS is unset', async () => {
+    const result = await new FakeMarketDataProvider().getMarketStatus()
+
+    expect(result).toMatchObject({
+      isOpen: expect.any(Boolean),
+      nextOpen: expect.any(String),
+      nextClose: expect.any(String),
+      session: expect.stringMatching(/^(regular|pre|post|closed)$/)
+    })
+  })
+
+  it('throws the MarketDataError named by FAKE_MARKET_DATA_ERROR', async () => {
+    process.env.FAKE_MARKET_DATA_ERROR = 'auth_failed'
+
+    await expect(new FakeMarketDataProvider().getMarketStatus()).rejects.toMatchObject({
+      code: 'auth_failed'
+    })
+  })
+})
+
+describe('FakeMarketDataProvider.getMarketCalendar', () => {
+  afterEach(() => {
+    delete process.env.FAKE_MARKET_CALENDAR
+    delete process.env.FAKE_MARKET_DATA_ERROR
+    delete process.env.FAKE_MARKET_CALENDAR_ERROR
+  })
+
+  it('generates every weekday in the range at 16:00 when FAKE_MARKET_CALENDAR is unset', async () => {
+    // 2026-09-07 is a Monday; 2026-09-12 a Saturday, 2026-09-13 a Sunday.
+    const result = await new FakeMarketDataProvider().getMarketCalendar({
+      start: '2026-09-07',
+      end: '2026-09-13'
+    })
+
+    expect(result.map((d) => d.date)).toEqual([
+      '2026-09-07',
+      '2026-09-08',
+      '2026-09-09',
+      '2026-09-10',
+      '2026-09-11'
+    ])
+    expect(result.every((d) => d.close === '16:00')).toBe(true)
+  })
+
+  it('returns only fixture days inside the requested range when FAKE_MARKET_CALENDAR is set', async () => {
+    const fixture: MarketCalendarDay[] = [
+      { date: '2026-09-04', close: '16:00' },
+      { date: '2026-09-08', close: '13:00' },
+      { date: '2026-09-30', close: '16:00' }
+    ]
+    process.env.FAKE_MARKET_CALENDAR = JSON.stringify(fixture)
+
+    const result = await new FakeMarketDataProvider().getMarketCalendar({
+      start: '2026-09-07',
+      end: '2026-09-11'
+    })
+
+    expect(result).toEqual([{ date: '2026-09-08', close: '13:00' }])
+  })
+
+  it('throws the MarketDataError named by FAKE_MARKET_DATA_ERROR', async () => {
+    process.env.FAKE_MARKET_DATA_ERROR = 'network_error'
+
+    await expect(
+      new FakeMarketDataProvider().getMarketCalendar({ start: '2026-09-07', end: '2026-09-11' })
+    ).rejects.toMatchObject({ code: 'network_error' })
+  })
+
+  // [US-116] "The calendar is not refetched on every render" is only observable from a
+  // spec if the fake counts its fetches: the throttle lives in the store, and the bench
+  // gives no other outward sign of having skipped one.
+  it('counts calendar fetches so the refresh throttle is observable', async () => {
+    const provider = new FakeMarketDataProvider()
+    const before = marketCalendarFetchCount()
+
+    await provider.getMarketCalendar({ start: '2026-09-07', end: '2026-09-11' })
+    await provider.getMarketCalendar({ start: '2026-09-07', end: '2026-09-11' })
+
+    // A delta, because the count is process-wide and the e2e seam reads it the same way.
+    expect(marketCalendarFetchCount() - before).toBe(2)
+  })
+
+  // [US-116] AC 5 and AC 6 need the calendar to fail while quotes and chains serve
+  // normally. FAKE_MARKET_DATA_ERROR is global to the fake, so the calendar gets its own
+  // seam rather than a spec racing a global toggle across one concurrent call.
+  it('throws only the calendar call when FAKE_MARKET_CALENDAR_ERROR is set', async () => {
+    process.env.FAKE_MARKET_CALENDAR_ERROR = 'network_error'
+    const provider = new FakeMarketDataProvider()
+
+    await expect(
+      provider.getMarketCalendar({ start: '2026-09-07', end: '2026-09-11' })
+    ).rejects.toMatchObject({ code: 'network_error' })
+    await expect(provider.getStockQuotes(['AAPL'])).resolves.toBeInstanceOf(Map)
+    await expect(provider.getMarketStatus()).resolves.toMatchObject({ session: 'regular' })
   })
 })
 

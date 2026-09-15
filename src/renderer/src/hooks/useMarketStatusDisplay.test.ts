@@ -24,15 +24,31 @@ describe('useMarketStatusDisplay', () => {
     } as unknown as ReturnType<typeof useMarketStatus>)
   })
 
-  it('derives hasBroker from settings and passes it to useMarketStatus', () => {
+  it('derives hasMarketData from settings and passes it to useMarketStatus', () => {
     renderHook(() => useMarketStatusDisplay())
 
     expect(mockUseMarketStatus).toHaveBeenCalledWith(true)
   })
 
-  it('passes hasBroker=false to useMarketStatus when no broker is configured', () => {
+  // [US-116] The pill asks whether the market-data provider is reachable, not whether a
+  // broker is attached — the session is a market fact.
+  it('enables the status query on market-data credentials alone, with no broker', () => {
     mockUseSettingsStatus.mockReturnValue({
-      data: { activeBrokerEnv: 'none', marketData: 'missing' },
+      data: { activeBrokerEnv: 'none', marketData: 'configured' },
+      isLoading: false,
+      isError: false
+    } as unknown as ReturnType<typeof useSettingsStatus>)
+
+    const { result } = renderHook(() => useMarketStatusDisplay())
+
+    expect(mockUseMarketStatus).toHaveBeenCalledWith(true)
+    expect(result.current.hasMarketData).toBe(true)
+    expect(result.current.display).toBe('LIVE')
+  })
+
+  it('passes hasMarketData=false to useMarketStatus when market data is not configured', () => {
+    mockUseSettingsStatus.mockReturnValue({
+      data: { activeBrokerEnv: 'alpaca_paper', marketData: 'missing' },
       isLoading: false,
       isError: false
     } as unknown as ReturnType<typeof useSettingsStatus>)
@@ -46,7 +62,7 @@ describe('useMarketStatusDisplay', () => {
     const { result } = renderHook(() => useMarketStatusDisplay(false))
 
     expect(result.current.display).toBe('LIVE')
-    expect(result.current.hasBroker).toBe(true)
+    expect(result.current.hasMarketData).toBe(true)
   })
 
   it('derives DELAYED display when stale, regardless of session', () => {

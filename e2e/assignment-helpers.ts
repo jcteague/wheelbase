@@ -52,6 +52,11 @@ export type LaunchOpts = {
   /** Launch with no Alpaca credentials at all — no preseeded rows and no env fallback.
    *  For specs asserting the "not connected" states. */
   withoutBrokerCredentials?: boolean
+  /** [US-116] Market-data credentials saved, no broker attached: `activeBrokerEnv` reads
+   *  'none' while `CredentialStatus.marketData` reads 'configured'. This is the journal-
+   *  only install the story is about, and the only state the current credential model can
+   *  express for it — the env fallback is a real, documented path (see `.env.example`). */
+  marketDataWithoutBroker?: boolean
 }
 
 export const REGULAR_SESSION: MarketStatusFixture = {
@@ -143,6 +148,13 @@ export function buildLaunchEnv(dbPath: string, opts: LaunchOpts): Record<string,
     // The preseed writes real credential rows and activates them, which is what makes
     // CredentialStatus.marketData read 'configured' in every other spec.
     delete env.WHEELBASE_PRESEED_ACTIVE_ENV
+  }
+  if (opts.marketDataWithoutBroker) {
+    // No activated broker rows, but a usable env-fallback key pair — so the broker-gated
+    // work (assignment detection) stays off while every market fact still resolves.
+    delete env.WHEELBASE_PRESEED_ACTIVE_ENV
+    env.ALPACA_KEY_ID = 'PKE2ETESTKEYID'
+    env.ALPACA_SECRET_KEY = 'e2e-test-secret'
   }
   return env
 }

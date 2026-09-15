@@ -8,7 +8,7 @@ import type Database from 'better-sqlite3'
 import type { MarketDataProvider, StockQuote } from '../integrations/market-data-provider'
 import { DEFAULT_SCREENING_CRITERIA, type EarningsLookup } from '../core/screener'
 import { logger } from '../logger'
-import { makeTestDb, seedIvr, seedTradingCalendar } from '../test-utils'
+import { makeTestDb, seedIvr, seedTradingCalendar, weekdayCalendarFetcher } from '../test-utils'
 import { getEarningsCalendar } from './earnings-dates'
 import { getAssessedIvrByUnderlying } from './ivr-snapshots'
 import { buildWatchlistSnapshot } from './watchlist-snapshot'
@@ -58,10 +58,11 @@ function mockEarnings(byTicker: Record<string, EarningsLookup>): void {
   )
 }
 
-/** A DB with the exchange calendar already cached — the state every snapshot runs in. */
+/** A DB with the exchange calendar already cached and reaching far enough ahead that no
+ *  refresh is due — the steady state every snapshot runs in. */
 function makeSnapshotDb(): Database.Database {
   const db = makeTestDb()
-  seedTradingCalendar(db, '2026-05-01', '2026-12-31')
+  seedTradingCalendar(db, '2026-05-01', '2027-12-31')
   return db
 }
 
@@ -109,9 +110,18 @@ function stockQuote(price: string, prevClose = '100.00'): StockQuote {
 function makeProvider(
   quotes: (tickers: string[]) => Map<string, StockQuote> | Promise<Map<string, StockQuote>> = () =>
     new Map()
-): { provider: MarketDataProvider; getStockQuotes: ReturnType<typeof vi.fn> } {
+): {
+  provider: MarketDataProvider
+  getStockQuotes: ReturnType<typeof vi.fn>
+  getMarketCalendar: ReturnType<typeof vi.fn>
+} {
   const getStockQuotes = vi.fn(async (tickers: string[]) => quotes(tickers))
-  return { provider: { getStockQuotes } as unknown as MarketDataProvider, getStockQuotes }
+  const getMarketCalendar = weekdayCalendarFetcher()
+  return {
+    provider: { getStockQuotes, getMarketCalendar } as unknown as MarketDataProvider,
+    getStockQuotes,
+    getMarketCalendar
+  }
 }
 
 describe('buildWatchlistSnapshot', () => {
@@ -384,6 +394,83 @@ describe('buildWatchlistSnapshot', () => {
 
     expect(logger.info).toHaveBeenCalledWith(
       expect.objectContaining({ rowCount: 2 }),
+      'watchlist_snapshot_built'
+    )
+  })
+})
+
+// [US-116] The bench refreshes the calendar it reads, so a fresh install does not wait
+// for the nightly collection before IV rank becomes legible.
+describe('buildWatchlistSnapshot — the calendar refresh it rides on', () => {
+  it('fetches the calendar once and renders the seeded IV rank on the same open', async () => {
+    // An install that has never collected: entries and a reading, but no calendar.
+    const db = makeTestDb()
+    seedEntries(db, [{ ticker: 'KO', addedAt: '2026-07-01T12:00:00.000Z' }])
+    seedIvr(db, [['KO', '2026-07-22T20:10:00Z', '58.0']])
+    const { provider, getMarketCalendar } = makeProvider(
+      () => new Map([['KO', stockQuote('62.00', '61.50')]])
+    )
+
+    const snapshot = await buildWatchlistSnapshot(() => provider, db, {
+      currentDate: CURRENT_DATE
+    })
+
+    expect(getMarketCalendar).toHaveBeenCalledTimes(1)
+    expect(snapshot.rows[0].ivRank).toMatchObject({ value: '58.0', state: 'fresh' })
+  })
+
+  it('does not refetch the calendar on a second open once coverage is current', async () => {
+    const db = makeSnapshotDb()
+    seedEntries(db, [{ ticker: 'KO', addedAt: '2026-07-01T12:00:00.000Z' }])
+    const { provider, getMarketCalendar } = makeProvider()
+
+    await buildWatchlistSnapshot(() => provider, db, { currentDate: CURRENT_DATE })
+    await buildWatchlistSnapshot(() => provider, db, { currentDate: CURRENT_DATE })
+
+    expect(getMarketCalendar).not.toHaveBeenCalled()
+  })
+
+  it('still returns every row when the calendar fetch fails, with IV rank unknown', async () => {
+    const db = makeTestDb()
+    seedEntries(db, [
+      { ticker: 'KO', addedAt: '2026-07-01T12:00:00.000Z' },
+      { ticker: 'AAPL', addedAt: '2026-07-20T12:00:00.000Z' }
+    ])
+    seedIvr(db, [['KO', '2026-07-22T20:10:00Z', '58.0']])
+    const { provider, getMarketCalendar } = makeProvider(
+      () =>
+        new Map([
+          ['KO', stockQuote('62.00', '61.50')],
+          ['AAPL', stockQuote('210.00', '208.00')]
+        ])
+    )
+    getMarketCalendar.mockRejectedValue(new Error('calendar unavailable'))
+
+    const snapshot = await buildWatchlistSnapshot(() => provider, db, {
+      currentDate: CURRENT_DATE
+    })
+
+    expect(snapshot.rows).toHaveLength(2)
+    for (const row of snapshot.rows) {
+      expect(row.entry.ticker).toBeTruthy()
+      expect(row.quote).not.toBeNull()
+      expect(row.verdict).toBeTruthy()
+      expect(row.ivRank).toBeNull()
+    }
+  })
+
+  it('logs the built snapshot at info with the full row count despite a calendar failure', async () => {
+    const db = makeTestDb()
+    seedEntries(db, [{ ticker: 'KO', addedAt: '2026-07-01T12:00:00.000Z' }])
+    const { provider, getMarketCalendar } = makeProvider(
+      () => new Map([['KO', stockQuote('62.00', '61.50')]])
+    )
+    getMarketCalendar.mockRejectedValue(new Error('calendar unavailable'))
+
+    await buildWatchlistSnapshot(() => provider, db, { currentDate: CURRENT_DATE })
+
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ rowCount: 1, quotedCount: 1 }),
       'watchlist_snapshot_built'
     )
   })

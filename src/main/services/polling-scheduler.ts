@@ -1,4 +1,4 @@
-import type { BrokerProvider, MarketStatus } from '../integrations/broker-provider'
+import type { MarketStatus, MarketStatusSource } from '../integrations/market-data-provider'
 import { logger } from '../logger'
 
 export type CadencePolicy =
@@ -96,13 +96,13 @@ type JobState = {
 }
 
 /**
- * Creates a polling scheduler bound to a broker getter rather than a broker
- * instance. The broker is resolved fresh on every reschedule so that runtime
- * credential changes (Settings page → brokerFactory.recreate()) take effect on
- * the next tick without an app restart.
+ * Creates a polling scheduler bound to a status-source getter rather than a provider
+ * instance. The source is resolved fresh on every reschedule so that runtime credential
+ * changes (Settings page → marketDataFactory.recreate()) take effect on the next tick
+ * without an app restart.
  */
 export function createPollingScheduler(
-  getBroker: () => BrokerProvider,
+  getStatusSource: () => MarketStatusSource,
   clock: Clock = realClock
 ): PollingScheduler {
   const jobs = new Map<string, JobState>()
@@ -164,7 +164,7 @@ export function createPollingScheduler(
     if (stopped) return
     let status: MarketStatus
     try {
-      status = await getBroker().getMarketStatus()
+      status = await getStatusSource().getMarketStatus()
     } catch (err) {
       logger.warn(
         { err, job: state.config.name },
@@ -202,7 +202,7 @@ export function createPollingScheduler(
     if (stopped) return
     let status: MarketStatus
     try {
-      status = await getBroker().getMarketStatus()
+      status = await getStatusSource().getMarketStatus()
     } catch (err) {
       logger.warn(
         { err, job: state.config.name },

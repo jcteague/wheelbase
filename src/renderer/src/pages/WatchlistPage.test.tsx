@@ -198,7 +198,7 @@ function setCriteriaError(): void {
 function setMarketDisplay(display: MarketStatusDisplay): void {
   mockUseMarketStatusDisplay.mockReturnValue({
     settingsQuery: {} as ReturnType<typeof useMarketStatusDisplay>['settingsQuery'],
-    hasBroker: true,
+    hasMarketData: true,
     statusQuery: {} as ReturnType<typeof useMarketStatusDisplay>['statusQuery'],
     display
   })

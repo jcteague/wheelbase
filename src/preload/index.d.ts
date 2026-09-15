@@ -292,7 +292,7 @@ type IpcBrokerResult<T> =
 
 type IpcGetBrokerAccountResult = IpcBrokerResult<{ account: IpcAccountInfo }>
 type IpcGetBrokerActivitiesResult = IpcBrokerResult<{ activities: IpcBrokerActivity[] }>
-type IpcGetBrokerMarketStatusResult = IpcBrokerResult<{ status: IpcMarketStatus }>
+type IpcGetMarketStatusResult = IpcResult<{ status: IpcMarketStatus }>
 
 type IpcCredentialState = 'configured' | 'missing'
 type IpcActiveBrokerEnvironment = 'paper' | 'live' | 'none'
@@ -655,7 +655,6 @@ declare global {
           type: string
           since?: string
         }) => Promise<IpcGetBrokerActivitiesResult>
-        marketStatus: () => Promise<IpcGetBrokerMarketStatusResult>
       }
       settings: {
         status: () => Promise<IpcCredentialStatusResult>
@@ -681,6 +680,7 @@ declare global {
         stockQuotes: (payload: IpcGetStockQuotesPayload) => Promise<IpcGetStockQuotesResult>
         optionSnapshot: (payload: IpcOptionSnapshotPayload) => Promise<IpcGetOptionSnapshotResult>
         optionChain: (payload: IpcOptionChainPayload) => Promise<IpcGetOptionChainResult>
+        marketStatus: () => Promise<IpcGetMarketStatusResult>
       }
       triggerTestTick: (payload: { ticker: string; quote: IpcStockQuote }) => Promise<{ ok: true }>
       triggerStreamError: (payload: IpcStreamErrorEvent) => Promise<{ ok: true }>
@@ -746,6 +746,8 @@ declare global {
       testIvrSetOutcomes: (outcomes: unknown) => Promise<{ ok: boolean }>
       testIvrSetNow: (nowIso: unknown) => Promise<{ ok: true } | { ok: false; error: string }>
       testIvrSnapshots: () => Promise<unknown[]>
+      testTradingSessionCount: () => Promise<number>
+      testMarketCalendarFetchCount: () => Promise<number>
     }
   }
 }

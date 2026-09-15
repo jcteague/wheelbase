@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IVRResult } from '../integrations/barchart-ivr-scraper'
-import type { BrokerProvider } from '../integrations/broker-provider'
+import type { MarketCalendarDay, MarketDataProvider } from '../integrations/market-data-provider'
 import { logger } from '../logger'
 import { makeTestDb, seedTradingCalendar, seedWatchlist } from '../test-utils'
 import { removeWatchlistEntry } from './watchlist'
@@ -30,6 +30,12 @@ function makeCollectorDb(): Database.Database {
   const db = makeTestDb()
   seedTradingCalendar(db, '2026-01-01', '2026-12-31', { closures: ['2026-11-26'] })
   return db
+}
+
+function calendarProvider(
+  days: MarketCalendarDay[]
+): Pick<MarketDataProvider, 'getMarketCalendar'> {
+  return { getMarketCalendar: vi.fn().mockResolvedValue(days) }
 }
 
 function insertPosition(
@@ -171,16 +177,11 @@ describe('collectIVRSnapshots', () => {
     )
   })
 
-  it('refreshes the cached calendar from the broker before reading it', async () => {
+  it('refreshes the cached calendar from the market-data provider before reading it', async () => {
     const db = makeTestDb()
     seedWatchlist(db, ['KO'])
     const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
-    const brokerProvider = {
-      getAccountInfo: vi.fn(),
-      getActivities: vi.fn(),
-      getMarketStatus: vi.fn(),
-      getMarketCalendar: vi.fn().mockResolvedValue([{ date: '2026-05-29', close: '16:00' }])
-    } as unknown as BrokerProvider
+    const marketDataProvider = calendarProvider([{ date: '2026-05-29', close: '16:00' }])
 
     // No calendar cached at all, so without the refresh the run could not tell that
     // 2026-05-29 was a trading day.
@@ -189,34 +190,62 @@ describe('collectIVRSnapshots', () => {
       logger,
       fetchIvr,
       clock: makeClock(),
-      brokerProvider
+      marketDataProvider
     })
 
-    expect(brokerProvider.getMarketCalendar).toHaveBeenCalled()
+    expect(marketDataProvider.getMarketCalendar).toHaveBeenCalled()
     expect(result.skippedReason).toBeNull()
     expect(fetchIvr).toHaveBeenCalledWith('KO')
   })
 
-  it('still collects on the cached calendar when the broker calendar fetch fails', async () => {
+  it('still collects on the cached calendar when the calendar fetch fails', async () => {
     const db = makeCollectorDb()
     seedWatchlist(db, ['KO'])
     const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
-    const brokerProvider = {
-      getAccountInfo: vi.fn(),
-      getActivities: vi.fn(),
-      getMarketStatus: vi.fn(),
-      getMarketCalendar: vi.fn().mockRejectedValue(new Error('network error'))
-    } as unknown as BrokerProvider
+    const marketDataProvider = calendarProvider([])
+    vi.mocked(marketDataProvider.getMarketCalendar).mockRejectedValue(new Error('network error'))
 
     const result = await collectIVRSnapshots({
       db,
       logger,
       fetchIvr,
       clock: makeClock(),
-      brokerProvider
+      marketDataProvider
     })
 
     expect(result.successCount).toBe(1)
+  })
+
+  // [US-116] The calendar is a market fact now, so the collector takes the market-data
+  // provider — and still refreshes on its own weekly schedule.
+  it('reads the existing cache and fetches nothing when no provider is supplied', async () => {
+    const db = makeCollectorDb()
+    seedWatchlist(db, ['KO'])
+    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
+
+    const result = await collectIVRSnapshots({ db, logger, fetchIvr, clock: makeClock() })
+
+    expect(result.successCount).toBe(1)
+    expect(result.skippedReason).toBeNull()
+  })
+
+  it('refreshes the calendar on a run eight days after the last fetch', async () => {
+    // Coverage stops well inside the 400-day lookahead, so the weekly throttle is due.
+    const db = makeTestDb()
+    seedTradingCalendar(db, '2026-01-01', '2027-06-20')
+    seedWatchlist(db, ['KO'])
+    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
+    const marketDataProvider = calendarProvider([{ date: '2026-05-29', close: '16:00' }])
+
+    await collectIVRSnapshots({
+      db,
+      logger,
+      fetchIvr,
+      clock: makeClock(),
+      marketDataProvider
+    })
+
+    expect(marketDataProvider.getMarketCalendar).toHaveBeenCalled()
   })
 
   it('collects the union of open-position and watchlist tickers, distinct and sorted', async () => {

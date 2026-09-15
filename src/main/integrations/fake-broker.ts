@@ -1,14 +1,10 @@
-import { eachDayOfInterval, format, isWeekend, parseISO } from 'date-fns'
 import {
   BrokerError,
   type AccountInfo,
   type ActivityFilter,
   type BrokerActivity,
   type BrokerErrorCode,
-  type BrokerProvider,
-  type MarketCalendarDay,
-  type MarketCalendarRange,
-  type MarketStatus
+  type BrokerProvider
 } from './broker-provider'
 
 const DEFAULT_ACCOUNT: AccountInfo = {
@@ -17,25 +13,6 @@ const DEFAULT_ACCOUNT: AccountInfo = {
   cash: '25000.00',
   environment: 'paper',
   accountNumberMasked: 'PA…123'
-}
-
-const DEFAULT_MARKET_STATUS: MarketStatus = {
-  isOpen: true,
-  nextOpen: '2026-05-30T13:30:00Z',
-  nextClose: '2026-05-29T20:00:00Z',
-  session: 'regular'
-}
-
-const FAKE_CLOSE_TIME = '16:00'
-
-/** Every weekday in the range as a normal 16:00 session. Offline runs need a calendar
- *  that is correct *relative to whatever day the suite runs on*, so this is generated
- *  rather than fixtured; a spec that needs a holiday or early close sets
- *  FAKE_BROKER_CALENDAR explicitly. */
-function weekdaySessions(range: MarketCalendarRange): MarketCalendarDay[] {
-  return eachDayOfInterval({ start: parseISO(range.start), end: parseISO(range.end) })
-    .filter((day) => !isWeekend(day))
-    .map((day) => ({ date: format(day, 'yyyy-MM-dd'), close: FAKE_CLOSE_TIME }))
 }
 
 function parseEnv<T>(envVar: string): T | null {
@@ -76,18 +53,5 @@ export class FakeBrokerProvider implements BrokerProvider {
     this.maybeThrow()
     void filter
     return parseEnv<BrokerActivity[]>('FAKE_BROKER_ACTIVITIES') ?? []
-  }
-
-  async getMarketStatus(): Promise<MarketStatus> {
-    this.maybeThrow()
-    return parseEnv<MarketStatus>('FAKE_MARKET_STATUS') ?? DEFAULT_MARKET_STATUS
-  }
-
-  async getMarketCalendar(range: MarketCalendarRange): Promise<MarketCalendarDay[]> {
-    this.maybeThrow()
-    const fixture = parseEnv<MarketCalendarDay[]>('FAKE_BROKER_CALENDAR')
-    if (fixture === null) return weekdaySessions(range)
-
-    return fixture.filter((day) => day.date >= range.start && day.date <= range.end)
   }
 }

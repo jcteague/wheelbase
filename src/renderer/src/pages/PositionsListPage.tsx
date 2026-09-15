@@ -178,7 +178,7 @@ export function PositionsListPage(): React.JSX.Element {
   )
 
   const quotesQuery = useStockQuotes(tickers)
-  const { settingsQuery, hasBroker, statusQuery, display } = useMarketStatusDisplay(
+  const { settingsQuery, hasMarketData, statusQuery, display } = useMarketStatusDisplay(
     quotesQuery.stale
   )
   const snapshotsQuery = useOptionSnapshots(legs, { session: statusQuery.data?.session })
@@ -192,10 +192,10 @@ export function PositionsListPage(): React.JSX.Element {
   const showNoBrokerBanner = settingsQuery.data?.activeBrokerEnv === 'none'
   // Market data and the broker share one set of Alpaca keys, so a rejection from either
   // source is the same problem and gets a single prompt.
-  // Only surface a broker auth error when credentials ARE configured but rejected — not when none are saved
+  // Only surface an auth error when credentials ARE configured but rejected — not when none are saved
   const authPrompt =
     quotesQuery.streamError?.code === 'auth_failed' ||
-    (hasBroker && getErrorCode(statusQuery.error) === 'auth_failed')
+    (hasMarketData && getErrorCode(statusQuery.error) === 'auth_failed')
       ? 'Alpaca authentication failed — check your key in Settings'
       : null
 

@@ -24,7 +24,7 @@ import { readEarningsOrEmpty } from './earnings-horizon'
 import { getScreeningCriteria } from './screening-criteria'
 import { fetchIsolatedStockQuotes } from './underlying-quotes'
 import { getAssessedIvrByUnderlying } from './ivr-snapshots'
-import { readTradingCalendar } from './trading-calendar-store'
+import { ensureTradingCalendar, readTradingCalendar } from './trading-calendar-store'
 
 export type ScreenerExclusionCode = ExclusionCode | 'no_options_listed' | 'data_unavailable'
 
@@ -90,8 +90,9 @@ async function readUnderlyingPrices(
  *
  * Both reads degrade internally to "unknown for everyone" rather than sinking the run:
  * IVR is display-only and never a hard filter, so losing it must not cost the trader
- * the whole screen. That is why there is no catch here — a second one could only ever
- * be reached by a test mock, and would hide a genuine defect if one appeared.
+ * the whole screen. The refresh feeding this read is likewise best-effort and logs its
+ * own outcomes. That is why there is no catch here — a second one could only ever be
+ * reached by a test mock, and would hide a genuine defect if one appeared.
  */
 function readAssessedIvr(
   db: Database.Database,
@@ -267,7 +268,11 @@ export async function screenWatchlistCandidates(
 
   const [prices, earnings] = await Promise.all([
     readUnderlyingPrices(provider, screenable, criteria),
-    readEarningsOrEmpty(db, screenable, criteria, currentDate, 'screener_earnings_read_failed')
+    readEarningsOrEmpty(db, screenable, criteria, currentDate, 'screener_earnings_read_failed'),
+    // Awaited, not fired and forgotten: the IVR read below ages its readings against
+    // this calendar and must see refreshed rows. Self-throttling and self-logging, and it
+    // never rejects — a calendar failure costs freshness only, never `provider_unavailable`.
+    ensureTradingCalendar(db, () => provider, currentDate)
   ])
   const assessedIvRanks = readAssessedIvr(db, screenable, currentDate, earnings)
   const ctx: ScreenContext = {

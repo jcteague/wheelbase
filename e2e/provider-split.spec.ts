@@ -292,15 +292,24 @@ describe('US-31: Provider Split — IPC channel routing', () => {
     expect(symbol).toBe('AAPL')
   })
 
-  it('BrokerProvider exposes market status', async () => {
-    const { ok, session, isOpen } = await page.evaluate(async () => {
-      const result = await window.api.broker.marketStatus()
-      if (!result.ok) return { ok: false as const, session: null, isOpen: null }
-      return { ok: true as const, session: result.status.session, isOpen: result.status.isOpen }
+  // [US-116] Market status left the broker: it is a fact about the exchange, not about
+  // the trader's account, so MarketDataProvider answers it.
+  it('MarketDataProvider exposes market status, and BrokerProvider does not', async () => {
+    const { ok, session, isOpen, onBroker } = await page.evaluate(async () => {
+      const onBroker = 'marketStatus' in (window.api.broker as unknown as Record<string, unknown>)
+      const result = await window.api.marketData.marketStatus()
+      if (!result.ok) return { ok: false as const, session: null, isOpen: null, onBroker }
+      return {
+        ok: true as const,
+        session: result.status.session,
+        isOpen: result.status.isOpen,
+        onBroker
+      }
     })
     expect(ok).toBe(true)
     expect(['regular', 'pre', 'post', 'closed']).toContain(session)
     expect(isOpen).toBe(true)
+    expect(onBroker).toBe(false)
   })
 
   it('Interfaces remain independent', () => {
@@ -542,9 +551,10 @@ describe('US-40: Broker behaviors via IPC', () => {
     expect(qty).toBe(100)
   })
 
-  it('getMarketStatus returns current session', async () => {
+  // [US-116] The session is a market fact, so it comes off the market-data channel.
+  it('marketData.marketStatus returns current session', async () => {
     const { ok, session, isOpen } = await page.evaluate(async () => {
-      const result = await window.api.broker.marketStatus()
+      const result = await window.api.marketData.marketStatus()
       if (!result.ok) return { ok: false as const, session: null, isOpen: null }
       return { ok: true as const, session: result.status.session, isOpen: result.status.isOpen }
     })
@@ -552,6 +562,13 @@ describe('US-40: Broker behaviors via IPC', () => {
     expect(['regular', 'pre', 'post', 'closed']).toContain(session)
     expect(session).toBe('regular')
     expect(isOpen).toBe(true)
+  })
+
+  it('the broker bridge no longer exposes marketStatus', async () => {
+    const exposed = await page.evaluate(
+      () => 'marketStatus' in (window.api.broker as unknown as Record<string, unknown>)
+    )
+    expect(exposed).toBe(false)
   })
 
   it('Missing Alpaca credentials surface typed error', async () => {

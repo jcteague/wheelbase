@@ -1558,3 +1558,202 @@ describe('AlpacaMarketDataProvider degraded payloads', () => {
     })
   })
 })
+
+// [US-116] The exchange clock and calendar are market facts, served by the same trading
+// host (and the same key pair) the open-interest lookup already authenticates against.
+describe('AlpacaMarketDataProvider market facts', () => {
+  const LIVE_CREDS: AlpacaCredentials = {
+    environment: 'live',
+    keyId: 'AKTESTKEYID',
+    secret: 'super-secret-value'
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubGlobal('fetch', mockFetch)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  describe('getMarketStatus', () => {
+    const OPEN_CLOCK = {
+      timestamp: '2026-05-29T14:00:00-04:00',
+      is_open: true,
+      next_open: '2026-06-01T13:30:00Z',
+      next_close: '2026-05-29T20:00:00Z'
+    }
+
+    function clockAt(timestamp: string): Record<string, unknown> {
+      return { ...OPEN_CLOCK, is_open: false, timestamp }
+    }
+
+    it('requests the clock on the paper trading host for paper credentials', async () => {
+      mockFetch.mockResolvedValue(fetchOk(OPEN_CLOCK))
+
+      const { provider } = createProvider()
+      await provider.getMarketStatus()
+
+      expect(lastFetchUrl()).toBe('https://paper-api.alpaca.markets/v2/clock')
+    })
+
+    it('requests the clock on the live trading host for live credentials', async () => {
+      mockFetch.mockResolvedValue(fetchOk(OPEN_CLOCK))
+
+      const { provider } = createProvider(LIVE_CREDS)
+      await provider.getMarketStatus()
+
+      expect(lastFetchUrl()).toBe('https://api.alpaca.markets/v2/clock')
+    })
+
+    it("maps an open clock to session 'regular', passing next_open and next_close through", async () => {
+      mockFetch.mockResolvedValue(fetchOk(OPEN_CLOCK))
+
+      const { provider } = createProvider()
+      const result = await provider.getMarketStatus()
+
+      expect(result).toEqual({
+        isOpen: true,
+        nextOpen: '2026-06-01T13:30:00Z',
+        nextClose: '2026-05-29T20:00:00Z',
+        session: 'regular'
+      })
+    })
+
+    it("maps a closed clock at 07:00 ET to session 'pre'", async () => {
+      mockFetch.mockResolvedValue(fetchOk(clockAt('2026-05-29T07:00:00-04:00')))
+
+      const { provider } = createProvider()
+
+      expect((await provider.getMarketStatus()).session).toBe('pre')
+    })
+
+    it("maps a closed clock at 17:00 ET to session 'post'", async () => {
+      mockFetch.mockResolvedValue(fetchOk(clockAt('2026-05-29T17:00:00-04:00')))
+
+      const { provider } = createProvider()
+
+      expect((await provider.getMarketStatus()).session).toBe('post')
+    })
+
+    it("maps a closed clock at 02:00 ET to session 'closed'", async () => {
+      mockFetch.mockResolvedValue(fetchOk(clockAt('2026-05-29T02:00:00-04:00')))
+
+      const { provider } = createProvider()
+
+      expect((await provider.getMarketStatus()).session).toBe('closed')
+    })
+
+    it('reads the timestamp against its own -05:00 offset rather than the -04:00 default', async () => {
+      // 09:20 EST is pre-market; read against the -04:00 default the same instant would
+      // land at 10:20 and be misreported as closed.
+      mockFetch.mockResolvedValue(fetchOk(clockAt('2026-01-15T09:20:00-05:00')))
+
+      const { provider } = createProvider()
+
+      expect((await provider.getMarketStatus()).session).toBe('pre')
+    })
+
+    it('falls back to the -04:00 default when the timestamp carries no parseable offset', async () => {
+      // 21:00Z is 17:00 under the -04:00 fallback.
+      mockFetch.mockResolvedValue(fetchOk(clockAt('2026-05-29T21:00:00Z')))
+
+      const { provider } = createProvider()
+
+      expect((await provider.getMarketStatus()).session).toBe('post')
+    })
+
+    it('rejects a 401 with MarketDataError auth_failed, never a BrokerError', async () => {
+      mockFetch.mockResolvedValue(fetchErr(401))
+
+      const { provider } = createProvider()
+      const thrown = await provider.getMarketStatus().catch((e: unknown) => e)
+
+      expect(thrown).toBeInstanceOf(MarketDataError)
+      expect((thrown as MarketDataError).code).toBe('auth_failed')
+    })
+
+    it('rejects a network failure with network_error', async () => {
+      mockFetch.mockRejectedValue(
+        Object.assign(new Error('fetch failed'), { cause: { code: 'ECONNREFUSED' } })
+      )
+
+      const { provider } = createProvider()
+      const thrown = await provider.getMarketStatus().catch((e: unknown) => e)
+
+      expect((thrown as MarketDataError).code).toBe('network_error')
+    })
+
+    it('rejects auth_failed before issuing any request when credentials are absent', async () => {
+      const { provider } = createProvider(null)
+      const thrown = await provider.getMarketStatus().catch((e: unknown) => e)
+
+      expect((thrown as MarketDataError).code).toBe('auth_failed')
+      expect(mockFetch).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('getMarketCalendar', () => {
+    const RANGE = { start: '2026-09-01', end: '2026-09-30' }
+
+    it('requests the calendar on the trading host with both dates in the query string', async () => {
+      mockFetch.mockResolvedValue(fetchOk([]))
+
+      const { provider } = createProvider()
+      await provider.getMarketCalendar(RANGE)
+
+      expect(lastFetchUrl()).toBe(
+        'https://paper-api.alpaca.markets/v2/calendar?start=2026-09-01&end=2026-09-30'
+      )
+    })
+
+    it('maps each row to a { date, close } pair, dropping open', async () => {
+      mockFetch.mockResolvedValue(
+        fetchOk([
+          { date: '2026-09-01', open: '09:30', close: '16:00' },
+          { date: '2026-11-27', open: '09:30', close: '13:00' }
+        ])
+      )
+
+      const { provider } = createProvider()
+
+      expect(await provider.getMarketCalendar(RANGE)).toEqual([
+        { date: '2026-09-01', close: '16:00' },
+        { date: '2026-11-27', close: '13:00' }
+      ])
+    })
+
+    it('drops rows whose date or close is not a string', async () => {
+      mockFetch.mockResolvedValue(
+        fetchOk([
+          { date: '2026-09-01', open: '09:30', close: '16:00' },
+          { date: 20260902, open: '09:30', close: '16:00' },
+          { date: '2026-09-03', open: '09:30', close: null }
+        ])
+      )
+
+      const { provider } = createProvider()
+
+      expect(await provider.getMarketCalendar(RANGE)).toEqual([
+        { date: '2026-09-01', close: '16:00' }
+      ])
+    })
+
+    it('returns an empty array when the exchange published no sessions in the range', async () => {
+      mockFetch.mockResolvedValue(fetchOk([]))
+
+      const { provider } = createProvider()
+
+      expect(await provider.getMarketCalendar(RANGE)).toEqual([])
+    })
+
+    it('rejects auth_failed before issuing any request when credentials are absent', async () => {
+      const { provider } = createProvider(null)
+      const thrown = await provider.getMarketCalendar(RANGE).catch((e: unknown) => e)
+
+      expect((thrown as MarketDataError).code).toBe('auth_failed')
+      expect(mockFetch).not.toHaveBeenCalled()
+    })
+  })
+})

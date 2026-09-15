@@ -71,6 +71,29 @@ export type OptionChainFilter = {
   cursor?: string
 }
 
+// --- Market session types ---
+
+export type MarketStatus = {
+  isOpen: boolean
+  nextOpen: string
+  nextClose: string
+  session: 'regular' | 'pre' | 'post' | 'closed'
+}
+
+/** One day the exchange published a session for, as the venue states it: an Eastern
+ *  wall-clock close ('16:00', or '13:00' on an early-close day). Days the exchange was
+ *  shut are simply absent from a calendar response. */
+export type MarketCalendarDay = {
+  date: string // 'YYYY-MM-DD'
+  close: string // 'HH:MM' Eastern wall clock
+}
+
+/** Inclusive day bounds for a calendar request. */
+export type MarketCalendarRange = {
+  start: string // 'YYYY-MM-DD'
+  end: string // 'YYYY-MM-DD'
+}
+
 // --- Streaming types ---
 
 export type MarketDataFeed = 'stockQuotes' | 'optionQuotes' | 'optionTrades'
@@ -95,6 +118,10 @@ export type MarketDataProvider = {
   getStockQuotes(tickers: string[]): Promise<Map<string, StockQuote>>
   getOptionSnapshot(contractId: string): Promise<OptionSnapshot>
   getOptionChainSnapshot(filter: OptionChainFilter): Promise<OptionChainQuote[]>
+  getMarketStatus(): Promise<MarketStatus>
+  /** The exchange's own session calendar over `range`. Sessions are facts we cache
+   *  rather than derive: holiday rules have exceptions and unscheduled closures exist. */
+  getMarketCalendar(range: MarketCalendarRange): Promise<MarketCalendarDay[]>
   supportsStreaming(feed: MarketDataFeed): boolean
   connect(feeds?: MarketDataFeed[]): Promise<void>
   disconnect(): Promise<void>
@@ -103,3 +130,10 @@ export type MarketDataProvider = {
     symbols: string[]
   ): Observable<StreamEvent<StockQuote | OptionSnapshot>>
 }
+
+/** The one method the polling scheduler needs. Keeps `polling-scheduler.ts` from
+ *  importing a port that can also stream quotes. */
+export type MarketStatusSource = Pick<MarketDataProvider, 'getMarketStatus'>
+
+/** The one method the trading-calendar store needs, for the same reason. */
+export type MarketCalendarSource = Pick<MarketDataProvider, 'getMarketCalendar'>

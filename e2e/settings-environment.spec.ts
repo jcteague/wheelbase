@@ -80,6 +80,9 @@ type LaunchOptions = {
   optionSnapshots?: Record<string, object>
   mockSettingsConnections?: object
   fakeBrokerError?: string
+  /** [US-116] Rejects every market-data call, including the exchange clock the pill
+   *  polls — which is how an expired Alpaca key now reaches the Positions page. */
+  fakeMarketDataError?: string
   brokerAccount?: object
   brokerAccountPaper?: object
   brokerAccountLive?: object
@@ -111,6 +114,7 @@ function buildEnv(dbPath: string, options: LaunchOptions): Record<string, string
       options.mockSettingsConnections ?? DEFAULT_CONNECTION_MOCKS
     ),
     FAKE_BROKER_ERROR: options.fakeBrokerError ?? '',
+    FAKE_MARKET_DATA_ERROR: options.fakeMarketDataError ?? '',
     FAKE_BROKER_ACCOUNT: options.brokerAccount ? JSON.stringify(options.brokerAccount) : '',
     FAKE_BROKER_ACCOUNT_PAPER: options.brokerAccountPaper
       ? JSON.stringify(options.brokerAccountPaper)
@@ -676,8 +680,12 @@ describe('US-37 Layer 5 e2e coverage', () => {
     )
 
     await app.close()
+    // [US-116] The market-status poll behind this prompt is a market fact now, so an
+    // expired key reaches the page as a market-data auth failure. The same Alpaca key
+    // pair backs both, which is why one prompt still covers it.
     app = await launchApp(dbPath, {
-      fakeBrokerError: 'auth_failed'
+      fakeBrokerError: 'auth_failed',
+      fakeMarketDataError: 'auth_failed'
     })
     const relaunchedPage = await getPage(app)
     await openPositions(relaunchedPage)
