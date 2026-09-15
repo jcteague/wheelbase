@@ -20,6 +20,7 @@ import { registerTestIvrIpc } from './ipc/test-ivr'
 import { createFakeIvrCollaborators } from './integrations/fake-ivr'
 import { DETECT_ASSIGNMENTS_JOB_NAME, detectAssignments } from './services/detect-assignments'
 import { collectIVRSnapshots, IVR_COLLECT_JOB_NAME } from './services/ivr-collector'
+import { createIvrOnDemand } from './services/ivr-on-demand'
 import { ALERT_EVAL_JOB_NAME, evaluateAlerts } from './services/evaluate-alerts'
 import { getAlertDefaults, saveAlertDefaults } from './services/alert-defaults'
 import { scheduler } from './services/scheduler-instance'
@@ -156,7 +157,6 @@ app.whenReady().then(() => {
   brokerFactory.configure({ loadActiveAlpacaCredentials: resolveAlpacaCredentials })
 
   registerPingHandler()
-  registerPositionsHandlers(db)
 
   const marketData = registerMarketDataHandlers(
     () => marketDataFactory.create(),
@@ -198,10 +198,21 @@ app.whenReady().then(() => {
   // fetcher + clock. Resolved once so the collector, the watchlist snapshot and the
   // screener all share it — the two halves of the bench must be judged at one clock.
   const ivrCollaborators = createFakeIvrCollaborators()
+  // [US-100] One port shared by both entry points a ticker can arrive through, so a
+  // watchlist add and a manually entered position collect identically.
+  const ivrOnDemand = createIvrOnDemand({
+    db,
+    logger,
+    getProvider: () => marketDataFactory.create(),
+    onCollected: (ticker) => mainWindow?.webContents.send('ivr:snapshot-updated', { ticker }),
+    ...ivrCollaborators
+  })
+  registerPositionsHandlers(db, { ivrOnDemand })
   registerWatchlistIpc({
     db,
     getProvider: () => marketDataFactory.create(),
-    getCurrentDate: ivrCollaborators.clock?.now
+    getCurrentDate: ivrCollaborators.clock?.now,
+    ivrOnDemand
   })
   registerScreenerIpc({
     db,
@@ -243,10 +254,11 @@ app.whenReady().then(() => {
   scheduler.register({
     name: IVR_COLLECT_JOB_NAME,
     cadence: { kind: 'afterClose', offsetMinutes: 60 },
-    handler: async () => {
+    handler: async ({ trigger }) => {
       return collectIVRSnapshots({
         db,
         logger,
+        trigger,
         signal: ivrAbort.signal,
         // Best effort: the collector refreshes the cached exchange calendar, which is a
         // market fact and so needs no broker. Resolved per tick so credentials added

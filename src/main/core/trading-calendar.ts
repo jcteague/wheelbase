@@ -176,3 +176,27 @@ export function countCompletedSessionsAfter(
     (candidate) => candidate.date > session.date && hasClosedBy(candidate, now)
   ).length
 }
+
+/** The half-open interval `[from, to)` a reading belongs to. `to` is null while the
+ *  window's far end is still open. */
+export type ObservationWindow = { from: string; to: string | null }
+
+/**
+ * The window every reading between two closes belongs to:
+ * `[session.closeAt, nextSession.closeAt)`. `to` is null for the newest session the
+ * calendar knows, whose window is still open at its far end. Null when the calendar
+ * holds no session on `session.date` — a window we cannot bound is not one we may
+ * delete rows inside.
+ */
+export function observationWindowOf(
+  calendar: TradingCalendar,
+  session: TradingSession
+): ObservationWindow | null {
+  const known = getTradingSession(calendar, session.date)
+  if (known.status !== 'open') return null
+
+  return {
+    from: known.session.closeAt,
+    to: calendar.sessions.find((candidate) => candidate.date > session.date)?.closeAt ?? null
+  }
+}

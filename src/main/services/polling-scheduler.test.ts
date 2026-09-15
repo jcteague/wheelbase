@@ -346,9 +346,11 @@ describe('runNow()', () => {
     expect(handler).toHaveBeenCalledTimes(1)
 
     // Manual trigger while the tick's run is still in flight: no second run starts,
-    // and the caller receives the in-flight run's result.
+    // and the caller receives the in-flight run's result. The joined run keeps the
+    // trigger it started with — no second context is ever handed to the handler.
     const joined = scheduler.runNow('job')
     expect(handler).toHaveBeenCalledTimes(1)
+    expect(handler).toHaveBeenNthCalledWith(1, { trigger: 'scheduled' })
 
     resolvers[0]('batch')
     await expect(joined).resolves.toBe('batch')
@@ -828,6 +830,50 @@ describe('a failing status source falls back to the default cadence', () => {
       expect.objectContaining({ job: 'job' }),
       expect.stringContaining('falling back to default cadence')
     )
+
+    await scheduler.stop()
+  })
+})
+
+describe('runNow() — run trigger', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('tells the handler a timer tick was scheduled', async () => {
+    const handler = vi.fn().mockResolvedValue(undefined)
+    const scheduler = makeStartedScheduler(handler)
+
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(handler).toHaveBeenCalledWith({ trigger: 'scheduled' })
+
+    await scheduler.stop()
+  })
+
+  it('tells the handler a bare runNow was explicit', async () => {
+    const handler = vi.fn().mockResolvedValue(undefined)
+    const scheduler = makeStartedScheduler(handler)
+
+    await vi.advanceTimersByTimeAsync(0)
+    await scheduler.runNow('job')
+
+    expect(handler).toHaveBeenNthCalledWith(2, { trigger: 'explicit' })
+
+    await scheduler.stop()
+  })
+
+  it('lets a caller drive a run as if the timer had fired', async () => {
+    const handler = vi.fn().mockResolvedValue(undefined)
+    const scheduler = makeStartedScheduler(handler)
+
+    await vi.advanceTimersByTimeAsync(0)
+    await scheduler.runNow('job', { trigger: 'scheduled' })
+
+    expect(handler).toHaveBeenNthCalledWith(2, { trigger: 'scheduled' })
 
     await scheduler.stop()
   })

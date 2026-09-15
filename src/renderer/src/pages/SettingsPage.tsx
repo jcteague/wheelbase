@@ -508,14 +508,6 @@ export function SettingsPage(): React.JSX.Element {
   async function handleCollectIvrNow(): Promise<void> {
     try {
       const batch = await collectIvrNow.mutateAsync()
-      if (batch.skippedReason === 'market_closed') {
-        setIvrMessage({
-          tone: 'muted',
-          text: 'IVR refresh skipped: market closed on a non-trading day.'
-        })
-        return
-      }
-
       setIvrMessage({
         tone: batch.errorCount > 0 ? 'muted' : 'success',
         text: `IVR refresh complete: ${batch.successCount} snapshots saved, ${batch.errorCount} errors.`

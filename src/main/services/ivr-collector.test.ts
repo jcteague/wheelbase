@@ -3,9 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IVRResult } from '../integrations/barchart-ivr-scraper'
 import type { MarketCalendarDay, MarketDataProvider } from '../integrations/market-data-provider'
 import { logger } from '../logger'
+import type { TradingCalendar } from '../core/trading-calendar'
 import { makeTestDb, seedTradingCalendar, seedWatchlist } from '../test-utils'
+import { readTradingCalendar } from './trading-calendar-store'
 import { removeWatchlistEntry } from './watchlist'
-import { collectIVRSnapshots } from './ivr-collector'
+import { collectIVRSnapshots, collectTicker } from './ivr-collector'
 
 vi.mock('../logger', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
@@ -102,6 +104,7 @@ function runCollector(
   opts: {
     clock?: TestClock
     signal?: AbortSignal
+    trigger?: 'scheduled' | 'explicit'
   } = {}
 ): ReturnType<typeof collectIVRSnapshots> {
   return collectIVRSnapshots({
@@ -109,7 +112,8 @@ function runCollector(
     logger,
     fetchIvr,
     clock: opts.clock ?? makeClock(),
-    signal: opts.signal
+    signal: opts.signal,
+    trigger: opts.trigger
   })
 }
 
@@ -123,7 +127,8 @@ describe('collectIVRSnapshots', () => {
     const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>()
 
     const result = await runCollector(db, fetchIvr, {
-      clock: makeClock('2026-05-30T15:00:00.000Z')
+      clock: makeClock('2026-05-30T15:00:00.000Z'),
+      trigger: 'scheduled'
     })
 
     expect(fetchIvr).not.toHaveBeenCalled()
@@ -153,7 +158,8 @@ describe('collectIVRSnapshots', () => {
     const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
 
     const result = await runCollector(db, fetchIvr, {
-      clock: makeClock('2026-11-26T19:00:00.000Z')
+      clock: makeClock('2026-11-26T19:00:00.000Z'),
+      trigger: 'scheduled'
     })
 
     expect(fetchIvr).not.toHaveBeenCalled()
@@ -319,7 +325,7 @@ describe('collectIVRSnapshots', () => {
     expect(listSnapshots(db)).toEqual([
       {
         underlying: 'KO',
-        observed_at: '2026-05-28T21:00:00.000Z',
+        observed_at: '2026-05-28T20:00:00.000Z',
         ivr: '38.0',
         ivp: null,
         iv30: null,
@@ -471,7 +477,7 @@ describe('collectIVRSnapshots', () => {
     expect(listSnapshots(db)).toEqual([
       {
         underlying: 'SPY',
-        observed_at: '2026-05-29T21:05:00.000Z',
+        observed_at: '2026-05-29T20:00:00.000Z',
         ivr: '42.5',
         ivp: '50.0',
         iv30: '0.18',
@@ -480,7 +486,7 @@ describe('collectIVRSnapshots', () => {
     ])
   })
 
-  it('re-running on the same UTC calendar day deletes the older row before inserting the fresh row', async () => {
+  it('re-collecting within the same session replaces the earlier row', async () => {
     const db = makeCollectorDb()
     insertPosition(db, { id: 'pos-spy', ticker: 'SPY' })
 
@@ -489,16 +495,26 @@ describe('collectIVRSnapshots', () => {
        VALUES ('SPY', '2026-05-29T20:00:00.000Z', '30.1', '45.0', '0.22', 'barchart')`
     ).run()
 
-    const fetchIvr = vi
-      .fn<(_: string) => Promise<IVRResult>>()
-      .mockResolvedValue(okResult('SPY', { ivr: 42.5, ivp: 50.0, iv30: 0.18 }))
+    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(
+      okResult('SPY', {
+        ivr: 42.5,
+        ivp: 50.0,
+        iv30: 0.18,
+        observedAt: '2026-05-31T15:00:00.000Z'
+      })
+    )
 
-    await runCollector(db, fetchIvr)
+    // Sunday: the reading still belongs to Friday's close, so it overwrites Friday's
+    // row rather than inventing a Sunday one.
+    await runCollector(db, fetchIvr, {
+      clock: makeClock('2026-05-31T15:00:00.000Z'),
+      trigger: 'explicit'
+    })
 
     expect(listSnapshots(db)).toEqual([
       {
         underlying: 'SPY',
-        observed_at: '2026-05-29T21:05:00.000Z',
+        observed_at: '2026-05-29T20:00:00.000Z',
         ivr: '42.5',
         ivp: '50.0',
         iv30: '0.18',
@@ -507,10 +523,12 @@ describe('collectIVRSnapshots', () => {
     ])
   })
 
-  it('uses the UTC calendar day instead of slicing the timestamp string when overwriting', async () => {
+  it('sweeps a legacy fetch-instant row that falls inside the session being collected', async () => {
     const db = makeCollectorDb()
     insertPosition(db, { id: 'pos-spy', ticker: 'SPY' })
 
+    // Written by a pre-US-100 late-evening manual refresh: stamped at the fetch, which
+    // lands after Friday's close and so belongs to Friday's observation window.
     db.prepare(
       `INSERT INTO ivr_snapshot (underlying, observed_at, ivr, ivp, iv30, source)
        VALUES ('SPY', '2026-05-30T01:00:00.000Z', '30.1', '45.0', '0.22', 'barchart')`
@@ -518,19 +536,40 @@ describe('collectIVRSnapshots', () => {
 
     const fetchIvr = vi
       .fn<(_: string) => Promise<IVRResult>>()
-      .mockResolvedValue(okResult('SPY', { ivr: 42.5, observedAt: '2026-05-29T23:30:00-02:00' }))
+      .mockResolvedValue(okResult('SPY', { ivr: 42.5 }))
 
     await runCollector(db, fetchIvr)
 
     expect(listSnapshots(db)).toEqual([
       {
         underlying: 'SPY',
-        observed_at: '2026-05-29T23:30:00-02:00',
+        observed_at: '2026-05-29T20:00:00.000Z',
         ivr: '42.5',
         ivp: null,
         iv30: null,
         source: 'barchart'
       }
+    ])
+  })
+
+  it('leaves a row belonging to the previous session alone', async () => {
+    const db = makeCollectorDb()
+    insertPosition(db, { id: 'pos-spy', ticker: 'SPY' })
+
+    db.prepare(
+      `INSERT INTO ivr_snapshot (underlying, observed_at, ivr, ivp, iv30, source)
+       VALUES ('SPY', '2026-05-28T20:00:00.000Z', '30.1', NULL, NULL, 'barchart')`
+    ).run()
+
+    const fetchIvr = vi
+      .fn<(_: string) => Promise<IVRResult>>()
+      .mockResolvedValue(okResult('SPY', { ivr: 42.5 }))
+
+    await runCollector(db, fetchIvr)
+
+    expect(listSnapshots(db).map((row) => row.observed_at)).toEqual([
+      '2026-05-28T20:00:00.000Z',
+      '2026-05-29T20:00:00.000Z'
     ])
   })
 
@@ -590,7 +629,7 @@ describe('collectIVRSnapshots', () => {
     expect(listSnapshots(db)).toEqual([
       {
         underlying: 'SPY',
-        observed_at: '2026-05-29T21:06:00.000Z',
+        observed_at: '2026-05-29T20:00:00.000Z',
         ivr: '55.5',
         ivp: null,
         iv30: null,
@@ -598,5 +637,218 @@ describe('collectIVRSnapshots', () => {
       }
     ])
     expect(vi.mocked(logger.warn)).toHaveBeenCalled()
+  })
+})
+
+describe('collectIVRSnapshots — trigger', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('collects on a weekend when a person explicitly asked for it', async () => {
+    const db = makeCollectorDb()
+    seedWatchlist(db, ['KO'])
+    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
+
+    const result = await runCollector(db, fetchIvr, {
+      clock: makeClock('2026-05-31T15:00:00.000Z'),
+      trigger: 'explicit'
+    })
+
+    expect(fetchIvr).toHaveBeenCalledWith('KO')
+    expect(result.skippedReason).toBeNull()
+    expect(result.successCount).toBe(1)
+    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
+      { etDate: '2026-05-31', trigger: 'explicit' },
+      expect.stringContaining('explicit request')
+    )
+  })
+
+  it('collects on a weekday market holiday when a person explicitly asked for it', async () => {
+    const db = makeCollectorDb()
+    seedWatchlist(db, ['KO'])
+    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
+
+    const result = await runCollector(db, fetchIvr, {
+      clock: makeClock('2026-11-26T19:00:00.000Z'),
+      trigger: 'explicit'
+    })
+
+    expect(fetchIvr).toHaveBeenCalledWith('KO')
+    expect(result.skippedReason).toBeNull()
+  })
+
+  it('treats an omitted trigger as a scheduled run', async () => {
+    const db = makeCollectorDb()
+    seedWatchlist(db, ['KO'])
+    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
+
+    const result = await collectIVRSnapshots({
+      db,
+      logger,
+      fetchIvr,
+      clock: makeClock('2026-05-31T15:00:00.000Z')
+    })
+
+    expect(fetchIvr).not.toHaveBeenCalled()
+    expect(result.skippedReason).toBe('market_closed')
+  })
+})
+
+describe('collectIVRSnapshots — observation stamping', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('stamps a weekend fetch at the close of the Friday it reflects', async () => {
+    const db = makeCollectorDb()
+    seedWatchlist(db, ['KO'])
+    const fetchIvr = vi
+      .fn<(_: string) => Promise<IVRResult>>()
+      .mockResolvedValue(okResult('KO', { observedAt: '2026-05-31T15:00:00.000Z' }))
+
+    await runCollector(db, fetchIvr, {
+      clock: makeClock('2026-05-31T15:00:00.000Z'),
+      trigger: 'explicit'
+    })
+
+    expect(listSnapshots(db).map((row) => row.observed_at)).toEqual(['2026-05-29T20:00:00.000Z'])
+  })
+
+  it('stamps a holiday fetch at the previous session close, in standard time', async () => {
+    const db = makeCollectorDb()
+    seedWatchlist(db, ['KO'])
+    const fetchIvr = vi
+      .fn<(_: string) => Promise<IVRResult>>()
+      .mockResolvedValue(okResult('KO', { observedAt: '2026-11-26T23:00:00.000Z' }))
+
+    await runCollector(db, fetchIvr, {
+      clock: makeClock('2026-11-26T23:00:00.000Z'),
+      trigger: 'explicit'
+    })
+
+    expect(listSnapshots(db).map((row) => row.observed_at)).toEqual(['2026-11-25T21:00:00.000Z'])
+  })
+
+  it('stamps an intraday fetch at the previous close, not the session still running', async () => {
+    const db = makeCollectorDb()
+    seedWatchlist(db, ['KO'])
+    const fetchIvr = vi
+      .fn<(_: string) => Promise<IVRResult>>()
+      .mockResolvedValue(okResult('KO', { observedAt: '2026-05-29T14:05:00.000Z' }))
+
+    await runCollector(db, fetchIvr, { clock: makeClock('2026-05-29T14:05:00.000Z') })
+
+    expect(listSnapshots(db).map((row) => row.observed_at)).toEqual(['2026-05-28T20:00:00.000Z'])
+  })
+
+  it('falls back to the fetch instant and warns when the calendar cannot place it', async () => {
+    const db = makeTestDb()
+    seedWatchlist(db, ['KO'])
+    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
+
+    await runCollector(db, fetchIvr)
+
+    expect(listSnapshots(db).map((row) => row.observed_at)).toEqual(['2026-05-29T21:05:00.000Z'])
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      expect.objectContaining({ ticker: 'KO' }),
+      'ivr_observation_unstamped'
+    )
+  })
+})
+
+describe('collectTicker', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  function calendarFor(db: Database.Database, now: string): TradingCalendar {
+    return readTradingCalendar(db, new Date(now))
+  }
+
+  it('reports a persisted reading', async () => {
+    const db = makeCollectorDb()
+    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
+
+    const outcome = await collectTicker({
+      db,
+      logger,
+      fetchIvr,
+      calendar: calendarFor(db, '2026-05-29T21:30:00.000Z'),
+      ticker: 'KO'
+    })
+
+    expect(outcome).toBe('persisted')
+    expect(listSnapshots(db)).toHaveLength(1)
+  })
+
+  it('reports an uncovered ticker as not_available without writing a row', async () => {
+    const db = makeCollectorDb()
+    const fetchIvr = vi
+      .fn<(_: string) => Promise<IVRResult>>()
+      .mockResolvedValue(NOT_AVAILABLE_RESULT)
+
+    const outcome = await collectTicker({
+      db,
+      logger,
+      fetchIvr,
+      calendar: calendarFor(db, '2026-05-29T21:30:00.000Z'),
+      ticker: 'XYZ'
+    })
+
+    expect(outcome).toBe('not_available')
+    expect(listSnapshots(db)).toHaveLength(0)
+  })
+
+  it('reports a scraper error as failed', async () => {
+    const db = makeCollectorDb()
+    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue({
+      status: 'network_error',
+      error: { code: 'NETWORK_FAILURE', message: 'unreachable' }
+    })
+
+    const outcome = await collectTicker({
+      db,
+      logger,
+      fetchIvr,
+      calendar: calendarFor(db, '2026-05-29T21:30:00.000Z'),
+      ticker: 'KO'
+    })
+
+    expect(outcome).toBe('failed')
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      { ticker: 'KO', error: { code: 'NETWORK_FAILURE', message: 'unreachable' } },
+      'IVR collection failed for ticker'
+    )
+  })
+
+  it('reports a thrown fetch as failed and logs it under the err key', async () => {
+    const db = makeCollectorDb()
+    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockRejectedValue(new Error('boom'))
+
+    const outcome = await collectTicker({
+      db,
+      logger,
+      fetchIvr,
+      calendar: calendarFor(db, '2026-05-29T21:30:00.000Z'),
+      ticker: 'KO'
+    })
+
+    expect(outcome).toBe('failed')
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      expect.objectContaining({ ticker: 'KO', err: expect.any(Error) }),
+      expect.stringContaining('IVR collection threw for ticker')
+    )
+  })
+
+  it('rethrows a persist failure rather than reporting it as a per-ticker outcome', async () => {
+    const db = makeCollectorDb()
+    const calendar = calendarFor(db, '2026-05-29T21:30:00.000Z')
+    db.exec('DROP TABLE ivr_snapshot')
+    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
+
+    await expect(collectTicker({ db, logger, fetchIvr, calendar, ticker: 'KO' })).rejects.toThrow(
+      /ivr_snapshot/
+    )
   })
 })

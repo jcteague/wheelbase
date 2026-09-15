@@ -1,7 +1,7 @@
 // [US-63] Watchlist service — add / list / remove; update is [US-69]
 import { describe, expect, it, vi } from 'vitest'
 import { ValidationError } from '../core/lifecycle'
-import type { WatchlistEntryRecord } from '../schemas'
+import type { WatchlistEntryPayload, WatchlistEntryRecord } from '../schemas'
 import { makeTestDb } from '../test-utils'
 import {
   addWatchlistEntry,
@@ -371,5 +371,35 @@ describe('updateWatchlistEntry', () => {
     }
 
     expect(listWatchlist(db).map((e) => e.ticker)).toEqual(['AAPL'])
+  })
+})
+
+function basePayload(ticker: string): WatchlistEntryPayload {
+  return { ticker, postEarningsOnly: false, coreHolding: false }
+}
+
+describe('addWatchlistEntry — on-demand IVR trigger', () => {
+  it('collects the normalised ticker once, after the row exists', () => {
+    const db = makeTestDb()
+    const seen: Array<{ ticker: string; rowExists: boolean }> = []
+    const ivrOnDemand = {
+      collect: async (ticker: string): Promise<void> => {
+        const row = db.prepare('SELECT ticker FROM watchlist WHERE ticker = ?').get('AAPL')
+        seen.push({ ticker, rowExists: row !== undefined })
+      }
+    }
+
+    addWatchlistEntry(db, basePayload('aapl'), ivrOnDemand)
+
+    expect(seen).toEqual([{ ticker: 'AAPL', rowExists: true }])
+  })
+
+  it('never collects for an add that was rejected as a duplicate', () => {
+    const db = makeTestDb()
+    const collect = vi.fn(async () => {})
+    addWatchlistEntry(db, basePayload('AAPL'))
+
+    expect(() => addWatchlistEntry(db, basePayload('AAPL'), { collect })).toThrow(ValidationError)
+    expect(collect).not.toHaveBeenCalled()
   })
 })

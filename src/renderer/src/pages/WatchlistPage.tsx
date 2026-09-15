@@ -11,6 +11,7 @@ import { ScreeningCriteriaSheet } from '../components/ScreeningCriteriaSheet'
 import { WatchlistEntryForm } from '../components/WatchlistEntryForm'
 import { ErrorAlert } from '../components/ui/ErrorAlert'
 import { LoadingState } from '../components/ui/LoadingState'
+import { useIvrSnapshotUpdates } from '../hooks/useIvrSnapshotUpdates'
 import { useMarketStatusDisplay } from '../hooks/useMarketStatusDisplay'
 import { useRemoveFromWatchlist } from '../hooks/useRemoveFromWatchlist'
 import { useScreenerResults } from '../hooks/useScreenerResults'
@@ -70,6 +71,7 @@ function SavedBanner(): React.JSX.Element {
 export function WatchlistPage(): React.JSX.Element {
   const snapshotQuery = useWatchlistSnapshot()
   const screenerQuery = useScreenerResults()
+  useIvrSnapshotUpdates()
   const { data: criteria, isError: isCriteriaError } = useScreeningCriteria()
   const { data: credentialStatus } = useSettingsStatus()
   const { display } = useMarketStatusDisplay()

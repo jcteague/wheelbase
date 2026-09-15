@@ -1,6 +1,6 @@
 # IPC Handlers
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39,us-99,us-116 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39,us-99,us-116,us-100 -->
 
 ## Overview
 
@@ -8,7 +8,7 @@ Every interaction between the renderer and the main process flows through `ipcMa
 
 **Documented envelope deviation (us-35).** The `assignments:confirm` and `assignments:dismiss` handlers return an error envelope with an **additional top-level `code` field** alongside the standard `errors` array: `{ ok: false, code: 'NOT_FOUND' | 'NOT_PENDING' | 'TRANSITION_REJECTED', errors: [{ field: '__root__', code, message }] }`. The deviation exists because `handleIpcCall` cannot express a top-level discriminator alongside the field-level error array, and the renderer's banner state machine switches on the top-level `code` without having to scan the `errors[]` list. The shared helper `pendingAssignmentErrorResponse(err: PendingAssignmentError)` in `src/main/ipc/assignments.ts` produces this shape; treat it as an exceptional pattern, not a precedent — every other handler in this document uses the canonical `{ ok, errors }` envelope.
 
-Two transport patterns are in use. Most handlers are request/response (`ipcRenderer.invoke` ↔ `ipcMain.handle`) and carry a Zod-validated payload from the renderer through to a service function. The market-data subsystem additionally uses **fire-and-forget push events** (`webContents.send` ↔ `ipcRenderer.on`) for stream ticks (`market-data:stock-quote`) and stream failures (`market-data:stream-error`); these are one-way, main → renderer, and have no response envelope. Payload validation happens twice: the renderer adapter (`src/renderer/src/api/*.ts`) maps snake_case form state to camelCase IPC fields, and the main-process handler re-validates via the matching `*PayloadSchema` from `src/main/schemas.ts` before calling the service.
+Two transport patterns are in use. Most handlers are request/response (`ipcRenderer.invoke` ↔ `ipcMain.handle`) and carry a Zod-validated payload from the renderer through to a service function. Some subsystems additionally use **fire-and-forget push events** (`webContents.send` ↔ `ipcRenderer.on`) — stream ticks (`market-data:stock-quote`), stream failures (`market-data:stream-error`), and (us-100) out-of-band IVR readings (`ivr:snapshot-updated`); these are one-way, main → renderer, and have no response envelope. Payload validation happens twice: the renderer adapter (`src/renderer/src/api/*.ts`) maps snake_case form state to camelCase IPC fields, and the main-process handler re-validates via the matching `*PayloadSchema` from `src/main/schemas.ts` before calling the service.
 
 **Broker / market-data namespace split (us-39).** US-39 separated broker concerns from market-data concerns at the IPC layer. The old `AlpacaMarketDataProvider` (which handled both quote data and broker calls) was replaced by two separate providers: `MassiveMarketDataProvider` (market data) and `AlpacaBrokerProvider` (broker). Three new `broker:*` channels (`broker:account`, `broker:market-status`, `broker:activities`) now route to `AlpacaBrokerProvider` via `src/main/ipc/broker.ts`. All `market-data:*` channels routed to `MassiveMarketDataProvider` via `src/main/ipc/market-data.ts`. The `market-data:market-status` channel (which previously forwarded to Alpaca) was served for a time by `broker:market-status`. **[US-116] reversed that**: the exchange session is a fact about the market, not the account, so `market-data:market-status` is canonical again and `broker:market-status` is deleted. `BrokerProvider` is now exactly `getAccountInfo` + `getActivities`, and the `broker:*` namespace is `broker:account` + `broker:activities`.
 
@@ -1242,12 +1242,12 @@ Handlers are grouped by namespace. Each subsection documents the request payload
   | ---------- | ---------------- | ------------------------------ |
   | `__root__` | `internal_error` | `An unexpected error occurred` |
 
-- **Notes:** unlike `assignments:run-detection-now` (whose `scheduler.runNow` discards the handler return value), this channel **does** return the collector summary because US-44 requires the renderer to see success and error counts. The handler validates the scheduler result with `CollectIvrNowBatchSchema` (`{ successCount, errorCount, skippedCount, skippedReason }` — all counts `int().min(0)`, `skippedReason: z.enum(['market_closed']).nullable()`) before returning, so a swallowed job-handler error — where the scheduler resolves `undefined` — surfaces as a proper `{ ok: false }` envelope via `handleIpcCall` rather than a fake `{ ok: true }`. There is no request schema since the channel takes no payload. The renderer adapter (`src/renderer/src/api/ivr.ts`) normalizes the envelope to a flat `CollectIvrNowResult` (`{ successCount, errorCount, skippedCount, skippedReason }`) and throws the existing `ApiError` shape on `{ ok: false }`. `runNow('ivr-collect')` resets the cadence clock to now after the out-of-band run. The non-trading-day guard lives inside `collectIVRSnapshots` (`BrokerProvider.getMarketStatus()` → `session: 'closed'`), so both the scheduled and manual paths are safe on weekends/holidays.
+- **Notes:** unlike `assignments:run-detection-now` (whose `scheduler.runNow` discards the handler return value), this channel **does** return the collector summary because US-44 requires the renderer to see success and error counts. The handler validates the scheduler result with `CollectIvrNowBatchSchema` (`{ successCount, errorCount, skippedCount, skippedReason }` — all counts `int().min(0)`, `skippedReason: z.enum(['market_closed']).nullable()`) before returning, so a swallowed job-handler error — where the scheduler resolves `undefined` — surfaces as a proper `{ ok: false }` envelope via `handleIpcCall` rather than a fake `{ ok: true }`. There is no request schema since the channel takes no payload. The renderer adapter (`src/renderer/src/api/ivr.ts`) normalizes the envelope to a flat `CollectIvrNowResult` (`{ successCount, errorCount, skippedCount, skippedReason }`) and throws the existing `ApiError` shape on `{ ok: false }`. `runNow('ivr-collect')` resets the cadence clock to now after the out-of-band run. The non-trading-day guard lives inside `collectIVRSnapshots`. **(us-116)** its verdict now comes from the cached exchange calendar rather than `BrokerProvider.getMarketStatus()`. **(us-100)** it is scoped by trigger: `scheduler.runNow('ivr-collect')` defaults to `trigger: 'explicit'`, so this channel is **never** refused on a weekend or a market holiday and its `skippedReason` is `null` on a closed day. The scheduled after-close tick passes `'scheduled'` and keeps the guard. `skippedReason: 'market_closed'` therefore remains reachable here only when an explicit refresh _joins_ an already in-flight scheduled run.
 - **Source:** `src/main/ipc/ivr.ts`, `src/main/schemas.ts` (`CollectIvrNowBatchSchema`), `src/main/services/ivr-collector.ts` (`collectIVRSnapshots`)
-- **Driven by:** [us-44 — IVR snapshot store and scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md)
+- **Driven by:** [us-44 — IVR snapshot store and scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md), [us-100 — IVR on demand and outside market hours](../features/us-100-ivr-on-demand-and-outside-market-hours.md)
 <!-- /generated -->
 
-<!-- generated:from us-35 -->
+<!-- generated:from us-35,us-100 -->
 
 ## Dev-only scheduler handlers (us-35)
 
@@ -1297,9 +1297,24 @@ These channels do **not** follow the `{ ok, errors }` envelope — they return a
 - **Request:** none.
 - **Response:** `{ ok: true }`.
 - **Source:** `src/main/ipc/test-scheduler.ts`.
+
+### `_test:scheduler-run-scheduled` (us-100)
+
+- **Purpose:** run a registered job **as the timer would** — `scheduler.runNow(jobName, { trigger: 'scheduled' })`. Since us-100 the `ivr-collect` handler branches on its run trigger, so a spec asserting that a scheduled run still refuses a weekend cannot use `_test:scheduler-run-now`: that drives the explicit path and would pass for the wrong reason.
+- **Request:** `jobName: string` (positional, not wrapped in an object).
+- **Response:** the handler's own return value (`unknown`) — unlike `_test:scheduler-run-now`, which discards it. The e2e helper `collectIvrScheduled` (`e2e/ivr-helpers.ts`) wraps it as an `IvrBatch`.
+- **Source:** `src/main/ipc/test-scheduler.ts`.
+
+### `_test:ivr-fetch-log` (us-100)
+
+- **Purpose:** return every ticker the fake Barchart scraper has been asked for, in call order, since outcomes were last programmed. This is the only way to assert a negative — "no IVR request is made for KO" — because an absent `ivr_snapshot` row proves nothing: a fetch that returned `not_available` writes none either.
+- **Request:** none.
+- **Response:** `string[]` — upper-cased tickers, call order preserved.
+- **Notes:** the log lives in `src/main/integrations/fake-ivr.ts` and is **reset by `_test:ivr-set-outcomes`** (and by a fresh `createFakeIvrCollaborators()`), so programming a scenario's outcomes is also its reset point. `readFakeIvrFetchLog()` returns a copy.
+- **Source:** `src/main/ipc/test-ivr.ts`, `src/main/integrations/fake-ivr.ts`.
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39,us-99 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39,us-99,us-100 -->
 
 ## Push events
 
@@ -1336,6 +1351,19 @@ Push events are one-way `main → renderer` messages sent via `webContents.send`
 - **Trigger:** emitted when the provider's stream Observable errors (WebSocket failure, auth loss, etc.). For US-32 the `feed` is always `'stockQuotes'`. The renderer treats receipt of this event as an immediate signal to render the `StaleDataBanner` and override the market-status pill to `DELAYED`, bypassing the 5-minute freshness threshold.
 - **Source:** `src/main/ipc/market-data.ts`
 - **Driven by:** [us-32 — Live Position Prices](../features/us-32-live-position-prices.md)
+
+### `ivr:snapshot-updated`
+
+- **Channel:** `ivr:snapshot-updated`
+- **Direction:** main → renderer
+- **Payload:**
+  ```typescript
+  type IvrSnapshotUpdatedEvent = { ticker: string } // upper-cased
+  ```
+- **Trigger:** emitted by the `onCollected` callback of the `IvrOnDemand` port (`src/main/services/ivr-on-demand.ts`), and **only** when a row was actually persisted — a `not_available`, a failed fetch, or a same-session skip sends nothing. `src/main/index.ts` wires it to `mainWindow?.webContents.send(...)`. The renderer subscribes through `useIvrSnapshotUpdates` (`src/renderer/src/hooks/useIvrSnapshotUpdates.ts`, mounted by `WatchlistPage`) and invalidates `watchlistQueryKeys.snapshot` and `screenerQueryKeys.results`.
+- **Why it exists:** `watchlist:add` and `positions:create` fire their collection detached, after the write commits, so the add response has already returned by the time the reading lands. `useWatchlistSnapshot` has no `refetchInterval` by design, so without this push a newly added card would read `n/a` until a manual reload.
+- **Source:** `src/main/index.ts`, `src/main/services/ivr-on-demand.ts`, `src/preload/index.ts`
+- **Driven by:** [us-100 — IVR on demand and outside market hours](../features/us-100-ivr-on-demand-and-outside-market-hours.md)
 <!-- /generated -->
 
 <!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39,us-44,us-51,us-59 -->
@@ -1625,7 +1653,7 @@ US-37 adds a dedicated `settings:*` namespace for credential status, Alpaca cred
 
 <!-- /generated -->
 
-<!-- generated:from us-63,us-96 -->
+<!-- generated:from us-63,us-96,us-100 -->
 
 ## `watchlist:*` namespace
 
@@ -1669,7 +1697,16 @@ postEarningsOnly?, coreHolding? }` (parsed by `WatchlistAddPayloadSchema`; ticke
 - **Error:** duplicate ticker → `{ ok: false, errors: [{ field: 'ticker', code:
 'duplicate', message: '<TICKER> is already on the watchlist' }] }` (from a service
   `ValidationError`). Bad payloads map to the standard Zod field errors.
-- **Source:** `src/main/ipc/watchlist.ts`, `src/main/schemas.ts`, `src/main/services/watchlist.ts` (`addWatchlistEntry`)
+- **Side effect (us-100):** after the row commits, `addWatchlistEntry` fires
+  `void ivrOnDemand?.collect(ticker)` — a single-ticker IVR collection for **this ticker
+  only**, never the whole bench. It is detached on purpose: the add must not wait on a
+  ~1s Barchart fetch, and `IvrOnDemand.collect` never rejects, so **an IVR failure is
+  never an error on this channel** and the response shape above is unchanged. The
+  duplicate-ticker `ValidationError` is thrown before the insert, so a rejected add never
+  collects. When a row is persisted the renderer is told via the
+  [`ivr:snapshot-updated`](#ivrsnapshot-updated) push event. `positions:create` carries
+  the same side effect through the same port.
+- **Source:** `src/main/ipc/watchlist.ts`, `src/main/schemas.ts`, `src/main/services/watchlist.ts` (`addWatchlistEntry`), `src/main/services/ivr-on-demand.ts`
 
 ### `watchlist:remove`
 

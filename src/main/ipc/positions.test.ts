@@ -1013,4 +1013,23 @@ describe('registerPositionsHandlers', () => {
     })
     expect(savePositionAlertOverrides).not.toHaveBeenCalled()
   })
+
+  it('positions:create hands the on-demand IVR port to the service', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+    const db = {} as never
+    const ivrOnDemand = { collect: vi.fn(async () => {}) }
+
+    createPosition.mockReturnValue({ position: { id: 'p1', ticker: 'TSLA' } })
+
+    registerPositionsHandlers(db, { ivrOnDemand })
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:create'
+    )
+    await handler?.(null, { ticker: 'TSLA' })
+
+    expect(createPosition).toHaveBeenCalledWith(db, { ticker: 'TSLA' }, ivrOnDemand)
+  })
 })

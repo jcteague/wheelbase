@@ -49,6 +49,13 @@ export function registerTestSchedulerIpc(scheduler: PollingScheduler): void {
     await scheduler.runNow(jobName)
   })
 
+  // Unlike `_test:scheduler-run-now`, this drives the job on the *scheduled* trigger and
+  // returns the handler's result — the only way a spec can assert that a scheduled run
+  // still refuses a weekend while an explicit one proceeds.
+  ipcMain.handle('_test:scheduler-run-scheduled', (_, jobName: string) =>
+    scheduler.runNow(jobName, { trigger: 'scheduled' })
+  )
+
   ipcMain.handle('_test:scheduler-register', (_, fixture: TestJobFixture) => {
     try {
       scheduler.register({

@@ -1,11 +1,22 @@
 # Follow-up: IVR collector should detect weekday market holidays
 
-**Status:** ✅ Resolved by US-98 (2026-09-10)
+**Status:** ✅ Fully resolved — holiday half by US-98 (2026-09-10), trigger half by US-100 (2026-09-15)
 **Source:** US-44 code review, 2026-06-20
 **Area:** `src/main/services/ivr-collector.ts`, `src/main/integrations/broker-provider.ts`
 
 > **Resolution.** Implemented as recommended below, with one addition: the calendar is
 > **cached**, not fetched per check.
+>
+> **Trigger half closed by US-100.** This note and US-100 pulled in opposite directions on
+> the same guard: this one wanted it _stricter_ (a weekday holiday must not scrape), US-100
+> wanted a weekend refresh to work. US-100 settled it by scoping the guard to the run's
+> trigger rather than changing its strictness — `collectIVRSnapshots` takes
+> `trigger: 'scheduled' | 'explicit'`, a scheduled run keeps the calendar guard in full
+> (weekends **and** holidays), and an explicit run — a trader clicking "Refresh IVR now", or
+> adding a ticker — does not consult the calendar for permission at all. Barchart needs no
+> credentials and serves the last close whenever asked, so the guard only ever existed to
+> avoid pointless _scheduled_ fetches. See
+> [us-100](../../spec/features/us-100-ivr-on-demand-and-outside-market-hours.md).
 >
 > - `BrokerProvider.getMarketCalendar(range)` returns the venue's own sessions
 >   (`{ date, close }`, Eastern wall clock; closed days simply absent).

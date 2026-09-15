@@ -4,6 +4,7 @@ import Decimal from 'decimal.js'
 import { ValidationError } from '../core/lifecycle'
 import { logger } from '../logger'
 import type { WatchlistEntryPayload, WatchlistEntryRecord } from '../schemas'
+import type { IvrOnDemand } from './ivr-on-demand'
 
 interface WatchlistRow {
   ticker: string
@@ -81,7 +82,8 @@ function toStoredFields(payload: WatchlistEntryPayload): {
 
 export function addWatchlistEntry(
   db: Database.Database,
-  payload: WatchlistEntryPayload
+  payload: WatchlistEntryPayload,
+  ivrOnDemand?: IvrOnDemand
 ): WatchlistEntryRecord {
   const ticker = normalizeTicker(payload.ticker)
 
@@ -106,6 +108,10 @@ export function addWatchlistEntry(
   )
 
   logger.info({ ticker }, 'watchlist_entry_added')
+  // [US-100] Detached on purpose: `collect` never rejects and the add must not wait on
+  // a ~1s Barchart fetch. The renderer learns the reading landed from the
+  // `ivr:snapshot-updated` push, not from this response.
+  void ivrOnDemand?.collect(ticker)
 
   return {
     ticker,

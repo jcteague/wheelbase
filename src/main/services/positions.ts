@@ -9,6 +9,7 @@ import { openWheel } from '../core/lifecycle'
 import { localToday, makeSnapshotAt } from '../dates'
 import { logger } from '../logger'
 import type { CreatePositionPayload, CreatePositionResult } from '../schemas'
+import type { IvrOnDemand } from './ivr-on-demand'
 
 export { listPositions } from './list-positions'
 export { getPosition } from './get-position'
@@ -25,7 +26,8 @@ export { expireCcPosition } from './expire-cc-position'
 
 export function createPosition(
   db: Database.Database,
-  payload: CreatePositionPayload
+  payload: CreatePositionPayload,
+  ivrOnDemand?: IvrOnDemand
 ): CreatePositionResult {
   const today = localToday()
   const fillDate = payload.fillDate ?? today
@@ -118,6 +120,9 @@ export function createPosition(
     { positionId, ticker: payload.ticker, phase: lifecycleResult.phase, basisFormatted },
     'position_created'
   )
+  // [US-100] See addWatchlistEntry: a manually entered position is the other way a
+  // ticker enters the app, and it must not wait on the network either.
+  void ivrOnDemand?.collect(payload.ticker)
 
   return {
     position: {

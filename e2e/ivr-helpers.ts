@@ -61,6 +61,7 @@ export type IvrOutcome =
     }
   | { status: 'not_available'; error: { code: 'TICKER_NOT_COVERED'; message: string } }
   | { status: 'parse_error'; error: { code: 'PARSE_FAILED'; message: string; rawSnippet: string } }
+  | { status: 'network_error'; error: { code: 'NETWORK_FAILURE'; message: string } }
 
 export function okOutcome(
   ticker: string,
@@ -73,6 +74,15 @@ export function notAvailableOutcome(ticker: string): IvrOutcome {
   return {
     status: 'not_available',
     error: { code: 'TICKER_NOT_COVERED', message: `Barchart has no options data for ${ticker}` }
+  }
+}
+
+/** Mirrors `makeNetworkError` in `barchart-ivr-scraper.ts` — what an unreachable
+ *  Barchart looks like to the collector. */
+export function networkErrorOutcome(ticker: string): IvrOutcome {
+  return {
+    status: 'network_error',
+    error: { code: 'NETWORK_FAILURE', message: `Barchart unreachable for ${ticker}` }
   }
 }
 
@@ -223,6 +233,8 @@ export type IvrBatch = {
 
 type IvrTestApi = {
   testIvrSnapshots: () => Promise<IvrSnapshotRow[]>
+  testIvrFetchLog: () => Promise<string[]>
+  testSchedulerRunScheduled: (jobName: string) => Promise<IvrBatch>
   testIvrSetOutcomes: (outcomes: Record<string, IvrOutcome>) => Promise<{ ok: boolean }>
   testIvrSetNow: (nowIso: string) => Promise<{ ok: boolean; error?: string }>
   testTradingSessionCount: () => Promise<number>
@@ -287,4 +299,58 @@ export async function collectIvrNow(page: Page): Promise<IvrBatch> {
     if (!result.ok) throw new Error(`ivr:collect-now failed: ${JSON.stringify(result)}`)
     return result.batch
   })
+}
+
+/** Every ticker the fake scraper has been asked for since the last `setIvrOutcomes`.
+ *  The only way to assert a fetch did *not* happen: an absent row proves nothing, since
+ *  a fetch that returned `not_available` also writes none. */
+export async function readIvrFetchLog(page: Page): Promise<string[]> {
+  return await page.evaluate(async () => {
+    const api = window.api as unknown as IvrTestApi
+    return await api.testIvrFetchLog()
+  })
+}
+
+/** Drive the batch on the *scheduled* trigger, as the after-close timer would.
+ *  `collectIvrNow` drives the explicit one and would pass for the wrong reason. */
+export async function collectIvrScheduled(page: Page): Promise<IvrBatch> {
+  return await page.evaluate(async () => {
+    const api = window.api as unknown as IvrTestApi
+    return await api.testSchedulerRunScheduled('ivr-collect')
+  })
+}
+
+/**
+ * Seed the Background's positions and watchlist through the production IPCs, then wait
+ * until every seeded ticker has been fetched.
+ *
+ * [US-100] Seeding now *triggers* collection, so a scenario that reset the fetch log
+ * immediately after seeding would race the background collections and see them land
+ * mid-assertion. Settling first makes the subsequent `setIvrOutcomes` reset meaningful.
+ */
+export async function seedBenchAndSettle(
+  page: Page,
+  { positions = [], watchlist = [] }: { positions?: string[]; watchlist?: string[] }
+): Promise<void> {
+  for (const ticker of positions) await seedActivePosition(page, ticker)
+  await seedWatchlist(page, watchlist)
+
+  const seeded = [...positions, ...watchlist]
+  if (seeded.length === 0) return
+
+  // Polled by hand rather than through `expect`: the helper modules here stay free of a
+  // test-framework import, the way the rest of e2e/ does.
+  const deadline = Date.now() + 15_000
+  for (;;) {
+    const log = await readIvrFetchLog(page)
+    if (seeded.every((ticker) => log.includes(ticker))) return
+    if (Date.now() > deadline) {
+      throw new Error(
+        `seedBenchAndSettle timed out: expected ${seeded.join(', ')} in the fetch log, saw ${
+          log.join(', ') || '(empty)'
+        }`
+      )
+    }
+    await page.waitForTimeout(100)
+  }
 }

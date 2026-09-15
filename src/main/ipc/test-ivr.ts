@@ -3,7 +3,7 @@
 import { ipcMain } from 'electron'
 import type Database from 'better-sqlite3'
 import type { IVRResult } from '../integrations/barchart-ivr-scraper'
-import { setFakeIvrNow, setFakeIvrOutcomes } from '../integrations/fake-ivr'
+import { readFakeIvrFetchLog, setFakeIvrNow, setFakeIvrOutcomes } from '../integrations/fake-ivr'
 import { marketCalendarFetchCount } from '../integrations/fake-market-data'
 
 export function registerTestIvrIpc(db: Database.Database): void {
@@ -30,6 +30,8 @@ export function registerTestIvrIpc(db: Database.Database): void {
   })
 
   ipcMain.handle('_test:market-calendar-fetch-count', () => marketCalendarFetchCount())
+
+  ipcMain.handle('_test:ivr-fetch-log', () => readFakeIvrFetchLog())
 
   ipcMain.handle('_test:ivr-snapshots', () =>
     db

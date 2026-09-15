@@ -10,7 +10,13 @@ export type CadencePolicy =
     }
   | { kind: 'afterClose'; offsetMinutes: number }
 
-export type JobHandler = () => Promise<unknown>
+/** Which entry point started a run. Handlers that behave differently for a person
+ *  than for the timer (the IVR collector's non-trading-day guard) branch on this. */
+export type JobTrigger = 'scheduled' | 'explicit'
+
+export type JobRunContext = { trigger: JobTrigger }
+
+export type JobHandler = (ctx: JobRunContext) => Promise<unknown>
 
 export type JobConfig = {
   name: string
@@ -28,7 +34,7 @@ export interface PollingScheduler {
   register(config: JobConfig): void
   start(): void
   stop(): Promise<void>
-  runNow(jobName: string): Promise<unknown>
+  runNow(jobName: string, opts?: { trigger?: JobTrigger }): Promise<unknown>
   getRegistry(): JobRegistryEntry[]
 }
 
@@ -91,7 +97,8 @@ type JobState = {
   /** The in-flight handler promise, or null when idle. A scheduled tick firing while
    *  a run is in flight is skipped, and runNow() joins the run instead of starting a
    *  concurrent one — overlapping runs would double-hit the provider and leave two
-   *  live reschedules racing to arm timers. */
+   *  live reschedules racing to arm timers. A joined run keeps the trigger it started
+   *  with: the joiner's context is never handed to the handler. */
   running: Promise<unknown> | null
 }
 
@@ -120,8 +127,8 @@ export function createPollingScheduler(
     }, delayMs)
   }
 
-  async function runTracked(state: JobState): Promise<unknown> {
-    const p = runHandler(state)
+  async function runTracked(state: JobState, ctx: JobRunContext): Promise<unknown> {
+    const p = runHandler(state, ctx)
     state.running = p
     inFlight.add(p)
     try {
@@ -132,10 +139,10 @@ export function createPollingScheduler(
     }
   }
 
-  async function runHandler(state: JobState): Promise<unknown> {
+  async function runHandler(state: JobState, ctx: JobRunContext): Promise<unknown> {
     state.invocations++
     try {
-      return await state.config.handler()
+      return await state.config.handler(ctx)
     } catch (err) {
       logger.warn({ err, job: state.config.name }, `Job '${state.config.name}' handler error`)
       return undefined
@@ -194,7 +201,7 @@ export function createPollingScheduler(
 
   async function tick(state: JobState): Promise<void> {
     if (state.running !== null) return
-    await runTracked(state)
+    await runTracked(state, { trigger: 'scheduled' })
     await reschedule(state)
   }
 
@@ -265,7 +272,10 @@ export function createPollingScheduler(
       })
     },
 
-    async runNow(jobName: string): Promise<unknown> {
+    async runNow(
+      jobName: string,
+      { trigger = 'explicit' }: { trigger?: JobTrigger } = {}
+    ): Promise<unknown> {
       const state = jobs.get(jobName)
       if (!state) {
         throw new SchedulerError('job_not_found', `Job not found: ${jobName}`)
@@ -281,7 +291,7 @@ export function createPollingScheduler(
         state.timerId = null
       }
 
-      const result = await runTracked(state)
+      const result = await runTracked(state, { trigger })
       await reschedule(state)
       return result
     },

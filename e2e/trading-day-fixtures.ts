@@ -97,3 +97,31 @@ export function weekdayCalendar(holidays: string[] = []): CalendarDay[] {
   }
   return days
 }
+
+/**
+ * The instant the 16:00 ET session on `day` closed — what `ivr_snapshot.observed_at`
+ * now carries for a reading taken on that session.
+ *
+ * Computed from the zone offset rather than pinned at 20:00Z or 21:00Z, so the expected
+ * stamp is right on both sides of the DST boundary the derived BASE_DAY drifts across.
+ * Mirrors `etInstantAt` in `src/main/core/trading-calendar.ts`, which is what actually
+ * produced the stamp.
+ */
+export function sessionCloseOn(day: string): string {
+  const parsed = parseISO(day)
+  const guess = new Date(
+    Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 16, 0, 0)
+  )
+
+  const zoneName = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    timeZoneName: 'longOffset'
+  })
+    .formatToParts(guess)
+    .find((part) => part.type === 'timeZoneName')!.value
+
+  const [, sign, hours, minutes = '00'] = /^GMT([+-])(\d{2}):?(\d{2})?$/.exec(zoneName)!
+  const offsetMinutes = (sign === '+' ? 1 : -1) * (Number(hours) * 60 + Number(minutes))
+
+  return new Date(guess.getTime() - offsetMinutes * 60_000).toISOString()
+}

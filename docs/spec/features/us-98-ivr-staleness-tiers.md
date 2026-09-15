@@ -1,6 +1,6 @@
 # US-98: Age an IV-rank reading so a stale one can't pass as current
 
-<!-- generated:from us-98 -->
+<!-- generated:from us-98,us-100 -->
 
 > **Status: shipped.** The freshness engine, the exchange-calendar cache, the earnings
 > split and the screener surface are implemented, refactored, and covered end to end by
@@ -233,6 +233,22 @@ request, no renderer-side ageing.
 - [`trading_session`](../schema/tables.md#trading_session) — migration `015`
 - [`earnings_date.last_earnings`](../schema/tables.md#earnings_date) — migration `014`
 
+### Amended by us-100: `observed_at` now names a session close
+
+The freshness tiers here age a reading by comparing its `observed_at` against the
+calendar. [us-100](./us-100-ivr-on-demand-and-outside-market-hours.md) changed what that
+column carries: it is now the **close of the exchange session the reading reflects**
+(`TradingSession.closeAt`), not the instant the scrape happened. It falls back to the
+fetch instant only when the calendar cannot place that instant, and warns
+`ivr_observation_unstamped` when it does.
+
+This makes US-98's inputs strictly more trustworthy rather than different. Barchart serves
+the last close, so before us-100 a Saturday scrape and a Sunday scrape of the same Friday
+number were stored as two rows under two different dates, and a Friday reading could look
+fresher than it was. The series now holds at most one row per underlying per session, so
+`countCompletedSessionsAfter` is counting real observations. No tier boundary, no
+`AssessedIvRank` field, and no rendering rule changed.
+
 ## Source files
 
 - `src/main/core/trading-calendar.ts`
@@ -272,6 +288,7 @@ Not yet created: the watchlist snapshot / Signal modules that depend on US-96.
 - [us-67 — Configure screening criteria](./us-67-configure-screening-criteria.md)
 - [us-70 — Earnings-in-window warning](./us-70-earnings-in-window-warning.md)
 - [us-44 — IVR snapshot store & scheduler](./us-44-ivr-snapshot-store-and-scheduler.md)
+- [us-100 — IVR on demand and outside market hours](./us-100-ivr-on-demand-and-outside-market-hours.md)
 
 <!-- /generated -->
 

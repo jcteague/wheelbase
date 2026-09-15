@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ValidationError } from '../core/lifecycle'
 import type { CreatePositionPayload } from '../schemas'
 import { makeTestDb, isoDate } from '../test-utils'
@@ -130,5 +130,32 @@ describe('createPosition', () => {
     }
     const count = (db.prepare('SELECT COUNT(*) as n FROM positions').get() as { n: number }).n
     expect(count).toBe(0)
+  })
+})
+
+describe('createPosition — on-demand IVR trigger', () => {
+  it('collects the ticker once after the position is committed', () => {
+    const db = makeTestDb()
+    const seen: Array<{ ticker: string; rowCount: number }> = []
+    const ivrOnDemand = {
+      collect: async (ticker: string): Promise<void> => {
+        const row = db.prepare('SELECT COUNT(*) AS c FROM positions').get() as { c: number }
+        seen.push({ ticker, rowCount: row.c })
+      }
+    }
+
+    createPosition(db, { ...VALID_PAYLOAD, ticker: 'TSLA' }, ivrOnDemand)
+
+    expect(seen).toEqual([{ ticker: 'TSLA', rowCount: 1 }])
+  })
+
+  it('never collects when the lifecycle engine rejects the position', () => {
+    const db = makeTestDb()
+    const collect = vi.fn(async () => {})
+
+    expect(() =>
+      createPosition(db, { ...VALID_PAYLOAD, expiration: '2020-01-17' }, { collect })
+    ).toThrow()
+    expect(collect).not.toHaveBeenCalled()
   })
 })

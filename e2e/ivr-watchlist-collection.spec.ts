@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { ElectronApplication, Page } from 'playwright'
 import { cleanupDb, getPage, tmpDb } from './assignment-helpers'
 import {
+  FAKE_NOW_DAY,
   collectIvrNow,
   launchIvrApp,
   notAvailableOutcome,
@@ -25,6 +26,7 @@ import {
   setIvrOutcomes,
   type IvrOutcome
 } from './ivr-helpers'
+import { afterCloseOn, sessionCloseOn, sessionsBefore } from './trading-day-fixtures'
 import {
   RANKED_PUTS,
   cardReason,
@@ -39,8 +41,12 @@ import {
   waitForMeetsCardCount
 } from './screener-helpers'
 
-const SAME_DAY_AFTERNOON = '2026-05-29T20:55:00Z'
-const YESTERDAY_AFTERNOON = '2026-05-28T20:55:00Z'
+// [US-100] Derived from the fixture day so each reading falls inside the calendar's
+// read window and is stamped at the session close it belongs to. 21:00Z is at or past
+// the 16:00 ET close in both EDT and EST.
+const SAME_DAY_AFTERNOON = afterCloseOn(FAKE_NOW_DAY)
+const PREVIOUS_SESSION_DAY = sessionsBefore(FAKE_NOW_DAY, 1)
+const YESTERDAY_AFTERNOON = afterCloseOn(PREVIOUS_SESSION_DAY)
 
 /** Just the KO chain, so the screener scenarios have exactly one bench candidate. */
 const KO_ONLY = RANKED_PUTS.filter((fixture) => fixture.ticker === 'KO')
@@ -206,7 +212,7 @@ describe('US-97: IVR collection covers watchlist underlyings', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({
       underlying: 'KO',
-      observed_at: YESTERDAY_AFTERNOON,
+      observed_at: sessionCloseOn(PREVIOUS_SESSION_DAY),
       ivr: '38.0'
     })
   })

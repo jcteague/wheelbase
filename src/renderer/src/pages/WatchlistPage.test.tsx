@@ -27,6 +27,7 @@ import { WatchlistPage } from './WatchlistPage'
 // their own suite.
 
 vi.mock('../hooks/useWatchlistSnapshot')
+vi.mock('../hooks/useIvrSnapshotUpdates')
 vi.mock('../hooks/useScreenerResults')
 vi.mock('../hooks/useScreeningCriteria')
 vi.mock('../hooks/useMarketStatusDisplay')

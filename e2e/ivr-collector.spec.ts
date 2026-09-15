@@ -16,7 +16,10 @@ import {
   tmpDb
 } from './assignment-helpers'
 import {
+  FAKE_NOW_DAY,
   collectIvrNow,
+  collectIvrScheduled,
+  fakeNowAt,
   launchIvrApp,
   notAvailableOutcome,
   okOutcome,
@@ -25,13 +28,30 @@ import {
   seedActivePosition,
   setIvrOutcomes
 } from './ivr-helpers'
-import { BASE_DAY, afterCloseOn, sessionsBefore, weekdayCalendar } from './trading-day-fixtures'
+import {
+  BASE_DAY,
+  afterCloseOn,
+  mostRecent,
+  sessionCloseOn,
+  sessionsBefore,
+  weekdayCalendar
+} from './trading-day-fixtures'
 
 // A guaranteed weekend so the trading-day guard treats a closed session as a
 // genuine non-trading day regardless of when the suite runs.
-const WEEKEND_NOW = '2026-05-23T17:00:00Z'
-const SAME_DAY_MORNING = '2026-05-29T14:05:00Z'
-const SAME_DAY_AFTERNOON = '2026-05-29T20:55:00Z'
+const WEEKEND_NOW = afterCloseOn(mostRecent(6))
+// [US-100] Anchored to the fixture day rather than pinned: a reading dated outside the
+// store's 45-day read window has no session to be placed against, so it would silently
+// take the unstamped fallback and this suite would stop testing the stamp at all.
+//
+// Both instants sit after the fixture day's close and before the next one, so they
+// belong to the *same* observation window — which is what makes the overwrite case a
+// re-collection rather than two different sessions. 21:00Z is the close in EST and an
+// hour past it in EDT, so neither drifts across the boundary with the derived BASE_DAY.
+const SAME_SESSION_EARLY = afterCloseOn(FAKE_NOW_DAY)
+const SAME_SESSION_LATE = fakeNowAt('22:30:00.000Z')
+/** Where a reading taken on the fixture day's session is now stored. */
+const SAME_DAY_STAMP = sessionCloseOn(FAKE_NOW_DAY)
 
 describe('US-44: IVR collector — scheduling and persistence', () => {
   let app: ElectronApplication
@@ -66,9 +86,9 @@ describe('US-44: IVR collector — scheduling and persistence', () => {
     await seedActivePosition(page, 'SPY', 110)
 
     await setIvrOutcomes(page, {
-      SPY: okOutcome('SPY', { ivr: 40, observedAt: SAME_DAY_AFTERNOON }),
-      AAPL: okOutcome('AAPL', { ivr: 55, observedAt: SAME_DAY_AFTERNOON }),
-      TSLA: okOutcome('TSLA', { ivr: 70, observedAt: SAME_DAY_AFTERNOON })
+      SPY: okOutcome('SPY', { ivr: 40, observedAt: SAME_SESSION_LATE }),
+      AAPL: okOutcome('AAPL', { ivr: 55, observedAt: SAME_SESSION_LATE }),
+      TSLA: okOutcome('TSLA', { ivr: 70, observedAt: SAME_SESSION_LATE })
     })
 
     const batch = await collectIvrNow(page)
@@ -85,7 +105,7 @@ describe('US-44: IVR collector — scheduling and persistence', () => {
 
     await seedActivePosition(page, 'SPY')
     await setIvrOutcomes(page, {
-      SPY: okOutcome('SPY', { ivr: 42.5, ivp: 50, iv30: 0.18, observedAt: SAME_DAY_AFTERNOON })
+      SPY: okOutcome('SPY', { ivr: 42.5, ivp: 50, iv30: 0.18, observedAt: SAME_SESSION_LATE })
     })
 
     await collectIvrNow(page)
@@ -94,7 +114,7 @@ describe('US-44: IVR collector — scheduling and persistence', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({
       underlying: 'SPY',
-      observed_at: SAME_DAY_AFTERNOON,
+      observed_at: SAME_DAY_STAMP,
       ivr: '42.5',
       ivp: '50.0',
       iv30: '0.18',
@@ -102,7 +122,7 @@ describe('US-44: IVR collector — scheduling and persistence', () => {
     })
   })
 
-  it('AC: Re-running on the same calendar day overwrites the existing row', async () => {
+  it('AC: Re-running within the same session overwrites the existing row', async () => {
     dbPath = tmpDb('wb-e2e-ivr-overwrite')
     app = await launchIvrApp(dbPath)
     const page = await getPage(app)
@@ -110,12 +130,12 @@ describe('US-44: IVR collector — scheduling and persistence', () => {
     await seedActivePosition(page, 'SPY')
 
     await setIvrOutcomes(page, {
-      SPY: okOutcome('SPY', { ivr: 30, observedAt: SAME_DAY_MORNING })
+      SPY: okOutcome('SPY', { ivr: 30, observedAt: SAME_SESSION_EARLY })
     })
     await collectIvrNow(page)
 
     await setIvrOutcomes(page, {
-      SPY: okOutcome('SPY', { ivr: 45, observedAt: SAME_DAY_AFTERNOON })
+      SPY: okOutcome('SPY', { ivr: 45, observedAt: SAME_SESSION_LATE })
     })
     await collectIvrNow(page)
 
@@ -123,7 +143,7 @@ describe('US-44: IVR collector — scheduling and persistence', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({
       underlying: 'SPY',
-      observed_at: SAME_DAY_AFTERNOON,
+      observed_at: SAME_DAY_STAMP,
       ivr: '45.0'
     })
   })
@@ -154,7 +174,7 @@ describe('US-44: IVR collector — scheduling and persistence', () => {
     await seedActivePosition(page, 'SPY')
     await setIvrOutcomes(page, {
       AAPL: parseErrorOutcome(),
-      SPY: okOutcome('SPY', { ivr: 33.3, observedAt: SAME_DAY_AFTERNOON })
+      SPY: okOutcome('SPY', { ivr: 33.3, observedAt: SAME_SESSION_LATE })
     })
 
     const batch = await collectIvrNow(page)
@@ -172,7 +192,7 @@ describe('US-44: IVR collector — scheduling and persistence', () => {
 
     await seedActivePosition(page, 'SPY')
     await setIvrOutcomes(page, {
-      SPY: okOutcome('SPY', { ivr: 61, observedAt: SAME_DAY_AFTERNOON })
+      SPY: okOutcome('SPY', { ivr: 61, observedAt: SAME_SESSION_LATE })
     })
 
     await page.evaluate(() => {
@@ -195,16 +215,15 @@ describe('US-44: IVR collector — scheduling and persistence', () => {
     await seedActivePosition(page, 'SPY')
     // Program a successful outcome: if any fetch happened, a row would persist.
     await setIvrOutcomes(page, {
-      SPY: okOutcome('SPY', { ivr: 99, observedAt: SAME_DAY_AFTERNOON })
+      SPY: okOutcome('SPY', { ivr: 99, observedAt: SAME_SESSION_LATE })
     })
 
-    await page.evaluate(() => {
-      location.hash = '#/settings'
-    })
-    await page.waitForSelector('button:has-text("Refresh IVR now")')
-    await page.click('button:has-text("Refresh IVR now")')
+    // [US-100] The guard is now scoped to the *scheduled* trigger, so this drives the
+    // job as the after-close timer would. Driving `collectIvrNow` here would exercise
+    // the explicit path, which deliberately no longer skips.
+    const batch = await collectIvrScheduled(page)
 
-    await page.waitForSelector('text=IVR refresh skipped: market closed on a non-trading day.')
+    expect(batch.skippedReason).toBe('market_closed')
     const rows = await readIvrSnapshots(page)
     expect(rows).toHaveLength(0)
   })
@@ -228,7 +247,7 @@ describe('US-44: IVR collector — scheduling and persistence', () => {
       SPY: okOutcome('SPY', { ivr: 99, observedAt: afterCloseOn(holiday) })
     })
 
-    const batch = await collectIvrNow(page)
+    const batch = await collectIvrScheduled(page)
 
     expect(batch.skippedReason).toBe('market_closed')
     expect(batch.successCount).toBe(0)
@@ -266,7 +285,7 @@ describe('US-44: IVR collector — scheduling and persistence', () => {
       SPY: okOutcome('SPY', { ivr: 99, observedAt: afterCloseOn(holiday) })
     })
 
-    const batch = await collectIvrNow(page)
+    const batch = await collectIvrScheduled(page)
 
     expect(batch.skippedReason).toBe('market_closed')
     expect(batch.successCount).toBe(0)

@@ -10,7 +10,8 @@ vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() } }))
 
 vi.mock('../integrations/fake-ivr', () => ({
   setFakeIvrNow: vi.fn(),
-  setFakeIvrOutcomes: vi.fn()
+  setFakeIvrOutcomes: vi.fn(),
+  readFakeIvrFetchLog: vi.fn(() => ['KO', 'MSFT'])
 }))
 
 vi.mock('../integrations/fake-market-data', () => ({
@@ -88,5 +89,11 @@ describe('registerTestIvrIpc', () => {
     expect(handlers.get('_test:ivr-snapshots')!()).toEqual([
       expect.objectContaining({ underlying: 'KO', ivr: '58.0' })
     ])
+  })
+
+  it('serves the fake scraper fetch log', async () => {
+    const handlers = await handlersFor(makeTestDb())
+
+    expect(handlers.get('_test:ivr-fetch-log')!()).toEqual(['KO', 'MSFT'])
   })
 })

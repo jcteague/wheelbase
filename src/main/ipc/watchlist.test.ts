@@ -65,14 +65,17 @@ describe('registerWatchlistIpc', () => {
     updateWatchlistEntry.mockReset()
     buildWatchlistSnapshot.mockReset()
     db = {} as Database.Database
+    ivrOnDemand = { collect: vi.fn(async (): Promise<void> => {}) }
     provider = {} as MarketDataProvider
     getProvider = vi.fn(() => provider)
   })
 
+  let ivrOnDemand: { collect: (ticker: string) => Promise<void> }
+
   async function register(): Promise<Array<[string, (...args: unknown[]) => unknown]>> {
     const { ipcMain } = await import('electron')
     const { registerWatchlistIpc } = await import('./watchlist')
-    registerWatchlistIpc({ db, getProvider, getCurrentDate: () => CURRENT_DATE })
+    registerWatchlistIpc({ db, getProvider, getCurrentDate: () => CURRENT_DATE, ivrOnDemand })
     return vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>
   }
 
@@ -82,7 +85,11 @@ describe('registerWatchlistIpc', () => {
     const handler = getRegisteredHandler(await register(), 'watchlist:add')
     const result = await handler?.(null, { ticker: 'aapl' })
 
-    expect(addWatchlistEntry).toHaveBeenCalledWith(db, expect.objectContaining({ ticker: 'AAPL' }))
+    expect(addWatchlistEntry).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ ticker: 'AAPL' }),
+      ivrOnDemand
+    )
     expect(result).toMatchObject({ ok: true, entry: SAMPLE_ENTRY })
   })
 
@@ -208,5 +215,19 @@ describe('registerWatchlistIpc', () => {
 
     expect(removeWatchlistEntry).toHaveBeenCalledWith(db, 'AAPL')
     expect(result).toMatchObject({ ok: true, ticker: 'AAPL' })
+  })
+
+  it('watchlist:add hands the on-demand IVR port to the service', async () => {
+    addWatchlistEntry.mockReturnValue(SAMPLE_ENTRY)
+    const calls = await register()
+    const handler = calls.find(([channel]) => channel === 'watchlist:add')![1]
+
+    await handler(null, { ticker: 'AAPL' })
+
+    expect(addWatchlistEntry).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ ticker: 'AAPL' }),
+      ivrOnDemand
+    )
   })
 })

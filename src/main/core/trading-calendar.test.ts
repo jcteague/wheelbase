@@ -8,7 +8,9 @@ import {
   getMostRecentCompletedSession,
   getTradingSession,
   isIsoDay,
-  type TradingCalendar
+  observationWindowOf,
+  type TradingCalendar,
+  type TradingSession
 } from './trading-calendar'
 
 const atEt = (date: string, time: string): Date => new Date(etInstantAt(date, time)!)
@@ -117,5 +119,52 @@ describe('trading calendar', () => {
     expect(etInstantAt('2026-03-06', '24:00')).toBeNull()
     expect(etInstantAt('2026-03-06', '9:30')).toBeNull()
     expect(etDateOf(new Date('invalid'))).toBe('')
+  })
+})
+
+describe('observationWindowOf', () => {
+  it('spans from a session close to the next session close', () => {
+    const friday = getTradingSession(WEEKEND, '2026-06-12')
+    expect(friday.status).toBe('open')
+
+    expect(observationWindowOf(WEEKEND, (friday as { session: TradingSession }).session)).toEqual({
+      from: etInstantAt('2026-06-12', '16:00'),
+      to: etInstantAt('2026-06-15', '16:00')
+    })
+  })
+
+  it('skips a mid-week closure when finding the next close', () => {
+    const wednesday = getTradingSession(THANKSGIVING, '2026-11-25')
+
+    expect(
+      observationWindowOf(THANKSGIVING, (wednesday as { session: TradingSession }).session)
+    ).toEqual({
+      from: etInstantAt('2026-11-25', '16:00'),
+      to: etInstantAt('2026-11-27', '13:00')
+    })
+  })
+
+  it('leaves the window open-ended for the last session in the calendar', () => {
+    const last = getTradingSession(WEEKEND, '2026-06-16')
+
+    expect(observationWindowOf(WEEKEND, (last as { session: TradingSession }).session)).toEqual({
+      from: etInstantAt('2026-06-16', '16:00'),
+      to: null
+    })
+  })
+
+  it('returns null for a day the calendar does not hold a session for', () => {
+    const saturday: TradingSession = {
+      date: '2026-06-13',
+      closeAt: etInstantAt('2026-06-13', '16:00')!
+    }
+    const outside: TradingSession = {
+      date: '2026-07-01',
+      closeAt: etInstantAt('2026-07-01', '16:00')!
+    }
+
+    expect(observationWindowOf(WEEKEND, saturday)).toBeNull()
+    expect(observationWindowOf(WEEKEND, outside)).toBeNull()
+    expect(observationWindowOf(EMPTY_TRADING_CALENDAR, saturday)).toBeNull()
   })
 })

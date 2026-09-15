@@ -30,6 +30,7 @@ import { rollCspPosition } from '../services/roll-csp-position'
 import { rollCcPosition } from '../services/roll-cc-position'
 import { savePositionAlertOverrides } from '../services/save-position-alert-overrides'
 import type { CreatePositionPayload } from '../schemas'
+import type { IvrOnDemand } from '../services/ivr-on-demand'
 
 function registerParsedPositionHandler<Payload extends { positionId: string }>(
   db: Database.Database,
@@ -46,11 +47,16 @@ function registerParsedPositionHandler<Payload extends { positionId: string }>(
   )
 }
 
-export function registerPositionsHandlers(db: Database.Database): void {
+export function registerPositionsHandlers(
+  db: Database.Database,
+  { ivrOnDemand }: { ivrOnDemand?: IvrOnDemand } = {}
+): void {
   ipcMain.handle('positions:list', () => listPositions(db))
 
   ipcMain.handle('positions:create', (_, payload: CreatePositionPayload) =>
-    handleIpcCall('positions_create_unhandled_error', () => createPosition(db, payload))
+    handleIpcCall('positions_create_unhandled_error', () =>
+      createPosition(db, payload, ivrOnDemand)
+    )
   )
 
   ipcMain.handle('positions:get', (_, payload: { positionId: string }) => {

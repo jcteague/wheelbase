@@ -10,6 +10,12 @@ vi.mock('electron', () => {
     loadURL = vi.fn()
     loadFile = vi.fn()
     static getAllWindows = vi.fn(() => [])
+    /** [US-100] The push path sends on the main window's webContents, so a test needs
+     *  the instance bootstrap actually created. */
+    static instances: BrowserWindowMock[] = []
+    constructor() {
+      BrowserWindowMock.instances.push(this)
+    }
   }
 
   return {
@@ -60,7 +66,6 @@ vi.mock('./ipc/screener', () => ({ registerScreenerIpc: vi.fn() }))
 const fakeIvrNow = vi.fn(() => new Date('2026-07-23T15:30:00Z'))
 vi.mock('./integrations/fake-ivr', () => ({
   createFakeIvrCollaborators: vi.fn(() => ({ clock: { now: fakeIvrNow } })),
-  isFakeIvrEnabled: vi.fn(() => false),
   setFakeIvrNow: vi.fn(),
   setFakeIvrOutcomes: vi.fn()
 }))
@@ -103,6 +108,15 @@ vi.mock('./services/detect-assignments', () => ({
   DETECT_ASSIGNMENTS_JOB_NAME: 'detect-assignments',
   detectAssignments: vi.fn().mockResolvedValue({ detected: 0, skipped: 0 })
 }))
+
+type IvrOnDemandDeps = { onCollected: (ticker: string) => void; clock?: { now: () => Date } }
+const mockCreateIvrOnDemand = vi.fn(
+  (deps: IvrOnDemandDeps): { collect: () => Promise<void>; deps: IvrOnDemandDeps } => ({
+    collect: async (): Promise<void> => {},
+    deps
+  })
+)
+vi.mock('./services/ivr-on-demand', () => ({ createIvrOnDemand: mockCreateIvrOnDemand }))
 
 vi.mock('./services/ivr-collector', () => ({
   IVR_COLLECT_JOB_NAME: 'ivr-collect',
@@ -234,12 +248,14 @@ describe('main process bootstrap', () => {
 
     const registration = mockSchedulerRegister.mock.calls
       .map(([job]) => job)
-      .find((job) => job.name === 'ivr-collect') as { handler: () => Promise<unknown> } | undefined
+      .find((job) => job.name === 'ivr-collect') as
+      | { handler: (ctx: { trigger: string }) => Promise<unknown> }
+      | undefined
 
     expect(registration).toBeDefined()
 
     const { collectIVRSnapshots } = await import('./services/ivr-collector')
-    await registration!.handler()
+    await registration!.handler({ trigger: 'scheduled' })
 
     expect(vi.mocked(collectIVRSnapshots)).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -257,11 +273,13 @@ describe('main process bootstrap', () => {
 
     const registration = mockSchedulerRegister.mock.calls
       .map(([job]) => job)
-      .find((job) => job.name === 'ivr-collect') as { handler: () => Promise<unknown> } | undefined
+      .find((job) => job.name === 'ivr-collect') as
+      | { handler: (ctx: { trigger: string }) => Promise<unknown> }
+      | undefined
 
     const { brokerFactory } = await import('./integrations/broker-factory')
     vi.mocked(brokerFactory.create).mockClear()
-    await registration!.handler()
+    await registration!.handler({ trigger: 'scheduled' })
 
     const { collectIVRSnapshots } = await import('./services/ivr-collector')
     expect(vi.mocked(collectIVRSnapshots)).toHaveBeenCalledWith(
@@ -275,10 +293,12 @@ describe('main process bootstrap', () => {
 
     const registration = mockSchedulerRegister.mock.calls
       .map(([job]) => job)
-      .find((job) => job.name === 'ivr-collect') as { handler: () => Promise<unknown> } | undefined
+      .find((job) => job.name === 'ivr-collect') as
+      | { handler: (ctx: { trigger: string }) => Promise<unknown> }
+      | undefined
     expect(registration).toBeDefined()
 
-    await registration!.handler()
+    await registration!.handler({ trigger: 'scheduled' })
     const { collectIVRSnapshots } = await import('./services/ivr-collector')
     const call = vi.mocked(collectIVRSnapshots).mock.calls.at(-1)?.[0] as { signal?: AbortSignal }
     expect(call.signal).toBeDefined()
@@ -479,5 +499,66 @@ describe('main process bootstrap', () => {
     const stopOrder = mockSchedulerStop.mock.invocationCallOrder[0]
     const exitOrder = vi.mocked(app.exit).mock.invocationCallOrder[0]
     expect(exitOrder).toBeGreaterThan(stopOrder)
+  })
+
+  // [US-100] The scheduled after-close tick must keep the non-trading-day guard while
+  // "Refresh IVR now" bypasses it. Both arrive at the same handler, so the trigger the
+  // scheduler hands it is the only thing that tells them apart.
+  it('forwards the run trigger from the scheduler to the collector', async () => {
+    await triggerBootstrap()
+
+    const registration = mockSchedulerRegister.mock.calls
+      .map(([job]) => job)
+      .find((job) => job.name === 'ivr-collect') as
+      | { handler: (ctx: { trigger: string }) => Promise<unknown> }
+      | undefined
+
+    const { collectIVRSnapshots } = await import('./services/ivr-collector')
+
+    await registration!.handler({ trigger: 'explicit' })
+    expect(vi.mocked(collectIVRSnapshots)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ trigger: 'explicit' })
+    )
+
+    await registration!.handler({ trigger: 'scheduled' })
+    expect(vi.mocked(collectIVRSnapshots)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ trigger: 'scheduled' })
+    )
+  })
+
+  it('shares one on-demand IVR port between the watchlist and positions registrations', async () => {
+    await triggerBootstrap()
+
+    expect(mockCreateIvrOnDemand).toHaveBeenCalledTimes(1)
+    expect(mockCreateIvrOnDemand).toHaveBeenCalledWith(
+      expect.objectContaining({ clock: expect.objectContaining({ now: fakeIvrNow }) })
+    )
+
+    const port = mockCreateIvrOnDemand.mock.results[0].value
+    const { registerWatchlistIpc } = await import('./ipc/watchlist')
+    const { registerPositionsHandlers } = await import('./ipc/positions')
+
+    expect(vi.mocked(registerWatchlistIpc)).toHaveBeenCalledWith(
+      expect.objectContaining({ ivrOnDemand: port })
+    )
+    expect(vi.mocked(registerPositionsHandlers)).toHaveBeenCalledWith(expect.anything(), {
+      ivrOnDemand: port
+    })
+  })
+
+  it('pushes a snapshot-updated event to the renderer when a reading lands', async () => {
+    await triggerBootstrap()
+
+    const { onCollected } = mockCreateIvrOnDemand.mock.calls[0][0]
+    const { BrowserWindow } = await import('electron')
+    const win = (
+      BrowserWindow as unknown as {
+        instances: Array<{ webContents: { send: ReturnType<typeof vi.fn> } }>
+      }
+    ).instances.at(-1)!
+
+    onCollected('AAPL')
+
+    expect(win.webContents.send).toHaveBeenCalledWith('ivr:snapshot-updated', { ticker: 'AAPL' })
   })
 })

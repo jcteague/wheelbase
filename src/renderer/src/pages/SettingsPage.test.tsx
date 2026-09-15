@@ -192,26 +192,6 @@ it('clicking Refresh IVR now surfaces the returned success and error counts', as
   ).toBeInTheDocument()
 })
 
-it('shows a skipped message when the collector reports market_closed', async () => {
-  mockUseCollectIvrNow.mockReturnValue({
-    mutateAsync: vi.fn().mockResolvedValue({
-      successCount: 0,
-      errorCount: 0,
-      skippedCount: 0,
-      skippedReason: 'market_closed'
-    })
-  } as unknown as ReturnType<typeof useCollectIvrNow>)
-
-  render(<SettingsPage />)
-
-  const section = screen.getByRole('region', { name: /market data/i })
-  fireEvent.click(within(section).getByRole('button', { name: /refresh ivr now/i }))
-
-  expect(
-    await within(section).findByText('IVR refresh skipped: market closed on a non-trading day.')
-  ).toHaveClass('text-wb-text-muted')
-})
-
 it('shows an error message when the IVR collect mutation rejects', async () => {
   mockUseCollectIvrNow.mockReturnValue({
     mutateAsync: vi.fn().mockRejectedValue(

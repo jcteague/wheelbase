@@ -744,10 +744,12 @@ declare global {
       }
       ivr: {
         collectNow: () => Promise<IpcCollectIvrNowResult>
+        onSnapshotUpdated: (cb: (event: { ticker: string }) => void) => () => void
       }
       testIvrSetOutcomes: (outcomes: unknown) => Promise<{ ok: boolean }>
       testIvrSetNow: (nowIso: unknown) => Promise<{ ok: true } | { ok: false; error: string }>
       testIvrSnapshots: () => Promise<unknown[]>
+      testIvrFetchLog: () => Promise<string[]>
       testTradingSessionCount: () => Promise<number>
       testMarketCalendarFetchCount: () => Promise<number>
     }
