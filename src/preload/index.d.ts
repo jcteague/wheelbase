@@ -371,9 +371,10 @@ type IpcCollectIvrNowBatch = {
 }
 type IpcCollectIvrNowResult = IpcResult<{ batch: IpcCollectIvrNowBatch }>
 
-interface IpcWatchlistAddPayload {
+/** The editable fields keyed by the ticker. Add and update send the same shape. */
+interface IpcWatchlistEntryPayload {
   ticker: string
-  notes?: string
+  notes?: string | null
   ownBelowPrice?: number | null
   ivrTrigger?: number | null
   postEarningsOnly?: boolean
@@ -390,7 +391,7 @@ interface IpcWatchlistEntry {
   addedAt: string
 }
 
-type IpcWatchlistAddResult = IpcResult<{ entry: IpcWatchlistEntry }>
+type IpcWatchlistEntryResult = IpcResult<{ entry: IpcWatchlistEntry }>
 type IpcWatchlistRemoveResult = IpcResult<{ ticker: string }>
 
 /** Mirrors `AssessedIvRank` in `src/main/core/ivr-freshness.ts` — the reading plus the
@@ -730,7 +731,8 @@ declare global {
       }
       watchlist: {
         snapshot: () => Promise<IpcWatchlistSnapshotResult>
-        add: (payload: IpcWatchlistAddPayload) => Promise<IpcWatchlistAddResult>
+        add: (payload: IpcWatchlistEntryPayload) => Promise<IpcWatchlistEntryResult>
+        update: (payload: IpcWatchlistEntryPayload) => Promise<IpcWatchlistEntryResult>
         remove: (payload: { ticker: string }) => Promise<IpcWatchlistRemoveResult>
       }
       screener: {

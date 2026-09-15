@@ -7,6 +7,7 @@ import type { MarketDataProvider } from '../integrations/market-data-provider'
 const listWatchlist = vi.fn()
 const addWatchlistEntry = vi.fn()
 const removeWatchlistEntry = vi.fn()
+const updateWatchlistEntry = vi.fn()
 const buildWatchlistSnapshot = vi.fn()
 
 vi.mock('electron', () => ({
@@ -20,7 +21,8 @@ vi.mock('../logger', () => ({
 vi.mock('../services/watchlist', () => ({
   listWatchlist,
   addWatchlistEntry,
-  removeWatchlistEntry
+  removeWatchlistEntry,
+  updateWatchlistEntry
 }))
 
 vi.mock('../services/watchlist-snapshot', () => ({ buildWatchlistSnapshot }))
@@ -60,6 +62,7 @@ describe('registerWatchlistIpc', () => {
     listWatchlist.mockReset()
     addWatchlistEntry.mockReset()
     removeWatchlistEntry.mockReset()
+    updateWatchlistEntry.mockReset()
     buildWatchlistSnapshot.mockReset()
     db = {} as Database.Database
     provider = {} as MarketDataProvider
@@ -105,6 +108,51 @@ describe('registerWatchlistIpc', () => {
     expect(result).toMatchObject({
       ok: false,
       errors: [expect.objectContaining({ field: 'ticker' })]
+    })
+  })
+
+  // [US-69] The edit channel. Same envelope discipline as add: a Zod failure never reaches
+  // the service, and a service ValidationError arrives as a field error the form can bind.
+  it('watchlist:update parses the payload and returns { ok: true, entry }', async () => {
+    updateWatchlistEntry.mockReturnValue(SAMPLE_ENTRY)
+
+    const handler = getRegisteredHandler(await register(), 'watchlist:update')
+    const result = await handler?.(null, { ticker: 'aapl', notes: 'x' })
+
+    expect(updateWatchlistEntry).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ ticker: 'AAPL', notes: 'x' })
+    )
+    expect(result).toMatchObject({ ok: true, entry: SAMPLE_ENTRY })
+  })
+
+  it('watchlist:update maps a not_found ValidationError to { ok: false, errors }', async () => {
+    updateWatchlistEntry.mockImplementation(() => {
+      throw new ValidationError('ticker', 'not_found', 'AAPL is not on the watchlist')
+    })
+
+    const handler = getRegisteredHandler(await register(), 'watchlist:update')
+    const result = await handler?.(null, { ticker: 'AAPL' })
+
+    expect(result).toMatchObject({
+      ok: false,
+      errors: [{ field: 'ticker', code: 'not_found', message: 'AAPL is not on the watchlist' }]
+    })
+  })
+
+  it('watchlist:update rejects an over-length note without calling the service', async () => {
+    const handler = getRegisteredHandler(await register(), 'watchlist:update')
+    const result = await handler?.(null, { ticker: 'AAPL', notes: 'a'.repeat(501) })
+
+    expect(updateWatchlistEntry).not.toHaveBeenCalled()
+    expect(result).toMatchObject({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          field: 'notes',
+          message: 'Note must be 500 characters or fewer'
+        })
+      ]
     })
   })
 

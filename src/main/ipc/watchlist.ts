@@ -1,9 +1,13 @@
 import { ipcMain } from 'electron'
 import type Database from 'better-sqlite3'
 import type { MarketDataProvider } from '../integrations/market-data-provider'
-import { addWatchlistEntry, removeWatchlistEntry } from '../services/watchlist'
+import {
+  addWatchlistEntry,
+  removeWatchlistEntry,
+  updateWatchlistEntry
+} from '../services/watchlist'
 import { buildWatchlistSnapshot } from '../services/watchlist-snapshot'
-import { WatchlistAddPayloadSchema, WatchlistRemovePayloadSchema } from '../schemas'
+import { WatchlistEntryPayloadSchema, WatchlistRemovePayloadSchema } from '../schemas'
 import { handleIpcCall } from './utils'
 
 export function registerWatchlistIpc({
@@ -27,7 +31,14 @@ export function registerWatchlistIpc({
 
   ipcMain.handle('watchlist:add', (_, payload: unknown) =>
     handleIpcCall('watchlist_add_error', () => ({
-      entry: addWatchlistEntry(db, WatchlistAddPayloadSchema.parse(payload))
+      entry: addWatchlistEntry(db, WatchlistEntryPayloadSchema.parse(payload))
+    }))
+  )
+
+  // [US-69] Contract: plans/us-69/contracts/watchlist-update.md
+  ipcMain.handle('watchlist:update', (_, payload: unknown) =>
+    handleIpcCall('watchlist_update_error', () => ({
+      entry: updateWatchlistEntry(db, WatchlistEntryPayloadSchema.parse(payload))
     }))
   )
 

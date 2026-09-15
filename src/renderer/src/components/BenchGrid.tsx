@@ -2,6 +2,7 @@ import type { ScreenerCandidate } from '../api/screener'
 import { type Bench, defaultSelection } from '../lib/bench'
 import { BenchDetail } from './BenchDetail'
 import { BenchSection } from './BenchSection'
+import { WatchlistEntryForm } from './WatchlistEntryForm'
 import { ScreenerStateCard } from './ScreenerStateCard'
 import { AlertBox } from './ui/AlertBox'
 import { SectionCard } from './ui/SectionCard'
@@ -11,6 +12,10 @@ import { SectionCard } from './ui/SectionCard'
 // Each section owns the message it shows when it is empty, because "nothing meets your
 // criteria" and "nothing is waiting" are answers to different questions — the first is a
 // prompt to loosen the screen, the second is simply good news.
+//
+// [US-69] The panel is one slot holding either the read view or the entry form. Which one
+// is derived from `editing === current.ticker`, never stored separately, so leaving a
+// stock cannot leave a form open over another stock's detail.
 
 type BenchGridProps = {
   bench: Bench
@@ -26,6 +31,11 @@ type BenchGridProps = {
   /** False when the provider was unreachable, so no screen ran. An empty Meets section then
    *  means "we could not look", not "we looked and found nothing". */
   screened: boolean
+  /** The ticker whose entry form is open, or null while the panel shows the read view. */
+  editing: string | null
+  onEdit: (ticker: string) => void
+  /** Saved or cancelled — either way the panel goes back to the read view. */
+  onEditDone: () => void
 }
 
 export function BenchGrid({
@@ -36,7 +46,10 @@ export function BenchGrid({
   onReview,
   onAdjustCriteria,
   criteriaUnloadable,
-  screened
+  screened,
+  editing,
+  onEdit,
+  onEditDone
 }: BenchGridProps): React.JSX.Element {
   const stocks = [...bench.meets, ...bench.waiting]
   // A stock the trader removed takes its selection with it, so the panel falls back to
@@ -93,7 +106,23 @@ export function BenchGrid({
       </div>
       <div data-testid="bench-detail-panel" className="xl:sticky xl:top-4">
         <SectionCard>
-          {current !== null && <BenchDetail stock={current} onReview={onReview} />}
+          {current !== null &&
+            (editing === current.ticker ? (
+              // Keyed by ticker so switching stocks remounts the form rather than reusing
+              // the previous entry's seeded row toggles.
+              <WatchlistEntryForm
+                key={current.ticker}
+                entry={current.row.entry}
+                onSaved={onEditDone}
+                onCancel={onEditDone}
+              />
+            ) : (
+              <BenchDetail
+                stock={current}
+                onReview={onReview}
+                onEdit={() => onEdit(current.ticker)}
+              />
+            ))}
         </SectionCard>
         <p className="mt-3 text-xs leading-relaxed text-wb-text-muted">
           Select a stock to see its thesis, condition checks, IV-reading status, and matching

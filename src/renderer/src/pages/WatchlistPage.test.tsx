@@ -13,6 +13,7 @@ import { candidate, entry, row, unmet, verdict } from '../components/bench-test-
 import { useAddToWatchlist } from '../hooks/useAddToWatchlist'
 import { useMarketStatusDisplay } from '../hooks/useMarketStatusDisplay'
 import { useRemoveFromWatchlist } from '../hooks/useRemoveFromWatchlist'
+import { useUpdateWatchlistEntry } from '../hooks/useUpdateWatchlistEntry'
 import { useScreenerResults } from '../hooks/useScreenerResults'
 import { useSaveScreeningCriteria, useScreeningCriteria } from '../hooks/useScreeningCriteria'
 import { useSettingsStatus } from '../hooks/useSettings'
@@ -33,6 +34,7 @@ vi.mock('../hooks/useSettings')
 // The add form and the card's ✕ own these; the page never calls IPC itself.
 vi.mock('../hooks/useAddToWatchlist')
 vi.mock('../hooks/useRemoveFromWatchlist')
+vi.mock('../hooks/useUpdateWatchlistEntry')
 // Hoisted so the factory can close over the spy — `vi.mock` runs before module init.
 const { mockNavigate } = vi.hoisted(() => ({ mockNavigate: vi.fn() }))
 vi.mock('wouter', () => ({ useLocation: () => ['/watchlist', mockNavigate] }))
@@ -45,11 +47,13 @@ const mockUseMarketStatusDisplay = vi.mocked(useMarketStatusDisplay)
 const mockUseSettingsStatus = vi.mocked(useSettingsStatus)
 const mockUseAddToWatchlist = vi.mocked(useAddToWatchlist)
 const mockUseRemoveFromWatchlist = vi.mocked(useRemoveFromWatchlist)
+const mockUseUpdateWatchlistEntry = vi.mocked(useUpdateWatchlistEntry)
 
 const snapshotRefetch = vi.fn()
 const screenerRefetch = vi.fn()
 const mockSaveMutate = vi.fn()
 const mockRemoveMutate = vi.fn()
+const mockUpdateMutate = vi.fn()
 
 const QUOTE_TIMESTAMP = '2026-09-11T16:00:02-04:00'
 const QUOTE_TIME = format(parseISO(QUOTE_TIMESTAMP), 'HH:mm:ss')
@@ -255,6 +259,7 @@ beforeEach(() => {
   screenerRefetch.mockReset()
   mockSaveMutate.mockReset()
   mockRemoveMutate.mockReset()
+  mockUpdateMutate.mockReset()
   mockNavigate.mockReset()
 
   setSnapshot([KO_ROW, AAPL_ROW])
@@ -279,6 +284,14 @@ beforeEach(() => {
     isSuccess: false,
     reset: vi.fn()
   } as unknown as ReturnType<typeof useRemoveFromWatchlist>)
+  mockUseUpdateWatchlistEntry.mockReturnValue({
+    mutate: mockUpdateMutate,
+    isPending: false,
+    isError: false,
+    error: null,
+    isSuccess: false,
+    reset: vi.fn()
+  } as unknown as ReturnType<typeof useUpdateWatchlistEntry>)
   mockUseSaveScreeningCriteria.mockImplementation(
     () =>
       ({
@@ -687,5 +700,112 @@ describe('WatchlistPage — query states', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Failed to screen the watchlist — check that market data is reachable.'
     )
+  })
+
+  // [US-69] The page holds which stock is being edited, and the four transitions that
+  // clear it. The rule they all serve: one entry form open at a time, and never one
+  // pointing at a stock the trader has left.
+  describe('editing an entry', () => {
+    async function openEdit(): Promise<void> {
+      await userEvent.click(screen.getByTestId('bench-detail-edit'))
+    }
+
+    it('swaps the detail panel for the seeded entry form', async () => {
+      renderPage()
+
+      await openEdit()
+
+      expect(screen.getByTestId('watchlist-edit-submit')).toBeInTheDocument()
+      expect(screen.queryByTestId('bench-detail-thesis')).toBeNull()
+      expect(screen.getByTestId('watchlist-entry-ticker')).toHaveTextContent('KO')
+    })
+
+    it('closes the edit when the add form is opened, and vice versa', async () => {
+      renderPage()
+
+      await openEdit()
+      await userEvent.click(screen.getByTestId('bench-add-toggle'))
+
+      expect(screen.queryByTestId('watchlist-edit-submit')).toBeNull()
+      expect(screen.getByTestId('watchlist-add-submit')).toBeInTheDocument()
+      expect(document.querySelectorAll('#thesis')).toHaveLength(1)
+
+      await openEdit()
+
+      expect(screen.queryByTestId('watchlist-add-submit')).toBeNull()
+      expect(screen.getByTestId('watchlist-edit-submit')).toBeInTheDocument()
+      expect(document.querySelectorAll('#thesis')).toHaveLength(1)
+    })
+
+    it('leaves the edit behind when another stock is selected', async () => {
+      renderPage()
+
+      await openEdit()
+      await userEvent.click(
+        within(screen.getByTestId('watchlist-row-AAPL')).getByTestId('watchlist-ticker')
+      )
+
+      expect(screen.queryByTestId('watchlist-edit-submit')).toBeNull()
+      expect(screen.getByTestId('bench-detail-ticker')).toHaveTextContent('AAPL')
+    })
+
+    it('restores the read view on cancel, for the same stock', async () => {
+      renderPage()
+
+      await openEdit()
+      await userEvent.click(screen.getByTestId('watchlist-edit-cancel'))
+
+      expect(screen.queryByTestId('watchlist-edit-submit')).toBeNull()
+      expect(screen.getByTestId('bench-detail-ticker')).toHaveTextContent('KO')
+    })
+
+    it('restores the read view once the save succeeds, keeping the selection', async () => {
+      renderPage()
+
+      await openEdit()
+      await userEvent.click(screen.getByTestId('watchlist-edit-submit'))
+
+      const options = mockUpdateMutate.mock.calls[0][1] as { onSuccess: () => void }
+      act(() => options.onSuccess())
+
+      expect(screen.queryByTestId('watchlist-edit-submit')).toBeNull()
+      expect(screen.getByTestId('bench-detail-ticker')).toHaveTextContent('KO')
+    })
+
+    // The Edit button is reachable on the stock the bench defaulted to, which the trader
+    // never clicked. Unless opening the form also pins that stock as the selection, a
+    // background snapshot refetch that re-sections the bench moves the default elsewhere
+    // and unmounts the form — discarding whatever was typed, with nothing said.
+    it('pins the stock it opened on, so a re-sectioned bench cannot discard the edit', async () => {
+      const { rerender } = renderPage()
+
+      await openEdit()
+      expect(screen.getByTestId('watchlist-entry-ticker')).toHaveTextContent('KO')
+
+      // A refetch lands in which AAPL now meets criteria and KO does not, so the bench's
+      // own default flips from KO to AAPL.
+      setSnapshot([
+        row({ entry: entry({ ticker: 'AAPL', notes: 'Would own below $170' }) }),
+        row({ verdict: verdict({ iv: unmet('IV low') }) })
+      ])
+      setResults({
+        ...OK_RESULTS,
+        ranked: [candidate({ ticker: 'AAPL', timestamp: QUOTE_TIMESTAMP })]
+      })
+      act(() => rerender())
+
+      expect(screen.getByTestId('watchlist-edit-submit')).toBeInTheDocument()
+      expect(screen.getByTestId('watchlist-entry-ticker')).toHaveTextContent('KO')
+    })
+
+    it('closes the edit when the stock being edited is removed', async () => {
+      renderPage()
+
+      await openEdit()
+      await userEvent.click(screen.getByTestId('watchlist-remove-KO'))
+
+      expect(mockRemoveMutate).toHaveBeenCalledWith('KO')
+      expect(screen.queryByTestId('watchlist-edit-submit')).toBeNull()
+    })
   })
 })

@@ -1,8 +1,14 @@
-// [US-63] Watchlist service — add / list / remove
+// [US-63] Watchlist service — add / list / remove; update is [US-69]
 import { describe, expect, it, vi } from 'vitest'
 import { ValidationError } from '../core/lifecycle'
+import type { WatchlistEntryRecord } from '../schemas'
 import { makeTestDb } from '../test-utils'
-import { addWatchlistEntry, listWatchlist, removeWatchlistEntry } from './watchlist'
+import {
+  addWatchlistEntry,
+  listWatchlist,
+  removeWatchlistEntry,
+  updateWatchlistEntry
+} from './watchlist'
 
 vi.mock('../logger', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
@@ -157,5 +163,213 @@ describe('removeWatchlistEntry', () => {
       expect(ve.code).toBe('not_found')
       expect(ve.message).toBe('TSLA is not on the watchlist')
     }
+  })
+})
+
+// [US-69] An update is a full replacement of every editable column, keyed by the ticker.
+// The identity columns — `ticker` and `added_at` — are what these tests most want to see
+// left alone: an edit that quietly reordered the bench would be a bug no rendering test
+// could catch.
+describe('updateWatchlistEntry', () => {
+  function seedAapl(db: ReturnType<typeof makeTestDb>): WatchlistEntryRecord {
+    return addWatchlistEntry(db, {
+      ticker: 'AAPL',
+      notes: 'Would own below $170',
+      ownBelowPrice: 170,
+      ivrTrigger: null,
+      postEarningsOnly: false,
+      coreHolding: false
+    })
+  }
+
+  it('replaces the editable fields and returns the updated record', () => {
+    const db = makeTestDb()
+    const added = seedAapl(db)
+
+    const updated = updateWatchlistEntry(db, {
+      ticker: 'AAPL',
+      notes: 'Would own below $165 after the split',
+      ownBelowPrice: 165,
+      ivrTrigger: null,
+      postEarningsOnly: false,
+      coreHolding: false
+    })
+
+    expect(updated).toEqual({
+      ticker: 'AAPL',
+      notes: 'Would own below $165 after the split',
+      ownBelowPrice: '165.0000',
+      ivrTrigger: null,
+      postEarningsOnly: false,
+      coreHolding: false,
+      addedAt: added.addedAt
+    })
+  })
+
+  it('leaves addedAt and the bench order untouched', () => {
+    const db = makeTestDb()
+    const added = seedAapl(db)
+    addWatchlistEntry(db, { ticker: 'KO', postEarningsOnly: false, coreHolding: false })
+    const orderBefore = listWatchlist(db).map((e) => e.ticker)
+
+    const updated = updateWatchlistEntry(db, {
+      ticker: 'AAPL',
+      notes: 'Edited',
+      ownBelowPrice: null,
+      ivrTrigger: null,
+      postEarningsOnly: false,
+      coreHolding: false
+    })
+
+    expect(updated.addedAt).toBe(added.addedAt)
+    // The bench is ordered `added_at DESC`, so the check that matters is that editing the
+    // older entry did not move it — not what the order happens to be.
+    expect(listWatchlist(db).map((e) => e.ticker)).toEqual(orderBefore)
+  })
+
+  it('stores NULL for a cleared thesis, whether null or an empty string', () => {
+    const db = makeTestDb()
+    seedAapl(db)
+
+    const cleared = updateWatchlistEntry(db, {
+      ticker: 'AAPL',
+      notes: null,
+      ownBelowPrice: 170,
+      ivrTrigger: null,
+      postEarningsOnly: false,
+      coreHolding: false
+    })
+    expect(cleared.notes).toBeNull()
+
+    updateWatchlistEntry(db, {
+      ticker: 'AAPL',
+      notes: 'back',
+      ownBelowPrice: 170,
+      ivrTrigger: null,
+      postEarningsOnly: false,
+      coreHolding: false
+    })
+    const emptied = updateWatchlistEntry(db, {
+      ticker: 'AAPL',
+      notes: '',
+      ownBelowPrice: 170,
+      ivrTrigger: null,
+      postEarningsOnly: false,
+      coreHolding: false
+    })
+
+    expect(emptied.notes).toBeNull()
+    const raw = db.prepare('SELECT notes FROM watchlist WHERE ticker = ?').get('AAPL') as {
+      notes: string | null
+    }
+    expect(raw.notes).toBeNull()
+  })
+
+  it('adds a condition that was not set before', () => {
+    const db = makeTestDb()
+    seedAapl(db)
+
+    const updated = updateWatchlistEntry(db, {
+      ticker: 'AAPL',
+      notes: 'Would own below $170',
+      ownBelowPrice: 170,
+      ivrTrigger: 50,
+      postEarningsOnly: false,
+      coreHolding: false
+    })
+
+    expect(updated.ivrTrigger).toBe(50)
+    const raw = db.prepare('SELECT ivr_trigger FROM watchlist WHERE ticker = ?').get('AAPL') as {
+      ivr_trigger: number | null
+    }
+    expect(raw.ivr_trigger).toBe(50)
+  })
+
+  it('removes one condition while leaving the other in place', () => {
+    const db = makeTestDb()
+    seedAapl(db)
+    updateWatchlistEntry(db, {
+      ticker: 'AAPL',
+      notes: null,
+      ownBelowPrice: 170,
+      ivrTrigger: 50,
+      postEarningsOnly: false,
+      coreHolding: false
+    })
+
+    const updated = updateWatchlistEntry(db, {
+      ticker: 'AAPL',
+      notes: null,
+      ownBelowPrice: 170,
+      ivrTrigger: null,
+      postEarningsOnly: false,
+      coreHolding: false
+    })
+
+    expect(updated.ivrTrigger).toBeNull()
+    expect(updated.ownBelowPrice).toBe('170.0000')
+  })
+
+  it('round-trips the boolean flags as 0/1', () => {
+    const db = makeTestDb()
+    seedAapl(db)
+
+    const updated = updateWatchlistEntry(db, {
+      ticker: 'AAPL',
+      notes: null,
+      ownBelowPrice: null,
+      ivrTrigger: null,
+      postEarningsOnly: true,
+      coreHolding: true
+    })
+
+    expect(updated.postEarningsOnly).toBe(true)
+    expect(updated.coreHolding).toBe(true)
+    const raw = db
+      .prepare('SELECT post_earnings_only, core_holding FROM watchlist WHERE ticker = ?')
+      .get('AAPL') as { post_earnings_only: number; core_holding: number }
+    expect(raw).toEqual({ post_earnings_only: 1, core_holding: 1 })
+  })
+
+  it('normalizes the ticker before keying the row', () => {
+    const db = makeTestDb()
+    seedAapl(db)
+
+    const updated = updateWatchlistEntry(db, {
+      ticker: 'aapl',
+      notes: 'lowercased key',
+      ownBelowPrice: null,
+      ivrTrigger: null,
+      postEarningsOnly: false,
+      coreHolding: false
+    })
+
+    expect(updated.ticker).toBe('AAPL')
+    expect(updated.notes).toBe('lowercased key')
+  })
+
+  it('throws a not_found ValidationError and writes nothing when the ticker is absent', () => {
+    const db = makeTestDb()
+    seedAapl(db)
+
+    try {
+      updateWatchlistEntry(db, {
+        ticker: 'TSLA',
+        notes: 'nope',
+        ownBelowPrice: null,
+        ivrTrigger: null,
+        postEarningsOnly: false,
+        coreHolding: false
+      })
+      expect.unreachable('expected not_found ValidationError')
+    } catch (err) {
+      expect(err).toBeInstanceOf(ValidationError)
+      const ve = err as ValidationError
+      expect(ve.field).toBe('ticker')
+      expect(ve.code).toBe('not_found')
+      expect(ve.message).toBe('TSLA is not on the watchlist')
+    }
+
+    expect(listWatchlist(db).map((e) => e.ticker)).toEqual(['AAPL'])
   })
 })

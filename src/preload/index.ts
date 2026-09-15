@@ -75,6 +75,7 @@ const api = {
   watchlist: {
     snapshot: () => invoke('watchlist:snapshot'),
     add: (payload: unknown) => invoke('watchlist:add', payload),
+    update: (payload: unknown) => invoke('watchlist:update', payload),
     remove: (payload: { ticker: string }) => invoke('watchlist:remove', payload)
   },
   screener: {

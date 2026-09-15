@@ -93,7 +93,11 @@ export function SheetHeader({
 }
 
 export function SheetBody({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="p-6 overflow-y-auto flex flex-col gap-4 flex-1">{children}</div>
+  return (
+    <div className="p-6 overflow-y-auto flex flex-col gap-4 flex-1 min-h-0 [&>*]:shrink-0">
+      {children}
+    </div>
+  )
 }
 
 export function SheetFooter({ children }: { children: ReactNode }): React.JSX.Element {

@@ -1,6 +1,6 @@
 ---
 title: 'US-68: Promote to Trade'
-story: 'As a wheel trader, I want one click to open the new-wheel form pre-filled from a screener result, confirmed against a fresh quote, so I don''t re-key the trade.'
+story: "As a wheel trader, I want one click to open the new-wheel form pre-filled from a screener result, confirmed against a fresh quote, so I don't re-key the trade."
 states: ['prefilled', 'moved', 'stale', 'offline', 'edited']
 ---
 
@@ -84,9 +84,24 @@ export function SectionLabel({ children, style }) {
 
 export function MarketPill({ status = 'live' }) {
   const variant = {
-    live: { color: T.green, border: 'rgba(63,185,80,0.3)', background: 'rgba(63,185,80,0.1)', label: 'LIVE' },
-    ext: { color: T.gold, border: 'rgba(210,153,34,0.3)', background: 'rgba(210,153,34,0.1)', label: 'EXT' },
-    closed: { color: T.text2, border: 'rgba(139,148,158,0.3)', background: 'rgba(139,148,158,0.1)', label: 'CLOSED' }
+    live: {
+      color: T.green,
+      border: 'rgba(63,185,80,0.3)',
+      background: 'rgba(63,185,80,0.1)',
+      label: 'LIVE'
+    },
+    ext: {
+      color: T.gold,
+      border: 'rgba(210,153,34,0.3)',
+      background: 'rgba(210,153,34,0.1)',
+      label: 'EXT'
+    },
+    closed: {
+      color: T.text2,
+      border: 'rgba(139,148,158,0.3)',
+      background: 'rgba(139,148,158,0.1)',
+      label: 'CLOSED'
+    }
   }[status]
   return (
     <span
@@ -105,7 +120,9 @@ export function MarketPill({ status = 'live' }) {
         color: variant.color
       }}
     >
-      <span style={{ width: 6, height: 6, borderRadius: 999, background: variant.color, flexShrink: 0 }} />
+      <span
+        style={{ width: 6, height: 6, borderRadius: 999, background: variant.color, flexShrink: 0 }}
+      />
       {variant.label}
     </span>
   )
@@ -234,7 +251,8 @@ export function Shell({ status, children }) {
         <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>{children}</div>
       </div>
     </div>
-  )
+
+)
 }
 
 export function Provenance({ closed }) {
@@ -286,7 +304,14 @@ export function Banner({ tone, children }) {
         marginBottom: 16
       }}
     >
-      <span style={{ fontFamily: T.mono, fontSize: '0.8rem', color: gold ? T.gold : T.green, lineHeight: 1.4 }}>
+      <span
+        style={{
+          fontFamily: T.mono,
+          fontSize: '0.8rem',
+          color: gold ? T.gold : T.green,
+          lineHeight: 1.4
+        }}
+      >
         {gold ? '⚠' : '✓'}
       </span>
       <span style={{ fontSize: '0.78rem', color: T.text, lineHeight: 1.5 }}>{children}</span>
@@ -332,7 +357,9 @@ export function Input({ value, placeholder, accent }) {
     >
       {value || placeholder}
       {accent ? (
-        <span style={{ marginLeft: 'auto', width: 6, height: 6, borderRadius: 999, background: T.gold }} />
+        <span
+          style={{ marginLeft: 'auto', width: 6, height: 6, borderRadius: 999, background: T.gold }}
+        />
       ) : null}
     </div>
   )
@@ -354,8 +381,12 @@ export function DerivedRow({ premium, edited }) {
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         <SectionLabel style={{ fontSize: '0.6rem' }}>Capital required</SectionLabel>
-        <span style={{ fontFamily: T.mono, fontSize: '1.1rem', fontWeight: 700, color: T.text }}>{money(18000)}</span>
-        <span style={{ fontFamily: T.mono, fontSize: '0.62rem', color: T.muted }}>180 × 100 × 1 contract</span>
+        <span style={{ fontFamily: T.mono, fontSize: '1.1rem', fontWeight: 700, color: T.text }}>
+          {money(18000)}
+        </span>
+        <span style={{ fontFamily: T.mono, fontSize: '0.62rem', color: T.muted }}>
+          180 × 100 × 1 contract
+        </span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-end' }}>
         <SectionLabel style={{ fontSize: '0.6rem' }}>Yield if flat</SectionLabel>
@@ -363,7 +394,9 @@ export function DerivedRow({ premium, edited }) {
           {yieldHint(premium)}
         </span>
         {edited ? (
-          <span style={{ fontFamily: T.mono, fontSize: '0.62rem', color: T.muted }}>recomputed from your price</span>
+          <span style={{ fontFamily: T.mono, fontSize: '0.62rem', color: T.muted }}>
+            recomputed from your price
+          </span>
         ) : null}
       </div>
     </div>
@@ -376,12 +409,13 @@ export function PromoteForm({ state }) {
   const premium = edited ? 2.65 : 2.7
   const premiumStr = edited ? '2.65' : '2.70'
 
-  return (
-    <div style={{ maxWidth: 560 }}>
-      <div style={{ fontSize: '1.15rem', fontWeight: 600, color: T.text, marginBottom: 4 }}>New Wheel · Cash-Secured Put</div>
-      <div style={{ fontSize: '0.8rem', color: T.text2, marginBottom: 18 }}>
-        Confirm the details, then record the trade. Nothing is saved until you click Record wheel.
-      </div>
+return (
+
+<div style={{ maxWidth: 560 }}>
+<div style={{ fontSize: '1.15rem', fontWeight: 600, color: T.text, marginBottom: 4 }}>New Wheel · Cash-Secured Put</div>
+<div style={{ fontSize: '0.8rem', color: T.text2, marginBottom: 18 }}>
+Confirm the details, then record the trade. Nothing is saved until you click Record wheel.
+</div>
 
       <Provenance closed={closed} />
 
@@ -486,7 +520,8 @@ export function PromoteForm({ state }) {
         </span>
       </div>
     </div>
-  )
+
+)
 }
 
 export function Segment({ options, value, onChange }) {
@@ -530,18 +565,20 @@ export function Segment({ options, value, onChange }) {
 export function Mockup() {
   const [state, setState] = useState('prefilled')
 
-  return (
-    <div style={{ fontFamily: 'inherit', color: T.text }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
-        <SectionLabel>State</SectionLabel>
-        <Segment value={state} onChange={setState} options={STATES} />
-      </div>
+return (
+
+<div style={{ fontFamily: 'inherit', color: T.text }}>
+<div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
+<SectionLabel>State</SectionLabel>
+<Segment value={state} onChange={setState} options={STATES} />
+</div>
 
       <Shell status={state === 'stale' ? 'closed' : 'live'}>
         <PromoteForm state={state} />
       </Shell>
     </div>
-  )
+
+)
 }
 
 <Mockup />

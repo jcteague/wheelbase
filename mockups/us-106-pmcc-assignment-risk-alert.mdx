@@ -1,0 +1,483 @@
+---
+title: 'US-106: PMCC assignment-risk alert'
+story: 'Fire a medium-urgency alert when the underlying trades within 2% below a PMCC short-call strike, or anywhere at or above it, so the trader can roll or close before the LEAPS has to cover an assignment.'
+states:
+  [
+    'clear',
+    'approaching',
+    'at-the-money',
+    'in-the-money',
+    'deep-itm',
+    'quote-unavailable',
+    'retreated',
+    'rolled-up',
+    'no-short-call',
+    'short-expiring'
+  ]
+---
+
+import { useState } from 'react'
+import { SectionCard } from '../src/renderer/src/components/ui/SectionCard'
+import { Badge } from '../src/renderer/src/components/ui/Badge'
+import { AlertBox } from '../src/renderer/src/components/ui/AlertBox'
+import { StatGrid } from '../src/renderer/src/components/ui/Stat'
+import { FormButton } from '../src/renderer/src/components/ui/FormButton'
+import { UrgencyPill } from '../src/renderer/src/components/UrgencyPill'
+import { PhaseBadge } from '../src/renderer/src/components/PhaseBadge'
+
+# US-106: PMCC assignment-risk alert
+
+_The dashboard management queue, with a PMCC row in it for the first time. **XYZ** holds an $80 LEAPS and a $110 short call. As the stock climbs toward $110 the queue gains a row; the panel under the queue explains why, with the stock plotted against the strike._
+
+## Where this appears
+
+- **Management queue** (US-51) — the alert row: ticker, MED pill, a PMCC badge where a wheel row shows its phase, the summary, and the Review position action.
+- **Position detail** — unchanged. Review position lands on the XYZ detail page as every other alert does.
+
+## The floor, not a band
+
+US-55's put rule warns inside a 1% band on either side of the strike. This rule is one-directional: it opens 2% below the short-call strike and never closes above it. A stock 8% through the strike is more exposed than one 2% through it, so the coloured region on the ruler runs off the right edge. The wheel's covered-call breach (US-62) starts at the strike; this rule starts earlier because a PMCC trader has no shares to deliver.
+
+## Acceptance Criteria States
+
+- **clear**: XYZ at $105.00, 4.5% below the strike. Not in the queue; the panel shows the stock outside the band.
+- **approaching**: $108.35, 1.5% below. Row opens at MED: "approaching assignment".
+- **at-the-money**: $110.00. Reads 0.0% above, in the money.
+- **in-the-money**: $112.53, 2.3% above. In the money, "LEAPS would have to cover".
+- **deep-itm**: $118.80, 8.0% above. Still open. There is no upper edge to the rule.
+- **quote-unavailable**: no XYZ price this run. The rule skips and the existing row stays open with its last summary rather than resolving on missing data.
+- **retreated**: the stock fell to $106.00. The row resolves and leaves the queue.
+- **rolled-up**: the short call was rolled to $115 (US-104). $112.53 is now 2.1% below the new strike, so the alert resolves and nothing refires.
+- **no-short-call**: only the LEAPS is open. The PMCC is not evaluated, even at $118.80, and its old alert resolves.
+- **short-expiring**: valuation moves to 2026-10-12, four days before the short expires. EXPIRATION_IMMINENT co-fires at HIGH above the MED assignment-risk row. Neither mentions the LEAPS.
+
+---
+
+export const TODAY = '2026-09-28'
+export const LEAPS = { strike: 80, expiration: '2027-09-17' }
+export const SHORT = { strike: 110, expiration: '2026-10-16', premium: 2.0 }
+export const APPROACH_PERCENT = 2
+
+export const PRESETS = [
+  { key: 'clear', label: 'clear', price: 105.0 },
+  { key: 'approaching', label: 'approaching', price: 108.35 },
+  { key: 'at-the-money', label: 'at the money', price: 110.0 },
+  { key: 'in-the-money', label: 'in the money', price: 112.53 },
+  { key: 'deep-itm', label: 'deep ITM', price: 118.8 },
+  { key: 'quote-unavailable', label: 'quote unavailable', price: null, previous: 112.53 },
+  { key: 'retreated', label: 'retreated', price: 106.0, previous: 112.53 },
+  { key: 'rolled-up', label: 'rolled up', price: 112.53, previous: 112.53, shortStrike: 115 },
+  { key: 'no-short-call', label: 'no short call', price: 118.8, previous: 112.53, shortOpen: false },
+  { key: 'short-expiring', label: 'short expiring', price: 112.53, today: '2026-10-12' }
+]
+
+export const WHEEL_ROWS = [
+  {
+    ticker: 'AAPL',
+    phase: 'CSP_OPEN',
+    urgency: 'medium',
+    rule: 'STRIKE_PROXIMITY',
+    summary: 'Stock is 0.8% below the $180.00 put strike — now in the money'
+  },
+  {
+    ticker: 'GOOGL',
+    phase: 'CC_OPEN',
+    urgency: 'low',
+    rule: 'PROFIT_TARGET',
+    summary: '54.0% of max profit captured — consider closing'
+  }
+]
+
+export const URGENCY_ORDER = { high: 0, medium: 1, low: 2 }
+
+export const money = (value) => `$${value.toFixed(2)}`
+
+export const dte = (expiration, today) =>
+  Math.round((Date.parse(expiration) - Date.parse(today)) / 86400000)
+
+export function distance(price, strike) {
+  const pct = Math.round(((price - strike) / strike) * 1000000) / 10000
+  return { pct, abs: Math.abs(pct), direction: price >= strike ? 'above' : 'below' }
+}
+
+export function summaryFor(price, strike) {
+  const d = distance(price, strike)
+  const base = `Stock is ${d.abs.toFixed(1)}% ${d.direction} the ${money(strike)} short-call strike`
+  return d.direction === 'below'
+    ? `${base} — approaching assignment`
+    : `${base} — in the money, LEAPS would have to cover`
+}
+
+export function evaluate(preset) {
+  const shortOpen = preset.shortOpen !== false
+  const strike = preset.shortStrike ?? SHORT.strike
+  const today = preset.today ?? TODAY
+  const shortDte = dte(SHORT.expiration, today)
+  const hadAlert = preset.previous !== undefined
+  const common = {
+    shortOpen,
+    strike,
+    today,
+    shortDte,
+    price: preset.price,
+    previous: preset.previous ?? null,
+    hadAlert
+  }
+
+  if (!shortOpen) {
+    return { ...common, fires: false, skipped: false, dist: null, summary: null, status: hadAlert ? 'resolved' : 'none' }
+  }
+  if (preset.price === null) {
+    return {
+      ...common,
+      fires: false,
+      skipped: true,
+      dist: distance(preset.previous, strike),
+      summary: summaryFor(preset.previous, strike),
+      status: 'kept-open'
+    }
+  }
+  const dist = distance(preset.price, strike)
+  const fires = dist.pct >= -APPROACH_PERCENT
+  return {
+    ...common,
+    fires,
+    skipped: false,
+    dist,
+    summary: fires ? summaryFor(preset.price, strike) : null,
+    status: fires ? 'open' : hadAlert ? 'resolved' : 'none',
+    imminent: shortDte >= 0 && shortDte <= 5
+  }
+}
+
+export function queueRows(model) {
+  const rows = [...WHEEL_ROWS]
+  if (model.status === 'open' || model.status === 'kept-open') {
+    rows.push({
+      ticker: 'XYZ',
+      pmcc: true,
+      urgency: 'medium',
+      rule: 'PMCC_ASSIGNMENT_RISK',
+      summary: model.summary
+    })
+  }
+  if (model.imminent && model.shortOpen) {
+    rows.push({
+      ticker: 'XYZ',
+      pmcc: true,
+      urgency: 'high',
+      rule: 'EXPIRATION_IMMINENT',
+      summary: `Expires in ${model.shortDte} days at ${money(model.strike)} strike`
+    })
+  }
+  return rows.sort((a, b) => URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency])
+}
+
+export function QueueRow({ row, highlight }) {
+  return (
+    <div
+      className={`grid grid-cols-[96px_150px_1fr_auto] items-center gap-4 border-t border-wb-border px-4 py-3.5 ${highlight ? 'bg-wb-gold-subtle' : ''}`}
+    >
+      <div className="flex flex-col gap-1">
+        <span className="text-base font-bold text-wb-text-primary">{row.ticker}</span>
+        <UrgencyPill urgency={row.urgency} />
+      </div>
+      {row.pmcc ? (
+        <Badge className="gap-[5px] rounded text-[0.7rem] px-2 py-0.5">
+          <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-wb-gold" />
+          PMCC · short call
+        </Badge>
+      ) : (
+        <PhaseBadge phase={row.phase} variant="short" />
+      )}
+      <span className="text-sm leading-relaxed text-wb-text-secondary">{row.summary}</span>
+      <div className="flex justify-self-end gap-2">
+        <button
+          type="button"
+          className="rounded-lg border border-wb-gold-border bg-wb-gold-dim px-3.5 py-2.5 text-xs font-wb-mono font-bold text-wb-gold"
+        >
+          Review position
+        </button>
+        <button
+          type="button"
+          className="rounded-lg border border-wb-red/30 bg-wb-red-dim px-3.5 py-2.5 text-xs font-wb-mono font-bold text-wb-red"
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export function LegendItem({ swatchClass, label, value, tone, shape = 'square' }) {
+  const swatchShape =
+    shape === 'dot'
+      ? 'h-4 w-4 rounded-full border-2 border-wb-bg-base'
+      : 'h-3 w-3 rounded-sm'
+  return (
+    <div className="contents">
+      <span className="flex h-4 w-4 items-center justify-center">
+        <span className={`inline-block shrink-0 ${swatchShape} ${swatchClass}`} />
+      </span>
+      <span className="text-wb-text-secondary">{label}</span>
+      <span className={tone ?? 'text-wb-text-primary'}>{value}</span>
+    </div>
+  )
+}
+
+export function StrikeRuler({ model }) {
+  const strike = model.strike
+  const min = strike * 0.94
+  const max = strike * 1.1
+  const pct = (value) => `${Math.max(0, Math.min(((value - min) / (max - min)) * 100, 100))}%`
+  const floor = strike * (1 - APPROACH_PERCENT / 100)
+  const marker = model.price ?? (model.skipped ? model.previous : null)
+  const markerTone = model.skipped
+    ? 'bg-wb-text-muted'
+    : model.fires
+      ? model.dist.direction === 'above'
+        ? 'bg-wb-red'
+        : 'bg-wb-gold'
+      : 'bg-wb-green'
+
+  return (
+    <div className="flex flex-col gap-3 px-4 py-4">
+      <div className="relative h-14">
+        <div className="absolute inset-x-0 top-5 h-1.5 rounded-full bg-wb-bg-elevated" />
+        {model.shortOpen ? (
+          <div
+            className="absolute top-5 h-1.5 bg-wb-gold-dim"
+            style={{ left: pct(floor), width: `calc(${pct(strike)} - ${pct(floor)})` }}
+          />
+        ) : null}
+        {model.shortOpen ? (
+          <div
+            className="absolute top-5 h-1.5 rounded-r-full bg-wb-red-dim"
+            style={{ left: pct(strike), right: 0 }}
+          />
+        ) : null}
+        {model.shortOpen ? (
+          <div className="absolute top-3 h-6 w-px bg-wb-gold" style={{ left: pct(floor) }} />
+        ) : null}
+        {model.shortOpen ? (
+          <div className="absolute top-2 h-8 w-0.5 bg-wb-text-primary" style={{ left: pct(strike) }} />
+        ) : null}
+        {marker === null ? null : (
+          <div
+            className={`absolute top-3.5 h-4 w-4 -translate-x-1/2 rounded-full border-2 border-wb-bg-base ${markerTone} ${model.skipped ? 'opacity-50' : ''}`}
+            style={{ left: pct(marker) }}
+          />
+        )}
+        <div className="absolute inset-x-0 top-10 flex justify-between text-[10px] text-wb-text-muted">
+          <span>{money(min)}</span>
+          <span>{money(max)}</span>
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-[auto_auto_1fr] items-center gap-x-3 gap-y-1.5 border-t border-wb-border pt-3 text-[10px] text-wb-text-muted">
+        <LegendItem
+          swatchClass="bg-wb-gold-dim"
+          label="2% approach band"
+          value={model.shortOpen ? `${money(floor)} to ${money(strike)}` : 'no short call'}
+        />
+        <LegendItem
+          swatchClass="bg-wb-red-dim"
+          label="In the money"
+          value={model.shortOpen ? `${money(strike)} and above, no upper edge` : 'no short call'}
+        />
+        <LegendItem
+          shape="dot"
+          swatchClass={`${markerTone} ${model.skipped ? 'opacity-50' : ''}`}
+          label={model.skipped ? 'Last known price' : 'Stock price'}
+          value={marker === null ? 'unavailable' : money(marker)}
+          tone={model.fires ? (model.dist.direction === 'above' ? 'text-wb-red' : 'text-wb-gold') : undefined}
+        />
+      </div>
+    </div>
+  )
+}
+
+export function Explanation({ model, presetKey }) {
+  if (model.status === 'kept-open') {
+    return (
+      <AlertBox variant="warning">
+        No XYZ quote this evaluation. The rule skipped with reason missing_underlying_price, so
+        the open alert keeps its last summary instead of resolving. It will re-evaluate on the next
+        tick.
+      </AlertBox>
+    )
+  }
+  if (!model.shortOpen) {
+    return (
+      <AlertBox variant="info">
+        Only the LEAPS is open, so the PMCC is not evaluated at all. Even at {money(model.price)}{' '}
+        there is no short call to be assigned. The alert that was open resolved when the short call
+        left the position. Sell the next short call to resume (US-115).
+      </AlertBox>
+    )
+  }
+  if (model.status === 'resolved' && presetKey === 'rolled-up') {
+    return (
+      <AlertBox variant="success">
+        Short call rolled to {money(model.strike)} (US-104). {money(model.price)} is now{' '}
+        {model.dist.abs.toFixed(1)}% below the new strike, outside the band, so the alert resolved
+        and nothing refired.
+      </AlertBox>
+    )
+  }
+  if (model.status === 'resolved') {
+    return (
+      <AlertBox variant="success">
+        Resolved this evaluation: the stock fell to {money(model.price)},{' '}
+        {model.dist.abs.toFixed(1)}% below the strike. The row is kept as history. A fresh alert
+        opens with a new triggered time if the stock climbs back inside 2%.
+      </AlertBox>
+    )
+  }
+  if (model.status === 'none') {
+    return (
+      <AlertBox variant="info">
+        {money(model.price)} is {model.dist.abs.toFixed(1)}% below the {money(model.strike)}{' '}
+        short-call strike, outside the 2% band. Nothing to review yet.
+      </AlertBox>
+    )
+  }
+  if (model.dist.direction === 'above') {
+    return (
+      <AlertBox variant="error">
+        In the money. If the short call is assigned the trader is short 100 shares and covers from
+        the LEAPS, which ends the position. Roll up-and-out (US-104), close the short, or accept
+        assignment (US-111). Exercise is unlikely while the call holds extrinsic value; the alert
+        states where the stock is, not that assignment is imminent.
+      </AlertBox>
+    )
+  }
+  return (
+    <AlertBox variant="warning">
+      Approaching the strike from below. The roll decision is cheapest here, before the short goes
+      in the money. Same summary shape as the wheel rules, with the strike named so the trader can
+      act from the queue row.
+    </AlertBox>
+  )
+}
+
+export function Mockup() {
+  const [presetKey, setPresetKey] = useState('approaching')
+  const preset = PRESETS.find((entry) => entry.key === presetKey) ?? PRESETS[0]
+  const model = evaluate(preset)
+  const rows = queueRows(model)
+  const openCount = rows.length
+
+  const statusLabel =
+    model.status === 'open'
+      ? 'OPEN'
+      : model.status === 'kept-open'
+        ? 'OPEN · skipped this run'
+        : model.status === 'resolved'
+          ? 'RESOLVED'
+          : model.shortOpen
+            ? 'NOT FIRING'
+            : 'NOT EVALUATED'
+
+  return (
+    <div className="flex flex-col gap-4 font-wb-mono text-wb-text-primary">
+      <div className="relative isolate h-[900px] transform-gpu overflow-hidden rounded-lg border border-wb-border bg-wb-bg-base">
+        <aside className="absolute inset-y-0 left-0 flex w-[200px] flex-col gap-6 border-r border-wb-border bg-wb-bg-surface p-5">
+          <div className="text-lg font-bold tracking-widest text-wb-gold">WHEELBASE</div>
+          <div className="flex flex-col gap-5 text-xs text-wb-text-secondary">
+            <span className="font-semibold text-wb-gold">Dashboard</span>
+            <span>Positions</span>
+            <span>Calendar</span>
+            <span>Screener</span>
+            <span>Watchlist</span>
+          </div>
+          <div className="mt-auto text-xs text-wb-text-muted">PAPER ACCOUNT</div>
+        </aside>
+
+        <main className="ml-[200px] h-full overflow-auto">
+          <div className="flex items-start justify-between border-b border-wb-border px-6 py-4">
+            <div>
+              <h2 className="text-xl font-semibold">Dashboard</h2>
+              <div className="mt-1 text-xs text-wb-text-secondary">
+                Alerts evaluated {model.today} · {model.shortOpen ? `XYZ short call ${model.shortDte} DTE` : 'XYZ LEAPS only'}
+              </div>
+            </div>
+            <span className="rounded bg-wb-green-dim px-2 py-0.5 text-xs font-semibold text-wb-green">
+              LIVE
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-4 p-6">
+            <SectionCard header="Management Queue">
+              <div className="flex items-center justify-between border-b border-wb-border px-4 py-3.5">
+                <h3 className="text-lg font-bold text-wb-text-primary">What Needs Attention First</h3>
+                <span className="text-xs text-wb-text-muted">
+                  {openCount ? `${openCount} open alerts` : 'All clear'}
+                </span>
+              </div>
+              {rows.map((row) => (
+                <QueueRow key={`${row.ticker}-${row.rule}`} row={row} highlight={row.ticker === 'XYZ'} />
+              ))}
+            </SectionCard>
+
+            <SectionCard header="XYZ · PMCC · why it is (or is not) in the queue">
+              <StatGrid
+                minWidth={140}
+                items={[
+                  {
+                    label: 'Stock price',
+                    value: model.price === null ? <span className="text-wb-text-muted">unavailable</span> : money(model.price)
+                  },
+                  {
+                    label: 'Short-call strike',
+                    value: model.shortOpen ? `${money(model.strike)} · ${SHORT.expiration}` : 'none open'
+                  },
+                  {
+                    label: 'Distance',
+                    value:
+                      model.dist === null || model.price === null ? (
+                        <span className="text-wb-text-muted">—</span>
+                      ) : (
+                        <span className={model.fires ? (model.dist.direction === 'above' ? 'text-wb-red' : 'text-wb-gold') : 'text-wb-green'}>
+                          {model.dist.abs.toFixed(1)}% {model.dist.direction}
+                        </span>
+                      )
+                  },
+                  { label: 'PMCC_ASSIGNMENT_RISK', value: statusLabel },
+                  { label: 'LEAPS (not evaluated)', value: `${money(LEAPS.strike)} · ${LEAPS.expiration}` }
+                ]}
+              />
+              <StrikeRuler model={model} />
+              <div className="px-4 pb-4">
+                <Explanation model={model} presetKey={presetKey} />
+              </div>
+            </SectionCard>
+          </div>
+        </main>
+      </div>
+
+      <details className="rounded-lg border border-wb-border p-3 text-xs text-wb-text-secondary">
+        <summary className="cursor-pointer">Review states · prototype controls</summary>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {PRESETS.map((entry) => (
+            <FormButton
+              key={entry.key}
+              label={entry.label}
+              variant={entry.key === presetKey ? 'primary' : 'secondary'}
+              onClick={() => setPresetKey(entry.key)}
+            />
+          ))}
+        </div>
+        <p className="mt-3">
+          Every figure is derived from the preset price and strike: the percent distance is
+          (price minus strike) over strike, the direction flips at the strike, and the rule fires
+          when the stock is at most 2% below it with no upper limit. The AAPL and GOOGL rows are
+          fixed wheel alerts, there to show a PMCC row sitting beside them in one urgency-sorted
+          queue. The short-expiring preset moves the valuation date to 2026-10-12 so the wheel's
+          expiration rule co-fires on the short call.
+        </p>
+      </details>
+    </div>
+  )
+}
+
+<Mockup />

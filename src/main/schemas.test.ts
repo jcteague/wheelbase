@@ -7,7 +7,7 @@ import {
   RollCcPayloadSchema,
   RollCspPayloadSchema,
   SetStockQuoteTickersPayloadSchema,
-  WatchlistAddPayloadSchema,
+  WatchlistEntryPayloadSchema,
   WatchlistRemovePayloadSchema
 } from './schemas'
 
@@ -272,9 +272,9 @@ describe('GetOptionSnapshotsPayloadSchema', () => {
   })
 })
 
-describe('WatchlistAddPayloadSchema', () => {
+describe('WatchlistEntryPayloadSchema', () => {
   it('accepts a full payload', () => {
-    const result = WatchlistAddPayloadSchema.parse({
+    const result = WatchlistEntryPayloadSchema.parse({
       ticker: 'AAPL',
       notes: 'Would own below $180',
       ownBelowPrice: 180,
@@ -293,44 +293,111 @@ describe('WatchlistAddPayloadSchema', () => {
   })
 
   it('accepts a ticker-only payload with boolean defaults', () => {
-    const result = WatchlistAddPayloadSchema.parse({ ticker: 'AAPL' })
+    const result = WatchlistEntryPayloadSchema.parse({ ticker: 'AAPL' })
     expect(result.ticker).toBe('AAPL')
     expect(result.postEarningsOnly).toBe(false)
     expect(result.coreHolding).toBe(false)
   })
 
   it('uppercases and trims the ticker', () => {
-    const result = WatchlistAddPayloadSchema.parse({ ticker: ' nvda ' })
+    const result = WatchlistEntryPayloadSchema.parse({ ticker: ' nvda ' })
     expect(result.ticker).toBe('NVDA')
   })
 
   it('rejects ownBelowPrice <= 0', () => {
-    expect(WatchlistAddPayloadSchema.safeParse({ ticker: 'AAPL', ownBelowPrice: 0 }).success).toBe(
-      false
-    )
-    expect(WatchlistAddPayloadSchema.safeParse({ ticker: 'AAPL', ownBelowPrice: -5 }).success).toBe(
-      false
-    )
+    expect(
+      WatchlistEntryPayloadSchema.safeParse({ ticker: 'AAPL', ownBelowPrice: 0 }).success
+    ).toBe(false)
+    expect(
+      WatchlistEntryPayloadSchema.safeParse({ ticker: 'AAPL', ownBelowPrice: -5 }).success
+    ).toBe(false)
   })
 
   it('rejects ivrTrigger outside 0-100', () => {
-    expect(WatchlistAddPayloadSchema.safeParse({ ticker: 'AAPL', ivrTrigger: -1 }).success).toBe(
+    expect(WatchlistEntryPayloadSchema.safeParse({ ticker: 'AAPL', ivrTrigger: -1 }).success).toBe(
       false
     )
-    expect(WatchlistAddPayloadSchema.safeParse({ ticker: 'AAPL', ivrTrigger: 150 }).success).toBe(
+    expect(WatchlistEntryPayloadSchema.safeParse({ ticker: 'AAPL', ivrTrigger: 150 }).success).toBe(
       false
     )
   })
 
   it('rejects a non-integer ivrTrigger', () => {
-    expect(WatchlistAddPayloadSchema.safeParse({ ticker: 'AAPL', ivrTrigger: 50.5 }).success).toBe(
-      false
-    )
+    expect(
+      WatchlistEntryPayloadSchema.safeParse({ ticker: 'AAPL', ivrTrigger: 50.5 }).success
+    ).toBe(false)
   })
 
   it('rejects notes longer than 500 chars', () => {
+    const result = WatchlistEntryPayloadSchema.safeParse({ ticker: 'AAPL', notes: 'a'.repeat(501) })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0]?.message).toBe('Note must be 500 characters or fewer')
+  })
+})
+
+// Add and update parse through this one schema, so these cases cover both channels.
+describe('WatchlistEntryPayloadSchema (update cases)', () => {
+  it('accepts a full payload and uppercases the ticker', () => {
+    const result = WatchlistEntryPayloadSchema.parse({
+      ticker: 'aapl',
+      notes: 'x',
+      ownBelowPrice: 165,
+      ivrTrigger: 50,
+      postEarningsOnly: true,
+      coreHolding: false
+    })
+    expect(result).toEqual({
+      ticker: 'AAPL',
+      notes: 'x',
+      ownBelowPrice: 165,
+      ivrTrigger: 50,
+      postEarningsOnly: true,
+      coreHolding: false
+    })
+  })
+
+  it('accepts a cleared entry and defaults the omitted booleans', () => {
+    const result = WatchlistEntryPayloadSchema.parse({
+      ticker: 'AAPL',
+      notes: null,
+      ownBelowPrice: null,
+      ivrTrigger: null
+    })
+    expect(result).toEqual({
+      ticker: 'AAPL',
+      notes: null,
+      ownBelowPrice: null,
+      ivrTrigger: null,
+      postEarningsOnly: false,
+      coreHolding: false
+    })
+  })
+
+  it('rejects notes longer than 500 chars', () => {
+    const result = WatchlistEntryPayloadSchema.safeParse({
+      ticker: 'AAPL',
+      notes: 'a'.repeat(501)
+    })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0]?.path[0]).toBe('notes')
+    expect(result.error?.issues[0]?.message).toBe('Note must be 500 characters or fewer')
+  })
+
+  it('rejects a malformed ticker', () => {
+    const result = WatchlistEntryPayloadSchema.safeParse({ ticker: '12345' })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0]?.message).toBe('Enter a valid ticker symbol')
+  })
+
+  it('rejects an out-of-bounds condition value', () => {
     expect(
-      WatchlistAddPayloadSchema.safeParse({ ticker: 'AAPL', notes: 'a'.repeat(501) }).success
+      WatchlistEntryPayloadSchema.safeParse({ ticker: 'AAPL', ownBelowPrice: 0 }).success
+    ).toBe(false)
+    expect(WatchlistEntryPayloadSchema.safeParse({ ticker: 'AAPL', ivrTrigger: 101 }).success).toBe(
+      false
+    )
+    expect(
+      WatchlistEntryPayloadSchema.safeParse({ ticker: 'AAPL', ivrTrigger: 50.5 }).success
     ).toBe(false)
   })
 })

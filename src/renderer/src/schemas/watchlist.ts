@@ -35,7 +35,7 @@ export const watchlistEntrySchema = z.object({
     .min(1, 'Enter a ticker symbol')
     .toUpperCase()
     .regex(TICKER_REGEX, 'Enter a valid ticker symbol'),
-  thesis: z.string().trim().max(500).optional(),
+  thesis: z.string().trim().max(500, 'Note must be 500 characters or fewer').optional(),
   ownBelowPrice: optionalPositiveMoneySchema,
   ivrTrigger: optionalIvrTriggerSchema,
   postEarningsOnly: z.boolean().default(false),

@@ -42,6 +42,7 @@ describe('watchlistEntrySchema', () => {
     it('rejects a thesis longer than 500 characters', () => {
       const result = watchlistEntrySchema.safeParse({ ...validBase, thesis: 'a'.repeat(501) })
       expect(result.success).toBe(false)
+      expect(result.error?.issues[0]?.message).toBe('Note must be 500 characters or fewer')
     })
 
     it('accepts a thesis of exactly 500 characters', () => {

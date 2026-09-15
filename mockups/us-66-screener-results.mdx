@@ -50,16 +50,124 @@ export const T = {
 }
 
 export const CANDIDATES = [
-  { rank: 1, ticker: 'KO', strike: 60, exp: 'Aug 21', dte: 37, mark: 0.95, bid: 0.92, ask: 0.98, spread: '$0.06 (6%)', delta: 0.22, ivr: { value: 38, state: 'fresh', age: 0 }, oi: '1,800', period: '1.58%', ann: '15.6%/yr', score: '0.71' },
-  { rank: 2, ticker: 'AAPL', strike: 180, exp: 'Aug 21', dte: 37, mark: 2.7, bid: 2.67, ask: 2.73, spread: '$0.06 (2%)', delta: 0.28, ivr: { value: 44, state: 'aging', age: 2 }, oi: '4,200', period: '1.50%', ann: '14.8%/yr', score: '0.53' },
-  { rank: 3, ticker: 'MSFT', strike: 410, exp: 'Aug 28', dte: 44, mark: 6.2, bid: 6.05, ask: 6.35, spread: '$0.30 (5%)', delta: 0.25, ivr: null, oi: '2,600', period: '1.51%', ann: '12.5%/yr', score: '0.50' }
+  {
+    rank: 1,
+    ticker: 'KO',
+    strike: 60,
+    exp: 'Aug 21',
+    dte: 37,
+    mark: 0.95,
+    bid: 0.92,
+    ask: 0.98,
+    spread: '$0.06 (6%)',
+    delta: 0.22,
+    ivr: { value: 38, state: 'fresh', age: 0 },
+    oi: '1,800',
+    period: '1.58%',
+    ann: '15.6%/yr',
+    score: '0.71'
+  },
+  {
+    rank: 2,
+    ticker: 'AAPL',
+    strike: 180,
+    exp: 'Aug 21',
+    dte: 37,
+    mark: 2.7,
+    bid: 2.67,
+    ask: 2.73,
+    spread: '$0.06 (2%)',
+    delta: 0.28,
+    ivr: { value: 44, state: 'aging', age: 2 },
+    oi: '4,200',
+    period: '1.50%',
+    ann: '14.8%/yr',
+    score: '0.53'
+  },
+  {
+    rank: 3,
+    ticker: 'MSFT',
+    strike: 410,
+    exp: 'Aug 28',
+    dte: 44,
+    mark: 6.2,
+    bid: 6.05,
+    ask: 6.35,
+    spread: '$0.30 (5%)',
+    delta: 0.25,
+    ivr: null,
+    oi: '2,600',
+    period: '1.51%',
+    ann: '12.5%/yr',
+    score: '0.50'
+  }
 ]
 
 export const EARNINGS_ROWS = [
-  { rank: 1, ticker: 'KO', strike: 60, exp: 'Aug 21', dte: 37, mark: 0.95, spread: '$0.06 (6%)', delta: 0.22, ivr: { value: 38, state: 'fresh', age: 0 }, oi: '1,800', period: '1.58%', ann: '15.6%/yr', score: '0.71', flag: null },
-  { rank: 2, ticker: 'MSFT', strike: 410, exp: 'Aug 28', dte: 44, mark: 6.2, spread: '$0.30 (5%)', delta: 0.25, ivr: null, oi: '2,600', period: '1.51%', ann: '12.5%/yr', score: '0.50', flag: null },
-  { rank: null, ticker: 'NVDA', strike: 118, exp: 'Aug 21', dte: 37, mark: 2.15, spread: '$0.08 (4%)', delta: 0.26, ivr: { value: 52, state: 'stale', age: 6 }, oi: '3,100', period: '1.82%', ann: '18.0%/yr', score: '0.69', flag: 'unknown' },
-  { rank: null, ticker: 'AAPL', strike: 180, exp: 'Aug 21', dte: 37, mark: 2.7, spread: '$0.06 (2%)', delta: 0.28, ivr: { value: 44, state: 'predates_earnings', age: 1 }, oi: '4,200', period: '1.50%', ann: '14.8%/yr', score: '0.53', flag: 'earnings' }
+  {
+    rank: 1,
+    ticker: 'KO',
+    strike: 60,
+    exp: 'Aug 21',
+    dte: 37,
+    mark: 0.95,
+    spread: '$0.06 (6%)',
+    delta: 0.22,
+    ivr: { value: 38, state: 'fresh', age: 0 },
+    oi: '1,800',
+    period: '1.58%',
+    ann: '15.6%/yr',
+    score: '0.71',
+    flag: null
+  },
+  {
+    rank: 2,
+    ticker: 'MSFT',
+    strike: 410,
+    exp: 'Aug 28',
+    dte: 44,
+    mark: 6.2,
+    spread: '$0.30 (5%)',
+    delta: 0.25,
+    ivr: null,
+    oi: '2,600',
+    period: '1.51%',
+    ann: '12.5%/yr',
+    score: '0.50',
+    flag: null
+  },
+  {
+    rank: null,
+    ticker: 'NVDA',
+    strike: 118,
+    exp: 'Aug 21',
+    dte: 37,
+    mark: 2.15,
+    spread: '$0.08 (4%)',
+    delta: 0.26,
+    ivr: { value: 52, state: 'stale', age: 6 },
+    oi: '3,100',
+    period: '1.82%',
+    ann: '18.0%/yr',
+    score: '0.69',
+    flag: 'unknown'
+  },
+  {
+    rank: null,
+    ticker: 'AAPL',
+    strike: 180,
+    exp: 'Aug 21',
+    dte: 37,
+    mark: 2.7,
+    spread: '$0.06 (2%)',
+    delta: 0.28,
+    ivr: { value: 44, state: 'predates_earnings', age: 1 },
+    oi: '4,200',
+    period: '1.50%',
+    ann: '14.8%/yr',
+    score: '0.53',
+    flag: 'earnings'
+  }
 ]
 
 export const EXCLUDED = [
@@ -91,7 +199,10 @@ export function formatIvr(ivr) {
   if (ivr == null) return { value: 'n/a', caption: null, muted: true }
   if (typeof ivr === 'number') return { value: String(ivr), caption: null, muted: false }
   return {
-    value: ivr.state === 'aging' || ivr.state === 'stale' ? `${ivr.value} · ${ivr.age}d` : String(ivr.value),
+    value:
+      ivr.state === 'aging' || ivr.state === 'stale'
+        ? `${ivr.value} · ${ivr.age}d`
+        : String(ivr.value),
     caption: ivr.state === 'predates_earnings' ? 'predates earnings' : null,
     muted: ivr.state === 'stale' || ivr.state === 'predates_earnings'
   }
@@ -289,7 +400,8 @@ export function Shell({ closed, staleBadge, children }) {
         <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>{children}</div>
       </div>
     </div>
-  )
+
+)
 }
 
 export function EarningsBadge({ kind }) {
@@ -387,7 +499,15 @@ export function CandidateRow({ row, first, flag }) {
         )}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <span style={{ fontFamily: T.mono, fontWeight: 700, fontSize: '0.85rem', color: T.gold, letterSpacing: '0.02em' }}>
+        <span
+          style={{
+            fontFamily: T.mono,
+            fontWeight: 700,
+            fontSize: '0.85rem',
+            color: T.gold,
+            letterSpacing: '0.02em'
+          }}
+        >
           {row.ticker}
         </span>
         {flag ? <EarningsBadge kind={flag} /> : null}
@@ -399,9 +519,20 @@ export function CandidateRow({ row, first, flag }) {
       <div style={{ ...cell, color: T.green, fontWeight: 500 }}>{row.period}</div>
       <div style={{ ...cell, color: T.green, fontWeight: 600 }}>{row.ann}</div>
       <div style={cell}>{row.delta.toFixed(2)}</div>
-      <div style={{ ...cell, color: ivr.muted ? T.muted : T.text, display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }} title="Observation date shown in Eastern Time">
+      <div
+        style={{
+          ...cell,
+          color: ivr.muted ? T.muted : T.text,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-end'
+        }}
+        title="Observation date shown in Eastern Time"
+      >
         <span>{ivr.value}</span>
-        {ivr.caption ? <span style={{ fontSize: '0.58rem', color: T.muted }}>{ivr.caption}</span> : null}
+        {ivr.caption ? (
+          <span style={{ fontSize: '0.58rem', color: T.muted }}>{ivr.caption}</span>
+        ) : null}
       </div>
       <div style={{ ...cell, color: T.text2 }}>{row.oi}</div>
       <div style={{ ...cell, color: T.text2 }}>{row.spread}</div>
@@ -430,15 +561,24 @@ export function CandidateRow({ row, first, flag }) {
 export function ScoreLegend() {
   return (
     <div style={{ fontFamily: T.mono, fontSize: '0.7rem', color: T.muted, lineHeight: 1.7 }}>
-      Ranked by <span style={{ color: T.gold }}>yield-per-delta</span> — annualized return-if-flat ÷ delta. KO 0.71 · AAPL
-      0.53 · MSFT 0.50. A fresh `38` has no visible qualifier; aging `44 · 2d` remains usable; stale `52 · 6d` is muted; and expired/missing IVR is <span style={{ color: T.text2 }}>n/a</span>. All remain ranked on yield-per-delta.
+      Ranked by <span style={{ color: T.gold }}>yield-per-delta</span> — annualized return-if-flat ÷
+      delta. KO 0.71 · AAPL 0.53 · MSFT 0.50. A fresh `38` has no visible qualifier; aging `44 · 2d`
+      remains usable; stale `52 · 6d` is muted; and expired/missing IVR is{' '}
+      <span style={{ color: T.text2 }}>n/a</span>. All remain ranked on yield-per-delta.
     </div>
   )
 }
 
 export function ExcludedSection({ open, onToggle }) {
   return (
-    <div style={{ border: `1px solid ${T.border}`, borderRadius: T.r, background: T.surface, overflow: 'hidden' }}>
+    <div
+      style={{
+        border: `1px solid ${T.border}`,
+        borderRadius: T.r,
+        background: T.surface,
+        overflow: 'hidden'
+      }}
+    >
       <button
         onClick={onToggle}
         style={{
@@ -453,7 +593,9 @@ export function ExcludedSection({ open, onToggle }) {
         }}
       >
         <SectionLabel>Excluded ({EXCLUDED.length})</SectionLabel>
-        <span style={{ fontFamily: T.mono, fontSize: '0.72rem', color: T.muted }}>{open ? '▾' : '▸'}</span>
+        <span style={{ fontFamily: T.mono, fontSize: '0.72rem', color: T.muted }}>
+          {open ? '▾' : '▸'}
+        </span>
       </button>
       {open ? (
         <div style={{ borderTop: `1px solid ${T.border}` }}>
@@ -468,7 +610,15 @@ export function ExcludedSection({ open, onToggle }) {
                 borderTop: i === 0 ? 'none' : `1px solid ${T.borderSub}`
               }}
             >
-              <span style={{ fontFamily: T.mono, fontWeight: 700, fontSize: '0.8rem', color: T.text2, width: 60 }}>
+              <span
+                style={{
+                  fontFamily: T.mono,
+                  fontWeight: 700,
+                  fontSize: '0.8rem',
+                  color: T.text2,
+                  width: 60
+                }}
+              >
                 {e.ticker}
               </span>
               <span
@@ -494,7 +644,14 @@ export function ExcludedSection({ open, onToggle }) {
 
 export function ResultsTable({ rows }) {
   return (
-    <div style={{ border: `1px solid ${T.border}`, borderRadius: T.r, overflow: 'hidden', background: T.surface }}>
+    <div
+      style={{
+        border: `1px solid ${T.border}`,
+        borderRadius: T.r,
+        overflow: 'hidden',
+        background: T.surface
+      }}
+    >
       <HeaderRow />
       {rows.map((row, i) => (
         <CandidateRow key={row.ticker} row={row} first={i === 0} flag={row.flag} />
@@ -536,7 +693,9 @@ export function CenteredCard({ tone, title, body, action, caption }) {
           {isError ? '⚠' : '⌕'}
         </span>
         <div style={{ fontSize: '1rem', fontWeight: 600, color: T.text }}>{title}</div>
-        <div style={{ fontSize: '0.82rem', color: T.text2, maxWidth: 380, lineHeight: 1.6 }}>{body}</div>
+        <div style={{ fontSize: '0.82rem', color: T.text2, maxWidth: 380, lineHeight: 1.6 }}>
+          {body}
+        </div>
         {action ? (
           <button
             style={{
@@ -556,7 +715,9 @@ export function CenteredCard({ tone, title, body, action, caption }) {
         ) : null}
       </div>
       {caption ? (
-        <div style={{ fontFamily: T.mono, fontSize: '0.7rem', color: T.muted, lineHeight: 1.6 }}>{caption}</div>
+        <div style={{ fontFamily: T.mono, fontSize: '0.7rem', color: T.muted, lineHeight: 1.6 }}>
+          {caption}
+        </div>
       ) : null}
     </div>
   )
@@ -575,30 +736,30 @@ export function Mockup() {
   const [state, setState] = useState('ranked')
   const [excludedOpen, setExcludedOpen] = useState(false)
 
-  const closed = state === 'stale'
-  const open = state === 'excluded' ? true : excludedOpen
+const closed = state === 'stale'
+const open = state === 'excluded' ? true : excludedOpen
 
-  return (
-    <div style={{ fontFamily: 'inherit', color: T.text }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
-        <SectionLabel>State</SectionLabel>
-        <div
-          style={{
+return (
+
+<div style={{ fontFamily: 'inherit', color: T.text }}>
+<div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
+<SectionLabel>State</SectionLabel>
+<div
+style={{
             display: 'inline-flex',
             gap: 2,
             padding: 3,
             borderRadius: 999,
             border: `1px solid ${T.border}`,
             background: T.elevated
-          }}
-        >
-          {['ranked', 'earnings', 'excluded', 'unavailable', 'empty', 'stale'].map((s) => {
-            const active = state === s
-            return (
-              <button
-                key={s}
-                onClick={() => setState(s)}
-                style={{
+          }} >
+{['ranked', 'earnings', 'excluded', 'unavailable', 'empty', 'stale'].map((s) => {
+const active = state === s
+return (
+<button
+key={s}
+onClick={() => setState(s)}
+style={{
                   padding: '5px 12px',
                   borderRadius: 999,
                   border: 'none',
@@ -608,14 +769,13 @@ export function Mockup() {
                   background: active ? T.goldDim : 'transparent',
                   color: active ? T.gold : T.text2,
                   fontWeight: active ? 700 : 400
-                }}
-              >
-                {s}
-              </button>
-            )
-          })}
-        </div>
-      </div>
+                }} >
+{s}
+</button>
+)
+})}
+</div>
+</div>
 
       <Shell closed={closed} staleBadge={state === 'stale'}>
         {state === 'unavailable' ? (
@@ -679,7 +839,8 @@ export function Mockup() {
         )}
       </Shell>
     </div>
-  )
+
+)
 }
 
 <Mockup />

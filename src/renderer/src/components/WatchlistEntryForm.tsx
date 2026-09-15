@@ -5,9 +5,10 @@ import { twMerge } from 'tailwind-merge'
 import type { z } from 'zod'
 
 import { watchlistEntrySchema, type WatchlistEntryFormValues } from '@/schemas/watchlist'
-import type { ApiError } from '../api/watchlist'
+import type { ApiError, WatchlistEntry, WatchlistEntryPayload } from '../api/watchlist'
 import type { IpcFieldError } from '../api/error'
 import { useAddToWatchlist } from '../hooks/useAddToWatchlist'
+import { useUpdateWatchlistEntry } from '../hooks/useUpdateWatchlistEntry'
 import { Field } from './ui/FormField'
 import { FormButton } from './ui/FormButton'
 import { NumberInput } from './ui/NumberInput'
@@ -16,6 +17,7 @@ import { ErrorAlert } from './ui/ErrorAlert'
 const IVR_PRESETS = [30, 50, 70] as const
 const THESIS_MAX_LENGTH = 500
 const GENERIC_ADD_ERROR = 'Could not add the ticker — please try again.'
+const GENERIC_EDIT_ERROR = 'Could not save the changes — please try again.'
 
 // The schema's `.default(false)` booleans make its input type (form values) differ
 // from its output type (submitted values), so type the form with both.
@@ -70,10 +72,38 @@ function ConditionRow({ label, error, onRemove, children }: ConditionRowProps): 
   )
 }
 
-export function WatchlistAddForm(): React.JSX.Element {
-  const mutation = useAddToWatchlist()
-  const [showOwnBelow, setShowOwnBelow] = useState(false)
-  const [showHighIv, setShowHighIv] = useState(false)
+// [US-69] One form, two modes. Adding and editing ask the trader for exactly the same
+// things, so they are one component rather than two that drift apart — the only
+// differences are the ticker (an input when adding, fixed text when editing, because a
+// rename is remove + re-add), the mutation behind Save, and the footer's buttons.
+
+type WatchlistEntryFormProps = {
+  /** Absent in add mode. Present in edit mode, seeding the form and fixing the ticker. */
+  entry?: WatchlistEntry
+  onSaved?: () => void
+  onCancel?: () => void
+}
+
+/** Stored 4dp money reads back as the 2dp a trader normally types — but never rounded.
+ *  Nothing upstream caps the price at 2dp, and a save replaces the field outright, so
+ *  rounding here would let someone who opened the form to fix a typo in the thesis
+ *  silently rewrite a trigger they never touched. */
+function seedPrice(ownBelowPrice: string | null | undefined): string | undefined {
+  if (ownBelowPrice == null) return undefined
+  const value = Number(ownBelowPrice)
+  return Number(value.toFixed(2)) === value ? value.toFixed(2) : String(value)
+}
+
+export function WatchlistEntryForm({
+  entry,
+  onSaved,
+  onCancel
+}: WatchlistEntryFormProps): React.JSX.Element {
+  const isEdit = entry !== undefined
+  const addMutation = useAddToWatchlist()
+  const updateMutation = useUpdateWatchlistEntry()
+  const [showOwnBelow, setShowOwnBelow] = useState(entry?.ownBelowPrice != null)
+  const [showHighIv, setShowHighIv] = useState(entry?.ivrTrigger != null)
 
   const {
     register,
@@ -87,53 +117,72 @@ export function WatchlistAddForm(): React.JSX.Element {
   } = useForm<WatchlistFormInput, unknown, WatchlistEntryFormValues>({
     resolver: zodResolver(watchlistEntrySchema),
     defaultValues: {
-      ticker: '',
-      thesis: undefined,
-      ownBelowPrice: undefined,
-      ivrTrigger: undefined,
-      postEarningsOnly: false,
-      coreHolding: false
+      ticker: entry?.ticker ?? '',
+      thesis: entry?.notes ?? undefined,
+      ownBelowPrice: seedPrice(entry?.ownBelowPrice),
+      ivrTrigger: entry?.ivrTrigger == null ? undefined : String(entry.ivrTrigger),
+      postEarningsOnly: entry?.postEarningsOnly ?? false,
+      coreHolding: entry?.coreHolding ?? false
     }
   })
 
-  const thesis = useWatch({ control, name: 'thesis' }) ?? ''
+  // Trimmed, because the schema trims before it measures and the service stores the
+  // trimmed text. Counting the raw value would put a red `505 / 500` beside a note that
+  // saves perfectly well once its trailing spaces come off.
+  const thesis = (useWatch({ control, name: 'thesis' }) ?? '').trim()
   const postEarningsOnly = useWatch({ control, name: 'postEarningsOnly' })
   const coreHolding = useWatch({ control, name: 'coreHolding' })
 
   // Ticker-field errors bind to the ticker input; every other IPC failure
   // (validation on another field, or a non-field internal error) is surfaced
-  // as a form-level alert so it can never fail silently.
+  // as a form-level alert so it can never fail silently. In edit mode there is no ticker
+  // input to bind to, so a ticker error goes to the alert as well.
   function mapFieldErrors(error: ApiError): void {
-    const details = (error.body as { detail?: IpcFieldError[] }).detail ?? []
+    // Optional chained: a rejection that never reached the `{ ok, errors }` envelope — a
+    // dead channel, a serialization failure — has no body at all, and throwing in here
+    // would lose the failure entirely rather than show it.
+    const details = (error.body as { detail?: IpcFieldError[] } | null | undefined)?.detail ?? []
     let surfaced = false
     details.forEach((fe) => {
-      if (fe.field === 'ticker') setError('ticker', { message: fe.message })
+      if (fe.field === 'ticker' && !isEdit) setError('ticker', { message: fe.message })
       else setError('root', { message: fe.message })
       surfaced = true
     })
-    if (!surfaced) setError('root', { message: GENERIC_ADD_ERROR })
+    if (!surfaced) setError('root', { message: isEdit ? GENERIC_EDIT_ERROR : GENERIC_ADD_ERROR })
+  }
+
+  /** The form's values as the payload both channels take. A condition the trader cleared
+   *  is an empty string here and an explicit `null` on the wire — the same thing an
+   *  absent condition means, and what the service stores either way. */
+  function toPayload(values: WatchlistEntryFormValues): WatchlistEntryPayload {
+    return {
+      ticker: values.ticker,
+      notes: values.thesis || null,
+      ownBelowPrice: values.ownBelowPrice ? parseFloat(values.ownBelowPrice) : null,
+      ivrTrigger: values.ivrTrigger ? parseInt(values.ivrTrigger, 10) : null,
+      postEarningsOnly: values.postEarningsOnly,
+      coreHolding: values.coreHolding
+    }
   }
 
   function onSubmit(values: WatchlistEntryFormValues): void {
     clearErrors('root')
-    mutation.mutate(
-      {
-        ticker: values.ticker,
-        notes: values.thesis || undefined,
-        ownBelowPrice: values.ownBelowPrice ? parseFloat(values.ownBelowPrice) : undefined,
-        ivrTrigger: values.ivrTrigger ? parseInt(values.ivrTrigger, 10) : undefined,
-        postEarningsOnly: values.postEarningsOnly,
-        coreHolding: values.coreHolding
+    const onError = (error: unknown): void => mapFieldErrors(error as ApiError)
+
+    if (isEdit) {
+      updateMutation.mutate(toPayload(values), { onSuccess: () => onSaved?.(), onError })
+      return
+    }
+
+    addMutation.mutate(toPayload(values), {
+      // Adding clears the form for the next ticker; editing hands the panel back instead.
+      onSuccess: () => {
+        reset()
+        setShowOwnBelow(false)
+        setShowHighIv(false)
       },
-      {
-        onSuccess: () => {
-          reset()
-          setShowOwnBelow(false)
-          setShowHighIv(false)
-        },
-        onError: (error) => mapFieldErrors(error as ApiError)
-      }
-    )
+      onError
+    })
   }
 
   function removeOwnBelow(): void {
@@ -153,20 +202,32 @@ export function WatchlistAddForm(): React.JSX.Element {
       className="flex flex-col gap-[14px] rounded-md border border-wb-gold-border bg-wb-bg-surface p-4"
     >
       <div className="font-wb-mono text-[0.65rem] uppercase tracking-[0.12em] text-wb-text-muted">
-        Add to watchlist
+        {isEdit ? `Edit ${entry.ticker}` : 'Add to watchlist'}
       </div>
 
       {errors.root?.message && <ErrorAlert message={errors.root.message} />}
 
-      <Field label="Ticker" htmlFor="ticker" error={errors.ticker?.message}>
-        <NumberInput
-          {...register('ticker')}
-          id="ticker"
-          placeholder="Ticker (e.g. NVDA)"
-          className="uppercase max-w-[240px]"
-          hasError={Boolean(errors.ticker)}
-        />
-      </Field>
+      {isEdit ? (
+        <div className="flex items-baseline gap-2">
+          <span
+            data-testid="watchlist-entry-ticker"
+            className="font-wb-mono font-bold tracking-[0.03em] text-wb-gold"
+          >
+            {entry.ticker}
+          </span>
+          <span className="font-wb-mono text-[0.66rem] text-wb-text-muted">· ticker fixed</span>
+        </div>
+      ) : (
+        <Field label="Ticker" htmlFor="ticker" error={errors.ticker?.message}>
+          <NumberInput
+            {...register('ticker')}
+            id="ticker"
+            placeholder="Ticker (e.g. NVDA)"
+            className="uppercase max-w-[240px]"
+            hasError={Boolean(errors.ticker)}
+          />
+        </Field>
+      )}
 
       <div className="flex flex-col gap-[10px]">
         <div className="font-wb-mono text-[0.62rem] uppercase tracking-[0.12em] text-wb-text-muted">
@@ -252,26 +313,51 @@ export function WatchlistAddForm(): React.JSX.Element {
       </div>
 
       <Field label="Thesis (optional)" htmlFor="thesis" error={errors.thesis?.message}>
+        {/* No `maxLength`: silently truncating at 500 would let the trader believe a long
+            thesis saved whole. The counter turns red and the resolver rejects instead. */}
         <textarea
           {...register('thesis')}
           id="thesis"
-          maxLength={THESIS_MAX_LENGTH}
           placeholder="Why you'd own this name…"
           className="w-full min-h-[56px] resize-none p-[10px] rounded-md border border-wb-border bg-wb-bg-elevated text-wb-text-primary text-[0.8125rem] leading-normal outline-none"
         />
       </Field>
 
       <div className="flex items-center justify-between">
-        <span className="font-wb-mono text-[0.66rem] text-wb-text-muted">
+        <span
+          className={twMerge(
+            'font-wb-mono text-[0.66rem]',
+            thesis.length > THESIS_MAX_LENGTH ? 'text-wb-red' : 'text-wb-text-muted'
+          )}
+        >
           {thesis.length} / {THESIS_MAX_LENGTH}
         </span>
-        <FormButton
-          label="Add ticker"
-          pendingLabel="Adding…"
-          isPending={mutation.isPending}
-          data-testid="watchlist-add-submit"
-          aria-label="Add ticker"
-        />
+        {isEdit ? (
+          <div className="flex items-center gap-2">
+            <FormButton
+              variant="secondary"
+              label="Cancel"
+              onClick={onCancel}
+              data-testid="watchlist-edit-cancel"
+              aria-label="Cancel"
+            />
+            <FormButton
+              label="Save changes"
+              pendingLabel="Saving…"
+              isPending={updateMutation.isPending}
+              data-testid="watchlist-edit-submit"
+              aria-label="Save changes"
+            />
+          </div>
+        ) : (
+          <FormButton
+            label="Add ticker"
+            pendingLabel="Adding…"
+            isPending={addMutation.isPending}
+            data-testid="watchlist-add-submit"
+            aria-label="Add ticker"
+          />
+        )}
       </div>
     </form>
   )

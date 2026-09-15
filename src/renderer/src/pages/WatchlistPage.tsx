@@ -8,7 +8,7 @@ import { BenchHeader } from '../components/BenchHeader'
 import { MarketDataOutage } from '../components/MarketDataOutage'
 import { PageLayout } from '../components/PageLayout'
 import { ScreeningCriteriaSheet } from '../components/ScreeningCriteriaSheet'
-import { WatchlistAddForm } from '../components/WatchlistAddForm'
+import { WatchlistEntryForm } from '../components/WatchlistEntryForm'
 import { ErrorAlert } from '../components/ui/ErrorAlert'
 import { LoadingState } from '../components/ui/LoadingState'
 import { useMarketStatusDisplay } from '../hooks/useMarketStatusDisplay'
@@ -25,9 +25,13 @@ import { fmtQuoteTime } from '../lib/screener-format'
 // question — "what am I watching?" and "what is worth selling today?" — so they share
 // one page: two sections of cards on the left, the selected stock's detail on the right.
 //
-// The page itself only holds the sheet/add/selection state and decides which of the
-// bench's states to show; the header, the grid and the outage state each own their own
-// markup and copy.
+// The page itself only holds the sheet/add/selection/editing state and decides which of
+// the bench's states to show; the header, the grid and the outage state each own their
+// own markup and copy.
+//
+// [US-69] One entry form at a time. Opening either form closes the other, and leaving a
+// stock — by selecting another or removing it — closes the edit rather than leaving it
+// pointing at something the trader is no longer looking at.
 
 export const WATCHLIST_PAGE_TITLE = 'Watchlist'
 
@@ -76,6 +80,7 @@ export function WatchlistPage(): React.JSX.Element {
   const [savedConfirmed, setSavedConfirmed] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
+  const [editing, setEditing] = useState<string | null>(null)
 
   const snapshot = snapshotQuery.data
   const rows = snapshot?.rows ?? []
@@ -100,6 +105,38 @@ export function WatchlistPage(): React.JSX.Element {
   function openSheet(): void {
     setSavedConfirmed(false)
     setSheetOpen(true)
+  }
+
+  function handleEdit(ticker: string): void {
+    // Editing a stock selects it. The Edit button is reachable on the stock the bench
+    // defaulted to, which the trader never clicked — leaving `selected` null there would
+    // let a background refetch that re-sections the bench move the default elsewhere and
+    // unmount the open form, discarding what was typed without saying so.
+    setSelected(ticker)
+    setEditing(ticker)
+    setAddOpen(false)
+  }
+
+  function handleEditDone(): void {
+    setEditing(null)
+  }
+
+  function handleToggleAdd(): void {
+    setAddOpen((open) => !open)
+    setEditing(null)
+  }
+
+  function handleSelect(ticker: string): void {
+    setSelected(ticker)
+    setEditing(null)
+  }
+
+  function handleRemove(ticker: string): void {
+    removeMutation.mutate(ticker)
+    // Not redundant with the panel deriving its content from `editing === current.ticker`:
+    // the mutation is async, so the card stays on the bench for the whole IPC + refetch
+    // round trip. Without this the form would sit open over a stock already being deleted.
+    if (editing === ticker) setEditing(null)
   }
 
   function refreshBench(): void {
@@ -132,14 +169,14 @@ export function WatchlistPage(): React.JSX.Element {
           addOpen={addOpen}
           onOpenCriteria={openSheet}
           onRefresh={refreshBench}
-          onToggleAdd={() => setAddOpen((open) => !open)}
+          onToggleAdd={handleToggleAdd}
         />
       }
     >
       <div className="flex flex-col gap-5 p-6">
         {savedConfirmed && <SavedBanner />}
 
-        {(addOpen || rows.length === 0) && <WatchlistAddForm />}
+        {(addOpen || rows.length === 0) && <WatchlistEntryForm />}
 
         {criteriaUnloadable && (
           <ErrorAlert message="Failed to load your screening criteria — the criteria sheet can't be opened until they load." />
@@ -180,9 +217,12 @@ export function WatchlistPage(): React.JSX.Element {
           <BenchGrid
             bench={bench}
             selected={selected}
-            onSelect={setSelected}
-            onRemove={(ticker) => removeMutation.mutate(ticker)}
+            onSelect={handleSelect}
+            onRemove={handleRemove}
             onReview={handleReview}
+            editing={editing}
+            onEdit={handleEdit}
+            onEditDone={handleEditDone}
             onAdjustCriteria={openSheet}
             criteriaUnloadable={criteriaUnloadable}
             screened={results?.status === 'ok'}

@@ -11,6 +11,7 @@ import { MatchingPutCard } from './MatchingPutCard'
 import { ReadingNote } from './ReadingNote'
 import { AlertBox } from './ui/AlertBox'
 import { Badge } from './ui/Badge'
+import { Button } from './ui/button'
 
 // [US-96] The sticky panel beside the bench, per the mockup's `StockDetail`.
 //
@@ -22,6 +23,9 @@ import { Badge } from './ui/Badge'
 type BenchDetailProps = {
   stock: BenchStock
   onReview: (candidate: ScreenerCandidate) => void
+  /** [US-69] Opens the entry form over this panel. The panel owns the affordance because
+   *  it is where the thesis and the conditions are read; the grid owns the swap. */
+  onEdit: () => void
 }
 
 const HEADING = 'mb-2 text-xs font-semibold uppercase tracking-widest text-wb-text-muted'
@@ -60,7 +64,7 @@ function earningsLine(earnings: EarningsDisplay): { text: string; caution: boole
   return { text: `${fmtDate(earnings.date)} · ${countdown(earnings.daysUntil)}`, caution: true }
 }
 
-export function BenchDetail({ stock, onReview }: BenchDetailProps): React.JSX.Element {
+export function BenchDetail({ stock, onReview, onEdit }: BenchDetailProps): React.JSX.Element {
   const { ticker, row, candidate, rank, reason, verdictCopy } = stock
   const { entry, quote, ivRank, earnings, verdict } = row
   const meets = rank !== null
@@ -95,9 +99,21 @@ export function BenchDetail({ stock, onReview }: BenchDetailProps): React.JSX.El
             </p>
           )}
         </div>
-        <Badge color={meets ? 'var(--wb-green)' : undefined}>
-          {meets ? 'Meets criteria' : 'Watching'}
-        </Badge>
+        <div className="flex shrink-0 items-center gap-2">
+          <Badge color={meets ? 'var(--wb-green)' : undefined}>
+            {meets ? 'Meets criteria' : 'Watching'}
+          </Badge>
+          <Button
+            data-testid="bench-detail-edit"
+            size="sm"
+            variant="outline"
+            aria-label="Edit thesis and conditions"
+            onClick={onEdit}
+            className="font-wb-mono border-wb-border bg-wb-bg-elevated text-wb-text-secondary"
+          >
+            Edit
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-3 rounded-md bg-wb-bg-elevated p-4">

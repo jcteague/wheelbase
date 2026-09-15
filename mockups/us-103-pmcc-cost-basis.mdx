@@ -102,12 +102,48 @@ export const EVENTS = [
 ]
 
 export const STAGES = [
-  { key: 'entry', step: '1 · Entry', through: 'short-1', openShort: 'XYZ $110.00 CALL exp 2026-10-16', phase: 'LEAPS + short call open' },
-  { key: 'short-expired', step: '2 · Short expired', through: 'expire-1', openShort: null, phase: 'LEAPS open · no short call' },
-  { key: 'new-short', step: '3 · New short call', through: 'short-2', openShort: 'XYZ $108.00 CALL exp 2026-11-20', phase: 'LEAPS + short call open' },
-  { key: 'short-roll', step: '4 · Short-call roll', through: 'short-roll-1', openShort: 'XYZ $112.00 CALL exp 2026-12-18', phase: 'LEAPS + short call open' },
-  { key: 'leaps-roll', step: '5 · LEAPS roll', through: 'leaps-roll-1', openShort: 'XYZ $112.00 CALL exp 2026-12-18', phase: 'LEAPS + short call open' },
-  { key: 'free', step: '6 · Free position', through: 'cycles', openShort: null, phase: 'LEAPS open · no short call' }
+  {
+    key: 'entry',
+    step: '1 · Entry',
+    through: 'short-1',
+    openShort: 'XYZ $110.00 CALL exp 2026-10-16',
+    phase: 'LEAPS + short call open'
+  },
+  {
+    key: 'short-expired',
+    step: '2 · Short expired',
+    through: 'expire-1',
+    openShort: null,
+    phase: 'LEAPS open · no short call'
+  },
+  {
+    key: 'new-short',
+    step: '3 · New short call',
+    through: 'short-2',
+    openShort: 'XYZ $108.00 CALL exp 2026-11-20',
+    phase: 'LEAPS + short call open'
+  },
+  {
+    key: 'short-roll',
+    step: '4 · Short-call roll',
+    through: 'short-roll-1',
+    openShort: 'XYZ $112.00 CALL exp 2026-12-18',
+    phase: 'LEAPS + short call open'
+  },
+  {
+    key: 'leaps-roll',
+    step: '5 · LEAPS roll',
+    through: 'leaps-roll-1',
+    openShort: 'XYZ $112.00 CALL exp 2026-12-18',
+    phase: 'LEAPS + short call open'
+  },
+  {
+    key: 'free',
+    step: '6 · Free position',
+    through: 'cycles',
+    openShort: null,
+    phase: 'LEAPS open · no short call'
+  }
 ]
 
 export const signed = (value, places) =>
@@ -127,30 +163,30 @@ export function ledgerThrough(stageKey, contracts, withFees) {
   const shares = SHARES_PER_CONTRACT * contracts
   const fee = (event) => (withFees ? (event.fee ?? 0) : 0)
 
-  const longCost = applied
-    .filter((event) => event.leg === 'long')
-    .reduce((sum, event) => sum + event.perShare * shares + fee(event), 0)
-  const credits = applied
-    .filter((event) => event.leg === 'short')
-    .reduce((sum, event) => sum - event.perShare * shares - fee(event), 0)
-  const strike = applied.reduce((current, event) => event.strikeAfter ?? current, 0)
-  const basis = longCost - credits
+const longCost = applied
+.filter((event) => event.leg === 'long')
+.reduce((sum, event) => sum + event.perShare _ shares + fee(event), 0)
+const credits = applied
+.filter((event) => event.leg === 'short')
+.reduce((sum, event) => sum - event.perShare _ shares - fee(event), 0)
+const strike = applied.reduce((current, event) => event.strikeAfter ?? current, 0)
+const basis = longCost - credits
 
-  return {
-    stage,
-    applied,
-    shares,
-    longCost,
-    credits,
-    basis,
-    strike,
-    basisPerShare: basis / shares,
-    longCostPerShare: longCost / shares,
-    creditsPerShare: credits / shares,
-    effectiveShareCost: strike + basis / shares,
-    recovered: (credits / longCost) * 100,
-    free: basis <= 0
-  }
+return {
+stage,
+applied,
+shares,
+longCost,
+credits,
+basis,
+strike,
+basisPerShare: basis / shares,
+longCostPerShare: longCost / shares,
+creditsPerShare: credits / shares,
+effectiveShareCost: strike + basis / shares,
+recovered: (credits / longCost) \* 100,
+free: basis <= 0
+}
 }
 
 export function Mockup() {
@@ -160,20 +196,21 @@ export function Mockup() {
   const view = ledgerThrough(stageKey, contracts, withFees)
   const accent = view.free ? 'text-wb-green' : 'text-wb-gold'
 
-  return (
-    <div className="flex flex-col gap-4 font-wb-mono text-wb-text-primary">
-      <div className="relative isolate h-[900px] transform-gpu overflow-hidden rounded-lg border border-wb-border bg-wb-bg-base">
-        <aside className="absolute inset-y-0 left-0 flex w-[200px] flex-col gap-6 border-r border-wb-border bg-wb-bg-surface p-5">
-          <div className="text-lg font-bold tracking-widest text-wb-gold">WHEELBASE</div>
-          <div className="flex flex-col gap-5 text-xs text-wb-text-secondary">
-            <span className="font-semibold text-wb-gold">Positions</span>
-            <span>Management queue</span>
-            <span>Calendar</span>
-            <span>Screener</span>
-            <span>Watchlist</span>
-          </div>
-          <div className="mt-auto text-xs text-wb-text-muted">PAPER ACCOUNT</div>
-        </aside>
+return (
+
+<div className="flex flex-col gap-4 font-wb-mono text-wb-text-primary">
+<div className="relative isolate h-[900px] transform-gpu overflow-hidden rounded-lg border border-wb-border bg-wb-bg-base">
+<aside className="absolute inset-y-0 left-0 flex w-[200px] flex-col gap-6 border-r border-wb-border bg-wb-bg-surface p-5">
+<div className="text-lg font-bold tracking-widest text-wb-gold">WHEELBASE</div>
+<div className="flex flex-col gap-5 text-xs text-wb-text-secondary">
+<span className="font-semibold text-wb-gold">Positions</span>
+<span>Management queue</span>
+<span>Calendar</span>
+<span>Screener</span>
+<span>Watchlist</span>
+</div>
+<div className="mt-auto text-xs text-wb-text-muted">PAPER ACCOUNT</div>
+</aside>
 
         <main className="ml-[200px] h-full overflow-auto">
           <div className="flex items-start justify-between border-b border-wb-border px-6 py-4">
@@ -362,7 +399,8 @@ export function Mockup() {
         </p>
       </details>
     </div>
-  )
+
+)
 }
 
 <Mockup />

@@ -245,11 +245,23 @@ pnpm lint         # ESLint
 pnpm build        # production build
 ```
 
-> **Note:** `better-sqlite3` must be built twice — once for each Node ABI:
+> **Note:** `better-sqlite3` is built against one Node ABI at a time, and the two test
+> commands need different ones. **The rebuild is manual** — pnpm 10+ refuses to run a
+> dependency's build scripts without approval, so a `pretest` hook that shelled out to
+> `pnpm rebuild` failed the whole run before a single test executed. Switch ABI with:
 >
-> - After `pnpm install`, run `npx electron-rebuild -f -w better-sqlite3` to build for Electron (required for `pnpm dev` / `pnpm build`)
-> - Then run `pnpm rebuild better-sqlite3` to rebuild for system Node (required for `pnpm test` via Vitest)
-> - Order matters: run electron-rebuild first, then the system rebuild, so tests work in the same shell session.
+> ```bash
+> pnpm rebuild:electron   # Electron ABI — pnpm dev / build / test:e2e
+> pnpm rebuild:node       # system Node ABI — pnpm test (Vitest)
+> ```
+>
+> Run the matching one whenever you swap between `pnpm test` and `pnpm test:e2e`. The
+> symptom of the wrong ABI is `NODE_MODULE_VERSION <n> … requires <m>` from Vitest, or a
+> hang on `waiting for event 'window'` from an e2e launch.
+>
+> If an e2e run reports `Electron failed to install correctly`, its postinstall was skipped
+> (same build-script policy): `node node_modules/electron/install.js`, then
+> `pnpm rebuild:electron`.
 
 ---
 
