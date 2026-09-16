@@ -18,8 +18,7 @@ const baseGreeks = {
   delta: SAFE_DELTA,
   theta: -0.05,
   gamma: 0.015,
-  vega: 0.12,
-  iv: 0.32
+  vega: 0.12
 }
 
 function makeInput(overrides: Partial<CockpitInput> = {}): CockpitInput {
@@ -32,6 +31,7 @@ function makeInput(overrides: Partial<CockpitInput> = {}): CockpitInput {
     currentMid: 1.75,
     underlying: 185,
     greeks: baseGreeks,
+    impliedVolatility: 0.32,
     ...overrides
   }
 }
@@ -63,10 +63,10 @@ describe('ContextStrip', () => {
     expect(screen.getByText('30% yield over 21d')).toBeInTheDocument()
   })
 
-  it('renders IV as percentage', () => {
-    // greeks.iv=0.32 → '32.0%'
-    render(<ContextStrip input={makeInput()} />)
-    expect(screen.getByText('32.0%')).toBeInTheDocument()
+  it('renders IV as a one-decimal percentage', () => {
+    // impliedVolatility=0.284 → '28.4%' — a sibling of greeks, not a member of it
+    render(<ContextStrip input={makeInput({ impliedVolatility: 0.284 })} />)
+    expect(screen.getByText('28.4%')).toBeInTheDocument()
   })
 
   it('renders Vega per 1% IV move', () => {
@@ -152,21 +152,39 @@ describe('ContextStrip', () => {
     expect(screen.getByText('$5.00/d')).toHaveClass('text-wb-green')
   })
 
-  it('renders — for IV when impliedVolatility is null', () => {
-    // After refactoring: iv moves out of greeks into CockpitInput.impliedVolatility (number | null)
-    // When impliedVolatility is null the IV cell must show "—" rather than "NaN%" or crashing.
-    const greeksWithoutIv = {
-      delta: baseGreeks.delta,
-      theta: baseGreeks.theta,
-      gamma: baseGreeks.gamma,
-      vega: baseGreeks.vega
-    }
-    const input = {
-      ...makeInput(),
-      greeks: greeksWithoutIv,
-      impliedVolatility: null
-    } as unknown as CockpitInput
-    render(<ContextStrip input={input} />)
+  // [US-117] The value that actually reached this cell was NaN, not null: `parseFloat` of a
+  // field no producer filled. `NaN != null` is true, so it sailed into (NaN*100).toFixed(1).
+  it.each([
+    ['null', null],
+    ['NaN', NaN]
+  ])('renders — for IV when impliedVolatility is %s', (_label, impliedVolatility) => {
+    render(<ContextStrip input={makeInput({ impliedVolatility })} />)
     expect(screen.getByText('—')).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain('NaN')
+  })
+
+  it('renders the IV cell as — while the Greek cells still show values', () => {
+    // IV is a sibling of greeks, so its absence dashes one cell rather than taking the strip
+    // down with it.
+    render(<ContextStrip input={makeInput({ impliedVolatility: null })} />)
+    expect(screen.getByText('—')).toBeInTheDocument()
+    expect(screen.getByText('$5.00/d')).toBeInTheDocument() // Theta
+    expect(screen.getByText('$12.00')).toBeInTheDocument() // Vega
+    expect(screen.getByText('0.015')).toBeInTheDocument() // Gamma
+  })
+
+  it('IV sub-label still reads "implied vol" when the cell is dashed', () => {
+    render(<ContextStrip input={makeInput({ impliedVolatility: null })} />)
+    expect(screen.getByText('implied vol')).toBeInTheDocument()
+  })
+
+  it('IV sub-label still reads "rank {n}" when the cell is dashed and ivRank is passed', () => {
+    render(<ContextStrip input={makeInput({ impliedVolatility: null })} ivRank={42} />)
+    expect(screen.getByText('rank 42')).toBeInTheDocument()
+  })
+
+  it('dashed IV cell takes the default text colour, not a severity token', () => {
+    render(<ContextStrip input={makeInput({ impliedVolatility: null })} />)
+    expect(screen.getByText('—')).toHaveClass('text-wb-text-primary')
   })
 })

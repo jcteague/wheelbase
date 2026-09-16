@@ -241,6 +241,10 @@ interface IpcSetStockQuoteTickersPayload {
 
 type IpcSetStockQuoteTickersResult = IpcResult<{ subscribedTickers: string[] }>
 
+// Hand-maintained mirror of `OptionSnapshot` in
+// `src/main/integrations/market-data-provider.ts` — that type is the source of truth.
+// `greeks` is all-or-nothing and absent for roughly half of quoted contracts; implied
+// volatility is a sibling of it, not a member, and either may arrive without the other.
 interface IpcOptionSnapshot {
   bid: string
   ask: string
@@ -248,13 +252,14 @@ interface IpcOptionSnapshot {
   lastTrade: string
   openInterest: number | null
   volume: number | null
-  greeks: {
+  greeks?: {
     delta: string
     gamma: string
     theta: string
     vega: string
-    iv: string
   }
+  /** 4dp decimal string, e.g. '0.2840' */
+  impliedVolatility?: string
   timestamp: string
 }
 

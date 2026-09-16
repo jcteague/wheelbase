@@ -168,3 +168,22 @@ describe('observationWindowOf', () => {
     expect(observationWindowOf(EMPTY_TRADING_CALENDAR, saturday)).toBeNull()
   })
 })
+
+describe('getMostRecentCompletedSession — nothing has closed yet', () => {
+  it('returns null for an instant the calendar covers but no session precedes', () => {
+    // 2026-06-08 is inside the coverage window, but the first session it holds
+    // (2026-06-11) has not closed yet — a different answer from "cannot speak", which
+    // the EMPTY_TRADING_CALENDAR case above covers.
+    expect(getMostRecentCompletedSession(WEEKEND, atEt('2026-06-08', '09:30'))).toBeNull()
+  })
+})
+
+describe('etInstantAt — offsets the parser cannot read', () => {
+  it('falls back to UTC for a pre-1883 local-mean-time offset', () => {
+    // New York ran on LMT until 1883, which Intl reports as 'GMT-04:56:02'. The offset
+    // parser only understands whole minutes, so it reads nothing and treats the day as
+    // UTC. Documented rather than fixed: the exchange calendar never reaches back that
+    // far, and a seconds-aware parser would be dead code for a real trading session.
+    expect(etInstantAt('1800-01-01', '16:00')).toBe('1800-01-01T16:00:00.000Z')
+  })
+})

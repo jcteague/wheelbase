@@ -29,6 +29,7 @@ import {
   mapClock,
   mapOptionQuote,
   mapStockSnapshot,
+  nonFiniteFigures,
   parseFrames,
   parseOpenInterest,
   type AlpacaCalendarDay,
@@ -158,6 +159,13 @@ export class AlpacaMarketDataProvider implements MarketDataProvider {
     const snap = data.snapshots?.[contractId]
     if (!snap) {
       throw new MarketDataError('not_found', `Option contract ${contractId} not in snapshot`)
+    }
+    // The mapper drops a NaN/Infinity figure silently because it is pure. An omitted figure
+    // is the normal case and stays quiet; one Alpaca sent but could not model is a defect
+    // worth naming. The chain path stays silent — 161 contracts per underlying is noise.
+    const fields = nonFiniteFigures(snap)
+    if (fields.length > 0) {
+      logger.warn({ contract: contractId, fields }, 'alpaca_option_snapshot_non_finite_figure')
     }
     return mapOptionQuote(snap)
   }

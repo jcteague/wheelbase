@@ -1,6 +1,6 @@
 # US-34: Position Cockpit (Triage Cockpit)
 
-<!-- generated:from us-34 -->
+<!-- generated:from us-34,us-117 -->
 
 ## Summary
 
@@ -70,7 +70,7 @@ All verdict, severity, and derived-math logic lives in `src/renderer/src/lib/ver
 - **Leg history table lives inside the Cost-basis drawer** — AC-7 specifies the drawer "contains the leg history table when expanded". The cockpit's premise is "compress everything below the verdict into collapsible reference"; history is reference, not action → [[leg-history-in-cost-basis-drawer]]
 - **No-active-leg branch renders differently** — without an option leg there are no greeks, no distance-to-strike, no P&L. Render only `<VerdictBlock>` with `SHARES_VERDICT` and the "Cost basis & history" drawer `defaultOpen` → [[no-active-leg-cockpit-branch]]
 - **One file per cockpit part** — eight files under `components/position-cockpit/` plus the verdict module. Mirrors the handoff prototype's structure so the visual reference maps file-for-file; each unit gets its own `*.spec.tsx` → [[cockpit-component-decomposition]]
-- **IV reads from `snapshot.greeks.iv`** — the handoff component incorrectly read `snapshot.impliedVolatility`, which does not exist on `OptionSnapshot`. The real field is `OptionGreeks.iv: string` (parseFloat'd in `buildCockpitInput`).
+- **IV read from `snapshot.greeks.iv`** — ~~the handoff component incorrectly read `snapshot.impliedVolatility`, which does not exist on `OptionSnapshot`~~. **Superseded by [US-117](us-117-position-implied-volatility.md):** this correction was backwards. `greeks.iv` was a required field **no producer has ever written**, so `buildCockpitInput` parsed `undefined` and the cell rendered `NaN%`; the handoff component had it right. `greeks.iv` is now deleted from all three type declarations and IV reads from the sibling `snapshot.impliedVolatility`.
 - **Inline `style` only for runtime values** — permitted exclusively for `color-mix()` over runtime colour variables, dynamic SVG attributes, dynamic widths/positions, and the `gridTemplateColumns` switch in `VerdictBlock` (two-column vs single-column based on whether `pnl` is present). All static layout uses Tailwind `wb-*` tokens.
 - **`MANAGEMENT_RULES` constants drive tests** — test files reference `MANAGEMENT_RULES.tightDte`, `MANAGEMENT_RULES.actNowDte`, `MANAGEMENT_RULES.cspDangerDelta`, etc. — not hardcoded magic numbers. Keeps assertions valid if thresholds become user-configurable in a later story.
 
@@ -133,7 +133,7 @@ None. No SQLite tables added, no migrations, no IPC channels. All data is transi
 Reference-only (handoff prototype, not the source of truth):
 
 - `plans/us-33/handoff/Position Cockpit Mockup.html` — pixel target with six state toggles (target-hit, csp-safe, approaching, itm-urgent, cc-moderate, holding-shares)
-- `plans/us-33/handoff/src/components/position-cockpit/*.tsx` — handoff React components used as shape/logic reference; two corrections applied when porting: `iv` reads from `snapshot.greeks.iv` (not `snapshot.impliedVolatility`), and `underlying` reads from the new `underlyingPrice` prop (not the snapshot)
+- `plans/us-33/handoff/src/components/position-cockpit/*.tsx` — handoff React components used as shape/logic reference; two corrections applied when porting: `iv` reads from `snapshot.greeks.iv` (not `snapshot.impliedVolatility`) — **reverted by [US-117](us-117-position-implied-volatility.md), which restored the sibling `impliedVolatility` field** — and `underlying` reads from the new `underlyingPrice` prop (not the snapshot)
 
 ## Open questions
 

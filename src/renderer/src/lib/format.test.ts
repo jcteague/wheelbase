@@ -5,6 +5,7 @@ import {
   fmtDate,
   fmtMoney,
   fmtPct,
+  parseFinite,
   pnlClass,
   pnlColor
 } from './format'
@@ -106,5 +107,36 @@ describe('computeDteFromInput', () => {
   // The shape guard admits it; `parseISO` rejects it. Must be null, never NaN.
   it('has no DTE for a well-shaped but impossible date', () => {
     expect(computeDteFromInput('2026-13-45')).toBeNull()
+  })
+})
+
+// [US-117] Every figure on the Context strip crosses the IPC as a decimal string. Bare
+// `parseFloat` turns an absent one into NaN, which sails past a `!= null` guard and renders
+// as "NaN%"; `|| null` fixes that but swallows a legitimate 0, which is a valid delta.
+describe('parseFinite', () => {
+  const NULL_INPUTS = [undefined, null, '', 'NaN', 'abc', 'Infinity', '-Infinity']
+
+  it.each([
+    ['0.2840', 0.284],
+    ['-0.05', -0.05],
+    ['12.00', 12]
+  ])('returns the number for a well-formed decimal string (%s)', (input, expected) => {
+    expect(parseFinite(input)).toBe(expected)
+  })
+
+  it('returns 0 for "0" rather than nulling a legitimate zero', () => {
+    expect(parseFinite('0')).toBe(0)
+    expect(parseFinite('0.0000')).toBe(0)
+  })
+
+  it.each(NULL_INPUTS)('returns null for %s', (input) => {
+    expect(parseFinite(input)).toBeNull()
+  })
+
+  it('never returns NaN', () => {
+    const inputs = [...NULL_INPUTS, '0', '0.2840', '-0.05']
+    for (const input of inputs) {
+      expect(Number.isNaN(parseFinite(input))).toBe(false)
+    }
   })
 })

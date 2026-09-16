@@ -34,9 +34,11 @@ export function ContextStrip({ input, ivRank }: ContextStripProps): React.JSX.El
   const thetaValueClass =
     theta.yieldPct >= MANAGEMENT_RULES.targetCapturePct ? 'text-wb-green' : 'text-wb-text-primary'
 
-  const iv =
-    input.impliedVolatility !== undefined ? input.impliedVolatility : (input.greeks.iv ?? null)
-  const ivValue = iv != null ? `${(iv * 100).toFixed(1)}%` : '—'
+  // Implied volatility is a sibling of greeks, so it dashes on its own rather than taking the
+  // strip down. `buildCockpitInput` guarantees a finite number or null; the finite check is a
+  // second line of defence, because `NaN != null` is what rendered "NaN%" (US-117).
+  const iv = input.impliedVolatility
+  const ivValue = iv != null && Number.isFinite(iv) ? `${(iv * 100).toFixed(1)}%` : '—'
   const ivSub = ivRank != null ? `rank ${ivRank}` : 'implied vol'
 
   const vegaValue = fmtMoney(String(input.greeks.vega * 100))

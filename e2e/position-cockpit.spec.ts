@@ -46,6 +46,8 @@ function occSym(
 
 // ── Snapshot factory ────────────────────────────────────────────────────────
 
+// [US-117] Implied volatility is a sibling of `greeks`, not a member: the provider supplies
+// the two independently, so either may arrive without the other.
 function makeSnapshot(bid: string, ask: string, mid: string, delta: string): object {
   return {
     bid,
@@ -54,9 +56,27 @@ function makeSnapshot(bid: string, ask: string, mid: string, delta: string): obj
     lastTrade: mid,
     openInterest: null,
     volume: null,
-    greeks: { delta, gamma: '0.02', theta: '-0.05', vega: '0.10', iv: '0.25' },
+    greeks: { delta, gamma: '0.02', theta: '-0.05', vega: '0.10' },
+    impliedVolatility: '0.2500',
     timestamp: new Date().toISOString()
   }
+}
+
+type Snapshot = { greeks: Record<string, string>; impliedVolatility?: string }
+
+function withIv(snap: object, impliedVolatility: string): object {
+  return { ...snap, impliedVolatility }
+}
+
+function withoutIv(snap: object): object {
+  const copy: Record<string, unknown> = { ...snap }
+  delete copy.impliedVolatility
+  return copy
+}
+
+function withGreek(snap: object, field: string, value: string): object {
+  const greeks = (snap as Snapshot).greeks
+  return { ...snap, greeks: { ...greeks, [field]: value } }
 }
 
 // ── Named snapshots ─────────────────────────────────────────────────────────
@@ -131,6 +151,16 @@ async function goToPositionDetail(page: Page, positionId: string): Promise<void>
     location.hash = `#/positions/${id}`
   }, positionId)
   await page.waitForSelector('[data-testid="position-detail"]')
+}
+
+// The value span immediately after a Context-strip label. Assertions must target the cell
+// rather than the page, or a coincidental '28.4%' elsewhere would satisfy them.
+function contextCellValue(page: Page, label: string): Promise<string> {
+  return page.locator(`xpath=//span[text()="${label}"]/following-sibling::span[1]`).innerText()
+}
+
+async function expectNoNaNAnywhere(page: Page): Promise<void> {
+  expect(await page.locator('body').innerText()).not.toContain('NaN')
 }
 
 // ── Position seeding ────────────────────────────────────────────────────────
@@ -573,7 +603,7 @@ describe('US-34: Position Cockpit (Triage Cockpit)', () => {
   })
 
   it('US-34 AC: IV displayed as XX.X% not decimal', async () => {
-    // iv='0.25' → (0.25 * 100).toFixed(1) + '%' = '25.0%'
+    // impliedVolatility='0.2500' → (0.25 * 100).toFixed(1) + '%' = '25.0%'
     dbPath = path.join(os.tmpdir(), `wb-e2e-us34-iv-format-${Date.now()}.db`)
     app = await launchWithMocks(dbPath, {
       optionSnapshots: { [OCC_30D]: SNAP_HOLD }
@@ -626,4 +656,119 @@ describe('US-34: Position Cockpit (Triage Cockpit)', () => {
     expect(await page.locator('text=Risk snapshot').count()).toBe(0)
     expect(await page.locator(':text-is("Theta")').count()).toBe(0)
   })
+
+  // ── US-117 AC: implied volatility is a real number or an honest dash ───────
+  //
+  // ACs 4 and 6a–d name a cell reading '—' in situations where the Context strip does not
+  // render at all: no snapshot means no greeks, and one unparseable greek nulls the whole
+  // all-or-nothing block. Keeping US-34's shipped gate was the explicit decision (research
+  // ADR 5), so those are asserted as *nothing broken is shown* — the strip is absent AND
+  // 'NaN' appears nowhere AND the cockpit itself rendered, so "absent" cannot be satisfied
+  // by a blank page or a crash.
+
+  it("US-117 AC: the contract's implied volatility is shown as a percentage", async () => {
+    dbPath = path.join(os.tmpdir(), `wb-e2e-us117-iv-percent-${Date.now()}.db`)
+    app = await launchWithMocks(dbPath, {
+      optionSnapshots: { [OCC_30D]: withIv(SNAP_HOLD, '0.2840') }
+    })
+    const page = await app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+
+    const positionId = await seedPosition(page)
+    await goToPositionDetail(page, positionId)
+    await page.waitForSelector(':text-is("IV")')
+
+    expect(await contextCellValue(page, 'IV')).toBe('28.4%')
+  })
+
+  it('US-117 AC: a contract the provider has no implied volatility for reads as absent', async () => {
+    dbPath = path.join(os.tmpdir(), `wb-e2e-us117-iv-absent-${Date.now()}.db`)
+    app = await launchWithMocks(dbPath, {
+      optionSnapshots: { [OCC_30D]: withoutIv(SNAP_HOLD) }
+    })
+    const page = await app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+
+    const positionId = await seedPosition(page)
+    await goToPositionDetail(page, positionId)
+    await page.waitForSelector(':text-is("IV")')
+
+    expect(await contextCellValue(page, 'IV')).toBe('—')
+    // The dash is IV's alone — its neighbours still show real figures.
+    expect(await contextCellValue(page, 'Theta')).toBe('$5.00/d')
+    await expectNoNaNAnywhere(page)
+  })
+
+  it('US-117 AC: a newly added position shows its implied volatility without waiting', async () => {
+    dbPath = path.join(os.tmpdir(), `wb-e2e-us117-new-position-${Date.now()}.db`)
+    app = await launchWithMocks(dbPath, {
+      optionSnapshots: { [OCC_30D]: withIv(SNAP_HOLD, '0.2840') }
+    })
+    const page = await app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+
+    // Created here rather than pre-seeded: useOptionSnapshots keys on the position's own OCC
+    // symbol and fires on mount, so this must hold without advancing the 60s poll interval.
+    const positionId = await seedPosition(page)
+    await goToPositionDetail(page, positionId)
+    await page.waitForSelector(':text-is("IV")')
+
+    expect(await contextCellValue(page, 'IV')).toBe('28.4%')
+  })
+
+  it('US-117 AC: no snapshot at all reads as absent, not broken', async () => {
+    dbPath = path.join(os.tmpdir(), `wb-e2e-us117-no-snapshot-${Date.now()}.db`)
+    app = await launchWithMocks(dbPath, { optionSnapshots: {} })
+    const page = await app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+
+    const positionId = await seedPosition(page)
+    await goToPositionDetail(page, positionId)
+
+    // The cockpit rendered — "absent" cannot be satisfied by a blank page or a crash.
+    await page.waitForSelector('text=Awaiting market data')
+    expect(await page.locator(':text-is("IV")').count()).toBe(0)
+    await expectNoNaNAnywhere(page)
+  })
+
+  it('US-117 AC: a malformed figure is treated as absent', async () => {
+    // The warn-level half of this AC is asserted in the main process, the only layer that can
+    // observe a pino logger: alpaca-market-data.test.ts › 'logs a warn naming the dropped
+    // field'. The split is deliberate.
+    dbPath = path.join(os.tmpdir(), `wb-e2e-us117-iv-malformed-${Date.now()}.db`)
+    app = await launchWithMocks(dbPath, {
+      optionSnapshots: { [OCC_30D]: withIv(SNAP_HOLD, 'NaN') }
+    })
+    const page = await app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+
+    const positionId = await seedPosition(page)
+    await goToPositionDetail(page, positionId)
+    await page.waitForSelector(':text-is("IV")')
+
+    expect(await contextCellValue(page, 'IV')).toBe('—')
+    await expectNoNaNAnywhere(page)
+  })
+
+  // Scenario Outline, one `it` per field so a failure names the field. Greeks are
+  // all-or-nothing (research ADR 4), so one unparseable figure hides the whole strip.
+  for (const field of ['delta', 'theta', 'gamma', 'vega']) {
+    it(`US-117 AC: ${field} that cannot be parsed renders no NaN`, async () => {
+      dbPath = path.join(os.tmpdir(), `wb-e2e-us117-greek-${field}-${Date.now()}.db`)
+      app = await launchWithMocks(dbPath, {
+        optionSnapshots: { [OCC_30D]: withGreek(SNAP_HOLD, field, 'NaN') }
+      })
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+
+      const positionId = await seedPosition(page)
+      await goToPositionDetail(page, positionId)
+
+      // The P&L panel is driven by the same snapshot but not by its greeks, so it proves the
+      // snapshot arrived. Without it, "no strip" would pass vacuously before any data loads.
+      await page.waitForSelector('text=$100 of $350 max')
+      expect(await page.locator(':text-is("IV")').count()).toBe(0)
+      await expectNoNaNAnywhere(page)
+    })
+  }
 })

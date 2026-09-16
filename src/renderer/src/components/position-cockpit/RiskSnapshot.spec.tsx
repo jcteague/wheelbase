@@ -17,7 +17,7 @@ const SAFE_DELTA = -(MANAGEMENT_RULES.cspWarningDelta - 0.05)
 // delta above danger threshold → 'danger' severity
 const DANGER_DELTA = -(MANAGEMENT_RULES.cspDangerDelta + 0.07)
 
-const baseGreeks = { delta: SAFE_DELTA, theta: -0.05, gamma: 0.01, vega: 0.12, iv: 0.3 }
+const baseGreeks = { delta: SAFE_DELTA, theta: -0.05, gamma: 0.01, vega: 0.12 }
 
 function makeInput(overrides: Partial<CockpitInput> = {}): CockpitInput {
   return {
@@ -29,6 +29,7 @@ function makeInput(overrides: Partial<CockpitInput> = {}): CockpitInput {
     currentMid: 1.75,
     underlying: 185,
     greeks: baseGreeks,
+    impliedVolatility: 0.3,
     ...overrides
   }
 }

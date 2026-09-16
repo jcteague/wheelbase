@@ -57,7 +57,7 @@ swap.
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56,us-64,us-99 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56,us-64,us-99,us-117 -->
 
 ## Provider interface
 
@@ -263,11 +263,28 @@ results return the `OptionChainQuote` superset described in the next section:
 2dp) — never read from the API directly. Greeks and IV come from the REST
 snapshot **only**; there is no option streaming feed. That is the practical
 reason option data is polled (60 s) rather than streamed. `greeks` is emitted
-only when `delta`, `gamma`, `theta` and `vega` are **all** numbers — Alpaca
-sends `greeks: {}` on deep-OTM strikes and a `rho` the app never surfaces, and
-a half-filled greek set would mislead the screener, which ranks on delta.
-`impliedVolatility` is emitted only when numeric. Both are omitted entirely
-otherwise. The bulk `market-data:option-snapshots` IPC channel (and a
+only when `delta`, `gamma`, `theta` and `vega` are **all finite** numbers —
+Alpaca sends `greeks: {}` on deep-OTM strikes and a `rho` the app never
+surfaces, and a half-filled greek set would mislead the screener, which ranks
+on delta. `impliedVolatility` is emitted only when finite, independently of
+`greeks` — either may be present without the other. Both are omitted entirely
+otherwise, and **neither is ever `null` nor ever the string `"NaN"`**.
+
+Finiteness rather than `typeof x === 'number'` is the rule because
+`typeof NaN === 'number'` is `true`: the looser predicate let a `NaN` through
+`new Decimal(NaN).toFixed(4)` and put the literal string `"NaN"` on the IPC,
+which is how the position cockpit came to render `NaN%`
+([US-117](../features/us-117-position-implied-volatility.md)). A figure Alpaca
+sent but could not model is dropped by the pure mapper and named by
+`nonFiniteFigures`; `getOptionSnapshot` logs it as
+`alpaca_option_snapshot_non_finite_figure` with `{ contract, fields }`. An
+**omitted** figure is the normal case and never warns. The chain path stays
+silent — 161 contracts per underlying would make it noise.
+
+The preload (`IpcOptionSnapshot`) and renderer (`OptionSnapshot`) declarations
+are hand-maintained mirrors of this type with no structural link to it; they
+must be edited in lockstep with it. Letting them drift is precisely what
+US-117 fixed. The bulk `market-data:option-snapshots` IPC channel (and a
 service-level batch over `getOptionSnapshot`) is what the renderer's
 `useOptionSnapshots` hook polls; singular `market-data:option-snapshot` and
 `market-data:option-chain` channels exist alongside it. A `?symbols=` response

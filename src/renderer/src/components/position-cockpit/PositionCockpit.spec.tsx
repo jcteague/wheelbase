@@ -70,9 +70,9 @@ const baseOptionSnapshot: OptionSnapshot = {
     delta: '-0.25',
     gamma: '0.02',
     theta: '-0.05',
-    vega: '0.12',
-    iv: '0.30'
+    vega: '0.12'
   },
+  impliedVolatility: '0.3000',
   timestamp: '2024-01-15T16:00:00Z'
 }
 
@@ -255,5 +255,80 @@ describe('PositionCockpit', () => {
     const costBasisTrigger = screen.getByRole('button', { name: /Cost basis & history/i })
     fireEvent.click(costBasisTrigger)
     expect(screen.getByRole('table')).toBeInTheDocument()
+  })
+
+  // Branches the component already had but no test reached. Added to clear the 95%
+  // changed-code coverage gate for US-117; the behaviour they pin is pre-existing.
+  describe('untested existing branches', () => {
+    it('omits the "Cost basis & history" drawer when there is no cost basis snapshot', () => {
+      render(<PositionCockpit detail={{ ...noActiveLegDetail, costBasisSnapshot: null }} />)
+      expect(screen.queryByText(/Cost basis & history/i)).not.toBeInTheDocument()
+    })
+
+    it('renders a loss on held shares with a minus sign, not a plus', () => {
+      // basis $176.50, spot $170.00 → unrealized −$650.00 over 100 shares
+      render(<PositionCockpit detail={noActiveLegDetail} underlyingPrice="170.00" />)
+      expect(screen.getByText('−$650.00')).toHaveClass('text-wb-red')
+    })
+
+    it('throws when the active leg is not an option', () => {
+      const stockLeg: LegDetail = { ...baseLeg, instrumentType: 'STOCK' }
+      expect(() =>
+        render(<PositionCockpit detail={{ ...baseDetail, activeLeg: stockLeg }} />)
+      ).toThrow(/instrumentType must be PUT or CALL/)
+    })
+  })
+
+  // [US-117] buildCockpitInput is where the defect lived: it read a `greeks.iv` no producer
+  // fills, and `parseFloat(undefined)` is NaN, which passes ContextStrip's `!= null` guard.
+  describe('implied volatility', () => {
+    function renderWith(snapshot: OptionSnapshot | undefined): void {
+      render(<PositionCockpit detail={baseDetail} snapshot={snapshot} underlyingPrice="185.00" />)
+    }
+
+    it('passes impliedVolatility from the snapshot into the cockpit input', () => {
+      renderWith({ ...baseOptionSnapshot, impliedVolatility: '0.2840' })
+      expect(screen.getByText('28.4%')).toBeInTheDocument()
+    })
+
+    it('sets impliedVolatility to null when the snapshot omits it', () => {
+      const withoutIv: OptionSnapshot = { ...baseOptionSnapshot }
+      delete withoutIv.impliedVolatility
+      renderWith(withoutIv)
+      expect(screen.getByText('—')).toBeInTheDocument()
+      expect(document.body.textContent).not.toContain('NaN')
+    })
+
+    it("sets impliedVolatility to null when the snapshot carries 'NaN'", () => {
+      renderWith({ ...baseOptionSnapshot, impliedVolatility: 'NaN' })
+      expect(screen.getByText('—')).toBeInTheDocument()
+      expect(document.body.textContent).not.toContain('NaN')
+    })
+
+    it('sets impliedVolatility to null when there is no snapshot at all', () => {
+      // No snapshot means no greeks, so US-34's gate hides the strip entirely — the
+      // assertion is that nothing broken is shown, not that a dashed cell exists.
+      renderWith(undefined)
+      expect(screen.queryByText('Context')).not.toBeInTheDocument()
+      expect(document.body.textContent).not.toContain('NaN')
+    })
+
+    it('nulls the whole greeks block when one greek parses to NaN', () => {
+      renderWith({
+        ...baseOptionSnapshot,
+        greeks: { ...baseOptionSnapshot.greeks!, vega: 'NaN' }
+      })
+      expect(screen.queryByText('Context')).not.toBeInTheDocument()
+      expect(document.body.textContent).not.toContain('NaN')
+    })
+
+    it('keeps a zero-valued figure', () => {
+      // `parseFloat(x) || null` would read a legitimate 0 delta as absent and hide the strip.
+      renderWith({
+        ...baseOptionSnapshot,
+        greeks: { ...baseOptionSnapshot.greeks!, delta: '0' }
+      })
+      expect(screen.getByText('Context')).toBeInTheDocument()
+    })
   })
 })

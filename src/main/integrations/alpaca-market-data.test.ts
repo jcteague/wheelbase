@@ -75,6 +75,7 @@ function fetchErr(status: number, body = '', headers: Record<string, string> = {
 }
 
 import { AlpacaMarketDataProvider } from './alpaca-market-data'
+import { mapOptionQuote, nonFiniteFigures } from './alpaca-market-data-mappers'
 
 const PAPER_CREDS: AlpacaCredentials = {
   environment: 'paper',
@@ -818,6 +819,118 @@ describe('AlpacaMarketDataProvider option data', () => {
       expect((thrown as MarketDataError).code).toBe('auth_failed')
       expect(mockFetch).not.toHaveBeenCalled()
     })
+
+    // [US-117] The mapper drops a non-finite figure silently because it is pure; the adapter
+    // is the only layer that can say so. The chain path deliberately stays quiet — 161
+    // contracts per underlying would make this noise.
+    it('logs a warn naming the dropped field', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn')
+      mockFetch.mockResolvedValueOnce(
+        fetchOk(chainPage({ [ATM_PUT_KEY]: { ...ATM_PUT_SNAPSHOT, impliedVolatility: NaN } }))
+      )
+
+      const { provider } = createProvider()
+      await provider.getOptionSnapshot(ATM_PUT_KEY)
+
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+      expect(warnSpy).toHaveBeenCalledWith(
+        { contract: ATM_PUT_KEY, fields: ['impliedVolatility'] },
+        'alpaca_option_snapshot_non_finite_figure'
+      )
+    })
+
+    it('does not warn for a snapshot that merely omits impliedVolatility', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn')
+      const noIv: Record<string, unknown> = { ...ATM_PUT_SNAPSHOT }
+      delete noIv.impliedVolatility
+      mockFetch.mockResolvedValueOnce(fetchOk(chainPage({ [ATM_PUT_KEY]: noIv })))
+
+      const { provider } = createProvider()
+      await provider.getOptionSnapshot(ATM_PUT_KEY)
+
+      expect(warnSpy).not.toHaveBeenCalled()
+    })
+
+    it('still returns the mapped snapshot when it warns', async () => {
+      mockFetch.mockResolvedValueOnce(
+        fetchOk(chainPage({ [ATM_PUT_KEY]: { ...ATM_PUT_SNAPSHOT, impliedVolatility: NaN } }))
+      )
+
+      const { provider } = createProvider()
+      const result = await provider.getOptionSnapshot(ATM_PUT_KEY)
+
+      expect(result).toMatchObject({ bid: '8.97', ask: '9.41', mid: '9.19' })
+      expect(result).not.toHaveProperty('impliedVolatility')
+    })
+  })
+})
+
+// === Pure option-snapshot mappers ===
+//
+// [US-117] `typeof NaN === 'number'`, so the old predicates admitted a non-finite figure and
+// `new Decimal(NaN).toFixed(4)` put the string 'NaN' on the IPC. A figure Alpaca cannot model
+// is absent, not zero and not 'NaN'.
+
+const GREEK_FIELDS = ['delta', 'gamma', 'theta', 'vega'] as const
+
+describe('mapOptionQuote non-finite figures', () => {
+  it('omits impliedVolatility when Alpaca sends NaN', () => {
+    const result = mapOptionQuote({ ...ATM_PUT_SNAPSHOT, impliedVolatility: NaN })
+
+    expect(result).not.toHaveProperty('impliedVolatility')
+    expect(JSON.stringify(result)).not.toContain('NaN')
+  })
+
+  it('omits impliedVolatility when Alpaca sends Infinity', () => {
+    const result = mapOptionQuote({ ...ATM_PUT_SNAPSHOT, impliedVolatility: Infinity })
+
+    expect(result).not.toHaveProperty('impliedVolatility')
+  })
+
+  it.each(GREEK_FIELDS)('omits the whole greeks block when %s is NaN', (field) => {
+    const result = mapOptionQuote({
+      ...ATM_PUT_SNAPSHOT,
+      greeks: { ...ATM_PUT_SNAPSHOT.greeks, [field]: NaN }
+    })
+
+    expect(result).not.toHaveProperty('greeks')
+    expect(JSON.stringify(result)).not.toContain('NaN')
+  })
+
+  it('keeps a legitimate zero', () => {
+    const result = mapOptionQuote({
+      ...ATM_PUT_SNAPSHOT,
+      greeks: { ...ATM_PUT_SNAPSHOT.greeks, delta: 0 },
+      impliedVolatility: 0
+    })
+
+    expect(result.impliedVolatility).toBe('0.0000')
+    expect(result.greeks?.delta).toBe('0.0000')
+  })
+})
+
+describe('nonFiniteFigures', () => {
+  it('returns [] for a clean snapshot', () => {
+    expect(nonFiniteFigures(ATM_PUT_SNAPSHOT)).toEqual([])
+  })
+
+  it('returns [] for a snapshot that omits both blocks', () => {
+    expect(nonFiniteFigures({ latestTrade: { p: 1.2, t: '2026-09-04T19:59:44Z' } })).toEqual([])
+  })
+
+  it('names impliedVolatility when it is NaN', () => {
+    expect(nonFiniteFigures({ ...ATM_PUT_SNAPSHOT, impliedVolatility: NaN })).toEqual([
+      'impliedVolatility'
+    ])
+  })
+
+  it('names each non-finite greek', () => {
+    const figures = nonFiniteFigures({
+      ...ATM_PUT_SNAPSHOT,
+      greeks: { ...ATM_PUT_SNAPSHOT.greeks, delta: NaN, vega: Infinity }
+    })
+
+    expect(figures).toEqual(['greeks.delta', 'greeks.vega'])
   })
 })
 

@@ -1,4 +1,4 @@
-import type { OptionSnapshot } from '../../api/market-data'
+import type { OptionGreeks, OptionSnapshot } from '../../api/market-data'
 import type { LegDetail, PositionDetail, SnapshotDetail } from '../../api/positions'
 import type { LegHistoryEntry } from '../../lib/rollGroups'
 import { isOptionInstrument } from '../../../../main/core/types'
@@ -12,7 +12,7 @@ import {
   WHEEL_COMPLETE_VERDICT
 } from '../../lib/verdict'
 import { deriveRunningBasis } from '../../lib/deriveRunningBasis'
-import { fmtMoney } from '../../lib/format'
+import { fmtMoney, parseFinite } from '../../lib/format'
 import { VerdictBlock } from './VerdictBlock'
 import { RiskSnapshot } from './RiskSnapshot'
 import { ContextStrip } from './ContextStrip'
@@ -212,6 +212,19 @@ type BuildCockpitInputArgs = {
   underlyingPrice: string | null | undefined
 }
 
+// All four greeks or none. `computeVerdict`, `computeDistance` and `RiskSnapshot` all read
+// `input.greeks.delta` as a plain number, so one unusable figure has to take the block with
+// it rather than leave a NaN for them to render.
+function parseAllOrNothing(greeks: OptionGreeks | undefined): CockpitInput['greeks'] {
+  if (!greeks) return null
+  const delta = parseFinite(greeks.delta)
+  const theta = parseFinite(greeks.theta)
+  const gamma = parseFinite(greeks.gamma)
+  const vega = parseFinite(greeks.vega)
+  if (delta === null || theta === null || gamma === null || vega === null) return null
+  return { delta, theta, gamma, vega }
+}
+
 function buildCockpitInput({
   activeLeg,
   snapshot,
@@ -228,16 +241,9 @@ function buildCockpitInput({
     strike: parseFloat(activeLeg.strike),
     contracts: activeLeg.contracts,
     premiumPerContract: parseFloat(activeLeg.premiumPerContract),
-    currentMid: snapshot ? parseFloat(snapshot.mid) : null,
-    underlying: underlyingPrice ? parseFloat(underlyingPrice) || null : null,
-    greeks: snapshot?.greeks
-      ? {
-          delta: parseFloat(snapshot.greeks.delta),
-          theta: parseFloat(snapshot.greeks.theta),
-          gamma: parseFloat(snapshot.greeks.gamma),
-          vega: parseFloat(snapshot.greeks.vega),
-          iv: parseFloat(snapshot.greeks.iv)
-        }
-      : null
+    currentMid: parseFinite(snapshot?.mid),
+    underlying: parseFinite(underlyingPrice),
+    greeks: parseAllOrNothing(snapshot?.greeks),
+    impliedVolatility: parseFinite(snapshot?.impliedVolatility)
   }
 }

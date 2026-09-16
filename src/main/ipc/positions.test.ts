@@ -1032,4 +1032,80 @@ describe('registerPositionsHandlers', () => {
 
     expect(createPosition).toHaveBeenCalledWith(db, { ticker: 'TSLA' }, ivrOnDemand)
   })
+
+  it('positions:list returns the service result unwrapped', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+    const db = {} as never
+    const rows = [{ id: 'p1', ticker: 'AAPL' }]
+    listPositions.mockReturnValue(rows)
+
+    registerPositionsHandlers(db)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:list'
+    )
+
+    expect(await handler?.()).toBe(rows)
+    expect(listPositions).toHaveBeenCalledWith(db)
+  })
+
+  it('positions:get returns ok:true with the position when it exists', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+    const db = {} as never
+    getPosition.mockReturnValue({ position: { id: 'p1', ticker: 'AAPL' }, legs: [] })
+
+    registerPositionsHandlers(db)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:get'
+    )
+
+    expect(await handler?.(null, { positionId: 'p1' })).toEqual({
+      ok: true,
+      position: { id: 'p1', ticker: 'AAPL' },
+      legs: []
+    })
+    expect(getPosition).toHaveBeenCalledWith(db, 'p1')
+  })
+
+  it('positions:get returns a not_found envelope for an unknown id', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+    getPosition.mockReturnValue(undefined)
+
+    registerPositionsHandlers({} as never)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:get'
+    )
+
+    expect(await handler?.(null, { positionId: 'missing' })).toEqual({
+      ok: false,
+      errors: [{ field: '__root__', code: 'not_found', message: 'Position not found' }]
+    })
+  })
+
+  // Test-only channel: there is no UI for profit_target_percent, so the e2e suite sets it
+  // through here. It still has to write the column it claims to.
+  it('test:set-position-profit-target writes the override straight to the row', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+    const run = vi.fn()
+    const db = { prepare: vi.fn(() => ({ run })) } as never
+
+    registerPositionsHandlers(db)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'test:set-position-profit-target'
+    )
+
+    expect(await handler?.(null, { positionId: 'p1', targetPercent: 40 })).toEqual({ ok: true })
+    expect(run).toHaveBeenCalledWith(40, 'p1')
+  })
 })

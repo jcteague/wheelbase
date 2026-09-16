@@ -202,7 +202,8 @@ function makeOptionSnapshot(mid: string): OptionSnapshot {
     lastTrade: mid,
     openInterest: 100,
     volume: 50,
-    greeks: { delta: '-0.30', gamma: '0.02', theta: '-0.05', vega: '0.10', iv: '0.25' },
+    greeks: { delta: '-0.30', gamma: '0.02', theta: '-0.05', vega: '0.10' },
+    impliedVolatility: '0.2500',
     timestamp: '2026-04-28T10:00:00Z'
   }
 }

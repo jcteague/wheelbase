@@ -27,10 +27,15 @@ export type CockpitInput = {
   currentMid: number | null
   /** spot price for the underlying */
   underlying: number | null
-  /** greeks from option snapshot */
-  greeks: { delta: number; theta: number; gamma: number; vega: number; iv?: number } | null
-  /** implied volatility as a decimal (e.g. 0.32 = 32%); separate from greeks to support providers that omit iv */
-  impliedVolatility?: number | null
+  /** all four present or the whole block is null — never a partial set */
+  greeks: { delta: number; theta: number; gamma: number; vega: number } | null
+  /**
+   * Implied volatility as a decimal (0.284 = 28.4%). A sibling of `greeks`, not a member:
+   * Alpaca supplies it independently, so either may arrive without the other. Required and
+   * nullable so a producer cannot silently leave it unset — that omission is what rendered
+   * "NaN%" (US-117).
+   */
+  impliedVolatility: number | null
 }
 
 // -------- Management rules (future: replace with user preferences) --------

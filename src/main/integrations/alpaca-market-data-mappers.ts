@@ -103,14 +103,32 @@ export type AlpacaContracts = {
   next_page_token: string | null
 }
 
+/** The greeks surfaced downstream — `rho` is never used. */
+const GREEK_NAMES = ['delta', 'gamma', 'theta', 'vega'] as const
+
+// `typeof NaN === 'number'`, so every figure is judged on finiteness rather than presence: a
+// figure Alpaca sent as NaN/Infinity is unusable, and admitting it would put the string 'NaN'
+// on the IPC.
+function isFiniteNumber(value: number | undefined): value is number {
+  return Number.isFinite(value)
+}
+
+// A figure Alpaca sent but cannot model: present in the payload, unusable as a number.
+function isUnusable(value: number | undefined): boolean {
+  return value !== undefined && !isFiniteNumber(value)
+}
+
 function isCompleteGreeks(g: AlpacaGreeks | undefined): g is CompleteGreeks {
-  return (
-    g != null &&
-    typeof g.delta === 'number' &&
-    typeof g.gamma === 'number' &&
-    typeof g.theta === 'number' &&
-    typeof g.vega === 'number'
-  )
+  return g != null && GREEK_NAMES.every((name) => isFiniteNumber(g[name]))
+}
+
+/** Field names that Alpaca sent as a number but which cannot be used (NaN / Infinity). */
+export function nonFiniteFigures(snap: AlpacaOptionSnapshot): string[] {
+  const figures = [
+    ...GREEK_NAMES.map((name) => ({ field: `greeks.${name}`, value: snap.greeks?.[name] })),
+    { field: 'impliedVolatility', value: snap.impliedVolatility }
+  ]
+  return figures.filter(({ value }) => isUnusable(value)).map(({ field }) => field)
 }
 
 function computeMid(bid: Decimal, ask: Decimal): Decimal {
@@ -132,8 +150,8 @@ export function mapOptionQuote(snap: AlpacaOptionSnapshot): OptionSnapshot {
     // Epoch 0 reads as "never quoted"; Alpaca's nanosecond precision truncates to ms here.
     timestamp: new Date(snap.latestQuote?.t ?? snap.latestTrade?.t ?? 0).toISOString()
   }
-  // A partial greek set is unusable for the screener's delta ranking, so it is dropped
-  // wholesale rather than emitted half-filled. `rho` is never surfaced.
+  // A partial or non-finite greek set is unusable for the screener's delta ranking, so it is
+  // dropped wholesale rather than emitted half-filled. `rho` is never surfaced.
   if (isCompleteGreeks(snap.greeks)) {
     quote.greeks = {
       delta: new Decimal(snap.greeks.delta).toFixed(4),
@@ -142,7 +160,7 @@ export function mapOptionQuote(snap: AlpacaOptionSnapshot): OptionSnapshot {
       vega: new Decimal(snap.greeks.vega).toFixed(4)
     }
   }
-  if (typeof snap.impliedVolatility === 'number') {
+  if (isFiniteNumber(snap.impliedVolatility)) {
     quote.impliedVolatility = new Decimal(snap.impliedVolatility).toFixed(4)
   }
   return quote

@@ -18,12 +18,13 @@ export type MarketStatus = {
   session: 'regular' | 'pre' | 'post' | 'closed'
 }
 
+// Hand-maintained mirror of `OptionSnapshot` in
+// `src/main/integrations/market-data-provider.ts` — that type is the source of truth.
 export type OptionGreeks = {
   delta: string
   gamma: string
   theta: string
   vega: string
-  iv: string
 }
 
 export type OptionSnapshot = {
@@ -33,7 +34,10 @@ export type OptionSnapshot = {
   lastTrade: string
   openInterest: number | null
   volume: number | null
-  greeks: OptionGreeks
+  /** all four present or the block is absent — the producer never sends a partial set */
+  greeks?: OptionGreeks
+  /** 4dp decimal string, e.g. '0.2840'; independent of `greeks` */
+  impliedVolatility?: string
   timestamp: string
 }
 

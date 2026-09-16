@@ -52,7 +52,8 @@ const FRESH_SNAPSHOT = {
   lastTrade: '2.68',
   openInterest: 4200,
   volume: 500,
-  greeks: { delta: '-0.28', gamma: '0.02', theta: '-0.03', vega: '0.10', iv: '0.28' },
+  greeks: { delta: '-0.28', gamma: '0.02', theta: '-0.03', vega: '0.10' },
+  impliedVolatility: '0.2800',
   timestamp: FRESH_AT
 }
 

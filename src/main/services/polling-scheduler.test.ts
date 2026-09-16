@@ -5,6 +5,7 @@ import type { MarketStatus, MarketStatusSource } from '../integrations/market-da
 import { logger } from '../logger'
 import {
   createPollingScheduler,
+  decideNextCadenceMs,
   SchedulerError,
   type CadencePolicy,
   type PollingScheduler
@@ -876,5 +877,358 @@ describe('runNow() — run trigger', () => {
     expect(handler).toHaveBeenNthCalledWith(2, { trigger: 'scheduled' })
 
     await scheduler.stop()
+  })
+})
+
+// The paths below were unreachable from the scenario-shaped suites above: pure-helper
+// arms nothing constructs directly, the `stopped` guards that only a shutdown mid-flight
+// reaches, and the afterClose error/registration paths.
+describe('decideNextCadenceMs — policy arms', () => {
+  it('has no interval to offer for an afterClose policy', () => {
+    expect(decideNextCadenceMs({ kind: 'afterClose', offsetMinutes: 60 }, MARKET_OPEN)).toBeNull()
+  })
+
+  it('falls back to the open cadence in extended hours when none is configured', () => {
+    expect(decideNextCadenceMs({ kind: 'interval', marketOpenMs: 60_000 }, MARKET_EXTENDED)).toBe(
+      60_000
+    )
+  })
+
+  it('uses the closed cadence when one is configured', () => {
+    expect(
+      decideNextCadenceMs(
+        { kind: 'interval', marketOpenMs: 60_000, marketClosedMs: 900_000 },
+        MARKET_CLOSED
+      )
+    ).toBe(900_000)
+  })
+
+  it('falls back to the open cadence when closed is left undefined', () => {
+    expect(decideNextCadenceMs({ kind: 'interval', marketOpenMs: 60_000 }, MARKET_CLOSED)).toBe(
+      60_000
+    )
+  })
+})
+
+describe('getRegistry()', () => {
+  it('reports each job with its cadence and a running invocation count', async () => {
+    vi.useFakeTimers()
+    const handler = vi.fn().mockResolvedValue(undefined)
+    const scheduler = makeStartedScheduler(handler)
+
+    expect(scheduler.getRegistry()).toEqual([
+      { name: 'job', cadence: { kind: 'interval', marketOpenMs: 60_000 }, invocations: 0 }
+    ])
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(scheduler.getRegistry()[0].invocations).toBe(1)
+
+    await scheduler.stop()
+    vi.useRealTimers()
+  })
+})
+
+describe('register() after start()', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('auto-starts a job registered once the scheduler is already running', async () => {
+    const statusSource = makeStatusSource()
+    const scheduler = createPollingScheduler(() => statusSource)
+    scheduler.start()
+
+    const handler = vi.fn().mockResolvedValue(undefined)
+    scheduler.register({
+      name: 'late',
+      cadence: { kind: 'interval', marketOpenMs: 60_000 },
+      handler
+    })
+
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(handler).toHaveBeenCalledTimes(1)
+
+    await scheduler.stop()
+  })
+
+  it('does not start a job registered after stop()', async () => {
+    const statusSource = makeStatusSource()
+    const scheduler = createPollingScheduler(() => statusSource)
+    scheduler.start()
+    await scheduler.stop()
+
+    const handler = vi.fn().mockResolvedValue(undefined)
+    scheduler.register({
+      name: 'late',
+      cadence: { kind: 'interval', marketOpenMs: 60_000 },
+      handler
+    })
+
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(handler).not.toHaveBeenCalled()
+  })
+})
+
+describe('afterClose cadence — start and reschedule failures', () => {
+  const AFTER_CLOSE: CadencePolicy = { kind: 'afterClose', offsetMinutes: 60 }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T12:00:00Z'))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('arms nothing and logs WARN when the status source rejects at start', async () => {
+    const statusSource: MarketStatusSource = {
+      getMarketStatus: vi.fn().mockRejectedValue(new MarketDataError('network_error', 'down'))
+    }
+    const scheduler = createPollingScheduler(() => statusSource)
+    const handler = vi.fn().mockResolvedValue(undefined)
+    scheduler.register({ name: 'job', cadence: AFTER_CLOSE, handler })
+
+    scheduler.start()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
+
+    expect(handler).not.toHaveBeenCalled()
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      expect.objectContaining({ job: 'job' }),
+      expect.stringContaining('afterClose start failed')
+    )
+
+    await scheduler.stop()
+  })
+
+  it('arms nothing when the scheduler is stopped before the status source answers', async () => {
+    let release!: (status: MarketStatus) => void
+    const statusSource: MarketStatusSource = {
+      getMarketStatus: vi.fn(
+        () =>
+          new Promise<MarketStatus>((resolve) => {
+            release = resolve
+          })
+      )
+    }
+    const scheduler = createPollingScheduler(() => statusSource)
+    const handler = vi.fn().mockResolvedValue(undefined)
+    scheduler.register({ name: 'job', cadence: AFTER_CLOSE, handler })
+
+    scheduler.start()
+    await scheduler.stop()
+    release(MARKET_OPEN)
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
+
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  it('leaves an afterClose job unscheduled when a reschedule fails', async () => {
+    const getMarketStatus = vi
+      .fn()
+      .mockResolvedValueOnce({ ...MARKET_OPEN, nextClose: '2026-01-01T13:00:00Z' })
+      .mockRejectedValue(new MarketDataError('network_error', 'down'))
+    const scheduler = createPollingScheduler(() => ({ getMarketStatus }))
+    const handler = vi.fn().mockResolvedValue(undefined)
+    scheduler.register({ name: 'job', cadence: AFTER_CLOSE, handler })
+
+    scheduler.start()
+    // nextClose + 60min = 14:00Z, i.e. two hours out.
+    await vi.advanceTimersByTimeAsync(2 * 60 * 60_000)
+    expect(handler).toHaveBeenCalledTimes(1)
+
+    // The post-run reschedule rejected. An interval job would fall back to its cadence;
+    // an afterClose job has no default interval, so it simply stays unarmed.
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
+    expect(handler).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      expect.objectContaining({ job: 'job' }),
+      expect.stringContaining('reschedule failed')
+    )
+
+    await scheduler.stop()
+  })
+})
+
+describe('shutdown races', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('does not reschedule when stop() lands while a reschedule is awaiting status', async () => {
+    let release!: (status: MarketStatus) => void
+    const getMarketStatus = vi
+      .fn()
+      .mockResolvedValueOnce(MARKET_OPEN)
+      .mockImplementation(
+        () =>
+          new Promise<MarketStatus>((resolve) => {
+            release = resolve
+          })
+      )
+    const scheduler = createPollingScheduler(() => ({ getMarketStatus }))
+    const handler = vi.fn().mockResolvedValue(undefined)
+    scheduler.register({
+      name: 'job',
+      cadence: { kind: 'interval', marketOpenMs: 60_000 },
+      handler
+    })
+    scheduler.start()
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(handler).toHaveBeenCalledTimes(1)
+
+    // Second tick's reschedule is mid-flight when stop() lands.
+    await vi.advanceTimersByTimeAsync(60_000)
+    const stopped = scheduler.stop()
+    release(MARKET_OPEN)
+    await stopped
+
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    expect(handler).toHaveBeenCalledTimes(2)
+  })
+
+  it('skips a timer tick that fires while a run is still in flight', async () => {
+    const resolvers: Array<() => void> = []
+    const handler = vi.fn().mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolvers.push(resolve)
+        })
+    )
+    const scheduler = makeStartedScheduler(handler as unknown as () => Promise<void>)
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(handler).toHaveBeenCalledTimes(1)
+
+    // The first run never settles, so no reschedule ever arms a second timer: the
+    // in-flight guard is what keeps the handler at one invocation.
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    expect(handler).toHaveBeenCalledTimes(1)
+
+    resolvers[0]()
+    await vi.advanceTimersByTimeAsync(0)
+    await scheduler.stop()
+  })
+})
+
+describe('parkUntilNextOpen — unusable nextOpen', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('falls back to marketOpenMs and warns when nextOpen is absent', async () => {
+    const statusSource = makeStatusSource({
+      ...MARKET_CLOSED,
+      nextOpen: '' as unknown as string
+    })
+    const scheduler = createPollingScheduler(() => statusSource)
+    const handler = vi.fn().mockResolvedValue(undefined)
+    scheduler.register({
+      name: 'job',
+      cadence: { kind: 'interval', marketOpenMs: 60_000, marketClosedMs: null },
+      handler
+    })
+    scheduler.start()
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(handler).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      expect.objectContaining({ job: 'job' }),
+      expect.stringContaining('nextOpen was unusable')
+    )
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(handler).toHaveBeenCalledTimes(2)
+
+    await scheduler.stop()
+  })
+})
+
+describe('afterClose cadence — re-arming and late start', () => {
+  const AFTER_CLOSE: CadencePolicy = { kind: 'afterClose', offsetMinutes: 60 }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T12:00:00Z'))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('arms the next close after each run', async () => {
+    const getMarketStatus = vi
+      .fn()
+      .mockResolvedValueOnce({ ...MARKET_OPEN, nextClose: '2026-01-01T13:00:00Z' })
+      .mockResolvedValue({ ...MARKET_OPEN, nextClose: '2026-01-02T13:00:00Z' })
+    const scheduler = createPollingScheduler(() => ({ getMarketStatus }))
+    const handler = vi.fn().mockResolvedValue(undefined)
+    scheduler.register({ name: 'job', cadence: AFTER_CLOSE, handler })
+
+    scheduler.start()
+    // First close 13:00Z + 60min → fires at 14:00Z, two hours from the 12:00Z start.
+    await vi.advanceTimersByTimeAsync(2 * 60 * 60_000)
+    expect(handler).toHaveBeenCalledTimes(1)
+
+    // The post-run reschedule saw tomorrow's close and armed it rather than stopping.
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
+    expect(handler).toHaveBeenCalledTimes(2)
+
+    await scheduler.stop()
+  })
+
+  it('does not arm an afterClose job when start() follows stop()', async () => {
+    const statusSource = makeStatusSource()
+    const scheduler = createPollingScheduler(() => statusSource)
+    const handler = vi.fn().mockResolvedValue(undefined)
+    scheduler.register({ name: 'job', cadence: AFTER_CLOSE, handler })
+
+    await scheduler.stop()
+    scheduler.start()
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
+
+    expect(handler).not.toHaveBeenCalled()
+    expect(statusSource.getMarketStatus).not.toHaveBeenCalled()
+  })
+
+  it('does not arm the fallback cadence when stop() lands during a failing reschedule', async () => {
+    // The catch arm re-arms the default cadence, and unlike the success path it has no
+    // `stopped` re-check of its own — scheduleTick is the last line of defence.
+    let rejectStatus!: (err: Error) => void
+    const getMarketStatus = vi.fn(
+      () =>
+        new Promise<MarketStatus>((_resolve, reject) => {
+          rejectStatus = reject
+        })
+    )
+    const scheduler = createPollingScheduler(() => ({ getMarketStatus }))
+    const handler = vi.fn().mockResolvedValue(undefined)
+    scheduler.register({
+      name: 'job',
+      cadence: { kind: 'interval', marketOpenMs: 60_000 },
+      handler
+    })
+    scheduler.start()
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(handler).toHaveBeenCalledTimes(1)
+
+    const stopping = scheduler.stop()
+    rejectStatus(new MarketDataError('network_error', 'down'))
+    await stopping
+
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    expect(handler).toHaveBeenCalledTimes(1)
   })
 })

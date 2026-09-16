@@ -24,7 +24,8 @@ const baseInput: CockpitInput = {
   premiumPerContract: 3.5,
   currentMid: 1.75,
   underlying: 185.5,
-  greeks: { delta: SAFE_DELTA, theta: -0.05, gamma: 0.02, vega: 0.1, iv: 0.3 }
+  greeks: { delta: SAFE_DELTA, theta: -0.05, gamma: 0.02, vega: 0.1 },
+  impliedVolatility: 0.3
 }
 
 const holdVerdict: Verdict = {

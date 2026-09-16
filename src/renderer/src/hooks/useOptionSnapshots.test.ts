@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useOptionSnapshots, type ActiveLegSummary } from './useOptionSnapshots'
+import type { OptionSnapshot } from '../api/market-data'
 import { marketDataQueryKeys } from './marketDataQueryKeys'
 
 const mockGetOptionSnapshots = vi.fn()
@@ -26,7 +27,7 @@ function makeWrapper(
   return Wrapper
 }
 
-const AAPL_OPTION_SNAPSHOT = {
+const AAPL_OPTION_SNAPSHOT: OptionSnapshot = {
   bid: '1.20',
   ask: '1.40',
   mid: '1.30',
@@ -37,9 +38,22 @@ const AAPL_OPTION_SNAPSHOT = {
     delta: '-0.30',
     gamma: '0.02',
     theta: '-0.05',
-    vega: '0.15',
-    iv: '0.25'
+    vega: '0.15'
   },
+  impliedVolatility: '0.2500',
+  timestamp: '2024-01-15T15:30:00Z'
+}
+
+// [US-117] The IPC mirror must describe what the producer actually sends: `greeks` is omitted
+// for roughly half of quoted contracts, and implied volatility is a sibling of it, not a
+// member. A required `greeks.iv` no producer fills is what put "NaN%" on the Context strip.
+const GREEKLESS_SNAPSHOT: OptionSnapshot = {
+  bid: '1.20',
+  ask: '1.40',
+  mid: '1.30',
+  lastTrade: '1.30',
+  openInterest: 100,
+  volume: 50,
   timestamp: '2024-01-15T15:30:00Z'
 }
 
@@ -258,5 +272,27 @@ describe('useOptionSnapshots', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.unavailable).toBe(false)
+  })
+
+  it('types a snapshot that omits both greeks and impliedVolatility', () => {
+    // Type-level assertion: absence is the normal case, so neither key may be required.
+    expect(GREEKLESS_SNAPSHOT).not.toHaveProperty('greeks')
+    expect(GREEKLESS_SNAPSHOT).not.toHaveProperty('impliedVolatility')
+  })
+
+  it('returns a snapshot that carries impliedVolatility', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    mockGetOptionSnapshots.mockResolvedValue({
+      ok: true,
+      snapshots: { [AAPL_PUT_OCC]: { ...AAPL_OPTION_SNAPSHOT, impliedVolatility: '0.2840' } },
+      unavailable: false
+    })
+
+    const { result } = renderHook(() => useOptionSnapshots([AAPL_PUT_LEG]), {
+      wrapper: makeWrapper(queryClient)
+    })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data?.[AAPL_PUT_OCC].impliedVolatility).toBe('0.2840')
   })
 })

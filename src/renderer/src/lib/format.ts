@@ -23,6 +23,20 @@ export function fmtDate(value: string): string {
   })
 }
 
+/**
+ * A finite number, or `null` for absent, empty, or unparseable input. Never `NaN`.
+ *
+ * The figures on the position cockpit cross the IPC as decimal strings and any of them may
+ * be absent. `parseFloat` reads absence as `NaN`, which passes a `!= null` guard and renders
+ * as "NaN%"; `parseFloat(x) || null` avoids that but also nulls a legitimate `0`, and zero is
+ * a valid delta. This guards both.
+ */
+export function parseFinite(value: string | null | undefined): number | null {
+  if (value == null || value === '') return null
+  const parsed = parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 export function pnlColor(value: string): string {
   return parseFloat(value) >= 0 ? 'var(--wb-green)' : 'var(--wb-red)'
 }
