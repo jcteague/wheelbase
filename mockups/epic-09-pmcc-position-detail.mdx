@@ -1,0 +1,1810 @@
+---
+title: 'Epic 09: PMCC Position Detail — Final Layout'
+story: 'One consolidated mockup of the PMCC detail page after every Epic 09 detail-page story ships: the two-lane cockpit and guardrails (US-118), the leg-reference and cost-basis drawers (US-101, US-103), the leg timeline (US-109), and the sheets for selling, retiring and assigning the short call (US-115, US-119, US-111).'
+states:
+  [
+    'healthy',
+    'assignment-risk',
+    'in-the-money',
+    'below-breakeven',
+    'roll-window',
+    'delta-decaying',
+    'broken',
+    'leaps-only',
+    'no-marks',
+    'sell-short',
+    'close-early',
+    'expire',
+    'assignment',
+    'closed',
+    'wheel'
+  ]
+---
+
+import { useState } from 'react'
+import { PageHeader } from '../src/renderer/src/components/PageLayout'
+import { Breadcrumb } from '../src/renderer/src/components/ui/Breadcrumb'
+import { SectionCard } from '../src/renderer/src/components/ui/SectionCard'
+import { Badge } from '../src/renderer/src/components/ui/Badge'
+import { Caption } from '../src/renderer/src/components/ui/Caption'
+import { StatGrid } from '../src/renderer/src/components/ui/Stat'
+import { FormButton } from '../src/renderer/src/components/ui/FormButton'
+import { Field } from '../src/renderer/src/components/ui/FormField'
+import { NumberInput } from '../src/renderer/src/components/ui/NumberInput'
+import { AlertBox } from '../src/renderer/src/components/ui/AlertBox'
+import { SummaryRow } from '../src/renderer/src/components/ui/SummaryRow'
+import { SheetPanel, SheetHeader, SheetBody, SheetFooter } from '../src/renderer/src/components/ui/Sheet'
+import { CollapsedDrawer } from '../src/renderer/src/components/position-cockpit/CollapsedDrawer'
+import { VerdictBlock } from '../src/renderer/src/components/position-cockpit/VerdictBlock'
+import { LegHistoryTable } from '../src/renderer/src/components/LegHistoryTable'
+
+# Epic 09: PMCC Position Detail — Final Layout
+
+_The **XYZ** PMCC detail page as it looks once every Epic 09 story that touches it has shipped. One position, one history, one valuation date per preset; every figure on the page — lane statuses, P&L, guardrails, cycle nets, running basis, the three sheets' previews — is folded from the same legs and quotes, so the stories that share this page cannot disagree with each other._
+
+## Which story owns what
+
+The chrome is imported, not redrawn: `PageHeader`, `Breadcrumb`, `CollapsedDrawer`, `StatGrid`, `SheetPanel` and — on the `wheel` preset — `VerdictBlock` and `LegHistoryTable` come from `src/renderer/src`.
+
+| Region | Owner |
+| -- | -- |
+| Header actions (which buttons appear in which state) | US-118 |
+| Two-lane hero: SHORT CALL lane, LEAPS lane, Net P&L | US-118 |
+| Guardrails strip: effective share cost, coverage, premium recovered, cycles | US-118 (figures from US-103 and US-109) |
+| `Leg reference` drawer | US-101 |
+| `Cost basis` drawer | US-103 |
+| `Leg timeline` drawer | US-109 |
+| Sell Short Call sheet | US-115 |
+| Close Short Early / Record Expiration sheets | US-119 |
+| Record Assignment sheet | US-111 |
+| Roll Short Call / Roll LEAPS sheets | US-104, US-105 — already mocked in their own files; the buttons are placed here |
+| Close Position (LEAPS-only exit) | US-120 — stub; the button is placed here |
+
+## The hierarchy, and why
+
+A PMCC is two positions on two clocks. The page is ordered by how often a trader comes to it for each: **weekly** — does the short call need me? (left lane); **quarterly** — does the LEAPS need me? (right lane); **monthly** — is the position working? (guardrails); **rarely** — audit (the drawers). A single wheel-style verdict would have to average the two lanes, and the `in-the-money` preset is the case where they legitimately disagree.
+
+## Acceptance Criteria States
+
+- **healthy**: 2027-08-13. Cycle 9 at 89.7% of max — TAKE PROFIT; LEAPS HEALTHY at Δ 0.82. The default.
+- **assignment-risk**: stock 1.6% below the short strike — the lane goes gold before it goes red (US-106's band).
+- **in-the-money**: stock through the strike. Short lane red, LEAPS lane green, P&L strongly positive. The two lanes disagree and the page says so.
+- **below-breakeven**: a younger position whose short strike sits under the effective share cost — the structural error, and it outranks everything else on the lane.
+- **roll-window**: an imported PMCC whose LEAPS has 35 DTE and whose short outlasts it. LEAPS lane gold (US-107's 60 days); coverage in the red.
+- **delta-decaying**: LEAPS Δ 0.54 — below the 0.60 floor.
+- **broken**: stock through the LEAPS strike. The position has stopped being a PMCC.
+- **leaps-only**: 2027-07-19, cycle 8 expired and unrecorded-no-more. The short lane invites the next cycle; the header offers Sell Short Call.
+- **no-marks**: the LEAPS snapshot is missing. P&L blanks; every guardrail still renders.
+- **sell-short**: US-115's sheet over the LEAPS-only page, 2027-07-23. Editable strike, expiration and price — try $85 or 2028-01-21.
+- **close-early**: US-119's buyback sheet over the healthy page. Editable cost to close.
+- **expire**: 2027-08-23, cycle 9's expiration has passed. The header swaps to Record Expiration; US-119's expiration sheet is open.
+- **assignment**: 2027-08-24, assigned at $118 with the stock at $121.40. US-111's sheet with the three settlements derived live.
+- **closed**: what sell-and-cover leaves behind. Final P&L +$2,725.00, lanes terminal, timeline complete.
+- **wheel**: the classic wheel page, rendered by the shipped components, for comparison.
+
+---
+
+export const DAY = 86400000
+
+export const ms = (s) => Date.parse(`${s}T00:00:00Z`)
+
+export const days = (a, b) => Math.round((ms(b) - ms(a)) / DAY)
+
+export const money = (n) =>
+  `${n < 0 ? '-' : ''}$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+export const signed = (n) => `${n < 0 ? '−' : '+'}${money(Math.abs(n))}`
+
+export const BASE_LEAPS = [
+  {
+    kind: 'open',
+    date: '2026-09-14',
+    action: 'BUY',
+    strike: 80,
+    expiration: '2027-09-17',
+    price: 25.0
+  },
+  {
+    kind: 'roll',
+    date: '2027-07-09',
+    close: { strike: 80, expiration: '2027-09-17', price: 26.0 },
+    open: { strike: 85, expiration: '2028-01-21', price: 23.5 }
+  }
+]
+
+export const BASE_CYCLES = [
+  {
+    n: 1,
+    open: { date: '2026-09-14', strike: 110, expiration: '2026-10-16', price: 2.0 },
+    rolls: [],
+    end: { date: '2026-10-16', outcome: 'expired' }
+  },
+  {
+    n: 2,
+    open: { date: '2026-10-23', strike: 108, expiration: '2026-11-20', price: 1.8 },
+    rolls: [
+      {
+        date: '2026-11-06',
+        close: { strike: 108, expiration: '2026-11-20', price: 3.0 },
+        open: { strike: 112, expiration: '2026-12-18', price: 2.4 }
+      }
+    ],
+    end: { date: '2026-12-18', outcome: 'expired' }
+  },
+  {
+    n: 3,
+    open: { date: '2027-01-04', strike: 112, expiration: '2027-02-05', price: 1.7 },
+    rolls: [],
+    end: { date: '2027-02-05', outcome: 'expired' }
+  },
+  {
+    n: 4,
+    open: { date: '2027-02-08', strike: 114, expiration: '2027-03-12', price: 1.55 },
+    rolls: [],
+    end: { date: '2027-03-12', outcome: 'expired' }
+  },
+  {
+    n: 5,
+    open: { date: '2027-03-15', strike: 114, expiration: '2027-04-16', price: 2.2 },
+    rolls: [],
+    end: { date: '2027-04-02', outcome: 'closed', price: 0.55 }
+  },
+  {
+    n: 6,
+    open: { date: '2027-04-05', strike: 116, expiration: '2027-05-07', price: 1.75 },
+    rolls: [],
+    end: { date: '2027-05-07', outcome: 'expired' }
+  },
+  {
+    n: 7,
+    open: { date: '2027-05-07', strike: 116, expiration: '2027-06-18', price: 1.75 },
+    rolls: [],
+    end: { date: '2027-06-18', outcome: 'expired' }
+  },
+  {
+    n: 8,
+    open: { date: '2027-06-22', strike: 112, expiration: '2027-07-16', price: 2.4 },
+    rolls: [],
+    end: { date: '2027-07-16', outcome: 'expired' }
+  },
+  {
+    n: 9,
+    open: { date: '2027-07-23', strike: 118, expiration: '2027-08-20', price: 1.95 },
+    rolls: [],
+    end: null
+  }
+]
+
+export const IMPORTED_LEAPS = [
+  {
+    kind: 'open',
+    date: '2027-01-11',
+    action: 'BUY',
+    strike: 90,
+    expiration: '2027-09-17',
+    price: 21.4
+  }
+]
+
+export const IMPORTED_CYCLES = [
+  {
+    n: 1,
+    open: { date: '2027-07-06', strike: 120, expiration: '2027-10-16', price: 3.1 },
+    rolls: [],
+    end: null
+  }
+]
+
+export const PRESETS = [
+  { key: 'full-history', label: 'full history', today: '2027-08-13' },
+  {
+    key: 'assigned',
+    label: 'assigned',
+    today: '2027-08-24',
+    closedAt: '2027-08-20',
+    patch: (cycles) =>
+      cycles.map((c) => (c.n === 9 ? { ...c, end: { date: '2027-08-20', outcome: 'assigned' } } : c))
+  },
+  {
+    key: 'no-shorts',
+    label: 'no shorts sold',
+    today: '2027-08-13',
+    leaps: [
+      {
+        kind: 'open',
+        date: '2027-06-01',
+        action: 'BUY',
+        strike: 95,
+        expiration: '2028-06-16',
+        price: 19.8
+      }
+    ],
+    cycles: []
+  },
+  {
+    key: 'coverage-flag',
+    label: 'short outlasts LEAPS',
+    today: '2027-08-13',
+    leaps: IMPORTED_LEAPS,
+    cycles: IMPORTED_CYCLES,
+    imported: true
+  },
+  { key: 'three-contracts', label: '3 contracts', today: '2027-08-13', contracts: 3 },
+  {
+    key: 'unknown-role',
+    label: 'unknown leg role',
+    today: '2027-08-13',
+    patch: (cycles) =>
+      cycles.map((c) =>
+        c.n === 9
+          ? {
+              ...c,
+              extras: [{ date: '2027-08-04', role: 'SHORT_CALL_ADJUSTED', note: 'recorded by a later story' }]
+            }
+          : c
+      )
+  },
+  {
+    key: 'closed',
+    label: 'position closed',
+    today: '2027-09-02',
+    closedAt: '2027-08-20',
+    closeAll: true,
+    patch: (cycles) =>
+      cycles.map((c) => (c.n === 9 ? { ...c, end: { date: '2027-08-20', outcome: 'assigned' } } : c))
+  },
+  { key: 'wheel-unchanged', label: 'classic wheel', today: '2027-08-13', wheel: true }
+]
+
+
+export const OUTCOME_LABEL = {
+  expired: 'Expired worthless',
+  closed: 'Closed early',
+  assigned: 'Assigned',
+  open: 'Open'
+}
+
+export const OUTCOME_COLOR = {
+  expired: '#3fb950',
+  closed: '#3fb950',
+  assigned: '#f85149',
+  open: '#e6a817'
+}
+
+export function cycleShape(cycle, today) {
+  const current = cycle.rolls.length ? cycle.rolls[cycle.rolls.length - 1].open : cycle.open
+  const outcome = cycle.end ? cycle.end.outcome : 'open'
+  const endDate = cycle.end ? cycle.end.date : today
+  const rollNet = cycle.rolls.reduce((sum, r) => sum + (r.open.price - r.close.price), 0)
+  const closeCost = cycle.end && cycle.end.outcome === 'closed' ? cycle.end.price : 0
+  return {
+    ...cycle,
+    current,
+    outcome,
+    endDate,
+    dteAtOpen: days(cycle.open.date, cycle.open.expiration),
+    daysHeld: days(cycle.open.date, endDate),
+    net: cycle.open.price + rollNet - closeCost,
+    rollNet,
+    closeCost
+  }
+}
+
+export function buildModel(preset) {
+  const today = preset.today
+  const contracts = preset.contracts ?? 1
+  const leapsEvents = preset.leaps ?? BASE_LEAPS
+  const rawCycles = preset.cycles ?? (preset.patch ? preset.patch(BASE_CYCLES) : BASE_CYCLES)
+  const cycles = rawCycles.map((c) => cycleShape(c, today))
+
+  const ledger = []
+  let leapsCost = 0
+  let credits = 0
+  const push = (date, label, group) => {
+    ledger.push({ date, label, group, basis: leapsCost - credits })
+  }
+  const timed = []
+  leapsEvents.forEach((e) => timed.push({ at: e.date, order: 0, kind: 'leaps', e }))
+  cycles.forEach((c) => {
+    timed.push({ at: c.open.date, order: 3, kind: 'cycle-open', c })
+    c.rolls.forEach((r) => timed.push({ at: r.date, order: 2, kind: 'cycle-roll', c, r }))
+    if (c.end) timed.push({ at: c.end.date, order: 1, kind: 'cycle-end', c })
+  })
+  timed
+    .sort((a, b) => ms(a.at) - ms(b.at) || a.order - b.order)
+    .forEach((t) => {
+      if (t.kind === 'leaps') {
+        if (t.e.kind === 'open') leapsCost += t.e.price
+        else leapsCost += t.e.open.price - t.e.close.price
+        push(t.at, t.e.kind === 'open' ? 'LEAPS bought' : 'LEAPS roll #1', 'leaps')
+      } else if (t.kind === 'cycle-open') {
+        credits += t.c.open.price
+        push(t.at, `Cycle ${t.c.n} opened`, `cycle-${t.c.n}`)
+      } else if (t.kind === 'cycle-roll') {
+        credits += t.r.open.price - t.r.close.price
+        push(t.at, `Cycle ${t.c.n} roll`, `cycle-${t.c.n}`)
+      } else {
+        if (t.c.end.outcome === 'closed') credits -= t.c.end.price
+        push(t.at, `Cycle ${t.c.n} ${OUTCOME_LABEL[t.c.end.outcome].toLowerCase()}`, `cycle-${t.c.n}`)
+      }
+    })
+
+  const basisAfter = (group) => {
+    const rows = ledger.filter((l) => l.group === group)
+    return rows.length ? rows[rows.length - 1].basis : null
+  }
+
+  const openLeaps = leapsEvents[leapsEvents.length - 1]
+  const currentLeaps = openLeaps.kind === 'open' ? openLeaps : openLeaps.open
+  const start = leapsEvents[0].date
+  const closed = cycles.filter((c) => c.end)
+  const openCycle = cycles.find((c) => !c.end)
+
+  const gaps = []
+  cycles.forEach((c, i) => {
+    const prev = i === 0 ? null : cycles[i - 1]
+    if (prev && prev.end) {
+      const g = days(prev.end.date, c.open.date)
+      if (g > 0) gaps.push({ after: prev.n, before: c.n, days: g, from: prev.end.date, to: c.open.date })
+    }
+  })
+  const lastClosed = closed.length ? closed[closed.length - 1] : null
+  if (!openCycle && lastClosed && days(lastClosed.end.date, today) > 0 && !preset.closeAll) {
+    gaps.push({ after: lastClosed.n, before: null, days: days(lastClosed.end.date, today), from: lastClosed.end.date, to: today })
+  }
+  if (cycles.length === 0) {
+    gaps.push({ after: null, before: null, days: days(start, today), from: start, to: today })
+  } else if (days(start, cycles[0].open.date) > 0) {
+    gaps.unshift({ after: null, before: cycles[0].n, days: days(start, cycles[0].open.date), from: start, to: cycles[0].open.date })
+  }
+
+  const totalDays = days(start, today)
+  const uncovered = gaps.reduce((s, g) => s + g.days, 0)
+  const realized = closed.reduce((s, c) => s + c.net, 0)
+  const openCredit = openCycle ? openCycle.net : 0
+  const leapsRollNet = leapsEvents
+    .filter((e) => e.kind === 'roll')
+    .reduce((s, e) => s + (e.close.price - e.open.price), 0)
+
+  const flags = cycles
+    .filter((c) => ms(c.current.expiration) > ms(currentLeaps.expiration))
+    .map((c) => ({
+      n: c.n,
+      by: days(currentLeaps.expiration, c.current.expiration)
+    }))
+
+  return {
+    today,
+    contracts,
+    start,
+    leapsEvents,
+    currentLeaps,
+    cycles,
+    gaps,
+    ledger,
+    basisAfter,
+    openCycle,
+    closedCount: closed.length,
+    realized,
+    openCredit,
+    average: closed.length ? realized / closed.length : 0,
+    leapsCost,
+    credits,
+    basis: leapsCost - credits,
+    leapsRollNet,
+    totalDays,
+    uncovered,
+    covered: totalDays - uncovered,
+    flags,
+    positionClosed: Boolean(preset.closeAll),
+    closedAt: preset.closedAt,
+    imported: Boolean(preset.imported),
+    settlement: preset.settlement ?? null
+  }
+}
+
+export function Strip({ model }) {
+  const t0 = ms(model.start)
+  const t1 = model.settlement ? ms(model.settlement.date) : ms(model.currentLeaps.expiration)
+  const pct = (d) => `${(((ms(d) - t0) / (t1 - t0)) * 100).toFixed(3)}%`
+  const width = (a, b) => `${(((ms(b) - ms(a)) / (t1 - t0)) * 100).toFixed(3)}%`
+  const rollDates = model.leapsEvents.filter((e) => e.kind === 'roll').map((e) => e.date)
+
+  return (
+    <div className="border-b border-wb-border px-5 py-4">
+      <div className="mb-3 flex items-baseline justify-between">
+        <Caption>
+          Coverage · {model.start} to{' '}
+          {model.settlement ? `${model.settlement.date} (closed)` : model.currentLeaps.expiration}
+        </Caption>
+        <span className="font-wb-mono text-[0.65rem] text-wb-text-muted">
+          covered {model.covered} of {model.totalDays} days · {model.uncovered} uncovered
+        </span>
+      </div>
+
+      <div className="relative h-[14px] rounded-sm bg-wb-bg-elevated">
+        <div className="absolute inset-y-0 left-0 w-full rounded-sm border border-wb-blue-dim bg-[rgba(121,192,255,0.18)]" />
+        {rollDates.map((d) => (
+          <div
+            key={d}
+            className="absolute inset-y-[-3px] w-[2px] bg-wb-gold"
+            style={{ left: pct(d) }}
+            title={`LEAPS roll · ${d}`}
+          />
+        ))}
+        <span className="absolute left-2 top-[-1px] font-wb-mono text-[0.6rem] font-semibold text-[#79c0ff]">
+          LEAPS {money(model.currentLeaps.strike)} · covers throughout
+        </span>
+      </div>
+
+      <div className="relative mt-1.5 h-[14px] rounded-sm bg-wb-bg-elevated">
+        {model.cycles.map((c) => (
+          <div
+            key={c.n}
+            className={`absolute inset-y-0 rounded-[2px] border ${
+              c.outcome === 'assigned'
+                ? 'border-wb-red-border bg-[rgba(248,81,73,0.28)]'
+                : c.outcome === 'open'
+                  ? 'border-wb-gold-border bg-wb-gold-dim'
+                  : 'border-wb-green-border bg-[rgba(63,185,80,0.22)]'
+            }`}
+            style={{ left: pct(c.open.date), width: width(c.open.date, c.endDate) }}
+            title={`Cycle ${c.n} · ${money(c.current.strike)} · ${c.daysHeld}d · ${signed(c.net)}/share`}
+          />
+        ))}
+        {model.cycles.length === 0 && (
+          <span className="absolute left-2 top-[-1px] font-wb-mono text-[0.6rem] text-wb-text-muted">
+            no short call has been sold against this LEAPS
+          </span>
+        )}
+      </div>
+
+      <div className="relative mt-1 h-[10px]">
+        <div className="absolute h-[10px] w-[2px] bg-wb-text-primary" style={{ left: pct(model.today) }} />
+        <span
+          className="absolute top-[-1px] ml-1.5 font-wb-mono text-[0.6rem] text-wb-text-secondary"
+          style={{ left: pct(model.today) }}
+        >
+          today {model.today}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+export function Row({ children, tone }) {
+  return (
+    <tr
+      className="border-b border-wb-border"
+      style={{
+        background:
+          tone === 'roll'
+            ? 'rgba(88,166,255,0.03)'
+            : tone === 'leaps'
+              ? 'rgba(121,192,255,0.05)'
+              : undefined
+      }}
+    >
+      {children}
+    </tr>
+  )
+}
+
+export function Cell({ children, className }) {
+  return <td className={`px-3 py-2 align-top ${className ?? ''}`}>{children}</td>
+}
+
+export function Head({ children, className }) {
+  return (
+    <th
+      className={`px-3 py-2 text-left font-wb-mono text-[0.6rem] font-semibold uppercase tracking-[0.1em] text-wb-text-muted ${className ?? ''}`}
+    >
+      {children}
+    </th>
+  )
+}
+
+export function LeapsTrack({ model }) {
+  const c = model.contracts
+  return (
+    <div className="overflow-hidden rounded-lg border border-[rgba(121,192,255,0.28)] bg-[rgba(121,192,255,0.03)]">
+      <div className="flex items-baseline gap-2 border-b border-[rgba(121,192,255,0.22)] bg-[rgba(121,192,255,0.08)] px-5 py-2.5">
+        <Badge color="#79c0ff">L</Badge>
+        <span className="font-wb-mono text-sm font-semibold text-[#79c0ff]">LEAPS track</span>
+        <span className="font-wb-mono text-[0.65rem] text-wb-text-secondary">
+          {model.positionClosed ? 'closed' : 'open'} {money(model.currentLeaps.strike)} call ·{' '}
+          {model.currentLeaps.expiration} · LEAPS cost to date {money(model.leapsCost)} / share
+        </span>
+      </div>
+      <table className="w-full border-collapse">
+        <thead>
+          <tr>
+            <Head>Event</Head>
+            <Head>Date</Head>
+            <Head>Contract</Head>
+            <Head>Price / share</Head>
+            <Head>Net</Head>
+            <Head>Coverage</Head>
+            <Head className="text-[#79c0ff]">Basis after</Head>
+          </tr>
+        </thead>
+        <tbody>
+          {model.leapsEvents.map((e, i) => {
+            const basis = model.ledger.filter((l) => l.group === 'leaps')[i]
+            if (e.kind === 'open') {
+              return (
+                <Row key={e.date} tone="leaps">
+                  <Cell>
+                    <Badge color="#79c0ff">Buy LEAPS</Badge>
+                  </Cell>
+                  <Cell className="text-wb-text-secondary">{e.date}</Cell>
+                  <Cell className="text-wb-gold">
+                    {money(e.strike)} call · {e.expiration} · ×{c}
+                  </Cell>
+                  <Cell className="text-wb-red">−{money(e.price)}</Cell>
+                  <Cell className="text-wb-text-secondary">−{money(e.price * 100 * c)}</Cell>
+                  <Cell className="text-wb-text-secondary">
+                    opens coverage · {days(e.date, e.expiration)} DTE at fill
+                  </Cell>
+                  <Cell className="font-semibold text-[#79c0ff]">{money(basis.basis)}</Cell>
+                </Row>
+              )
+            }
+            const net = e.close.price - e.open.price
+            return (
+              <Row key={e.date} tone="leaps">
+                <Cell>
+                  <Badge color="#e6a817">LEAPS roll #1</Badge>
+                </Cell>
+                <Cell className="text-wb-text-secondary">{e.date}</Cell>
+                <Cell className="text-wb-gold">
+                  {money(e.close.strike)} {e.close.expiration} → {money(e.open.strike)}{' '}
+                  {e.open.expiration}
+                </Cell>
+                <Cell className="text-wb-text-secondary">
+                  sell {money(e.close.price)} / buy {money(e.open.price)}
+                </Cell>
+                <Cell className={net >= 0 ? 'text-wb-green' : 'text-wb-gold'}>
+                  {net >= 0 ? 'Net credit ' : 'Net debit '}
+                  {money(Math.abs(net))} ({money(Math.abs(net) * 100 * c)})
+                </Cell>
+                <Cell className="text-wb-green">
+                  unbroken · +{days(e.close.expiration, e.open.expiration)} days
+                </Cell>
+                <Cell className="font-semibold text-[#79c0ff]">{money(basis.basis)}</Cell>
+              </Row>
+            )
+          })}
+          {model.settlement && (
+            <Row tone="leaps">
+              <Cell>
+                <Badge color="#484f58">Sold to close</Badge>
+              </Cell>
+              <Cell className="text-wb-text-secondary">{model.settlement.date}</Cell>
+              <Cell className="text-wb-gold">
+                {money(model.currentLeaps.strike)} call · {model.currentLeaps.expiration}
+              </Cell>
+              <Cell className="text-wb-green">+{money(model.settlement.leapsSale)}</Cell>
+              <Cell className="text-wb-text-secondary">
+                +{money(model.settlement.leapsSale * 100 * c)}
+              </Cell>
+              <Cell className="text-wb-text-secondary">closes coverage · settled by US-111</Cell>
+              <Cell className="text-wb-text-muted">—</Cell>
+            </Row>
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+export function CycleGroup({ cycle, model }) {
+  const c = model.contracts
+  const basis = model.basisAfter(`cycle-${cycle.n}`)
+  const flagged = model.flags.find((f) => f.n === cycle.n)
+  const color = OUTCOME_COLOR[cycle.outcome]
+
+  return (
+    <div className="border-b border-wb-border">
+      <div
+        className="flex flex-wrap items-center justify-between gap-2 px-5 py-2.5"
+        style={{ background: cycle.outcome === 'open' ? 'rgba(230,168,23,0.05)' : 'rgba(88,166,255,0.02)' }}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge color="#d2a8ff">S</Badge>
+          <span className="font-wb-mono text-sm font-bold text-wb-text-primary">
+            Cycle {cycle.n}
+          </span>
+          <span className="font-wb-mono text-[0.7rem] text-wb-text-secondary">
+            {money(cycle.current.strike)} call · sold {cycle.open.date} at {cycle.dteAtOpen} DTE ·{' '}
+            {cycle.daysHeld} days {cycle.outcome === 'open' ? 'so far' : 'held'}
+          </span>
+          <Badge color={color}>{OUTCOME_LABEL[cycle.outcome]}</Badge>
+          {cycle.rolls.length > 0 && (
+            <Badge color="#e6a817">
+              {cycle.rolls.length} roll{cycle.rolls.length > 1 ? 's' : ''}
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-baseline gap-2">
+          <span className="font-wb-mono text-[0.65rem] uppercase tracking-[0.08em] text-wb-text-muted">
+            {cycle.outcome === 'open' ? 'Net credit, open' : 'Net credit'}
+          </span>
+          <span
+            className="font-wb-mono text-sm font-bold"
+            style={{ color: cycle.net >= 0 ? 'var(--wb-green)' : 'var(--wb-gold)' }}
+          >
+            {signed(cycle.net)} / share ({signed(cycle.net * 100 * c)})
+          </span>
+        </div>
+      </div>
+
+      {flagged && (
+        <div className="border-b border-wb-red-border bg-wb-red-dim px-5 py-2 font-wb-mono text-[0.7rem] text-wb-red">
+          ⚠ This short expires {flagged.by} days after the open LEAPS (
+          {model.currentLeaps.expiration}). It was uncovered for that stretch. US-102 rejects new
+          legs in this shape; this one predates it.
+        </div>
+      )}
+
+      <table className="w-full border-collapse">
+        <tbody>
+          <Row>
+            <Cell className="w-[130px]">
+              <Badge color="#d2a8ff">Sell to open</Badge>
+            </Cell>
+            <Cell className="w-[100px] text-wb-text-secondary">{cycle.open.date}</Cell>
+            <Cell className="text-wb-gold">
+              {money(cycle.open.strike)} call · {cycle.open.expiration} · ×{c}
+            </Cell>
+            <Cell className="text-wb-green">+{money(cycle.open.price)}</Cell>
+            <Cell className="text-wb-text-secondary">+{money(cycle.open.price * 100 * c)}</Cell>
+          </Row>
+
+          {cycle.rolls.map((r, i) => {
+            const net = r.open.price - r.close.price
+            return (
+              <Row key={r.date} tone="roll">
+                <Cell className="pl-7">
+                  <Badge color={net >= 0 ? '#3fb950' : '#e6a817'}>Roll #{i + 1}</Badge>
+                </Cell>
+                <Cell className="text-wb-text-secondary">{r.date}</Cell>
+                <Cell className="text-wb-gold">
+                  {money(r.close.strike)} {r.close.expiration} → {money(r.open.strike)}{' '}
+                  {r.open.expiration}
+                </Cell>
+                <Cell className="text-wb-text-secondary">
+                  buy {money(r.close.price)} / sell {money(r.open.price)}
+                </Cell>
+                <Cell className={net >= 0 ? 'text-wb-green' : 'text-wb-gold'}>
+                  {net >= 0 ? 'Net credit ' : 'Net debit '}
+                  {money(Math.abs(net))} ({money(Math.abs(net) * 100 * c)})
+                </Cell>
+              </Row>
+            )
+          })}
+
+          {(cycle.extras ?? []).map((x) => (
+            <Row key={x.role}>
+              <Cell className="pl-7">
+                <Badge color="#8899aa">{x.role}</Badge>
+              </Cell>
+              <Cell className="text-wb-text-secondary">{x.date}</Cell>
+              <Cell className="text-wb-text-muted italic" colSpan={3}>
+                {x.note} — rendered without interpretation
+              </Cell>
+            </Row>
+          ))}
+
+          {cycle.end && (
+            <Row>
+              <Cell>
+                <Badge color={color}>{OUTCOME_LABEL[cycle.outcome]}</Badge>
+              </Cell>
+              <Cell className="text-wb-text-secondary">{cycle.end.date}</Cell>
+              <Cell className="text-wb-gold">
+                {money(cycle.current.strike)} call · {cycle.current.expiration}
+              </Cell>
+              <Cell className="text-wb-text-secondary italic">
+                {cycle.outcome === 'expired'
+                  ? 'expired worthless'
+                  : cycle.outcome === 'closed'
+                    ? `−${money(cycle.end.price)}`
+                    : '— (assigned)'}
+              </Cell>
+              <Cell className="text-wb-text-secondary italic">
+                {cycle.outcome === 'closed'
+                  ? `−${money(cycle.end.price * 100 * c)}`
+                  : cycle.outcome === 'assigned'
+                    ? model.settlement
+                      ? `covered from market at ${money(model.settlement.coverPrice)} · US-111`
+                      : 'settlement recorded by US-111'
+                    : '—'}
+              </Cell>
+            </Row>
+          )}
+
+          {!cycle.end && (
+            <Row>
+              <Cell>
+                <Badge color="#e6a817">Open</Badge>
+              </Cell>
+              <Cell className="text-wb-text-secondary">—</Cell>
+              <Cell className="text-wb-text-secondary" colSpan={3}>
+                {days(model.today, cycle.current.expiration)} DTE remaining · credit collected, not
+                realized
+              </Cell>
+            </Row>
+          )}
+
+          <tr style={{ background: 'rgba(121,192,255,0.05)' }}>
+            <td colSpan={5} className="border-t border-wb-border px-5 py-1.5">
+              <span className="font-wb-mono text-[0.65rem] text-wb-text-muted">
+                PMCC cost basis after cycle {cycle.n}
+              </span>
+              <span className="ml-2 font-wb-mono text-[0.75rem] font-semibold text-[#79c0ff]">
+                {money(basis)} / share
+              </span>
+              <span className="ml-2 font-wb-mono text-[0.65rem] text-wb-text-muted">
+                from the US-103 snapshot chain
+              </span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+export function GapRow({ gap }) {
+  return (
+    <div className="flex items-center gap-3 border-b border-dashed border-wb-border px-5 py-2">
+      <span className="font-wb-mono text-[0.7rem] text-wb-text-muted">
+        ○ Uncovered · {gap.days} day{gap.days === 1 ? '' : 's'} · {gap.from} to {gap.to}
+      </span>
+      <span className="font-wb-mono text-[0.65rem] text-wb-text-muted">
+        no short call open against the LEAPS
+      </span>
+    </div>
+  )
+}
+
+export const TONE = {
+  green: '#3fb950',
+  gold: '#e6a817',
+  red: '#f85149',
+  muted: '#484f58',
+  teal: '#2dd4bf',
+  sky: '#79c0ff'
+}
+
+export const pct = (x, d = 1) => `${(x * 100).toFixed(d)}%`
+
+export const mid = (bid, ask) => (bid == null || ask == null ? null : (bid + ask) / 2)
+
+export const YOUNG_LEAPS = [
+  { kind: 'open', date: '2026-04-17', action: 'BUY', strike: 80, expiration: '2027-09-17', price: 25.0 }
+]
+
+export const YOUNG_CYCLES = [
+  {
+    n: 1,
+    open: { date: '2026-04-17', strike: 105, expiration: '2026-05-15', price: 2.0 },
+    rolls: [],
+    end: { date: '2026-05-15', outcome: 'expired' }
+  },
+  {
+    n: 2,
+    open: { date: '2026-05-18', strike: 105, expiration: '2026-06-19', price: 1.8 },
+    rolls: [],
+    end: { date: '2026-06-19', outcome: 'expired' }
+  },
+  {
+    n: 3,
+    open: { date: '2026-06-22', strike: 99, expiration: '2026-07-17', price: 1.55 },
+    rolls: [],
+    end: null
+  }
+]
+
+export const swapCycle9 = (strike, price) => (cycles) =>
+  cycles.map((c) =>
+    c.n === 9 ? { ...c, open: { ...c.open, strike, price } } : c
+  )
+
+export const dropCycle9 = (cycles) => cycles.filter((c) => c.n !== 9)
+
+export const assignCycle9 = (cycles) =>
+  cycles.map((c) => (c.n === 9 ? { ...c, end: { date: '2027-08-20', outcome: 'assigned' } } : c))
+
+export const Q_BASE = { stock: 104.2, leapsBid: 24.2, leapsAsk: 24.8, leapsDelta: 0.82, shortBid: 0.15, shortAsk: 0.25 }
+
+export const PAGE_PRESETS = [
+  { key: 'healthy', label: 'healthy', today: '2027-08-13', q: Q_BASE },
+  {
+    key: 'assignment-risk',
+    label: 'assignment risk',
+    today: '2027-08-13',
+    q: { stock: 116.1, leapsBid: 32.1, leapsAsk: 32.7, leapsDelta: 0.88, shortBid: 1.15, shortAsk: 1.25 }
+  },
+  {
+    key: 'in-the-money',
+    label: 'in the money',
+    today: '2027-08-13',
+    q: { stock: 121.4, leapsBid: 37.0, leapsAsk: 37.4, leapsDelta: 0.9, shortBid: 3.5, shortAsk: 3.7 }
+  },
+  {
+    key: 'below-breakeven',
+    label: 'below breakeven',
+    today: '2026-07-06',
+    leaps: YOUNG_LEAPS,
+    cycles: YOUNG_CYCLES,
+    q: { stock: 99.4, leapsBid: 25.6, leapsAsk: 26.2, leapsDelta: 0.78, shortBid: 1.4, shortAsk: 1.6 }
+  },
+  {
+    key: 'roll-window',
+    label: 'LEAPS roll window',
+    today: '2027-08-13',
+    leaps: IMPORTED_LEAPS,
+    cycles: IMPORTED_CYCLES,
+    imported: true,
+    q: { stock: 112.0, leapsBid: 22.5, leapsAsk: 23.1, leapsDelta: 0.86, shortBid: 1.3, shortAsk: 1.5 }
+  },
+  {
+    key: 'delta-decaying',
+    label: 'delta decaying',
+    today: '2027-08-13',
+    patch: swapCycle9(95, 0.9),
+    q: { stock: 86.5, leapsBid: 7.9, leapsAsk: 8.5, leapsDelta: 0.54, shortBid: 0.25, shortAsk: 0.35 }
+  },
+  {
+    key: 'broken',
+    label: 'broken',
+    today: '2027-08-13',
+    patch: swapCycle9(95, 0.9),
+    q: { stock: 83.1, leapsBid: 6.1, leapsAsk: 6.7, leapsDelta: 0.42, shortBid: 0.15, shortAsk: 0.25 }
+  },
+  {
+    key: 'leaps-only',
+    label: 'LEAPS only',
+    today: '2027-07-19',
+    patch: dropCycle9,
+    q: { stock: 103.1, leapsBid: 23.8, leapsAsk: 24.4, leapsDelta: 0.81, shortBid: null, shortAsk: null }
+  },
+  {
+    key: 'no-marks',
+    label: 'no LEAPS mark',
+    today: '2027-08-13',
+    q: { stock: 104.2, leapsBid: null, leapsAsk: null, leapsDelta: null, shortBid: 0.15, shortAsk: 0.25 }
+  },
+  {
+    key: 'sell-short',
+    label: 'sheet · sell short (US-115)',
+    today: '2027-07-23',
+    patch: dropCycle9,
+    sheet: 'sell',
+    q: { stock: 104.6, leapsBid: 24.0, leapsAsk: 24.6, leapsDelta: 0.81, shortBid: null, shortAsk: null }
+  },
+  { key: 'close-early', label: 'sheet · close early (US-119)', today: '2027-08-13', sheet: 'close', q: Q_BASE },
+  {
+    key: 'expire',
+    label: 'sheet · expire (US-119)',
+    today: '2027-08-23',
+    sheet: 'expire',
+    q: { stock: 104.2, leapsBid: 24.2, leapsAsk: 24.8, leapsDelta: 0.82, shortBid: 0, shortAsk: 0 }
+  },
+  {
+    key: 'assignment',
+    label: 'sheet · assignment (US-111)',
+    today: '2027-08-24',
+    sheet: 'assign',
+    q: { stock: 121.4, leapsBid: 37.0, leapsAsk: 37.4, leapsDelta: 0.9, shortBid: 3.3, shortAsk: 3.5 }
+  },
+  {
+    key: 'closed',
+    label: 'closed',
+    today: '2027-08-24',
+    closedAt: '2027-08-23',
+    closeAll: true,
+    patch: assignCycle9,
+    settlement: { path: 'sell-cover', date: '2027-08-23', leapsSale: 37.2, coverPrice: 121.4 },
+    q: null
+  },
+  { key: 'wheel', label: 'classic wheel', today: '2027-08-13', wheel: true }
+]
+
+export function deriveCockpit(model, q) {
+  const c = model.contracts
+  const open = model.openCycle
+  const eff = model.currentLeaps.strike + model.basis
+  const leapsDte = days(model.today, model.currentLeaps.expiration)
+  const shortDte = open ? days(model.today, open.current.expiration) : null
+  const slack = open ? days(open.current.expiration, model.currentLeaps.expiration) : null
+  const leapsMid = q ? mid(q.leapsBid, q.leapsAsk) : null
+  const shortMid = q && open ? mid(q.shortBid, q.shortAsk) : null
+  const captured = open && shortMid != null ? (open.net - shortMid) / open.net : null
+  const distBelow = open && q ? (open.current.strike - q.stock) / open.current.strike : null
+  const maxIfCalled = open ? (open.current.strike - eff) * 100 * c : null
+  const wide = leapsMid != null && q.leapsAsk - q.leapsBid > 0.1 * leapsMid
+  const intrinsic = q ? Math.max(0, q.stock - model.currentLeaps.strike) : null
+  const extrinsic = leapsMid != null ? leapsMid - intrinsic : null
+
+  let pnl = null
+  if (model.settlement) {
+    pnl =
+      (model.settlement.leapsSale - model.settlement.coverPrice + model.cycles[model.cycles.length - 1].current.strike) *
+        100 *
+        c -
+      model.basis * 100 * c
+  } else if (leapsMid != null && (!open || shortMid != null)) {
+    pnl = (leapsMid - (open ? shortMid : 0)) * 100 * c - model.basis * 100 * c
+  }
+  const pnlPct = pnl != null && model.basis > 0 ? pnl / (model.basis * 100 * c) : null
+
+  let shortStatus
+  if (model.positionClosed) shortStatus = { label: 'CLOSED', tone: 'muted', reason: `assigned ${model.closedAt} · settled` }
+  else if (!open) {
+    const last = model.cycles[model.cycles.length - 1]
+    const idle = last && last.end ? days(last.end.date, model.today) : days(model.start, model.today)
+    shortStatus = { label: 'NO SHORT CALL', tone: 'gold', reason: `${idle} days uncovered · sell one to resume income` }
+  } else if (open.current.strike < eff)
+    shortStatus = {
+      label: 'BELOW BREAKEVEN',
+      tone: 'red',
+      reason: `strike ${money(open.current.strike)} is ${money(eff - open.current.strike)} under your effective share cost · call-away locks in ${signed(maxIfCalled)}${q && q.stock >= open.current.strike ? ' · stock is through the strike' : ''}`
+    }
+  else if (q && q.stock >= open.current.strike)
+    shortStatus = {
+      label: 'ASSIGNMENT RISK',
+      tone: 'red',
+      reason: `in the money by ${money(q.stock - open.current.strike)}${captured != null ? ` · ${pct(captured)} of max` : ''} · LEAPS would have to cover`
+    }
+  else if (distBelow != null && distBelow <= 0.02)
+    shortStatus = {
+      label: 'ASSIGNMENT RISK',
+      tone: 'gold',
+      reason: `${pct(distBelow)} below strike${captured != null ? ` · ${pct(captured)} of max captured` : ''}`
+    }
+  else if (shortDte < 0)
+    shortStatus = { label: 'EXPIRED · RECORD IT', tone: 'gold', reason: `expired ${open.current.expiration} below the strike · record the expiration` }
+  else if (captured != null && captured >= 0.5)
+    shortStatus = { label: 'TAKE PROFIT', tone: 'gold', reason: `${pct(captured)} of max captured · ${pct(distBelow)} below strike` }
+  else if (shortDte <= 7)
+    shortStatus = { label: 'EXPIRING', tone: 'gold', reason: `${shortDte}d left${captured != null ? ` · ${pct(captured)} of max captured` : ''} · ${pct(distBelow)} below strike` }
+  else
+    shortStatus = {
+      label: 'HOLD',
+      tone: 'green',
+      reason: `${captured != null ? `${pct(captured)} of max captured · ` : ''}${distBelow != null ? `${pct(distBelow)} below strike · ` : ''}let theta work`
+    }
+
+  let leapsStatus
+  if (model.positionClosed) leapsStatus = { label: 'CLOSED', tone: 'muted', reason: `sold to close ${model.settlement.date} at ${money(model.settlement.leapsSale)}` }
+  else if (q && q.stock <= model.currentLeaps.strike)
+    leapsStatus = {
+      label: 'BROKEN',
+      tone: 'red',
+      reason: `stock ${money(model.currentLeaps.strike - q.stock)} below the ${money(model.currentLeaps.strike)} strike · the LEAPS is all extrinsic`
+    }
+  else if (q && q.leapsDelta != null && q.leapsDelta < 0.6)
+    leapsStatus = { label: 'DELTA DECAYING', tone: 'gold', reason: `Δ ${q.leapsDelta.toFixed(2)} below 0.60 · no longer tracking as synthetic stock` }
+  else if (leapsDte <= 60)
+    leapsStatus = { label: 'ROLL WINDOW', tone: 'gold', reason: `${leapsDte}d · roll while it still has time value to sell` }
+  else
+    leapsStatus = {
+      label: 'HEALTHY',
+      tone: 'green',
+      reason: `tracking as synthetic stock${q ? ` · ${pct((q.stock - model.currentLeaps.strike) / model.currentLeaps.strike)} above strike` : ''}`
+    }
+
+  let actions = []
+  if (!model.positionClosed) {
+    if (!open) actions = ['Sell Short Call →', 'Roll LEAPS →', 'Close Position →']
+    else if (shortDte < 0) actions = ['Record Expiration →', 'Record Assignment →', 'Roll LEAPS →']
+    else actions = ['Roll Short Call →', 'Close Short Early →', 'Record Assignment →', 'Roll LEAPS →']
+  }
+
+  return { eff, leapsDte, shortDte, slack, leapsMid, shortMid, captured, distBelow, maxIfCalled, wide, intrinsic, extrinsic, pnl, pnlPct, shortStatus, leapsStatus, actions }
+}
+
+export function tint(color, p) {
+  return `color-mix(in srgb, ${color} ${p}%, transparent)`
+}
+
+export function Pill({ label, tone, size = 'sm' }) {
+  const color = TONE[tone]
+  return (
+    <span
+      className={`inline-flex items-center self-start rounded-full font-sans font-bold tracking-[0.08em] ${size === 'lg' ? 'px-3 py-1 text-sm' : 'px-2.5 py-0.5 text-xs'}`}
+      style={{ background: tint(color, 20), color, border: `1px solid ${tint(color, 40)}` }}
+    >
+      {label}
+    </span>
+  )
+}
+
+export function Lane({ title, meta, facts, status }) {
+  const color = TONE[status.tone]
+  return (
+    <div className="flex flex-col gap-2.5 rounded-lg p-4" style={{ background: tint(color, 6), border: `1px solid ${tint(color, 28)}` }}>
+      <div className="flex items-baseline justify-between">
+        <span className="font-wb-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-wb-text-muted">{title}</span>
+        <span className="font-wb-mono text-xs text-wb-text-secondary">{meta}</span>
+      </div>
+      <div className="font-wb-mono text-sm text-wb-text-primary">{facts}</div>
+      <Pill label={status.label} tone={status.tone} size="lg" />
+      <span className="font-sans text-sm text-wb-text-muted">{status.reason}</span>
+    </div>
+  )
+}
+
+export function Hero({ model, k }) {
+  const open = model.openCycle
+  const worst = ['red', 'gold', 'green', 'muted'].find((t) => k.shortStatus.tone === t || k.leapsStatus.tone === t)
+  const outer = TONE[worst]
+  const pnlColor = k.pnl == null ? TONE.muted : k.pnl >= 0 ? TONE.green : TONE.red
+
+  return (
+    <div
+      className="flex flex-col gap-4 rounded-xl p-[22px]"
+      style={{
+        background: `linear-gradient(180deg, ${tint(outer, 12)} 0%, var(--wb-bg-surface) 100%)`,
+        border: `1px solid ${tint(outer, 40)}`
+      }}
+    >
+      <div className="flex flex-wrap items-center gap-3.5">
+        <span className="font-sans text-[26px] font-bold tracking-[0.02em] text-wb-text-primary">XYZ</span>
+        <Pill label="PMCC" tone="teal" />
+        <span className="font-wb-mono text-xs tracking-[0.05em] text-wb-text-muted">
+          {model.positionClosed
+            ? `closed ${model.closedAt}`
+            : open
+              ? 'LEAPS + short call open'
+              : 'LEAPS open · no short call'}
+          {' · '}
+          {model.contracts} contract{model.contracts > 1 ? 's' : ''}
+        </span>
+      </div>
+
+      <div className="grid gap-3" style={{ gridTemplateColumns: '1fr 1fr' }}>
+        <Lane
+          title={open ? `Short call · Cycle ${open.n}` : 'Short call'}
+          meta={open ? (k.shortDte < 0 ? `expired ${-k.shortDte}d ago` : `${k.shortDte}d`) : '—'}
+          facts={
+            open ? (
+              <>
+                <span className="text-wb-gold">{money(open.current.strike)}</span> · {open.current.expiration} ·{' '}
+                {k.shortMid != null ? `mid ${money(k.shortMid)}` : 'mid —'}
+                {k.captured != null ? ` · ${pct(k.captured)} of max` : ''}
+              </>
+            ) : (
+              <span className="text-wb-text-muted">no short call open</span>
+            )
+          }
+          status={k.shortStatus}
+        />
+        <Lane
+          title="LEAPS"
+          meta={model.positionClosed ? 'closed' : `${k.leapsDte}d`}
+          facts={
+            <>
+              <span className="text-wb-gold">{money(model.currentLeaps.strike)}</span> · {model.currentLeaps.expiration} ·{' '}
+              {k.leapsMid != null ? `mid ${money(k.leapsMid)}` : 'mid —'}
+              {k.wide ? <span className="text-wb-gold" title="LEAPS spread is more than 10% of the mid"> ⚠</span> : null}
+              {' · Δ '}
+              {k.leapsDelta != null ? k.leapsDelta.toFixed(2) : '—'}
+            </>
+          }
+          status={k.leapsStatus}
+        />
+      </div>
+
+      <div className="flex flex-wrap items-baseline gap-3 border-t border-wb-border pt-3">
+        <span className="font-wb-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-wb-text-muted">
+          {model.positionClosed ? 'Final P&L' : 'Net P&L'}
+        </span>
+        <span className="font-sans text-[28px] font-bold leading-none" style={{ color: pnlColor }}>
+          {k.pnl == null ? '—' : signed(k.pnl)}
+          {k.wide && k.pnl != null ? <span className="ml-1 text-base text-wb-gold" title="LEAPS spread makes this unreliable">⚠</span> : null}
+        </span>
+        <span className="font-wb-mono text-xs text-wb-text-muted">
+          {k.pnl == null
+            ? 'unavailable — a leg has no mark'
+            : k.pnlPct == null
+              ? 'basis not positive'
+              : `${k.pnlPct >= 0 ? '+' : ''}${pct(k.pnlPct)} of basis`}
+          {' · cost basis '}
+          {money(model.basis)} / share
+          {model.positionClosed ? ' · from the terminal snapshot' : ''}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+export function Guard({ label, value, sub, tone, meter }) {
+  const color = tone ? TONE[tone] : undefined
+  return (
+    <div className="flex flex-col gap-1 bg-wb-bg-surface px-4 py-3.5">
+      <span className="font-wb-mono text-[9.5px] font-semibold uppercase tracking-[0.12em] text-wb-text-muted">{label}</span>
+      <span className="font-wb-mono text-sm font-semibold" style={{ color: color ?? 'var(--wb-text-primary)' }}>
+        {value}
+      </span>
+      {meter != null && (
+        <div className="h-[3px] w-full rounded bg-wb-bg-elevated">
+          <div className="h-[3px] rounded" style={{ width: `${Math.min(100, meter * 100)}%`, background: meter >= 1 ? TONE.gold : TONE.green }} />
+        </div>
+      )}
+      <span className="font-wb-mono text-[10px] text-wb-text-muted">{sub}</span>
+    </div>
+  )
+}
+
+export function Guardrails({ model, k }) {
+  const open = model.openCycle
+  const recovered = model.leapsCost > 0 ? model.credits / model.leapsCost : null
+  return (
+    <SectionCard header="Guardrails · US-118 (figures from US-103 and US-109)">
+      <div className="grid grid-cols-4 gap-px bg-wb-border">
+        <Guard
+          label="Effective share cost"
+          value={money(k.eff)}
+          tone={open ? (open.current.strike >= k.eff ? 'green' : 'red') : undefined}
+          sub={
+            open
+              ? `short ${money(open.current.strike)} is ${signed(open.current.strike - k.eff)} ${open.current.strike >= k.eff ? 'above' : 'below'} · call-away locks in ${signed(k.maxIfCalled)}`
+              : `${money(model.currentLeaps.strike)} strike + ${money(model.basis)} basis · no short call open`
+          }
+        />
+        <Guard
+          label="Coverage"
+          value={k.slack == null ? '—' : `${k.slack} days slack`}
+          tone={k.slack == null ? undefined : k.slack < 0 ? 'red' : undefined}
+          sub={
+            open
+              ? k.slack < 0
+                ? 'short outlasts the LEAPS · US-102 rejects new legs in this shape'
+                : `short ${open.current.expiration} · LEAPS ${model.currentLeaps.expiration}`
+              : `LEAPS ${model.currentLeaps.expiration} · nothing to cover`
+          }
+        />
+        <Guard
+          label="Premium recovered"
+          value={recovered == null ? '—' : pct(recovered)}
+          tone={recovered != null && recovered >= 1 ? 'gold' : undefined}
+          meter={recovered}
+          sub={`${money(model.credits)} of ${money(model.leapsCost)} LEAPS cost`}
+        />
+        <Guard
+          label="Cycles"
+          value={`${model.cycles.length} · ${model.closedCount} closed${model.openCycle ? ' · 1 open' : ''}`}
+          sub={model.closedCount ? `${signed(model.average)} avg net · ${model.uncovered}d uncovered` : `${model.uncovered}d uncovered · no cycle closed yet`}
+        />
+      </div>
+    </SectionCard>
+  )
+}
+
+export function TealButton({ label, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`wb-teal-button inline-flex cursor-pointer items-center gap-1 rounded px-3 py-1 font-wb-mono text-[0.7rem] font-medium text-wb-teal ${active ? 'ring-1 ring-wb-teal' : ''}`}
+    >
+      {label}
+    </button>
+  )
+}
+
+export function HeaderActions({ actions, activeSheet, onOpen, isWheel }) {
+  if (isWheel) {
+    return (
+      <div className="flex items-center gap-2.5">
+        <Badge color="#d2a8ff" className="gap-[5px] rounded px-[9px] py-0.5 text-[0.7rem]">
+          <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-[#d2a8ff]" />
+          Sell Call
+        </Badge>
+        <div className="mx-1 h-4 w-px bg-wb-border" />
+        <TealButton label="Roll CC →" />
+        <TealButton label="Close CC Early →" />
+        <TealButton label="Record Call-Away →" />
+      </div>
+    )
+  }
+  const sheetFor = { 'Sell Short Call →': 'sell', 'Close Short Early →': 'close', 'Record Expiration →': 'expire', 'Record Assignment →': 'assign' }
+  return (
+    <div className="flex items-center gap-2.5">
+      <Badge color="#2dd4bf" className="gap-[5px] rounded px-[9px] py-0.5 text-[0.7rem]">
+        <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-[#2dd4bf]" />
+        PMCC
+      </Badge>
+      {actions.length > 0 && <div className="mx-1 h-4 w-px bg-wb-border" />}
+      {actions.map((a) => (
+        <TealButton key={a} label={a} active={sheetFor[a] === activeSheet} onClick={() => sheetFor[a] && onOpen(sheetFor[a])} />
+      ))}
+    </div>
+  )
+}
+
+export function TimelineDrawer({ title, meta, children, defaultOpen = true }) {
+  const [open, setOpen] = useState(defaultOpen)
+  // CollapsedDrawer's exact markup plus the one-line `meta` prop US-109 adds to it —
+  // its right-hand label is hardcoded to `{fieldCount} fields`, which is wrong for a timeline.
+  return (
+    <div className="rounded-lg border border-wb-border bg-wb-bg-surface">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className={`flex w-full cursor-pointer items-center justify-between px-[18px] py-[10px] text-left ${open ? 'border-b border-wb-border' : ''}`}
+      >
+        <span className="flex items-center gap-2 font-wb-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-wb-text-muted">
+          <span className="text-[9px]">{open ? '▼' : '▶'}</span>
+          {title}
+        </span>
+        <span className="font-wb-mono text-[11px] text-wb-text-muted">{meta}</span>
+      </button>
+      {open ? <div>{children}</div> : null}
+    </div>
+  )
+}
+
+export function OwnerNote({ children }) {
+  return (
+    <div className="border-b border-wb-border bg-wb-bg-elevated px-[18px] py-1.5 font-wb-mono text-[10px] uppercase tracking-[0.06em] text-wb-text-muted">
+      {children}
+    </div>
+  )
+}
+
+export function Money({ value, onChange, id, error }) {
+  return (
+    <NumberInput
+      id={id}
+      prefix="$"
+      value={value}
+      hasError={Boolean(error)}
+      onChange={(e) => onChange(e.target.value)}
+      inputMode="decimal"
+    />
+  )
+}
+
+export function Scrim({ onClose, children }) {
+  return (
+    <div className="absolute inset-0 z-20">
+      <div className="absolute inset-0 bg-[rgba(0,0,0,0.45)]" onClick={onClose} />
+      {children}
+    </div>
+  )
+}
+
+export function SellShortSheet({ model, k, onClose }) {
+  const [strike, setStrike] = useState('118.00')
+  const [expiration, setExpiration] = useState('2027-08-20')
+  const [price, setPrice] = useState('1.95')
+  const s = parseFloat(strike)
+  const p = parseFloat(price)
+  const c = model.contracts
+  const last = model.cycles[model.cycles.length - 1]
+  const idle = last ? days(last.end.date, model.today) : 0
+  const errors = {}
+  if (!(s > model.currentLeaps.strike)) errors.strike = 'Short-call strike must be above the LEAPS strike.'
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiration)) errors.expiration = 'Enter an expiration as YYYY-MM-DD.'
+  else if (ms(expiration) >= ms(model.currentLeaps.expiration)) errors.expiration = 'Short call must expire before the LEAPS call.'
+  else if (ms(expiration) <= ms(model.today)) errors.expiration = 'Expiration must be after the fill date.'
+  if (!(p > 0)) errors.price = 'Actual fill price must be greater than zero.'
+  const valid = Object.keys(errors).length === 0
+  const basisAfter = model.basis - (p > 0 ? p : 0)
+  const effAfter = model.currentLeaps.strike + basisAfter
+  const recBefore = model.credits / model.leapsCost
+  const recAfter = (model.credits + (p > 0 ? p : 0)) / model.leapsCost
+  const dte = errors.expiration ? null : days(model.today, expiration)
+  const below = valid && s < effAfter
+
+  return (
+    <SheetPanel width={460}>
+      <SheetHeader eyebrow="SELL SHORT CALL" title={`XYZ · against ${money(model.currentLeaps.strike)} LEAPS`} subtitle={`US-115 · ${model.today}`} onClose={onClose} />
+      <SheetBody>
+        <SectionCard header="Coverage" headerVariant="emphasized">
+          <StatGrid
+            minWidth={100}
+            items={[
+              { label: 'LEAPS', value: <span className="text-wb-gold">{money(model.currentLeaps.strike)}</span> },
+              { label: 'Expires', value: model.currentLeaps.expiration },
+              { label: 'DTE', value: k.leapsDte },
+              { label: 'Δ', value: '0.81' }
+            ]}
+          />
+          <div className="px-4 pb-3 font-wb-mono text-[0.72rem] text-wb-text-secondary">
+            Cycle {last.n} {OUTCOME_LABEL[last.end.outcome].toLowerCase()} {last.end.date} · {idle} days uncovered
+          </div>
+        </SectionCard>
+
+        <SectionCard header="Contract">
+          <div className="flex flex-col gap-3 p-4">
+            <div className="rounded-md border border-dashed border-wb-border px-3 py-2 font-wb-mono text-[0.7rem] text-wb-text-muted">
+              Picker · XYZ calls before {model.currentLeaps.expiration}, strikes above {money(model.currentLeaps.strike)} · 20–45 DTE · Δ 0.25–0.35 · <span className="text-wb-teal">Enter manually</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Strike" htmlFor="ss-strike" error={errors.strike}>
+                <Money id="ss-strike" value={strike} onChange={setStrike} error={errors.strike} />
+              </Field>
+              <Field label="Expiration" htmlFor="ss-exp" error={errors.expiration} hint={dte != null ? `${dte} DTE` : undefined}>
+                <NumberInput id="ss-exp" value={expiration} hasError={Boolean(errors.expiration)} onChange={(e) => setExpiration(e.target.value)} />
+              </Field>
+              <Field label="Actual sale price / share" htmlFor="ss-price" error={errors.price}>
+                <Money id="ss-price" value={price} onChange={setPrice} error={errors.price} />
+              </Field>
+              <Field label="Contracts" htmlFor="ss-qty" hint={`max ${c} (LEAPS held)`}>
+                <NumberInput id="ss-qty" value={c} readOnly />
+              </Field>
+              <Field label="Fill date" htmlFor="ss-date">
+                <NumberInput id="ss-date" value={model.today} readOnly />
+              </Field>
+              <Field label="Fees" htmlFor="ss-fees">
+                <NumberInput id="ss-fees" prefix="$" value="0.00" readOnly />
+              </Field>
+            </div>
+          </div>
+        </SectionCard>
+
+        <SectionCard header="After this sale" headerVariant="emphasized">
+          <div className="flex flex-col gap-1.5 p-4">
+            <SummaryRow label="Credit" value={p > 0 ? `${money(p * 100 * c)}${dte != null ? ` · ${dte} DTE` : ''}` : '—'} />
+            <SummaryRow label="Cost basis after" value={`${money(basisAfter)} / share (from ${money(model.basis)})`} highlight />
+            <SummaryRow label="Effective share cost after" value={`${money(effAfter)} (from ${money(k.eff)})`} />
+            <SummaryRow label="Premium recovered after" value={`${pct(recAfter)} (from ${pct(recBefore)})`} />
+            <div className={`mt-1 font-wb-mono text-[0.75rem] ${below ? 'text-wb-gold' : 'text-wb-green'}`}>
+              {valid
+                ? below
+                  ? `Strike ${money(s)} is below your effective share cost of ${money(effAfter)} after this sale — check this is intended.`
+                  : `Strike ${money(s)} is ${signed(s - effAfter)} above your effective share cost`
+                : 'Fix the errors above to see the guardrails'}
+            </div>
+          </div>
+        </SectionCard>
+        {below && (
+          <AlertBox variant="warning">
+            If assigned, covering from the LEAPS realizes roughly {money(Math.abs((s - effAfter) * 100 * c))} on the diagonal but caps the LEAPS below its cost.
+          </AlertBox>
+        )}
+      </SheetBody>
+      <SheetFooter>
+        <FormButton label="Cancel" variant="secondary" onClick={onClose} />
+        <FormButton label="Record Short Call" disabled={!valid} />
+      </SheetFooter>
+    </SheetPanel>
+  )
+}
+
+export function RetireShortSheet({ model, k, mode, onClose }) {
+  const [cost, setCost] = useState('0.20')
+  const open = model.openCycle
+  const c = model.contracts
+  const isExpire = mode === 'expire'
+  const costNum = parseFloat(cost)
+  const error = !isExpire && !(costNum > 0) ? 'Cost to close must be greater than zero' : null
+  const net = isExpire ? open.net : open.net - (costNum > 0 ? costNum : 0)
+  const capturedPct = open.net > 0 ? net / open.net : null
+  const basisAfter = isExpire ? model.basis : model.basis + (costNum > 0 ? costNum : 0)
+  const held = isExpire ? days(open.open.date, open.current.expiration) : days(open.open.date, model.today)
+  const losing = net < 0
+
+  return (
+    <SheetPanel width={460}>
+      <SheetHeader
+        eyebrow={isExpire ? 'RECORD EXPIRATION' : 'CLOSE SHORT EARLY'}
+        title={`XYZ ${money(open.current.strike)} call · ${open.current.expiration}`}
+        subtitle={`US-119 · ${model.today}`}
+        onClose={onClose}
+      />
+      <SheetBody>
+        <SectionCard header="Coverage · stays open">
+          <StatGrid
+            minWidth={110}
+            items={[
+              { label: 'LEAPS', value: <span className="text-wb-gold">{money(model.currentLeaps.strike)}</span> },
+              { label: 'Expires', value: model.currentLeaps.expiration },
+              { label: 'DTE', value: k.leapsDte }
+            ]}
+          />
+        </SectionCard>
+        <SectionCard header={`This cycle · ${open.n}`}>
+          <StatGrid
+            minWidth={110}
+            items={[
+              { label: 'Sold', value: `${open.open.date} at ${money(open.open.price)}` },
+              { label: 'Days held', value: held },
+              { label: isExpire ? 'Expired' : 'DTE', value: isExpire ? open.current.expiration : k.shortDte }
+            ]}
+          />
+        </SectionCard>
+
+        {isExpire ? (
+          <div className="rounded-md border border-wb-border bg-wb-bg-elevated px-4 py-2.5 font-wb-mono text-[0.72rem] text-wb-text-secondary">
+            XYZ closed at {money(104.2)} on {open.current.expiration} — below the {money(open.current.strike)} strike. Confirm with your broker that this call was not assigned.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Cost to close / share" htmlFor="ce-cost" error={error}>
+              <Money id="ce-cost" value={cost} onChange={setCost} error={error} />
+            </Field>
+            <Field label="Fill date" htmlFor="ce-date">
+              <NumberInput id="ce-date" value={model.today} readOnly />
+            </Field>
+          </div>
+        )}
+
+        <SectionCard header="Net" headerVariant="emphasized">
+          <div className="flex flex-col gap-1.5 p-4">
+            <div className="flex items-baseline justify-between">
+              <span className="font-wb-mono text-[0.75rem] text-wb-text-muted">Cycle {open.n} net</span>
+              <span className="font-wb-mono text-base font-bold" style={{ color: losing ? TONE.red : TONE.green }}>
+                {signed(net)} / share ({signed(net * 100 * c)})
+              </span>
+            </div>
+            <SummaryRow label="% of max captured" value={capturedPct == null ? '—' : pct(capturedPct)} />
+            <SummaryRow label="Cost basis after" value={`${money(basisAfter)} / share (from ${money(model.basis)})`} highlight />
+            <SummaryRow label="Effective share cost after" value={`${money(model.currentLeaps.strike + basisAfter)} (from ${money(k.eff)})`} />
+            {isExpire && <SummaryRow label="Credit" value={`${money(open.net)} moves from open to realized · basis unchanged`} />}
+          </div>
+        </SectionCard>
+        {losing && <AlertBox variant="warning">Buying back above the credit collected — this cycle nets a loss.</AlertBox>}
+      </SheetBody>
+      <SheetFooter>
+        <FormButton label="Cancel" variant="secondary" onClick={onClose} />
+        <FormButton label={isExpire ? 'Confirm Expiration' : 'Confirm Close'} disabled={Boolean(error)} />
+      </SheetFooter>
+    </SheetPanel>
+  )
+}
+
+export function AssignmentSheet({ model, k, q, onClose }) {
+  const [settle, setSettle] = useState('sell-cover')
+  const [leapsSale, setLeapsSale] = useState(k.leapsMid.toFixed(2))
+  const [sharePrice, setSharePrice] = useState(q.stock.toFixed(2))
+  const open = model.openCycle
+  const c = model.contracts
+  const shares = 100 * c
+  const strike = open.current.strike
+  const L = model.currentLeaps.strike
+  const sale = parseFloat(leapsSale)
+  const buy = parseFloat(sharePrice)
+  const basisTotal = model.basis * 100 * c
+  const deliver = strike * shares
+  const exerciseCash = deliver - L * shares
+  const sellCoverCash = (sale > 0 ? sale : 0) * shares - (buy > 0 ? buy : 0) * shares + deliver
+  const coverCost = deliver - (buy > 0 ? buy : 0) * shares
+  const coverPerShare = buy > 0 ? buy - strike : 0
+  const cycleNetKeep = open.net - coverPerShare
+  const basisKeep = model.basis + coverPerShare
+  const realized = settle === 'exercise' ? exerciseCash - basisTotal : settle === 'sell-cover' ? sellCoverCash - basisTotal : null
+  const belowEff = strike < k.eff
+  const errors = {}
+  if (settle === 'sell-cover' && !(sale > 0)) errors.sale = 'LEAPS sale price must be greater than zero'
+  if (settle !== 'exercise' && !(buy > 0)) errors.buy = 'Share purchase price must be greater than zero'
+
+  const Option = ({ id, title, note }) => (
+    <label className={`flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 ${settle === id ? 'border-wb-gold-border bg-wb-gold-dim' : 'border-wb-border'}`}>
+      <input type="radio" name="settle" checked={settle === id} onChange={() => setSettle(id)} className="mt-1" />
+      <span className="flex flex-col">
+        <span className="font-wb-mono text-sm text-wb-text-primary">{title}</span>
+        <span className="font-wb-mono text-[0.7rem] text-wb-text-muted">{note}</span>
+      </span>
+    </label>
+  )
+
+  return (
+    <SheetPanel width={460}>
+      <SheetHeader eyebrow="RECORD ASSIGNMENT" title={`XYZ ${money(strike)} call · assigned`} subtitle={`US-111 · assigned ${open.current.expiration} · recording ${model.today}`} onClose={onClose} />
+      <SheetBody>
+        <SectionCard header="Assigned short call">
+          <StatGrid
+            minWidth={100}
+            items={[
+              { label: 'Strike', value: <span className="text-wb-gold">{money(strike)}</span> },
+              { label: 'Sold', value: `${open.open.date} at ${money(open.open.price)}` },
+              { label: 'Delivered', value: `${shares} sh at ${money(strike)}` },
+              { label: 'Received', value: <span className="text-wb-green">+{money(deliver)}</span> }
+            ]}
+          />
+        </SectionCard>
+        <SectionCard header="Your LEAPS">
+          <StatGrid
+            minWidth={100}
+            items={[
+              { label: 'Strike', value: <span className="text-wb-gold">{money(L)}</span> },
+              { label: 'DTE', value: k.leapsDte },
+              { label: 'Mid', value: `${money(k.leapsMid)} (${money(q.leapsBid)} × ${money(q.leapsAsk)})` },
+              { label: 'Intrinsic · extrinsic', value: `${money(k.intrinsic)} · ${money(k.extrinsic)}` }
+            ]}
+          />
+        </SectionCard>
+
+        <div className="flex flex-col gap-2">
+          <span className="font-wb-mono text-xs font-semibold uppercase tracking-widest text-wb-text-secondary">Settlement</span>
+          <Option id="exercise" title="Exercise the LEAPS" note={`forfeits ${money(k.extrinsic * shares)} extrinsic · position closes`} />
+          <Option id="sell-cover" title="Sell the LEAPS and buy shares to deliver" note={`captures the extrinsic · better than exercising by ${money(k.extrinsic * shares)} · position closes`} />
+          <Option id="cover-keep" title="Buy shares to deliver, keep the LEAPS" note="cycle nets a loss · position continues LEAPS-only" />
+        </div>
+
+        {settle !== 'exercise' && (
+          <div className="grid grid-cols-2 gap-3">
+            {settle === 'sell-cover' && (
+              <Field label="LEAPS sale price / share" htmlFor="as-sale" error={errors.sale}>
+                <Money id="as-sale" value={leapsSale} onChange={setLeapsSale} error={errors.sale} />
+              </Field>
+            )}
+            <Field label="Share purchase price" htmlFor="as-buy" error={errors.buy}>
+              <Money id="as-buy" value={sharePrice} onChange={setSharePrice} error={errors.buy} />
+            </Field>
+            <Field label="Settlement date" htmlFor="as-date">
+              <NumberInput id="as-date" value="2027-08-23" readOnly />
+            </Field>
+          </div>
+        )}
+
+        <SectionCard header="Result" headerVariant="emphasized">
+          <div className="flex flex-col gap-1.5 p-4">
+            {settle === 'exercise' && (
+              <>
+                <SummaryRow label={`Pay ${money(L)} × ${shares} sh`} value={`−${money(L * shares)}`} />
+                <SummaryRow label={`Deliver at ${money(strike)}`} value={`+${money(deliver)}`} />
+                <SummaryRow label="Settlement cash" value={signed(exerciseCash)} />
+                <SummaryRow label="Less cost basis" value={`−${money(basisTotal)}`} />
+              </>
+            )}
+            {settle === 'sell-cover' && (
+              <>
+                <SummaryRow label="Sell LEAPS" value={`+${money((sale > 0 ? sale : 0) * shares)}`} />
+                <SummaryRow label={`Buy ${shares} sh`} value={`−${money((buy > 0 ? buy : 0) * shares)}`} />
+                <SummaryRow label={`Deliver at ${money(strike)}`} value={`+${money(deliver)}`} />
+                <SummaryRow label="Settlement cash" value={signed(sellCoverCash)} />
+                <SummaryRow label="Less cost basis" value={`−${money(basisTotal)}`} />
+              </>
+            )}
+            {settle === 'cover-keep' && (
+              <>
+                <SummaryRow label={`Buy ${shares} sh`} value={`−${money((buy > 0 ? buy : 0) * shares)}`} />
+                <SummaryRow label={`Deliver at ${money(strike)}`} value={`+${money(deliver)}`} />
+                <SummaryRow label="Cost to cover" value={signed(coverCost)} />
+                <SummaryRow label={`Cycle ${open.n} net`} value={`${signed(cycleNetKeep)} / share (${signed(cycleNetKeep * shares)})`} />
+                <SummaryRow label="Cost basis after" value={`${money(basisKeep)} / share (from ${money(model.basis)})`} highlight />
+                <SummaryRow label="Effective share cost after" value={`${money(L + basisKeep)} (from ${money(k.eff)})`} />
+              </>
+            )}
+            {realized != null && (
+              <div className="mt-1 flex items-baseline justify-between border-t border-wb-border pt-2">
+                <span className="font-wb-mono text-[0.75rem] text-wb-text-muted">Realized P&L</span>
+                <span className="font-wb-mono text-lg font-bold" style={{ color: realized >= 0 ? TONE.green : TONE.red }}>
+                  {signed(realized)}
+                </span>
+              </div>
+            )}
+          </div>
+        </SectionCard>
+        {belowEff && (
+          <AlertBox variant="error">
+            The short strike sat below your effective share cost of {money(k.eff)} — this assignment locks in a loss on the diagonal.
+          </AlertBox>
+        )}
+        {settle === 'exercise' && k.extrinsic > 0 && (
+          <AlertBox variant="warning">Forfeits {money(k.extrinsic * shares)} of extrinsic value. Selling the LEAPS and buying shares captures it.</AlertBox>
+        )}
+      </SheetBody>
+      <SheetFooter>
+        <FormButton label="Cancel" variant="secondary" onClick={onClose} />
+        <FormButton label="Confirm Assignment" disabled={Object.keys(errors).length > 0} />
+      </SheetFooter>
+    </SheetPanel>
+  )
+}
+
+export const WHEEL_LEGS = [
+  { id: 'w1', positionId: 'p1', legRole: 'CSP_OPEN', action: 'SELL', instrumentType: 'PUT', strike: '180.0000', expiration: '2027-04-16', contracts: 1, premiumPerContract: '3.5000', fillDate: '2027-03-12', rollChainId: null, runningCostBasis: '176.5000' },
+  { id: 'w2', positionId: 'p1', legRole: 'ASSIGN', action: '—', instrumentType: 'PUT', strike: '180.0000', expiration: null, contracts: 1, premiumPerContract: '0.0000', fillDate: '2027-04-16', rollChainId: null, runningCostBasis: '176.5000' },
+  { id: 'w3', positionId: 'p1', legRole: 'CC_OPEN', action: 'SELL', instrumentType: 'CALL', strike: '182.0000', expiration: '2027-05-21', contracts: 1, premiumPerContract: '2.3000', fillDate: '2027-04-20', rollChainId: null, runningCostBasis: '174.2000' },
+  { id: 'w4', positionId: 'p1', legRole: 'CC_CLOSE', action: 'BUY', instrumentType: 'CALL', strike: '182.0000', expiration: '2027-05-21', contracts: 1, premiumPerContract: '1.8000', fillDate: '2027-05-08', rollChainId: null, runningCostBasis: '174.2000' }
+]
+
+export function Timeline({ model }) {
+  return (
+    <>
+      <Strip model={model} />
+      <div className="flex flex-col gap-5 px-4 pt-4 pb-2">
+        <LeapsTrack model={model} />
+
+        <div className="overflow-hidden rounded-lg border border-[rgba(210,168,255,0.28)] bg-[rgba(210,168,255,0.02)]">
+          <div className="flex items-baseline gap-2 border-b border-[rgba(210,168,255,0.22)] bg-[rgba(210,168,255,0.08)] px-5 py-2.5">
+            <Badge color="#d2a8ff">S</Badge>
+            <span className="font-wb-mono text-sm font-semibold text-[#d2a8ff]">Short-call cycles</span>
+            <span className="font-wb-mono text-[0.65rem] text-wb-text-secondary">
+              {model.cycles.length} cycle{model.cycles.length === 1 ? '' : 's'} · {model.closedCount} closed{model.openCycle ? ' · 1 open' : ''} · a roll stays inside its cycle
+            </span>
+          </div>
+          {model.cycles.length === 0 && (
+            <div className="px-5 py-6 text-center font-wb-mono text-[0.75rem] text-wb-text-muted">
+              No short call has been sold against this LEAPS yet. The LEAPS track above is the whole history.
+            </div>
+          )}
+          {model.cycles.map((cycle, i) => {
+            const before = model.gaps.find((g) => g.before === cycle.n)
+            return (
+              <div key={cycle.n} className={i === model.cycles.length - 1 ? '[&>div:last-child]:border-b-0' : undefined}>
+                {before && <GapRow gap={before} />}
+                <CycleGroup cycle={cycle} model={model} />
+              </div>
+            )
+          })}
+          {model.gaps.filter((g) => g.before === null && g.after !== null).map((g) => <GapRow key={`tail-${g.from}`} gap={g} />)}
+        </div>
+      </div>
+      <div className="border-t border-wb-blue-dim bg-[rgba(88,166,255,0.03)] px-5 py-3">
+        <div className="mb-2 flex items-baseline justify-between">
+          <Caption>Timeline summary</Caption>
+          <span className="font-wb-mono text-[0.65rem] text-wb-text-muted">reconciles to the Cost basis drawer above</span>
+        </div>
+        <StatGrid
+          minWidth={150}
+          items={[
+            { label: 'Cycles', value: `${model.cycles.length} · ${model.closedCount} closed${model.openCycle ? ' · 1 open' : ''}` },
+            { label: 'Realized net credits', value: <span className="text-wb-green">{signed(model.realized)} / share ({signed(model.realized * 100 * model.contracts)})</span> },
+            { label: 'Average per closed cycle', value: model.closedCount ? `${signed(model.average)} / share` : '—' },
+            { label: 'Open cycle credit', value: model.openCycle ? <span className="text-wb-gold">{signed(model.openCredit)} / share · open</span> : <span className="text-wb-text-muted">—</span> },
+            { label: 'LEAPS roll net', value: model.leapsRollNet === 0 ? <span className="text-wb-text-muted">no roll yet</span> : <span className="text-wb-green">{signed(model.leapsRollNet)} / share</span> },
+            { label: 'Coverage', value: `${model.covered} of ${model.totalDays} days · ${model.uncovered} uncovered` }
+          ]}
+        />
+        <div className="mt-2.5 font-wb-mono text-[0.68rem] text-wb-text-secondary">
+          Realized {money(model.realized)} + open {money(model.openCredit)} = {money(model.credits)} short-call credits to date. LEAPS cost to date {money(model.leapsCost)} − {money(model.credits)} = <span className="text-wb-sky">{money(model.basis)}</span> cost basis per share.
+        </div>
+      </div>
+    </>
+  )
+}
+
+export function Mockup() {
+  const [presetKey, setPresetKey] = useState('healthy')
+  const [sheetOverride, setSheetOverride] = useState(undefined)
+  const preset = PAGE_PRESETS.find((p) => p.key === presetKey)
+  const isWheel = Boolean(preset.wheel)
+  const model = buildModel(preset)
+  const q = preset.q ?? null
+  const k = isWheel ? null : deriveCockpit(model, q)
+  const sheet = sheetOverride === undefined ? preset.sheet : sheetOverride
+  const c = model.contracts
+
+  const pick = (key) => {
+    setPresetKey(key)
+    setSheetOverride(undefined)
+  }
+
+  return (
+    <div className="flex flex-col gap-4 font-wb-mono text-wb-text-primary">
+      <div className={`relative isolate flex transform-gpu flex-col overflow-hidden rounded-lg border border-wb-border bg-wb-bg-base ${isWheel ? 'h-[560px]' : 'h-[1300px]'}`}>
+        <PageHeader
+          left={<Breadcrumb backTo="#/" backLabel="Positions" current={isWheel ? 'AAPL' : 'XYZ'} />}
+          right={<HeaderActions actions={k ? k.actions : []} activeSheet={sheet} onOpen={setSheetOverride} isWheel={isWheel} />}
+        />
+
+        <main className="flex flex-1 flex-col gap-4 overflow-y-auto p-6">
+          {isWheel ? (
+            <div className="flex flex-col gap-3">
+              <VerdictBlock input={null} verdict={{ label: 'HOLD', sub: 'Comfortably out of the money — let theta work', color: '#3fb950' }} pnl={null} ticker="AAPL" phaseLabel="Sell Call" phaseColor="#d2a8ff" />
+              <CollapsedDrawer key="wheel-history" title="Cost basis & history" fieldCount={3} defaultOpen>
+                <StatGrid
+                  minWidth={140}
+                  items={[
+                    { label: 'Effective Basis / Share', value: <span className="text-wb-sky">$174.20</span> },
+                    { label: 'Premium Collected', value: <span className="text-wb-green">$580.00</span> },
+                    { label: 'Cycles', value: 0 }
+                  ]}
+                />
+                <LegHistoryTable legs={WHEEL_LEGS} finalPnl={null} />
+              </CollapsedDrawer>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <Hero model={model} k={{ ...k, leapsDelta: q ? q.leapsDelta : null }} />
+              <Guardrails model={model} k={k} />
+
+              <CollapsedDrawer key="pmcc-legref" title="Leg reference" fieldCount={model.openCycle ? 8 : 4}>
+                <OwnerNote>US-101 · the contracts as recorded</OwnerNote>
+                <StatGrid
+                  minWidth={130}
+                  items={[
+                    { label: 'LEAPS strike', value: <span className="text-wb-gold">{money(model.currentLeaps.strike)}</span> },
+                    { label: 'LEAPS expiration', value: model.currentLeaps.expiration },
+                    { label: 'Contracts', value: c },
+                    { label: 'LEAPS fill', value: money(model.leapsEvents[model.leapsEvents.length - 1].kind === 'roll' ? model.leapsEvents[model.leapsEvents.length - 1].open.price : model.leapsEvents[0].price) },
+                    ...(model.openCycle
+                      ? [
+                          { label: 'Short strike', value: <span className="text-wb-gold">{money(model.openCycle.current.strike)}</span> },
+                          { label: 'Short expiration', value: model.openCycle.current.expiration },
+                          { label: 'Short contracts', value: c },
+                          { label: 'Short fill', value: <span className="text-wb-green">{money(model.openCycle.open.price)}</span> }
+                        ]
+                      : [])
+                  ]}
+                />
+              </CollapsedDrawer>
+
+              <CollapsedDrawer key="pmcc-basis" title="Cost basis" fieldCount={6} defaultOpen>
+                <OwnerNote>US-103 · cash ledger, never a quote</OwnerNote>
+                <StatGrid
+                  minWidth={150}
+                  items={[
+                    { label: 'Cost basis / share', value: <span className="text-wb-sky">{money(model.basis)}</span> },
+                    { label: 'Total', value: money(model.basis * 100 * c) },
+                    { label: 'LEAPS cost to date', value: money(model.leapsCost) },
+                    { label: 'Short-call credits to date', value: <span className="text-wb-green">−{money(model.credits)}</span> },
+                    { label: 'Effective share cost', value: money(k.eff) },
+                    { label: 'Premium recovered', value: model.leapsCost > 0 ? pct(model.credits / model.leapsCost) : '—' }
+                  ]}
+                />
+              </CollapsedDrawer>
+
+              <TimelineDrawer title="Leg timeline" meta={`${model.cycles.length} ${model.cycles.length === 1 ? 'cycle' : 'cycles'} · ${model.uncovered}d uncovered`}>
+                <OwnerNote>US-109 · a roll stays inside its cycle</OwnerNote>
+                {model.positionClosed && (
+                  <div className="border-b border-wb-border bg-wb-bg-elevated px-5 py-2 font-wb-mono text-[0.7rem] text-wb-text-secondary">
+                    Position closed {model.closedAt} · the timeline is complete. Settlement recorded by US-111.
+                  </div>
+                )}
+                <div className={model.positionClosed ? 'opacity-70' : undefined}>
+                  <Timeline model={model} />
+                </div>
+              </TimelineDrawer>
+            </div>
+          )}
+        </main>
+
+        {!isWheel && sheet === 'sell' && !model.openCycle && (
+          <Scrim onClose={() => setSheetOverride(null)}>
+            <SellShortSheet key={presetKey} model={model} k={k} onClose={() => setSheetOverride(null)} />
+          </Scrim>
+        )}
+        {!isWheel && (sheet === 'close' || sheet === 'expire') && model.openCycle && (
+          <Scrim onClose={() => setSheetOverride(null)}>
+            <RetireShortSheet key={`${presetKey}-${sheet}`} model={model} k={k} mode={sheet} onClose={() => setSheetOverride(null)} />
+          </Scrim>
+        )}
+        {!isWheel && sheet === 'assign' && model.openCycle && q && k.leapsMid != null && (
+          <Scrim onClose={() => setSheetOverride(null)}>
+            <AssignmentSheet key={presetKey} model={model} k={k} q={q} onClose={() => setSheetOverride(null)} />
+          </Scrim>
+        )}
+      </div>
+
+      <details className="rounded-lg border border-wb-border p-3 text-xs text-wb-text-secondary" open>
+        <summary className="cursor-pointer">Review states · prototype controls</summary>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {PAGE_PRESETS.map((entry) => (
+            <FormButton key={entry.key} label={entry.label} variant={entry.key === presetKey ? 'primary' : 'secondary'} onClick={() => pick(entry.key)} />
+          ))}
+        </div>
+        <p className="mt-3">
+          The header buttons are live: on any PMCC preset, click <em>Sell Short Call</em>, <em>Close Short Early</em>, <em>Record Expiration</em> or{' '}
+          <em>Record Assignment</em> to open that story's sheet over the current state (Roll Short Call and Roll LEAPS have their own mockups). Inside the sheets the
+          money fields are editable and every preview recomputes — set the sell-short strike to 85 or the expiration to 2028-01-21 to see the US-101 and US-102 rules
+          fire; raise the buyback cost above the credit to see a losing cycle; switch the assignment settlement to see the three realized figures.
+        </p>
+        <p className="mt-2">
+          Everything derives from one ledger. Lane statuses come from the strike, DTE, delta and stock price against the fixed thresholds US-106 (2%), US-107 (60 days)
+          and US-108 (Δ 0.60) own. Net P&L is Σ(±mid × 100 × contracts) − cost basis. Effective share cost is LEAPS strike + basis per share; "call-away locks in" is
+          (short strike − effective share cost) × 100 × contracts, and it equals the exercise settlement on the assignment sheet exactly — the same number, from
+          projection to booking. Premium recovered is credits ÷ LEAPS cost. Cycle nets, gaps and running basis are the US-109 fold, and the timeline summary
+          reconciles to the Cost basis drawer in one line.
+        </p>
+        <p className="mt-2">
+          Deliberately absent: a single position-level verdict, a position-level "% of max profit", any per-leg P&L, an annualized cycle return, and the wheel's
+          theta / vega / gamma strip — a diagonal's net greeks have the LEAPS working against the short, and showing the short's alone would overstate income exactly
+          when the LEAPS is in its roll window.
+        </p>
+      </details>
+    </div>
+  )
+}
+
+<Mockup />
