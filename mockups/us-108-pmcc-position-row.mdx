@@ -1,0 +1,529 @@
+---
+title: 'US-108: PMCC position row on the dashboard'
+story: 'Give the PMCC its own row on the dashboard positions list: both legs side by side, the running cost basis, credits collected so far, and a live net P&L marked against the cost basis.'
+states:
+  [
+    'both-open',
+    'stock-fell',
+    'wide-spread',
+    'leaps-quote-missing',
+    'leaps-only',
+    'roll-window',
+    'free',
+    'three-contracts',
+    'closed'
+  ]
+---
+
+import { useState } from 'react'
+import { SectionCard } from '../src/renderer/src/components/ui/SectionCard'
+import { Badge } from '../src/renderer/src/components/ui/Badge'
+import { TableHeader, TableCell } from '../src/renderer/src/components/ui/TablePrimitives'
+import { PhaseBadge } from '../src/renderer/src/components/PhaseBadge'
+import { TargetBadge } from '../src/renderer/src/components/TargetBadge'
+
+# US-108: PMCC position row on the dashboard
+
+_The dashboard positions list with **XYZ**, a PMCC, sitting between two classic wheels. The row keeps the ten shared columns; wherever a wheel row shows one value for its single open leg, the PMCC row stacks two lines — the LEAPS on top (`L`), the short call beneath it (`S`). Cost basis and credits come from US-103's cash ledger. Net P&L marks the open diagonal at the mid and subtracts that cost basis._
+
+## Where this appears
+
+- **Dashboard positions list** — the PMCC row, in DTE order with the wheels. The nearest decision point is the short call's expiration when one is open, otherwise the LEAPS expiration.
+- **Position detail** — unchanged. Clicking the row opens the XYZ detail page as any other row does.
+- **Management queue** — unchanged. Alerts live there (US-106, US-107); the row carries only the same in-row cues a wheel row has.
+
+## Acceptance Criteria States
+
+- **both-open**: 2026-11-06, XYZ $104.20. $80 LEAPS (315d) marked $26.10, $108 short (14d) marked $0.90. Spread value $2,520.00 less cost basis $2,120.00 = **+$400.00, +18.9% of basis**. The short has given back 50.0% of its $1.80 credit, so the TARGET badge fires exactly as it does on a wheel row.
+- **stock-fell**: XYZ $92.00. The LEAPS is marked $16.40 while the short is nearly worthless at $0.20: the diagonal is **-$500.00** even though the short leg is 88.9% profitable. Two greens on one leg, one red on the position.
+- **wide-spread**: LEAPS quoted $24.60 × $27.60 — 11.5% of mid. The mid carries the existing wide-spread warning and the P&L is flagged as unreliable, because a far-dated deep ITM LEAPS mid is the least trustworthy number on the row.
+- **leaps-quote-missing**: no LEAPS snapshot this poll. The short mid still shows; the P&L reads — rather than a half-marked figure.
+- **leaps-only**: 2026-10-19, the first short expired worthless three days ago and nothing has been sold yet. Short cells read "No short call open"; the row sorts by the LEAPS DTE; P&L is the LEAPS mark alone against the $2,300.00 basis.
+- **roll-window**: 2027-07-20, the LEAPS has 59 days left. Its DTE turns gold — the same treatment the US-107 alert threshold uses — while the 31-day short stays neutral.
+- **free**: after a LEAPS roll to $85 and eleven short-call cycles, credits ($22.90) exceed the LEAPS cost to date ($22.50). Cost basis reads **-$40.00** with "LEAPS paid for"; P&L shows the dollar figure only, because a percentage of a negative basis means nothing.
+- **three-contracts**: the both-open state with three contracts per leg. Every total scales by three; every per-share figure and percentage is unchanged.
+- **closed**: a PMCC that has been closed (US-111 or a later close story). It sits in the Closed section, muted, with its last cost basis and credits and no live figures.
+
+Use the preset controls under the frame. Every figure in the row is derived from the preset's quotes, fills and valuation date, so the mockup cannot drift from the criteria.
+
+---
+
+export const PRESETS = [
+  {
+    key: 'both-open',
+    label: 'both open · target hit',
+    today: '2026-11-06',
+    price: 104.2,
+    prevClose: 103.1,
+    contracts: 1,
+    leaps: { strike: 80, expiration: '2027-09-17', paid: 25.0, bid: 25.7, ask: 26.5 },
+    short: { strike: 108, expiration: '2026-11-20', sold: 1.8, bid: 0.85, ask: 0.95 },
+    leapsCost: 25.0,
+    credits: 3.8
+  },
+  {
+    key: 'stock-fell',
+    label: 'stock fell',
+    today: '2026-11-06',
+    price: 92.0,
+    prevClose: 95.4,
+    contracts: 1,
+    leaps: { strike: 80, expiration: '2027-09-17', paid: 25.0, bid: 16.1, ask: 16.7 },
+    short: { strike: 108, expiration: '2026-11-20', sold: 1.8, bid: 0.15, ask: 0.25 },
+    leapsCost: 25.0,
+    credits: 3.8
+  },
+  {
+    key: 'wide-spread',
+    label: 'wide LEAPS spread',
+    today: '2026-11-06',
+    price: 104.2,
+    prevClose: 103.1,
+    contracts: 1,
+    leaps: { strike: 80, expiration: '2027-09-17', paid: 25.0, bid: 24.6, ask: 27.6 },
+    short: { strike: 108, expiration: '2026-11-20', sold: 1.8, bid: 0.85, ask: 0.95 },
+    leapsCost: 25.0,
+    credits: 3.8
+  },
+  {
+    key: 'leaps-quote-missing',
+    label: 'LEAPS quote missing',
+    today: '2026-11-06',
+    price: 104.2,
+    prevClose: 103.1,
+    contracts: 1,
+    leaps: { strike: 80, expiration: '2027-09-17', paid: 25.0, bid: null, ask: null },
+    short: { strike: 108, expiration: '2026-11-20', sold: 1.8, bid: 0.85, ask: 0.95 },
+    leapsCost: 25.0,
+    credits: 3.8
+  },
+  {
+    key: 'leaps-only',
+    label: 'LEAPS only',
+    today: '2026-10-19',
+    price: 103.1,
+    prevClose: 102.6,
+    contracts: 1,
+    leaps: { strike: 80, expiration: '2027-09-17', paid: 25.0, bid: 25.1, ask: 25.7 },
+    short: null,
+    leapsCost: 25.0,
+    credits: 2.0
+  },
+  {
+    key: 'roll-window',
+    label: 'LEAPS roll window',
+    today: '2027-07-20',
+    price: 109.4,
+    prevClose: 108.9,
+    contracts: 1,
+    leaps: { strike: 80, expiration: '2027-09-17', paid: 25.0, bid: 29.9, ask: 30.5 },
+    short: { strike: 112, expiration: '2027-08-20', sold: 2.1, bid: 1.25, ask: 1.35 },
+    leapsCost: 25.0,
+    credits: 9.7
+  },
+  {
+    key: 'free',
+    label: 'LEAPS paid for',
+    today: '2027-11-08',
+    price: 118.3,
+    prevClose: 117.2,
+    contracts: 1,
+    leaps: { strike: 85, expiration: '2028-01-21', paid: 23.5, bid: 33.1, ask: 33.7 },
+    short: { strike: 120, expiration: '2027-12-17', sold: 1.6, bid: 0.9, ask: 1.0 },
+    leapsCost: 22.5,
+    credits: 22.9
+  },
+  {
+    key: 'three-contracts',
+    label: 'three contracts',
+    today: '2026-11-06',
+    price: 104.2,
+    prevClose: 103.1,
+    contracts: 3,
+    leaps: { strike: 80, expiration: '2027-09-17', paid: 25.0, bid: 25.7, ask: 26.5 },
+    short: { strike: 108, expiration: '2026-11-20', sold: 1.8, bid: 0.85, ask: 0.95 },
+    leapsCost: 25.0,
+    credits: 3.8
+  },
+  {
+    key: 'closed',
+    label: 'closed',
+    today: '2026-11-25',
+    price: 111.4,
+    prevClose: 110.9,
+    contracts: 1,
+    closed: true,
+    leaps: { strike: 80, expiration: '2027-09-17', paid: 25.0, bid: null, ask: null },
+    short: { strike: 108, expiration: '2026-11-20', sold: 1.8, bid: null, ask: null },
+    leapsCost: 25.0,
+    credits: 3.8
+  }
+]
+
+export const WHEELS = [
+  { ticker: 'MSFT', phase: 'CC_OPEN', dte: 10, strike: 420, mid: 2.15, entry: 4.3, premium: 860.0, basis: 411.7 },
+  { ticker: 'AAPL', phase: 'CSP_OPEN', dte: 30, strike: 180, mid: 2.9, entry: 3.5, premium: 350.0, basis: 176.5 }
+]
+
+export const PROFIT_TARGET_PERCENT = 50
+export const LEAPS_ROLL_WINDOW_DTE = 60
+export const SHORT_URGENT_DTE = 7
+export const SHARES = 100
+
+export const money = (value) => {
+  const abs = Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return value < 0 ? `-$${abs}` : `$${abs}`
+}
+
+export const signed = (value) => (value >= 0 ? `+${money(value)}` : money(value))
+
+export const pct1 = (value) => `${value.toFixed(1)}%`
+
+export const dte = (expiration, today) =>
+  Math.round((Date.parse(expiration) - Date.parse(today)) / 86400000)
+
+export const addDays = (today, days) =>
+  new Date(Date.parse(today) + days * 86400000).toISOString().slice(0, 10)
+
+export const mid = (leg) => (leg && leg.bid !== null ? Math.round(((leg.bid + leg.ask) / 2) * 100) / 100 : null)
+
+export const wideSpread = (leg) => {
+  const m = mid(leg)
+  return m !== null && m > 0 && (leg.ask - leg.bid) / m > 0.1
+}
+
+export function evaluate(preset) {
+  const shares = SHARES * preset.contracts
+  const basisPerShare = Math.round((preset.leapsCost - preset.credits) * 100) / 100
+  const basisTotal = basisPerShare * shares
+  const creditsTotal = preset.credits * shares
+  const recovered = preset.leapsCost > 0 ? (preset.credits / preset.leapsCost) * 100 : null
+  const leapsMid = mid(preset.leaps)
+  const shortMid = preset.short ? mid(preset.short) : null
+  const shortOpen = preset.short !== null
+  const marksReady = !preset.closed && leapsMid !== null && (!shortOpen || shortMid !== null)
+  const valuePerShare = marksReady ? leapsMid - (shortOpen ? shortMid : 0) : null
+  const pnl = marksReady ? Math.round((valuePerShare * shares - basisTotal) * 100) / 100 : null
+  const pnlPercent = pnl !== null && basisTotal > 0 ? (pnl / basisTotal) * 100 : null
+  const shortPnl = shortOpen && shortMid !== null && !preset.closed ? (preset.short.sold - shortMid) * shares : null
+  const shortPercent = shortPnl !== null ? (shortPnl / (preset.short.sold * shares)) * 100 : null
+  const leapsDte = dte(preset.leaps.expiration, preset.today)
+  const shortDte = shortOpen ? dte(preset.short.expiration, preset.today) : null
+  return {
+    shares,
+    basisPerShare,
+    basisTotal,
+    creditsTotal,
+    recovered,
+    leapsMid,
+    shortMid,
+    shortOpen,
+    marksReady,
+    valuePerShare,
+    pnl,
+    pnlPercent,
+    shortPnl,
+    shortPercent,
+    targetReached: shortPercent !== null && shortPercent >= PROFIT_TARGET_PERCENT,
+    leapsDte,
+    shortDte,
+    sortDte: preset.closed ? null : shortOpen ? shortDte : leapsDte,
+    leapsWide: wideSpread(preset.leaps),
+    free: basisPerShare <= 0,
+    state: preset.closed ? 'Closed' : shortOpen ? 'LEAPS + short call open' : 'LEAPS open · no short call'
+  }
+}
+
+export const COLUMNS = ['Ticker', 'Phase', 'Price', 'Opt Mid', 'P&L', 'Strike', 'Expiration', 'DTE', 'Premium', 'Cost Basis']
+
+export const CELL = 'py-[10px] px-[16px] border-b-0'
+export const VALUE = 'font-wb-mono text-[0.8125rem]'
+export const SUB = 'font-wb-mono text-[0.65rem] text-wb-text-muted'
+export const LEG_TAG = 'inline-block w-3 shrink-0 text-[0.55rem] font-bold tracking-[0.08em] text-wb-text-muted'
+
+export function TwoLine({ leaps, short, shortOpen, leapsClass, shortClass }) {
+  return (
+    <div className="flex flex-col gap-[2px]">
+      <span className={`flex items-center gap-1.5 ${VALUE} ${leapsClass ?? 'text-wb-text-primary'}`}>
+        <span className={LEG_TAG} title="LEAPS call">L</span>
+        {leaps}
+      </span>
+      <span className={`flex items-center gap-1.5 ${VALUE} ${shortOpen ? (shortClass ?? 'text-wb-text-secondary') : 'text-wb-text-muted'}`}>
+        <span className={LEG_TAG} title="Short call">S</span>
+        {shortOpen ? short : '—'}
+      </span>
+    </div>
+  )
+}
+
+export function PmccBadge() {
+  return (
+    <Badge className="gap-[5px] rounded text-[0.7rem] px-2 py-0.5" data-testid="pmcc-badge">
+      <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-wb-gold" />
+      PMCC
+    </Badge>
+  )
+}
+
+export function PmccRow({ preset, model }) {
+  const closed = preset.closed === true
+  const leapsDteGold = !closed && model.leapsDte <= LEAPS_ROLL_WINDOW_DTE
+  const shortDteGold = !closed && model.shortDte !== null && model.shortDte <= SHORT_URGENT_DTE
+  const pnlClass = model.pnl === null ? 'text-wb-text-muted' : model.pnl >= 0 ? 'text-wb-green' : 'text-wb-red'
+  const shortPnlClass = model.shortPnl === null ? '' : model.shortPnl >= 0 ? 'text-wb-green' : 'text-wb-red'
+  return (
+    <tr
+      data-testid={closed ? 'position-card-closed' : 'position-card'}
+      className={`wb-position-row bg-wb-bg-surface border border-wb-border ${closed ? 'opacity-[0.55]' : ''}`}
+    >
+      <TableCell className={CELL}>
+        <div className="flex flex-col gap-[1px]">
+          <div className="flex items-center gap-1.5">
+            <span className="font-wb-mono font-bold text-sm text-wb-text-primary tracking-[0.02em]">XYZ</span>
+            <TargetBadge
+              targetReached={model.targetReached}
+              pnlPercent={model.shortPercent === null ? '0' : model.shortPercent.toFixed(4)}
+              maxProfit={model.shortOpen ? (preset.short.sold * model.shares).toFixed(4) : '0'}
+              targetPercent={PROFIT_TARGET_PERCENT}
+            />
+          </div>
+          <span className="text-[0.65rem] text-wb-text-muted font-wb-mono">{closed ? 'CLOSED' : 'ACTIVE'}</span>
+        </div>
+      </TableCell>
+      <TableCell className={CELL}>
+        <div className="flex flex-col gap-[3px]">
+          <PmccBadge />
+          <span className={SUB}>{model.state}</span>
+        </div>
+      </TableCell>
+      <TableCell className={CELL}>
+        {closed ? (
+          <span className={`${VALUE} text-wb-text-muted`}>—</span>
+        ) : (
+          <div className="flex flex-col">
+            <span className={`${VALUE} text-wb-text-primary`}>{money(preset.price)}</span>
+            <span className={`${VALUE} text-[0.7rem] ${preset.price >= preset.prevClose ? 'text-wb-green' : 'text-wb-red'}`}>
+              {signed(preset.price - preset.prevClose)}
+            </span>
+          </div>
+        )}
+      </TableCell>
+      <TableCell className={CELL} title={model.leapsWide ? `Wide spread: ${money(preset.leaps.bid)} × ${money(preset.leaps.ask)} — P&L may be unreliable` : undefined}>
+        <TwoLine
+          shortOpen={model.shortOpen}
+          leaps={
+            model.leapsMid === null || closed ? (
+              <span className="text-wb-text-muted">— <span className="text-[0.6rem]">unavailable</span></span>
+            ) : (
+              <span className="flex items-center gap-1">
+                {money(model.leapsMid)}
+                {model.leapsWide ? <span className="text-wb-gold text-[0.7rem]">⚠</span> : null}
+              </span>
+            )
+          }
+          short={model.shortMid === null || closed ? <span className="text-wb-text-muted">—</span> : money(model.shortMid)}
+        />
+      </TableCell>
+      <TableCell className={CELL} title={model.leapsWide ? 'LEAPS spread is wide — P&L may be unreliable' : model.pnlPercent === null && model.pnl !== null ? 'Cost basis is zero or negative; no percentage' : undefined}>
+        <div className="flex flex-col gap-[2px]">
+          <span className={`${VALUE} font-semibold ${pnlClass}`}>
+            {model.pnl === null ? '—' : signed(model.pnl)}
+            {model.pnl !== null && model.leapsWide ? <span className="ml-1 text-wb-gold text-[0.7rem]">⚠</span> : null}
+          </span>
+          <span className={`${SUB} ${model.pnl === null ? '' : pnlClass}`}>
+            {model.pnl === null
+              ? closed ? '' : 'unavailable'
+              : model.pnlPercent === null
+                ? 'of basis n/a'
+                : `${model.pnlPercent >= 0 ? '+' : ''}${pct1(model.pnlPercent)} of basis`}
+          </span>
+          {model.shortPercent !== null ? (
+            <span className={`${SUB} ${shortPnlClass}`} title="Short call: share of its own max profit captured">
+              S {pct1(model.shortPercent)} of max
+            </span>
+          ) : null}
+        </div>
+      </TableCell>
+      <TableCell className={CELL}>
+        <TwoLine shortOpen={model.shortOpen} leaps={money(preset.leaps.strike)} short={model.shortOpen ? money(preset.short.strike) : null} />
+      </TableCell>
+      <TableCell className={CELL}>
+        <TwoLine
+          shortOpen={model.shortOpen}
+          leapsClass="text-wb-text-secondary tracking-[0.03em]"
+          shortClass="text-wb-text-secondary tracking-[0.03em]"
+          leaps={preset.leaps.expiration}
+          short={model.shortOpen ? preset.short.expiration : <span className="text-wb-text-muted text-[0.7rem]">No short call open</span>}
+        />
+      </TableCell>
+      <TableCell className={CELL}>
+        <TwoLine
+          shortOpen={model.shortOpen}
+          leapsClass={leapsDteGold ? 'font-semibold text-wb-gold' : 'text-wb-text-secondary'}
+          shortClass={shortDteGold ? 'font-semibold text-wb-gold' : 'text-wb-text-secondary'}
+          leaps={closed ? '—' : `${model.leapsDte}d`}
+          short={model.shortOpen ? (closed ? '—' : `${model.shortDte}d`) : null}
+        />
+      </TableCell>
+      <TableCell className={CELL}>
+        <div className="flex flex-col gap-[2px]">
+          <span className={`${VALUE} text-wb-green font-medium`}>{money(model.creditsTotal)}</span>
+          <span className={SUB}>{model.recovered === null ? '' : `${pct1(model.recovered)} recovered`}</span>
+        </div>
+      </TableCell>
+      <TableCell className={CELL}>
+        <div className="flex flex-col gap-[2px]">
+          <span className={`${VALUE} ${model.free ? 'text-wb-gold font-semibold' : 'text-wb-text-primary'}`}>{money(model.basisTotal)}</span>
+          <span className={`${SUB} ${model.free ? 'text-wb-gold' : ''}`}>
+            {model.free ? 'LEAPS paid for' : `${money(model.basisPerShare)} / share`}
+          </span>
+        </div>
+      </TableCell>
+    </tr>
+  )
+}
+
+export function WheelRow({ wheel, today }) {
+  const pnl = (wheel.entry - wheel.mid) * SHARES
+  const pnlPercent = (pnl / (wheel.entry * SHARES)) * 100
+  const gold = wheel.dte <= SHORT_URGENT_DTE
+  return (
+    <tr className="wb-position-row bg-wb-bg-surface border border-wb-border">
+      <TableCell className={CELL}>
+        <div className="flex flex-col gap-[1px]">
+          <div className="flex items-center gap-1.5">
+            <span className="font-wb-mono font-bold text-sm text-wb-text-primary tracking-[0.02em]">{wheel.ticker}</span>
+            <TargetBadge targetReached={pnlPercent >= PROFIT_TARGET_PERCENT} pnlPercent={pnlPercent.toFixed(4)} maxProfit={(wheel.entry * SHARES).toFixed(4)} targetPercent={PROFIT_TARGET_PERCENT} />
+          </div>
+          <span className="text-[0.65rem] text-wb-text-muted font-wb-mono">ACTIVE</span>
+        </div>
+      </TableCell>
+      <TableCell className={CELL}>
+        <PhaseBadge phase={wheel.phase} variant="short" />
+      </TableCell>
+      <TableCell className={CELL}>
+        <span className={`${VALUE} text-wb-text-primary`}>{money(wheel.strike * (wheel.phase === 'CSP_OPEN' ? 1.03 : 0.985))}</span>
+      </TableCell>
+      <TableCell className={CELL}>
+        <span className={`${VALUE} font-semibold text-wb-text-primary`}>{money(wheel.mid)}</span>
+      </TableCell>
+      <TableCell className={CELL}>
+        <div className="flex flex-col gap-[2px]">
+          <span className={`${VALUE} font-semibold ${pnl >= 0 ? 'text-wb-green' : 'text-wb-red'}`}>{signed(pnl)}</span>
+          <span className={`${SUB} ${pnl >= 0 ? 'text-wb-green' : 'text-wb-red'}`}>{pnlPercent >= 0 ? '+' : ''}{pct1(pnlPercent)}</span>
+        </div>
+      </TableCell>
+      <TableCell className={CELL}>
+        <span className={`${VALUE} text-wb-text-primary`}>{money(wheel.strike)}</span>
+      </TableCell>
+      <TableCell className={CELL}>
+        <span className={`${VALUE} text-wb-text-secondary tracking-[0.03em]`}>{addDays(today, wheel.dte)}</span>
+      </TableCell>
+      <TableCell className={CELL}>
+        <span className={`${VALUE} ${gold ? 'font-semibold text-wb-gold' : 'text-wb-text-secondary'}`}>{wheel.dte}d</span>
+      </TableCell>
+      <TableCell className={CELL}>
+        <span className={`${VALUE} text-wb-green font-medium`}>{money(wheel.premium)}</span>
+      </TableCell>
+      <TableCell className={CELL}>
+        <span className={`${VALUE} text-wb-text-primary`}>{money(wheel.basis)}</span>
+      </TableCell>
+    </tr>
+  )
+}
+
+export function Derivation({ preset, model }) {
+  const rows = [
+    ['LEAPS mid', model.leapsMid === null ? '— (no snapshot)' : money(model.leapsMid)],
+    ['Short mid', !model.shortOpen ? 'no short call open' : model.shortMid === null ? '—' : money(model.shortMid)],
+    ['Spread value / share', model.valuePerShare === null ? '—' : `${money(model.valuePerShare)} × ${model.shares} sh = ${money(model.valuePerShare * model.shares)}`],
+    ['Cost basis (US-103)', `${money(preset.leapsCost)} LEAPS cost − ${money(preset.credits)} credits = ${money(model.basisPerShare)} / share · ${money(model.basisTotal)}`],
+    ['Net P&L', model.pnl === null ? '— (needs both marks)' : `${money(model.valuePerShare * model.shares)} − ${money(model.basisTotal)} = ${signed(model.pnl)}${model.pnlPercent === null ? ' (no % — basis ≤ 0)' : ` · ${pct1(model.pnlPercent)} of basis`}`],
+    ['Short call % of max', model.shortPercent === null ? '—' : `(${money(preset.short.sold)} − ${money(model.shortMid)}) / ${money(preset.short.sold)} = ${pct1(model.shortPercent)}${model.targetReached ? ' → TARGET' : ''}`],
+    ['Premium recovered', model.recovered === null ? '—' : `${money(preset.credits)} / ${money(preset.leapsCost)} = ${pct1(model.recovered)}`],
+    ['Sort key (DTE)', model.sortDte === null ? 'closed → last' : `${model.sortDte}d (${model.shortOpen ? 'short call' : 'LEAPS'})`]
+  ]
+  return (
+    <SectionCard header="How the row is derived">
+      <div className="grid grid-cols-[180px_1fr] gap-x-6 gap-y-2 p-4 font-wb-mono text-xs">
+        {rows.map(([label, value]) => (
+          <div key={label} className="contents">
+            <span className="text-wb-text-muted">{label}</span>
+            <span className="text-wb-text-primary">{value}</span>
+          </div>
+        ))}
+      </div>
+    </SectionCard>
+  )
+}
+
+export function Mockup() {
+  const [key, setKey] = useState('both-open')
+  const preset = PRESETS.find((p) => p.key === key)
+  const model = evaluate(preset)
+  const active = preset.closed
+    ? WHEELS.map((w) => ({ kind: 'wheel', w, dte: w.dte }))
+    : [...WHEELS.map((w) => ({ kind: 'wheel', w, dte: w.dte })), { kind: 'pmcc', dte: model.sortDte }].sort(
+        (a, b) => (a.dte === null) - (b.dte === null) || a.dte - b.dte
+      )
+  return (
+    <div className="flex flex-col gap-4 font-wb-mono text-wb-text-primary">
+      <div className="rounded-lg border border-wb-border bg-wb-bg-base">
+        <div className="flex items-center justify-between border-b border-wb-border px-6 py-3">
+          <div className="flex items-center gap-[10px]">
+            <h1 className="m-0 text-sm font-semibold text-wb-text-primary">Active Positions</h1>
+            <Badge>{active.length}</Badge>
+          </div>
+          <span className="text-xs text-wb-text-muted">Valuation date {preset.today} · America/New_York</span>
+        </div>
+        <div className="px-6 pt-4 pb-2 text-xs font-medium uppercase tracking-[0.08em] text-wb-text-muted">Active</div>
+        <table className="w-full border-collapse text-[0.8125rem]">
+          <thead>
+            <tr className="bg-wb-bg-surface border-b border-wb-border">
+              {COLUMNS.map((col) => (
+                <TableHeader key={col} className="px-[16px] py-[8px]">
+                  {col}
+                </TableHeader>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {active.map((row) =>
+              row.kind === 'wheel' ? (
+                <WheelRow key={row.w.ticker} wheel={row.w} today={preset.today} />
+              ) : (
+                <PmccRow key="pmcc" preset={preset} model={model} />
+              )
+            )}
+          </tbody>
+        </table>
+        {preset.closed ? (
+          <>
+            <div className="px-6 pt-4 pb-2 text-xs font-medium uppercase tracking-[0.08em] text-wb-text-muted">Closed</div>
+            <table className="w-full border-collapse text-[0.8125rem]">
+              <tbody>
+                <PmccRow preset={preset} model={model} />
+              </tbody>
+            </table>
+          </>
+        ) : null}
+        <div className="h-4" />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {PRESETS.map((p) => (
+          <button
+            key={p.key}
+            type="button"
+            onClick={() => setKey(p.key)}
+            className={`rounded-md border px-3 py-1.5 text-xs ${p.key === key ? 'border-wb-gold bg-wb-gold-dim text-wb-gold' : 'border-wb-border bg-wb-bg-surface text-wb-text-secondary'}`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+      <Derivation preset={preset} model={model} />
+    </div>
+  )
+}
+
+<Mockup />

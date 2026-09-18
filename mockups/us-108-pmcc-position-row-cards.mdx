@@ -1,0 +1,553 @@
+---
+title: 'US-108: PMCC position card on the dashboard'
+story: 'As a PMCC trader scanning the dashboard alongside my wheels, I want the PMCC to show both legs, what the LEAPS still costs me, what the short calls have paid back, and a live net P&L, so I can tell in one glance whether the position needs attention today.'
+states: ['both-legs', 'falling-stock', 'wide-leaps-spread', 'missing-leaps', 'short-expiring', 'short-itm', 'below-breakeven', 'leaps-only', 'roll-window', 'leaps-delta-low', 'leaps-paid-for', 'three-contracts', 'two-shorts', 'partial-coverage', 'closed']
+---
+
+import { Fragment, useState } from 'react'
+
+# US-108: PMCC position card on the dashboard
+
+_A PMCC is a position with a **legs array**, not a row with stacked cells. One calm position line answers "does either leg need me this week?" — glyphs, net P&L, running cost basis. Under it, one block per leg. Three contracts, a second short call or partial coverage add blocks rather than new cell types, so the same primitive carries conventional wheels when multi-contract lands. Tier 2 opens from the Detail bar at the card foot (a click anywhere on the card also toggles it); the ticker and the Open ↗ link go to the detail page, where tier 3 lives._
+
+## Acceptance Criteria States
+
+- **both-legs** — Background. `+$400.00` / `+18.9% of basis`, short call `50.0% of max` with the gold TARGET badge
+- **falling-stock** — `-$500.00` / `-23.6% of basis` with a short call at `88.9% of max`; no position-level % of max
+- **wide-leaps-spread** — LEAPS spread `$3.00` = 11.5% of mid; the ⚠ travels from the LEAPS mark onto the P&L
+- **missing-leaps** — no LEAPS snapshot: mark and P&L read `—`, the short-call cue and both cash figures survive
+- **short-expiring** — short call 4 DTE with earnings in 2 days: gold DTE, ⚑ on US-56's predicate, and a gold ▲ because $106.10 is 1.8% below the strike (US-106)
+- **short-itm** — short through the strike: red ▲ on US-106's in-the-money branch; the `$0.08` extrinsic left shows in tier 2
+- **below-breakeven** — short strike under LEAPS strike + basis: ✕, being called away locks in a loss
+- **leaps-only** — short expired worthless, none sold: `+$240.00` / `+10.4%`, short term drops out
+- **roll-window** — LEAPS `59d` gold at the US-107 threshold; short `31d` unemphasised, no expiring-soon flag
+- **leaps-delta-low** — LEAPS delta `0.54`: δ glyph, no longer tracking as synthetic stock
+- **leaps-paid-for** — basis `-$40.00` / "LEAPS paid for" in gold; `+$3,285.00` with no percentage
+- **three-contracts** — same per-share fills and quotes ×3: totals scale, per-share figures do not
+- **two-shorts** _(not yet supported)_ — two short calls against one LEAPS stack as two leg blocks
+- **partial-coverage** _(not yet supported)_ — 3 LEAPS, 1 short sold: the coverage ratio is explicit
+- **closed** — muted, in the Closed section, last basis and credits only
+
+Every figure is derived from the preset's fills, quotes, contracts and valuation date, so this mockup and the
+acceptance criteria cannot drift apart. The derivation panel under the grid prints the arithmetic.
+
+---
+
+export const T = {
+  gold: 'var(--wb-gold, #e6a817)', green: 'var(--wb-green, #3fb950)', red: 'var(--wb-red, #f85149)',
+  violet: 'var(--wb-violet, #d2a8ff)', sky: 'var(--wb-sky, #79c0ff)', teal: 'var(--wb-teal, #2dd4bf)',
+  pri: 'var(--wb-text-primary, #e6edf3)', sec: 'var(--wb-text-secondary, #b1bac4)', mut: 'var(--wb-text-muted, #6e7681)'
+}
+
+export const ROLL_WINDOW_DTE = 60    // US-107 threshold, referenced not redefined
+export const EXPIRING_SOON_DTE = 7   // existing short-leg rule
+export const WIDE_SPREAD_PCT = 10    // US-33 predicate
+export const LEAPS_DELTA_FLOOR = 0.6 // synthetic-stock failure mode
+export const ASSIGNMENT_RISK_PCT_BELOW = 2 // US-106 predicate, referenced not redefined
+export const EARNINGS_PROXIMITY_MAX_DAYS = 10 // US-56 predicate, referenced not redefined
+
+export const d = (s) => new Date(s + 'T00:00:00Z')
+export const dte = (from, to) => Math.round((d(to) - d(from)) / 86400000)
+export const addDays = (from, n) => new Date(d(from).getTime() + n * 86400000).toISOString().slice(0, 10)
+export const r2 = (n) => Math.round(n * 100) / 100
+
+export function fmtMoney(n, signed) {
+  if (n == null) return '—'
+  const sign = signed ? (n > 0 ? '+' : n < 0 ? '-' : '') : n < 0 ? '-' : ''
+  return sign + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+export const fmtPct = (n, signed) => (signed && n > 0 ? '+' : n < 0 ? '-' : '') + Math.abs(n).toFixed(1) + '%'
+// A subtraction term that stays legible when the operand is negative.
+export const term = (n) => (n < 0 ? '+ ' + fmtMoney(Math.abs(n)) : '− ' + fmtMoney(n))
+export function mark(q) {
+  if (!q || q.bid == null) return { mid: null, unavailable: true }
+  const mid = r2((q.bid + q.ask) / 2)
+  const spread = r2(q.ask - q.bid)
+  const spreadPct = (spread / mid) * 100
+  return { mid, spread, spreadPct, wide: spreadPct > WIDE_SPREAD_PCT, unavailable: false }
+}
+// Pure valuation — mirrors computePmccUnrealizedPnl in src/main/core/costbasis.ts,
+// generalised over a legs array so N shorts need no second formula.
+export function computePmccUnrealizedPnl({ legs, basisTotal }) {
+  const gross = legs.reduce((s, l) => s + (l.side === 'SHORT' ? -1 : 1) * l.mid * 100 * l.contracts, 0)
+  const pnl = r2(gross - basisTotal)
+  return { pnl, pnlPercentOfBasis: basisTotal > 0 ? (pnl / basisTotal) * 100 : null, gross: r2(gross) }
+}
+
+export const L = (o) => ({ kind: 'LEAPS', side: 'LONG', strike: 80, exp: '2027-09-17', fill: 25.0, contracts: 1, delta: 0.82, ...o })
+export const S = (o) => ({ kind: 'SHORT', side: 'SHORT', strike: 108, exp: '2026-11-20', fill: 1.8, contracts: 1, delta: 0.24, ...o })
+export const BASE = { ticker: 'XYZ', valuation: '2026-11-06', price: 104.2, target: 0.5, basisPerShare: 21.2, creditsToDate: 3.8, leapsCostToDate: 25.0, entryDebit: 23.2, openDate: '2026-04-17', cycles: 4 }
+
+export const PRESETS = {
+  'both-legs': { ...BASE, note: 'Background · both legs open, short call at the 50% target',
+    legs: [L({ q: { bid: 25.7, ask: 26.5 } }), S({ q: { bid: 0.85, ask: 0.95 } })] },
+  'falling-stock': { ...BASE, note: 'Losing position, profitable short call — no position-level % of max',
+    price: 92.0, legs: [L({ q: { bid: 16.1, ask: 16.7 }, delta: 0.71 }), S({ q: { bid: 0.15, ask: 0.25 }, delta: 0.06 })] },
+  'wide-leaps-spread': { ...BASE, note: 'LEAPS spread $3.00 = 11.5% of mid — warning travels onto the P&L',
+    legs: [L({ q: { bid: 24.6, ask: 27.6 } }), S({ q: { bid: 0.85, ask: 0.95 } })] },
+  'missing-leaps': { ...BASE, note: 'No LEAPS snapshot this poll — P&L unavailable, short cue survives',
+    legs: [L({ q: null }), S({ q: { bid: 0.85, ask: 0.95 } })] },
+  'short-expiring': { ...BASE, note: 'Short call 4 DTE, earnings in 2 days, stock 1.8% below the strike — ⚑ and a gold ▲ fire',
+    valuation: '2026-11-16', price: 106.1, earnings: '2026-11-18',
+    legs: [L({ q: { bid: 26.9, ask: 27.5 } }), S({ q: { bid: 0.55, ask: 0.65 }, delta: 0.41 })] },
+  'short-itm': { ...BASE, note: 'Short call through the strike with $0.08 extrinsic left — assignment risk',
+    valuation: '2026-11-16', price: 111.4,
+    legs: [L({ q: { bid: 31.9, ask: 32.5 }, delta: 0.88 }), S({ q: { bid: 3.4, ask: 3.6 }, delta: 0.79 })] },
+  'below-breakeven': { ...BASE, note: 'Short strike under LEAPS strike + basis — called away locks a loss',
+    price: 99.4, legs: [L({ q: { bid: 21.4, ask: 22.0 }, delta: 0.76 }), S({ strike: 99, fill: 1.55, q: { bid: 1.2, ask: 1.3 }, delta: 0.47 })] },
+  'leaps-only': { ...BASE, note: 'Short call expired worthless, none sold yet — short term drops out',
+    valuation: '2026-10-19', price: 103.4, basisPerShare: 23.0, creditsToDate: 2.0, cycles: 2,
+    legs: [L({ q: { bid: 25.1, ask: 25.7 } })] },
+  'roll-window': { ...BASE, note: 'LEAPS inside the 60-day roll window; short call untouched at 31 DTE',
+    valuation: '2027-07-20', price: 108.0, basisPerShare: 19.1, creditsToDate: 5.9, cycles: 9,
+    legs: [L({ q: { bid: 28.4, ask: 29.0 }, delta: 0.74 }), S({ strike: 112, exp: '2027-08-20', fill: 2.1, q: { bid: 1.9, ask: 2.1 }, delta: 0.33 })] },
+  'leaps-delta-low': { ...BASE, note: 'LEAPS delta 0.54 — no longer acting as synthetic stock',
+    valuation: '2027-02-08', price: 86.5, basisPerShare: 20.1, creditsToDate: 4.9, cycles: 6,
+    legs: [L({ q: { bid: 13.2, ask: 13.8 }, delta: 0.54 }), S({ strike: 95, exp: '2027-03-19', fill: 1.1, q: { bid: 0.6, ask: 0.7 }, delta: 0.18 })] },
+  'leaps-paid-for': { ...BASE, note: 'Negative basis — dollars only, no percentage of a non-positive basis',
+    valuation: '2027-11-08', price: 117.4, basisPerShare: -0.4, creditsToDate: 22.9, leapsCostToDate: 22.5, cycles: 17,
+    legs: [L({ strike: 85, exp: '2028-01-21', fill: 22.5, q: { bid: 33.1, ask: 33.7 }, delta: 0.86 }),
+           S({ strike: 120, exp: '2027-11-19', fill: 1.3, q: { bid: 0.9, ask: 1.0 }, delta: 0.29 })] },
+  'three-contracts': { ...BASE, note: 'Same fills and quotes on 3 contracts — totals scale, per-share figures do not',
+    legs: [L({ contracts: 3, q: { bid: 25.7, ask: 26.5 } }), S({ contracts: 3, q: { bid: 0.85, ask: 0.95 } })] },
+  'two-shorts': { ...BASE, note: 'Not yet supported — two short calls against one LEAPS stack as two leg blocks',
+    future: true, price: 106.8,
+    legs: [L({ contracts: 2, q: { bid: 28.1, ask: 28.7 } }),
+           S({ contracts: 1, strike: 108, exp: '2026-11-20', fill: 1.8, q: { bid: 1.15, ask: 1.25 }, delta: 0.38 }),
+           S({ contracts: 1, strike: 112, exp: '2026-12-18', fill: 1.35, q: { bid: 1.0, ask: 1.1 }, delta: 0.27 })] },
+  'partial-coverage': { ...BASE, note: 'Not yet supported — 3 LEAPS, 1 short sold: the coverage ratio is explicit',
+    future: true, legs: [L({ contracts: 3, q: { bid: 25.7, ask: 26.5 } }), S({ contracts: 1, q: { bid: 0.85, ask: 0.95 } })] },
+  closed: { ...BASE, note: 'Status CLOSED — muted, in the Closed section, last basis and credits only',
+    status: 'CLOSED', legs: [L({ q: { bid: 25.7, ask: 26.5 } }), S({ q: { bid: 0.85, ask: 0.95 } })] }
+}
+// Classic wheels alongside, to check the PMCC sorts into one list by its nearest decision point.
+export const WHEELS = [
+  { ticker: 'MSFT', label: 'SELL CALL', color: T.violet, price: 421.5, dteDays: 10,
+    strike: 430, fill: 2.8, q: { bid: 1.75, ask: 1.85 }, contracts: 1, basisPerShare: 402.4, premium: 280 },
+  { ticker: 'AAPL', label: 'SELL PUT', color: T.gold, price: 182.45, dteDays: 30,
+    strike: 180, fill: 3.5, q: { bid: 2.55, ask: 2.65 }, contracts: 1, basisPerShare: 176.5, premium: 350 }
+]
+
+export function derive(p) {
+  const closed = p.status === 'CLOSED'
+  const legs = p.legs.map((l) => ({ ...l, m: mark(l.q), dte: dte(p.valuation, l.exp) }))
+  const longs = legs.filter((l) => l.side === 'LONG')
+  const shorts = legs.filter((l) => l.side === 'SHORT')
+  const longCt = longs.reduce((s, l) => s + l.contracts, 0)
+  const shortCt = shorts.reduce((s, l) => s + l.contracts, 0)
+  const basisTotal = r2(p.basisPerShare * 100 * longCt)
+  const premiumTotal = r2(p.creditsToDate * 100 * longCt)
+  const recovered = (p.creditsToDate / p.leapsCostToDate) * 100
+  const breakeven = r2(longs[0].strike + p.basisPerShare)
+  const marksReady = !closed && legs.every((l) => l.m.mid != null)
+  const val = marksReady ? computePmccUnrealizedPnl({
+    legs: legs.map((l) => ({ side: l.side, mid: l.m.mid, contracts: l.contracts })), basisTotal }) : null
+  // Short-call cues reuse computeUnrealizedPnl / resolveProfitTarget, fed the short leg.
+  legs.forEach((l) => {
+    if (l.side !== 'SHORT' || closed || l.m.mid == null) return
+    l.pnl = r2((l.fill - l.m.mid) * 100 * l.contracts)
+    l.pctMax = ((l.fill - l.m.mid) / l.fill) * 100
+    l.target = l.pctMax >= p.target * 100
+    l.itm = p.price >= l.strike
+    l.extrinsic = r2(Math.max(0, l.m.mid - Math.max(0, p.price - l.strike)))
+  })
+  const nearShort = shorts.slice().sort((a, b) => a.dte - b.dte)[0] || null
+  const wideLeaps = longs.some((l) => l.m.wide)
+  const alerts = []
+  if (!closed) {
+    if (longs.some((l) => l.dte <= ROLL_WINDOW_DTE)) alerts.push({ g: '◆', n: 'Roll window', c: T.gold, t: `LEAPS inside the ${ROLL_WINDOW_DTE}-day roll window (US-107)` })
+    // ▲ is US-106's one-directional band: within 2% below the short strike, or anywhere at/above it.
+    const pctBelow = (l) => ((l.strike - p.price) / l.strike) * 100
+    if (shorts.some((l) => l.itm)) alerts.push({ g: '▲', n: 'Assignment risk', c: T.red, t: `Stock is ${Math.abs(pctBelow(shorts.find((l) => l.itm))).toFixed(1)}% above the short-call strike — in the money, LEAPS would have to cover (US-106)` })
+    else if (shorts.some((l) => pctBelow(l) <= ASSIGNMENT_RISK_PCT_BELOW)) alerts.push({ g: '▲', n: 'Assignment risk', c: T.gold, t: `Stock is ${pctBelow(shorts.find((l) => pctBelow(l) <= ASSIGNMENT_RISK_PCT_BELOW)).toFixed(1)}% below the short-call strike — approaching assignment (US-106)` })
+    // ⚑ is US-56's predicate: 0 ≤ days to earnings ≤ 10 and on or before the short call's expiration.
+    const daysToEarnings = p.earnings ? dte(p.valuation, p.earnings) : null
+    if (daysToEarnings !== null && nearShort && daysToEarnings >= 0 && daysToEarnings <= EARNINGS_PROXIMITY_MAX_DAYS && daysToEarnings <= nearShort.dte) alerts.push({ g: '⚑', n: 'Earnings', c: T.gold, t: `Earnings in ${daysToEarnings} days before your ${nearShort.exp} expiration (US-56)` })
+    if (shorts.some((l) => l.strike < breakeven)) alerts.push({ g: '✕', n: 'Below breakeven', c: T.red, t: `Short strike below breakeven ${fmtMoney(breakeven)} — being called away locks in a loss` })
+    if (longs.some((l) => l.delta < LEAPS_DELTA_FLOOR)) alerts.push({ g: 'δ', n: 'Delta floor', c: T.gold, t: `LEAPS delta ${longs[0].delta.toFixed(2)} below ${LEAPS_DELTA_FLOOR.toFixed(2)} — no longer tracking as synthetic stock` })
+    if (wideLeaps) alerts.push({ g: '⚠', n: 'Wide spread', c: T.gold, t: `LEAPS spread is ${longs.find((l) => l.m.wide).m.spreadPct.toFixed(1)}% of the mid — the P&L that depends on it is unreliable` })
+  }
+  return { closed, legs, longs, shorts, longCt, shortCt, basisTotal, premiumTotal, recovered,
+    breakeven, val, nearShort, wideLeaps, alerts, cycles: p.cycles,
+    sortKey: nearShort ? nearShort.dte : Math.min(...longs.map((l) => l.dte)),
+    partial: shortCt < longCt,
+    state: closed ? 'Closed' : shorts.length ? (shorts.length > 1 ? `LEAPS + ${shorts.length} short calls open` : 'LEAPS + short call open') : 'LEAPS open · no short call' }
+}
+
+export const CSS = `
+.u108{font-family:var(--font-wb-sans,'Inter',system-ui,sans-serif);color:var(--wb-text-primary,#e6edf3)}
+.u108 .mono{font-family:var(--font-wb-mono,ui-monospace,'SF Mono',Menlo,monospace);font-variant-numeric:tabular-nums}
+.u108 .sub{font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:10.5px;color:var(--wb-text-muted,#6e7681)}
+.u108 .eyebrow{font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:9px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--wb-text-muted,#6e7681)}
+.u108 .presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.u108 .presets button{font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:10.5px;font-weight:600;letter-spacing:.04em;padding:5px 10px;border-radius:5px;border:1px solid var(--wb-border,#21262d);background:transparent;color:var(--wb-text-muted,#6e7681);cursor:pointer;transition:all .12s}
+.u108 .presets button:hover{color:var(--wb-text-secondary,#b1bac4);border-color:#30363d}
+.u108 .presets button[data-on="1"]{border-color:var(--wb-gold-border,rgba(230,168,23,.3));background:var(--wb-gold-dim,rgba(230,168,23,.14));color:var(--wb-gold,#e6a817)}
+.u108 .sect{font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:9.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--wb-text-muted,#6e7681);padding:14px 2px 8px}
+.u108 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px}
+.u108 .card{background:var(--wb-bg-surface,#161b27);border:1px solid var(--wb-border,#21262d);border-radius:10px;overflow:hidden;cursor:pointer;transition:border-color .12s}
+.u108 .card:hover{border-color:#30363d}
+.u108 .card.pmcc{border-left:2px solid var(--wb-teal,#2dd4bf)}
+.u108 .card.muted{opacity:.5}
+.u108 .cardhead{display:flex;align-items:center;gap:8px;padding:11px 13px;border-bottom:1px solid var(--wb-border-subtle,#161b22)}
+.u108 .cardbody{padding:11px 13px;display:grid;gap:9px}
+.u108 .legline{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;padding:8px 10px;background:var(--wb-bg-base,#0d1117);border:1px solid var(--wb-border-subtle,#161b22);border-radius:7px;font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:11.5px;font-variant-numeric:tabular-nums}
+.u108 .cardfoot{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--wb-border,#21262d);border-top:1px solid var(--wb-border,#21262d)}
+.u108 .cardfoot .c{background:var(--wb-bg-elevated,#1c2333);padding:9px 12px}
+.u108 .meter{height:3px;border-radius:2px;background:var(--wb-border,#21262d);overflow:hidden;margin-top:7px}
+.u108 .meter i{display:block;height:100%}
+.u108 .badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:10px;font-weight:600;letter-spacing:.08em;padding:2px 7px;border-radius:4px;border:1px solid;white-space:nowrap}
+.u108 .chip{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:9.5px;font-weight:600;letter-spacing:.08em;padding:1px 6px;border-radius:3px;border:1px solid;white-space:nowrap}
+.u108 .lab{font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:9px;font-weight:700;letter-spacing:.08em;padding:1px 4px;border-radius:3px;border:1px solid}
+.u108 .glyphs{display:inline-flex;align-items:center;gap:5px}
+.u108 .glyph{cursor:help;font-size:11.5px;line-height:1;position:relative}
+.u108 .tip{position:relative}
+.u108 .tip[data-tip]:hover::after{content:attr(data-tip);position:absolute;left:0;top:calc(100% + 7px);z-index:20;width:max-content;max-width:280px;padding:7px 9px;border-radius:6px;background:var(--wb-bg-elevated,#1c2333);border:1px solid #30363d;box-shadow:0 8px 24px rgba(0,0,0,.45);color:var(--wb-text-primary,#e6edf3);font-family:var(--font-wb-sans,'Inter',system-ui,sans-serif);font-size:11px;font-weight:400;line-height:1.45;letter-spacing:0;text-transform:none;white-space:normal;pointer-events:none}
+.u108 .tip[data-tip]:hover::before{content:'';position:absolute;left:4px;top:calc(100% + 2px);border:5px solid transparent;border-bottom-color:#30363d;z-index:21}
+.u108 .cardhead .tip[data-tip]:hover::after{left:auto;right:0}
+.u108 .cardhead .tip[data-tip]:hover::before{left:auto;right:4px}
+.u108 .cardhead .glyphs .tip[data-tip]:hover::after,.u108 .cardhead .ticker.tip[data-tip]:hover::after{left:0;right:auto}
+.u108 .cardhead .glyphs .tip[data-tip]:hover::before,.u108 .cardhead .ticker.tip[data-tip]:hover::before{left:4px;right:auto}
+.u108 .t2bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 13px;border-top:1px solid var(--wb-border,#21262d);background:var(--wb-bg-surface,#161b27);font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:9.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--wb-text-muted,#6e7681);transition:color .12s,background .12s}
+.u108 .card:hover .t2bar{color:var(--wb-text-secondary,#b1bac4);background:var(--wb-bg-elevated,#1c2333)}
+.u108 .t2bar[aria-expanded="true"]{color:var(--wb-gold,#e6a817)}
+.u108 .chev{display:inline-block;font-size:11px;transition:transform .15s}
+.u108 .chev.open{transform:rotate(180deg)}
+.u108 .openlink{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:10px;font-weight:600;letter-spacing:.08em;padding:3px 8px;border-radius:4px;border:1px solid var(--wb-border,#21262d);color:var(--wb-text-secondary,#b1bac4);text-decoration:none;white-space:nowrap;transition:all .12s}
+.u108 .openlink:hover{color:var(--wb-text-primary,#e6edf3);border-color:#30363d;background:var(--wb-bg-elevated,#1c2333)}
+.u108 .ticker{font-size:15px;font-weight:700;letter-spacing:.04em;color:inherit;text-decoration:none}
+.u108 .ticker:hover{text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--wb-text-muted,#6e7681)}
+.u108 .t2{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:1px;background:var(--wb-border,#21262d);border-top:1px solid var(--wb-border,#21262d)}
+.u108 .t2 .c{background:var(--wb-bg-elevated,#1c2333);padding:9px 12px;display:flex;flex-direction:column;gap:3px}
+.u108 .t2 .v{font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:12px;font-variant-numeric:tabular-nums}
+.u108 .t2 .n{font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:10px;color:var(--wb-text-muted,#6e7681)}
+.u108 .panel{background:var(--wb-bg-surface,#161b27);border:1px solid var(--wb-border,#21262d);border-radius:8px;overflow:hidden;margin-top:18px}
+.u108 .deriv{display:grid;grid-template-columns:minmax(120px,176px) 1fr auto;font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:11.5px}
+.u108 .deriv>div{padding:7px 14px;border-top:1px solid var(--wb-border-subtle,#161b22)}
+.u108 .deriv .dk{color:var(--wb-text-muted,#6e7681);letter-spacing:.04em}
+.u108 .deriv .de{color:var(--wb-text-secondary,#b1bac4)}
+.u108 .deriv .dv{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.u108 .tiers{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1px;background:var(--wb-border,#21262d);border-radius:8px;overflow:hidden;margin-top:18px}
+.u108 .tiers section{background:var(--wb-bg-surface,#161b27);padding:12px 14px}
+.u108 .tiers h4{margin:0 0 7px;font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:9.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--wb-text-label,#c9d1d9)}
+.u108 .tiers li{font-size:11.5px;line-height:1.65;color:var(--wb-text-secondary,#b1bac4)}
+`
+
+export function Badge({ color, children, title }) {
+  return (
+    <span className={title ? 'badge tip' : 'badge'} data-tip={title} style={{ background: color + '18', color, borderColor: color + '3d' }}>
+      <span style={{ width: 5, height: 5, borderRadius: '50%', background: color, flexShrink: 0 }} />
+      {children}
+    </span>
+  )
+}
+
+export function Chip({ color, children, title }) {
+  return <span className={title ? 'chip tip' : 'chip'} data-tip={title} style={{ background: color + '15', color, borderColor: color + '38' }}>{children}</span>
+}
+
+export function LegTag({ kind }) {
+  const c = kind === 'LEAPS' ? T.sky : T.violet
+  return <span className="lab tip" data-tip={kind === 'LEAPS' ? 'LEAPS — long call, the synthetic stock' : 'Short call — the income leg'} style={{ color: c, borderColor: c + '45', background: c + '12' }}>{kind === 'LEAPS' ? 'L' : 'S'}</span>
+}
+// Tier 2 — credits and cycles, breakeven, max if called, delta, extrinsic, mark width, entry debit.
+export function t2cells(p, x) {
+  const l0 = x.longs[0]
+  const s0 = x.nearShort
+  const maxIfCalled = s0 ? r2((s0.strike - l0.strike - p.basisPerShare) * 100 * s0.contracts) : null
+  return [
+    ['Credits collected', fmtMoney(x.premiumTotal), `${p.cycles} short-call cycles · ${fmtPct(x.recovered)} of LEAPS cost`],
+    ['Breakeven', fmtMoney(x.breakeven), `LEAPS ${fmtMoney(l0.strike)} + basis ${fmtMoney(p.basisPerShare)} / share`],
+    ['Max if called', s0 ? fmtMoney(maxIfCalled, true) : '—', s0 ? `called away at ${fmtMoney(s0.strike)}` : 'no short call open'],
+    ['LEAPS delta', l0.delta.toFixed(2), l0.delta < LEAPS_DELTA_FLOOR ? `below the ${LEAPS_DELTA_FLOOR.toFixed(2)} floor` : 'tracking as synthetic stock'],
+    ['Short extrinsic', s0 && s0.extrinsic != null ? fmtMoney(s0.extrinsic) : '—', s0 ? (s0.itm ? 'ITM — assignment math is live' : 'OTM — all extrinsic') : 'no short call open'],
+    ['LEAPS mark', l0.m.mid == null ? '—' : fmtMoney(l0.m.mid),
+      l0.m.mid == null ? 'no snapshot this poll' : `${fmtMoney(l0.q.bid)} × ${fmtMoney(l0.q.ask)} · ${l0.m.spreadPct.toFixed(1)}% wide${l0.m.wide ? ' · P&L unreliable' : ''}`],
+    ['Entry net debit', fmtMoney(p.entryDebit * 100 * x.longCt), `${fmtMoney(p.entryDebit)} / share · opened ${p.openDate} · ${dte(p.openDate, p.valuation)}d ago`]
+  ]
+}
+
+export function Tier2Grid({ p, x }) {
+  return (
+    <div className="t2">
+      {t2cells(p, x).map(([k, v, n]) => (
+        <div className="c" key={k}>
+          <span className="eyebrow">{k}</span>
+          <span className="v">{v}</span>
+          <span className="n">{n}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function PnlBlock({ x, size }) {
+  const val = x.val
+  const c = val ? (val.pnl > 0 ? T.green : val.pnl < 0 ? T.red : T.sec) : T.mut
+  return (
+    <div>
+      <div className="eyebrow" style={{ marginBottom: 3 }}>Net P&L · marked against basis</div>
+      <div className="mono" style={{ fontSize: size, fontWeight: 600, color: c, letterSpacing: '-.01em' }}>
+        {x.closed || !val ? '—' : fmtMoney(val.pnl, true)}
+        {x.wideLeaps && val ? <span className="glyph tip" style={{ color: T.gold, fontSize: 13 }} data-tip="Wide spread — the LEAPS spread makes this P&L unreliable"> ⚠</span> : null}
+      </div>
+      <div className="sub" style={{ color: val && val.pnlPercentOfBasis != null ? c : T.mut, opacity: 0.9 }}>
+        {x.closed ? 'closed — no live marks'
+          : !val ? 'unavailable — a leg has no mark'
+          : val.pnlPercentOfBasis != null ? fmtPct(val.pnlPercentOfBasis, true) + ' of basis'
+          : 'basis not positive'}
+      </div>
+    </div>
+  )
+}
+
+export function CardFoot({ p, x }) {
+  return (
+    <div className="cardfoot">
+      <div className="c">
+        <div className="eyebrow">Cost basis</div>
+        <div className="mono" style={{ fontSize: 13, color: x.basisTotal <= 0 ? T.gold : T.sky, marginTop: 2 }}>{fmtMoney(x.basisTotal)}</div>
+        <div className="sub" style={x.basisTotal <= 0 ? { color: T.gold } : null}>
+          {x.basisTotal <= 0 ? 'LEAPS paid for' : fmtMoney(p.basisPerShare) + ' / share'}
+        </div>
+      </div>
+      <div className="c">
+        <div className="eyebrow">Credits collected</div>
+        <div className="mono" style={{ fontSize: 13, color: T.green, marginTop: 2 }}>{fmtMoney(x.premiumTotal)}</div>
+        <div className="sub">{fmtPct(x.recovered)} of LEAPS cost recovered</div>
+        <div className="meter tip" data-tip={`Recovery meter — ${fmtPct(x.recovered)} of the LEAPS cost paid back by short-call credits; gold at 100%`}>
+          <i style={{ width: Math.min(100, x.recovered) + '%', background: x.recovered >= 100 ? T.gold : T.green }} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function PmccCard({ p }) {
+  const [open, setOpen] = useState(false)
+  const x = derive(p)
+  return (
+    <div className={'card pmcc' + (x.closed ? ' muted' : '')} onClick={() => setOpen(!open)}>
+      <div className="cardhead">
+        <a className="ticker tip" href={'#/positions/' + p.ticker.toLowerCase()} onClick={(e) => e.stopPropagation()} data-tip="Open position detail">{p.ticker}</a>
+        <span className="tip" data-tip="PMCC — poor man's covered call: a long LEAPS call financing short calls"><Badge color={T.teal}>PMCC</Badge></span>
+        {x.alerts.length ? (
+          <span className="glyphs">
+            {x.alerts.map((a, i) => <span key={i} className="glyph tip" role="img" aria-label={a.n} style={{ color: a.c }} data-tip={`${a.n} — ${a.t}`}>{a.g}</span>)}
+          </span>
+        ) : null}
+        <span style={{ marginLeft: 'auto', textAlign: 'right' }}>
+          <div className="mono" style={{ fontSize: 12.5 }}>{x.closed ? '—' : fmtMoney(p.price)}</div>
+          <div className="sub">{x.closed ? 'closed' : `${x.sortKey}d to next decision`}</div>
+        </span>
+        <a className="openlink tip" href={'#/positions/' + p.ticker.toLowerCase()} onClick={(e) => e.stopPropagation()} data-tip="Open the position detail page — leg timeline, roll history, cost-basis snapshots">Open ↗</a>
+      </div>
+      <div className="cardbody">
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 }}>
+          <PnlBlock x={x} size={24} />
+          <span className="sub" style={{ textAlign: 'right' }}>
+            {x.state}<br />{x.partial ? `${x.shortCt} of ${x.longCt} covered` : `${x.longCt} × 100 sh`}
+          </span>
+        </div>
+        {x.legs.map((l, i) => {
+          const goldDte = !x.closed && (l.side === 'LONG' ? l.dte <= ROLL_WINDOW_DTE : l.dte <= EXPIRING_SOON_DTE)
+          const wide = l.side === 'LONG' && l.m.wide
+          return (
+            <div className="legline" key={i}>
+              <LegTag kind={l.kind} />
+              <span>
+                {fmtMoney(l.strike)} {l.kind === 'LEAPS' ? 'LEAPS' : 'call'}{l.contracts > 1 ? ' ×' + l.contracts : ''}
+                <span className="sub"> · {l.exp}</span>
+              </span>
+              <span style={{ color: goldDte ? T.gold : T.sec }}
+                className={goldDte ? 'tip' : undefined}
+                data-tip={goldDte ? (l.side === 'LONG' ? `Roll window — LEAPS inside the ${ROLL_WINDOW_DTE}-day window (US-107)` : 'Expiring soon — short call inside 7 days') : undefined}>
+                {x.closed ? '—' : l.dte + 'd'}
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, justifySelf: 'end' }}>
+                <span className={wide ? 'tip' : undefined} style={{ color: wide ? T.gold : T.sec }} data-tip={wide ? `Wide spread — ${l.m.spreadPct.toFixed(1)}% of the mid; the mark is unreliable` : undefined}>
+                  {x.closed ? '—' : l.m.unavailable ? '— unavail.' : fmtMoney(l.m.mid) + (wide ? ' ⚠' : '')}
+                </span>
+                {l.side === 'SHORT'
+                  ? l.target
+                    ? <Chip color={T.gold} title={`Profit target — short call has given back ${fmtPct(l.pctMax)} of its max profit; ${p.target * 100}% target reached`}>TARGET</Chip>
+                    : l.pctMax != null
+                      ? <span style={{ color: l.pnl > 0 ? T.green : l.pnl < 0 ? T.red : T.sec, minWidth: 74, textAlign: 'right' }}>{fmtPct(l.pctMax)} of max</span>
+                      : <span className="sub" style={{ minWidth: 74, textAlign: 'right' }}>—</span>
+                  : <span className="sub" style={{ minWidth: 74, textAlign: 'right' }}>Δ {l.delta.toFixed(2)} · {fmtMoney(l.fill)} debit</span>}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+      <CardFoot p={p} x={x} />
+      <div className="t2bar" role="button" aria-expanded={open}>
+        <span>{open ? 'Hide detail' : 'Detail · breakeven · max if called · Δ · extrinsic'}</span>
+        <span className={'chev' + (open ? ' open' : '')}>▾</span>
+      </div>
+      {open ? <Tier2Grid p={p} x={x} /> : null}
+    </div>
+  )
+}
+// Classic wheel card — one leg, % of max profit, per-share basis. Unchanged by this story.
+export function WheelCard({ w, valuation }) {
+  const m = mark(w.q)
+  const pnl = r2((w.fill - m.mid) * 100 * w.contracts)
+  const pctMax = ((w.fill - m.mid) / w.fill) * 100
+  const c = pnl > 0 ? T.green : pnl < 0 ? T.red : T.sec
+  return (
+    <div className="card" style={{ borderLeft: '2px solid ' + w.color }}>
+      <div className="cardhead">
+        <a className="ticker tip" href={'#/positions/' + w.ticker.toLowerCase()} onClick={(e) => e.stopPropagation()} data-tip="Open position detail">{w.ticker}</a>
+        <Badge color={w.color}>{w.label}</Badge>
+        <span style={{ marginLeft: 'auto', textAlign: 'right' }}>
+          <div className="mono" style={{ fontSize: 12.5 }}>{fmtMoney(w.price)}</div>
+          <div className="sub">{w.dteDays}d to expiration</div>
+        </span>
+        <a className="openlink tip" href={'#/positions/' + w.ticker.toLowerCase()} onClick={(e) => e.stopPropagation()} data-tip="Open the position detail page">Open ↗</a>
+      </div>
+      <div className="cardbody">
+        <div>
+          <div className="eyebrow" style={{ marginBottom: 3 }}>Unrealized P&L</div>
+          <div className="mono" style={{ fontSize: 24, fontWeight: 600, color: c }}>{fmtMoney(pnl, true)}</div>
+          <div className="sub" style={{ color: c, opacity: 0.9 }}>{fmtPct(pctMax)} of max profit</div>
+        </div>
+        <div className="legline">
+          <span className="lab tip" data-tip={w.label === 'SELL PUT' ? 'Cash-secured put' : 'Covered call'} style={{ color: w.color, borderColor: w.color + '45', background: w.color + '12' }}>
+            {w.label === 'SELL PUT' ? 'P' : 'C'}
+          </span>
+          <span>{fmtMoney(w.strike)} {w.label === 'SELL PUT' ? 'put' : 'call'}<span className="sub"> · {addDays(valuation, w.dteDays)}</span></span>
+          <span style={{ color: T.sec }}>{w.dteDays}d</span>
+          <span style={{ color: T.sec, justifySelf: 'end' }}>{fmtMoney(m.mid)}<span className="sub"> · {fmtMoney(w.fill)} credit</span></span>
+        </div>
+      </div>
+      <div className="cardfoot">
+        <div className="c">
+          <div className="eyebrow">Cost basis</div>
+          <div className="mono" style={{ fontSize: 13, color: T.sky, marginTop: 2 }}>{fmtMoney(w.basisPerShare)}</div>
+          <div className="sub">/ share</div>
+        </div>
+        <div className="c">
+          <div className="eyebrow">Premium collected</div>
+          <div className="mono" style={{ fontSize: 13, color: T.green, marginTop: 2 }}>{fmtMoney(w.premium)}</div>
+          <div className="sub">this cycle</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function Derivation({ p }) {
+  const x = derive(p)
+  const l0 = x.longs[0]
+  const expr = x.val
+    ? x.legs.map((l) => `${l.side === 'SHORT' ? '− ' : ''}${fmtMoney(l.m.mid)}×100×${l.contracts}`).join(' ') + ' ' + term(x.basisTotal)
+    : x.closed ? 'closed — no live marks' : 'a mark is missing on an open leg'
+  const rows = [
+    ['Valuation date', 'America/New_York', p.valuation],
+    ['Legs', `${x.longCt} LEAPS contract${x.longCt === 1 ? '' : 's'} · ${x.shortCt} short${x.shortCt === 1 ? '' : 's'}${x.partial ? ' · part-covered' : ''}`, x.legs.length + ' blocks'],
+    ['LEAPS mid', l0.q ? `(${fmtMoney(l0.q.bid)} + ${fmtMoney(l0.q.ask)}) ÷ 2` : 'no snapshot returned this poll', l0.q ? fmtMoney(l0.m.mid) : '—'],
+    ['LEAPS spread', l0.q ? `${fmtMoney(l0.m.spread)} ÷ ${fmtMoney(l0.m.mid)}` : '—', l0.q ? l0.m.spreadPct.toFixed(1) + '%' + (l0.m.wide ? ' · wide' : '') : '—'],
+    ['Net P&L', expr, x.val ? fmtMoney(x.val.pnl, true) : '—'],
+    ['% of basis', x.val ? (x.val.pnlPercentOfBasis == null ? 'undefined — basis is not positive' : `${fmtMoney(x.val.pnl, true)} ÷ ${fmtMoney(x.basisTotal)}`) : '—',
+      x.val && x.val.pnlPercentOfBasis != null ? fmtPct(x.val.pnlPercentOfBasis, true) : '—'],
+    ...x.shorts.map((s, i) => [`Short ${x.shorts.length > 1 ? i + 1 + ' ' : ''}% of max`,
+      s.pctMax != null ? `(${fmtMoney(s.fill)} − ${fmtMoney(s.m.mid)}) ÷ ${fmtMoney(s.fill)}` : '—',
+      s.pctMax != null ? fmtPct(s.pctMax) : '—']),
+    ['Breakeven', `LEAPS ${fmtMoney(l0.strike)} + basis ${fmtMoney(p.basisPerShare)}`, fmtMoney(x.breakeven)],
+    ['Premium recovered', `${fmtMoney(p.creditsToDate)} credits ÷ ${fmtMoney(p.leapsCostToDate)} LEAPS cost`, fmtPct(x.recovered)],
+    ['Cost basis', `${fmtMoney(p.basisPerShare)} / share × 100 × ${x.longCt}`, fmtMoney(x.basisTotal)],
+    ['Sort key', x.nearShort ? 'short-call DTE (nearest open short)' : 'LEAPS DTE (no short call)', x.closed ? 'closed' : x.sortKey + 'd']
+  ]
+  return (
+    <div className="panel">
+      <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--wb-border, #21262d)', fontFamily: 'var(--font-wb-mono, ui-monospace, Menlo, monospace)', fontSize: 10, fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase', color: p.future ? T.gold : T.mut }}>
+        Derivation · {p.note}
+      </div>
+      <div className="deriv">
+        {rows.map(([k, e, v], i) => (
+          <Fragment key={i}>
+            <div className="dk">{k}</div><div className="de">{e}</div><div className="dv">{v}</div>
+          </Fragment>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export const TIERS = [
+  ['Tier 1 · on the card face', [
+    'Ticker, PMCC badge, underlying price, nearest decision point',
+    'Short call: strike, DTE, mid vs entry credit, TARGET at 50%',
+    'LEAPS: strike, DTE gold inside the 60-day window, delta',
+    'Net P&L, percent of basis only while basis is positive',
+    'Running cost basis, "LEAPS paid for" when negative',
+    'Credits collected with a recovered-of-LEAPS-cost meter',
+    'Glyphs: roll window ◆, assignment ▲, earnings ⚑, breakeven ✕, delta floor δ, wide spread ⚠'
+  ]],
+  ['Tier 2 · click the card', [
+    'Credits collected and short-call cycles',
+    'Breakeven and max if called at the short strike',
+    'LEAPS delta in full, short extrinsic',
+    'LEAPS mark, bid/ask width, unreliable note',
+    'Entry net debit and days since open'
+  ]],
+  ['Tier 3 · position detail', [
+    'Leg timeline and linked snapshot chain (US-103, US-109)',
+    'Per-cycle credit waterfall',
+    'Full Greeks, IVR and short context (US-112)'
+  ]]
+]
+
+export function TierMap() {
+  return (
+    <div className="tiers">
+      {TIERS.map(([h, items]) => (
+        <section key={h}>
+          <h4>{h}</h4>
+          <ul style={{ margin: 0, paddingLeft: 16 }}>{items.map((t) => <li key={t}>{t}</li>)}</ul>
+        </section>
+      ))}
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [key, setKey] = useState('both-legs')
+  const p = PRESETS[key]
+  const x = derive(p)
+  const cards = [
+    ...WHEELS.map((w) => ({ dte: w.dteDays, el: <WheelCard key={w.ticker} w={w} valuation={p.valuation} /> })),
+    ...(x.closed ? [] : [{ dte: x.sortKey, el: <PmccCard key={'xyz-' + key} p={p} /> }])
+  ].sort((a, b) => a.dte - b.dte)
+  return (
+    <div className="u108">
+      <style>{CSS}</style>
+      <div className="presets">
+        {Object.keys(PRESETS).map((k) => (
+          <button key={k} data-on={k === key ? '1' : '0'} onClick={() => setKey(k)}>
+            {k}{PRESETS[k].future ? ' ⧉' : ''}
+          </button>
+        ))}
+      </div>
+      <div className="sect">Active · {cards.length} positions · sorted by nearest decision point</div>
+      <div className="cards">{cards.map((c) => c.el)}</div>
+      {x.closed ? (
+        <Fragment>
+          <div className="sect">Closed</div>
+          <div className="cards"><PmccCard p={p} /></div>
+        </Fragment>
+      ) : null}
+      <Derivation p={p} />
+      <TierMap />
+      <div className="sub" style={{ marginTop: 12, lineHeight: 1.7 }}>
+        ⧉ marks states the app does not support yet — shown to prove the card absorbs them without new primitives.
+        Open questions for implementation: the wide-spread ⚠ is on the LEAPS leg only, though a $0.10 spread on a
+        $0.90 short call also trips the 10% predicate; and breakeven reads the first LEAPS strike, which needs a
+        contract-weighted average once laddered LEAPS are real.
+      </div>
+    </div>
+  )
+}
+
+<Mockup />
