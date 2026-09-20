@@ -1,6 +1,6 @@
 ---
 name: qa-test
-description: Runs manual QA testing for the Wheelbase Electron app. Use this skill when the user asks to "run QA", "test the app", "verify the UI", "run the manual test plan", "test US-N", "check if the app works", or wants to validate that a user story's acceptance criteria pass in the live app. The skill reads structured test plans from docs/epics/02-stories/ and drives the running Electron app via the Electron MCP tools. It also performs adversarial testing to find edge cases the happy-path scenarios don't cover. Use it any time new functionality has been implemented and needs end-to-end validation.
+description: Runs manual QA testing for the Wheelbase Electron app. Use this skill when the user asks to "run QA", "test the app", "verify the UI", "run the manual test plan", "test US-N", "check if the app works", or wants to validate that a user story's acceptance criteria pass in the live app. The skill reads structured test plans from docs/epics/02-stories/ and drives the running Electron app via the Playwright MCP tools attached over the Chrome DevTools Protocol. It also performs adversarial testing to find edge cases the happy-path scenarios don't cover. Use it any time new functionality has been implemented and needs end-to-end validation.
 ---
 
 # Wheelbase QA Tester
@@ -9,73 +9,72 @@ You are a **black-box QA engineer** for the Wheelbase Electron app — a single-
 strategy journal. You treat the app as an opaque UI. You never look at source code, selectors, or
 implementation details. You navigate and interact entirely through what is visible on screen.
 
-You interact with the app exclusively through the **Electron MCP tools**:
+You interact with the app exclusively through the **Playwright MCP tools**. The server attaches
+to the running Wheelbase window over the Chrome DevTools Protocol (port 9222, opened by
+`pnpm dev`), so every tool acts on the real app, not a separate browser.
 
-| Tool                                      | Purpose                                        |
-| ----------------------------------------- | ---------------------------------------------- |
-| `mcp__electron__get_electron_window_info` | Confirm the app is running                     |
-| `mcp__electron__take_screenshot`          | See what is currently on screen                |
-| `mcp__electron__send_command_to_electron` | Navigate, read page content, click, fill forms |
-| `mcp__electron__read_electron_logs`       | Read console output when investigating a bug   |
+| Tool                                        | Purpose                                                  |
+| ------------------------------------------- | -------------------------------------------------------- |
+| `mcp__playwright__browser_snapshot`         | Accessibility tree of what is on screen — use this first |
+| `mcp__playwright__browser_take_screenshot`  | Visual check of layout, colours, and state               |
+| `mcp__playwright__browser_click`            | Click an element by its snapshot `ref`                   |
+| `mcp__playwright__browser_type`             | Type into a field by its snapshot `ref`                  |
+| `mcp__playwright__browser_fill_form`        | Fill several fields in one call                          |
+| `mcp__playwright__browser_select_option`    | Choose from a `<select>`                                 |
+| `mcp__playwright__browser_press_key`        | `Enter`, `Escape`, `Tab`                                 |
+| `mcp__playwright__browser_navigate`         | Change the hash route                                    |
+| `mcp__playwright__browser_wait_for`         | Wait for text to appear or disappear                     |
+| `mcp__playwright__browser_evaluate`         | Read a value you cannot see (e.g. `location.hash`)       |
+| `mcp__playwright__browser_console_messages` | Renderer console, for bug investigation only             |
 
 ---
 
 ## How to Interact with the App
 
-Use `send_command_to_electron` commands to drive the UI. Always start by taking a screenshot or
-calling `get_page_structure` to understand what is currently visible before acting.
+Always call `browser_snapshot` before acting. It returns every visible element with a `ref`
+you pass to the click, type, and select tools. Re-snapshot after each action that changes the
+screen — refs from a stale snapshot are rejected.
 
 ### Discovering what's on screen
 
-```json
-{ "command": "get_page_structure" }
-{ "command": "get_body_text" }
-{ "command": "find_elements" }
-```
+- `browser_snapshot` — the labelled tree; this is what you read values from
+- `browser_take_screenshot` — when the test plan asks about colour, layout, or emphasis
 
 ### Clicking visible elements
 
-```json
-{ "command": "click_by_text", "args": { "text": "<visible label or button text>" } }
-{ "command": "click_by_selector", "args": { "selector": "<CSS selector>" } }
-```
-
-Prefer `click_by_text` — use the label the user would see. Only fall back to `click_by_selector`
-if `get_page_structure` reveals a selector and the text is ambiguous.
+Find the element in the snapshot by the label the user would see, then click its `ref`.
+Pass the visible text as `element` so the report stays readable. Never derive CSS selectors —
+you are black-box.
 
 ### Filling form fields
 
-```json
-{ "command": "fill_input", "args": { "placeholder": "<field label or placeholder>", "value": "<value>" } }
-{ "command": "fill_input", "args": { "selector": "<selector>", "value": "<value>" } }
-```
+Use `browser_type` with the field's `ref` for a single field, or `browser_fill_form` for a
+whole form. Field names in the test plan's Inputs table map to the labels in the snapshot.
 
 ### Keyboard
 
-```json
-{ "command": "send_keyboard_shortcut", "args": { "text": "Enter" } }
-{ "command": "send_keyboard_shortcut", "args": { "text": "Escape" } }
-```
+`browser_press_key` with `Enter` to submit, `Escape` to dismiss a sheet, `Tab` to move focus.
 
-### Running JavaScript (for values you can't read visually)
+### Reading values you cannot see
 
-```json
-{ "command": "eval", "args": { "code": "new Date().toISOString().slice(0,10)" } }
-{ "command": "eval", "args": { "code": "location.hash" } }
+```js
+// browser_evaluate
+() => location.hash
+() => new Date().toISOString().slice(0, 10)
 ```
 
 ### Navigating
 
-```json
-{ "command": "navigate_to_hash", "args": { "text": "#/" } }
-```
+Routing is hash-based. Pass the full URL to `browser_navigate`; take the origin from the
+current snapshot's URL and append the hash, e.g. `<origin>/#/`.
 
 ---
 
 ## Step 0 — Prerequisites
 
-Call `mcp__electron__get_electron_window_info` to confirm an Electron window is detected.
-If no window is found, tell the user to run:
+Call `browser_snapshot` to confirm the Playwright server is attached to a Wheelbase window.
+If it reports no page or a connection error, the app is not running (or another Electron
+process holds port 9222). Tell the user to run:
 
 ```
 pnpm dev
@@ -124,10 +123,10 @@ position. Prior scenario data is fine — each scenario creates its own position
 
 For each row in the Inputs table:
 
-1. Confirm you are on the specified screen (screenshot or `get_body_text`)
+1. Confirm you are on the specified screen (`browser_snapshot`)
 2. Perform the specified action (fill field, click button, etc.) using the visible label from
    the test plan
-3. After each major action, take a screenshot and use `get_body_text` to verify the result
+3. After each major action, re-snapshot to verify the result; screenshot when appearance matters
 
 ### Verifying calculated values
 
@@ -141,7 +140,7 @@ Check values shown in the UI against the **Math** block:
 ### Pass criteria
 
 A scenario **passes** when every row in the Confirmation Form and Success Screen tables matches
-what `get_body_text` and the screenshot show. Record PASS or FAIL with notes.
+what the snapshot and the screenshot show. Record PASS or FAIL with notes.
 
 ---
 
@@ -207,12 +206,12 @@ On any confirmation form, click the submit button twice quickly. Verify only one
 
 ## Step 4 — Bug Investigation (only if bugs found)
 
-If a scenario fails, check the logs before drawing conclusions:
+If a scenario fails, check the renderer console before drawing conclusions:
+`browser_console_messages` with `level: "error"` (widen to `warning` if that is empty).
 
-```json
-{ "logType": "renderer", "lines": 50 }
-{ "logType": "main", "lines": 50 }
-```
+The main-process (pino) logs are not reachable over CDP. If the failure looks like a
+service or database problem, say so and hand off to the `debug-app` skill, which captures
+that stream.
 
 Note any errors, stack traces, or unexpected output. Report them verbatim in the test report.
 Do **not** read source code.
@@ -242,7 +241,7 @@ Do **not** read source code.
 **Steps to reproduce:** ...
 **Expected:** ...
 **Actual:** ...
-**Log evidence:** (paste relevant lines from read_electron_logs)
+**Log evidence:** (paste relevant lines from browser_console_messages)
 
 ## Verdict
 PASS / FAIL — <one-line summary>

@@ -23,6 +23,12 @@
       "skillPath": "skills/ponytail/SKILL.md",
       "computedHash": "210fa0831f649ce9f8a305f7b7c8cf2a0dd09ac4dd53067109941b96e7811d4e"
     },
+    "typescript-magician": {
+      "source": "mcollina/skills",
+      "sourceType": "github",
+      "skillPath": "skills/typescript-magician/SKILL.md",
+      "computedHash": "99e61d29c107b3c52adbb70c6ee8cfbfb7830ea0649dba4ec89557fdf5c46b54"
+    },
     "vercel-react-best-practices": {
       "source": "vercel-labs/agent-skills",
       "sourceType": "github",

@@ -76,7 +76,9 @@ export function deriveRunningBasis<T extends { fillDate: string }>(
       si++
     }
 
-    const { enriched: dayEnriched, finalBasis } = assignDaySnapshots(
+    // Annotated to break the inference cycle: lastBasis feeds this call and is
+    // reassigned from its result inside the loop.
+    const { enriched: dayEnriched, finalBasis }: DayResult<T> = assignDaySnapshots(
       dayLegs,
       daySnapshots,
       lastBasis

@@ -213,6 +213,10 @@ pnpm test && pnpm lint && pnpm typecheck
 
 All three must pass. Any failure → fix and restart the loop.
 
+If the typecheck fix you are reaching for is a cast, an `as unknown as`, a widened type,
+or an `any`, stop and invoke `/typescript-magician` instead. Satisfying the compiler by
+loosening a type passes this gate while hiding the defect from every later one.
+
 ### Gate C — Acceptance criteria covered by e2e tests
 
 ```bash
@@ -235,15 +239,21 @@ AC Audit (cycle <n>):
 Any `✗` → write the missing e2e test through the `/red` → `/green` cycle, add it to
 tasks.md as a checked task, and restart the loop.
 
+If an e2e test fails and the assertion output does not explain why, invoke `/debug-app`
+to reproduce the step in the running app with the main-process pino logs alongside it.
+The e2e runner and the code reviewer cannot see those logs. Stop the debug-app session
+before rerunning `pnpm test:e2e`, so nothing holds port 9222.
+
 If an AC is genuinely not e2e-testable (a non-observable internal invariant), say so
 explicitly, name the unit/integration test that covers it instead, and mark it
 `✓ (unit: <path>)`. Do not use this escape hatch for anything a user can observe in
 the UI.
 
-> **better-sqlite3 ABI note:** `pretest` rebuilds for system Node and `pretest:e2e`
-> rebuilds for Electron, so alternating `pnpm test` / `pnpm test:e2e` self-heals. If
-> e2e hangs on `waiting for event 'window'`, run
-> `npx electron-rebuild -f -w better-sqlite3` and retry once.
+> **better-sqlite3 ABI note:** pnpm skips `pre*` hooks, so the rebuild is manual. Run
+> `pnpm rebuild:node` before `pnpm test` and `pnpm rebuild:electron` before
+> `pnpm test:e2e` whenever you switch between them. The wrong-ABI symptoms are
+> `NODE_MODULE_VERSION <n> ... requires <m>` from Vitest, or an e2e hang on
+> `waiting for event 'window'`.
 
 ### Gate D — 95% coverage on changed code
 
@@ -323,7 +333,8 @@ Ask it for three things, in this order:
 2. **Bugs** — correctness defects, unhandled edge cases, silent failures, broken
    invariants, violations of the Architecture Rules in `CLAUDE.md` (pure `core/`
    engines, thin IPC handlers, linked roll pairs, hash routing, RHF+Zod forms,
-   Tailwind `wb-*` tokens, per-item failure isolation in batch jobs).
+   Tailwind `wb-*` tokens, per-item failure isolation in batch jobs). Treat an unsafe
+   cast, `as unknown as`, `any`, or a type widened only to satisfy the compiler as a bug.
 3. **Refactor opportunities visible only at the whole-feature level** — duplication
    across the layers this plan touched, an abstraction the layer-by-layer TDD passes
    could not see, a seam that is now obviously in the wrong place. Explicitly _not_
