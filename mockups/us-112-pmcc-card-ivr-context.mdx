@@ -1,0 +1,540 @@
+---
+title: 'US-112: IVR on the PMCC position card'
+story: 'As a PMCC trader scanning the dashboard, I want the underlying IV rank on the PMCC card, read once for the short call I sell and once for the LEAPS I hold, so I know whether this cycle premium is worth selling and whether a LEAPS roll would be buying time cheap or dear.'
+states: ['rich-fresh', 'fair-fresh', 'thin-fresh', 'edge-30', 'edge-60-1', 'rich-earnings', 'thin-roll-window', 'rich-roll-window', 'leaps-only-rich', 'aging', 'stale', 'expired', 'predates-earnings', 'none', 'closed']
+---
+
+import { Fragment, useState } from 'react'
+
+# US-112: IVR on the PMCC position card
+
+_One number, two readings. The underlying's IV rank sits on the card face as a compact cell — numeral, freshness ring, one zone word — because "is this premium worth selling?" is the weekly question. Tier 2 reads the same number twice: what it means for the short call (the leg you sell, which likes rich IV) and what it means for the LEAPS (the leg you hold and roll, which pays up for it). Only a decision-usable reading gets a sentence; stale, expired, predates-earnings and missing readings look exactly as they do on the bench. The card is US-108's; this story adds the IVR cell and the two context cells and nothing else._
+
+## Acceptance Criteria States
+
+- **rich-fresh** — Background. `IVR 62` fresh, `rich`; tier 2: short `RICH`, LEAPS `PRICEY TO ROLL`
+- **fair-fresh** — `45` → `fair`; both contexts `FAIR`
+- **thin-fresh** — `22` → `thin` in gold; short `THIN`, LEAPS `CHEAP TO ROLL`
+- **edge-30** — `30` is `fair`: the low zone is strictly below 30
+- **edge-60-1** — `60.1` is `rich`: the high zone is strictly above 60 (60 itself is fair)
+- **rich-earnings** — valuation 2026-11-16, earnings 2026-11-18 inside the short's window: ⚑ fires, the face word `rich` turns gold, and the short context reads `RICH · EVENT-DRIVEN`
+- **thin-roll-window** — valuation 2027-07-20, LEAPS 59d (◆): low IV inside the window reads `ROLL NOW`
+- **rich-roll-window** — same window, `62`: `PRICEY · WINDOW OPEN` — the window beats IV
+- **leaps-only-rich** — no short call open: the short context speaks to the next sale
+- **aging** — 2 trading days old: still usable, ring at three-quarters, contexts unchanged
+- **stale** — 5 trading days old: muted `62 · 5d`, half ring, both contexts `—`
+- **expired** — 12 trading days old: `exp`, quarter ring, both contexts `—`
+- **predates-earnings** — observed before the last print: gold hollow ring, both contexts `—`
+- **none** — no reading collected: `n/a` on the face and in both cells; every other figure unchanged
+- **closed** — muted card in the Closed section: no IVR, no tier 2
+
+Every IVR figure on the card is derived from the preset's reading (value, age, state) and the three
+booleans US-108's card already computes (short call open, ◆ roll window, ⚑ earnings), so the mockup
+and the acceptance criteria cannot drift apart. The derivation panel prints the resolution; the
+registry panel prints both context tables in their order.
+
+---
+
+export const T = {
+  gold: 'var(--wb-gold, #e6a817)', green: 'var(--wb-green, #3fb950)', red: 'var(--wb-red, #f85149)',
+  violet: 'var(--wb-violet, #d2a8ff)', sky: 'var(--wb-sky, #79c0ff)', teal: 'var(--wb-teal, #2dd4bf)',
+  pri: 'var(--wb-text-primary, #e6edf3)', sec: 'var(--wb-text-secondary, #b1bac4)', mut: 'var(--wb-text-muted, #6e7681)'
+}
+
+export const IVR_LOW_MAX = 30
+export const IVR_HIGH_MIN = 60
+export const ROLL_WINDOW_DTE = 60
+export const EXPIRING_SOON_DTE = 7
+export const ASSIGNMENT_RISK_PCT_BELOW = 2
+export const EARNINGS_PROXIMITY_MAX_DAYS = 10
+
+export const d = (s) => new Date(s + 'T00:00:00Z')
+export const dte = (from, to) => Math.round((d(to) - d(from)) / 86400000)
+export const r2 = (n) => Math.round(n * 100) / 100
+export function fmtMoney(n, signed) {
+  if (n == null) return '—'
+  const sign = signed ? (n > 0 ? '+' : n < 0 ? '-' : '') : n < 0 ? '-' : ''
+  return sign + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+export const fmtPct = (n, signed) => (signed && n > 0 ? '+' : n < 0 ? '-' : '') + Math.abs(n).toFixed(1) + '%'
+export const fmtIvr = (v) => String(Number(v))
+export const tradingDaysLabel = (n) => `${n} trading ${n === 1 ? 'day' : 'days'}`
+
+export const TIER_TITLE = { fresh: 'Fresh', aging: 'Aging', stale: 'Stale', expired: 'Expired', predates_earnings: 'Predates earnings' }
+export const isUsableIvrState = (s) => s === 'fresh' || s === 'aging'
+export const TONE = { green: T.green, gold: T.gold, neutral: T.sec, muted: T.mut }
+
+export function ivrZone(value) {
+  const v = Number(value)
+  return v < IVR_LOW_MAX ? 'low' : v > IVR_HIGH_MIN ? 'high' : 'mid'
+}
+export const ZONE_WORD = { low: 'thin', mid: 'fair', high: 'rich' }
+export const ZONE_TONE = { low: 'gold', mid: 'neutral', high: 'green' }
+
+export function unusable(ivRank) {
+  if (ivRank === null) return { status: 'n/a', tone: 'muted', text: 'no IV rank collected' }
+  if (ivRank.value === null) return { status: 'n/a', tone: 'muted', text: 'rank withheld — flat 52-week window' }
+  const age = tradingDaysLabel(ivRank.ageTradingDays)
+  if (ivRank.state === 'stale') return { status: 'Stale', tone: 'muted', text: `${age} old — collect a fresh reading before acting on it` }
+  if (ivRank.state === 'expired') return { status: 'Expired', tone: 'muted', text: `last reading ${age} ago — collection has been failing` }
+  if (ivRank.state === 'predates_earnings') return { status: 'Predates earnings', tone: 'muted', text: 'observed before the last print — IV has re-priced since' }
+  return null
+}
+
+export const SHORT_CALL_CONTEXT = [
+  { status: 'RICH · EVENT-DRIVEN', tone: 'gold', test: (i) => i.zone === 'high' && i.earningsBeforeShortExpiry, text: (i) => `IV re-prices after the ${i.nextEarnings} print — don't anchor on it` },
+  { status: 'RICH', tone: 'green', test: (i) => i.zone === 'high' && i.hasShortCall, text: () => 'premium is rich — a roll up-and-out collects more than usual' },
+  { status: 'RICH', tone: 'green', test: (i) => i.zone === 'high', text: () => 'premium is rich — sell the next short call into it' },
+  { status: 'THIN', tone: 'gold', test: (i) => i.zone === 'low' && i.hasShortCall, text: () => 'premium is thin — the next cycle pays less; consider a longer DTE' },
+  { status: 'THIN', tone: 'gold', test: (i) => i.zone === 'low', text: () => 'premium is thin — wait, or go longer DTE, before selling the next short' },
+  { status: 'FAIR', tone: 'neutral', test: () => true, text: () => 'premium is fair — run the usual cycle' }
+]
+
+export const LEAPS_CONTEXT = [
+  { status: 'PRICEY · WINDOW OPEN', tone: 'gold', test: (i) => i.zone === 'high' && i.leapsInRollWindow, text: () => 'the window beats IV — roll on DTE, not on price' },
+  { status: 'PRICEY TO ROLL', tone: 'gold', test: (i) => i.zone === 'high', text: () => 'IV inflates the LEAPS mark and any roll — some of this P&L is vega' },
+  { status: 'ROLL NOW', tone: 'green', test: (i) => i.zone === 'low' && i.leapsInRollWindow, text: () => `cheap time inside the ${ROLL_WINDOW_DTE}-day window — a roll locks in low IV` },
+  { status: 'CHEAP TO ROLL', tone: 'green', test: (i) => i.zone === 'low', text: () => 'extending the LEAPS is cheap while IV is low' },
+  { status: 'FAIR', tone: 'neutral', test: () => true, text: () => 'no IV edge either way on the LEAPS' }
+]
+
+export function resolve(registry, input) {
+  const blocked = unusable(input.ivRank)
+  if (blocked) return { ...blocked, rule: 'unusable' }
+  const i = { ...input, zone: ivrZone(input.ivRank.value) }
+  const idx = registry.findIndex((r) => r.test(i))
+  const r = registry[idx]
+  return { status: r.status, tone: r.tone, text: r.text(i), rule: `row ${idx + 1}` }
+}
+
+export function faceZoneLabel(ivRank, shortCtx) {
+  // The face word is the zone; its tone is the short-call read, so an event-driven rich reading is gold at a glance.
+  if (ivRank === null || ivRank.value === null) return { word: 'n/a', tone: 'muted', zone: 'none' }
+  if (!isUsableIvrState(ivRank.state)) return { word: TIER_TITLE[ivRank.state], tone: 'muted', zone: 'none' }
+  const zone = ivrZone(ivRank.value)
+  return { word: ZONE_WORD[zone], tone: shortCtx ? shortCtx.tone : ZONE_TONE[zone], zone }
+}
+
+export const BASE = { ticker: 'XYZ', valuation: '2026-11-06', price: 104.2, basisPerShare: 21.2, creditsToDate: 3.8, leapsCostToDate: 25.0, entryDebit: 23.2, openDate: '2026-04-17', cycles: 4, earnings: null,
+  leaps: { strike: 80, exp: '2027-09-17', fill: 25.0, mid: 26.1, bid: 25.7, ask: 26.5, delta: 0.82 },
+  short: { strike: 108, exp: '2026-11-20', fill: 1.8, mid: 0.9, bid: 0.85, ask: 0.95 } }
+export const reading = (value, ageTradingDays, state) => ({ value, ageTradingDays, state, observedAt: 'close' })
+export const WINDOW = { valuation: '2027-07-20', price: 108.0, basisPerShare: 19.1, creditsToDate: 5.9, cycles: 9,
+  leaps: { strike: 80, exp: '2027-09-17', fill: 25.0, mid: 28.7, bid: 28.4, ask: 29.0, delta: 0.74 },
+  short: { strike: 112, exp: '2027-08-20', fill: 2.1, mid: 2.0, bid: 1.9, ask: 2.1 } }
+
+export const PRESETS = {
+  'rich-fresh': { ...BASE, note: 'Background · IV rank 62 observed at the last close — rich for the short, pricey for the LEAPS', ivr: reading('62', 1, 'fresh') },
+  'fair-fresh': { ...BASE, note: 'IV rank 45 — fair either way, the usual cycle', ivr: reading('45', 1, 'fresh') },
+  'thin-fresh': { ...BASE, note: 'IV rank 22 — thin premium for the short, cheap time for the LEAPS', ivr: reading('22', 1, 'fresh') },
+  'edge-30': { ...BASE, note: 'IV rank 30 — the low zone is strictly below 30, so 30 is fair', ivr: reading('30', 1, 'fresh') },
+  'edge-60-1': { ...BASE, note: 'IV rank 60.1 — the high zone is strictly above 60; 60 itself reads fair', ivr: reading('60.1', 1, 'fresh') },
+  'rich-earnings': { ...BASE, note: 'Earnings in 2 days, before the short expires — ⚑ fires and the rich reading is qualified, not celebrated', valuation: '2026-11-16', price: 106.1, earnings: '2026-11-18', short: { ...BASE.short, mid: 0.6, bid: 0.55, ask: 0.65 }, leaps: { ...BASE.leaps, mid: 27.2, bid: 26.9, ask: 27.5 }, ivr: reading('62', 1, 'fresh') },
+  'thin-roll-window': { ...BASE, ...WINDOW, note: 'LEAPS 59d inside the 60-day window (◆) with IV rank 22 — the ideal roll', ivr: reading('22', 1, 'fresh') },
+  'rich-roll-window': { ...BASE, ...WINDOW, note: 'Same window with IV rank 62 — the window beats IV; roll on DTE, not on price', ivr: reading('62', 1, 'fresh') },
+  'leaps-only-rich': { ...BASE, note: 'Short expired worthless, none sold — the short context speaks to the next sale', valuation: '2026-10-19', price: 103.4, basisPerShare: 23.0, creditsToDate: 2.0, cycles: 2, short: null, leaps: { ...BASE.leaps, mid: 25.4, bid: 25.1, ask: 25.7 }, ivr: reading('62', 1, 'fresh') },
+  aging: { ...BASE, note: 'Observed 2 trading days ago — aging, still decision-usable; the age joins the numeral', ivr: reading('62', 2, 'aging') },
+  stale: { ...BASE, note: 'Observed 5 trading days ago — shown muted for context, no advice from it', ivr: reading('62', 5, 'stale') },
+  expired: { ...BASE, note: 'Observed 12 trading days ago — reads exp; collection has been failing', ivr: reading('62', 12, 'expired') },
+  'predates-earnings': { ...BASE, note: 'A print landed after the observation — unusable regardless of age', ivr: reading('62', 1, 'predates_earnings') },
+  none: { ...BASE, note: 'No reading collected — n/a on the face and in both cells; everything else on the card is unchanged', ivr: null },
+  closed: { ...BASE, note: 'Status CLOSED — muted, no IVR, no tier 2', status: 'CLOSED', ivr: reading('62', 1, 'fresh') }
+}
+
+export function derive(p) {
+  const closed = p.status === 'CLOSED'
+  const leaps = { ...p.leaps, dte: dte(p.valuation, p.leaps.exp) }
+  const short = p.short ? { ...p.short, dte: dte(p.valuation, p.short.exp) } : null
+  const basisTotal = r2(p.basisPerShare * 100)
+  const premiumTotal = r2(p.creditsToDate * 100)
+  const recovered = (p.creditsToDate / p.leapsCostToDate) * 100
+  const pnl = r2((leaps.mid - (short ? short.mid : 0)) * 100 - basisTotal)
+  const pnlPct = (pnl / basisTotal) * 100
+  const shortPctMax = short ? ((short.fill - short.mid) / short.fill) * 100 : null
+  const leapsInRollWindow = !closed && leaps.dte <= ROLL_WINDOW_DTE
+  const daysToEarnings = p.earnings ? dte(p.valuation, p.earnings) : null
+  const earningsBeforeShortExpiry = !!(short && daysToEarnings !== null && daysToEarnings >= 0 && daysToEarnings <= EARNINGS_PROXIMITY_MAX_DAYS && daysToEarnings <= short.dte)
+  const pctBelow = short ? ((short.strike - p.price) / short.strike) * 100 : null
+  const glyphs = []
+  if (!closed) {
+    if (leapsInRollWindow) glyphs.push({ g: '◆', n: 'Roll window', c: T.gold, t: `LEAPS inside the ${ROLL_WINDOW_DTE}-day roll window (US-107)` })
+    if (short && pctBelow <= ASSIGNMENT_RISK_PCT_BELOW) glyphs.push({ g: '▲', n: 'Assignment risk', c: p.price >= short.strike ? T.red : T.gold, t: `Stock is ${Math.abs(pctBelow).toFixed(1)}% ${p.price >= short.strike ? 'above' : 'below'} the short-call strike (US-106)` })
+    if (earningsBeforeShortExpiry) glyphs.push({ g: '⚑', n: 'Earnings', c: T.gold, t: `Earnings in ${daysToEarnings} days before your ${short.exp} expiration (US-56)` })
+  }
+  const input = { ivRank: p.ivr, hasShortCall: !!short, leapsInRollWindow, earningsBeforeShortExpiry, nextEarnings: p.earnings }
+  const shortCtx = resolve(SHORT_CALL_CONTEXT, input)
+  return { closed, leaps, short, basisTotal, premiumTotal, recovered, pnl, pnlPct, shortPctMax, glyphs, input,
+    face: faceZoneLabel(p.ivr, shortCtx), shortCtx, leapsCtx: resolve(LEAPS_CONTEXT, input),
+    sortKey: short ? short.dte : leaps.dte,
+    state: closed ? 'Closed' : short ? 'LEAPS + short call open' : 'LEAPS open · no short call' }
+}
+
+export const CSS = `
+.u112{font-family:var(--font-wb-sans,'Inter',system-ui,sans-serif);color:var(--wb-text-primary,#e6edf3)}
+.u112 .mono{font-family:var(--font-wb-mono,ui-monospace,'SF Mono',Menlo,monospace);font-variant-numeric:tabular-nums}
+.u112 .sub{font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:10.5px;color:var(--wb-text-muted,#6e7681)}
+.u112 .eyebrow{font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:9px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--wb-text-muted,#6e7681)}
+.u112 .presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.u112 .presets button{font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:10.5px;font-weight:600;letter-spacing:.04em;padding:5px 10px;border-radius:5px;border:1px solid var(--wb-border,#21262d);background:transparent;color:var(--wb-text-muted,#6e7681);cursor:pointer;transition:all .12s}
+.u112 .presets button:hover{color:var(--wb-text-secondary,#b1bac4);border-color:#30363d}
+.u112 .presets button[data-on="1"]{border-color:var(--wb-gold-border,rgba(230,168,23,.3));background:var(--wb-gold-dim,rgba(230,168,23,.14));color:var(--wb-gold,#e6a817)}
+.u112 .sect{font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:9.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--wb-text-muted,#6e7681);padding:14px 2px 8px}
+.u112 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px}
+.u112 .card{background:var(--wb-bg-surface,#161b27);border:1px solid var(--wb-border,#21262d);border-radius:10px;overflow:hidden;cursor:pointer;transition:border-color .12s}
+.u112 .card:hover{border-color:#30363d}
+.u112 .card.pmcc{border-left:2px solid var(--wb-teal,#2dd4bf)}
+.u112 .card.muted{opacity:.5}
+.u112 .cardhead{display:flex;align-items:center;gap:10px;padding:11px 13px;border-bottom:1px solid var(--wb-border-subtle,#161b22)}
+.u112 .cardbody{padding:11px 13px;display:grid;gap:9px}
+.u112 .legline{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;padding:8px 10px;background:var(--wb-bg-base,#0d1117);border:1px solid var(--wb-border-subtle,#161b22);border-radius:7px;font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:11.5px;font-variant-numeric:tabular-nums}
+.u112 .cardfoot{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--wb-border,#21262d);border-top:1px solid var(--wb-border,#21262d)}
+.u112 .cardfoot .c{background:var(--wb-bg-elevated,#1c2333);padding:9px 12px}
+.u112 .meter{height:3px;border-radius:2px;background:var(--wb-border,#21262d);overflow:hidden;margin-top:7px}
+.u112 .meter i{display:block;height:100%}
+.u112 .badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:10px;font-weight:600;letter-spacing:.08em;padding:2px 7px;border-radius:4px;border:1px solid;white-space:nowrap}
+.u112 .chip{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:9.5px;font-weight:600;letter-spacing:.08em;padding:1px 6px;border-radius:3px;border:1px solid;white-space:nowrap}
+.u112 .lab{font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:9px;font-weight:700;letter-spacing:.08em;padding:1px 4px;border-radius:3px;border:1px solid}
+.u112 .glyphs{display:inline-flex;align-items:center;gap:5px}
+.u112 .glyph{cursor:help;font-size:11.5px;line-height:1;position:relative}
+.u112 .tip{position:relative}
+.u112 .tip[data-tip]:hover::after{content:attr(data-tip);position:absolute;left:0;top:calc(100% + 7px);z-index:20;width:max-content;max-width:300px;padding:7px 9px;border-radius:6px;background:var(--wb-bg-elevated,#1c2333);border:1px solid #30363d;box-shadow:0 8px 24px rgba(0,0,0,.45);color:var(--wb-text-primary,#e6edf3);font-family:var(--font-wb-sans,'Inter',system-ui,sans-serif);font-size:11px;font-weight:400;line-height:1.45;letter-spacing:0;text-transform:none;white-space:normal;pointer-events:none}
+.u112 .tip[data-tip]:hover::before{content:'';position:absolute;left:4px;top:calc(100% + 2px);border:5px solid transparent;border-bottom-color:#30363d;z-index:21}
+.u112 .cardhead .tip[data-tip]:hover::after{left:auto;right:0}
+.u112 .cardhead .tip[data-tip]:hover::before{left:auto;right:4px}
+.u112 .cardhead .glyphs .tip[data-tip]:hover::after,.u112 .cardhead .ticker.tip[data-tip]:hover::after{left:0;right:auto}
+.u112 .cardhead .glyphs .tip[data-tip]:hover::before,.u112 .cardhead .ticker.tip[data-tip]:hover::before{left:4px;right:auto}
+.u112 .ivrface{display:flex;flex-direction:column;gap:2px;margin-left:auto;padding-right:12px;border-right:1px solid var(--wb-border-subtle,#161b22);text-align:right;align-items:flex-end}
+.u112 .ivrface.new{box-shadow:inset 0 0 0 1px var(--wb-gold-border,rgba(230,168,23,.35));border-radius:6px;padding:4px 10px 4px 8px;margin-right:-2px}
+.u112 .ivrnum{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:12.5px;font-variant-numeric:tabular-nums;cursor:default}
+.u112 .t2bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 13px;border-top:1px solid var(--wb-border,#21262d);background:var(--wb-bg-surface,#161b27);font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:9.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--wb-text-muted,#6e7681);transition:color .12s,background .12s}
+.u112 .card:hover .t2bar{color:var(--wb-text-secondary,#b1bac4);background:var(--wb-bg-elevated,#1c2333)}
+.u112 .t2bar[aria-expanded="true"]{color:var(--wb-gold,#e6a817)}
+.u112 .chev{display:inline-block;font-size:11px;transition:transform .15s}
+.u112 .chev.open{transform:rotate(180deg)}
+.u112 .openlink{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:10px;font-weight:600;letter-spacing:.08em;padding:3px 8px;border-radius:4px;border:1px solid var(--wb-border,#21262d);color:var(--wb-text-secondary,#b1bac4);text-decoration:none;white-space:nowrap;transition:all .12s}
+.u112 .openlink:hover{color:var(--wb-text-primary,#e6edf3);border-color:#30363d;background:var(--wb-bg-elevated,#1c2333)}
+.u112 .ticker{font-size:15px;font-weight:700;letter-spacing:.04em;color:inherit;text-decoration:none}
+.u112 .ticker:hover{text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--wb-text-muted,#6e7681)}
+.u112 .t2{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:1px;background:var(--wb-border,#21262d);border-top:1px solid var(--wb-border,#21262d)}
+.u112 .t2 .c{background:var(--wb-bg-elevated,#1c2333);padding:9px 12px;display:flex;flex-direction:column;gap:3px}
+.u112 .t2 .c.new{box-shadow:inset 0 0 0 1px var(--wb-gold-border,rgba(230,168,23,.35))}
+.u112 .t2 .v{font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:12px;font-variant-numeric:tabular-nums}
+.u112 .t2 .n{font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:10px;color:var(--wb-text-muted,#6e7681);line-height:1.45}
+.u112 .t2.ctxrow{grid-template-columns:1fr 1fr}
+.u112 .t2 .ctx .v{font-size:10.5px;font-weight:700;letter-spacing:.09em}
+.u112 .panel{background:var(--wb-bg-surface,#161b27);border:1px solid var(--wb-border,#21262d);border-radius:8px;overflow:hidden;margin-top:18px}
+.u112 .panel h5{margin:0;padding:10px 14px;border-bottom:1px solid var(--wb-border,#21262d);font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:10px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--wb-text-muted,#6e7681)}
+.u112 .deriv{display:grid;grid-template-columns:minmax(140px,200px) 1fr auto;font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:11.5px}
+.u112 .deriv>div{padding:7px 14px;border-top:1px solid var(--wb-border-subtle,#161b22)}
+.u112 .deriv .dk{color:var(--wb-text-muted,#6e7681);letter-spacing:.04em}
+.u112 .deriv .de{color:var(--wb-text-secondary,#b1bac4)}
+.u112 .deriv .dv{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.u112 .reg{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--wb-border,#21262d)}
+.u112 .reg section{background:var(--wb-bg-surface,#161b27);padding:10px 14px}
+.u112 .reg h4{margin:0 0 8px;font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:9.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--wb-text-label,#c9d1d9)}
+.u112 .reg ol{margin:0;padding-left:18px}
+.u112 .reg li{font-size:11px;line-height:1.6;color:var(--wb-text-secondary,#b1bac4);padding:2px 0}
+.u112 .reg li b{font-family:var(--font-wb-mono,ui-monospace,Menlo,monospace);font-size:10px;letter-spacing:.08em}
+.u112 .reg li.on{background:var(--wb-gold-dim,rgba(230,168,23,.12));border-radius:4px;padding:2px 6px;margin-left:-6px}
+.u112 .legend{font-size:11.5px;line-height:1.7;color:var(--wb-text-secondary,#b1bac4);margin-top:12px}
+`
+
+export function FreshnessRing({ state, size = 14 }) {
+  // Mirrors FreshnessRing.tsx: one fixed arc step per tier; predates_earnings is a hollow gold ring around a dot.
+  const tier = { fresh: [1, T.green], aging: [0.75, T.sec], stale: [0.5, T.mut], expired: [0.25, T.mut], predates_earnings: [0, T.gold] }[state]
+  const stroke = 2.25
+  const r = (size - stroke) / 2
+  const c = 2 * Math.PI * r
+  const centre = size / 2
+  return (
+    <svg data-testid="freshness-ring" data-state={state} width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
+      <circle cx={centre} cy={centre} r={r} fill="none" stroke={state === 'predates_earnings' ? T.gold : 'var(--wb-border, #21262d)'} strokeWidth={stroke} />
+      {tier[0] > 0 ? <circle cx={centre} cy={centre} r={r} fill="none" stroke={tier[1]} strokeWidth={stroke} strokeDasharray={`${c * tier[0]} ${c}`} strokeLinecap="butt" transform={`rotate(-90 ${centre} ${centre})`} /> : null}
+      {state === 'predates_earnings' ? <circle cx={centre} cy={centre} r={size / 6} fill={T.gold} /> : null}
+    </svg>
+  )
+}
+
+export function ivrTooltip(ivRank) {
+  if (ivRank === null) return 'No IV rank collected'
+  const age = tradingDaysLabel(ivRank.ageTradingDays)
+  const v = fmtIvr(ivRank.value)
+  switch (ivRank.state) {
+    case 'predates_earnings': return `Predates earnings — observed at the close before the last earnings report. IV re-prices through a print, so this reading is unusable regardless of age.`
+    case 'expired': return `Expired — last reading ${age} ago. Treated as no reading. Age this old means collection has been failing.`
+    case 'stale': return `Stale — IV rank ${v}, ${age} old. Too old to trust: shown for context, never advised on.`
+    case 'aging': return `Aging — IV rank ${v}, ${age} old. Still decision-usable; expect it to have drifted a few points.`
+    default: return `Fresh — IV rank ${v}, ${age} old. Current as of the last session close.`
+  }
+}
+
+export function IvrCell({ ivRank }) {
+  // Mirrors IvrCell.tsx byte for byte in behaviour: n/a, exp, muted unusable, age suffix on aging/stale, ring, tooltip.
+  if (ivRank === null) return <span className="ivrnum tip" data-ivr-state="empty" data-tip={ivrTooltip(null)} style={{ color: T.mut }}>n/a</span>
+  const usable = isUsableIvrState(ivRank.state)
+  const showsAge = ivRank.state === 'aging' || ivRank.state === 'stale'
+  const expired = ivRank.state === 'expired'
+  const value = expired ? 'exp' : fmtIvr(ivRank.value)
+  return (
+    <span className="ivrnum tip" data-testid="ivr-cell" data-ivr-state={ivRank.state} data-tip={ivrTooltip(ivRank)} style={{ color: usable ? T.pri : T.mut, fontWeight: expired ? 400 : 600 }}>
+      <span>{value}{showsAge ? ` · ${ivRank.ageTradingDays}d` : ''}</span>
+      <FreshnessRing state={ivRank.state} />
+    </span>
+  )
+}
+
+export function IvrFace({ ivRank, closed, face }) {
+  return (
+    <span className="ivrface new" data-testid="pmcc-ivr-face" data-zone={closed ? 'none' : face.zone}>
+      <span className="eyebrow">IVR</span>
+      {closed ? <span className="mono" style={{ fontSize: 12.5, color: T.mut }}>—</span> : <IvrCell ivRank={ivRank} />}
+      {closed ? null : <span className="sub" style={{ color: TONE[face.tone] }}>{face.word}</span>}
+    </span>
+  )
+}
+
+export function Badge({ color, children, title }) {
+  return (
+    <span className={title ? 'badge tip' : 'badge'} data-tip={title} style={{ background: color + '18', color, borderColor: color + '3d' }}>
+      <span style={{ width: 5, height: 5, borderRadius: '50%', background: color, flexShrink: 0 }} />
+      {children}
+    </span>
+  )
+}
+
+export function Chip({ color, children, title }) {
+  return <span className={title ? 'chip tip' : 'chip'} data-tip={title} style={{ background: color + '15', color, borderColor: color + '38' }}>{children}</span>
+}
+
+export function LegTag({ kind }) {
+  const c = kind === 'LEAPS' ? T.sky : T.violet
+  return <span className="lab tip" data-tip={kind === 'LEAPS' ? 'LEAPS — long call, the synthetic stock' : 'Short call — the income leg'} style={{ color: c, borderColor: c + '45', background: c + '12' }}>{kind === 'LEAPS' ? 'L' : 'S'}</span>
+}
+
+export function LegLine({ p, x, leg, kind }) {
+  const goldDte = !x.closed && (kind === 'LEAPS' ? leg.dte <= ROLL_WINDOW_DTE : leg.dte <= EXPIRING_SOON_DTE)
+  return (
+    <div className="legline">
+      <LegTag kind={kind} />
+      <span>{fmtMoney(leg.strike)} {kind === 'LEAPS' ? 'LEAPS' : 'call'}<span className="sub"> · {leg.exp}</span></span>
+      <span style={{ color: goldDte ? T.gold : T.sec }} className={goldDte ? 'tip' : undefined} data-tip={goldDte ? (kind === 'LEAPS' ? `Roll window — LEAPS inside the ${ROLL_WINDOW_DTE}-day window (US-107)` : 'Expiring soon — short call inside 7 days') : undefined}>{x.closed ? '—' : leg.dte + 'd'}</span>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, justifySelf: 'end' }}>
+        <span style={{ color: T.sec }}>{x.closed ? '—' : fmtMoney(leg.mid)}</span>
+        {kind === 'SHORT'
+          ? x.shortPctMax >= 50 ? <Chip color={T.gold} title={`Profit target — ${fmtPct(x.shortPctMax)} of max profit captured`}>TARGET</Chip> : <span style={{ color: T.green, minWidth: 74, textAlign: 'right' }}>{x.closed ? '—' : fmtPct(x.shortPctMax) + ' of max'}</span>
+          : <span className="sub" style={{ minWidth: 74, textAlign: 'right' }}>Δ {leg.delta.toFixed(2)} · {fmtMoney(leg.fill)} debit</span>}
+      </span>
+    </div>
+  )
+}
+
+export function ContextCells({ x }) {
+  const cells = [['Short-call IV context', 'pmcc-ivr-context-short', x.shortCtx], ['LEAPS IV context', 'pmcc-ivr-context-leaps', x.leapsCtx]]
+  return cells.map(([label, id, ctx]) => (
+    <div className="c ctx new" key={id} data-testid={id} data-status={ctx.status} data-tone={ctx.tone}>
+      <span className="eyebrow">{label}</span>
+      <span className="v" style={{ color: TONE[ctx.tone] }}>{ctx.status}{ctx.rule === 'unusable' && ctx.status !== 'n/a' ? ' · —' : ''}</span>
+      <span className="n">{ctx.text}</span>
+    </div>
+  ))
+}
+
+export function Tier2({ p, x }) {
+  const l = x.leaps
+  const s = x.short
+  const cells = [
+    ['Credits collected', fmtMoney(x.premiumTotal), `${p.cycles} short-call cycles · ${fmtPct(x.recovered)} of LEAPS cost`],
+    ['Breakeven', fmtMoney(r2(l.strike + p.basisPerShare)), `LEAPS ${fmtMoney(l.strike)} + basis ${fmtMoney(p.basisPerShare)} / share`],
+    ['Max if called', s ? fmtMoney(r2((s.strike - l.strike - p.basisPerShare) * 100), true) : '—', s ? `called away at ${fmtMoney(s.strike)}` : 'no short call open'],
+    ['LEAPS delta', l.delta.toFixed(2), 'tracking as synthetic stock'],
+    ['Short extrinsic', s ? fmtMoney(r2(Math.max(0, s.mid - Math.max(0, p.price - s.strike)))) : '—', s ? (p.price >= s.strike ? 'ITM — assignment math is live' : 'OTM — all extrinsic') : 'no short call open'],
+    ['LEAPS mark', fmtMoney(l.mid), `${fmtMoney(l.bid)} × ${fmtMoney(l.ask)} · ${(((l.ask - l.bid) / l.mid) * 100).toFixed(1)}% wide`],
+    ['Entry net debit', fmtMoney(p.entryDebit * 100), `${fmtMoney(p.entryDebit)} / share · opened ${p.openDate} · ${dte(p.openDate, p.valuation)}d ago`]
+  ]
+  return (
+    <div className="t2">
+      {cells.map(([k, v, n]) => (
+        <div className="c" key={k}><span className="eyebrow">{k}</span><span className="v">{v}</span><span className="n">{n}</span></div>
+      ))}
+    </div>
+  )
+}
+
+export function PmccCard({ p, open, setOpen }) {
+  const x = derive(p)
+  const pnlColor = x.pnl > 0 ? T.green : x.pnl < 0 ? T.red : T.sec
+  return (
+    <div className={'card pmcc' + (x.closed ? ' muted' : '')} onClick={() => !x.closed && setOpen(!open)}>
+      <div className="cardhead">
+        <a className="ticker tip" href="#/positions/xyz" onClick={(e) => e.stopPropagation()} data-tip="Open position detail">{p.ticker}</a>
+        <span className="tip" data-tip="PMCC — poor man's covered call: a long LEAPS call financing short calls"><Badge color={T.teal}>PMCC</Badge></span>
+        {x.glyphs.length ? <span className="glyphs">{x.glyphs.map((a, i) => <span key={i} className="glyph tip" role="img" aria-label={a.n} style={{ color: a.c }} data-tip={`${a.n} — ${a.t}`}>{a.g}</span>)}</span> : null}
+        <IvrFace ivRank={p.ivr} closed={x.closed} face={x.face} />
+        <span style={{ textAlign: 'right' }}>
+          <div className="mono" style={{ fontSize: 12.5 }}>{x.closed ? '—' : fmtMoney(p.price)}</div>
+          <div className="sub">{x.closed ? 'closed' : `${x.sortKey}d to next decision`}</div>
+        </span>
+        <a className="openlink tip" href="#/positions/xyz" onClick={(e) => e.stopPropagation()} data-tip="Open the position detail page">Open ↗</a>
+      </div>
+      <div className="cardbody">
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 3 }}>Net P&L · marked against basis</div>
+            <div className="mono" style={{ fontSize: 24, fontWeight: 600, color: x.closed ? T.mut : pnlColor, letterSpacing: '-.01em' }}>{x.closed ? '—' : fmtMoney(x.pnl, true)}</div>
+            <div className="sub" style={{ color: x.closed ? T.mut : pnlColor, opacity: 0.9 }}>{x.closed ? 'closed — no live marks' : fmtPct(x.pnlPct, true) + ' of basis'}</div>
+          </div>
+          <span className="sub" style={{ textAlign: 'right' }}>{x.state}<br />1 × 100 sh</span>
+        </div>
+        <LegLine p={p} x={x} leg={x.leaps} kind="LEAPS" />
+        {x.short ? <LegLine p={p} x={x} leg={x.short} kind="SHORT" /> : null}
+      </div>
+      <div className="cardfoot">
+        <div className="c">
+          <div className="eyebrow">Cost basis</div>
+          <div className="mono" style={{ fontSize: 13, color: T.sky, marginTop: 2 }}>{fmtMoney(x.basisTotal)}</div>
+          <div className="sub">{fmtMoney(p.basisPerShare)} / share</div>
+        </div>
+        <div className="c">
+          <div className="eyebrow">Credits collected</div>
+          <div className="mono" style={{ fontSize: 13, color: T.green, marginTop: 2 }}>{fmtMoney(x.premiumTotal)}</div>
+          <div className="sub">{fmtPct(x.recovered)} of LEAPS cost recovered</div>
+          <div className="meter"><i style={{ width: Math.min(100, x.recovered) + '%', background: T.green }} /></div>
+        </div>
+      </div>
+      {x.closed ? null : (
+        <Fragment>
+          <div className="t2bar" role="button" aria-expanded={open}>
+            <span>{open ? 'Hide detail' : 'Detail · breakeven · max if called · Δ · extrinsic · IV'}</span>
+            <span className={'chev' + (open ? ' open' : '')}>▾</span>
+          </div>
+          {open ? <Tier2 p={p} x={x} /> : null}
+          {open ? <div className="t2 ctxrow"><ContextCells x={x} /></div> : null}
+        </Fragment>
+      )}
+    </div>
+  )
+}
+
+export function WheelCard() {
+  // MSFT covered call alongside, unchanged by this story: it carries ivRank on the list item and renders nothing new (US-88).
+  return (
+    <div className="card" style={{ borderLeft: '2px solid ' + T.violet, cursor: 'default' }}>
+      <div className="cardhead">
+        <a className="ticker" href="#/positions/msft">MSFT</a>
+        <Badge color={T.violet}>SELL CALL</Badge>
+        <span style={{ marginLeft: 'auto', textAlign: 'right' }}>
+          <div className="mono" style={{ fontSize: 12.5 }}>$421.50</div>
+          <div className="sub">10d to expiration</div>
+        </span>
+        <a className="openlink" href="#/positions/msft">Open ↗</a>
+      </div>
+      <div className="cardbody">
+        <div>
+          <div className="eyebrow" style={{ marginBottom: 3 }}>Unrealized P&L</div>
+          <div className="mono" style={{ fontSize: 24, fontWeight: 600, color: T.green }}>+$100.00</div>
+          <div className="sub" style={{ color: T.green, opacity: 0.9 }}>35.7% of max profit</div>
+        </div>
+        <div className="legline">
+          <span className="lab" style={{ color: T.violet, borderColor: T.violet + '45', background: T.violet + '12' }}>C</span>
+          <span>$430.00 call<span className="sub"> · 2026-11-16</span></span>
+          <span style={{ color: T.sec }}>10d</span>
+          <span style={{ color: T.sec, justifySelf: 'end' }}>$1.80<span className="sub"> · $2.80 credit</span></span>
+        </div>
+      </div>
+      <div className="cardfoot">
+        <div className="c"><div className="eyebrow">Cost basis</div><div className="mono" style={{ fontSize: 13, color: T.sky, marginTop: 2 }}>$402.40</div><div className="sub">/ share</div></div>
+        <div className="c"><div className="eyebrow">Premium collected</div><div className="mono" style={{ fontSize: 13, color: T.green, marginTop: 2 }}>$280.00</div><div className="sub">this cycle</div></div>
+      </div>
+    </div>
+  )
+}
+
+export function Derivation({ p }) {
+  const x = derive(p)
+  const iv = p.ivr
+  const rows = [
+    ['Valuation date', 'America/New_York', p.valuation],
+    ['Reading', iv === null ? 'no row for XYZ' : `value ${iv.value} · observed at the close · ${tradingDaysLabel(iv.ageTradingDays)} old`, iv === null ? 'null' : iv.state],
+    ['Usable', iv === null ? '—' : `isUsableIvrState(${iv.state})`, iv === null ? 'no' : isUsableIvrState(iv.state) ? 'yes' : 'no'],
+    ['Zone', iv === null || !isUsableIvrState(iv.state) ? '—' : `${iv.value} < ${IVR_LOW_MAX} → low · > ${IVR_HIGH_MIN} → high · else mid`, x.face.zone],
+    ['Face', 'numeral + ring from IvrCell · zone word in the short-call tone, or tier title', x.closed ? '—' : `${x.face.word} · ${x.face.tone}`],
+    ['Short call open', x.short ? `${fmtMoney(x.short.strike)} call · ${x.short.exp}` : 'none — LEAPS only', x.input.hasShortCall ? 'yes' : 'no'],
+    ['◆ roll window', `LEAPS ${x.leaps.dte}d ≤ ${ROLL_WINDOW_DTE} (US-107)`, x.input.leapsInRollWindow ? 'yes' : 'no'],
+    ['⚑ earnings', p.earnings ? `${p.earnings} · ${dte(p.valuation, p.earnings)}d · on or before the short expiry (US-56)` : 'no earnings date known', x.input.earningsBeforeShortExpiry ? 'yes' : 'no'],
+    ['Short-call context', `SHORT_CALL_CONTEXT · ${x.shortCtx.rule}`, x.shortCtx.status],
+    ['LEAPS context', `LEAPS_CONTEXT · ${x.leapsCtx.rule}`, x.leapsCtx.status]
+  ]
+  return (
+    <div className="panel">
+      <h5>Derivation · {p.note}</h5>
+      <div className="deriv">
+        {rows.map(([k, e, v], i) => (
+          <Fragment key={i}><div className="dk">{k}</div><div className="de">{e}</div><div className="dv">{v}</div></Fragment>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export function Registry({ p }) {
+  const x = derive(p)
+  const on = (list, ctx) => list.map((r) => r.status === ctx.status && ctx.rule !== 'unusable' && r.text({ ...x.input, zone: x.input.ivRank ? ivrZone(x.input.ivRank.value) : null }) === ctx.text)
+  const shortOn = on(SHORT_CALL_CONTEXT, x.shortCtx)
+  const leapsOn = on(LEAPS_CONTEXT, x.leapsCtx)
+  const sample = { ...x.input, zone: 'high', nextEarnings: '{date}' }
+  return (
+    <div className="panel">
+      <h5>Context registries · ordered, first match wins · unusable readings short-circuit both</h5>
+      <div className="reg">
+        <section>
+          <h4>Short-call IV context</h4>
+          <ol>{SHORT_CALL_CONTEXT.map((r, i) => <li key={i} className={shortOn[i] ? 'on' : ''}><b style={{ color: TONE[r.tone] }}>{r.status}</b> — {r.text(sample)}</li>)}</ol>
+        </section>
+        <section>
+          <h4>LEAPS IV context</h4>
+          <ol>{LEAPS_CONTEXT.map((r, i) => <li key={i} className={leapsOn[i] ? 'on' : ''}><b style={{ color: TONE[r.tone] }}>{r.status}</b> — {r.text(sample)}</li>)}</ol>
+        </section>
+      </div>
+      <div className="legend" style={{ padding: '8px 14px 12px' }}>
+        Zones: <b>thin</b> below {IVR_LOW_MAX} · <b>fair</b> {IVR_LOW_MAX}–{IVR_HIGH_MIN} · <b>rich</b> above {IVR_HIGH_MIN} (Epic 12 defaults; US-88 reuses them). Row tests, top to bottom: high ∧ ⚑ · high ∧ short open · high · low ∧ short open · low · always — and for the LEAPS: high ∧ ◆ · high · low ∧ ◆ · low · always.
+      </div>
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [key, setKey] = useState('rich-fresh')
+  const [open, setOpen] = useState(true)
+  const p = PRESETS[key]
+  const closed = p.status === 'CLOSED'
+  return (
+    <div className="u112">
+      <style>{CSS}</style>
+      <div className="presets">
+        {Object.keys(PRESETS).map((k) => <button key={k} data-on={k === key ? '1' : '0'} onClick={() => setKey(k)}>{k}</button>)}
+      </div>
+      <div className="sect">Active · sorted by nearest decision point · gold outline marks what this story adds</div>
+      <div className="cards">
+        {closed ? <WheelCard /> : (
+          <Fragment>
+            <WheelCard />
+            <PmccCard key={key} p={p} open={open} setOpen={setOpen} />
+          </Fragment>
+        )}
+      </div>
+      {closed ? (
+        <Fragment>
+          <div className="sect">Closed</div>
+          <div className="cards"><PmccCard p={p} open={false} setOpen={() => {}} /></div>
+        </Fragment>
+      ) : null}
+      <Derivation p={p} />
+      <Registry p={p} />
+      <div className="legend">
+        The face cell sits left of the price block so the header still reads ticker → badge → glyphs → IVR → price → Open. Hover the numeral for the existing freshness tooltip; the ring is the tier, not the age. The two context cells close tier 2 after Entry net debit. Nothing new on the wheel card: it carries the reading on its list item and US-88 decides how the wheel shows it.
+      </div>
+    </div>
+  )
+}
+
+<Mockup />

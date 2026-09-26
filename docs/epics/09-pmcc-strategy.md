@@ -50,11 +50,12 @@ Read before writing or generating any story in this epic. Each item here comes f
 - [ ] US-107: Fire alert when LEAPS DTE drops below 60 days — a time rule with MANAGEMENT_WINDOW's shape: opens at 60 DTE inclusive, refreshes as the days count down, resolves only on a LEAPS roll (US-105) or close; medium urgency, fixed threshold; makes a PMCC evaluable whenever its LEAPS is open, widening US-106, with the short-leg rules inapplicable (not skipped) on a LEAPS-only PMCC
 - [ ] US-108: Display PMCC-specific position card on dashboard
 - [ ] US-109: Display PMCC-specific leg timeline on position detail
-- [ ] US-110: Add PMCC screening criteria to candidate screener
+- [ ] US-110: Add PMCC screening criteria to candidate screener — a `Wheel | PMCC` lens on the US-96 bench with its own criteria document and pure engine; ships the matching-diagonal card without a promote action, which US-122 adds
 - [ ] US-111: Handle PMCC short call assignment (exercise LEAPS to cover) — closing event; settles against the cost basis owned by [US-103](09-stories/US-103-pmcc-cost-basis.md)
 - [ ] US-112: Display IVR on PMCC position card for both LEAPS underlying and short call context (consumes Epic 12 service)
 - [ ] US-113: Show IV term-structure context on PMCC entry form — favors low front-month IV when buying LEAPS, high front-month IV when selling the short call (diagonal efficiency signal)
 - [ ] US-114: Surface IVR context inside PMCC short-call roll dialog (parallels US-89 for the wheel CC roll)
+- [ ] US-122: Review a PMCC screener match in the PMCC entry form — the promote handoff US-110 defers, mirroring US-68 for the wheel; depends on US-110 and US-101
 - [ ] US-115: Sell a subsequent short call against an open LEAPS once the previous short expires or is closed — lowers the cost basis owned by [US-103](09-stories/US-103-pmcc-cost-basis.md); the routine income leg of the PMCC cycle, deferred by US-101 and previously owned by no story; enforces the [US-102](09-stories/US-102-enforce-long-dte-greater-than-short-dte.md) invariant at its service boundary
 
 ## Dependencies
