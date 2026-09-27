@@ -1,6 +1,6 @@
 # Market Data
 
-<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56,us-70,us-99,us-116 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56,us-70,us-99,us-116,us-121 -->
 
 ## Overview
 
@@ -10,17 +10,20 @@ trading session the market is currently in. Quotes and snapshots are fully
 transient — no SQLite rows, no migrations, no persistent state: every such value
 is fetched from a `MarketDataProvider`, held in renderer memory via TanStack
 Query, and discarded on app close. Two auxiliary feeds persist deliberately
-because what they carry is not a quote — `ivr_snapshot` (a daily IV-rank time
-series) and `earnings_date` (one current earnings date per ticker). See
+because what they carry is not a quote — the IV30 history (`iv30_reading` /
+`iv30_gap`, [US-121](../features/us-121-iv-rank-from-own-iv-history.md), the input IV rank is computed from) and
+`earnings_date` (one current earnings date per ticker). See
 "Architectural invariant: market data is transient" below for where the line sits.
 
 Alongside the primary quote/option feed, the domain carries **auxiliary
 vendor feeds** — standalone integration modules for data the primary vendor
 cannot serve on the current plan. The Barchart IVR scraper (US-43) set the
 precedent; the Finnhub earnings-calendar feed
-([US-56](../features/us-56-earnings-proximity-alert.md)) follows it. Neither
-is a `MarketDataProvider` method (see "Auxiliary feed: Finnhub earnings
-calendar" below).
+([US-56](../features/us-56-earnings-proximity-alert.md)) follows it and is not
+a `MarketDataProvider` method (see "Auxiliary feed: Finnhub earnings
+calendar" below). [US-121] Barchart is retired: IV rank is now **computed
+in-house** from Alpaca daily option and stock bars served by the primary
+provider — see "Daily bars" and "IV history and IV rank" below.
 
 The primary feed has four moving parts:
 
@@ -57,7 +60,7 @@ swap.
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56,us-64,us-99,us-117 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56,us-64,us-99,us-117,us-121 -->
 
 ## Provider interface
 
@@ -77,6 +80,9 @@ type MarketDataProvider = {
   getStockQuotes(tickers: string[]): Promise<Map<string, StockQuote>>
   getOptionSnapshot(contractId: string): Promise<OptionSnapshot>
   getOptionChainSnapshot(filter: OptionChainFilter): Promise<OptionChainQuote[]>
+  // [US-121] completed daily bars — see "Daily bars" below
+  getOptionDailyBars(input: { symbols: string[] } & DailyBarRange): Promise<Map<string, DailyBar[]>>
+  getStockDailyBars(input: { symbol: string } & DailyBarRange): Promise<DailyBar[]>
 
   // Streaming — Observables
   supportsStreaming(feed: MarketDataFeed): boolean
@@ -138,15 +144,17 @@ rate_limited` after `MAX_RETRIES` honouring `Retry-After`, other non-ok →
   `@alpacahq/typescript-sdk` is used only by the broker provider (see
   [alpaca-sdk-rest-only](../architecture/02-adrs/alpaca-sdk-rest-only.md)).
 - **The type stays scoped to what the primary vendor serves.** Data the
-  primary vendor cannot supply on the current plan (IVR, earnings dates) is
+  primary vendor cannot supply on the current plan (earnings dates) is
   deliberately **not** added to `MarketDataProvider` — doing so would force
   every provider (including the fake) to implement a capability the primary
   vendor lacks. Such data lives in standalone auxiliary integration modules
-  instead: the Barchart IVR scraper
-  ([us-43](../features/us-43-barchart-ivr-scraper.md)) and the Finnhub
-  earnings-calendar feed
+  instead: the Finnhub earnings-calendar feed
   ([us-56](../features/us-56-earnings-proximity-alert.md); see "Auxiliary
-  feed: Finnhub earnings calendar" below).
+  feed: Finnhub earnings calendar" below), and until US-121 the Barchart IVR
+  scraper ([us-43](../features/us-43-barchart-ivr-scraper.md)). [US-121] IV
+  rank no longer needs an auxiliary feed: Alpaca serves the daily bars it is
+  computed from, so they are ordinary provider capabilities (see
+  [daily-bars-on-market-data-provider](../architecture/02-adrs/daily-bars-on-market-data-provider.md)).
 
 ### Configuration
 
@@ -185,7 +193,7 @@ for the Alpaca vendor seam see
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-99 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-99,us-121 -->
 
 ## REST surface
 
@@ -196,7 +204,10 @@ authenticate with `APCA-API-KEY-ID` / `APCA-API-SECRET-KEY` headers (never
 logged). Stock reads use `/v2/stocks/snapshots` with `feed=iex`; option reads
 use `/v1beta1/options/snapshots` with `feed=indicative`; open interest comes
 from the **trading** host's `/v2/options/contracts`. `feed=sip` and
-`feed=opra` are never requested (both 403 on the free plan). The exact
+`feed=opra` are never requested for **snapshots** (both 403 on the free plan).
+[US-121] The one exception is historical **daily stock bars**
+(`/v2/stocks/bars?feed=sip`), which the free plan does serve — see "Daily bars"
+below. The exact
 endpoint table lives in
 [`contracts/alpaca-integration.md`](../contracts/alpaca-integration.md).
 
@@ -361,6 +372,108 @@ but the split is kept: the broker side goes through the SDK and `BrokerError`,
 the market-data side through raw `fetch` and `MarketDataError`. See
 [`contracts/ipc-handlers.md`](../contracts/ipc-handlers.md) for the broker
 channel contracts.
+
+<!-- /generated -->
+
+<!-- generated:from us-121 -->
+
+## Daily bars (US-121)
+
+Two `MarketDataProvider` capabilities return **completed daily bars**, the only input the IV30
+engine consumes ([US-121](../features/us-121-iv-rank-from-own-iv-history.md)). They are market facts and never touch `BrokerProvider`.
+
+- `getOptionDailyBars({ symbols, start, end? })` → `Map<occSymbol, DailyBar[]>`, each array
+  ascending. A symbol with no bars is simply absent (a miss, not an error); `symbols: []` makes no
+  request.
+- `getStockDailyBars({ symbol, start, end? })` → `DailyBar[]` from the consolidated (SIP) feed.
+- `DailyBar = { date, vwap, close, volume, tradeCount }`. `date` is the **Eastern session day**,
+  derived with `etDateOf(bar.t)`: Alpaca stamps a daily bar at midnight ET expressed in UTC, so a
+  UTC slice of `t` is the right day only by accident of the offset sign. `vwap` / `close` are 4-dp
+  strings; a bar with a non-finite `vw` or `c` is dropped by the mapper.
+- `DailyBarRange.end` omitted means "through the present". **The caller guarantees `end` is never
+  the current calendar day** — Alpaca answers `403 OPRA agreement is not signed` when it is. The
+  IV-history service owns that rule; the adapter passes `end` through verbatim.
+- The IV-history service takes only `IvHistoryBarSource = Pick<MarketDataProvider,
+'getOptionDailyBars' | 'getStockDailyBars'>`.
+
+`AlpacaMarketDataProvider` chunks option symbols 100 per request, issues batches sequentially, and
+merges `next_page_token` pages per symbol through the shared `fetchPages` helper (also used by chain
+snapshots and open interest). Stocks request `feed=sip&adjustment=raw`. Expired contracts are
+served back to January 2024, but the chain endpoint lists live contracts only, so historical OCC
+symbols are **constructed** (`buildOccSymbol`) and only 35–60% of probed symbols exist. A one-year
+backfill is roughly 25–35 requests per ticker, within Alpaca's ~200 req/min (with `apiFetch`'s
+existing two 429 retries).
+
+`FakeMarketDataProvider` synthesises bars from a programmed IV series (`WHEELBASE_FAKE_IV_SERIES`),
+pricing each requested contract with the real Black–Scholes pricer, and records every bar request
+for the e2e suite — see
+[fake-provider-synthesises-bars-from-iv-series](../architecture/02-adrs/fake-provider-synthesises-bars-from-iv-series.md).
+Endpoint details: [`contracts/alpaca-integration.md`](../contracts/alpaca-integration.md).
+
+<!-- /generated -->
+
+<!-- generated:from us-121 -->
+
+## IV history and IV rank (US-121)
+
+IV rank is not a vendor field. The app computes a 30-day implied volatility (IV30) for each
+completed session from daily bars, stores the series with its inputs, and derives rank, percentile
+and range from the series on every read. (No dedicated domain page exists for IV history yet; this
+section and the [US-121 feature page](../features/us-121-iv-rank-from-own-iv-history.md) are its home.)
+
+### IV30 per session
+
+For each session, from the option bars and the underlying's SIP bar of that session:
+
+1. **Expirations.** Weekly candidates are Fridays in `[session+7, session+45]`; monthly candidates
+   are third Fridays in `[session+7, session+70]`; a Friday that is a closure shifts to the prior
+   session. Of the candidates with DTE ≥ 7, take the largest ≤ 30 DTE and the smallest > 30 DTE
+   (exactly 30 → alone; one side only → the nearest alone; no extrapolation).
+2. **Strike.** Walk floor/ceil of the underlying VWAP at increments 0.5, 1, 2.5, 5, nearest first.
+   The first strike whose call **and** put both traded (≥ 1 trade) **and** both invert wins.
+3. **Tier.** Weekly first; if either weekly expiration finds no strike, the monthly tier. Neither →
+   the session is a gap (`no_tradeable_pair`); no underlying bar → gap (`no_underlying_bar`).
+4. **IV.** Invert European Black–Scholes on each leg's VWAP (`r = 0.045`, `q = 0`, both stored), and
+   average call and put. Interpolate in total variance:
+
+```
+T = DTE / 365      λ = (T30 − T_near) / (T_far − T_near)
+w30  = σ_near² · T_near · (1 − λ) + σ_far² · T_far · λ
+IV30 = sqrt(w30 / T30)            // no far expiration → IV30 = σ_near
+```
+
+Today's reading, the backfill and the catch-up are the same engine. Alpaca's per-contract
+`impliedVolatility` is never used for rank. See
+[iv30-from-daily-bar-vwap](../architecture/02-adrs/iv30-from-daily-bar-vwap.md) and
+[iv30-contract-selection](../architecture/02-adrs/iv30-contract-selection.md).
+
+### Metrics on read
+
+```
+anchor     = the ticker's latest stored reading
+window     = the 252 calendar sessions strictly before the anchor
+publish only if ≥ 200 window sessions hold a reading       // else insufficient_history
+low, high  = min, max of window readings
+rank       = clamp((anchor − low) / (high − low) × 100, 0, 100)   // null when high = low
+percentile = count(window readings strictly below anchor) / count(window) × 100
+rank, percentile rounded half-up to integers
+```
+
+`observedAt` is the anchor session's close, so the US-98 freshness tiers age a stale series exactly
+as before. See
+[iv-rank-window-252-before-anchor](../architecture/02-adrs/iv-rank-window-252-before-anchor.md).
+
+### Collection
+
+`collectIvHistory` is one per-ticker path shared by the nightly `ivr-collect` job (close + 60 min),
+the Settings "Refresh IVR now" action and the watchlist-add / position-open trigger. It fetches
+only **missing** sessions: the 253 most recent sessions whose bars have settled (today counts 45
+minutes after its close), minus those holding a reading or a gap. A weekend run, or a rerun, is
+`up_to_date` with no request. Stale-`engine_version` rows are recomputed from stored inputs first,
+with no request. Reading metrics makes no request at all. See
+[ivr-collector-idempotent-over-missing-sessions](../architecture/02-adrs/ivr-collector-idempotent-over-missing-sessions.md),
+[iv30-engine-version-recompute](../architecture/02-adrs/iv30-engine-version-recompute.md) and
+[iv-rank-absence-reason-in-memory-run-state](../architecture/02-adrs/iv-rank-absence-reason-in-memory-run-state.md).
 
 <!-- /generated -->
 
@@ -862,7 +975,7 @@ components subscribe to the same ticker list.
 
 <!-- /generated -->
 
-<!-- generated:from us-56,us-70,us-99 -->
+<!-- generated:from us-56,us-70,us-99,us-121 -->
 
 ## Auxiliary feed: Finnhub earnings calendar
 
@@ -878,7 +991,8 @@ The feed lives in `src/main/integrations/finnhub-earnings.ts` and is **not**
 a `MarketDataProvider` method (see the adapter rules above). It follows the
 Barchart IVR scraper ([us-43](../features/us-43-barchart-ivr-scraper.md))
 precedent for vendor-specific auxiliary feeds: one integration module, one
-consumer, no generic multi-vendor abstraction.
+consumer, no generic multi-vendor abstraction. (The scraper itself was retired
+by [US-121](../features/us-121-iv-rank-from-own-iv-history.md); Finnhub is now the only auxiliary feed.)
 
 ### HTTP contract
 
@@ -932,8 +1046,8 @@ date, weekly for a distant one).
 This is the one auxiliary market-data feed that **does** persist, and it is a deliberate
 exception to the transient-market-data invariant below — a scheduled earnings date is a
 durable fact about a calendar event, not a decaying quote, and the alert scheduler and the
-screener need to share it across restarts. It persists differently from `ivr_snapshot`,
-though: IVR is a time series because its history _is_ the product, while earnings is a
+screener need to share it across restarts. It persists differently from the IV30 history
+(`iv30_reading`, US-121), though: IV is a time series because its history _is_ the product, while earnings is a
 point-in-time lookup where a stale value is simply wrong. See
 [earnings-persisted-per-ticker](../architecture/02-adrs/earnings-persisted-per-ticker.md).
 
@@ -976,7 +1090,7 @@ without the key (the rule skips everywhere; every other rule is unaffected).
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56,us-70 -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-56,us-70,us-121 -->
 
 ## Architectural invariant: market data is transient
 
@@ -990,11 +1104,13 @@ Every such value:
 - Lives in renderer memory inside TanStack Query.
 - Is discarded on app close.
 
-**Two auxiliary feeds are deliberate exceptions**, because what they carry is not a quote:
-`ivr_snapshot` (migration 007) keeps a daily IV-rank time series because IVR's _history_ is
-the product, and `earnings_date` (migration 013) keeps one current row per ticker because a
-scheduled earnings date is a durable calendar fact that two consumers share across restarts.
-Neither stores a price.
+**Two persisted series are deliberate exceptions**, because what they carry is not a quote:
+the IV30 history (`iv30_reading` / `iv30_gap`, migration 016, [US-121](../features/us-121-iv-rank-from-own-iv-history.md); it replaced
+migration 007's `ivr_snapshot`) keeps one implied-volatility reading per session because IV's
+_history_ is the product, and `earnings_date` (migration 013) keeps one current row per ticker
+because a scheduled earnings date is a durable calendar fact that two consumers share across
+restarts. Neither is a live quote: an IV30 row stores the settled daily-bar VWAPs it was
+inverted from so it can be recomputed, never a price anything else reads.
 
 This is enforced by convention:
 

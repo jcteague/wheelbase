@@ -1,6 +1,8 @@
 # ADR: Non-trading-day IVR guard lives in the collector
 
-<!-- generated:from us-44,us-98,us-100 -->
+<!-- generated:from us-44,us-98,us-100,us-121 -->
+
+> **Status: Superseded by [US-121](../../features/us-121-iv-rank-from-own-iv-history.md) (2026-09-26)** — see [ivr-collector-idempotent-over-missing-sessions](./ivr-collector-idempotent-over-missing-sessions.md). `collectIVRSnapshots` no longer takes a `trigger` or consults the calendar for permission; each ticker fetches only the sessions it is missing, so a weekend or holiday run is `up_to_date` with no bar request. `skippedReason: 'market_closed'` no longer exists. `JobRunContext.trigger` survives on the scheduler with no consumer. The text below records the guard as it stood from US-44 through US-100.
 
 ## Decision
 

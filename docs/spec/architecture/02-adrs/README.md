@@ -2,7 +2,7 @@
 
 Each ADR captures one architectural choice that emerged from a plan/story. Decisions are grouped below by theme; many ADRs are referenced by multiple feature pages.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,us-53-54-55,us-57-58,us-97,us-98,us-99,missing-ac -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,us-53-54-55,us-57-58,us-97,us-98,us-99,us-121,missing-ac -->
 
 ## Engine & architecture
 
@@ -32,7 +32,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [active-leg-metadata-via-positions-list](./active-leg-metadata-via-positions-list.md) — `PositionListItem` extended with active-leg metadata via the existing subquery.
 - [shared-massive-app-configuration](./shared-massive-app-configuration.md) — **Superseded by alpaca-sole-market-data-vendor (US-99).** Massive credentials stayed in shared app configuration; settings stored Alpaca only.
 - [fill-migration-gap-with-007](./fill-migration-gap-with-007.md) — Use migration `007_create_ivr_snapshot.sql` to fill the open numbering gap between `006` and `008`.
-- [ivr-same-day-overwrite-delete-then-insert](./ivr-same-day-overwrite-delete-then-insert.md) — Same-day IVR refreshes delete the prior UTC-day row, then insert the fresh snapshot.
+- [ivr-same-day-overwrite-delete-then-insert](./ivr-same-day-overwrite-delete-then-insert.md) — **Superseded by ivr-collector-idempotent-over-missing-sessions (US-121).** Same-session IVR refreshes deleted the prior row in the session window, then inserted the fresh snapshot.
 - [active-ivr-targets-from-positions](./active-ivr-targets-from-positions.md) — **Superseded by union-ivr-targets-positions-and-watchlist (US-97).** IVR collection targets come from distinct active `positions.ticker` values, not renderer list projections.
 - [union-ivr-targets-positions-and-watchlist](./union-ivr-targets-positions-and-watchlist.md) — IVR collection targets are the `UNION` of open-position tickers and every watchlist row, superseding the positions-only rule; the existing uppercase/`Set`/sort pipeline is what makes a held-and-watchlisted ticker fetch exactly once.
 
@@ -86,15 +86,30 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [option-snapshots-rest-polling](./option-snapshots-rest-polling.md) — REST polling at 60 s, disabled when market closed; no stream bridge.
 - [renderer-builds-occ-symbols](./renderer-builds-occ-symbols.md) — Renderer builds OCC symbols from active legs; no server-side building.
 - [ipc-returns-full-option-snapshot](./ipc-returns-full-option-snapshot.md) — `market-data:option-snapshots` returns the full `OptionSnapshot` shape.
-- [barchart-as-canonical-ivr-source](./barchart-as-canonical-ivr-source.md) — IVR collection builds on the existing Barchart scraper and persists `source='barchart'`.
+- [barchart-as-canonical-ivr-source](./barchart-as-canonical-ivr-source.md) — **Superseded by barchart-retired-from-code-and-schema (US-121).** IVR collection built on the Barchart scraper and persisted `source='barchart'`.
 - [ivr-collector-throttle-boundary](./ivr-collector-throttle-boundary.md) — The IVR collector enforces the 1 request/second batch throttle, even though the scraper also rate-limits.
-- [trading-calendar-fetched-and-cached](./trading-calendar-fetched-and-cached.md) — Exchange sessions are facts fetched through `BrokerProvider.getMarketCalendar` and cached in `trading_session`; closures stored explicitly so an unfetched day reads as unknown, not closed.
+- [trading-calendar-fetched-and-cached](./trading-calendar-fetched-and-cached.md) — Exchange sessions are facts fetched through `MarketDataProvider.getMarketCalendar` (US-116) and cached in `trading_session`; closures stored explicitly; reads never fetch. US-121 widens reads to 400 days back / 70 ahead for the IV-rank window.
 - [alpaca-sole-market-data-vendor](./alpaca-sole-market-data-vendor.md) — Alpaca's free data plan is the only market-data vendor (US-99); Massive removed; supersedes shared-massive-app-configuration.
 - [market-data-lazy-credentials-stream-restart](./market-data-lazy-credentials-stream-restart.md) — One provider instance resolving credentials on every call; the factory never throws; a broker-credential change restarts only the stock stream.
 - [iex-feed-for-seed-and-stream](./iex-feed-for-seed-and-stream.md) — One batched IEX snapshot seeds; the IEX `bars` websocket streams; same feed for both so ticks never jump against the seed; real bid/ask carried, not faked.
 - [per-symbol-ws-subscription-reconciliation](./per-symbol-ws-subscription-reconciliation.md) — `stream()` sends only the unsubscribe/subscribe diff against a remembered set; 405/406 surface as `StreamError`s; socket-identity guard and a fresh `Subject` per fault.
 - [open-interest-from-contracts-endpoint](./open-interest-from-contracts-endpoint.md) — OI joined from the trading API's contracts endpoint by symbol, degrading to `null` with a warning so the screener's OI floor stays honest.
 - [alpaca-credentials-runtime-env-only](./alpaca-credentials-runtime-env-only.md) — The shared dev-fallback loader reads `process.env` only; `.env` can never configure keys because `electron-vite` inlines `MAIN_VITE_*` into the bundle.
+
+## IV history & IV rank (US-121)
+
+- [iv30-from-daily-bar-vwap](./iv30-from-daily-bar-vwap.md) — IV30 is Black–Scholes inverted from Alpaca daily option-bar VWAP against the SIP daily VWAP (r = 0.045, q = 0, stored), call/put averaged, interpolated to 30 days in total variance; one engine for history and today; vendor IV never used.
+- [iv30-contract-selection](./iv30-contract-selection.md) — Weekly Fridays then third-Friday monthlies bracketing 30 DTE, DTE ≥ 7, nearest strike whose legs both traded and both invert; one-sided brackets use the nearest expiration alone, never extrapolate.
+- [iv30-series-with-inputs-metrics-on-read](./iv30-series-with-inputs-metrics-on-read.md) — `iv30_reading` stores each session's IV30 with every input; rank, percentile and range are derived on read, never stored.
+- [iv30-gap-rows-except-newest-session](./iv30-gap-rows-except-newest-session.md) — Unreadable sessions are `iv30_gap` rows that count against coverage and are not re-probed; the newest session is never gapped.
+- [iv-rank-window-252-before-anchor](./iv-rank-window-252-before-anchor.md) — Rank/percentile/range over the 252 sessions strictly before the latest reading, published only at ≥ 200 coverage; flat window → null rank, percentile kept.
+- [iv30-engine-version-recompute](./iv30-engine-version-recompute.md) — `engine_version` behind current → recompute `iv30` from stored inputs before each collect; no provider call.
+- [daily-bars-on-market-data-provider](./daily-bars-on-market-data-provider.md) — `getOptionDailyBars` / `getStockDailyBars` on `MarketDataProvider`; the adapter hides 100-symbol batches and paging; the service guarantees `end` never names today.
+- [ivr-collector-idempotent-over-missing-sessions](./ivr-collector-idempotent-over-missing-sessions.md) — Each ticker fetches only missing settled sessions (close + 45 min); weekend runs are `up_to_date` with no request; supersedes the closed-day guard and the same-day overwrite.
+- [ivr-auth-failure-aborts-as-skip](./ivr-auth-failure-aborts-as-skip.md) — `auth_failed` (incl. from the calendar refresh) aborts the run as `market_data_unavailable` and marks every target `no_market_data`; everything else is per-ticker `failed`.
+- [iv-rank-absence-reason-in-memory-run-state](./iv-rank-absence-reason-in-memory-run-state.md) — Exactly one of `ivRank` / `ivRankAbsence` (a union end to end); `pending`/`no_market_data`/`failed` from in-memory run state, `insufficient_history` derived; display-only; on-demand pushes per settle, batch pushes once.
+- [fake-provider-synthesises-bars-from-iv-series](./fake-provider-synthesises-bars-from-iv-series.md) — The e2e seam prices bars with the real pricer from a programmed IV series (`WHEELBASE_FAKE_IV_SERIES`) and records every bar request.
+- [barchart-retired-from-code-and-schema](./barchart-retired-from-code-and-schema.md) — Scraper, fake, seam and `ivr_snapshot` deleted (migration 016); `ivr-collect`, `ivr:*` names kept; supersedes barchart-as-canonical-ivr-source.
 
 ## Background polling & assignment detection
 
@@ -108,7 +123,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [park-wake-reuses-scheduletick](./park-wake-reuses-scheduletick.md) — Park-wake timer reuses `scheduleTick`; stale `nextOpen` falls back to `marketOpenMs` (US-49).
 - [consolidated-before-quit](./consolidated-before-quit.md) — Single `before-quit` handler awaits scheduler + market-data shutdown concurrently.
 - [dev-only-test-scheduler-ipc](./dev-only-test-scheduler-ipc.md) — `_test:scheduler-*` channels guarded by `NODE_ENV === 'test'` for e2e introspection.
-- [ivr-non-trading-day-guard-in-collector](./ivr-non-trading-day-guard-in-collector.md) — The collector owns the weekend/holiday guard so scheduled and manual runs share one skip path; amended by US-98 so the verdict comes from the cached exchange calendar, not the broker clock.
+- [ivr-non-trading-day-guard-in-collector](./ivr-non-trading-day-guard-in-collector.md) — **Superseded by ivr-collector-idempotent-over-missing-sessions (US-121).** The collector owned the weekend/holiday guard (calendar verdict since US-98, scoped by trigger since US-100); `market_closed` no longer exists.
 - [alert-evaluation-job-cadence](./alert-evaluation-job-cadence.md) — `alert-evaluation` reuses the US-46 scheduler with a 60 s / 5 min interval cadence; parked overnight; not broker-gated.
 
 ## Management alerts
