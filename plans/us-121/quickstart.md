@@ -18,9 +18,9 @@ it at startup and in `makeTestDb()`; nothing to do by hand. It also drops `ivr_s
 pnpm rebuild:node          # only when switching from an e2e run
 pnpm test                  # whole suite
 pnpm test -- src/main/core/black-scholes src/main/core/iv30 src/main/core/iv-metrics   # engine only
-pnpm test -- src/main/services/iv-history src/main/services/ivr-collector src/main/services/ivr-snapshots
+pnpm test -- src/main/services/iv-history src/main/services/iv-run-state src/main/services/ivr-collector src/main/services/ivr-snapshots
 pnpm test -- src/main/integrations/alpaca-market-data src/main/integrations/fake-market-data
-pnpm test -- src/renderer/src/components/IvrCell src/renderer/src/lib/ivr-tooltip
+pnpm test -- src/renderer/src/components/IvrCell src/renderer/src/components/ReadingNote src/renderer/src/lib/ivr-tooltip
 ```
 
 Passing criteria: every file green, `pnpm lint` clean, `pnpm typecheck` clean, `pnpm format`
@@ -56,8 +56,9 @@ Symptom of the wrong ABI: `NODE_MODULE_VERSION <n> … requires <m>` from Vitest
 ALPACA_KEY_ID=… ALPACA_SECRET_KEY=… ALPACA_PAPER=true pnpm dev
 ```
 
-Add AAPL to the watchlist; within ~10 s the card's IVR cell should resolve from `n/a` to an
-integer with a tooltip naming the 52-week range. `pino` INFO lines to look for:
+Add AAPL to the watchlist; the card's IVR cell should show a pulsing `…` titled
+`Computing IV history` and, within ~10 s, resolve to an integer with a tooltip naming the 52-week
+range. With no credentials the cell reads `n/a` titled `IV rank needs Alpaca market-data credentials`. `pino` INFO lines to look for:
 `iv_history_collected` (readings/gaps per ticker), `IVR snapshot collection completed`. Compare the
 rank against the spike table in the Linear story (AAPL read 36 on 2026-09-18); the SIP feed will
 move it by a point or two.

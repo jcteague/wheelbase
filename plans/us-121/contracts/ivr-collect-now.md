@@ -26,11 +26,11 @@ export const CollectIvrNowBatchSchema = z.object({
 
 `skippedReason`:
 
-| value                       | when                                                                                                                                                                       |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ~~`'market_closed'`~~       | **removed** — superseded by the missing-sessions logic; `ivr-non-trading-day-guard-in-collector` ADR is superseded                                                         |
-| `'market_data_unavailable'` | the first ticker's bar request raised `MarketDataError('auth_failed')` — no Alpaca credentials. Counts are all zero, one INFO line `ivr_collection_skipped_no_market_data` |
-| `null`                      | the run executed                                                                                                                                                           |
+| value                       | when                                                                                                                                                                                                                                                                          |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ~~`'market_closed'`~~       | **removed** — superseded by the missing-sessions logic; `ivr-non-trading-day-guard-in-collector` ADR is superseded                                                                                                                                                            |
+| `'market_data_unavailable'` | a ticker's turn returned `no_market_data` (its provider raised `MarketDataError('auth_failed')` — no Alpaca credentials). Counts are all zero, one INFO line `ivr_collection_skipped_no_market_data`, and every collection target is marked `no_market_data` in the run state |
+| `null`                      | the run executed                                                                                                                                                                                                                                                              |
 
 ## Error codes
 
@@ -39,6 +39,14 @@ export const CollectIvrNowBatchSchema = z.object({
 | `__root__` | `internal_error` | `IVR collection failed before producing a batch summary` (handler threw and the scheduler resolved `undefined`) |
 
 Only the standard envelope errors apply; per-ticker failures are counts, never envelope errors.
+
+## Side effects on the run state
+
+The batch owns the in-memory absence reasons for the tickers it visits (see
+`watchlist-snapshot-ivrank.md`): `markPending(ticker)` before each turn, `settle(ticker, outcome)`
+after it, and `markNoMarketData(remaining)` when a turn reports `no_market_data`. A bench refetch
+during the run therefore shows `…` (computing) for the ticker in flight and a reason-specific `n/a`
+for any ticker the run could not complete.
 
 ## Renderer
 
