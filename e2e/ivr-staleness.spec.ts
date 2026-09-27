@@ -3,7 +3,7 @@
 // Each `it()` maps to exactly one acceptance criterion from
 // docs/epics/08-stories/US-98-ivr-staleness-tiers.md, named verbatim. The suite boots
 // the real Electron app, seeds IV ranks through the production collector over the
-// US-44 fake-scraper seam, and reads the rendered bench — so every verdict on
+// US-121 fake IV series, and reads the rendered bench — so every verdict on
 // screen is one the real freshness engine produced from a real persisted row.
 //
 // [US-96] The readings moved onto the Watchlist page's cards, where each one draws its
@@ -11,7 +11,7 @@
 // and the age off the cell's accessible label, which is where the retired `title`
 // attribute's wording went when the hover tooltip replaced it.
 //
-// Ages come from moving the *observation* back through sessions, not from moving the
+// Ages come from ending the IV series earlier (`endingSessionsAgo`), not from moving the
 // clock forward: advancing `now` would also shift every fixture's DTE, which is how a
 // staleness spec quietly becomes a DTE-window spec. The two specs that must move the
 // clock (AC2's morning, AC3's holiday) keep the fixture day fixed so DTE stays inside
@@ -23,7 +23,7 @@
 // per-gate verdict and the "Meets criteria" section, so the tests read the vocabulary
 // that exists while asserting exactly what the scenarios describe.
 import { afterEach, describe, expect, it } from 'vitest'
-import type { ElectronApplication, Page } from 'playwright'
+import type { ElectronApplication } from 'playwright'
 import { cleanupDb, tmpDb } from './assignment-helpers'
 import { setIvrNow } from './ivr-helpers'
 import {
@@ -34,13 +34,10 @@ import {
   ivrCell,
   launchScreener,
   meetsTickers,
-  openCriteriaSheet,
   reloadBench,
-  saveCriteria,
   screenerDate,
-  setCriteriaValues,
+  setIvRankFloor,
   waitForBenchCard,
-  waitForCriteriaSheetClosed,
   waitingTickers,
   type PutFixtureSpec
 } from './screener-helpers'
@@ -49,7 +46,7 @@ import {
   afterCloseOn,
   morningOf,
   mostRecent,
-  observedSessionsAgo,
+  sessionsAgo,
   sessionsBefore,
   weekdayCalendar
 } from './trading-day-fixtures'
@@ -75,7 +72,7 @@ describe('US-98: IV-rank staleness tiers', () => {
     const launched = await launchScreener(dbPath, {
       fixtures: KO_ONLY,
       fakeNow: afterCloseOn(BASE_DAY),
-      ivr: { KO: { ivr: 38, observedAt: observedSessionsAgo(0) } }
+      ivr: { KO: { rank: 38, endingSessionsAgo: 0 } }
     })
     app = launched.app
     const { page } = launched
@@ -98,7 +95,7 @@ describe('US-98: IV-rank staleness tiers', () => {
     const launched = await launchScreener(dbPath, {
       fixtures: KO_ONLY,
       fakeNow: morningOf(monday),
-      ivr: { KO: { ivr: 38, observedAt: afterCloseOn(priorSession) } }
+      ivr: { KO: { rank: 38, endingSessionsAgo: sessionsAgo(priorSession) } }
     })
     app = launched.app
     const { page } = launched
@@ -117,13 +114,12 @@ describe('US-98: IV-rank staleness tiers', () => {
     const holiday = BASE_DAY
     const priorSession = sessionsBefore(holiday, 1)
 
-    // Collect on the open day before the closure, then view on the closure itself —
-    // seeding *on* the holiday would be a collection the guard must refuse.
+    // Collect on the open day before the closure, then view on the closure itself.
     const launched = await launchScreener(dbPath, {
       fixtures: KO_ONLY,
       fakeNow: afterCloseOn(priorSession),
       marketCalendar: weekdayCalendar([holiday]),
-      ivr: { KO: { ivr: 38, observedAt: afterCloseOn(priorSession) } }
+      ivr: { KO: { rank: 38, endingSessionsAgo: sessionsAgo(priorSession) } }
     })
     app = launched.app
     const { page } = launched
@@ -145,7 +141,7 @@ describe('US-98: IV-rank staleness tiers', () => {
     const launched = await launchScreener(dbPath, {
       fixtures: KO_ONLY,
       fakeNow: afterCloseOn(BASE_DAY),
-      ivr: { KO: { ivr: 38, observedAt: observedSessionsAgo(2) } }
+      ivr: { KO: { rank: 38, endingSessionsAgo: 2 } }
     })
     app = launched.app
     const { page } = launched
@@ -166,7 +162,7 @@ describe('US-98: IV-rank staleness tiers', () => {
       fixtures: KO_ONLY,
       fakeNow: afterCloseOn(BASE_DAY),
       conditions: { KO: { ivrTrigger: 50 } },
-      ivr: { KO: { ivr: 58, observedAt: observedSessionsAgo(6) } }
+      ivr: { KO: { rank: 58, endingSessionsAgo: 6 } }
     })
     app = launched.app
     const { page } = launched
@@ -198,7 +194,7 @@ describe('US-98: IV-rank staleness tiers', () => {
       fixtures: [expired, never],
       fakeNow: afterCloseOn(BASE_DAY),
       // MSFT is deliberately never collected.
-      ivr: { KO: { ivr: 38, observedAt: observedSessionsAgo(12) } }
+      ivr: { KO: { rank: 38, endingSessionsAgo: 12 } }
     })
     app = launched.app
     const { page } = launched
@@ -226,7 +222,7 @@ describe('US-98: IV-rank staleness tiers', () => {
     const launched = await launchScreener(dbPath, {
       fixtures: KO_ONLY,
       fakeNow: afterCloseOn(BASE_DAY),
-      ivr: { KO: { ivr: 62, observedAt: afterCloseOn(observationSession) } },
+      ivr: { KO: { rank: 62, endingSessionsAgo: sessionsAgo(observationSession) } },
       earnings: { KO: { next: CLEAR_NEXT, last: printAfterIt } }
     })
     app = launched.app
@@ -249,7 +245,7 @@ describe('US-98: IV-rank staleness tiers', () => {
     const launched = await launchScreener(dbPath, {
       fixtures: KO_ONLY,
       fakeNow: afterCloseOn(BASE_DAY),
-      ivr: { KO: { ivr: 62, observedAt: afterCloseOn(observationSession) } },
+      ivr: { KO: { rank: 62, endingSessionsAgo: sessionsAgo(observationSession) } },
       earnings: { KO: { next: CLEAR_NEXT, last: printBeforeIt } }
     })
     app = launched.app
@@ -267,7 +263,7 @@ describe('US-98: IV-rank staleness tiers', () => {
     const launched = await launchScreener(dbPath, {
       fixtures: KO_ONLY,
       fakeNow: afterCloseOn(BASE_DAY),
-      ivr: { KO: { ivr: 62, observedAt: observedSessionsAgo(1) } },
+      ivr: { KO: { rank: 62, endingSessionsAgo: 1 } },
       earningsUnreachable: true
     })
     app = launched.app
@@ -296,8 +292,8 @@ describe('US-98: IV-rank staleness tiers', () => {
       fixtures,
       fakeNow: afterCloseOn(BASE_DAY),
       ivr: {
-        KO: { ivr: 38, observedAt: observedSessionsAgo(12) }, // expired
-        AAPL: { ivr: 38, observedAt: observedSessionsAgo(0) } // usable
+        KO: { rank: 38, endingSessionsAgo: 12 }, // expired
+        AAPL: { rank: 38, endingSessionsAgo: 0 } // usable
         // MSFT: never collected
       }
     })
@@ -318,7 +314,7 @@ describe('US-98: IV-rank staleness tiers', () => {
     const launched = await launchScreener(dbPath, {
       fixtures: KO_ONLY,
       fakeNow: afterCloseOn(BASE_DAY),
-      ivr: { KO: { ivr: 22, observedAt: observedSessionsAgo(6) } }
+      ivr: { KO: { rank: 22, endingSessionsAgo: 6 } }
     })
     app = launched.app
     const { page } = launched
@@ -341,7 +337,7 @@ describe('US-98: IV-rank staleness tiers', () => {
     const launched = await launchScreener(dbPath, {
       fixtures: KO_ONLY,
       fakeNow: afterCloseOn(BASE_DAY),
-      ivr: { KO: { ivr: 22, observedAt: observedSessionsAgo(12) } }
+      ivr: { KO: { rank: 22, endingSessionsAgo: 12 } }
     })
     app = launched.app
     const { page } = launched
@@ -364,7 +360,7 @@ describe('US-98: IV-rank staleness tiers', () => {
       fakeNow: afterCloseOn(BASE_DAY),
       // The IV condition is KO's only gate: no price target, no earnings gate.
       conditions: { KO: { ivrTrigger: 40 } },
-      ivr: { KO: { ivr: 58, observedAt: observedSessionsAgo(6) } }
+      ivr: { KO: { rank: 58, endingSessionsAgo: 6 } }
     })
     app = launched.app
     const { page } = launched
@@ -377,22 +373,3 @@ describe('US-98: IV-rank staleness tiers', () => {
     expect(await cardReason(page, 'KO')).toBe('IV too old to judge')
   })
 })
-
-/**
- * Turn the IV-rank floor on at `value` through the criteria sheet, as a trader would.
- *
- * Waits on the criteria chip rather than a row count: these specs assert that the row
- * count does *not* change, so waiting for it would resolve before the re-screen and
- * pass vacuously.
- */
-async function setIvRankFloor(page: Page, value: string): Promise<void> {
-  await openCriteriaSheet(page, 'header')
-  await page.click('[data-testid="iv-rank-floor-on"]')
-  await setCriteriaValues(page, { minIvRank: value })
-  await saveCriteria(page)
-  await waitForCriteriaSheetClosed(page)
-  await page.waitForFunction((expected) => {
-    const strip = document.querySelector('[data-testid="screener-criteria-strip"]')
-    return strip?.textContent?.includes(expected) ?? false
-  }, `IVR ≥ ${value}`)
-}

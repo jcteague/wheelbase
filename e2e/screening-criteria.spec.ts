@@ -5,7 +5,7 @@
 // Gherkin. Every criteria write goes through the real sheet — never a direct
 // `app_settings` write — so each test proves the whole path: form → Zod → IPC →
 // service → `app_settings` → engine → re-screened bench. Only the market-data
-// provider and the IVR scrape are faked, through the existing e2e seams.
+// provider and the IV series are faked, through the existing e2e seams.
 //
 // [US-96] The criteria live on the Watchlist page now: the header button, the summary
 // strip and the empty Meets-criteria state are the same three entry points, and a save

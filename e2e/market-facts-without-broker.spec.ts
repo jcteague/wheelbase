@@ -6,11 +6,11 @@
 // usable env-fallback key pair, so `activeBrokerEnv` reads 'none' while
 // `CredentialStatus.marketData` reads 'configured'.
 //
-// Two scenarios need "the trading calendar has never been fetched" *and* a recorded IV
-// reading. Only the collector can write a reading, and it refreshes the calendar on the
-// same run — so those specs launch with the calendar seam failing, let the collector
-// persist the reading against an empty `trading_session`, then clear the fault and open
-// the bench. What the bench does next is exactly what the scenario is about.
+// [US-121] Two scenarios start from "the trading calendar has never been fetched". An IV
+// reading can no longer exist before the calendar does — the collector places every reading
+// on a session — so those specs launch with the calendar seam failing (KO's backfill fails
+// with it), clear the fault, open the bench, and only then collect. What the bench does on
+// that first open, and how the reading collected afterwards is judged, is the scenario.
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ElectronApplication, Page } from 'playwright'
 import {
@@ -31,6 +31,7 @@ import { localToday } from './dates'
 import { collectIvrNow, marketCalendarFetches, setIvrNow, tradingSessionCount } from './ivr-helpers'
 import {
   KO_PUT,
+  ivSeriesFor,
   ivrCell,
   launchScreener,
   meetsTickers,
@@ -41,7 +42,7 @@ import {
   type PutFixtureSpec,
   type ScreenerLaunchOpts
 } from './screener-helpers'
-import { afterCloseOn, daysAfterBaseDay, observedSessionsAgo } from './trading-day-fixtures'
+import { afterCloseOn, daysAfterBaseDay } from './trading-day-fixtures'
 
 /** One stock is enough for every scenario here: the story is about where a market fact
  *  comes from, not about how many rows the bench can rank. */
@@ -51,7 +52,17 @@ const KO_THESIS = 'Dividend aristocrat — accumulate under $60'
 
 /** A reading recorded at the previous close, which the freshness engine calls fresh once
  *  it has a calendar to age it against, and cannot judge at all without one. */
-const KO_AT_PREVIOUS_CLOSE = { KO: { ivr: 58, observedAt: observedSessionsAgo(1) } }
+const KO_AT_PREVIOUS_CLOSE = { KO: { rank: 58, endingSessionsAgo: 1 } }
+
+/** The Background with the calendar unreachable at launch. KO's series is in the env, but
+ *  its backfill cannot place a session without a calendar, so nothing waits for it. */
+function withCalendarFailing(): ScreenerLaunchOpts {
+  return background({
+    marketCalendarError: 'network_error',
+    ivr: undefined,
+    ivSeries: ivSeriesFor(KO_AT_PREVIOUS_CLOSE)
+  })
+}
 
 /** The Background: market-data credentials, no broker. */
 function background(overrides: ScreenerLaunchOpts = {}): ScreenerLaunchOpts {
@@ -62,6 +73,18 @@ function background(overrides: ScreenerLaunchOpts = {}): ScreenerLaunchOpts {
     ivr: KO_AT_PREVIOUS_CLOSE,
     ...overrides
   }
+}
+
+/** Wait for KO's launch-time backfill to fail for want of a calendar. Reloads each poll: a
+ *  failed run pushes no update, so a bench that rendered KO as pending would never move. */
+async function waitForKoBackfillFailure(page: Page): Promise<void> {
+  await expect
+    .poll(async () => {
+      await reloadBench(page)
+      await waitForBenchCard(page, 'KO')
+      return (await ivrCell(page, 'KO')).reason
+    })
+    .toBe('failed')
 }
 
 /** Wait for the pill to settle on `display`. Auto-retrying rather than a single read: the
@@ -83,19 +106,18 @@ describe('US-116: market facts come from the market-data provider, not the broke
     cleanupDb(dbPath)
   })
 
-  /** Launch into the Background with the calendar unreachable, so the reading lands
-   *  against an empty `trading_session`; then clear the fault. The bench has not been
-   *  re-opened yet, so nothing has had a chance to fetch a calendar. */
+  /** Launch into the Background with the calendar unreachable, then clear the fault. The
+   *  bench has not been re-opened yet, so nothing has fetched a calendar — and KO's
+   *  launch-time backfill failed for want of one, so it has no reading either. */
   async function launchWithNoCalendarYet(prefix: string): Promise<Page> {
     dbPath = tmpDb(prefix)
-    const launched = await launchScreener(
-      dbPath,
-      background({ marketCalendarError: 'network_error' })
-    )
+    const launched = await launchScreener(dbPath, withCalendarFailing())
     app = launched.app
-    expect(await tradingSessionCount(launched.page)).toBe(0)
+    const { page } = launched
+    await waitForKoBackfillFailure(page)
+    expect(await tradingSessionCount(page)).toBe(0)
     await setMarketCalendarError(app, null)
-    return launched.page
+    return page
   }
 
   it('IV rank is judged without a broker', async () => {
@@ -103,9 +125,13 @@ describe('US-116: market facts come from the market-data provider, not the broke
 
     await reloadBench(page)
     await waitForBenchCard(page, 'KO')
+    expect(await tradingSessionCount(page)).toBeGreaterThan(0)
+    await collectIvrNow(page)
+    await reloadBench(page)
+    await waitForBenchCard(page, 'KO')
 
-    // The ring is the whole claim: it can only render from a calendar the bench fetched
-    // itself, through the market-data provider, with no broker attached.
+    // The ring is the whole claim: it can only render from a calendar fetched through the
+    // market-data provider, with no broker attached.
     expect(await ivrCell(page, 'KO')).toMatchObject({ text: '58', ring: 'fresh' })
   })
 
@@ -141,6 +167,11 @@ describe('US-116: market facts come from the market-data provider, not the broke
     // store's in-flight promise is what collapses them.
     expect(await tradingSessionCount(page)).toBeGreaterThan(0)
     expect(await marketCalendarFetches(page)).toBe(1)
+
+    // A reading collected afterwards is aged, not read as unreadable.
+    await collectIvrNow(page)
+    await reloadBench(page)
+    await waitForBenchCard(page, 'KO')
     expect(await ivrCell(page, 'KO')).toMatchObject({ text: '58', ring: 'fresh' })
   })
 
@@ -165,13 +196,10 @@ describe('US-116: market facts come from the market-data provider, not the broke
 
   it('A calendar failure degrades IV freshness only', async () => {
     dbPath = tmpDb('wb-e2e-us116-ac5')
-    const launched = await launchScreener(
-      dbPath,
-      background({ marketCalendarError: 'network_error' })
-    )
+    const launched = await launchScreener(dbPath, withCalendarFailing())
     app = launched.app
     const { page } = launched
-    await waitForBenchCard(page, 'KO')
+    await waitForKoBackfillFailure(page)
 
     // The trader's own work and the live quote both survive: only the reading's age is
     // unknowable without a calendar.
@@ -194,10 +222,7 @@ describe('US-116: market facts come from the market-data provider, not the broke
 
   it('A calendar failure is not reported as a market-data outage', async () => {
     dbPath = tmpDb('wb-e2e-us116-ac6')
-    const launched = await launchScreener(
-      dbPath,
-      background({ marketCalendarError: 'network_error' })
-    )
+    const launched = await launchScreener(dbPath, withCalendarFailing())
     app = launched.app
     const { page } = launched
     await waitForBenchCard(page, 'KO', 'meets')

@@ -3,7 +3,7 @@
 // Exactly one `it()` per acceptance-criteria scenario in
 // docs/epics/08-stories/US-96-watchlist-live-snapshot.md, each named verbatim. The suite
 // boots the real Electron app over the offline seams: the fake market-data provider serves
-// the put chains and the underlying quotes, the US-44 fake scraper seeds the IV ranks
+// the put chains and the underlying quotes, the US-121 fake IV series seeds the IV ranks
 // through the production collector, and the fake earnings calendar answers US-70's
 // lookups. Nothing between the IPC and the DOM is stubbed, so every string asserted below
 // is one the real engines produced.
@@ -55,7 +55,6 @@ import {
   waitingTickers,
   type ScreenerLaunchOpts
 } from './screener-helpers'
-import { observedSessionsAgo } from './trading-day-fixtures'
 
 /** Every bench put expires on the same day, 37 DTE out — the story's "Oct 16". */
 const BENCH_EXPIRATION = screenerDate(37)
@@ -384,7 +383,7 @@ describe('US-96: one live bench', () => {
 
   it('An aging reading still satisfies an IV condition', async () => {
     const page = await launchBench('wb-e2e-us96-ac19', {
-      ivr: { KO: { ivr: 58, observedAt: observedSessionsAgo(2) } }
+      ivr: { KO: { rank: 58, endingSessionsAgo: 2 } }
     })
 
     // Two sessions old is still decision-usable, so KO's `IVR ≥ 40` is genuinely met.
@@ -605,10 +604,11 @@ describe('US-96: one live bench', () => {
     // credentials produces the card's *copy*, and the injected error produces the failing
     // call the copy describes. Offline the fake provider replaces the Alpaca one outright,
     // so it cannot raise that failure on its own. Same pairing as US-99's outage specs.
-    const page = await launch(
-      'wb-e2e-us96-ac31',
-      benchOpts({ withoutBrokerCredentials: true, marketDataError: 'auth_failed' })
-    )
+    // [US-121] No IV ranks: with no market data, no IV history can be collected either.
+    const page = await launch('wb-e2e-us96-ac31', {
+      ...benchOpts({ withoutBrokerCredentials: true, marketDataError: 'auth_failed' }),
+      ivr: undefined
+    })
     await waitForBenchCard(page, 'KO', 'waiting')
 
     const card = page.locator('[data-testid="screener-unavailable"]')
