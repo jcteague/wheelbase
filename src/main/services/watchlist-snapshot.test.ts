@@ -8,20 +8,27 @@ import type Database from 'better-sqlite3'
 import type { MarketDataProvider, StockQuote } from '../integrations/market-data-provider'
 import { DEFAULT_SCREENING_CRITERIA, type EarningsLookup } from '../core/screener'
 import { logger } from '../logger'
-import { makeTestDb, seedIvr, seedTradingCalendar, weekdayCalendarFetcher } from '../test-utils'
+import {
+  makeTestDb,
+  makeTradingCalendar,
+  seedRankedIv30Series,
+  seedTradingCalendar,
+  weekdayCalendarFetcher
+} from '../test-utils'
 import { getEarningsCalendar } from './earnings-dates'
-import { getAssessedIvrByUnderlying } from './ivr-snapshots'
+import { createIvRunState, type IvRunState } from './iv-run-state'
+import { readIvRankLookup } from './ivr-snapshots'
 import { buildWatchlistSnapshot } from './watchlist-snapshot'
 
 vi.mock('../logger', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
 }))
 
-// The IVR read path stays real so the seeded DB drives the assessment; the spy exists
-// only so the `lastEarnings` handed to it can be asserted.
+// The IV-rank read path stays real so the seeded DB drives the assessment; the spy exists
+// only so the options handed to it can be asserted.
 vi.mock('./ivr-snapshots', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./ivr-snapshots')>()
-  return { ...actual, getAssessedIvrByUnderlying: vi.fn(actual.getAssessedIvrByUnderlying) }
+  return { ...actual, readIvRankLookup: vi.fn(actual.readIvRankLookup) }
 })
 
 // The earnings *store* is stubbed so each test can state a ticker's verdict directly;
@@ -35,6 +42,21 @@ vi.mock('./earnings-dates', async (importOriginal) => {
 // is Wednesday 2026-07-22.
 const CURRENT_DATE = new Date('2026-07-23T15:30:00Z')
 const QUOTE_TIMESTAMP = '2026-07-23T15:29:00Z'
+/** The weekday sessions every seeded or fetched calendar in this file holds. */
+const SESSIONS = makeTradingCalendar('2025-05-01', '2027-12-31')
+
+/** KO's series, anchored at `anchorSession`, reading IV rank 58. */
+function seedKoRank(db: Database.Database, anchorSession = '2026-07-22'): void {
+  seedRankedIv30Series(db, 'KO', SESSIONS, anchorSession, 58)
+}
+
+function snapshotAt(
+  getProvider: () => MarketDataProvider,
+  db: Database.Database,
+  runState: IvRunState = createIvRunState()
+): ReturnType<typeof buildWatchlistSnapshot> {
+  return buildWatchlistSnapshot(getProvider, db, { currentDate: CURRENT_DATE, runState })
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -62,7 +84,7 @@ function mockEarnings(byTicker: Record<string, EarningsLookup>): void {
  *  refresh is due — the steady state every snapshot runs in. */
 function makeSnapshotDb(): Database.Database {
   const db = makeTestDb()
-  seedTradingCalendar(db, '2026-05-01', '2027-12-31')
+  seedTradingCalendar(db, '2025-05-01', '2027-12-31')
   return db
 }
 
@@ -133,9 +155,7 @@ describe('buildWatchlistSnapshot', () => {
     ])
     const { provider } = makeProvider()
 
-    const snapshot = await buildWatchlistSnapshot(() => provider, db, {
-      currentDate: CURRENT_DATE
-    })
+    const snapshot = await snapshotAt(() => provider, db)
 
     expect(snapshot.rows.map((row) => row.entry.ticker)).toEqual(['AAPL', 'KO'])
   })
@@ -145,9 +165,7 @@ describe('buildWatchlistSnapshot', () => {
     seedEntries(db, [{ ticker: 'KO', addedAt: '2026-07-01T12:00:00.000Z' }])
     const { provider } = makeProvider()
 
-    const snapshot = await buildWatchlistSnapshot(() => provider, db, {
-      currentDate: CURRENT_DATE
-    })
+    const snapshot = await snapshotAt(() => provider, db)
 
     expect(snapshot.asOf).toBe(CURRENT_DATE.toISOString())
   })
@@ -157,9 +175,7 @@ describe('buildWatchlistSnapshot', () => {
     seedEntries(db, [{ ticker: 'KO', addedAt: '2026-07-01T12:00:00.000Z' }])
     const { provider } = makeProvider(() => new Map([['KO', stockQuote('62.00', '61.50')]]))
 
-    const snapshot = await buildWatchlistSnapshot(() => provider, db, {
-      currentDate: CURRENT_DATE
-    })
+    const snapshot = await snapshotAt(() => provider, db)
 
     expect(snapshot.rows[0].quote).toEqual({
       price: '62.00',
@@ -178,15 +194,13 @@ describe('buildWatchlistSnapshot', () => {
         ivrTrigger: 40
       }
     ])
-    seedIvr(db, [['KO', '2026-07-22T20:10:00Z', '58.0']])
+    seedKoRank(db)
     mockEarnings({ KO: { status: 'found', date: '2026-10-15' } })
     const { provider } = makeProvider(() => new Map([['KO', stockQuote('62.00', '61.50')]]))
 
-    const snapshot = await buildWatchlistSnapshot(() => provider, db, {
-      currentDate: CURRENT_DATE
-    })
+    const snapshot = await snapshotAt(() => provider, db)
 
-    expect(snapshot.rows[0].ivRank).toMatchObject({ value: '58.0', state: 'fresh' })
+    expect(snapshot.rows[0].ivRank).toMatchObject({ value: '58', state: 'fresh' })
     expect(snapshot.rows[0].earnings).toEqual({
       kind: 'date',
       date: '2026-10-15',
@@ -205,7 +219,7 @@ describe('buildWatchlistSnapshot', () => {
     const { provider } = makeProvider()
     const getProvider = vi.fn(() => provider)
 
-    const snapshot = await buildWatchlistSnapshot(getProvider, db, { currentDate: CURRENT_DATE })
+    const snapshot = await snapshotAt(getProvider, db)
 
     expect(snapshot).toEqual({ rows: [], asOf: CURRENT_DATE.toISOString() })
     expect(getProvider).not.toHaveBeenCalled()
@@ -224,9 +238,7 @@ describe('buildWatchlistSnapshot', () => {
         { ticker: 'KO', addedAt: '2026-07-01T12:00:00.000Z', ownBelowPrice: '70.0000' }
       ])
 
-      const snapshot = await buildWatchlistSnapshot(unavailableProvider(), db, {
-        currentDate: CURRENT_DATE
-      })
+      const snapshot = await snapshotAt(unavailableProvider(), db)
 
       expect(snapshot.rows).toHaveLength(1)
       expect(snapshot.rows[0].quote).toBeNull()
@@ -239,13 +251,11 @@ describe('buildWatchlistSnapshot', () => {
     it('still assesses the IV rank', async () => {
       const db = makeSnapshotDb()
       seedEntries(db, [{ ticker: 'KO', addedAt: '2026-07-01T12:00:00.000Z', ivrTrigger: 40 }])
-      seedIvr(db, [['KO', '2026-07-22T20:10:00Z', '58.0']])
+      seedKoRank(db)
 
-      const snapshot = await buildWatchlistSnapshot(unavailableProvider(), db, {
-        currentDate: CURRENT_DATE
-      })
+      const snapshot = await snapshotAt(unavailableProvider(), db)
 
-      expect(snapshot.rows[0].ivRank).toMatchObject({ value: '58.0', state: 'fresh' })
+      expect(snapshot.rows[0].ivRank).toMatchObject({ value: '58', state: 'fresh' })
       expect(snapshot.rows[0].verdict.iv).toEqual({ verdict: 'met', label: null })
     })
 
@@ -253,7 +263,7 @@ describe('buildWatchlistSnapshot', () => {
       const db = makeSnapshotDb()
       seedEntries(db, [{ ticker: 'KO', addedAt: '2026-07-01T12:00:00.000Z' }])
 
-      await buildWatchlistSnapshot(unavailableProvider(), db, { currentDate: CURRENT_DATE })
+      await snapshotAt(unavailableProvider(), db)
 
       expect(logger.warn).toHaveBeenCalledWith(
         expect.objectContaining({ err: expect.anything() }),
@@ -273,9 +283,7 @@ describe('buildWatchlistSnapshot', () => {
       return new Map([['KO', stockQuote('62.00', '61.50')]])
     })
 
-    const snapshot = await buildWatchlistSnapshot(() => provider, db, {
-      currentDate: CURRENT_DATE
-    })
+    const snapshot = await snapshotAt(() => provider, db)
 
     const byTicker = new Map(snapshot.rows.map((row) => [row.entry.ticker, row.quote]))
     expect(byTicker.get('AAPL')).toBeNull()
@@ -295,9 +303,7 @@ describe('buildWatchlistSnapshot', () => {
       ])
       const { provider } = makeProvider()
 
-      const snapshot = await buildWatchlistSnapshot(() => provider, db, {
-        currentDate: CURRENT_DATE
-      })
+      const snapshot = await snapshotAt(() => provider, db)
 
       expect(snapshot.rows.map((row) => row.earnings)).toEqual([
         { kind: 'unknown' },
@@ -308,18 +314,18 @@ describe('buildWatchlistSnapshot', () => {
     it('assesses the IV rank with no last-print knowledge', async () => {
       const db = makeSnapshotDb()
       seedEntries(db, [{ ticker: 'KO', addedAt: '2026-07-01T12:00:00.000Z' }])
-      seedIvr(db, [['KO', '2026-07-22T20:10:00Z', '58.0']])
+      seedKoRank(db)
       const { provider } = makeProvider()
 
-      await buildWatchlistSnapshot(() => provider, db, { currentDate: CURRENT_DATE })
+      await snapshotAt(() => provider, db)
 
-      const options = vi.mocked(getAssessedIvrByUnderlying).mock.calls[0][2]
+      const options = vi.mocked(readIvRankLookup).mock.calls[0][2]
       expect(options.lastEarnings.get('KO')).toBeUndefined()
     })
   })
 
   // The fifth degradation guarantee in contracts/watchlist-snapshot.md. The read degrades
-  // inside `getAssessedIvrByUnderlying`, so this asserts it at the boundary the contract
+  // inside `readIvRankLookup`, so this asserts it at the boundary the contract
   // actually names rather than trusting the layer below to keep its promise.
   it('degrades a failed IVR read to unknown for every row without failing the snapshot', async () => {
     const db = makeSnapshotDb()
@@ -327,20 +333,19 @@ describe('buildWatchlistSnapshot', () => {
       { ticker: 'KO', addedAt: '2026-07-02T12:00:00.000Z', ivrTrigger: 40 },
       { ticker: 'AAPL', addedAt: '2026-07-01T12:00:00.000Z', ivrTrigger: 50 }
     ])
-    seedIvr(db, [['KO', '2026-07-22T20:10:00Z', '58.0']])
+    seedKoRank(db)
     const { provider } = makeProvider(
       (tickers) => new Map(tickers.map((ticker) => [ticker, stockQuote('62.00', '61.50')]))
     )
-    vi.mocked(getAssessedIvrByUnderlying).mockReturnValueOnce(
+    const notCollected = { reading: null, absence: { reason: 'not_collected' as const } }
+    vi.mocked(readIvRankLookup).mockReturnValueOnce(
       new Map([
-        ['KO', null],
-        ['AAPL', null]
+        ['KO', notCollected],
+        ['AAPL', notCollected]
       ])
     )
 
-    const snapshot = await buildWatchlistSnapshot(() => provider, db, {
-      currentDate: CURRENT_DATE
-    })
+    const snapshot = await snapshotAt(() => provider, db)
 
     expect(snapshot.rows.map((r) => r.ivRank)).toEqual([null, null])
     for (const row of snapshot.rows) {
@@ -350,16 +355,63 @@ describe('buildWatchlistSnapshot', () => {
     }
   })
 
+  it('carries exactly one of ivRank and ivRankAbsence on every row', async () => {
+    const db = makeSnapshotDb()
+    seedEntries(db, [
+      { ticker: 'KO', addedAt: '2026-07-02T12:00:00.000Z' },
+      { ticker: 'AAPL', addedAt: '2026-07-01T12:00:00.000Z' }
+    ])
+    seedKoRank(db)
+    const { provider } = makeProvider()
+
+    const snapshot = await snapshotAt(() => provider, db)
+
+    const byTicker = new Map(snapshot.rows.map((row) => [row.entry.ticker, row]))
+    expect(byTicker.get('KO')).toMatchObject({ ivRank: { value: '58' }, ivRankAbsence: null })
+    expect(byTicker.get('AAPL')).toMatchObject({
+      ivRank: null,
+      ivRankAbsence: { reason: 'not_collected' }
+    })
+  })
+
+  it('judges a pending ticker exactly as a never-collected one — the reason never reaches the verdict', async () => {
+    const db = makeSnapshotDb()
+    seedEntries(db, [
+      { ticker: 'KO', addedAt: '2026-07-02T12:00:00.000Z', ivrTrigger: 40 },
+      { ticker: 'AAPL', addedAt: '2026-07-01T12:00:00.000Z', ivrTrigger: 40 }
+    ])
+    const runState = createIvRunState()
+    runState.markPending('KO')
+    const { provider } = makeProvider()
+
+    const snapshot = await snapshotAt(() => provider, db, runState)
+
+    const byTicker = new Map(snapshot.rows.map((row) => [row.entry.ticker, row]))
+    expect(byTicker.get('KO')?.ivRankAbsence).toEqual({ reason: 'pending' })
+    expect(byTicker.get('AAPL')?.ivRankAbsence).toEqual({ reason: 'not_collected' })
+    expect(byTicker.get('KO')?.verdict.iv).toEqual({ verdict: 'unknown', label: 'IV unavailable' })
+    expect(byTicker.get('KO')?.verdict).toEqual(byTicker.get('AAPL')?.verdict)
+  })
+
+  it('hands the run state it was given to the IV-rank read', async () => {
+    const db = makeSnapshotDb()
+    seedEntries(db, [{ ticker: 'KO', addedAt: '2026-07-01T12:00:00.000Z' }])
+    const runState = createIvRunState()
+    const { provider } = makeProvider()
+
+    await snapshotAt(() => provider, db, runState)
+
+    expect(vi.mocked(readIvRankLookup).mock.calls[0][2].runState).toBe(runState)
+  })
+
   it('reports a stale reading as too old to judge rather than letting it decide', async () => {
     const db = makeSnapshotDb()
     seedEntries(db, [{ ticker: 'KO', addedAt: '2026-07-01T12:00:00.000Z', ivrTrigger: 40 }])
     // 7 completed sessions back — inside the stale tier.
-    seedIvr(db, [['KO', '2026-07-13T20:10:00Z', '58.0']])
+    seedKoRank(db, '2026-07-13')
     const { provider } = makeProvider()
 
-    const snapshot = await buildWatchlistSnapshot(() => provider, db, {
-      currentDate: CURRENT_DATE
-    })
+    const snapshot = await snapshotAt(() => provider, db)
 
     expect(snapshot.rows[0].ivRank).toMatchObject({ state: 'stale' })
     expect(snapshot.rows[0].verdict.iv.label).toBe('IV too old to judge')
@@ -370,7 +422,7 @@ describe('buildWatchlistSnapshot', () => {
     seedEntries(db, [{ ticker: 'KO', addedAt: '2026-07-01T12:00:00.000Z' }])
     const { provider } = makeProvider()
 
-    await buildWatchlistSnapshot(() => provider, db, { currentDate: CURRENT_DATE })
+    await snapshotAt(() => provider, db)
 
     expect(getEarningsCalendar).toHaveBeenCalledWith(
       db,
@@ -390,7 +442,7 @@ describe('buildWatchlistSnapshot', () => {
     ])
     const { provider } = makeProvider()
 
-    await buildWatchlistSnapshot(() => provider, db, { currentDate: CURRENT_DATE })
+    await snapshotAt(() => provider, db)
 
     expect(logger.info).toHaveBeenCalledWith(
       expect.objectContaining({ rowCount: 2 }),
@@ -406,17 +458,15 @@ describe('buildWatchlistSnapshot — the calendar refresh it rides on', () => {
     // An install that has never collected: entries and a reading, but no calendar.
     const db = makeTestDb()
     seedEntries(db, [{ ticker: 'KO', addedAt: '2026-07-01T12:00:00.000Z' }])
-    seedIvr(db, [['KO', '2026-07-22T20:10:00Z', '58.0']])
+    seedKoRank(db)
     const { provider, getMarketCalendar } = makeProvider(
       () => new Map([['KO', stockQuote('62.00', '61.50')]])
     )
 
-    const snapshot = await buildWatchlistSnapshot(() => provider, db, {
-      currentDate: CURRENT_DATE
-    })
+    const snapshot = await snapshotAt(() => provider, db)
 
     expect(getMarketCalendar).toHaveBeenCalledTimes(1)
-    expect(snapshot.rows[0].ivRank).toMatchObject({ value: '58.0', state: 'fresh' })
+    expect(snapshot.rows[0].ivRank).toMatchObject({ value: '58', state: 'fresh' })
   })
 
   it('does not refetch the calendar on a second open once coverage is current', async () => {
@@ -424,8 +474,8 @@ describe('buildWatchlistSnapshot — the calendar refresh it rides on', () => {
     seedEntries(db, [{ ticker: 'KO', addedAt: '2026-07-01T12:00:00.000Z' }])
     const { provider, getMarketCalendar } = makeProvider()
 
-    await buildWatchlistSnapshot(() => provider, db, { currentDate: CURRENT_DATE })
-    await buildWatchlistSnapshot(() => provider, db, { currentDate: CURRENT_DATE })
+    await snapshotAt(() => provider, db)
+    await snapshotAt(() => provider, db)
 
     expect(getMarketCalendar).not.toHaveBeenCalled()
   })
@@ -436,7 +486,7 @@ describe('buildWatchlistSnapshot — the calendar refresh it rides on', () => {
       { ticker: 'KO', addedAt: '2026-07-01T12:00:00.000Z' },
       { ticker: 'AAPL', addedAt: '2026-07-20T12:00:00.000Z' }
     ])
-    seedIvr(db, [['KO', '2026-07-22T20:10:00Z', '58.0']])
+    seedKoRank(db)
     const { provider, getMarketCalendar } = makeProvider(
       () =>
         new Map([
@@ -446,9 +496,7 @@ describe('buildWatchlistSnapshot — the calendar refresh it rides on', () => {
     )
     getMarketCalendar.mockRejectedValue(new Error('calendar unavailable'))
 
-    const snapshot = await buildWatchlistSnapshot(() => provider, db, {
-      currentDate: CURRENT_DATE
-    })
+    const snapshot = await snapshotAt(() => provider, db)
 
     expect(snapshot.rows).toHaveLength(2)
     for (const row of snapshot.rows) {
@@ -467,7 +515,7 @@ describe('buildWatchlistSnapshot — the calendar refresh it rides on', () => {
     )
     getMarketCalendar.mockRejectedValue(new Error('calendar unavailable'))
 
-    await buildWatchlistSnapshot(() => provider, db, { currentDate: CURRENT_DATE })
+    await snapshotAt(() => provider, db)
 
     expect(logger.info).toHaveBeenCalledWith(
       expect.objectContaining({ rowCount: 1, quotedCount: 1 }),

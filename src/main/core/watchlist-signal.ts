@@ -80,14 +80,16 @@ const IV_UNKNOWN_LABEL: Partial<Record<IvRankState, string>> = {
 
 function ivGate(trigger: number | null, reading: AssessedIvRank | null): Gate {
   if (trigger === null) return none
-  if (reading === null) return unknown('IV unavailable')
+  // A flat window withholds the rank: with no number to compare, it is as undecidable as
+  // no reading at all, whatever its age.
+  if (reading === null || reading.value === null) return unknown('IV unavailable')
   // `isUsableState` is the one authority on which readings may decide anything, so this gate
   // asks it rather than keeping a second list of states that can drift away from it.
   if (!isUsableState(reading.state)) {
     return unknown(IV_UNKNOWN_LABEL[reading.state] ?? 'IV unavailable')
   }
 
-  // `Decimal`, not a float compare: this is the same stored 1dp value the screener's own
+  // `Decimal`, not a float compare: this is the same integer rank the screener's own
   // IV-rank floor tests with `Decimal`, and one threshold rule judged two different ways is
   // how the two quietly disagree at a boundary.
   return new Decimal(reading.value).greaterThanOrEqualTo(trigger) ? met : unmet('IV low')

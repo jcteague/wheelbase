@@ -6,6 +6,8 @@
 import Decimal from 'decimal.js'
 import {
   MarketDataError,
+  type DailyBar,
+  type DailyBarRange,
   type MarketCalendarDay,
   type MarketCalendarRange,
   type MarketStatus,
@@ -17,6 +19,7 @@ import {
 } from './market-data-provider'
 import { ALPACA_TRADING_BASE_URLS } from './alpaca-hosts'
 import { parseOccSymbol } from '../core/option-symbol'
+import { etDateOf } from '../core/trading-calendar'
 import type { AlpacaCredentials } from '../services/settings'
 
 export const DATA_BASE_URL = 'https://data.alpaca.markets'
@@ -301,6 +304,84 @@ export function mapCalendarDays(raw: AlpacaCalendarDay[]): MarketCalendarDay[] {
   return raw
     .filter((day) => typeof day.date === 'string' && typeof day.close === 'string')
     .map((day) => ({ date: day.date, close: day.close }))
+}
+
+// --- Daily bars ---
+
+const BARS_PAGE_SIZE = 10000
+// Implied vol is only as good as the underlying price it is inverted against, so stock bars
+// come from the consolidated tape (SIP), unadjusted to match the options' struck prices.
+const DAILY_STOCK_FEED = 'sip'
+export const OPTION_BARS_BATCH_SIZE = 100
+
+export type AlpacaDailyBar = {
+  t: string
+  o?: number
+  h?: number
+  l?: number
+  c: number
+  v: number
+  n: number
+  vw: number
+}
+
+export type AlpacaBarsResponse = {
+  bars: Record<string, AlpacaDailyBar[] | undefined> | null
+  next_page_token: string | null
+}
+
+function barsParams(
+  symbols: string,
+  range: DailyBarRange,
+  pageToken: string | undefined
+): URLSearchParams {
+  const params = new URLSearchParams({ symbols, timeframe: '1Day', start: range.start })
+  // An omitted end means "through the present"; never send one the caller did not choose.
+  if (range.end !== undefined) params.set('end', range.end)
+  params.set('limit', String(BARS_PAGE_SIZE))
+  if (pageToken) params.set('page_token', pageToken)
+  return params
+}
+
+export function buildOptionBarsUrl(
+  symbols: string[],
+  range: DailyBarRange,
+  pageToken?: string
+): string {
+  const params = barsParams(symbols.join(','), range, pageToken)
+  return `${DATA_BASE_URL}/v1beta1/options/bars?${params.toString()}`
+}
+
+export function buildStockBarsUrl(
+  symbol: string,
+  range: DailyBarRange,
+  pageToken?: string
+): string {
+  const params = barsParams(symbol, range, pageToken)
+  params.set('feed', DAILY_STOCK_FEED)
+  params.set('adjustment', 'raw')
+  return `${DATA_BASE_URL}/v2/stocks/bars?${params.toString()}`
+}
+
+/** null when the bar's vwap or close is non-finite or its timestamp unparseable. */
+export function mapDailyBar(raw: AlpacaDailyBar): DailyBar | null {
+  if (!Number.isFinite(raw.vw) || !Number.isFinite(raw.c)) return null
+  // A daily bar is stamped at Eastern midnight, so its ET day is the session day.
+  const date = etDateOf(new Date(raw.t))
+  if (date === '') return null
+  return {
+    date,
+    vwap: new Decimal(raw.vw).toFixed(4),
+    close: new Decimal(raw.c).toFixed(4),
+    volume: raw.v,
+    tradeCount: raw.n
+  }
+}
+
+export function chunkSymbols(symbols: string[], size: number): string[][] {
+  return Array.from({ length: Math.ceil(symbols.length / size) }, (_, i) =>
+    symbols.slice(i * size, (i + 1) * size)
+  )
 }
 
 // --- Websocket frames ---

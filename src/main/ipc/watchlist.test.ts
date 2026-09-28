@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3'
 import { ValidationError } from '../core/lifecycle'
 import type { WatchlistEntryRecord } from '../schemas'
 import type { MarketDataProvider } from '../integrations/market-data-provider'
+import { createIvRunState } from '../services/iv-run-state'
 
 const listWatchlist = vi.fn()
 const addWatchlistEntry = vi.fn()
@@ -47,8 +48,17 @@ const SAMPLE_ENTRY: WatchlistEntryRecord = {
 // [US-96] The snapshot channel reads the clock the screener channel reads, so the two
 // halves of the bench are judged at the same instant.
 const CURRENT_DATE = new Date('2026-07-23T15:30:00Z')
+const RUN_STATE = createIvRunState()
 const SAMPLE_SNAPSHOT = {
-  rows: [{ entry: SAMPLE_ENTRY, quote: null, ivRank: null, earnings: { kind: 'unknown' } }],
+  rows: [
+    {
+      entry: SAMPLE_ENTRY,
+      quote: null,
+      ivRank: null,
+      ivRankAbsence: { reason: 'not_collected' },
+      earnings: { kind: 'unknown' }
+    }
+  ],
   asOf: CURRENT_DATE.toISOString()
 }
 
@@ -75,7 +85,13 @@ describe('registerWatchlistIpc', () => {
   async function register(): Promise<Array<[string, (...args: unknown[]) => unknown]>> {
     const { ipcMain } = await import('electron')
     const { registerWatchlistIpc } = await import('./watchlist')
-    registerWatchlistIpc({ db, getProvider, getCurrentDate: () => CURRENT_DATE, ivrOnDemand })
+    registerWatchlistIpc({
+      db,
+      getProvider,
+      getCurrentDate: () => CURRENT_DATE,
+      ivrOnDemand,
+      runState: RUN_STATE
+    })
     return vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>
   }
 
@@ -170,8 +186,10 @@ describe('registerWatchlistIpc', () => {
     const result = await handler?.(null)
 
     expect(buildWatchlistSnapshot).toHaveBeenCalledWith(getProvider, db, {
-      currentDate: CURRENT_DATE
+      currentDate: CURRENT_DATE,
+      runState: RUN_STATE
     })
+    expect(buildWatchlistSnapshot.mock.calls[0][2].runState).toBe(RUN_STATE)
     expect(result).toMatchObject({ ok: true, ...SAMPLE_SNAPSHOT })
   })
 
@@ -194,7 +212,7 @@ describe('registerWatchlistIpc', () => {
     buildWatchlistSnapshot.mockResolvedValue(SAMPLE_SNAPSHOT)
     const { ipcMain } = await import('electron')
     const { registerWatchlistIpc } = await import('./watchlist')
-    registerWatchlistIpc({ db, getProvider })
+    registerWatchlistIpc({ db, getProvider, runState: RUN_STATE })
     const calls = vi.mocked(ipcMain.handle).mock.calls as Array<
       [string, (...args: unknown[]) => unknown]
     >

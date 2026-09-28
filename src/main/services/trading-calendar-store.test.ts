@@ -2,7 +2,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type Database from 'better-sqlite3'
 import { getTradingSession } from '../core/trading-calendar'
-import type { MarketCalendarDay, MarketCalendarSource } from '../integrations/market-data-provider'
+import {
+  MarketDataError,
+  type MarketCalendarDay,
+  type MarketCalendarSource
+} from '../integrations/market-data-provider'
 import { makeTestDb, seedTradingCalendar } from '../test-utils'
 import { logger } from '../logger'
 import {
@@ -85,15 +89,27 @@ describe('readTradingCalendar', () => {
     )
   })
 
-  it('bounds the loaded window so an ancient snapshot cannot widen the scan', () => {
+  // [US-121] The window covers a full 252-session rank window plus stale sessions behind
+  // it, and the monthly expiration horizon (+70 days) ahead of it.
+  it('loads 400 days back and 70 days ahead, clipped to stored coverage', () => {
     const db = makeTestDb()
-    seedTradingCalendar(db, '2025-01-01', '2026-12-31')
+    seedTradingCalendar(db, '2025-06-30', '2026-12-31')
 
     const calendar = readTradingCalendar(db, NOW)
 
-    expect(calendar.firstDay).toBe('2026-08-09')
-    expect(calendar.lastDay).toBe('2026-09-25')
-    expect(calendar.sessions.length).toBeLessThan(40)
+    expect(calendar.firstDay).toBe('2025-08-19')
+    expect(calendar.lastDay).toBe('2026-12-02')
+  })
+
+  it('bounds the loaded window so an ancient snapshot cannot widen the scan', () => {
+    const db = makeTestDb()
+    seedTradingCalendar(db, '2020-01-01', '2028-12-31')
+
+    const calendar = readTradingCalendar(db, NOW)
+
+    expect(calendar.firstDay).toBe('2025-08-19')
+    expect(calendar.lastDay).toBe('2026-12-02')
+    expect(calendar.sessions.length).toBeLessThan(340)
   })
 
   it('degrades to knowing nothing when the read itself fails', () => {
@@ -135,7 +151,7 @@ describe('refreshTradingCalendar', () => {
     await refreshTradingCalendar(db, provider, NOW)
 
     expect(provider.getMarketCalendar).toHaveBeenCalledWith({
-      start: '2026-05-26',
+      start: '2025-07-30',
       end: '2027-10-28'
     })
     expect(getTradingSession(readTradingCalendar(db, NOW), '2026-09-22')).toMatchObject({
@@ -156,13 +172,45 @@ describe('refreshTradingCalendar', () => {
     expect(storedRow(db, '2026-09-22')?.close_at).toBe('2026-09-22T20:00:00.000Z')
   })
 
+  it('reports no_market_data when the provider rejects for want of credentials', async () => {
+    const db = makeTestDb()
+    const provider = providerReturning([])
+    vi.mocked(provider.getMarketCalendar).mockRejectedValue(
+      new MarketDataError('auth_failed', 'no market-data credentials')
+    )
+
+    expect(await refreshTradingCalendar(db, provider, NOW)).toEqual({ status: 'no_market_data' })
+  })
+
   it('skips the fetch while stored coverage still reaches far enough ahead', async () => {
     const db = makeTestDb()
-    seedTradingCalendar(db, '2026-09-01', '2027-11-01')
+    seedTradingCalendar(db, '2025-08-01', '2027-11-01')
     const provider = providerReturning([])
 
     expect(await refreshTradingCalendar(db, provider, NOW)).toEqual({ status: 'skipped' })
     expect(provider.getMarketCalendar).not.toHaveBeenCalled()
+  })
+
+  // [US-121] An install upgraded from the 120-day cache holds too little history for
+  // a rank window, however far ahead its coverage reaches.
+  it('refetches when stored coverage does not reach back to the read window', async () => {
+    const db = makeTestDb()
+    seedTradingCalendar(db, '2025-08-20', '2027-11-01')
+    const provider = providerReturning([])
+
+    expect((await refreshTradingCalendar(db, provider, NOW)).status).toBe('refreshed')
+    expect(provider.getMarketCalendar).toHaveBeenCalledWith({
+      start: '2025-07-30',
+      end: '2027-10-28'
+    })
+  })
+
+  it('skips when stored coverage reaches exactly back to the read window', async () => {
+    const db = makeTestDb()
+    seedTradingCalendar(db, '2025-08-19', '2027-11-01')
+    const provider = providerReturning([])
+
+    expect(await refreshTradingCalendar(db, provider, NOW)).toEqual({ status: 'skipped' })
   })
 
   it('drops a published session it cannot parse instead of writing a bad instant', async () => {
@@ -194,17 +242,17 @@ describe('ensureTradingCalendar', () => {
 
     expect(provider.getMarketCalendar).toHaveBeenCalledTimes(1)
     expect(provider.getMarketCalendar).toHaveBeenCalledWith({
-      start: '2026-05-26',
+      start: '2025-07-30',
       end: '2027-10-28'
     })
-    expect(storedRow(db, '2026-05-26')).toBeDefined()
+    expect(storedRow(db, '2025-07-30')).toBeDefined()
     expect(storedRow(db, '2027-10-28')).toBeDefined()
     expect(storedRow(db, '2026-09-22')?.close_at).toBe('2026-09-22T20:00:00.000Z')
   })
 
   it('does not fetch while stored coverage still reaches far enough ahead', async () => {
     const db = makeTestDb()
-    seedTradingCalendar(db, '2026-09-01', '2027-11-01')
+    seedTradingCalendar(db, '2025-08-01', '2027-11-01')
     const provider = providerReturning([])
 
     await ensureTradingCalendar(db, () => provider, NOW)
@@ -250,7 +298,7 @@ describe('ensureTradingCalendar', () => {
         },
         NOW
       )
-    ).resolves.toBeUndefined()
+    ).resolves.toEqual({ status: 'failed' })
 
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ err: expect.anything() }),
@@ -264,7 +312,9 @@ describe('ensureTradingCalendar', () => {
     const provider = providerReturning([])
     vi.mocked(provider.getMarketCalendar).mockRejectedValue(new Error('network error'))
 
-    await expect(ensureTradingCalendar(db, () => provider, NOW)).resolves.toBeUndefined()
+    await expect(ensureTradingCalendar(db, () => provider, NOW)).resolves.toEqual({
+      status: 'failed'
+    })
 
     expect(storedRow(db, '2026-09-22')?.close_at).toBe('2026-09-22T20:00:00.000Z')
     expect(logger.warn).toHaveBeenCalledWith(

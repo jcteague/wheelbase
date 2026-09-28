@@ -9,18 +9,21 @@ import {
 import { buildWatchlistSnapshot } from '../services/watchlist-snapshot'
 import { WatchlistEntryPayloadSchema, WatchlistRemovePayloadSchema } from '../schemas'
 import type { IvrOnDemand } from '../services/ivr-on-demand'
+import type { IvRunState } from '../services/iv-run-state'
 import { handleIpcCall } from './utils'
 
 export function registerWatchlistIpc({
   db,
   getProvider,
   getCurrentDate = () => new Date(),
-  ivrOnDemand
+  ivrOnDemand,
+  runState
 }: {
   db: Database.Database
   getProvider: () => MarketDataProvider
   getCurrentDate?: () => Date
   ivrOnDemand?: IvrOnDemand
+  runState: IvRunState
 }): void {
   // [US-96] No payload — every expected failure (provider unconfigured, a single quote,
   // the earnings or IVR read) is modelled inside the success payload, so the envelope's
@@ -28,7 +31,7 @@ export function registerWatchlistIpc({
   // See plans/us-96/contracts/watchlist-snapshot.md.
   ipcMain.handle('watchlist:snapshot', () =>
     handleIpcCall('watchlist_snapshot_error', () =>
-      buildWatchlistSnapshot(getProvider, db, { currentDate: getCurrentDate() })
+      buildWatchlistSnapshot(getProvider, db, { currentDate: getCurrentDate(), runState })
     )
   )
 

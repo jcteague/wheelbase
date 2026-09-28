@@ -1,4 +1,7 @@
-import type Database from 'better-sqlite3'
+import Database from 'better-sqlite3'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { makeTestDb, MIGRATIONS_DIR } from '../test-utils'
 import { runMigrations } from './migrate'
@@ -89,6 +92,78 @@ function insertLegWithInstrument(
   return () => stmt.run(id, legRole, action, instrumentType, contracts)
 }
 
+/**
+ * A DB migrated only through `lastFile` — the runner has no stop-at-version, so copy the
+ * earlier migration files into a temp dir and run against that. Running the real dir
+ * afterwards applies only what is missing, the way an upgrading install would.
+ */
+function makeDbThrough(lastFile: string): Database.Database {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wb-migrate-'))
+  fs.readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql') && f <= lastFile)
+    .forEach((f) => fs.copyFileSync(path.join(MIGRATIONS_DIR, f), path.join(dir, f)))
+
+  const db = new Database(':memory:')
+  runMigrations(db, dir)
+  fs.rmSync(dir, { recursive: true, force: true })
+  return db
+}
+
+function listAllIndexNames(db: Database.Database): string[] {
+  return namesOf(db.prepare(`SELECT name FROM sqlite_master WHERE type='index'`).all())
+}
+
+function primaryKeyColumns(db: Database.Database, tableName: string): string[] {
+  return (db.prepare(`PRAGMA table_info(${tableName})`).all() as { name: string; pk: number }[])
+    .filter((c) => c.pk > 0)
+    .sort((a, b) => a.pk - b.pk)
+    .map((c) => c.name)
+}
+
+function columnDefault(db: Database.Database, tableName: string, column: string): string | null {
+  const row = (
+    db.prepare(`PRAGMA table_info(${tableName})`).all() as {
+      name: string
+      dflt_value: string | null
+    }[]
+  ).find((c) => c.name === column)
+  return row?.dflt_value ?? null
+}
+
+type ReadingOverrides = Partial<Record<string, string | number | null>>
+
+function insertIv30Reading(db: Database.Database, overrides: ReadingOverrides = {}): void {
+  const row: Record<string, string | number | null> = {
+    underlying: 'AAPL',
+    session: '2026-03-12',
+    engine_version: 1,
+    observed_at: '2026-03-12T20:00:00.000Z',
+    iv30: '0.2475',
+    underlying_vwap: '200.1235',
+    expiration_tier: 'weekly',
+    near_expiration: '2026-04-10',
+    near_strike: '200.0000',
+    near_call_vwap: '5.1000',
+    near_call_trades: 120,
+    near_put_vwap: '4.9000',
+    near_put_trades: 98,
+    rate: '0.0450',
+    dividend_yield: '0.0000',
+    ...overrides
+  }
+  const cols = Object.keys(row)
+  db.prepare(
+    `INSERT INTO iv30_reading (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`
+  ).run(...cols.map((c) => row[c]))
+}
+
+function insertIv30Gap(db: Database.Database, reason: string, session = '2026-03-12'): void {
+  db.prepare(
+    `INSERT INTO iv30_gap (underlying, session, reason, attempted_at)
+     VALUES ('AAPL', ?, ?, '2026-03-13T12:00:00.000Z')`
+  ).run(session, reason)
+}
+
 describe('runMigrations', () => {
   it('creates all domain tables', () => {
     const db = makeTestDb()
@@ -119,7 +194,8 @@ describe('runMigrations', () => {
       '012_create_watchlist.sql',
       '013_create_earnings_date.sql',
       '014_add_last_earnings.sql',
-      '015_create_trading_session.sql'
+      '015_create_trading_session.sql',
+      '016_create_iv30_history.sql'
     ])
   })
 
@@ -227,8 +303,8 @@ describe('runMigrations', () => {
     ).toThrow(/UNIQUE constraint failed/i)
   })
 
-  it('applies 007_create_ivr_snapshot.sql and creates ivr_snapshot with latest-first index', () => {
-    const db = makeTestDb()
+  it('migration 007 created ivr_snapshot with a latest-first index (before 016 drops it)', () => {
+    const db = makeDbThrough('015_create_trading_session.sql')
 
     expect(listUserTables(db)).toContain('ivr_snapshot')
     expect(
@@ -241,10 +317,6 @@ describe('runMigrations', () => {
       { name: 'iv30', type: 'TEXT', notnull: 0 },
       { name: 'source', type: 'TEXT', notnull: 1 }
     ])
-
-    expect(listIndexes(db, 'ivr_snapshot')).toContain(
-      'idx_ivr_snapshot_underlying_observed_at_desc'
-    )
     expect(indexSql(db, 'idx_ivr_snapshot_underlying_observed_at_desc')).toContain(
       'ON ivr_snapshot (underlying, observed_at DESC)'
     )
@@ -270,5 +342,145 @@ describe('runMigrations', () => {
 
     expect(listIndexes(db, 'watchlist')).toContain('idx_watchlist_added_at_desc')
     expect(indexSql(db, 'idx_watchlist_added_at_desc')).toContain('ON watchlist (added_at DESC)')
+  })
+})
+
+describe('migration 016 — iv30_reading, iv30_gap, drop ivr_snapshot', () => {
+  it('creates iv30_reading with the exact column list from the data model', () => {
+    const db = makeTestDb()
+
+    expect(
+      columnInfo(db, 'iv30_reading').map(({ name, type, notnull }) => ({ name, type, notnull }))
+    ).toEqual([
+      { name: 'underlying', type: 'TEXT', notnull: 1 },
+      { name: 'session', type: 'TEXT', notnull: 1 },
+      { name: 'method', type: 'TEXT', notnull: 1 },
+      { name: 'engine_version', type: 'INTEGER', notnull: 1 },
+      { name: 'observed_at', type: 'TEXT', notnull: 1 },
+      { name: 'iv30', type: 'TEXT', notnull: 1 },
+      { name: 'underlying_vwap', type: 'TEXT', notnull: 1 },
+      { name: 'expiration_tier', type: 'TEXT', notnull: 1 },
+      { name: 'near_expiration', type: 'TEXT', notnull: 1 },
+      { name: 'near_strike', type: 'TEXT', notnull: 1 },
+      { name: 'near_call_vwap', type: 'TEXT', notnull: 1 },
+      { name: 'near_call_trades', type: 'INTEGER', notnull: 1 },
+      { name: 'near_put_vwap', type: 'TEXT', notnull: 1 },
+      { name: 'near_put_trades', type: 'INTEGER', notnull: 1 },
+      { name: 'far_expiration', type: 'TEXT', notnull: 0 },
+      { name: 'far_strike', type: 'TEXT', notnull: 0 },
+      { name: 'far_call_vwap', type: 'TEXT', notnull: 0 },
+      { name: 'far_call_trades', type: 'INTEGER', notnull: 0 },
+      { name: 'far_put_vwap', type: 'TEXT', notnull: 0 },
+      { name: 'far_put_trades', type: 'INTEGER', notnull: 0 },
+      { name: 'rate', type: 'TEXT', notnull: 1 },
+      { name: 'dividend_yield', type: 'TEXT', notnull: 1 }
+    ])
+  })
+
+  it('keys iv30_reading on (underlying, session, method) with method defaulting to daily_vwap', () => {
+    const db = makeTestDb()
+
+    expect(primaryKeyColumns(db, 'iv30_reading')).toEqual(['underlying', 'session', 'method'])
+    expect(columnDefault(db, 'iv30_reading', 'method')).toBe("'daily_vwap'")
+
+    insertIv30Reading(db)
+    expect(db.prepare('SELECT method FROM iv30_reading').get()).toEqual({ method: 'daily_vwap' })
+  })
+
+  it('creates idx_iv30_reading_underlying_session_desc on (underlying, session DESC)', () => {
+    const db = makeTestDb()
+
+    expect(listIndexes(db, 'iv30_reading')).toContain('idx_iv30_reading_underlying_session_desc')
+    expect(indexSql(db, 'idx_iv30_reading_underlying_session_desc')).toContain(
+      'ON iv30_reading (underlying, session DESC)'
+    )
+  })
+
+  it('rejects a duplicate (underlying, session, method) reading', () => {
+    const db = makeTestDb()
+    insertIv30Reading(db)
+
+    expect(() => insertIv30Reading(db, { iv30: '0.3000' })).toThrow(/UNIQUE constraint failed/i)
+  })
+
+  it('accepts a second method for the same underlying and session', () => {
+    const db = makeTestDb()
+    insertIv30Reading(db)
+
+    expect(() => insertIv30Reading(db, { method: 'minute_vwap' })).not.toThrow()
+  })
+
+  it('accepts weekly and monthly expiration tiers and rejects daily', () => {
+    const db = makeTestDb()
+
+    expect(() => insertIv30Reading(db, { expiration_tier: 'weekly' })).not.toThrow()
+    expect(() =>
+      insertIv30Reading(db, { session: '2026-03-13', expiration_tier: 'monthly' })
+    ).not.toThrow()
+    expect(() =>
+      insertIv30Reading(db, { session: '2026-03-16', expiration_tier: 'daily' })
+    ).toThrow(/CHECK constraint failed/i)
+  })
+
+  it('stores a two-expiration reading with all far_* inputs', () => {
+    const db = makeTestDb()
+    insertIv30Reading(db, {
+      far_expiration: '2026-04-17',
+      far_strike: '200.0000',
+      far_call_vwap: '6.2000',
+      far_call_trades: 40,
+      far_put_vwap: '6.0000',
+      far_put_trades: 33
+    })
+
+    expect(db.prepare('SELECT far_expiration, far_put_trades FROM iv30_reading').get()).toEqual({
+      far_expiration: '2026-04-17',
+      far_put_trades: 33
+    })
+  })
+
+  it('keys iv30_gap on (underlying, session, method) with method defaulting to daily_vwap', () => {
+    const db = makeTestDb()
+
+    expect(primaryKeyColumns(db, 'iv30_gap')).toEqual(['underlying', 'session', 'method'])
+    expect(columnDefault(db, 'iv30_gap', 'method')).toBe("'daily_vwap'")
+    expect(columnInfo(db, 'iv30_gap').map((c) => c.name)).toEqual([
+      'underlying',
+      'session',
+      'method',
+      'reason',
+      'attempted_at'
+    ])
+
+    insertIv30Gap(db, 'no_tradeable_pair')
+    expect(() => insertIv30Gap(db, 'no_underlying_bar')).toThrow(/UNIQUE constraint failed/i)
+  })
+
+  it('iv30_gap reason accepts no_underlying_bar and no_tradeable_pair and rejects other', () => {
+    const db = makeTestDb()
+
+    expect(() => insertIv30Gap(db, 'no_underlying_bar', '2026-03-12')).not.toThrow()
+    expect(() => insertIv30Gap(db, 'no_tradeable_pair', '2026-03-13')).not.toThrow()
+    expect(() => insertIv30Gap(db, 'other', '2026-03-16')).toThrow(/CHECK constraint failed/i)
+  })
+
+  it('drops ivr_snapshot and its latest-first index', () => {
+    const db = makeTestDb()
+
+    expect(listUserTables(db)).not.toContain('ivr_snapshot')
+    expect(listAllIndexNames(db)).not.toContain('idx_ivr_snapshot_underlying_observed_at_desc')
+  })
+
+  it('migrates a DB holding legacy ivr_snapshot rows without error', () => {
+    const db = makeDbThrough('015_create_trading_session.sql')
+    db.prepare(
+      `INSERT INTO ivr_snapshot (underlying, observed_at, ivr, ivp, iv30)
+       VALUES ('AAPL', '2026-03-12T20:00:00.000Z', '42.0000', '55.0000', '0.2475')`
+    ).run()
+
+    expect(() => runMigrations(db, MIGRATIONS_DIR)).not.toThrow()
+    expect(listUserTables(db)).not.toContain('ivr_snapshot')
+    expect(listUserTables(db)).toEqual(expect.arrayContaining(['iv30_reading', 'iv30_gap']))
+    expect(listAppliedMigrations(db)).toContain('016_create_iv30_history.sql')
   })
 })

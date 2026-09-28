@@ -16,11 +16,12 @@ import { registerWatchlistIpc } from './ipc/watchlist'
 import { registerScreenerIpc } from './ipc/screener'
 import { registerIvrIpc } from './ipc/ivr'
 import { registerTestSchedulerIpc, seedTestJobsFromEnv } from './ipc/test-scheduler'
-import { registerTestIvrIpc } from './ipc/test-ivr'
-import { createFakeIvrCollaborators } from './integrations/fake-ivr'
+import { registerTestIvHistoryIpc } from './ipc/test-iv-history'
+import { createFakeClock } from './integrations/fake-clock'
 import { DETECT_ASSIGNMENTS_JOB_NAME, detectAssignments } from './services/detect-assignments'
 import { collectIVRSnapshots, IVR_COLLECT_JOB_NAME } from './services/ivr-collector'
 import { createIvrOnDemand } from './services/ivr-on-demand'
+import { createIvRunState } from './services/iv-run-state'
 import { ALERT_EVAL_JOB_NAME, evaluateAlerts } from './services/evaluate-alerts'
 import { getAlertDefaults, saveAlertDefaults } from './services/alert-defaults'
 import { scheduler } from './services/scheduler-instance'
@@ -193,31 +194,41 @@ app.whenReady().then(() => {
 
   registerAssignmentsIpc({ db, scheduler })
   registerAlertsHandlers({ db })
-  // In production this resolves to `{}` so the real Barchart scraper and wall clock
-  // are used; e2e runs set WHEELBASE_FAKE_IVR to inject a deterministic offline
-  // fetcher + clock. Resolved once so the collector, the watchlist snapshot and the
-  // screener all share it — the two halves of the bench must be judged at one clock.
-  const ivrCollaborators = createFakeIvrCollaborators()
+  // In production this resolves to `undefined` so the wall clock is used; e2e runs set
+  // WHEELBASE_FAKE_NOW to pin it. Resolved once so the collector, the on-demand path, the
+  // watchlist snapshot and the screener all share it — the two halves of the bench must be
+  // judged at one clock.
+  const fakeClock = createFakeClock()
+  // [US-121] One run state per app: the batch and the on-demand path write it, both read
+  // paths report from it, so a card can say a backfill is in flight or why it failed.
+  const ivRunState = createIvRunState()
+  // An IV run that changed what the bench can show tells it to refetch: per ticker for the
+  // on-demand path, once per run for the batch (`ticker: null`).
+  const notifyIvrSnapshotUpdated = (ticker: string | null): void =>
+    mainWindow?.webContents.send('ivr:snapshot-updated', { ticker })
   // [US-100] One port shared by both entry points a ticker can arrive through, so a
   // watchlist add and a manually entered position collect identically.
   const ivrOnDemand = createIvrOnDemand({
     db,
     logger,
     getProvider: () => marketDataFactory.create(),
-    onCollected: (ticker) => mainWindow?.webContents.send('ivr:snapshot-updated', { ticker }),
-    ...ivrCollaborators
+    runState: ivRunState,
+    clock: fakeClock,
+    onSettled: notifyIvrSnapshotUpdated
   })
   registerPositionsHandlers(db, { ivrOnDemand })
   registerWatchlistIpc({
     db,
     getProvider: () => marketDataFactory.create(),
-    getCurrentDate: ivrCollaborators.clock?.now,
-    ivrOnDemand
+    getCurrentDate: fakeClock?.now,
+    ivrOnDemand,
+    runState: ivRunState
   })
   registerScreenerIpc({
     db,
     getProvider: () => marketDataFactory.create(),
-    getCurrentDate: ivrCollaborators.clock?.now
+    getCurrentDate: fakeClock?.now,
+    runState: ivRunState
   })
   registerIvrIpc({ scheduler })
 
@@ -254,17 +265,19 @@ app.whenReady().then(() => {
   scheduler.register({
     name: IVR_COLLECT_JOB_NAME,
     cadence: { kind: 'afterClose', offsetMinutes: 60 },
-    handler: async ({ trigger }) => {
+    // The scheduler's `trigger` has no consumer here since US-121: a closed-day run finds no
+    // missing sessions, so scheduled and explicit runs behave identically.
+    handler: async () => {
       return collectIVRSnapshots({
         db,
         logger,
-        trigger,
         signal: ivrAbort.signal,
-        // Best effort: the collector refreshes the cached exchange calendar, which is a
-        // market fact and so needs no broker. Resolved per tick so credentials added
-        // after launch take effect without a restart.
-        marketDataProvider: marketDataFactory.create(),
-        ...ivrCollaborators
+        runState: ivRunState,
+        onCompleted: () => notifyIvrSnapshotUpdated(null),
+        clock: fakeClock,
+        // Calendar and daily bars are market facts and so need no broker. Resolved per tick
+        // so credentials added after launch take effect without a restart.
+        marketDataProvider: marketDataFactory.create()
       })
     }
   })
@@ -294,7 +307,7 @@ app.whenReady().then(() => {
   if (process.env.NODE_ENV === 'test') {
     seedTestJobsFromEnv(scheduler)
     registerTestSchedulerIpc(scheduler)
-    registerTestIvrIpc(db)
+    registerTestIvHistoryIpc(db)
 
     // Test-only: preseed an active broker environment so detect-assignments and
     // other broker-gated jobs run without going through the credential-save UI

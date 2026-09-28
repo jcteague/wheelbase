@@ -9,12 +9,21 @@ import {
   type EarningsLookup,
   type ScreeningCriteria
 } from '../core/screener'
+import type { AssessedIvRank } from '../core/ivr-freshness'
 import { logger } from '../logger'
 import type Database from 'better-sqlite3'
-import { makeTestDb, seedIvr, seedTradingCalendar, weekdayCalendarFetcher } from '../test-utils'
+import {
+  makeTestDb,
+  makeTradingCalendar,
+  seedRankedIv30Series,
+  seedTradingCalendar,
+  weekdayCalendarFetcher
+} from '../test-utils'
 import { pullWatchlistChains, type TickerChainResult } from './candidate-chains'
 import { getEarningsCalendar } from './earnings-dates'
-import { getAssessedIvrByUnderlying, getLatestIvrByUnderlying } from './ivr-snapshots'
+import { readIvMetricsByUnderlying } from './iv-history-read'
+import { createIvRunState } from './iv-run-state'
+import { readIvRankLookup, type IvRankLookup } from './ivr-snapshots'
 import { fetchEarningsCalendar } from '../integrations/finnhub-earnings'
 import { screenWatchlistCandidates } from './screener'
 import { saveScreeningCriteria } from './screening-criteria'
@@ -25,15 +34,16 @@ vi.mock('../logger', () => ({
 
 vi.mock('./candidate-chains', () => ({ pullWatchlistChains: vi.fn() }))
 
-// The IVR read path stays real so a seeded DB drives the join; individual tests swap
-// in a throwing implementation to exercise the degrade-to-empty path.
+// The IV-rank read path stays real so a seeded DB drives the join; individual tests swap
+// in a throwing series read to exercise the degrade-to-empty path, or program the lookup.
 vi.mock('./ivr-snapshots', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./ivr-snapshots')>()
-  return {
-    ...actual,
-    getLatestIvrByUnderlying: vi.fn(actual.getLatestIvrByUnderlying),
-    getAssessedIvrByUnderlying: vi.fn(actual.getAssessedIvrByUnderlying)
-  }
+  return { ...actual, readIvRankLookup: vi.fn(actual.readIvRankLookup) }
+})
+
+vi.mock('./iv-history-read', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./iv-history-read')>()
+  return { ...actual, readIvMetricsByUnderlying: vi.fn(actual.readIvMetricsByUnderlying) }
 })
 
 // [US-70] The earnings *store* is stubbed here so each test can state a ticker's
@@ -83,6 +93,20 @@ function mockEarnings(byTicker: Record<string, EarningsLookup>): void {
 
 // 2026-07-23; the strikes below expire 2026-08-29, i.e. 37 DTE.
 const CURRENT_DATE = new Date(2026, 6, 23)
+/** The weekday sessions every seeded or fetched calendar in this file holds. */
+const SESSIONS = makeTradingCalendar('2025-05-01', '2027-12-31')
+/** A usable reading for a lookup a test programs directly. */
+const FRESH_READING: AssessedIvRank = {
+  value: '40',
+  percentile: '40',
+  low: '0.2000',
+  high: '0.4500',
+  observedAt: '2026-07-22T20:00:00Z',
+  ageTradingDays: 0,
+  state: 'fresh'
+}
+/** Never marked: no run is in flight for any ticker unless a test builds its own. */
+const RUN_STATE = createIvRunState()
 
 /** A DB with the exchange calendar already cached, which is the state every screen
  *  runs in: the collector refreshes it daily. Freshness assessment reports "unknown"
@@ -91,7 +115,7 @@ function makeScreenerDb(): Database.Database {
   const db = makeTestDb()
   // Reaches past the refresh threshold, so the screen's own ensureTradingCalendar is the
   // no-op it is in steady state.
-  seedTradingCalendar(db, '2026-05-01', '2027-12-31')
+  seedTradingCalendar(db, '2025-05-01', '2027-12-31')
   return db
 }
 const EXPIRATION = '2026-08-29'
@@ -192,6 +216,7 @@ describe('screenWatchlistCandidates', () => {
     mockChains({ status: 'ok', tickers: [] })
 
     await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       criteria: criteriaWith({ dteMin: 20, dteMax: 40 }),
       currentDate: CURRENT_DATE
     })
@@ -207,7 +232,10 @@ describe('screenWatchlistCandidates', () => {
     const { provider } = makeProvider()
     mockChains({ status: 'ok', tickers: [] })
 
-    await screenWatchlistCandidates(() => provider, db, { currentDate: CURRENT_DATE })
+    await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
+      currentDate: CURRENT_DATE
+    })
 
     expect(pullWatchlistChains).toHaveBeenCalledWith(provider, db, {
       window: { min: DEFAULT_SCREENING_CRITERIA.dteMin, max: DEFAULT_SCREENING_CRITERIA.dteMax },
@@ -224,6 +252,7 @@ describe('screenWatchlistCandidates', () => {
     })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       criteria: criteriaWith({ maxUnderlyingPrice: '500' }),
       currentDate: CURRENT_DATE
     })
@@ -235,7 +264,7 @@ describe('screenWatchlistCandidates', () => {
       quoteTimestamp: null
     })
     expect(getStockQuotes).not.toHaveBeenCalled()
-    expect(getLatestIvrByUnderlying).not.toHaveBeenCalled()
+    expect(readIvRankLookup).not.toHaveBeenCalled()
   })
 
   it('ranks one row per ticker in yield-per-delta order', async () => {
@@ -244,6 +273,7 @@ describe('screenWatchlistCandidates', () => {
     mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       currentDate: CURRENT_DATE
     })
 
@@ -255,41 +285,41 @@ describe('screenWatchlistCandidates', () => {
 
   it('joins the latest IVR reading onto each ranked candidate', async () => {
     const db = makeScreenerDb()
-    seedIvr(db, [
-      ['AAPL', '2026-07-20T20:00:00Z', '31.5'],
-      ['AAPL', '2026-07-22T20:00:00Z', '44.0']
-    ])
+    seedRankedIv30Series(db, 'AAPL', SESSIONS, '2026-07-22', 44)
     const { provider } = makeProvider()
     mockChains({ status: 'ok', tickers: [AAPL_OK] })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       currentDate: CURRENT_DATE
     })
 
-    expect(getAssessedIvrByUnderlying).toHaveBeenCalledWith(
+    expect(readIvRankLookup).toHaveBeenCalledWith(
       db,
       ['AAPL'],
-      expect.objectContaining({ now: CURRENT_DATE })
+      expect.objectContaining({ now: CURRENT_DATE, runState: RUN_STATE })
     )
     expect(result.ranked[0].ivRank).toMatchObject({
-      value: '44.0',
-      observedAt: '2026-07-22T20:00:00Z',
+      value: '44',
+      observedAt: '2026-07-22T20:00:00.000Z',
       state: 'fresh'
     })
+    expect(result.ranked[0].ivRankAbsence).toBeNull()
   })
 
-  it('still ranks a ticker with no IVR snapshot, carrying a null IV rank', async () => {
+  it('still ranks a ticker with no IV history, carrying a null IV rank and its absence', async () => {
     const db = makeScreenerDb()
-    seedIvr(db, [['AAPL', '2026-07-23T12:00:00Z', '44.0']])
     const { provider } = makeProvider()
     mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       currentDate: CURRENT_DATE
     })
 
     expect(result.ranked.map((c) => c.ticker)).toEqual(['KO', 'AAPL'])
     expect(result.ranked[0].ivRank).toBeNull()
+    expect(result.ranked[0].ivRankAbsence).toEqual({ reason: 'not_collected' })
     expect(result.ranked[0].yieldPerDelta).toBe('0.7892')
   })
 
@@ -299,11 +329,12 @@ describe('screenWatchlistCandidates', () => {
     const db = makeScreenerDb()
     // Over twenty sessions before 2026-07-23 — past the stale boundary, but still
     // inside the window the calendar read reaches, so this is expired, not unreadable.
-    seedIvr(db, [['KO', '2026-06-19T21:00:00Z', '10.0']])
+    seedRankedIv30Series(db, 'KO', SESSIONS, '2026-06-19', 10)
     const { provider } = makeProvider()
     mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       criteria: criteriaWith({ minIvRank: '30' }),
       currentDate: CURRENT_DATE
     })
@@ -311,23 +342,24 @@ describe('screenWatchlistCandidates', () => {
     expect(result.ranked.map((c) => c.ticker)).toEqual(['KO', 'AAPL'])
     expect(result.excluded).toEqual([])
     expect(result.ranked[0].ivRank).toMatchObject({
-      value: '10.0',
-      observedAt: '2026-06-19T21:00:00Z',
+      value: '10',
+      observedAt: '2026-06-19T20:00:00.000Z',
       state: 'expired'
     })
   })
 
   it('degrades a failing IVR read to an empty map, warns, and still ranks every candidate', async () => {
     const db = makeScreenerDb()
-    seedIvr(db, [['AAPL', '2026-07-23T12:00:00Z', '44.0']])
-    // The snapshot query itself fails — the boundary that actually owns the degrade.
-    vi.mocked(getLatestIvrByUnderlying).mockImplementationOnce(() => {
-      throw new Error('ivr_snapshot read failed')
+    seedRankedIv30Series(db, 'AAPL', SESSIONS, '2026-07-22', 44)
+    // The series query itself fails — the boundary that actually owns the degrade.
+    vi.mocked(readIvMetricsByUnderlying).mockImplementationOnce(() => {
+      throw new Error('iv30_reading read failed')
     })
     const { provider } = makeProvider()
     mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       currentDate: CURRENT_DATE
     })
 
@@ -341,7 +373,10 @@ describe('screenWatchlistCandidates', () => {
     const { provider, getStockQuotes } = makeProvider()
     mockChains({ status: 'ok', tickers: [AAPL_OK] })
 
-    await screenWatchlistCandidates(() => provider, db, { currentDate: CURRENT_DATE })
+    await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
+      currentDate: CURRENT_DATE
+    })
 
     expect(DEFAULT_SCREENING_CRITERIA.maxUnderlyingPrice).toBeNull()
     expect(getStockQuotes).not.toHaveBeenCalled()
@@ -355,6 +390,7 @@ describe('screenWatchlistCandidates', () => {
     mockChains({ status: 'ok', tickers: [AAPL_OK] })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       criteria: criteriaWith({ maxUnderlyingPrice: '75' }),
       currentDate: CURRENT_DATE
     })
@@ -368,7 +404,7 @@ describe('screenWatchlistCandidates', () => {
     const { provider } = makeProvider()
     mockChains({ status: 'ok', tickers: [] })
 
-    await screenWatchlistCandidates(() => provider, db)
+    await screenWatchlistCandidates(() => provider, db, { runState: RUN_STATE })
 
     // The DTE window still reaches the chain pull, dated from the real clock rather
     // than an injected instant.
@@ -386,6 +422,7 @@ describe('screenWatchlistCandidates', () => {
     mockChains({ status: 'ok', tickers: [AAPL_OK] })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       criteria: criteriaWith({ maxUnderlyingPrice: '75' }),
       currentDate: CURRENT_DATE
     })
@@ -409,6 +446,7 @@ describe('screenWatchlistCandidates', () => {
     mockChains({ status: 'ok', tickers: [AAPL_OK] })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       criteria: criteriaWith({ maxUnderlyingPrice: '75' }),
       currentDate: CURRENT_DATE
     })
@@ -424,6 +462,7 @@ describe('screenWatchlistCandidates', () => {
     mockChains({ status: 'ok', tickers: [{ ticker: 'XYZ', status: 'no_options_listed' }] })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       currentDate: CURRENT_DATE
     })
 
@@ -440,6 +479,7 @@ describe('screenWatchlistCandidates', () => {
     mockChains({ status: 'ok', tickers: [{ ticker: 'XYZ', status: 'no_options_listed' }] })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       criteria: criteriaWith({ dteMin: 20, dteMax: 40 }),
       currentDate: CURRENT_DATE
     })
@@ -453,6 +493,7 @@ describe('screenWatchlistCandidates', () => {
     mockChains({ status: 'ok', tickers: [{ ticker: 'XYZ', status: 'data_unavailable' }] })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       currentDate: CURRENT_DATE
     })
 
@@ -461,25 +502,29 @@ describe('screenWatchlistCandidates', () => {
     ])
   })
 
-  it('isolates a ticker whose stored IV rank is corrupt so the others still rank', async () => {
+  it('isolates a ticker whose joined IV rank makes the engine throw so the others still rank', async () => {
     const db = makeScreenerDb()
     const { provider } = makeProvider()
     // `wellFormedStrikes` validates the quote, but not the ticker-level values joined
-    // in alongside it. A non-numeric IVR row makes the [US-67] iv_rank_floor filter's
+    // in alongside it. A non-numeric rank makes the [US-67] iv_rank_floor filter's
     // Decimal math throw — the backstop the per-ticker catch exists for.
-    seedIvr(db, [['AAPL', '2026-07-23T12:00:00Z', 'not-a-number']])
+    vi.mocked(readIvRankLookup).mockReturnValueOnce(
+      new Map([['AAPL', { reading: { ...FRESH_READING, value: 'not-a-number' }, absence: null }]])
+    )
     mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       criteria: criteriaWith({ minIvRank: '30' }),
       currentDate: CURRENT_DATE
     })
 
     // The healthy ticker is unaffected; the corrupt one degrades to a row of its own
     // rather than taking the whole run down.
-    expect(result.ranked.map((candidate) => candidate.ticker)).toEqual(['KO', 'AAPL'])
-    expect(result.ranked.find((candidate) => candidate.ticker === 'AAPL')?.ivRank).toBeNull()
-    expect(result.excluded).toEqual([])
+    expect(result.ranked.map((candidate) => candidate.ticker)).toEqual(['KO'])
+    expect(result.excluded).toEqual([
+      { ticker: 'AAPL', code: 'data_unavailable', reason: 'market data unavailable' }
+    ])
   })
 
   it('contributes one excluded row carrying the representative reason when a ticker has no survivor', async () => {
@@ -500,6 +545,7 @@ describe('screenWatchlistCandidates', () => {
     })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       currentDate: CURRENT_DATE
     })
 
@@ -522,6 +568,7 @@ describe('screenWatchlistCandidates', () => {
     })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       currentDate: CURRENT_DATE
     })
 
@@ -548,6 +595,7 @@ describe('screenWatchlistCandidates', () => {
     })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       currentDate: CURRENT_DATE
     })
 
@@ -576,6 +624,7 @@ describe('screenWatchlistCandidates', () => {
     })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       currentDate: CURRENT_DATE
     })
 
@@ -594,7 +643,7 @@ describe('screenWatchlistCandidates', () => {
         throw new Error('Market data provider not configured')
       },
       db,
-      { currentDate: CURRENT_DATE }
+      { currentDate: CURRENT_DATE, runState: RUN_STATE }
     )
 
     expect(result).toEqual({
@@ -616,6 +665,7 @@ describe('screenWatchlistCandidates', () => {
     mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       criteria: criteriaWith({ maxUnderlyingPrice: '75' }),
       currentDate: CURRENT_DATE
     })
@@ -660,6 +710,7 @@ describe('screenWatchlistCandidates', () => {
     })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       currentDate: CURRENT_DATE
     })
 
@@ -672,6 +723,7 @@ describe('screenWatchlistCandidates', () => {
     mockChains({ status: 'ok', tickers: [{ ticker: 'XYZ', status: 'no_options_listed' }] })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       currentDate: CURRENT_DATE
     })
 
@@ -686,7 +738,10 @@ describe('screenWatchlistCandidates', () => {
       tickers: [AAPL_OK, KO_OK, { ticker: 'XYZ', status: 'no_options_listed' }]
     })
 
-    await screenWatchlistCandidates(() => provider, db, { currentDate: CURRENT_DATE })
+    await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
+      currentDate: CURRENT_DATE
+    })
 
     expect(logger.info).toHaveBeenCalledTimes(1)
     expect(logger.info).toHaveBeenCalledWith(
@@ -705,6 +760,7 @@ describe('screenWatchlistCandidates', () => {
       mockChains({ status: 'ok', tickers: [AAPL_OK] })
 
       const result = await screenWatchlistCandidates(() => provider, db, {
+        runState: RUN_STATE,
         currentDate: CURRENT_DATE
       })
 
@@ -720,6 +776,7 @@ describe('screenWatchlistCandidates', () => {
       mockChains({ status: 'ok', tickers: [AAPL_OK] })
 
       const result = await screenWatchlistCandidates(() => provider, db, {
+        runState: RUN_STATE,
         currentDate: CURRENT_DATE
       })
 
@@ -735,6 +792,7 @@ describe('screenWatchlistCandidates', () => {
       mockChains({ status: 'ok', tickers: [AAPL_OK] })
 
       const result = await screenWatchlistCandidates(() => provider, db, {
+        runState: RUN_STATE,
         criteria: DEFAULT_SCREENING_CRITERIA,
         currentDate: CURRENT_DATE
       })
@@ -748,7 +806,10 @@ describe('screenWatchlistCandidates', () => {
       const { provider } = makeProvider()
       mockChains({ status: 'ok', tickers: [] })
 
-      await screenWatchlistCandidates(() => provider, db, { currentDate: CURRENT_DATE })
+      await screenWatchlistCandidates(() => provider, db, {
+        runState: RUN_STATE,
+        currentDate: CURRENT_DATE
+      })
 
       expect(pullWatchlistChains).toHaveBeenCalledWith(provider, db, {
         window: { min: 40, max: 45 },
@@ -772,6 +833,7 @@ describe('screenWatchlistCandidates', () => {
       mockEarnings({ AAPL: { status: 'found', date: AFTER_EXPIRY } })
 
       const result = await screenWatchlistCandidates(() => provider, db, {
+        runState: RUN_STATE,
         currentDate: CURRENT_DATE
       })
 
@@ -785,6 +847,7 @@ describe('screenWatchlistCandidates', () => {
       mockEarnings({ AAPL: { status: 'found', date: IN_WINDOW } })
 
       const result = await screenWatchlistCandidates(() => provider, db, {
+        runState: RUN_STATE,
         currentDate: CURRENT_DATE
       })
 
@@ -805,6 +868,7 @@ describe('screenWatchlistCandidates', () => {
       mockEarnings({ AAPL: { status: 'found', date: IN_WINDOW } })
 
       const result = await screenWatchlistCandidates(() => provider, db, {
+        runState: RUN_STATE,
         criteria: criteriaWith({ earningsHandling: 'flag' }),
         currentDate: CURRENT_DATE
       })
@@ -822,7 +886,10 @@ describe('screenWatchlistCandidates', () => {
       const { provider } = makeProvider()
       mockChains({ status: 'ok', tickers: [AAPL_OK] })
 
-      await screenWatchlistCandidates(() => provider, db, { currentDate: CURRENT_DATE })
+      await screenWatchlistCandidates(() => provider, db, {
+        runState: RUN_STATE,
+        currentDate: CURRENT_DATE
+      })
 
       const { horizon } = vi.mocked(getEarningsCalendar).mock.calls[0][2]
       // Default dteMax is 45, so the calendar must be read past the furthest expiry.
@@ -837,6 +904,7 @@ describe('screenWatchlistCandidates', () => {
       mockChains({ status: 'ok', tickers: [AAPL_OK] })
 
       await screenWatchlistCandidates(() => provider, db, {
+        runState: RUN_STATE,
         criteria: criteriaWith({ dteMin: 50, dteMax: 60 }),
         currentDate: CURRENT_DATE
       })
@@ -860,11 +928,13 @@ describe('screenWatchlistCandidates', () => {
       })
 
       const first = await screenWatchlistCandidates(() => provider, db, {
+        runState: RUN_STATE,
         currentDate: CURRENT_DATE
       })
       expect(fetchEarningsCalendar).toHaveBeenCalledTimes(1)
 
       const second = await screenWatchlistCandidates(() => provider, db, {
+        runState: RUN_STATE,
         currentDate: CURRENT_DATE
       })
 
@@ -879,6 +949,7 @@ describe('screenWatchlistCandidates', () => {
       vi.mocked(getEarningsCalendar).mockRejectedValueOnce(new Error('database is locked'))
 
       const result = await screenWatchlistCandidates(() => provider, db, {
+        runState: RUN_STATE,
         currentDate: CURRENT_DATE
       })
 
@@ -903,6 +974,7 @@ describe('screenWatchlistCandidates', () => {
       )
 
       const result = await screenWatchlistCandidates(() => provider, db, {
+        runState: RUN_STATE,
         currentDate: CURRENT_DATE
       })
 
@@ -919,6 +991,7 @@ describe('screenWatchlistCandidates', () => {
       mockEarnings({ AAPL: { status: 'unavailable' }, KO: { status: 'none' } })
 
       const result = await screenWatchlistCandidates(() => provider, db, {
+        runState: RUN_STATE,
         currentDate: CURRENT_DATE
       })
 
@@ -935,6 +1008,7 @@ describe('screenWatchlistCandidates', () => {
       mockEarnings({ AAPL: { status: 'unavailable' }, KO: { status: 'none' } })
 
       const result = await screenWatchlistCandidates(() => provider, db, {
+        runState: RUN_STATE,
         criteria: criteriaWith({ earningsHandling: 'exclude' }),
         currentDate: CURRENT_DATE
       })
@@ -951,7 +1025,10 @@ describe('screenWatchlistCandidates', () => {
         tickers: [AAPL_OK, { ticker: 'XYZ', status: 'no_options_listed' }]
       })
 
-      await screenWatchlistCandidates(() => provider, db, { currentDate: CURRENT_DATE })
+      await screenWatchlistCandidates(() => provider, db, {
+        runState: RUN_STATE,
+        currentDate: CURRENT_DATE
+      })
 
       expect(vi.mocked(getEarningsCalendar).mock.calls[0][1]).toEqual(['AAPL'])
     })
@@ -967,6 +1044,7 @@ describe('screenWatchlistCandidates', () => {
       })
 
       const result = await screenWatchlistCandidates(() => provider, db, {
+        runState: RUN_STATE,
         criteria: criteriaWith({ earningsHandling: 'flag' }),
         currentDate: CURRENT_DATE
       })
@@ -976,31 +1054,116 @@ describe('screenWatchlistCandidates', () => {
   })
 })
 
+// [US-121] The reading shape the IV-history series publishes: an integer rank that is
+// null for a flat window, plus the percentile and range. Only a usable reading with a
+// rank reaches the engine; every reading still reaches the trader on the candidate.
+describe('screenWatchlistCandidates — nullable IV rank', () => {
+  const assessed = (value: string | null): AssessedIvRank => ({
+    value,
+    percentile: '40',
+    low: '0.2000',
+    high: value === null ? '0.2000' : '0.4500',
+    observedAt: '2026-07-22T20:00:00Z',
+    ageTradingDays: 0,
+    state: 'fresh'
+  })
+
+  function mockAssessed(byTicker: Record<string, AssessedIvRank>): void {
+    vi.mocked(readIvRankLookup).mockReturnValueOnce(
+      new Map(
+        Object.entries(byTicker).map(([ticker, reading]): [string, IvRankLookup] => [
+          ticker,
+          { reading, absence: null }
+        ])
+      )
+    )
+  }
+
+  it('keeps a fresh reading with a withheld rank out of the IV-rank floor but on the candidate', async () => {
+    const db = makeScreenerDb()
+    const { provider } = makeProvider()
+    mockAssessed({ AAPL: assessed(null), KO: assessed('30') })
+    mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
+
+    const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
+      criteria: criteriaWith({ minIvRank: '30' }),
+      currentDate: CURRENT_DATE
+    })
+
+    expect(result.excluded).toEqual([])
+    expect(result.ranked.map((c) => c.ticker)).toEqual(['KO', 'AAPL'])
+    expect(result.ranked.find((c) => c.ticker === 'AAPL')?.ivRank).toEqual(assessed(null))
+    expect(logger.error).not.toHaveBeenCalled()
+  })
+
+  it('excludes a rank of 29 and includes a rank of 30 at a floor of 30', async () => {
+    const db = makeScreenerDb()
+    const { provider } = makeProvider()
+    mockAssessed({ AAPL: assessed('30'), KO: assessed('29') })
+    mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
+
+    const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
+      criteria: criteriaWith({ minIvRank: '30' }),
+      currentDate: CURRENT_DATE
+    })
+
+    expect(result.ranked.map((c) => c.ticker)).toEqual(['AAPL'])
+    expect(result.ranked[0].ivRank).toEqual(assessed('30'))
+    expect(result.excluded).toEqual([
+      expect.objectContaining({ ticker: 'KO', code: 'iv_rank_floor' })
+    ])
+  })
+
+  it('ranks a failed ticker with n/a and its absence, never applying the floor to it', async () => {
+    const db = makeScreenerDb()
+    const { provider } = makeProvider()
+    const runState = createIvRunState()
+    runState.settle('AAPL', { status: 'failed' })
+    mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
+
+    const result = await screenWatchlistCandidates(() => provider, db, {
+      runState,
+      criteria: criteriaWith({ minIvRank: '30' }),
+      currentDate: CURRENT_DATE
+    })
+
+    expect(result.excluded).toEqual([])
+    expect(result.ranked.find((c) => c.ticker === 'AAPL')).toMatchObject({
+      ivRank: null,
+      ivRankAbsence: { reason: 'failed' }
+    })
+  })
+})
+
 // [US-116] The screen refreshes the calendar that ages its IV ranks, and a calendar
 // failure is a freshness problem — never a market-data outage.
 describe('screenWatchlistCandidates — the calendar refresh it rides on', () => {
   it('fetches the calendar once and assesses the seeded reading on a fresh install', async () => {
     const db = makeTestDb()
-    seedIvr(db, [['KO', '2026-07-22T20:10:00Z', '58.0']])
+    seedRankedIv30Series(db, 'KO', SESSIONS, '2026-07-22', 58)
     const { provider, getMarketCalendar } = makeProvider()
     mockChains({ status: 'ok', tickers: [KO_OK] })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       currentDate: CURRENT_DATE
     })
 
     expect(getMarketCalendar).toHaveBeenCalledTimes(1)
-    expect(result.ranked[0].ivRank).toMatchObject({ value: '58.0', state: 'fresh' })
+    expect(result.ranked[0].ivRank).toMatchObject({ value: '58', state: 'fresh' })
   })
 
   it('still reports ok with the ranked candidates when the calendar fetch fails', async () => {
     const db = makeTestDb()
-    seedIvr(db, [['KO', '2026-07-22T20:10:00Z', '58.0']])
+    seedRankedIv30Series(db, 'KO', SESSIONS, '2026-07-22', 58)
     const { provider, getMarketCalendar } = makeProvider()
     getMarketCalendar.mockRejectedValue(new Error('calendar unavailable'))
     mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: RUN_STATE,
       currentDate: CURRENT_DATE
     })
 
@@ -1019,7 +1182,7 @@ describe('screenWatchlistCandidates — the calendar refresh it rides on', () =>
         throw new Error('Market data provider not configured')
       },
       db,
-      { currentDate: CURRENT_DATE }
+      { currentDate: CURRENT_DATE, runState: RUN_STATE }
     )
 
     expect(result.status).toBe('provider_unavailable')

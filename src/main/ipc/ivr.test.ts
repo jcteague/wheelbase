@@ -63,6 +63,46 @@ describe('registerIvrIpc', () => {
     })
   })
 
+  // [US-121] A run with no market-data credentials is a modelled skip, not an error.
+  it('ivr:collect-now accepts a market_data_unavailable skip', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerIvrIpc } = await import('./ivr')
+    const batch = {
+      successCount: 0,
+      errorCount: 0,
+      skippedCount: 0,
+      skippedReason: 'market_data_unavailable'
+    }
+    vi.mocked(scheduler.runNow).mockResolvedValue(batch)
+
+    registerIvrIpc({ scheduler })
+    const handler = getHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'ivr:collect-now'
+    )
+
+    expect(await handler(null)).toEqual({ ok: true, batch })
+  })
+
+  it('ivr:collect-now rejects the retired market_closed skip reason', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerIvrIpc } = await import('./ivr')
+    vi.mocked(scheduler.runNow).mockResolvedValue({
+      successCount: 0,
+      errorCount: 0,
+      skippedCount: 0,
+      skippedReason: 'market_closed'
+    })
+
+    registerIvrIpc({ scheduler })
+    const handler = getHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'ivr:collect-now'
+    )
+
+    expect(await handler(null)).toMatchObject({ ok: false })
+  })
+
   it('ivr:collect-now returns an ipc error envelope when the job swallows an error and resolves undefined', async () => {
     const { ipcMain } = await import('electron')
     const { registerIvrIpc } = await import('./ivr')

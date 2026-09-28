@@ -21,6 +21,8 @@ const provider = {
   getOptionChainSnapshot: vi.fn(),
   getMarketStatus: vi.fn(),
   getMarketCalendar: vi.fn(),
+  getOptionDailyBars: vi.fn(),
+  getStockDailyBars: vi.fn(),
   supportsStreaming: vi.fn(),
   connect: vi.fn(),
   disconnect: vi.fn(),

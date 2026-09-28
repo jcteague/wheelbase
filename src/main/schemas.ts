@@ -174,7 +174,7 @@ export const CollectIvrNowBatchSchema = z.object({
   successCount: z.number().int().min(0),
   errorCount: z.number().int().min(0),
   skippedCount: z.number().int().min(0),
-  skippedReason: z.enum(['market_closed']).nullable()
+  skippedReason: z.enum(['market_data_unavailable']).nullable()
 })
 
 export type CollectIvrNowBatch = z.infer<typeof CollectIvrNowBatchSchema>

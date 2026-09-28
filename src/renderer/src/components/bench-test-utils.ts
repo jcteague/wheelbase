@@ -4,7 +4,7 @@
 // screener's candidate — and every component test needs a different leaf of it. These
 // builders give each test one shallow override to write instead of a full literal.
 
-import type { ScreenerCandidate, ScreenerIvRank } from '../api/screener'
+import type { IvRankPair, ScreenerCandidate, ScreenerIvRank } from '../api/screener'
 import type {
   EarningsDisplay,
   EntryVerdict,
@@ -21,7 +21,10 @@ export const unmet = (label: string): Gate => ({ verdict: 'unmet', label })
 export const unknown = (label: string): Gate => ({ verdict: 'unknown', label })
 
 export const FRESH_IVR: ScreenerIvRank = {
-  value: '58.0',
+  value: '58',
+  percentile: '64',
+  low: '0.1800',
+  high: '0.4500',
   observedAt: '2026-09-11T20:00:00.000Z',
   ageTradingDays: 0,
   state: 'fresh'
@@ -57,18 +60,24 @@ export function verdict(overrides: Partial<EntryVerdict> = {}): EntryVerdict {
   return { price: none, iv: met, earnings: none, ...overrides }
 }
 
-export function row(overrides: Partial<WatchlistSnapshotRow> = {}): WatchlistSnapshotRow {
+/** The IV-rank pair is overridden whole or not at all — half a pair would build a row
+ *  with neither a reading nor a reason, which the types rule out. */
+type Overrides<T extends IvRankPair> = Partial<Omit<T, keyof IvRankPair>> &
+  (IvRankPair | { ivRank?: never; ivRankAbsence?: never })
+
+export function row(overrides: Overrides<WatchlistSnapshotRow> = {}): WatchlistSnapshotRow {
   return {
     entry: entry(),
     quote: KO_QUOTE,
     ivRank: FRESH_IVR,
+    ivRankAbsence: null,
     earnings: FAR_EARNINGS,
     verdict: verdict(),
     ...overrides
   }
 }
 
-export function candidate(overrides: Partial<ScreenerCandidate> = {}): ScreenerCandidate {
+export function candidate(overrides: Overrides<ScreenerCandidate> = {}): ScreenerCandidate {
   return {
     ticker: 'KO',
     contractId: 'KO261016P00060000',
@@ -84,6 +93,7 @@ export function candidate(overrides: Partial<ScreenerCandidate> = {}): ScreenerC
     openInterest: 1800,
     volume: 340,
     ivRank: FRESH_IVR,
+    ivRankAbsence: null,
     capitalSecured: '6000.00',
     periodYield: '0.0158',
     annualizedYield: '0.1562',

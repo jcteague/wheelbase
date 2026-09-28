@@ -1,6 +1,5 @@
 import { isValid } from 'date-fns'
 
-import type { IvRank } from './screener'
 import {
   countCompletedSessionsAfter,
   etDateOf,
@@ -20,9 +19,16 @@ export type IvRankAgeTier = 'fresh' | 'aging' | 'stale' | 'expired'
  *  can be overridden by a print that landed after it. */
 export type IvRankState = IvRankAgeTier | 'predates_earnings'
 
-export type AssessedIvRank = {
-  value: string
-  observedAt: string
+/** What the IV-history series publishes for a ticker, derived from its 252-session IV30 window. */
+export type IvRankReading = {
+  value: string | null // integer rank as a string; null when the window is flat (high === low)
+  percentile: string // integer IV percentile as a string
+  low: string // 52-week IV30 low, 4 dp
+  high: string // 52-week IV30 high, 4 dp
+  observedAt: string // ISO instant of the anchor session's close
+}
+
+export type AssessedIvRank = IvRankReading & {
   ageTradingDays: number
   state: IvRankState
 }
@@ -62,9 +68,14 @@ export function tierForAge(age: number): IvRankAgeTier {
   return 'expired'
 }
 
-function validReading(reading: IvRank, now: Date): boolean {
-  if (typeof reading.value !== 'string' || reading.value.trim() === '') return false
-  if (!Number.isFinite(Number(reading.value))) return false
+function isFiniteNumberString(value: unknown): boolean {
+  return typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))
+}
+
+/** A null rank is a flat window, not a corrupt one — the percentile and range still read. */
+function validReading(reading: IvRankReading, now: Date): boolean {
+  if (reading.value !== null && !isFiniteNumberString(reading.value)) return false
+  if (![reading.percentile, reading.low, reading.high].every(isFiniteNumberString)) return false
   const observedAt = new Date(reading.observedAt)
   return isValid(observedAt) && observedAt <= now
 }
@@ -81,7 +92,7 @@ function predatesKnownEarnings(
   return today !== '' && lastEarnings <= today && lastEarnings > observationSessionDate
 }
 
-export function assessIvRank(reading: IvRank, ctx: AssessContext): IvRankAssessment {
+export function assessIvRank(reading: IvRankReading, ctx: AssessContext): IvRankAssessment {
   if (!isValid(ctx.now) || !validReading(reading, ctx.now)) return { status: 'unreadable' }
 
   const observation = getMostRecentCompletedSession(ctx.calendar, new Date(reading.observedAt))
@@ -97,6 +108,14 @@ export function assessIvRank(reading: IvRank, ctx: AssessContext): IvRankAssessm
 
   return {
     status: 'assessed',
-    reading: { value: reading.value, observedAt: reading.observedAt, ageTradingDays, state }
+    reading: {
+      value: reading.value,
+      percentile: reading.percentile,
+      low: reading.low,
+      high: reading.high,
+      observedAt: reading.observedAt,
+      ageTradingDays,
+      state
+    }
   }
 }

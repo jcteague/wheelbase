@@ -1,149 +1,195 @@
-// [US-65] ivr-snapshots — read path for the latest IVR per underlying
+// [US-65/US-121] ivr-snapshots — the IV-rank read path: the stored IV30 series assessed for
+// freshness, or — when there is no publishable reading — the display-only reason it is absent.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type Database from 'better-sqlite3'
-import { makeTestDb, makeTradingCalendar } from '../test-utils'
+import {
+  makeTestDb,
+  makeTradingCalendar,
+  seedIv30Series,
+  seedRankedIv30Series
+} from '../test-utils'
 import { logger } from '../logger'
-import { getAssessedIvrByUnderlying, getLatestIvrByUnderlying } from './ivr-snapshots'
+import { createIvRunState, type IvRunState } from './iv-run-state'
+import { readIvMetricsByUnderlying } from './iv-history-read'
+import { absenceFor, lookupOf, readIvRankLookup } from './ivr-snapshots'
 
 vi.mock('../logger', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
 }))
 
+vi.mock('./iv-history-read', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./iv-history-read')>()
+  return { ...actual, readIvMetricsByUnderlying: vi.fn(actual.readIvMetricsByUnderlying) }
+})
+
+/** Wednesday 2026-09-23 10:00 ET — Tuesday 09-22 is the newest completed session. */
 const NOW = new Date('2026-09-23T14:00:00.000Z')
-const CALENDAR = makeTradingCalendar('2026-08-24', '2026-09-24', { closures: ['2026-09-07'] })
+const CALENDAR = makeTradingCalendar('2025-06-01', '2026-12-31')
 
 beforeEach(() => {
   vi.clearAllMocks()
 })
 
-function insertSnapshot(
+function lookup(
   db: Database.Database,
-  underlying: string,
-  observedAt: string,
-  ivr: string
-): void {
-  db.prepare(
-    `INSERT INTO ivr_snapshot (underlying, observed_at, ivr, source)
-     VALUES (?, ?, ?, 'barchart')`
-  ).run(underlying, observedAt, ivr)
+  tickers: string[],
+  opts: { runState?: IvRunState; lastEarnings?: Map<string, string | null | undefined> } = {}
+): ReturnType<typeof readIvRankLookup> {
+  return readIvRankLookup(db, tickers, {
+    now: NOW,
+    calendar: CALENDAR,
+    lastEarnings: opts.lastEarnings ?? new Map(),
+    runState: opts.runState ?? createIvRunState()
+  })
 }
 
-describe('getLatestIvrByUnderlying', () => {
-  it('returns the most recently observed ivr when a ticker has several snapshots', () => {
-    const db = makeTestDb()
-    insertSnapshot(db, 'AAPL', '2026-08-03T20:00:00.000Z', '38.0')
-    insertSnapshot(db, 'AAPL', '2026-08-05T20:00:00.000Z', '44.0')
+/** 150 window sessions with a reading, plus the anchor — below the 200-session gate. */
+function seedSparseSeries(db: Database.Database, ticker: string): void {
+  const sessions = CALENDAR.sessions.map((s) => s.date).filter((d) => d <= '2026-09-22')
+  seedIv30Series(
+    db,
+    ticker,
+    sessions.slice(-151).map((session) => [session, '0.2500'])
+  )
+}
 
-    expect(getLatestIvrByUnderlying(db, ['AAPL'])).toEqual(
-      new Map([['AAPL', { value: '44.0', observedAt: '2026-08-05T20:00:00.000Z' }]])
-    )
-  })
-
-  it('carries the observation time so callers can judge how stale the reading is', () => {
-    const db = makeTestDb()
-    insertSnapshot(db, 'AAPL', '2026-08-05T20:00:00.000Z', '44.0')
-
-    expect(getLatestIvrByUnderlying(db, ['AAPL']).get('AAPL')?.observedAt).toBe(
-      '2026-08-05T20:00:00.000Z'
-    )
-  })
-
-  it('omits an underlying that has no snapshot rather than mapping it to null or zero', () => {
-    const db = makeTestDb()
-    insertSnapshot(db, 'AAPL', '2026-08-05T20:00:00.000Z', '44.0')
-
-    const ivrs = getLatestIvrByUnderlying(db, ['AAPL', 'MSFT'])
-
-    expect(ivrs.has('MSFT')).toBe(false)
-    expect(ivrs.size).toBe(1)
-  })
-
-  it('upper-cases the requested underlying to match how the collector stores it', () => {
-    const db = makeTestDb()
-    insertSnapshot(db, 'AAPL', '2026-08-05T20:00:00.000Z', '44.0')
-
-    expect(getLatestIvrByUnderlying(db, ['aapl'])).toEqual(
-      new Map([['AAPL', { value: '44.0', observedAt: '2026-08-05T20:00:00.000Z' }]])
-    )
-  })
-
-  it('returns an empty map without preparing a statement when no underlyings are requested', () => {
-    const db = makeTestDb()
-    const prepare = vi.spyOn(db, 'prepare')
-
-    expect(getLatestIvrByUnderlying(db, [])).toEqual(new Map())
-    expect(prepare).not.toHaveBeenCalled()
+describe('absenceFor', () => {
+  it.each([
+    ['pending', { status: 'insufficient', coverage: 150 }, { reason: 'pending' }],
+    ['no_market_data', { status: 'none' }, { reason: 'no_market_data' }],
+    ['failed', { status: 'insufficient', coverage: 150 }, { reason: 'failed' }],
+    [
+      undefined,
+      { status: 'insufficient', coverage: 150 },
+      { reason: 'insufficient_history', coverage: 150, window: 252, required: 200 }
+    ],
+    [undefined, { status: 'none' }, { reason: 'not_collected' }]
+  ] as const)('(%s, %o) → %o', (runStatus, read, expected) => {
+    expect(absenceFor(runStatus, read)).toEqual(expected)
   })
 })
 
-describe('getAssessedIvrByUnderlying', () => {
-  it('assesses the latest raw row with supplied clock, calendar and earnings knowledge', () => {
+describe('lookupOf', () => {
+  it('answers for a ticker the read never saw as not_collected, whatever its case', () => {
     const db = makeTestDb()
-    insertSnapshot(db, 'KO', '2026-09-18T21:00:00.000Z', '58.0')
+    const runState = createIvRunState()
+    runState.markPending('KO')
+    const lookups = lookup(db, ['KO'], { runState })
 
-    expect(
-      getAssessedIvrByUnderlying(db, ['KO'], {
-        now: NOW,
-        calendar: CALENDAR,
-        lastEarnings: new Map([['KO', undefined]])
-      }).get('KO')
-    ).toMatchObject({ state: 'aging', ageTradingDays: 2 })
+    expect(lookupOf(lookups, 'ko')).toEqual({ reading: null, absence: { reason: 'pending' } })
+    expect(lookupOf(lookups, 'XYZ')).toEqual({
+      reading: null,
+      absence: { reason: 'not_collected' }
+    })
+  })
+})
+
+describe('readIvRankLookup', () => {
+  it('reports not_collected for a ticker with no readings and no run', () => {
+    const db = makeTestDb()
+
+    expect(lookup(db, ['KO']).get('KO')).toEqual({
+      reading: null,
+      absence: { reason: 'not_collected' }
+    })
   })
 
-  it('preserves a zero reading and reports a ticker with no snapshot as unknown', () => {
+  it('publishes an assessed reading carrying percentile and range', () => {
     const db = makeTestDb()
-    insertSnapshot(db, 'KO', '2026-09-22T21:00:00.000Z', '0.0')
+    seedRankedIv30Series(db, 'KO', CALENDAR, '2026-09-22', 58)
 
-    const result = getAssessedIvrByUnderlying(db, ['KO', 'MSFT'], {
-      now: NOW,
-      calendar: CALENDAR,
-      lastEarnings: new Map()
+    expect(lookup(db, ['ko']).get('KO')).toEqual({
+      reading: {
+        value: '58',
+        percentile: '100',
+        low: '0.2000',
+        high: '0.3000',
+        observedAt: '2026-09-22T20:00:00.000Z',
+        ageTradingDays: 0,
+        state: 'fresh'
+      },
+      absence: null
     })
-
-    expect(result.get('KO')).toMatchObject({ value: '0.0', state: 'fresh' })
-    expect(result.get('MSFT')).toBeNull()
-    expect(logger.warn).not.toHaveBeenCalled()
   })
 
-  // [US-96] Only `unreadable` still collapses to null: an aged-out row keeps its value
-  // so the renderer can show `exp` instead of the "never collected" n/a.
-  it('passes an expired row through as an expired reading rather than as no reading', () => {
+  it('lets a published reading win over a pending run', () => {
     const db = makeTestDb()
-    insertSnapshot(db, 'DIS', '2026-09-03T21:00:00.000Z', '47.0')
+    seedRankedIv30Series(db, 'KO', CALENDAR, '2026-09-22', 58)
+    const runState = createIvRunState()
+    runState.markPending('KO')
 
-    const result = getAssessedIvrByUnderlying(db, ['DIS'], {
-      now: NOW,
-      calendar: CALENDAR,
-      lastEarnings: new Map()
-    })
+    const result = lookup(db, ['KO'], { runState }).get('KO')
 
-    expect(result.get('DIS')).toEqual({
-      value: '47.0',
-      observedAt: '2026-09-03T21:00:00.000Z',
-      ageTradingDays: 12,
-      state: 'expired'
+    expect(result?.reading).toMatchObject({ value: '58' })
+    expect(result?.absence).toBeNull()
+  })
+
+  it('reports insufficient_history with the coverage of a sparse window', () => {
+    const db = makeTestDb()
+    seedSparseSeries(db, 'KO')
+
+    expect(lookup(db, ['KO']).get('KO')).toEqual({
+      reading: null,
+      absence: { reason: 'insufficient_history', coverage: 150, window: 252, required: 200 }
     })
-    expect(logger.warn).not.toHaveBeenCalled()
+  })
+
+  it('reports the run status ahead of a sparse window', () => {
+    const db = makeTestDb()
+    seedSparseSeries(db, 'KO')
+    const runState = createIvRunState()
+    runState.settle('KO', { status: 'failed' })
+
+    expect(lookup(db, ['KO'], { runState }).get('KO')?.absence).toEqual({ reason: 'failed' })
+  })
+
+  it('looks the run state up by upper-cased ticker', () => {
+    const db = makeTestDb()
+    const runState = createIvRunState()
+    runState.markPending('MSFT')
+
+    expect(lookup(db, ['msft'], { runState }).get('MSFT')?.absence).toEqual({
+      reason: 'pending'
+    })
+  })
+
+  it('assesses against the supplied earnings knowledge', () => {
+    const db = makeTestDb()
+    seedRankedIv30Series(db, 'KO', CALENDAR, '2026-09-18', 58)
+
+    const result = lookup(db, ['KO'], { lastEarnings: new Map([['KO', '2026-09-21']]) })
+
+    expect(result.get('KO')?.reading).toMatchObject({ state: 'predates_earnings' })
+  })
+
+  it('logs an unreadable assessment and reports not_collected', () => {
+    const db = makeTestDb()
+    // The anchor's close (Wednesday 16:00 ET) is after NOW, so the reading cannot be assessed.
+    seedRankedIv30Series(db, 'KO', CALENDAR, '2026-09-23', 58)
+
+    expect(lookup(db, ['KO']).get('KO')).toEqual({
+      reading: null,
+      absence: { reason: 'not_collected' }
+    })
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ ticker: 'KO' }),
+      'ivr_assessment_unreadable_snapshot'
+    )
   })
 
   // IV rank is display-only and never a hard filter, so losing the whole read must cost
-  // the caller its IVR column and nothing else — not the screen, and not the bench.
-  it('degrades a failed snapshot read to unknown for everyone instead of throwing', () => {
-    const db = {
-      prepare: () => {
-        throw new Error('database disk image is malformed')
-      }
-    } as unknown as Database.Database
-
-    const result = getAssessedIvrByUnderlying(db, ['KO', 'AAPL'], {
-      now: NOW,
-      calendar: CALENDAR,
-      lastEarnings: new Map()
+  // the caller its IV-rank column and nothing else — not the screen, and not the bench.
+  it('degrades a failed series read to not_collected for everyone instead of throwing', () => {
+    const db = makeTestDb()
+    vi.mocked(readIvMetricsByUnderlying).mockImplementationOnce(() => {
+      throw new Error('database disk image is malformed')
     })
 
+    const result = lookup(db, ['KO', 'AAPL'])
+
     expect([...result.entries()]).toEqual([
-      ['KO', null],
-      ['AAPL', null]
+      ['KO', { reading: null, absence: { reason: 'not_collected' } }],
+      ['AAPL', { reading: null, absence: { reason: 'not_collected' } }]
     ])
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ tickers: ['KO', 'AAPL'] }),
@@ -151,50 +197,7 @@ describe('getAssessedIvrByUnderlying', () => {
     )
   })
 
-  it('warns rather than silently dropping a row it holds but cannot read', () => {
-    const db = makeTestDb()
-    insertSnapshot(db, 'KO', '2026-09-22T21:00:00.000Z', 'not-a-number')
-
-    const result = getAssessedIvrByUnderlying(db, ['KO'], {
-      now: NOW,
-      calendar: CALENDAR,
-      lastEarnings: new Map()
-    })
-
-    expect(result.get('KO')).toBeNull()
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ ticker: 'KO' }),
-      'ivr_assessment_unreadable_snapshot'
-    )
-  })
-
-  it('treats a reading the calendar cannot reach as unreadable, not as absent', () => {
-    const db = makeTestDb()
-    insertSnapshot(db, 'KO', '2026-05-01T20:00:00.000Z', '58.0')
-
-    expect(
-      getAssessedIvrByUnderlying(db, ['KO'], {
-        now: NOW,
-        calendar: CALENDAR,
-        lastEarnings: new Map()
-      }).get('KO')
-    ).toBeNull()
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ ticker: 'KO' }),
-      'ivr_assessment_unreadable_snapshot'
-    )
-  })
-
-  it('does not perform any scraper or earnings I/O', () => {
-    const db = makeTestDb()
-    insertSnapshot(db, 'KO', '2026-09-22T21:00:00.000Z', '58.0')
-
-    expect(
-      getAssessedIvrByUnderlying(db, ['KO'], {
-        now: NOW,
-        calendar: CALENDAR,
-        lastEarnings: new Map([['KO', '2026-09-01']])
-      }).get('KO')
-    ).toMatchObject({ state: 'fresh' })
+  it('returns an empty map for no tickers', () => {
+    expect(lookup(makeTestDb(), [])).toEqual(new Map())
   })
 })

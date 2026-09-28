@@ -49,8 +49,8 @@ export const DEFAULT_SCREENING_CRITERIA: ScreeningCriteria = {
  * display-surface concern.
  */
 export type IvRank = {
-  value: string // as stored, 1dp
-  observedAt: string // ISO timestamp of the scrape that produced it
+  value: string // integer IV rank as a string (US-121)
+  observedAt: string // ISO instant of the anchor session's close
 }
 
 /**

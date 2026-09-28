@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   AssignCspPayloadSchema,
+  CollectIvrNowBatchSchema,
   GetOptionSnapshotsPayloadSchema,
   GetStockQuotesPayloadSchema,
   OpenCcPayloadSchema,
@@ -406,5 +407,24 @@ describe('WatchlistRemovePayloadSchema', () => {
   it('accepts { ticker } and normalizes it', () => {
     const result = WatchlistRemovePayloadSchema.parse({ ticker: ' nvda ' })
     expect(result.ticker).toBe('NVDA')
+  })
+})
+
+// [US-121] The closed-day guard is gone; the one skip left is a run with no market-data credentials.
+describe('CollectIvrNowBatchSchema', () => {
+  const batch = { successCount: 0, errorCount: 0, skippedCount: 0 }
+
+  it('accepts market_data_unavailable and null', () => {
+    expect(
+      CollectIvrNowBatchSchema.parse({ ...batch, skippedReason: 'market_data_unavailable' })
+        .skippedReason
+    ).toBe('market_data_unavailable')
+    expect(CollectIvrNowBatchSchema.parse({ ...batch, skippedReason: null }).skippedReason).toBe(
+      null
+    )
+  })
+
+  it.each(['barchart_down', 'market_closed'])('rejects %s', (skippedReason) => {
+    expect(CollectIvrNowBatchSchema.safeParse({ ...batch, skippedReason }).success).toBe(false)
   })
 })

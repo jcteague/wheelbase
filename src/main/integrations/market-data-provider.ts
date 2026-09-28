@@ -94,6 +94,24 @@ export type MarketCalendarRange = {
   end: string // 'YYYY-MM-DD'
 }
 
+// --- Daily bars ---
+
+/** One completed daily bar. */
+export type DailyBar = {
+  date: string // 'YYYY-MM-DD' — the Eastern session day
+  vwap: string // 4 dp
+  close: string // 4 dp
+  volume: number
+  tradeCount: number
+}
+
+export type DailyBarRange = {
+  start: string // 'YYYY-MM-DD' inclusive
+  /** 'YYYY-MM-DD' inclusive; omitted means "through the present". Callers never pass the
+   *  current calendar day, whose bar is not complete. */
+  end?: string
+}
+
 // --- Streaming types ---
 
 export type MarketDataFeed = 'stockQuotes' | 'optionQuotes' | 'optionTrades'
@@ -122,6 +140,11 @@ export type MarketDataProvider = {
   /** The exchange's own session calendar over `range`. Sessions are facts we cache
    *  rather than derive: holiday rules have exceptions and unscheduled closures exist. */
   getMarketCalendar(range: MarketCalendarRange): Promise<MarketCalendarDay[]>
+  /** Daily bars for any number of OCC symbols. A symbol with no bars is absent from the map —
+   *  a miss, not an error. Each array is ascending by date. */
+  getOptionDailyBars(input: { symbols: string[] } & DailyBarRange): Promise<Map<string, DailyBar[]>>
+  /** The underlying's daily bars from the consolidated tape, ascending by date. */
+  getStockDailyBars(input: { symbol: string } & DailyBarRange): Promise<DailyBar[]>
   supportsStreaming(feed: MarketDataFeed): boolean
   connect(feeds?: MarketDataFeed[]): Promise<void>
   disconnect(): Promise<void>
@@ -137,3 +160,9 @@ export type MarketStatusSource = Pick<MarketDataProvider, 'getMarketStatus'>
 
 /** The one method the trading-calendar store needs, for the same reason. */
 export type MarketCalendarSource = Pick<MarketDataProvider, 'getMarketCalendar'>
+
+/** The slice the IV-history service takes. */
+export type IvHistoryBarSource = Pick<
+  MarketDataProvider,
+  'getOptionDailyBars' | 'getStockDailyBars'
+>

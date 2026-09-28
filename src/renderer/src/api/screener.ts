@@ -6,11 +6,29 @@ export type { ApiError }
 
 // Field-for-field mirror of IpcIvRank (src/preload/index.d.ts).
 export type ScreenerIvRank = {
-  value: string // 1dp
-  observedAt: string // ISO timestamp of the scrape that produced it
+  value: string | null // integer rank ('25'); null when the 252-session window is flat
+  percentile: string // integer IV percentile ('71')
+  low: string // 52-week IV30 low, 4dp
+  high: string // 52-week IV30 high, 4dp
+  observedAt: string // ISO instant of the anchor session's close
   ageTradingDays: number
   state: 'fresh' | 'aging' | 'stale' | 'expired' | 'predates_earnings'
 }
+
+// Field-for-field mirror of IpcIvRankAbsence (src/preload/index.d.ts) — why a reading is
+// missing. Display-only: the verdict and the screener floor never read it.
+export type ScreenerIvRankAbsence =
+  | { reason: 'pending' }
+  | { reason: 'no_market_data' }
+  | { reason: 'failed' }
+  | { reason: 'insufficient_history'; coverage: number; window: number; required: number }
+  | { reason: 'not_collected' }
+
+// Mirror of IpcIvRankPair — exactly one of ivRank / ivRankAbsence is non-null, so a row
+// with neither cannot be built.
+export type IvRankPair =
+  | { ivRank: ScreenerIvRank; ivRankAbsence: null }
+  | { ivRank: null; ivRankAbsence: ScreenerIvRankAbsence }
 
 // Field-for-field mirror of IpcCandidateEarnings (src/preload/index.d.ts).
 // `flagged` only occurs when the saved criteria set earningsHandling: 'flag'.
@@ -36,14 +54,13 @@ export type ScreenerCandidate = {
   delta: string // 4dp, absolute
   openInterest: number | null
   volume: number | null
-  ivRank: ScreenerIvRank | null // null → render "n/a"
   capitalSecured: string // 2dp
   periodYield: string // 4dp fraction
   annualizedYield: string // 4dp fraction
   yieldPerDelta: string // 4dp — the rank score
   earnings: ScreenerCandidateEarnings
   timestamp: string // ISO quote time
-}
+} & IvRankPair
 
 // Field-for-field mirror of IpcScreenerExclusion (src/preload/index.d.ts).
 export type ScreenerExclusion = {

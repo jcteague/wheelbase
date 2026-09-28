@@ -18,22 +18,25 @@ import {
   type TradingCalendar,
   type TradingSession
 } from '../core/trading-calendar'
-import type { MarketCalendarSource } from '../integrations/market-data-provider'
+import { MarketDataError, type MarketCalendarSource } from '../integrations/market-data-provider'
 import { logger } from '../logger'
 
 /**
- * How far back a read loads. Comfortably past `STALE_MAX_AGE` (10 trading days) so a
- * reading at the stale boundary is still assessable, and it bounds the session list
- * the engine scans — an ancient snapshot cannot make the read walk months of days.
+ * [US-121] How far back a read loads: a full IV-rank window (252 sessions ≈ 365 calendar
+ * days) plus up to ten stale sessions behind its anchor. Still bounded, so an ancient
+ * reading cannot make the read walk years of days — 400 rows is one indexed range scan.
  */
-const READ_LOOKBACK_DAYS = 45
+const READ_LOOKBACK_DAYS = 400
 
-/** Enough ahead to cover a session in progress; the engine never reasons past today. */
-const READ_LOOKAHEAD_DAYS = 2
+/** Far enough ahead for the IV30 expiration horizon: shifting a holiday Friday back to the
+ *  prior session needs future sessions as far out as the monthly candidates reach (70 days,
+ *  `iv30-selection.ts`). */
+const READ_LOOKAHEAD_DAYS = 70
 
 /** One fetch covers a wide band so the refresh is rare and a laptop offline for weeks
- *  still has coverage. Alpaca returns one small row per day, so the range is cheap. */
-const REFRESH_LOOKBACK_DAYS = 120
+ *  still has coverage. The lookback exceeds the read lookback so a fetch leaves slack
+ *  behind the rank window. Alpaca returns one small row per day, so the range is cheap. */
+const REFRESH_LOOKBACK_DAYS = 420
 const REFRESH_LOOKAHEAD_DAYS = 400
 
 /** Refetch at most this often: the published calendar changes a few times a year. */
@@ -103,7 +106,7 @@ export function readTradingCalendar(db: Database.Database, now: Date): TradingCa
 
     const firstDay = maxDay(dayOffset(now, -READ_LOOKBACK_DAYS), stored.first_day)
     const lastDay = minDay(dayOffset(now, READ_LOOKAHEAD_DAYS), stored.last_day)
-    if (firstDay > lastDay) {
+    if (today < firstDay || today > lastDay) {
       logger.warn(
         { today, coverage: stored },
         'Trading calendar does not cover today; IVR freshness is unavailable'
@@ -143,11 +146,19 @@ function warnIfCoverageRunningOut(now: Date, lastDay: string): void {
 }
 
 /** True when the stored calendar no longer reaches far enough ahead to be worth
- *  trusting for another interval. Cheap enough to check on every bench open. */
+ *  trusting for another interval, or does not reach back far enough to serve a read —
+ *  an install upgraded from a narrower cache refetches once. Cheap enough to check on
+ *  every bench open. */
 function needsRefresh(db: Database.Database, now: Date): boolean {
-  const stored = db.prepare(COVERAGE_QUERY).get() as { last_day: string | null }
-  if (stored.last_day === null) return true
-  return stored.last_day < dayOffset(now, REFRESH_LOOKAHEAD_DAYS - REFRESH_INTERVAL_DAYS)
+  const stored = db.prepare(COVERAGE_QUERY).get() as {
+    first_day: string | null
+    last_day: string | null
+  }
+  if (stored.first_day === null || stored.last_day === null) return true
+  return (
+    stored.first_day > dayOffset(now, -READ_LOOKBACK_DAYS) ||
+    stored.last_day < dayOffset(now, REFRESH_LOOKAHEAD_DAYS - REFRESH_INTERVAL_DAYS)
+  )
 }
 
 function persistDays(
@@ -165,6 +176,9 @@ export type RefreshTradingCalendarResult =
   | { status: 'refreshed'; dayCount: number; sessionCount: number }
   | { status: 'skipped' }
   | { status: 'failed' }
+  /** The provider refused for want of market-data credentials. On a fresh install this is
+   *  the first call to fail, so IV collection must hear it here or report a plain failure. */
+  | { status: 'no_market_data' }
 
 /**
  * Fetches the exchange calendar around `now` and rewrites the cache for that range.
@@ -211,6 +225,10 @@ export async function refreshTradingCalendar(
     )
     return { status: 'refreshed', dayCount: rows.length, sessionCount: closes.size }
   } catch (err) {
+    if (err instanceof MarketDataError && err.code === 'auth_failed') {
+      logger.info('trading_calendar_refresh_no_market_data')
+      return { status: 'no_market_data' }
+    }
     logger.warn({ err }, 'trading_calendar_refresh_failed')
     return { status: 'failed' }
   }
@@ -220,7 +238,7 @@ export async function refreshTradingCalendar(
 // both would otherwise race to fetch the same calendar. One in-flight promise, cleared on
 // settle, collapses them into a single fetch without caching the *result* — a later open
 // is free to retry a refresh that failed.
-let inFlight: Promise<void> | null = null
+let inFlight: Promise<RefreshTradingCalendarResult> | null = null
 
 /**
  * Refreshes the cached exchange calendar if it is due, then resolves. Never throws and
@@ -239,10 +257,10 @@ export function ensureTradingCalendar(
   db: Database.Database,
   getProvider: () => MarketCalendarSource,
   now: Date
-): Promise<void> {
+): Promise<RefreshTradingCalendarResult> {
   if (inFlight) return inFlight
 
-  const run = async (): Promise<void> => {
+  const run = async (): Promise<RefreshTradingCalendarResult> => {
     // Only resolving the provider is guarded: an unconfigured install throws here, and
     // that is a skip rather than a fault. refreshTradingCalendar swallows and logs every
     // outcome of its own, so anything escaping it is a programming error worth surfacing.
@@ -251,10 +269,10 @@ export function ensureTradingCalendar(
       provider = getProvider()
     } catch (err) {
       logger.warn({ err }, 'trading_calendar_provider_unavailable')
-      return
+      return { status: 'failed' }
     }
 
-    await refreshTradingCalendar(db, provider, now)
+    return refreshTradingCalendar(db, provider, now)
   }
 
   inFlight = run().finally(() => {

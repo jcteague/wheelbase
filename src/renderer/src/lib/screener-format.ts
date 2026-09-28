@@ -23,8 +23,9 @@ export function fmtDelta(value: string): string {
   return new Decimal(value).toFixed(2)
 }
 
-export function formatIvrValue(value: string): string {
-  return new Decimal(value).toString()
+export function formatIvrValue(value: string | null): string {
+  // A flat 52-week window has no rank; the reading itself still exists.
+  return value === null ? 'n/a' : new Decimal(value).toString()
 }
 
 export function fmtOpenInterest(openInterest: number | null): string {

@@ -6,7 +6,7 @@ export type CollectIvrNowResult = {
   successCount: number
   errorCount: number
   skippedCount: number
-  skippedReason: 'market_closed' | null
+  skippedReason: 'market_data_unavailable' | null
 }
 
 export async function collectIvrNow(): Promise<CollectIvrNowResult> {

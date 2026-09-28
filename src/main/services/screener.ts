@@ -16,14 +16,21 @@ import {
   type ScreeningCriteria,
   type TickerScreeningResult
 } from '../core/screener'
-import { isUsableState, type AssessedIvRank } from '../core/ivr-freshness'
+import { isUsableState } from '../core/ivr-freshness'
 import { logger } from '../logger'
 import { pullWatchlistChains, type TickerChainResult } from './candidate-chains'
 import type { EarningsCalendarKnowledge } from './earnings-dates'
 import { readEarningsOrEmpty } from './earnings-horizon'
 import { getScreeningCriteria } from './screening-criteria'
 import { fetchIsolatedStockQuotes } from './underlying-quotes'
-import { getAssessedIvrByUnderlying } from './ivr-snapshots'
+import type { IvRunState } from './iv-run-state'
+import {
+  lookupOf,
+  readIvRankLookup,
+  toIvRankPair,
+  type IvRankLookup,
+  type IvRankPair
+} from './ivr-snapshots'
 import { ensureTradingCalendar, readTradingCalendar } from './trading-calendar-store'
 
 export type ScreenerExclusionCode = ExclusionCode | 'no_options_listed' | 'data_unavailable'
@@ -34,9 +41,7 @@ export type ScreenerExclusion = {
   reason: string
 }
 
-export type RankedCandidate = Omit<ScoredCandidate, 'ivRank'> & {
-  ivRank: AssessedIvRank | null
-}
+export type RankedCandidate = Omit<ScoredCandidate, 'ivRank'> & IvRankPair
 
 export type ScreenerResults = {
   status: 'ok' | 'provider_unavailable'
@@ -45,7 +50,7 @@ export type ScreenerResults = {
   quoteTimestamp: string | null // newest ranked strike timestamp, for the stale badge
 }
 
-type ScreenOptions = { criteria?: ScreeningCriteria; currentDate?: Date }
+type ScreenOptions = { criteria?: ScreeningCriteria; currentDate?: Date; runState: IvRunState }
 
 // A ticker either got screened or never made it far enough to be — the second case
 // carries the reason straight into the excluded list.
@@ -85,8 +90,8 @@ async function readUnderlyingPrices(
 }
 
 /**
- * Freshness-assessed IV rank per ticker, judged against the cached exchange calendar
- * and what the earnings store knows about each ticker's last print.
+ * Freshness-assessed IV rank per ticker — or why it is absent — judged against the cached
+ * exchange calendar and what the earnings store knows about each ticker's last print.
  *
  * Both reads degrade internally to "unknown for everyone" rather than sinking the run:
  * IVR is display-only and never a hard filter, so losing it must not cost the trader
@@ -94,29 +99,30 @@ async function readUnderlyingPrices(
  * own outcomes. That is why there is no catch here — a second one could only ever be
  * reached by a test mock, and would hide a genuine defect if one appeared.
  */
-function readAssessedIvr(
+function readIvRanks(
   db: Database.Database,
   tickers: string[],
   currentDate: Date,
-  earnings: Map<string, EarningsCalendarKnowledge>
-): Map<string, AssessedIvRank | null> {
-  return getAssessedIvrByUnderlying(db, tickers, {
+  earnings: Map<string, EarningsCalendarKnowledge>,
+  runState: IvRunState
+): Map<string, IvRankLookup> {
+  return readIvRankLookup(db, tickers, {
     now: currentDate,
     calendar: readTradingCalendar(db, currentDate),
-    lastEarnings: new Map([...earnings].map(([ticker, known]) => [ticker, known.last]))
+    lastEarnings: new Map([...earnings].map(([ticker, known]) => [ticker, known.last])),
+    runState
   })
 }
 
-/** Only a reading the freshness engine judged usable is scored. The rest still reach
- *  the trader through `RankedCandidate.ivRank`, marked rather than silently priced in. */
-function usableIvRanks(assessed: Map<string, AssessedIvRank | null>): Map<string, IvRank> {
+/** Only a usable reading with a rank is scored — a flat window withholds the rank, so the
+ *  IV-rank floor has nothing to judge. The rest still reach the trader through
+ *  `RankedCandidate.ivRank`, marked rather than silently priced in. */
+function usableIvRanks(lookups: Map<string, IvRankLookup>): Map<string, IvRank> {
   return new Map(
-    [...assessed].flatMap(
-      ([ticker, reading]): Array<[string, IvRank]> =>
-        reading !== null && isUsableState(reading.state)
-          ? [[ticker, { value: reading.value, observedAt: reading.observedAt }]]
-          : []
-    )
+    [...lookups].flatMap(([ticker, { reading }]): Array<[string, IvRank]> => {
+      if (reading === null || reading.value === null || !isUsableState(reading.state)) return []
+      return [[ticker, { value: reading.value, observedAt: reading.observedAt }]]
+    })
   )
 }
 
@@ -203,7 +209,7 @@ function representativeExclusion(screened: TickerScreeningResult): ScreenerExclu
   return [{ ticker: screened.ticker, code: closest.code, reason: closest.reason }]
 }
 
-function newestTimestamp(candidates: ScoredCandidate[]): string | null {
+function newestTimestamp(candidates: Pick<ScoredCandidate, 'timestamp'>[]): string | null {
   return candidates.reduce<string | null>(
     (newest, candidate) =>
       newest === null || compareAsc(parseISO(candidate.timestamp), parseISO(newest)) > 0
@@ -235,7 +241,7 @@ const PROVIDER_UNAVAILABLE: ScreenerResults = {
 export async function screenWatchlistCandidates(
   getProvider: () => MarketDataProvider,
   db: Database.Database,
-  opts: ScreenOptions = {}
+  opts: ScreenOptions
 ): Promise<ScreenerResults> {
   const criteria = opts.criteria ?? getScreeningCriteria(db)
   const currentDate = opts.currentDate ?? new Date()
@@ -274,9 +280,9 @@ export async function screenWatchlistCandidates(
     // never rejects — a calendar failure costs freshness only, never `provider_unavailable`.
     ensureTradingCalendar(db, () => provider, currentDate)
   ])
-  const assessedIvRanks = readAssessedIvr(db, screenable, currentDate, earnings)
+  const ivRankLookups = readIvRanks(db, screenable, currentDate, earnings, opts.runState)
   const ctx: ScreenContext = {
-    ivRanks: usableIvRanks(assessedIvRanks),
+    ivRanks: usableIvRanks(ivRankLookups),
     prices,
     earnings: new Map([...earnings].map(([ticker, known]) => [ticker, known.next])),
     criteria,
@@ -287,12 +293,9 @@ export async function screenWatchlistCandidates(
 
   const ranked = rankCandidates(
     outcomes.flatMap((outcome) => ('screened' in outcome ? [outcome.screened] : []))
-  ).map(
-    (candidate): RankedCandidate => ({
-      ...candidate,
-      ivRank: assessedIvRanks.get(candidate.ticker) ?? null
-    })
-  )
+  ).map((candidate): RankedCandidate => {
+    return { ...candidate, ...toIvRankPair(lookupOf(ivRankLookups, candidate.ticker)) }
+  })
   const excluded = outcomes.flatMap((outcome) =>
     'screened' in outcome ? representativeExclusion(outcome.screened) : [outcome.exclusion]
   )

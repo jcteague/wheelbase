@@ -4,6 +4,7 @@
 import { ipcMain } from 'electron'
 import type Database from 'better-sqlite3'
 import type { MarketDataProvider } from '../integrations/market-data-provider'
+import type { IvRunState } from '../services/iv-run-state'
 import { screenWatchlistCandidates } from '../services/screener'
 import { getScreeningCriteria, saveScreeningCriteria } from '../services/screening-criteria'
 import { SaveScreeningCriteriaPayloadSchema } from '../schemas'
@@ -13,11 +14,13 @@ import { handleIpcCall } from './utils'
 export function registerScreenerIpc({
   db,
   getProvider,
-  getCurrentDate = () => new Date()
+  getCurrentDate = () => new Date(),
+  runState
 }: {
   db: Database.Database
   getProvider: () => MarketDataProvider
   getCurrentDate?: () => Date
+  runState: IvRunState
 }): void {
   // No payload, so no Zod request schema — see plans/us-65/contracts/screener-results.md.
   // [US-99] Construction never fails now: with no Alpaca credentials the chain pull raises
@@ -25,7 +28,7 @@ export function registerScreenerIpc({
   // than a generic internal_error.
   ipcMain.handle('screener:results', () =>
     handleIpcCall('screener_results_error', () =>
-      screenWatchlistCandidates(getProvider, db, { currentDate: getCurrentDate() })
+      screenWatchlistCandidates(getProvider, db, { currentDate: getCurrentDate(), runState })
     )
   )
 

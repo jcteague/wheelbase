@@ -108,8 +108,8 @@ export function addWatchlistEntry(
   )
 
   logger.info({ ticker }, 'watchlist_entry_added')
-  // [US-100] Detached on purpose: `collect` never rejects and the add must not wait on
-  // a ~1s Barchart fetch. The renderer learns the reading landed from the
+  // [US-100/US-121] Detached on purpose: `collect` never rejects and the add must not wait
+  // on an IV-history backfill. The renderer learns the reading landed from the
   // `ivr:snapshot-updated` push, not from this response.
   void ivrOnDemand?.collect(ticker)
 

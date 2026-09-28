@@ -5,6 +5,8 @@ import { vi, type Mock } from 'vitest'
 import { localDate } from './dates'
 import { runMigrations } from './db/migrate'
 import { etInstantAt, type TradingCalendar } from './core/trading-calendar'
+import { IV30_ENGINE_VERSION } from './core/iv30'
+import { RANK_WINDOW_SESSIONS } from './core/iv-metrics'
 import { addWatchlistEntry } from './services/watchlist'
 
 export const MIGRATIONS_DIR = path.join(process.cwd(), 'migrations')
@@ -27,18 +29,56 @@ export function seedWatchlist(db: Database.Database, tickers: string[]): void {
   }
 }
 
-export type IvrSeedRow = [underlying: string, observedAt: string, ivr: string]
+const NORMAL_CLOSE = '16:00'
 
-/** IVR readings straight into the table the collector writes, so read-path tests can
- *  set up history (several observations for one ticker) without going through it. */
-export function seedIvr(db: Database.Database, rows: IvrSeedRow[]): void {
+export type Iv30SeedRow = [session: string, iv30: string]
+
+/** [US-121] IV30 readings straight into `iv30_reading`, so read-path tests can set up a
+ *  series without running the collector. The stored inputs are placeholders — a row
+ *  seeded here is for reading, not for recompute. `observed_at` is the 16:00 ET close. */
+export function seedIv30Series(db: Database.Database, ticker: string, rows: Iv30SeedRow[]): void {
   const insert = db.prepare(
-    'INSERT INTO ivr_snapshot (underlying, observed_at, ivr) VALUES (?, ?, ?)'
+    `INSERT INTO iv30_reading (
+       underlying, session, method, engine_version, observed_at, iv30, underlying_vwap,
+       expiration_tier, near_expiration, near_strike, near_call_vwap, near_call_trades,
+       near_put_vwap, near_put_trades, rate, dividend_yield
+     ) VALUES (?, ?, 'daily_vwap', ?, ?, ?, '100.0000', 'monthly', ?, '100.0000',
+       '3.0000', 100, '3.0000', 100, '0.0450', '0.0000')`
   )
-  for (const [underlying, observedAt, ivr] of rows) insert.run(underlying, observedAt, ivr)
+  for (const [session, iv30] of rows) {
+    insert.run(
+      ticker.toUpperCase(),
+      session,
+      IV30_ENGINE_VERSION,
+      etInstantAt(session, NORMAL_CLOSE),
+      iv30,
+      session
+    )
+  }
 }
 
-const NORMAL_CLOSE = '16:00'
+/**
+ * [US-121] A full rank window plus its anchor, ending at `anchorSession`, whose IV rank reads
+ * `rank`: every window reading is 0.2000 except the oldest at 0.3000 (low 0.2000, high 0.3000),
+ * and the anchor sits at `0.2 + rank / 1000`. Sessions come from `calendar`, so the read path
+ * sees a complete window when it reads the same calendar.
+ */
+export function seedRankedIv30Series(
+  db: Database.Database,
+  ticker: string,
+  calendar: TradingCalendar,
+  anchorSession: string,
+  rank: number
+): void {
+  const window = calendar.sessions
+    .map((session) => session.date)
+    .filter((session) => session < anchorSession)
+    .slice(-RANK_WINDOW_SESSIONS)
+  const rows = window.map(
+    (session, index): Iv30SeedRow => [session, index === 0 ? '0.3000' : '0.2000']
+  )
+  seedIv30Series(db, ticker, [...rows, [anchorSession, (0.2 + rank / 1000).toFixed(4)]])
+}
 
 /** Every calendar day from `firstDay` to `lastDay` inclusive, as YYYY-MM-DD. */
 function eachIsoDay(firstDay: string, lastDay: string): string[] {

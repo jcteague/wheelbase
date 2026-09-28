@@ -1,4 +1,4 @@
-import type { ScreenerIvRank } from '../api/screener'
+import type { ScreenerIvRank, ScreenerIvRankAbsence } from '../api/screener'
 import { formatIvrValue } from './screener-format'
 
 type IvrState = ScreenerIvRank['state']
@@ -77,6 +77,79 @@ function tooltipBody(reading: ScreenerIvRank): string {
   }
 }
 
+/** The 52-week IV30 range a rank is measured against: `0.1800–0.4500`. */
+export function formatIvRange(low: string, high: string): string {
+  return `${low}–${high}`
+}
+
 export function ivrTooltipCopy(reading: ScreenerIvRank): { title: string; body: string } {
-  return { title: TIER_TITLE[reading.state], body: tooltipBody(reading) }
+  const range = `52-wk IV ${formatIvRange(reading.low, reading.high)} · IV percentile ${reading.percentile}`
+  return { title: TIER_TITLE[reading.state], body: `${tooltipBody(reading)} ${range}` }
+}
+
+/** The `title` on a cell with no reading: why it is missing, in one line. */
+export function ivrAbsenceTitle(absence: ScreenerIvRankAbsence): string {
+  switch (absence.reason) {
+    case 'pending':
+      return 'Computing IV history'
+    case 'insufficient_history':
+      return `IV history covers ${absence.coverage} of the last ${absence.window} sessions; rank needs ${absence.required}`
+    case 'no_market_data':
+      return 'IV rank needs Alpaca market-data credentials'
+    case 'failed':
+      return 'Last IV history run failed'
+    case 'not_collected':
+      return 'No IV rank collected'
+  }
+}
+
+export type IvrNote = {
+  variant: 'info' | 'warning'
+  kind: string
+  text: string
+}
+
+/**
+ * The bench-detail note for a missing reading. Waiting on history is information;
+ * a failed run or missing credentials is something the trader has to act on.
+ */
+export function ivrAbsenceNote(
+  ticker: string,
+  absence: ScreenerIvRankAbsence,
+  condition: string
+): IvrNote {
+  const consequence = `${condition} cannot be judged and this stock cannot reach Meets criteria on it.`
+
+  switch (absence.reason) {
+    case 'pending':
+      return {
+        variant: 'info',
+        kind: absence.reason,
+        text: `IV history for ${ticker} is still being computed. Until it finishes, ${consequence}`
+      }
+    case 'insufficient_history':
+      return {
+        variant: 'info',
+        kind: absence.reason,
+        text: `IV history for ${ticker} covers ${absence.coverage} of the last ${absence.window} sessions and rank needs ${absence.required}. Until it fills in, ${consequence}`
+      }
+    case 'not_collected':
+      return {
+        variant: 'info',
+        kind: absence.reason,
+        text: `No IV rank has been collected for ${ticker}. Until one exists, ${consequence}`
+      }
+    case 'failed':
+      return {
+        variant: 'warning',
+        kind: absence.reason,
+        text: `The last IV history run failed for ${ticker}. Until a run succeeds, ${consequence}`
+      }
+    case 'no_market_data':
+      return {
+        variant: 'warning',
+        kind: absence.reason,
+        text: `IV rank for ${ticker} needs Alpaca market-data credentials — add them in Settings. Until then, ${consequence}`
+      }
+  }
 }

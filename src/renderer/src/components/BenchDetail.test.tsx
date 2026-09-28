@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import type { ScreenerIvRankAbsence } from '../api/screener'
 import { BenchDetail } from './BenchDetail'
 import {
   candidate,
@@ -192,6 +193,7 @@ describe('BenchDetail', () => {
         row: row({
           entry: entry({ ivrTrigger: 45 }),
           ivRank: { ...FRESH_IVR, state: 'stale', ageTradingDays: 6 },
+          ivRankAbsence: null,
           verdict: verdict({ iv: unknown('IV too old to judge') })
         })
       })
@@ -325,7 +327,13 @@ describe('BenchDetail', () => {
 
     it('says nothing about an aging reading, which still decides conditions', () => {
       const ivRank = { ...FRESH_IVR, state: 'aging' as const, ageTradingDays: 2 }
-      render(<BenchDetail stock={meets({ row: row({ ivRank }) })} onReview={noop} onEdit={noop} />)
+      render(
+        <BenchDetail
+          stock={meets({ row: row({ ivRank, ivRankAbsence: null }) })}
+          onReview={noop}
+          onEdit={noop}
+        />
+      )
 
       expect(screen.queryByTestId('bench-reading-note')).toBeNull()
     })
@@ -333,7 +341,11 @@ describe('BenchDetail', () => {
     it('explains that a stale reading is shown for context only', () => {
       const ivRank = { ...FRESH_IVR, state: 'stale' as const, ageTradingDays: 6 }
       render(
-        <BenchDetail stock={waiting({ row: row({ ivRank }) })} onReview={noop} onEdit={noop} />
+        <BenchDetail
+          stock={waiting({ row: row({ ivRank, ivRankAbsence: null }) })}
+          onReview={noop}
+          onEdit={noop}
+        />
       )
 
       expect(screen.getByTestId('bench-reading-note')).toHaveTextContent(
@@ -346,6 +358,7 @@ describe('BenchDetail', () => {
         row: row({
           entry: entry({ ivrTrigger: null }),
           ivRank: { ...FRESH_IVR, state: 'stale', ageTradingDays: 6 },
+          ivRankAbsence: null,
           verdict: verdict({ iv: none })
         })
       })
@@ -359,7 +372,11 @@ describe('BenchDetail', () => {
     it('explains that an expired reading counts as no reading at all', () => {
       const ivRank = { ...FRESH_IVR, state: 'expired' as const, ageTradingDays: 12 }
       render(
-        <BenchDetail stock={waiting({ row: row({ ivRank }) })} onReview={noop} onEdit={noop} />
+        <BenchDetail
+          stock={waiting({ row: row({ ivRank, ivRankAbsence: null }) })}
+          onReview={noop}
+          onEdit={noop}
+        />
       )
 
       expect(screen.getByTestId('bench-reading-note')).toHaveTextContent(
@@ -370,7 +387,11 @@ describe('BenchDetail', () => {
     it('explains that a reading taken before a print is unusable at any age', () => {
       const ivRank = { ...FRESH_IVR, state: 'predates_earnings' as const, ageTradingDays: 1 }
       render(
-        <BenchDetail stock={waiting({ row: row({ ivRank }) })} onReview={noop} onEdit={noop} />
+        <BenchDetail
+          stock={waiting({ row: row({ ivRank, ivRankAbsence: null }) })}
+          onReview={noop}
+          onEdit={noop}
+        />
       )
 
       expect(screen.getByTestId('bench-reading-note')).toHaveTextContent(
@@ -378,18 +399,63 @@ describe('BenchDetail', () => {
       )
     })
 
-    it('explains that a ticker was never collected', () => {
+    // [US-121] A missing reading is explained by why it is missing, not guessed at.
+    it.each<[ScreenerIvRankAbsence, 'info' | 'warning', string]>([
+      [{ reason: 'pending' }, 'info', 'still being computed'],
+      [
+        { reason: 'insufficient_history', coverage: 150, window: 252, required: 200 },
+        'info',
+        'covers 150 of the last 252 sessions and rank needs 200'
+      ],
+      [{ reason: 'not_collected' }, 'info', 'No IV rank has been collected'],
+      [{ reason: 'failed' }, 'warning', 'last IV history run failed'],
+      [{ reason: 'no_market_data' }, 'warning', 'Alpaca market-data credentials']
+    ])('explains a missing reading by its reason (%o)', (absence, tone, phrase) => {
       render(
         <BenchDetail
-          stock={waiting({ row: row({ ivRank: null }) })}
+          stock={waiting({ row: row({ ivRank: null, ivRankAbsence: absence }) })}
           onReview={noop}
           onEdit={noop}
         />
       )
 
-      expect(screen.getByTestId('bench-reading-note')).toHaveTextContent(
-        'There is no usable IV rank for KO. Until one exists, an IV condition cannot be judged and this stock cannot reach Meets criteria on it.'
+      const notes = screen.getAllByTestId('bench-reading-note')
+      expect(notes).toHaveLength(1)
+      const [note] = notes
+      expect(note).toHaveAttribute('data-kind', absence.reason)
+      expect(note).toHaveAttribute('data-tone', tone)
+      expect(note).toHaveTextContent(phrase)
+      expect(note).toHaveTextContent('KO')
+      expect(note).toHaveTextContent('“IVR ≥ 40”')
+    })
+
+    it('explains that a flat 52-week range withholds the rank', () => {
+      const ivRank = { ...FRESH_IVR, value: null }
+      render(
+        <BenchDetail
+          stock={waiting({ row: row({ ivRank, ivRankAbsence: null }) })}
+          onReview={noop}
+          onEdit={noop}
+        />
       )
+
+      const note = screen.getByTestId('bench-reading-note')
+      expect(note).toHaveAttribute('data-tone', 'info')
+      expect(note).toHaveTextContent('IV rank unavailable for a flat 52-week range')
+      expect(note).toHaveTextContent('KO')
+    })
+
+    it('says nothing about a fresh reading with a rank', () => {
+      const ivRank = { ...FRESH_IVR, value: '25' }
+      render(
+        <BenchDetail
+          stock={meets({ row: row({ ivRank, ivRankAbsence: null }) })}
+          onReview={noop}
+          onEdit={noop}
+        />
+      )
+
+      expect(screen.queryByTestId('bench-reading-note')).toBeNull()
     })
   })
 
@@ -471,6 +537,7 @@ describe('BenchDetail', () => {
           entry: entry({ ownBelowPrice: '170.0000', ivrTrigger: 50 }),
           quote: AAPL_QUOTE,
           ivRank: FRESH_IVR,
+          ivRankAbsence: null,
           verdict: verdict({
             price: unmet('Price $178.40 above $170 target'),
             iv: unmet('IV low')

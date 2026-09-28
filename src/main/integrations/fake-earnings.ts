@@ -4,7 +4,7 @@
 // runs must stay offline and deterministic, so when WHEELBASE_MOCK_EARNINGS is present
 // the store reads this fixture map instead. When the env var is absent — i.e.
 // production — `fakeEarningsCalendarFetcher()` returns null and the real feed is used
-// unchanged, exactly as `createFakeIvrCollaborators` does for the IVR scraper.
+// unchanged, exactly as `createFakeClock` does for the wall clock.
 import { addDays, format, parseISO } from 'date-fns'
 import { etDateOf } from '../core/trading-calendar'
 import type { EarningsLookup } from '../core/screener'

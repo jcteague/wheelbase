@@ -1,294 +1,201 @@
-// [US-100] The single-ticker collection path a watchlist add or a new position fires.
+// [US-100/US-121] The single-ticker collection path a watchlist add or a new position fires.
 //
 // Every test here pins a guarantee the callers depend on but cannot observe: `collect`
 // is detached with `void`, so a rejection would become an unhandled rejection and the
 // add it was fired from would look broken for a reason the trader could not see.
 import type Database from 'better-sqlite3'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { IVRResult } from '../integrations/barchart-ivr-scraper'
-import type { MarketCalendarSource } from '../integrations/market-data-provider'
+import { FakeMarketDataProvider, setFakeIvSeries } from '../integrations/fake-market-data'
+import { MarketDataError, type MarketDataProvider } from '../integrations/market-data-provider'
 import { logger } from '../logger'
-import {
-  makeTestDb,
-  seedTradingCalendar,
-  seedWatchlist,
-  weekdayCalendarFetcher
-} from '../test-utils'
+import { makeTestDb, seedTradingCalendar, seedWatchlist } from '../test-utils'
+import { collectIvHistory, type IvHistoryTickerOutcome } from './iv-history'
+import { createIvRunState, type IvRunState } from './iv-run-state'
 import { createIvrOnDemand, type IvrOnDemand } from './ivr-on-demand'
 
 vi.mock('../logger', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
 }))
 
-/** Friday 2026-05-29 21:30Z — after the 20:00Z close, so Friday is the current session. */
-const FRIDAY_EVENING = '2026-05-29T21:30:00.000Z'
-const FRIDAY_CLOSE = '2026-05-29T20:00:00.000Z'
-const THURSDAY_CLOSE = '2026-05-28T20:00:00.000Z'
-/** Sunday — no session of its own, so the reading still belongs to Friday. */
-const SUNDAY = '2026-05-31T15:00:00.000Z'
+vi.mock('./iv-history', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./iv-history')>()
+  return { ...actual, collectIvHistory: vi.fn(actual.collectIvHistory) }
+})
+
+/** Friday 2026-09-25 17:30 ET — after the close, so Friday is the newest completed session. */
+const FRIDAY_EVENING = '2026-09-25T21:30:00.000Z'
 
 function makeDb(): Database.Database {
   const db = makeTestDb()
-  seedTradingCalendar(db, '2026-01-01', '2026-12-31')
+  seedTradingCalendar(db, '2025-06-01', '2027-12-31')
   return db
-}
-
-function okResult(ticker: string, ivr = 40.0, observedAt = FRIDAY_EVENING): IVRResult {
-  return { status: 'ok', data: { ticker, ivr, observedAt, source: 'barchart' } }
-}
-
-function insertSnapshot(
-  db: Database.Database,
-  ticker: string,
-  observedAt: string,
-  ivr = '30.1'
-): void {
-  db.prepare(
-    `INSERT INTO ivr_snapshot (underlying, observed_at, ivr, ivp, iv30, source)
-     VALUES (?, ?, ?, NULL, NULL, 'barchart')`
-  ).run(ticker, observedAt, ivr)
-}
-
-function listSnapshots(
-  db: Database.Database
-): Array<{ underlying: string; observed_at: string; ivr: string }> {
-  return db
-    .prepare(
-      `SELECT underlying, observed_at, ivr FROM ivr_snapshot ORDER BY underlying, observed_at`
-    )
-    .all() as Array<{ underlying: string; observed_at: string; ivr: string }>
-}
-
-/** Serves the same weekday calendar the seeded cache holds, so the refresh
- *  `ensureTradingCalendar` performs rewrites it with identical content rather than
- *  emptying it. */
-function stubProvider(): () => MarketCalendarSource {
-  return () => ({ getMarketCalendar: weekdayCalendarFetcher() })
 }
 
 type PortHarness = {
   port: IvrOnDemand
-  fetchIvr: ReturnType<typeof vi.fn>
-  onCollected: ReturnType<typeof vi.fn>
+  runState: IvRunState
+  onSettled: ReturnType<typeof vi.fn>
 }
 
 function makePort(
   db: Database.Database,
-  opts: {
-    fetchIvr?: (ticker: string) => Promise<IVRResult>
-    now?: string
-    getProvider?: () => MarketCalendarSource
-    onCollected?: (ticker: string) => void
-  } = {}
+  opts: { getProvider?: () => MarketDataProvider } = {}
 ): PortHarness {
-  const fetchIvr = vi.fn(opts.fetchIvr ?? (async (t: string) => okResult(t)))
-  const onCollected = vi.fn(opts.onCollected)
+  const onSettled = vi.fn()
+  const runState = createIvRunState()
   const port = createIvrOnDemand({
     db,
     logger,
-    getProvider: opts.getProvider ?? stubProvider(),
-    fetchIvr,
-    clock: { now: () => new Date(opts.now ?? FRIDAY_EVENING) },
-    onCollected
+    runState,
+    getProvider: opts.getProvider ?? (() => new FakeMarketDataProvider()),
+    clock: { now: () => new Date(FRIDAY_EVENING) },
+    onSettled
   })
-  return { port, fetchIvr, onCollected }
+  return { port, runState, onSettled }
+}
+
+function programOutcome(outcome: IvHistoryTickerOutcome): void {
+  vi.mocked(collectIvHistory).mockResolvedValueOnce(outcome)
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  setFakeIvSeries({})
 })
 
 describe('createIvrOnDemand', () => {
-  it('collects a ticker that has never been read, stamped at the session close', async () => {
+  it('collects exactly the given ticker and fires onSettled once it settles', async () => {
     const db = makeDb()
-    const { port, fetchIvr, onCollected } = makePort(db)
+    const { port, onSettled } = makePort(db)
+    programOutcome({ status: 'collected', readings: 253, gaps: 0 })
 
-    await port.collect('aapl')
+    await port.collect('msft')
 
-    expect(fetchIvr).toHaveBeenCalledTimes(1)
-    expect(fetchIvr).toHaveBeenCalledWith('AAPL')
-    expect(listSnapshots(db)).toEqual([
-      { underlying: 'AAPL', observed_at: FRIDAY_CLOSE, ivr: '40.0' }
-    ])
-    expect(onCollected).toHaveBeenCalledWith('AAPL')
+    expect(collectIvHistory).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(collectIvHistory).mock.calls[0][0]).toMatchObject({
+      ticker: 'MSFT',
+      now: new Date(FRIDAY_EVENING)
+    })
+    expect(onSettled).toHaveBeenCalledWith('MSFT')
     expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
-      expect.objectContaining({ ticker: 'AAPL' }),
+      expect.objectContaining({ ticker: 'MSFT' }),
       'ivr_on_demand_collected'
     )
+  })
+
+  // Every settle can change the card: pending → reading, → insufficient_history (an up-to-date
+  // but sparse series), → failed, → no_market_data. Without the push the card stays on "…".
+  it.each<IvHistoryTickerOutcome>([
+    { status: 'up_to_date' },
+    { status: 'failed' },
+    { status: 'no_market_data' }
+  ])('fires onSettled on $status too', async (outcome) => {
+    const db = makeDb()
+    const { port, onSettled } = makePort(db)
+    programOutcome(outcome)
+
+    await port.collect('MSFT')
+
+    expect(onSettled).toHaveBeenCalledExactlyOnceWith('MSFT')
   })
 
   it('never touches the batch targets', async () => {
     const db = makeDb()
     seedWatchlist(db, ['KO'])
-    db.prepare(
-      `INSERT INTO positions (id, ticker, strategy_type, status, phase, opened_date, created_at, updated_at)
-       VALUES ('p1', 'MSFT', 'WHEEL', 'ACTIVE', 'CSP_OPEN', '2026-05-01', '2026-05-01T00:00:00.000Z', '2026-05-01T00:00:00.000Z')`
-    ).run()
-    const { port, fetchIvr } = makePort(db)
+    const { port } = makePort(db)
 
     await port.collect('AAPL')
 
-    expect(fetchIvr.mock.calls.flat()).toEqual(['AAPL'])
+    expect(vi.mocked(collectIvHistory).mock.calls.map(([input]) => input.ticker)).toEqual(['AAPL'])
   })
 
-  it('does not refetch a ticker already read for the current trading day', async () => {
-    const db = makeDb()
-    insertSnapshot(db, 'AAPL', FRIDAY_CLOSE, '33.3')
-    // Sunday: the current trading day is still Friday, so Friday's row counts as today's.
-    const { port, fetchIvr, onCollected } = makePort(db, { now: SUNDAY })
+  it('awaits the calendar refresh before collecting on a fresh install', async () => {
+    const db = makeTestDb()
+    const provider = new FakeMarketDataProvider()
+    const getMarketCalendar = vi.spyOn(provider, 'getMarketCalendar')
+    const { port } = makePort(db, { getProvider: () => provider })
 
-    await port.collect('AAPL')
+    await port.collect('MSFT')
 
-    expect(fetchIvr).not.toHaveBeenCalled()
-    expect(listSnapshots(db)).toEqual([
-      { underlying: 'AAPL', observed_at: FRIDAY_CLOSE, ivr: '33.3' }
-    ])
-    expect(onCollected).not.toHaveBeenCalled()
-    expect(vi.mocked(logger.debug)).toHaveBeenCalledWith(
-      expect.objectContaining({ ticker: 'AAPL' }),
-      'ivr_on_demand_already_collected'
+    expect(getMarketCalendar).toHaveBeenCalled()
+    expect(getMarketCalendar.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(collectIvHistory).mock.invocationCallOrder[0]
+    )
+    expect(vi.mocked(collectIvHistory).mock.calls[0][0].calendar.sessions.length).toBeGreaterThan(
+      253
     )
   })
 
-  it('refetches when the only reading belongs to the previous session', async () => {
+  it('resolves and logs an error when the collection rejects', async () => {
     const db = makeDb()
-    insertSnapshot(db, 'AAPL', THURSDAY_CLOSE, '33.3')
-    const { port, fetchIvr } = makePort(db)
+    const { port, runState, onSettled } = makePort(db)
+    db.exec('DROP TABLE iv30_reading')
 
-    await port.collect('AAPL')
+    await expect(port.collect('MSFT')).resolves.toBeUndefined()
 
-    expect(fetchIvr).toHaveBeenCalledWith('AAPL')
-    expect(listSnapshots(db).map((r) => r.observed_at)).toEqual([THURSDAY_CLOSE, FRIDAY_CLOSE])
-  })
-
-  it('falls back to ET-date equality when no calendar is available', async () => {
-    const db = makeTestDb()
-    insertSnapshot(db, 'AAPL', '2026-05-29T18:00:00.000Z', '33.3')
-    const throwingProvider = (): MarketCalendarSource => {
-      throw new Error('no market-data credentials')
-    }
-    const { port, fetchIvr } = makePort(db, { getProvider: throwingProvider })
-
-    await port.collect('AAPL')
-
-    // Same ET day as the Friday-evening clock, so it still counts as collected.
-    expect(fetchIvr).not.toHaveBeenCalled()
-  })
-
-  it('collects and stores unstamped when no calendar is available and the reading is older', async () => {
-    const db = makeTestDb()
-    insertSnapshot(db, 'AAPL', '2026-05-28T18:00:00.000Z', '33.3')
-    const throwingProvider = (): MarketCalendarSource => {
-      throw new Error('no market-data credentials')
-    }
-    const { port, fetchIvr } = makePort(db, { getProvider: throwingProvider })
-
-    await port.collect('AAPL')
-
-    expect(fetchIvr).toHaveBeenCalledWith('AAPL')
-    expect(listSnapshots(db).map((r) => r.observed_at)).toEqual([
-      '2026-05-28T18:00:00.000Z',
-      FRIDAY_EVENING
-    ])
-  })
-
-  it('resolves and warns when the fetch throws', async () => {
-    const db = makeDb()
-    const { port, fetchIvr, onCollected } = makePort(db, {
-      fetchIvr: async () => {
-        throw new Error('boom')
-      }
-    })
-
-    await expect(port.collect('AAPL')).resolves.toBeUndefined()
-
-    expect(fetchIvr).toHaveBeenCalled()
-    expect(listSnapshots(db)).toEqual([])
-    expect(onCollected).not.toHaveBeenCalled()
-    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
-      expect.objectContaining({ ticker: 'AAPL', err: expect.any(Error) }),
-      expect.stringContaining('IVR collection threw for ticker')
-    )
-  })
-
-  it('resolves and warns when the scraper reports a network error', async () => {
-    const db = makeDb()
-    const { port, onCollected } = makePort(db, {
-      fetchIvr: async () => ({
-        status: 'network_error',
-        error: { code: 'NETWORK_FAILURE', message: 'unreachable' }
-      })
-    })
-
-    await expect(port.collect('AAPL')).resolves.toBeUndefined()
-
-    expect(listSnapshots(db)).toEqual([])
-    expect(onCollected).not.toHaveBeenCalled()
-    expect(vi.mocked(logger.warn)).toHaveBeenCalled()
-  })
-
-  it('resolves and logs at info when Barchart does not cover the ticker', async () => {
-    const db = makeDb()
-    const { port, onCollected } = makePort(db, {
-      fetchIvr: async () => ({
-        status: 'not_available',
-        error: { code: 'TICKER_NOT_COVERED', message: 'no coverage' }
-      })
-    })
-
-    await expect(port.collect('XYZ')).resolves.toBeUndefined()
-
-    expect(listSnapshots(db)).toEqual([])
-    expect(onCollected).not.toHaveBeenCalled()
-    expect(vi.mocked(logger.info)).toHaveBeenCalledWith({ ticker: 'XYZ' }, expect.any(String))
-  })
-
-  it('resolves and logs an error when the write fails', async () => {
-    const db = makeDb()
-    const { port, onCollected } = makePort(db)
-    db.exec('DROP TABLE ivr_snapshot')
-
-    await expect(port.collect('AAPL')).resolves.toBeUndefined()
-
-    expect(onCollected).not.toHaveBeenCalled()
+    expect(onSettled).toHaveBeenCalledExactlyOnceWith('MSFT')
+    expect(runState.get('MSFT')).toBe('failed')
     expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
-      expect.objectContaining({ ticker: 'AAPL', err: expect.any(Error) }),
+      expect.objectContaining({ ticker: 'MSFT', err: expect.any(Error) }),
       'ivr_on_demand_failed'
     )
   })
+})
 
-  it('fetches the calendar before resolving the stamp on a fresh install', async () => {
-    // No seeded calendar: without awaiting ensureTradingCalendar the reading would be
-    // written at the raw fetch instant and render as unassessable on the bench.
-    const db = makeTestDb()
-    const getMarketCalendar = vi.fn().mockResolvedValue([
-      { date: '2026-05-28', close: '16:00' },
-      { date: '2026-05-29', close: '16:00' }
-    ])
-    const { port } = makePort(db, { getProvider: () => ({ getMarketCalendar }) })
+describe('createIvrOnDemand — run state', () => {
+  it('marks the ticker pending synchronously, before the first await', () => {
+    const db = makeDb()
+    const { port, runState } = makePort(db)
 
-    await port.collect('AAPL')
+    const pending = port.collect('msft')
 
-    expect(getMarketCalendar).toHaveBeenCalled()
-    expect(listSnapshots(db).map((r) => r.observed_at)).toEqual([FRIDAY_CLOSE])
+    expect(runState.get('MSFT')).toBe('pending')
+    return pending
   })
 
-  it('uses the wall clock when no clock is injected', async () => {
-    // No calendar and no clock: the stamp falls back to the fetch instant, so the
-    // assertion does not depend on what today happens to be.
-    const db = makeTestDb()
-    const fetchIvr = vi.fn(async () => okResult('AAPL'))
+  it.each<[IvHistoryTickerOutcome, string | undefined]>([
+    [{ status: 'collected', readings: 1, gaps: 0 }, undefined],
+    [{ status: 'up_to_date' }, undefined],
+    [{ status: 'failed' }, 'failed'],
+    [{ status: 'no_market_data' }, 'no_market_data']
+  ])('settles %o to %s', async (outcome, expected) => {
+    const db = makeDb()
+    const { port, runState } = makePort(db)
+    programOutcome(outcome)
 
-    await createIvrOnDemand({
-      db,
-      logger,
+    await port.collect('MSFT')
+
+    expect(runState.get('MSFT')).toBe(expected)
+  })
+
+  it('settles no_market_data when the provider cannot be built, without rejecting', async () => {
+    const db = makeDb()
+    const { port, runState, onSettled } = makePort(db, {
       getProvider: () => {
         throw new Error('no market-data credentials')
-      },
-      fetchIvr
-    }).collect('AAPL')
+      }
+    })
 
-    expect(fetchIvr).toHaveBeenCalledWith('AAPL')
-    expect(listSnapshots(db).map((r) => r.observed_at)).toEqual([FRIDAY_EVENING])
+    await expect(port.collect('MSFT')).resolves.toBeUndefined()
+
+    expect(runState.get('MSFT')).toBe('no_market_data')
+    expect(collectIvHistory).not.toHaveBeenCalled()
+    expect(onSettled).toHaveBeenCalledExactlyOnceWith('MSFT')
+  })
+
+  it('settles no_market_data when a fresh install cannot fetch the calendar for want of credentials', async () => {
+    // No cached calendar: without credentials the calendar fetch is the first call to fail.
+    const db = makeTestDb()
+    const provider = new FakeMarketDataProvider()
+    vi.spyOn(provider, 'getMarketCalendar').mockRejectedValue(
+      new MarketDataError('auth_failed', 'no market-data credentials')
+    )
+    const { port, runState, onSettled } = makePort(db, { getProvider: () => provider })
+
+    await port.collect('MSFT')
+
+    expect(runState.get('MSFT')).toBe('no_market_data')
+    expect(collectIvHistory).not.toHaveBeenCalled()
+    expect(onSettled).toHaveBeenCalledExactlyOnceWith('MSFT')
   })
 })

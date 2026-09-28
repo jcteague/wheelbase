@@ -5,8 +5,9 @@
 // Every boundary here is allowed to fail on its own: an unconfigured provider, one
 // ticker's quote, the earnings store, the trading-calendar refresh and the IVR read each
 // degrade to "unknown" for what they feed, never to a failed snapshot. A missing answer
-// is always modelled — `quote: null`, `ivRank: null`, `{ kind: 'unknown' }` — so the
-// gate engine can report it as `unknown` rather than a quiet pass.
+// is always modelled — `quote: null`, `ivRank: null` with its `ivRankAbsence`,
+// `{ kind: 'unknown' }` — so the gate engine can report it as `unknown` rather than a
+// quiet pass.
 import type Database from 'better-sqlite3'
 
 import {
@@ -15,14 +16,20 @@ import {
   type EarningsDisplay,
   type EntryVerdict
 } from '../core/watchlist-signal'
-import type { AssessedIvRank } from '../core/ivr-freshness'
 import type { EarningsLookup } from '../core/screener'
 import type { MarketDataProvider } from '../integrations/market-data-provider'
 import { logger } from '../logger'
 import type { WatchlistEntryRecord } from '../schemas'
 import type { EarningsCalendarKnowledge } from './earnings-dates'
 import { readEarningsOrEmpty } from './earnings-horizon'
-import { getAssessedIvrByUnderlying } from './ivr-snapshots'
+import type { IvRunState } from './iv-run-state'
+import {
+  lookupOf,
+  readIvRankLookup,
+  toIvRankPair,
+  type IvRankLookup,
+  type IvRankPair
+} from './ivr-snapshots'
 import type { IpcStockQuote } from './market-data'
 import { getScreeningCriteria } from './screening-criteria'
 import { ensureTradingCalendar, readTradingCalendar } from './trading-calendar-store'
@@ -38,17 +45,16 @@ export type SnapshotQuote = {
 export type WatchlistSnapshotRow = {
   entry: WatchlistEntryRecord
   quote: SnapshotQuote | null // null → that ticker's fetch failed
-  ivRank: AssessedIvRank | null // null → never collected or unreadable
   earnings: EarningsDisplay
   verdict: EntryVerdict
-}
+} & IvRankPair
 
 export type WatchlistSnapshot = {
   rows: WatchlistSnapshotRow[] // watchlist order (added_at DESC)
   asOf: string // ISO request clock the verdicts were computed at
 }
 
-export type WatchlistSnapshotOptions = { currentDate: Date }
+export type WatchlistSnapshotOptions = { currentDate: Date; runState: IvRunState }
 
 /** Quotes for the whole watchlist, or none at all when the provider cannot be built —
  *  an unconfigured or unreachable provider is a modelled state, not an error. */
@@ -75,12 +81,13 @@ function snapshotQuote(quote: IpcStockQuote | undefined): SnapshotQuote | null {
 function buildRow(
   entry: WatchlistEntryRecord,
   quotes: Map<string, IpcStockQuote>,
-  assessed: Map<string, AssessedIvRank | null>,
+  lookups: Map<string, IvRankLookup>,
   earnings: Map<string, EarningsCalendarKnowledge>,
   currentDate: Date
 ): WatchlistSnapshotRow {
   const quote = snapshotQuote(quotes.get(entry.ticker))
-  const ivRank = assessed.get(entry.ticker) ?? null
+  const pair = toIvRankPair(lookupOf(lookups, entry.ticker))
+  const { ivRank, ivRankAbsence } = pair
   // A ticker the store said nothing about is `unavailable`, never "no earnings" —
   // absence of an answer must not read as absence of risk.
   const nextEarnings: EarningsLookup = earnings.get(entry.ticker)?.next ?? { status: 'unavailable' }
@@ -90,6 +97,7 @@ function buildRow(
       ticker: entry.ticker,
       hasQuote: quote !== null,
       ivRankState: ivRank?.state ?? null,
+      ivRankAbsence: ivRankAbsence?.reason ?? null,
       earnings: nextEarnings.status
     },
     'watchlist_snapshot_entry_input'
@@ -98,7 +106,7 @@ function buildRow(
   return {
     entry,
     quote,
-    ivRank,
+    ...pair,
     earnings: earningsDisplay(nextEarnings, currentDate),
     verdict: evaluateEntry({
       conditions: {
@@ -117,7 +125,7 @@ function buildRow(
 export async function buildWatchlistSnapshot(
   getProvider: () => MarketDataProvider,
   db: Database.Database,
-  { currentDate }: WatchlistSnapshotOptions
+  { currentDate, runState }: WatchlistSnapshotOptions
 ): Promise<WatchlistSnapshot> {
   const asOf = currentDate.toISOString()
   const entries = listWatchlist(db)
@@ -142,13 +150,14 @@ export async function buildWatchlistSnapshot(
     // so in steady state this is one indexed query and never rejects.
     ensureTradingCalendar(db, getProvider, currentDate)
   ])
-  const assessed = getAssessedIvrByUnderlying(db, tickers, {
+  const lookups = readIvRankLookup(db, tickers, {
     now: currentDate,
     calendar: readTradingCalendar(db, currentDate),
-    lastEarnings: new Map([...earnings].map(([ticker, known]) => [ticker, known.last]))
+    lastEarnings: new Map([...earnings].map(([ticker, known]) => [ticker, known.last])),
+    runState
   })
 
-  const rows = entries.map((entry) => buildRow(entry, quotes, assessed, earnings, currentDate))
+  const rows = entries.map((entry) => buildRow(entry, quotes, lookups, earnings, currentDate))
 
   logger.info({ rowCount: rows.length, quotedCount: quotes.size, asOf }, 'watchlist_snapshot_built')
   return { rows, asOf }

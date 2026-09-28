@@ -128,7 +128,7 @@ export function BenchCard({
             {candidate !== null && <EarningsBadge earnings={candidate.earnings} />}
           </span>
           <span className="inline-flex shrink-0 items-center gap-1.5 font-wb-mono">
-            IVR <IvrCell ivRank={row.ivRank} />
+            IVR <IvrCell ivr={row} />
           </span>
         </div>
       </div>

@@ -1,62 +1,44 @@
+// [US-44/US-100/US-121] The `ivr-collect` batch: brings every collection target's IV30 series
+// up to date through `collectIvHistory`, isolating one ticker's failure from the rest and
+// keeping the in-memory run state in step so the bench can say why a rank is absent.
+//
+// There is no closed-day guard: a run on a weekend or holiday finds no missing sessions and
+// reports every ticker `up_to_date` without a bar request (research.md, "The closed-day guard
+// is removed").
 import Database from 'better-sqlite3'
-import { addDays, parseISO } from 'date-fns'
-import Decimal from 'decimal.js'
-import type { Logger } from 'pino'
-import { fetchIVR, type IVRResult } from '../integrations/barchart-ivr-scraper'
-import {
-  etDateOf,
-  getMostRecentCompletedSession,
-  getTradingSession,
-  observationWindowOf,
-  type TradingCalendar
-} from '../core/trading-calendar'
-import type { MarketCalendarSource } from '../integrations/market-data-provider'
-import { readTradingCalendar, refreshTradingCalendar } from './trading-calendar-store'
+import type { MarketDataProvider } from '../integrations/market-data-provider'
 import { logger as defaultLogger } from '../logger'
+import { collectIvHistory, type CollectorLogger, type IvHistoryTickerOutcome } from './iv-history'
+import type { IvRunState } from './iv-run-state'
+import { readTradingCalendar, refreshTradingCalendar } from './trading-calendar-store'
 
 export const IVR_COLLECT_JOB_NAME = 'ivr-collect'
 
 export type CollectIVRSnapshotsResult = {
-  successCount: number
-  errorCount: number
-  skippedCount: number
-  skippedReason: 'market_closed' | null
+  successCount: number // tickers with status 'collected'
+  errorCount: number // 'failed'
+  skippedCount: number // 'up_to_date'
+  skippedReason: 'market_data_unavailable' | null
 }
 
 type Clock = {
   now(): Date
 }
 
-type CollectorLogger = Pick<Logger, 'info' | 'debug' | 'warn' | 'error'>
-
-/** What one ticker's turn produced. `failed` covers both a scraper error result and a
- *  thrown fetch — the caller tallies them the same way and neither aborts the batch. */
-export type TickerOutcome = 'persisted' | 'not_available' | 'failed'
-
-type CollectTickerInput = {
-  db: Database.Database
-  logger: CollectorLogger
-  fetchIvr: (ticker: string) => Promise<IVRResult>
-  calendar: TradingCalendar
-  ticker: string
-}
-
 type CollectIVRSnapshotsInput = {
   db: Database.Database
+  /** Serves the exchange calendar (refreshed before the run reads it) and the daily bars. */
+  marketDataProvider: MarketDataProvider
+  runState: IvRunState
   logger?: CollectorLogger
-  fetchIvr?: (ticker: string) => Promise<IVRResult>
   clock?: Clock
-  /** Refreshes the cached exchange calendar before the run reads it. The market-data
-   *  factory always constructs, so in the app this is always supplied; absence is a
-   *  test shape, and the run then uses whatever is already cached. */
-  marketDataProvider?: MarketCalendarSource
   /** Aborts the run at the next ticker boundary — set by the app's before-quit hook so
    *  a watchlist-sized batch does not stall shutdown for the scheduler's drain timeout. */
   signal?: AbortSignal
-  /** Who asked. The non-trading-day guard exists to avoid pointless *scheduled* fetches;
-   *  a person clicking refresh, or adding a ticker, has stated their intent and Barchart
-   *  serves the last close whenever it is asked. */
-  trigger?: 'scheduled' | 'explicit'
+  /** Fired once when the run ends, however it ends, so an open bench refetches. Once, not
+   *  per ticker: each refetch re-runs the screener, whose chain pulls share the rate limit
+   *  this run's bar requests need. */
+  onCompleted?: () => void
 }
 
 const COLLECTION_TARGETS_QUERY = `
@@ -72,6 +54,13 @@ const DEFAULT_CLOCK: Clock = {
   now: () => new Date()
 }
 
+const MARKET_DATA_UNAVAILABLE: CollectIVRSnapshotsResult = {
+  successCount: 0,
+  errorCount: 0,
+  skippedCount: 0,
+  skippedReason: 'market_data_unavailable'
+}
+
 function listCollectionTargets(db: Database.Database): string[] {
   const rows = db.prepare(COLLECTION_TARGETS_QUERY).all() as Array<{ ticker: string }>
 
@@ -80,184 +69,94 @@ function listCollectionTargets(db: Database.Database): string[] {
   )
 }
 
-/** The fallback dedupe window for a reading the calendar cannot place: the UTC day the
- *  fetch happened on. Only reachable on an install whose calendar has never been
- *  fetched — a stamped reading uses its session's window instead. */
-function utcDayBounds(isoTimestamp: string): { start: string; end: string } {
-  const observedAt = parseISO(isoTimestamp)
-  const dayStart = new Date(
-    Date.UTC(observedAt.getUTCFullYear(), observedAt.getUTCMonth(), observedAt.getUTCDate())
-  )
-
-  return {
-    start: dayStart.toISOString(),
-    end: addDays(dayStart, 1).toISOString()
-  }
-}
-
-/**
- * Writes the reading against the session it reflects, not the instant it was fetched.
- * Barchart serves the last close, so a Saturday and a Sunday scrape are the same
- * observation; stamping both at Friday's close is what keeps `ivr_snapshot` to one row
- * per underlying per session and keeps US-98's age-in-sessions honest.
- */
-function persistSnapshot(
-  db: Database.Database,
-  logger: CollectorLogger,
-  calendar: TradingCalendar,
-  result: Extract<IVRResult, { status: 'ok' }>
-): void {
-  const { ticker, observedAt } = result.data
-  const session = getMostRecentCompletedSession(calendar, parseISO(observedAt))
-  const window = session === null ? null : observationWindowOf(calendar, session)
-
-  if (window === null) {
-    logger.warn({ ticker, observedAt }, 'ivr_observation_unstamped')
-  }
-
-  // The row goes in at the lower bound of the window it was just cleared from, so the
-  // stamp and the dedupe range cannot drift apart. An open-ended window (the newest
-  // session the calendar holds) has no upper bound, and the SQL skips that half.
-  const { start, end } =
-    window === null ? utcDayBounds(observedAt) : { start: window.from, end: window.to }
-  const stamp = window?.from ?? observedAt
-
-  const deleteExisting = db.prepare(
-    `DELETE FROM ivr_snapshot
-     WHERE underlying = ?
-       AND observed_at >= ?
-       AND (? IS NULL OR observed_at < ?)`
-  )
-  const insertSnapshot = db.prepare(
-    `INSERT INTO ivr_snapshot (underlying, observed_at, ivr, ivp, iv30, source)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  )
-
-  db.transaction(() => {
-    deleteExisting.run(ticker, start, end, end)
-    insertSnapshot.run(
-      ticker,
-      stamp,
-      new Decimal(result.data.ivr).toFixed(1),
-      result.data.ivp === undefined ? null : new Decimal(result.data.ivp).toFixed(1),
-      result.data.iv30 === undefined ? null : new Decimal(result.data.iv30).toString(),
-      result.data.source
-    )
-  })()
-  logger.debug({ ticker, stamp }, 'ivr_snapshot_persisted')
-}
-
-/**
- * One ticker's turn: fetch, classify, and persist a reading. Shared by the scheduled
- * batch and the on-add single-ticker path so neither can drift from the other.
- *
- * Per-ticker isolation is mandatory for the fetch: `fetchIvr` rejects on a non-JSON
- * response body, and an unguarded throw would abort a batch and lose every ticker after
- * the offending one. `persistSnapshot` stays OUTSIDE the try on purpose — a DB write
- * failing is systemic (read-only file, bad migration), and downgrading it to a
- * per-ticker warn would report a broken run as "completed with N errors".
- */
-export async function collectTicker({
-  db,
-  logger,
-  fetchIvr,
-  calendar,
-  ticker
-}: CollectTickerInput): Promise<TickerOutcome> {
-  let result: IVRResult
+export async function collectIVRSnapshots(
+  input: CollectIVRSnapshotsInput
+): Promise<CollectIVRSnapshotsResult> {
   try {
-    result = await fetchIvr(ticker)
-  } catch (err) {
-    // `err`, not `error`: pino's Error serializer is bound to the `err` key.
-    logger.warn({ ticker, err }, 'IVR collection threw for ticker')
-    return 'failed'
-  }
-
-  switch (result.status) {
-    case 'ok':
-      persistSnapshot(db, logger, calendar, result)
-      return 'persisted'
-    case 'not_available':
-      logger.info({ ticker }, 'ticker not covered by Barchart IVR')
-      return 'not_available'
-    case 'parse_error':
-    case 'network_error':
-    case 'rate_limited':
-    case 'invalid_input':
-      logger.warn({ ticker, error: result.error }, 'IVR collection failed for ticker')
-      return 'failed'
+    return await runBatch(input)
+  } finally {
+    input.onCompleted?.()
   }
 }
 
-export async function collectIVRSnapshots({
+async function runBatch({
   db,
-  logger = defaultLogger,
-  fetchIvr = fetchIVR,
-  clock = DEFAULT_CLOCK,
   marketDataProvider,
-  signal,
-  trigger = 'scheduled'
+  runState,
+  logger = defaultLogger,
+  clock = DEFAULT_CLOCK,
+  signal
 }: CollectIVRSnapshotsInput): Promise<CollectIVRSnapshotsResult> {
   const now = clock.now()
   // Best effort, and deliberately before the read: a provider outage must leave the
   // batch to run on whatever is already cached rather than skip it.
-  if (marketDataProvider !== undefined) {
-    await refreshTradingCalendar(db, marketDataProvider, now)
-  }
-
-  const etDate = etDateOf(now)
+  const refresh = await refreshTradingCalendar(db, marketDataProvider, now)
   const calendar = readTradingCalendar(db, now)
-  const session = getTradingSession(calendar, etDate)
-  logger.debug({ etDate, calendarStatus: session.status }, 'ivr_collection_calendar_verdict')
 
-  if (session.status === 'unavailable') {
-    logger.warn({ etDate }, 'IVR collection calendar coverage unavailable; continuing best effort')
+  const targets = listCollectionTargets(db)
+  logger.debug({ targets }, 'ivr_collection_targets_loaded')
+
+  // No credentials refuse the calendar exactly as they would every bar request, so the run
+  // is the same configuration state the per-ticker `no_market_data` abort reports.
+  if (refresh.status === 'no_market_data') {
+    runState.markNoMarketData(targets)
+    logger.info({ targets }, 'ivr_collection_skipped_no_market_data')
+    return MARKET_DATA_UNAVAILABLE
   }
-
-  if (session.status === 'closed') {
-    if (trigger === 'scheduled') {
-      logger.info({ etDate }, 'Skipping IVR collection because market is closed')
-      return {
-        successCount: 0,
-        errorCount: 0,
-        skippedCount: 0,
-        skippedReason: 'market_closed'
-      }
-    }
-    logger.info(
-      { etDate, trigger },
-      'IVR collection proceeding on a closed day at explicit request'
-    )
-  }
-
-  const underlyings = listCollectionTargets(db)
-  logger.debug({ underlyings }, 'ivr_collection_targets_loaded')
 
   let successCount = 0
   let errorCount = 0
   let skippedCount = 0
 
-  // Request pacing is the scraper's job: `fetchIVR` awaits its own 1 req/s rate
-  // limiter before every Barchart call, so the loop adds no sleep of its own.
-  for (const ticker of underlyings) {
+  for (const [index, ticker] of targets.entries()) {
     if (signal?.aborted) {
       logger.info(
-        { successCount, errorCount, skippedCount, remaining: underlyings.length },
+        { successCount, errorCount, skippedCount, remaining: targets.length - index },
         'IVR snapshot collection aborted before completion'
       )
       break
     }
 
-    switch (await collectTicker({ db, logger, fetchIvr, calendar, ticker })) {
-      case 'persisted':
+    runState.markPending(ticker)
+    let outcome: IvHistoryTickerOutcome
+    // Per-ticker isolation: `collectIvHistory` already turns provider and engine errors into
+    // outcomes, and this catch backstops anything else so one ticker cannot lose the rest of
+    // the batch. A DB error is systemic (read-only file, bad migration) and is rethrown —
+    // downgrading it would report a broken run as "completed with N errors".
+    try {
+      outcome = await collectIvHistory({
+        db,
+        provider: marketDataProvider,
+        calendar,
+        now,
+        ticker,
+        logger
+      })
+    } catch (err) {
+      if (err instanceof Database.SqliteError) throw err
+      // `err`, not `error`: pino's Error serializer is bound to the `err` key.
+      logger.warn({ ticker, err }, 'ivr_collection_ticker_failed')
+      outcome = { status: 'failed' }
+    }
+    runState.settle(ticker, outcome)
+    logger.debug({ ticker, status: outcome.status }, 'iv_run_state_settled')
+
+    switch (outcome.status) {
+      case 'collected':
         successCount++
         break
-      case 'not_available':
+      case 'up_to_date':
         skippedCount++
         break
       case 'failed':
         errorCount++
         break
+      case 'no_market_data':
+        // No credentials fail every ticker identically: report a configuration state, not
+        // a broken run, and mark every remaining target so its card can say so.
+        runState.markNoMarketData(targets.slice(index))
+        logger.info({ ticker }, 'ivr_collection_skipped_no_market_data')
+        return MARKET_DATA_UNAVAILABLE
     }
   }
 
