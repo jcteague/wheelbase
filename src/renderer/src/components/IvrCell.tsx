@@ -1,4 +1,4 @@
-import type { IvRankPair, ScreenerIvRank } from '../api/screener'
+import type { IvRank, IvRankPair } from '../api/ivr'
 import {
   isUsableIvrState,
   ivrAbsenceTitle,
@@ -16,7 +16,7 @@ type IvrCellProps = {
   ivr: IvRankPair
 }
 
-const TIER_TEXT: Record<ScreenerIvRank['state'], string> = {
+const TIER_TEXT: Record<IvRank['state'], string> = {
   fresh: 'text-wb-green',
   aging: 'text-wb-text-secondary',
   stale: 'text-wb-text-muted',

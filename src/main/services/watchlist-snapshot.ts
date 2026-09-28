@@ -23,13 +23,7 @@ import type { WatchlistEntryRecord } from '../schemas'
 import type { EarningsCalendarKnowledge } from './earnings-dates'
 import { readEarningsOrEmpty } from './earnings-horizon'
 import type { IvRunState } from './iv-run-state'
-import {
-  lookupOf,
-  readIvRankLookup,
-  toIvRankPair,
-  type IvRankLookup,
-  type IvRankPair
-} from './ivr-snapshots'
+import { lookupOf, readIvRankLookup, type IvRankPair } from './iv-rank-lookup'
 import type { IpcStockQuote } from './market-data'
 import { getScreeningCriteria } from './screening-criteria'
 import { ensureTradingCalendar, readTradingCalendar } from './trading-calendar-store'
@@ -81,12 +75,12 @@ function snapshotQuote(quote: IpcStockQuote | undefined): SnapshotQuote | null {
 function buildRow(
   entry: WatchlistEntryRecord,
   quotes: Map<string, IpcStockQuote>,
-  lookups: Map<string, IvRankLookup>,
+  lookups: Map<string, IvRankPair>,
   earnings: Map<string, EarningsCalendarKnowledge>,
   currentDate: Date
 ): WatchlistSnapshotRow {
   const quote = snapshotQuote(quotes.get(entry.ticker))
-  const pair = toIvRankPair(lookupOf(lookups, entry.ticker))
+  const pair = lookupOf(lookups, entry.ticker)
   const { ivRank, ivRankAbsence } = pair
   // A ticker the store said nothing about is `unavailable`, never "no earnings" —
   // absence of an answer must not read as absence of risk.

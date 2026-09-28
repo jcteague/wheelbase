@@ -1,7 +1,7 @@
 // Adapter between the renderer and the watchlist IPC preload layer.
 
 import { type ApiError, throwMappedIpcErrors } from './error'
-import type { IvRankPair } from './screener'
+import type { IvRankPair } from './ivr'
 
 export type { ApiError }
 

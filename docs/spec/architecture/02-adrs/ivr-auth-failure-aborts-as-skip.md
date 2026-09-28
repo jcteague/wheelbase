@@ -5,7 +5,7 @@
 ## Decision
 
 - When the run's calendar refresh, or a ticker's turn, reports `no_market_data` (the provider
-  raised `MarketDataError('auth_failed')`), `collectIVRSnapshots` stops and returns `{ successCount: 0, errorCount: 0, skippedCount: 0, skippedReason:
+  raised `MarketDataError('auth_failed')`), `collectIvHistoryBatch` stops and returns `{ successCount: 0, errorCount: 0, skippedCount: 0, skippedReason:
 'market_data_unavailable' }` with one INFO line (`ivr_collection_skipped_no_market_data`), and
   marks **every** remaining target `no_market_data` in the run state.
 - Any other error — network, rate limit, a bad symbol, an engine throw — is caught in that ticker's

@@ -85,6 +85,8 @@ const api = {
   },
   ivr: {
     collectNow: () => invoke('ivr:collect-now'),
+    // The `snapshot` name predates US-121 and is kept with its channel: it announces an
+    // IV-history run settling, not a stored snapshot.
     onSnapshotUpdated: onIpcEvent<{ ticker: string | null }>('ivr:snapshot-updated')
   },
   // Dev-only scheduler inspection — backed by IPC handlers registered only when

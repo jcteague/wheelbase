@@ -1,4 +1,5 @@
 import type { Observable } from 'rxjs'
+import type { DailyBar } from '../core/iv30'
 
 // --- Error types ---
 
@@ -96,14 +97,8 @@ export type MarketCalendarRange = {
 
 // --- Daily bars ---
 
-/** One completed daily bar. */
-export type DailyBar = {
-  date: string // 'YYYY-MM-DD' — the Eastern session day
-  vwap: string // 4 dp
-  close: string // 4 dp
-  volume: number
-  tradeCount: number
-}
+// The bar shape is the IV30 engine's input, so the port speaks the engine's type.
+export type { DailyBar }
 
 export type DailyBarRange = {
   start: string // 'YYYY-MM-DD' inclusive

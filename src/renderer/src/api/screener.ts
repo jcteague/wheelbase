@@ -1,34 +1,9 @@
 // Adapter between the renderer and the screener IPC preload layer.
 
 import { type ApiError, throwMappedIpcErrors } from './error'
+import type { IvRankPair } from './ivr'
 
 export type { ApiError }
-
-// Field-for-field mirror of IpcIvRank (src/preload/index.d.ts).
-export type ScreenerIvRank = {
-  value: string | null // integer rank ('25'); null when the 252-session window is flat
-  percentile: string // integer IV percentile ('71')
-  low: string // 52-week IV30 low, 4dp
-  high: string // 52-week IV30 high, 4dp
-  observedAt: string // ISO instant of the anchor session's close
-  ageTradingDays: number
-  state: 'fresh' | 'aging' | 'stale' | 'expired' | 'predates_earnings'
-}
-
-// Field-for-field mirror of IpcIvRankAbsence (src/preload/index.d.ts) — why a reading is
-// missing. Display-only: the verdict and the screener floor never read it.
-export type ScreenerIvRankAbsence =
-  | { reason: 'pending' }
-  | { reason: 'no_market_data' }
-  | { reason: 'failed' }
-  | { reason: 'insufficient_history'; coverage: number; window: number; required: number }
-  | { reason: 'not_collected' }
-
-// Mirror of IpcIvRankPair — exactly one of ivRank / ivRankAbsence is non-null, so a row
-// with neither cannot be built.
-export type IvRankPair =
-  | { ivRank: ScreenerIvRank; ivRankAbsence: null }
-  | { ivRank: null; ivRankAbsence: ScreenerIvRankAbsence }
 
 // Field-for-field mirror of IpcCandidateEarnings (src/preload/index.d.ts).
 // `flagged` only occurs when the saved criteria set earningsHandling: 'flag'.

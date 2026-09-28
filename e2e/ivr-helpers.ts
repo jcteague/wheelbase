@@ -339,28 +339,11 @@ export type IvrBatch = {
   skippedReason: 'market_data_unavailable' | null
 }
 
-type IvrTestApi = {
-  testSchedulerRunScheduled: (jobName: string) => Promise<IvrBatch>
-  testIvSeriesSet: (fixture: FakeIvSeriesFixture) => Promise<{ ok: boolean; error?: string }>
-  testIvrSetNow: (nowIso: string) => Promise<{ ok: boolean; error?: string }>
-  testIv30History: () => Promise<Iv30ReadingRow[]>
-  testIv30Gaps: () => Promise<Iv30GapRow[]>
-  testDailyBarRequests: () => Promise<DailyBarRequest[]>
-  testIvHistoryRecompute: (opts?: {
-    force?: boolean
-  }) => Promise<{ recomputed: number; unrecomputable: number }>
-  testIv30Corrupt: (payload: { ticker: string; session: string; iv30: string }) => Promise<unknown>
-  testTableExists: (name: string) => Promise<boolean>
-  testTradingSessionCount: () => Promise<number>
-  testMarketCalendarFetchCount: () => Promise<number>
-}
-
 /** [US-116] How many rows the cached exchange calendar holds. Zero means it has never
  *  been fetched — the fresh-install state the bench is supposed to resolve by itself. */
 export async function tradingSessionCount(page: Page): Promise<number> {
   return await page.evaluate(async () => {
-    const api = window.api as unknown as IvrTestApi
-    return await api.testTradingSessionCount()
+    return await window.api.testTradingSessionCount()
   })
 }
 
@@ -368,19 +351,15 @@ export async function tradingSessionCount(page: Page): Promise<number> {
  *  lives in the store, so a skipped fetch is otherwise indistinguishable from a made one. */
 export async function marketCalendarFetches(page: Page): Promise<number> {
   return await page.evaluate(async () => {
-    const api = window.api as unknown as IvrTestApi
-    return await api.testMarketCalendarFetchCount()
+    return await window.api.testMarketCalendarFetchCount()
   })
 }
-
-type IvrApi = { ivr: { collectNow: () => Promise<unknown> } }
 
 /** [US-121] Replace the fake provider's IV series and clear its bar-request log, so what
  *  `readDailyBarRequests` reports afterwards is only the work that follows. */
 export async function setIvSeries(page: Page, fixture: FakeIvSeriesFixture): Promise<void> {
   await page.evaluate(async (next) => {
-    const api = window.api as unknown as IvrTestApi
-    const result = await api.testIvSeriesSet(next)
+    const result = await window.api.testIvSeriesSet(next)
     if (!result.ok) throw new Error(result.error ?? 'invalid IV series fixture')
   }, fixture)
 }
@@ -388,8 +367,7 @@ export async function setIvSeries(page: Page, fixture: FakeIvSeriesFixture): Pro
 /** Advance the shared fake clock without restarting the Electron app. */
 export async function setIvrNow(page: Page, nowIso: string): Promise<void> {
   await page.evaluate(async (next) => {
-    const api = window.api as unknown as IvrTestApi
-    const result = await api.testIvrSetNow(next)
+    const result = await window.api.testIvrSetNow(next)
     if (!result.ok) throw new Error(result.error ?? 'invalid fake IVR clock')
   }, nowIso)
 }
@@ -397,16 +375,14 @@ export async function setIvrNow(page: Page, nowIso: string): Promise<void> {
 /** Every persisted `iv30_reading` row, ordered by underlying then session. */
 export async function readIv30History(page: Page): Promise<Iv30ReadingRow[]> {
   return await page.evaluate(async () => {
-    const api = window.api as unknown as IvrTestApi
-    return await api.testIv30History()
+    return await window.api.testIv30History()
   })
 }
 
 /** Every persisted `iv30_gap` row, ordered by underlying then session. */
 export async function readIv30Gaps(page: Page): Promise<Iv30GapRow[]> {
   return await page.evaluate(async () => {
-    const api = window.api as unknown as IvrTestApi
-    return await api.testIv30Gaps()
+    return await window.api.testIv30Gaps()
   })
 }
 
@@ -415,8 +391,7 @@ export async function readIv30Gaps(page: Page): Promise<Iv30GapRow[]> {
  *  no bar data also writes no reading. */
 export async function readDailyBarRequests(page: Page): Promise<DailyBarRequest[]> {
   return await page.evaluate(async () => {
-    const api = window.api as unknown as IvrTestApi
-    return await api.testDailyBarRequests()
+    return await window.api.testDailyBarRequests()
   })
 }
 
@@ -432,8 +407,7 @@ export async function recomputeIvHistory(
   opts?: { force?: boolean }
 ): Promise<{ recomputed: number; unrecomputable: number }> {
   return await page.evaluate(async (options) => {
-    const api = window.api as unknown as IvrTestApi
-    return await api.testIvHistoryRecompute(options)
+    return await window.api.testIvHistoryRecompute(options)
   }, opts)
 }
 
@@ -444,15 +418,13 @@ export async function corruptIv30(
   payload: { ticker: string; session: string; iv30: string }
 ): Promise<void> {
   await page.evaluate(async (next) => {
-    const api = window.api as unknown as IvrTestApi
-    await api.testIv30Corrupt(next)
+    await window.api.testIv30Corrupt(next)
   }, payload)
 }
 
 export async function tableExists(page: Page, name: string): Promise<boolean> {
   return await page.evaluate(async (table) => {
-    const api = window.api as unknown as IvrTestApi
-    return await api.testTableExists(table)
+    return await window.api.testTableExists(table)
   }, name)
 }
 
@@ -469,10 +441,7 @@ export async function readingNote(page: Page): Promise<{ kind: string | null; te
 /** Trigger the batch through the production manual-trigger path and unwrap the summary. */
 export async function collectIvrNow(page: Page): Promise<IvrBatch> {
   return await page.evaluate(async () => {
-    const api = window.api as unknown as IvrApi
-    const result = (await api.ivr.collectNow()) as
-      | { ok: true; batch: IvrBatch }
-      | { ok: false; errors: unknown[] }
+    const result = await window.api.ivr.collectNow()
     if (!result.ok) throw new Error(`ivr:collect-now failed: ${JSON.stringify(result)}`)
     return result.batch
   })
@@ -481,8 +450,7 @@ export async function collectIvrNow(page: Page): Promise<IvrBatch> {
 /** Drive the batch on the *scheduled* trigger, as the after-close timer would. */
 export async function collectIvrScheduled(page: Page): Promise<IvrBatch> {
   return await page.evaluate(async () => {
-    const api = window.api as unknown as IvrTestApi
-    return await api.testSchedulerRunScheduled('ivr-collect')
+    return await window.api.testSchedulerRunScheduled('ivr-collect')
   })
 }
 

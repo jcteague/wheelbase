@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import type { ScreenerIvRankAbsence } from '../api/screener'
+import type { IvRankAbsence } from '../api/ivr'
 import { BenchDetail } from './BenchDetail'
 import {
   candidate,
@@ -400,7 +400,7 @@ describe('BenchDetail', () => {
     })
 
     // [US-121] A missing reading is explained by why it is missing, not guessed at.
-    it.each<[ScreenerIvRankAbsence, 'info' | 'warning', string]>([
+    it.each<[IvRankAbsence, 'info' | 'warning', string]>([
       [{ reason: 'pending' }, 'info', 'still being computed'],
       [
         { reason: 'insufficient_history', coverage: 150, window: 252, required: 200 },

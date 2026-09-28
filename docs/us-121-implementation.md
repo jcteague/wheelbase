@@ -43,7 +43,7 @@ The reason is display-only. The verdict engine and the screener floor treat ever
 flowchart LR
   subgraph Triggers
     A[watchlist add / position open] --> OD[IvrOnDemand.collect]
-    S[ivr-collect job<br/>close + 60 min] --> C[collectIVRSnapshots<br/>per-ticker try/catch]
+    S[ivr-collect job<br/>close + 60 min] --> C[collectIvHistoryBatch<br/>per-ticker try/catch]
     M[Settings: Refresh IVR now] --> C
   end
   OD -->|markPending → settle| RS[(IvRunState<br/>in-memory)]
@@ -80,17 +80,25 @@ flowchart LR
 - **Gap-only tickers:** a ticker with only gaps reads `insufficient_history` with coverage 0,
   not `not_collected`.
 
+**Verified live (2026-09-27, `scripts/check-bars-end-inclusive.mjs`):**
+
+- A date-only `end` is **inclusive** on both `/v2/stocks/bars` (SIP) and `/v1beta1/options/bars`.
+  With `end=2026-09-24` the last bar is stamped `2026-09-24T04:00:00Z`; with `end=2026-09-25` it
+  is `2026-09-25T04:00:00Z`.
+- So a run that names a completed session as `end` (daytime or weekend) does not drop that
+  session's bar.
+
 ## Key files
 
-| Layer         | Files                                                                                                                                                                                                                                                                                         |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Core (pure)   | `src/main/core/black-scholes.ts`, `iv30-selection.ts`, `iv30.ts`, `iv-metrics.ts`; `ivr-freshness.ts` / `watchlist-signal.ts` (nullable rank)                                                                                                                                                 |
-| Schema        | `migrations/016_create_iv30_history.sql`                                                                                                                                                                                                                                                      |
-| Market data   | `src/main/integrations/market-data-provider.ts` (daily-bar port), `alpaca-market-data*.ts` (100-symbol batches, shared `fetchPages`), `fake-market-data.ts` (bars priced from a programmed IV series), `fake-clock.ts`                                                                        |
-| Services      | `iv-history.ts` (collect + recompute), `iv-history-store.ts` (SQL), `iv-history-read.ts` (metrics read), `iv-run-state.ts`, `ivr-collector.ts`, `ivr-on-demand.ts`, `ivr-snapshots.ts` (`readIvRankLookup`, `absenceFor`, `lookupOf`), `trading-calendar-store.ts` (400 days back / 70 ahead) |
-| IPC / preload | `ipc/test-iv-history.ts` (dev-only `_test:iv-*` channels), `IpcIvRankPair` in `preload/index.d.ts`                                                                                                                                                                                            |
-| Renderer      | `IvrCell.tsx`, `ReadingNote.tsx`, `lib/ivr-tooltip.ts`, `SettingsPage.tsx`                                                                                                                                                                                                                    |
-| E2E           | `e2e/iv-history.spec.ts` (all 28 AC rows), `e2e/ivr-helpers.ts` (series builders), existing IVR specs migrated to the series seam                                                                                                                                                             |
+| Layer         | Files                                                                                                                                                                                                                                                                                          |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core (pure)   | `src/main/core/black-scholes.ts`, `iv30-selection.ts`, `iv30.ts`, `iv-metrics.ts`; `ivr-freshness.ts` / `watchlist-signal.ts` (nullable rank)                                                                                                                                                  |
+| Schema        | `migrations/016_create_iv30_history.sql`                                                                                                                                                                                                                                                       |
+| Market data   | `src/main/integrations/market-data-provider.ts` (daily-bar port), `alpaca-market-data*.ts` (100-symbol batches, shared `fetchPages`), `fake-market-data.ts` (bars priced from a programmed IV series), `fake-clock.ts`                                                                         |
+| Services      | `iv-history.ts` (collect + recompute), `iv-history-store.ts` (SQL), `iv-history-read.ts` (metrics read), `iv-run-state.ts`, `ivr-collector.ts`, `ivr-on-demand.ts`, `iv-rank-lookup.ts` (`readIvRankLookup`, `absenceFor`, `lookupOf`), `trading-calendar-store.ts` (400 days back / 70 ahead) |
+| IPC / preload | `ipc/test-iv-history.ts` (dev-only `_test:iv-*` channels), `IpcIvRankPair` in `preload/index.d.ts`                                                                                                                                                                                             |
+| Renderer      | `IvrCell.tsx`, `ReadingNote.tsx`, `lib/ivr-tooltip.ts`, `SettingsPage.tsx`                                                                                                                                                                                                                     |
+| E2E           | `e2e/iv-history.spec.ts` (all 28 AC rows), `e2e/ivr-helpers.ts` (series builders), existing IVR specs migrated to the series seam                                                                                                                                                              |
 
 ## Bugs found and fixed during implementation
 

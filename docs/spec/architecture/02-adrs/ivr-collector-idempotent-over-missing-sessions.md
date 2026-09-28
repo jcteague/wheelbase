@@ -4,7 +4,7 @@
 
 ## Decision
 
-`collectIVRSnapshots` no longer takes a `trigger` and no longer asks the calendar for permission.
+`collectIvHistoryBatch` (formerly `collectIVRSnapshots`) no longer takes a `trigger` and no longer asks the calendar for permission.
 For each target ticker, `collectIvHistory`:
 
 1. recomputes rows behind the current engine version from stored inputs;

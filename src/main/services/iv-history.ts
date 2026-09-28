@@ -119,6 +119,20 @@ type ProbeInput = {
   logger: CollectorLogger
 }
 
+/** One option-bar request covering every probed session from `firstProbed` on. */
+async function fetchOptionBars(
+  { provider, ticker, newest, now, logger }: ProbeInput,
+  symbols: string[],
+  firstProbed: string
+): Promise<Map<string, DailyBar[]>> {
+  const optionRange = barRange(firstProbed, newest, now)
+  logger.debug(
+    { ticker, kind: 'option', symbolCount: symbols.length, ...optionRange },
+    'iv_history_bar_request'
+  )
+  return provider.getOptionDailyBars({ symbols, ...optionRange })
+}
+
 /** Fetches the missing sessions' bars (one stock request, at most one option request) and
  *  runs the engine per session. Throws what the provider throws. */
 async function probeMissingSessions(
@@ -144,15 +158,10 @@ async function probeMissingSessions(
   })
   const symbols = [...new Set(probes.flatMap(({ plan }) => planSymbols(plan)))]
 
-  let optionBars = new Map<string, DailyBar[]>()
-  if (symbols.length > 0) {
-    const optionRange = barRange(probes[0].session.date, newest, now)
-    logger.debug(
-      { ticker, kind: 'option', symbolCount: symbols.length, ...optionRange },
-      'iv_history_bar_request'
-    )
-    optionBars = await provider.getOptionDailyBars({ symbols, ...optionRange })
-  }
+  const optionBars =
+    symbols.length > 0
+      ? await fetchOptionBars(input, symbols, probes[0].session.date)
+      : new Map<string, DailyBar[]>()
   const optionsBySession = indexBySession(optionBars)
   const probeByDate = new Map(probes.map((probe) => [probe.session.date, probe]))
 

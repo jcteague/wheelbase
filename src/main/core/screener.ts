@@ -61,7 +61,7 @@ export type IvRank = {
  * "no earnings risk", which is the silent pass US-70 exists to prevent.
  *
  * The engine declares this so it stays free of `integrations/` imports; the
- * Finnhub feed conforms to it, the same way `ivr-snapshots` conforms to `IvRank`.
+ * Finnhub feed conforms to it, the same way `iv-rank-lookup` conforms to `IvRank`.
  */
 export type EarningsLookup =
   | { status: 'found'; date: string }

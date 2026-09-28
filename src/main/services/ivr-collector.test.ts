@@ -21,7 +21,7 @@ import {
 } from '../test-utils'
 import { collectIvHistory } from './iv-history'
 import { createIvRunState } from './iv-run-state'
-import { collectIVRSnapshots } from './ivr-collector'
+import { collectIvHistoryBatch } from './ivr-collector'
 import { removeWatchlistEntry } from './watchlist'
 
 vi.mock('../logger', () => ({
@@ -133,9 +133,9 @@ function runCollector(
     runState?: ReturnType<typeof createIvRunState>
     onCompleted?: () => void
   } = {}
-): ReturnType<typeof collectIVRSnapshots> {
+): ReturnType<typeof collectIvHistoryBatch> {
   const now = opts.now ?? FRIDAY_EVENING
-  return collectIVRSnapshots({
+  return collectIvHistoryBatch({
     db,
     logger,
     clock: { now: () => now },
@@ -151,7 +151,7 @@ beforeEach(() => {
   setFakeIvSeries({})
 })
 
-describe('collectIVRSnapshots — outcomes', () => {
+describe('collectIvHistoryBatch — outcomes', () => {
   it('isolates a network_error on the second of three tickers and persists the other two', async () => {
     const db = makeCollectorDb()
     seedWatchlist(db, ['AAPL', 'KO', 'MSFT'])
@@ -293,13 +293,13 @@ describe('collectIVRSnapshots — outcomes', () => {
   })
 
   it('accepts no trigger argument', () => {
-    type Input = Parameters<typeof collectIVRSnapshots>[0]
+    type Input = Parameters<typeof collectIvHistoryBatch>[0]
     expectTypeOf<Input>().not.toHaveProperty('trigger')
     expectTypeOf<Input>().not.toHaveProperty('fetchIvr')
   })
 })
 
-describe('collectIVRSnapshots — run state', () => {
+describe('collectIvHistoryBatch — run state', () => {
   it('marks each ticker pending before its turn and settles it after', async () => {
     const db = makeCollectorDb()
     seedWatchlist(db, ['KO'])
@@ -341,7 +341,7 @@ describe('collectIVRSnapshots — run state', () => {
   })
 })
 
-describe('collectIVRSnapshots — completion notification', () => {
+describe('collectIvHistoryBatch — completion notification', () => {
   // The bench does not poll, so a run tells it to refetch — once. Each refetch re-runs the
   // screener (a chain pull per ticker), so a push per ticker would stampede the rate limit
   // the batch's own bar requests share.
@@ -406,7 +406,7 @@ describe('collectIVRSnapshots — completion notification', () => {
   })
 })
 
-describe('collectIVRSnapshots — targets', () => {
+describe('collectIvHistoryBatch — targets', () => {
   it('collects the union of open-position and watchlist tickers, distinct and sorted', async () => {
     const db = makeCollectorDb()
     insertPosition(db, { id: 'pos-spy-1', ticker: 'SPY' })
@@ -469,7 +469,7 @@ describe('collectIVRSnapshots — targets', () => {
   })
 })
 
-describe('collectIVRSnapshots — calendar refresh', () => {
+describe('collectIvHistoryBatch — calendar refresh', () => {
   it('refreshes the cached calendar from the market-data provider before reading it', async () => {
     const db = makeTestDb()
     seedWatchlist(db, ['KO'])

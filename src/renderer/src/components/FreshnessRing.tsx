@@ -1,6 +1,6 @@
-import type { ScreenerIvRank } from '../api/screener'
+import type { IvRank } from '../api/ivr'
 
-type IvrState = ScreenerIvRank['state']
+type IvrState = IvRank['state']
 
 type FreshnessRingProps = {
   state: IvrState

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ScreenerIvRank, ScreenerIvRankAbsence } from '../api/screener'
+import type { IvRank, IvRankAbsence } from '../api/ivr'
 import {
   formatIvRange,
   isUsableIvrState,
@@ -12,7 +12,7 @@ import {
 
 // [US-96] The tooltip is the only place the freshness rules are spelled out, so the
 // copy has to say what the reading does — not just how old it is.
-const BASE: ScreenerIvRank = {
+const BASE: IvRank = {
   value: '38',
   percentile: '71',
   low: '0.1800',
@@ -22,7 +22,7 @@ const BASE: ScreenerIvRank = {
   state: 'stale'
 }
 
-const reading = (over: Partial<ScreenerIvRank>): ScreenerIvRank => ({ ...BASE, ...over })
+const reading = (over: Partial<IvRank>): IvRank => ({ ...BASE, ...over })
 
 describe('observedSessionLabel', () => {
   it('names the observed session in Eastern Time', () => {
@@ -138,7 +138,7 @@ describe('formatIvRange', () => {
 })
 
 describe('ivrAbsenceTitle', () => {
-  it.each<[ScreenerIvRankAbsence, string]>([
+  it.each<[IvRankAbsence, string]>([
     [{ reason: 'pending' }, 'Computing IV history'],
     [
       { reason: 'insufficient_history', coverage: 150, window: 252, required: 200 },
@@ -155,7 +155,7 @@ describe('ivrAbsenceTitle', () => {
 describe('ivrAbsenceNote', () => {
   const CONDITION = '“IVR ≥ 30”'
 
-  it.each<[ScreenerIvRankAbsence, 'info' | 'warning']>([
+  it.each<[IvRankAbsence, 'info' | 'warning']>([
     [{ reason: 'pending' }, 'info'],
     [{ reason: 'insufficient_history', coverage: 150, window: 252, required: 200 }, 'info'],
     [{ reason: 'not_collected' }, 'info'],

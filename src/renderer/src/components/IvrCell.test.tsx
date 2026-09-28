@@ -1,10 +1,10 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
-import type { ScreenerIvRank, ScreenerIvRankAbsence } from '../api/screener'
+import type { IvRank, IvRankAbsence } from '../api/ivr'
 import { IvrCell } from './IvrCell'
 
-const BASE: ScreenerIvRank = {
+const BASE: IvRank = {
   value: '38',
   percentile: '71',
   low: '0.1800',
@@ -133,7 +133,7 @@ describe('IvrCell', () => {
     expect(screen.queryByRole('tooltip')).toBeNull()
   })
 
-  it.each<[ScreenerIvRankAbsence, string]>([
+  it.each<[IvRankAbsence, string]>([
     [{ reason: 'not_collected' }, 'No IV rank collected'],
     [{ reason: 'failed' }, 'Last IV history run failed'],
     [{ reason: 'no_market_data' }, 'IV rank needs Alpaca market-data credentials'],

@@ -5,8 +5,8 @@
 ## Decision
 
 Every bench row (`watchlist:snapshot`) and ranked candidate (`screener:results`) carries exactly
-one of `ivRank` or `ivRankAbsence`. The pair is a union (`IvRankLookup` in the main process,
-`IpcIvRankPair` across preload and renderer), so "both null" cannot be represented. `IvrCell` and
+one of `ivRank` or `ivRankAbsence`. The pair is a union (`IvRankPair` in the main process and the renderer's `api/ivr.ts`,
+`IpcIvRankPair` across preload), so "both null" cannot be represented. `IvrCell` and
 `ReadingNote` take a single `ivr` pair prop.
 
 | Reason                 | Source                                                                                                   |
@@ -18,7 +18,7 @@ one of `ivRank` or `ivRankAbsence`. The pair is a union (`IvRankLookup` in the m
 | `not_collected`        | neither rows nor any known run (also a fresh relaunch)                                                   |
 
 Precedence when no reading is published: `pending` > `no_market_data` > `failed` >
-`insufficient_history` > `not_collected` (`absenceFor` in `ivr-snapshots.ts`). A published reading
+`insufficient_history` > `not_collected` (`absenceFor` in `iv-rank-lookup.ts`). A published reading
 always wins over any run status — a catch-up in flight never hides a rank.
 
 **Run state** is a `createIvRunState()` closure over a `Map` in `services/iv-run-state.ts`, created
@@ -60,6 +60,6 @@ batch fires it **once per run** with `ticker: null` (`onCompleted`, from a `fina
 
 - [extract: us-121](../../.extracts/us-121.md) — ADRs "An absent rank carries a display-only reason…", "On-demand pushes per ticker on every settle…"
 - `plans/us-121/contracts/watchlist-snapshot-ivrank.md`, `plans/us-121/refactor-phase-results.md`
-- `src/main/services/iv-run-state.ts`, `src/main/services/ivr-snapshots.ts`, `src/preload/index.d.ts`
+- `src/main/services/iv-run-state.ts`, `src/main/services/iv-rank-lookup.ts`, `src/preload/index.d.ts`
 - Feature page: [us-121](../../features/us-121-iv-rank-from-own-iv-history.md)
 <!-- /generated -->

@@ -251,11 +251,11 @@ export class AlpacaMarketDataProvider implements MarketDataProvider {
     input: { symbols: string[] } & DailyBarRange
   ): Promise<Map<string, DailyBar[]>> {
     const { symbols, ...range } = input
-    const result = new Map<string, DailyBar[]>()
-    if (symbols.length === 0) return result
+    if (symbols.length === 0) return new Map()
     const credentials = this.credentials()
 
     const batches = chunkSymbols(symbols, OPTION_BARS_BATCH_SIZE)
+    const batchResults: Array<Map<string, DailyBar[]>> = []
     // Sequential on purpose: one underlying's history is several hundred symbols, and the
     // free plan's rate limit is shared with the rest of the app.
     for (const [batchIndex, batch] of batches.entries()) {
@@ -263,12 +263,14 @@ export class AlpacaMarketDataProvider implements MarketDataProvider {
         { batch: batchIndex + 1, of: batches.length, symbols: batch.length, ...range },
         'alpaca_option_bars_batch'
       )
-      const bars = await this.fetchDailyBars(
-        (pageToken) => buildOptionBarsUrl(batch, range, pageToken),
-        credentials
+      batchResults.push(
+        await this.fetchDailyBars(
+          (pageToken) => buildOptionBarsUrl(batch, range, pageToken),
+          credentials
+        )
       )
-      for (const [symbol, symbolBars] of bars) result.set(symbol, symbolBars)
     }
+    const result = new Map(batchResults.flatMap((bars) => [...bars]))
 
     logger.info(
       {

@@ -376,6 +376,33 @@ type IpcCollectIvrNowBatch = {
 }
 type IpcCollectIvrNowResult = IpcResult<{ batch: IpcCollectIvrNowBatch }>
 
+/** [US-121] One `iv30_reading` row as the dev-only `_test:iv30-history` channel returns it:
+ *  the table's snake_case columns. */
+type IpcTestIv30ReadingRow = {
+  underlying: string
+  session: string
+  method: string
+  engine_version: number
+  observed_at: string
+  iv30: string
+  underlying_vwap: string
+  expiration_tier: 'weekly' | 'monthly'
+  near_expiration: string
+  near_strike: string
+  near_call_vwap: string
+  near_call_trades: number
+  near_put_vwap: string
+  near_put_trades: number
+  far_expiration: string | null
+  far_strike: string | null
+  far_call_vwap: string | null
+  far_call_trades: number | null
+  far_put_vwap: string | null
+  far_put_trades: number | null
+  rate: string
+  dividend_yield: string
+}
+
 /** The editable fields keyed by the ticker. Add and update send the same shape. */
 interface IpcWatchlistEntryPayload {
   ticker: string
@@ -412,7 +439,7 @@ interface IpcIvRank {
   state: 'fresh' | 'aging' | 'stale' | 'expired' | 'predates_earnings'
 }
 
-/** [US-121] Mirrors `IvRankAbsence` in `src/main/services/ivr-snapshots.ts` — why a ticker has
+/** [US-121] Mirrors `IvRankAbsence` in `src/main/services/iv-rank-lookup.ts` — why a ticker has
  *  no IV rank. Display-only: the verdict and the screener floor never read it. */
 type IpcIvRankAbsence =
   | { reason: 'pending' } // a run for this ticker is in flight (backfill or catch-up)
@@ -421,7 +448,7 @@ type IpcIvRankAbsence =
   | { reason: 'insufficient_history'; coverage: number; window: number; required: number } // e.g. 150 / 252 / 200
   | { reason: 'not_collected' } // no rows and no run known to this process (also a fresh relaunch)
 
-/** Mirrors `IvRankPair` in `src/main/services/ivr-snapshots.ts` — exactly one of
+/** Mirrors `IvRankPair` in `src/main/services/iv-rank-lookup.ts` — exactly one of
  *  `ivRank` / `ivRankAbsence` is non-null. */
 type IpcIvRankPair =
   | { ivRank: IpcIvRank; ivRankAbsence: null }
@@ -767,9 +794,12 @@ declare global {
         collectNow: () => Promise<IpcCollectIvrNowResult>
         onSnapshotUpdated: (cb: (event: { ticker: string | null }) => void) => () => void // ticker null: a batch run settled
       }
+      /** Runs a job as the scheduler's own timer would. Only the IV-history batch is driven
+       *  this way, so the result is typed as its summary. */
+      testSchedulerRunScheduled: (jobName: 'ivr-collect') => Promise<IpcCollectIvrNowBatch>
       testIvSeriesSet: (fixture: unknown) => Promise<{ ok: true } | { ok: false; error: string }>
       testIvrSetNow: (nowIso: unknown) => Promise<{ ok: true } | { ok: false; error: string }>
-      testIv30History: () => Promise<Array<Record<string, unknown>>>
+      testIv30History: () => Promise<IpcTestIv30ReadingRow[]>
       testIv30Gaps: () => Promise<
         Array<{
           underlying: string

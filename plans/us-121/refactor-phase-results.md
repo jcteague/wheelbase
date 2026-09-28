@@ -206,3 +206,59 @@ Red/Green agents finish.
   never re-probed, so a transient empty stock-bar response gaps that ticker's history permanently.
 - The fake provider never returns partial bars or entitlement 403s, holds spot constant, and
   "lists" every strike and Friday.
+
+## Tidy-up pass (post-review)
+
+1. **Leftover "IVR snapshot" naming — done.** `collectIVRSnapshots` / `CollectIVRSnapshots*` →
+   `collectIvHistoryBatch` / `CollectIvHistoryBatch*`; `ivr-snapshots.ts` → `iv-rank-lookup.ts`
+   (and its test); log messages → `iv_history_collection_completed` / `_aborted`,
+   `ivr_assessment_unreadable_reading`, `ivr_assessment_series_read_failed`. Channel-mirroring
+   names (`ivr:*`, `onSnapshotUpdated`, `useIvrSnapshotUpdates`, `notifyIvrSnapshotUpdated`) are
+   kept, with a comment on why. User-facing copy that still says "snapshot" ("check the snapshot
+   diagnostics", "local snapshot store") was left: changing it is a behaviour change, and tests
+   assert it. `docs/spec/` still names `collectIVRSnapshots` / `ivr-snapshots.ts`; that is for
+   `/update-spec`.
+2. **Absence copy in two switches — done.** One `ABSENCE_COPY` table in `lib/ivr-tooltip.ts`
+   holds each reason's title, note variant and note text. It is typed as a mapped type over the
+   reason, so each entry sees its own narrowed absence and the table must be exhaustive.
+   `ivrAbsenceTitle` / `ivrAbsenceNote` are generic over the reason, so the lookup is typed
+   without a cast. The strings are unchanged.
+3. **Duplicated small types — done.** `Clock` now lives in `src/main/dates.ts` and is used by
+   `fake-clock.ts`, `ivr-collector.ts` and `ivr-on-demand.ts`. `ivr-on-demand` reuses
+   `CollectorLogger`. The port now re-exports core's `DailyBar`, so core still imports nothing
+   from integrations. The `Clock` in `polling-scheduler.ts` has a different shape and predates
+   US-121, so it was left.
+4. **Three shapes for one read — done.** The lookup is now `IvRankPair`, with fields
+   `ivRank` / `ivRankAbsence`. `IvRankLookup` and `toIvRankPair` are deleted, and
+   `readIvRankLookup` / `lookupOf` return the pair directly. `IvMetricsRead` is kept.
+5. **Row mapping in three places — partly.**
+   - `UPSERT_READING`'s named parameters now carry the column names, and `readingParams`
+     `satisfies Iv30ReadingRow & { method; observed_at }`. The compiler therefore ties the write
+     to the row type that `inputsOf` reads, and `SqlParams` is kept.
+   - `inputsOf`'s doubled far-column checks became one `farLegOf` helper, which returns the
+     leg, `null` or `'partial'`.
+   - I did not add a shared camel↔snake leg-column table. A dynamic mapping in both directions
+     needs template-literal key types or runtime type checks on the read side, and would read
+     worse than the two compiler-checked literals.
+6. **Renderer IV-rank types in the screener module — done.** `IvRankPair`, `IvRank` and
+   `IvRankAbsence` now live in `api/ivr.ts`. They were `ScreenerIvRank` /
+   `ScreenerIvRankAbsence`, and the new names match main's. All imports are updated.
+7. **Imperative code — done.** `getOptionDailyBars` keeps its sequential loop, but each batch
+   result goes into a local array, and the map is built once from it. `probeMissingSessions`
+   replaces `let optionBars` with a `const` ternary over a new `fetchOptionBars` helper.
+8. **Test-only casts — partly.**
+   - `e2e/ivr-helpers.ts`: all 12 `as unknown as` casts are removed, along with `IvrTestApi` and
+     `IvrApi`. The helpers call `window.api` directly through the `index.d.ts` Window
+     augmentation.
+     - `index.d.ts` gains a `testSchedulerRunScheduled('ivr-collect')` declaration (it existed
+       in the preload but was undeclared) and a precise `IpcTestIv30ReadingRow` return type for
+       `testIv30History`.
+     - An ad-hoc `tsc` run over the helper plus the d.ts is clean. The e2e directory is not
+       part of any tsconfig.
+   - `fake-market-data.test.ts`: the casts became `'getAccountInfo' in provider`. This is
+     typed and stricter, because it also sees prototype methods.
+   - `SettingsPage.test.tsx`: **skipped.** US-121 added one cast, which matches the 38
+     pre-existing identical partial-hook mocks in that file. Typing it would mean building a
+     full `UseMutationResult` union member (~15 fields per status variant), or rendering under
+     a real `QueryClientProvider` with the API module mocked instead. Either is contortion for
+     a single mock.

@@ -24,10 +24,11 @@ export const MIN_TRADES_PER_LEG = 1
 const DAYS_PER_YEAR = 365
 const TIERS: readonly ExpirationTier[] = ['weekly', 'monthly']
 
+/** One completed daily bar. */
 export type DailyBar = {
-  date: string
-  vwap: string
-  close: string
+  date: string // 'YYYY-MM-DD' — the Eastern session day
+  vwap: string // 4 dp
+  close: string // 4 dp
   volume: number
   tradeCount: number
 }

@@ -132,7 +132,7 @@ vi.mock('./services/ivr-on-demand', () => ({ createIvrOnDemand: mockCreateIvrOnD
 
 vi.mock('./services/ivr-collector', () => ({
   IVR_COLLECT_JOB_NAME: 'ivr-collect',
-  collectIVRSnapshots: vi.fn().mockResolvedValue({
+  collectIvHistoryBatch: vi.fn().mockResolvedValue({
     successCount: 0,
     errorCount: 0,
     skippedCount: 0,
@@ -255,7 +255,7 @@ describe('main process bootstrap', () => {
     )
   })
 
-  it('ivr-collect job handler delegates to collectIVRSnapshots with db, logger, and abort signal', async () => {
+  it('ivr-collect job handler delegates to collectIvHistoryBatch with db, logger, and abort signal', async () => {
     await triggerBootstrap()
 
     const registration = mockSchedulerRegister.mock.calls
@@ -266,10 +266,10 @@ describe('main process bootstrap', () => {
 
     expect(registration).toBeDefined()
 
-    const { collectIVRSnapshots } = await import('./services/ivr-collector')
+    const { collectIvHistoryBatch } = await import('./services/ivr-collector')
     await registration!.handler({ trigger: 'scheduled' })
 
-    expect(vi.mocked(collectIVRSnapshots)).toHaveBeenCalledWith(
+    expect(vi.mocked(collectIvHistoryBatch)).toHaveBeenCalledWith(
       expect.objectContaining({
         db: expect.anything(),
         logger: expect.anything(),
@@ -285,7 +285,7 @@ describe('main process bootstrap', () => {
       .find((job) => job.name === 'ivr-collect') as
       | { handler: (ctx: { trigger: string }) => Promise<unknown> }
       | undefined
-    const { collectIVRSnapshots } = await import('./services/ivr-collector')
+    const { collectIvHistoryBatch } = await import('./services/ivr-collector')
     const { BrowserWindow } = await import('electron')
     const win = (
       BrowserWindow as unknown as {
@@ -294,7 +294,7 @@ describe('main process bootstrap', () => {
     ).instances.at(-1)!
 
     await registration!.handler({ trigger: 'scheduled' })
-    vi.mocked(collectIVRSnapshots).mock.calls.at(-1)?.[0].onCompleted?.()
+    vi.mocked(collectIvHistoryBatch).mock.calls.at(-1)?.[0].onCompleted?.()
 
     expect(win.webContents.send).toHaveBeenCalledWith('ivr:snapshot-updated', { ticker: null })
   })
@@ -314,8 +314,8 @@ describe('main process bootstrap', () => {
     vi.mocked(brokerFactory.create).mockClear()
     await registration!.handler({ trigger: 'scheduled' })
 
-    const { collectIVRSnapshots } = await import('./services/ivr-collector')
-    expect(vi.mocked(collectIVRSnapshots)).toHaveBeenCalledWith(
+    const { collectIvHistoryBatch } = await import('./services/ivr-collector')
+    expect(vi.mocked(collectIvHistoryBatch)).toHaveBeenCalledWith(
       expect.objectContaining({ marketDataProvider: expect.anything() })
     )
     expect(vi.mocked(brokerFactory.create)).not.toHaveBeenCalled()
@@ -332,8 +332,8 @@ describe('main process bootstrap', () => {
     expect(registration).toBeDefined()
 
     await registration!.handler({ trigger: 'scheduled' })
-    const { collectIVRSnapshots } = await import('./services/ivr-collector')
-    const call = vi.mocked(collectIVRSnapshots).mock.calls.at(-1)?.[0] as { signal?: AbortSignal }
+    const { collectIvHistoryBatch } = await import('./services/ivr-collector')
+    const call = vi.mocked(collectIvHistoryBatch).mock.calls.at(-1)?.[0] as { signal?: AbortSignal }
     expect(call.signal).toBeDefined()
     expect(call.signal?.aborted).toBe(false)
 
@@ -545,10 +545,10 @@ describe('main process bootstrap', () => {
       | { handler: (ctx: { trigger: string }) => Promise<unknown> }
       | undefined
 
-    const { collectIVRSnapshots } = await import('./services/ivr-collector')
+    const { collectIvHistoryBatch } = await import('./services/ivr-collector')
     await registration!.handler({ trigger: 'explicit' })
 
-    expect(vi.mocked(collectIVRSnapshots).mock.calls.at(-1)?.[0]).not.toHaveProperty('trigger')
+    expect(vi.mocked(collectIvHistoryBatch).mock.calls.at(-1)?.[0]).not.toHaveProperty('trigger')
   })
 
   it('hands one IV run state to the on-demand port, both read channels and the ivr-collect job', async () => {
@@ -568,9 +568,9 @@ describe('main process bootstrap', () => {
       .find((job) => job.name === 'ivr-collect') as
       | { handler: (ctx: { trigger: string }) => Promise<unknown> }
       | undefined
-    const { collectIVRSnapshots } = await import('./services/ivr-collector')
+    const { collectIvHistoryBatch } = await import('./services/ivr-collector')
     await registration!.handler({ trigger: 'scheduled' })
-    expect(vi.mocked(collectIVRSnapshots).mock.calls.at(-1)?.[0].runState).toBe(ivRunState)
+    expect(vi.mocked(collectIvHistoryBatch).mock.calls.at(-1)?.[0].runState).toBe(ivRunState)
   })
 
   it('no main-process source imports the retired Barchart scraper or fake', async () => {

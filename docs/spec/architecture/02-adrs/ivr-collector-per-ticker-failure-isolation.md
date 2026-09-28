@@ -14,7 +14,7 @@
 
 ## Decision
 
-Each ticker's **fetch** in `collectIVRSnapshots` is wrapped in `try/catch`. A thrown fetch
+Each ticker's **fetch** in `collectIvHistoryBatch` (formerly `collectIVRSnapshots`) is wrapped in `try/catch`. A thrown fetch
 failure counts as `errorCount`, logs a WARN under the `err` key with the message
 `IVR collection threw for ticker`, and the loop continues to the next ticker.
 

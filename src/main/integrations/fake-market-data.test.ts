@@ -26,8 +26,8 @@ describe('FakeMarketDataProvider — interface shape', () => {
 
     expect(typeof provider.getMarketStatus).toBe('function')
     expect(typeof provider.getMarketCalendar).toBe('function')
-    expect((provider as unknown as Record<string, unknown>)['getAccountInfo']).toBeUndefined()
-    expect((provider as unknown as Record<string, unknown>)['getActivities']).toBeUndefined()
+    expect('getAccountInfo' in provider).toBe(false)
+    expect('getActivities' in provider).toBe(false)
   })
 })
 

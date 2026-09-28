@@ -1248,7 +1248,7 @@ Handlers are grouped by namespace. Each subsection documents the request payload
   - **(us-121) No closed-day guard.** `skippedReason: 'market_closed'` is removed. A run on a weekend or holiday finds no missing sessions and reports every ticker in `skippedCount` without a bar request, so neither the scheduled nor the explicit path is ever refused by the calendar, and the job no longer reads its trigger (the us-100 `'scheduled' | 'explicit'` split survives on the scheduler with no consumer). See [ivr-collector-idempotent-over-missing-sessions](../architecture/02-adrs/ivr-collector-idempotent-over-missing-sessions.md).
   - **(us-121) Auth failure.** When the run's calendar refresh or a ticker's turn reports `no_market_data` (Alpaca `auth_failed`), the run stops with all counts zero, logs one INFO `ivr_collection_skipped_no_market_data`, and marks every target `no_market_data` in the in-memory run state, so bench cards say "IV rank needs Alpaca market-data credentials". See [ivr-auth-failure-aborts-as-skip](../architecture/02-adrs/ivr-auth-failure-aborts-as-skip.md).
   - **(us-121) Side effects.** The run marks each ticker `pending` before its turn and settles it after (a bench refetch mid-run shows `…` for the ticker in flight), and fires [`ivr:snapshot-updated`](#ivrsnapshot-updated) **once** when the run ends (`{ ticker: null }`).
-- **Source:** `src/main/ipc/ivr.ts`, `src/main/schemas.ts` (`CollectIvrNowBatchSchema`), `src/main/services/ivr-collector.ts` (`collectIVRSnapshots`), `src/main/services/iv-history.ts` (`collectIvHistory`)
+- **Source:** `src/main/ipc/ivr.ts`, `src/main/schemas.ts` (`CollectIvrNowBatchSchema`), `src/main/services/ivr-collector.ts` (`collectIvHistoryBatch`), `src/main/services/iv-history.ts` (`collectIvHistory`)
 - **Driven by:** [us-44 — IVR snapshot store and scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md), [us-100 — IVR on demand and outside market hours](../features/us-100-ivr-on-demand-and-outside-market-hours.md), [us-121 — IV rank from our own IV history](../features/us-121-iv-rank-from-own-iv-history.md)
 <!-- /generated -->
 
@@ -1382,7 +1382,7 @@ Push events are one-way `main → renderer` messages sent via `webContents.send`
   ```
 - **Trigger (us-121):** one `notifyIvrSnapshotUpdated` function in `src/main/index.ts` is passed to both collection paths:
   - the `IvrOnDemand` port (`src/main/services/ivr-on-demand.ts`) calls it as `onSettled(ticker)` after **every** settle — `collected`, `up_to_date`, `failed` or `no_market_data` — so a card that showed `…` (pending) always re-reads its final state;
-  - `collectIVRSnapshots` calls it as `onCompleted()` **exactly once per run**, from a `finally` (normal end, abort, no-credentials, rethrown DB error), with `ticker: null`.
+  - `collectIvHistoryBatch` calls it as `onCompleted()` **exactly once per run**, from a `finally` (normal end, abort, no-credentials, rethrown DB error), with `ticker: null`.
 
   Before us-121 it fired only when a Barchart row was persisted; that left cards stuck on "Computing IV history" after a failed or already-complete run, and a per-ticker batch push would have re-run the screener (a chain pull per ticker) once per ticker. The renderer subscribes through `useIvrSnapshotUpdates` (`src/renderer/src/hooks/useIvrSnapshotUpdates.ts`, mounted by `WatchlistPage`) and invalidates `watchlistQueryKeys.snapshot` and `screenerQueryKeys.results`.
 
@@ -1814,8 +1814,8 @@ daysBeforeExpiry }` (only under `earningsHandling: 'flag'`),
   a `predates_earnings` reading survives on the payload however old it is, carrying its
   explanation. There is deliberately **no `usable` field**: usability is derived from
   `state` at each end (`isUsableState` in main, the tone rule in `IvrCell`) so one rule
-  cannot drift into two. Mirrored in `src/preload/index.d.ts` and as `ScreenerIvRank` in
-  `src/renderer/src/api/screener.ts`. See
+  cannot drift into two. Mirrored in `src/preload/index.d.ts` and as `IvRank` in
+  `src/renderer/src/api/ivr.ts` (`ScreenerIvRank` in `api/screener.ts` until the us-121 tidy-up). See
   [us-98](../features/us-98-ivr-staleness-tiers.md).
   **(us-121)** the reading is computed from the app's own IV30 history and gains three fields:
   `{ value: string | null, percentile, low, high, observedAt, ageTradingDays, state }` (`state`
@@ -1829,8 +1829,8 @@ daysBeforeExpiry }` (only under `earningsHandling: 'flag'`),
   `pending` > `no_market_data` > `failed` > `insufficient_history` > `not_collected`; a published
   reading always wins. `pending` / `no_market_data` / `failed` are in-memory run state, gone on
   relaunch. Display-only: neither the verdict nor the screener floor reads it. Mirrored as
-  `ScreenerIvRankAbsence` in `src/renderer/src/api/screener.ts`; the row / candidate pair is
-  `IpcIvRankPair`, so both-null is unrepresentable. See
+  `IvRankAbsence` / `IvRankPair` in `src/renderer/src/api/ivr.ts` (and `IvRankPair` in main); the
+  row / candidate pair is `IpcIvRankPair`, so both-null is unrepresentable. See
   [iv-rank-absence-reason-in-memory-run-state](../architecture/02-adrs/iv-rank-absence-reason-in-memory-run-state.md).
 - **Unusable readings never gate:** only `fresh` and `aging` readings are fed to the
   engine, so `iv_rank_floor` is never applied to a stale, earnings-invalid or expired
@@ -1859,7 +1859,7 @@ daysBeforeExpiry }` (only under `earningsHandling: 'flag'`),
 - **Source:** `src/main/ipc/screener.ts`, `src/main/services/screener.ts`
   (`screenWatchlistCandidates`), `src/main/core/screener.ts` (`screenTicker`,
   `rankCandidates`), `src/main/core/ivr-freshness.ts` (`assessIvRank`),
-  `src/main/services/ivr-snapshots.ts` (`readIvRankLookup`, `absenceFor`, `lookupOf` — us-121, replacing `getAssessedIvrByUnderlying`),
+  `src/main/services/iv-rank-lookup.ts` (`readIvRankLookup`, `absenceFor`, `lookupOf` — us-121, replacing `getAssessedIvrByUnderlying`),
   `src/main/services/iv-history-read.ts` (`readIvMetricsByUnderlying`), `src/main/services/iv-run-state.ts`,
   `src/main/services/trading-calendar-store.ts` (`readTradingCalendar`),
   `src/preload/index.ts`

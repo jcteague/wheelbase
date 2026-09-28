@@ -6,6 +6,7 @@
 // reports every ticker `up_to_date` without a bar request (research.md, "The closed-day guard
 // is removed").
 import Database from 'better-sqlite3'
+import type { Clock } from '../dates'
 import type { MarketDataProvider } from '../integrations/market-data-provider'
 import { logger as defaultLogger } from '../logger'
 import { collectIvHistory, type CollectorLogger, type IvHistoryTickerOutcome } from './iv-history'
@@ -14,18 +15,14 @@ import { readTradingCalendar, refreshTradingCalendar } from './trading-calendar-
 
 export const IVR_COLLECT_JOB_NAME = 'ivr-collect'
 
-export type CollectIVRSnapshotsResult = {
+export type CollectIvHistoryBatchResult = {
   successCount: number // tickers with status 'collected'
   errorCount: number // 'failed'
   skippedCount: number // 'up_to_date'
   skippedReason: 'market_data_unavailable' | null
 }
 
-type Clock = {
-  now(): Date
-}
-
-type CollectIVRSnapshotsInput = {
+type CollectIvHistoryBatchInput = {
   db: Database.Database
   /** Serves the exchange calendar (refreshed before the run reads it) and the daily bars. */
   marketDataProvider: MarketDataProvider
@@ -54,7 +51,7 @@ const DEFAULT_CLOCK: Clock = {
   now: () => new Date()
 }
 
-const MARKET_DATA_UNAVAILABLE: CollectIVRSnapshotsResult = {
+const MARKET_DATA_UNAVAILABLE: CollectIvHistoryBatchResult = {
   successCount: 0,
   errorCount: 0,
   skippedCount: 0,
@@ -69,9 +66,9 @@ function listCollectionTargets(db: Database.Database): string[] {
   )
 }
 
-export async function collectIVRSnapshots(
-  input: CollectIVRSnapshotsInput
-): Promise<CollectIVRSnapshotsResult> {
+export async function collectIvHistoryBatch(
+  input: CollectIvHistoryBatchInput
+): Promise<CollectIvHistoryBatchResult> {
   try {
     return await runBatch(input)
   } finally {
@@ -86,7 +83,7 @@ async function runBatch({
   logger = defaultLogger,
   clock = DEFAULT_CLOCK,
   signal
-}: CollectIVRSnapshotsInput): Promise<CollectIVRSnapshotsResult> {
+}: CollectIvHistoryBatchInput): Promise<CollectIvHistoryBatchResult> {
   const now = clock.now()
   // Best effort, and deliberately before the read: a provider outage must leave the
   // batch to run on whatever is already cached rather than skip it.
@@ -112,7 +109,7 @@ async function runBatch({
     if (signal?.aborted) {
       logger.info(
         { successCount, errorCount, skippedCount, remaining: targets.length - index },
-        'IVR snapshot collection aborted before completion'
+        'iv_history_collection_aborted'
       )
       break
     }
@@ -160,7 +157,7 @@ async function runBatch({
     }
   }
 
-  logger.info({ successCount, errorCount, skippedCount }, 'IVR snapshot collection completed')
+  logger.info({ successCount, errorCount, skippedCount }, 'iv_history_collection_completed')
 
   return {
     successCount,

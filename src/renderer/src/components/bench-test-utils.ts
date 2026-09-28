@@ -4,7 +4,8 @@
 // screener's candidate — and every component test needs a different leaf of it. These
 // builders give each test one shallow override to write instead of a full literal.
 
-import type { IvRankPair, ScreenerCandidate, ScreenerIvRank } from '../api/screener'
+import type { IvRank, IvRankPair } from '../api/ivr'
+import type { ScreenerCandidate } from '../api/screener'
 import type {
   EarningsDisplay,
   EntryVerdict,
@@ -20,7 +21,7 @@ export const none: Gate = { verdict: 'none', label: null }
 export const unmet = (label: string): Gate => ({ verdict: 'unmet', label })
 export const unknown = (label: string): Gate => ({ verdict: 'unknown', label })
 
-export const FRESH_IVR: ScreenerIvRank = {
+export const FRESH_IVR: IvRank = {
   value: '58',
   percentile: '64',
   low: '0.1800',

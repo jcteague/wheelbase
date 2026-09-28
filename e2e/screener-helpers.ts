@@ -665,7 +665,7 @@ export async function launchScreener(
 
 /**
  * [US-67] Restart against the same database file — the persistence AC. Nothing is
- * re-seeded: the watchlist, IV-rank snapshots, and saved criteria all live in
+ * re-seeded: the watchlist, IV history, and saved criteria all live in
  * `dbPath`, which survives the close because `cleanupDb` is a separate step.
  */
 export async function relaunchScreener(

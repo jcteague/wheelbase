@@ -7,6 +7,7 @@ import { watchlistQueryKeys } from './watchlistQueryKeys'
  * [US-100] Refetches the surfaces that render IV rank when a reading lands out of
  * band — an on-add collection finishes after the add response has already returned,
  * so without this push the bench would read `n/a` until the next manual reload.
+ * The name mirrors the `ivr:snapshot-updated` channel, which predates US-121's IV history.
  */
 export function useIvrSnapshotUpdates(): void {
   const queryClient = useQueryClient()

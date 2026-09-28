@@ -19,7 +19,7 @@ import { registerTestSchedulerIpc, seedTestJobsFromEnv } from './ipc/test-schedu
 import { registerTestIvHistoryIpc } from './ipc/test-iv-history'
 import { createFakeClock } from './integrations/fake-clock'
 import { DETECT_ASSIGNMENTS_JOB_NAME, detectAssignments } from './services/detect-assignments'
-import { collectIVRSnapshots, IVR_COLLECT_JOB_NAME } from './services/ivr-collector'
+import { collectIvHistoryBatch, IVR_COLLECT_JOB_NAME } from './services/ivr-collector'
 import { createIvrOnDemand } from './services/ivr-on-demand'
 import { createIvRunState } from './services/iv-run-state'
 import { ALERT_EVAL_JOB_NAME, evaluateAlerts } from './services/evaluate-alerts'
@@ -203,7 +203,8 @@ app.whenReady().then(() => {
   // paths report from it, so a card can say a backfill is in flight or why it failed.
   const ivRunState = createIvRunState()
   // An IV run that changed what the bench can show tells it to refetch: per ticker for the
-  // on-demand path, once per run for the batch (`ticker: null`).
+  // on-demand path, once per run for the batch (`ticker: null`). The channel keeps its
+  // pre-US-121 `snapshot` name.
   const notifyIvrSnapshotUpdated = (ticker: string | null): void =>
     mainWindow?.webContents.send('ivr:snapshot-updated', { ticker })
   // [US-100] One port shared by both entry points a ticker can arrive through, so a
@@ -268,7 +269,7 @@ app.whenReady().then(() => {
     // The scheduler's `trigger` has no consumer here since US-121: a closed-day run finds no
     // missing sessions, so scheduled and explicit runs behave identically.
     handler: async () => {
-      return collectIVRSnapshots({
+      return collectIvHistoryBatch({
         db,
         logger,
         signal: ivrAbort.signal,

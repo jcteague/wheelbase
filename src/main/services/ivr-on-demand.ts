@@ -5,15 +5,15 @@
 // until that window came round. This is the other trigger: the watchlist-add and
 // position-open paths hand the ticker here and return immediately.
 //
-// It deliberately does NOT reuse `collectIVRSnapshots`: that resolves its targets from
+// It deliberately does NOT reuse `collectIvHistoryBatch`: that resolves its targets from
 // positions ∪ watchlist, so firing it per add would refetch the whole bench every time.
 // Only the per-ticker body (`collectIvHistory`) is shared, and it is idempotent: a ticker
 // whose series is already complete is `up_to_date` without a bar request.
 import type Database from 'better-sqlite3'
-import type { Logger } from 'pino'
+import type { Clock } from '../dates'
 import type { MarketDataProvider } from '../integrations/market-data-provider'
 import { logger as defaultLogger } from '../logger'
-import { collectIvHistory, type IvHistoryTickerOutcome } from './iv-history'
+import { collectIvHistory, type CollectorLogger, type IvHistoryTickerOutcome } from './iv-history'
 import type { IvRunState } from './iv-run-state'
 import { ensureTradingCalendar, readTradingCalendar } from './trading-calendar-store'
 
@@ -34,8 +34,8 @@ type CreateIvrOnDemandDeps = {
   /** May throw when market data is unconfigured — that settles the ticker `no_market_data`. */
   getProvider: () => MarketDataProvider
   runState: IvRunState
-  clock?: { now(): Date }
-  logger?: Pick<Logger, 'info' | 'debug' | 'warn' | 'error'>
+  clock?: Clock
+  logger?: CollectorLogger
   /** Fired once per run, after the run state settles: every settle can change what the card
    *  shows (a reading, a coverage note, a failure), and the bench does not poll. */
   onSettled?: (ticker: string) => void

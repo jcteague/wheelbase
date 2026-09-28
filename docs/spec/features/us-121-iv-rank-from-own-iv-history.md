@@ -130,17 +130,19 @@ provider prices bars from a programmed IV series with the real pricer. See
   `reading`, `insufficient { coverage }` (a gap-only ticker has coverage 0) or `none`.
 - **`iv-run-state.ts`** — `createIvRunState()` is in-memory `pending` / `failed` / `no_market_data`
   state. One instance is created in `index.ts` and shared by every path below.
-- **`ivr-snapshots.ts`** — `readIvRankLookup` replaces `getAssessedIvrByUnderlying`. `absenceFor`
+- **`iv-rank-lookup.ts`** — `readIvRankLookup` replaces `getAssessedIvrByUnderlying` and returns
+  one `IvRankPair` (`ivRank` / `ivRankAbsence`, exactly one non-null) per ticker. `absenceFor`
   applies precedence: `pending` > `no_market_data` > `failed` > `insufficient_history` >
   `not_collected`, and a published reading always wins. `lookupOf` is the single defaulting
   accessor.
-- **`ivr-collector.ts`** — `collectIVRSnapshots` loops `collectIvHistory` with per-ticker isolation.
+- **`ivr-collector.ts`** — `collectIvHistoryBatch` loops `collectIvHistory` with per-ticker isolation.
   It has no `trigger` parameter and no closed-day guard. An auth failure, including one from the
   calendar refresh, aborts the run as `skippedReason: 'market_data_unavailable'` and marks every
   target `no_market_data`. `onCompleted` fires `ivr:snapshot-updated` once per run
   (`ticker: null`).
 - **`ivr-on-demand.ts`** — `collect(ticker)` marks `pending` synchronously before its first
   `await`, never rejects, and fires `onSettled` (the push, for that ticker) after every settle.
+  It shares `Clock` (`src/main/dates.ts`) and `CollectorLogger` with the collector.
 - **`trading-calendar-store.ts`** — reads now go 400 days back and 70 ahead; refreshes go 420 back
   and 400 ahead. The store refetches when the stored `first_day` is too late, and reports
   `no_market_data` on an auth failure.
@@ -152,10 +154,12 @@ provider prices bars from a programmed IV series with the real pricer. See
 - `CollectIvrNowBatchSchema.skippedReason` is now `'market_data_unavailable' | null`;
   `'market_closed'` is gone.
 - `IpcIvRank` gains `percentile`, `low` and `high`, and `value` becomes nullable. `IpcIvRankAbsence`
-  is added, and the pair travels as `IpcIvRankPair`.
+  is added, and the pair travels as `IpcIvRankPair`. The renderer mirrors are `IvRank`,
+  `IvRankAbsence` and `IvRankPair` in `api/ivr.ts`, named to match main.
 - `IvrCell` / `ReadingNote` take one `ivr` pair prop. `IvrCell` renders `…` (`animate-wb-pulse`)
   for `pending` and a reason-specific `title` otherwise. A flat window shows `n/a` but keeps its
-  tooltip. The tooltip body ends `52-wk IV <low>–<high> · IV percentile <p>`.
+  tooltip. The tooltip body ends `52-wk IV <low>–<high> · IV percentile <p>`. Each absence
+  reason's title and note come from one exhaustive `ABSENCE_COPY` table in `lib/ivr-tooltip.ts`.
 - `SettingsPage` shows `IV history refresh complete: N tickers updated, M errors.` or the
   credentials message.
 - The dev-only `_test:iv-*` channels in `ipc/test-iv-history.ts` replace `_test:ivr-set-outcomes` /
@@ -186,8 +190,6 @@ See [contracts/ipc-handlers.md](../contracts/ipc-handlers.md) and
   to fall back to.
 - `no_underlying_bar` gaps are never re-probed.
 - Unrecomputable rows WARN on every collect.
-- `IvMetricsRead` → `IvRankLookup` → `IvRankPair` are three shapes for one read. Row mapping is
-  maintained by hand in three places.
 - Strike grids for names priced under $10 or over $1000, and for monthly-only names, have not been
   verified.
 - A full-bench backfill on a fresh install can brush Alpaca's 200 req/min limit. At worst a ticker
@@ -246,10 +248,10 @@ Amended:
 - Integrations: `src/main/integrations/market-data-provider.ts`, `alpaca-market-data.ts`,
   `alpaca-market-data-mappers.ts`, `fake-market-data.ts`, `fake-clock.ts`
 - Services: `src/main/services/iv-history.ts`, `iv-history-store.ts`, `iv-history-read.ts`,
-  `iv-run-state.ts`, `ivr-collector.ts`, `ivr-on-demand.ts`, `ivr-snapshots.ts`,
+  `iv-run-state.ts`, `ivr-collector.ts`, `ivr-on-demand.ts`, `iv-rank-lookup.ts`,
   `watchlist-snapshot.ts`, `screener.ts`, `trading-calendar-store.ts`
 - IPC / wiring: `src/main/ipc/test-iv-history.ts`, `src/main/ipc/watchlist.ts`,
-  `src/main/ipc/screener.ts`, `src/main/schemas.ts`, `src/main/index.ts`, `src/main/test-utils.ts`
+  `src/main/ipc/screener.ts`, `src/main/schemas.ts`, `src/main/dates.ts`, `src/main/index.ts`, `src/main/test-utils.ts`
 - Preload: `src/preload/index.ts`, `src/preload/index.d.ts`
 - Renderer: `src/renderer/src/components/IvrCell.tsx`, `ReadingNote.tsx`, `BenchCard.tsx`,
   `BenchDetail.tsx`; `src/renderer/src/lib/ivr-tooltip.ts`, `screener-format.ts`;

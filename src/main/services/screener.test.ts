@@ -23,7 +23,7 @@ import { pullWatchlistChains, type TickerChainResult } from './candidate-chains'
 import { getEarningsCalendar } from './earnings-dates'
 import { readIvMetricsByUnderlying } from './iv-history-read'
 import { createIvRunState } from './iv-run-state'
-import { readIvRankLookup, type IvRankLookup } from './ivr-snapshots'
+import { readIvRankLookup, type IvRankPair } from './iv-rank-lookup'
 import { fetchEarningsCalendar } from '../integrations/finnhub-earnings'
 import { screenWatchlistCandidates } from './screener'
 import { saveScreeningCriteria } from './screening-criteria'
@@ -36,8 +36,8 @@ vi.mock('./candidate-chains', () => ({ pullWatchlistChains: vi.fn() }))
 
 // The IV-rank read path stays real so a seeded DB drives the join; individual tests swap
 // in a throwing series read to exercise the degrade-to-empty path, or program the lookup.
-vi.mock('./ivr-snapshots', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./ivr-snapshots')>()
+vi.mock('./iv-rank-lookup', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./iv-rank-lookup')>()
   return { ...actual, readIvRankLookup: vi.fn(actual.readIvRankLookup) }
 })
 
@@ -509,7 +509,9 @@ describe('screenWatchlistCandidates', () => {
     // in alongside it. A non-numeric rank makes the [US-67] iv_rank_floor filter's
     // Decimal math throw — the backstop the per-ticker catch exists for.
     vi.mocked(readIvRankLookup).mockReturnValueOnce(
-      new Map([['AAPL', { reading: { ...FRESH_READING, value: 'not-a-number' }, absence: null }]])
+      new Map([
+        ['AAPL', { ivRank: { ...FRESH_READING, value: 'not-a-number' }, ivRankAbsence: null }]
+      ])
     )
     mockChains({ status: 'ok', tickers: [AAPL_OK, KO_OK] })
 
@@ -1071,9 +1073,9 @@ describe('screenWatchlistCandidates — nullable IV rank', () => {
   function mockAssessed(byTicker: Record<string, AssessedIvRank>): void {
     vi.mocked(readIvRankLookup).mockReturnValueOnce(
       new Map(
-        Object.entries(byTicker).map(([ticker, reading]): [string, IvRankLookup] => [
+        Object.entries(byTicker).map(([ticker, reading]): [string, IvRankPair] => [
           ticker,
-          { reading, absence: null }
+          { ivRank: reading, ivRankAbsence: null }
         ])
       )
     )

@@ -17,7 +17,7 @@ import {
 } from '../test-utils'
 import { getEarningsCalendar } from './earnings-dates'
 import { createIvRunState, type IvRunState } from './iv-run-state'
-import { readIvRankLookup } from './ivr-snapshots'
+import { readIvRankLookup } from './iv-rank-lookup'
 import { buildWatchlistSnapshot } from './watchlist-snapshot'
 
 vi.mock('../logger', () => ({
@@ -26,8 +26,8 @@ vi.mock('../logger', () => ({
 
 // The IV-rank read path stays real so the seeded DB drives the assessment; the spy exists
 // only so the options handed to it can be asserted.
-vi.mock('./ivr-snapshots', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./ivr-snapshots')>()
+vi.mock('./iv-rank-lookup', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./iv-rank-lookup')>()
   return { ...actual, readIvRankLookup: vi.fn(actual.readIvRankLookup) }
 })
 
@@ -337,7 +337,7 @@ describe('buildWatchlistSnapshot', () => {
     const { provider } = makeProvider(
       (tickers) => new Map(tickers.map((ticker) => [ticker, stockQuote('62.00', '61.50')]))
     )
-    const notCollected = { reading: null, absence: { reason: 'not_collected' as const } }
+    const notCollected = { ivRank: null, ivRankAbsence: { reason: 'not_collected' as const } }
     vi.mocked(readIvRankLookup).mockReturnValueOnce(
       new Map([
         ['KO', notCollected],

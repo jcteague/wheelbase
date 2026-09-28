@@ -1,7 +1,13 @@
 // [US-121] SQL and row mapping for iv30_reading / iv30_gap. No arithmetic and no market-data
 // knowledge: readings arrive fully computed from core/iv30.ts and leave as plain rows.
 import type Database from 'better-sqlite3'
-import { IV30_METHOD, type Iv30GapReason, type Iv30Inputs, type Iv30Reading } from '../core/iv30'
+import {
+  IV30_METHOD,
+  type Iv30GapReason,
+  type Iv30Inputs,
+  type Iv30Reading,
+  type LegSelection
+} from '../core/iv30'
 
 export type PersistIvHistoryInput = {
   ticker: string
@@ -48,10 +54,10 @@ const UPSERT_READING = `
     near_put_vwap, near_put_trades, far_expiration, far_strike, far_call_vwap,
     far_call_trades, far_put_vwap, far_put_trades, rate, dividend_yield
   ) VALUES (
-    @underlying, @session, @method, @engineVersion, @observedAt, @iv30, @underlyingVwap,
-    @tier, @nearExpiration, @nearStrike, @nearCallVwap, @nearCallTrades,
-    @nearPutVwap, @nearPutTrades, @farExpiration, @farStrike, @farCallVwap,
-    @farCallTrades, @farPutVwap, @farPutTrades, @rate, @dividendYield
+    @underlying, @session, @method, @engine_version, @observed_at, @iv30, @underlying_vwap,
+    @expiration_tier, @near_expiration, @near_strike, @near_call_vwap, @near_call_trades,
+    @near_put_vwap, @near_put_trades, @far_expiration, @far_strike, @far_call_vwap,
+    @far_call_trades, @far_put_vwap, @far_put_trades, @rate, @dividend_yield
   )
   ON CONFLICT (underlying, session, method) DO UPDATE SET
     engine_version = excluded.engine_version,
@@ -121,32 +127,34 @@ export function selectAttemptedSessions(db: Database.Database, ticker: string): 
 /** Named parameters for UPSERT_READING — SQL scalars keyed by `@name`. */
 type SqlParams = Record<string, string | number | null>
 
+/** UPSERT_READING's parameters are named for their columns, so the compiler holds the write
+ *  to the same row shape `inputsOf` reads back. */
 function readingParams(ticker: string, reading: Iv30Reading, observedAt: string): SqlParams {
   const { near, far } = reading
   return {
     underlying: ticker,
     session: reading.session,
     method: IV30_METHOD,
-    engineVersion: reading.engineVersion,
-    observedAt,
+    engine_version: reading.engineVersion,
+    observed_at: observedAt,
     iv30: reading.iv30,
-    underlyingVwap: reading.underlyingVwap,
-    tier: reading.tier,
-    nearExpiration: near.expiration,
-    nearStrike: near.strike,
-    nearCallVwap: near.callVwap,
-    nearCallTrades: near.callTrades,
-    nearPutVwap: near.putVwap,
-    nearPutTrades: near.putTrades,
-    farExpiration: far?.expiration ?? null,
-    farStrike: far?.strike ?? null,
-    farCallVwap: far?.callVwap ?? null,
-    farCallTrades: far?.callTrades ?? null,
-    farPutVwap: far?.putVwap ?? null,
-    farPutTrades: far?.putTrades ?? null,
+    underlying_vwap: reading.underlyingVwap,
+    expiration_tier: reading.tier,
+    near_expiration: near.expiration,
+    near_strike: near.strike,
+    near_call_vwap: near.callVwap,
+    near_call_trades: near.callTrades,
+    near_put_vwap: near.putVwap,
+    near_put_trades: near.putTrades,
+    far_expiration: far?.expiration ?? null,
+    far_strike: far?.strike ?? null,
+    far_call_vwap: far?.callVwap ?? null,
+    far_call_trades: far?.callTrades ?? null,
+    far_put_vwap: far?.putVwap ?? null,
+    far_put_trades: far?.putTrades ?? null,
     rate: reading.rate,
-    dividendYield: reading.dividendYield
-  }
+    dividend_yield: reading.dividendYield
+  } satisfies Iv30ReadingRow & { method: string; observed_at: string }
 }
 
 /** One transaction: readings replace any gap for their session; gaps are upserted. */
@@ -192,9 +200,9 @@ export function updateIv30Values(
   })()
 }
 
-/** The engine inputs a stored row holds; null when its far_* columns are only partly set (the
- *  writer sets all six or none), which no inputs can faithfully describe. */
-export function inputsOf(row: Iv30ReadingRow): Iv30Inputs | null {
+/** The far leg a row holds: all six far_* columns set, or none of them (no far leg). A
+ *  partly-set leg — which the writer never produces — is `'partial'`. */
+function farLegOf(row: Iv30ReadingRow): LegSelection | null | 'partial' {
   const {
     far_expiration: expiration,
     far_strike: strike,
@@ -203,17 +211,27 @@ export function inputsOf(row: Iv30ReadingRow): Iv30Inputs | null {
     far_put_vwap: putVwap,
     far_put_trades: putTrades
   } = row
-  const farColumns = [expiration, strike, callVwap, callTrades, putVwap, putTrades]
-  if (farColumns.some((c) => c === null) && farColumns.some((c) => c !== null)) return null
-  const far =
-    expiration === null ||
-    strike === null ||
-    callVwap === null ||
-    callTrades === null ||
-    putVwap === null ||
-    putTrades === null
-      ? null
-      : { expiration, strike, callVwap, callTrades, putVwap, putTrades }
+  if (
+    expiration !== null &&
+    strike !== null &&
+    callVwap !== null &&
+    callTrades !== null &&
+    putVwap !== null &&
+    putTrades !== null
+  ) {
+    return { expiration, strike, callVwap, callTrades, putVwap, putTrades }
+  }
+  const noneSet = [expiration, strike, callVwap, callTrades, putVwap, putTrades].every(
+    (column) => column === null
+  )
+  return noneSet ? null : 'partial'
+}
+
+/** The engine inputs a stored row holds; null when its far leg is only partly set, which no
+ *  inputs can faithfully describe. */
+export function inputsOf(row: Iv30ReadingRow): Iv30Inputs | null {
+  const far = farLegOf(row)
+  if (far === 'partial') return null
   return {
     session: row.session,
     underlyingVwap: row.underlying_vwap,

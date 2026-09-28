@@ -24,13 +24,7 @@ import { readEarningsOrEmpty } from './earnings-horizon'
 import { getScreeningCriteria } from './screening-criteria'
 import { fetchIsolatedStockQuotes } from './underlying-quotes'
 import type { IvRunState } from './iv-run-state'
-import {
-  lookupOf,
-  readIvRankLookup,
-  toIvRankPair,
-  type IvRankLookup,
-  type IvRankPair
-} from './ivr-snapshots'
+import { lookupOf, readIvRankLookup, type IvRankPair } from './iv-rank-lookup'
 import { ensureTradingCalendar, readTradingCalendar } from './trading-calendar-store'
 
 export type ScreenerExclusionCode = ExclusionCode | 'no_options_listed' | 'data_unavailable'
@@ -105,7 +99,7 @@ function readIvRanks(
   currentDate: Date,
   earnings: Map<string, EarningsCalendarKnowledge>,
   runState: IvRunState
-): Map<string, IvRankLookup> {
+): Map<string, IvRankPair> {
   return readIvRankLookup(db, tickers, {
     now: currentDate,
     calendar: readTradingCalendar(db, currentDate),
@@ -117,11 +111,11 @@ function readIvRanks(
 /** Only a usable reading with a rank is scored — a flat window withholds the rank, so the
  *  IV-rank floor has nothing to judge. The rest still reach the trader through
  *  `RankedCandidate.ivRank`, marked rather than silently priced in. */
-function usableIvRanks(lookups: Map<string, IvRankLookup>): Map<string, IvRank> {
+function usableIvRanks(lookups: Map<string, IvRankPair>): Map<string, IvRank> {
   return new Map(
-    [...lookups].flatMap(([ticker, { reading }]): Array<[string, IvRank]> => {
-      if (reading === null || reading.value === null || !isUsableState(reading.state)) return []
-      return [[ticker, { value: reading.value, observedAt: reading.observedAt }]]
+    [...lookups].flatMap(([ticker, { ivRank }]): Array<[string, IvRank]> => {
+      if (ivRank === null || ivRank.value === null || !isUsableState(ivRank.state)) return []
+      return [[ticker, { value: ivRank.value, observedAt: ivRank.observedAt }]]
     })
   )
 }
@@ -294,7 +288,7 @@ export async function screenWatchlistCandidates(
   const ranked = rankCandidates(
     outcomes.flatMap((outcome) => ('screened' in outcome ? [outcome.screened] : []))
   ).map((candidate): RankedCandidate => {
-    return { ...candidate, ...toIvRankPair(lookupOf(ivRankLookups, candidate.ticker)) }
+    return { ...candidate, ...lookupOf(ivRankLookups, candidate.ticker) }
   })
   const excluded = outcomes.flatMap((outcome) =>
     'screened' in outcome ? representativeExclusion(outcome.screened) : [outcome.exclusion]

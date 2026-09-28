@@ -1,4 +1,4 @@
-import type { IvRankPair } from '../api/screener'
+import type { IvRankPair } from '../api/ivr'
 import { ivrAbsenceNote, type IvrNote, tradingDaysLabel } from '../lib/ivr-tooltip'
 import { formatIvrValue } from '../lib/screener-format'
 import { AlertBox } from './ui/AlertBox'

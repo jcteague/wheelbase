@@ -5,9 +5,7 @@
 // channel. When the env var is absent — i.e. production — `createFakeClock()` returns
 // `undefined` and every consumer falls back to the wall clock.
 
-export type Clock = {
-  now(): Date
-}
+import type { Clock } from '../dates'
 
 let fakeNowIso: string | null = null
 
