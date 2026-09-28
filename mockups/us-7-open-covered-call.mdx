@@ -437,9 +437,7 @@ export function computeGuardrail(strikeStr, basisStr, sharesHeld) {
 export function Mockup() {
   const [state, setState] = useState('form')
   const pos = MOCK_POSITION
-
 const states = ['form', 'below-cost-basis', 'at-cost-basis', 'above-cost-basis', 'partial-coverage', 'future-fill-date', 'zero-premium', 'past-expiration', 'success']
-
 // Per-state form values
 const strikeByState = {
 'form': '182.00',
@@ -452,7 +450,6 @@ const strikeByState = {
 'past-expiration': '182.00',
 'success': '182.00',
 }
-
 const strike = strikeByState[state] ?? '182.00'
 const expiration = state === 'past-expiration' ? '2024-06-21' : '2026-02-21'
 const premium = state === 'zero-premium' ? '0.00' : '2.30'
@@ -460,25 +457,19 @@ const contracts = '1'
 const sharesHeld = state === 'partial-coverage' ? 200 : pos.sharesHeld
 const totalContracts = state === 'partial-coverage' ? 2 : pos.contracts
 const fillDate = state === 'future-fill-date' ? '2099-01-01' : '2026-01-20'
-
 const isSuccess = state === 'success'
 const isPastExpiry = state === 'past-expiration'
 const isPartial = state === 'partial-coverage'
 const isFutureFill = state === 'future-fill-date'
 const isZeroPremium = state === 'zero-premium'
-
 // Guardrail — only shown in non-success form states
 const guardrail = !isSuccess ? computeGuardrail(strike, pos.basisPerShare, sharesHeld) : null
-
 // Post-CC cost basis: basisPerShare − (premiumPerContract × contracts × 100) / totalShares
 const premiumFloat = parseFloat(premium)
 const updatedBasis = (parseFloat(pos.basisPerShare) - premiumFloat).toFixed(2)
-const updatedTotalPremium = (parseFloat(pos.totalPremiumCollected) + premiumFloat \* 100).toFixed(2)
-
+const updatedTotalPremium = (parseFloat(pos.totalPremiumCollected) + premiumFloat * 100).toFixed(2)
 return (
-
 <div style={{ fontFamily: MONO, background: '#040608', minHeight: 520 }}>
-
       {/* Dev state toggle */}
       <div style={{
         display: 'flex',
@@ -510,10 +501,8 @@ return (
           </button>
         ))}
       </div>
-
       {/* Simulated content area with sheet overlay */}
       <div style={{ position: 'relative', height: 680, overflow: 'hidden', background: '#040608' }}>
-
         {/* Background: simulated position detail (HOLDING_SHARES) */}
         <div style={{ padding: '24px 28px', opacity: 0.25, pointerEvents: 'none', userSelect: 'none' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
@@ -535,13 +524,10 @@ return (
             ))}
           </div>
         </div>
-
         {/* Scrim */}
         <div style={{ position: 'absolute', inset: 0, background: 'rgba(4,6,8,0.45)' }} />
-
         {/* Sheet panel */}
         <div style={panelStyle}>
-
           {/* ── Header ── */}
           <div style={{
             padding: '20px 24px 18px',
@@ -591,10 +577,8 @@ return (
               marginTop: 2,
             }}>×</button>
           </div>
-
           {/* ── Body ── */}
           <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
-
             {isSuccess ? (
               <>
                 {/* Hero card */}
@@ -645,7 +629,6 @@ return (
                     </div>
                   </div>
                 </div>
-
                 {/* Result summary card — Real: <SectionCard> with <MockSummaryRow> rows */}
                 <MockSectionCard>
                   <MockSummaryRow label="Leg recorded" value={<span style={{ color: '#bc8cff' }}>CC_OPEN · Jan 20, 2026</span>} />
@@ -661,7 +644,6 @@ return (
                   <MockSummaryRow label="Premium collected" value={<span style={{ color: 'var(--wb-green, #3fb950)' }}>+${premium}/share · +$230.00 total</span>} />
                   <MockSummaryRow label="Updated cost basis" value={'$' + updatedBasis + ' / share'} noBorder highlight />
                 </MockSectionCard>
-
                 {/* Profit preview note */}
                 <MockAlertBox variant="info">
                   <span style={{ display: 'flex', gap: 8, alignItems: 'flex-start', lineHeight: 1.6 }}>
@@ -669,13 +651,11 @@ return (
                     <span>If shares are called away at <strong>${strike}</strong>, you profit <strong>$5.50/share</strong> ($550.00 total) above cost basis.</span>
                   </span>
                 </MockAlertBox>
-
                 {/* What's next */}
                 {/* Real: <Caption>What's next?</Caption> */}
                 <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--wb-text-muted, #4a5a6a)' }}>
                   What&apos;s next?
                 </div>
-
                 <button onClick={() => {}} style={{
                   width: '100%',
                   fontSize: 11,
@@ -705,9 +685,7 @@ return (
                     highlight
                   />
                 </MockSectionCard>
-
                 {/* Form fields: Strike, Expiration, Premium, Contracts, Fill Date */}
-
                 <MockField
                   label="Strike"
                   hint="The strike price of the covered call you are selling"
@@ -718,14 +696,12 @@ return (
                     placeholder="0.00"
                   />
                 </MockField>
-
                 {/* Guardrail alert — Real: conditional <AlertBox variant="warning"> or <AlertBox variant="info"> */}
                 {guardrail && (
                   <MockAlertBox variant={guardrail.type === 'above' ? 'info' : 'warning'}>
                     {guardrail.message}
                   </MockAlertBox>
                 )}
-
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <MockField
                     label="Premium / share"
@@ -747,21 +723,18 @@ return (
                     />
                   </MockField>
                 </div>
-
                 {/* Partial coverage notice — Real: <AlertBox variant="info"> when ccContracts < totalContracts */}
                 {isPartial && (
                   <MockAlertBox variant="info">
                     {contracts} of {totalContracts} contracts covered — {(totalContracts - parseInt(contracts)) * 100} shares uncovered
                   </MockAlertBox>
                 )}
-
                 {/* Zero premium warning — Real: <AlertBox variant="warning"> when premium === 0 */}
                 {isZeroPremium && (
                   <MockAlertBox variant="warning">
                     Premium is $0.00 — are you sure?
                   </MockAlertBox>
                 )}
-
                 <MockField
                   label="Expiration"
                   hint="Option expiration date"
@@ -769,21 +742,18 @@ return (
                 >
                   <MockDatePicker value={expiration} hasError={isPastExpiry} />
                 </MockField>
-
                 <MockField
                   label="Fill Date"
                   hint="The date this order was filled"
                 >
                   <MockDatePicker value={fillDate} />
                 </MockField>
-
                 {/* Future fill date warning — Real: <AlertBox variant="warning"> when fillDate > today */}
                 {isFutureFill && (
                   <MockAlertBox variant="warning">
                     This date is in the future — are you sure?
                   </MockAlertBox>
                 )}
-
                 {/* Irrevocable warning — Real: <AlertBox variant="warning"><strong>This cannot be undone.</strong>…</AlertBox> */}
                 <MockAlertBox variant="warning">
                   <strong style={{ fontWeight: 700, display: 'block', marginBottom: 3 }}>This cannot be undone.</strong>
@@ -792,7 +762,6 @@ return (
               </>
             )}
           </div>
-
           {/* ── Footer ── */}
           {!isSuccess && (
             <div style={{
@@ -814,11 +783,9 @@ return (
               />
             </div>
           )}
-
         </div>
       </div>
     </div>
-
 )
 }
 

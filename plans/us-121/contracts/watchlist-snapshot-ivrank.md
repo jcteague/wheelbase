@@ -25,18 +25,21 @@ interface IpcIvRank {
   state: 'fresh' | 'aging' | 'stale' | 'expired' | 'predates_earnings'
 }
 
-// watchlist:snapshot row (unchanged otherwise)
-{ entry, quote, ivRank: IpcIvRank | null, earnings, verdict }
+interface IpcIvRankAbsence {
+  status: 'absent'
+  reason: 'pending' | 'insufficient_history' | 'no_market_data' | 'failed' | 'not_collected'
+  coverage?: number      // window sessions with a reading; present for insufficient_history
+}
+
+// watchlist:snapshot row (unchanged otherwise) — exactly one of the two is non-null
+{ entry, quote, ivRank: IpcIvRank | null, ivRankAbsence: IpcIvRankAbsence | null, earnings, verdict }
 // screener:results ranked candidate (unchanged otherwise)
-{ …, ivRank: IpcIvRank | null, … }
+{ …, ivRank: IpcIvRank | null, ivRankAbsence: IpcIvRankAbsence | null, … }
 ```
 
-`ivRank: null` now means: no `iv30_reading` for the ticker, fewer than 200 of the 252 window
-sessions have a reading, or the anchor could not be placed on the calendar (`unreadable`, logged).
-`ivr_snapshot` no longer exists, so there is no legacy source to fall back to.
+`ivRank: null` always comes with an `ivRankAbsence` saying why: `pending` (collection in flight in this process), `insufficient_history` (rows exist, coverage below 200 — `coverage` carries the count), `no_market_data` (last run aborted on missing credentials), `failed` (last run for this ticker failed), `not_collected` (no rows, no known status — never attempted, or a relaunch mid-backfill). An `unreadable` assessment (anchor not placeable on the calendar) reports `not_collected` and is logged. `ivr_snapshot` no longer exists, so there is no legacy source to fall back to.
 
-Verdict semantics (`verdict.iv`): `value: null` → `unknown` with label `IV unavailable`, exactly
-as a missing reading; the `stale` / `predates_earnings` labels are unchanged.
+Verdict semantics (`verdict.iv`): `value: null` → `unknown` with label `IV unavailable`, exactly as a missing reading; the `stale` / `predates_earnings` labels are unchanged. The absence reason never reaches the verdict engine or the screener floor.
 
 ## Error codes
 
@@ -49,7 +52,7 @@ as a missing reading; the `stale` / `predates_earnings` labels are unchanged.
 `ScreenerIvRank` in `src/renderer/src/api/screener.ts` gains the same three fields and the
 nullable `value`. `IvrCell` renders `n/a` for a null value **with** the tooltip (unlike a `null`
 reading, which has none); `ivrTooltipCopy` appends
-`52-wk IV 0.1800–0.4500 · IV percentile 71` to every tier's body.
+`52-wk IV 0.1800–0.4500 · IV percentile 71` to every tier's body. `IvrCell` takes `absence` too: `pending` renders a muted pulsing `…` titled `Computing IV history`; the other reasons render `n/a` with `data-ivr-reason` and a reason-specific title.
 
 ## Source
 

@@ -1,0 +1,1134 @@
+---
+title: 'Epic 09: New Position Sheet — Final Layout'
+story: 'The shared New position sheet once US-101 (Standard / PMCC toggle, two leg sections, review summary, rejections, market-data notices), US-113 (IV term-structure block in PMCC mode) and US-122 (arrival pre-filled from the PMCC screener with the promote banner) have all shipped.'
+states:
+  [
+    'standard',
+    'pmcc-empty',
+    'pmcc-review',
+    'iv-front-thin',
+    'iv-flat',
+    'iv-missing',
+    'iv-manual',
+    'stale',
+    'quotes-unavailable',
+    'loading',
+    'no-matching',
+    'reject-structure',
+    'reject-dates',
+    'saving',
+    'save-failed',
+    'promoted-match',
+    'promoted-moved',
+    'promoted-moved-both',
+    'promoted-stale-closed',
+    'promoted-stale-ext',
+    'promoted-offline',
+    'promoted-missing',
+    'promoted-edited',
+    'promoted-replaced',
+    'promoted-malformed'
+  ]
+---
+
+import { useState } from 'react'
+import { PageHeader } from '../src/renderer/src/components/PageLayout'
+import { MarketStatusPill } from '../src/renderer/src/components/MarketStatusPill'
+import { Badge } from '../src/renderer/src/components/ui/Badge'
+import { Field } from '../src/renderer/src/components/ui/FormField'
+import { NumberInput } from '../src/renderer/src/components/ui/NumberInput'
+import { FormButton } from '../src/renderer/src/components/ui/FormButton'
+import { SectionCard } from '../src/renderer/src/components/ui/SectionCard'
+import { AlertBox } from '../src/renderer/src/components/ui/AlertBox'
+import { ErrorAlert } from '../src/renderer/src/components/ui/ErrorAlert'
+import { Caption } from '../src/renderer/src/components/ui/Caption'
+import { DatePicker } from '../src/renderer/src/components/ui/date-picker'
+import {
+  SheetOverlay,
+  SheetPanel,
+  SheetHeader,
+  SheetBody,
+  SheetFooter
+} from '../src/renderer/src/components/ui/Sheet'
+import { PositionsGrid, activeCount } from './epic-09-pmcc-dashboard.mdx'
+
+# Epic 09: New Position Sheet — Final Layout
+
+_The **New position** sheet as it looks once every Epic 09 story that touches it has shipped, rendered over the shipped positions list. One 460px sheet, two strategies: **Standard** is the wheel form exactly as it ships today, **PMCC** stacks a Buy LEAPS call section, a Sell short call section, the IV term-structure read and the opening cash flows. Every figure on the sheet — DTE, cash flows, debit-to-width, IV spread and ratio, the promote banner's "net debit at fresh marks" — is folded from the fixture in this file, never typed in._
+
+## Which story owns what
+
+The chrome is imported, not redrawn: `PageHeader`, `MarketStatusPill`, `Badge`, `SheetOverlay` / `SheetPanel` / `SheetHeader` / `SheetBody` / `SheetFooter`, `Field`, `NumberInput`, `DatePicker`, `FormButton`, `SectionCard`, `AlertBox` and `ErrorAlert` all come from `src/renderer/src`.
+
+| Region | Owner |
+| -- | -- |
+| The sheet itself: header, `Standard / PMCC` toggle, fixed footer with Cancel + the active strategy's action | US-101 |
+| Standard mode: the shipped wheel form, unchanged, inside the sheet | US-101 (form is US-1 / US-68 as shipped) |
+| PMCC mode: shared Ticker + `Contracts per leg`, the two leg sections (picker, quote block, actual fill, fees, fill date) | US-101 |
+| Per-selector market-data notices (loading, no matching calls, quotes unavailable, stale) | US-101 |
+| Opening cash flows + `Initial net debit` in the footer | US-101 |
+| Field and pair-level rejection messages beside the right leg; failed-save recovery | US-101 |
+| `IV term structure` block between Sell short call and the cash flows, PMCC mode only | US-113 |
+| `⊞ Promoted from Screener · PMCC · Quoted HH:mm:ss` strip and the single banner slot (offline, missing, stale, moved, edited, match) | US-122 |
+| Pre-filled XLF legs with fresh per-leg quotes, editable fill defaults, seeded thesis, malformed landing | US-122 |
+
+## Acceptance Criteria States
+
+XYZ presets are the entry-day fixture (valuation **2026-09-14**, XYZ $100.00, $80 LEAPS exp 2027-09-17 at $25.00, $110 short exp 2026-10-16 at $2.00, quoted 10:12 ET — the same position `BASE_LEAPS[0]` / `BASE_CYCLES[0]` in the detail mockup opens). XLF presets are US-122's fixture (Friday **2026-09-18**, $42 LEAPS exp 2028-01-21 mark $10.30, $53 short exp 2026-10-23 mark $0.64, screener snapshot 10:42:15). The two fixtures are never blended. The US-122 handoff (`IpcPmccScoredCandidate` + the query-string codec) carries no per-contract IV, so the XLF IVs on the promoted presets (short 19.5%, LEAPS 17.0%) come only from the sheet’s own re-quote on open — US-113 reads chain IV from the fresh quotes — which is why `promoted-offline` reads `Quotes unavailable · —` and `promoted-missing` reads `n/a · IV not quoted for the LEAPS`: no re-quote, no IV.
+
+- **standard**: 2026-09-14. `Open Wheel` opened the sheet; Standard is selected and the shipped wheel form (Ticker, Contracts, Strike Price, Premium / Contract, Expiration, Advanced) sits in the body with `Open Wheel` in the footer. No IV block, no PMCC field anywhere. — US-101 / US-113.
+- **pmcc-empty**: PMCC selected with an untouched draft: both pickers waiting, fills empty, cash flows dashed, the IV block asking `Select both calls to compare their IV`. — US-101 / US-113.
+- **pmcc-review**: both XYZ calls selected from the chain. LEAPS 368 DTE, short 32 DTE, cash flows $2,500.00 / $200.00 / $0.00 → `Initial net debit` $2,300.00, width $30.00, 76.67%. IV block reads `BACKWARDATION · FRONT RICH` (34.0% / 28.0%, +6.0 pts, 1.21). — US-101 / US-113.
+- **iv-front-thin**: same entry, short quoted 28.0% against the LEAPS 34.0% → `CONTANGO · FRONT THIN` in gold, −6.0 pts, 0.82. — US-113.
+- **iv-flat**: 30.0% / 29.0% → `FLAT · FLAT`, +1.0 pt, 1.03. — US-113.
+- **iv-missing**: the short call's quote carries no IV → `—` for that leg, Spread and Ratio `—`, `n/a · IV not quoted for the short call` (the LEAPS and both-legs variants swap the leg named). — US-113.
+- **iv-manual**: LEAPS entered manually, short from the chain → LEAPS IV `—` with no quote time, `n/a · manual entry — no quote to read the LEAPS IV`; manual strike / expiration / fill remain editable. — US-113 / US-101.
+- **stale**: both quotes stale. Each picker shows `Quote is stale. Verify against your actual fill.`; the block inherits it — figures muted, `Stale · —`, no read word. — US-101 / US-113.
+- **quotes-unavailable**: the market-data request failed. Each picker shows `Quotes unavailable. Enter your filled trade manually.`, quote blocks show em dashes, the IV block reads `Quotes unavailable · —`. Fills preserved. — US-101 / US-113.
+- **loading**: the call chain is still loading — `Loading call contracts…` on both selectors, manual entry still offered. — US-101.
+- **no-matching**: the LEAPS filters (180+ DTE · Δ 0.70–0.85) return nothing — `No matching calls. Adjust filters or enter manually.` on that selector only; the short selection is preserved. — US-101.
+- **reject-structure**: `Record PMCC` pressed on a broken entry. `Contracts must be a positive whole number.` beside Contracts per leg; `Enter the actual LEAPS fill price.` beside the LEAPS fill; `Short call must expire before the LEAPS call.` beside the short expiration; `Short-call strike must be above the LEAPS strike.` beside the short strike; the pair-level `Both calls must have the same underlying.` at the top of the short leg. Values stay for correction. — US-101.
+- **reject-dates**: `Fill date cannot be in the future.` beside the LEAPS fill date, `LEAPS must be acquired no later than the short-call fill.` beside the short fill date, `Fees cannot be negative.` beside the short fees, and the pair-level `This PMCC entry requires a net debit before fees.` on the cash flows. — US-101.
+- **saving**: `Record PMCC` → `Recording…`, toggle and footer disabled. — US-101.
+- **save-failed**: the storage failure left the sheet open with `Could not record PMCC. Your entries are preserved. Try again.` at the top, every value intact and `Record PMCC` available again. — US-101.
+- **promoted-match**: 2026-09-18, LIVE. `Review trade →` on XLF's Matching diagonal card opened the sheet in PMCC mode: strip `⊞ Promoted from Screener · PMCC · Quoted 10:58:40`, Ticker XLF, Contracts per leg 1, LEAPS $42.00 / 2028-01-21 / 490 DTE with fill 10.30, short $53.00 / 2026-10-23 / 35 DTE with fill 0.64, thesis seeded, cash flows $1,030.00 / $64.00 / $966.00 / $11.00 / 87.82%. Fresh marks $10.60 / $0.68 → green `Fresh quotes LEAPS $10.60 · short $0.68 — no material move from the promoted marks.` — US-122. (In production this arrival renders over the watchlist bench, which the screener mockup owns; the list is shown underneath here so the sheet is the same one in every preset.)
+- **promoted-moved**: LEAPS fresh mark $10.85 → gold `Price moved: LEAPS quoted $10.30 → now $10.85 — net debit at fresh marks $10.21 (92.82% of width). Review before submitting.` Fills still 10.30 / 0.64. — US-122.
+- **promoted-moved-both**: LEAPS $10.85 and short $0.55 → both legs listed, net debit at fresh marks $10.30 (93.64% of width). — US-122.
+- **promoted-stale-closed**: pill CLOSED, diagonal quoted 16:00:02 → gold `Market closed — the pre-filled marks are stale after-hours snapshots (quoted 16:00:02). Verify before recording.` Each quote block also carries US-101's per-leg stale notice and the IV block reads `Stale · —`. — US-122 / US-101 / US-113.
+- **promoted-stale-ext**: pill EXT → gold `Extended hours — options aren't trading, so the pre-filled marks are stale snapshots (quoted 16:00:02). Verify before recording.` — US-122.
+- **promoted-offline**: provider unreachable → gold `Couldn't refresh quotes — showing screener snapshot from 10:42:15. Verify before recording.`; every promoted value pre-filled; each quote block shows `Quotes unavailable. Enter your filled trade manually.`; strip keeps 10:42:15. — US-122 / US-101.
+- **promoted-missing**: provider answered but the $42 LEAPS is gone from today's chain → gold `The $42.00 LEAPS expiring Jan 21, 2028 is no longer in XLF's chain — pre-filled from the 10:42:15 screener snapshot. Choose a contract or enter your fill manually.`; LEAPS quote block `No quote available`, short leg fresh; LEAPS fields still hold 42.00 / 2028-01-21 / 10.30. — US-122.
+- **promoted-edited**: fill changed to 10.40 → LEAPS purchase cost $1,040.00, net debit $976.00, 88.73%; green `Recording your entered prices, not the screener snapshot (LEAPS $10.40 vs $10.30).` — US-122.
+- **promoted-replaced**: the short picker now holds the $54 call — its fill is empty and the banner compares the LEAPS only. — US-122.
+- **promoted-malformed**: a bad handoff query lands on a plain PMCC sheet: Ticker XLF, nothing else pre-filled, no strip, no banner. — US-122.
+
+Not shown here: the positions-list row and detail leg-reference drawer after recording (US-101 — dashboard and detail mockups), the Matching diagonal card's `Review trade →` (US-122 — screener mockup), and the "quantities must match" and "adjusted deliverable" rejections, which have no field to land beside once quantity is shared and contracts are picked from a standard chain — they are boundary-only rules.
+
+---
+
+export const DAY = 86400000
+
+export const ms = (s) => Date.parse(`${s}T00:00:00Z`)
+
+export const days = (a, b) => Math.round((ms(b) - ms(a)) / DAY)
+
+export const money = (n) =>
+  `${n < 0 ? '−' : ''}$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+export const fix2 = (n) => n.toFixed(2)
+
+export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+export const longDate = (iso) => {
+  const [y, m, d] = iso.split('-').map(Number)
+  return `${MONTHS[m - 1]} ${d}, ${y}`
+}
+
+export const pct2 = (x) => `${(x * 100).toFixed(2)}%`
+
+export const ivPct = (iv) => (iv == null ? '—' : `${(iv * 100).toFixed(1)}%`)
+
+export const num = (s) => {
+  if (s === '' || s == null) return null
+  const n = Number(s)
+  return Number.isFinite(n) ? n : null
+}
+
+export const BASE_LEAPS_OPEN = {
+  kind: 'open',
+  date: '2026-09-14',
+  action: 'BUY',
+  strike: 80,
+  expiration: '2027-09-17',
+  price: 25.0
+}
+
+export const BASE_CYCLE_1_OPEN = { date: '2026-09-14', strike: 110, expiration: '2026-10-16', price: 2.0 }
+
+export const XYZ = {
+  ticker: 'XYZ',
+  today: '2026-09-14',
+  stock: 100,
+  quotedAt: '10:12 ET',
+  staleAt: 'Sep 11, 2026 · 16:00 ET',
+  long: {
+    strike: BASE_LEAPS_OPEN.strike,
+    expiration: BASE_LEAPS_OPEN.expiration,
+    fill: BASE_LEAPS_OPEN.price,
+    fillDate: BASE_LEAPS_OPEN.date,
+    bid: 24.8,
+    ask: 25.2,
+    delta: 0.8,
+    iv: 0.28
+  },
+  short: {
+    strike: BASE_CYCLE_1_OPEN.strike,
+    expiration: BASE_CYCLE_1_OPEN.expiration,
+    fill: BASE_CYCLE_1_OPEN.price,
+    fillDate: BASE_CYCLE_1_OPEN.date,
+    bid: 1.9,
+    ask: 2.1,
+    delta: 0.3,
+    iv: 0.34
+  }
+}
+
+export const XLF = {
+  ticker: 'XLF',
+  today: '2026-09-18',
+  quotedAt: '10:42:15',
+  freshAt: '10:58:40',
+  closeAt: '16:00:02',
+  note: 'Core financials ETF — run a PMCC while IVR stays under 50',
+  long: { strike: 42, expiration: '2028-01-21', mark: 10.3, bid: 10.15, ask: 10.45, delta: 0.81, iv: 0.17 },
+  short: { strike: 53, expiration: '2026-10-23', mark: 0.64, bid: 0.62, ask: 0.66, delta: 0.29, iv: 0.195 },
+  replacement: { strike: 54, expiration: '2026-10-23', mark: 0.46, bid: 0.44, ask: 0.48, delta: 0.24, iv: 0.19 }
+}
+
+export const LEG_META = {
+  long: {
+    title: 'Buy LEAPS call',
+    action: 'BUY TO OPEN',
+    filters: '180+ DTE · Δ 0.70–0.85',
+    fillLabel: 'Actual purchase / share',
+    name: 'LEAPS'
+  },
+  short: {
+    title: 'Sell short call',
+    action: 'SELL TO OPEN',
+    filters: '20–45 DTE · Δ 0.25–0.35',
+    fillLabel: 'Actual sale / share',
+    name: 'short call'
+  }
+}
+
+export const NOTICE = {
+  loading: 'Loading call contracts…',
+  empty: 'No matching calls. Adjust filters or enter manually.',
+  unavailable: 'Quotes unavailable. Enter your filled trade manually.',
+  stale: 'Quote is stale. Verify against your actual fill.'
+}
+
+export const SAVE_FAILED = 'Could not record PMCC. Your entries are preserved. Try again.'
+
+export const IV_RATIO_RICH_MIN = 1.1
+
+export const IV_RATIO_THIN_MAX = 0.9
+
+export const IV_READS = [
+  {
+    shape: 'BACKWARDATION',
+    status: 'FRONT RICH',
+    tone: 'green',
+    test: (r) => r > IV_RATIO_RICH_MIN,
+    text: 'the short call is quoted at richer IV than the LEAPS — you are selling vol dearer than you are buying it, the diagonal’s edge'
+  },
+  {
+    shape: 'CONTANGO',
+    status: 'FRONT THIN',
+    tone: 'gold',
+    test: (r) => r < IV_RATIO_THIN_MAX,
+    text: 'the LEAPS is quoted at richer IV than the short call — you are buying vol dearer than you are selling it, and the LEAPS mark can bleed it'
+  },
+  {
+    shape: 'FLAT',
+    status: 'FLAT',
+    tone: 'neutral',
+    test: () => true,
+    text: 'no IV edge between the legs — the entry stands on strike, DTE and debit-to-width'
+  }
+]
+
+export function readTermStructure({ shortIv, leapsIv, shortSource, leapsSource, quoteState }) {
+  // Withheld states short-circuit the registry in US-113's order:
+  // unavailable → stale → manual → missing IV. Figures stay muted where they exist.
+  if (quoteState === 'unavailable') {
+    return { kind: 'withheld', status: 'Quotes unavailable · —', reason: 'no live quote to read IV from' }
+  }
+  if (quoteState === 'stale') {
+    return {
+      kind: 'withheld',
+      status: 'Stale · —',
+      reason: 'a quote is stale — verify against a live quote before reading it'
+    }
+  }
+  if (shortSource === 'manual') {
+    return { kind: 'withheld', status: 'n/a', reason: 'manual entry — no quote to read the short call’s IV' }
+  }
+  if (leapsSource === 'manual') {
+    return { kind: 'withheld', status: 'n/a', reason: 'manual entry — no quote to read the LEAPS IV' }
+  }
+  const shortMissing = shortIv == null
+  const leapsMissing = leapsIv == null || leapsIv === 0
+  if (shortMissing || leapsMissing) {
+    const reason =
+      shortMissing && leapsMissing
+        ? 'IV not quoted for either call'
+        : shortMissing
+          ? 'IV not quoted for the short call'
+          : 'IV not quoted for the LEAPS'
+    return { kind: 'withheld', status: 'n/a', reason }
+  }
+  const ratio = shortIv / leapsIv
+  const spreadPts = (shortIv - leapsIv) * 100
+  const read = IV_READS.find((r) => r.test(ratio))
+  return { kind: 'read', ...read, ratio, spreadPts }
+}
+
+export const fmtSpread = (pts) => {
+  const abs = Math.abs(pts).toFixed(1)
+  const sign = pts < 0 ? '−' : '+'
+  return `${sign}${abs} ${abs === '1.0' ? 'pt' : 'pts'}`
+}
+
+export const IV_TONE_CLASS = {
+  green: 'text-wb-green',
+  gold: 'text-wb-gold',
+  neutral: 'text-wb-text-secondary',
+  muted: 'text-wb-text-muted'
+}
+
+export const MOVE_FLOOR = 0.05
+
+export const MOVE_FRACTION = 0.05
+
+export const markMovedMaterially = (promoted, fresh) =>
+  Math.abs(fresh - promoted) > Math.max(MOVE_FLOOR, promoted * MOVE_FRACTION) + 1e-9
+
+export function requote(base, mark) {
+  const half = (base.ask - base.bid) / 2
+  return { bid: mark - half, ask: mark + half, mid: mark, delta: base.delta, iv: base.iv }
+}
+
+export function xyzLeg(key, over = {}) {
+  const base = XYZ[key]
+  return {
+    key,
+    ticker: XYZ.ticker,
+    source: 'chain',
+    strike: base.strike,
+    expiration: base.expiration,
+    quote: {
+      bid: base.bid,
+      ask: base.ask,
+      mid: (base.bid + base.ask) / 2,
+      delta: base.delta,
+      iv: base.iv,
+      at: `${longDate(XYZ.today)} · ${XYZ.quotedAt}`,
+      time: XYZ.quotedAt
+    },
+    fill: fix2(base.fill),
+    fees: '0.00',
+    fillDate: base.fillDate,
+    errors: {},
+    pairError: null,
+    notice: null,
+    hints: {},
+    ...over
+  }
+}
+
+export function emptyLeg(key, today, over = {}) {
+  return {
+    key,
+    ticker: null,
+    source: null,
+    strike: null,
+    expiration: null,
+    quote: null,
+    fill: '',
+    fees: '0.00',
+    fillDate: today,
+    errors: {},
+    pairError: null,
+    notice: null,
+    hints: {},
+    ...over
+  }
+}
+
+export function xlfLeg(key, { fetch, freshMark, fill, contract, promoted = true } = {}) {
+  // fetch: 'fresh' | 'close' | 'unavailable' | 'missing'
+  const base = contract ?? XLF[key]
+  const at =
+    fetch === 'close' ? XLF.closeAt : fetch === 'fresh' ? XLF.freshAt : XLF.quotedAt
+  const quote =
+    fetch === 'unavailable' || fetch === 'missing'
+      ? null
+      : { ...requote(base, freshMark ?? base.mark), at: `${longDate(XLF.today)} · ${at} ET`, time: `${at} ET` }
+  return {
+    key,
+    ticker: XLF.ticker,
+    source: 'chain',
+    promoted,
+    promotedMark: promoted ? base.mark : null,
+    strike: base.strike,
+    expiration: base.expiration,
+    quote,
+    noQuote: fetch === 'missing' ? 'No quote available' : null,
+    fill: fill ?? (promoted ? fix2(base.mark) : ''),
+    fees: '0.00',
+    fillDate: XLF.today,
+    errors: {},
+    pairError: null,
+    notice: fetch === 'unavailable' ? NOTICE.unavailable : fetch === 'close' ? NOTICE.stale : null,
+    hints: promoted ? { fill: 'editable — override with your actual fill' } : {}
+  }
+}
+
+export function summarize(long, short, contracts) {
+  const n = num(contracts)
+  const lf = num(long.fill)
+  const sf = num(short.fill)
+  const fees = (num(long.fees) ?? 0) + (num(short.fees) ?? 0)
+  const usable = n != null && n > 0
+  const cost = usable && lf != null ? lf * 100 * n : null
+  const credit = usable && sf != null ? sf * 100 * n : null
+  const debit = cost != null && credit != null ? cost - credit + fees : null
+  const width = long.strike != null && short.strike != null ? short.strike - long.strike : null
+  const ratio = lf != null && sf != null && width != null && width > 0 ? (lf - sf) / width : null
+  return { cost, credit, fees, debit, width, ratio }
+}
+
+export function promoteBanner(p, long, short) {
+  if (!p) return null
+  const legs = { long, short }
+  const live = ['long', 'short'].filter((k) => legs[k].promoted)
+  if (p.fetch === 'failed') {
+    return { kind: 'offline', tone: 'warning', text: `Couldn’t refresh quotes — showing screener snapshot from ${XLF.quotedAt}. Verify before recording.` }
+  }
+  const missing = live.find((k) => legs[k].noQuote)
+  if (missing) {
+    const leg = legs[missing]
+    return {
+      kind: 'missing',
+      tone: 'warning',
+      text: `The ${money(leg.strike)} ${LEG_META[missing].name} expiring ${longDate(leg.expiration)} is no longer in ${XLF.ticker}’s chain — pre-filled from the ${XLF.quotedAt} screener snapshot. Choose a contract or enter your fill manually.`
+    }
+  }
+  if (p.session === 'CLOSED') {
+    return { kind: 'stale', tone: 'warning', text: `Market closed — the pre-filled marks are stale after-hours snapshots (quoted ${XLF.closeAt}). Verify before recording.` }
+  }
+  if (p.session === 'EXT') {
+    return { kind: 'stale', tone: 'warning', text: `Extended hours — options aren’t trading, so the pre-filled marks are stale snapshots (quoted ${XLF.closeAt}). Verify before recording.` }
+  }
+  const moved = live.filter((k) => legs[k].quote && markMovedMaterially(legs[k].promotedMark, legs[k].quote.mid))
+  if (moved.length) {
+    const freshDebit = long.quote.mid - short.quote.mid
+    const width = short.strike - long.strike
+    const list = moved.map((k) => `${LEG_META[k].name} quoted ${money(legs[k].promotedMark)} → now ${money(legs[k].quote.mid)}`).join(' · ')
+    return { kind: 'moved', tone: 'warning', text: `Price moved: ${list} — net debit at fresh marks ${money(freshDebit)} (${pct2(freshDebit / width)} of width). Review before submitting.` }
+  }
+  const edited = live.filter((k) => num(legs[k].fill) != null && num(legs[k].fill) !== legs[k].promotedMark)
+  if (edited.length) {
+    const list = edited.map((k) => `${LEG_META[k].name} ${money(num(legs[k].fill))} vs ${money(legs[k].promotedMark)}`).join(' · ')
+    return { kind: 'edited', tone: 'success', text: `Recording your entered prices, not the screener snapshot (${list}).` }
+  }
+  const fresh = live.filter((k) => legs[k].quote)
+  if (fresh.length === live.length && fresh.length > 0) {
+    const list = fresh.map((k) => `${LEG_META[k].name} ${money(legs[k].quote.mid)}`).join(' · ')
+    return fresh.length === 2
+      ? { kind: 'match', tone: 'success', text: `Fresh quotes ${list} — no material move from the promoted marks.` }
+      : { kind: 'match', tone: 'success', text: `Fresh quote ${list} — no material move from the promoted mark.` }
+  }
+  return null
+}
+
+export const XYZ_BASE = { fixture: XYZ, mode: 'PMCC', pill: 'LIVE', ticker: 'XYZ', contracts: '1', quoteState: 'ok', save: 'idle' }
+
+export const XLF_BASE = { fixture: XLF, mode: 'PMCC', pill: 'LIVE', ticker: 'XLF', contracts: '1', quoteState: 'ok', save: 'idle', advancedOpen: true }
+
+export const PRESETS = [
+  {
+    key: 'standard',
+    group: 'US-101 · entry',
+    label: 'Standard',
+    ...XYZ_BASE,
+    mode: 'Standard',
+    ticker: '',
+    contracts: ''
+  },
+  {
+    key: 'pmcc-empty',
+    group: 'US-101 · entry',
+    label: 'PMCC empty',
+    ...XYZ_BASE,
+    ticker: '',
+    legs: () => [emptyLeg('long', XYZ.today), emptyLeg('short', XYZ.today)]
+  },
+  {
+    key: 'pmcc-review',
+    group: 'US-101 · entry',
+    label: 'PMCC review',
+    ...XYZ_BASE,
+    legs: () => [xyzLeg('long'), xyzLeg('short')]
+  },
+  {
+    key: 'iv-front-thin',
+    group: 'US-113 · IV term structure',
+    label: 'FRONT THIN',
+    ...XYZ_BASE,
+    legs: () => [xyzLeg('long', { quote: { ...xyzLeg('long').quote, iv: 0.34 } }), xyzLeg('short', { quote: { ...xyzLeg('short').quote, iv: 0.28 } })]
+  },
+  {
+    key: 'iv-flat',
+    group: 'US-113 · IV term structure',
+    label: 'FLAT',
+    ...XYZ_BASE,
+    legs: () => [xyzLeg('long', { quote: { ...xyzLeg('long').quote, iv: 0.29 } }), xyzLeg('short', { quote: { ...xyzLeg('short').quote, iv: 0.3 } })]
+  },
+  {
+    key: 'iv-missing',
+    group: 'US-113 · IV term structure',
+    label: 'missing IV',
+    ...XYZ_BASE,
+    legs: () => [xyzLeg('long'), xyzLeg('short', { quote: { ...xyzLeg('short').quote, iv: null } })]
+  },
+  {
+    key: 'iv-manual',
+    group: 'US-113 · IV term structure',
+    label: 'manual entry',
+    ...XYZ_BASE,
+    legs: () => [xyzLeg('long', { source: 'manual', quote: null }), xyzLeg('short')]
+  },
+  {
+    key: 'stale',
+    group: 'US-101 · market data',
+    label: 'stale',
+    ...XYZ_BASE,
+    quoteState: 'stale',
+    legs: () => [
+      xyzLeg('long', { notice: NOTICE.stale, quote: { ...xyzLeg('long').quote, at: XYZ.staleAt, time: XYZ.staleAt.split(' · ')[1], stale: true } }),
+      xyzLeg('short', { notice: NOTICE.stale, quote: { ...xyzLeg('short').quote, at: XYZ.staleAt, time: XYZ.staleAt.split(' · ')[1], stale: true } })
+    ]
+  },
+  {
+    key: 'quotes-unavailable',
+    group: 'US-101 · market data',
+    label: 'quotes unavailable',
+    ...XYZ_BASE,
+    quoteState: 'unavailable',
+    legs: () => [xyzLeg('long', { notice: NOTICE.unavailable, quote: null }), xyzLeg('short', { notice: NOTICE.unavailable, quote: null })]
+  },
+  {
+    key: 'loading',
+    group: 'US-101 · market data',
+    label: 'loading',
+    ...XYZ_BASE,
+    quoteState: 'loading',
+    legs: () => [emptyLeg('long', XYZ.today, { notice: NOTICE.loading }), emptyLeg('short', XYZ.today, { notice: NOTICE.loading })]
+  },
+  {
+    key: 'no-matching',
+    group: 'US-101 · market data',
+    label: 'no matching calls',
+    ...XYZ_BASE,
+    legs: () => [emptyLeg('long', XYZ.today, { notice: NOTICE.empty }), xyzLeg('short')]
+  },
+  {
+    key: 'reject-structure',
+    group: 'US-101 · rejections',
+    label: 'reject · structure',
+    ...XYZ_BASE,
+    contracts: '0',
+    contractsError: 'Contracts must be a positive whole number.',
+    legs: () => [
+      xyzLeg('long', { fill: '', errors: { fill: 'Enter the actual LEAPS fill price.' } }),
+      xyzLeg('short', {
+        ticker: 'ABC',
+        strike: 75,
+        expiration: XYZ.long.expiration,
+        quote: null,
+        pairError: 'Both calls must have the same underlying.',
+        errors: {
+          expiration: 'Short call must expire before the LEAPS call.',
+          strike: 'Short-call strike must be above the LEAPS strike.'
+        }
+      })
+    ]
+  },
+  {
+    key: 'reject-dates',
+    group: 'US-101 · rejections',
+    label: 'reject · dates & fees',
+    ...XYZ_BASE,
+    summaryError: 'This PMCC entry requires a net debit before fees.',
+    legs: () => [
+      xyzLeg('long', { fillDate: '2026-09-15', errors: { fillDate: 'Fill date cannot be in the future.' } }),
+      xyzLeg('short', {
+        fill: '30.00',
+        fees: '-1.00',
+        fillDate: '2026-09-13',
+        errors: { fees: 'Fees cannot be negative.', fillDate: 'LEAPS must be acquired no later than the short-call fill.' }
+      })
+    ]
+  },
+  {
+    key: 'saving',
+    group: 'US-101 · saving',
+    label: 'saving',
+    ...XYZ_BASE,
+    save: 'pending',
+    legs: () => [xyzLeg('long'), xyzLeg('short')]
+  },
+  {
+    key: 'save-failed',
+    group: 'US-101 · saving',
+    label: 'save failed',
+    ...XYZ_BASE,
+    save: 'failed',
+    legs: () => [xyzLeg('long'), xyzLeg('short')]
+  },
+  {
+    key: 'promoted-match',
+    group: 'US-122 · promoted from screener',
+    label: 'match',
+    ...XLF_BASE,
+    promoted: { fetch: 'ok', session: 'LIVE', stripAt: XLF.freshAt },
+    legs: () => [xlfLeg('long', { fetch: 'fresh', freshMark: 10.6 }), xlfLeg('short', { fetch: 'fresh', freshMark: 0.68 })]
+  },
+  {
+    key: 'promoted-moved',
+    group: 'US-122 · promoted from screener',
+    label: 'moved',
+    ...XLF_BASE,
+    promoted: { fetch: 'ok', session: 'LIVE', stripAt: XLF.freshAt },
+    legs: () => [xlfLeg('long', { fetch: 'fresh', freshMark: 10.85 }), xlfLeg('short', { fetch: 'fresh', freshMark: 0.64 })]
+  },
+  {
+    key: 'promoted-moved-both',
+    group: 'US-122 · promoted from screener',
+    label: 'moved · both',
+    ...XLF_BASE,
+    promoted: { fetch: 'ok', session: 'LIVE', stripAt: XLF.freshAt },
+    legs: () => [xlfLeg('long', { fetch: 'fresh', freshMark: 10.85 }), xlfLeg('short', { fetch: 'fresh', freshMark: 0.55 })]
+  },
+  {
+    key: 'promoted-stale-closed',
+    group: 'US-122 · promoted from screener',
+    label: 'stale · CLOSED',
+    ...XLF_BASE,
+    pill: 'CLOSED',
+    quoteState: 'stale',
+    promoted: { fetch: 'ok', session: 'CLOSED', stripAt: XLF.closeAt },
+    legs: () => [xlfLeg('long', { fetch: 'close' }), xlfLeg('short', { fetch: 'close' })]
+  },
+  {
+    key: 'promoted-stale-ext',
+    group: 'US-122 · promoted from screener',
+    label: 'stale · EXT',
+    ...XLF_BASE,
+    pill: 'EXT',
+    quoteState: 'stale',
+    promoted: { fetch: 'ok', session: 'EXT', stripAt: XLF.closeAt },
+    legs: () => [xlfLeg('long', { fetch: 'close' }), xlfLeg('short', { fetch: 'close' })]
+  },
+  {
+    key: 'promoted-offline',
+    group: 'US-122 · promoted from screener',
+    label: 'offline',
+    ...XLF_BASE,
+    quoteState: 'unavailable',
+    promoted: { fetch: 'failed', session: 'LIVE', stripAt: XLF.quotedAt },
+    legs: () => [xlfLeg('long', { fetch: 'unavailable' }), xlfLeg('short', { fetch: 'unavailable' })]
+  },
+  {
+    key: 'promoted-missing',
+    group: 'US-122 · promoted from screener',
+    label: 'missing contract',
+    ...XLF_BASE,
+    promoted: { fetch: 'ok', session: 'LIVE', stripAt: XLF.freshAt },
+    legs: () => [xlfLeg('long', { fetch: 'missing' }), xlfLeg('short', { fetch: 'fresh', freshMark: 0.64 })]
+  },
+  {
+    key: 'promoted-edited',
+    group: 'US-122 · promoted from screener',
+    label: 'edited',
+    ...XLF_BASE,
+    promoted: { fetch: 'ok', session: 'LIVE', stripAt: XLF.freshAt },
+    legs: () => [xlfLeg('long', { fetch: 'fresh', freshMark: 10.3, fill: '10.40' }), xlfLeg('short', { fetch: 'fresh', freshMark: 0.64 })]
+  },
+  {
+    key: 'promoted-replaced',
+    group: 'US-122 · promoted from screener',
+    label: 'contract replaced',
+    ...XLF_BASE,
+    promoted: { fetch: 'ok', session: 'LIVE', stripAt: XLF.freshAt },
+    legs: () => [
+      xlfLeg('long', { fetch: 'fresh', freshMark: 10.6 }),
+      xlfLeg('short', { fetch: 'fresh', contract: XLF.replacement, promoted: false })
+    ]
+  },
+  {
+    key: 'promoted-malformed',
+    group: 'US-122 · promoted from screener',
+    label: 'malformed landing',
+    ...XLF_BASE,
+    advancedOpen: false,
+    legs: () => [emptyLeg('long', XLF.today), emptyLeg('short', XLF.today)]
+  }
+]
+
+export function buildView(preset) {
+  const fx = preset.fixture
+  const [long, short] = preset.legs ? preset.legs() : [emptyLeg('long', fx.today), emptyLeg('short', fx.today)]
+  const bothSelected = Boolean(long.source && short.source)
+  const iv = bothSelected
+    ? readTermStructure({
+        shortIv: short.quote ? short.quote.iv : null,
+        leapsIv: long.quote ? long.quote.iv : null,
+        shortSource: short.source,
+        leapsSource: long.source,
+        quoteState: preset.quoteState
+      })
+    : null
+  return {
+    long,
+    short,
+    iv,
+    summary: summarize(long, short, preset.contracts),
+    banner: promoteBanner(preset.promoted, long, short),
+    pending: preset.save === 'pending'
+  }
+}
+
+export function contractLabel(leg) {
+  if (!leg.source) return null
+  if (leg.source === 'manual') return `Entered manually · ${leg.ticker} ${money(leg.strike)} call · ${longDate(leg.expiration)}`
+  return `${leg.ticker} ${money(leg.strike)} call · ${longDate(leg.expiration)}`
+}
+
+export function Sidebar() {
+  return (
+    <aside className="absolute inset-y-0 left-0 flex w-[200px] flex-col gap-6 border-r border-wb-border bg-wb-bg-surface p-5">
+      <div className="flex items-center gap-2">
+        <span className="h-2 w-2 rounded-full bg-wb-gold" />
+        <span className="font-wb-mono text-[0.75rem] font-bold uppercase tracking-[0.15em] text-wb-text-primary">Wheelbase</span>
+      </div>
+      <div className="flex flex-col gap-4 text-xs text-wb-text-secondary">
+        <span className="font-semibold text-wb-gold">◈ Positions</span>
+        <span>+ Open Wheel</span>
+        <span>☰ Watchlist</span>
+        <span>⊞ Screener</span>
+        <span>▦ Calendar</span>
+        <span>⚙ Settings</span>
+      </div>
+      <div className="mt-auto font-wb-mono text-[0.65rem] text-wb-text-muted">Wheel Strategy</div>
+    </aside>
+  )
+}
+
+export const BACKDROP_PRESET = { key: 'backdrop', today: '2026-09-14' }
+
+export function PositionsUnderneath({ pill }) {
+  return (
+    <main className="ml-[200px] flex h-full flex-col overflow-hidden opacity-55">
+      <PageHeader
+        left={
+          <div className="flex items-center gap-[10px]">
+            <h1 className="m-0 text-sm font-semibold text-wb-text-primary">Active Positions</h1>
+            <Badge>{activeCount(BACKDROP_PRESET, undefined, false)}</Badge>
+          </div>
+        }
+        right={
+          <div className="flex items-center gap-[10px]">
+            <MarketStatusPill state={pill} />
+            <span className="flex items-center gap-[6px] rounded-md bg-wb-gold px-[14px] py-[5px] text-xs font-medium tracking-[0.02em] text-wb-bg-base">+ New Wheel</span>
+          </div>
+        }
+      />
+      <PositionsGrid preset={BACKDROP_PRESET} pmcc={false} />
+    </main>
+  )
+}
+
+export function StrategyToggle({ mode, pending, onChange }) {
+  return (
+    <div className="border-b border-wb-border px-6 py-4">
+      <div role="group" aria-label="Position strategy" className="grid grid-cols-2 gap-1 rounded-lg border border-wb-border bg-wb-bg-elevated p-1">
+        {['Standard', 'PMCC'].map((choice) => (
+          <FormButton
+            key={choice}
+            label={choice}
+            aria-label={`${choice}${mode === choice ? ' selected' : ''}`}
+            variant={mode === choice ? 'primary' : 'secondary'}
+            disabled={pending}
+            onClick={() => onChange(choice)}
+          />
+        ))}
+      </div>
+      <p className="mt-3 text-xs text-wb-text-secondary">
+        {mode === 'PMCC' ? 'Long LEAPS call + a shorter-dated short call.' : 'Start the wheel with a cash-secured put.'}
+      </p>
+    </div>
+  )
+}
+
+export function StandardForm() {
+  // The shipped NewWheelForm, field for field: two-column primaries, expiration, Advanced.
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="grid grid-cols-2 gap-5">
+        <Field label="Ticker" htmlFor="std-ticker">
+          <NumberInput id="std-ticker" aria-label="Ticker" placeholder="TSLA" readOnly value="" />
+        </Field>
+        <Field label="Contracts" htmlFor="std-contracts">
+          <NumberInput id="std-contracts" aria-label="Contracts" inputMode="numeric" placeholder="1" readOnly value="" />
+        </Field>
+        <Field label="Strike Price" htmlFor="std-strike">
+          <NumberInput id="std-strike" aria-label="Strike" inputMode="decimal" placeholder="245.00" readOnly value="" />
+        </Field>
+        <Field label="Premium / Contract" htmlFor="std-premium">
+          <NumberInput id="std-premium" aria-label="Premium per contract" inputMode="decimal" placeholder="3.20" readOnly value="" />
+        </Field>
+      </div>
+      <Field label="Expiration" htmlFor="std-expiration">
+        <DatePicker id="std-expiration" aria-label="Expiration" value="" onChange={() => {}} />
+      </Field>
+      <div>
+        <button type="button" aria-expanded={false} className="flex cursor-pointer items-center gap-[8px] border-none bg-transparent px-0 py-1 font-wb-mono text-xs uppercase tracking-[0.06em] text-wb-text-muted">
+          <span>▶</span>
+          Advanced
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export function QuoteBlock({ leg }) {
+  const q = leg.quote
+  return (
+    <div className="border-l-2 border-wb-gold pl-3 text-[11px] leading-relaxed text-wb-text-secondary">
+      <Caption>Quote</Caption>
+      {leg.source === 'manual' ? (
+        <div className="text-wb-text-muted">Entered manually · no quote</div>
+      ) : q ? (
+        <>
+          <div className={q.stale ? 'text-wb-text-muted' : ''}>
+            Bid {money(q.bid)} · Ask {money(q.ask)} · Mid {money(q.mid)} · Δ {q.delta == null ? '—' : q.delta.toFixed(2)}
+          </div>
+          <div className={q.stale ? 'text-wb-gold' : 'text-wb-text-muted'}>
+            {q.at}
+            {q.stale ? ' · Stale' : ''}
+          </div>
+        </>
+      ) : (
+        <>
+          <div>Bid — · Ask — · Mid — · Δ —</div>
+          <div className="text-wb-text-muted">{leg.noQuote ?? 'No quote available'}</div>
+        </>
+      )}
+    </div>
+  )
+}
+
+export function LegSection({ leg, today }) {
+  const meta = LEG_META[leg.key]
+  const label = contractLabel(leg)
+  const dte = leg.expiration ? `${days(today, leg.expiration)} DTE` : undefined
+  const id = (f) => `${leg.key}-${f}`
+  return (
+    <SectionCard header={meta.title} headerVariant="emphasized" className="shrink-0">
+      <div className="flex flex-col gap-3 p-4">
+        <div className="flex items-center justify-between">
+          <span className="rounded bg-wb-gold-dim px-2 py-1 font-wb-mono text-xs font-bold tracking-wide text-wb-gold">{meta.action}</span>
+          <span className="font-wb-mono text-[10px] text-wb-text-secondary">{meta.filters}</span>
+        </div>
+        {leg.pairError ? <ErrorAlert message={leg.pairError} /> : null}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className={`flex flex-1 cursor-pointer items-center justify-between rounded-md border border-wb-border bg-wb-bg-elevated px-3 py-2 text-left font-wb-mono text-[0.8125rem] ${label ? 'text-wb-text-primary' : 'text-wb-text-muted'}`}
+          >
+            <span>{label ?? `Choose a ${leg.ticker ?? ''} call…`}</span>
+            <span className="text-wb-text-muted">▾</span>
+          </button>
+          <button type="button" className="cursor-pointer border-none bg-transparent px-1 font-wb-mono text-[0.72rem] text-wb-teal">
+            Enter manually
+          </button>
+        </div>
+        {leg.notice ? (
+          <div
+            role="status"
+            className={`font-wb-mono text-[0.72rem] ${leg.notice === NOTICE.loading ? 'text-wb-text-secondary' : leg.notice === NOTICE.empty ? 'text-wb-text-secondary' : 'text-wb-gold'}`}
+          >
+            {leg.notice === NOTICE.loading || leg.notice === NOTICE.empty ? '' : '⚠ '}
+            {leg.notice}
+          </div>
+        ) : null}
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Strike" htmlFor={id('strike')} error={leg.errors.strike}>
+            <NumberInput id={id('strike')} readOnly value={leg.strike == null ? '' : fix2(leg.strike)} placeholder="0.00" hasError={Boolean(leg.errors.strike)} />
+          </Field>
+          <Field label="Expiration" htmlFor={id('expiration')} hint={dte} error={leg.errors.expiration}>
+            <DatePicker id={id('expiration')} value={leg.expiration ?? ''} onChange={() => {}} hasError={Boolean(leg.errors.expiration)} />
+          </Field>
+        </div>
+        {leg.source ? <QuoteBlock leg={leg} /> : null}
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={meta.fillLabel} htmlFor={id('fill')} hint={leg.hints.fill} error={leg.errors.fill}>
+            <NumberInput id={id('fill')} readOnly value={leg.fill} placeholder="0.00" hasError={Boolean(leg.errors.fill)} />
+          </Field>
+          <Field label="Total leg fees" htmlFor={id('fees')} error={leg.errors.fees}>
+            <NumberInput id={id('fees')} readOnly value={leg.fees} hasError={Boolean(leg.errors.fees)} />
+          </Field>
+        </div>
+        <Field label="Fill date" htmlFor={id('fill-date')} hint="defaults to today" error={leg.errors.fillDate}>
+          <DatePicker id={id('fill-date')} value={leg.fillDate} onChange={() => {}} hasError={Boolean(leg.errors.fillDate)} />
+        </Field>
+      </div>
+    </SectionCard>
+  )
+}
+
+export function IvTermStructureBlock({ iv, long, short }) {
+  const withheld = iv && iv.kind === 'withheld'
+  const figureClass = withheld ? 'text-wb-text-muted' : 'text-wb-text-primary'
+  const shortIv = short.quote ? short.quote.iv : null
+  const leapsIv = long.quote ? long.quote.iv : null
+  const cols = [
+    { label: 'Short-call IV', iv: shortIv, leg: short },
+    { label: 'LEAPS IV', iv: leapsIv, leg: long }
+  ]
+  return (
+    <SectionCard header="IV term structure" className="shrink-0">
+      <div data-testid="pmcc-iv-term-structure" data-status={iv ? iv.status : ''} className="flex flex-col gap-3 p-4">
+        <div className="font-wb-mono text-[0.68rem] text-wb-text-muted">short-call IV vs LEAPS IV, the contracts you selected</div>
+        {!iv ? (
+          <div className="font-wb-mono text-[0.8rem] text-wb-text-muted">Select both calls to compare their IV</div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              {cols.map((c) => (
+                <div key={c.label} className="flex flex-col gap-[3px]">
+                  <Caption>{c.label}</Caption>
+                  <span className={`font-wb-mono text-[1.05rem] font-bold ${figureClass}`}>{withheld && c.iv == null ? '—' : ivPct(c.iv)}</span>
+                  <span className="font-wb-mono text-[0.62rem] text-wb-text-muted">
+                    {c.leg.source === 'manual' || !c.leg.quote ? ' ' : `quoted ${c.leg.quote.time}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-[3px]">
+                <Caption>Spread</Caption>
+                <span className={`font-wb-mono text-[0.9rem] font-semibold ${figureClass}`}>{iv.kind === 'read' ? fmtSpread(iv.spreadPts) : '—'}</span>
+              </div>
+              <div className="flex flex-col gap-[3px]">
+                <Caption>Ratio</Caption>
+                <span className={`font-wb-mono text-[0.9rem] font-semibold ${figureClass}`}>{iv.kind === 'read' ? iv.ratio.toFixed(2) : '—'}</span>
+              </div>
+            </div>
+            <div className="border-t border-wb-border-subtle pt-3">
+              {iv.kind === 'read' ? (
+                <>
+                  <div data-shape={iv.shape} data-tone={iv.tone} className={`font-wb-mono text-[0.8rem] font-bold tracking-[0.06em] ${IV_TONE_CLASS[iv.tone]}`}>
+                    {iv.shape} · {iv.status}
+                  </div>
+                  <div className="mt-1 text-[0.75rem] leading-relaxed text-wb-text-secondary">{iv.text}</div>
+                </>
+              ) : (
+                <>
+                  <div className={`font-wb-mono text-[0.8rem] font-bold tracking-[0.06em] ${IV_TONE_CLASS.muted}`}>{iv.status}</div>
+                  <div className="mt-1 text-[0.75rem] leading-relaxed text-wb-text-muted">{iv.reason}</div>
+                </>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </SectionCard>
+  )
+}
+
+export function CashFlows({ summary, error }) {
+  const s = summary
+  const rows = [
+    ['LEAPS purchase cost', s.cost == null ? '—' : money(s.cost)],
+    ['Short-call credit', s.credit == null ? '—' : money(s.credit)],
+    ['Fees', money(s.fees)],
+    ['Initial net debit', s.debit == null ? '—' : money(s.debit)],
+    ['Strike width / share', s.width == null ? '—' : money(s.width)],
+    ['Debit / strike width, before fees', s.ratio == null ? '—' : pct2(s.ratio)]
+  ]
+  return (
+    <div className="rounded-lg border border-wb-border p-4 text-xs">
+      <div className="mb-3 font-semibold uppercase tracking-widest text-wb-text-secondary">Opening cash flows</div>
+      {error ? (
+        <div className="mb-3">
+          <ErrorAlert message={error} />
+        </div>
+      ) : null}
+      <div className="flex flex-col gap-2">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex justify-between">
+            <span className="text-wb-text-secondary">{label}</span>
+            <span className={label === 'Initial net debit' ? 'font-semibold text-wb-gold' : ''}>{value}</span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-wb-text-muted">Opening credit is not yet realized profit.</p>
+    </div>
+  )
+}
+
+export function PromotedStrip({ at }) {
+  // PromoteProvenance class for class, with the strategy word US-122 adds to the strip.
+  return (
+    <div data-testid="promote-provenance" className="flex items-center gap-[10px] rounded-md border border-wb-gold-border bg-wb-gold-subtle px-3 py-2">
+      <span className="font-wb-mono text-[0.6rem] font-bold uppercase tracking-[0.08em] text-wb-gold">⊞ Promoted from Screener · PMCC</span>
+      <span className="ml-auto font-wb-mono text-[0.68rem] text-wb-text-muted">Quoted {at}</span>
+    </div>
+  )
+}
+
+export function PromoteBannerBox({ banner }) {
+  if (!banner) return null
+  return (
+    <AlertBox variant={banner.tone} data-testid="promote-banner" data-kind={banner.kind} data-tone={banner.tone}>
+      {banner.tone === 'warning' ? '⚠' : '✓'} {banner.text}
+    </AlertBox>
+  )
+}
+
+export function PmccForm({ preset, view }) {
+  const fx = preset.fixture
+  const promoted = Boolean(preset.promoted)
+  const [advancedOpen, setAdvancedOpen] = useState(Boolean(preset.advancedOpen))
+  return (
+    <>
+      {preset.save === 'failed' ? <ErrorAlert message={SAVE_FAILED} /> : null}
+      {promoted ? (
+        <div className="flex flex-col gap-4">
+          <PromotedStrip at={preset.promoted.stripAt} />
+          <PromoteBannerBox banner={view.banner} />
+        </div>
+      ) : null}
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Ticker" htmlFor="pmcc-ticker" hint={promoted ? 'from screener — editable' : undefined}>
+          <NumberInput id="pmcc-ticker" aria-label="Ticker" readOnly value={preset.ticker} placeholder="TSLA" />
+        </Field>
+        <Field label="Contracts per leg" htmlFor="pmcc-contracts" error={preset.contractsError}>
+          <NumberInput id="pmcc-contracts" aria-label="Contracts per leg" inputMode="numeric" readOnly value={preset.contracts} placeholder="1" hasError={Boolean(preset.contractsError)} />
+        </Field>
+      </div>
+      <LegSection leg={view.long} today={fx.today} />
+      <LegSection leg={view.short} today={fx.today} />
+      <IvTermStructureBlock iv={view.iv} long={view.long} short={view.short} />
+      <CashFlows summary={view.summary} error={preset.summaryError} />
+      <div>
+        <button
+          type="button"
+          aria-expanded={advancedOpen}
+          onClick={() => setAdvancedOpen((v) => !v)}
+          className="flex cursor-pointer items-center gap-[8px] border-none bg-transparent px-0 py-1 font-wb-mono text-xs uppercase tracking-[0.06em] text-wb-text-muted"
+        >
+          <span>{advancedOpen ? '▼' : '▶'}</span>
+          Advanced
+        </button>
+        {advancedOpen ? (
+          <div className="mt-4 flex flex-col gap-5">
+            <Field label="Thesis" htmlFor="pmcc-thesis" hint={promoted ? 'seeded from the watchlist note' : undefined}>
+              <NumberInput id="pmcc-thesis" aria-label="Thesis" readOnly value={promoted ? fx.note : ''} placeholder="Why this trade?" />
+            </Field>
+            <Field label="Notes" htmlFor="pmcc-notes">
+              <NumberInput id="pmcc-notes" aria-label="Notes" readOnly value="" placeholder="Additional notes…" />
+            </Field>
+          </div>
+        ) : null}
+      </div>
+    </>
+  )
+}
+
+export function NewPositionSheet({ preset, view, mode, onMode }) {
+  const pmcc = mode === 'PMCC'
+  const pending = view.pending
+  return (
+    <SheetOverlay onClose={() => {}}>
+      <SheetPanel width={460}>
+        <div role="dialog" aria-label="New position" className="flex h-full min-h-0 flex-col">
+          <SheetHeader eyebrow="OPEN WHEEL" title="New position" subtitle="Record a completed trade" onClose={() => {}} />
+          <StrategyToggle mode={mode} pending={pending} onChange={onMode} />
+          <SheetBody>{pmcc ? <PmccForm key={preset.key} preset={preset} view={view} /> : <StandardForm />}</SheetBody>
+          <SheetFooter>
+            <div className="flex w-full flex-col gap-3">
+              {pmcc ? (
+                <div className="flex justify-between text-sm">
+                  <span className="text-wb-text-secondary">Initial net debit</span>
+                  <strong className="text-wb-gold">{view.summary.debit == null ? '—' : money(view.summary.debit)}</strong>
+                </div>
+              ) : null}
+              <div className="grid grid-cols-2 gap-3">
+                <FormButton label="Cancel" variant="secondary" disabled={pending} />
+                <FormButton label={pmcc ? 'Record PMCC' : 'Open Wheel'} pendingLabel={pmcc ? 'Recording…' : 'Opening…'} isPending={pending} />
+              </div>
+              {pmcc ? <span className="text-[10px] text-wb-text-secondary">Uses your actual fills. No order is placed.</span> : null}
+            </div>
+          </SheetFooter>
+        </div>
+      </SheetPanel>
+    </SheetOverlay>
+  )
+}
+
+export function PresetBar({ presetKey, onPick }) {
+  const groups = PRESETS.reduce((acc, p) => {
+    const last = acc[acc.length - 1]
+    if (last && last.group === p.group) last.items.push(p)
+    else acc.push({ group: p.group, items: [p] })
+    return acc
+  }, [])
+  return (
+    <div className="flex flex-col gap-2">
+      {groups.map((g) => (
+        <div key={g.group} className="flex flex-wrap items-center gap-1.5">
+          <span className="w-[210px] font-wb-mono text-[0.62rem] uppercase tracking-[0.12em] text-wb-text-muted">{g.group}</span>
+          {g.items.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              data-preset={p.key}
+              onClick={() => onPick(p.key)}
+              className={`cursor-pointer rounded border px-2.5 py-1 font-wb-mono text-[0.7rem] ${presetKey === p.key ? 'border-wb-gold bg-wb-gold-dim text-wb-gold' : 'border-wb-border bg-transparent text-wb-text-secondary'}`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [presetKey, setPresetKey] = useState('pmcc-review')
+  const [modeOverride, setModeOverride] = useState(null)
+  const preset = PRESETS.find((p) => p.key === presetKey)
+  const mode = modeOverride ?? preset.mode
+  const view = buildView(preset)
+  const pick = (key) => {
+    setPresetKey(key)
+    setModeOverride(null)
+  }
+  return (
+    <div className="flex flex-col gap-4 font-wb-mono text-wb-text-primary">
+      <PresetBar presetKey={presetKey} onPick={pick} />
+      <div className="flex items-center gap-3 font-wb-mono text-[0.7rem] text-wb-text-muted">
+        <span>
+          {preset.fixture.ticker} · valuation {longDate(preset.fixture.today)} · {mode} mode
+          {preset.promoted ? ' · arrived from the PMCC screener' : ''}
+        </span>
+        <MarketStatusPill state={preset.pill} />
+        <span>market status on the page header, under the sheet</span>
+      </div>
+      <div className={`relative isolate transform-gpu overflow-hidden rounded-lg border border-wb-border bg-wb-bg-base ${mode !== 'PMCC' ? 'h-[720px]' : preset.promoted ? 'h-[2720px]' : 'h-[2380px]'}`}>
+        <Sidebar />
+        <PositionsUnderneath pill={preset.pill} />
+        <NewPositionSheet preset={preset} view={view} mode={mode} onMode={setModeOverride} />
+      </div>
+    </div>
+  )
+}
+
+<Mockup />

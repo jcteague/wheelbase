@@ -1,0 +1,1251 @@
+---
+title: 'Epic 09: PMCC Alert Surfaces — Final Layout'
+story: 'The management queue and the alert-configuration surfaces once US-106 (PMCC assignment-risk alert) and US-107 (PMCC LEAPS roll-window alert) have shipped, with US-59 dismissal and the US-57 / US-58 threshold forms shown unchanged beside them.'
+states:
+  [
+    'clear',
+    'approaching',
+    'at-the-money',
+    'in-the-money',
+    'deep-itm',
+    'quote-unavailable',
+    'retreated',
+    'rolled-up',
+    'no-short-call',
+    'short-expiring',
+    'dismiss',
+    'dismissed',
+    'outside-window',
+    'at-60',
+    'in-window',
+    'co-fire',
+    'leaps-only',
+    'rolled',
+    'expiration-unreadable',
+    'overrides',
+    'thresholds'
+  ]
+---
+
+import { useState } from 'react'
+import { PageHeader } from '../src/renderer/src/components/PageLayout'
+import { Breadcrumb } from '../src/renderer/src/components/ui/Breadcrumb'
+import { SectionCard } from '../src/renderer/src/components/ui/SectionCard'
+import { Badge } from '../src/renderer/src/components/ui/Badge'
+import { AlertBox } from '../src/renderer/src/components/ui/AlertBox'
+import { StatGrid } from '../src/renderer/src/components/ui/Stat'
+import { FormButton } from '../src/renderer/src/components/ui/FormButton'
+import { Field } from '../src/renderer/src/components/ui/FormField'
+import { NumberInput } from '../src/renderer/src/components/ui/NumberInput'
+import { SheetOverlay, SheetPanel, SheetHeader, SheetBody, SheetFooter } from '../src/renderer/src/components/ui/Sheet'
+import { Button } from '../src/renderer/src/components/ui/button'
+import { UrgencyPill } from '../src/renderer/src/components/UrgencyPill'
+import { ManagementQueueRow } from '../src/renderer/src/components/ManagementQueueRow'
+import { MarketStatusPill } from '../src/renderer/src/components/MarketStatusPill'
+import { NavItem } from '../src/renderer/src/components/NavItem'
+import { EnvironmentBadge } from '../src/renderer/src/components/EnvironmentBadge'
+import { MarketDataStatusDot } from '../src/renderer/src/components/MarketDataStatusDot'
+import { PositionsGrid, activeCount } from './epic-09-pmcc-dashboard.mdx'
+
+# Epic 09: PMCC Alert Surfaces — Final Layout
+
+_The dashboard's management queue with **XYZ**, the fixture PMCC, in it beside two classic wheels — as it looks once the two PMCC alert rules have shipped. One rule watches the stock against the short-call strike (US-106), the other watches the calendar against the LEAPS (US-107). Every row, status and figure below is folded from the XYZ legs and the preset's valuation date and price; nothing is typed in. The dismissal panel (US-59) and the two threshold forms (US-57, US-58) are shown on the same rows and the same position so the reader can confirm they are unchanged._
+
+## Which story owns what
+
+The chrome is imported, not redrawn: `PageHeader`, `Breadcrumb`, `MarketStatusPill`, `NavItem`, `EnvironmentBadge`, `MarketDataStatusDot`, `SectionCard`, `UrgencyPill`, the `Sheet` parts and shadcn `Button` come from `src/renderer/src`. The classic-wheel rows are the shipped `ManagementQueueRow` itself.
+
+| Region | Owner |
+| -- | -- |
+| Queue row for a `PMCC_ASSIGNMENT_RISK` alert: MED pill, PMCC badge in place of the wheel phase badge, summary, Review position | US-106 |
+| Queue row for a `PMCC_LEAPS_ROLL_WINDOW` alert: same badge, a summary that begins "LEAPS" so the two XYZ rows read apart | US-107 |
+| The PMCC badge itself (the teal `PMCC` pill, shared with the card and the detail hero) | US-106 introduces it in the queue; the strategy pill is US-101's / US-118's vocabulary |
+| Wheel rules riding along on the PMCC short call (`EXPIRATION_IMMINENT`, `MANAGEMENT_WINDOW`) — the short is the evaluated leg, never the LEAPS | US-106 (evaluability), US-107 (widens it to the LEAPS) |
+| Classic-wheel rows, urgency ordering, the "N open alerts" count, Review position | US-51 — unchanged |
+| Dismiss button and the confirmation panel on a PMCC row | US-59 — unchanged |
+| Per-position alert thresholds on the XYZ detail page | US-58 — unchanged; US-106 / US-107 add no field |
+| Global alert defaults on Settings | US-57 — unchanged; US-106 / US-107 add no field |
+
+## One queue, two clocks
+
+A PMCC can hold two rows in the queue for the same ticker: one about the short call, one about the LEAPS. The queue does not grow a column for that. The badge says the position is a PMCC; the summary says which leg. The short-call rows use the wheel's own wording ("Expires in 2 days at $118.00 strike"), because the rule is the wheel's rule reading the PMCC's short leg; the LEAPS row is the only one that begins with "LEAPS". The 2% band and the 60-day window are fixed built-ins, referenced from the constants their stories define, and neither the per-position overrides nor the global defaults gain a field for them.
+
+## Acceptance Criteria States
+
+Every 2026 preset uses XYZ on its opening leg pair — the $80.00 LEAPS expiring 2027-09-17 and cycle 1, the $110.00 call expiring 2026-10-16 — which is US-106's Background. Every 2027 preset before `rolled` uses the fixture **as if the 2027-07-09 LEAPS roll had not happened**, so the LEAPS is still the $80.00 / 2027-09-17 contract US-107's Background names; `rolled` is the fixture's true history. On the 2026-09-28 dates the fixture short has 18 DTE, so the wheel's `MANAGEMENT_WINDOW` rule also fires on it — that row is real and is shown.
+
+- **clear**: 2026-09-28, XYZ $105.00, 4.5% below the strike. No assignment-risk row. The short's 18-DTE management-window row is there. US-106 "does not fire".
+- **approaching**: $108.35, 1.5% below. MED row, "approaching assignment". US-106 fires / queue-row scenario.
+- **at-the-money**: $110.00. "0.0% above … in the money, LEAPS would have to cover". US-106 fires.
+- **in-the-money**: $112.53, 2.3% above. The default. US-106 fires / queue-row scenario.
+- **deep-itm**: $118.80, 8.0% above. Still open; no upper edge. US-106 fires.
+- **quote-unavailable**: no XYZ price this run. The rule skips with `missing_underlying_price`; the row stays open with its last summary. US-106 missing quote.
+- **retreated**: $106.00. The assignment-risk row resolves and leaves the queue; the management-window row stays. US-106 resolves on retreat.
+- **rolled-up**: short rolled to $115.00 expiring 2026-11-20 (US-104). $112.53 is 2.1% below the new strike — resolved, nothing refired; XYZ leaves the queue. US-106 resolves on roll.
+- **no-short-call**: 2026-10-19, cycle 1 expired worthless, LEAPS only at $118.80. Not evaluated for the short-call rules; old rows resolved. US-106 LEAPS-only.
+- **short-expiring**: 2026-10-12, $112.53. `EXPIRATION_IMMINENT` HIGH "Expires in 4 days at $110.00 strike" above the MED assignment-risk row; neither mentions the LEAPS. US-106 existing rules on the short leg.
+- **dismiss**: US-59's confirmation panel open on the XYZ assignment-risk row (from the in-the-money state).
+- **dismissed**: the row hidden after Confirm dismiss, condition unchanged; "3 open alerts". US-59 on a PMCC rule.
+- **outside-window**: 2027-07-18, LEAPS 61 DTE, one day outside. No XYZ rows. US-107 does not fire.
+- **at-60**: 2027-07-19, 60 DTE, inclusive boundary. "LEAPS expires in 60 days at $80.00 strike — review for roll or close". No short call open and the row is here anyway. US-107 fires.
+- **in-window**: 2027-07-20, 59 DTE. The same row, summary refreshed in place. US-107 fires / queue-row scenario.
+- **co-fire**: 2027-08-18. `EXPIRATION_IMMINENT` HIGH on the $118.00 short (2 DTE) above the MED LEAPS row (30 DTE). Each names its own leg. US-107 co-fire.
+- **leaps-only**: 2027-09-15, cycle 9 expired 2027-08-20, LEAPS 2 DTE. The LEAPS row is open; the stale expiration row for the short resolved. US-107 LEAPS-only.
+- **rolled**: 2027-07-20 with the fixture's roll to $85.00 expiring 2028-01-21 (US-105), 185 DTE. Resolved, nothing refired. US-107 resolves on roll.
+- **expiration-unreadable**: the LEAPS expiration cannot be read. Skipped with `missing_leaps_dte`; the row keeps its last summary. US-107 missing data.
+- **overrides**: the XYZ detail page's Per-Position Alert Thresholds form, unchanged (US-58). Its two fields govern the short-call rules; the PMCC rules have no field.
+- **thresholds**: Settings, Alert Defaults, unchanged (US-57). 50% and 21 days; no third field.
+
+Not on this screen: the ▲ and ◆ glyphs on the PMCC card (`epic-09-pmcc-dashboard.mdx`) and the lane statuses on the detail hero (`epic-09-pmcc-position-detail.mdx`) are the live counterparts of these rows and use the same predicates; the classic-wheel "does not use the PMCC rule" scenarios are shown implicitly — AAPL and GOOGL never gain a PMCC row.
+
+---
+
+export const DAY = 86400000
+
+export const ms = (s) => Date.parse(`${s}T00:00:00Z`)
+
+export const days = (a, b) => Math.round((ms(b) - ms(a)) / DAY)
+
+export const utcDate = (t) => new Date(t).toISOString().slice(0, 10)
+
+export const dateMinus = (date, n) => utcDate(ms(date) - n * DAY)
+
+export const money = (n) =>
+  `${n < 0 ? '-' : ''}$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+export const BASE_LEAPS = [
+  {
+    kind: 'open',
+    date: '2026-09-14',
+    action: 'BUY',
+    strike: 80,
+    expiration: '2027-09-17',
+    price: 25.0
+  },
+  {
+    kind: 'roll',
+    date: '2027-07-09',
+    close: { strike: 80, expiration: '2027-09-17', price: 26.0 },
+    open: { strike: 85, expiration: '2028-01-21', price: 23.5 }
+  }
+]
+
+export const BASE_CYCLES = [
+  {
+    n: 1,
+    open: { date: '2026-09-14', strike: 110, expiration: '2026-10-16', price: 2.0 },
+    rolls: [],
+    end: { date: '2026-10-16', outcome: 'expired' }
+  },
+  {
+    n: 2,
+    open: { date: '2026-10-23', strike: 108, expiration: '2026-11-20', price: 1.8 },
+    rolls: [
+      {
+        date: '2026-11-06',
+        close: { strike: 108, expiration: '2026-11-20', price: 3.0 },
+        open: { strike: 112, expiration: '2026-12-18', price: 2.4 }
+      }
+    ],
+    end: { date: '2026-12-18', outcome: 'expired' }
+  },
+  {
+    n: 3,
+    open: { date: '2027-01-04', strike: 112, expiration: '2027-02-05', price: 1.7 },
+    rolls: [],
+    end: { date: '2027-02-05', outcome: 'expired' }
+  },
+  {
+    n: 4,
+    open: { date: '2027-02-08', strike: 114, expiration: '2027-03-12', price: 1.55 },
+    rolls: [],
+    end: { date: '2027-03-12', outcome: 'expired' }
+  },
+  {
+    n: 5,
+    open: { date: '2027-03-15', strike: 114, expiration: '2027-04-16', price: 2.2 },
+    rolls: [],
+    end: { date: '2027-04-02', outcome: 'closed', price: 0.55 }
+  },
+  {
+    n: 6,
+    open: { date: '2027-04-05', strike: 116, expiration: '2027-05-07', price: 1.75 },
+    rolls: [],
+    end: { date: '2027-05-07', outcome: 'expired' }
+  },
+  {
+    n: 7,
+    open: { date: '2027-05-07', strike: 116, expiration: '2027-06-18', price: 1.75 },
+    rolls: [],
+    end: { date: '2027-06-18', outcome: 'expired' }
+  },
+  {
+    n: 8,
+    open: { date: '2027-06-22', strike: 112, expiration: '2027-07-16', price: 2.4 },
+    rolls: [],
+    end: { date: '2027-07-16', outcome: 'expired' }
+  },
+  {
+    n: 9,
+    open: { date: '2027-07-23', strike: 118, expiration: '2027-08-20', price: 1.95 },
+    rolls: [],
+    end: null
+  }
+]
+
+export const Q_BASE = { stock: 104.2, leapsBid: 24.2, leapsAsk: 24.8, leapsDelta: 0.82, shortBid: 0.15, shortAsk: 0.25 }
+
+export const UNROLLED = [BASE_LEAPS[0]]
+
+export const ROLLED_UP_CYCLES = BASE_CYCLES.map((c) =>
+  c.n === 1
+    ? {
+        ...c,
+        rolls: [
+          {
+            date: '2026-09-28',
+            close: { strike: 110, expiration: '2026-10-16' },
+            open: { strike: 115, expiration: '2026-11-20' }
+          }
+        ],
+        end: null
+      }
+    : c
+)
+
+export const CYCLE9_EXPIRED = BASE_CYCLES.map((c) =>
+  c.n === 9 ? { ...c, end: { date: '2027-08-20', outcome: 'expired' } } : c
+)
+
+export const TONE = {
+  green: '#3fb950',
+  gold: '#e6a817',
+  red: '#f85149',
+  muted: '#484f58',
+  teal: '#2dd4bf',
+  sky: '#79c0ff'
+}
+
+export function tint(color, p) {
+  return `color-mix(in srgb, ${color} ${p}%, transparent)`
+}
+
+export function Pill({ label, tone, size = 'sm' }) {
+  const color = TONE[tone]
+  return (
+    <span
+      className={`inline-flex items-center self-start rounded-full font-sans font-bold tracking-[0.08em] ${size === 'lg' ? 'px-3 py-1 text-sm' : 'px-2.5 py-0.5 text-xs'}`}
+      style={{ background: tint(color, 20), color, border: `1px solid ${tint(color, 40)}` }}
+    >
+      {label}
+    </span>
+  )
+}
+
+export const APPROACH_PERCENT = 2
+
+export const WINDOW_DTE = 60
+
+export const EXPIRATION_IMMINENT_MAX_DTE = 5
+
+export const MANAGEMENT_WINDOW_DTE = 21
+
+export const URGENCY_ORDER = { high: 0, medium: 1, low: 2 }
+
+export const pctBelow = (price, strike) => Math.round(((strike - price) / strike) * 1000000) / 10000
+
+export function inDays(n) {
+  if (n === 0) return 'today'
+  if (n === 1) return 'in 1 day'
+  return `in ${n} days`
+}
+
+export function assignmentRiskSummary(price, strike) {
+  const below = pctBelow(price, strike)
+  const direction = price >= strike ? 'above' : 'below'
+  const base = `Stock is ${Math.abs(below).toFixed(1)}% ${direction} the ${money(strike)} short-call strike`
+  return direction === 'below' ? `${base} — approaching assignment` : `${base} — in the money, LEAPS would have to cover`
+}
+
+export function leapsRollWindowSummary(dte, strike) {
+  return `LEAPS expires ${inDays(dte)} at ${money(strike)} strike — review for roll or close`
+}
+
+export function legsAt(today, leapsEvents, cycles) {
+  const t = ms(today)
+  const past = leapsEvents.filter((e) => ms(e.date) <= t)
+  const last = past[past.length - 1]
+  const leaps = last.kind === 'open' ? last : last.open
+  const cycle = cycles.find((c) => ms(c.open.date) <= t && (!c.end || ms(c.end.date) > t)) ?? null
+  const short = cycle
+    ? [cycle.open, ...cycle.rolls.filter((r) => ms(r.date) <= t).map((r) => r.open)].pop()
+    : null
+  return { leaps, cycle, short }
+}
+
+export function evaluate(ctx) {
+  const { leaps, cycle, short } = legsAt(ctx.today, ctx.leaps, ctx.cycles)
+  const shortDte = short ? days(ctx.today, short.expiration) : null
+  const leapsDte = ctx.unreadable ? null : days(ctx.today, leaps.expiration)
+  const matches = []
+  const skipped = []
+  if (short) {
+    if (shortDte >= 0 && shortDte <= EXPIRATION_IMMINENT_MAX_DTE) {
+      matches.push({
+        rule: 'EXPIRATION_IMMINENT',
+        urgency: 'high',
+        leg: 'short call',
+        summary: `Expires in ${shortDte} days at ${money(short.strike)} strike`,
+        since: dateMinus(short.expiration, EXPIRATION_IMMINENT_MAX_DTE)
+      })
+    } else if (shortDte > EXPIRATION_IMMINENT_MAX_DTE && shortDte <= MANAGEMENT_WINDOW_DTE) {
+      matches.push({
+        rule: 'MANAGEMENT_WINDOW',
+        urgency: 'medium',
+        leg: 'short call',
+        summary: `${shortDte} DTE remaining — review for roll or close`,
+        since: dateMinus(short.expiration, MANAGEMENT_WINDOW_DTE)
+      })
+    }
+    if (ctx.price == null) {
+      skipped.push({ rule: 'PMCC_ASSIGNMENT_RISK', reason: 'missing_underlying_price' })
+    } else if (pctBelow(ctx.price, short.strike) <= APPROACH_PERCENT) {
+      matches.push({
+        rule: 'PMCC_ASSIGNMENT_RISK',
+        urgency: 'medium',
+        leg: 'short call',
+        summary: assignmentRiskSummary(ctx.price, short.strike),
+        since: ctx.today
+      })
+    }
+  }
+  if (ctx.unreadable) {
+    skipped.push({ rule: 'PMCC_LEAPS_ROLL_WINDOW', reason: 'missing_leaps_dte' })
+  } else if (leapsDte >= 0 && leapsDte <= WINDOW_DTE) {
+    matches.push({
+      rule: 'PMCC_LEAPS_ROLL_WINDOW',
+      urgency: 'medium',
+      leg: 'LEAPS',
+      summary: leapsRollWindowSummary(leapsDte, leaps.strike),
+      since: dateMinus(leaps.expiration, WINDOW_DTE)
+    })
+  }
+  const distance = short && ctx.price != null ? pctBelow(ctx.price, short.strike) : null
+  return { today: ctx.today, price: ctx.price, leaps, cycle, short, shortDte, leapsDte, matches, skipped, distance, unreadable: ctx.unreadable }
+}
+
+export function run(preset) {
+  const ctx = {
+    today: preset.today,
+    price: preset.price ?? null,
+    leaps: preset.leaps ?? BASE_LEAPS,
+    cycles: preset.cycles ?? BASE_CYCLES,
+    unreadable: Boolean(preset.unreadable)
+  }
+  const now = evaluate(ctx)
+  const prev = preset.previous ? evaluate({ ...ctx, unreadable: false, ...preset.previous }) : null
+  const keptOpen = prev ? prev.matches.filter((m) => now.skipped.some((s) => s.rule === m.rule)) : []
+  const open = [...now.matches, ...keptOpen.map((m) => ({ ...m, kept: true }))].map((m) => {
+    const was = prev ? prev.matches.find((p) => p.rule === m.rule) : null
+    return { ...m, since: was ? was.since : m.since }
+  })
+  const resolved = prev ? prev.matches.filter((m) => !open.some((o) => o.rule === m.rule)) : []
+  return { ...now, prev, open, resolved, keptOpen }
+}
+
+export function wheelRowsFor(today) {
+  const era2026 = ms(today) < ms('2027-01-01')
+  return [
+    {
+      alertId: 'aapl-1',
+      positionId: 'aapl',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      urgency: 'medium',
+      summary: era2026
+        ? 'Stock is 0.8% below the $180.00 put strike — now in the money'
+        : '20 DTE remaining — review for roll or close',
+      quickAction: 'Review position',
+      triggeredAt: era2026 ? '2026-09-24T14:31:00' : '2027-07-01T09:31:00'
+    },
+    {
+      alertId: 'googl-1',
+      positionId: 'googl',
+      ticker: 'GOOGL',
+      phase: 'CC_OPEN',
+      urgency: 'low',
+      summary: '54.0% of max profit captured — consider closing',
+      quickAction: 'Review position',
+      triggeredAt: era2026 ? '2026-09-24T15:02:00' : '2027-07-02T15:02:00'
+    }
+  ]
+}
+
+export function queueItems(model, preset) {
+  const xyz = model.open
+    .filter((m) => m.rule !== preset.dismissed)
+    .map((m) => ({
+      alertId: `xyz-${m.rule}`,
+      positionId: 'xyz',
+      ticker: 'XYZ',
+      pmcc: true,
+      leg: m.leg,
+      rule: m.rule,
+      kept: Boolean(m.kept),
+      urgency: m.urgency,
+      summary: m.summary,
+      quickAction: 'Review position',
+      triggeredAt: `${m.since}T09:31:00`
+    }))
+  return [...wheelRowsFor(model.today), ...xyz].sort(
+    (a, b) =>
+      URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency] ||
+      (a.triggeredAt < b.triggeredAt ? -1 : a.triggeredAt > b.triggeredAt ? 1 : 0)
+  )
+}
+
+export function ruleStatus(model, rule, preset) {
+  if (preset.dismissed === rule) return { label: 'DISMISSED · hidden', tone: 'text-wb-text-muted' }
+  if (model.open.some((m) => m.rule === rule && m.kept)) return { label: 'OPEN · skipped this run', tone: 'text-wb-gold' }
+  if (model.open.some((m) => m.rule === rule)) return { label: 'OPEN', tone: 'text-wb-gold' }
+  if (model.resolved.some((m) => m.rule === rule)) return { label: 'RESOLVED', tone: 'text-wb-green' }
+  if (rule === 'PMCC_ASSIGNMENT_RISK' && !model.short) return { label: 'NOT EVALUATED · no short call', tone: 'text-wb-text-muted' }
+  return { label: 'NOT FIRING', tone: 'text-wb-green' }
+}
+
+export const abs1 = (x) => Math.abs(x).toFixed(1)
+
+export const PRESETS = [
+  {
+    key: 'clear',
+    group: 'US-106 · assignment risk',
+    label: 'clear',
+    today: '2026-09-28',
+    price: 105.0,
+    ruler: 'price',
+    tone: 'info',
+    scenario: 'US-106 · does not fire while more than 2% below',
+    note: (m) =>
+      `${money(m.price)} is ${abs1(m.distance)}% below the ${money(m.short.strike)} short-call strike, outside the 2% band, so PMCC_ASSIGNMENT_RISK does not fire. The short call has ${m.shortDte} DTE, inside the 6–21 day management window, so the wheel's MANAGEMENT_WINDOW rule rides along on the PMCC's short leg exactly as US-106's technical notes say. Nothing evaluates the $${m.leaps.strike}.00 LEAPS (${m.leapsDte} DTE).`
+  },
+  {
+    key: 'approaching',
+    group: 'US-106 · assignment risk',
+    label: 'approaching',
+    today: '2026-09-28',
+    price: 108.35,
+    ruler: 'price',
+    tone: 'warning',
+    scenario: 'US-106 · fires as the stock approaches the strike',
+    note: (m) =>
+      `Approaching from below: ${abs1(m.distance)}% under the strike, inside the 2% floor. The roll decision is cheapest here, before the short goes in the money. The summary names the strike so the trader can weigh roll up-and-out (US-104), close and resell (US-115) or assignment (US-111) from the row itself.`
+  },
+  {
+    key: 'at-the-money',
+    group: 'US-106 · assignment risk',
+    label: 'at the money',
+    today: '2026-09-28',
+    price: 110.0,
+    ruler: 'price',
+    tone: 'error',
+    scenario: 'US-106 · fires at the strike',
+    note: () =>
+      `Price equals the strike, so direction is "above" and the distance is 0.0% — the same convention as US-55 — and the summary switches from "approaching assignment" to "in the money, LEAPS would have to cover". Urgency stays MED: time pressure is EXPIRATION_IMMINENT's job.`
+  },
+  {
+    key: 'in-the-money',
+    group: 'US-106 · assignment risk',
+    label: 'in the money',
+    today: '2026-09-28',
+    price: 112.53,
+    ruler: 'price',
+    tone: 'error',
+    scenario: 'US-106 · fires through the strike; the queue-row scenario',
+    note: (m) =>
+      `${abs1(m.distance)}% through the strike. If the short is assigned the trader is short 100 shares and the LEAPS covers, which ends the position. The alert states where the stock is, not that exercise is imminent — remaining extrinsic value and ex-dividend timing are deliberately out of scope. Review position opens the XYZ detail page.`
+  },
+  {
+    key: 'deep-itm',
+    group: 'US-106 · assignment risk',
+    label: 'deep ITM',
+    today: '2026-09-28',
+    price: 118.8,
+    ruler: 'price',
+    tone: 'error',
+    scenario: 'US-106 · fires with no upper edge',
+    note: (m) =>
+      `${abs1(m.distance)}% through the strike and still open. The rule is a floor with no ceiling: a stock that has run past the strike is more exposed, not less, which is why the red region on the ruler runs off the right edge.`
+  },
+  {
+    key: 'quote-unavailable',
+    group: 'US-106 · assignment risk',
+    label: 'quote unavailable',
+    today: '2026-09-28',
+    price: null,
+    previous: { price: 112.53 },
+    ruler: 'price',
+    tone: 'warning',
+    scenario: 'US-106 · a missing quote keeps the alert open',
+    note: () =>
+      `No XYZ price this evaluation. PMCC_ASSIGNMENT_RISK skips with reason missing_underlying_price, and the US-50 keep-open set leaves the open row untouched with its last summary instead of resolving it. MANAGEMENT_WINDOW needs only the DTE, so it re-evaluates normally.`
+  },
+  {
+    key: 'retreated',
+    group: 'US-106 · assignment risk',
+    label: 'retreated',
+    today: '2026-09-28',
+    price: 106.0,
+    previous: { price: 112.53 },
+    ruler: 'price',
+    tone: 'success',
+    scenario: 'US-106 · resolves when the stock retreats below the band',
+    note: (m) =>
+      `The stock fell to ${money(m.price)}, ${abs1(m.distance)}% below the strike. The assignment-risk row is marked resolved and leaves the queue; the ${m.shortDte}-DTE management-window row stays, because that condition has not cleared. A fresh assignment-risk alert with a new triggered time opens if the stock climbs back inside 2%.`
+  },
+  {
+    key: 'rolled-up',
+    group: 'US-106 · assignment risk',
+    label: 'rolled up',
+    today: '2026-09-28',
+    price: 112.53,
+    cycles: ROLLED_UP_CYCLES,
+    previous: { price: 112.53, cycles: BASE_CYCLES },
+    ruler: 'price',
+    tone: 'success',
+    scenario: 'US-106 · resolves when the short is rolled further from the money',
+    note: (m) =>
+      `Rolled to the ${money(m.short.strike)} call expiring ${m.short.expiration} (US-104). ${money(m.price)} is now ${abs1(m.distance)}% below the new strike, so the alert resolves and nothing refires. At ${m.shortDte} DTE the new short is outside the management window too, so XYZ leaves the queue entirely.`
+  },
+  {
+    key: 'no-short-call',
+    group: 'US-106 · assignment risk',
+    label: 'no short call',
+    today: '2026-10-19',
+    price: 118.8,
+    previous: { today: '2026-10-15', price: 118.8 },
+    ruler: 'price',
+    tone: 'info',
+    scenario: 'US-106 · a PMCC with no open short call is not evaluated',
+    note: (m) =>
+      `Cycle 1 expired worthless on 2026-10-16 and only the LEAPS (${m.leapsDte} DTE) remains. There is no short leg to evaluate, so even at ${money(m.price)} nothing fires and the assignment-risk and expiration rows that were open on 2026-10-15 are resolved. US-107 still evaluates the PMCC for the LEAPS rule, which at ${m.leapsDte} DTE does not fire.`
+  },
+  {
+    key: 'short-expiring',
+    group: 'US-106 · assignment risk',
+    label: 'short expiring',
+    today: '2026-10-12',
+    price: 112.53,
+    ruler: 'price',
+    tone: 'warning',
+    scenario: 'US-106 · the existing short-leg rules evaluate the PMCC short call, never the LEAPS',
+    note: (m) =>
+      `${m.shortDte} days before the short expires, EXPIRATION_IMMINENT co-fires at HIGH above the MED assignment-risk row. Both rows are about the ${money(m.short.strike)} short call; neither mentions the ${money(m.leaps.strike)} LEAPS or ${m.leaps.expiration}. MANAGEMENT_WINDOW does not fire, because the two DTE rules are exclusive ranges.`
+  },
+  {
+    key: 'dismiss',
+    group: 'US-59 · dismissal on a PMCC row',
+    label: 'dismiss',
+    today: '2026-09-28',
+    price: 112.53,
+    confirm: 'PMCC_ASSIGNMENT_RISK',
+    ruler: 'price',
+    tone: 'info',
+    scenario: 'US-59 · the confirmation panel on a PMCC alert',
+    note: () =>
+      `US-59's confirmation panel over the XYZ assignment-risk row: same copy, same buttons, the same sheet slot; the ticker is the only variable. Confirm dismiss records dismissed_at and moves to the dismissed preset; Keep alert open returns to in-the-money.`
+  },
+  {
+    key: 'dismissed',
+    group: 'US-59 · dismissal on a PMCC row',
+    label: 'dismissed',
+    today: '2026-09-28',
+    price: 112.53,
+    dismissed: 'PMCC_ASSIGNMENT_RISK',
+    ruler: 'price',
+    tone: 'info',
+    scenario: 'US-59 · a dismissed alert stays hidden while the condition is unchanged',
+    note: () =>
+      `The assignment-risk row is dismissed with a timestamp and hidden while the condition is unchanged: the daily summary refresh lands on the hidden row and does not refire. If the stock retreats below the band and later climbs back inside 2%, a new open row with a new triggered time appears — US-59's resolve-then-refire lifecycle, unchanged for the PMCC rules.`
+  },
+  {
+    key: 'outside-window',
+    group: 'US-107 · LEAPS roll window',
+    label: 'outside window',
+    today: '2027-07-18',
+    price: Q_BASE.stock,
+    leaps: UNROLLED,
+    ruler: 'dte',
+    tone: 'info',
+    scenario: 'US-107 · does not fire with more than 60 days left',
+    note: (m) =>
+      `LEAPS at ${m.leapsDte} DTE, one day outside the inclusive 60-day window, so nothing fires — the boundary seen from the far side. Cycle 8 expired 2027-07-16 and cycle 9 is not sold until 2027-07-23, so no short-call rule has a leg to read either. XYZ is not in the queue.`
+  },
+  {
+    key: 'at-60',
+    group: 'US-107 · LEAPS roll window',
+    label: 'at 60 DTE',
+    today: '2027-07-19',
+    price: Q_BASE.stock,
+    leaps: UNROLLED,
+    ruler: 'dte',
+    tone: 'warning',
+    scenario: 'US-107 · fires at 60 days, inclusive',
+    note: (m) =>
+      `Exactly ${m.leapsDte} DTE: the row opens, because every existing rule fires at its named number (21, 5, 1%, 2%) and a trader who says "roll at 60" means 60. No short call is open and the row is here anyway — this is the case US-107 widens evaluability for.`
+  },
+  {
+    key: 'in-window',
+    group: 'US-107 · LEAPS roll window',
+    label: 'in window',
+    today: '2027-07-20',
+    price: Q_BASE.stock,
+    leaps: UNROLLED,
+    previous: { today: '2027-07-19' },
+    ruler: 'dte',
+    tone: 'warning',
+    scenario: 'US-107 · the queue row identifies the PMCC and the LEAPS as the leg',
+    note: (m) =>
+      `One day later, ${m.leapsDte} DTE. The same row: US-50 upserts on (position, rule) and refreshes the summary in place, so triggered_at is unchanged and nothing refired. Review position leads to the detail page, where Roll LEAPS (US-105) is the action this row points at.`
+  },
+  {
+    key: 'co-fire',
+    group: 'US-107 · LEAPS roll window',
+    label: 'co-fire',
+    today: '2027-08-18',
+    price: Q_BASE.stock,
+    leaps: UNROLLED,
+    previous: { today: '2027-07-19' },
+    ruler: 'dte',
+    tone: 'warning',
+    scenario: 'US-107 · the short-call rules and the LEAPS rule co-fire without reading each other\'s leg',
+    note: (m) =>
+      `Two XYZ rows about two legs. The HIGH row is EXPIRATION_IMMINENT on the ${money(m.short.strike)} short call (${m.shortDte} DTE); the MED row is this rule on the ${money(m.leaps.strike)} LEAPS (${m.leapsDte} DTE). Each summary names its leg and strike; neither reads the other leg. The stock at ${money(m.price)} is ${abs1(m.distance)}% below the short strike, so no assignment-risk row.`
+  },
+  {
+    key: 'leaps-only',
+    group: 'US-107 · LEAPS roll window',
+    label: 'LEAPS only',
+    today: '2027-09-15',
+    price: Q_BASE.stock,
+    leaps: UNROLLED,
+    cycles: CYCLE9_EXPIRED,
+    previous: { today: '2027-08-19' },
+    ruler: 'dte',
+    tone: 'error',
+    scenario: 'US-107 · a PMCC with only the LEAPS open is still evaluated',
+    note: (m) =>
+      `Cycle 9 expired worthless on 2027-08-20 and only the LEAPS remains, ${m.leapsDte} days from expiration. The short-call rules are inapplicable — not skipped — so the stale EXPIRATION_IMMINENT row from the expired short resolved instead of being kept open. Without this rule the queue would be empty for XYZ while its LEAPS ran to expiration.`
+  },
+  {
+    key: 'rolled',
+    group: 'US-107 · LEAPS roll window',
+    label: 'rolled',
+    today: '2027-07-20',
+    price: Q_BASE.stock,
+    leaps: BASE_LEAPS,
+    previous: { today: '2027-07-19', leaps: UNROLLED },
+    ruler: 'dte',
+    tone: 'success',
+    scenario: 'US-107 · resolves when the LEAPS is rolled out past the window',
+    note: (m) =>
+      `The fixture's own history: the LEAPS was rolled to the ${money(m.leaps.strike)} call expiring ${m.leaps.expiration} (US-105), now ${m.leapsDte} DTE. The alert resolved and nothing refired; a fresh one opens with a new triggered time when the new LEAPS reaches 60 DTE, on ${dateMinus(m.leaps.expiration, WINDOW_DTE)}.`
+  },
+  {
+    key: 'expiration-unreadable',
+    group: 'US-107 · LEAPS roll window',
+    label: 'expiration unreadable',
+    today: '2027-07-20',
+    price: Q_BASE.stock,
+    leaps: UNROLLED,
+    unreadable: true,
+    previous: { today: '2027-07-19' },
+    ruler: 'dte',
+    tone: 'warning',
+    scenario: 'US-107 · a LEAPS with no readable expiration keeps the alert open',
+    note: () =>
+      `The LEAPS expiration could not be read this evaluation. The rule skips with reason missing_leaps_dte, and the open row keeps its last summary (from 2027-07-19) rather than resolving on missing data. It re-evaluates on the next tick.`
+  },
+  {
+    key: 'overrides',
+    group: 'US-57 / US-58 · thresholds',
+    label: 'per-position overrides',
+    today: '2027-08-13',
+    price: Q_BASE.stock,
+    page: 'detail',
+    ruler: null,
+    tone: 'info',
+    scenario: 'US-58 · per-position overrides, unchanged',
+    note: () =>
+      `US-58's form on the XYZ detail page, unchanged. Profit target and management window apply to the PMCC's short call, because PROFIT_TARGET and MANAGEMENT_WINDOW now evaluate that leg (US-106). PMCC_ASSIGNMENT_RISK's 2% and PMCC_LEAPS_ROLL_WINDOW's 60 days are fixed built-ins with no field here — both stories put configurability, global or per position, out of scope.`
+  },
+  {
+    key: 'thresholds',
+    group: 'US-57 / US-58 · thresholds',
+    label: 'global thresholds',
+    today: '2027-08-13',
+    price: Q_BASE.stock,
+    page: 'settings',
+    ruler: null,
+    tone: 'info',
+    scenario: 'US-57 · global alert defaults, unchanged',
+    note: () =>
+      `US-57's global defaults on Settings, unchanged: 50% profit target and a 21-day management window. They feed the short-call rules on a PMCC exactly as on a wheel. No third field for the PMCC rules; their 2% and 60-day thresholds are constants referenced by the card glyphs and the detail lanes as well.`
+  }
+]
+
+export const GROUPS = [...new Set(PRESETS.map((p) => p.group))]
+
+export function cardPresetFor(preset) {
+  // The XYZ card reads the same legs the rules read: the ledger cut at the valuation date, the preset's stock price, and no option marks (none are quoted here).
+  const t = ms(preset.today)
+  const leaps = (preset.leaps ?? BASE_LEAPS).filter((e) => ms(e.date) <= t)
+  const cycles = (preset.cycles ?? BASE_CYCLES)
+    .filter((c) => ms(c.open.date) <= t)
+    .map((c) => ({ ...c, rolls: c.rolls.filter((r) => ms(r.date) <= t), end: c.end && ms(c.end.date) <= t ? c.end : null }))
+  const q = { stock: preset.price ?? null, leapsBid: null, leapsAsk: null, leapsDelta: null, shortBid: null, shortAsk: null }
+  return { key: preset.key, today: preset.today, leaps, cycles, q, ivr: null }
+}
+
+export function wheelCardsFor(today) {
+  // The two classic wheels behind wheelRowsFor, priced so each card produces exactly its queue row and no other.
+  const era2026 = ms(today) < ms('2027-01-01')
+  return [
+    { id: 'aapl', ticker: 'AAPL', phase: 'CSP_OPEN', kind: 'PUT', dte: era2026 ? 30 : 20, strike: 180, fill: 3.5, bid: 2.55, ask: 2.65, price: era2026 ? 178.56 : 182.45, contracts: 1, premium: 350, basis: 176.5 },
+    { id: 'googl', ticker: 'GOOGL', phase: 'CC_OPEN', kind: 'CALL', dte: 35, strike: 175, fill: 2.5, bid: 1.1, ask: 1.2, price: 168.4, contracts: 1, premium: 250, basis: 164.8 }
+  ]
+}
+
+export function Sidebar({ page }) {
+  return (
+    <aside className="flex h-full w-[200px] min-w-[200px] flex-col border-r border-wb-border bg-wb-bg-surface">
+      <div className="flex items-center gap-[8px] border-b border-wb-border px-[16px] py-[16px]">
+        <div className="h-2 w-2 rounded-full bg-wb-gold" style={{ boxShadow: '0 0 6px var(--wb-gold)' }} />
+        <span className="font-wb-mono text-xs font-bold uppercase tracking-[0.15em] text-wb-text-primary">Wheelbase</span>
+      </div>
+      <nav className="flex flex-1 flex-col gap-[4px] px-[8px] py-[16px]">
+        <div className="mb-[4px] px-[12px] py-[6px] font-wb-mono text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-wb-text-muted">Trading</div>
+        <NavItem href="/" label="Positions" icon="◈" active={page !== 'settings'} />
+        <NavItem href="/new" label="Open Wheel" icon="+" active={false} />
+        <NavItem href="/calendar" label="Calendar" icon="▦" active={false} />
+        <NavItem href="/watchlist" label="Watchlist" icon="☰" active={false} />
+        <div className="mb-[4px] mt-[12px] px-[12px] py-[6px] font-wb-mono text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-wb-text-muted">System</div>
+        <NavItem href="/settings" label="Settings" icon="⚙" active={page === 'settings'} />
+      </nav>
+      <div className="border-t border-wb-border px-[16px] py-[12px] font-wb-mono text-[0.65rem] text-wb-text-muted">Wheel Strategy</div>
+    </aside>
+  )
+}
+
+export function Shell({ page, children }) {
+  return (
+    <div className="relative isolate flex h-[860px] transform-gpu overflow-hidden rounded-lg border border-wb-border bg-wb-bg-base text-wb-text-primary">
+      <Sidebar page={page} />
+      <main className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex items-center justify-between border-b border-wb-border bg-wb-bg-surface px-6 py-3">
+          <div className="font-wb-mono text-[0.72rem] uppercase tracking-[0.12em] text-wb-text-muted">{page === 'settings' ? 'Settings' : 'Dashboard'}</div>
+          <div className="flex items-center gap-3">
+            <EnvironmentBadge activeBrokerEnv="paper" />
+            <MarketDataStatusDot marketData="configured" />
+          </div>
+        </div>
+        {children}
+      </main>
+    </div>
+  )
+}
+
+export function PmccQueueRow({ item, onDismissClick }) {
+  const state = item.leg === 'LEAPS' && !item.hasShort ? 'LEAPS open · no short call' : 'LEAPS + short call open'
+  return (
+    <div
+      data-testid="management-queue-row"
+      data-ticker={item.ticker}
+      className="grid grid-cols-[96px_110px_1fr_auto] items-center gap-4 border-t border-wb-border px-4 py-3.5"
+    >
+      <div className="flex flex-col gap-1">
+        <span className="text-base font-bold text-wb-text-primary">{item.ticker}</span>
+        <UrgencyPill urgency={item.urgency} />
+      </div>
+      <span title={state}>
+        <Pill label="PMCC" tone="teal" />
+      </span>
+      <span className="leading-relaxed text-wb-text-secondary">{item.summary}</span>
+      <div className="flex justify-self-end gap-2">
+        <button type="button" className="rounded-lg border border-wb-gold-border bg-wb-gold-dim px-3.5 py-2.5 font-wb-mono font-bold text-wb-gold">
+          {item.quickAction}
+        </button>
+        <button
+          type="button"
+          onClick={() => onDismissClick(item.alertId)}
+          className="rounded-lg border border-wb-red/30 bg-wb-red-dim px-3.5 py-2.5 font-wb-mono font-bold text-wb-red"
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export function Queue({ items, hasShort, onDismissClick }) {
+  return (
+    <SectionCard header="Management Queue">
+      <div className="flex items-center justify-between border-b border-wb-border px-4 py-3.5">
+        <h2 className="text-lg font-bold text-wb-text-primary">What Needs Attention First</h2>
+        <span className="font-wb-mono text-xs text-wb-text-muted">{items.length ? `${items.length} open alerts` : 'All clear'}</span>
+      </div>
+      {items.length ? (
+        items.map((item) =>
+          item.pmcc ? (
+            <PmccQueueRow key={item.alertId} item={{ ...item, hasShort }} onDismissClick={onDismissClick} />
+          ) : (
+            <ManagementQueueRow key={item.alertId} item={item} onDismissClick={onDismissClick} />
+          )
+        )
+      ) : (
+        <div className="px-7 py-7 text-center leading-relaxed text-wb-text-secondary">
+          <p className="mb-2 text-wb-text-primary">No positions need attention right now</p>
+          <p>All active wheels are outside the management window and below their alert thresholds.</p>
+        </div>
+      )}
+    </SectionCard>
+  )
+}
+
+export function DismissPanel({ ticker, onCancel, onConfirm }) {
+  return (
+    <SheetOverlay onClose={onCancel}>
+      <SheetPanel>
+        <SheetHeader eyebrow="Confirm Dismissal" title="Hide this alert until the condition clears?" onClose={onCancel} />
+        <SheetBody>
+          <p className="leading-relaxed text-wb-text-secondary">
+            {ticker} will disappear from the open queue, but the dismissal will be recorded with a timestamp. If the condition clears and later returns, a fresh alert can appear.
+          </p>
+        </SheetBody>
+        <SheetFooter>
+          <Button variant="outline" onClick={onCancel} className="flex-1">
+            Keep alert open
+          </Button>
+          <Button onClick={onConfirm} className="flex-1 bg-wb-red font-bold text-white">
+            Confirm dismiss
+          </Button>
+        </SheetFooter>
+      </SheetPanel>
+    </SheetOverlay>
+  )
+}
+
+export function DashboardPage({ cardPreset, wheels, items, hasShort, confirming, onDismissClick, onCancel, onConfirm }) {
+  return (
+    <>
+      <PageHeader
+        left={
+          <div className="flex items-center gap-[10px]">
+            <h1 className="m-0 text-sm font-semibold text-wb-text-primary">Active Positions</h1>
+            <Badge>{activeCount(cardPreset, wheels)}</Badge>
+          </div>
+        }
+        right={
+          <div className="flex items-center gap-[10px]">
+            <MarketStatusPill state="LIVE" />
+            <a
+              href="#/new"
+              className="wb-hover-opacity flex items-center gap-[6px] rounded-md bg-wb-gold px-[14px] py-[5px] text-xs font-medium tracking-[0.02em] text-wb-bg-base no-underline"
+            >
+              + New Wheel
+            </a>
+          </div>
+        }
+      />
+      <div className="flex-1 overflow-auto">
+        <div className="mx-[24px] my-[16px]">
+          <Queue items={items} hasShort={hasShort} onDismissClick={onDismissClick} />
+        </div>
+        <PositionsGrid preset={cardPreset} wheels={wheels} />
+      </div>
+      {confirming ? <DismissPanel ticker={confirming.ticker} onCancel={onCancel} onConfirm={onConfirm} /> : null}
+    </>
+  )
+}
+
+export function OverridesForm() {
+  const [customEnabled, setCustomEnabled] = useState(false)
+  return (
+    <SectionCard header="Per-Position Alert Thresholds">
+      <div className="flex flex-col gap-4 p-5">
+        <div
+          className={[
+            'rounded-md border px-3 py-2.5 font-wb-mono text-[0.72rem]',
+            customEnabled ? 'border-wb-gold-border bg-wb-gold-dim text-wb-gold' : 'border-wb-blue/30 bg-wb-blue-dim text-wb-blue'
+          ].join(' ')}
+        >
+          {customEnabled ? 'Custom alert thresholds active' : 'Using global defaults'}
+        </div>
+        <div className="flex items-center gap-2">
+          <input id="custom-alerts-toggle" type="checkbox" checked={customEnabled} onChange={(e) => setCustomEnabled(e.target.checked)} />
+          <label htmlFor="custom-alerts-toggle" className="font-wb-mono text-xs text-wb-text-secondary">
+            Custom alerts
+          </label>
+        </div>
+        <form onSubmit={(e) => e.preventDefault()} className="flex flex-col gap-4">
+          <Field label="Profit Target Override" htmlFor="override-profit-target-percent">
+            <NumberInput id="override-profit-target-percent" type="number" aria-label="Profit Target Override" disabled={!customEnabled} defaultValue="50" />
+          </Field>
+          <Field label="Management Window Override" htmlFor="override-management-window-dte">
+            <NumberInput id="override-management-window-dte" type="number" aria-label="Management Window Override" disabled={!customEnabled} defaultValue="21" />
+          </Field>
+          <div className="flex gap-2">
+            <FormButton label="Save overrides" disabled={!customEnabled} />
+            <FormButton label="Use global defaults" variant="secondary" onClick={() => setCustomEnabled(false)} />
+          </div>
+        </form>
+      </div>
+    </SectionCard>
+  )
+}
+
+export function DetailPage() {
+  return (
+    <>
+      <PageHeader
+        left={<Breadcrumb backTo="#/" backLabel="Positions" current="XYZ" />}
+        right={
+          <div className="flex items-center gap-3">
+            <Pill label="PMCC" tone="teal" />
+            <span className="font-wb-mono text-[0.65rem] text-wb-text-muted">header actions · epic-09-pmcc-position-detail.mdx</span>
+          </div>
+        }
+      />
+      <main className="flex flex-1 flex-col gap-4 overflow-y-auto p-6">
+        <div className="rounded-lg border border-dashed border-wb-border px-5 py-8 text-center font-wb-mono text-xs text-wb-text-muted">
+          Two-lane cockpit, guardrails and drawers — drawn in epic-09-pmcc-position-detail.mdx (US-118). This screen shows the form that sits beneath them.
+        </div>
+        <OverridesForm />
+      </main>
+    </>
+  )
+}
+
+export function SettingsField({ id, label, children }) {
+  return (
+    <label htmlFor={id} className="flex flex-col gap-2">
+      <span className="font-wb-mono text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-wb-text-muted">{label}</span>
+      {children}
+    </label>
+  )
+}
+
+export function SettingsSectionStub({ title, line }) {
+  return (
+    <section className="rounded-lg border border-wb-border bg-wb-bg-surface">
+      <div className="border-b border-wb-border px-5 py-4">
+        <div className="font-wb-mono text-[0.74rem] font-semibold uppercase tracking-[0.12em] text-wb-text-secondary">{title}</div>
+      </div>
+      <div className="px-5 py-4 font-wb-mono text-[0.68rem] text-wb-text-muted">{line}</div>
+    </section>
+  )
+}
+
+export function AlertDefaults() {
+  return (
+    <section role="region" aria-label="Alert Defaults" className="rounded-lg border border-wb-border bg-wb-bg-surface">
+      <div className="border-b border-wb-border px-5 py-4">
+        <div className="font-wb-mono text-[0.74rem] font-semibold uppercase tracking-[0.12em] text-wb-text-secondary">Alert Defaults</div>
+      </div>
+      <form onSubmit={(e) => e.preventDefault()} className="flex flex-col gap-4 px-5 py-5">
+        <SettingsField id="profit-target-percent" label="Profit Target">
+          <input
+            id="profit-target-percent"
+            type="number"
+            aria-label="Profit Target"
+            defaultValue="50"
+            className="h-10 w-full rounded-md border border-wb-border bg-wb-bg-elevated px-3 font-wb-mono text-sm text-wb-text-primary"
+          />
+        </SettingsField>
+        <SettingsField id="management-window-dte" label="Management Window">
+          <input
+            id="management-window-dte"
+            type="number"
+            aria-label="Management Window"
+            defaultValue="21"
+            className="h-10 w-full rounded-md border border-wb-border bg-wb-bg-elevated px-3 font-wb-mono text-sm text-wb-text-primary"
+          />
+        </SettingsField>
+        <div className="flex items-center gap-2">
+          <button type="submit" className="rounded-md bg-wb-gold px-3 py-2 font-wb-mono text-xs font-semibold tracking-[0.06em] text-wb-bg-base disabled:opacity-40">
+            Save alert defaults
+          </button>
+          <button type="button" className="rounded-md border border-wb-border px-3 py-2 font-wb-mono text-xs font-semibold tracking-[0.06em] text-wb-text-secondary">
+            Reset
+          </button>
+        </div>
+      </form>
+    </section>
+  )
+}
+
+export function SettingsPageMock() {
+  return (
+    <>
+      <PageHeader left={<h1 className="m-0 text-sm font-semibold text-wb-text-primary">Settings</h1>} />
+      <div className="flex-1 overflow-auto">
+        <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-5 px-6 py-6">
+          <SettingsSectionStub title="Market Data — Alpaca" line="Unchanged · using paper credentials" />
+          <SettingsSectionStub title="Broker — Alpaca" line="Unchanged · PAPER active, LIVE configured" />
+          <AlertDefaults />
+        </div>
+      </div>
+    </>
+  )
+}
+
+export function LegendItem({ swatchClass, label, value, tone, shape = 'square' }) {
+  const swatchShape = shape === 'dot' ? 'h-4 w-4 rounded-full border-2 border-wb-bg-base' : 'h-3 w-3 rounded-sm'
+  return (
+    <div className="contents">
+      <span className="flex h-4 w-4 items-center justify-center">
+        <span className={`inline-block shrink-0 ${swatchShape} ${swatchClass}`} />
+      </span>
+      <span className="text-wb-text-secondary">{label}</span>
+      <span className={tone ?? 'text-wb-text-primary'}>{value}</span>
+    </div>
+  )
+}
+
+export function StrikeRuler({ model }) {
+  const strike = model.short ? model.short.strike : 110
+  const min = strike * 0.94
+  const max = strike * 1.1
+  const pct = (value) => `${Math.max(0, Math.min(((value - min) / (max - min)) * 100, 100))}%`
+  const floor = strike * (1 - APPROACH_PERCENT / 100)
+  const skipped = model.keptOpen.some((m) => m.rule === 'PMCC_ASSIGNMENT_RISK')
+  const marker = model.price ?? (skipped && model.prev ? model.prev.price : null)
+  const fires = model.open.some((m) => m.rule === 'PMCC_ASSIGNMENT_RISK' && !m.kept)
+  const markerTone = skipped ? 'bg-wb-text-muted' : fires ? (model.distance <= 0 ? 'bg-wb-red' : 'bg-wb-gold') : 'bg-wb-green'
+  const valueTone = fires ? (model.distance <= 0 ? 'text-wb-red' : 'text-wb-gold') : undefined
+  return (
+    <div className="flex flex-col gap-3 px-4 py-4">
+      <div className="relative h-14">
+        <div className="absolute inset-x-0 top-5 h-1.5 rounded-full bg-wb-bg-elevated" />
+        {model.short ? (
+          <div className="absolute top-5 h-1.5 bg-wb-gold-dim" style={{ left: pct(floor), width: `calc(${pct(strike)} - ${pct(floor)})` }} />
+        ) : null}
+        {model.short ? <div className="absolute top-5 h-1.5 rounded-r-full bg-wb-red-dim" style={{ left: pct(strike), right: 0 }} /> : null}
+        {model.short ? <div className="absolute top-3 h-6 w-px bg-wb-gold" style={{ left: pct(floor) }} /> : null}
+        {model.short ? <div className="absolute top-2 h-8 w-0.5 bg-wb-text-primary" style={{ left: pct(strike) }} /> : null}
+        {marker === null ? null : (
+          <div
+            className={`absolute top-3.5 h-4 w-4 -translate-x-1/2 rounded-full border-2 border-wb-bg-base ${markerTone} ${skipped ? 'opacity-50' : ''}`}
+            style={{ left: pct(marker) }}
+          />
+        )}
+        <div className="absolute inset-x-0 top-10 flex justify-between text-[10px] text-wb-text-muted">
+          <span>{money(min)}</span>
+          <span>{money(max)}</span>
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-[auto_auto_1fr] items-center gap-x-3 gap-y-1.5 border-t border-wb-border pt-3 text-[10px] text-wb-text-muted">
+        <LegendItem swatchClass="bg-wb-gold-dim" label="2% approach band" value={model.short ? `${money(floor)} to ${money(strike)}` : 'no short call'} />
+        <LegendItem swatchClass="bg-wb-red-dim" label="In the money" value={model.short ? `${money(strike)} and above, no upper edge` : 'no short call'} />
+        <LegendItem
+          shape="dot"
+          swatchClass={`${markerTone} ${skipped ? 'opacity-50' : ''}`}
+          label={skipped ? 'Last known price' : 'Stock price'}
+          value={marker === null ? 'unavailable' : money(marker)}
+          tone={valueTone}
+        />
+      </div>
+    </div>
+  )
+}
+
+export function DteRuler({ model }) {
+  const max = 200
+  const pct = (d) => `${Math.max(0, Math.min((d / max) * 100, 100))}%`
+  const skipped = model.keptOpen.some((m) => m.rule === 'PMCC_LEAPS_ROLL_WINDOW')
+  const leapsMarker = skipped && model.prev ? model.prev.leapsDte : model.leapsDte
+  const fires = model.open.some((m) => m.rule === 'PMCC_LEAPS_ROLL_WINDOW' && !m.kept)
+  const leapsTone = skipped ? 'bg-wb-text-muted' : fires ? 'bg-wb-gold' : 'bg-wb-green'
+  return (
+    <div className="flex flex-col gap-3 px-4 py-4">
+      <div className="relative h-14">
+        <div className="absolute inset-x-0 top-5 h-1.5 rounded-full bg-wb-bg-elevated" />
+        <div className="absolute top-5 h-1.5 rounded-l-full bg-wb-gold-dim" style={{ left: 0, width: pct(WINDOW_DTE) }} />
+        <div className="absolute top-3 h-6 w-px bg-wb-gold" style={{ left: pct(WINDOW_DTE) }} />
+        <div className="absolute top-2 h-8 w-0.5 bg-wb-text-primary" style={{ left: 0 }} />
+        {model.short ? (
+          <div className="absolute top-4 h-3 w-3 -translate-x-1/2 rotate-45 border border-wb-bg-base bg-wb-text-secondary" style={{ left: pct(model.shortDte) }} />
+        ) : null}
+        {leapsMarker === null ? null : (
+          <div
+            className={`absolute top-3.5 h-4 w-4 -translate-x-1/2 rounded-full border-2 border-wb-bg-base ${leapsTone} ${skipped ? 'opacity-50' : ''}`}
+            style={{ left: pct(leapsMarker) }}
+          />
+        )}
+        <div className="absolute inset-x-0 top-10 flex justify-between text-[10px] text-wb-text-muted">
+          <span>today · {model.today}</span>
+          <span>{max} days out</span>
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-[auto_auto_1fr] items-center gap-x-3 gap-y-1.5 border-t border-wb-border pt-3 text-[10px] text-wb-text-muted">
+        <LegendItem swatchClass="bg-wb-gold-dim" label="Roll window" value={`0 to ${WINDOW_DTE} DTE, inclusive`} />
+        <LegendItem
+          shape="dot"
+          swatchClass={`${leapsTone} ${skipped ? 'opacity-50' : ''}`}
+          label={skipped ? 'LEAPS, last known' : 'LEAPS'}
+          value={
+            skipped
+              ? `${money(model.leaps.strike)} · expiration unreadable · was ${model.prev.leapsDte} DTE`
+              : `${money(model.leaps.strike)} · ${model.leaps.expiration} · ${model.leapsDte} DTE`
+          }
+          tone={fires ? 'text-wb-gold' : undefined}
+        />
+        <LegendItem
+          swatchClass="rotate-45 bg-wb-text-secondary"
+          label="Short call"
+          value={model.short ? `${money(model.short.strike)} · ${model.short.expiration} · ${model.shortDte} DTE` : 'none open'}
+        />
+      </div>
+    </div>
+  )
+}
+
+export function Evaluation({ model, preset }) {
+  const ar = ruleStatus(model, 'PMCC_ASSIGNMENT_RISK', preset)
+  const lrw = ruleStatus(model, 'PMCC_LEAPS_ROLL_WINDOW', preset)
+  const rideAlong = model.open.filter((m) => m.rule === 'EXPIRATION_IMMINENT' || m.rule === 'MANAGEMENT_WINDOW')
+  return (
+    <SectionCard header={`Evaluation · XYZ · ${preset.today} · ${preset.scenario}`}>
+      {preset.ruler ? (
+        <StatGrid
+          minWidth={150}
+          items={[
+            {
+              label: 'Stock price',
+              value: model.price === null ? <span className="text-wb-text-muted">unavailable</span> : money(model.price)
+            },
+            {
+              label: 'Short call',
+              value: model.short ? `${money(model.short.strike)} · ${model.short.expiration} · ${model.shortDte} DTE` : <span className="text-wb-text-muted">none open</span>
+            },
+            {
+              label: 'LEAPS',
+              value: model.unreadable ? (
+                <span className="text-wb-text-muted">{money(model.leaps.strike)} · expiration unreadable</span>
+              ) : (
+                `${money(model.leaps.strike)} · ${model.leaps.expiration} · ${model.leapsDte} DTE`
+              )
+            },
+            { label: 'PMCC_ASSIGNMENT_RISK', value: <span className={ar.tone}>{ar.label}</span> },
+            { label: 'PMCC_LEAPS_ROLL_WINDOW', value: <span className={lrw.tone}>{lrw.label}</span> },
+            {
+              label: 'Short-leg rules riding along',
+              value: rideAlong.length ? rideAlong.map((m) => m.rule).join(' · ') : <span className="text-wb-text-muted">none</span>
+            }
+          ]}
+        />
+      ) : null}
+      {preset.ruler === 'price' ? <StrikeRuler model={model} /> : null}
+      {preset.ruler === 'dte' ? <DteRuler model={model} /> : null}
+      <div className="flex flex-col gap-3 px-4 pb-4 pt-4">
+        <AlertBox variant={preset.tone}>{preset.note(model)}</AlertBox>
+        {model.resolved.length ? (
+          <div className="font-wb-mono text-[0.68rem] text-wb-text-muted">
+            Resolved this run: {model.resolved.map((m) => `${m.rule} ("${m.summary}")`).join(' · ')}
+          </div>
+        ) : null}
+        {model.keptOpen.length ? (
+          <div className="font-wb-mono text-[0.68rem] text-wb-text-muted">
+            Kept open on skip: {model.keptOpen.map((m) => m.rule).join(' · ')} — reason {model.skipped.map((s) => s.reason).join(', ')}
+          </div>
+        ) : null}
+      </div>
+    </SectionCard>
+  )
+}
+
+export function Frame({ preset, onConfirmed }) {
+  const model = run(preset)
+  const items = queueItems(model, preset)
+  const [confirming, setConfirming] = useState(
+    preset.confirm ? { alertId: `xyz-${preset.confirm}`, ticker: 'XYZ' } : null
+  )
+  const page = preset.page ?? 'dashboard'
+  return (
+    <div className="flex flex-col gap-4">
+      <Shell page={page}>
+        {page === 'dashboard' ? (
+          <DashboardPage
+            cardPreset={cardPresetFor(preset)}
+            wheels={wheelCardsFor(preset.today)}
+            items={items}
+            hasShort={Boolean(model.short)}
+            confirming={confirming}
+            onDismissClick={(alertId) => {
+              const item = items.find((i) => i.alertId === alertId)
+              setConfirming({ alertId, ticker: item ? item.ticker : 'XYZ' })
+            }}
+            onCancel={() => {
+              setConfirming(null)
+              if (preset.confirm) onConfirmed('in-the-money')
+            }}
+            onConfirm={() => {
+              const target = confirming
+              setConfirming(null)
+              if (target && target.alertId === 'xyz-PMCC_ASSIGNMENT_RISK') onConfirmed('dismissed')
+            }}
+          />
+        ) : null}
+        {page === 'detail' ? <DetailPage /> : null}
+        {page === 'settings' ? <SettingsPageMock /> : null}
+      </Shell>
+      <Evaluation model={model} preset={preset} />
+    </div>
+  )
+}
+
+export function Mockup() {
+  const [presetKey, setPresetKey] = useState('in-the-money')
+  const preset = PRESETS.find((p) => p.key === presetKey) ?? PRESETS[0]
+
+  return (
+    <div className="flex flex-col gap-4 font-wb-mono text-wb-text-primary">
+      <Frame key={presetKey} preset={preset} onConfirmed={setPresetKey} />
+
+      <details className="rounded-lg border border-wb-border p-3 text-xs text-wb-text-secondary" open>
+        <summary className="cursor-pointer">Review states · prototype controls</summary>
+        {GROUPS.map((group) => (
+          <div key={group} className="mt-3 flex flex-col gap-2">
+            <span className="text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-wb-text-muted">{group}</span>
+            <div className="flex flex-wrap gap-2">
+              {PRESETS.filter((p) => p.group === group).map((entry) => (
+                <FormButton
+                  key={entry.key}
+                  label={entry.label}
+                  variant={entry.key === presetKey ? 'primary' : 'secondary'}
+                  onClick={() => setPresetKey(entry.key)}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+        <p className="mt-4">
+          The queue is the app's own: the AAPL and GOOGL rows are the shipped ManagementQueueRow, and the XYZ rows use the same grid with the teal PMCC pill where a
+          wheel row shows its phase badge. Rows sort by urgency tier, then by triggered time, exactly as listManagementQueue orders them. The Dismiss button on any
+          row opens US-59's confirmation sheet; on the XYZ assignment-risk row, Confirm dismiss moves to the dismissed preset.
+        </p>
+        <p className="mt-2">
+          Everything derives from the XYZ legs and the preset's valuation date and price. DTE is whole calendar days; PMCC_ASSIGNMENT_RISK fires when (strike −
+          price) / strike is at most 2% with no upper limit, and its summary direction flips at the strike; PMCC_LEAPS_ROLL_WINDOW fires when the LEAPS DTE is
+          between 0 and 60 inclusive. EXPIRATION_IMMINENT (0–5 DTE) and MANAGEMENT_WINDOW (6–21 DTE) read the short leg and ride along unchanged. The presets carry
+          no option mark, so PROFIT_TARGET and EARNINGS_PROXIMITY have nothing to evaluate here; on the real dashboard they would also read the short leg.
+        </p>
+        <p className="mt-2">
+          Deliberately absent: a leg column in the queue (the summary names the leg), a configurable field for the 2% band or the 60-day window (US-106 and US-107
+          put both out of scope), and any alert on the LEAPS strike or delta (US-118's BROKEN and DELTA DECAYING lanes have no alert rule in this epic).
+        </p>
+      </details>
+    </div>
+  )
+}
+
+<Mockup />

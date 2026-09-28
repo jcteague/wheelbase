@@ -143,6 +143,31 @@ string; observedAt: string }` is what the service hands `assessIvRank`; `Assesse
   fields describing one reading, two freshness verdicts to keep aligned); keep `value: string` and
   drop the flat-window scenario (the story chose to specify it).
 
+### ADR: An absent rank carries a display-only reason; the collector keeps that status in memory
+
+- **Decision:** `readIvMetricsByUnderlying` never returns a bare `null`. A ticker with no publishable
+  rank gets `IvRankAbsence { reason, coverage? }` with one of `pending`, `insufficient_history`,
+  `no_market_data`, `failed`, `not_collected`. The bench row and ranked candidate carry it as
+  `ivRankAbsence` beside `ivRank` (exactly one non-null). `insufficient_history` is derived from the
+  stored series on read; the other three process states are a module-level `Map` in `iv-history.ts`
+  that `collectIvHistory` writes on entry and in `finally` and that a successful run clears. Nothing is
+  persisted. The verdict engine, `usableIvRanks` and `iv_rank_floor` still receive
+  `AssessedIvRank | null` and never see the reason. `IvrCell` renders `pending` as a pulsing `…`
+  titled "Computing IV history" and every other reason as `n/a` with a reason-specific title;
+  `ReadingNote` names the reason.
+- **Why:** After this story a bare `null` would hide five different situations, and during a
+  fresh-install backfill the whole bench reads `n/a` for minutes with no sign anything is happening.
+  `ReadingNote` already has a comment admitting it cannot tell the cases apart. The reason is kept
+  out of the decision path because "an unknown decides nothing" must not depend on _why_ it is
+  unknown. Memory rather than a table because `pending`/`failed`/`no_market_data` describe this
+  process's last attempt, not a market fact; a relaunch honestly reads `not_collected` until the
+  next run rather than showing a stale "computing".
+- **Alternatives considered:** a discriminated union replacing `ivRank: AssessedIvRank | null`
+  everywhere (touches the screener core, `ivGate`, `RankedCandidate` overlay and every mirror for
+  no decision-path gain); a persisted status table (a second source of truth for a transient fact);
+  a progress bar or request counts (the snapshot is a point-in-time read; the collector already logs
+  progress).
+
 ### ADR: Daily bars are two `MarketDataProvider` capabilities; the adapter hides batching and paging
 
 - **Decision:** `getOptionDailyBars({ symbols, start, end? })` → `Map<symbol, DailyBar[]>` and

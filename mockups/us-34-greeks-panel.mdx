@@ -362,27 +362,22 @@ export function GreeksPanel({ greeks, leg, instrumentLabel, underlyingPrice }) {
     )
   }
   const colorFor = (sev) => SEVERITY_COLOR[sev] ?? SEVERITY_COLOR.default
-
 // ---- DTE-aware derivations ----
 const absDelta = Math.abs(greeks.delta)
 const dte = leg.dte
 const deltaSev = deltaSeverity(absDelta, instrumentLabel, dte)
-
 // Theta: per-share → per-contract dollars/day. Yield = decay over remaining DTE / total premium.
-const thetaPerContract = Math.abs(greeks.theta) _ 100
-const premiumDollars = leg.premium _ leg.contracts _ 100
-const thetaYieldPct = premiumDollars > 0 ? (thetaPerContract _ dte) / premiumDollars \* 100 : 0
+const thetaPerContract = Math.abs(greeks.theta) * 100
+const premiumDollars = leg.premium * leg.contracts * 100
+const thetaYieldPct = premiumDollars > 0 ? (thetaPerContract * dte) / premiumDollars * 100 : 0
 const thetaSev = thetaYieldSeverity(thetaYieldPct)
-
 // Gamma rises as DTE shrinks. Mark warning when |gamma| ≥ 0.04 within 7 DTE.
 const gammaSev = dte <= 7 && Math.abs(greeks.gamma) >= 0.04 ? 'warning' : 'default'
-
 // ---- Tier-1 banners ----
 // ITM-near-expiration urgent: |Δ| > 0.50 with DTE ≤ 3.
 const itmUrgent = dte <= 3 && absDelta > 0.50
 // Soft notice when DTE ≤ 7 (thresholds tightened).
 const dteTightened = dte <= 7 && !itmUrgent
-
 const deltaTooltip = (() => {
 if (deltaSev === 'danger') return 'High assignment risk'
 if (deltaSev === 'warning')
@@ -391,15 +386,11 @@ return dte <= 7
 : `Moderate ${instrumentLabel === 'CC' ? 'call-away' : 'assignment'} risk — consider rolling`
 return `Low ${instrumentLabel === 'CC' ? 'call-away' : 'assignment'} risk`
 })()
-
 const thetaTooltip = `θ yield = (theta×DTE)/premium = ${thetaYieldPct.toFixed(0)}% — ${
     thetaSev === 'normal' ? 'healthy decay' : thetaSev === 'warning' ? 'anemic vs premium' : 'moderate decay'
   }`
-
 return (
-
 <SectionCard header="Greeks" headerRight={`${instrumentLabel} · ${dte}d · DTE-aware thresholds`}>
-
       {/* Urgent ITM-near-expiration banner */}
       {itmUrgent ? (
         <div
@@ -425,7 +416,6 @@ return (
           </span>
         </div>
       ) : null}
-
       {/* DTE tightened notice */}
       {dteTightened ? (
         <div
@@ -446,7 +436,6 @@ return (
           DTE ≤ 7 · delta thresholds shifted down 0.05 · gamma scrutiny on
         </div>
       ) : null}
-
       {/* Tier 1 — delta + theta */}
       <StatGrid minWidth={200}>
         <Stat
@@ -468,7 +457,6 @@ return (
           title={thetaTooltip}
         />
       </StatGrid>
-
       {/* Tier 2 — IV + vega + gamma */}
       <StatGrid minWidth={140}>
         <Stat label="IV" value={(greeks.iv * 100).toFixed(1) + '%'} sublabel="implied volatility" />
@@ -482,7 +470,6 @@ return (
         />
       </StatGrid>
     </SectionCard>
-
 )
 }
 

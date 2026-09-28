@@ -302,6 +302,27 @@ counts as missing); readings in `[first window session, anchor]`; `computeIvMetr
 `IvRankReading` with `observedAt = anchor.observed_at`. A ticker with no reading, or metrics
 `null`, maps to `null`.
 
+## 3a. Absence reasons (display-only)
+
+```ts
+// src/main/core/ivr-freshness.ts
+export type IvRankAbsenceReason =
+  | 'pending' // a collection for this ticker is in flight in this process
+  | 'insufficient_history' // rows exist; fewer than MIN_WINDOW_COVERAGE window sessions have a reading
+  | 'no_market_data' // the last run aborted with auth_failed (no Alpaca credentials)
+  | 'failed' // the last run for this ticker failed (network, rate limit, engine)
+  | 'not_collected' // no rows and no known status — never attempted, or a relaunch mid-backfill
+export type IvRankAbsence = { status: 'absent'; reason: IvRankAbsenceReason; coverage?: number }
+```
+
+`readIvMetricsByUnderlying` returns `IvRankReading | IvRankAbsence` per ticker. `WatchlistSnapshotRow`
+and `RankedCandidate` carry `ivRank: AssessedIvRank | null` **and** `ivRankAbsence: IvRankAbsence |
+null`, exactly one non-null. The verdict engine, `usableIvRanks` and `iv_rank_floor` never see the
+absence — an absent reading is `unknown` whatever the reason. `pending` / `failed` /
+`no_market_data` live in a module-level `Map` in `iv-history.ts` written by the collector
+(`markCollecting` on entry, `markOutcome` in `finally`, cleared on `collected` / `up_to_date`);
+nothing is persisted, so a relaunch mid-backfill reads `not_collected` until the next run.
+
 ## 4. Batch result (`collectIVRSnapshots`, amended)
 
 ```ts
@@ -315,26 +336,26 @@ type CollectIVRSnapshotsResult = {
 
 ## 5. Validation rules from the acceptance criteria
 
-| Rule                                                            | Where enforced                                                            | Scenario                                                          |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Rank = `(today − low)/(high − low) × 100`, half-up integer      | `computeIvMetrics`                                                        | IV rank is computed from the app's own IV history                 |
-| Percentile = strictly-below count / window count × 100, half-up | `computeIvMetrics`                                                        | IV percentile is computed alongside IV rank                       |
-| Low/high = window min/max, today excluded                       | `computeIvMetrics`                                                        | The IV range behind the rank is reported with it                  |
-| Rank clamped to 0..100; high still reports window max           | `computeIvMetrics`                                                        | A reading outside the window's range is clamped                   |
-| `high === low` → rank null, percentile still published          | `computeIvMetrics` → `value: null`                                        | A flat window withholds rank but not percentile                   |
-| Coverage < 200 of 252 → all metrics null                        | `computeIvMetrics`                                                        | Too sparse / young history                                        |
-| Engine version behind → recompute from inputs, no fetch         | `recomputeIvHistory`                                                      | A corrected engine recomputes…                                    |
-| Read path makes no provider call                                | `readIvMetricsByUnderlying` is sync, DB-only                              | Reading IV metrics makes no market-data request                   |
-| Add returns before backfill                                     | `addWatchlistEntry` → `void ivrOnDemand.collect` (unchanged)              | Adding a ticker does not wait on its backfill                     |
-| One ticker's failure isolated                                   | per-ticker `try/catch` in `collectIVRSnapshots`                           | One ticker's backfill failure leaves the others intact            |
-| Backfill and catch-up are one path                              | `listMissingSessions`                                                     | Missed sessions are caught up by the next daily run               |
-| Untraded leg → next strike; strike + trades stored              | `computeIv30` rule 2; `near_*` columns                                    | An untraded strike is skipped for its neighbour                   |
-| Weekly fails → monthly; tier stored                             | `computeIv30` rule 2; `expiration_tier`                                   | Thin weeklies fall back to the monthly expirations                |
-| No pair anywhere → gap row, no reading                          | `computeIv30` rule 3; `iv30_gap`                                          | A day with no tradeable ATM pair is left as a gap                 |
-| Today from the same engine, no vendor IV                        | `collectIvHistory` → `computeIv30`                                        | Today's reading is computed the same way as the history           |
-| `end` omitted or a completed session; never today               | `collectIvHistory` end rule                                               | Bar requests never name the current calendar day as their end     |
-| `observed_at` = session close                                   | `trading_session.close_at` on write                                       | Today's reading is available the same evening                     |
-| `ivr_snapshot` dropped; only `iv30_reading` is read             | migration 016; `getAssessedIvrByUnderlying` → `readIvMetricsByUnderlying` | Barchart readings are removed on upgrade                          |
-| No credentials → skip + log, add succeeds                       | auth abort in `collectIVRSnapshots`; `IvrOnDemand.collect` never rejects  | No market-data credentials leaves IV rank unavailable, not broken |
-| Floor: `< floor` excluded, `= floor` included, null → unchanged | `iv_rank_floor` on `IvRank.value` via `usableIvRanks`                     | The computed rank drives the screener floor                       |
-| DTE < 7 excluded, 7 used                                        | `selectExpirationPair`                                                    | Expirations too near expiry are excluded from IV30                |
+| Rule                                                                                    | Where enforced                                                                                          | Scenario                                                          |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Rank = `(today − low)/(high − low) × 100`, half-up integer                              | `computeIvMetrics`                                                                                      | IV rank is computed from the app's own IV history                 |
+| Percentile = strictly-below count / window count × 100, half-up                         | `computeIvMetrics`                                                                                      | IV percentile is computed alongside IV rank                       |
+| Low/high = window min/max, today excluded                                               | `computeIvMetrics`                                                                                      | The IV range behind the rank is reported with it                  |
+| Rank clamped to 0..100; high still reports window max                                   | `computeIvMetrics`                                                                                      | A reading outside the window's range is clamped                   |
+| `high === low` → rank null, percentile still published                                  | `computeIvMetrics` → `value: null`                                                                      | A flat window withholds rank but not percentile                   |
+| Coverage < 200 of 252 → all metrics null; card says `covers N of the last 252 sessions` | `computeIvMetrics`; `IvRankAbsence.insufficient_history`                                                | Too sparse / young history                                        |
+| Engine version behind → recompute from inputs, no fetch                                 | `recomputeIvHistory`                                                                                    | A corrected engine recomputes…                                    |
+| Read path makes no provider call                                                        | `readIvMetricsByUnderlying` is sync, DB-only                                                            | Reading IV metrics makes no market-data request                   |
+| Add returns before backfill; card shows computing state meanwhile                       | `addWatchlistEntry` → `void ivrOnDemand.collect` (unchanged); `pending` absence                         | Adding a ticker does not wait on its backfill                     |
+| One ticker's failure isolated; its card says the run failed                             | per-ticker `try/catch` in `collectIVRSnapshots`; `failed` absence                                       | One ticker's backfill failure leaves the others intact            |
+| Backfill and catch-up are one path                                                      | `listMissingSessions`                                                                                   | Missed sessions are caught up by the next daily run               |
+| Untraded leg → next strike; strike + trades stored                                      | `computeIv30` rule 2; `near_*` columns                                                                  | An untraded strike is skipped for its neighbour                   |
+| Weekly fails → monthly; tier stored                                                     | `computeIv30` rule 2; `expiration_tier`                                                                 | Thin weeklies fall back to the monthly expirations                |
+| No pair anywhere → gap row, no reading                                                  | `computeIv30` rule 3; `iv30_gap`                                                                        | A day with no tradeable ATM pair is left as a gap                 |
+| Today from the same engine, no vendor IV                                                | `collectIvHistory` → `computeIv30`                                                                      | Today's reading is computed the same way as the history           |
+| `end` omitted or a completed session; never today                                       | `collectIvHistory` end rule                                                                             | Bar requests never name the current calendar day as their end     |
+| `observed_at` = session close                                                           | `trading_session.close_at` on write                                                                     | Today's reading is available the same evening                     |
+| `ivr_snapshot` dropped; only `iv30_reading` is read                                     | migration 016; `getAssessedIvrByUnderlying` → `readIvMetricsByUnderlying`                               | Barchart readings are removed on upgrade                          |
+| No credentials → skip + log, add succeeds, card names the missing credentials           | auth abort in `collectIVRSnapshots` marks targets `no_market_data`; `IvrOnDemand.collect` never rejects | No market-data credentials leaves IV rank unavailable, not broken |
+| Floor: `< floor` excluded, `= floor` included, null → unchanged                         | `iv_rank_floor` on `IvRank.value` via `usableIvRanks`                                                   | The computed rank drives the screener floor                       |
+| DTE < 7 excluded, 7 used                                                                | `selectExpirationPair`                                                                                  | Expirations too near expiry are excluded from IV30                |

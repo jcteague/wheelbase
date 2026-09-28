@@ -1,0 +1,1485 @@
+---
+title: 'Epic 09: Watchlist Bench, PMCC Lens — Final Layout'
+story: 'One consolidated mockup of the Watchlist bench after both Epic 09 screener stories ship: the Wheel | PMCC lens, the matching-diagonal card and the PMCC criteria sheet (US-110), plus the Review trade action that hands a diagonal to the PMCC entry form (US-122).'
+states:
+  [
+    'wheel lens',
+    'pmcc lens',
+    'diagonal detail',
+    'review trade',
+    'excluded reason',
+    'held back by conditions',
+    'extrinsic unavailable',
+    'no matches',
+    'data unavailable',
+    'criteria sheet',
+    'sheet invalid',
+    'sheet iv band on',
+    'after tightening to 85%',
+    'iv ceiling excludes KO'
+  ]
+---
+
+import { useState } from 'react'
+import { Button } from '../src/renderer/src/components/ui/button'
+import { Badge } from '../src/renderer/src/components/ui/Badge'
+import { SectionCard } from '../src/renderer/src/components/ui/SectionCard'
+import { AlertBox } from '../src/renderer/src/components/ui/AlertBox'
+import { FormButton } from '../src/renderer/src/components/ui/FormButton'
+import {
+  SheetOverlay,
+  SheetPanel,
+  SheetHeader,
+  SheetBody,
+  SheetFooter
+} from '../src/renderer/src/components/ui/Sheet'
+import { PageHeader } from '../src/renderer/src/components/PageLayout'
+import { MarketStatusPill } from '../src/renderer/src/components/MarketStatusPill'
+import { IvrCell } from '../src/renderer/src/components/IvrCell'
+import { GateBadge } from '../src/renderer/src/components/GateBadge'
+import { ReadingNote } from '../src/renderer/src/components/ReadingNote'
+import { EarningsBadge } from '../src/renderer/src/components/EarningsBadge'
+import { ScreenerStateCard } from '../src/renderer/src/components/ScreenerStateCard'
+import { MarketDataOutage } from '../src/renderer/src/components/MarketDataOutage'
+import { BenchGrid } from '../src/renderer/src/components/BenchGrid'
+import { buildBench, defaultSelection } from '../src/renderer/src/lib/bench'
+import { benchConditions } from '../src/renderer/src/lib/bench-conditions'
+import { dayChange } from '../src/renderer/src/lib/day-change'
+import { fmtDate, fmtMoney } from '../src/renderer/src/lib/format'
+import {
+  fmtCriteriaSummary,
+  fmtDelta,
+  fmtOpenInterest,
+  fmtScore,
+  fmtSpread,
+  fmtYieldPercent
+} from '../src/renderer/src/lib/screener-format'
+
+# Epic 09: Watchlist Bench, PMCC Lens — Final Layout
+
+_The **Watchlist** page as it looks once US-110 and US-122 have shipped. The bench is the shipped US-96 bench with one new header control: **Wheel | PMCC** switches the criteria strip, the criteria sheet, both card sections, the cards' second line and the detail panel's matching-contract card. Entries, theses, entry conditions, the three gates and the IV-reading treatment are shared and unchanged. The `wheel lens` preset is rendered by the shipped `BenchGrid` itself, so the reader can compare the two lenses side by side._
+
+**Fictional sample data as of Friday, September 18, 2026 (LIVE, quoted 10:42:15 ET).** Last completed session Thursday, September 17. Short calls expire **Oct 23, 2026 (35 DTE)**; LEAPS expire **Sep 17, 2027 (364 DTE)** or **Jan 21, 2028 (490 DTE)**. Every figure on a diagonal is folded in this file from the two legs' marks exactly as `scorePmccPair` in `plans/us-110/data-model.md` does it: net debit = LEAPS mark − short mark; ratio = debit ÷ strike width (rounded up at 2 dp, as the engine's reason strings are); cycle yield = short mark ÷ net debit; annualized = cycle × 365 ÷ 35; score = annualized ÷ short Δ; extrinsic = LEAPS mark − (price − LEAPS strike); recovered per cycle = short mark ÷ extrinsic. DTE is counted from the valuation date; day change from each quote's previous close.
+
+## Which story owns what
+
+The chrome is imported, not redrawn: `PageHeader`, `MarketStatusPill`, `SectionCard`, `Badge`, `AlertBox`, `ScreenerStateCard`, `MarketDataOutage`, `IvrCell`, `GateBadge`, `ReadingNote`, `EarningsBadge`, the `Sheet*` primitives and `FormButton` come from `src/renderer/src`, as do `buildBench`, `dayChange` and every money / yield / date formatter. The wheel lens mounts the shipped `BenchGrid` (cards, detail panel, `MatchingPutCard` and its `Review trade →`) unchanged.
+
+| Region                                                                                                               | Owner                                                                                                         |
+| -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `Wheel \| PMCC` strategy control after the count badge                                                                | US-110                                                                                                        |
+| Criteria strip in PMCC mode (`PMCC criteria` label, the eight default chips, the optional `IVR ≥` / `IVR ≤` chips) | US-110                                                                                                        |
+| Bench cards' second line on the PMCC lens (`$42.00 LEAPS · $53.00 short Oct 23 · 6.63% on debit`), rank pill score   | US-110                                                                                                        |
+| `Matching diagonal` card: LEAPS row, short row, 3×3 metric grid, caption                                             | US-110                                                                                                        |
+| `Review trade →` on the `Matching diagonal` card, and where it navigates                                             | US-122                                                                                                        |
+| Held-back copy naming a diagonal; stage-prefixed exclusion reasons; PMCC empty state; outage on the PMCC lens        | US-110                                                                                                        |
+| PMCC criteria sheet: six groups, cross-field validation, `Save & re-screen`                                          | US-110                                                                                                        |
+| `Screening criteria saved` banner, `Screening criteria` / `↻ Refresh` / `+ Add stock` buttons, the criteria strip    | US-67 / US-96 — shipped, unchanged                                                                            |
+| Cards, detail header, price / day change / IVR block, reading note, thesis, gates, earnings line                     | US-96 / US-98 — shipped, unchanged on both lenses                                                             |
+| `Matching put` card and its `Review trade →`                                                                         | US-96 / US-68 — shipped, unchanged; US-122 leaves it alone                                                    |
+| The New position sheet the PMCC `Review trade →` opens (promoted strip, banners, pre-filled legs)                    | US-122 — drawn in `epic-09-pmcc-new-position.mdx`, not here                                                   |
+
+## Acceptance Criteria States
+
+- **wheel lens** — 2026-09-18, Wheel selected (the lens the bench always opens on). The shipped US-96 bench, byte for byte: wheel chips, `KO` #1 and `XLF` #2, XLF's `Matching put` card with its US-68 `Review trade →`. US-122's "The wheel's Review trade path is unchanged" and US-110's "The wheel criteria are untouched by a PMCC save" both look exactly like this — the wheel strip reads `Δ 0.20–0.30 · DTE 30–45 · OI ≥ 500 · Spread ≤ 10% · Earnings Exclude` whatever the PMCC document says.
+- **pmcc lens** — PMCC selected: the strip is labelled `PMCC criteria` and reads the eight default chips; Meets criteria lists `XLF` #1 (score 2.38) then `KO` #2 (2.06); no card describes a put. US-110 "Switch the bench to the PMCC lens" and "A diagonal is ranked by annualized cycle yield per unit of short delta".
+- **diagonal detail** — XLF selected: the `Matching diagonal` card shows the LEAPS leg (`$42.00 CALL · Jan 21, 2028 · 490 DTE · mark $10.30 · Δ 0.81`), the short leg (`$53.00 CALL · Oct 23, 2026 · 35 DTE · mark $0.64 · Δ 0.29 · OI 2,140`) and the nine metrics, with US-122's gold `Review trade →` below the caption — same style and position as the `Matching put` card's. US-110 "The detail panel shows both legs and the spread metrics" (its "offers no Review trade action" clause is superseded by US-122 in this finished state) and US-122 "The matching-diagonal card offers Review trade".
+- **review trade** — `Review trade →` pressed: the page raises the ranked candidate, looks up XLF's note and navigates to `#/new?promoted=1&strategy=PMCC&…`, where the New position sheet opens in PMCC mode over the bench. The annotation under the panel shows the query the codec builds from this diagonal; the sheet itself is `epic-09-pmcc-new-position.mdx`. Nothing is recorded, and Cancel returns here with XLF still selected. US-122 "Review trade pre-fills the PMCC entry form" (departure side) and "Review trade never records a position".
+- **excluded reason** — AMD selected: `debit 93.84% of width exceeds 90%`, the pair-stage reason verbatim from the engine; XYZ reads `no calls quoted in the 180–540 DTE window`. US-110 "An excluded diagonal names the stage that refused it".
+- **held back by conditions** — AAPL selected: `Price $178.40 above $170 target` on the card, and the detail says a qualifying `$140.00 LEAPS · $190.00 short · Oct 23, 2026 · 5.64% on debit` is held back by the entry conditions above. US-110 "Entry conditions gate a PMCC match exactly as they gate a put".
+- **extrinsic unavailable** — XLF's stock quote cannot be fetched: its price and day change read `—`, it still ranks #1 with score 2.38, and `Extrinsic in LEAPS` / `Recovered per cycle` both read `—`. US-110 "Extrinsic is display-only".
+- **no matches** — every pair filtered out (the ceiling tightened to 60% for the demonstration): the empty card names the PMCC knobs to loosen. Not a Linear scenario; carried from the US-110 bench mockup.
+- **data unavailable** — the provider is unreachable: the outage card and its caption, Meets criteria waiting for market data, every card `Data unavailable · not evaluated`, prices `—`, IV readings keeping their own age. The pill still reads `LIVE` because the session is computed from the calendar when the status query fails. US-110 "A provider outage degrades the PMCC lens like the wheel".
+- **criteria sheet** — the sheet open over the PMCC bench at the shipped defaults; subtitle `Applies to all 9 watchlist tickers · PMCC · LEAPS + short call`. US-110 "Edit PMCC criteria and re-screen" (before the save).
+- **sheet invalid** — three of the outline's edits shown together so their placement is visible: LEAPS minimum DTE `40` (`LEAPS minimum DTE must exceed short-call maximum DTE`), short delta `0.35–0.25` (`Minimum delta must be less than maximum delta`), IV floor `60` above ceiling `40` (`IV-rank floor must be less than IV-rank ceiling`). `Save & re-screen` disabled, footer `Fix the highlighted fields.`, the bench behind unchanged. US-110 "Reject an overlapping or inverted PMCC window" — Linear tests one edit at a time; the other two examples (`LEAPS maximum DTE 800`, `Max debit / width 0`) bind to the same field slots.
+- **sheet iv band on** — both optional IV-rank inputs enabled (floor 30, ceiling 55): the enabled look of the two Off/On controls. Sheet-only state.
+- **after tightening to 85%** — `Save & re-screen` with max debit / width 85: the sheet closed, `Screening criteria saved`, the strip reads `Debit ≤ 85% width`, XLF in Stocks of interest reading `debit 87.82% of width exceeds 85%`, KO #1. US-110 "Edit PMCC criteria and re-screen".
+- **iv ceiling excludes KO** — the IV-rank ceiling enabled at 55 and saved: `IVR ≤ 55` in the strip, KO in Stocks of interest reading `IV rank 58.0 (Sep 17) above 55`, XLF still #1. US-110 "An IV-rank ceiling excludes a rich underlying".
+- _Not shown here_: "Saved PMCC criteria survive a restart, the lens does not" is a relaunch — after it the bench opens on the `wheel lens` preset and selecting PMCC shows the `after tightening to 85%` strip. Every other US-122 scenario (fresh quotes, the moved / stale / offline / missing / edited banners, the malformed handoff, validation on a promoted entry) happens on the New position sheet and lives in `epic-09-pmcc-new-position.mdx`.
+
+---
+
+export const VALUATION = '2026-09-18'
+
+export const QUOTED_AT = '2026-09-18T14:42:15Z'
+
+export const SHORT_EXP = '2026-10-23'
+
+export const JAN28 = '2028-01-21'
+
+export const SEP27 = '2027-09-17'
+
+export const DAY = 86400000
+
+export const ms = (s) => Date.parse(s + 'T00:00:00Z')
+
+export const dte = (exp) => Math.round((ms(exp) - ms(VALUATION)) / DAY)
+
+export const d2 = (n) => n.toFixed(2)
+
+export const d4 = (n) => n.toFixed(4)
+
+export const SESSION = {
+  sep17: '2026-09-17T20:00:00Z',
+  sep15: '2026-09-15T20:00:00Z',
+  sep14: '2026-09-14T20:00:00Z',
+  sep9: '2026-09-09T20:00:00Z',
+  aug31: '2026-08-31T20:00:00Z'
+}
+
+export const ivr = (value, observedAt, ageTradingDays, state) => ({
+  value,
+  observedAt,
+  ageTradingDays,
+  state
+})
+
+export const gate = (verdict, label) => ({ verdict, label: label ?? null })
+
+export const NONE = gate('none')
+
+export const MET = gate('met')
+
+export const CLEAR = { status: 'clear' }
+
+export function entry(ticker, notes, opts) {
+  return {
+    ticker,
+    notes,
+    ownBelowPrice: null,
+    ivrTrigger: null,
+    postEarningsOnly: false,
+    coreHolding: false,
+    addedAt: '2026-08-03T14:00:00Z',
+    ...opts
+  }
+}
+
+export function earningsOn(date) {
+  // watchlist-signal.ts: daysUntil from the valuation date; within the 7-day window is a caution.
+  const daysUntil = Math.round((ms(date) - ms(VALUATION)) / DAY)
+  if (daysUntil < 0) return { kind: 'unknown' }
+  return { kind: 'date', date, daysUntil, withinWindow: daysUntil <= 7 }
+}
+
+export const NO_EARNINGS = { kind: 'unknown' }
+
+export function quote(price, prevClose) {
+  return { price: d2(price), prevClose: prevClose === null ? null : d2(prevClose), timestamp: QUOTED_AT }
+}
+
+export function leg(strike, expiration, mark, spreadAbs, delta, openInterest) {
+  // IpcPmccLeg from plans/us-110/contracts/screener-pmcc.md; bid/ask straddle the mark.
+  return {
+    contractId: `${expiration.replace(/-/g, '')}C${strike}`,
+    strike: d4(strike),
+    expiration,
+    dte: dte(expiration),
+    bid: d2(mark - spreadAbs / 2),
+    ask: d2(mark + spreadAbs / 2),
+    mark: d2(mark),
+    spreadAbsolute: d2(spreadAbs),
+    spreadPercent: d2((spreadAbs / mark) * 100),
+    delta: d4(delta),
+    openInterest,
+    volume: null,
+    timestamp: QUOTED_AT
+  }
+}
+
+export function put(ticker, strike, mark, spreadAbs, delta, openInterest, ivRank) {
+  // ScreenerCandidate: the wheel engine's arithmetic, stored as decimal strings.
+  const periodYield = mark / strike
+  const annualizedYield = (periodYield * 365) / dte(SHORT_EXP)
+  return {
+    ticker,
+    contractId: `${SHORT_EXP.replace(/-/g, '')}P${strike}`,
+    strike: d4(strike),
+    expiration: SHORT_EXP,
+    dte: dte(SHORT_EXP),
+    bid: d2(mark - spreadAbs / 2),
+    ask: d2(mark + spreadAbs / 2),
+    mark: d2(mark),
+    spreadAbsolute: d2(spreadAbs),
+    spreadPercent: d2((spreadAbs / mark) * 100),
+    delta: d4(delta),
+    openInterest,
+    volume: null,
+    ivRank,
+    capitalSecured: d2(strike * 100),
+    periodYield: d4(periodYield),
+    annualizedYield: d4(annualizedYield),
+    yieldPerDelta: d4(annualizedYield / delta),
+    earnings: CLEAR,
+    timestamp: QUOTED_AT
+  }
+}
+
+export function ratioUp(fraction) {
+  // The engine's formatPercent rounds UP at 2dp (93.8333 → 93.84), so a reason string and the
+  // Debit / width cell can never disagree with each other.
+  return Math.ceil(fraction * 10000 - 1e-9) / 100
+}
+
+export function diagonal(ticker, long, short, price, ivRank) {
+  // IpcPmccScoredCandidate, mirroring scorePmccPair in plans/us-110/data-model.md.
+  const longMark = Number(long.mark)
+  const shortMark = Number(short.mark)
+  const netDebit = longMark - shortMark
+  const width = Number(short.strike) - Number(long.strike)
+  const cycle = shortMark / netDebit
+  const annual = (cycle * 365) / short.dte
+  const extrinsic =
+    price === null ? null : Math.max(0, longMark - Math.max(0, price - Number(long.strike)))
+  const coverage = extrinsic === null || extrinsic <= 0 ? null : shortMark / extrinsic
+  return {
+    ticker,
+    long,
+    short,
+    ivRank,
+    netDebit: d2(netDebit),
+    capitalAtRisk: d2(netDebit * 100),
+    strikeWidth: d2(width),
+    debitToWidthPercent: d2(ratioUp(netDebit / width)),
+    cycleYield: d4(cycle),
+    annualizedYield: d4(annual),
+    returnPerDelta: d4(annual / Number(short.delta)),
+    longExtrinsic: extrinsic === null ? null : d2(extrinsic),
+    extrinsicCoverage: coverage === null ? null : d4(coverage),
+    earnings: CLEAR,
+    timestamp: QUOTED_AT
+  }
+}
+
+export const STOCKS = [
+  {
+    entry: entry('XLF', 'Core financials ETF — run a PMCC while IVR stays under 50'),
+    quote: quote(51.2, 50.89),
+    ivRank: ivr('46.0', SESSION.sep17, 0, 'fresh'),
+    earnings: NO_EARNINGS,
+    verdict: { price: NONE, iv: NONE, earnings: NONE },
+    put: [50, 0.65, 0.04, 0.24, 8610],
+    putExclusion: null,
+    long: leg(42, JAN28, 10.3, 0.3, 0.81, 640),
+    short: leg(53, SHORT_EXP, 0.64, 0.04, 0.29, 2140),
+    diagonalExclusion: null
+  },
+  {
+    entry: entry(
+      'KO',
+      'Core wheel. Comfortable owning through a full cycle; a diagonal when I would rather not tie up the cash.',
+      { ivrTrigger: 40 }
+    ),
+    quote: quote(68.9, 68.69),
+    ivRank: ivr('58.0', SESSION.sep17, 0, 'fresh'),
+    earnings: earningsOn('2026-11-03'),
+    verdict: { price: NONE, iv: MET, earnings: NONE },
+    put: [67.5, 1.05, 0.06, 0.25, 4820],
+    putExclusion: null,
+    long: leg(57.5, JAN28, 13.2, 0.25, 0.82, 410),
+    short: leg(72.5, SHORT_EXP, 0.62, 0.03, 0.25, 3900),
+    diagonalExclusion: null
+  },
+  {
+    entry: entry('AAPL', 'Would own below $170. Waiting for a better entry.', {
+      ownBelowPrice: '170.0000'
+    }),
+    quote: quote(178.4, 176.98),
+    ivRank: ivr('34.0', SESSION.sep17, 0, 'fresh'),
+    earnings: earningsOn('2026-10-29'),
+    verdict: { price: gate('unmet', 'Price $178.40 above $170 target'), iv: NONE, earnings: NONE },
+    put: null,
+    putExclusion: 'delta 0.19 outside 0.20–0.30',
+    long: leg(140, SEP27, 45.9, 0.45, 0.81, 1120),
+    short: leg(190, SHORT_EXP, 2.45, 0.05, 0.27, 6300),
+    diagonalExclusion: null
+  },
+  {
+    entry: entry(
+      'PEP',
+      'Second staple. Only when premium is rich; the collector has not refreshed this name since Sep 9.',
+      { ivrTrigger: 45 }
+    ),
+    quote: quote(171.3, 170.96),
+    ivRank: ivr('58.0', SESSION.sep9, 6, 'stale'),
+    earnings: earningsOn('2026-11-04'),
+    verdict: { price: NONE, iv: gate('unknown', 'IV too old to judge'), earnings: NONE },
+    put: [165, 2.1, 0.08, 0.23, 2140],
+    putExclusion: null,
+    long: leg(140, SEP27, 36.4, 0.4, 0.8, 380),
+    short: leg(180, SHORT_EXP, 1.85, 0.05, 0.27, 1760),
+    diagonalExclusion: null
+  },
+  {
+    entry: entry('DIS', 'Media exposure at a discount. No IV reading for nearly three weeks.', {
+      ivrTrigger: 40
+    }),
+    quote: quote(112.4, 111.84),
+    ivRank: ivr('47.0', SESSION.aug31, 13, 'expired'),
+    earnings: earningsOn('2026-11-12'),
+    verdict: { price: NONE, iv: gate('unknown', 'IV unavailable'), earnings: NONE },
+    put: [105, 1.4, 0.05, 0.22, 3260],
+    putExclusion: null,
+    long: leg(90, SEP27, 27.6, 0.35, 0.79, 520),
+    short: leg(120, SHORT_EXP, 1.35, 0.04, 0.26, 2480),
+    diagonalExclusion: null
+  },
+  {
+    entry: entry('MSFT', 'Wait until after the earnings report.', { postEarningsOnly: true }),
+    quote: quote(505.1, 511.24),
+    ivRank: ivr('41.0', SESSION.sep15, 2, 'aging'),
+    earnings: earningsOn('2026-09-21'),
+    verdict: { price: NONE, iv: NONE, earnings: gate('unmet', 'Earnings in 3 days') },
+    put: null,
+    putExclusion: 'earnings 2026-09-21 falls on or before expiry',
+    long: null,
+    short: null,
+    diagonalExclusion: 'short call earnings 2026-09-21 falls on or before expiry'
+  },
+  {
+    entry: entry('AMD', 'Stock conditions pass. Rich IV makes the LEAPS expensive right now.', {
+      ivrTrigger: 50
+    }),
+    quote: quote(156.2, 154.5),
+    ivRank: ivr('52.0', SESSION.sep17, 0, 'fresh'),
+    earnings: earningsOn('2026-11-03'),
+    verdict: { price: NONE, iv: MET, earnings: NONE },
+    put: null,
+    putExclusion: 'spread 14% exceeds 10%',
+    long: leg(110, SEP27, 60.2, 0.6, 0.8, 930),
+    short: leg(170, SHORT_EXP, 3.9, 0.08, 0.29, 5410),
+    diagonalExclusion: null
+  },
+  {
+    entry: entry(
+      'ORCL',
+      'Sell the post-earnings vol crush, not the run-up. Reported Sep 15 after the close.',
+      { ivrTrigger: 50 }
+    ),
+    quote: quote(243.6, 254.02),
+    ivRank: ivr('62.0', SESSION.sep14, 3, 'predates_earnings'),
+    earnings: earningsOn('2026-09-15'),
+    verdict: { price: NONE, iv: gate('unknown', 'IV predates earnings'), earnings: NONE },
+    put: [230, 4.35, 0.15, 0.26, 1910],
+    putExclusion: null,
+    long: null,
+    short: null,
+    diagonalExclusion: 'no calls quoted in the 180–540 DTE window'
+  },
+  {
+    entry: entry('XYZ', 'Research name. Thin option book; no long-dated calls are listed.', {
+      ivrTrigger: 40
+    }),
+    quote: quote(24.1, null),
+    ivRank: null,
+    earnings: NO_EARNINGS,
+    verdict: { price: NONE, iv: gate('unknown', 'IV unavailable'), earnings: NONE },
+    put: null,
+    putExclusion: 'no puts quoted in the 30–45 DTE window',
+    long: null,
+    short: null,
+    diagonalExclusion: 'no calls quoted in the 180–540 DTE window'
+  }
+]
+
+export const WHEEL_CRITERIA = {
+  deltaMin: '0.20',
+  deltaMax: '0.30',
+  dteMin: 30,
+  dteMax: 45,
+  minOpenInterest: 500,
+  maxSpreadPercent: '10',
+  maxSpreadAbsolute: '0.10',
+  maxUnderlyingPrice: null,
+  minIvRank: null,
+  earningsHandling: 'exclude'
+}
+
+export const PMCC_DEFAULTS = { maxRatio: 90, ivFloor: null, ivCeiling: null }
+
+export function pmccChips({ maxRatio, ivFloor, ivCeiling }) {
+  // fmtPmccCriteriaSummary, in the plan's chip order.
+  return [
+    'LEAPS Δ 0.70–0.85',
+    'LEAPS 180–540 DTE',
+    'Short Δ 0.25–0.35',
+    'Short 20–45 DTE',
+    'Debit ≤ ' + maxRatio + '% width',
+    'OI ≥ 200',
+    'Spread ≤ 10%',
+    ...(ivFloor === null ? [] : ['IVR ≥ ' + ivFloor]),
+    ...(ivCeiling === null ? [] : ['IVR ≤ ' + ivCeiling]),
+    'Earnings Exclude'
+  ]
+}
+
+export function fmtRatioPercent(percent) {
+  // 2dp, trailing zeros trimmed: '87.82' → 87.82%, '87.50' → 87.5%.
+  return String(Number(percent)) + '%'
+}
+
+export function fmtDateYear(value) {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  })
+}
+
+export const easternDay = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  month: 'short',
+  day: 'numeric'
+})
+
+export function snapshotFor(mode) {
+  // The watchlist half of the bench. An outage or a single failed quote nulls the price.
+  const rows = STOCKS.map((s) => ({
+    entry: s.entry,
+    quote: mode === 'outage' || (mode === 'noquote' && s.entry.ticker === 'XLF') ? null : s.quote,
+    ivRank: s.ivRank,
+    earnings: s.earnings,
+    verdict: s.verdict
+  }))
+  return { rows, asOf: QUOTED_AT }
+}
+
+export const OUTAGE = { status: 'provider_unavailable', ranked: [], excluded: [], quoteTimestamp: null }
+
+export function wheelResults(mode) {
+  if (mode === 'outage') return OUTAGE
+  const ranked = STOCKS.filter((s) => s.put !== null)
+    .map((s) => put(s.entry.ticker, ...s.put, s.ivRank))
+    .sort((a, b) => Number(b.yieldPerDelta) - Number(a.yieldPerDelta))
+  const excluded = STOCKS.filter((s) => s.put === null).map((s) => ({
+    ticker: s.entry.ticker,
+    code: 'delta_band',
+    reason: s.putExclusion
+  }))
+  return { status: 'ok', ranked, excluded, quoteTimestamp: QUOTED_AT }
+}
+
+export function pmccResults(mode, criteria) {
+  // The funnel from plans/us-110/data-model.md: ticker (IV-rank band) → leg → pair, ranked by
+  // annualized cycle yield on net debit per unit of short delta.
+  if (mode === 'outage') return OUTAGE
+  const ranked = []
+  const excluded = []
+  STOCKS.forEach((s) => {
+    const ticker = s.entry.ticker
+    const usable = s.ivRank !== null && (s.ivRank.state === 'fresh' || s.ivRank.state === 'aging')
+    const observed = s.ivRank === null ? '' : easternDay.format(new Date(s.ivRank.observedAt))
+    if (usable && criteria.ivFloor !== null && Number(s.ivRank.value) < criteria.ivFloor) {
+      excluded.push({
+        ticker,
+        code: 'iv_rank_floor',
+        reason: `IV rank ${s.ivRank.value} (${observed}) below ${criteria.ivFloor}`
+      })
+      return
+    }
+    if (usable && criteria.ivCeiling !== null && Number(s.ivRank.value) > criteria.ivCeiling) {
+      excluded.push({
+        ticker,
+        code: 'iv_rank_ceiling',
+        reason: `IV rank ${s.ivRank.value} (${observed}) above ${criteria.ivCeiling}`
+      })
+      return
+    }
+    if (s.long === null) {
+      excluded.push({ ticker, code: 'no_options_listed', reason: s.diagonalExclusion })
+      return
+    }
+    const price = mode === 'noquote' && ticker === 'XLF' ? null : Number(s.quote.price)
+    const pair = diagonal(ticker, s.long, s.short, price, s.ivRank)
+    if (Number(pair.debitToWidthPercent) > criteria.maxRatio) {
+      excluded.push({
+        ticker,
+        code: 'debit_to_width',
+        reason: `debit ${fmtRatioPercent(pair.debitToWidthPercent)} of width exceeds ${criteria.maxRatio}%`
+      })
+      return
+    }
+    ranked.push(pair)
+  })
+  ranked.sort(
+    (a, b) =>
+      Number(b.returnPerDelta) - Number(a.returnPerDelta) || a.ticker.localeCompare(b.ticker)
+  )
+  return { status: 'ok', ranked, excluded, quoteTimestamp: QUOTED_AT }
+}
+
+export function rankWithinMeets(bench) {
+  // Linear pins XLF #1 / KO #2 although AAPL's held-back diagonal (2.18) scores between them;
+  // the number shown is therefore the stock's place in Meets criteria, not the engine index.
+  return { ...bench, meets: bench.meets.map((stock, i) => ({ ...stock, rank: i + 1 })) }
+}
+
+export function fmtDiagonalLine(c) {
+  return `${fmtMoney(c.long.strike)} LEAPS · ${fmtMoney(c.short.strike)} short ${fmtDate(c.short.expiration)} · ${fmtYieldPercent(c.cycleYield)} on debit`
+}
+
+export function buildPmccPromoteSearch(candidate, note) {
+  // US-122's codec: the wheel payload plus a strategy discriminator and the two legs.
+  const params = new URLSearchParams({
+    promoted: '1',
+    strategy: 'PMCC',
+    ticker: candidate.ticker,
+    longStrike: String(Number(candidate.long.strike)),
+    longExpiration: candidate.long.expiration,
+    longMark: candidate.long.mark,
+    shortStrike: String(Number(candidate.short.strike)),
+    shortExpiration: candidate.short.expiration,
+    shortMark: candidate.short.mark,
+    quotedAt: candidate.timestamp
+  })
+  const thesis = note?.trim()
+  if (thesis) params.set('thesis', thesis)
+  return params.toString()
+}
+
+export function Segment({ options, value, onChange }) {
+  // The Segment from ScreeningCriteriaForm.tsx, class for class (extracted to criteria-fields.tsx by the plan).
+  return (
+    <div className="inline-flex gap-0.5 rounded-full border border-wb-border bg-wb-bg-elevated p-[3px]">
+      {options.map((option) => {
+        const active = option.value === value
+        return (
+          <button
+            key={option.testId}
+            type="button"
+            data-testid={option.testId}
+            aria-pressed={active}
+            onClick={() => onChange(option.value)}
+            className={
+              'cursor-pointer rounded-full border-none px-3 py-1 font-wb-mono text-[0.72rem] ' +
+              (active ? 'bg-wb-gold-dim font-bold text-wb-gold' : 'bg-transparent text-wb-text-secondary')
+            }
+          >
+            {option.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+export function StrategyToggle({ value, onChange }) {
+  return (
+    <div role="group" aria-label="Screening strategy" data-testid="bench-strategy">
+      <Segment
+        value={value}
+        onChange={onChange}
+        options={[
+          { value: 'WHEEL', label: 'Wheel', testId: 'bench-strategy-wheel' },
+          { value: 'PMCC', label: 'PMCC', testId: 'bench-strategy-pmcc' }
+        ]}
+      />
+    </div>
+  )
+}
+
+export function CriteriaStrip({ label, chips, onClick }) {
+  // ScreenerCriteriaStrip.tsx, with the label and chips made props as the plan does.
+  return (
+    <button
+      type="button"
+      data-testid="screener-criteria-strip"
+      onClick={onClick}
+      className="flex w-full cursor-pointer flex-wrap items-center gap-[10px] rounded-md border border-wb-border bg-wb-bg-surface px-[14px] py-[9px] text-left hover:bg-wb-bg-hover"
+    >
+      <span className="font-wb-mono text-[0.6rem] uppercase tracking-[0.12em] text-wb-text-muted">
+        {label}
+      </span>
+      {chips.map((chip) => (
+        <span
+          key={chip}
+          className="whitespace-nowrap rounded border border-wb-border-subtle bg-wb-bg-elevated px-2 py-[2px] font-wb-mono text-[0.7rem] text-wb-text-secondary"
+        >
+          {chip}
+        </span>
+      ))}
+      <span className="ml-auto font-wb-mono text-[0.68rem] text-wb-gold">Edit →</span>
+    </button>
+  )
+}
+
+export const HEADER_BUTTON = 'font-wb-mono border-wb-border bg-wb-bg-elevated text-wb-text-secondary'
+
+export function BenchHeader({ strategy, onStrategy, chips, onOpenCriteria }) {
+  // BenchHeader.tsx with the strategy control after the count badge.
+  return (
+    <>
+      <PageHeader
+        left={
+          <div className="flex items-center gap-[10px]">
+            <h1 className="m-0 text-sm font-semibold text-wb-text-primary">Watchlist</h1>
+            <Badge data-testid="bench-count">{STOCKS.length}</Badge>
+            <StrategyToggle value={strategy} onChange={onStrategy} />
+          </div>
+        }
+        right={
+          <div className="flex items-center gap-[10px]">
+            <Button size="sm" variant="outline" onClick={onOpenCriteria} className={HEADER_BUTTON}>
+              Screening criteria
+            </Button>
+            <Button size="sm" variant="outline" className={HEADER_BUTTON}>
+              ↻ Refresh
+            </Button>
+            <Button
+              size="sm"
+              className="border border-wb-gold-border bg-wb-gold-dim font-wb-mono text-wb-gold hover:bg-wb-gold-dim"
+            >
+              + Add stock
+            </Button>
+            <MarketStatusPill state="LIVE" />
+          </div>
+        }
+      />
+      <div className="flex shrink-0 items-center gap-3 border-b border-wb-border bg-wb-bg-surface px-6 py-3">
+        <CriteriaStrip
+          label={strategy === 'PMCC' ? 'PMCC criteria' : 'Criteria'}
+          chips={chips}
+          onClick={onOpenCriteria}
+        />
+      </div>
+    </>
+  )
+}
+
+export function SavedBanner() {
+  // WatchlistPage.tsx's SavedBanner, unchanged by US-110.
+  return (
+    <div className="flex items-center gap-[10px] rounded-md border border-wb-green-border bg-wb-green-subtle px-[14px] py-[10px]">
+      <span className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-wb-green-dim font-wb-mono text-[0.7rem] font-bold text-wb-green">
+        ✓
+      </span>
+      <span className="text-[0.8125rem] font-semibold text-wb-green">Screening criteria saved</span>
+    </div>
+  )
+}
+
+export const RANK_PILL =
+  'inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-[5px] bg-wb-gold-dim text-wb-gold text-[0.68rem] font-bold'
+
+export function DiagonalBenchCard({ stock, selected, onSelect }) {
+  // BenchCard.tsx, generic over the candidate: the second line describes the diagonal and the
+  // rank pill's title carries returnPerDelta. Everything else is the shipped card.
+  const { ticker, row, candidate, rank, reason } = stock
+  const meets = rank !== null
+  const conditions = benchConditions(row.entry)
+  const conditionText = [conditions.price, conditions.iv, conditions.earnings]
+    .filter((c) => c !== null)
+    .join(' · ')
+  return (
+    <SectionCard className={selected ? 'ring-1 ring-wb-gold' : undefined}>
+      <div
+        data-testid={`watchlist-row-${ticker}`}
+        data-bench-section={meets ? 'meets' : 'waiting'}
+        onClick={() => onSelect(ticker)}
+        className="relative flex cursor-pointer flex-col gap-2 p-4"
+      >
+        <button
+          type="button"
+          title="Remove"
+          onClick={(event) => event.stopPropagation()}
+          className="absolute right-3 top-3 h-6 w-6 rounded-md border border-wb-border bg-transparent text-wb-text-muted"
+        >
+          ✕
+        </button>
+        <div className="flex items-center justify-between gap-2 pr-8">
+          <span className="flex items-center gap-2">
+            {meets && (
+              <span
+                data-testid="watchlist-rank"
+                title={candidate === null ? undefined : fmtScore(candidate.returnPerDelta)}
+                className={RANK_PILL}
+              >
+                #{rank}
+              </span>
+            )}
+            <Button
+              data-testid="watchlist-ticker"
+              variant="link"
+              size="sm"
+              aria-pressed={selected}
+              className="h-auto p-0 font-bold tracking-[0.03em] text-wb-gold"
+            >
+              {ticker} →
+            </Button>
+          </span>
+          <span data-testid="watchlist-price" className="font-wb-mono text-sm">
+            {row.quote === null ? '—' : fmtMoney(row.quote.price)}
+          </span>
+        </div>
+        {meets && candidate !== null ? (
+          <p data-testid="watchlist-contract" className="text-xs text-wb-text-secondary">
+            {fmtDiagonalLine(candidate)}
+          </p>
+        ) : (
+          <p data-testid="watchlist-reason" className="text-xs text-wb-text-secondary">
+            {reason}
+          </p>
+        )}
+        <div className="flex items-center justify-between gap-2 text-[11px] text-wb-text-muted">
+          <span className="flex min-w-0 flex-wrap items-center gap-2">
+            {meets && conditionText !== '' && <span>{conditionText}</span>}
+            {!meets && row.entry.notes !== null && (
+              <span data-testid="watchlist-card-thesis" className="truncate">
+                {row.entry.notes}
+              </span>
+            )}
+            {candidate !== null && <EarningsBadge earnings={candidate.earnings} />}
+          </span>
+          <span className="inline-flex shrink-0 items-center gap-1.5 font-wb-mono">
+            IVR <IvrCell ivRank={row.ivRank} />
+          </span>
+        </div>
+      </div>
+    </SectionCard>
+  )
+}
+
+export function DiagonalBenchSection({ title, stocks, selected, empty, onSelect, accent }) {
+  // BenchSection.tsx, rendering the diagonal card.
+  return (
+    <section aria-label={title} className="flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <h3 className="m-0 text-base font-semibold text-wb-text-primary">{title}</h3>
+        <Badge data-testid="bench-section-count" color={accent ? 'var(--wb-green)' : undefined}>
+          {stocks.length}
+        </Badge>
+      </div>
+      {stocks.length === 0
+        ? empty
+        : stocks.map((stock) => (
+            <DiagonalBenchCard
+              key={stock.ticker}
+              stock={stock}
+              selected={stock.ticker === selected}
+              onSelect={onSelect}
+            />
+          ))}
+    </section>
+  )
+}
+
+export function LegRow({ role, leg }) {
+  // LEAPS wears the HOLDING_SHARES sky (it stands in for shares); the short wears CC_OPEN violet.
+  const long = role === 'long'
+  const tag = long
+    ? 'border-wb-sky/30 bg-wb-sky/10 text-wb-sky'
+    : 'border-wb-violet/30 bg-wb-violet-dim text-wb-violet'
+  return (
+    <div
+      data-testid={`bench-leg-${role}`}
+      className="flex flex-col gap-1 rounded-md border border-wb-border-subtle bg-wb-bg-elevated px-3 py-2.5"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex items-center gap-2">
+          <span
+            className={
+              'rounded border px-1.5 py-px font-wb-mono text-[0.6rem] font-bold tracking-[0.08em] ' + tag
+            }
+          >
+            {long ? 'LEAPS · BUY' : 'SHORT · SELL'}
+          </span>
+          <span className="font-wb-mono text-lg">{fmtMoney(leg.strike)} CALL</span>
+        </span>
+        <span className="text-sm text-wb-text-secondary">
+          {fmtDateYear(leg.expiration)} · {leg.dte} DTE
+        </span>
+      </div>
+      <div className="font-wb-mono text-[11px] text-wb-text-secondary">
+        mark {fmtMoney(leg.mark)} · Δ {fmtDelta(leg.delta)} · OI {fmtOpenInterest(leg.openInterest)} ·
+        spread {fmtSpread(leg.spreadAbsolute, leg.spreadPercent)}
+      </div>
+    </div>
+  )
+}
+
+export const DIAGONAL_METRICS = [
+  ['Net debit / share', (c) => fmtMoney(c.netDebit)],
+  ['Per spread', (c) => fmtMoney(c.capitalAtRisk)],
+  ['Strike width', (c) => fmtMoney(c.strikeWidth)],
+  ['Debit / width', (c) => fmtRatioPercent(c.debitToWidthPercent)],
+  ['Cycle yield', (c) => fmtYieldPercent(c.cycleYield)],
+  ['Annualized', (c) => `${fmtYieldPercent(c.annualizedYield)}/yr`],
+  ['Extrinsic in LEAPS', (c) => (c.longExtrinsic === null ? '—' : fmtMoney(c.longExtrinsic))],
+  ['Recovered per cycle', (c) => (c.extrinsicCoverage === null ? '—' : fmtYieldPercent(c.extrinsicCoverage))],
+  ['Short Δ', (c) => fmtDelta(c.short.delta)]
+]
+
+export function MatchingDiagonalCard({ candidate, onReview }) {
+  // MatchingDiagonalCard.tsx (US-110) with US-122's onReview: the button is identical in style
+  // and placement to MatchingPutCard's and is the only action on the card.
+  return (
+    <SectionCard header="Matching diagonal · best score for this stock">
+      <div data-testid="bench-detail-diagonal" className="flex flex-col gap-4 p-4">
+        <LegRow role="long" leg={candidate.long} />
+        <LegRow role="short" leg={candidate.short} />
+        <dl data-testid="bench-diagonal-metrics" className="m-0 grid grid-cols-3 gap-4">
+          {DIAGONAL_METRICS.map(([label, value]) => (
+            <div key={label}>
+              <dt className="text-xs text-wb-text-muted">{label}</dt>
+              <dd className="m-0 mt-1 font-wb-mono text-sm">{value(candidate)}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="text-xs text-wb-text-muted">
+          Net debit uses marks, before fees. Under 100% of width, the strike width covers the debit
+          if the short call is assigned. Cycle yield = short mark ÷ net debit.
+        </p>
+        <Button
+          size="sm"
+          data-testid={`bench-review-${candidate.ticker}`}
+          onClick={() => onReview(candidate)}
+          className="self-start border border-wb-gold-border bg-wb-gold-dim font-wb-mono text-wb-gold hover:bg-wb-gold-dim"
+        >
+          Review trade →
+        </Button>
+      </div>
+    </SectionCard>
+  )
+}
+
+export const HEADING = 'mb-2 text-xs font-semibold uppercase tracking-widest text-wb-text-muted'
+
+export const CHANGE_TONE = { up: 'text-wb-green', down: 'text-wb-red', flat: 'text-wb-text-secondary' }
+
+export function countdown(daysUntil) {
+  if (daysUntil === 0) return 'today'
+  return `in ${daysUntil} ${daysUntil === 1 ? 'day' : 'days'}`
+}
+
+export function earningsLine(earnings) {
+  if (earnings.kind === 'unknown') return { text: 'Unknown · needs verification', caution: true }
+  if (!earnings.withinWindow) return { text: fmtDate(earnings.date), caution: false }
+  return { text: `${fmtDate(earnings.date)} · ${countdown(earnings.daysUntil)}`, caution: true }
+}
+
+export function DiagonalBenchDetail({ stock, onReview }) {
+  // BenchDetail.tsx, generic over the candidate. Everything above the matching-contract card is
+  // the shipped panel; only the card and the held-back line change with the lens.
+  const { ticker, row, candidate, rank, reason, verdictCopy } = stock
+  const { entry, quote, ivRank, earnings, verdict } = row
+  const meets = rank !== null
+  const conditions = benchConditions(entry)
+  const change = dayChange(quote)
+  const gates = [
+    { testId: 'bench-gate-price', condition: conditions.price, gate: verdict.price },
+    { testId: 'bench-gate-iv', condition: conditions.iv, gate: verdict.iv },
+    { testId: 'bench-gate-earnings', condition: conditions.earnings, gate: verdict.earnings }
+  ].filter((g) => g.condition !== null && g.gate.verdict !== 'none')
+  const line = earningsLine(earnings)
+  return (
+    <div className="flex flex-col gap-5 p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="m-0 font-wb-mono text-xs tracking-widest text-wb-text-muted">STOCK DETAIL</p>
+          <h3
+            data-testid="bench-detail-ticker"
+            className="m-0 mt-2 font-wb-mono text-3xl font-semibold text-wb-gold"
+          >
+            {ticker}
+          </h3>
+          {verdictCopy !== null && (
+            <p data-testid="bench-detail-verdict" className="m-0 mt-1 text-sm text-wb-text-secondary">
+              {verdictCopy}
+            </p>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Badge color={meets ? 'var(--wb-green)' : undefined}>
+            {meets ? 'Meets criteria' : 'Watching'}
+          </Badge>
+          <Button
+            size="sm"
+            variant="outline"
+            aria-label="Edit thesis and conditions"
+            className="font-wb-mono border-wb-border bg-wb-bg-elevated text-wb-text-secondary"
+          >
+            Edit
+          </Button>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-3 rounded-md bg-wb-bg-elevated p-4">
+        <div>
+          <p className="m-0 text-xs text-wb-text-muted">Last price</p>
+          <p data-testid="bench-last-price" className="m-0 mt-1 font-wb-mono text-lg">
+            {quote === null ? '—' : fmtMoney(quote.price)}
+          </p>
+        </div>
+        <div>
+          <p className="m-0 text-xs text-wb-text-muted">Day change</p>
+          <p
+            data-testid="bench-day-change"
+            className={`m-0 mt-1 font-wb-mono text-lg ${change === null ? 'text-wb-text-muted' : CHANGE_TONE[change.direction]}`}
+          >
+            {change?.percent ?? '—'}
+          </p>
+        </div>
+        <div>
+          <p className="m-0 text-xs text-wb-text-muted">IV rank</p>
+          <p className="m-0 mt-1 font-wb-mono text-lg">
+            <IvrCell ivRank={ivRank} />
+          </p>
+        </div>
+      </div>
+      <ReadingNote ticker={ticker} ivRank={ivRank} ivrTrigger={entry.ivrTrigger} />
+      <div>
+        <h4 className={HEADING}>Your thesis</h4>
+        <p data-testid="bench-detail-thesis" className="m-0 text-sm leading-relaxed text-wb-text-secondary">
+          {entry.notes ?? 'No thesis yet.'}
+        </p>
+      </div>
+      <div>
+        <h4 className={HEADING}>Entry conditions</h4>
+        <div className="flex flex-wrap gap-2">
+          {gates.map(({ testId, condition, gate }) => (
+            <GateBadge key={testId} testId={testId} condition={condition} gate={gate} />
+          ))}
+          {conditions.tags.map((tag) => (
+            <span
+              key={tag}
+              className="rounded border border-wb-border-subtle px-1.5 py-px text-[0.62rem] text-wb-text-secondary"
+            >
+              {tag}
+            </span>
+          ))}
+          {gates.length === 0 && conditions.tags.length === 0 && <Badge>No personal conditions</Badge>}
+        </div>
+      </div>
+      <div className="flex justify-between gap-3 text-xs">
+        <span className="text-wb-text-muted">Earnings</span>
+        <span data-testid="bench-detail-earnings" className={line.caution ? 'text-wb-gold' : undefined}>
+          {line.text}
+        </span>
+      </div>
+      {meets && candidate !== null ? (
+        <MatchingDiagonalCard candidate={candidate} onReview={onReview} />
+      ) : (
+        <div className="flex flex-col gap-3">
+          <AlertBox variant="warning" data-testid="bench-detail-waiting">
+            {`${reason}. This stock stays on your watchlist while you wait.`}
+          </AlertBox>
+          {candidate !== null && (
+            <p data-testid="bench-detail-held-back" className="m-0 text-xs leading-relaxed text-wb-text-muted">
+              {`A qualifying diagonal exists (${fmtMoney(candidate.long.strike)} LEAPS · ${fmtMoney(candidate.short.strike)} short · ${fmtDateYear(candidate.short.expiration)} · ${fmtYieldPercent(candidate.cycleYield)} on debit) but is held back by the entry conditions above.`}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function PmccBenchGrid({ bench, selected, onSelect, onReview, onAdjustCriteria, screened, annotation }) {
+  // BenchGrid.tsx on the PMCC lens: the empty copy names the PMCC knobs and the panel mounts the
+  // diagonal detail. `annotation` is the mockup's own note under the panel (see ReviewAnnotation).
+  const stocks = [...bench.meets, ...bench.waiting]
+  const current =
+    stocks.find((stock) => stock.ticker === selected) ??
+    stocks.find((stock) => stock.ticker === defaultSelection(bench)) ??
+    null
+  return (
+    <div
+      data-testid="bench-grid"
+      className="grid items-start gap-5 xl:grid-cols-[minmax(300px,0.85fr)_minmax(420px,1.15fr)]"
+    >
+      <div className="flex flex-col gap-6">
+        <DiagonalBenchSection
+          title="Meets criteria"
+          accent
+          stocks={bench.meets}
+          selected={current?.ticker ?? null}
+          onSelect={onSelect}
+          empty={
+            screened ? (
+              <ScreenerStateCard
+                data-testid="screener-empty"
+                tone="neutral"
+                title="No diagonals match your PMCC criteria"
+                body="Every LEAPS and short-call pair on your watchlist was filtered out. Loosen a delta band, a DTE window, or the debit-to-width limit."
+                actionLabel="Adjust criteria"
+                onAction={onAdjustCriteria}
+              />
+            ) : (
+              <AlertBox variant="info">
+                Waiting for market data — no screen has run, so nothing can meet criteria yet.
+              </AlertBox>
+            )
+          }
+        />
+        <DiagonalBenchSection
+          title="Stocks of interest"
+          stocks={bench.waiting}
+          selected={current?.ticker ?? null}
+          onSelect={onSelect}
+          empty={<AlertBox variant="info">Nothing waiting — every saved stock meets criteria.</AlertBox>}
+        />
+      </div>
+      <div data-testid="bench-detail-panel" className="xl:sticky xl:top-4">
+        <SectionCard>
+          {current !== null && <DiagonalBenchDetail stock={current} onReview={onReview} />}
+        </SectionCard>
+        {annotation}
+        <p className="mt-3 text-xs leading-relaxed text-wb-text-muted">
+          Select a stock to see its thesis, condition checks, IV-reading status, and matching contract
+          here.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+export function ReviewAnnotation({ candidate, note }) {
+  // Does not ship: what the click does, for the reader. The sheet it opens is the new-position mockup.
+  return (
+    <div className="mt-3 flex flex-col gap-2 rounded border border-dashed border-wb-gold-border bg-wb-gold-subtle px-3 py-2.5 text-[11px] leading-relaxed text-wb-text-muted">
+      <div className="font-wb-mono text-[0.6rem] uppercase tracking-[0.12em] text-wb-gold">
+        Annotation · does not ship · US-122
+      </div>
+      <div>
+        <span className="text-wb-text-secondary">Review trade →</span> raises the ranked candidate; the
+        page looks up XLF's watchlist note and navigates. The New position sheet opens in{' '}
+        <span className="text-wb-text-secondary">PMCC</span> mode over this bench, pre-filled from the
+        diagonal and re-quoted on open — see <code>epic-09-pmcc-new-position.mdx</code>. Nothing is
+        recorded; Cancel returns here with XLF still selected.
+      </div>
+      <code className="break-all font-wb-mono text-[10px] text-wb-text-secondary">
+        #/new?{buildPmccPromoteSearch(candidate, note)}
+      </code>
+    </div>
+  )
+}
+
+export function Divider() {
+  return <div className="h-px bg-wb-border-subtle" />
+}
+
+export function SheetGroup({ label, children }) {
+  return (
+    <div className="flex flex-col gap-3.5">
+      <div className="font-wb-mono text-[0.62rem] uppercase tracking-[0.12em] text-wb-text-muted">
+        {label}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+export function SheetField({ label, caption, error, children }) {
+  return (
+    <div>
+      <div className="text-[0.8125rem] font-semibold text-wb-text-primary">{label}</div>
+      <div className="mt-1 text-[0.7rem] leading-relaxed text-wb-text-muted">{caption}</div>
+      <div className="mt-2.5">{children}</div>
+      {error && (
+        <div className="mt-1.5 flex items-center gap-1.5 text-[0.7rem] text-wb-red">
+          <span className="font-wb-mono font-bold">!</span>
+          {error}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function NumericInput({ ariaLabel, value, widthClass, hasError, disabled, suffix }) {
+  return (
+    <span
+      className={[
+        'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5',
+        widthClass,
+        hasError ? 'border-wb-red' : 'border-wb-border',
+        disabled ? 'bg-wb-bg-surface opacity-50' : 'bg-wb-bg-base'
+      ].join(' ')}
+    >
+      <input
+        type="text"
+        aria-label={ariaLabel}
+        readOnly
+        value={value}
+        disabled={disabled}
+        className="w-full min-w-0 flex-1 border-none bg-transparent font-wb-mono text-[0.85rem] text-wb-text-primary outline-none"
+      />
+      {suffix && <span className="font-wb-mono text-[0.78rem] text-wb-text-muted">{suffix}</span>}
+    </span>
+  )
+}
+
+export function RangeField({ label, caption, unit, error, minLabel, maxLabel, min, max }) {
+  return (
+    <SheetField label={label} caption={caption} error={error}>
+      <div className="flex items-center gap-2">
+        <NumericInput ariaLabel={minLabel} value={min} widthClass="w-[86px]" hasError={Boolean(error)} />
+        <span className="text-wb-text-muted">–</span>
+        <NumericInput ariaLabel={maxLabel} value={max} widthClass="w-[86px]" hasError={Boolean(error)} />
+        <span className="text-[0.72rem] text-wb-text-muted">{unit}</span>
+      </div>
+    </SheetField>
+  )
+}
+
+export function OptionalNumericField({ label, caption, error, enabled, value, suffix, testIdPrefix }) {
+  return (
+    <SheetField label={label} caption={caption} error={error}>
+      <div className="flex items-center gap-3">
+        <Segment
+          value={enabled}
+          onChange={() => {}}
+          options={[
+            { value: false, label: 'Off', testId: testIdPrefix + '-off' },
+            { value: true, label: 'On', testId: testIdPrefix + '-on' }
+          ]}
+        />
+        <NumericInput
+          ariaLabel={label}
+          value={value}
+          widthClass="w-[104px]"
+          hasError={Boolean(error)}
+          disabled={!enabled}
+          suffix={suffix}
+        />
+      </div>
+    </SheetField>
+  )
+}
+
+export function PmccCriteriaSheet({ variant, criteria, onClose, onSave }) {
+  // PmccScreeningCriteriaForm inside the shipped 460px SheetPanel: six groups, the wheel form's
+  // field primitives, the wheel form's footer.
+  const invalid = variant === 'invalid'
+  const band = variant === 'ivband' || invalid
+  const floorOn = band || criteria.ivFloor !== null
+  const ceilingOn = band || criteria.ivCeiling !== null
+  const floorValue = invalid ? '60' : criteria.ivFloor === null ? '30' : String(criteria.ivFloor)
+  const ceilingValue = invalid ? '40' : criteria.ivCeiling === null ? '55' : String(criteria.ivCeiling)
+  return (
+    <SheetOverlay onClose={onClose}>
+      <SheetPanel width={460}>
+        <div className="flex h-full min-h-0 flex-col">
+          <SheetHeader
+            eyebrow="Screener"
+            title="Screening Criteria"
+            subtitle={`Applies to all ${STOCKS.length} watchlist tickers · PMCC · LEAPS + short call`}
+            onClose={onClose}
+            eyebrowColor="var(--wb-gold)"
+          />
+          <SheetBody>
+            <p className="text-[0.75rem] leading-relaxed text-wb-text-secondary">
+              Leg filters disqualify a call; the pair filter disqualifies a LEAPS + short combination;
+              the IV band disqualifies the underlying. Saving re-screens immediately.
+            </p>
+            <SheetGroup label="LEAPS (long call)">
+              <RangeField
+                label="Delta band"
+                caption="Deep in the money: the LEAPS stands in for shares."
+                unit="Δ"
+                minLabel="LEAPS minimum delta"
+                maxLabel="LEAPS maximum delta"
+                min="0.70"
+                max="0.85"
+              />
+              <RangeField
+                label="DTE window"
+                caption="Long enough that the LEAPS outlives several short cycles."
+                unit="days"
+                error={invalid ? 'LEAPS minimum DTE must exceed short-call maximum DTE' : null}
+                minLabel="LEAPS minimum DTE"
+                maxLabel="LEAPS maximum DTE"
+                min={invalid ? '40' : '180'}
+                max="540"
+              />
+            </SheetGroup>
+            <Divider />
+            <SheetGroup label="Short call">
+              <RangeField
+                label="Delta band"
+                caption="Assignment-probability band for the call you sell."
+                unit="Δ"
+                error={invalid ? 'Minimum delta must be less than maximum delta' : null}
+                minLabel="Short-call minimum delta"
+                maxLabel="Short-call maximum delta"
+                min={invalid ? '0.35' : '0.25'}
+                max={invalid ? '0.25' : '0.35'}
+              />
+              <RangeField
+                label="DTE window"
+                caption="Days to expiration for the income leg."
+                unit="days"
+                minLabel="Short-call minimum DTE"
+                maxLabel="Short-call maximum DTE"
+                min="20"
+                max="45"
+              />
+            </SheetGroup>
+            <Divider />
+            <SheetGroup label="Spread efficiency (pair)">
+              <SheetField
+                label="Max debit / strike width"
+                caption="Net debit (LEAPS mark − short mark) as a share of strike width. Under 100% the width covers the debit if the short is assigned; 75% is the common comfort guideline."
+              >
+                <NumericInput
+                  ariaLabel="Max debit / width"
+                  value={String(criteria.maxRatio)}
+                  widthClass="w-[104px]"
+                  suffix="%"
+                />
+              </SheetField>
+            </SheetGroup>
+            <Divider />
+            <SheetGroup label="Liquidity (per leg)">
+              <SheetField
+                label="Minimum open interest"
+                caption="Applied to the LEAPS and the short call separately. LEAPS books are thin — 200 is a floor, not a target."
+              >
+                <NumericInput ariaLabel="Minimum open interest" value="200" widthClass="w-[104px]" />
+              </SheetField>
+              <SheetField
+                label="Max bid-ask spread"
+                caption="of each leg's mark; a tight absolute spread (≤ $0.10) also passes."
+              >
+                <NumericInput ariaLabel="Max bid-ask spread" value="10" widthClass="w-[104px]" suffix="%" />
+              </SheetField>
+            </SheetGroup>
+            <Divider />
+            <SheetGroup label="IV environment (optional)">
+              <OptionalNumericField
+                label="IV-rank floor"
+                caption="Off by default. A floor keeps the short credit worth selling."
+                enabled={floorOn}
+                value={floorValue}
+                suffix="IVR"
+                testIdPrefix="iv-rank-floor"
+              />
+              <OptionalNumericField
+                label="IV-rank ceiling"
+                caption="Off by default. A ceiling keeps you from buying the LEAPS while its extrinsic is inflated."
+                error={invalid ? 'IV-rank floor must be less than IV-rank ceiling' : null}
+                enabled={ceilingOn}
+                value={ceilingValue}
+                suffix="IVR"
+                testIdPrefix="iv-rank-ceiling"
+              />
+            </SheetGroup>
+            <Divider />
+            <SheetGroup label="Policy">
+              <SheetField
+                label="Earnings handling"
+                caption="Judged against the short call's expiration. Exclude drops the pair; Flag keeps it with a warning and no rank."
+              >
+                <Segment
+                  value="exclude"
+                  onChange={() => {}}
+                  options={[
+                    { value: 'exclude', label: 'Exclude', testId: 'earnings-exclude' },
+                    { value: 'flag', label: 'Flag only', testId: 'earnings-flag' }
+                  ]}
+                />
+              </SheetField>
+            </SheetGroup>
+          </SheetBody>
+          <SheetFooter>
+            <FormButton label="Save & re-screen" disabled={invalid} onClick={onSave} />
+            <FormButton label="Cancel" variant="secondary" onClick={onClose} />
+            {invalid ? (
+              <span className="ml-auto text-[0.7rem] text-wb-text-muted">Fix the highlighted fields.</span>
+            ) : (
+              <button
+                type="button"
+                className="ml-auto cursor-pointer border-none bg-transparent font-wb-mono text-[0.7rem] text-wb-text-muted underline"
+              >
+                Reset to defaults
+              </button>
+            )}
+          </SheetFooter>
+        </div>
+      </SheetPanel>
+    </SheetOverlay>
+  )
+}
+
+export const BASE_STATE = {
+  strategy: 'PMCC',
+  selected: null,
+  mode: 'normal',
+  maxRatio: 90,
+  ivFloor: null,
+  ivCeiling: null,
+  sheet: null,
+  saved: false,
+  reviewed: false
+}
+
+export const PRESETS = [
+  { key: 'wheel lens', strategy: 'WHEEL', selected: 'XLF' },
+  { key: 'pmcc lens' },
+  { key: 'diagonal detail', selected: 'XLF' },
+  { key: 'review trade', selected: 'XLF', reviewed: true },
+  { key: 'excluded reason', selected: 'AMD' },
+  { key: 'held back by conditions', selected: 'AAPL' },
+  { key: 'extrinsic unavailable', selected: 'XLF', mode: 'noquote' },
+  { key: 'no matches', maxRatio: 60 },
+  { key: 'data unavailable', mode: 'outage' },
+  { key: 'criteria sheet', selected: 'XLF', sheet: 'default' },
+  { key: 'sheet invalid', selected: 'XLF', sheet: 'invalid' },
+  { key: 'sheet iv band on', selected: 'XLF', sheet: 'ivband' },
+  { key: 'after tightening to 85%', selected: 'KO', maxRatio: 85, saved: true },
+  { key: 'iv ceiling excludes KO', selected: 'KO', ivCeiling: 55, saved: true }
+]
+
+export const FOOTER_COPY =
+  'Meets criteria = saved stock conditions pass on a usable IV reading + a qualifying contract for the selected strategy. Aging readings (2–3 sessions) still count; a stale, earnings-predating, or missing reading is unknown and never satisfies a condition. Stocks without personal conditions use screening defaults.'
+
+export function Mockup() {
+  const [presetKey, setPresetKey] = useState('wheel lens')
+  const [state, setState] = useState({ ...BASE_STATE, ...PRESETS[0] })
+  const patch = (changes) => setState((s) => ({ ...s, ...changes }))
+  const pick = (preset) => {
+    setPresetKey(preset.key)
+    setState({ ...BASE_STATE, ...preset })
+  }
+
+  const pmcc = state.strategy === 'PMCC'
+  const criteria = { maxRatio: state.maxRatio, ivFloor: state.ivFloor, ivCeiling: state.ivCeiling }
+  const snapshot = snapshotFor(state.mode)
+  const results = pmcc ? pmccResults(state.mode, criteria) : wheelResults(state.mode)
+  const bench = rankWithinMeets(buildBench(snapshot, results))
+  const chips = pmcc ? pmccChips(criteria) : fmtCriteriaSummary(WHEEL_CRITERIA)
+  const screened = results.status === 'ok'
+  const stocks = [...bench.meets, ...bench.waiting]
+  const current =
+    stocks.find((s) => s.ticker === state.selected) ??
+    stocks.find((s) => s.ticker === defaultSelection(bench)) ??
+    null
+  const reviewedCandidate = state.reviewed && current?.candidate ? current.candidate : null
+
+  const openSheet = () => pmcc && patch({ sheet: 'default', saved: false })
+  const saveSheet = () => {
+    const band = state.sheet === 'ivband'
+    patch({
+      sheet: null,
+      saved: true,
+      ivFloor: band ? 30 : state.ivFloor,
+      ivCeiling: band ? 55 : state.ivCeiling
+    })
+  }
+
+  return (
+    <div className="my-6 flex flex-col gap-4 text-wb-text-primary">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-wb-text-muted">
+        <span className="mr-2 font-wb-mono uppercase tracking-widest">Preset</span>
+        {PRESETS.map((preset) => (
+          <Button
+            key={preset.key}
+            size="sm"
+            variant={presetKey === preset.key ? 'secondary' : 'ghost'}
+            aria-pressed={presetKey === preset.key}
+            onClick={() => pick(preset)}
+          >
+            {preset.key}
+          </Button>
+        ))}
+      </div>
+      <div
+        className={
+          'relative isolate flex transform-gpu flex-col overflow-hidden rounded-xl border border-wb-border bg-wb-bg-base ' +
+          (state.sheet !== null ? 'h-[1040px]' : '')
+        }
+      >
+        <BenchHeader
+          strategy={state.strategy}
+          onStrategy={(strategy) => patch({ strategy, saved: false, reviewed: false, sheet: null })}
+          chips={chips}
+          onOpenCriteria={openSheet}
+        />
+        <div className="flex-1 overflow-auto">
+          <div className="flex flex-col gap-5 p-6">
+            {state.saved && <SavedBanner />}
+            {results.status === 'provider_unavailable' && (
+              <MarketDataOutage marketDataConfigured onRetry={() => {}} onOpenSettings={() => {}} />
+            )}
+            {pmcc ? (
+              <PmccBenchGrid
+                bench={bench}
+                selected={state.selected}
+                onSelect={(ticker) => patch({ selected: ticker, reviewed: false })}
+                onReview={() => patch({ reviewed: true })}
+                onAdjustCriteria={openSheet}
+                screened={screened}
+                annotation={
+                  reviewedCandidate && (
+                    <ReviewAnnotation candidate={reviewedCandidate} note={current.row.entry.notes} />
+                  )
+                }
+              />
+            ) : (
+              <BenchGrid
+                bench={bench}
+                selected={state.selected}
+                onSelect={(ticker) => patch({ selected: ticker })}
+                onRemove={() => {}}
+                onReview={() => {}}
+                onAdjustCriteria={() => {}}
+                criteriaUnloadable={false}
+                screened={screened}
+                editing={null}
+                onEdit={() => {}}
+                onEditDone={() => {}}
+              />
+            )}
+          </div>
+          <footer className="border-t border-wb-border px-6 py-3 text-xs text-wb-text-muted">
+            {FOOTER_COPY}
+          </footer>
+        </div>
+        {state.sheet !== null && (
+          <PmccCriteriaSheet
+            variant={state.sheet}
+            criteria={criteria}
+            onClose={() => patch({ sheet: null })}
+            onSave={saveSheet}
+          />
+        )}
+      </div>
+      <details className="rounded-lg border border-wb-border p-3 text-xs text-wb-text-secondary">
+        <summary className="cursor-pointer">Design notes · what is new on this screen</summary>
+        <ul className="mt-3 flex flex-col gap-2 pl-5 leading-relaxed">
+          <li>
+            <strong>One new control.</strong> The Wheel | PMCC segment reuses the criteria form's pill and
+            sits after the count badge. It is page state, not persisted; the bench always opens on Wheel.
+          </li>
+          <li>
+            <strong>Same cards, different second line.</strong> A put reads `$67.50 put · Oct 23 · 1.56%
+            yield`; a diagonal reads `$42.00 LEAPS · $53.00 short Oct 23 · 6.63% on debit`. Rank pill,
+            IVR cell, thesis, remove and select are untouched.
+          </li>
+          <li>
+            <strong>The detail panel swaps one card.</strong> Matching put → Matching diagonal: two leg
+            rows (sky = LEAPS, the synthetic shares; violet = short call, the CC colour), a 3×3 metric
+            grid, and — since US-122 — the same gold `Review trade →` the put card has. Everything above
+            it is unchanged.
+          </li>
+          <li>
+            <strong>Gates are shared.</strong> AAPL's price condition, PEP's stale reading and MSFT's
+            earnings hold a diagonal back exactly as they hold a put back; the held-back line names the
+            diagonal. A held-back diagonal keeps no action, as on the wheel.
+          </li>
+          <li>
+            <strong>Reasons come from the engine verbatim</strong>, prefixed by stage: `LEAPS delta 0.62
+            outside 0.70–0.85`, `short call open interest 120 below 200`, `debit 93.84% of width exceeds
+            90%`, `no calls quoted in the 180–540 DTE window`, `IV rank 58.0 (Sep 17) above 55`.
+          </li>
+          <li>
+            <strong>The sheet names its lens.</strong> Six groups instead of four, the LEAPS window must
+            sit strictly beyond the short window, and the subtitle reads `PMCC · LEAPS + short call` so a
+            trader never edits the wrong document. Switching lenses happens on the bench, not in the sheet.
+          </li>
+        </ul>
+      </details>
+    </div>
+  )
+}
+
+<Mockup />

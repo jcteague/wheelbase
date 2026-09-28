@@ -52,11 +52,14 @@ Read before writing or generating any story in this epic. Each item here comes f
 - [ ] US-109: Display PMCC-specific leg timeline on position detail
 - [ ] US-110: Add PMCC screening criteria to candidate screener — a `Wheel | PMCC` lens on the US-96 bench with its own criteria document and pure engine; ships the matching-diagonal card without a promote action, which US-122 adds
 - [ ] US-111: Handle PMCC short call assignment (exercise LEAPS to cover) — closing event; settles against the cost basis owned by [US-103](09-stories/US-103-pmcc-cost-basis.md)
-- [ ] US-112: Display IVR on PMCC position card for both LEAPS underlying and short call context (consumes Epic 12 service)
-- [ ] US-113: Show IV term-structure context on PMCC entry form — favors low front-month IV when buying LEAPS, high front-month IV when selling the short call (diagonal efficiency signal)
-- [ ] US-114: Surface IVR context inside PMCC short-call roll dialog (parallels US-89 for the wheel CC roll)
-- [ ] US-122: Review a PMCC screener match in the PMCC entry form — the promote handoff US-110 defers, mirroring US-68 for the wheel; depends on US-110 and US-101
+- [ ] US-112: Display IVR on PMCC position card for both LEAPS underlying and short call context — reads the per-underlying assessed IV rank US-97 collects and US-98 grades (US-121 reshapes it); no Epic 12 service exists or is needed
+- [ ] US-113: Show IV term-structure context on PMCC entry form — a read-only block in US-101's PMCC form comparing the selected short call's IV with the selected LEAPS's IV (spread, ratio, BACKWARDATION · FRONT RICH / CONTANGO · FRONT THIN / FLAT at 1.10 / 0.90); reads per-contract chain IV already on the quotes, consumes no Epic 12 service, never gates recording; depends on US-101
+- [ ] US-114: Surface IVR context inside PMCC short-call roll dialog — the first IVR-in-a-roll-sheet surface: a read-only IV context section in the US-104 sheet reusing the bench's IvrCell and US-112's short-call registry, with the event-driven qualifier re-judged live against the replacement expiration (US-70's rule); advisory only, never touches the net preview or validation; adds ivRank/nextEarnings to positions:get; US-89 (wheel CC roll, unrefined) later follows this pattern
 - [ ] US-115: Sell a subsequent short call against an open LEAPS once the previous short expires or is closed — lowers the cost basis owned by [US-103](09-stories/US-103-pmcc-cost-basis.md); the routine income leg of the PMCC cycle, deferred by US-101 and previously owned by no story; enforces the [US-102](09-stories/US-102-enforce-long-dte-greater-than-short-dte.md) invariant at its service boundary
+- [ ] US-118: PMCC detail cockpit — two-lane status, guardrails, and header actions — replaces the wheel's single VerdictBlock on a PMCC with a SHORT CALL lane and a LEAPS lane that may legitimately disagree, a Net P&L line, a guardrails strip (effective share cost, coverage, premium recovered, cycles) and the pure header action map every sibling's button is placed by; shares US-106 / US-107 / US-108 predicates, adds no rule; depends on US-101 and US-103
+- [ ] US-119: Retire the PMCC short call — record expiration or close early — the PMCC analogues of US-9 and US-8: the two cycle endings that are not assignment, returning the position to LEAPS-only so US-115 can sell the next short; expiration flips the credit to realized without moving basis, a buyback is a US-103 debit contribution; depends on US-101 and US-103
+- [ ] US-120: Close a PMCC by selling the LEAPS — the voluntary, no-assignment exit from the LEAPS-only state (US-119 retires the short first; never under an open short); one terminal SELL on the LEAPS, status CLOSED, terminal US-103 snapshot with final_pnl = proceeds − fees − cost basis; placed by US-118's action map, mirrors US-4 / US-10 in shape and US-111's closing paths in accounting
+- [ ] US-122: Review a PMCC screener match in the PMCC entry form — Review trade → on the US-110 matching-diagonal card opens the US-101 sheet in PMCC mode pre-filled from the diagonal, mirroring US-68: one-shot query-string codec, both legs re-quoted on open, one non-blocking banner (outage, missing contract, stale session, per-leg drift with net debit at fresh marks, edit, match), never auto-submits; depends on US-110 and US-101
 
 ## Dependencies
 
@@ -65,7 +68,7 @@ Read before writing or generating any story in this epic. Each item here comes f
 - Epic 06: Live Market Data (option chains for dual selector)
 - Epic 07: Management Alerts (PMCC alert rules extend the engine)
 - Epic 08: Candidate Screener (PMCC criteria extend the screener)
-- Epic 12: Volatility Analytics (IVR/IVP data feed for PMCC card and roll dialog)
+- Epic 12: Volatility Analytics — no longer a dependency: US-112 / US-114 read the shipped IV-rank store (US-97, US-98, US-121) and US-113 reads per-contract chain IV; Epic 12 has no Linear project and its stories (US-86–US-92, incl. US-89) are unrefined
 
 ## Strategy
 

@@ -83,12 +83,9 @@ export function DistanceGauge({ type, strike, price }) {
   const status = getStatusLabel(type, distance)
   const otm = isOtm(type, distance)
   const abs = distance !== null ? Math.abs(distance) : 0
-
 // Gauge bar width: capped at 100% for ±10%
-const barWidth = distance !== null ? Math.min((abs / 10) \* 100, 100) : 0
-
+const barWidth = distance !== null ? Math.min((abs / 10) * 100, 100) : 0
 return (
-
 <div style={{ fontFamily: MONO }}>
 {/* Percentage + status */}
 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -106,7 +103,6 @@ ${price.toFixed(2)} vs ${type} ${strike.toFixed(2)}
           background: color + '15', color, border: '1px solid ' + color + '30',
         }}>{status}</span>
 </div>
-
       {/* Visual gauge bar */}
       <div style={{
         height: 4, borderRadius: 2,
@@ -122,7 +118,6 @@ ${price.toFixed(2)} vs ${type} ${strike.toFixed(2)}
           }} />
         )}
       </div>
-
       {/* Tooltip line */}
       {price !== null && (
         <div style={{ fontSize: '0.6rem', color: '#4a5a6a', marginTop: 4 }}>
@@ -130,7 +125,6 @@ ${price.toFixed(2)} vs ${type} ${strike.toFixed(2)}
         </div>
       )}
     </div>
-
 )
 }
 
@@ -138,9 +132,7 @@ export function PositionCardWithDistance({ pos }) {
   const phaseColors = { CSP_OPEN: '#e6a817', CC_OPEN: '#d2a8ff' }
   const phaseLabels = { CSP_OPEN: 'Sell Put', CC_OPEN: 'Sell Call' }
   const color = phaseColors[pos.phase] ?? '#8899aa'
-
 return (
-
 <div style={{
       background: 'var(--wb-bg-surface, #070a0e)',
       border: '1px solid var(--wb-border, #1e2a38)',
@@ -156,7 +148,6 @@ return (
 {phaseLabels[pos.phase]}
 </span>
 </div>
-
       {/* Strike info */}
       <div style={{ padding: '10px 14px', borderBottom: '1px solid rgba(30,42,56,0.4)' }}>
         <div style={{ fontSize: '0.6rem', color: '#4a5a6a', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>
@@ -164,7 +155,6 @@ return (
         </div>
         <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#e6a817' }}>${pos.strike.toFixed(2)}</div>
       </div>
-
       {/* Distance indicator — THE FOCAL ELEMENT */}
       <div style={{
         padding: '12px 14px',
@@ -176,7 +166,6 @@ return (
         <DistanceGauge type={pos.type} strike={pos.strike} price={pos.price} />
       </div>
     </div>
-
 )
 }
 
@@ -184,11 +173,8 @@ export function Mockup() {
   const [state, setState] = useState('otm-safe')
   const allStates = ['otm-safe', 'approaching', 'itm-danger', 'no-price']
   const positions = SCENARIOS[state]
-
 return (
-
 <div style={{ fontFamily: MONO, background: '#040608', color: 'var(--wb-text-primary, #e2eaf2)', minHeight: 400 }}>
-
       {/* State toggle */}
       <div style={{ display: 'flex', gap: 6, padding: '10px 14px', background: '#0d1117', borderBottom: '1px solid #1e2a38', flexWrap: 'wrap' }}>
         <span style={{ fontSize: 9, color: '#4a5a6a', letterSpacing: '0.12em', textTransform: 'uppercase', alignSelf: 'center', marginRight: 4 }}>State:</span>
@@ -201,20 +187,16 @@ return (
           }}>{s}</button>
         ))}
       </div>
-
       <div style={{ padding: '20px 24px' }}>
         <div style={{ fontSize: '0.65rem', color: '#4a5a6a', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>Phase 2 — Live Data</div>
         <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 16 }}>Distance to Strike Indicator</div>
-
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
           {positions.map(pos => (
             <PositionCardWithDistance key={pos.ticker} pos={pos} />
           ))}
         </div>
       </div>
-
     </div>
-
 )
 }
 

@@ -1,0 +1,1264 @@
+---
+title: 'Epic 09: PMCC Dashboard — Final Layout'
+story: 'The positions dashboard after every Epic 09 story that touches it has shipped: the PMCC card among the wheel cards (US-108, superseding the minimal row US-101 gave it), the IVR cell and the two IV-context cells on that card (US-112), and the action strip that carries the assignment-risk ▲ and roll-window ◆ states whose predicates US-106 and US-107 own.'
+states:
+  [
+    'healthy',
+    'assignment-risk',
+    'short-expiring',
+    'short-itm',
+    'below-breakeven',
+    'falling-stock',
+    'wide-leaps-spread',
+    'missing-leaps',
+    'leaps-delta-low',
+    'leaps-only',
+    'roll-window',
+    'roll-window-rich',
+    'leaps-paid-for',
+    'three-contracts',
+    'two-shorts',
+    'two-shorts-risk',
+    'partial-coverage',
+    'closed',
+    'ivr-rich',
+    'ivr-fair',
+    'ivr-thin',
+    'ivr-edge-30',
+    'ivr-edge-60-1',
+    'ivr-aging',
+    'ivr-stale',
+    'ivr-expired',
+    'ivr-predates-earnings',
+    'ivr-none'
+  ]
+---
+
+import { Fragment, useState } from 'react'
+import { PageHeader } from '../src/renderer/src/components/PageLayout'
+import { MarketStatusPill } from '../src/renderer/src/components/MarketStatusPill'
+import { PhaseBadge } from '../src/renderer/src/components/PhaseBadge'
+import { TargetBadge } from '../src/renderer/src/components/TargetBadge'
+import { ExpiringSoonFlag } from '../src/renderer/src/components/ExpiringSoonFlag'
+import { IvrCell } from '../src/renderer/src/components/IvrCell'
+import { UrgencyPill } from '../src/renderer/src/components/UrgencyPill'
+import { Badge } from '../src/renderer/src/components/ui/Badge'
+import { SectionCard } from '../src/renderer/src/components/ui/SectionCard'
+import { FormButton } from '../src/renderer/src/components/ui/FormButton'
+
+# Epic 09: PMCC Dashboard — Final Layout
+
+_The positions dashboard as it looks once every Epic 09 story that touches it has shipped. **XYZ** is the PMCC from the detail mockup — same LEAPS, same nine short-call cycles, same quotes per preset — sitting in one card grid with three wheels in different phases and a closed section. Every figure on every card is folded from those legs and quotes; the action strip, the awareness tags, the management queue rows and the IVR context cells are all derived from the same predicates, so the live read on the card and the managed read in the queue can be compared preset by preset._
+
+## Signals: action states and awareness tags
+
+A card's signals come in two tiers. **Action states** mean a leg needs a trade. On the PMCC card they are ✕ short strike below breakeven (US-108, red), ▲ assignment risk (US-106, red in the money, gold approaching), ◆ LEAPS roll window (US-107, gold), and the short-leg queue rules riding on the nearest short call, EXPIRATION_IMMINENT and MANAGEMENT_WINDOW (gold, with the queue's own summary). On a wheel card they are that card's own STRIKE_PROXIMITY (red below a put strike, gold otherwise), COVERED_CALL_BREACH (red), EXPIRATION_IMMINENT and MANAGEMENT_WINDOW rows, whose strip text is the queue summary word for word. Any open action state puts a full-width **action strip** at the top of the card. The strip shows the glyph, the status word from US-118's detail-page lanes, and the concrete figure. The leg the state belongs to takes the same tint, a tone-coloured left border and the small glyph, and the card's left edge takes the action tone in place of the strategy colour. The teal PMCC pill still names the strategy. When several states are open, the strip leads with the first in US-118's lane order, ✕ BELOW BREAKEVEN › ▲ ASSIGNMENT RISK red › ▲ ASSIGNMENT RISK gold › ◆ ROLL WINDOW › EXPIRATION_IMMINENT › MANAGEMENT_WINDOW, and a `+N` chip lists the rest in its tooltip. **Awareness tags** (⚑ earnings, ⚠ wide spread, δ delta floor) stay small after the PMCC pill, because they qualify a read rather than ask for a trade. PROFIT_TARGET is good news and keeps its TARGET chip. US-108's glyph-row wording needs to change to match: ▲, ◆ and ✕ no longer sit in a glyph row after the ticker; they are carried by the strip and the leg.
+
+## Which story owns what
+
+The chrome is imported, not redrawn: `PageHeader`, `MarketStatusPill`, `Badge`, `SectionCard`, `UrgencyPill` and — on the wheel cards — `PhaseBadge`, `TargetBadge` and `ExpiringSoonFlag`, and on the PMCC card `IvrCell` (with its `FreshnessRing` and tooltip), all come from `src/renderer/src`.
+
+| Region | Owner |
+| -- | -- |
+| Page header, position count, market-status pill, `+ New Wheel`, Active / Closed sections, DTE sort with no-option positions last | Shipped (US-2, US-32) — imported |
+| The card grid and the wheel card (one leg block, phase badge, % of max profit, per-share basis) | US-18 (Epic 04, pulled forward as US-108's prerequisite) |
+| PMCC card tier 1: header, position line, leg blocks, footer with recovery meter, the ✕ predicate, the δ awareness tag | US-108 |
+| ▲ assignment risk — the 2% one-directional band, gold approaching and red in the money | US-106 (predicate); US-108 places it in the strip |
+| ◆ roll window — the 60-day inclusive threshold and the gold LEAPS DTE | US-107 (predicate); US-108 places it in the strip |
+| ⚑ earnings awareness tag | US-56 (shipped predicate); US-108 places it |
+| ⚠ wide-spread awareness tag | US-33 (predicate); US-108 places it |
+| PMCC card action strip, leg highlight and action-tone card edge, the lane-order precedence and the `+N` chip; the short-leg EXPIRATION_IMMINENT / MANAGEMENT_WINDOW rows riding on the short | US-108 |
+| Wheel card action strip, leg highlight and action-tone card edge for STRIKE_PROXIMITY, COVERED_CALL_BREACH, EXPIRATION_IMMINENT and MANAGEMENT_WINDOW, mirroring the queue summary | US-18 — US-18 must be ported to Linear with this |
+| Detail bar and tier 2 cells (credits, breakeven, max if called, Δ, extrinsic, LEAPS mark, entry debit) | US-108 |
+| `IVR` face cell between the awareness tags and the price; `Short-call IV context` and `LEAPS IV context` closing tier 2; `· IV` on the Detail bar | US-112 |
+| Management queue rows for the PMCC rules, and the wheel-shared rules riding on the short call | US-106 / US-107 — drawn in full in `epic-09-pmcc-alerts.mdx`; here only so the action strip and the queue can be compared |
+| The minimal PMCC row (badge, state, two expirations, initial debit) | US-101 — superseded by US-108's card; nothing of it survives except the badge and the state label |
+
+## Acceptance Criteria States
+
+All dates are America/New_York valuation dates. The XYZ fixture is the detail mockup's: LEAPS $85 exp 2028-01-21 bought $23.50 after the 2027-07-09 roll, LEAPS cost to date $22.50 / share, cycle 9 = $118 call exp 2027-08-20 sold 2027-07-23 at $1.95, credits $15.95, cost basis $6.55 / share, stock $104.20 on 2027-08-13. US-108's own mockup used its Background numbers ($80 LEAPS, $108 short, basis $21.20 on 2026-11-06); this screen uses the fixture, so the dollar figures differ from that story's Gherkin while every rule and every label is the same.
+
+- **healthy**: 2027-08-13. XYZ sorts first on its short's 7 DTE — gold, inside the existing 7-day rule — ahead of MSFT (10d), AAPL (30d) and NVDA (shares, no leg, last). Net P&L `+$1,775.00` / `+271.0% of basis`; short call `89.7% of max` with the gold TARGET chip; LEAPS 161d. The short's 7 DTE is inside the management window, so a gold strip reads `◷ MANAGEMENT WINDOW · 7 DTE remaining — review for roll or close` (the queue's own row), the short-call row is tinted gold and the card edge is gold; no awareness tags. MSFT carries the same gold strip at 10 DTE; AAPL and NVDA are calm. IVR 62 fresh, `rich`. Tier 2 closed — the resting state. (US-108 Background, sort scenario; strip per US-108 / US-18.)
+- **assignment-risk**: stock $116.10, 1.6% below the $118 strike. Gold strip `▲ ASSIGNMENT RISK · stock 1.6% below the $118.00 strike · plan the roll` with `+1` (MANAGEMENT WINDOW); a MED `PMCC_ASSIGNMENT_RISK` row joins the queue with US-106's summary. (US-106 approaching; US-108 ▲ outline, gold row.)
+- **short-expiring**: 2027-08-16, short 4d in gold, earnings 2027-08-18 inside its window, stock 1.8% below the strike. Gold strip `▲ ASSIGNMENT RISK · stock 1.8% below the $118.00 strike · plan the roll` with `+1` (`◷ EXPIRING · Expires in 4 days at $118.00 strike`); ⚑ sits as an awareness tag after the pill; the face word `rich` turns gold and the short-call context reads `RICH · EVENT-DRIVEN`. The queue carries EXPIRATION_IMMINENT at HIGH above the MED rows. (US-108 short-expiring; US-112 rich-earnings; US-106 short-expiring co-fire.)
+- **short-itm**: stock $121.40 through the strike. Red strip `▲ ASSIGNMENT RISK · stock 2.9% above the $118.00 strike · roll or close` with `+1` (MANAGEMENT WINDOW), red short-call row, red card edge; short call `−84.6% of max` in red; tier 2 opens on `Short extrinsic $0.20 — ITM — assignment math is live`. (US-106 in-the-money; US-108 short-itm.)
+- **below-breakeven**: 2026-07-06, the same position young — $80 LEAPS, three cycles, basis $19.65, so breakeven is $99.65 and the open $99 short sits under it. Red strip `✕ BELOW BREAKEVEN · $99.00 strike is $0.65 under the $99.65 breakeven · roll up before it is called` leads, with `+2` for the red ▲ (stock $99.40 is through the $99 strike) and MANAGEMENT WINDOW at 11 DTE; the $99 row carries ✕ ▲ ◷. (US-108 ✕ scenario; lane order per US-118.)
+- **falling-stock**: stock $88.00. The diagonal is `−$129.00` / `−19.7% of basis` in red while the short reads `97.9% of max` in green with TARGET — no position-level % of max. Gold MANAGEMENT WINDOW strip at 7 DTE. (US-108 falling-stock.)
+- **wide-leaps-spread**: LEAPS $23.10 × $25.90, 11.4% of the mid. ⚠ on the LEAPS mark, on the P&L, and as an awareness tag after the pill — no strip of its own; the strip is the 7-DTE MANAGEMENT WINDOW. (US-108 wide-spread.)
+- **missing-leaps**: no LEAPS snapshot this poll. LEAPS mid `— unavail.`, Δ `—`, P&L `—` / `unavailable — a leg has no mark`; the short's TARGET chip, cost basis, credits and the 7-DTE MANAGEMENT WINDOW strip survive. (US-108 missing-snapshot and missing-greeks.)
+- **leaps-delta-low**: cycle 9 re-sold as a $95 call, stock $86.50, LEAPS Δ 0.54. Gold δ awareness tag; the strip is the 7-DTE MANAGEMENT WINDOW; tier 2 notes the 0.60 floor. (US-108 δ scenario.)
+- **leaps-only**: 2027-07-19, cycle 8 expired three days ago and nothing sold. State `LEAPS open · no short call`, one leg block, `186d to next decision`, sorts after AAPL; no strip. `+$1,560.00` / `+183.5%`. Short-call IV context speaks to the next sale. (US-108 LEAPS-only; US-112 leaps-only-rich.)
+- **roll-window**: the imported PMCC the detail mockup uses for this state — $90 LEAPS with 35 DTE, $120 short with 64 DTE. Gold strip `◆ ROLL WINDOW · LEAPS 35d left, inside the 60-day window · roll while it has time value` on the LEAPS row, gold LEAPS DTE, a MED `PMCC_LEAPS_ROLL_WINDOW` row; IVR 22 reads `thin` and the LEAPS context `ROLL NOW`. (US-107 in-window; US-108 roll-window; US-112 thin-roll-window.)
+- **roll-window-rich**: the same window with IVR 62 — `PRICEY · WINDOW OPEN`: the window beats IV. (US-112 rich-roll-window.)
+- **leaps-paid-for**: 2027-11-08 with cycles 10–12 appended to the fixture's history (projected, not in the detail mockup), so credits reach $22.90 against $22.50 of LEAPS cost. Basis `-$40.00` with `LEAPS paid for` in gold, meter full and gold at 101.8%, P&L `+$3,285.00` with `basis not positive`. Gold MANAGEMENT WINDOW strip on the $120 short at 11 DTE. (US-108 paid-for scenario — the story's own numbers.)
+- **three-contracts**: the healthy quotes on 3 contracts. `$85.00 LEAPS ×3`, `3 × 100 sh`, totals ×3, per-share figures and percentages unchanged. (US-108 contracts scenario.)
+- **two-shorts** ⧉: two open short calls against 2 LEAPS contracts — three leg blocks, `LEAPS + 2 short calls open`, sorted by the nearer short; the MANAGEMENT WINDOW strip marks only the $118 short at 7 DTE. The app cannot produce this yet; shown to prove the card absorbs it. (US-108.)
+- **two-shorts-risk** ⧉: the two-shorts position with the stock at $116.50 — the $118 short is 1.3% below its strike (gold ▲), the $122 short 4.5% below. Strip `▲ ASSIGNMENT RISK · stock 1.3% below the $118.00 strike · plan the roll` with `+1` (MANAGEMENT WINDOW). Only the $118 row is marked; the $122 row stays calm. (US-106 predicate; leg highlight US-108.)
+- **partial-coverage** ⧉: 3 LEAPS, one short — `1 of 3 covered`. Also not yet producible. (US-108.)
+- **closed**: 2027-08-24, assigned and settled the day before. The XYZ card sits in the Closed section, muted, with the PMCC badge and `Closed`; price, mids, DTEs, P&L and IVR read `—`; last basis and credits still display; no strip, no awareness tags, no Detail bar. (US-108 and US-112 closed scenarios.)
+- **ivr-rich / ivr-fair / ivr-thin**: 62 / 45 / 22 on the healthy card with tier 2 open — face word and both context cells per the registries. (US-112 zone outlines.)
+- **ivr-edge-30 / ivr-edge-60-1**: 30 reads `fair`, 60.1 reads `rich`. (US-112 zone edges.)
+- **ivr-aging / ivr-stale / ivr-expired / ivr-predates-earnings**: the four freshness tiers exactly as `IvrCell` renders them on the bench; only aging still earns a context sentence. (US-112 usable-reading outline.)
+- **ivr-none**: no reading — `n/a` on the face and in both cells; nothing else on the card moves. (US-112.)
+
+Not shown on this screen: US-112's live refresh after an out-of-band collection (a behaviour, not a state), the calendar-read failure (renders as `ivr-none` with a WARN in the log), and US-108's neutral card for a phase a later story introduces — no such phase exists yet to draw.
+
+---
+
+export const DAY = 86400000
+
+export const ms = (s) => Date.parse(`${s}T00:00:00Z`)
+
+export const days = (a, b) => Math.round((ms(b) - ms(a)) / DAY)
+
+export const isoDate = (t) => {
+  const d = new Date(t)
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+}
+
+export const addDays = (from, n) => isoDate(ms(from) + n * DAY)
+
+export const money = (n) =>
+  `${n < 0 ? '-' : ''}$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+export const signed = (n) => `${n < 0 ? '−' : '+'}${money(Math.abs(n))}`
+
+export const pct = (x, d = 1) => `${(x * 100).toFixed(d)}%`
+
+export const signedPct = (x, d = 1) => `${x < 0 ? '−' : '+'}${pct(Math.abs(x), d)}`
+
+export const mid = (bid, ask) => (bid == null || ask == null ? null : (bid + ask) / 2)
+
+export const BASE_LEAPS = [
+  {
+    kind: 'open',
+    date: '2026-09-14',
+    action: 'BUY',
+    strike: 80,
+    expiration: '2027-09-17',
+    price: 25.0
+  },
+  {
+    kind: 'roll',
+    date: '2027-07-09',
+    close: { strike: 80, expiration: '2027-09-17', price: 26.0 },
+    open: { strike: 85, expiration: '2028-01-21', price: 23.5 }
+  }
+]
+
+export const BASE_CYCLES = [
+  {
+    n: 1,
+    open: { date: '2026-09-14', strike: 110, expiration: '2026-10-16', price: 2.0 },
+    rolls: [],
+    end: { date: '2026-10-16', outcome: 'expired' }
+  },
+  {
+    n: 2,
+    open: { date: '2026-10-23', strike: 108, expiration: '2026-11-20', price: 1.8 },
+    rolls: [
+      {
+        date: '2026-11-06',
+        close: { strike: 108, expiration: '2026-11-20', price: 3.0 },
+        open: { strike: 112, expiration: '2026-12-18', price: 2.4 }
+      }
+    ],
+    end: { date: '2026-12-18', outcome: 'expired' }
+  },
+  {
+    n: 3,
+    open: { date: '2027-01-04', strike: 112, expiration: '2027-02-05', price: 1.7 },
+    rolls: [],
+    end: { date: '2027-02-05', outcome: 'expired' }
+  },
+  {
+    n: 4,
+    open: { date: '2027-02-08', strike: 114, expiration: '2027-03-12', price: 1.55 },
+    rolls: [],
+    end: { date: '2027-03-12', outcome: 'expired' }
+  },
+  {
+    n: 5,
+    open: { date: '2027-03-15', strike: 114, expiration: '2027-04-16', price: 2.2 },
+    rolls: [],
+    end: { date: '2027-04-02', outcome: 'closed', price: 0.55 }
+  },
+  {
+    n: 6,
+    open: { date: '2027-04-05', strike: 116, expiration: '2027-05-07', price: 1.75 },
+    rolls: [],
+    end: { date: '2027-05-07', outcome: 'expired' }
+  },
+  {
+    n: 7,
+    open: { date: '2027-05-07', strike: 116, expiration: '2027-06-18', price: 1.75 },
+    rolls: [],
+    end: { date: '2027-06-18', outcome: 'expired' }
+  },
+  {
+    n: 8,
+    open: { date: '2027-06-22', strike: 112, expiration: '2027-07-16', price: 2.4 },
+    rolls: [],
+    end: { date: '2027-07-16', outcome: 'expired' }
+  },
+  {
+    n: 9,
+    open: { date: '2027-07-23', strike: 118, expiration: '2027-08-20', price: 1.95 },
+    rolls: [],
+    end: null
+  }
+]
+
+export const IMPORTED_LEAPS = [
+  {
+    kind: 'open',
+    date: '2027-01-11',
+    action: 'BUY',
+    strike: 90,
+    expiration: '2027-09-17',
+    price: 21.4
+  }
+]
+
+export const IMPORTED_CYCLES = [
+  {
+    n: 1,
+    open: { date: '2027-07-06', strike: 120, expiration: '2027-10-16', price: 3.1 },
+    rolls: [],
+    end: null
+  }
+]
+
+export const YOUNG_LEAPS = [
+  { kind: 'open', date: '2026-04-17', action: 'BUY', strike: 80, expiration: '2027-09-17', price: 25.0 }
+]
+
+export const YOUNG_CYCLES = [
+  {
+    n: 1,
+    open: { date: '2026-04-17', strike: 105, expiration: '2026-05-15', price: 2.0 },
+    rolls: [],
+    end: { date: '2026-05-15', outcome: 'expired' }
+  },
+  {
+    n: 2,
+    open: { date: '2026-05-18', strike: 105, expiration: '2026-06-19', price: 1.8 },
+    rolls: [],
+    end: { date: '2026-06-19', outcome: 'expired' }
+  },
+  {
+    n: 3,
+    open: { date: '2026-06-22', strike: 99, expiration: '2026-07-17', price: 1.55 },
+    rolls: [],
+    end: null
+  }
+]
+
+export const OUTCOME_LABEL = {
+  expired: 'Expired worthless',
+  closed: 'Closed early',
+  assigned: 'Assigned',
+  open: 'Open'
+}
+
+export function cycleShape(cycle, today) {
+  const current = cycle.rolls.length ? cycle.rolls[cycle.rolls.length - 1].open : cycle.open
+  const outcome = cycle.end ? cycle.end.outcome : 'open'
+  const endDate = cycle.end ? cycle.end.date : today
+  const rollNet = cycle.rolls.reduce((sum, r) => sum + (r.open.price - r.close.price), 0)
+  const closeCost = cycle.end && cycle.end.outcome === 'closed' ? cycle.end.price : 0
+  return {
+    ...cycle,
+    current,
+    outcome,
+    endDate,
+    dteAtOpen: days(cycle.open.date, cycle.open.expiration),
+    daysHeld: days(cycle.open.date, endDate),
+    net: cycle.open.price + rollNet - closeCost,
+    rollNet,
+    closeCost
+  }
+}
+
+export function buildModel(preset) {
+  // Copied from epic-09-pmcc-position-detail.mdx — the one ledger every Epic 09 screen folds from.
+  const today = preset.today
+  const contracts = preset.contracts ?? 1
+  const leapsEvents = preset.leaps ?? BASE_LEAPS
+  const rawCycles = preset.cycles ?? (preset.patch ? preset.patch(BASE_CYCLES) : BASE_CYCLES)
+  const cycles = rawCycles.map((c) => cycleShape(c, today))
+  const ledger = []
+  let leapsCost = 0
+  let credits = 0
+  const push = (date, label, group) => {
+    ledger.push({ date, label, group, basis: leapsCost - credits })
+  }
+  const timed = []
+  leapsEvents.forEach((e) => timed.push({ at: e.date, order: 0, kind: 'leaps', e }))
+  cycles.forEach((c) => {
+    timed.push({ at: c.open.date, order: 3, kind: 'cycle-open', c })
+    c.rolls.forEach((r) => timed.push({ at: r.date, order: 2, kind: 'cycle-roll', c, r }))
+    if (c.end) timed.push({ at: c.end.date, order: 1, kind: 'cycle-end', c })
+  })
+  timed
+    .sort((a, b) => ms(a.at) - ms(b.at) || a.order - b.order)
+    .forEach((t) => {
+      if (t.kind === 'leaps') {
+        if (t.e.kind === 'open') leapsCost += t.e.price
+        else leapsCost += t.e.open.price - t.e.close.price
+        push(t.at, t.e.kind === 'open' ? 'LEAPS bought' : 'LEAPS roll #1', 'leaps')
+      } else if (t.kind === 'cycle-open') {
+        credits += t.c.open.price
+        push(t.at, `Cycle ${t.c.n} opened`, `cycle-${t.c.n}`)
+      } else if (t.kind === 'cycle-roll') {
+        credits += t.r.open.price - t.r.close.price
+        push(t.at, `Cycle ${t.c.n} roll`, `cycle-${t.c.n}`)
+      } else {
+        if (t.c.end.outcome === 'closed') credits -= t.c.end.price
+        push(t.at, `Cycle ${t.c.n} ${OUTCOME_LABEL[t.c.end.outcome].toLowerCase()}`, `cycle-${t.c.n}`)
+      }
+    })
+  const openLeaps = leapsEvents[leapsEvents.length - 1]
+  const currentLeaps = openLeaps.kind === 'open' ? openLeaps : openLeaps.open
+  const start = leapsEvents[0].date
+  const closed = cycles.filter((c) => c.end)
+  const openCycle = cycles.find((c) => !c.end)
+  const realized = closed.reduce((s, c) => s + c.net, 0)
+  return {
+    today,
+    contracts,
+    start,
+    leapsEvents,
+    currentLeaps,
+    cycles,
+    ledger,
+    openCycle,
+    openCycles: cycles.filter((c) => !c.end),
+    closedCount: closed.length,
+    realized,
+    leapsCost,
+    credits,
+    basis: leapsCost - credits,
+    entryDebit: leapsEvents[0].price - (cycles[0] && cycles[0].open.date === start ? cycles[0].open.price : 0),
+    positionClosed: Boolean(preset.closeAll),
+    closedAt: preset.closedAt,
+    imported: Boolean(preset.imported)
+  }
+}
+
+export const Q_BASE = { stock: 104.2, leapsBid: 24.2, leapsAsk: 24.8, leapsDelta: 0.82, shortBid: 0.15, shortAsk: 0.25 }
+
+export const swapCycle9 = (strike, price) => (cycles) =>
+  cycles.map((c) => (c.n === 9 ? { ...c, open: { ...c.open, strike, price } } : c))
+
+export const dropCycle9 = (cycles) => cycles.filter((c) => c.n !== 9)
+
+export const assignCycle9 = (cycles) =>
+  cycles.map((c) => (c.n === 9 ? { ...c, end: { date: '2027-08-20', outcome: 'assigned' } } : c))
+
+export const extendCycles = (cycles) => [
+  ...cycles.map((c) => (c.n === 9 ? { ...c, end: { date: '2027-08-20', outcome: 'expired' } } : c)),
+  { n: 10, open: { date: '2027-08-23', strike: 118, expiration: '2027-09-17', price: 2.85 }, rolls: [], end: { date: '2027-09-17', outcome: 'expired' } },
+  { n: 11, open: { date: '2027-09-20', strike: 118, expiration: '2027-10-15', price: 2.8 }, rolls: [], end: { date: '2027-10-15', outcome: 'expired' } },
+  { n: 12, open: { date: '2027-10-18', strike: 120, expiration: '2027-11-19', price: 1.3 }, rolls: [], end: null }
+]
+
+export const addSecondShort = (cycles) => [
+  ...cycles,
+  { n: 10, open: { date: '2027-08-02', strike: 122, expiration: '2027-09-17', price: 1.6 }, rolls: [], end: null }
+]
+
+export const ROLL_WINDOW_DTE = 60
+
+export const EXPIRING_SOON_DTE = 7
+
+export const WIDE_SPREAD = 0.1
+
+export const LEAPS_DELTA_FLOOR = 0.6
+
+export const ASSIGNMENT_RISK_PCT_BELOW = 2
+
+export const EARNINGS_PROXIMITY_MAX_DAYS = 10
+
+export const EXPIRATION_IMMINENT_MAX_DTE = 5
+
+export const MANAGEMENT_WINDOW_DTE = 21
+
+export const PROFIT_TARGET = 50
+
+export const IVR_LOW_MAX = 30
+
+export const IVR_HIGH_MIN = 60
+
+export const TEAL = '#2dd4bf'
+
+export const TONE_CLASS = {
+  green: 'text-wb-green',
+  gold: 'text-wb-gold',
+  red: 'text-wb-red',
+  neutral: 'text-wb-text-secondary',
+  muted: 'text-wb-text-muted'
+}
+
+export const reading = (value, ageTradingDays, state) => ({ value, ageTradingDays, state })
+
+export const IVR_RICH = reading('62', 1, 'fresh')
+
+export const PRESETS = [
+  { key: 'healthy', group: 'position', label: 'healthy', today: '2027-08-13', q: Q_BASE, ivr: IVR_RICH },
+  { key: 'assignment-risk', group: 'position', label: 'assignment risk ▲', today: '2027-08-13', ivr: IVR_RICH,
+    q: { stock: 116.1, leapsBid: 32.1, leapsAsk: 32.7, leapsDelta: 0.88, shortBid: 1.15, shortAsk: 1.25 } },
+  { key: 'short-expiring', group: 'position', label: 'short expiring · ⚑ ▲', today: '2027-08-16', earnings: '2027-08-18', ivr: IVR_RICH, t2: true,
+    q: { stock: 115.88, leapsBid: 32.3, leapsAsk: 32.9, leapsDelta: 0.88, shortBid: 0.55, shortAsk: 0.65 } },
+  { key: 'short-itm', group: 'position', label: 'short in the money ▲', today: '2027-08-13', ivr: IVR_RICH, t2: true,
+    q: { stock: 121.4, leapsBid: 37.0, leapsAsk: 37.4, leapsDelta: 0.9, shortBid: 3.5, shortAsk: 3.7 } },
+  { key: 'below-breakeven', group: 'position', label: 'below breakeven ✕', today: '2026-07-06', leaps: YOUNG_LEAPS, cycles: YOUNG_CYCLES, ivr: IVR_RICH,
+    q: { stock: 99.4, leapsBid: 25.6, leapsAsk: 26.2, leapsDelta: 0.78, shortBid: 1.4, shortAsk: 1.6 } },
+  { key: 'falling-stock', group: 'position', label: 'falling stock', today: '2027-08-13', ivr: IVR_RICH,
+    q: { stock: 88.0, leapsBid: 5.1, leapsAsk: 5.5, leapsDelta: 0.63, shortBid: 0.02, shortAsk: 0.06 } },
+  { key: 'wide-leaps-spread', group: 'position', label: 'wide LEAPS spread ⚠', today: '2027-08-13', ivr: IVR_RICH,
+    q: { stock: 104.2, leapsBid: 23.1, leapsAsk: 25.9, leapsDelta: 0.82, shortBid: 0.15, shortAsk: 0.25 } },
+  { key: 'missing-leaps', group: 'position', label: 'no LEAPS mark', today: '2027-08-13', ivr: IVR_RICH,
+    q: { stock: 104.2, leapsBid: null, leapsAsk: null, leapsDelta: null, shortBid: 0.15, shortAsk: 0.25 } },
+  { key: 'leaps-delta-low', group: 'position', label: 'delta decaying δ', today: '2027-08-13', patch: swapCycle9(95, 0.9), ivr: IVR_RICH, t2: true,
+    q: { stock: 86.5, leapsBid: 7.9, leapsAsk: 8.5, leapsDelta: 0.54, shortBid: 0.25, shortAsk: 0.35 } },
+  { key: 'leaps-only', group: 'position', label: 'LEAPS only', today: '2027-07-19', patch: dropCycle9, ivr: IVR_RICH, t2: true,
+    q: { stock: 103.1, leapsBid: 23.8, leapsAsk: 24.4, leapsDelta: 0.81, shortBid: null, shortAsk: null } },
+  { key: 'roll-window', group: 'position', label: 'roll window ◆ · IVR thin', today: '2027-08-13', leaps: IMPORTED_LEAPS, cycles: IMPORTED_CYCLES, imported: true, ivr: reading('22', 1, 'fresh'), t2: true,
+    q: { stock: 112.0, leapsBid: 22.5, leapsAsk: 23.1, leapsDelta: 0.86, shortBid: 1.3, shortAsk: 1.5 } },
+  { key: 'roll-window-rich', group: 'position', label: 'roll window ◆ · IVR rich', today: '2027-08-13', leaps: IMPORTED_LEAPS, cycles: IMPORTED_CYCLES, imported: true, ivr: IVR_RICH, t2: true,
+    q: { stock: 112.0, leapsBid: 22.5, leapsAsk: 23.1, leapsDelta: 0.86, shortBid: 1.3, shortAsk: 1.5 } },
+  { key: 'leaps-paid-for', group: 'position', label: 'LEAPS paid for', today: '2027-11-08', patch: extendCycles, projected: true, ivr: IVR_RICH,
+    q: { stock: 117.4, leapsBid: 33.1, leapsAsk: 33.7, leapsDelta: 0.86, shortBid: 0.9, shortAsk: 1.0 } },
+  { key: 'three-contracts', group: 'position', label: '3 contracts', today: '2027-08-13', contracts: 3, q: Q_BASE, ivr: IVR_RICH },
+  { key: 'two-shorts', group: 'position', label: 'two shorts ⧉', today: '2027-08-13', contracts: 2, shortContracts: 1, patch: addSecondShort, future: true, ivr: IVR_RICH,
+    q: { stock: 104.2, leapsBid: 24.2, leapsAsk: 24.8, leapsDelta: 0.82, shorts: [{ bid: 0.15, ask: 0.25 }, { bid: 0.95, ask: 1.05 }] } },
+  { key: 'two-shorts-risk', group: 'position', label: 'two shorts · one at risk ⧉ ▲', today: '2027-08-13', contracts: 2, shortContracts: 1, patch: addSecondShort, future: true, ivr: IVR_RICH,
+    q: { stock: 116.5, leapsBid: 32.4, leapsAsk: 33.0, leapsDelta: 0.88, shorts: [{ bid: 1.3, ask: 1.4 }, { bid: 1.9, ask: 2.05 }] } },
+  { key: 'partial-coverage', group: 'position', label: 'partial coverage ⧉', today: '2027-08-13', contracts: 3, shortContracts: 1, future: true, q: Q_BASE, ivr: IVR_RICH },
+  { key: 'closed', group: 'position', label: 'closed', today: '2027-08-24', closedAt: '2027-08-23', closeAll: true, patch: assignCycle9, q: null, ivr: IVR_RICH },
+  { key: 'ivr-rich', group: 'ivr', label: '62 · rich', today: '2027-08-13', q: Q_BASE, ivr: IVR_RICH, t2: true },
+  { key: 'ivr-fair', group: 'ivr', label: '45 · fair', today: '2027-08-13', q: Q_BASE, ivr: reading('45', 1, 'fresh'), t2: true },
+  { key: 'ivr-thin', group: 'ivr', label: '22 · thin', today: '2027-08-13', q: Q_BASE, ivr: reading('22', 1, 'fresh'), t2: true },
+  { key: 'ivr-edge-30', group: 'ivr', label: 'edge 30', today: '2027-08-13', q: Q_BASE, ivr: reading('30', 1, 'fresh'), t2: true },
+  { key: 'ivr-edge-60-1', group: 'ivr', label: 'edge 60.1', today: '2027-08-13', q: Q_BASE, ivr: reading('60.1', 1, 'fresh'), t2: true },
+  { key: 'ivr-aging', group: 'ivr', label: 'aging', today: '2027-08-13', q: Q_BASE, ivr: reading('62', 2, 'aging'), t2: true },
+  { key: 'ivr-stale', group: 'ivr', label: 'stale', today: '2027-08-13', q: Q_BASE, ivr: reading('62', 5, 'stale'), t2: true },
+  { key: 'ivr-expired', group: 'ivr', label: 'expired', today: '2027-08-13', q: Q_BASE, ivr: reading('62', 12, 'expired'), t2: true },
+  { key: 'ivr-predates-earnings', group: 'ivr', label: 'predates earnings', today: '2027-08-13', q: Q_BASE, ivr: reading('62', 1, 'predates_earnings'), t2: true },
+  { key: 'ivr-none', group: 'ivr', label: 'none collected', today: '2027-08-13', q: Q_BASE, ivr: null, t2: true }
+]
+
+export const WHEELS = [
+  { id: 'msft', ticker: 'MSFT', phase: 'CC_OPEN', kind: 'CALL', dte: 10, strike: 430, fill: 2.8, bid: 1.75, ask: 1.85, price: 421.5, contracts: 1, premium: 280, basis: 402.4 },
+  { id: 'aapl', ticker: 'AAPL', phase: 'CSP_OPEN', kind: 'PUT', dte: 30, strike: 180, fill: 3.5, bid: 2.55, ask: 2.65, price: 182.45, contracts: 1, premium: 350, basis: 176.5 },
+  { id: 'nvda', ticker: 'NVDA', phase: 'HOLDING_SHARES', kind: null, dte: null, price: 128.3, contracts: 1, premium: 640, basis: 118.6 }
+]
+
+export const CLOSED_WHEEL = { id: 'tsla', ticker: 'TSLA', phase: 'WHEEL_COMPLETE', kind: null, dte: null, closed: true, premium: 1240, basis: 236.4 }
+
+export function markOf(bid, ask) {
+  const m = mid(bid, ask)
+  return { bid, ask, mid: m, spread: m == null ? null : ask - bid }
+}
+
+export function ivrZone(value) {
+  const v = Number(value)
+  return v < IVR_LOW_MAX ? 'low' : v > IVR_HIGH_MIN ? 'high' : 'mid'
+}
+
+export const ZONE_WORD = { low: 'thin', mid: 'fair', high: 'rich' }
+
+export const ZONE_TONE = { low: 'gold', mid: 'neutral', high: 'green' }
+
+export const TIER_TITLE = { fresh: 'Fresh', aging: 'Aging', stale: 'Stale', expired: 'Expired', predates_earnings: 'Predates earnings' }
+
+export const isUsableIvrState = (s) => s === 'fresh' || s === 'aging'
+
+export const tradingDaysLabel = (n) => `${n} trading ${n === 1 ? 'day' : 'days'}`
+
+export function unusable(ivRank) {
+  if (ivRank === null) return { status: 'n/a', tone: 'muted', text: 'no IV rank collected' }
+  const age = tradingDaysLabel(ivRank.ageTradingDays)
+  if (ivRank.state === 'stale') return { status: 'Stale · —', tone: 'muted', text: `${age} old — collect a fresh reading before acting on it` }
+  if (ivRank.state === 'expired') return { status: 'Expired · —', tone: 'muted', text: `last reading ${age} ago — collection has been failing` }
+  if (ivRank.state === 'predates_earnings') return { status: 'Predates earnings · —', tone: 'muted', text: 'observed before the last print — IV has re-priced since' }
+  return null
+}
+
+export const SHORT_CALL_CONTEXT = [
+  { status: 'RICH · EVENT-DRIVEN', tone: 'gold', test: (i) => i.zone === 'high' && i.earningsBeforeShortExpiry, text: (i) => `IV re-prices after the ${i.nextEarnings} print — don't anchor on it` },
+  { status: 'RICH', tone: 'green', test: (i) => i.zone === 'high' && i.hasShortCall, text: () => 'premium is rich — a roll up-and-out collects more than usual' },
+  { status: 'RICH', tone: 'green', test: (i) => i.zone === 'high', text: () => 'premium is rich — sell the next short call into it' },
+  { status: 'THIN', tone: 'gold', test: (i) => i.zone === 'low' && i.hasShortCall, text: () => 'premium is thin — the next cycle pays less; consider a longer DTE' },
+  { status: 'THIN', tone: 'gold', test: (i) => i.zone === 'low', text: () => 'premium is thin — wait, or go longer DTE, before selling the next short' },
+  { status: 'FAIR', tone: 'neutral', test: () => true, text: () => 'premium is fair — run the usual cycle' }
+]
+
+export const LEAPS_CONTEXT = [
+  { status: 'PRICEY · WINDOW OPEN', tone: 'gold', test: (i) => i.zone === 'high' && i.leapsInRollWindow, text: () => 'the window beats IV — roll on DTE, not on price' },
+  { status: 'PRICEY TO ROLL', tone: 'gold', test: (i) => i.zone === 'high', text: () => 'IV inflates the LEAPS mark and any roll — some of this P&L is vega' },
+  { status: 'ROLL NOW', tone: 'green', test: (i) => i.zone === 'low' && i.leapsInRollWindow, text: () => `cheap time inside the ${ROLL_WINDOW_DTE}-day window — a roll locks in low IV` },
+  { status: 'CHEAP TO ROLL', tone: 'green', test: (i) => i.zone === 'low', text: () => 'extending the LEAPS is cheap while IV is low' },
+  { status: 'FAIR', tone: 'neutral', test: () => true, text: () => 'no IV edge either way on the LEAPS' }
+]
+
+export function resolveContext(registry, input) {
+  const blocked = unusable(input.ivRank)
+  if (blocked) return { ...blocked, rule: 'unusable' }
+  const i = { ...input, zone: ivrZone(input.ivRank.value) }
+  const idx = registry.findIndex((r) => r.test(i))
+  const r = registry[idx]
+  return { status: r.status, tone: r.tone, text: r.text(i), rule: `row ${idx + 1}` }
+}
+
+export function faceZone(ivRank, shortCtx) {
+  // The face word is the zone; its tone is the short-call read, so an event-driven rich reading is gold at a glance.
+  if (ivRank === null) return { word: null, tone: 'muted', zone: 'none' }
+  if (!isUsableIvrState(ivRank.state)) return { word: TIER_TITLE[ivRank.state], tone: 'muted', zone: 'none' }
+  const zone = ivrZone(ivRank.value)
+  return { word: ZONE_WORD[zone], tone: shortCtx ? shortCtx.tone : ZONE_TONE[zone], zone }
+}
+
+export const GLYPHS = [
+  { glyph: '◆', name: 'Roll window', owner: 'US-107', test: (x) => x.inRollWindow, tone: () => 'gold', tip: () => `LEAPS inside the ${ROLL_WINDOW_DTE}-day roll window` },
+  { glyph: '▲', name: 'Assignment risk', owner: 'US-106', test: (x) => x.riskShort != null, tone: (x) => (x.riskShort.itm ? 'red' : 'gold'),
+    tip: (x) => x.riskShort.itm
+      ? `Stock is ${pct(-x.riskShort.pctBelow)} above the short-call strike — in the money, LEAPS would have to cover`
+      : `Stock is ${pct(x.riskShort.pctBelow)} below the short-call strike — approaching assignment` },
+  { glyph: '⚑', name: 'Earnings', owner: 'US-56', test: (x) => x.earningsFlag, tone: () => 'gold', tip: (x) => `Earnings in ${x.daysToEarnings} days before your ${x.nearShort.exp} expiration` },
+  { glyph: '✕', name: 'Below breakeven', owner: 'US-108', test: (x) => x.shorts.some((s) => s.strike < x.breakeven), tone: () => 'red', tip: (x) => `Short strike below breakeven ${money(x.breakeven)} — being called away locks in a loss` },
+  { glyph: 'δ', name: 'Delta floor', owner: 'US-108', test: (x) => x.leaps.delta != null && x.leaps.delta < LEAPS_DELTA_FLOOR, tone: () => 'gold', tip: (x) => `LEAPS delta ${x.leaps.delta.toFixed(2)} below ${LEAPS_DELTA_FLOOR.toFixed(2)} — no longer tracking as synthetic stock` },
+  { glyph: '⚠', name: 'Wide spread', owner: 'US-33', test: (x) => x.leaps.wide, tone: () => 'gold', tip: (x) => `LEAPS spread is ${pct(x.leaps.m.spread / x.leaps.m.mid)} of the mid — the P&L that depends on it is unreliable` }
+]
+
+export const rankActions = (list) => [...list].sort((a, b) => a.rank - b.rank)
+
+export const PMCC_ACTION = {
+  '▲': { rank: (x) => (x.riskShort.itm ? 1 : 2), word: 'ASSIGNMENT RISK', leg: (x) => x.riskShort,
+    reason: (x) => x.riskShort.itm
+      ? `stock ${pct(-x.riskShort.pctBelow)} above the ${money(x.riskShort.strike)} strike · roll or close`
+      : `stock ${pct(x.riskShort.pctBelow)} below the ${money(x.riskShort.strike)} strike · plan the roll` },
+  '✕': { rank: () => 0, word: 'BELOW BREAKEVEN', leg: (x) => x.shorts.find((s) => s.strike < x.breakeven),
+    reason: (x) => {
+      const s = x.shorts.find((l) => l.strike < x.breakeven)
+      return `${money(s.strike)} strike is ${money(x.breakeven - s.strike)} under the ${money(x.breakeven)} breakeven · roll up before it is called`
+    } },
+  '◆': { rank: () => 3, word: 'ROLL WINDOW', leg: (x) => x.leaps,
+    reason: (x) => `LEAPS ${x.leaps.dte}d left, inside the ${ROLL_WINDOW_DTE}-day window · roll while it has time value` }
+}
+
+export function pmccActions(x) {
+  // The action tier, in US-118's lane order (rank): ✕ › ▲ red › ▲ gold › ◆ › EXPIRATION_IMMINENT › MANAGEMENT_WINDOW.
+  // ✕ ▲ ◆ come from the same glyph evaluation the tooltips use; the short-leg queue rules ride on the nearest short (US-106) with the queue's own summary. ⚑ ⚠ δ stay awareness tags.
+  const glyphActs = x.glyphs.filter((g) => PMCC_ACTION[g.glyph]).map((g) => {
+    const a = PMCC_ACTION[g.glyph]
+    return { glyph: g.glyph, word: a.word, tone: g.toneKey, rank: a.rank(x), reason: a.reason(x), leg: a.leg(x), owner: g.owner }
+  })
+  const legActs = x.closed || !x.nearShort ? [] : shortLegRows('XYZ', true, x.nearShort).filter((r) => QUEUE_ACTION[r.code]).map((r) => ({ ...queueAction(r), leg: x.nearShort, owner: 'US-106' }))
+  return rankActions([...glyphActs, ...legActs])
+}
+
+export function deriveCard(preset) {
+  const model = buildModel(preset)
+  const q = preset.q ?? null
+  // A caller's preset may carry a stock price with no option marks, or no stock price at all; marks then read — and ▲ cannot be evaluated.
+  const hasStock = q != null && q.stock != null
+  const closed = model.positionClosed
+  const today = model.today
+  const c = model.contracts
+  const shortC = preset.shortContracts ?? c
+  const cur = model.currentLeaps
+  const leapsMark = markOf(q ? q.leapsBid : null, q ? q.leapsAsk : null)
+  const leaps = {
+    side: 'LONG', tag: 'L', strike: cur.strike, exp: cur.expiration, dte: days(today, cur.expiration), contracts: c,
+    fill: cur.price, delta: q ? q.leapsDelta : null, m: leapsMark,
+    wide: leapsMark.mid != null && leapsMark.spread > WIDE_SPREAD * leapsMark.mid
+  }
+  const shortQuotes = q ? (q.shorts ?? [{ bid: q.shortBid, ask: q.shortAsk }]) : []
+  // A closed card still shows its last short call, dashed — "both mids and both DTEs read —" (US-108).
+  const shortCycles = closed ? model.cycles.slice(-1) : model.openCycles
+  const shorts = shortCycles
+    .map((cy, i) => {
+      const sq = shortQuotes[i] ?? { bid: null, ask: null }
+      const m = markOf(sq.bid, sq.ask)
+      const captured = m.mid != null ? (cy.net - m.mid) / cy.net : null
+      return {
+        side: 'SHORT', tag: 'S', cycle: cy.n, strike: cy.current.strike, exp: cy.current.expiration, dte: days(today, cy.current.expiration),
+        contracts: shortC, fill: cy.net, m, captured,
+        target: captured != null && captured * 100 >= PROFIT_TARGET,
+        pnl: m.mid != null ? (cy.net - m.mid) * 100 * shortC : null,
+        itm: hasStock ? q.stock >= cy.current.strike : false,
+        pctBelow: hasStock ? (cy.current.strike - q.stock) / cy.current.strike : null,
+        extrinsic: m.mid != null && hasStock ? Math.max(0, m.mid - Math.max(0, q.stock - cy.current.strike)) : null
+      }
+    })
+    .sort((a, b) => a.dte - b.dte)
+  const legs = [leaps, ...shorts]
+  const basisTotal = model.basis * 100 * c
+  const creditsTotal = model.credits * 100 * c
+  const recovered = model.leapsCost > 0 ? model.credits / model.leapsCost : null
+  const breakeven = cur.strike + model.basis
+  const marksReady = !closed && legs.every((l) => l.m.mid != null)
+  const gross = marksReady ? legs.reduce((s, l) => s + (l.side === 'SHORT' ? -1 : 1) * l.m.mid * 100 * l.contracts, 0) : null
+  const pnl = marksReady ? gross - basisTotal : null
+  const pnlPct = pnl != null && basisTotal > 0 ? pnl / basisTotal : null
+  const nearShort = shorts[0] ?? null
+  const sortKey = closed ? null : nearShort ? nearShort.dte : leaps.dte
+  const daysToEarnings = preset.earnings ? days(today, preset.earnings) : null
+  const earningsFlag = Boolean(!closed && nearShort && daysToEarnings != null && daysToEarnings >= 0 && daysToEarnings <= EARNINGS_PROXIMITY_MAX_DAYS && daysToEarnings <= nearShort.dte)
+  const inRollWindow = !closed && leaps.dte >= 0 && leaps.dte <= ROLL_WINDOW_DTE
+  const riskShort = closed ? null : (shorts.find((s) => s.pctBelow != null && s.pctBelow * 100 <= ASSIGNMENT_RISK_PCT_BELOW) ?? null)
+  const x = {
+    preset, model, closed, today, contracts: c, shortContracts: shortC, leaps, shorts, legs, basisTotal, creditsTotal, recovered, breakeven,
+    marksReady, gross, pnl, pnlPct, nearShort, sortKey, daysToEarnings, earningsFlag, inRollWindow, riskShort,
+    cycles: model.cycles.length, entryDebit: model.entryDebit,
+    partial: shorts.length > 0 && shorts.reduce((s, l) => s + l.contracts, 0) < c,
+    coveredContracts: shorts.reduce((s, l) => s + l.contracts, 0),
+    state: closed ? 'Closed' : shorts.length ? (shorts.length > 1 ? `LEAPS + ${shorts.length} short calls open` : 'LEAPS + short call open') : 'LEAPS open · no short call'
+  }
+  x.glyphs = closed ? [] : GLYPHS.filter((g) => g.test(x)).map((g) => ({ ...g, toneKey: g.tone(x), text: g.tip(x) }))
+  x.actions = pmccActions(x)
+  x.awareness = x.glyphs.filter((g) => !PMCC_ACTION[g.glyph])
+  const observedAt = preset.ivr ? new Date(ms(today) - preset.ivr.ageTradingDays * DAY + 20 * 3600000).toISOString() : null
+  x.ivRank = preset.ivr ? { ...preset.ivr, observedAt } : null
+  const input = { ivRank: x.ivRank, hasShortCall: shorts.length > 0, leapsInRollWindow: inRollWindow, earningsBeforeShortExpiry: earningsFlag, nextEarnings: preset.earnings ?? null }
+  x.shortCtx = resolveContext(SHORT_CALL_CONTEXT, input)
+  x.leapsCtx = resolveContext(LEAPS_CONTEXT, input)
+  x.face = faceZone(x.ivRank, x.shortCtx)
+  x.ivrInput = input
+  return x
+}
+
+export function deriveWheel(w, today) {
+  const m = w.kind ? markOf(w.bid, w.ask) : markOf(null, null)
+  const pnl = w.kind && m.mid != null ? (w.fill - m.mid) * 100 * w.contracts : null
+  const pctMax = pnl != null ? (w.fill - m.mid) / w.fill : null
+  return {
+    ...w, m, pnl, pctMax,
+    exp: w.dte != null ? addDays(today, w.dte) : null,
+    urgent: w.dte != null && w.dte <= EXPIRING_SOON_DTE,
+    target: pctMax != null && pctMax * 100 >= PROFIT_TARGET,
+    wide: m.mid != null && m.spread > WIDE_SPREAD * m.mid,
+    maxProfit: w.kind ? w.fill * 100 * w.contracts : 0
+  }
+}
+
+export const URGENCY_RANK = { high: 0, medium: 1, low: 2 }
+
+export function shortLegRows(ticker, pmcc, leg) {
+  // The engine's short-leg rules for one leg — shared by the wheel legs and the PMCC short (US-106).
+  const time = leg.dte >= 0 && leg.dte <= EXPIRATION_IMMINENT_MAX_DTE
+    ? [{ ticker, pmcc, urgency: 'high', code: 'EXPIRATION_IMMINENT', summary: `Expires in ${leg.dte} days at ${money(leg.strike)} strike` }]
+    : leg.dte > EXPIRATION_IMMINENT_MAX_DTE && leg.dte <= MANAGEMENT_WINDOW_DTE
+      ? [{ ticker, pmcc, urgency: 'medium', code: 'MANAGEMENT_WINDOW', summary: `${leg.dte} DTE remaining — review for roll or close` }]
+      : []
+  const profit = leg.captured != null && leg.captured * 100 >= PROFIT_TARGET
+    ? [{ ticker, pmcc, urgency: 'low', code: 'PROFIT_TARGET', summary: `${pct(leg.captured)} of max profit captured — consider closing` }]
+    : []
+  return [...time, ...profit]
+}
+
+export function wheelRows(w) {
+  // One wheel's queue rows; the queue and the wheel card's action strip both read these, so the strip mirrors the queue.
+  if (!w.kind) return []
+  const breach = w.phase === 'CC_OPEN' && w.price >= w.strike
+  const near = w.phase === 'CSP_OPEN' && Math.abs((w.strike - w.price) / w.strike) * 100 <= 1
+  return [
+    ...shortLegRows(w.ticker, w.phase, { dte: w.dte, strike: w.strike, captured: w.pctMax }),
+    ...(breach ? [{ ticker: w.ticker, pmcc: w.phase, urgency: 'medium', code: 'COVERED_CALL_BREACH', summary: `Stock is ${pct((w.price - w.strike) / w.strike)} above the ${money(w.strike)} call strike — shares may be called away` }] : []),
+    ...(near ? [{ ticker: w.ticker, pmcc: w.phase, urgency: 'medium', code: 'STRIKE_PROXIMITY', itm: w.price < w.strike, summary: `Stock is ${pct(Math.abs((w.strike - w.price) / w.strike))} ${w.price >= w.strike ? 'above' : 'below'} the ${money(w.strike)} put strike` }] : [])
+  ]
+}
+
+export const QUEUE_ACTION = {
+  STRIKE_PROXIMITY: { glyph: '▲', word: 'STRIKE PROXIMITY', tone: (r) => (r.itm ? 'red' : 'gold'), rank: (r) => (r.itm ? 1 : 2) },
+  COVERED_CALL_BREACH: { glyph: '▲', word: 'CALL BREACHED', tone: () => 'red', rank: () => 1 },
+  EXPIRATION_IMMINENT: { glyph: '◷', word: 'EXPIRING', tone: () => 'gold', rank: () => 4 },
+  MANAGEMENT_WINDOW: { glyph: '◷', word: 'MANAGEMENT WINDOW', tone: () => 'gold', rank: () => 5 }
+}
+
+export function queueAction(r) {
+  const a = QUEUE_ACTION[r.code]
+  return { glyph: a.glyph, word: a.word, tone: a.tone(r), rank: a.rank(r), reason: r.summary }
+}
+
+export function wheelActions(w) {
+  // The wheel card's action tier is its own queue rows minus PROFIT_TARGET, which keeps the TARGET chip; ranks share the PMCC lane order.
+  return rankActions(wheelRows(w).filter((r) => QUEUE_ACTION[r.code]).map(queueAction))
+}
+
+export function queueRows(x, wheels) {
+  // The engine's registry, folded over the same legs the cards read. Short-leg rules ride on the PMCC short (US-106); ✕ and δ live on the card only.
+  const rows = []
+  if (!x.closed) {
+    const s = x.nearShort
+    if (s) {
+      rows.push(...shortLegRows('XYZ', true, s))
+      if (x.riskShort) rows.push({ ticker: 'XYZ', pmcc: true, urgency: 'medium', code: 'PMCC_ASSIGNMENT_RISK', summary: x.riskShort.itm
+        ? `Stock is ${pct(-x.riskShort.pctBelow)} above the ${money(x.riskShort.strike)} short-call strike — in the money, LEAPS would have to cover`
+        : `Stock is ${pct(x.riskShort.pctBelow)} below the ${money(x.riskShort.strike)} short-call strike — approaching assignment` })
+      if (x.earningsFlag) rows.push({ ticker: 'XYZ', pmcc: true, urgency: 'medium', code: 'EARNINGS_PROXIMITY', summary: `Earnings ${x.daysToEarnings === 0 ? 'today' : x.daysToEarnings === 1 ? 'in 1 day' : `in ${x.daysToEarnings} days`} before your ${s.exp} expiration` })
+    }
+    if (x.inRollWindow) rows.push({ ticker: 'XYZ', pmcc: true, urgency: 'medium', code: 'PMCC_LEAPS_ROLL_WINDOW', summary: `LEAPS expires in ${x.leaps.dte} days at ${money(x.leaps.strike)} strike — review for roll or close` })
+  }
+  rows.push(...wheels.flatMap(wheelRows))
+  return rows.sort((a, b) => URGENCY_RANK[a.urgency] - URGENCY_RANK[b.urgency] || a.ticker.localeCompare(b.ticker))
+}
+
+export function tier2Cells(x) {
+  const l = x.leaps
+  const s = x.nearShort
+  const maxIfCalled = s ? (s.strike - l.strike - x.model.basis) * 100 * s.contracts : null
+  return [
+    ['Credits collected', money(x.creditsTotal), `${x.cycles} short-call cycle${x.cycles === 1 ? '' : 's'} · ${pct(x.recovered)} of LEAPS cost`],
+    ['Breakeven', money(x.breakeven), `LEAPS ${money(l.strike)} + basis ${money(x.model.basis)} / share`],
+    ['Max if called', s ? signed(maxIfCalled) : '—', s ? `called away at ${money(s.strike)}` : 'no short call open'],
+    ['LEAPS delta', l.delta == null ? '—' : l.delta.toFixed(2), l.delta == null ? 'no greeks this poll' : l.delta < LEAPS_DELTA_FLOOR ? `below the ${LEAPS_DELTA_FLOOR.toFixed(2)} floor` : 'tracking as synthetic stock'],
+    ['Short extrinsic', s && s.extrinsic != null ? money(s.extrinsic) : '—', s ? (s.itm ? 'ITM — assignment math is live' : 'OTM — all extrinsic') : 'no short call open'],
+    ['LEAPS mark', l.m.mid == null ? '—' : money(l.m.mid), l.m.mid == null ? 'no snapshot this poll' : `${money(l.m.bid)} × ${money(l.m.ask)} · ${pct(l.m.spread / l.m.mid)} wide${l.wide ? ' · P&L unreliable' : ''}`],
+    ['Entry net debit', money(x.entryDebit * 100 * x.contracts), `${money(x.entryDebit)} / share · opened ${x.model.start} · ${days(x.model.start, x.today)}d ago`]
+  ]
+}
+
+export const EYEBROW = 'font-wb-mono text-[9px] font-semibold uppercase tracking-[0.11em] text-wb-text-muted'
+
+export const SUB = 'font-wb-mono text-[10.5px] text-wb-text-muted'
+
+export const OPEN_LINK = 'inline-flex items-center gap-1 rounded border border-wb-border px-2 py-[3px] font-wb-mono text-[10px] font-semibold tracking-[0.08em] text-wb-text-secondary no-underline whitespace-nowrap hover:border-wb-text-muted hover:bg-wb-bg-elevated hover:text-wb-text-primary'
+
+export const TICKER_LINK = 'font-wb-mono text-[15px] font-bold tracking-[0.04em] text-wb-text-primary no-underline hover:underline hover:underline-offset-[3px]'
+
+export const LEG_BASE = 'grid grid-cols-[auto_1fr_auto_auto] items-center gap-[10px] rounded-[7px] border px-[10px] py-2 font-wb-mono text-[11.5px] tabular-nums'
+
+export const LEG_LINE = `${LEG_BASE} border-wb-border-subtle bg-wb-bg-base`
+
+export const LEG_ACT_CLASS = {
+  red: `${LEG_BASE} border-wb-red/30 border-l-[3px] border-l-wb-red bg-wb-red-dim`,
+  gold: `${LEG_BASE} border-wb-gold-border border-l-[3px] border-l-wb-gold bg-wb-gold-dim`
+}
+
+export const STRIP_CLASS = {
+  red: 'border-b border-wb-red/40 bg-wb-red/20',
+  gold: 'border-b border-wb-gold/40 bg-wb-gold/20'
+}
+
+export const CHIP_CLASS = {
+  red: 'border-wb-red/50 text-wb-red',
+  gold: 'border-wb-gold/50 text-wb-gold'
+}
+
+export const EDGE_CLASS = { red: 'border-l-wb-red', gold: 'border-l-wb-gold' }
+
+export const actionText = (a) => `${a.glyph} ${a.word} · ${a.reason}`
+
+export function ActionStrip({ actions }) {
+  // The worst open action state by lane order; any others ride on a +N chip whose tooltip lists them.
+  const [top, ...rest] = actions
+  return (
+    <div data-testid="action-strip" data-tone={top.tone} role="status" className={`flex items-center gap-2 px-[13px] py-[8px] font-wb-mono ${STRIP_CLASS[top.tone]}`}>
+      <span aria-hidden="true" className={`text-[16px] leading-none ${TONE_CLASS[top.tone]}`}>{top.glyph}</span>
+      <span className="min-w-0 text-[11.5px] leading-snug">
+        <span className={`text-[12px] font-bold tracking-[0.12em] ${TONE_CLASS[top.tone]}`}>{top.word}</span>
+        <span className="text-wb-text-primary"> · {top.reason}</span>
+      </span>
+      {rest.length ? (
+        <span title={`Also open:\n${rest.map(actionText).join('\n')}`} className={`ml-auto shrink-0 cursor-help rounded border px-[6px] py-px text-[10px] font-bold ${CHIP_CLASS[rest[0].tone]}`}>
+          +{rest.length}
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
+export function LegMarks({ acts }) {
+  return acts.length ? (
+    <span title={acts.map(actionText).join('\n')} className={`mr-[6px] cursor-help ${TONE_CLASS[acts[0].tone]}`}>
+      {acts.map((a) => a.glyph).join(' ')}
+    </span>
+  ) : null
+}
+
+export const TAG_CLASS = {
+  L: 'text-wb-sky border-wb-sky/40 bg-wb-sky/10',
+  S: 'text-wb-violet border-wb-violet/40 bg-wb-violet-dim',
+  P: 'text-wb-gold border-wb-gold-border bg-wb-gold-dim',
+  C: 'text-wb-violet border-wb-violet/40 bg-wb-violet-dim',
+  '·': 'text-wb-text-muted border-wb-border bg-wb-bg-elevated'
+}
+
+export const TAG_TIP = {
+  L: 'LEAPS — long call, the synthetic stock',
+  S: 'Short call — the income leg',
+  P: 'Cash-secured put',
+  C: 'Covered call',
+  '·': 'No option leg open'
+}
+
+export function LegTag({ tag }) {
+  return (
+    <span title={TAG_TIP[tag]} className={`rounded-[3px] border px-1 py-px font-wb-mono text-[9px] font-bold tracking-[0.08em] ${TAG_CLASS[tag]}`}>
+      {tag}
+    </span>
+  )
+}
+
+export const ACCENT_CLASS = {
+  CSP_OPEN: 'border-l-wb-gold',
+  CC_OPEN: 'border-l-wb-violet',
+  HOLDING_SHARES: 'border-l-wb-sky',
+  WHEEL_COMPLETE: 'border-l-wb-green',
+  PMCC: 'border-l-wb-teal'
+}
+
+export function CardShell({ accent, edge, muted, clickable, onClick, testId, children }) {
+  // edge: an open action state's tone replaces the strategy accent on the left border.
+  return (
+    <div
+      data-testid={testId}
+      data-edge={edge ?? accent}
+      onClick={onClick}
+      className={[
+        'flex flex-col overflow-hidden rounded-[10px] border border-wb-border bg-wb-bg-surface transition-colors',
+        edge ? `border-l-4 ${EDGE_CLASS[edge]}` : `border-l-2 ${ACCENT_CLASS[accent]}`,
+        muted ? 'opacity-50' : 'hover:border-wb-text-muted/60',
+        clickable ? 'cursor-pointer' : ''
+      ].join(' ')}
+    >
+      {children}
+    </div>
+  )
+}
+
+export function CardHead({ children }) {
+  return <div className="flex items-center gap-2 border-b border-wb-border-subtle px-[13px] py-[11px]">{children}</div>
+}
+
+export function PriceBlock({ price, sub }) {
+  return (
+    <span className="text-right">
+      <div className="font-wb-mono text-[12.5px] tabular-nums text-wb-text-primary">{price == null ? '—' : money(price)}</div>
+      <div className={SUB}>{sub}</div>
+    </span>
+  )
+}
+
+export function FootCell({ label, children }) {
+  return (
+    <div className="bg-wb-bg-elevated px-3 py-[9px]">
+      <div className={EYEBROW}>{label}</div>
+      {children}
+    </div>
+  )
+}
+
+export function IvrFace({ x }) {
+  return (
+    <span data-testid="pmcc-ivr-face" data-zone={x.closed ? 'none' : x.face.zone} className="ml-auto flex flex-col items-end gap-[2px] border-r border-wb-border-subtle pr-3 text-right">
+      <span className={EYEBROW}>IVR</span>
+      {x.closed ? (
+        <span className="font-wb-mono text-[12.5px] text-wb-text-muted">—</span>
+      ) : (
+        <span className="font-wb-mono text-[12.5px] font-semibold tabular-nums">
+          <IvrCell ivRank={x.ivRank} />
+        </span>
+      )}
+      {x.closed || x.face.word == null ? null : <span className={`${SUB} ${TONE_CLASS[x.face.tone]}`}>{x.face.word}</span>}
+    </span>
+  )
+}
+
+export function PmccLegLine({ x, leg, acts = [] }) {
+  const goldDte = !x.closed && (leg.side === 'LONG' ? leg.dte <= ROLL_WINDOW_DTE : leg.dte <= EXPIRING_SOON_DTE)
+  const dteTip = leg.side === 'LONG' ? `Roll window — LEAPS inside the ${ROLL_WINDOW_DTE}-day window (US-107)` : `Expiring soon — short call inside ${EXPIRING_SOON_DTE} days`
+  const wide = leg.side === 'LONG' && leg.wide
+  return (
+    <div data-testid="pmcc-leg" data-action={acts.length ? acts[0].tone : undefined} className={acts.length ? LEG_ACT_CLASS[acts[0].tone] : LEG_LINE}>
+      <LegTag tag={leg.tag} />
+      <span className="text-wb-text-primary">
+        <LegMarks acts={acts} />
+        {money(leg.strike)} {leg.side === 'LONG' ? 'LEAPS' : 'call'}
+        {leg.contracts > 1 ? ` ×${leg.contracts}` : ''}
+        <span className={SUB}> · {leg.exp}</span>
+      </span>
+      <span title={goldDte ? dteTip : undefined} className={goldDte ? 'font-semibold text-wb-gold' : 'text-wb-text-secondary'}>
+        {x.closed ? '—' : `${leg.dte}d`}
+      </span>
+      <span className="inline-flex items-center justify-self-end gap-[7px]">
+        <span title={wide ? `Wide spread — ${pct(leg.m.spread / leg.m.mid)} of the mid; the mark is unreliable` : undefined} className={wide ? 'text-wb-gold' : 'text-wb-text-secondary'}>
+          {x.closed ? '—' : leg.m.mid == null ? '— unavail.' : `${money(leg.m.mid)}${wide ? ' ⚠' : ''}`}
+        </span>
+        {leg.side === 'SHORT' ? (
+          x.closed ? (
+            <span className={`${SUB} min-w-[74px] text-right`}>—</span>
+          ) : leg.target ? (
+            <TargetBadge targetReached pnlPercent={(leg.captured * 100).toFixed(1)} maxProfit={(leg.fill * 100 * leg.contracts).toFixed(2)} targetPercent={PROFIT_TARGET} />
+          ) : leg.captured != null ? (
+            <span className={`min-w-[74px] text-right ${leg.pnl > 0 ? 'text-wb-green' : leg.pnl < 0 ? 'text-wb-red' : 'text-wb-text-secondary'}`}>
+              {leg.captured < 0 ? '−' : ''}{pct(Math.abs(leg.captured))} of max
+            </span>
+          ) : (
+            <span className={`${SUB} min-w-[74px] text-right`}>—</span>
+          )
+        ) : (
+          <span className={`${SUB} min-w-[74px] text-right`}>
+            Δ {x.closed || leg.delta == null ? '—' : leg.delta.toFixed(2)} · {money(leg.fill)} debit
+          </span>
+        )}
+      </span>
+    </div>
+  )
+}
+
+export function PmccCard({ x, open, onToggle }) {
+  const pnlTone = x.pnl == null ? 'text-wb-text-muted' : x.pnl > 0 ? 'text-wb-green' : x.pnl < 0 ? 'text-wb-red' : 'text-wb-text-secondary'
+  const stop = (e) => e.stopPropagation()
+  const actions = x.actions
+  const tags = x.awareness
+  return (
+    <CardShell accent="PMCC" edge={actions.length ? actions[0].tone : undefined} muted={x.closed} clickable={!x.closed} onClick={x.closed ? undefined : onToggle} testId={x.closed ? 'position-card-closed' : 'position-card'}>
+      {actions.length ? <ActionStrip actions={actions} /> : null}
+      <CardHead>
+        <a href="#/positions/xyz" onClick={stop} title="Open position detail" className={TICKER_LINK}>XYZ</a>
+        <span title="PMCC — poor man's covered call: a long LEAPS call financing short calls">
+          <Badge color={TEAL}>PMCC</Badge>
+        </span>
+        {tags.length ? (
+          <span className="inline-flex items-center gap-[5px]" data-testid="pmcc-awareness-tags">
+            {tags.map((g) => (
+              <span key={g.glyph} role="img" aria-label={g.name} title={`${g.name} — ${g.text}`} className={`cursor-help text-[11.5px] leading-none ${TONE_CLASS[g.toneKey]}`}>
+                {g.glyph}
+              </span>
+            ))}
+          </span>
+        ) : null}
+        <IvrFace x={x} />
+        <PriceBlock price={x.closed ? null : x.preset.q.stock} sub={x.closed ? 'closed' : `${x.sortKey}d to next decision`} />
+        <a href="#/positions/xyz" onClick={stop} title="Open the position detail page — leg timeline, roll history, cost-basis snapshots" className={OPEN_LINK}>Open ↗</a>
+      </CardHead>
+      <div className="grid gap-[9px] px-[13px] py-[11px]">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <div className={`${EYEBROW} mb-[3px]`}>Net P&L · marked against basis</div>
+            <div className={`font-wb-mono text-2xl font-semibold tabular-nums tracking-[-0.01em] ${pnlTone}`}>
+              {x.pnl == null ? '—' : signed(x.pnl)}
+              {x.leaps.wide && x.pnl != null ? (
+                <span title="Wide spread — the LEAPS spread makes this P&L unreliable" className="ml-1 cursor-help text-[13px] text-wb-gold">⚠</span>
+              ) : null}
+            </div>
+            <div className={`${SUB} ${x.pnlPct != null ? pnlTone : 'text-wb-text-muted'}`}>
+              {x.closed ? 'closed — no live marks' : x.pnl == null ? 'unavailable — a leg has no mark' : x.pnlPct != null ? `${signedPct(x.pnlPct)} of basis` : 'basis not positive'}
+            </div>
+          </div>
+          <span className={`${SUB} text-right`}>
+            {x.state}
+            <br />
+            {x.closed ? `${x.contracts} × 100 sh` : x.partial ? `${x.coveredContracts} of ${x.contracts} covered` : `${x.contracts} × 100 sh`}
+          </span>
+        </div>
+        {x.legs.map((leg) => (
+          <PmccLegLine key={`${leg.side}-${leg.strike}-${leg.exp}`} x={x} leg={leg} acts={actions.filter((a) => a.leg === leg)} />
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-px border-t border-wb-border bg-wb-border">
+        <FootCell label="Cost basis">
+          <div className={`mt-[2px] font-wb-mono text-[13px] tabular-nums ${x.basisTotal <= 0 ? 'text-wb-gold' : 'text-wb-sky'}`}>{money(x.basisTotal)}</div>
+          <div className={`${SUB} ${x.basisTotal <= 0 ? 'text-wb-gold' : ''}`}>{x.basisTotal <= 0 ? 'LEAPS paid for' : `${money(x.model.basis)} / share`}</div>
+        </FootCell>
+        <FootCell label="Credits collected">
+          <div className="mt-[2px] font-wb-mono text-[13px] tabular-nums text-wb-green">{money(x.creditsTotal)}</div>
+          <div className={SUB}>{pct(x.recovered)} of LEAPS cost recovered</div>
+          <div title={`Recovery meter — ${pct(x.recovered)} of the LEAPS cost paid back by short-call credits; gold at 100%`} className="mt-[7px] h-[3px] overflow-hidden rounded-[2px] bg-wb-border">
+            <div className={`h-full ${x.recovered >= 1 ? 'bg-wb-gold' : 'bg-wb-green'}`} style={{ width: `${Math.min(100, x.recovered * 100)}%` }} />
+          </div>
+        </FootCell>
+      </div>
+      {x.closed ? null : (
+        <Fragment>
+          <div
+            role="button"
+            aria-expanded={open}
+            className={`flex items-center justify-between gap-[10px] border-t border-wb-border px-[13px] py-[7px] font-wb-mono text-[9.5px] font-semibold uppercase tracking-[0.1em] transition-colors ${open ? 'text-wb-gold' : 'text-wb-text-muted hover:bg-wb-bg-elevated hover:text-wb-text-secondary'}`}
+          >
+            <span>{open ? 'Hide detail' : 'Detail · breakeven · max if called · Δ · extrinsic · IV'}</span>
+            <span className={`inline-block text-[11px] transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
+          </div>
+          {open ? (
+            <Fragment>
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(168px,1fr))] gap-px border-t border-wb-border bg-wb-border">
+                {tier2Cells(x).map(([k, v, n]) => (
+                  <div key={k} className="flex flex-col gap-[3px] bg-wb-bg-elevated px-3 py-[9px]">
+                    <span className={EYEBROW}>{k}</span>
+                    <span className="font-wb-mono text-xs tabular-nums text-wb-text-primary">{v}</span>
+                    <span className="font-wb-mono text-[10px] leading-[1.45] text-wb-text-muted">{n}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-px bg-wb-border">
+                {[['Short-call IV context', 'pmcc-ivr-context-short', x.shortCtx], ['LEAPS IV context', 'pmcc-ivr-context-leaps', x.leapsCtx]].map(([label, id, ctx]) => (
+                  <div key={id} data-testid={id} data-status={ctx.status} data-tone={ctx.tone} className="flex flex-col gap-[3px] bg-wb-bg-elevated px-3 py-[9px]">
+                    <span className={EYEBROW}>{label}</span>
+                    <span className={`font-wb-mono text-[10.5px] font-bold tracking-[0.09em] ${TONE_CLASS[ctx.tone]}`}>{ctx.status}</span>
+                    <span className="font-wb-mono text-[10px] leading-[1.45] text-wb-text-muted">{ctx.text}</span>
+                  </div>
+                ))}
+              </div>
+            </Fragment>
+          ) : null}
+        </Fragment>
+      )}
+    </CardShell>
+  )
+}
+
+export function WheelCard({ w }) {
+  // The wheel card US-18 supplies: one leg block, the wheel phase badge, "% of max profit" P&L, per-share cost basis.
+  // No awareness tags, no coverage line, no recovery meter, no "of basis" percentage, no Detail bar — the whole card navigates (US-24).
+  // Its own queue action rows ride on the card as an action strip, a tinted leg and an action-tone edge.
+  const closed = Boolean(w.closed)
+  const pnlTone = w.pnl == null ? 'text-wb-text-muted' : w.pnl >= 0 ? 'text-wb-green' : 'text-wb-red'
+  const href = `#/positions/${w.id}`
+  const go = () => {
+    window.location.hash = `/positions/${w.id}`
+  }
+  const actions = closed ? [] : wheelActions(w)
+  return (
+    <CardShell accent={w.phase} edge={actions.length ? actions[0].tone : undefined} muted={closed} clickable={!closed} onClick={closed ? undefined : go} testId={closed ? 'position-card-closed' : 'position-card'}>
+      {actions.length ? <ActionStrip actions={actions} /> : null}
+      <CardHead>
+        <a href={href} className={TICKER_LINK}>{w.ticker}</a>
+        <PhaseBadge phase={w.phase} variant="short" />
+        {!closed && w.target ? (
+          <TargetBadge targetReached pnlPercent={(w.pctMax * 100).toFixed(1)} maxProfit={w.maxProfit.toFixed(2)} targetPercent={PROFIT_TARGET} />
+        ) : null}
+        {!closed && w.urgent ? <ExpiringSoonFlag compact /> : null}
+        <span className="ml-auto" />
+        <PriceBlock price={closed ? null : w.price} sub={closed ? 'closed' : w.dte != null ? `${w.dte}d to expiration` : 'shares held · no option leg'} />
+        <a href={href} title="Open the position detail page" className={OPEN_LINK}>Open ↗</a>
+      </CardHead>
+      <div className="grid gap-[9px] px-[13px] py-[11px]">
+        <div>
+          <div className={`${EYEBROW} mb-[3px]`}>Unrealized P&L</div>
+          <div className={`font-wb-mono text-2xl font-semibold tabular-nums tracking-[-0.01em] ${pnlTone}`}>{closed || w.pnl == null ? '—' : signed(w.pnl)}</div>
+          <div className={`${SUB} ${w.pnl != null && !closed ? pnlTone : ''}`}>
+            {closed ? 'closed — no live marks' : w.pnl == null ? (w.kind ? 'unavailable' : 'no option leg open') : `${signedPct(w.pctMax)} of max profit`}
+          </div>
+        </div>
+        {w.kind ? (
+          <div className={actions.length ? LEG_ACT_CLASS[actions[0].tone] : LEG_LINE}>
+            <LegTag tag={w.kind === 'PUT' ? 'P' : 'C'} />
+            <span className="text-wb-text-primary">
+              <LegMarks acts={actions} />
+              {money(w.strike)} {w.kind === 'PUT' ? 'put' : 'call'}
+              <span className={SUB}> · {w.exp}</span>
+            </span>
+            <span className={w.urgent && !closed ? 'font-semibold text-wb-gold' : 'text-wb-text-secondary'}>{closed ? '—' : `${w.dte}d`}</span>
+            <span className="justify-self-end text-wb-text-secondary">
+              {closed ? '—' : w.m.mid == null ? '— unavailable' : money(w.m.mid)}
+              {!closed && w.wide ? <span title={`Wide spread: ${money(w.m.bid)} × ${money(w.m.ask)} — P&L may be unreliable`} className="ml-1 text-wb-gold">⚠</span> : null}
+              <span className={SUB}> · {money(w.fill)} credit</span>
+            </span>
+          </div>
+        ) : (
+          <div className={LEG_LINE}>
+            <LegTag tag="·" />
+            <span className="text-wb-text-muted">{closed ? 'wheel complete' : 'no option leg open — sell a covered call'}</span>
+            <span className="text-wb-text-muted">—</span>
+            <span className="justify-self-end text-wb-text-muted">—</span>
+          </div>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-px border-t border-wb-border bg-wb-border">
+        <FootCell label="Cost basis">
+          <div className="mt-[2px] font-wb-mono text-[13px] tabular-nums text-wb-sky">{money(w.basis)}</div>
+          <div className={SUB}>/ share</div>
+        </FootCell>
+        <FootCell label="Premium collected">
+          <div className="mt-[2px] font-wb-mono text-[13px] tabular-nums text-wb-green">{money(w.premium)}</div>
+          <div className={SUB}>to date</div>
+        </FootCell>
+      </div>
+    </CardShell>
+  )
+}
+
+export function QueueRow({ row }) {
+  // Mirrors ManagementQueueRow.tsx; a PMCC row carries the PMCC badge where a wheel row shows its phase (US-106).
+  return (
+    <div data-testid="management-queue-row" data-ticker={row.ticker} className="grid grid-cols-[96px_110px_1fr_auto] items-center gap-4 border-t border-wb-border px-4 py-3.5">
+      <div className="flex flex-col gap-1">
+        <span className="text-base font-bold text-wb-text-primary">{row.ticker}</span>
+        <UrgencyPill urgency={row.urgency} />
+      </div>
+      {row.pmcc === true ? (
+        <span>
+          <Badge color={TEAL}>PMCC</Badge>
+        </span>
+      ) : (
+        <PhaseBadge phase={row.pmcc} variant="short" />
+      )}
+      <span className="leading-relaxed text-wb-text-secondary">{row.summary}</span>
+      <div className="flex justify-self-end gap-2">
+        <button type="button" className="rounded-lg border border-wb-gold-border bg-wb-gold-dim px-3.5 py-2.5 font-wb-mono font-bold text-wb-gold">Review position</button>
+        <button type="button" className="rounded-lg border border-wb-red/30 bg-wb-red-dim px-3.5 py-2.5 font-wb-mono font-bold text-wb-red">Dismiss</button>
+      </div>
+    </div>
+  )
+}
+
+export function Queue({ rows }) {
+  return (
+    <SectionCard header="Management Queue">
+      <div className="flex items-center justify-between border-b border-wb-border px-4 py-3.5">
+        <h2 className="m-0 text-lg font-bold text-wb-text-primary">What Needs Attention First</h2>
+        <span className="font-wb-mono text-xs text-wb-text-muted">{rows.length ? `${rows.length} open alerts` : 'All clear'}</span>
+      </div>
+      {rows.length ? (
+        rows.map((row) => <QueueRow key={`${row.ticker}-${row.code}`} row={row} />)
+      ) : (
+        <div className="px-7 py-7 text-center leading-relaxed text-wb-text-secondary">
+          <p className="mb-2 text-wb-text-primary">No positions need attention right now</p>
+          <p className="m-0">All active wheels are outside the management window and below their alert thresholds.</p>
+        </div>
+      )}
+    </SectionCard>
+  )
+}
+
+export function SectionHeader({ title }) {
+  return (
+    <div className="px-[24px] pt-[16px] pb-[8px] font-wb-mono text-xs font-medium uppercase tracking-[0.08em] text-wb-text-muted">
+      {title}
+    </div>
+  )
+}
+
+export function Derivation({ x }) {
+  const l = x.leaps
+  const expr = x.pnl != null
+    ? `${x.legs.map((leg) => `${leg.side === 'SHORT' ? '− ' : ''}${money(leg.m.mid)} × 100 × ${leg.contracts}`).join(' ')} ${x.basisTotal < 0 ? `+ ${money(-x.basisTotal)}` : `− ${money(x.basisTotal)}`}`
+    : x.closed ? 'closed — no live marks' : 'a mark is missing on an open leg'
+  const iv = x.ivRank
+  const rows = [
+    ['Valuation date', 'America/New_York', x.today],
+    ['Ledger', `LEAPS cost ${money(x.model.leapsCost)} − credits ${money(x.model.credits)} · ${x.cycles} cycle${x.cycles === 1 ? '' : 's'}`, `${money(x.model.basis)} / share`],
+    ['LEAPS mid', l.m.mid == null ? 'no snapshot this poll' : `(${money(l.m.bid)} + ${money(l.m.ask)}) ÷ 2 · spread ${pct(l.m.spread / l.m.mid)}${l.wide ? ' · wide' : ''}`, l.m.mid == null ? '—' : money(l.m.mid)],
+    ['Net P&L', expr, x.pnl == null ? '—' : signed(x.pnl)],
+    ['% of basis', x.pnl == null ? '—' : x.pnlPct == null ? 'undefined — basis is not positive' : `${signed(x.pnl)} ÷ ${money(x.basisTotal)}`, x.pnlPct == null ? '—' : signedPct(x.pnlPct)],
+    ...x.shorts.map((s, i) => [`Short ${x.shorts.length > 1 ? `${i + 1} ` : ''}% of max`, s.captured == null ? '—' : `(${money(s.fill)} − ${money(s.m.mid)}) ÷ ${money(s.fill)}`, s.captured == null ? '—' : `${s.captured < 0 ? '−' : ''}${pct(Math.abs(s.captured))}${s.target ? ' · TARGET' : ''}`]),
+    ['Breakeven', `LEAPS ${money(l.strike)} + basis ${money(x.model.basis)}`, money(x.breakeven)],
+    ['Premium recovered', `${money(x.model.credits)} ÷ ${money(x.model.leapsCost)} LEAPS cost`, pct(x.recovered)],
+    ['Sort key', x.closed ? 'closed section' : x.nearShort ? 'nearest open short-call DTE' : 'LEAPS DTE — no short call', x.closed ? '—' : `${x.sortKey}d`],
+    ['Action strip', x.actions.length ? x.actions.map((a) => `${a.glyph} ${a.word} (${a.owner}, ${a.tone}) — ${a.reason}`).join('  ·  ') : x.closed ? 'none — closed' : 'none — no action state open', x.actions.length ? `${x.actions[0].word}${x.actions.length > 1 ? ` +${x.actions.length - 1}` : ''}` : '—'],
+    ['Awareness tags', x.awareness.length ? x.awareness.map((g) => `${g.glyph} ${g.name} (${g.owner}) — ${g.text}`).join('  ·  ') : x.closed ? 'none — closed' : 'none', x.awareness.map((g) => g.glyph).join(' ') || '—'],
+    ['IV rank', iv === null ? 'no row for XYZ' : `${iv.value} · ${TIER_TITLE[iv.state]} · ${tradingDaysLabel(iv.ageTradingDays)} old · usable ${isUsableIvrState(iv.state) ? 'yes' : 'no'}`, x.closed ? '—' : x.face.word == null ? 'n/a · no word' : `${x.face.word} · ${x.face.tone}`],
+    ['Short-call IV context', `SHORT_CALL_CONTEXT · ${x.shortCtx.rule} · short open ${x.ivrInput.hasShortCall ? 'yes' : 'no'} · ⚑ ${x.ivrInput.earningsBeforeShortExpiry ? 'yes' : 'no'}`, x.shortCtx.status],
+    ['LEAPS IV context', `LEAPS_CONTEXT · ${x.leapsCtx.rule} · ◆ ${x.ivrInput.leapsInRollWindow ? 'yes' : 'no'}`, x.leapsCtx.status]
+  ]
+  return (
+    <div className="overflow-hidden rounded-lg border border-wb-border bg-wb-bg-surface">
+      <div className={`border-b border-wb-border px-[14px] py-[10px] font-wb-mono text-[10px] font-semibold uppercase tracking-[0.14em] ${x.preset.future || x.preset.projected ? 'text-wb-gold' : 'text-wb-text-muted'}`}>
+        Derivation · {x.preset.label}{x.preset.future ? ' · not producible by the app yet' : ''}{x.preset.projected ? ' · cycles 10–12 are projected, not in the fixture' : ''}
+      </div>
+      <div className="grid grid-cols-[minmax(150px,200px)_1fr_auto] font-wb-mono text-[11.5px]">
+        {rows.map(([k, e, v], i) => (
+          <Fragment key={i}>
+            <div className="border-t border-wb-border-subtle px-[14px] py-[7px] tracking-[0.04em] text-wb-text-muted">{k}</div>
+            <div className="border-t border-wb-border-subtle px-[14px] py-[7px] text-wb-text-secondary">{e}</div>
+            <div className="border-t border-wb-border-subtle px-[14px] py-[7px] text-right font-semibold tabular-nums text-wb-text-primary">{v}</div>
+          </Fragment>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export const activeCount = (preset, wheels = WHEELS, pmcc = true) => wheels.length + (pmcc && !deriveCard(preset).closed ? 1 : 0)
+
+export function PositionsGrid({ preset, wheels = WHEELS, pmcc = true, open = Boolean(preset.t2), onToggle = () => {} }) {
+  // The Active + Closed card sections; the other Epic 09 mockups import this so the positions list is drawn once.
+  // preset is one of PRESETS or a caller-built object of the same shape (today, leaps, cycles, q, ivr); wheels are raw WHEELS-shaped rows; pmcc=false leaves XYZ out.
+  const x = pmcc ? deriveCard(preset) : null
+  const derived = wheels.map((w) => deriveWheel(w, preset.today))
+  const active = [
+    ...derived.map((w) => ({ key: w.dte, el: <WheelCard key={w.id} w={w} /> })),
+    ...(!x || x.closed ? [] : [{ key: x.sortKey, el: <PmccCard key={`xyz-${preset.key}`} x={x} open={open} onToggle={onToggle} /> }])
+  ].sort((a, b) => (a.key == null) - (b.key == null) || a.key - b.key)
+  const closedCards = [
+    ...(x && x.closed ? [<PmccCard key={`xyz-closed-${preset.key}`} x={x} open={false} onToggle={() => {}} />] : []),
+    <WheelCard key="tsla" w={deriveWheel(CLOSED_WHEEL, preset.today)} />
+  ]
+  return (
+    <>
+      <SectionHeader title="Active" />
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(400px,1fr))] gap-3 px-[24px] pb-[8px]">
+        {active.map((a) => a.el)}
+      </div>
+      <SectionHeader title="Closed" />
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(400px,1fr))] gap-3 px-[24px] pb-[24px]">
+        {closedCards}
+      </div>
+    </>
+  )
+}
+
+export function Mockup() {
+  const [presetKey, setPresetKey] = useState('healthy')
+  const [tier2, setTier2] = useState(undefined)
+  const preset = PRESETS.find((p) => p.key === presetKey)
+  const x = deriveCard(preset)
+  const open = tier2 === undefined ? Boolean(preset.t2) : tier2
+  const wheels = WHEELS.map((w) => deriveWheel(w, preset.today))
+  const rows = queueRows(x, wheels)
+  const pick = (key) => {
+    setPresetKey(key)
+    setTier2(undefined)
+  }
+  return (
+    <div className="flex flex-col gap-4 font-wb-mono text-wb-text-primary">
+      <div className="relative isolate flex flex-col overflow-hidden rounded-lg border border-wb-border bg-wb-bg-base">
+        <PageHeader
+          left={
+            <div className="flex items-center gap-[10px]">
+              <h1 className="m-0 text-sm font-semibold text-wb-text-primary">Active Positions</h1>
+              <Badge>{activeCount(preset)}</Badge>
+            </div>
+          }
+          right={
+            <div className="flex items-center gap-[10px]">
+              <MarketStatusPill state="LIVE" />
+              <a href="#/new" className="wb-hover-opacity flex items-center gap-[6px] rounded-md bg-wb-gold px-[14px] py-[5px] text-xs font-medium tracking-[0.02em] text-wb-bg-base no-underline">
+                + New Wheel
+              </a>
+            </div>
+          }
+        />
+        <div className="mx-[24px] my-[16px]">
+          <Queue rows={rows} />
+        </div>
+        <PositionsGrid preset={preset} open={open} onToggle={() => setTier2(!open)} />
+      </div>
+      <details className="rounded-lg border border-wb-border p-3 text-xs text-wb-text-secondary" open>
+        <summary className="cursor-pointer">Review states · prototype controls</summary>
+        {[['position', 'Position state'], ['ivr', 'IV rank reading on the healthy card']].map(([group, title]) => (
+          <div key={group} className="mt-3">
+            <div className={`${EYEBROW} mb-2`}>{title}</div>
+            <div className="flex flex-wrap gap-2">
+              {PRESETS.filter((p) => p.group === group).map((entry) => (
+                <span key={entry.key} data-preset={entry.key}>
+                  <FormButton label={entry.label} variant={entry.key === presetKey ? 'primary' : 'secondary'} onClick={() => pick(entry.key)} />
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+        <p className="mt-3 mb-0 leading-relaxed text-wb-text-muted">
+          Click the XYZ card or its Detail bar to toggle tier 2; the ticker and Open ↗ go to the detail page. Hover the +N chip, a marked leg, an awareness tag, a leg tag or the IVR numeral for its tooltip. ⧉ marks states the app cannot produce yet.
+        </p>
+      </details>
+      <Derivation x={x} />
+    </div>
+  )
+}
+
+<Mockup />
