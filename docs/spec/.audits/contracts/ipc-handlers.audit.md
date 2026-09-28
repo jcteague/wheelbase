@@ -1,0 +1,96 @@
+---
+page: docs/spec/contracts/ipc-handlers.md
+audited_at: 2026-09-28
+findings: 37
+---
+
+# Audit: docs/spec/contracts/ipc-handlers.md
+
+## Verified (40)
+
+- ✓ Every documented production channel is registered: `positions:*` (`src/main/ipc/positions.ts:54-146`), `market-data:*` (`src/main/ipc/market-data.ts:43-88`), `broker:account` / `broker:activities` (`src/main/ipc/broker.ts:9,16`), `assignments:*` (`src/main/ipc/assignments.ts:16-35`), `alerts:list` / `alerts:dismiss` (`src/main/ipc/alerts.ts:8,12`), `ivr:collect-now` (`src/main/ipc/ivr.ts:8`), all eight `settings:*` (`src/main/ipc/settings.ts:55-147`), `watchlist:snapshot|add|remove` (`src/main/ipc/watchlist.ts:32,38,51`), `screener:*` (`src/main/ipc/screener.ts:29,37,43`); each has a matching preload binding in `src/preload/index.ts:17-87`.
+- ✓ `broker:market-status` removed: no registration in `src/main/ipc/` and no preload binding.
+- ✓ `_test:ivr-fetch-log` / `_test:ivr-set-outcomes` removed (framed as history): no registration; `src/main/ipc/test-ivr.ts` does not exist.
+- ✓ `_test:scheduler-*` channels registered in `src/main/ipc/test-scheduler.ts:46-79`; `_test:scheduler-run-scheduled` calls `scheduler.runNow(jobName, { trigger: 'scheduled' })` (`:55-57`); register returns `{ ok }` / `{ ok: false, errorCode }` (`:59-72`); simulate-wake is a no-op `{ ok: true }` (`:79`).
+- ✓ `_test:iv-*`, `_test:table-exists`, `_test:trading-session-count`, `_test:market-calendar-fetch-count` registered by `registerTestIvHistoryIpc` in `src/main/ipc/test-iv-history.ts:20-82`, shapes match the table (e.g. `iv30-corrupt` sets `engine_version = 0` at `:58-64`).
+- ✓ `NODE_ENV === 'test'` guard present in `src/main/index.ts`, `src/main/ipc/test-scheduler.ts`, `src/main/ipc/test-iv-history.ts`.
+- ✓ `WHEELBASE_FAKE_IV_SERIES` read by `src/main/integrations/fake-market-data.ts`; `WHEELBASE_FAKE_IVR` no longer referenced anywhere; `WHEELBASE_TEST_JOBS` / `seedTestJobsFromEnv` in `src/main/ipc/test-scheduler.ts`; fake clock in `src/main/integrations/fake-clock.ts`.
+- ✓ `handleIpcCall(logLabel, fn)` in `src/main/ipc/utils.ts:18`.
+- ✓ Push events `market-data:stock-quote` / `market-data:stream-error` sent via `webContents.send` (`src/main/ipc/market-data.ts:37,40`); `ivr:snapshot-updated` subscribed in `src/preload/index.ts:90`; `notifyIvrSnapshotUpdated`, `onSettled`, `onCompleted` present in `src/main/index.ts`, `src/main/services/ivr-on-demand.ts`, `src/main/services/ivr-collector.ts`; `useIvrSnapshotUpdates` mounted by `WatchlistPage`.
+- ✓ `registerMarketDataHandlers` returns `{ restartStockQuoteStream }` (`src/main/ipc/market-data.ts:25-28,115-118`); `newStreamState()` used (`:34`).
+- ✓ `market-data:market-status` is one `handleIpcCall` around `getProvider().getMarketStatus()` (`src/main/ipc/market-data.ts:88-93`); `MarketStatus` shape matches (`src/main/integrations/market-data-provider.ts:77-82`); clock URL `/v2/clock` (`src/main/integrations/alpaca-market-data-mappers.ts:281`); `useMarketStatus` polls at 60 s; query key `['market','status']`.
+- ✓ Alpaca endpoints: `v2/stocks/snapshots` with `iex` feed, `v1beta1/options/snapshots` (single + by-underlying) with `indicative` feed, `/v2/options/contracts` (`src/main/integrations/alpaca-market-data-mappers.ts:27-29,50,213,218,230`).
+- ✓ `GetStockQuotesPayloadSchema` = tickers min 1 / max 10 chars, ≤ 50 (`src/main/schemas.ts:382-391`); `SetStockQuoteTickersPayloadSchema` is an alias (`:394`); `IpcStockQuote` shape (`src/main/services/market-data.ts:11-18`).
+- ✓ `GetOptionSnapshotPayloadSchema` `{ underlying, contract }` with OCC regex (`src/main/schemas.ts:402-405`); `market-data:option-chain` returns `nextCursor: null` (`src/main/ipc/market-data.ts:84`).
+- ✓ `positions:list` item fields match `PositionListItem` (`src/main/schemas.ts:157-171`); DTE-ascending sort with null last (`src/main/services/list-positions.ts:91-96`); `activeLegSubquery` in `src/main/services/active-leg-sql.ts`.
+- ✓ `positions:get`: `not_found` / `Position not found` (`src/main/ipc/positions.ts:62-71`); `GET_LEGS_QUERY` selects `roll_chain_id` (`src/main/services/get-position.ts:130-133`), `mapLegRow` surfaces it (`:71`), `activeLeg.rollChainId: null` (`:107`), snapshot history `ORDER BY snapshot_at ASC` (`:144`).
+- ✓ Planned us-13 `rollCount` is indeed not implemented (no `rollCount` in `src/main`).
+- ✓ `registerParsedPositionHandler` used for close-csp, assign-csp, expire-csp, open-cc, close-cc-early, record-call-away, roll-csp, roll-cc, save-alert-overrides (`src/main/ipc/positions.ts:73-153`).
+- ✓ `positions:roll-csp` still enforces strict `newExpiration > current` with `must_be_after_current` (`src/main/core/lifecycle.ts:369-374`) — consistent with "us-13 planned".
+- ✓ `positions:roll-cc`: `must_be_on_or_after_current` (inclusive), `no_change` on `__roll__` (`src/main/core/lifecycle.ts:401-414`); wrong-phase message `No open covered call on this position` (`:33`).
+- ✓ `RollPayloadBaseSchema`, `RollCspPayloadSchema = RollPayloadBaseSchema`, `RollCcPayloadSchema = RollPayloadBaseSchema`, `IsoDateRegex` / `IsoDateMessage`, `RollResultBase` (`src/main/schemas.ts:42-43,328-369`); `calculateRollBasis` in `src/main/core/costbasis.ts`.
+- ✓ Messages `Cost to close must be greater than zero` / `New premium must be greater than zero` (template `src/main/core/lifecycle.ts:43,378-379`); `Strike must be positive` (`:37`).
+- ✓ All other error `code` strings in the page's tables occur in `src/main` (grep of every table row; only `TRANSITION_REJECTED` and `invalid_literal` are absent — see Drift).
+- ✓ `SaveAlertOverridesPayloadSchema` (`positionId` min 1, int 1–99 / 6–45, nullable) (`src/main/schemas.ts:474-488`).
+- ✓ `resolveProfitTarget` and `DEFAULT_PROFIT_TARGET_PERCENT = 50` (`src/main/core/profit-target.ts:4,6`); `DEFAULT_MANAGEMENT_WINDOW_DTE = 21` (`src/main/core/alerts.ts:24`); `getAlertDefaults` / `saveAlertDefaults` and keys `alert_default_profit_target_percent` / `alert_default_management_window_dte` (`src/main/services/alert-defaults.ts:15-16,28,37`).
+- ✓ `settings:get-alert-defaults` / `save-alert-defaults` return `{ defaults }` (`src/main/ipc/settings.ts:141-153`).
+- ✓ `CredentialStatus` fields `marketData`, `alpacaPaper`, `alpacaLive`, `activeBrokerEnv`, masked account numbers (`src/main/services/settings.ts:11-18`); mirrored `IpcCredentialStatus` in `src/preload/index.d.ts:305`; `hasFallbackCredentials`, `loadAlpacaCredentialsFromEnv` exist.
+- ✓ `TestConnectionPayloadSchema` is a plain `z.object` with `vendor: z.literal('alpaca')` (`src/main/schemas.ts:491-496`).
+- ✓ `missing_credentials` / `Alpaca ${environment} credentials are not configured` (`src/main/ipc/settings.ts:123-127`, `src/main/services/settings.ts:256-260`).
+- ✓ Environment-mismatch messages (LIVE/PAPER) in `src/main/integrations/alpaca-broker.ts:101,107`; `WHEELBASE_MOCK_SETTINGS_CONNECTIONS` in `src/main/index.ts:92`; `saveVerifiedAlpacaCredentials` in `src/main/services/save-verified-alpaca-credentials.ts`.
+- ✓ `assignments:list-pending` row shape matches `PendingAssignmentNotification` (`src/main/services/pending-assignments.ts:15-24`); `confirmPending` returns `{ id, phase: 'HOLDING_SHARES', assignedAt }` (`:91,114`); `assignments:dismiss` returns handler-computed `dismissedAt` (`src/main/ipc/assignments.ts:27-32`).
+- ✓ `assignments:run-detection-now` returns `{}` while `src/preload/index.d.ts:761-762` advertises `detected/skipped/durationMs` — tech-debt note is accurate.
+- ✓ `alerts:list` body `handleIpcCall('alerts_list_error', () => ({ items: listManagementQueue(db) }))` (`src/main/ipc/alerts.ts:8-10`); `ManagementQueueItem` in `src/main/schemas.ts:622`; `idx_alerts_status_urgency` in `migrations/009_create_alerts.sql`.
+- ✓ `alerts:dismiss` calls `dismissAlert(db, alertId, new Date().toISOString())` returning `{ alert }` (`src/main/ipc/alerts.ts:12-17`); `AlertError('NOT_FOUND', \`Alert ${alertId} not found\`)`/`('NOT_OPEN', 'Only open alerts can be dismissed')` (`src/main/services/alerts.ts:211,214`); `upsertOpenAlert` exists.
+- ✓ `ivr:collect-now` throws `IVR collection failed before producing a batch summary` on `undefined` and parses `CollectIvrNowBatchSchema` (`src/main/ipc/ivr.ts:10-17`); `skippedReason: z.enum(['market_data_unavailable']).nullable()` (`src/main/schemas.ts:173-177`); `afterClose` / `offsetMinutes: 60` (`src/main/index.ts:268`); `collectIvHistoryBatch` / `collectIvHistory` exist.
+- ✓ `watchlist:add` duplicate → `ValidationError('ticker','duplicate', '<TICKER> is already on the watchlist')` (`src/main/services/watchlist.ts:91`); watchlist order `added_at DESC` (`:30`); `watchlist:remove` returns `{ ticker }` (`src/main/ipc/watchlist.ts:51-56`).
+- ✓ `IpcIvRank` `{ value: string|null, percentile, low, high, observedAt, ageTradingDays, state }` with `'expired'` (`src/preload/index.d.ts:432-440`); `IpcIvRankAbsence` / `IpcIvRankPair` (`:444-455`); absence reasons incl. `insufficient_history { coverage, window, required }` (`src/main/services/iv-rank-lookup.ts:14-15`).
+- ✓ Screener symbols exist: `screenWatchlistCandidates`, `screenTicker`, `rankCandidates`, `assessIvRank`, `readIvRankLookup`, `absenceFor`, `lookupOf`, `readIvMetricsByUnderlying`, `readTradingCalendar`, `usableIvRanks`, `isUsableState`, `getScreeningCriteria`, `saveScreeningCriteria`, `DEFAULT_SCREENING_CRITERIA`, `SaveScreeningCriteriaPayloadSchema`, `inverted_band`, `out_of_range`; `getAssessedIvrByUnderlying` is gone (correctly framed as replaced).
+- ✓ Renderer helpers exist: `IPC_TO_FORM_FIELD` / `mapIpcErrors` in `src/renderer/src/api/positions.ts`, `throwMappedIpcErrors` in `src/renderer/src/api/error.ts:24`, `deriveRunningBasis`, `buildRollTimeline` (`src/renderer/src/lib/rollGroups.ts`), `useAlertDefaults`.
+- ✓ All referenced e2e files (`e2e/polling-scheduler.spec.ts`, `e2e/assignment-detection.spec.ts`, `e2e/ivr-helpers.ts` incl. `collectIvrScheduled`) and ADR / schema links under `../architecture/02-adrs/` and `../schema/tables.md` exist.
+
+## Drift (22)
+
+- ✗ Overview (line 7) says `registerParsedPositionHandler` lives in `src/main/ipc/utils.ts`; it is a private function in `src/main/ipc/positions.ts:35`. `utils.ts` exports only `handleIpcCall` and `IpcFieldError`.
+- ✗ Overview (line 9) and `assignments:confirm` Notes (line 1057): claims a helper `pendingAssignmentErrorResponse(err)` in `src/main/ipc/assignments.ts` builds the top-level-`code` envelope, and that `handleIpcCall` "cannot express a top-level discriminator". No such helper exists; `handleIpcCall` itself produces `{ ok: false, code, errors }` for `PendingAssignmentError` and `AlertError` via `rootCauseEnvelope` (`src/main/ipc/utils.ts:14-16,28-33`). The same false rationale is repeated for `alerts:dismiss` (line ~1210) and in the us-35 history paragraph (line 1471).
+- ✗ `assignments:confirm` Notes (line 1057) say the handler "does its own Zod parse + try/catch". It is Zod parse inside `handleIpcCall` with no local try/catch (`src/main/ipc/assignments.ts:20-25`).
+- ✗ `assignments:confirm` lists `TRANSITION_REJECTED` as a top-level/field code (lines 1043, 1053, error catalogue ~1427, line 1471). `PendingAssignmentError.code` is only `'NOT_PENDING' | 'NOT_FOUND'` (`src/main/services/pending-assignments.ts:7-8`), and the string `TRANSITION_REJECTED` appears nowhere in `src/`. A lifecycle rejection would surface as a `ValidationError` field error (`invalid_phase` etc.), not this code.
+- ✗ `assignments:confirm` / `assignments:dismiss` message columns (lines 1051-1052, 1089-1090) give `Pending assignment not found` / `Pending assignment is no longer pending`; actual messages are `` `Pending assignment ${id} not found` `` / `` `Pending assignment ${id} is not pending` `` (`src/main/services/pending-assignments.ts:96,99,122,130`).
+- ✗ `positions:list` response is documented as `{ ok: true, positions: [...] }` with an `internal_error` row. The handler returns the bare `PositionListItem[]` array, with no envelope and no `handleIpcCall` (`src/main/ipc/positions.ts:54`, `src/main/services/list-positions.ts:63,99`). The catalogue claim that `internal_error` covers "`positions:list`" (line ~1428) is also wrong. The Note (line 69) that treats the channel name as "derived … until confirmed" is stale: the name is confirmed at `positions.ts:54`.
+- ✗ `positions:get` documents an `internal_error` row and implies the standard envelope path. The handler builds the envelope inline without `handleIpcCall` or Zod parsing (`src/main/ipc/positions.ts:62-71`), so an unexpected error is thrown to the renderer rather than mapped to `internal_error`.
+- ✗ `market-data:option-snapshots` is labelled "(superseded)" / "historical" (lines 813-819, 1471), and callers "must migrate". It is still registered (`src/main/ipc/market-data.ts:65-70`), exposed (`src/preload/index.ts:33`), and actively used by `useOptionSnapshots` (`src/renderer/src/hooks/useOptionSnapshots.ts:53-62`, consumed by `PositionDetailPage`) and `usePromotedQuote` (`src/renderer/src/hooks/usePromotedQuote.ts:43`). Its payload is `{ symbols: string[] }` (max 50, each 1–25 chars) (`src/main/schemas.ts:397-399`).
+- ✗ `IpcOptionSnapshot.greeks` is documented with an `iv` member (line ~846). The provider `OptionSnapshot.greeks` has only `delta/gamma/theta/vega`, and IV is a separate optional top-level `impliedVolatility?: string` (`src/main/integrations/market-data-provider.ts:44-50`).
+- ✗ `market-data:option-chain` request documents `strikeFrom?` / `strikeTo?` as `number`. The schema has `z.string().optional()` (`src/main/schemas.ts:413-414`). `limit` is also bounded `int 1–250` (`:415`), which the page does not mention.
+- ✗ `broker:account` response is documented as `{ ok: true, accountInfo: { accountNumber, buyingPower, portfolioValue, cash } }`. The handler returns `{ account }` (`src/main/ipc/broker.ts:10-13`), and `AccountInfo` is `{ buyingPower, portfolioValue, cash, environment, accountNumberMasked }` (`src/main/integrations/broker-provider.ts:21-27`). There is no `accountNumber`.
+- ✗ `broker:activities` request is documented as `{ activityType?, after?, until?, pageSize? }`. The schema is `{ type: string (required, min 1), since?: string (datetime) }` (`src/main/schemas.ts:420-423`).
+- ✗ `positions:close-csp` error table (line 183) gives `Close price must be positive`; actual is `Close price must be greater than zero` (`src/main/core/lifecycle.ts:43,52`).
+- ✗ `positions:open-cc` error table (line 379) gives `Premium per contract must be positive`; actual is `Premium per contract must be greater than zero` (`src/main/core/lifecycle.ts:43,48`).
+- ✗ `positions:roll-cc` `no_change` message (line 657) gives `Roll must change the expiration, strike, or both`; actual is `Roll must change at least one of strike or expiration` (`src/main/core/lifecycle.ts:410-414`). The `must_be_on_or_after_current` message has no `(MMM DD, YYYY)` suffix in main (`src/main/core/lifecycle.ts:405`).
+- ✗ The error catalogue `(zod path)` row says `field` is `path.join('.')`. `handleIpcCall` uses `String(issue.path[0] ?? '__root__')`, only the first path segment (`src/main/ipc/utils.ts:55-60`).
+- ✗ `settings:test-connection` error row gives Zod code `invalid_literal` for `vendor: 'massive'`. The project uses Zod `^4.3.6` (package.json), where a failed `z.literal` reports `invalid_value`. The string `invalid_literal` appears nowhere in `src/`.
+- ✗ `watchlist:add` names its schema `WatchlistAddPayloadSchema` / `WatchlistAddPayload`. No such symbol exists: add and update both parse `WatchlistEntryPayloadSchema` (`src/main/ipc/watchlist.ts:40,47`).
+- ✗ `watchlist:update` is registered (`src/main/ipc/watchlist.ts:45-49`) and exposed (`src/preload/index.ts:78`), but the `watchlist:*` section does not document it.
+- ✗ The `ping` channel is registered (`src/main/ipc/ping.ts:4`) and exposed (`src/preload/index.ts:17`), but it is undocumented. So are the unconditionally-registered `test:trigger-stock-tick`, `test:trigger-stream-error` (`src/main/ipc/market-data.ts:98,109`) and `test:set-position-profit-target` (`src/main/ipc/positions.ts:157`). These also bypass the envelope. Minor: they are test/diagnostic channels.
+- ✗ The `watchlist:*` / `screener:*` intros give registration signatures `registerWatchlistIpc({ db, getProvider, getCurrentDate })` / `registerScreenerIpc({ db, getProvider, getCurrentDate })`. Both now also take a required `runState: IvRunState`, and the watchlist one also takes `ivrOnDemand?` (`src/main/ipc/watchlist.ts:15-27`, `src/main/ipc/screener.ts:13-23`). `screener:results` also passes `{ currentDate, runState }` to `screenWatchlistCandidates` (`src/main/ipc/screener.ts:29-32`), not just `(getProvider, db)` as stated.
+- ✗ `resolveProfitTarget` is attributed to `src/main/core/alerts.ts` (line 64). It is defined in `src/main/core/profit-target.ts:6`.
+
+## Unverifiable (9)
+
+- ? Renderer-side behaviours such as `apiError(502, …)` in the stock-quotes adapter, `StaleDataBanner` / `DELAYED` pill override on stream error, `setQueryData` tick merge, and the renderer returning `[]` on a non-ok `alerts:list`. These are renderer narratives that were not traced line-by-line.
+- ? Detailed per-position-handler request/response bodies for close-csp, expire-csp, assign-csp, open-cc, close-cc-early, expire-cc, record-call-away (`LegRecord` / snapshot field lists) were spot-checked only via error codes. Their full shapes need a human pass against each service's return type.
+- ? "`connect()` failure is logged and the app continues REST-only", and "`streaming_unsupported` is the Alpaca 409 case": behavioural claims in `src/main/services/market-data.ts` / the adapter, not mechanically verified.
+- ? us-121 collector semantics (pending/settle marking, auth-failure abort logging `ivr_collection_skipped_no_market_data`, no closed-day guard). Symbols exist, but the behaviour is covered by the linked ADRs and was not traced.
+- ? Screener `ScoredCandidate` field list, `IpcCandidateEarnings` four-state union, exclusion-code ordering and reason formatting: symbols exist, but full shape and order were not diffed.
+- ? `screener:save-criteria` bounds (0.01–0.99, 1–365, 1–50, 0–100) and the Zod-vs-service `custom` vs `out_of_range` code note. Plausible given `src/main/core/screening-criteria.ts`, but not diffed value-by-value.
+- ? "`useWatchlistSnapshot` has no `refetchInterval` by design", and the `usePendingAssignments` / `useManagementQueue` 30 s intervals: renderer hook config was not checked.
+- ? "`IvrOnDemand.collect` never rejects and marks `pending` synchronously before its first await": behavioural.
+- ? The history narrative in the Driven-by parenthetical (us-2 FastAPI origin, us-8/us-9 snapshot omissions, etc.) is historical prose.
+
+## Missing files (6)
+
+- ✗ `../features/us-5-record-csp-expiration.md` does not exist (actual: `us-5-expire-csp.md`).
+- ✗ `../features/us-6-record-csp-assignment.md` does not exist (actual: `us-6-record-assignment.md`).
+- ✗ `../features/us-9-record-cc-expiration.md` does not exist (actual: `us-9-expire-cc.md`).
+- ✗ `../features/us-10-record-shares-called-away.md` does not exist (actual: `us-10-call-away.md`).
+- ✗ `../features/us-11-wheel-leg-chain-display.md` does not exist (actual: `us-11-leg-history.md`).
+- ✗ `../features/us-13-roll-csp-down-and-out.md` does not exist (actual: `us-13-roll-down-and-out.md`).
