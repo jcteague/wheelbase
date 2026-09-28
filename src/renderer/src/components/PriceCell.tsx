@@ -42,11 +42,10 @@ export function PriceCell({ quote, session, testId }: PriceCellProps): React.JSX
   }
 
   const isClosed = session === 'closed'
-  const displayPrice = isClosed && quote.prevClose !== null ? quote.prevClose : quote.price
 
   return (
     <td data-testid={testId}>
-      <div>{fmtMoney(displayPrice)}</div>
+      <div>{fmtMoney(quote.price)}</div>
       {!isClosed && quote.prevClose !== null && (
         <ChangeLine price={quote.price} prevClose={quote.prevClose} />
       )}

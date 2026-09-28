@@ -85,20 +85,22 @@ describe('PriceCell', () => {
     expect(screen.queryByText(/^[+-]\$/)).toBeNull()
   })
 
-  it('renders prevClose and no change line when session is closed', () => {
+  // prevClose is the session *before* the last one — on a weekend, Thursday's close — so
+  // the last known price is the latest trade, not prevClose.
+  it('renders the latest price, not prevClose, and no change line when session is closed', () => {
     const quote: StockQuote = {
-      price: '182.45',
-      prevClose: '182.00',
-      bid: '182.40',
-      ask: '182.50',
+      price: '516.16',
+      prevClose: '497.59',
+      bid: '516.00',
+      ask: '516.30',
       volume: 0,
       timestamp: ''
     }
 
     renderPriceCell(<PriceCell quote={quote} session="closed" />)
 
-    expect(screen.getByText('$182.00')).toBeInTheDocument()
-    expect(screen.queryByText('$182.45')).toBeNull()
+    expect(screen.getByText('$516.16')).toBeInTheDocument()
+    expect(screen.queryByText('$497.59')).toBeNull()
     expect(screen.queryByText(/^[+-]\$/)).toBeNull()
   })
 })

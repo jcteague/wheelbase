@@ -54,7 +54,8 @@ const QUOTE_TSLA = {
   timestamp: '2026-04-29T15:00:00Z'
 }
 
-// Closed-session fixture: prevClose is the authoritative display price per AC-4
+// Closed-session fixture: price is the last known price per AC-4. prevClose is the session
+// before it (Thursday's close on a weekend), so it must not be what the cell shows.
 const QUOTE_AAPL_CLOSED = {
   price: '182.45',
   bid: '182.40',
@@ -266,8 +267,11 @@ describe('US-32: live underlying price on positions list', () => {
     await seedPositions(page, ['AAPL'])
     await goToPositionsList(page)
 
-    await page.waitForSelector('[data-testid="position-card-AAPL-price"]:has-text("$182.00")')
+    await page.waitForSelector('[data-testid="position-card-AAPL-price"]:has-text("$182.45")')
     await page.waitForSelector('[data-testid="market-status-pill"]:has-text("CLOSED")')
+    expect(
+      await page.locator('[data-testid="position-card-AAPL-price"]:has-text("$182.00")').count()
+    ).toBe(0)
   })
 
   it('AC-5: shows extended hours price with amber EXT indicator during pre/post market', async () => {
