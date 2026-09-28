@@ -8,8 +8,8 @@
 // alone; the queries below are the bench's, not the retired table's.
 //
 // The suite stays offline: put chains come from the FakeMarketDataProvider's
-// OCC-keyed WHEELBASE_MOCK_OPTION_SNAPSHOTS fixtures, IVR rows from the US-44
-// fake-scraper seam, and the market session from FAKE_MARKET_STATUS. Every
+// OCC-keyed WHEELBASE_MOCK_OPTION_SNAPSHOTS fixtures, IV ranks from the US-121 fake
+// IV series (see ivr-helpers.ts), and the market session from FAKE_MARKET_STATUS. Every
 // rendered number the ACs pin is produced by the real US-65 engine over these
 // fixtures — nothing stubs the IPC — so the spec proves the renderer formats what
 // the screener actually emits.
@@ -18,24 +18,20 @@ import { addDays, format, parseISO } from 'date-fns'
 import { getPage, launchElectron, type MarketStatusFixture } from './assignment-helpers'
 import {
   buildIvrLaunchEnv,
-  collectIvrNow,
   FAKE_NOW_DAY,
   fakeNowAt,
-  okOutcome,
   seedWatchlist,
-  setIvrOutcomes,
+  seriesForRank,
+  waitForIvHistory,
+  type FakeIvSeriesFixture,
   type WatchlistConditions
 } from './ivr-helpers'
-import { BASE_DAY, observedSessionsAgo, sessionsBefore } from './trading-day-fixtures'
+import { BASE_DAY, sessionsBefore } from './trading-day-fixtures'
 
 /** Every fixture quote carries the same stamp so `quoteTimestamp` (the newest ranked
  *  strike's timestamp) is deterministic for the stale-caption assertion. Pinned to the
  *  fixture day rather than a fixed date — see FAKE_NOW_DAY. */
 export const QUOTE_TIMESTAMP = fakeNowAt('20:00:02Z')
-
-/** When the fake IVR scrape is recorded as having happened. Display never shows it;
- *  it only has to be a parseable ISO instant for the snapshot row. */
-export const IVR_OBSERVED_AT = fakeNowAt('21:00:00Z')
 
 /** One put strike as the provider would quote it. `mid` is what the engine screens
  *  on (it becomes `mark`), so it is stated rather than derived from bid/ask. */
@@ -267,24 +263,31 @@ function assertIvrTickersCollectible(tickers: string[], fixtureTickers: string[]
 }
 
 /**
- * [US-98] An IV rank to persist. A bare number is collected "just now" — the case every
- * spec that is not about staleness wants. Supplying `observedAt` is how a spec ages a
- * reading: the collector stores the timestamp verbatim, so the freshness engine counts
- * real sessions between it and the clock. See `e2e/trading-day-fixtures.ts`.
+ * [US-98/US-121] An IV rank to persist. A bare number is a series ending at the latest
+ * close — the case every spec that is not about staleness wants. `endingSessionsAgo` is how
+ * a spec ages a reading: the series stops that many sessions before BASE_DAY, so the
+ * freshness engine counts real sessions between its last reading and the clock. See
+ * `seriesForRank` and `e2e/trading-day-fixtures.ts`.
  */
-export type IvrFixture = number | { ivr: number; observedAt: string }
+export type IvrFixture = number | { rank: number; endingSessionsAgo: number }
 
-function ivrOutcomeFor(ticker: string, fixture: IvrFixture): ReturnType<typeof okOutcome> {
-  return typeof fixture === 'number'
-    ? okOutcome(ticker, { ivr: fixture, observedAt: IVR_OBSERVED_AT })
-    : okOutcome(ticker, fixture)
+/** The fake IV series that makes each ticker's collected rank read as its fixture. */
+export function ivSeriesFor(ivr: Record<string, IvrFixture>): FakeIvSeriesFixture {
+  return Object.fromEntries(
+    Object.entries(ivr).map(([ticker, fixture]) => [
+      ticker,
+      typeof fixture === 'number'
+        ? seriesForRank(fixture)
+        : seriesForRank(fixture.rank, { endingSessionsAgo: fixture.endingSessionsAgo })
+    ])
+  )
 }
 
 /**
- * Persist an IVR snapshot per ticker through the real collector. [US-97] The collector
- * targets the union of open positions and the watchlist, and `launchScreener` has
- * already seeded these tickers onto the watchlist — so the bench names are collected
- * with no position in the database at all.
+ * Wait for each ticker's IV history to land. [US-121] There is nothing to trigger: the
+ * series is in the launch env and `watchlist.add` backfills each ticker on its own, so
+ * seeding the watchlist *is* the collection. Waiting here keeps the bench's first fetch
+ * from racing the backfills.
  */
 async function seedIvr(
   page: Page,
@@ -293,22 +296,11 @@ async function seedIvr(
 ): Promise<void> {
   const tickers = Object.keys(ivr)
   assertIvrTickersCollectible(tickers, fixtureTickers)
-  await setIvrOutcomes(
-    page,
-    Object.fromEntries(tickers.map((ticker) => [ticker, ivrOutcomeFor(ticker, ivr[ticker])]))
-  )
-  const batch = await collectIvrNow(page)
-  if (batch.successCount !== tickers.length) {
-    throw new Error(
-      `seedIvr: programmed ${tickers.length} ok outcomes but the collector persisted ` +
-        `${batch.successCount} — batch ${JSON.stringify(batch)}. A run that persists ` +
-        `nothing (e.g. skippedReason "market_closed") must fail here, not three files away.`
-    )
-  }
+  await waitForIvHistory(page, tickers)
 }
 
 /** [US-96] The bench lives on the Watchlist page — there is no `#/screener` any more. */
-async function goToBench(page: Page): Promise<void> {
+export async function goToBench(page: Page): Promise<void> {
   await page.evaluate(() => {
     location.hash = '#/watchlist'
   })
@@ -321,8 +313,13 @@ export type ScreenerLaunchOpts = {
   /** Put chains the fake provider serves; their tickers are the seeded watchlist.
    *  Defaults to the three ranking fixtures. */
   fixtures?: PutFixtureSpec[]
-  /** IV ranks to persist, keyed by ticker. Tickers omitted here render `n/a`. */
+  /** IV ranks to persist, keyed by ticker. Tickers omitted here render `n/a`. Launch waits
+   *  for each one's backfill to land. */
   ivr?: Record<string, IvrFixture>
+  /** [US-121] Extra fake IV series put in the launch env *without* waiting for them to be
+   *  collected — for a scenario in which the backfill is expected to fail (e.g. no
+   *  calendar). Merged under `ivr`'s series. */
+  ivSeries?: FakeIvSeriesFixture
   /** [US-98] The instant the shared fake clock starts at — what the collector treats as
    *  "now" and what the screener ages readings against. Defaults to DEFAULT_FAKE_NOW. */
   fakeNow?: string
@@ -566,14 +563,14 @@ export const BENCH_CONDITIONS: Record<string, WatchlistConditions> = {
  * with no ring rather than borrow another stock's tier.
  */
 export const BENCH_IVR: Record<string, IvrFixture> = {
-  KO: { ivr: 58, observedAt: observedSessionsAgo(0) }, // fresh
-  XLF: { ivr: 46, observedAt: observedSessionsAgo(0) }, // fresh
-  AAPL: { ivr: 34, observedAt: observedSessionsAgo(0) }, // fresh, but below AAPL's trigger
-  MSFT: { ivr: 41, observedAt: observedSessionsAgo(2) }, // aging
-  ORCL: { ivr: 62, observedAt: observedSessionsAgo(2) }, // aging on time, but see ORCL_LAST_PRINT
-  PEP: { ivr: 58, observedAt: observedSessionsAgo(6) }, // stale
-  DIS: { ivr: 47, observedAt: observedSessionsAgo(12) }, // expired
-  AMD: { ivr: 52, observedAt: observedSessionsAgo(0) } // fresh
+  KO: 58, // fresh
+  XLF: 46, // fresh
+  AAPL: 34, // fresh, but below AAPL's trigger
+  MSFT: { rank: 41, endingSessionsAgo: 2 }, // aging
+  ORCL: { rank: 62, endingSessionsAgo: 2 }, // aging on time, but see ORCL_LAST_PRINT
+  PEP: { rank: 58, endingSessionsAgo: 6 }, // stale
+  DIS: { rank: 47, endingSessionsAgo: 12 }, // expired
+  AMD: 52 // fresh
 }
 
 /**
@@ -611,15 +608,16 @@ export const BENCH_QUOTES: Record<string, StockQuoteFixture> = {
 }
 
 function screenerLaunchEnv(dbPath: string, opts: ScreenerLaunchOpts): Record<string, string> {
-  // buildIvrLaunchEnv supplies the shared keys plus the WHEELBASE_FAKE_IVR seam this
-  // suite seeds IV ranks through; only the market-data fixtures are ours.
+  // buildIvrLaunchEnv supplies the shared keys plus the fake IV series this suite seeds
+  // IV ranks through; only the market-data fixtures are ours.
   const fixtures = opts.fixtures ?? RANKED_PUTS
   const env = buildIvrLaunchEnv(dbPath, {
     marketStatus: opts.marketStatus,
     withoutBrokerCredentials: opts.withoutBrokerCredentials,
     marketDataWithoutBroker: opts.marketDataWithoutBroker,
     fakeNow: opts.fakeNow,
-    marketCalendar: opts.marketCalendar
+    marketCalendar: opts.marketCalendar,
+    ivSeries: { ...opts.ivSeries, ...ivSeriesFor(opts.ivr ?? {}) }
   })
   env.WHEELBASE_MOCK_OPTION_SNAPSHOTS = JSON.stringify(buildPutFixtures(fixtures))
   env.WHEELBASE_MOCK_STOCK_QUOTES = JSON.stringify(opts.stockQuotes ?? flatQuotesFor(fixtures))
@@ -651,16 +649,23 @@ export async function launchScreener(
   const app = await launchElectron(screenerLaunchEnv(dbPath, opts))
   const page = await getPage(app)
 
-  await seedWatchlist(page, fixtureTickers, opts.watchlistNotes, opts.conditions)
-  if (opts.ivr) await seedIvr(page, opts.ivr, fixtureTickers)
-  await goToBench(page)
+  // A seeding failure closes the app before rethrowing: the caller never receives it, so
+  // nothing else would, and a stray instance stalls every later launch in the run.
+  try {
+    await seedWatchlist(page, fixtureTickers, opts.watchlistNotes, opts.conditions)
+    if (opts.ivr) await seedIvr(page, opts.ivr, fixtureTickers)
+    await goToBench(page)
+  } catch (err) {
+    await app.close()
+    throw err
+  }
 
   return { app, page }
 }
 
 /**
  * [US-67] Restart against the same database file — the persistence AC. Nothing is
- * re-seeded: the watchlist, IV-rank snapshots, and saved criteria all live in
+ * re-seeded: the watchlist, IV history, and saved criteria all live in
  * `dbPath`, which survives the close because `cleanupDb` is a separate step.
  */
 export async function relaunchScreener(
@@ -865,25 +870,35 @@ export async function detailEarnings(page: Page): Promise<{ text: string; tone: 
 }
 
 /** [US-98] The rendered IV-rank cell on a card: what a trader sees, the state the engine
- *  assigned, the tier its ring draws, and the accessible label carrying the age. */
+ *  assigned, the tier its ring draws, and the accessible label carrying the age.
+ *  [US-121] A card with no reading says why: `state` is `empty` or `pending`, `reason` is
+ *  the absence reason and `title` its hover text. */
 export type IvrCellReading = {
   text: string
   state: string | null
-  /** Null when no ring is drawn — a ticker that was never collected. */
+  /** Null when no ring is drawn — a ticker with no reading. */
   ring: string | null
-  /** Null for a never-collected ticker, which has no reading to describe. */
+  /** Null for a ticker with no reading, which has nothing to describe. */
   label: string | null
+  /** The absence reason (`data-ivr-reason`); null when there is a reading or it is pending. */
+  reason: string | null
+  /** The absence hover text; null when there is a reading. */
+  title: string | null
 }
 
 export async function ivrCell(page: Page, ticker: string): Promise<IvrCellReading> {
   const cell = page.locator(`${benchCard(ticker)} [data-testid="ivr-cell"]`)
   if ((await cell.count()) === 0) {
-    const empty = page.locator(`${benchCard(ticker)} [data-ivr-state="empty"]`)
+    const absent = page.locator(
+      `${benchCard(ticker)} [data-ivr-state="empty"], ${benchCard(ticker)} [data-ivr-state="pending"]`
+    )
     return {
-      text: (await empty.textContent())?.trim() ?? '',
-      state: 'empty',
+      text: (await absent.textContent())?.trim() ?? '',
+      state: await absent.getAttribute('data-ivr-state'),
       ring: null,
-      label: null
+      label: null,
+      reason: await absent.getAttribute('data-ivr-reason'),
+      title: await absent.getAttribute('title')
     }
   }
   const ring = cell.locator('[data-testid="freshness-ring"]')
@@ -891,7 +906,9 @@ export async function ivrCell(page: Page, ticker: string): Promise<IvrCellReadin
     text: (await cell.textContent())?.trim() ?? '',
     state: await cell.getAttribute('data-ivr-state'),
     ring: (await ring.count()) === 0 ? null : await ring.getAttribute('data-state'),
-    label: await cell.getAttribute('aria-label')
+    label: await cell.getAttribute('aria-label'),
+    reason: null,
+    title: null
   }
 }
 
@@ -1100,4 +1117,17 @@ export async function segmentPressed(page: Page, testId: string): Promise<boolea
 export async function criteriaChips(page: Page): Promise<string[]> {
   const spans = await page.locator('[data-testid="screener-criteria-strip"] span').allTextContents()
   return spans.slice(1, -1)
+}
+
+/** Turn the screener's IV-rank floor on at `value` and wait until the re-screen used it. */
+export async function setIvRankFloor(page: Page, value: string): Promise<void> {
+  await openCriteriaSheet(page, 'header')
+  await page.click('[data-testid="iv-rank-floor-on"]')
+  await setCriteriaValues(page, { minIvRank: value })
+  await saveCriteria(page)
+  await waitForCriteriaSheetClosed(page)
+  await page.waitForFunction((expected) => {
+    const strip = document.querySelector('[data-testid="screener-criteria-strip"]')
+    return strip?.textContent?.includes(expected) ?? false
+  }, `IVR ≥ ${value}`)
 }

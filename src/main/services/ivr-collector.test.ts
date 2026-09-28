@@ -1,43 +1,91 @@
+// [US-44/US-100/US-121] The `ivr-collect` batch: every collection target (open positions ∪
+// watchlist) brought up to date through `collectIvHistory`, one ticker's failure isolated from
+// the rest, and the in-memory run state kept in step so the bench can say why a rank is absent.
 import type Database from 'better-sqlite3'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { IVRResult } from '../integrations/barchart-ivr-scraper'
-import type { MarketCalendarDay, MarketDataProvider } from '../integrations/market-data-provider'
-import { logger } from '../logger'
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import type { TradingCalendar } from '../core/trading-calendar'
-import { makeTestDb, seedTradingCalendar, seedWatchlist } from '../test-utils'
-import { readTradingCalendar } from './trading-calendar-store'
+import {
+  FakeMarketDataProvider,
+  dailyBarRequestCount,
+  setFakeIvSeries,
+  type FakeIvSeries
+} from '../integrations/fake-market-data'
+import { MarketDataError } from '../integrations/market-data-provider'
+import { logger } from '../logger'
+import {
+  makeTestDb,
+  makeTradingCalendar,
+  seedIv30Series,
+  seedTradingCalendar,
+  seedWatchlist
+} from '../test-utils'
+import { collectIvHistory } from './iv-history'
+import { createIvRunState } from './iv-run-state'
+import { collectIvHistoryBatch } from './ivr-collector'
 import { removeWatchlistEntry } from './watchlist'
-import { collectIVRSnapshots, collectTicker } from './ivr-collector'
 
 vi.mock('../logger', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
 }))
 
-type TestClock = {
-  now: () => Date
-}
+// The real service runs by default; the spy lets a test pin call order or program an outcome.
+vi.mock('./iv-history', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./iv-history')>()
+  return { ...actual, collectIvHistory: vi.fn(actual.collectIvHistory) }
+})
 
-type FetchIvr = ReturnType<typeof vi.fn<(ticker: string) => Promise<IVRResult>>>
+/** Friday 2026-09-25 17:30 ET — after the close, so Friday is the newest completed session. */
+const FRIDAY_EVENING = new Date('2026-09-25T21:30:00.000Z')
+/** Saturday 2026-09-26 11:00 ET. */
+const SATURDAY = new Date('2026-09-26T15:00:00.000Z')
+/** Thanksgiving 2026-11-26 (a closure) at 17:30 ET; Wednesday is the newest completed session. */
+const THANKSGIVING_EVENING = new Date('2026-11-26T22:30:00.000Z')
 
-function makeClock(now = '2026-05-29T21:30:00.000Z'): TestClock {
-  return {
-    now: () => new Date(now)
-  }
-}
+const CALENDAR_FIRST_DAY = '2025-06-01'
+const CALENDAR_LAST_DAY = '2027-12-31'
+const CLOSURES = ['2026-11-26']
+const CALENDAR = makeTradingCalendar(CALENDAR_FIRST_DAY, CALENDAR_LAST_DAY, { closures: CLOSURES })
 
-/** A DB whose exchange calendar is already cached for 2026 — the state a scheduled run
- *  normally finds, since the previous run refreshed it. Anything outside 2026 is
- *  deliberately uncovered, which is how the coverage-gap case is exercised. */
+/** A DB whose exchange calendar is cached far enough back and ahead that no refresh is due —
+ *  the state a scheduled run normally finds. */
 function makeCollectorDb(): Database.Database {
   const db = makeTestDb()
-  seedTradingCalendar(db, '2026-01-01', '2026-12-31', { closures: ['2026-11-26'] })
+  seedTradingCalendar(db, CALENDAR_FIRST_DAY, CALENDAR_LAST_DAY, { closures: CLOSURES })
   return db
 }
 
-function calendarProvider(
-  days: MarketCalendarDay[]
-): Pick<MarketDataProvider, 'getMarketCalendar'> {
-  return { getMarketCalendar: vi.fn().mockResolvedValue(days) }
+/** The 253 sessions (window + anchor) a run at `now` requires. */
+function requiredSessions(calendar: TradingCalendar, now: Date): string[] {
+  return calendar.sessions
+    .filter((session) => new Date(session.closeAt) <= now)
+    .map((session) => session.date)
+    .slice(-253)
+}
+
+/** Seeds every required session except the newest `missing`, and programs the fake to serve
+ *  bars for exactly those — so a run collects only a handful of sessions. */
+function seedAllBut(
+  db: Database.Database,
+  ticker: string,
+  missing: number,
+  now = FRIDAY_EVENING
+): { sessions: string[] } {
+  const required = requiredSessions(CALENDAR, now)
+  const seeded = required.slice(0, required.length - missing)
+  seedIv30Series(
+    db,
+    ticker,
+    seeded.map((session) => [session, '0.2500'])
+  )
+  return { sessions: required.slice(required.length - missing) }
+}
+
+function series(sessions: string[], extra: Partial<FakeIvSeries> = {}): FakeIvSeries {
+  return {
+    price: 100,
+    sessions: Object.fromEntries(sessions.map((session) => [session, 0.26])),
+    ...extra
+  }
 }
 
 function insertPosition(
@@ -65,195 +113,300 @@ function insertWatchlistTickerRaw(db: Database.Database, ticker: string): void {
   )
 }
 
-function listSnapshots(db: Database.Database): Array<Record<string, unknown>> {
-  return db
-    .prepare(
-      `SELECT underlying, observed_at, ivr, ivp, iv30, source
-       FROM ivr_snapshot
-       ORDER BY underlying, observed_at`
-    )
-    .all() as Array<Record<string, unknown>>
+function readingCount(db: Database.Database, ticker: string): number {
+  const row = db
+    .prepare('SELECT COUNT(*) AS count FROM iv30_reading WHERE underlying = ?')
+    .get(ticker) as { count: number }
+  return row.count
 }
 
-const NOT_AVAILABLE_RESULT: IVRResult = {
-  status: 'not_available',
-  error: { code: 'TICKER_NOT_COVERED', message: 'missing' }
+function collectedTickers(): string[] {
+  return vi.mocked(collectIvHistory).mock.calls.map(([input]) => input.ticker)
 }
 
-function okResult(
-  ticker: string,
-  overrides: { ivr?: number; ivp?: number; iv30?: number; observedAt?: string } = {}
-): Extract<IVRResult, { status: 'ok' }> {
-  return {
-    status: 'ok',
-    data: {
-      ticker,
-      ivr: 40.0,
-      observedAt: '2026-05-29T21:05:00.000Z',
-      source: 'barchart',
-      ...overrides
-    }
-  }
-}
-
-/** Run the collector with the defaults every test shares — a regular-session broker
- *  and a fixed clock — varying only what the scenario is about. */
 function runCollector(
   db: Database.Database,
-  fetchIvr: FetchIvr,
   opts: {
-    clock?: TestClock
+    now?: Date
     signal?: AbortSignal
-    trigger?: 'scheduled' | 'explicit'
+    provider?: FakeMarketDataProvider
+    runState?: ReturnType<typeof createIvRunState>
+    onCompleted?: () => void
   } = {}
-): ReturnType<typeof collectIVRSnapshots> {
-  return collectIVRSnapshots({
+): ReturnType<typeof collectIvHistoryBatch> {
+  const now = opts.now ?? FRIDAY_EVENING
+  return collectIvHistoryBatch({
     db,
     logger,
-    fetchIvr,
-    clock: opts.clock ?? makeClock(),
+    clock: { now: () => now },
+    marketDataProvider: opts.provider ?? new FakeMarketDataProvider(),
+    runState: opts.runState ?? createIvRunState(),
     signal: opts.signal,
-    trigger: opts.trigger
+    onCompleted: opts.onCompleted
   })
 }
 
-describe('collectIVRSnapshots', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
+beforeEach(() => {
+  vi.clearAllMocks()
+  setFakeIvSeries({})
+})
 
-  it('returns early and logs skip for a weekend without broker market status', async () => {
+describe('collectIvHistoryBatch — outcomes', () => {
+  it('isolates a network_error on the second of three tickers and persists the other two', async () => {
     const db = makeCollectorDb()
-    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>()
-
-    const result = await runCollector(db, fetchIvr, {
-      clock: makeClock('2026-05-30T15:00:00.000Z'),
-      trigger: 'scheduled'
+    seedWatchlist(db, ['AAPL', 'KO', 'MSFT'])
+    const aapl = seedAllBut(db, 'AAPL', 2)
+    const ko = seedAllBut(db, 'KO', 2)
+    const msft = seedAllBut(db, 'MSFT', 2)
+    setFakeIvSeries({
+      AAPL: series(aapl.sessions),
+      KO: series(ko.sessions, { failWith: 'network_error' }),
+      MSFT: series(msft.sessions)
     })
 
-    expect(fetchIvr).not.toHaveBeenCalled()
+    const result = await runCollector(db)
+
+    expect(result).toEqual({ successCount: 2, errorCount: 1, skippedCount: 0, skippedReason: null })
+    expect(readingCount(db, 'AAPL')).toBe(253)
+    expect(readingCount(db, 'MSFT')).toBe(253)
+    expect(readingCount(db, 'KO')).toBe(251)
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      expect.objectContaining({ ticker: 'KO', err: expect.any(MarketDataError) }),
+      expect.any(String)
+    )
+  })
+
+  it('skips the run as market_data_unavailable when the first ticker reports no_market_data', async () => {
+    const db = makeCollectorDb()
+    seedWatchlist(db, ['AAPL', 'KO', 'MSFT'])
+    seedAllBut(db, 'AAPL', 2)
+    const provider = new FakeMarketDataProvider()
+    vi.spyOn(provider, 'getStockDailyBars').mockRejectedValue(
+      new MarketDataError('auth_failed', 'no market-data credentials')
+    )
+    const runState = createIvRunState()
+
+    const result = await runCollector(db, { provider, runState })
+
     expect(result).toEqual({
       successCount: 0,
       errorCount: 0,
       skippedCount: 0,
-      skippedReason: 'market_closed'
+      skippedReason: 'market_data_unavailable'
     })
-    expect(vi.mocked(logger.info)).toHaveBeenCalled()
+    expect(collectedTickers()).toEqual(['AAPL'])
+    expect(
+      vi
+        .mocked(logger.info)
+        .mock.calls.filter(([, msg]) => msg === 'ivr_collection_skipped_no_market_data')
+    ).toHaveLength(1)
+    expect(['AAPL', 'KO', 'MSFT'].map((ticker) => runState.get(ticker))).toEqual([
+      'no_market_data',
+      'no_market_data',
+      'no_market_data'
+    ])
   })
 
-  it('continues collecting on a normal weekday without broker market status', async () => {
-    const db = makeCollectorDb()
-    seedWatchlist(db, ['KO'])
-    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
+  it('skips the run as market_data_unavailable when a fresh install cannot fetch the calendar for want of credentials', async () => {
+    // No cached calendar: without credentials the calendar fetch is the first call to fail.
+    const db = makeTestDb()
+    seedWatchlist(db, ['AAPL', 'KO'])
+    const provider = new FakeMarketDataProvider()
+    vi.spyOn(provider, 'getMarketCalendar').mockRejectedValue(
+      new MarketDataError('auth_failed', 'no market-data credentials')
+    )
+    const runState = createIvRunState()
+    const onCompleted = vi.fn()
 
-    const result = await runCollector(db, fetchIvr)
+    const result = await runCollector(db, { provider, runState, onCompleted })
 
-    expect(fetchIvr).toHaveBeenCalledWith('KO')
-    expect(result.successCount).toBe(1)
+    expect(result).toEqual({
+      successCount: 0,
+      errorCount: 0,
+      skippedCount: 0,
+      skippedReason: 'market_data_unavailable'
+    })
+    expect(collectIvHistory).not.toHaveBeenCalled()
+    expect(['AAPL', 'KO'].map((ticker) => runState.get(ticker))).toEqual([
+      'no_market_data',
+      'no_market_data'
+    ])
+    expect(onCompleted).toHaveBeenCalledOnce()
   })
 
-  it('skips a recognised weekday holiday without making Barchart calls', async () => {
+  it('counts a ticker whose series is already complete as skipped (up to date)', async () => {
     const db = makeCollectorDb()
     seedWatchlist(db, ['KO'])
-    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
+    seedAllBut(db, 'KO', 0)
 
-    const result = await runCollector(db, fetchIvr, {
-      clock: makeClock('2026-11-26T19:00:00.000Z'),
-      trigger: 'scheduled'
-    })
+    const result = await runCollector(db)
 
-    expect(fetchIvr).not.toHaveBeenCalled()
-    expect(result.skippedReason).toBe('market_closed')
+    expect(result).toEqual({ successCount: 0, errorCount: 0, skippedCount: 1, skippedReason: null })
+    expect(dailyBarRequestCount()).toBe(0)
   })
 
-  it('logs unknown calendar coverage and continues best effort', async () => {
+  it('makes no bar request on a Saturday when every series is complete through Friday', async () => {
+    const db = makeCollectorDb()
+    seedWatchlist(db, ['AAPL', 'KO'])
+    seedAllBut(db, 'AAPL', 0, SATURDAY)
+    seedAllBut(db, 'KO', 0, SATURDAY)
+
+    const result = await runCollector(db, { now: SATURDAY })
+
+    expect(result).toEqual({ successCount: 0, errorCount: 0, skippedCount: 2, skippedReason: null })
+    expect(dailyBarRequestCount()).toBe(0)
+  })
+
+  it('makes no bar request on a recognised holiday when every series is complete', async () => {
     const db = makeCollectorDb()
     seedWatchlist(db, ['KO'])
-    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
+    seedAllBut(db, 'KO', 0, THANKSGIVING_EVENING)
 
-    const result = await runCollector(db, fetchIvr, {
-      clock: makeClock('2029-01-02T15:00:00.000Z')
-    })
+    const result = await runCollector(db, { now: THANKSGIVING_EVENING })
 
-    expect(fetchIvr).toHaveBeenCalledWith('KO')
-    expect(result.successCount).toBe(1)
+    expect(result).toEqual({ successCount: 0, errorCount: 0, skippedCount: 1, skippedReason: null })
+    expect(dailyBarRequestCount()).toBe(0)
+  })
+
+  it('isolates an unexpected throw from one ticker as a failed ticker and continues', async () => {
+    const db = makeCollectorDb()
+    seedWatchlist(db, ['AAPL', 'KO'])
+    seedAllBut(db, 'KO', 0)
+    vi.mocked(collectIvHistory).mockRejectedValueOnce(new Error('engine blew up'))
+
+    const result = await runCollector(db)
+
+    expect(result).toEqual({ successCount: 0, errorCount: 1, skippedCount: 1, skippedReason: null })
     expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
-      { etDate: '2029-01-02' },
-      expect.stringContaining('calendar coverage unavailable')
+      expect.objectContaining({ ticker: 'AAPL', err: expect.any(Error) }),
+      expect.any(String)
     )
   })
 
-  it('refreshes the cached calendar from the market-data provider before reading it', async () => {
-    const db = makeTestDb()
-    seedWatchlist(db, ['KO'])
-    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
-    const marketDataProvider = calendarProvider([{ date: '2026-05-29', close: '16:00' }])
+  it('rethrows a DB failure instead of downgrading a systemic fault to a per-ticker error', async () => {
+    const db = makeCollectorDb()
+    seedWatchlist(db, ['AAPL', 'KO'])
+    db.exec('DROP TABLE iv30_reading')
 
-    // No calendar cached at all, so without the refresh the run could not tell that
-    // 2026-05-29 was a trading day.
-    const result = await collectIVRSnapshots({
-      db,
-      logger,
-      fetchIvr,
-      clock: makeClock(),
-      marketDataProvider
-    })
-
-    expect(marketDataProvider.getMarketCalendar).toHaveBeenCalled()
-    expect(result.skippedReason).toBeNull()
-    expect(fetchIvr).toHaveBeenCalledWith('KO')
+    await expect(runCollector(db)).rejects.toThrow(/iv30_reading/)
+    expect(collectedTickers()).toEqual(['AAPL'])
   })
 
-  it('still collects on the cached calendar when the calendar fetch fails', async () => {
+  it('accepts no trigger argument', () => {
+    type Input = Parameters<typeof collectIvHistoryBatch>[0]
+    expectTypeOf<Input>().not.toHaveProperty('trigger')
+    expectTypeOf<Input>().not.toHaveProperty('fetchIvr')
+  })
+})
+
+describe('collectIvHistoryBatch — run state', () => {
+  it('marks each ticker pending before its turn and settles it after', async () => {
     const db = makeCollectorDb()
     seedWatchlist(db, ['KO'])
-    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
-    const marketDataProvider = calendarProvider([])
-    vi.mocked(marketDataProvider.getMarketCalendar).mockRejectedValue(new Error('network error'))
+    seedAllBut(db, 'KO', 0)
+    const runState = createIvRunState()
+    const markPending = vi.spyOn(runState, 'markPending')
+    const settle = vi.spyOn(runState, 'settle')
 
-    const result = await collectIVRSnapshots({
-      db,
-      logger,
-      fetchIvr,
-      clock: makeClock(),
-      marketDataProvider
-    })
+    await runCollector(db, { runState })
 
-    expect(result.successCount).toBe(1)
+    const collectOrder = vi.mocked(collectIvHistory).mock.invocationCallOrder[0]
+    expect(markPending).toHaveBeenCalledWith('KO')
+    expect(settle).toHaveBeenCalledWith('KO', { status: 'up_to_date' })
+    expect(markPending.mock.invocationCallOrder[0]).toBeLessThan(collectOrder)
+    expect(settle.mock.invocationCallOrder[0]).toBeGreaterThan(collectOrder)
   })
 
-  // [US-116] The calendar is a market fact now, so the collector takes the market-data
-  // provider — and still refreshes on its own weekly schedule.
-  it('reads the existing cache and fetches nothing when no provider is supplied', async () => {
+  it('leaves a failed ticker reading failed and clears the collected and up-to-date ones', async () => {
     const db = makeCollectorDb()
-    seedWatchlist(db, ['KO'])
-    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
-
-    const result = await collectIVRSnapshots({ db, logger, fetchIvr, clock: makeClock() })
-
-    expect(result.successCount).toBe(1)
-    expect(result.skippedReason).toBeNull()
-  })
-
-  it('refreshes the calendar on a run eight days after the last fetch', async () => {
-    // Coverage stops well inside the 400-day lookahead, so the weekly throttle is due.
-    const db = makeTestDb()
-    seedTradingCalendar(db, '2026-01-01', '2027-06-20')
-    seedWatchlist(db, ['KO'])
-    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
-    const marketDataProvider = calendarProvider([{ date: '2026-05-29', close: '16:00' }])
-
-    await collectIVRSnapshots({
-      db,
-      logger,
-      fetchIvr,
-      clock: makeClock(),
-      marketDataProvider
+    seedWatchlist(db, ['AAPL', 'KO', 'MSFT'])
+    const aapl = seedAllBut(db, 'AAPL', 1)
+    const ko = seedAllBut(db, 'KO', 1)
+    seedAllBut(db, 'MSFT', 0)
+    setFakeIvSeries({
+      AAPL: series(aapl.sessions),
+      KO: series(ko.sessions, { failWith: 'network_error' })
     })
+    const runState = createIvRunState()
 
-    expect(marketDataProvider.getMarketCalendar).toHaveBeenCalled()
+    await runCollector(db, { runState })
+
+    expect(runState.get('AAPL')).toBeUndefined()
+    expect(runState.get('KO')).toBe('failed')
+    expect(runState.get('MSFT')).toBeUndefined()
+    expect(vi.mocked(logger.debug)).toHaveBeenCalledWith(
+      { ticker: 'KO', status: 'failed' },
+      'iv_run_state_settled'
+    )
+  })
+})
+
+describe('collectIvHistoryBatch — completion notification', () => {
+  // The bench does not poll, so a run tells it to refetch — once. Each refetch re-runs the
+  // screener (a chain pull per ticker), so a push per ticker would stampede the rate limit
+  // the batch's own bar requests share.
+  it('notifies once, after every ticker has settled', async () => {
+    const db = makeCollectorDb()
+    seedWatchlist(db, ['AAPL', 'KO', 'MSFT'])
+    const aapl = seedAllBut(db, 'AAPL', 1)
+    const ko = seedAllBut(db, 'KO', 1)
+    seedAllBut(db, 'MSFT', 0)
+    setFakeIvSeries({
+      AAPL: series(aapl.sessions),
+      KO: series(ko.sessions, { failWith: 'network_error' })
+    })
+    const runState = createIvRunState()
+    const statesAtNotify: Array<Array<string | undefined>> = []
+    const onCompleted = vi.fn(() =>
+      statesAtNotify.push(['AAPL', 'KO', 'MSFT'].map((ticker) => runState.get(ticker)))
+    )
+
+    await runCollector(db, { runState, onCompleted })
+
+    expect(statesAtNotify).toEqual([[undefined, 'failed', undefined]])
   })
 
+  it('notifies once when a ticker reports no market data and the run stops', async () => {
+    const db = makeCollectorDb()
+    seedWatchlist(db, ['AAPL', 'KO', 'MSFT'])
+    seedAllBut(db, 'AAPL', 2)
+    const provider = new FakeMarketDataProvider()
+    vi.spyOn(provider, 'getStockDailyBars').mockRejectedValue(
+      new MarketDataError('auth_failed', 'no market-data credentials')
+    )
+    const onCompleted = vi.fn()
+
+    await runCollector(db, { provider, onCompleted })
+
+    expect(onCompleted).toHaveBeenCalledOnce()
+  })
+
+  it('notifies once when the run is aborted between tickers', async () => {
+    const db = makeCollectorDb()
+    seedWatchlist(db, ['AAPL', 'KO'])
+    const controller = new AbortController()
+    controller.abort()
+    const onCompleted = vi.fn()
+
+    await runCollector(db, { signal: controller.signal, onCompleted })
+
+    expect(onCompleted).toHaveBeenCalledOnce()
+  })
+
+  it('still notifies when a systemic DB failure is rethrown', async () => {
+    const db = makeCollectorDb()
+    seedWatchlist(db, ['AAPL'])
+    seedAllBut(db, 'AAPL', 1)
+    db.exec('DROP TABLE iv30_reading')
+    const onCompleted = vi.fn()
+
+    await expect(runCollector(db, { onCompleted })).rejects.toThrow()
+
+    expect(onCompleted).toHaveBeenCalledOnce()
+  })
+})
+
+describe('collectIvHistoryBatch — targets', () => {
   it('collects the union of open-position and watchlist tickers, distinct and sorted', async () => {
     const db = makeCollectorDb()
     insertPosition(db, { id: 'pos-spy-1', ticker: 'SPY' })
@@ -263,592 +416,96 @@ describe('collectIVRSnapshots', () => {
     seedWatchlist(db, ['KO', 'XYZ'])
     insertWatchlistTickerRaw(db, 'aapl')
 
-    const fetchIvr = vi
-      .fn<(_: string) => Promise<IVRResult>>()
-      .mockResolvedValue(NOT_AVAILABLE_RESULT)
+    await runCollector(db)
 
-    await runCollector(db, fetchIvr)
-
-    expect(fetchIvr.mock.calls.map(([ticker]) => ticker)).toEqual(['AAPL', 'KO', 'SPY', 'XYZ'])
+    expect(collectedTickers()).toEqual(['AAPL', 'KO', 'SPY', 'XYZ'])
   })
 
   it('collects a watchlist ticker whose only position is CLOSED, and never a closed ticker off the watchlist', async () => {
     const db = makeCollectorDb()
     insertPosition(db, { id: 'pos-ko-closed', ticker: 'KO', status: 'CLOSED' })
     seedWatchlist(db, ['KO'])
-    // The discriminating row: CLOSED and NOT watchlisted. A plain
-    // `positions UNION watchlist` (without the status filter) would collect it.
     insertPosition(db, { id: 'pos-tsla-closed', ticker: 'TSLA', status: 'CLOSED' })
 
-    const fetchIvr = vi
-      .fn<(_: string) => Promise<IVRResult>>()
-      .mockResolvedValue(NOT_AVAILABLE_RESULT)
+    await runCollector(db)
 
-    await runCollector(db, fetchIvr)
-
-    expect(fetchIvr.mock.calls.map(([ticker]) => ticker)).toEqual(['KO'])
+    expect(collectedTickers()).toEqual(['KO'])
   })
 
-  it('fetches a ticker that is both held and watchlisted exactly once and writes one row', async () => {
-    const db = makeCollectorDb()
-    insertPosition(db, { id: 'pos-aapl', ticker: 'AAPL' })
-    seedWatchlist(db, ['AAPL'])
-
-    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('AAPL'))
-
-    const result = await runCollector(db, fetchIvr)
-
-    expect(fetchIvr).toHaveBeenCalledTimes(1)
-    expect(fetchIvr).toHaveBeenCalledWith('AAPL')
-    expect(result.successCount).toBe(1)
-    expect(listSnapshots(db)).toHaveLength(1)
-  })
-
-  it('stops collecting a ticker removed from the watchlist and keeps its prior snapshot', async () => {
+  it('stops collecting a ticker removed from the watchlist and keeps its stored series', async () => {
     const db = makeCollectorDb()
     seedWatchlist(db, ['KO'])
+    const ko = seedAllBut(db, 'KO', 1)
+    setFakeIvSeries({ KO: series(ko.sessions) })
 
-    const fetchIvr = vi
-      .fn<(_: string) => Promise<IVRResult>>()
-      .mockResolvedValue(okResult('KO', { ivr: 38.0, observedAt: '2026-05-28T21:00:00.000Z' }))
-
-    await runCollector(db, fetchIvr)
-    expect(fetchIvr).toHaveBeenCalledWith('KO')
+    await runCollector(db)
+    expect(collectedTickers()).toEqual(['KO'])
 
     removeWatchlistEntry(db, 'KO')
-    fetchIvr.mockClear()
-    await runCollector(db, fetchIvr)
+    vi.mocked(collectIvHistory).mockClear()
+    await runCollector(db)
 
-    // Never fetched again, and the reading taken while it was still watchlisted stays
-    // readable — dropping a ticker stops collection, it does not erase history.
-    expect(fetchIvr).not.toHaveBeenCalled()
-    expect(listSnapshots(db)).toEqual([
-      {
-        underlying: 'KO',
-        observed_at: '2026-05-28T20:00:00.000Z',
-        ivr: '38.0',
-        ivp: null,
-        iv30: null,
-        source: 'barchart'
-      }
-    ])
-  })
-
-  it('counts an uncovered watchlist ticker as skipped and still succeeds for the others', async () => {
-    const db = makeCollectorDb()
-    insertPosition(db, { id: 'pos-msft', ticker: 'MSFT' })
-    seedWatchlist(db, ['KO', 'XYZ'])
-
-    const fetchIvr = vi
-      .fn<(_: string) => Promise<IVRResult>>()
-      .mockImplementation(async (ticker) =>
-        ticker === 'XYZ' ? NOT_AVAILABLE_RESULT : okResult(ticker)
-      )
-
-    const result = await runCollector(db, fetchIvr)
-
-    expect(result).toEqual({
-      successCount: 2,
-      errorCount: 0,
-      skippedCount: 1,
-      skippedReason: null
-    })
-    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
-      expect.objectContaining({ ticker: 'XYZ' }),
-      expect.stringContaining('ticker not covered by Barchart IVR')
-    )
-  })
-
-  it('isolates a network_error on one watchlist ticker from the rest of the batch', async () => {
-    const db = makeCollectorDb()
-    insertPosition(db, { id: 'pos-msft', ticker: 'MSFT' })
-    seedWatchlist(db, ['KO', 'AAPL', 'XYZ'])
-
-    const fetchIvr = vi
-      .fn<(_: string) => Promise<IVRResult>>()
-      .mockImplementation(async (ticker) => {
-        if (ticker === 'KO') {
-          return {
-            status: 'network_error',
-            error: { code: 'NETWORK_FAILURE', message: 'socket hang up' }
-          }
-        }
-
-        return okResult(ticker)
-      })
-
-    const result = await runCollector(db, fetchIvr)
-
-    expect(fetchIvr.mock.calls.map(([ticker]) => ticker)).toEqual(['AAPL', 'KO', 'MSFT', 'XYZ'])
-    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
-      expect.objectContaining({ ticker: 'KO' }),
-      expect.stringContaining('IVR collection failed for ticker')
-    )
-    expect(result).toEqual({
-      successCount: 3,
-      errorCount: 1,
-      skippedCount: 0,
-      skippedReason: null
-    })
-  })
-
-  it('isolates a thrown fetch failure so the rest of the batch is still attempted', async () => {
-    // The scraper does not return every failure as a status — `fetchIVR` parses the
-    // response body outside a try, so a non-JSON body (interstitial, captcha, HTML
-    // error) rejects. Without per-ticker isolation that rejection aborts the run and
-    // loses every ticker after the bad one.
-    const db = makeCollectorDb()
-    insertPosition(db, { id: 'pos-msft', ticker: 'MSFT' })
-    seedWatchlist(db, ['KO', 'AAPL'])
-
-    const fetchIvr = vi
-      .fn<(_: string) => Promise<IVRResult>>()
-      .mockImplementation(async (ticker) => {
-        if (ticker === 'KO') throw new Error('Unexpected token < in JSON at position 0')
-        return okResult(ticker)
-      })
-
-    const result = await runCollector(db, fetchIvr)
-
-    expect(fetchIvr.mock.calls.map(([ticker]) => ticker)).toEqual(['AAPL', 'KO', 'MSFT'])
-    expect(result).toEqual({
-      successCount: 2,
-      errorCount: 1,
-      skippedCount: 0,
-      skippedReason: null
-    })
-    // `err`, not `error` — pino serializes a thrown Error only under a configured key.
-    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
-      expect.objectContaining({ ticker: 'KO', err: expect.any(Error) }),
-      expect.stringContaining('IVR collection threw for ticker')
-    )
-  })
-
-  it('rethrows a persist failure instead of downgrading a systemic DB fault to per-ticker warns', async () => {
-    // Fetch failures are per-ticker and isolated; a persistSnapshot throw is systemic
-    // (read-only DB, bad migration) and must abort the run as a run-level failure, not
-    // resolve as "completed with N errors".
-    const db = makeCollectorDb()
-    seedWatchlist(db, ['AAPL', 'KO'])
-    db.exec('DROP TABLE ivr_snapshot')
-
-    const fetchIvr = vi
-      .fn<(_: string) => Promise<IVRResult>>()
-      .mockImplementation(async (ticker) => okResult(ticker))
-
-    await expect(runCollector(db, fetchIvr)).rejects.toThrow(/ivr_snapshot/)
-    // Aborted on the first persist — the second ticker was never fetched.
-    expect(fetchIvr).toHaveBeenCalledTimes(1)
+    expect(collectIvHistory).not.toHaveBeenCalled()
+    expect(readingCount(db, 'KO')).toBe(253)
   })
 
   it('stops at the next ticker boundary when the abort signal fires mid-run', async () => {
     const db = makeCollectorDb()
     seedWatchlist(db, ['AAPL', 'KO', 'MSFT'])
-
     const controller = new AbortController()
-    const fetchIvr = vi
-      .fn<(_: string) => Promise<IVRResult>>()
-      .mockImplementation(async (ticker) => {
-        controller.abort()
-        return okResult(ticker)
-      })
+    vi.mocked(collectIvHistory).mockImplementationOnce(async () => {
+      controller.abort()
+      return { status: 'collected', readings: 1, gaps: 0 }
+    })
 
-    const result = await runCollector(db, fetchIvr, { signal: controller.signal })
+    const result = await runCollector(db, { signal: controller.signal })
 
-    // AAPL was in flight when abort fired; KO and MSFT are never attempted.
-    expect(fetchIvr.mock.calls.map(([ticker]) => ticker)).toEqual(['AAPL'])
+    expect(collectedTickers()).toEqual(['AAPL'])
     expect(result.successCount).toBe(1)
     expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
       expect.objectContaining({ successCount: 1 }),
       expect.stringContaining('aborted')
     )
   })
-
-  it('persists a successful Barchart snapshot as decimal strings', async () => {
-    const db = makeCollectorDb()
-    insertPosition(db, { id: 'pos-spy', ticker: 'SPY' })
-
-    const fetchIvr = vi
-      .fn<(_: string) => Promise<IVRResult>>()
-      .mockResolvedValue(okResult('SPY', { ivr: 42.5, ivp: 50.0, iv30: 0.18 }))
-
-    await runCollector(db, fetchIvr)
-
-    expect(listSnapshots(db)).toEqual([
-      {
-        underlying: 'SPY',
-        observed_at: '2026-05-29T20:00:00.000Z',
-        ivr: '42.5',
-        ivp: '50.0',
-        iv30: '0.18',
-        source: 'barchart'
-      }
-    ])
-  })
-
-  it('re-collecting within the same session replaces the earlier row', async () => {
-    const db = makeCollectorDb()
-    insertPosition(db, { id: 'pos-spy', ticker: 'SPY' })
-
-    db.prepare(
-      `INSERT INTO ivr_snapshot (underlying, observed_at, ivr, ivp, iv30, source)
-       VALUES ('SPY', '2026-05-29T20:00:00.000Z', '30.1', '45.0', '0.22', 'barchart')`
-    ).run()
-
-    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(
-      okResult('SPY', {
-        ivr: 42.5,
-        ivp: 50.0,
-        iv30: 0.18,
-        observedAt: '2026-05-31T15:00:00.000Z'
-      })
-    )
-
-    // Sunday: the reading still belongs to Friday's close, so it overwrites Friday's
-    // row rather than inventing a Sunday one.
-    await runCollector(db, fetchIvr, {
-      clock: makeClock('2026-05-31T15:00:00.000Z'),
-      trigger: 'explicit'
-    })
-
-    expect(listSnapshots(db)).toEqual([
-      {
-        underlying: 'SPY',
-        observed_at: '2026-05-29T20:00:00.000Z',
-        ivr: '42.5',
-        ivp: '50.0',
-        iv30: '0.18',
-        source: 'barchart'
-      }
-    ])
-  })
-
-  it('sweeps a legacy fetch-instant row that falls inside the session being collected', async () => {
-    const db = makeCollectorDb()
-    insertPosition(db, { id: 'pos-spy', ticker: 'SPY' })
-
-    // Written by a pre-US-100 late-evening manual refresh: stamped at the fetch, which
-    // lands after Friday's close and so belongs to Friday's observation window.
-    db.prepare(
-      `INSERT INTO ivr_snapshot (underlying, observed_at, ivr, ivp, iv30, source)
-       VALUES ('SPY', '2026-05-30T01:00:00.000Z', '30.1', '45.0', '0.22', 'barchart')`
-    ).run()
-
-    const fetchIvr = vi
-      .fn<(_: string) => Promise<IVRResult>>()
-      .mockResolvedValue(okResult('SPY', { ivr: 42.5 }))
-
-    await runCollector(db, fetchIvr)
-
-    expect(listSnapshots(db)).toEqual([
-      {
-        underlying: 'SPY',
-        observed_at: '2026-05-29T20:00:00.000Z',
-        ivr: '42.5',
-        ivp: null,
-        iv30: null,
-        source: 'barchart'
-      }
-    ])
-  })
-
-  it('leaves a row belonging to the previous session alone', async () => {
-    const db = makeCollectorDb()
-    insertPosition(db, { id: 'pos-spy', ticker: 'SPY' })
-
-    db.prepare(
-      `INSERT INTO ivr_snapshot (underlying, observed_at, ivr, ivp, iv30, source)
-       VALUES ('SPY', '2026-05-28T20:00:00.000Z', '30.1', NULL, NULL, 'barchart')`
-    ).run()
-
-    const fetchIvr = vi
-      .fn<(_: string) => Promise<IVRResult>>()
-      .mockResolvedValue(okResult('SPY', { ivr: 42.5 }))
-
-    await runCollector(db, fetchIvr)
-
-    expect(listSnapshots(db).map((row) => row.observed_at)).toEqual([
-      '2026-05-28T20:00:00.000Z',
-      '2026-05-29T20:00:00.000Z'
-    ])
-  })
-
-  it('does not persist not_available results and logs the uncovered symbol at INFO', async () => {
-    const db = makeCollectorDb()
-    insertPosition(db, { id: 'pos-spy', ticker: 'SPY' })
-
-    const fetchIvr = vi
-      .fn<(_: string) => Promise<IVRResult>>()
-      .mockResolvedValue(NOT_AVAILABLE_RESULT)
-
-    const result = await runCollector(db, fetchIvr)
-
-    expect(listSnapshots(db)).toEqual([])
-    expect(result).toEqual({
-      successCount: 0,
-      errorCount: 0,
-      skippedCount: 1,
-      skippedReason: null
-    })
-    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
-      expect.objectContaining({ ticker: 'SPY' }),
-      expect.stringContaining('ticker not covered by Barchart IVR')
-    )
-  })
-
-  it('logs parse_error and continues to the next ticker without aborting the batch', async () => {
-    const db = makeCollectorDb()
-    insertPosition(db, { id: 'pos-aapl', ticker: 'AAPL' })
-    insertPosition(db, { id: 'pos-spy', ticker: 'SPY' })
-
-    const fetchIvr = vi
-      .fn<(_: string) => Promise<IVRResult>>()
-      .mockImplementation(async (ticker) => {
-        if (ticker === 'AAPL') {
-          return {
-            status: 'parse_error',
-            error: {
-              code: 'PARSE_FAILED',
-              message: 'Expected impliedVolatilityRank1y in Barchart response',
-              rawSnippet: '{"raw":{}}'
-            }
-          }
-        }
-
-        return okResult('SPY', { ivr: 55.5, observedAt: '2026-05-29T21:06:00.000Z' })
-      })
-
-    const result = await runCollector(db, fetchIvr)
-
-    expect(result).toEqual({
-      successCount: 1,
-      errorCount: 1,
-      skippedCount: 0,
-      skippedReason: null
-    })
-    expect(listSnapshots(db)).toEqual([
-      {
-        underlying: 'SPY',
-        observed_at: '2026-05-29T20:00:00.000Z',
-        ivr: '55.5',
-        ivp: null,
-        iv30: null,
-        source: 'barchart'
-      }
-    ])
-    expect(vi.mocked(logger.warn)).toHaveBeenCalled()
-  })
 })
 
-describe('collectIVRSnapshots — trigger', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
-  it('collects on a weekend when a person explicitly asked for it', async () => {
-    const db = makeCollectorDb()
-    seedWatchlist(db, ['KO'])
-    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
-
-    const result = await runCollector(db, fetchIvr, {
-      clock: makeClock('2026-05-31T15:00:00.000Z'),
-      trigger: 'explicit'
-    })
-
-    expect(fetchIvr).toHaveBeenCalledWith('KO')
-    expect(result.skippedReason).toBeNull()
-    expect(result.successCount).toBe(1)
-    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
-      { etDate: '2026-05-31', trigger: 'explicit' },
-      expect.stringContaining('explicit request')
-    )
-  })
-
-  it('collects on a weekday market holiday when a person explicitly asked for it', async () => {
-    const db = makeCollectorDb()
-    seedWatchlist(db, ['KO'])
-    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
-
-    const result = await runCollector(db, fetchIvr, {
-      clock: makeClock('2026-11-26T19:00:00.000Z'),
-      trigger: 'explicit'
-    })
-
-    expect(fetchIvr).toHaveBeenCalledWith('KO')
-    expect(result.skippedReason).toBeNull()
-  })
-
-  it('treats an omitted trigger as a scheduled run', async () => {
-    const db = makeCollectorDb()
-    seedWatchlist(db, ['KO'])
-    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
-
-    const result = await collectIVRSnapshots({
-      db,
-      logger,
-      fetchIvr,
-      clock: makeClock('2026-05-31T15:00:00.000Z')
-    })
-
-    expect(fetchIvr).not.toHaveBeenCalled()
-    expect(result.skippedReason).toBe('market_closed')
-  })
-})
-
-describe('collectIVRSnapshots — observation stamping', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
-  it('stamps a weekend fetch at the close of the Friday it reflects', async () => {
-    const db = makeCollectorDb()
-    seedWatchlist(db, ['KO'])
-    const fetchIvr = vi
-      .fn<(_: string) => Promise<IVRResult>>()
-      .mockResolvedValue(okResult('KO', { observedAt: '2026-05-31T15:00:00.000Z' }))
-
-    await runCollector(db, fetchIvr, {
-      clock: makeClock('2026-05-31T15:00:00.000Z'),
-      trigger: 'explicit'
-    })
-
-    expect(listSnapshots(db).map((row) => row.observed_at)).toEqual(['2026-05-29T20:00:00.000Z'])
-  })
-
-  it('stamps a holiday fetch at the previous session close, in standard time', async () => {
-    const db = makeCollectorDb()
-    seedWatchlist(db, ['KO'])
-    const fetchIvr = vi
-      .fn<(_: string) => Promise<IVRResult>>()
-      .mockResolvedValue(okResult('KO', { observedAt: '2026-11-26T23:00:00.000Z' }))
-
-    await runCollector(db, fetchIvr, {
-      clock: makeClock('2026-11-26T23:00:00.000Z'),
-      trigger: 'explicit'
-    })
-
-    expect(listSnapshots(db).map((row) => row.observed_at)).toEqual(['2026-11-25T21:00:00.000Z'])
-  })
-
-  it('stamps an intraday fetch at the previous close, not the session still running', async () => {
-    const db = makeCollectorDb()
-    seedWatchlist(db, ['KO'])
-    const fetchIvr = vi
-      .fn<(_: string) => Promise<IVRResult>>()
-      .mockResolvedValue(okResult('KO', { observedAt: '2026-05-29T14:05:00.000Z' }))
-
-    await runCollector(db, fetchIvr, { clock: makeClock('2026-05-29T14:05:00.000Z') })
-
-    expect(listSnapshots(db).map((row) => row.observed_at)).toEqual(['2026-05-28T20:00:00.000Z'])
-  })
-
-  it('falls back to the fetch instant and warns when the calendar cannot place it', async () => {
+describe('collectIvHistoryBatch — calendar refresh', () => {
+  it('refreshes the cached calendar from the market-data provider before reading it', async () => {
     const db = makeTestDb()
     seedWatchlist(db, ['KO'])
-    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
+    const provider = new FakeMarketDataProvider()
+    const getMarketCalendar = vi.spyOn(provider, 'getMarketCalendar')
 
-    await runCollector(db, fetchIvr)
+    // No calendar cached at all: without the refresh the run could not place `now`.
+    await runCollector(db, { provider })
 
-    expect(listSnapshots(db).map((row) => row.observed_at)).toEqual(['2026-05-29T21:05:00.000Z'])
-    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
-      expect.objectContaining({ ticker: 'KO' }),
-      'ivr_observation_unstamped'
-    )
-  })
-})
-
-describe('collectTicker', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
-  function calendarFor(db: Database.Database, now: string): TradingCalendar {
-    return readTradingCalendar(db, new Date(now))
-  }
-
-  it('reports a persisted reading', async () => {
-    const db = makeCollectorDb()
-    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
-
-    const outcome = await collectTicker({
-      db,
-      logger,
-      fetchIvr,
-      calendar: calendarFor(db, '2026-05-29T21:30:00.000Z'),
-      ticker: 'KO'
-    })
-
-    expect(outcome).toBe('persisted')
-    expect(listSnapshots(db)).toHaveLength(1)
-  })
-
-  it('reports an uncovered ticker as not_available without writing a row', async () => {
-    const db = makeCollectorDb()
-    const fetchIvr = vi
-      .fn<(_: string) => Promise<IVRResult>>()
-      .mockResolvedValue(NOT_AVAILABLE_RESULT)
-
-    const outcome = await collectTicker({
-      db,
-      logger,
-      fetchIvr,
-      calendar: calendarFor(db, '2026-05-29T21:30:00.000Z'),
-      ticker: 'XYZ'
-    })
-
-    expect(outcome).toBe('not_available')
-    expect(listSnapshots(db)).toHaveLength(0)
-  })
-
-  it('reports a scraper error as failed', async () => {
-    const db = makeCollectorDb()
-    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue({
-      status: 'network_error',
-      error: { code: 'NETWORK_FAILURE', message: 'unreachable' }
-    })
-
-    const outcome = await collectTicker({
-      db,
-      logger,
-      fetchIvr,
-      calendar: calendarFor(db, '2026-05-29T21:30:00.000Z'),
-      ticker: 'KO'
-    })
-
-    expect(outcome).toBe('failed')
-    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
-      { ticker: 'KO', error: { code: 'NETWORK_FAILURE', message: 'unreachable' } },
-      'IVR collection failed for ticker'
+    expect(getMarketCalendar).toHaveBeenCalled()
+    expect(vi.mocked(collectIvHistory).mock.calls[0][0].calendar.sessions.length).toBeGreaterThan(
+      253
     )
   })
 
-  it('reports a thrown fetch as failed and logs it under the err key', async () => {
+  it('still runs on the cached calendar when the calendar fetch fails', async () => {
     const db = makeCollectorDb()
-    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockRejectedValue(new Error('boom'))
+    seedWatchlist(db, ['KO'])
+    seedAllBut(db, 'KO', 0)
+    const provider = new FakeMarketDataProvider()
+    vi.spyOn(provider, 'getMarketCalendar').mockRejectedValue(new Error('network error'))
 
-    const outcome = await collectTicker({
-      db,
-      logger,
-      fetchIvr,
-      calendar: calendarFor(db, '2026-05-29T21:30:00.000Z'),
-      ticker: 'KO'
-    })
+    const result = await runCollector(db, { provider })
 
-    expect(outcome).toBe('failed')
-    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
-      expect.objectContaining({ ticker: 'KO', err: expect.any(Error) }),
-      expect.stringContaining('IVR collection threw for ticker')
-    )
+    expect(result.skippedCount).toBe(1)
   })
 
-  it('rethrows a persist failure rather than reporting it as a per-ticker outcome', async () => {
-    const db = makeCollectorDb()
-    const calendar = calendarFor(db, '2026-05-29T21:30:00.000Z')
-    db.exec('DROP TABLE ivr_snapshot')
-    const fetchIvr = vi.fn<(_: string) => Promise<IVRResult>>().mockResolvedValue(okResult('KO'))
+  it('refreshes the calendar on a run once its lookahead has run short', async () => {
+    const db = makeTestDb()
+    seedTradingCalendar(db, CALENDAR_FIRST_DAY, '2027-06-20')
+    seedWatchlist(db, ['KO'])
+    const provider = new FakeMarketDataProvider()
+    const getMarketCalendar = vi.spyOn(provider, 'getMarketCalendar')
 
-    await expect(collectTicker({ db, logger, fetchIvr, calendar, ticker: 'KO' })).rejects.toThrow(
-      /ivr_snapshot/
-    )
+    await runCollector(db, { provider })
+
+    expect(getMarketCalendar).toHaveBeenCalled()
   })
 })

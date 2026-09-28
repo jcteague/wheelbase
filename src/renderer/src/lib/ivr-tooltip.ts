@@ -1,7 +1,7 @@
-import type { ScreenerIvRank } from '../api/screener'
+import type { IvRank, IvRankAbsence } from '../api/ivr'
 import { formatIvrValue } from './screener-format'
 
-type IvrState = ScreenerIvRank['state']
+type IvrState = IvRank['state']
 
 export const TIER_TITLE: Record<IvrState, string> = {
   fresh: 'Fresh',
@@ -58,7 +58,7 @@ export function tradingDaysLabel(age: number): string {
  * whether it can satisfy an IV condition, because that is the question the number
  * on the row leaves open.
  */
-function tooltipBody(reading: ScreenerIvRank): string {
+function tooltipBody(reading: IvRank): string {
   const observed = observedSessionLabel(reading.observedAt)
   const age = tradingDaysLabel(reading.ageTradingDays)
   const value = formatIvrValue(reading.value)
@@ -77,6 +77,88 @@ function tooltipBody(reading: ScreenerIvRank): string {
   }
 }
 
-export function ivrTooltipCopy(reading: ScreenerIvRank): { title: string; body: string } {
-  return { title: TIER_TITLE[reading.state], body: tooltipBody(reading) }
+/** The 52-week IV30 range a rank is measured against: `0.1800–0.4500`. */
+export function formatIvRange(low: string, high: string): string {
+  return `${low}–${high}`
+}
+
+export function ivrTooltipCopy(reading: IvRank): { title: string; body: string } {
+  const range = `52-wk IV ${formatIvRange(reading.low, reading.high)} · IV percentile ${reading.percentile}`
+  return { title: TIER_TITLE[reading.state], body: `${tooltipBody(reading)} ${range}` }
+}
+
+type IvRankAbsenceReason = IvRankAbsence['reason']
+type AbsenceFor<R extends IvRankAbsenceReason> = Extract<IvRankAbsence, { reason: R }>
+
+export type IvrNote = {
+  variant: 'info' | 'warning'
+  kind: string
+  text: string
+}
+
+/** Everything a missing reading says, per reason, in one row so the card title and the
+ *  detail note cannot drift apart. `note` is completed by the shared consequence. */
+type AbsenceCopy<R extends IvRankAbsenceReason> = {
+  title: (absence: AbsenceFor<R>) => string
+  variant: IvrNote['variant']
+  note: (ticker: string, absence: AbsenceFor<R>, consequence: string) => string
+}
+
+/**
+ * Waiting on history is information; a failed run or missing credentials is something the
+ * trader has to act on.
+ */
+const ABSENCE_COPY: { [R in IvRankAbsenceReason]: AbsenceCopy<R> } = {
+  pending: {
+    title: () => 'Computing IV history',
+    variant: 'info',
+    note: (ticker, _absence, consequence) =>
+      `IV history for ${ticker} is still being computed. Until it finishes, ${consequence}`
+  },
+  insufficient_history: {
+    title: ({ coverage, window, required }) =>
+      `IV history covers ${coverage} of the last ${window} sessions; rank needs ${required}`,
+    variant: 'info',
+    note: (ticker, { coverage, window, required }, consequence) =>
+      `IV history for ${ticker} covers ${coverage} of the last ${window} sessions and rank needs ${required}. Until it fills in, ${consequence}`
+  },
+  not_collected: {
+    title: () => 'No IV rank collected',
+    variant: 'info',
+    note: (ticker, _absence, consequence) =>
+      `No IV rank has been collected for ${ticker}. Until one exists, ${consequence}`
+  },
+  failed: {
+    title: () => 'Last IV history run failed',
+    variant: 'warning',
+    note: (ticker, _absence, consequence) =>
+      `The last IV history run failed for ${ticker}. Until a run succeeds, ${consequence}`
+  },
+  no_market_data: {
+    title: () => 'IV rank needs Alpaca market-data credentials',
+    variant: 'warning',
+    note: (ticker, _absence, consequence) =>
+      `IV rank for ${ticker} needs Alpaca market-data credentials — add them in Settings. Until then, ${consequence}`
+  }
+}
+
+/** The `title` on a cell with no reading: why it is missing, in one line. */
+export function ivrAbsenceTitle<R extends IvRankAbsenceReason>(absence: AbsenceFor<R>): string {
+  const copy: AbsenceCopy<R> = ABSENCE_COPY[absence.reason]
+  return copy.title(absence)
+}
+
+/** The bench-detail note for a missing reading. */
+export function ivrAbsenceNote<R extends IvRankAbsenceReason>(
+  ticker: string,
+  absence: AbsenceFor<R>,
+  condition: string
+): IvrNote {
+  const consequence = `${condition} cannot be judged and this stock cannot reach Meets criteria on it.`
+  const copy: AbsenceCopy<R> = ABSENCE_COPY[absence.reason]
+  return {
+    variant: copy.variant,
+    kind: absence.reason,
+    text: copy.note(ticker, absence, consequence)
+  }
 }

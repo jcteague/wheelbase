@@ -1,26 +1,27 @@
 ---
 page: docs/spec/architecture/02-adrs/ipc-returns-full-option-snapshot.md
-audited_at: 2026-06-27
-findings: 0
+audited_at: 2026-09-28
+findings: 6
 ---
 
-# Audit: ipc-returns-full-option-snapshot.md
+# Audit: docs/spec/architecture/02-adrs/ipc-returns-full-option-snapshot.md
 
-## Verified (4)
+## Verified (5)
 
-- ✓ `market-data:option-snapshots` handler exists (`src/main/ipc/market-data.ts:52`) and returns `fetchOptionSnapshots(...)` 1:1 without field stripping.
-- ✓ `IpcOptionSnapshot` includes the full shape — `greeks`, `lastTrade`, `openInterest`, `volume` (plus `bid/ask/mid/timestamp`) — in `src/preload/index.d.ts:242-257`.
-- ✓ `IpcStockQuote` (`src/preload/index.d.ts:210-217`) has NO `change`/`changePercent` fields, confirming the contrast claim that stock quotes drop those hardcoded-to-0 fields.
-- ✓ Provider `OptionSnapshot` type (`src/main/integrations/market-data-provider.ts:36-50`) carries the same data forwarded to the renderer.
+- ✓ `OptionSnapshot` carries `bid`, `ask`, `mid`, `lastTrade`, `openInterest`, `volume`, `timestamp`, optional `greeks { delta, gamma, theta, vega }` and a top-level optional `impliedVolatility` — `src/main/integrations/market-data-provider.ts:37-52`.
+- ✓ `market-data:option-snapshots` handler exists and returns the provider snapshots unflattened via `fetchOptionSnapshots` — `src/main/ipc/market-data.ts:65-69`, `src/main/services/market-data.ts:57-67`.
+- ✓ The stock-quote path drops fields (`IpcStockQuote` has no `change`/`changePercent`) — `src/preload/index.d.ts:212-219`.
+- ✓ Linked feature pages exist: `us-33-option-mid-pnl.md`, `market-data-massive-migration.md` (cited as revision history, not current vendor).
+- ✓ Cited source files exist.
 
 ## Drift (0)
 
-(none material — note: the IPC greeks key is `iv` while the provider type exposes `impliedVolatility` as a sibling and `greeks` without `iv`; the IPC layer reshapes them into one `greeks` object. This is a flattening detail, not a contradiction of the ADR's "full shape forwarded, not stripped" claim.)
+None.
 
-## Unverifiable (0)
+## Unverifiable (1)
+
+- ? "renderer must remain robust to their absence" / Greeks-display motivation — narrative.
 
 ## Missing files (0)
 
-- ✓ `../../features/us-33-option-mid-pnl.md` exists.
-
-One-line: Audited ipc-returns-full-option-snapshot.md: 4 verified, 0 drift, 0 unverifiable, 0 missing.
+None.

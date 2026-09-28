@@ -188,7 +188,7 @@ it('clicking Refresh IVR now surfaces the returned success and error counts', as
 
   expect(collectIvrNow).toHaveBeenCalledTimes(1)
   expect(
-    await within(section).findByText('IVR refresh complete: 2 snapshots saved, 1 errors.')
+    await within(section).findByText('IV history refresh complete: 2 tickers updated, 1 errors.')
   ).toBeInTheDocument()
 })
 
@@ -638,9 +638,32 @@ it('shows a green IVR message when the refresh completes without errors', async 
   render(<SettingsPage />)
   fireEvent.click(screen.getByRole('button', { name: /refresh ivr now/i }))
 
-  expect(await screen.findByText('IVR refresh complete: 3 snapshots saved, 0 errors.')).toHaveClass(
-    'text-wb-green'
-  )
+  expect(
+    await screen.findByText('IV history refresh complete: 3 tickers updated, 0 errors.')
+  ).toHaveClass('text-wb-green')
+})
+
+// [US-121] A run without market-data credentials reports why nothing was collected,
+// rather than a zero-count completion.
+it('names the missing market-data credentials when the run is skipped for them', async () => {
+  mockUseCollectIvrNow.mockReturnValue({
+    mutateAsync: vi.fn().mockResolvedValue({
+      successCount: 0,
+      errorCount: 0,
+      skippedCount: 0,
+      skippedReason: 'market_data_unavailable'
+    })
+  } as unknown as ReturnType<typeof useCollectIvrNow>)
+
+  render(<SettingsPage />)
+  fireEvent.click(screen.getByRole('button', { name: /refresh ivr now/i }))
+
+  expect(
+    await screen.findByText(
+      'IV rank needs Alpaca market-data credentials — add them above to start collecting.'
+    )
+  ).toBeInTheDocument()
+  expect(screen.queryByText(/refresh complete/)).not.toBeInTheDocument()
 })
 
 it.each([

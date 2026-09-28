@@ -1,27 +1,30 @@
 ---
 page: docs/spec/architecture/02-adrs/alpaca-sdk-rest-only.md
-audited_at: 2026-06-27
-findings: 1
+audited_at: 2026-09-28
+findings: 2
 ---
 
-# Audit: alpaca-sdk-rest-only.md
+# Audit: docs/spec/architecture/02-adrs/alpaca-sdk-rest-only.md
 
-## Verified (4)
+## Verified (6)
 
-- ✓ SDK version `@alpacahq/typescript-sdk: 0.0.32-preview` matches "(v0.0.32-preview)" — `package.json`.
-- ✓ SDK calls isolated in `src/main/integrations/alpaca.ts` (createClient wrapper; header comment "Nothing outside this module imports @alpacahq/typescript-sdk") — `alpaca.ts:1-4`.
-- ✓ REST methods `getAccount`, `getActivity`, `getClock` are used via the SDK client — `src/main/integrations/alpaca-broker.ts:156,177,199`.
-- ✓ Streaming bypasses the SDK using raw `ws`: `import WebSocket from 'ws'` / `new WebSocket(...)` in the market-data provider — `src/main/integrations/massive-market-data.ts:3,268`. (No `ws`/`WebSocket`/streaming in `alpaca.ts` or `alpaca-broker.ts`, confirming the SDK path is REST-only.)
+- ✓ `@alpacahq/typescript-sdk` pinned at `0.0.32-preview` — `package.json:60`.
+- ✓ `src/main/integrations/alpaca-broker.ts` is the only non-test module importing the SDK — `alpaca-broker.ts:2` (grep of `src/`).
+- ✓ Broker uses SDK `getAccount` and `getActivity` — `alpaca-broker.ts:129,150`.
+- ✓ Market data uses raw `fetch` against `https://data.alpaca.markets` (`src/main/integrations/alpaca-market-data-mappers.ts:25`) for `/v2/stocks/snapshots` (:50) and `/v1beta1/options/snapshots…` (:213,218), plus the trading host's `/v2/options/contracts` (:230), with `APCA-API-KEY-ID` / `APCA-API-SECRET-KEY` headers (`src/main/integrations/alpaca-market-data.ts:93-94`); streams from `wss://stream.data.alpaca.markets/v2/iex` (`alpaca-market-data.ts:56`).
+- ✓ Massive-era code gone — no `massive-market-data.ts` in `src/main/integrations/`.
+- ✓ Settings probe calls `${ALPACA_TRADING_BASE_URLS[env]}/v2/account` — `src/main/services/settings-connections.ts:2,97`; host map in `src/main/integrations/alpaca-hosts.ts:5-6`.
 
-## Drift (1)
+## Drift (2)
 
-- ✗ Page lists `getStocksQuotesLatest` among the REST endpoints used (line 7), but `grep` finds no usage of `getStocksQuotesLatest` (or `getStocksSnapshots`) anywhere under `src/`. The Alpaca broker only calls `getAccount`/`getActivity`/`getClock`; market-data quotes come from the Massive WebSocket provider, not an Alpaca REST quotes call. Suggested fix: drop `getStocksQuotesLatest` from the "endpoints where it works" list, or cite the actual caller if it exists outside what was grepped.
+- ✗ Line 22 says the broker uses the SDK for `getAccount`, `getClock`, and `getActivity`. `alpaca-broker.ts` has no `getClock` call; the market clock (and calendar) are now served by the market-data adapter over raw `fetch` — `${ALPACA_TRADING_BASE_URLS[environment]}/v2/clock` at `src/main/integrations/alpaca-market-data-mappers.ts:281` (and `/v2/calendar` at :289), matching CLAUDE.md's "market facts belong on `MarketDataProvider`". Suggested fix: drop `getClock` from the broker list and note the clock moved to the market-data adapter.
+- ✗ Line 25 says `src/main/integrations/alpaca.ts` "remains `@deprecated`". The file does not exist (`ls src/main/integrations/` has no `alpaca.ts`; no `@deprecated` marker in the integrations directory). Suggested fix: remove the bullet or record the file's deletion.
 
 ## Unverifiable (2)
 
-- ? Claims about SDK bugs (`getStocksSnapshots` wrong path, `getOptionsSnapshots` omits greeks, `getActivity` ignores query params, "WebSocket support is todo", "unmaintained", "Deno-to-Node transpile via dnt") — upstream-library narrative; not mechanically auditable against this repo.
-- ? "Streaming has zero SDK support so the provider implements it from scratch" — the from-scratch `ws` streaming observed lives in `massive-market-data.ts` (Massive/Polygon-compatible), not an Alpaca streaming provider; whether this is the "provider" the ADR means is ambiguous. Flag for human review.
+- ? SDK bug list (`getStocksSnapshots` wrong path, `getOptionsSnapshots` typing, `getActivity` ignoring params) — third-party behaviour.
+- ? The market-data endpoint list is not exhaustive (US-121 added `/v1beta1/options/bars` and `/v2/stocks/bars`, `alpaca-market-data-mappers.ts:352,363`), but those are also raw `fetch`, consistent with the decision.
 
 ## Missing files (0)
 
-None.
+- (none) — `docs/spec/.extracts/us-31.md`, `docs/spec/.extracts/us-99.md`, `plans/market-data-massive-migration/research.md`, `plans/us-99/contracts/alpaca-market-data.md`, and both feature pages exist.

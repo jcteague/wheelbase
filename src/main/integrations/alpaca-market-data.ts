@@ -2,6 +2,8 @@ import { Subject, defer, filter, type Observable } from 'rxjs'
 import WebSocket from 'ws'
 import {
   MarketDataError,
+  type DailyBar,
+  type DailyBarRange,
   type MarketCalendarDay,
   type MarketCalendarRange,
   type MarketDataFeed,
@@ -15,23 +17,29 @@ import {
   type StreamEvent
 } from './market-data-provider'
 import {
+  OPTION_BARS_BATCH_SIZE,
   buildCalendarUrl,
   buildChainUrl,
   buildClockUrl,
   buildContractsUrl,
+  buildOptionBarsUrl,
   buildSingleSnapshotUrl,
+  buildStockBarsUrl,
   buildStockSnapshotsUrl,
+  chunkSymbols,
   classifyStreamError,
   connectError,
   mapBar,
   mapCalendarDays,
   mapChainEntry,
   mapClock,
+  mapDailyBar,
   mapOptionQuote,
   mapStockSnapshot,
   nonFiniteFigures,
   parseFrames,
   parseOpenInterest,
+  type AlpacaBarsResponse,
   type AlpacaCalendarDay,
   type AlpacaClock,
   type AlpacaContracts,
@@ -173,19 +181,17 @@ export class AlpacaMarketDataProvider implements MarketDataProvider {
   async getOptionChainSnapshot(filter: OptionChainFilter): Promise<OptionChainQuote[]> {
     const credentials = this.credentials()
 
-    const entries: Array<[string, AlpacaOptionSnapshot]> = []
-    let pageToken: string | undefined
-    do {
-      const page = (await this.apiFetch(
-        buildChainUrl(filter, pageToken),
-        credentials
-      )) as AlpacaOptionSnapshots
-      for (const [key, snap] of Object.entries(page.snapshots ?? {})) {
-        if (snap) entries.push([key, snap])
-      }
-      // An explicit limit means the caller is paging itself — hand back the one page.
-      pageToken = filter.limit === undefined ? (page.next_page_token ?? undefined) : undefined
-    } while (pageToken)
+    // An explicit limit means the caller is paging itself — hand back the one page.
+    const pages = await this.fetchPages<AlpacaOptionSnapshots>(
+      (pageToken) => buildChainUrl(filter, pageToken),
+      credentials,
+      { followPages: filter.limit === undefined }
+    )
+    const entries = pages.flatMap((page) =>
+      Object.entries(page.snapshots ?? {}).flatMap(
+        ([key, snap]): Array<[string, AlpacaOptionSnapshot]> => (snap ? [[key, snap]] : [])
+      )
+    )
 
     if (entries.length === 0) return []
 
@@ -241,30 +247,122 @@ export class AlpacaMarketDataProvider implements MarketDataProvider {
     return days
   }
 
+  async getOptionDailyBars(
+    input: { symbols: string[] } & DailyBarRange
+  ): Promise<Map<string, DailyBar[]>> {
+    const { symbols, ...range } = input
+    if (symbols.length === 0) return new Map()
+    const credentials = this.credentials()
+
+    const batches = chunkSymbols(symbols, OPTION_BARS_BATCH_SIZE)
+    const batchResults: Array<Map<string, DailyBar[]>> = []
+    // Sequential on purpose: one underlying's history is several hundred symbols, and the
+    // free plan's rate limit is shared with the rest of the app.
+    for (const [batchIndex, batch] of batches.entries()) {
+      logger.debug(
+        { batch: batchIndex + 1, of: batches.length, symbols: batch.length, ...range },
+        'alpaca_option_bars_batch'
+      )
+      batchResults.push(
+        await this.fetchDailyBars(
+          (pageToken) => buildOptionBarsUrl(batch, range, pageToken),
+          credentials
+        )
+      )
+    }
+    const result = new Map(batchResults.flatMap((bars) => [...bars]))
+
+    logger.info(
+      {
+        kind: 'option',
+        requested: symbols.length,
+        symbols: result.size,
+        bars: [...result.values()].reduce((total, bars) => total + bars.length, 0),
+        ...range
+      },
+      'alpaca_daily_bars_mapped'
+    )
+    return result
+  }
+
+  async getStockDailyBars(input: { symbol: string } & DailyBarRange): Promise<DailyBar[]> {
+    const { symbol, ...range } = input
+    const credentials = this.credentials()
+    logger.debug({ symbol, ...range }, 'alpaca_stock_bars_request')
+    const bars = await this.fetchDailyBars(
+      (pageToken) => buildStockBarsUrl(symbol, range, pageToken),
+      credentials
+    )
+    const symbolBars = bars.get(symbol) ?? []
+    logger.info(
+      { kind: 'stock', symbol, bars: symbolBars.length, ...range },
+      'alpaca_daily_bars_mapped'
+    )
+    return symbolBars
+  }
+
+  // Merges each symbol's bars across every page, ascending.
+  private async fetchDailyBars(
+    urlFor: (pageToken: string | undefined) => string,
+    credentials: AlpacaCredentials
+  ): Promise<Map<string, DailyBar[]>> {
+    const pages = await this.fetchPages<AlpacaBarsResponse>(urlFor, credentials)
+    const merged = pages
+      .flatMap((page) => Object.entries(page.bars ?? {}))
+      .reduce((bySymbol, [symbol, rawBars]) => {
+        const mapped = (rawBars ?? []).flatMap((raw) => mapDailyBar(raw) ?? [])
+        if (mapped.length > 0) bySymbol.set(symbol, [...(bySymbol.get(symbol) ?? []), ...mapped])
+        return bySymbol
+      }, new Map<string, DailyBar[]>())
+
+    return new Map(
+      [...merged].map(([symbol, bars]) => [
+        symbol,
+        [...bars].sort((a, b) => a.date.localeCompare(b.date))
+      ])
+    )
+  }
+
+  // Every Alpaca list endpoint pages the same way: follow `next_page_token` until it is null.
+  private async fetchPages<Page extends { next_page_token: string | null }>(
+    urlFor: (pageToken: string | undefined) => string,
+    credentials: AlpacaCredentials,
+    { followPages = true }: { followPages?: boolean } = {}
+  ): Promise<Page[]> {
+    const pages: Page[] = []
+    let pageToken: string | undefined
+    do {
+      const page = (await this.apiFetch(urlFor(pageToken), credentials)) as Page
+      pages.push(page)
+      pageToken = followPages ? (page.next_page_token ?? undefined) : undefined
+      logger.debug({ page: pages.length, more: pageToken !== undefined }, 'alpaca_page_fetched')
+    } while (pageToken)
+    return pages
+  }
+
   // Open interest is a nice-to-have ranking input, so a contracts outage degrades the whole
   // chain to `openInterest: null` rather than failing the refresh.
   private async fetchOpenInterest(
     filter: OptionChainFilter,
     credentials: AlpacaCredentials
   ): Promise<Map<string, number | null>> {
-    const openInterest = new Map<string, number | null>()
     try {
-      let pageToken: string | undefined
-      do {
-        const page = (await this.apiFetch(
-          buildContractsUrl(filter, credentials.environment, pageToken),
-          credentials
-        )) as AlpacaContracts
-        for (const row of page.option_contracts ?? []) {
-          openInterest.set(row.symbol, parseOpenInterest(row.open_interest))
-        }
-        pageToken = page.next_page_token ?? undefined
-      } while (pageToken)
+      const pages = await this.fetchPages<AlpacaContracts>(
+        (pageToken) => buildContractsUrl(filter, credentials.environment, pageToken),
+        credentials
+      )
+      return new Map(
+        pages.flatMap((page) =>
+          (page.option_contracts ?? []).map((row): [string, number | null] => [
+            row.symbol,
+            parseOpenInterest(row.open_interest)
+          ])
+        )
+      )
     } catch (err) {
       logger.warn({ underlying: filter.underlying, err }, 'alpaca_open_interest_unavailable')
       return new Map()
     }
-    return openInterest
   }
 
   // The free plan streams IEX bars only; option feeds stay on the REST snapshot path.

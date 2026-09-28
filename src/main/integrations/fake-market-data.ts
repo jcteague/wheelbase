@@ -1,9 +1,23 @@
-import { eachDayOfInterval, format, isWeekend, parseISO } from 'date-fns'
+import Decimal from 'decimal.js'
+import {
+  addDays,
+  differenceInCalendarDays,
+  eachDayOfInterval,
+  format,
+  getDate,
+  isFriday,
+  isThursday,
+  isWeekend,
+  parseISO
+} from 'date-fns'
 import { Observable, Subject } from 'rxjs'
 import { filter } from 'rxjs/operators'
+import { blackScholesPrice } from '../core/black-scholes'
 import { parseOccSymbol } from '../core/option-symbol'
 import {
   MarketDataError,
+  type DailyBar,
+  type DailyBarRange,
   type MarketCalendarDay,
   type MarketCalendarRange,
   type MarketDataErrorCode,
@@ -65,6 +79,137 @@ function parseEnv<T>(envVar: string): T | null {
   return raw ? (JSON.parse(raw) as T) : null
 }
 
+// --- IV-history daily bars ---
+
+/** One session of a programmed IV series: a flat vol surface, optionally thinned. */
+export type FakeIvSessionSpec =
+  | number
+  | {
+      iv: number
+      untraded?: Array<{ strike: number; type: 'call' | 'put' }>
+      tradeCount?: number
+      weeklyTradeCount?: number
+    }
+
+export type FakeIvSeries = {
+  price: number
+  tradeCount?: number
+  weeklyTradeCount?: number
+  latencyMs?: number
+  failWith?: 'network_error' | 'rate_limited' | 'unknown'
+  sessions: Record<string, FakeIvSessionSpec>
+}
+
+export type FakeIvSeriesFixture = Record<string, FakeIvSeries>
+
+export type DailyBarRequest = {
+  kind: 'option' | 'stock'
+  underlying: string
+  start: string
+  end: string | null
+}
+
+const FAKE_RATE = 0.045
+const DEFAULT_TRADE_COUNT = 100
+const STOCK_VOLUME = 1_000_000
+const STOCK_TRADE_COUNT = 10_000
+
+let ivSeries: FakeIvSeriesFixture = {}
+let barRequests: DailyBarRequest[] = []
+
+/** Replaces the programmed IV series and clears the request log. */
+export function setFakeIvSeries(fixture: FakeIvSeriesFixture): void {
+  ivSeries = fixture
+  barRequests = []
+}
+
+export function dailyBarRequests(): DailyBarRequest[] {
+  return [...barRequests]
+}
+
+export function dailyBarRequestCount(): number {
+  return barRequests.length
+}
+
+function recordBarRequest(
+  kind: DailyBarRequest['kind'],
+  underlying: string,
+  range: DailyBarRange
+): void {
+  barRequests = [...barRequests, { kind, underlying, start: range.start, end: range.end ?? null }]
+}
+
+function delay(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve()
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function sessionsInRange(series: FakeIvSeries, range: DailyBarRange): string[] {
+  return Object.keys(series.sessions)
+    .filter(
+      (session) => session >= range.start && (range.end === undefined || session <= range.end)
+    )
+    .sort()
+}
+
+/** Third-Friday ("monthly") expiration, decided locally so the fake shares nothing with the
+ *  selection logic it feeds. A Thursday 14–20 counts too: when the third Friday is an exchange
+ *  holiday (Juneteenth 2026) the monthly expires the day before. Tickers with Thursday
+ *  dailies would misclassify, which no fixture needs. */
+function isMonthlyExpiration(expiration: string): boolean {
+  const day = parseISO(expiration)
+  return isThirdFriday(day) || (isThursday(day) && isThirdFriday(addDays(day, 1)))
+}
+
+function isThirdFriday(date: Date): boolean {
+  return isFriday(date) && getDate(date) >= 15 && getDate(date) <= 21
+}
+
+function tradeCountFor(series: FakeIvSeries, spec: FakeIvSessionSpec, monthly: boolean): number {
+  const sessionSpec = typeof spec === 'number' ? undefined : spec
+  const tradeCount = sessionSpec?.tradeCount ?? series.tradeCount ?? DEFAULT_TRADE_COUNT
+  if (monthly) return tradeCount
+  return sessionSpec?.weeklyTradeCount ?? series.weeklyTradeCount ?? tradeCount
+}
+
+function optionBarsFor(
+  symbol: string,
+  range: DailyBarRange,
+  fixture: FakeIvSeriesFixture
+): DailyBar[] {
+  const identity = parseOccSymbol(symbol)
+  const series = identity ? fixture[identity.underlying] : undefined
+  if (!identity || !series) return []
+  const strike = Number(identity.strike)
+  const monthly = isMonthlyExpiration(identity.expiration)
+
+  return sessionsInRange(series, range).flatMap((session) => {
+    const spec = series.sessions[session]
+    const iv = typeof spec === 'number' ? spec : spec.iv
+    const untraded =
+      typeof spec !== 'number' &&
+      (spec.untraded ?? []).some(
+        (leg) => leg.strike === strike && leg.type === identity.contractType
+      )
+    const tradeCount = tradeCountFor(series, spec, monthly)
+    const daysToExpiry = differenceInCalendarDays(parseISO(identity.expiration), parseISO(session))
+    if (untraded || tradeCount === 0 || daysToExpiry <= 0) return []
+
+    const price = new Decimal(
+      blackScholesPrice({
+        type: identity.contractType,
+        spot: series.price,
+        strike,
+        yearsToExpiry: daysToExpiry / 365,
+        rate: FAKE_RATE,
+        dividendYield: 0,
+        volatility: iv
+      })
+    ).toFixed(4)
+    return [{ date: session, vwap: price, close: price, volume: tradeCount, tradeCount }]
+  })
+}
+
 /**
  * In-process fake provider for e2e tests (enabled via FAKE_MARKET_DATA=true).
  * Reads fixture data from environment variables:
@@ -74,8 +219,15 @@ function parseEnv<T>(envVar: string): T | null {
  *   FAKE_MARKET_CALENDAR              JSON string: MarketCalendarDay[]
  *   FAKE_MARKET_DATA_ERROR            MarketDataErrorCode — when set, all calls throw this error
  *   FAKE_MARKET_CALENDAR_ERROR        MarketDataErrorCode — fails only getMarketCalendar
+ *   WHEELBASE_FAKE_IV_SERIES          JSON string: FakeIvSeriesFixture — read at construction;
+ *                                     setFakeIvSeries() replaces it at runtime
  */
 export class FakeMarketDataProvider implements MarketDataProvider {
+  constructor() {
+    const fixture = parseEnv<FakeIvSeriesFixture>('WHEELBASE_FAKE_IV_SERIES')
+    if (fixture !== null) ivSeries = fixture
+  }
+
   private maybeThrow(): void {
     const code = process.env.FAKE_MARKET_DATA_ERROR
     if (code) throw new MarketDataError(code as MarketDataErrorCode, `Fake error: ${code}`)
@@ -138,6 +290,48 @@ export class FakeMarketDataProvider implements MarketDataProvider {
     if (fixture === null) return weekdaySessions(range)
 
     return fixture.filter((day) => day.date >= range.start && day.date <= range.end)
+  }
+
+  async getOptionDailyBars(
+    input: { symbols: string[] } & DailyBarRange
+  ): Promise<Map<string, DailyBar[]>> {
+    this.maybeThrow()
+    const { symbols, ...range } = input
+    const underlyings = [
+      ...new Set(symbols.flatMap((symbol) => parseOccSymbol(symbol)?.underlying ?? []))
+    ]
+    for (const underlying of underlyings) recordBarRequest('option', underlying, range)
+    await delay(Math.max(0, ...underlyings.map((u) => ivSeries[u]?.latencyMs ?? 0)))
+
+    const failing = underlyings.find((u) => ivSeries[u]?.failWith)
+    const failWith = failing ? ivSeries[failing].failWith : undefined
+    if (failWith) {
+      throw new MarketDataError(failWith, `Fake option bar error for ${failing}: ${failWith}`)
+    }
+
+    return new Map(
+      symbols
+        .map((symbol) => [symbol, optionBarsFor(symbol, range, ivSeries)] as const)
+        .filter(([, bars]) => bars.length > 0)
+    )
+  }
+
+  async getStockDailyBars(input: { symbol: string } & DailyBarRange): Promise<DailyBar[]> {
+    this.maybeThrow()
+    const { symbol, ...range } = input
+    recordBarRequest('stock', symbol, range)
+    const series = ivSeries[symbol]
+    if (!series) return []
+    await delay(series.latencyMs ?? 0)
+
+    const price = new Decimal(series.price).toFixed(4)
+    return sessionsInRange(series, range).map((date) => ({
+      date,
+      vwap: price,
+      close: price,
+      volume: STOCK_VOLUME,
+      tradeCount: STOCK_TRADE_COUNT
+    }))
   }
 
   async connect(): Promise<void> {

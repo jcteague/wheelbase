@@ -51,7 +51,7 @@ export type InstrumentType = z.infer<typeof InstrumentType>
 
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-12,us-13,us-14,us-32,us-33,us-44,us-57-58 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-12,us-13,us-14,us-32,us-33,us-44,us-57-58,us-121 -->
 
 ## Payload schemas
 
@@ -222,11 +222,11 @@ export const CollectIvrNowBatchSchema = z.object({
   successCount: z.number().int().min(0),
   errorCount: z.number().int().min(0),
   skippedCount: z.number().int().min(0),
-  skippedReason: z.enum(['market_closed']).nullable()
+  skippedReason: z.enum(['market_data_unavailable']).nullable()
 })
 ```
 
-Unusually for this section, this is **not** a request payload — `ivr:collect-now` takes no payload, so there is no request schema. It validates the _result_ the scheduler hands back at the `ivr:collect-now` IPC boundary: the batch summary produced by `collectIVRSnapshots(...)`. The handler re-parses the scheduler's `runNow('ivr-collect')` return through this schema before returning it to the renderer, which guards against a swallowed-error path returning an `undefined` batch (a parse failure surfaces as a normal `{ ok: false, errors }` envelope rather than a malformed success). `skippedReason` is `'market_closed'` only on the non-trading-day early exit (`successCount=0, errorCount=0, skippedCount=0`); otherwise `null`. Bound to `ivr:collect-now`. Driven by [us-44 — IVR snapshot store and scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md).
+Unusually for this section, this is **not** a request payload — `ivr:collect-now` takes no payload, so there is no request schema. It validates the _result_ the scheduler hands back at the `ivr:collect-now` IPC boundary: the batch summary produced by `collectIvHistoryBatch(...)` (named `collectIVRSnapshots` before us-121). The handler re-parses the scheduler's `runNow('ivr-collect')` return through this schema before returning it to the renderer, which guards against a swallowed-error path returning an `undefined` batch (a parse failure surfaces as a normal `{ ok: false, errors }` envelope rather than a malformed success). **(us-121)** `skippedReason` is `'market_data_unavailable'` when the run had no Alpaca market-data credentials (all counts zero); otherwise `null`. The former `'market_closed'` value is removed — a closed-day run now finds no missing sessions and counts every ticker in `skippedCount` — and parsing it fails. `successCount` counts tickers that persisted at least one reading or gap, `errorCount` tickers whose bar fetch or engine run failed, `skippedCount` tickers already up to date. Mirrored as `IpcCollectIvrNowBatch` in `src/preload/index.d.ts` and `CollectIvrNowResult` in `src/renderer/src/api/ivr.ts`. Bound to `ivr:collect-now`. Driven by [us-44 — IVR snapshot store and scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md) and [us-121](../features/us-121-iv-rank-from-own-iv-history.md).
 
 ### `SaveAlertDefaultsPayloadSchema`
 
@@ -593,7 +593,7 @@ interface IpcStreamErrorEvent {
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-44,us-57-58 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-44,us-57-58,us-121 -->
 
 ## Driven by
 
@@ -616,6 +616,7 @@ interface IpcStreamErrorEvent {
 - [us-37 — Paper/live broker environment toggle](../features/us-37-paper-live-broker-environment-toggle.md) — `BrokerEnvironmentSchema`, `SaveAlpacaCredentialsPayloadSchema`, `RemoveAlpacaCredentialsPayloadSchema`, `SetActiveBrokerEnvironmentPayloadSchema`, `TestStoredAlpacaConnectionPayloadSchema`, `TestConnectionPayloadSchema` (discriminated union on `vendor`), `CredentialStatus` / `TestSettingsConnectionResult` / `SaveAlpacaCredentialsResult` shapes
 - [us-44 — IVR snapshot store and scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md) — `CollectIvrNowBatchSchema` (result-validation schema for the no-payload `ivr:collect-now` boundary)
 - [us-57-58 — Configurable alert thresholds](../features/us-57-58-configurable-alert-thresholds.md) — `SaveAlertDefaultsPayloadSchema`, `SaveAlertOverridesPayloadSchema`
+- [us-121 — IV rank from our own IV history](../features/us-121-iv-rank-from-own-iv-history.md) — `CollectIvrNowBatchSchema.skippedReason` narrowed to `'market_data_unavailable'`; the reshaped `IpcIvRank` / new `IpcIvRankAbsence` are TypeScript mirrors, not Zod schemas (see [ipc-handlers](./ipc-handlers.md))
 <!-- /generated -->
 
 <!-- generated:from us-35 -->

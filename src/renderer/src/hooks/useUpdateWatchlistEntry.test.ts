@@ -39,6 +39,7 @@ function stale(ticker: string): WatchlistSnapshot {
         entry: { ...SAVED, ticker, notes: 'Would own below $170', ownBelowPrice: '170.0000' },
         quote: null,
         ivRank: null,
+        ivRankAbsence: { reason: 'not_collected' },
         earnings: { kind: 'unknown' },
         verdict: {
           price: { verdict: 'unmet', label: 'Above your price' },

@@ -1,26 +1,24 @@
 ---
 page: docs/spec/architecture/02-adrs/assignment-watermark-poll-start.md
-audited_at: 2026-06-27
-findings: 0
+audited_at: 2026-09-28
+findings: 1
 ---
 
-# Audit: assignment-watermark-poll-start.md
+# Audit: docs/spec/architecture/02-adrs/assignment-watermark-poll-start.md
 
 ## Verified (4)
 
-- ✓ `detectAssignments` exists at `src/main/services/detect-assignments.ts:78`.
-- ✓ `pollStartedAt = new Date().toISOString()` is captured **before** the broker await: `src/main/services/detect-assignments.ts:95`, with the `getActivities` await at line 99.
-- ✓ `pollStartedAt` (not a post-await timestamp) is persisted as the watermark: `appSettings.set(db, watermarkKey, pollStartedAt)` at `src/main/services/detect-assignments.ts:153`.
-- ✓ `INSERT OR IGNORE` is used for pending rows: `src/main/services/detect-assignments.ts:117`.
+- ✓ `pollStartedAt = new Date().toISOString()` captured before the broker call — `src/main/services/detect-assignments.ts:95` precedes `await brokerProvider.getActivities({ type: 'OPASN', since })` at `:99`.
+- ✓ `pollStartedAt` is what is persisted as the watermark — `appSettings.set(db, watermarkKey, pollStartedAt)` at `detect-assignments.ts:153` (key `assignments_last_poll_at:${env}`, `:87`).
+- ✓ `INSERT OR IGNORE` absorbs re-processing — `detect-assignments.ts:117`.
+- ✓ `detectAssignments` / `brokerProvider.getActivities` names match (`getActivities` takes a filter with `since`; the page's `{ since }` omits `type: 'OPASN'`, which is not a contradiction).
 
 ## Drift (0)
 
-None.
-
 ## Unverifiable (1)
 
-- ? The latency-race rationale (an OPASN landing between call and response being permanently skipped). The behavioral claim is corroborated by the dedicated race test (`detect-assignments.test.ts:240-260`) but the narrative argument itself is not mechanically checkable.
+- ? The race analysis and "surfaced by the code-review pass" history — narrative.
 
-## Missing files (0)
+## Missing files (1)
 
-- ✓ Feature page `../../features/us-35-assignment-detection.md` exists.
+- ✗ Source `plans/us-35/code-review-fixes.md` does not exist (no `plans/us-35/` directory). `../../features/us-35-assignment-detection.md` exists.

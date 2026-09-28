@@ -1,6 +1,8 @@
 # ADR: Same-day IVR refresh uses delete-then-insert
 
-<!-- generated:from us-44,us-100 -->
+<!-- generated:from us-44,us-100,us-121 -->
+
+> **Status: Superseded by [US-121](../../features/us-121-iv-rank-from-own-iv-history.md) (2026-09-26)** — see [ivr-collector-idempotent-over-missing-sessions](./ivr-collector-idempotent-over-missing-sessions.md). `ivr_snapshot` is dropped (migration 016) and `observationWindowOf` / `utcDayBounds` are deleted. IV30 readings live in `iv30_reading`, one row per `(underlying, session, method)` enforced by the primary key; a rerun in the same session finds nothing missing and leaves the row unchanged rather than overwriting it. The text below records the rule as it stood from US-44 through US-100.
 
 ## Decision
 

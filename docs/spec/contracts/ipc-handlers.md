@@ -24,7 +24,7 @@ Two transport patterns are in use. Most handlers are request/response (`ipcRende
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39,us-44,us-51,us-57-58,us-59,us-99 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39,us-44,us-51,us-57-58,us-59,us-99,us-121 -->
 
 ## Handler reference
 
@@ -1222,32 +1222,37 @@ Handlers are grouped by namespace. Each subsection documents the request payload
 
 ### `ivr:collect-now`
 
-- **Purpose:** manually trigger an out-of-band run of the `ivr-collect` collection job — the same job the scheduler runs after market close (`afterClose` cadence, `offsetMinutes: 60`). Backs the "Refresh IVR now" secondary action in the Settings Market Data section. Calls `scheduler.runNow('ivr-collect')` and returns the collector's batch summary so the renderer can show success/error counts. Target selection (all active-position underlyings) stays in the main-process collector — the channel accepts **no** renderer-supplied tickers or timing.
+- **Purpose:** manually trigger an out-of-band run of the `ivr-collect` job — the same job the scheduler runs after market close (`afterClose` cadence, `offsetMinutes: 60`). Backs the "Refresh IVR now" secondary action in the Settings Market Data section. Calls `scheduler.runNow('ivr-collect')` and returns the collector's batch summary. **(us-121)** the job is now the IV30 backfill/catch-up over every collection target (open positions ∪ watchlist): each ticker fetches only the settled sessions it is missing. Target selection stays in the main-process collector — the channel accepts **no** renderer-supplied tickers or timing.
 - **Request:** none (no payload).
 - **Response (success):**
   ```typescript
   {
     ok: true,
     batch: {
-      successCount: number                              // rows successfully inserted (after same-day overwrite)
-      errorCount: number                                // tickers that failed (parse/network/rate-limit/invalid-input)
-      skippedCount: number                              // tickers intentionally not persisted (incl. not_available)
-      skippedReason: 'market_closed' | null             // 'market_closed' when the whole batch exits early on a non-trading day
+      successCount: number                              // tickers that persisted ≥1 reading or gap this run
+      errorCount: number                                // tickers whose bar fetch or engine run failed (isolated)
+      skippedCount: number                              // tickers already up to date (nothing missing)
+      skippedReason: 'market_data_unavailable' | null   // no Alpaca market-data credentials; counts all zero
     }
   }
   ```
 - **Error codes:**
 
-  | field      | code             | message                        |
-  | ---------- | ---------------- | ------------------------------ |
-  | `__root__` | `internal_error` | `An unexpected error occurred` |
+  | field      | code             | message                                                                                                                 |
+  | ---------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------- |
+  | `__root__` | `internal_error` | `IVR collection failed before producing a batch summary` (the job handler threw and the scheduler resolved `undefined`) |
 
-- **Notes:** unlike `assignments:run-detection-now` (whose `scheduler.runNow` discards the handler return value), this channel **does** return the collector summary because US-44 requires the renderer to see success and error counts. The handler validates the scheduler result with `CollectIvrNowBatchSchema` (`{ successCount, errorCount, skippedCount, skippedReason }` — all counts `int().min(0)`, `skippedReason: z.enum(['market_closed']).nullable()`) before returning, so a swallowed job-handler error — where the scheduler resolves `undefined` — surfaces as a proper `{ ok: false }` envelope via `handleIpcCall` rather than a fake `{ ok: true }`. There is no request schema since the channel takes no payload. The renderer adapter (`src/renderer/src/api/ivr.ts`) normalizes the envelope to a flat `CollectIvrNowResult` (`{ successCount, errorCount, skippedCount, skippedReason }`) and throws the existing `ApiError` shape on `{ ok: false }`. `runNow('ivr-collect')` resets the cadence clock to now after the out-of-band run. The non-trading-day guard lives inside `collectIVRSnapshots`. **(us-116)** its verdict now comes from the cached exchange calendar rather than `BrokerProvider.getMarketStatus()`. **(us-100)** it is scoped by trigger: `scheduler.runNow('ivr-collect')` defaults to `trigger: 'explicit'`, so this channel is **never** refused on a weekend or a market holiday and its `skippedReason` is `null` on a closed day. The scheduled after-close tick passes `'scheduled'` and keeps the guard. `skippedReason: 'market_closed'` therefore remains reachable here only when an explicit refresh _joins_ an already in-flight scheduled run.
-- **Source:** `src/main/ipc/ivr.ts`, `src/main/schemas.ts` (`CollectIvrNowBatchSchema`), `src/main/services/ivr-collector.ts` (`collectIVRSnapshots`)
-- **Driven by:** [us-44 — IVR snapshot store and scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md), [us-100 — IVR on demand and outside market hours](../features/us-100-ivr-on-demand-and-outside-market-hours.md)
+  Per-ticker failures are counts, never envelope errors.
+
+- **Notes:** unlike `assignments:run-detection-now` (whose `scheduler.runNow` discards the handler return value), this channel **does** return the collector summary. The handler validates the scheduler result with `CollectIvrNowBatchSchema` before returning, so a swallowed job-handler error surfaces as a proper `{ ok: false }` envelope via `handleIpcCall` rather than a fake `{ ok: true }`. The renderer adapter (`src/renderer/src/api/ivr.ts`) normalizes the envelope to a flat `CollectIvrNowResult` and throws the existing `ApiError` shape on `{ ok: false }`. `runNow('ivr-collect')` resets the cadence clock to now after the out-of-band run. `SettingsPage` shows `IV history refresh complete: N tickers updated, M errors.` on `null` and `IV rank needs Alpaca market-data credentials — add them above to start collecting.` on `'market_data_unavailable'`.
+  - **(us-121) No closed-day guard.** `skippedReason: 'market_closed'` is removed. A run on a weekend or holiday finds no missing sessions and reports every ticker in `skippedCount` without a bar request, so neither the scheduled nor the explicit path is ever refused by the calendar, and the job no longer reads its trigger (the us-100 `'scheduled' | 'explicit'` split survives on the scheduler with no consumer). See [ivr-collector-idempotent-over-missing-sessions](../architecture/02-adrs/ivr-collector-idempotent-over-missing-sessions.md).
+  - **(us-121) Auth failure.** When the run's calendar refresh or a ticker's turn reports `no_market_data` (Alpaca `auth_failed`), the run stops with all counts zero, logs one INFO `ivr_collection_skipped_no_market_data`, and marks every target `no_market_data` in the in-memory run state, so bench cards say "IV rank needs Alpaca market-data credentials". See [ivr-auth-failure-aborts-as-skip](../architecture/02-adrs/ivr-auth-failure-aborts-as-skip.md).
+  - **(us-121) Side effects.** The run marks each ticker `pending` before its turn and settles it after (a bench refetch mid-run shows `…` for the ticker in flight), and fires [`ivr:snapshot-updated`](#ivrsnapshot-updated) **once** when the run ends (`{ ticker: null }`).
+- **Source:** `src/main/ipc/ivr.ts`, `src/main/schemas.ts` (`CollectIvrNowBatchSchema`), `src/main/services/ivr-collector.ts` (`collectIvHistoryBatch`), `src/main/services/iv-history.ts` (`collectIvHistory`)
+- **Driven by:** [us-44 — IVR snapshot store and scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md), [us-100 — IVR on demand and outside market hours](../features/us-100-ivr-on-demand-and-outside-market-hours.md), [us-121 — IV rank from our own IV history](../features/us-121-iv-rank-from-own-iv-history.md)
 <!-- /generated -->
 
-<!-- generated:from us-35,us-100 -->
+<!-- generated:from us-35,us-100,us-121 -->
 
 ## Dev-only scheduler handlers (us-35)
 
@@ -1300,21 +1305,36 @@ These channels do **not** follow the `{ ok, errors }` envelope — they return a
 
 ### `_test:scheduler-run-scheduled` (us-100)
 
-- **Purpose:** run a registered job **as the timer would** — `scheduler.runNow(jobName, { trigger: 'scheduled' })`. Since us-100 the `ivr-collect` handler branches on its run trigger, so a spec asserting that a scheduled run still refuses a weekend cannot use `_test:scheduler-run-now`: that drives the explicit path and would pass for the wrong reason.
+- **Purpose:** run a registered job **as the timer would** — `scheduler.runNow(jobName, { trigger: 'scheduled' })`. Added by us-100, when the `ivr-collect` handler branched on its run trigger. **(us-121)** that handler no longer reads the trigger, so both paths behave identically; the channel survives for specs that want the scheduled path (e.g. "A scheduled weekend run makes no bar requests", "Missed sessions are caught up by the next daily run").
 - **Request:** `jobName: string` (positional, not wrapped in an object).
 - **Response:** the handler's own return value (`unknown`) — unlike `_test:scheduler-run-now`, which discards it. The e2e helper `collectIvrScheduled` (`e2e/ivr-helpers.ts`) wraps it as an `IvrBatch`.
 - **Source:** `src/main/ipc/test-scheduler.ts`.
 
-### `_test:ivr-fetch-log` (us-100)
+### `_test:ivr-fetch-log` / `_test:ivr-set-outcomes` (removed by us-121)
 
-- **Purpose:** return every ticker the fake Barchart scraper has been asked for, in call order, since outcomes were last programmed. This is the only way to assert a negative — "no IVR request is made for KO" — because an absent `ivr_snapshot` row proves nothing: a fetch that returned `not_available` writes none either.
-- **Request:** none.
-- **Response:** `string[]` — upper-cased tickers, call order preserved.
-- **Notes:** the log lives in `src/main/integrations/fake-ivr.ts` and is **reset by `_test:ivr-set-outcomes`** (and by a fresh `createFakeIvrCollaborators()`), so programming a scenario's outcomes is also its reset point. `readFakeIvrFetchLog()` returns a copy.
-- **Source:** `src/main/ipc/test-ivr.ts`, `src/main/integrations/fake-ivr.ts`.
+The us-100 fake-Barchart channels are deleted along with `fake-ivr.ts` and `src/main/ipc/test-ivr.ts`. The negative "no request was made" is now asserted through `_test:daily-bar-requests` below.
+
+### `_test:iv-*` channels (us-121)
+
+Registered by `src/main/ipc/test-iv-history.ts` (`registerTestIvHistoryIpc(db)`), same `NODE_ENV === 'test'` guard and ad-hoc shapes. They program the fake market-data provider's IV series, read the persisted IV30 history back, and observe bar requests. See [fake-provider-synthesises-bars-from-iv-series](../architecture/02-adrs/fake-provider-synthesises-bars-from-iv-series.md).
+
+| Channel                      | Request                                 | Response                                                                                  |
+| ---------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `_test:iv-series-set`        | `FakeIvSeriesFixture` (ticker → series) | `{ ok: true }` / `{ ok: false, error }` — replaces the fixture and resets the request log |
+| `_test:iv30-history`         | —                                       | every `iv30_reading` row (snake_case), `ORDER BY underlying, session`                     |
+| `_test:iv30-gaps`            | —                                       | every `iv30_gap` row                                                                      |
+| `_test:daily-bar-requests`   | —                                       | `Array<{ kind: 'option' \| 'stock'; underlying; start; end: string \| null }>`            |
+| `_test:iv-history-recompute` | `{ force?: boolean }` (optional)        | `{ recomputed, unrecomputable }`                                                          |
+| `_test:iv30-corrupt`         | `{ ticker, session, iv30 }`             | `{ ok: true }` — overwrites `iv30` and sets `engine_version = 0`                          |
+| `_test:table-exists`         | `name: string`                          | `boolean` from `sqlite_master`                                                            |
+| `_test:ivr-set-now`          | `nowIso: string`                        | `{ ok, error? }` — unchanged; the fake clock now lives in `integrations/fake-clock.ts`    |
+
+The boot-time equivalent of `_test:iv-series-set` is the `WHEELBASE_FAKE_IV_SERIES` env var (JSON); `WHEELBASE_FAKE_IVR` is retired.
+
+- **Source:** `src/main/ipc/test-iv-history.ts`, `src/main/integrations/fake-market-data.ts`, `src/main/integrations/fake-clock.ts`, `src/preload/index.ts`, `e2e/ivr-helpers.ts`.
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39,us-99,us-100 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39,us-99,us-100,us-121 -->
 
 ## Push events
 
@@ -1358,12 +1378,17 @@ Push events are one-way `main → renderer` messages sent via `webContents.send`
 - **Direction:** main → renderer
 - **Payload:**
   ```typescript
-  type IvrSnapshotUpdatedEvent = { ticker: string } // upper-cased
+  type IvrSnapshotUpdatedEvent = { ticker: string | null } // upper-cased ticker, or null for a batch run
   ```
-- **Trigger:** emitted by the `onCollected` callback of the `IvrOnDemand` port (`src/main/services/ivr-on-demand.ts`), and **only** when a row was actually persisted — a `not_available`, a failed fetch, or a same-session skip sends nothing. `src/main/index.ts` wires it to `mainWindow?.webContents.send(...)`. The renderer subscribes through `useIvrSnapshotUpdates` (`src/renderer/src/hooks/useIvrSnapshotUpdates.ts`, mounted by `WatchlistPage`) and invalidates `watchlistQueryKeys.snapshot` and `screenerQueryKeys.results`.
-- **Why it exists:** `watchlist:add` and `positions:create` fire their collection detached, after the write commits, so the add response has already returned by the time the reading lands. `useWatchlistSnapshot` has no `refetchInterval` by design, so without this push a newly added card would read `n/a` until a manual reload.
-- **Source:** `src/main/index.ts`, `src/main/services/ivr-on-demand.ts`, `src/preload/index.ts`
-- **Driven by:** [us-100 — IVR on demand and outside market hours](../features/us-100-ivr-on-demand-and-outside-market-hours.md)
+- **Trigger (us-121):** one `notifyIvrSnapshotUpdated` function in `src/main/index.ts` is passed to both collection paths:
+  - the `IvrOnDemand` port (`src/main/services/ivr-on-demand.ts`) calls it as `onSettled(ticker)` after **every** settle — `collected`, `up_to_date`, `failed` or `no_market_data` — so a card that showed `…` (pending) always re-reads its final state;
+  - `collectIvHistoryBatch` calls it as `onCompleted()` **exactly once per run**, from a `finally` (normal end, abort, no-credentials, rethrown DB error), with `ticker: null`.
+
+  Before us-121 it fired only when a Barchart row was persisted; that left cards stuck on "Computing IV history" after a failed or already-complete run, and a per-ticker batch push would have re-run the screener (a chain pull per ticker) once per ticker. The renderer subscribes through `useIvrSnapshotUpdates` (`src/renderer/src/hooks/useIvrSnapshotUpdates.ts`, mounted by `WatchlistPage`) and invalidates `watchlistQueryKeys.snapshot` and `screenerQueryKeys.results`.
+
+- **Why it exists:** `watchlist:add` and `positions:create` fire their collection detached, after the write commits, so the add response has already returned by the time the reading lands. `useWatchlistSnapshot` has no `refetchInterval` by design, so without this push a newly added card would stay on its pending state until a manual reload.
+- **Source:** `src/main/index.ts`, `src/main/services/ivr-on-demand.ts`, `src/main/services/ivr-collector.ts`, `src/preload/index.ts`
+- **Driven by:** [us-100 — IVR on demand and outside market hours](../features/us-100-ivr-on-demand-and-outside-market-hours.md), [us-121 — IV rank from our own IV history](../features/us-121-iv-rank-from-own-iv-history.md)
 <!-- /generated -->
 
 <!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39,us-44,us-51,us-59 -->
@@ -1414,7 +1439,7 @@ Renderer adapters in `src/renderer/src/api/*.ts` translate IPC camelCase field n
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39,us-44,us-51,us-57-58,us-59 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-39,us-44,us-51,us-57-58,us-59,us-121 -->
 
 ## Driven by
 
@@ -1441,8 +1466,9 @@ Renderer adapters in `src/renderer/src/api/*.ts` translate IPC camelCase field n
 - [us-51 — Management Queue Dashboard](../features/us-51-management-queue-dashboard.md)
 - [us-57-58 — Configurable alert thresholds](../features/us-57-58-configurable-alert-thresholds.md)
 - [us-59 — Dismiss an alert with a record of the dismissal](../features/us-59-dismiss-alert.md)
+- [us-121 — IV rank from our own IV history](../features/us-121-iv-rank-from-own-iv-history.md)
 
-(us-2 was authored as a FastAPI `GET /api/positions` HTTP endpoint; the surviving Electron equivalent is `src/main/services/list-positions.ts` and the IPC channel name `positions:list` documented above is derived rather than authoritative. us-12-refactor introduced no new IPC handlers; it centralised the active-leg SQL into `src/main/services/active-leg-sql.ts` which is consumed by both `positions:get` and `positions:list`. us-6 introduced the global `optionType` → `instrumentType` rename across all leg-returning handlers and the `instrument_type` DB migration; us-5, us-6, and us-10 added `'EXPIRE'`, `'ASSIGN'`, and `'EXERCISE'` respectively to the `LegAction` enum. us-8 and us-9 both deliberately omit a new `cost_basis_snapshots` insert — us-8 because the existing CC_OPEN snapshot already captures the CC premium and the wheel is still open, us-9 because CC expiration is not a financial event (the premium was captured at CC open in us-7). us-10 introduced the new `positions:record-call-away` channel, the `'CALLED_AWAY'` `legRole` value, and the `WHEEL_COMPLETE` terminal phase. us-11 widened the `positions:get` response with an `allSnapshots` array (used by the renderer's `deriveRunningBasis()` pure helper to attach a running cost basis to every row in `LegHistoryTable`) and split previously-overloaded role values into distinct terminal-event values: `'CALLED_AWAY'` (now written by `positions:record-call-away` instead of `'CC_CLOSE'`) and `'CC_EXPIRED'` (now written by `positions:expire-cc` instead of a generic `'EXPIRE'`). us-13 is **plan-only** — the plan directory has no `tasks.md` or `refactor-phase-results.md` yet; both its planned changes (adding `rollCount` to `positions:get` and relaxing `positions:roll-csp` validation to allow same-expiration strike-only rolls) are documented as planned above. us-14 introduced the new `positions:roll-cc` channel — a mirror of `positions:roll-csp` for the CC leg with two intentional behaviour differences (`>=` expiration instead of `>`, plus an explicit `no_change` lifecycle guard on the sentinel field `__roll__`); the refactor phase consolidated `RollCspPayloadSchema` / `RollCcPayloadSchema` into a shared `RollPayloadBaseSchema` and `RollCspResult` / `RollCcResult` onto a shared `RollResultBase` interface — `calculateRollBasis()` is reused unchanged. us-15 added the `rollChainId: string | null` field to every entry in `positions:get`'s `legs[]` payload (the underlying `legs.roll_chain_id` column already existed from migration 001; us-15 only exposed it through `GET_LEGS_QUERY` + `mapLegRow`) and added the same field to the `LegRecord` TypeScript interface — all non-roll write-paths set `rollChainId: null` explicitly while the two roll services pass the shared UUID. The `activeLeg` payload deliberately still surfaces `rollChainId: null`. us-33 introduced the `market-data:option-snapshots` request/response channel (full provider `OptionSnapshot` shape including `greeks`, 1:1 with the provider — not flattened like `IpcStockQuote`) and extended `positions:list` with four nullable active-leg fields (`instrumentType`, `contracts`, `entryPremiumPerContract`, `profitTargetPercent`) sourced from the existing active-leg subquery plus the new `positions.profit_target_percent` column from migration `005`. us-31 (the market-data provider/foundation story) shipped **no** new IPC handlers — it landed the `MarketDataProvider` interface and `getOptionSnapshots(symbols)` adapter method that this channel consumes; us-34 (Greeks display) ships **no** new IPC handlers either, re-using the existing option-snapshots channel and reading `snapshots[symbol].greeks` directly. us-39 introduced the broker/market-data namespace split: `AlpacaMarketDataProvider` was removed entirely and replaced by `MassiveMarketDataProvider` (all `market-data:*` channels) and `AlpacaBrokerProvider` (all `broker:*` channels); the old plural `market-data:option-snapshots` channel was superseded by `market-data:option-snapshot` (singular) and `market-data:option-chain`; three new `broker:*` channels (`broker:account`, `broker:market-status`, `broker:activities`) now route to `AlpacaBrokerProvider` via `src/main/ipc/broker.ts`; `market-data:stock-quotes` now routes to `MassiveMarketDataProvider`; `greeks` on `IpcOptionSnapshot` became optional (absent rather than zero-filled when the provider omits them). us-39 introduced no DB migrations. us-35 introduced the four `assignments:*` channels (`assignments:list-pending`, `assignments:confirm`, `assignments:dismiss`, `assignments:run-detection-now`) plus four dev-only `_test:scheduler-*` channels (`_test:scheduler-registry`, `_test:scheduler-run-now`, `_test:scheduler-register`, `_test:scheduler-simulate-wake`) registered only when `NODE_ENV === 'test'`. `assignments:confirm` and `assignments:dismiss` are the only handlers in this document that deviate from the canonical `{ ok, errors }` envelope — they add a top-level `code` field (`NOT_FOUND` / `NOT_PENDING` / `TRANSITION_REJECTED`) sourced from `PendingAssignmentError.code` because `handleIpcCall` cannot express a top-level discriminator alongside the field-error array. us-35 also added migration `008_create_pending_assignments.sql` (with a compound `UNIQUE(activity_id, position_id)` index to support multi-CSP collisions on a single OPASN activity) and consumes the `app_settings` key/value table introduced by us-37's migration `006_add_credential_settings.sql` (per-environment watermark keys `assignments_last_poll_at:paper` / `:live`). us-37 introduced the six `settings:*` channels (`settings:get-credential-status`, `settings:save-alpaca-credentials`, `settings:remove-alpaca-credentials`, `settings:set-active-broker-environment`, `settings:test-connection`, `settings:test-stored-alpaca-connection`) and the migration `006_add_credential_settings.sql` that creates the `credential_settings` (encrypted Alpaca key material) and `app_settings` (active-broker-environment + general key/value) tables; broker provider refresh is runtime-scoped to broker handlers only — market-data providers continue uninterrupted across environment switches. us-44 introduced the new dedicated `ivr:*` namespace with a single handler, `ivr:collect-now` (`src/main/ipc/ivr.ts`), a manual scheduler trigger for the `ivr-collect` job that — unlike `assignments:run-detection-now` — returns the collector batch summary (`{ successCount, errorCount, skippedCount, skippedReason }`) validated through `CollectIvrNowBatchSchema` so a swallowed job-handler error becomes an honest `{ ok: false }` rather than a fake success; it also added migration `007_create_ivr_snapshot.sql` (the `ivr_snapshot` table — see [schema/tables](../schema/tables.md)) and the `ivr-collect` scheduler job registration in `src/main/index.ts`. us-51 introduced the new dedicated `alerts:*` namespace with a single handler, `alerts:list` (`src/main/ipc/alerts.ts`, `registerAlertsHandlers({ db })`), a payload-free read path that surfaces US-50's persisted open alerts as the dashboard "Management Queue"; the service `listManagementQueue(db)` (`src/main/services/alerts.ts`) INNER-JOINs open `alerts` to `positions`, sorts in SQL by urgency rank (high→medium→low) then `triggered_at ASC`, and projects into the new `ManagementQueueItem` view-model (`src/main/schemas.ts`) — deliberately a narrower shape than `AlertRecord`. us-51 added **no** migration (it reads US-50's `alerts` table from `migrations/009_create_alerts.sql`) and structurally mirrors `assignments:list-pending`. us-57-58 introduced three new channels — `settings:get-alert-defaults`, `settings:save-alert-defaults`, and `positions:save-alert-overrides` — making the alert engine's two thresholds (profit-target percent, management-window DTE) configurable at both a global (`app_settings`-backed) and per-position (`positions.management_window_dte_override`, migration `010`) level; it added no new migration for the global-defaults half (reuses the existing `app_settings` table) and one migration for the per-position half. us-59 added `alerts:dismiss` to the `alerts:*` namespace — a write channel alongside US-51's read-only `alerts:list` — transitioning an open alert to `dismissed` with a `dismissed_at` timestamp (migration `011_add_alerts_dismissal.sql`) and rejecting a non-open target with the new `NOT_OPEN` code; it follows the same `AlertError`/`handleIpcCall` dispatch pattern and the same top-level-`code` envelope deviation that `assignments:confirm` / `assignments:dismiss` established for us-35. us-99 retired Massive and pointed every `market-data:*` channel at `AlpacaMarketDataProvider` without adding, removing or reshaping any channel; it changed two settings shapes (`CredentialStatus.marketData` replacing `massive`/`massiveLastCheckedAt`; `TestConnectionPayloadSchema` Alpaca-only) and made broker-credential changes restart the stock stream via `registerMarketDataHandlers().restartStockQuoteStream`. us-116 moved the exchange clock and calendar off `BrokerProvider` onto `MarketDataProvider`: `broker:market-status` is deleted and `market-data:market-status` is canonical again (same payload, new service), `BrokerProvider` is reduced to `getAccountInfo` + `getActivities`, and two dev-only channels were added for e2e observability — `_test:trading-session-count` and `_test:market-calendar-fetch-count`, registered alongside the existing `_test:ivr-*` handlers only when `NODE_ENV === 'test'`. No migration. All are tracked here for regeneration completeness.)
+(us-2 was authored as a FastAPI `GET /api/positions` HTTP endpoint; the surviving Electron equivalent is `src/main/services/list-positions.ts` and the IPC channel name `positions:list` documented above is derived rather than authoritative. us-12-refactor introduced no new IPC handlers; it centralised the active-leg SQL into `src/main/services/active-leg-sql.ts` which is consumed by both `positions:get` and `positions:list`. us-6 introduced the global `optionType` → `instrumentType` rename across all leg-returning handlers and the `instrument_type` DB migration; us-5, us-6, and us-10 added `'EXPIRE'`, `'ASSIGN'`, and `'EXERCISE'` respectively to the `LegAction` enum. us-8 and us-9 both deliberately omit a new `cost_basis_snapshots` insert — us-8 because the existing CC_OPEN snapshot already captures the CC premium and the wheel is still open, us-9 because CC expiration is not a financial event (the premium was captured at CC open in us-7). us-10 introduced the new `positions:record-call-away` channel, the `'CALLED_AWAY'` `legRole` value, and the `WHEEL_COMPLETE` terminal phase. us-11 widened the `positions:get` response with an `allSnapshots` array (used by the renderer's `deriveRunningBasis()` pure helper to attach a running cost basis to every row in `LegHistoryTable`) and split previously-overloaded role values into distinct terminal-event values: `'CALLED_AWAY'` (now written by `positions:record-call-away` instead of `'CC_CLOSE'`) and `'CC_EXPIRED'` (now written by `positions:expire-cc` instead of a generic `'EXPIRE'`). us-13 is **plan-only** — the plan directory has no `tasks.md` or `refactor-phase-results.md` yet; both its planned changes (adding `rollCount` to `positions:get` and relaxing `positions:roll-csp` validation to allow same-expiration strike-only rolls) are documented as planned above. us-14 introduced the new `positions:roll-cc` channel — a mirror of `positions:roll-csp` for the CC leg with two intentional behaviour differences (`>=` expiration instead of `>`, plus an explicit `no_change` lifecycle guard on the sentinel field `__roll__`); the refactor phase consolidated `RollCspPayloadSchema` / `RollCcPayloadSchema` into a shared `RollPayloadBaseSchema` and `RollCspResult` / `RollCcResult` onto a shared `RollResultBase` interface — `calculateRollBasis()` is reused unchanged. us-15 added the `rollChainId: string | null` field to every entry in `positions:get`'s `legs[]` payload (the underlying `legs.roll_chain_id` column already existed from migration 001; us-15 only exposed it through `GET_LEGS_QUERY` + `mapLegRow`) and added the same field to the `LegRecord` TypeScript interface — all non-roll write-paths set `rollChainId: null` explicitly while the two roll services pass the shared UUID. The `activeLeg` payload deliberately still surfaces `rollChainId: null`. us-33 introduced the `market-data:option-snapshots` request/response channel (full provider `OptionSnapshot` shape including `greeks`, 1:1 with the provider — not flattened like `IpcStockQuote`) and extended `positions:list` with four nullable active-leg fields (`instrumentType`, `contracts`, `entryPremiumPerContract`, `profitTargetPercent`) sourced from the existing active-leg subquery plus the new `positions.profit_target_percent` column from migration `005`. us-31 (the market-data provider/foundation story) shipped **no** new IPC handlers — it landed the `MarketDataProvider` interface and `getOptionSnapshots(symbols)` adapter method that this channel consumes; us-34 (Greeks display) ships **no** new IPC handlers either, re-using the existing option-snapshots channel and reading `snapshots[symbol].greeks` directly. us-39 introduced the broker/market-data namespace split: `AlpacaMarketDataProvider` was removed entirely and replaced by `MassiveMarketDataProvider` (all `market-data:*` channels) and `AlpacaBrokerProvider` (all `broker:*` channels); the old plural `market-data:option-snapshots` channel was superseded by `market-data:option-snapshot` (singular) and `market-data:option-chain`; three new `broker:*` channels (`broker:account`, `broker:market-status`, `broker:activities`) now route to `AlpacaBrokerProvider` via `src/main/ipc/broker.ts`; `market-data:stock-quotes` now routes to `MassiveMarketDataProvider`; `greeks` on `IpcOptionSnapshot` became optional (absent rather than zero-filled when the provider omits them). us-39 introduced no DB migrations. us-35 introduced the four `assignments:*` channels (`assignments:list-pending`, `assignments:confirm`, `assignments:dismiss`, `assignments:run-detection-now`) plus four dev-only `_test:scheduler-*` channels (`_test:scheduler-registry`, `_test:scheduler-run-now`, `_test:scheduler-register`, `_test:scheduler-simulate-wake`) registered only when `NODE_ENV === 'test'`. `assignments:confirm` and `assignments:dismiss` are the only handlers in this document that deviate from the canonical `{ ok, errors }` envelope — they add a top-level `code` field (`NOT_FOUND` / `NOT_PENDING` / `TRANSITION_REJECTED`) sourced from `PendingAssignmentError.code` because `handleIpcCall` cannot express a top-level discriminator alongside the field-error array. us-35 also added migration `008_create_pending_assignments.sql` (with a compound `UNIQUE(activity_id, position_id)` index to support multi-CSP collisions on a single OPASN activity) and consumes the `app_settings` key/value table introduced by us-37's migration `006_add_credential_settings.sql` (per-environment watermark keys `assignments_last_poll_at:paper` / `:live`). us-37 introduced the six `settings:*` channels (`settings:get-credential-status`, `settings:save-alpaca-credentials`, `settings:remove-alpaca-credentials`, `settings:set-active-broker-environment`, `settings:test-connection`, `settings:test-stored-alpaca-connection`) and the migration `006_add_credential_settings.sql` that creates the `credential_settings` (encrypted Alpaca key material) and `app_settings` (active-broker-environment + general key/value) tables; broker provider refresh is runtime-scoped to broker handlers only — market-data providers continue uninterrupted across environment switches. us-44 introduced the new dedicated `ivr:*` namespace with a single handler, `ivr:collect-now` (`src/main/ipc/ivr.ts`), a manual scheduler trigger for the `ivr-collect` job that — unlike `assignments:run-detection-now` — returns the collector batch summary (`{ successCount, errorCount, skippedCount, skippedReason }`) validated through `CollectIvrNowBatchSchema` so a swallowed job-handler error becomes an honest `{ ok: false }` rather than a fake success; it also added migration `007_create_ivr_snapshot.sql` (the `ivr_snapshot` table — see [schema/tables](../schema/tables.md)) and the `ivr-collect` scheduler job registration in `src/main/index.ts`. us-51 introduced the new dedicated `alerts:*` namespace with a single handler, `alerts:list` (`src/main/ipc/alerts.ts`, `registerAlertsHandlers({ db })`), a payload-free read path that surfaces US-50's persisted open alerts as the dashboard "Management Queue"; the service `listManagementQueue(db)` (`src/main/services/alerts.ts`) INNER-JOINs open `alerts` to `positions`, sorts in SQL by urgency rank (high→medium→low) then `triggered_at ASC`, and projects into the new `ManagementQueueItem` view-model (`src/main/schemas.ts`) — deliberately a narrower shape than `AlertRecord`. us-51 added **no** migration (it reads US-50's `alerts` table from `migrations/009_create_alerts.sql`) and structurally mirrors `assignments:list-pending`. us-57-58 introduced three new channels — `settings:get-alert-defaults`, `settings:save-alert-defaults`, and `positions:save-alert-overrides` — making the alert engine's two thresholds (profit-target percent, management-window DTE) configurable at both a global (`app_settings`-backed) and per-position (`positions.management_window_dte_override`, migration `010`) level; it added no new migration for the global-defaults half (reuses the existing `app_settings` table) and one migration for the per-position half. us-59 added `alerts:dismiss` to the `alerts:*` namespace — a write channel alongside US-51's read-only `alerts:list` — transitioning an open alert to `dismissed` with a `dismissed_at` timestamp (migration `011_add_alerts_dismissal.sql`) and rejecting a non-open target with the new `NOT_OPEN` code; it follows the same `AlertError`/`handleIpcCall` dispatch pattern and the same top-level-`code` envelope deviation that `assignments:confirm` / `assignments:dismiss` established for us-35. us-99 retired Massive and pointed every `market-data:*` channel at `AlpacaMarketDataProvider` without adding, removing or reshaping any channel; it changed two settings shapes (`CredentialStatus.marketData` replacing `massive`/`massiveLastCheckedAt`; `TestConnectionPayloadSchema` Alpaca-only) and made broker-credential changes restart the stock stream via `registerMarketDataHandlers().restartStockQuoteStream`. us-116 moved the exchange clock and calendar off `BrokerProvider` onto `MarketDataProvider`: `broker:market-status` is deleted and `market-data:market-status` is canonical again (same payload, new service), `BrokerProvider` is reduced to `getAccountInfo` + `getActivities`, and two dev-only channels were added for e2e observability — `_test:trading-session-count` and `_test:market-calendar-fetch-count`, registered alongside the existing `_test:ivr-*` handlers only when `NODE_ENV === 'test'`. No migration. us-121 reshaped rather than added production channels: `ivr:collect-now`'s `skippedReason` became `'market_data_unavailable' | null` (`'market_closed'` removed with the closed-day guard), `watchlist:snapshot` rows and `screener:results` candidates carry a reshaped `IpcIvRank` (integer `value | null`, `percentile`, `low`, `high`) plus an `ivRankAbsence` reason, and `ivr:snapshot-updated` fires per ticker after every on-demand settle and once per batch with `ticker: null`; the dev-only `_test:ivr-set-outcomes` / `_test:ivr-fetch-log` were replaced by the `_test:iv-*` channels in `src/main/ipc/test-iv-history.ts`. Migration `016` adds `iv30_reading` / `iv30_gap` and drops `ivr_snapshot`. All are tracked here for regeneration completeness.)
 
 <!-- /generated -->
 
@@ -1653,7 +1679,7 @@ US-37 adds a dedicated `settings:*` namespace for credential status, Alpaca cred
 
 <!-- /generated -->
 
-<!-- generated:from us-63,us-96,us-100 -->
+<!-- generated:from us-63,us-96,us-100,us-121 -->
 
 ## `watchlist:*` namespace
 
@@ -1674,14 +1700,18 @@ channel and the widened registration signature come from
 - **Response (success):** `{ ok: true, rows: IpcWatchlistSnapshotRow[], asOf: string }`
   in watchlist order (`added_at DESC`), where a row is
   `{ entry, quote: IpcSnapshotQuote | null, ivRank: IpcIvRank | null,
-earnings: IpcEarningsDisplay, verdict: IpcEntryVerdict }`. A gate is
+ivRankAbsence: IpcIvRankAbsence | null, earnings: IpcEarningsDisplay, verdict: IpcEntryVerdict }`
+  — **(us-121)** exactly one of `ivRank` / `ivRankAbsence` is non-null (typed as the union
+  `IpcIvRankPair`); see `IpcIvRank` / `IpcIvRankAbsence` under `screener:results`. The verdict is
+  computed from `ivRank` only — the absence reason never reaches the IV gate. A gate is
   `{ verdict: 'met' | 'unmet' | 'unknown' | 'none', label: string | null }`; `asOf` is the
   ISO instant every verdict was judged at.
 - **Degradation:** every expected failure is modelled inside the success payload, never as
   an error envelope. The provider failing to construct yields `quote: null` on every row
   with price gates `unknown`; one ticker's quote rejecting nulls only that row; an
   earnings-read failure yields `{ kind: 'unknown' }` everywhere; an IVR-read failure yields
-  `ivRank: null` everywhere with IV gates `unknown`; an empty watchlist returns
+  `ivRank: null` everywhere with IV gates `unknown`; the IV read (us-121) is DB-only and makes no
+  market-data request; an empty watchlist returns
   `{ rows: [], asOf }` without constructing the provider at all.
 - **Error:** only the standard `__root__` / `internal_error` envelope.
 - **Source:** `src/main/ipc/watchlist.ts`, `src/main/services/watchlist-snapshot.ts`,
@@ -1699,11 +1729,14 @@ postEarningsOnly?, coreHolding? }` (parsed by `WatchlistAddPayloadSchema`; ticke
   `ValidationError`). Bad payloads map to the standard Zod field errors.
 - **Side effect (us-100):** after the row commits, `addWatchlistEntry` fires
   `void ivrOnDemand?.collect(ticker)` — a single-ticker IVR collection for **this ticker
-  only**, never the whole bench. It is detached on purpose: the add must not wait on a
-  ~1s Barchart fetch, and `IvrOnDemand.collect` never rejects, so **an IVR failure is
-  never an error on this channel** and the response shape above is unchanged. The
-  duplicate-ticker `ValidationError` is thrown before the insert, so a rejected add never
-  collects. When a row is persisted the renderer is told via the
+  only**, never the whole bench. It is detached on purpose: the add must not wait on the
+  ticker's IV-history backfill (a year of daily bars, ~25–35 requests — us-121), and
+  `IvrOnDemand.collect` never rejects, so **an IVR failure is never an error on this
+  channel** and the response shape above is unchanged. `collect` marks the ticker `pending`
+  synchronously before its first `await`, so the snapshot the renderer refetches after the
+  add already shows the computing state (`…`). The duplicate-ticker `ValidationError` is
+  thrown before the insert, so a rejected add never collects. When the collection settles
+  (any outcome) the renderer is told via the
   [`ivr:snapshot-updated`](#ivrsnapshot-updated) push event. `positions:create` carries
   the same side effect through the same port.
 - **Source:** `src/main/ipc/watchlist.ts`, `src/main/schemas.ts`, `src/main/services/watchlist.ts` (`addWatchlistEntry`), `src/main/services/ivr-on-demand.ts`
@@ -1719,7 +1752,7 @@ postEarningsOnly?, coreHolding? }` (parsed by `WatchlistAddPayloadSchema`; ticke
 
 <!-- /generated -->
 
-<!-- generated:from us-65,us-67,us-70,us-99,us-98,us-96 -->
+<!-- generated:from us-65,us-67,us-70,us-99,us-98,us-96,us-121 -->
 
 ## `screener:*` namespace
 
@@ -1781,9 +1814,24 @@ daysBeforeExpiry }` (only under `earningsHandling: 'flag'`),
   a `predates_earnings` reading survives on the payload however old it is, carrying its
   explanation. There is deliberately **no `usable` field**: usability is derived from
   `state` at each end (`isUsableState` in main, the tone rule in `IvrCell`) so one rule
-  cannot drift into two. Mirrored in `src/preload/index.d.ts` and as `ScreenerIvRank` in
-  `src/renderer/src/api/screener.ts`. See
+  cannot drift into two. Mirrored in `src/preload/index.d.ts` and as `IvRank` in
+  `src/renderer/src/api/ivr.ts` (`ScreenerIvRank` in `api/screener.ts` until the us-121 tidy-up). See
   [us-98](../features/us-98-ivr-staleness-tiers.md).
+  **(us-121)** the reading is computed from the app's own IV30 history and gains three fields:
+  `{ value: string | null, percentile, low, high, observedAt, ageTradingDays, state }` (`state`
+  also admits `'expired'`). `value` is the integer rank as a string (`'25'`, no decimal), `null` when
+  the 252-session window is flat; `percentile` is an integer string; `low` / `high` are the 52-week
+  IV30 range at 4 dp; `observedAt` is the anchor session's close. A `null` value reads
+  `unknown('IV unavailable')` at the IV gate and is dropped by `usableIvRanks`.
+- **`IpcIvRankAbsence`** (us-121): when `ivRank` is `null`, `ivRankAbsence` says why —
+  `{ reason: 'pending' | 'no_market_data' | 'failed' | 'not_collected' }` or
+  `{ reason: 'insufficient_history', coverage, window: 252, required: 200 }`. Precedence:
+  `pending` > `no_market_data` > `failed` > `insufficient_history` > `not_collected`; a published
+  reading always wins. `pending` / `no_market_data` / `failed` are in-memory run state, gone on
+  relaunch. Display-only: neither the verdict nor the screener floor reads it. Mirrored as
+  `IvRankAbsence` / `IvRankPair` in `src/renderer/src/api/ivr.ts` (and `IvRankPair` in main); the
+  row / candidate pair is `IpcIvRankPair`, so both-null is unrepresentable. See
+  [iv-rank-absence-reason-in-memory-run-state](../architecture/02-adrs/iv-rank-absence-reason-in-memory-run-state.md).
 - **Unusable readings never gate:** only `fresh` and `aging` readings are fed to the
   engine, so `iv_rank_floor` is never applied to a stale, earnings-invalid or expired
   one — such a candidate ranks exactly as it would with no IVR at all, at the same
@@ -1811,7 +1859,8 @@ daysBeforeExpiry }` (only under `earningsHandling: 'flag'`),
 - **Source:** `src/main/ipc/screener.ts`, `src/main/services/screener.ts`
   (`screenWatchlistCandidates`), `src/main/core/screener.ts` (`screenTicker`,
   `rankCandidates`), `src/main/core/ivr-freshness.ts` (`assessIvRank`),
-  `src/main/services/ivr-snapshots.ts` (`getAssessedIvrByUnderlying`),
+  `src/main/services/iv-rank-lookup.ts` (`readIvRankLookup`, `absenceFor`, `lookupOf` — us-121, replacing `getAssessedIvrByUnderlying`),
+  `src/main/services/iv-history-read.ts` (`readIvMetricsByUnderlying`), `src/main/services/iv-run-state.ts`,
   `src/main/services/trading-calendar-store.ts` (`readTradingCalendar`),
   `src/preload/index.ts`
 

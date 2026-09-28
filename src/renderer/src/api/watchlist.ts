@@ -1,7 +1,7 @@
 // Adapter between the renderer and the watchlist IPC preload layer.
 
 import { type ApiError, throwMappedIpcErrors } from './error'
-import type { ScreenerIvRank } from './screener'
+import type { IvRankPair } from './ivr'
 
 export type { ApiError }
 
@@ -53,7 +53,7 @@ export async function removeWatchlistEntry(ticker: string): Promise<void> {
 }
 
 // [US-96] One live bench. Field-for-field mirrors of the `IpcWatchlistSnapshot*` types in
-// `src/preload/index.d.ts`; `ScreenerIvRank` already mirrors `IpcIvRank`, so the snapshot
+// `src/preload/index.d.ts`; `IvRankPair` already mirrors `IpcIvRankPair`, so the snapshot
 // reuses it rather than declaring a second copy of the same reading.
 
 export type SnapshotQuote = {
@@ -82,10 +82,9 @@ export type EarningsDisplay =
 export type WatchlistSnapshotRow = {
   entry: WatchlistEntry
   quote: SnapshotQuote | null // null → the quote fetch failed for this ticker
-  ivRank: ScreenerIvRank | null // null → never collected or unreadable
   earnings: EarningsDisplay
   verdict: EntryVerdict
-}
+} & IvRankPair
 
 export type WatchlistSnapshot = {
   rows: WatchlistSnapshotRow[] // watchlist order (added_at DESC)

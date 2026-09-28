@@ -75,7 +75,14 @@ function fetchErr(status: number, body = '', headers: Record<string, string> = {
 }
 
 import { AlpacaMarketDataProvider } from './alpaca-market-data'
-import { mapOptionQuote, nonFiniteFigures } from './alpaca-market-data-mappers'
+import {
+  buildOptionBarsUrl,
+  buildStockBarsUrl,
+  mapDailyBar,
+  mapOptionQuote,
+  nonFiniteFigures,
+  type AlpacaDailyBar
+} from './alpaca-market-data-mappers'
 
 const PAPER_CREDS: AlpacaCredentials = {
   environment: 'paper',
@@ -1867,6 +1874,289 @@ describe('AlpacaMarketDataProvider market facts', () => {
 
       expect((thrown as MarketDataError).code).toBe('auth_failed')
       expect(mockFetch).not.toHaveBeenCalled()
+    })
+  })
+})
+
+// [US-121] Completed daily bars — the only input the IV30 engine consumes.
+describe('daily bar URL builders', () => {
+  const params = (url: string): URLSearchParams => new URL(url).searchParams
+
+  it('builds an option bars URL with 1Day timeframe, max limit, joined symbols and no end', () => {
+    const url = buildOptionBarsUrl(['A', 'B'], { start: '2025-09-19' })
+
+    expect(url.startsWith('https://data.alpaca.markets/v1beta1/options/bars?')).toBe(true)
+    expect(params(url).get('symbols')).toBe('A,B')
+    expect(params(url).get('timeframe')).toBe('1Day')
+    expect(params(url).get('limit')).toBe('10000')
+    expect(params(url).get('start')).toBe('2025-09-19')
+    expect(params(url).has('end')).toBe(false)
+    expect(params(url).has('page_token')).toBe(false)
+  })
+
+  it('appends end only when supplied', () => {
+    const url = buildOptionBarsUrl(['A'], { start: '2025-09-19', end: '2026-03-12' })
+
+    expect(params(url).get('end')).toBe('2026-03-12')
+  })
+
+  it('appends page_token when given', () => {
+    const url = buildOptionBarsUrl(['A'], { start: '2025-09-19' }, 'tok-2')
+
+    expect(params(url).get('page_token')).toBe('tok-2')
+  })
+
+  it('builds a stock bars URL on the SIP feed with raw adjustment', () => {
+    const url = buildStockBarsUrl('AAPL', { start: '2025-09-19', end: '2026-03-12' })
+
+    expect(url.startsWith('https://data.alpaca.markets/v2/stocks/bars?')).toBe(true)
+    expect(params(url).get('symbols')).toBe('AAPL')
+    expect(params(url).get('feed')).toBe('sip')
+    expect(params(url).get('adjustment')).toBe('raw')
+    expect(params(url).get('timeframe')).toBe('1Day')
+    expect(params(url).get('start')).toBe('2025-09-19')
+    expect(params(url).get('end')).toBe('2026-03-12')
+  })
+
+  it('omits end on the stock URL when absent and appends page_token when given', () => {
+    const url = buildStockBarsUrl('AAPL', { start: '2025-09-19' }, 'tok-3')
+
+    expect(params(url).has('end')).toBe(false)
+    expect(params(url).get('page_token')).toBe('tok-3')
+  })
+})
+
+describe('mapDailyBar', () => {
+  it('maps a vendor bar to a DailyBar dated by its Eastern session day', () => {
+    expect(mapDailyBar({ t: '2026-03-12T05:00:00Z', vw: 200.123456, c: 201, v: 10, n: 7 })).toEqual(
+      { date: '2026-03-12', vwap: '200.1235', close: '201.0000', volume: 10, tradeCount: 7 }
+    )
+  })
+
+  it('maps a 04:00Z (EDT midnight) timestamp to the same Eastern day', () => {
+    expect(mapDailyBar({ t: '2026-03-12T04:00:00Z', vw: 1, c: 1, v: 1, n: 1 })?.date).toBe(
+      '2026-03-12'
+    )
+  })
+
+  it('drops a bar whose vwap is non-finite', () => {
+    expect(mapDailyBar({ t: '2026-03-12T05:00:00Z', vw: NaN, c: 201, v: 10, n: 7 })).toBeNull()
+  })
+
+  it('drops a bar whose close is non-finite', () => {
+    expect(mapDailyBar({ t: '2026-03-12T05:00:00Z', vw: 200, c: Infinity, v: 10, n: 7 })).toBeNull()
+  })
+
+  it('drops a bar whose timestamp is unparseable', () => {
+    expect(mapDailyBar({ t: 'not-a-time', vw: 200, c: 201, v: 10, n: 7 })).toBeNull()
+  })
+})
+
+describe('AlpacaMarketDataProvider daily bars', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubGlobal('fetch', mockFetch)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  const urlAt = (index: number): URL => new URL(mockFetch.mock.calls[index][0] as string)
+  const rawBar = (day: string, vw: number): AlpacaDailyBar => ({
+    t: `${day}T04:00:00Z`,
+    o: vw,
+    h: vw,
+    l: vw,
+    c: vw,
+    v: 10,
+    n: 5,
+    vw
+  })
+  const symbolsFor = (count: number): string[] =>
+    Array.from(
+      { length: count },
+      (_, i) => `AAPL260410C${String(100000 + i * 1000).padStart(8, '0')}`
+    )
+
+  describe('getOptionDailyBars', () => {
+    it('issues no request for an empty symbol list', async () => {
+      const { provider } = createProvider()
+
+      const result = await provider.getOptionDailyBars({ symbols: [], start: '2026-03-01' })
+
+      expect(result.size).toBe(0)
+      expect(mockFetch).not.toHaveBeenCalled()
+    })
+
+    it('batches 250 symbols into sequential requests of 100, 100 and 50', async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(fetchOk({ bars: {}, next_page_token: null }))
+      )
+      const symbols = symbolsFor(250)
+      const { provider } = createProvider()
+
+      await provider.getOptionDailyBars({ symbols, start: '2026-03-01', end: '2026-03-12' })
+
+      expect(mockFetch).toHaveBeenCalledTimes(3)
+      const sizes = [0, 1, 2].map((i) => urlAt(i).searchParams.get('symbols')!.split(',').length)
+      expect(sizes).toEqual([100, 100, 50])
+      expect(urlAt(0).searchParams.get('symbols')!.split(',')).toEqual(symbols.slice(0, 100))
+      expect(urlAt(2).searchParams.get('end')).toBe('2026-03-12')
+    })
+
+    it('does not start the next batch until the previous one resolves', async () => {
+      let inFlight = 0
+      let maxInFlight = 0
+      mockFetch.mockImplementation(async () => {
+        inFlight += 1
+        maxInFlight = Math.max(maxInFlight, inFlight)
+        await Promise.resolve()
+        inFlight -= 1
+        return fetchOk({ bars: {}, next_page_token: null })
+      })
+      const { provider } = createProvider()
+
+      await provider.getOptionDailyBars({ symbols: symbolsFor(250), start: '2026-03-01' })
+
+      expect(maxInFlight).toBe(1)
+    })
+
+    it('merges bars per symbol across pages and omits symbols the vendor did not return', async () => {
+      const [a, b, missing] = symbolsFor(3)
+      mockFetch
+        .mockResolvedValueOnce(
+          fetchOk({
+            bars: { [a]: [rawBar('2026-03-11', 1.5)], [b]: [rawBar('2026-03-11', 2.5)] },
+            next_page_token: 'page-2'
+          })
+        )
+        .mockResolvedValueOnce(
+          fetchOk({ bars: { [a]: [rawBar('2026-03-12', 1.75)] }, next_page_token: null })
+        )
+      const { provider } = createProvider()
+
+      const result = await provider.getOptionDailyBars({
+        symbols: [a, b, missing],
+        start: '2026-03-11'
+      })
+
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+      expect(urlAt(1).searchParams.get('page_token')).toBe('page-2')
+      expect(urlAt(0).searchParams.has('end')).toBe(false)
+      expect(result.get(a)?.map((bar) => [bar.date, bar.vwap])).toEqual([
+        ['2026-03-11', '1.5000'],
+        ['2026-03-12', '1.7500']
+      ])
+      expect(result.get(b)).toHaveLength(1)
+      expect(result.has(missing)).toBe(false)
+    })
+
+    it('treats a null bars object as no bars', async () => {
+      mockFetch.mockResolvedValue(fetchOk({ bars: null, next_page_token: null }))
+      const { provider } = createProvider()
+
+      const result = await provider.getOptionDailyBars({
+        symbols: symbolsFor(2),
+        start: '2026-03-11'
+      })
+
+      expect(result.size).toBe(0)
+    })
+
+    it('logs alpaca_daily_bars_mapped at INFO with symbol and bar counts', async () => {
+      const [a] = symbolsFor(1)
+      mockFetch.mockResolvedValue(
+        fetchOk({ bars: { [a]: [rawBar('2026-03-11', 1.5)] }, next_page_token: null })
+      )
+      const info = vi.spyOn(logger, 'info')
+      const { provider } = createProvider()
+
+      await provider.getOptionDailyBars({ symbols: [a], start: '2026-03-11' })
+
+      expect(info).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'option', symbols: 1, bars: 1 }),
+        'alpaca_daily_bars_mapped'
+      )
+    })
+
+    it('rejects auth_failed before any request when credentials are absent', async () => {
+      const { provider } = createProvider(null)
+
+      const thrown = await provider
+        .getOptionDailyBars({ symbols: symbolsFor(1), start: '2026-03-11' })
+        .catch((e: unknown) => e)
+
+      expect((thrown as MarketDataError).code).toBe('auth_failed')
+      expect(mockFetch).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('getStockDailyBars', () => {
+    it('returns the underlying bars ascending by date', async () => {
+      mockFetch.mockResolvedValue(
+        fetchOk({
+          bars: { AAPL: [rawBar('2026-03-12', 201), rawBar('2026-03-11', 200)] },
+          next_page_token: null
+        })
+      )
+      const { provider } = createProvider()
+
+      const bars = await provider.getStockDailyBars({ symbol: 'AAPL', start: '2026-03-11' })
+
+      expect(bars.map((bar) => bar.date)).toEqual(['2026-03-11', '2026-03-12'])
+      expect(urlAt(0).searchParams.get('feed')).toBe('sip')
+    })
+
+    it('follows next_page_token', async () => {
+      mockFetch
+        .mockResolvedValueOnce(
+          fetchOk({ bars: { AAPL: [rawBar('2026-03-11', 200)] }, next_page_token: 'p2' })
+        )
+        .mockResolvedValueOnce(
+          fetchOk({ bars: { AAPL: [rawBar('2026-03-12', 201)] }, next_page_token: null })
+        )
+      const { provider } = createProvider()
+
+      const bars = await provider.getStockDailyBars({ symbol: 'AAPL', start: '2026-03-11' })
+
+      expect(bars).toHaveLength(2)
+      expect(urlAt(1).searchParams.get('page_token')).toBe('p2')
+    })
+
+    it('returns [] when the vendor has no bars', async () => {
+      mockFetch.mockResolvedValue(fetchOk({ bars: {}, next_page_token: null }))
+      const { provider } = createProvider()
+
+      expect(await provider.getStockDailyBars({ symbol: 'AAPL', start: '2026-03-11' })).toEqual([])
+    })
+
+    it('maps a 403 to MarketDataError auth_failed', async () => {
+      mockFetch.mockResolvedValue(fetchErr(403))
+      const { provider } = createProvider()
+
+      const thrown = await provider
+        .getStockDailyBars({ symbol: 'AAPL', start: '2026-03-11' })
+        .catch((e: unknown) => e)
+
+      expect(thrown).toBeInstanceOf(MarketDataError)
+      expect((thrown as MarketDataError).code).toBe('auth_failed')
+    })
+
+    it('succeeds after two 429 responses', async () => {
+      mockFetch
+        .mockResolvedValueOnce(fetchErr(429, '', { 'Retry-After': '0' }))
+        .mockResolvedValueOnce(fetchErr(429, '', { 'Retry-After': '0' }))
+        .mockResolvedValueOnce(
+          fetchOk({ bars: { AAPL: [rawBar('2026-03-11', 200)] }, next_page_token: null })
+        )
+      const { provider } = createProvider()
+
+      const bars = await provider.getStockDailyBars({ symbol: 'AAPL', start: '2026-03-11' })
+
+      expect(mockFetch).toHaveBeenCalledTimes(3)
+      expect(bars).toHaveLength(1)
     })
   })
 })

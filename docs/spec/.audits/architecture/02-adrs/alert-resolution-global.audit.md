@@ -1,25 +1,25 @@
 ---
 page: docs/spec/architecture/02-adrs/alert-resolution-global.md
-audited_at: 2026-06-27
-findings: 0
+audited_at: 2026-09-28
+findings: 1
 ---
 
-# Audit: alert-resolution-global.md
+# Audit: docs/spec/architecture/02-adrs/alert-resolution-global.md
 
-## Verified (3)
+## Verified (7)
 
-- ✓ Persist phase resolves every open alert whose `(position_id, rule_code)` key is absent from the matched set — `resolveAlertsNotIn` iterates open alerts and resolves those not in `matchedKeys` — `src/main/services/alerts.ts:115-129`; called at `evaluate-alerts.ts:120`.
-- ✓ Resolution sets `status = 'resolved', resolved_at = ?` (no delete) — `alerts.ts:129` (`UPDATE alerts SET status = 'resolved', resolved_at = ? ...`).
-- ✓ Shared `alertKey(positionId, ruleCode)` helper builds the identity — `alerts.ts:36`, used both for matched keys (`evaluate-alerts.ts:118`) and filtering (`alerts.ts:125`).
+- ✓ Keep-open set = matched keys plus skipped keys — `src/main/services/evaluate-alerts.ts:275-281` (`new Set(skippedKeys)` then `keepOpenKeys.add(...)` per match).
+- ✓ Every open alert absent from the set is resolved (`status = 'resolved'`, `resolved_at = now`) across all positions, not scoped to evaluable ones — `src/main/services/alerts.ts:145-167` (`resolveStaleRows` selects every row with the status), `resolveAlertsNotIn` at `alerts.ts:176`.
+- ✓ Shared `alertKey(positionId, ruleCode)` helper — `src/main/services/alerts.ts:37`.
+- ✓ `clearStaleDismissals(db, keepOpenKeys, now)` runs in the same transaction immediately after `resolveAlertsNotIn` — `evaluate-alerts.ts:282-283`.
+- ✓ Dismissed rows transition to `resolved` preserving `dismissed_at` — the UPDATE at `alerts.ts:161` sets only `status`, `resolved_at`, `updated_at`; `clearStaleDismissals` at `alerts.ts:190`.
+- ✓ Skip reasons `missing_option_mark` / `missing_underlying_price` exist — `src/main/core/alerts.ts:44-45`.
+- ✓ Closed positions drop out of the evaluable query (`WHERE p.status = 'ACTIVE' AND p.phase IN ('CSP_OPEN','CC_OPEN')`, `evaluate-alerts.ts:54-68`), so global resolution is what retires their alerts.
 
 ## Drift (0)
 
-None.
+## Unverifiable (0)
 
-## Unverifiable (1)
+## Missing files (1)
 
-- ? "global, not position-scoped ... includes closed/rolled positions" — the implementation iterates all currently-open alert rows (not just evaluable positions), consistent with the claim; the specific scenario coverage is design rationale.
-
-## Missing files (0)
-
-None.
+- ✗ Source `plans/us-50/research.md` does not exist. (`plans/us-59/research.md` exists.)

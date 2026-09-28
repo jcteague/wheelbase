@@ -1,6 +1,13 @@
 # ADR: Only usable IV-rank readings reach the screening engine
 
-<!-- generated:from us-98 -->
+<!-- generated:from us-98,us-121 -->
+
+> **Amended by [US-121](../../features/us-121-iv-rank-from-own-iv-history.md).** A reading's `value` can now be `null` (a flat 252-session window
+> publishes a percentile and range but no rank). `usableIvRanks` also drops `value === null`, so
+> `iv_rank_floor` still never sees a null, and `ivGate` reads it as `unknown('IV unavailable')`.
+> Readings come from `readIvRankLookup` (`iv-rank-lookup.ts`), and each ranked candidate carries a
+> display-only `ivRankAbsence` when it has no reading — see
+> [iv-rank-absence-reason-in-memory-run-state](./iv-rank-absence-reason-in-memory-run-state.md).
 
 ## Decision
 

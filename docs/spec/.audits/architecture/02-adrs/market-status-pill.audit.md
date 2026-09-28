@@ -1,25 +1,36 @@
 ---
 page: docs/spec/architecture/02-adrs/market-status-pill.md
-audited_at: 2026-06-27
-findings: 3
+audited_at: 2026-09-28
+findings: 2
 ---
 
 # Audit: market-status-pill.md
 
-## Verified (5)
+## Verified (11)
 
-- ✓ `MarketStatusPill` renders four states `LIVE | EXT | CLOSED | DELAYED` — `src/renderer/src/components/MarketStatusPill.tsx:3`.
-- ✓ LIVE uses pulse, others do not: `animate-wb-pulse` applied only when `state === 'LIVE'` — `src/renderer/src/components/MarketStatusPill.tsx:29,35`.
-- ✓ `useMarketStatus()` polls with `refetchInterval: 60_000`, `staleTime: 30_000`, `refetchOnWindowFocus: true` — `src/renderer/src/hooks/useMarketStatus.ts:6,7,14-16`.
-- ✓ Provider returns `{ isOpen, nextOpen, nextClose, session: 'regular'|'pre'|'post'|'closed' }` — `src/preload/index.d.ts:219-224`, `src/main/integrations/alpaca-broker.ts:201-204`.
-- ✓ `deriveMarketStatusDisplay()` is a pure function in `src/renderer/src/lib/market-status.ts:18`.
+- ✓ Four states `LIVE | EXT | CLOSED | DELAYED` — `src/renderer/src/components/MarketStatusPill.tsx:3`.
+- ✓ Token classes: LIVE `bg-wb-green`/`text-wb-green`, EXT & DELAYED `bg-wb-gold`/`text-wb-gold`, CLOSED `bg-wb-text-secondary`/`text-wb-text-secondary` — `MarketStatusPill.tsx:9-21`; `animate-wb-pulse` only when `LIVE` — `:29-36`.
+- ✓ `useMarketStatus()` at `src/renderer/src/hooks/useMarketStatus.ts` with `refetchInterval: 60_000`, `staleTime: 30_000`, `refetchOnWindowFocus: true` — `useMarketStatus.ts:6-17`.
+- ✓ Query key `marketDataQueryKeys.marketStatus = ['market', 'status']` — `src/renderer/src/hooks/marketDataQueryKeys.ts:2`.
+- ✓ Renderer calls `window.api.marketData.marketStatus()` → `market-data:market-status` — `src/renderer/src/api/market-data.ts:59-60`, `src/preload/index.ts:56`; handler `src/main/ipc/market-data.ts:88-93`; provider `AlpacaMarketDataProvider.getMarketStatus` — `src/main/integrations/alpaca-market-data.ts:223`.
+- ✓ No `broker:market-status` channel — `src/main/ipc/broker.test.ts:111-120`.
+- ✓ Gate `settingsQuery.data?.marketData === 'configured'` → `useMarketStatus(hasMarketData)` — `src/renderer/src/hooks/useMarketStatusDisplay.ts:20-23`; `undefined` while loading → `false`.
+- ✓ `deriveMarketStatusDisplay(session, stale)` two positional args; precedence stale → DELAYED, regular → LIVE, pre/post → EXT, else CLOSED — `src/renderer/src/lib/market-status.ts:18-27`.
+- ✓ Fallback `session ?? computeNYSESession()` when no session — `market-status.ts:6-16, 23`.
+- ✓ `useSettings` invalidation predicate `queryKey[0] === 'broker' || queryKey[0] === 'market'` — `src/renderer/src/hooks/useSettings.ts:35`.
+- ✓ `useMarketStatus` and `useStockQuotes` both keyed under `['market', …]` — `marketDataQueryKeys.ts:2-4`.
 
-## Drift (3)
+## Drift (2)
 
-- ✗ Page (line 16, 35) claims `deriveMarketStatusDisplay({ session, streamError, dataUpdatedAt })` takes an object with `streamError` and `dataUpdatedAt`. Actual signature is `deriveMarketStatusDisplay(session, stale)` — two positional args, a session and a boolean `stale` — `src/renderer/src/lib/market-status.ts:18-21`. The DELAYED precedence is collapsed into the single `stale` boolean (`if (stale) return 'DELAYED'`); the function does not see `streamError` or `dataUpdatedAt`. Suggested fix: update the signature and the precedence description.
-- ✗ Page (line 36) claims hardcoded pill colours `green #3fb950 (LIVE), amber #e6a817 (EXT/DELAYED), gray #6e7681 (CLOSED)`. Actual pill uses Tailwind `wb-*` tokens, not hex: `bg-wb-green` / `bg-wb-gold` / `bg-wb-text-secondary` — `src/renderer/src/components/MarketStatusPill.tsx:10-20`. (Hardcoded hex would also violate the CLAUDE.md Tailwind-token rule.) Suggested fix: replace the hex list with the wb-token mapping.
-- ✗ Page (line 36) claims the pulse is `@keyframes wb-pulse` defined in `src/renderer/src/index.css`. The component applies it via the Tailwind utility class `animate-wb-pulse` (`MarketStatusPill.tsx:35`), not an inline keyframes reference. (The keyframes may exist in the Tailwind config/css, but the page's framing is inaccurate.) Suggested fix: describe `animate-wb-pulse` utility usage.
+- ✗ Line 44: "The pill currently renders only on the positions list header … the position detail header does not yet show it." It also renders on `src/renderer/src/pages/CalendarPage.tsx:60` and in `src/renderer/src/components/BenchHeader.tsx:93` (watchlist bench; `useMarketStatusDisplay` also used by `WatchlistPage.tsx`, `PromotedFormChrome.tsx`). The detail-header half remains true (no pill in `PositionDetailPage.tsx`). Suggested fix: list current surfaces.
+- ✗ Line 14: "The handler returns `{ isOpen, nextOpen, nextClose, session }`." The handler returns `{ status }` wrapping that object (`src/main/ipc/market-data.ts:90-91`), unwrapped in `api/market-data.ts:59-62`. Minor shape wording.
 
-## Unverifiable (1)
+## Unverifiable (3)
 
-- ? "The pill renders on both the positions list header and the position detail header — same component, same data" — placement claim across pages; not mechanically traced here. Flag for human review.
+- ? "Market status changes ~6 times per day … 60 s poll catches transitions within a minute" — rationale.
+- ? Line 16 "the field is `hasMarketData`, formerly `hasBroker`" — `hasMarketData` is a local/return field of `useMarketStatusDisplay` (`:12, 21`); the settings field is `marketData` (`src/main/services/settings.ts:12`). History of `hasBroker` not checkable.
+- ? Memory-note guidance (no "POLL" copy) — UX policy.
+
+## Missing files (0)
+
+None.

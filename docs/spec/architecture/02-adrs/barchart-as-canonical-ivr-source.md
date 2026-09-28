@@ -1,6 +1,8 @@
 # ADR: Barchart is the canonical IVR source
 
-<!-- generated:from us-44 -->
+<!-- generated:from us-44,us-121 -->
+
+> **Status: Superseded by [US-121](../../features/us-121-iv-rank-from-own-iv-history.md) (2026-09-26)** — see [barchart-retired-from-code-and-schema](./barchart-retired-from-code-and-schema.md). Barchart put its site behind an AWS WAF challenge; IV rank is now computed in-house from Alpaca daily option bars. The scraper, its fake and the `ivr_snapshot` table (with its `source = 'barchart'` column) are deleted — migration 016 drops the table. The text below records the decision as it stood from US-44 until US-121.
 
 ## Decision
 

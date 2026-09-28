@@ -1,25 +1,28 @@
 ---
 page: docs/spec/architecture/02-adrs/pnl-math-in-costbasis.md
-audited_at: 2026-06-27
-findings: 0
+audited_at: 2026-09-28
+findings: 2
 ---
 
 # Audit: pnl-math-in-costbasis.md
 
-## Verified (7)
+## Verified (5)
 
-- ✓ `computeUnrealizedPnl(input)` exists in `src/main/core/costbasis.ts:285`.
-- ✓ Returns `{ pnl, pnlPercent, maxProfit }` as 4dp decimal strings (`.toFixed(4)`) (`src/main/core/costbasis.ts:280-282,304-306`).
-- ✓ `maxProfit = entryPremium × contracts × 100`: `entry.times(shares)` where `shares = sharesFromContracts(contracts) = contracts × 100` (`src/main/core/costbasis.ts:299-300`, `sharesFromContracts` at line 27).
-- ✓ `pnl = (entryPremium − currentMid) × contracts × 100`: `entry.minus(current).times(shares)` (`src/main/core/costbasis.ts:300`).
-- ✓ `pnlPercent = (pnl / maxProfit) × 100`, on the 0–100 scale: `pnlDec.dividedBy(maxProfitDec).times(100)` (`src/main/core/costbasis.ts:301`).
-- ✓ Rounding via `round4` which uses `Decimal.ROUND_HALF_UP` (`src/main/core/costbasis.ts:23`).
-- ✓ Reuses existing engine helpers `sharesFromContracts` and `round4`; engine already returns `basisPerShare`/`totalPremiumCollected`/`finalPnl` as decimal strings (`src/main/core/costbasis.ts:19-20,45-46,80`).
+- ✓ `computeUnrealizedPnl({ entryPremium, currentMid, contracts })` in `src/main/core/costbasis.ts:273-308`, returning `{ pnl, pnlPercent, maxProfit }` as 4-dp strings via `round4(...).toFixed(4)` — `:303-307`.
+- ✓ `ROUND_HALF_UP` rounding — `costbasis.ts:8`.
+- ✓ Formulas `maxProfit = entry × shares`, `pnl = (entry − mid) × shares`, `pnlPercent = pnl / maxProfit × 100` (0–100 scale) using `sharesFromContracts` (×100) — `costbasis.ts:298-301, 27`.
+- ✓ Reuses `round4` / `sharesFromContracts` helpers — `costbasis.ts:23, 27`.
+- ✓ Existing decimal-string fields `basisPerShare`, `totalPremiumCollected` — `costbasis.ts:19-20`.
 
 ## Drift (0)
 
+None.
+
 ## Unverifiable (1)
 
-- ? "The sign convention (positive when the option decayed below entry) matches the AC" — sign follows from `entry.minus(current)` which is verified; the AC-match assertion itself is narrative.
+- ? Rationale against returning numbers / renderer computation — design intent. (Also note the function throws on invalid input, `:286-296`, which the page does not mention.)
 
-## Missing files (0)
+## Missing files (2)
+
+- ✗ Source `plans/us-33/research.md` — `plans/us-33/` no longer exists.
+- ✗ Source `plans/us-33/data-model.md` — same.

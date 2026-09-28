@@ -30,7 +30,11 @@ range are derived on read over the 252 sessions before the latest reading, publi
 ≥ 200 coverage. The existing `ivr-collect` job, `ivr:collect-now` channel, watchlist-add trigger,
 freshness tiers, `IvrCell` and screener floor all keep working on the new value; the Barchart scraper, its fake, its e2e seam and its `ivr_snapshot` table are deleted; the seam is replaced by a fake provider that synthesises bars from a programmed IV series. Done means: a fresh install with Alpaca credentials shows an
 integer IV rank (with range and percentile in the tooltip) for every bench name within one run,
-the screener floor gates on it, a card whose rank is absent says why (computing, thin history, no credentials, failed run), and every acceptance scenario is an e2e test.
+the screener floor gates on it, and every acceptance scenario is an e2e test. An absent rank says why: every bench row and
+ranked candidate carries `ivRankAbsence` (`pending` / `insufficient_history` / `no_market_data` /
+`failed` / `not_collected`), so a card shows a computing state while a backfill runs and a
+reason-specific title otherwise; the reason is display-only and never reaches the verdict or the
+screener floor.
 
 ## Supporting Documents
 
@@ -216,7 +220,7 @@ All on `main` at `55773d2`:
 
 **Refactor — cleanup to consider:**
 
-- Confirm `ScreenerIvRank` (area 11) stays a field-for-field mirror; grep for `// 1dp` comments on the old shape and fix them.
+- Confirm `ScreenerIvRank` (area 12) stays a field-for-field mirror; grep for `// 1dp` comments on the old shape and fix them.
 
 **Acceptance criteria covered:**
 
@@ -306,7 +310,7 @@ All on `main` at `55773d2`:
 
 **Refactor — cleanup to consider:**
 
-- `e2e/trading-day-fixtures.ts` `CALENDAR_LOOKBACK_DAYS` must be raised to ≥ 450 in area 12 so explicit fixtures cover the refresh range.
+- `e2e/trading-day-fixtures.ts` `CALENDAR_LOOKBACK_DAYS` must be raised to ≥ 450 in area 13 so explicit fixtures cover the refresh range.
 
 **Acceptance criteria covered:**
 
@@ -316,8 +320,7 @@ All on `main` at `55773d2`:
 
 **Files to create or modify:**
 
-- `src/main/services/iv-history.ts` — `listMissingSessions`, `collectIvHistory`, `recomputeIvHistory`, `readIvMetricsByUnderlying`, persistence helpers, and the in-memory **collection status** (`markCollecting`, `markOutcome`, `collectionStatusOf`) behind the absence reason
-- `src/main/core/ivr-freshness.ts` — `IvRankAbsence` / `IvRankAbsenceReason` types (pure, shared by the read path and the IPC mirror)
+- `src/main/services/iv-history.ts` — `listMissingSessions`, `collectIvHistory`, `recomputeIvHistory`, `readIvMetricsByUnderlying` (returns `IvMetricsRead`), `IvHistoryTickerOutcome` (four statuses, incl. `no_market_data`), persistence helpers
 - `src/main/services/iv-history.test.ts` (uses `makeTestDb`, `seedTradingCalendar`, `makeSpyLogger`, the area-3 bar fixture builder as a mock `IvHistoryBarSource`)
 
 **Red — tests to write:**
@@ -330,20 +333,17 @@ All on `main` at `55773d2`:
 - A missing session whose bars fail the gate → a row in `iv30_gap` with `reason: 'no_tradeable_pair'`, **unless** it is the newest completed session, which gets no gap row and is still missing next call.
 - No stock bar for a session → gap `no_underlying_bar`.
 - A later run producing a reading for a session that has a gap row deletes the gap (same transaction).
-- Provider throws `MarketDataError('auth_failed')` → the error propagates (the batch classifies it); throws `'network_error'` → `{ status: 'failed' }` and a WARN with `err`, nothing persisted for that ticker.
+- Provider throws `MarketDataError('auth_failed')` → `{ status: 'no_market_data' }` with one INFO `iv_history_no_market_data` and nothing persisted; throws `'network_error'` → `{ status: 'failed' }` and a WARN with `err`, nothing persisted for that ticker. A `SqliteError` from the write is **not** caught (systemic, not a ticker outcome).
 - `recomputeIvHistory(db, { ticker })` rewrites `iv30` for rows with `engine_version < IV30_ENGINE_VERSION` from stored inputs (seed a row with `iv30 = '0.5200'`, `engine_version = 0`, inputs that reproduce `'0.2600'` → becomes `'0.2600'` and the current version), touches no current-version row, makes no provider call (no provider argument exists), and returns counts; `force: true` rewrites current-version rows too; a row whose inputs no longer invert is counted `unrecomputable` and left unchanged with a WARN.
 - `collectIvHistory` calls `recomputeIvHistory` for the ticker before computing missing sessions (spy order).
-- `readIvMetricsByUnderlying(db, ['AAPL'], calendar)` with 253 seeded readings (window 0.18–0.45, anchor 0.2475) → `{ value: '25', percentile: <expected>, low: '0.1800', high: '0.4500', observedAt: <anchor close> }`; with 150 window readings → `{ status: 'absent', reason: 'insufficient_history', coverage: 150 }`; ticker with no rows and no collection status → `{ status: 'absent', reason: 'not_collected' }`; anchor stale by 3 sessions → `observedAt` is the stale anchor's close and the window is the 252 before _it_.
+- `readIvMetricsByUnderlying(db, ['AAPL'], calendar)` with 253 seeded readings (window 0.18–0.45, anchor 0.2475) → `{ status: 'reading', reading: { value: '25', percentile: <expected>, low: '0.1800', high: '0.4500', observedAt: <anchor close> } }`; with 150 window readings → `{ status: 'insufficient', coverage: 150 }`; with 60 rows in total → `{ status: 'insufficient', coverage: 60 }`; ticker with no rows → `{ status: 'none' }`; anchor stale by 3 sessions → `observedAt` is the stale anchor's close and the window is the 252 before _it_.
 - `readIvMetricsByUnderlying` is synchronous and takes no provider (type-level assertion in the test).
-- Collection status: `collectIvHistory` calls `markCollecting(ticker)` before its first request and `markOutcome(ticker, outcome)` in a `finally`; while a slow provider is pending, `readIvMetricsByUnderlying` for that ticker with no rows returns `{ status: 'absent', reason: 'pending' }`; after `failed` → `reason: 'failed'`; after `collected` or `up_to_date` the status is cleared and the read falls through to the rows; a status is never persisted (a fresh module import knows nothing).
-- `collectIVRSnapshots` on an `auth_failed` abort marks **every** target `no_market_data` so each card can say why; a later successful run clears them.
 
 **Green — implementation:**
 
-- Per `data-model.md §3`. SQL as module constants (`INSERT … ON CONFLICT DO UPDATE` for readings so a forced re-probe is idempotent; `DELETE FROM iv30_gap WHERE …` before insert; `SELECT session, iv30 FROM iv30_reading WHERE underlying = ? AND session >= ? AND session <= ? AND method = ?`).
+- Per `data-model.md §3`. `collectIvHistory` knows nothing about run state — its two callers own that (area 10/11). SQL as module constants (`INSERT … ON CONFLICT DO UPDATE` for readings so a forced re-probe is idempotent; `DELETE FROM iv30_gap WHERE …` before insert; `SELECT session, iv30 FROM iv30_reading WHERE underlying = ? AND session >= ? AND session <= ? AND method = ?`).
 - Required sessions from `calendar.sessions` filtered by `hasClosedBy(now)` (reuse `getMostRecentCompletedSession` + slice of the last 253).
 - Window sessions for read: the 252 `calendar.sessions` dates strictly before the anchor session.
-- `readIvMetricsByUnderlying` returns `IvRankReading | IvRankAbsence` per ticker (never `null`): rows + metrics → reading; rows but metrics `null` → `insufficient_history` with `coverage`; no rows → the ticker's collection status (`pending` / `failed` / `no_market_data`) or `not_collected`. Status lives in a module-level `Map<string, IvRankAbsenceReason>`; it is display state and deliberately not a table.
 - Logging: INFO `iv_history_collected { ticker, readings, gaps, requests }`, `iv_history_recomputed { ticker, recomputed }`; DEBUG `iv_history_missing_sessions`, `iv_history_bar_request { kind, start, end }`, `iv_history_session_outcome`; WARN on failure with `err`.
 
 **Refactor — cleanup to consider:**
@@ -354,40 +354,77 @@ All on `main` at `55773d2`:
 
 - "Reading IV metrics makes no market-data request", "Missed sessions are caught up by the next daily run", "Bar requests never name the current calendar day as their end", "Today's reading is available the same evening", "A corrected engine recomputes every derived metric from stored inputs" (service half), "A day with no tradeable ATM pair is left as a gap" (persistence half).
 
-### 10. Rewire the collector, on-demand path and read path; retire Barchart
+### 10. IV run state — in-memory absence reasons
 
 **Files to create or modify:**
 
-- `src/main/services/ivr-collector.ts` — `collectIVRSnapshots` loops `collectIvHistory`; auth abort → `skippedReason: 'market_data_unavailable'`; remove `collectTicker`, `persistSnapshot`, `utcDayBounds`, the `fetchIvr` seam, the Barchart import, **and the closed-day guard** (the `trigger` parameter, the `getTradingSession` verdict and the `'market_closed'` branch — a run on a closure finds no missing sessions and is `up_to_date` for free); `marketDataProvider` becomes the full `MarketDataProvider` (calendar + bars)
+- `src/main/services/iv-run-state.ts` — `IvRunStatus`, `IvRunState`, `createIvRunState()` (closure over a `Map<string, IvRunStatus>`; never persisted)
+- `src/main/services/iv-run-state.test.ts`
+
+**Red — tests to write:**
+
+- `createIvRunState().get('AAPL')` is `undefined` on a fresh instance.
+- `markPending('aapl')` → `get('AAPL')` is `'pending'` (tickers upper-cased on write and read).
+- `settle('AAPL', { status: 'collected', readings: 3, gaps: 0 })` after `markPending` → `get` is `undefined`; the same for `{ status: 'up_to_date' }` (success clears the entry).
+- `settle('AAPL', { status: 'failed' })` → `'failed'`; `settle('AAPL', { status: 'no_market_data' })` → `'no_market_data'`.
+- `markNoMarketData(['MSFT', 'NVDA'])` → both read `'no_market_data'`; a later `markPending('MSFT')` → `'pending'` (a new run supersedes the old verdict); a later `settle('MSFT', collected)` → `undefined`.
+- Two instances do not share state (no module-level singleton).
+
+**Green — implementation:**
+
+- Per `data-model.md §3b`: four functions over one `Map`, `settle` as a `switch` on `outcome.status` with `collected` / `up_to_date` → `delete`. Under ~40 lines; no logging needed (the callers log the outcomes).
+
+**Refactor — cleanup to consider:**
+
+- None expected — check the type is imported from here by areas 11 and 12's main-process files, not re-declared.
+
+**Acceptance criteria covered:**
+
+- State half of "Adding a ticker does not wait on its backfill" (computing state), "One ticker's backfill failure leaves the others intact" (card explains the failed run) and "No market-data credentials leaves IV rank unavailable, not broken" (card names the credentials).
+
+### 11. Rewire the collector, on-demand path and read path; retire Barchart
+
+**Files to create or modify:**
+
+- `src/main/services/ivr-collector.ts` — `collectIVRSnapshots` takes `runState: IvRunState` and loops `collectIvHistory`, calling `runState.markPending(ticker)` before each turn and `runState.settle(ticker, outcome)` after; a `no_market_data` outcome → `runState.markNoMarketData(remaining targets)`, one INFO, `skippedReason: 'market_data_unavailable'`, loop aborted; remove `collectTicker`, `persistSnapshot`, `utcDayBounds`, the `fetchIvr` seam, the Barchart import, **and the closed-day guard** (the `trigger` parameter, the `getTradingSession` verdict and the `'market_closed'` branch — a run on a closure finds no missing sessions and is `up_to_date` for free); `marketDataProvider` becomes the full `MarketDataProvider` (calendar + bars)
 - `src/main/index.ts` — the `ivr-collect` handler no longer forwards `trigger`; `JobRunContext.trigger` stays on the scheduler (US-46 infrastructure with its own dev channel) and is noted as currently unconsumed
 - `src/main/services/ivr-collector.test.ts`
-- `src/main/services/ivr-on-demand.ts` — `collect(ticker)` → `ensureTradingCalendar` → `collectIvHistory`; `onCollected` on `'collected'`; drop `getLatestIvrByUnderlying` same-session check
+- `src/main/services/ivr-on-demand.ts` — takes `runState`; `collect(ticker)` calls `runState.markPending(ticker)` **synchronously before its first `await`**, then `ensureTradingCalendar` → `getProvider()` (a throw settles `no_market_data`) → `collectIvHistory` → `runState.settle(ticker, outcome)`; `onCollected` on `'collected'`; drop `getLatestIvrByUnderlying` same-session check
 - `src/main/services/ivr-on-demand.test.ts`
-- `src/main/services/ivr-snapshots.ts` — `getAssessedIvrByUnderlying` reads `readIvMetricsByUnderlying`; delete `getLatestIvrByUnderlying` and `LATEST_IVR_QUERY` (the table is gone)
-- `src/main/services/ivr-snapshots.test.ts`, `src/main/services/screener.test.ts` — both mock/use `getLatestIvrByUnderlying` today; re-point at `readIvMetricsByUnderlying`
+- `src/main/services/ivr-snapshots.ts` — `getAssessedIvrByUnderlying` becomes `readIvRankLookup(db, tickers, { now, lastEarnings, calendar, runState })` → `Map<string, IvRankLookup>`; `IvRankAbsence`, `IvRankLookup` types; pure `absenceFor(runStatus, read)` precedence; delete `getLatestIvrByUnderlying` and `LATEST_IVR_QUERY` (the table is gone)
+- `src/main/services/ivr-snapshots.test.ts`, `src/main/services/screener.test.ts` — both mock/use `getLatestIvrByUnderlying` today; re-point at `readIvMetricsByUnderlying` / `readIvRankLookup`
+- `src/main/services/watchlist-snapshot.ts` — `WatchlistSnapshotRow.ivRankAbsence`; `buildWatchlistSnapshot` options gain `runState`; `buildRow` spreads the lookup (`ivRank: lookup.reading, ivRankAbsence: lookup.absence`) and passes only `ivRank` to `evaluateEntry`
+- `src/main/services/watchlist-snapshot.test.ts`
+- `src/main/services/screener.ts` — `RankedCandidate.ivRankAbsence`; `ScreenOptions.runState`; `usableIvRanks` reads `lookup.reading`
+- `src/main/ipc/watchlist.ts`, `src/main/ipc/screener.ts` — `registerWatchlistIpc` / `registerScreenerIpc` take `runState: IvRunState` (required) and pass it in the service options; handlers stay one-liners
+- `src/main/ipc/watchlist.test.ts`, `src/main/ipc/screener.test.ts`
 - `src/main/test-utils.ts` — delete `seedIvr` / `IvrSeedRow`; add `seedIv30Series(db, ticker, rows)` writing `iv30_reading`
 - `src/main/core/trading-calendar.ts` — remove `observationWindowOf` (orphaned by `persistSnapshot`'s removal) and its tests
 - `src/main/schemas.ts` — `CollectIvrNowBatchSchema.skippedReason` enum widened; `schemas.test.ts`
-- `src/main/services/watchlist-snapshot.ts`, `src/main/services/screener.ts` — `getAssessedIvrByUnderlying` now yields `AssessedIvRank | IvRankAbsence`; the row/candidate gets `ivRank: AssessedIvRank | null` **and** `ivRankAbsence: IvRankAbsence | null` (exactly one non-null); the verdict engine and `usableIvRanks` keep receiving `AssessedIvRank | null` — the reason is display-only
-- `src/main/services/watchlist-snapshot.test.ts`, `src/main/services/screener.test.ts` — a row for a pending ticker has `ivRank: null`, `ivRankAbsence: { reason: 'pending' }` and `verdict.iv` still `unknown('IV unavailable')`
 - `src/main/integrations/fake-clock.ts` (new) — `WHEELBASE_FAKE_NOW`, `setFakeNow`, `createFakeClock()`; `fake-clock.test.ts`
 - **Delete:** `src/main/integrations/barchart-ivr-scraper.ts` (+test), `src/main/integrations/fake-ivr.ts` (+test)
 - `src/main/ipc/test-ivr.ts` → `src/main/ipc/test-iv-history.ts` — channels per `contracts/test-iv-history.md`; `test-iv-history.test.ts`
 - `src/main/ipc/ivr.test.ts` — schema acceptance of the new reason
-- `src/preload/index.ts`, `src/preload/index.d.ts` — new `_test:*` bridges; remove `testIvrSetOutcomes`/`testIvrFetchLog`/`testIvrSnapshots`; `IpcCollectIvrNowBatch.skippedReason`
-- `src/main/index.ts` — `createFakeClock()` replaces `createFakeIvrCollaborators()`; job handler passes `marketDataProvider: marketDataFactory.create()` (already does) and no `fetchIvr`; `registerTestIvHistoryIpc(db)`
+- `src/preload/index.ts`, `src/preload/index.d.ts` — new `_test:*` bridges; remove `testIvrSetOutcomes`/`testIvrFetchLog`/`testIvrSnapshots`; `IpcCollectIvrNowBatch.skippedReason`; `IpcIvRankAbsence` and `ivRankAbsence` on `IpcWatchlistSnapshotRow` and `IpcScreenerCandidate` per `contracts/watchlist-snapshot-ivrank.md`
+- `src/main/index.ts` — `createFakeClock()` replaces `createFakeIvrCollaborators()`; `const ivRunState = createIvRunState()` once, passed to `createIvrOnDemand`, `registerWatchlistIpc`, `registerScreenerIpc` and the `ivr-collect` job handler; job handler passes `marketDataProvider: marketDataFactory.create()` (already does) and no `fetchIvr`; `registerTestIvHistoryIpc(db)`
 - `src/main/index.test.ts` — wiring assertions updated
 
 **Red — tests to write:**
 
 - `collectIVRSnapshots` with three targets where the provider rejects the second ticker with `network_error` → `{ successCount: 2, errorCount: 1, skippedCount: 0, skippedReason: null }`, a WARN with `err` for that ticker, readings persisted for the other two.
-- First ticker throws `auth_failed` → `{ 0, 0, 0, skippedReason: 'market_data_unavailable' }`, one INFO `ivr_collection_skipped_no_market_data`, no further tickers attempted.
+- First ticker's turn returns `no_market_data` → `{ 0, 0, 0, skippedReason: 'market_data_unavailable' }`, one INFO `ivr_collection_skipped_no_market_data`, no further tickers attempted, and `runState.get` reads `'no_market_data'` for **every** target (including the ones never attempted).
+- Run-state order per ticker (spy on a real `createIvRunState()`): `markPending(t)` is called before `collectIvHistory` for `t` and `settle(t, outcome)` after it; after a run with one `network_error` ticker, `get` reads `'failed'` for that ticker and `undefined` for the collected and `up_to_date` ones.
 - Ticker already complete → counted in `skippedCount` (`up_to_date`).
 - A run at a Saturday clock (or a recognised holiday) with every ticker complete through Friday → every ticker `up_to_date`, `skippedReason: null`, and **zero** bar requests on the provider mock — the property the old `market_closed` guard protected, now a consequence of `listMissingSessions`. The US-100 weekend/holiday guard tests are deleted, not weakened.
 - `collectIVRSnapshots` accepts no `trigger` argument (type-level).
 - Abort signal set between tickers stops the loop (existing test retained).
-- `ivrOnDemand.collect('MSFT')` awaits `ensureTradingCalendar`, calls `collectIvHistory` for exactly `MSFT`, fires `onCollected('MSFT')` on `collected` **and** on `failed` (so the bench refetches and shows the `failed` reason), not on `up_to_date`; a rejecting provider is logged and **never rejects the returned promise**; the returned promise resolves before a slow provider resolves (fake timers) — proving the add would not wait.
-- `getAssessedIvrByUnderlying` with no `iv30_reading` rows → `null` for that ticker; with a complete series → assessed reading carrying `percentile/low/high`; `assessIvRank` `unreadable` still logs `ivr_assessment_unreadable_snapshot`.
+- `ivrOnDemand.collect('MSFT')` awaits `ensureTradingCalendar`, calls `collectIvHistory` for exactly `MSFT`, fires `onCollected('MSFT')` on `collected`, not on `up_to_date`, `failed` or `no_market_data`; a rejecting provider is logged and **never rejects the returned promise**; `addWatchlistEntry` returns before a slow `collect` resolves (existing US-100 test, retained).
+- `runState.get('MSFT')` is `'pending'` **synchronously** after `collect('MSFT')` is called and before it is awaited (no `await` precedes the mark); after it resolves it is `undefined` on `collected`, `'failed'` on `failed`, and `'no_market_data'` when `getProvider()` throws or the outcome is `no_market_data`.
+- `absenceFor` precedence table: `('pending', insufficient)` → `pending`; `('no_market_data', none)` → `no_market_data`; `('failed', insufficient)` → `failed`; `(undefined, { insufficient, coverage: 150 })` → `{ reason: 'insufficient_history', coverage: 150, window: 252, required: 200 }`; `(undefined, none)` → `not_collected`.
+- `readIvRankLookup` with no `iv30_reading` rows and no run state → `{ reading: null, absence: { reason: 'not_collected' } }`; with a complete series → `{ reading: <assessed, carrying percentile/low/high>, absence: null }` **even when** `runState.get` reads `'pending'` (a published reading wins); with 150 window readings → `insufficient_history` with `coverage: 150`; an `unreadable` assessment still logs `ivr_assessment_unreadable_snapshot` and reports `not_collected`.
+- `buildWatchlistSnapshot` row: exactly one of `ivRank` / `ivRankAbsence` is non-null; for a `pending` ticker the verdict's `iv` gate is `unknown('IV unavailable')` exactly as for `not_collected` (reason never reaches `evaluateEntry`).
+- `screenWatchlistCandidates` ranked candidate carries `ivRankAbsence`; a `failed` ticker still ranks with `n/a` and the floor is not applied to it (unchanged US-98 behaviour).
+- `registerWatchlistIpc` / `registerScreenerIpc` pass the `runState` they were given into the service call (spy); `index.test.ts` asserts one `createIvRunState()` instance reaches all four consumers.
 - `CollectIvrNowBatchSchema.parse({ …, skippedReason: 'market_data_unavailable' })` succeeds; `'barchart_down'` fails.
 - `createFakeClock()` returns `undefined` when `WHEELBASE_FAKE_NOW` is unset and a clock reading the env/`setFakeNow` value otherwise (moved tests from `fake-ivr.test.ts`).
 - `test-iv-history` handlers: `_test:iv-series-set` replaces the fixture and resets the request log; `_test:iv30-corrupt` sets `iv30` and `engine_version = 0`; `_test:table-exists` answers from `sqlite_master`; `_test:iv30-history` returns rows ordered `(underlying, session)`.
@@ -395,8 +432,10 @@ All on `main` at `55773d2`:
 
 **Green — implementation:**
 
-- Per `contracts/ivr-collect-now.md` and `research.md` ADRs "auth failure aborts…", "Barchart is retired…", "The e2e seam…".
-- `IvrOnDemand.collect` body: `try { await ensureTradingCalendar; const calendar = readTradingCalendar; const outcome = await collectIvHistory({ … provider: getProvider() … }); if (outcome.status === 'collected') { logger.info(...); onCollected?.(ticker) } } catch (err) { logger.error({ ticker, err }, 'ivr_on_demand_failed') }` — `getProvider()` inside the try so an unconfigured provider is a logged skip.
+- Per `contracts/ivr-collect-now.md`, `contracts/watchlist-snapshot-ivrank.md`, `data-model.md §3b` and `research.md` ADRs "auth failure aborts…", "An absent rank carries a display-only reason…", "Barchart is retired…", "The e2e seam…".
+- `IvRankAbsence` / `IvRankLookup` / `absenceFor` live in `ivr-snapshots.ts` beside `readIvRankLookup`; `absenceFor` is a five-branch pure function, tested directly.
+- `IvrOnDemand.collect` body: `runState.markPending(ticker)` as the first statement; then `try { await ensureTradingCalendar; const calendar = readTradingCalendar; const provider = getProvider(); const outcome = await collectIvHistory({ … provider … }); runState.settle(ticker, outcome); if (outcome.status === 'collected') { logger.info(...); onCollected?.(ticker) } } catch (err) { runState.settle(ticker, isAuthFailure(err) ? { status: 'no_market_data' } : { status: 'failed' }); logger.error({ ticker, err }, 'ivr_on_demand_failed') }` — `getProvider()` inside the try so an unconfigured provider is a logged `no_market_data`.
+- Batch loop: `runState.markPending(ticker)`; `const outcome = await collectIvHistory(...)` inside the per-ticker try; `runState.settle(ticker, outcome)`; `if (outcome.status === 'no_market_data') { runState.markNoMarketData(remaining); …; break }`. Logging: INFO `ivr_collection_skipped_no_market_data`; DEBUG `iv_run_state_settled { ticker, status }`.
 - Update the ADR-referencing comments in `ivr-collector.ts` (`persistSnapshot` outside the try → now `persistIvHistory` inside `collectIvHistory`, which rethrows DB errors — keep them systemic: do not catch `SqliteError` in the per-ticker catch; assert this in a test).
 
 **Refactor — cleanup to consider:**
@@ -405,21 +444,20 @@ All on `main` at `55773d2`:
 
 **Acceptance criteria covered:**
 
-- "One ticker's backfill failure leaves the others intact", "Adding a ticker does not wait on its backfill", "No market-data credentials leaves IV rank unavailable, not broken", "Today's reading is computed the same way as the history" (wiring half).
+- "One ticker's backfill failure leaves the others intact" (isolation + `failed` reason), "Adding a ticker does not wait on its backfill" (add returns first + `pending` reason), "No market-data credentials leaves IV rank unavailable, not broken" (skip + `no_market_data` reason), "A reading is withheld while the window is too sparse to trust" / "A young history is withheld the same way" (`insufficient_history` with coverage), "Today's reading is computed the same way as the history" (wiring half).
 
-### 11. Renderer: range and percentile in the IvrCell tooltip, null rank, absence reasons, settings message
+### 12. Renderer: range and percentile in the IvrCell tooltip, null rank, absence reasons, settings message
 
 **Files to create or modify:**
 
-- `src/renderer/src/api/screener.ts` — `ScreenerIvRank` mirror
-- `src/renderer/src/lib/ivr-tooltip.ts` — `ivrTooltipCopy` appends the range/percentile line; `formatIvRange(low, high)`
+- `src/renderer/src/api/screener.ts` — `ScreenerIvRank` mirror; `ScreenerIvRankAbsence` mirror of `IpcIvRankAbsence`; `ScreenerCandidate.ivRankAbsence`
+- `src/renderer/src/api/watchlist.ts` — `WatchlistSnapshotRow.ivRankAbsence`
+- `src/renderer/src/lib/ivr-tooltip.ts` — `ivrTooltipCopy` appends the range/percentile line; `formatIvRange(low, high)`; `ivrAbsenceTitle(absence)` (the cell's `title`) and `ivrAbsenceNote(ticker, absence, condition)` (the detail note's text + variant) per the table in `contracts/watchlist-snapshot-ivrank.md`
 - `src/renderer/src/lib/ivr-tooltip.test.ts`
-- `src/renderer/src/components/IvrCell.tsx` — props become `{ ivRank, absence }`; `value === null` → `n/a` numeral with `data-ivr-state={state}` and the tooltip retained; aria-label includes percentile and range; `absence.reason === 'pending'` → a muted `…` with `animate-wb-pulse`, `data-ivr-state="pending"`, title `Computing IV history`; other reasons → `n/a`, `data-ivr-state="empty"`, `data-ivr-reason={reason}` and a reason-specific title from `lib/ivr-tooltip.ts` `absenceTitle(absence)`
-- `src/renderer/src/lib/ivr-tooltip.ts` — `absenceTitle`: `insufficient_history` → `IV history covers ${coverage} of the last 252 sessions; rank needs 200`, `no_market_data` → `IV rank needs Alpaca market-data credentials`, `failed` → `Last IV history run failed; retried after the next close`, `not_collected` → `No IV history yet`
-- `src/renderer/src/components/BenchCard.tsx`, `BenchDetail.tsx`, screener result rows — pass `row.ivRankAbsence` through
-- `src/renderer/src/api/watchlist.ts`, `src/renderer/src/api/screener.ts`, `src/preload/index.d.ts` — `IpcIvRankAbsence` / `ScreenerIvRankAbsence` mirrors and the new row field
+- `src/renderer/src/components/IvrCell.tsx` — props become `{ ivRank, absence }`; `value === null` → `n/a` numeral with `data-ivr-state={state}` and the tooltip retained; aria-label includes percentile and range; `ivRank === null` renders by `absence`: `pending` → `…` with `data-ivr-state="pending"`, `animate-wb-pulse`, `title="Computing IV history"`; every other reason → `n/a` with `data-ivr-state="empty"`, `data-ivr-reason={reason}`, `title={ivrAbsenceTitle(absence)}`
+- `src/renderer/src/components/BenchCard.tsx`, `BenchDetail.tsx` — pass `row.ivRankAbsence` to `IvrCell` and `ReadingNote`
 - `src/renderer/src/components/IvrCell.test.tsx`
-- `src/renderer/src/components/ReadingNote.tsx` — `formatIvrValue` guarded for `null` (note text says "IV rank unavailable for a flat 52-week range" in the `null` case); takes `absence` and names the reason instead of the current "no usable IV rank" guess (its own comment says it cannot tell the cases apart — now it can)
+- `src/renderer/src/components/ReadingNote.tsx` — props gain `absence`; the `ivRank === null` branch renders `ivrAbsenceNote(...)` with `data-kind={absence.reason}` (replacing the single guessed `missing` note); `formatIvrValue` guarded for `null` (note text says "IV rank unavailable for a flat 52-week range" in the `null` case)
 - `src/renderer/src/components/ReadingNote.test.tsx` (if present; else `BenchDetail.test.tsx`)
 - `src/renderer/src/lib/screener-format.ts` — `formatIvrValue(value: string | null)` → `'n/a'` for null
 - `src/renderer/src/api/ivr.ts` — `skippedReason` union
@@ -431,16 +469,18 @@ All on `main` at `55773d2`:
 
 - `ivrTooltipCopy({ state: 'fresh', value: '25', percentile: '71', low: '0.1800', high: '0.4500', … }).body` ends with `52-wk IV 0.1800–0.4500 · IV percentile 71`; the same suffix appears for `aging`, `stale`, `expired`, `predates_earnings`.
 - `IvrCell` with `value: null` renders text `n/a`, `data-testid="ivr-cell"`, `data-ivr-state="fresh"`, and hovering shows the tooltip with the range and percentile (unlike `ivRank={null}`, which renders the plain `n/a` span with `data-ivr-state="empty"` and no tooltip — assert both).
+- `IvrCell` with `ivRank={null}` and `absence={{ reason: 'pending' }}` renders `…`, `data-ivr-state="pending"`, class `animate-wb-pulse`, `title="Computing IV history"`, no ring, no tooltip.
+- `IvrCell` with `ivRank={null}` and each of `not_collected` / `failed` / `no_market_data` / `{ insufficient_history, coverage: 150, window: 252, required: 200 }` renders `n/a`, `data-ivr-state="empty"`, `data-ivr-reason` = the reason, and the `title` from the contract table (`No IV rank collected`, `Last IV history run failed`, `IV rank needs Alpaca market-data credentials`, `IV history covers 150 of the last 252 sessions; rank needs 200`). The existing "renders missing readings as muted n/a" case is updated to pass `not_collected`.
+- `ReadingNote` with `ivRank={null}` renders one note per reason: `data-kind` = the reason; `pending`, `insufficient_history`, `not_collected` are `info`; `failed`, `no_market_data` are `warning`; the `insufficient_history` text contains `covers 150 of the last 252 sessions and rank needs 200`; the `no_market_data` text names `Alpaca market-data credentials`; the `failed` text says the last IV history run failed; every text names the ticker and the condition phrase (`“IVR ≥ 30”` when set).
 - `IvrCell` with `value: '25'` renders `25` (no decimal), aria-label contains `IV percentile 71` and `52-week IV 0.1800 to 0.4500`.
 - `ReadingNote` with `value: null` on a fresh reading renders an info note naming the flat range; with `value: '25'` renders nothing for fresh (unchanged).
-- `IvrCell` with `absence: { reason: 'pending' }` renders `…`, has the `animate-wb-pulse` class, `data-ivr-state="pending"` and title `Computing IV history`; with `reason: 'insufficient_history', coverage: 150` renders `n/a`, `data-ivr-reason="insufficient_history"`, title `IV history covers 150 of the last 252 sessions; rank needs 200`; `no_market_data`, `failed` and `not_collected` each render their title; `ivRank` and `absence` both null is a type error, not a runtime branch.
-- `ReadingNote` with `absence.reason === 'insufficient_history'` says the history is too thin to rank (info tone); `failed` warns; `pending` renders nothing (the cell already says so).
-- `absenceTitle` unit tests for all five reasons.
 - `SettingsPage` shows the credentials message on `skippedReason: 'market_data_unavailable'` and the updated completion text on `null`.
 
 **Green — implementation:**
 
 - Tailwind/`wb-*` tokens only (no inline styles); reuse `TIER_TEXT`; keep `IvrCell` under the existing structure — one extra `<span>` line in `TooltipContent` for the range/percentile in `font-wb-mono text-[0.62rem] text-wb-text-muted`.
+- Absence rendering is one early-return block at the top of `IvrCell`: `if (ivRank === null) return absence.reason === 'pending' ? <span data-ivr-state="pending" className="text-wb-text-muted animate-wb-pulse" title="Computing IV history">…</span> : <span data-ivr-state="empty" data-ivr-reason={absence.reason} className="text-wb-text-muted" title={ivrAbsenceTitle(absence)}>n/a</span>`. `animate-wb-pulse` is the existing token (`index.css`, used by `PositionCard`).
+- `ivrAbsenceTitle` / `ivrAbsenceNote` are two `switch`es over `absence.reason` in `ivr-tooltip.ts`; `ReadingNote.noteFor` calls `ivrAbsenceNote` in its `null` branch and keeps the tier `switch` otherwise.
 - `formatIvRange` uses the en dash (`–`) the criteria strip already uses.
 
 **Refactor — cleanup to consider:**
@@ -449,15 +489,15 @@ All on `main` at `55773d2`:
 
 **Acceptance criteria covered:**
 
-- "The IV range behind the rank is reported with it" (…appear in the IvrCell tooltip beside the freshness copy), "A flat window withholds rank but not percentile" (display half), "No market-data credentials leaves IV rank unavailable, not broken" (existing unavailable copy).
+- "The IV range behind the rank is reported with it" (…appear in the IvrCell tooltip beside the freshness copy), "A flat window withholds rank but not percentile" (display half), "Adding a ticker does not wait on its backfill" (computing state), "A reading is withheld while the window is too sparse to trust" / "A young history is withheld the same way" (the card explains coverage), "One ticker's backfill failure leaves the others intact" (the card explains the failed run), "No market-data credentials leaves IV rank unavailable, not broken" (the card names the credentials).
 
-### 12. E2E harness migration to the series seam
+### 13. E2E harness migration to the series seam
 
 **Files to create or modify:**
 
-- `e2e/ivr-helpers.ts` — remove `IvrOutcome`/`okOutcome`/`notAvailableOutcome`/`networkErrorOutcome`/`parseErrorOutcome`/`setIvrOutcomes`/`readIvrFetchLog`; add `FakeIvSeriesFixture` types, `seriesForRank(rank, { endingSessionsAgo = 0, tradingSessions })`, `seriesWithRange({ low, high, today, sessions })`, `seriesWithPercentile({ belowCount, today, low, high })`, `flatSeries(iv)`, `sparseSeries(readingCount)`, `setIvSeries(page, fixture)`, `readIv30History(page)`, `readIv30Gaps(page)`, `readDailyBarRequests(page)`, `recomputeIvHistory(page, opts?)`, `corruptIv30(page, …)`, `tableExists(page, name)`; `buildIvrLaunchEnv` sets `WHEELBASE_FAKE_IV_SERIES` from `opts.ivSeries` and no longer sets `WHEELBASE_FAKE_IVR`; `seedBenchAndSettle` polls `readIv30History`
+- `e2e/ivr-helpers.ts` — remove `IvrOutcome`/`okOutcome`/`notAvailableOutcome`/`networkErrorOutcome`/`parseErrorOutcome`/`setIvrOutcomes`/`readIvrFetchLog`; add `FakeIvSeriesFixture` types, `seriesForRank(rank, { endingSessionsAgo = 0, tradingSessions })`, `seriesWithRange({ low, high, today, sessions })`, `seriesWithPercentile({ belowCount, today, low, high })`, `flatSeries(iv)`, `sparseSeries(readingCount)`, `setIvSeries(page, fixture)`, `readIv30History(page)`, `readIv30Gaps(page)`, `readDailyBarRequests(page)`, `recomputeIvHistory(page, opts?)`, `corruptIv30(page, …)`, `tableExists(page, name)`, `readingNote(page)` (→ `{ kind, text }` from `[data-testid="bench-reading-note"]`); `buildIvrLaunchEnv` sets `WHEELBASE_FAKE_IV_SERIES` from `opts.ivSeries` and no longer sets `WHEELBASE_FAKE_IVR`; `seedBenchAndSettle` polls `readIv30History`
 - `e2e/trading-day-fixtures.ts` — `CALENDAR_LOOKBACK_DAYS = 450`; `sessionsBetween(from, count)` helper for building 253-session series
-- `e2e/screener-helpers.ts` — `IvrFixture` → `number | { rank: number; endingSessionsAgo: number }`; `seedIvr` builds series into the launch env (collection now fires on `watchlist.add`) and waits for rows; `assertIvrTickersCollectible` retained
+- `e2e/screener-helpers.ts` — `ivrCell(page, ticker)` also returns `reason` (`data-ivr-reason`) and `title` for the empty/pending states and recognises `data-ivr-state="pending"`; `IvrFixture` → `number | { rank: number; endingSessionsAgo: number }`; `seedIvr` builds series into the launch env (collection now fires on `watchlist.add`) and waits for rows; `assertIvrTickersCollectible` retained
 - `e2e/ivr-collector.spec.ts` — retitle to the surviving US-44 ACs: scheduling, targets, persistence (asserts `iv30_reading` rows), same-day rerun idempotent (`up_to_date`), one-failure-continues. "Market is closed on a non-trading day" becomes "A scheduled weekend run makes no bar requests" (clock at `WEEKEND_NOW`, series complete through Friday, `collectIvScheduled` → `skippedCount === targets`, `readDailyBarRequests()` unchanged). Delete `not_available` and `parse_error` cases (Barchart-only).
 - `e2e/ivr-on-demand.spec.ts` (US-100 guard half) — delete "The scheduled run still skips a weekend"; keep "Manual refresh works on a weekend / on a weekday market holiday" and "The scheduled run still fires after hours on a weekday", asserting on `iv30_reading` rows
 - `e2e/ivr-on-demand.spec.ts` — same ACs on the new seam; "A ticker Barchart does not cover" becomes "A ticker with no bar data is added without an IV rank" (series absent → gaps, `n/a`, add ok)
@@ -479,9 +519,9 @@ All on `main` at `55773d2`:
 
 **Acceptance criteria covered:**
 
-- Regression protection for US-44/US-97/US-98/US-100 ACs under the new source; harness for area 13.
+- Regression protection for US-44/US-97/US-98/US-100 ACs under the new source; harness for area 14.
 
-### 13. E2e Tests
+### 14. E2e Tests
 
 **Files to create or modify:**
 
@@ -496,10 +536,10 @@ All on `main` at `55773d2`:
 - `A flat window withholds rank but not percentile` — `flatSeries(0.2)` → cell `n/a` with `data-ivr-state="fresh"` and tooltip `IV percentile 0`.
 - `A corrected engine recomputes every derived metric from stored inputs` — backfill AAPL at 0.26 on a window session `S`; `corruptIv30(page, { ticker: 'AAPL', session: S, iv30: '0.5200' })`; note the request count; `recomputeIvHistory(page)`; `readIv30History` shows `S` at `0.2600` and current version; reload bench → rank/percentile/low/high equal the uncorrupted run's; `readDailyBarRequests` count unchanged.
 - `Reading IV metrics makes no market-data request` — after backfill, record `readDailyBarRequests().length`, `reloadBench` twice, count unchanged.
-- `A reading is withheld while the window is too sparse to trust` — NVDA `sparseSeries(150)` → `n/a`, `data-ivr-state="empty"`, `data-ivr-reason="insufficient_history"`, title `IV history covers 150 of the last 252 sessions; rank needs 200`.
-- `A young history is withheld the same way` — NVDA series of 60 sessions → `n/a`; `readIv30History` has 60 NVDA rows (proves it is withheld, not missing); title matches `/covers \d+ of the last 252 sessions/`.
-- `Adding a ticker does not wait on its backfill` — MSFT series with `latencyMs: 3000`; time `watchlist.add` (< 1 s); card immediately shows `data-ivr-state="pending"` with title `Computing IV history`; then within 10 s the cell resolves to an integer (push event).
-- `One ticker's backfill failure leaves the others intact` — AAPL/MSFT/SPY series, NVDA `failWith: 'network_error'`; `collectIvNow` → `errorCount: 1`, `successCount ≥ 3`; `readIv30History` has rows for the three and none for NVDA; after `reloadBench` the NVDA cell has `data-ivr-reason="failed"` and title `Last IV history run failed; retried after the next close`.
+- `A reading is withheld while the window is too sparse to trust` — NVDA `sparseSeries(150)` → `ivrCell` reads `n/a`, `state: 'empty'`, `reason: 'insufficient_history'`, `title: 'IV history covers 150 of the last 252 sessions; rank needs 200'` (no tooltip range); open the NVDA detail → `readingNote` kind `insufficient_history` with the same numbers.
+- `A young history is withheld the same way` — NVDA series of 60 sessions → `n/a` with `reason: 'insufficient_history'` and `title` containing `covers 60 of the last 252 sessions`; `readIv30History` has 60 NVDA rows (proves it is withheld, not missing).
+- `Adding a ticker does not wait on its backfill` — MSFT series with `latencyMs: 3000`; time `watchlist.add` (< 1 s); the MSFT card's cell reads `…` with `state: 'pending'` and `title: 'Computing IV history'`; then within 10 s the cell resolves to an integer (push event) and `state` is a tier, not `pending`.
+- `One ticker's backfill failure leaves the others intact` — AAPL/MSFT/SPY series, NVDA `failWith: 'network_error'`; `collectIvNow` → `errorCount: 1`, `successCount ≥ 3`; `readIv30History` has rows for the three and none for NVDA; the NVDA card reads `n/a` with `reason: 'failed'`, `title: 'Last IV history run failed'`, while AAPL/MSFT/SPY show integers.
 - `Missed sessions are caught up by the next daily run` — launch with the clock at `afterCloseOn(sessionsBefore(BASE_DAY, 3))` and a series through that day; then `setIvrNow(afterCloseOn(BASE_DAY))`, `setIvSeries` extended through `BASE_DAY`, `collectIvScheduled` → exactly three new AAPL rows; assert the same request `kind`s were used as the initial backfill (one code path).
 - `An untraded strike is skipped for its neighbour` — session `S` spec `{ iv: 0.26, untraded: [{ strike: 200.5, type: 'call' }] }` with price 200.4 → the `S` row has `near_strike = '200.0000'`, `near_call_trades = 100`, `near_put_trades = 100`.
 - `Thin weeklies fall back to the monthly expirations` — CHWY series with `weeklyTradeCount: 0` → every row `expiration_tier = 'monthly'` and `near_expiration` is a third Friday.
@@ -507,8 +547,8 @@ All on `main` at `55773d2`:
 - `Today's reading is computed the same way as the history` — series includes `BASE_DAY`; after the run the `BASE_DAY` row has the same `method`/`engine_version`/`rate` as the oldest row and `iv30` equals the programmed value; `readDailyBarRequests` shows only `option`/`stock` daily-bar kinds (no snapshot call was needed — assert the fake's snapshot counter, if exposed, else assert row provenance only).
 - `Bar requests never name the current calendar day as their end` — after a full backfill with the clock after today's close, every entry in `readDailyBarRequests` has `end === null || end < FAKE_NOW_DAY`; then a Saturday-clock run has every `end` equal to Friday.
 - `Today's reading is available the same evening` — clock `afterCloseOn(BASE_DAY)`; run; the `BASE_DAY` row exists with `observed_at === sessionCloseOn(BASE_DAY)` and the requests that produced it have `end === null`.
-- `Barchart readings are removed on upgrade` — before launch, the spec opens the temp DB with `better-sqlite3`, runs migrations 001–015 only, and inserts one legacy `ivr_snapshot` row for AAPL; after boot `tableExists(page, 'ivr_snapshot')` is `false`, `tableExists(page, 'iv30_reading')` is `true`, and the AAPL cell reads `n/a` with `data-ivr-state="empty"` — nothing survived to feed it.
-- `No market-data credentials leaves IV rank unavailable, not broken` — launch `withoutBrokerCredentials: true` (no env keys, no preseed) and `FAKE_MARKET_DATA_ERROR=auth_failed`; add MSFT → add ok; `collectIvNow` → `skippedReason: 'market_data_unavailable'`; after `reloadBench` the MSFT cell reads `n/a` with `data-ivr-reason="no_market_data"` and title `IV rank needs Alpaca market-data credentials`.
+- `Barchart readings are removed on upgrade` — before launch, the spec opens the temp DB with `better-sqlite3`, runs migrations 001–015 only, and inserts one legacy `ivr_snapshot` row for AAPL; after boot `tableExists(page, 'ivr_snapshot')` is `false`, `tableExists(page, 'iv30_reading')` is `true`, and the AAPL cell reads `n/a` with `state: 'empty'`, `reason: 'not_collected'`, `title: 'No IV rank collected'` — nothing survived to feed it.
+- `No market-data credentials leaves IV rank unavailable, not broken` — launch `withoutBrokerCredentials: true` (no env keys, no preseed) and `FAKE_MARKET_DATA_ERROR=auth_failed`; add MSFT → add ok; the MSFT card reads `n/a` with `reason: 'no_market_data'`, `title: 'IV rank needs Alpaca market-data credentials'`; open the detail → `readingNote` kind `no_market_data`; `collectIvNow` → `skippedReason: 'market_data_unavailable'` and every bench card now carries the same reason.
 - `The computed rank drives the screener floor — 29 is excluded` — NVDA `seriesForRank(29)`, floor 30 → excluded list reason `IV rank 29 (…) below 30`.
 - `The computed rank drives the screener floor — 30 is included` — `seriesForRank(30)` → ranked.
 - `The computed rank drives the screener floor — n/a is treated as it is today when IVR is unavailable` — NVDA `sparseSeries(150)` → ranked with `n/a` (floor not applied), matching US-98 AC12 behaviour.
@@ -519,7 +559,7 @@ All on `main` at `55773d2`:
 
 **Green — implementation:**
 
-- The spec file and any helper the Red bullets name that area 12 did not already add. Each test launches its own app (`tmpDb`, `afterEach` close + `cleanupDb`) in the style of `ivr-staleness.spec.ts`.
+- The spec file and any helper the Red bullets name that area 13 did not already add. Each test launches its own app (`tmpDb`, `afterEach` close + `cleanupDb`) in the style of `ivr-staleness.spec.ts`.
 
 **Refactor — cleanup to consider:**
 
@@ -531,34 +571,37 @@ All on `main` at `55773d2`:
 
 ## AC Audit
 
-| #     | Acceptance scenario (Linear)                                          | E2e test (area 13)                                          | Engine/service tests |
+| #     | Acceptance scenario (Linear)                                          | E2e test (area 14)                                          | Engine/service tests |
 | ----- | --------------------------------------------------------------------- | ----------------------------------------------------------- | -------------------- |
 | 1     | IV rank is computed from the app's own IV history                     | same name                                                   | area 4, 9            |
 | 2     | IV percentile is computed alongside IV rank                           | same name                                                   | area 4               |
-| 3     | The IV range behind the rank is reported with it                      | same name                                                   | area 4, 11           |
+| 3     | The IV range behind the rank is reported with it                      | same name                                                   | area 4, 12           |
 | 4     | A reading outside the window's range is clamped                       | same name                                                   | area 4               |
-| 5     | A flat window withholds rank but not percentile                       | same name                                                   | area 4, 5, 11        |
+| 5     | A flat window withholds rank but not percentile                       | same name                                                   | area 4, 5, 12        |
 | 6     | A corrected engine recomputes every derived metric from stored inputs | same name                                                   | area 3, 9            |
 | 7     | Reading IV metrics makes no market-data request                       | same name                                                   | area 9               |
-| 8     | A reading is withheld while the window is too sparse to trust         | same name                                                   | area 4               |
-| 9     | A young history is withheld the same way                              | same name                                                   | area 4               |
-| 10    | Adding a ticker does not wait on its backfill                         | same name                                                   | area 10              |
-| 11    | One ticker's backfill failure leaves the others intact                | same name                                                   | area 10              |
+| 8     | A reading is withheld while the window is too sparse to trust         | same name                                                   | area 4, 9, 11, 12    |
+| 9     | A young history is withheld the same way                              | same name                                                   | area 4, 9, 11, 12    |
+| 10    | Adding a ticker does not wait on its backfill                         | same name                                                   | area 10, 11, 12      |
+| 11    | One ticker's backfill failure leaves the others intact                | same name                                                   | area 10, 11, 12      |
 | 12    | Missed sessions are caught up by the next daily run                   | same name                                                   | area 9               |
 | 13    | An untraded strike is skipped for its neighbour                       | same name                                                   | area 3               |
 | 14    | Thin weeklies fall back to the monthly expirations                    | same name                                                   | area 2, 3            |
 | 15    | A day with no tradeable ATM pair is left as a gap                     | same name                                                   | area 3, 9            |
-| 16    | Today's reading is computed the same way as the history               | same name                                                   | area 3, 9, 10        |
+| 16    | Today's reading is computed the same way as the history               | same name                                                   | area 3, 9, 11        |
 | 17    | Bar requests never name the current calendar day as their end         | same name                                                   | area 7, 9            |
 | 18    | Today's reading is available the same evening                         | same name                                                   | area 9               |
-| 19    | Barchart readings are removed on upgrade                              | same name                                                   | area 6               |
-| 20    | No market-data credentials leaves IV rank unavailable, not broken     | same name                                                   | area 10              |
+| 19    | Barchart readings are removed on upgrade                              | same name                                                   | area 6, 11, 12       |
+| 20    | No market-data credentials leaves IV rank unavailable, not broken     | same name                                                   | area 10, 11, 12      |
 | 21a   | The computed rank drives the screener floor — 29 excluded             | `… — 29 is excluded`                                        | area 5               |
 | 21b   | … — 30 included                                                       | `… — 30 is included`                                        | area 5               |
 | 21c   | … — n/a treated as today                                              | `… — n/a is treated as it is today when IVR is unavailable` | area 5               |
 | 22a–e | Expirations too near expiry are excluded from IV30 (3, 6, 7, 9, 14)   | one test per row                                            | area 2               |
 
-Every scenario has a named e2e test; no AC is uncovered.
+Every scenario has a named e2e test; no AC is uncovered. The five scenarios the story amended on
+2026-09-20 (rows 8, 9, 10, 11, 20 — the card _explains_ the absence or shows a computing state)
+are asserted through `ivrCell(...).reason` / `.title` and `readingNote(page)`, never through a
+bare `n/a`.
 
 ## Out of scope (restated from the story, so `/plan-tasks` does not invent them)
 

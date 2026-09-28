@@ -8,7 +8,14 @@ import type {
   OptionChainQuote
 } from '../integrations/market-data-provider'
 import type Database from 'better-sqlite3'
-import { makeTestDb, seedIvr, seedTradingCalendar, seedWatchlist } from '../test-utils'
+import {
+  makeTestDb,
+  makeTradingCalendar,
+  seedRankedIv30Series,
+  seedTradingCalendar,
+  seedWatchlist
+} from '../test-utils'
+import { createIvRunState } from './iv-run-state'
 import { screenWatchlistCandidates } from './screener'
 
 vi.mock('../logger', () => ({
@@ -28,9 +35,14 @@ const CURRENT_DATE = new Date(2026, 6, 23)
  *  without one, so a screener test that did not seed it would be testing the outage. */
 function makeScreenerDb(): Database.Database {
   const db = makeTestDb()
-  seedTradingCalendar(db, '2026-05-01', '2026-12-31')
+  seedTradingCalendar(db, CALENDAR_FIRST_DAY, CALENDAR_LAST_DAY)
   return db
 }
+// Reaches back past the rank window and ahead past the refresh threshold, so the screen's
+// own calendar refresh is the no-op it is in steady state.
+const CALENDAR_FIRST_DAY = '2025-05-01'
+const CALENDAR_LAST_DAY = '2027-12-31'
+const SESSIONS = makeTradingCalendar(CALENDAR_FIRST_DAY, CALENDAR_LAST_DAY)
 const EXP_37_DTE = '2026-08-29'
 const EXP_36_DTE = '2026-08-28'
 const TIMESTAMP = '2026-07-23T15:30:00Z'
@@ -77,6 +89,7 @@ describe('US-65 screenWatchlistCandidates — acceptance criteria', () => {
     const provider = scriptChains({ AAPL: [chainStrike()] })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: createIvRunState(),
       currentDate: CURRENT_DATE
     })
 
@@ -118,6 +131,7 @@ describe('US-65 screenWatchlistCandidates — acceptance criteria', () => {
     })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: createIvRunState(),
       currentDate: CURRENT_DATE
     })
 
@@ -145,6 +159,7 @@ describe('US-65 screenWatchlistCandidates — acceptance criteria', () => {
     })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: createIvRunState(),
       currentDate: CURRENT_DATE
     })
 
@@ -172,6 +187,7 @@ describe('US-65 screenWatchlistCandidates — acceptance criteria', () => {
     })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: createIvRunState(),
       currentDate: CURRENT_DATE
     })
 
@@ -188,6 +204,7 @@ describe('US-65 screenWatchlistCandidates — acceptance criteria', () => {
     const provider = scriptChains({ AAPL: [chainStrike({ bid: '2.40', ask: '3.00' })] })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: createIvRunState(),
       currentDate: CURRENT_DATE
     })
 
@@ -215,6 +232,7 @@ describe('US-65 screenWatchlistCandidates — acceptance criteria', () => {
     })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: createIvRunState(),
       currentDate: CURRENT_DATE
     })
 
@@ -226,11 +244,9 @@ describe('US-65 screenWatchlistCandidates — acceptance criteria', () => {
   it('missing IV rank does not exclude a candidate', async () => {
     const db = makeScreenerDb()
     seedWatchlist(db, ['KO', 'AAPL', 'MSFT'])
-    // IVR observed for KO and AAPL — deliberately none for MSFT.
-    seedIvr(db, [
-      ['KO', '2026-07-22T20:00:00Z', '38.0'],
-      ['AAPL', '2026-07-22T20:00:00Z', '44.0']
-    ])
+    // IV history for KO and AAPL — deliberately none for MSFT.
+    seedRankedIv30Series(db, 'KO', SESSIONS, '2026-07-22', 38)
+    seedRankedIv30Series(db, 'AAPL', SESSIONS, '2026-07-22', 44)
     const provider = scriptChains({
       KO: [
         chainStrike({
@@ -257,6 +273,7 @@ describe('US-65 screenWatchlistCandidates — acceptance criteria', () => {
     })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: createIvRunState(),
       currentDate: CURRENT_DATE
     })
 
@@ -264,13 +281,18 @@ describe('US-65 screenWatchlistCandidates — acceptance criteria', () => {
     const [msft, ko] = result.ranked
     // MSFT still ranks; its IV rank reads "n/a" rather than excluding or zeroing it.
     expect(msft.ivRank).toBeNull()
+    expect(msft.ivRankAbsence).toEqual({ reason: 'not_collected' })
     expect(msft.yieldPerDelta).toBe('1.0000')
     expect(ko.ivRank).toEqual({
-      value: '38.0',
-      observedAt: '2026-07-22T20:00:00Z',
+      value: '38',
+      percentile: '100',
+      low: '0.2000',
+      high: '0.3000',
+      observedAt: '2026-07-22T20:00:00.000Z',
       ageTradingDays: 0,
       state: 'fresh'
     })
+    expect(ko.ivRankAbsence).toBeNull()
     expect(result.excluded).toEqual([])
   })
 
@@ -303,6 +325,7 @@ describe('US-65 screenWatchlistCandidates — acceptance criteria', () => {
     })
 
     const result = await screenWatchlistCandidates(() => provider, db, {
+      runState: createIvRunState(),
       currentDate: CURRENT_DATE
     })
 

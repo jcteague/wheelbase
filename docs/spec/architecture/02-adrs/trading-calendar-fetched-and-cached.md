@@ -1,6 +1,6 @@
 # ADR: The exchange calendar is fetched and cached, not checked in
 
-<!-- generated:from us-98,us-116 -->
+<!-- generated:from us-98,us-116,us-121 -->
 
 ## Decision
 
@@ -38,8 +38,9 @@ ahead, before reading.
   disables every freshness judgement.
 - A provider outage during refresh leaves the previous rows untouched and reports `failed`;
   the batch it gates still runs, per the batch failure-isolation rule.
-- Reads are bounded to 45 days back / 2 ahead, comfortably past the ten-session stale
-  boundary, so an ancient snapshot cannot make the read walk months of rows.
+- Reads are bounded, so an ancient reading cannot make the read walk unbounded rows. US-98
+  set 45 days back / 2 ahead (past the ten-session stale boundary); [US-121] widened it to
+  400 back / 70 ahead to hold the IV-rank window — see below.
 - [US-116] `getMarketCalendar` is part of the `MarketDataProvider` interface (narrowed to
   `MarketCalendarSource = Pick<MarketDataProvider, 'getMarketCalendar'>` at its two
   consumers), so every
@@ -59,6 +60,7 @@ ahead, before reading.
 - [extract: us-98](../../.extracts/us-98.md) — ADR "The exchange calendar is fetched and cached, not checked in"
 - [feature: us-98-ivr-staleness-tiers](../../features/us-98-ivr-staleness-tiers.md)
 - [`schema/tables.md`](../../schema/tables.md#trading_session)
+- [extract: us-121](../../.extracts/us-121.md) — ADR "The calendar store's window widens to cover the rank window"
 
 ## Update: who fetches it (US-116)
 
@@ -79,5 +81,29 @@ orchestration that already awaits quotes and earnings.
   await it inside a `Promise.all`, so a rejection would sink the bench.
 - The collector still calls `refreshTradingCalendar` directly, on its own weekly throttle: the
   nightly job owns its own provider and wants no in-flight sharing with bench reads.
+
+## Update: the window widens to hold the IV-rank window (US-121)
+
+[US-121](../../features/us-121-iv-rank-from-own-iv-history.md) computes IV rank over the 252 sessions before the latest reading and selects
+expirations up to 70 days ahead, shifting holiday Fridays to the prior session. Both need calendar
+evidence far beyond US-98's bounds:
+
+| Bound                   | US-98 | US-121 |
+| ----------------------- | ----- | ------ |
+| `READ_LOOKBACK_DAYS`    | 45    | 400    |
+| `READ_LOOKAHEAD_DAYS`   | 2     | 70     |
+| `REFRESH_LOOKBACK_DAYS` | 120   | 420    |
+
+252 sessions is about 365 calendar days, plus up to ten stale sessions on the anchor; the far
+monthly candidate can sit ~58 days out, which is why the plan's 50-day lookahead was raised to 70.
+The refresh interval (7 days) and lookahead (400) are unchanged. `needsRefresh` is also true when
+the stored `first_day` is later than `now − READ_LOOKBACK_DAYS`, so an install upgraded from the
+120-day cache refetches once. The "read never fetches" rule is untouched; 400 rows is still one
+indexed range scan.
+
+A refresh that fails with `auth_failed` now reports `{ status: 'no_market_data' }` rather than a
+generic failure — on a fresh install it is the first market-data call, and the IV-rank card must be
+able to name the missing credentials. See
+[ivr-auth-failure-aborts-as-skip](./ivr-auth-failure-aborts-as-skip.md).
 
 <!-- /generated -->

@@ -49,8 +49,8 @@ export const DEFAULT_SCREENING_CRITERIA: ScreeningCriteria = {
  * display-surface concern.
  */
 export type IvRank = {
-  value: string // as stored, 1dp
-  observedAt: string // ISO timestamp of the scrape that produced it
+  value: string // integer IV rank as a string (US-121)
+  observedAt: string // ISO instant of the anchor session's close
 }
 
 /**
@@ -61,7 +61,7 @@ export type IvRank = {
  * "no earnings risk", which is the silent pass US-70 exists to prevent.
  *
  * The engine declares this so it stays free of `integrations/` imports; the
- * Finnhub feed conforms to it, the same way `ivr-snapshots` conforms to `IvRank`.
+ * Finnhub feed conforms to it, the same way `iv-rank-lookup` conforms to `IvRank`.
  */
 export type EarningsLookup =
   | { status: 'found'; date: string }

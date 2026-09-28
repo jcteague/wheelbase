@@ -1,5 +1,10 @@
 import { addDays, format } from 'date-fns'
 
+/** The "now" boundary for services that must agree on one instant (and for tests to pin it). */
+export type Clock = {
+  now(): Date
+}
+
 /** Returns today's date as YYYY-MM-DD in the local timezone. */
 export function localToday(): string {
   return format(new Date(), 'yyyy-MM-dd')

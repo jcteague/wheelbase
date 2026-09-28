@@ -17,8 +17,12 @@ import {
 // not accidentally testing the timezone edge — that edge has its own test below.
 const NOW = new Date('2026-09-08T17:00:00.000Z')
 
-const reading = (value: string, state: IvRankState, ageTradingDays = 0): AssessedIvRank => ({
+// [US-121] Integer rank strings, alongside the percentile and range every reading carries.
+const reading = (value: string | null, state: IvRankState, ageTradingDays = 0): AssessedIvRank => ({
   value,
+  percentile: '71',
+  low: '0.1800',
+  high: '0.4500',
   observedAt: '2026-09-04T20:00:00.000Z',
   ageTradingDays,
   state
@@ -81,7 +85,7 @@ describe('[US-96] watchlist signal — price gate', () => {
 
 describe('[US-96] watchlist signal — IV gate', () => {
   it('is none when the entry has no IV-rank trigger', () => {
-    expect(evaluateEntry(input({ ivRank: reading('58.0', 'fresh') })).iv).toEqual(gate('none'))
+    expect(evaluateEntry(input({ ivRank: reading('58', 'fresh') })).iv).toEqual(gate('none'))
   })
 
   it('is unknown when no reading has ever been collected', () => {
@@ -93,14 +97,14 @@ describe('[US-96] watchlist signal — IV gate', () => {
 
   it('is unknown for an expired reading', () => {
     const verdict = evaluateEntry(
-      input({ conditions: conditions({ ivrTrigger: 40 }), ivRank: reading('47.0', 'expired', 12) })
+      input({ conditions: conditions({ ivrTrigger: 40 }), ivRank: reading('47', 'expired', 12) })
     )
     expect(verdict.iv).toEqual(gate('unknown', 'IV unavailable'))
   })
 
   it('is unknown for a stale reading', () => {
     const verdict = evaluateEntry(
-      input({ conditions: conditions({ ivrTrigger: 45 }), ivRank: reading('58.0', 'stale', 6) })
+      input({ conditions: conditions({ ivrTrigger: 45 }), ivRank: reading('58', 'stale', 6) })
     )
     expect(verdict.iv).toEqual(gate('unknown', 'IV too old to judge'))
   })
@@ -109,7 +113,7 @@ describe('[US-96] watchlist signal — IV gate', () => {
     const verdict = evaluateEntry(
       input({
         conditions: conditions({ ivrTrigger: 50 }),
-        ivRank: reading('62.0', 'predates_earnings', 1)
+        ivRank: reading('62', 'predates_earnings', 1)
       })
     )
     expect(verdict.iv).toEqual(gate('unknown', 'IV predates earnings'))
@@ -117,28 +121,46 @@ describe('[US-96] watchlist signal — IV gate', () => {
 
   it('is met when a fresh reading is at or above the trigger', () => {
     const verdict = evaluateEntry(
-      input({ conditions: conditions({ ivrTrigger: 40 }), ivRank: reading('58.0', 'fresh') })
+      input({ conditions: conditions({ ivrTrigger: 40 }), ivRank: reading('58', 'fresh') })
     )
     expect(verdict.iv).toEqual(gate('met'))
   })
 
   it('is met when an aging reading is above the trigger', () => {
     const verdict = evaluateEntry(
-      input({ conditions: conditions({ ivrTrigger: 40 }), ivRank: reading('58.0', 'aging', 2) })
+      input({ conditions: conditions({ ivrTrigger: 40 }), ivRank: reading('58', 'aging', 2) })
     )
     expect(verdict.iv).toEqual(gate('met'))
   })
 
   it('is unmet when a usable reading is below the trigger', () => {
     const verdict = evaluateEntry(
-      input({ conditions: conditions({ ivrTrigger: 50 }), ivRank: reading('34.0', 'fresh') })
+      input({ conditions: conditions({ ivrTrigger: 50 }), ivRank: reading('34', 'fresh') })
     )
     expect(verdict.iv).toEqual(gate('unmet', 'IV low'))
   })
 
+  // [US-121] A flat window withholds the rank: with no number to compare, the gate
+  // refuses to decide exactly as it does for a missing reading.
+  it('is unknown for a fresh reading whose rank is withheld', () => {
+    const verdict = evaluateEntry(
+      input({ conditions: conditions({ ivrTrigger: 30 }), ivRank: reading(null, 'fresh') })
+    )
+    expect(verdict.iv).toEqual(gate('unknown', 'IV unavailable'))
+  })
+
+  it('is met at 30 and unmet at 29 against a trigger of 30', () => {
+    const at = (value: string): Gate =>
+      evaluateEntry(
+        input({ conditions: conditions({ ivrTrigger: 30 }), ivRank: reading(value, 'fresh') })
+      ).iv
+    expect(at('30')).toEqual(gate('met'))
+    expect(at('29')).toEqual(gate('unmet', 'IV low'))
+  })
+
   it('is met when a usable reading sits exactly on the trigger', () => {
     const verdict = evaluateEntry(
-      input({ conditions: conditions({ ivrTrigger: 50 }), ivRank: reading('50.0', 'fresh') })
+      input({ conditions: conditions({ ivrTrigger: 50 }), ivRank: reading('50', 'fresh') })
     )
     expect(verdict.iv).toEqual(gate('met'))
   })

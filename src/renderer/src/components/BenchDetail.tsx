@@ -66,7 +66,7 @@ function earningsLine(earnings: EarningsDisplay): { text: string; caution: boole
 
 export function BenchDetail({ stock, onReview, onEdit }: BenchDetailProps): React.JSX.Element {
   const { ticker, row, candidate, rank, reason, verdictCopy } = stock
-  const { entry, quote, ivRank, earnings, verdict } = row
+  const { entry, quote, earnings, verdict } = row
   const meets = rank !== null
   const conditions = benchConditions(entry)
   const change = dayChange(quote)
@@ -136,12 +136,12 @@ export function BenchDetail({ stock, onReview, onEdit }: BenchDetailProps): Reac
         <div>
           <p className="m-0 text-xs text-wb-text-muted">IV rank</p>
           <p className="m-0 mt-1 font-wb-mono text-lg">
-            <IvrCell ivRank={ivRank} />
+            <IvrCell ivr={row} />
           </p>
         </div>
       </div>
 
-      <ReadingNote ticker={ticker} ivRank={ivRank} ivrTrigger={entry.ivrTrigger} />
+      <ReadingNote ticker={ticker} ivr={row} ivrTrigger={entry.ivrTrigger} />
 
       <div>
         <h4 className={HEADING}>Your thesis</h4>

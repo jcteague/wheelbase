@@ -25,7 +25,6 @@ import {
   promoteCard,
   waitForBenchCard
 } from './screener-helpers'
-import { observedSessionsAgo } from './trading-day-fixtures'
 
 const AAPL_NOTE = 'Would own below $170'
 
@@ -170,7 +169,7 @@ describe('US-69: edit a watchlist entry', () => {
   it('Changing a condition re-judges the bench', async () => {
     const page = await launch('wb-e2e-us69-ac8', {
       conditions: { AAPL: { ivrTrigger: 50 } },
-      ivr: { AAPL: { ivr: 34, observedAt: observedSessionsAgo(0) } }
+      ivr: { AAPL: { rank: 34, endingSessionsAgo: 0 } }
     })
 
     await waitForBenchCard(page, 'AAPL', 'waiting')

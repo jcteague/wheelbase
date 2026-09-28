@@ -6,6 +6,7 @@ import type { MarketDataProvider } from '../integrations/market-data-provider'
 import { DEFAULT_SCREENING_CRITERIA, type CandidateEarnings } from '../core/screener'
 import type { RankedCandidate, ScreenerExclusion, ScreenerResults } from '../services/screener'
 import { makeTestDb } from '../test-utils'
+import { createIvRunState } from '../services/iv-run-state'
 
 const screenWatchlistCandidates = vi.fn()
 
@@ -24,6 +25,7 @@ vi.mock('../services/screener', () => ({
 type IpcHandler = (...args: unknown[]) => unknown
 
 const db = {} as Database.Database
+const RUN_STATE = createIvRunState()
 const provider = {} as MarketDataProvider
 
 function getProvider(): MarketDataProvider {
@@ -42,6 +44,7 @@ async function registerAndGetHandler(
   registerScreenerIpc({
     db: database,
     getProvider,
+    runState: RUN_STATE,
     ...(currentDate === undefined ? {} : { getCurrentDate: () => currentDate })
   })
 
@@ -66,11 +69,15 @@ const SAMPLE_CANDIDATE: RankedCandidate = {
   openInterest: 1200,
   volume: 340,
   ivRank: {
-    value: '44.0',
+    value: '44',
+    percentile: '61',
+    low: '0.1800',
+    high: '0.4500',
     observedAt: '2026-07-15T20:00:00.000Z',
     ageTradingDays: 0,
     state: 'fresh'
   },
+  ivRankAbsence: null,
   capitalSecured: '18000.00',
   periodYield: '0.0150',
   annualizedYield: '0.1480',
@@ -129,8 +136,10 @@ describe('registerScreenerIpc', () => {
     // The thunk itself goes through — the service resolves it, so an unconfigured
     // provider surfaces as the modelled provider_unavailable state.
     expect(screenWatchlistCandidates).toHaveBeenCalledWith(getProvider, db, {
-      currentDate: expect.any(Date)
+      currentDate: expect.any(Date),
+      runState: RUN_STATE
     })
+    expect(screenWatchlistCandidates.mock.calls[0][2].runState).toBe(RUN_STATE)
   })
 
   it('passes the shared composition clock into the service', async () => {
@@ -140,7 +149,10 @@ describe('registerScreenerIpc', () => {
     const handler = await registerAndGetHandler('screener:results', db, currentDate)
     await handler(null)
 
-    expect(screenWatchlistCandidates).toHaveBeenCalledWith(getProvider, db, { currentDate })
+    expect(screenWatchlistCandidates).toHaveBeenCalledWith(getProvider, db, {
+      currentDate,
+      runState: RUN_STATE
+    })
   })
 
   it('screener:results forwards a provider_unavailable screen unchanged', async () => {

@@ -1,10 +1,20 @@
 # ADR: Per-ticker failure isolation in the IVR collection loop
 
-<!-- generated:from us-97 -->
+<!-- generated:from us-97,us-121 -->
+
+> **Amended by [US-121](../../features/us-121-iv-rank-from-own-iv-history.md).** The isolation rule stands; what it isolates changed. Each ticker's
+> turn is now `collectIvHistory` (daily bars + the IV30 engine), not a Barchart scrape — the
+> scraper, its 1 req/s limiter and the broker clock read described below are gone. Three
+> refinements: a DB write error inside `collectIvHistory` is still rethrown as systemic; a
+> `MarketDataError('auth_failed')` (or a calendar refresh reporting `no_market_data`) aborts the
+> whole run as `skippedReason: 'market_data_unavailable'` instead of counting N identical failures
+> — see [ivr-auth-failure-aborts-as-skip](./ivr-auth-failure-aborts-as-skip.md); and each turn is
+> bracketed by run-state `markPending` / `settle`, so a failed ticker's card says "Last IV history
+> run failed". The rationale below is kept as history.
 
 ## Decision
 
-Each ticker's **fetch** in `collectIVRSnapshots` is wrapped in `try/catch`. A thrown fetch
+Each ticker's **fetch** in `collectIvHistoryBatch` (formerly `collectIVRSnapshots`) is wrapped in `try/catch`. A thrown fetch
 failure counts as `errorCount`, logs a WARN under the `err` key with the message
 `IVR collection threw for ticker`, and the loop continues to the next ticker.
 

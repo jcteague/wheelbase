@@ -1,22 +1,28 @@
 ---
 page: docs/spec/architecture/02-adrs/no-active-leg-cockpit-branch.md
-audited_at: 2026-06-27
-findings: 1
+audited_at: 2026-09-28
+findings: 2
 ---
 
 # Audit: no-active-leg-cockpit-branch.md
 
-## Verified (4)
+## Verified (5)
 
-- ✓ `PositionCockpit` branches on `!activeLeg` — `src/renderer/src/components/position-cockpit/PositionCockpit.tsx:46`. (File lives in `position-cockpit/`, not directly under `components/`.)
-- ✓ In the no-active-leg branch it renders `<VerdictBlock pnl={null}>` with `SHARES_VERDICT` — `PositionCockpit.tsx:48,53-56`.
-- ✓ The cost-basis history drawer ("Cost basis & history") is rendered with `defaultOpen` in that branch — `PositionCockpit.tsx:68-72`, drawer title at line 138.
-- ✓ `RiskSnapshot`, `ContextStrip`, and the "Leg reference" drawer are NOT rendered in the no-active-leg branch — they appear only in the active-leg branch (`PositionCockpit.tsx:94,95,97`).
+- ✓ `if (!activeLeg)` branch in `src/renderer/src/components/position-cockpit/PositionCockpit.tsx:46`.
+- ✓ Verdict `WHEEL_COMPLETE_VERDICT` when `position.phase === 'WHEEL_COMPLETE'`, else `SHARES_VERDICT` — `PositionCockpit.tsx:47-48`.
+- ✓ `<VerdictBlock … pnl={null}>` plus `<CostBasisDrawer … defaultOpen>` only — `PositionCockpit.tsx:53-72`; `RiskSnapshot` / `ContextStrip` / "Leg reference" drawer appear only in the active-leg path (`:94-97`).
+- ✓ Local `CostBasisDrawer` wrapper renders `<CollapsedDrawer title="Cost basis & history" … defaultOpen={defaultOpen}>` — `PositionCockpit.tsx:129-138`.
+- ✓ Feature page `../../features/us-34-position-cockpit.md` exists.
 
-## Drift (1)
+## Drift (0)
 
-- ✗ Minor: Page (line 7) says the branch uses `SHARES_VERDICT`. The code selects `WHEEL_COMPLETE_VERDICT` when `position.phase === 'WHEEL_COMPLETE'`, else `SHARES_VERDICT` — `PositionCockpit.tsx:47-48`. Also, the page says it renders a bare `<CollapsedDrawer defaultOpen>`; the actual drawer is wrapped in a local `CostBasisDrawer` component (which renders a `CollapsedDrawer` titled "Cost basis & history") — `PositionCockpit.tsx:68,129-138`. Suggested fix: note the WHEEL_COMPLETE verdict variant and the `CostBasisDrawer` wrapper.
+None.
 
-## Unverifiable (0)
+## Unverifiable (1)
 
-(none)
+- ? Rationale (no greeks without an option leg; avoid empty cards) — design intent.
+
+## Missing files (2)
+
+- ✗ Source `plans/us-34/plan.md` — `plans/us-34/` no longer exists.
+- ✗ Source `plans/us-34/data-model.md` — same.

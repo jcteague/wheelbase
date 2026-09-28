@@ -1,6 +1,6 @@
 # Database Tables
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-35,us-37,us-44,us-50 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-35,us-37,us-44,us-50,us-121 -->
 
 ## Overview
 
@@ -14,9 +14,12 @@ sit alongside the domain core: **`pending_assignments`** records broker-detected
 assignments awaiting trader confirmation, **`credential_settings`** holds
 encrypted broker credentials, and **`app_settings`** is a generic key/value
 store for non-secret settings (broker environment selection, poll watermarks).
-A separate market-data table sits outside the wheel domain entirely:
-**`ivr_snapshot`** stores one daily IV-rank observation per active-position
-underlying, written by the after-close IVR collection job. Finally,
+Separate market-data tables sit outside the wheel domain entirely:
+**`iv30_reading`** stores one 30-day implied-volatility reading per underlying
+per exchange session, with every input that produced it, and **`iv30_gap`**
+records sessions the engine tried and could not read — together the series IV
+rank is derived from on read ([US-121](../features/us-121-iv-rank-from-own-iv-history.md), migration 016, which dropped the
+Barchart-era `ivr_snapshot`). Finally,
 **`alerts`** holds the management-alert set produced by the scheduled
 evaluation job: at most one **open** alert per `(position, rule)`, with cleared
 conditions resolved in place (rows are never deleted, so the table doubles as
@@ -463,60 +466,96 @@ broken referential integrity.
 
 <!-- /generated -->
 
-<!-- generated:from us-44 -->
+<!-- generated:from us-121 -->
 
-## `ivr_snapshot`
+## `iv30_reading`
 
-Daily implied-volatility-rank observations, one row per active-position
-underlying per market day. Rows are written by the after-close IVR
-collection job (`collectIVRSnapshots`), which batches distinct active
-tickers through the Barchart scraper. This table sits outside the wheel
-domain — it has no foreign key into `positions`; targets are derived by
-selecting distinct `ticker` from `positions` where `status != 'CLOSED'`.
-Added by migration `007`. See
-[us-44 — IVR Snapshot Store and Scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md).
+Created by `migrations/016_create_iv30_history.sql` ([us-121](../features/us-121-iv-rank-from-own-iv-history.md)). One row per
+`(underlying, session, method)`: the session's IV30 **and every input that produced it**, so a
+corrected engine can recompute the value without refetching and "why did AAPL read 25 that day?"
+is answerable from the row. Rank, percentile and the 52-week range are **not** stored — they are
+derived on every read (see
+[iv30-series-with-inputs-metrics-on-read](../architecture/02-adrs/iv30-series-with-inputs-metrics-on-read.md)).
+No foreign keys; targets are the union of open-position and watchlist tickers.
 
 ### Columns
 
-| Column        | Type | Nullable | Purpose                                                                              |
-| ------------- | ---- | -------- | ------------------------------------------------------------------------------------ |
-| `underlying`  | TEXT | No       | Uppercase ticker symbol, sourced from `positions.ticker`                             |
-| `observed_at` | TEXT | No       | ISO-8601 timestamp of the observation (from the scraper's `observedAt`)              |
-| `ivr`         | TEXT | No       | IV rank as a Decimal string at 1 dp; constrained to `0..100` via `IVRDataSchema`     |
-| `ivp`         | TEXT | Yes      | IV percentile as a Decimal string at 1 dp when Barchart returns it; otherwise `NULL` |
-| `iv30`        | TEXT | Yes      | 30-day historical volatility as a Decimal string when provided; otherwise `NULL`     |
-| `source`      | TEXT | No       | Data-provider tag; `NOT NULL DEFAULT 'barchart'`, persisted exactly as `'barchart'`  |
+| Column                                                                                               | Type           | Nullable | Purpose                                                                                                                      |
+| ---------------------------------------------------------------------------------------------------- | -------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `underlying`                                                                                         | TEXT           | No       | Upper-cased ticker                                                                                                           |
+| `session`                                                                                            | TEXT           | No       | `YYYY-MM-DD`, the Eastern session day                                                                                        |
+| `method`                                                                                             | TEXT           | No       | Input method, `DEFAULT 'daily_vwap'`; a later method is a new value, not a schema change                                     |
+| `engine_version`                                                                                     | INTEGER        | No       | `IV30_ENGINE_VERSION` that produced `iv30`; rows behind the current version are recomputed                                   |
+| `observed_at`                                                                                        | TEXT           | No       | ISO instant of the session's close (`trading_session.close_at`)                                                              |
+| `iv30`                                                                                               | TEXT           | No       | 30-day IV, 4 dp (e.g. `0.2475`)                                                                                              |
+| `underlying_vwap`                                                                                    | TEXT           | No       | SIP daily VWAP, 4 dp                                                                                                         |
+| `expiration_tier`                                                                                    | TEXT           | No       | `CHECK IN ('weekly', 'monthly')` — which tier produced the pair                                                              |
+| `near_expiration`                                                                                    | TEXT           | No       | `YYYY-MM-DD`                                                                                                                 |
+| `near_strike`                                                                                        | TEXT           | No       | 4 dp                                                                                                                         |
+| `near_call_vwap`, `near_put_vwap`                                                                    | TEXT           | No       | Option daily VWAPs, 4 dp                                                                                                     |
+| `near_call_trades`, `near_put_trades`                                                                | INTEGER        | No       | Daily bar trade count (`n`)                                                                                                  |
+| `far_expiration`, `far_strike`, `far_call_vwap`, `far_call_trades`, `far_put_vwap`, `far_put_trades` | TEXT / INTEGER | Yes      | All NULL together when one expiration was used (exactly 30 DTE, or a one-sided bracket); enforced by the writer, not a CHECK |
+| `rate`                                                                                               | TEXT           | No       | Risk-free rate used, 4 dp (`0.0450`)                                                                                         |
+| `dividend_yield`                                                                                     | TEXT           | No       | Dividend yield used, 4 dp (`0.0000`)                                                                                         |
 
 ### Constraints and indexes
 
-- **Primary key** `(underlying, observed_at)` — a single underlying may hold
-  multiple observations distinguished by timestamp.
-- **Secondary index** on `(underlying, observed_at DESC)` — supports
-  latest-snapshot lookups (the most recent observation per underlying).
-- `underlying` is validated non-empty and uppercase before persistence; `ivr`
-  is range-checked `0..100` at the schema boundary. There are no DB-level
-  CHECK constraints — validation lives in the service layer via
-  `IVRDataSchema`.
-
-### Same-day overwrite
-
-The latest same-day value wins. Because the primary key includes the exact
-`observed_at` timestamp, a second run on the same day would otherwise insert a
-new row rather than replace the earlier one. The collector therefore runs a
-delete-then-insert inside one transaction: before inserting the fresh row it
-deletes any existing row for the same `underlying` whose `observed_at` falls on
-the same **UTC calendar date** as the new observation. This keeps one row per
-underlying per UTC day while preserving the precise observation timestamp.
+- **Primary key** `(underlying, session, method)` — at most one reading per session per method,
+  enforced by the key (the old delete-window convention is gone).
+- **Index** `idx_iv30_reading_underlying_session_desc` on `(underlying, session DESC)` — "latest
+  reading" and window reads.
 
 ### How rows change
 
-- **Collect** (US-44, scheduled after-close job or manual `ivr:collect-now`
-  trigger): for each distinct active-position underlying, delete same-UTC-day
-  rows then `INSERT` the fresh observation with `source='barchart'`. A
-  `not_available` scraper result writes **no row** (counted as skipped);
-  parse/network/rate-limit errors write no row and the batch continues to the
-  next ticker. On a non-trading day the whole batch exits before any fetch and
-  no rows are written.
+- **Collect** (`collectIvHistory`, from the nightly `ivr-collect` job, `ivr:collect-now`, or the
+  on-demand watchlist-add / position-open trigger): inserts a reading for each **missing** settled
+  session (upsert, so a forced re-probe is idempotent), deleting any `iv30_gap` row for that
+  session in the same transaction. A session already holding a reading is never re-probed, so a
+  same-session rerun leaves the row unchanged.
+- **Recompute** (`recomputeIvHistory`, run before each collect): rewrites `iv30` and
+  `engine_version` for rows behind the current engine version from the stored inputs; no provider
+  call. Rows whose inputs no longer invert are left unchanged.
+- Rows are **never deleted** when they age out of the 252-session window.
+
+<!-- /generated -->
+
+<!-- generated:from us-121 -->
+
+## `iv30_gap`
+
+Created by migration 016 ([us-121](../features/us-121-iv-rank-from-own-iv-history.md)). One row per `(underlying, session, method)` the engine
+attempted and could not read. A gap is a result, not a reading: it contributes no value, counts
+against the 200-of-252 coverage gate, and stops later runs re-probing the session. See
+[iv30-gap-rows-except-newest-session](../architecture/02-adrs/iv30-gap-rows-except-newest-session.md).
+
+| Column         | Type | Nullable | Purpose                                               |
+| -------------- | ---- | -------- | ----------------------------------------------------- |
+| `underlying`   | TEXT | No       | Upper-cased ticker                                    |
+| `session`      | TEXT | No       | `YYYY-MM-DD` Eastern session day                      |
+| `method`       | TEXT | No       | `DEFAULT 'daily_vwap'`                                |
+| `reason`       | TEXT | No       | `CHECK IN ('no_underlying_bar', 'no_tradeable_pair')` |
+| `attempted_at` | TEXT | No       | ISO instant of the run                                |
+
+Primary key `(underlying, session, method)`. **Never written for the most recent completed
+session** — that session is retried by the next run instead. Deleted when a later write produces a
+reading for the session. A ticker with gap rows but no reading reads `insufficient_history` with
+coverage 0.
+
+<!-- /generated -->
+
+<!-- generated:from us-44,us-121 -->
+
+## `ivr_snapshot` (dropped)
+
+Created by migration `007` ([us-44](../features/us-44-ivr-snapshot-store-and-scheduler.md)) to hold
+one Barchart-scraped IV-rank observation per underlying per day
+(`underlying`, `observed_at`, `ivr`, `ivp`, `iv30`, `source = 'barchart'`; PK
+`(underlying, observed_at)`, one row per session kept by a delete-then-insert window).
+**Dropped by migration 016** ([us-121](../features/us-121-iv-rank-from-own-iv-history.md)) together with its
+`idx_ivr_snapshot_underlying_observed_at_desc` index. Its rows were Barchart's rank — a different
+quantity from the in-house IV30 series, never comparable with it — and nothing reads or writes the
+table any more. See
+[barchart-retired-from-code-and-schema](../architecture/02-adrs/barchart-retired-from-code-and-schema.md).
 
 <!-- /generated -->
 
@@ -712,7 +751,7 @@ to the freshness time tiers alone.
 
 <!-- /generated -->
 
-<!-- generated:from us-98 -->
+<!-- generated:from us-98,us-121 -->
 
 ## `trading_session`
 
@@ -745,8 +784,11 @@ Written only by `refreshTradingCalendar` in
 `src/main/services/trading-calendar-store.ts`, which upserts the whole fetched range in
 one transaction. Reads (`readTradingCalendar`) never fetch — a screen must not hang on the
 broker. The daily IVR collector is what keeps the cache ahead of today: it refreshes at
-most weekly, over 120 days back through 400 ahead, and a broker outage leaves the previous
-rows untouched. The store warns 30 days before coverage runs out, because an exhausted
+most weekly, over 420 days back through 400 ahead ([us-121](../features/us-121-iv-rank-from-own-iv-history.md) widened the lookback from
+US-98's 120 days), and a provider outage leaves the previous rows untouched. Reads span 400 days
+back through 70 ahead, enough for the 252-session IV-rank window plus the expiration horizon; a
+stored `first_day` later than that bound triggers a one-time refetch on upgraded installs. An
+`auth_failed` refresh reports `no_market_data`. The store warns 30 days before coverage runs out, because an exhausted
 calendar silently disables every freshness judgement.
 
 No foreign keys — keyed by date, independent of every other table.

@@ -1,5 +1,5 @@
-import type { ScreenerIvRank } from '../api/screener'
-import { tradingDaysLabel } from '../lib/ivr-tooltip'
+import type { IvRankPair } from '../api/ivr'
+import { ivrAbsenceNote, type IvrNote, tradingDaysLabel } from '../lib/ivr-tooltip'
 import { formatIvrValue } from '../lib/screener-format'
 import { AlertBox } from './ui/AlertBox'
 
@@ -12,15 +12,10 @@ import { AlertBox } from './ui/AlertBox'
 
 type ReadingNoteProps = {
   ticker: string
-  ivRank: ScreenerIvRank | null
+  /** The row's reading or, when there is none, why. */
+  ivr: IvRankPair
   /** The trader's own IV threshold, when they set one. */
   ivrTrigger: number | null
-}
-
-type Note = {
-  variant: 'info' | 'warning'
-  kind: string
-  text: string
 }
 
 /** Naming the trader's own threshold is more useful than the generic phrase, so the note
@@ -29,26 +24,14 @@ function conditionPhrase(ivrTrigger: number | null): string {
   return ivrTrigger === null ? 'an IV condition' : `“IVR ≥ ${ivrTrigger}”`
 }
 
-function noteFor(
-  ticker: string,
-  ivRank: ScreenerIvRank | null,
-  ivrTrigger: number | null
-): Note | null {
+function noteFor(ticker: string, ivr: IvRankPair, ivrTrigger: number | null): IvrNote | null {
   const condition = conditionPhrase(ivrTrigger)
+  const { ivRank, ivRankAbsence } = ivr
 
-  // Reads as information, not a warning: the common cause is a ticker whose IV history is
-  // simply too thin to rank yet, and nothing has gone wrong there.
-  //
-  // Says "usable reading", not "never collected": `null` also covers a row we hold but
-  // cannot read — a corrupt value, or a calendar that cannot reach the observation. The
-  // engine keeps those apart and logs the second for the operator, but the renderer is
-  // handed the same `null` for both, so naming one of them here would be a guess.
+  // The main process says why a reading is missing, so the note names that reason rather
+  // than guessing at one.
   if (ivRank === null) {
-    return {
-      variant: 'info',
-      kind: 'missing',
-      text: `There is no usable IV rank for ${ticker}. Until one exists, an IV condition cannot be judged and this stock cannot reach Meets criteria on it.`
-    }
+    return ivrAbsenceNote(ticker, ivRankAbsence, condition)
   }
 
   const age = tradingDaysLabel(ivRank.ageTradingDays)
@@ -74,20 +57,32 @@ function noteFor(
         text: `IV rank ${value} was observed before ${ticker} reported earnings. IV re-prices through a print, so this reading is unusable regardless of age and cannot satisfy an IV condition. It will clear after the next collection.`
       }
     default:
-      return null
+      if (ivRank.value !== null) return null
+      // A usable reading with no rank: the window is flat, so the percentile still stands
+      // but a rank condition has nothing to compare against.
+      return {
+        variant: 'info',
+        kind: 'flat_range',
+        text: `IV rank unavailable for a flat 52-week range: ${ticker}'s IV30 held at ${ivRank.low} all year. IV percentile ${ivRank.percentile} still stands, but ${condition} cannot be judged on rank until the range widens.`
+      }
   }
 }
 
 export function ReadingNote({
   ticker,
-  ivRank,
+  ivr,
   ivrTrigger
 }: ReadingNoteProps): React.JSX.Element | null {
-  const note = noteFor(ticker, ivRank, ivrTrigger)
+  const note = noteFor(ticker, ivr, ivrTrigger)
   if (note === null) return null
 
   return (
-    <AlertBox variant={note.variant} data-testid="bench-reading-note" data-kind={note.kind}>
+    <AlertBox
+      variant={note.variant}
+      data-testid="bench-reading-note"
+      data-kind={note.kind}
+      data-tone={note.variant}
+    >
       {note.text}
     </AlertBox>
   )

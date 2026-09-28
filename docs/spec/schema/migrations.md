@@ -120,7 +120,7 @@ separate "US-35 app_settings migration" in tree.
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50,us-57-58,us-59 -->
+<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50,us-57-58,us-59,us-121 -->
 
 ## Migration catalogue
 
@@ -259,6 +259,10 @@ COLUMN`. No table rebuild required because there is no constraint
 - **Source:** `migrations/006_add_credential_settings.sql`
 
 ### `migrations/007_create_ivr_snapshot.sql` — create `ivr_snapshot` for daily IVR storage
+
+> **Dropped by migration 016** ([us-121](../features/us-121-iv-rank-from-own-iv-history.md)). The table and its index no longer exist on
+> any migrated database; the entry below is kept as history. See
+> [Migration 016](#migration-016--iv30_reading-iv30_gap-drop-ivr_snapshot).
 
 - **Driven by:** [us-44 — IVR Snapshot Store & Scheduler](../features/us-44-ivr-snapshot-store-and-scheduler.md)
 - **Rationale:** First persisted IVR storage path. A post-close collector
@@ -550,7 +554,7 @@ between `006` and `008` without issue. The sequence is now contiguous again.
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50,us-59 -->
+<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50,us-59,us-121 -->
 
 ## Driven by
 
@@ -568,6 +572,8 @@ between `006` and `008` without issue. The sequence is now contiguous again.
   migration `009`
 - [us-59 — Dismiss an Alert](../features/us-59-dismiss-alert.md) —
   migration `011`
+- [us-121 — IV rank from our own IV history](../features/us-121-iv-rank-from-own-iv-history.md) —
+  migration `016` (drops `007`'s `ivr_snapshot`)
 
 <!-- /generated -->
 
@@ -638,7 +644,35 @@ bounded range scan on `date`. See [`schema/tables.md`](./tables.md#trading_sessi
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50,us-59 -->
+<!-- generated:from us-121 -->
+
+## Migration 016 — `iv30_reading`, `iv30_gap`, drop `ivr_snapshot`
+
+`migrations/016_create_iv30_history.sql` (introduced by [us-121](../features/us-121-iv-rank-from-own-iv-history.md)) replaces the
+Barchart-scraped IV rank with the in-house IV30 history:
+
+- **`iv30_reading`** — one row per `(underlying, session, method)` holding the session's IV30
+  and every input that produced it (underlying VWAP, expiration tier, near/far expiration and
+  strike, four option VWAPs and trade counts, rate, dividend yield, `engine_version`,
+  `observed_at`). `method` defaults to `'daily_vwap'`; `expiration_tier` is
+  `CHECK IN ('weekly', 'monthly')`; the six `far_*` columns are nullable together. Index
+  `idx_iv30_reading_underlying_session_desc (underlying, session DESC)`.
+- **`iv30_gap`** — one row per `(underlying, session, method)` attempted and not read, `reason`
+  `CHECK IN ('no_underlying_bar', 'no_tradeable_pair')`, plus `attempted_at`.
+- **`DROP TABLE ivr_snapshot`** at the end of the file (its index goes with it). The rows were
+  Barchart's rank — a different quantity, never comparable with the new series — and nothing
+  reads them. A database seeded with legacy `ivr_snapshot` rows migrates without error; the
+  e2e scenario "Barchart readings are removed on upgrade" runs 001–015, inserts a legacy row,
+  boots, and asserts the table is gone and the ticker reads `not_collected`.
+
+The file's header comment explains the inputs-stored / metrics-derived split and the gap
+table's role, in the style of `015`. It is a pure create/drop — no backfill. See
+[`schema/tables.md`](./tables.md#iv30_reading) and
+[iv30-series-with-inputs-metrics-on-read](../architecture/02-adrs/iv30-series-with-inputs-metrics-on-read.md).
+
+<!-- /generated -->
+
+<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50,us-59,us-121 -->
 
 ## See also
 
@@ -658,6 +692,8 @@ bounded range scan on `date`. See [`schema/tables.md`](./tables.md#trading_sessi
   the feature that introduced migration `009`
 - [us-59 — Dismiss an Alert](../features/us-59-dismiss-alert.md) —
   the feature that introduced migration `011`
+- [us-121 — IV rank from our own IV history](../features/us-121-iv-rank-from-own-iv-history.md) —
+  the feature that introduced migration `016`
 
 <!-- /generated -->
 

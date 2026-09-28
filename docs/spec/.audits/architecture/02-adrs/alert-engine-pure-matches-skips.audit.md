@@ -1,27 +1,25 @@
 ---
 page: docs/spec/architecture/02-adrs/alert-engine-pure-matches-skips.md
-audited_at: 2026-06-27
-findings: 0
+audited_at: 2026-09-28
+findings: 1
 ---
 
-# Audit: alert-engine-pure-matches-skips.md
+# Audit: docs/spec/architecture/02-adrs/alert-engine-pure-matches-skips.md
 
 ## Verified (5)
 
-- ✓ `src/main/core/alerts.ts` exists and exposes `evaluatePosition(input)` returning `{ matches: AlertMatch[]; skipped: SkippedRule[] }` — `core/alerts.ts:101` plus types `AlertMatch`/`SkippedRule`/`PositionEvaluation` at `:33,:40,:45-47`.
-- ✓ No DB/broker/logger imports — only `decimal.js` and `./types` imported — `core/alerts.ts:5-6`; header comment "No DB, broker, or logger imports" at `:3`.
-- ✓ Each rule is a small pure predicate (`RuleDefinition.test`) — `core/alerts.ts:72-99`.
-- ✓ Missing required input (`dte === null`) yields a `SkippedRule { ruleCode, reason }` (reason `MISSING_DTE`), not a throw — `core/alerts.ts:103-107`.
-- ✓ Service logs skips at DEBUG: `evaluate-alerts.ts` handles logging (skips logged in the service, not core).
+- ✓ `evaluatePosition(input): PositionEvaluation` returning `{ matches, skipped }` — `src/main/core/alerts.ts:107-110,302,332`.
+- ✓ No DB/broker/logger imports — imports are only `decimal.js`, `./costbasis`, `./profit-target`, `./types` (`src/main/core/alerts.ts:5-8`; header comment line 3).
+- ✓ `SkippedRule { ruleCode, reason }` — `src/main/core/alerts.ts:102-105`; missing `dte` yields a skip via `missingDteReason` rather than a throw.
+- ✓ Each rule is a small pure predicate in the `RULES` registry — `src/main/core/alerts.ts:232-300`.
+- ✓ Service logs skips at DEBUG — `logger.debug(..., 'alert_rule_skipped')` at `src/main/services/evaluate-alerts.ts:258-261`.
 
 ## Drift (0)
 
-None.
-
 ## Unverifiable (1)
 
-- ? "matching costbasis.ts, lifecycle.ts, and profit-target.ts" purity comparison — not individually re-audited; consistent with core-purity rule.
+- ? "Not throwing on missing data keeps one rule's missing input from aborting evaluation of the rest" — rationale; consistent with each rule's `missingData` guard preceding `test`.
 
-## Missing files (0)
+## Missing files (1)
 
-None.
+- ✗ Source `plans/us-50/research.md` does not exist.

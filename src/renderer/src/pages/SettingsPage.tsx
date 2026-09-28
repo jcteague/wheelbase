@@ -508,10 +508,17 @@ export function SettingsPage(): React.JSX.Element {
   async function handleCollectIvrNow(): Promise<void> {
     try {
       const batch = await collectIvrNow.mutateAsync()
-      setIvrMessage({
-        tone: batch.errorCount > 0 ? 'muted' : 'success',
-        text: `IVR refresh complete: ${batch.successCount} snapshots saved, ${batch.errorCount} errors.`
-      })
+      if (batch.skippedReason === 'market_data_unavailable') {
+        setIvrMessage({
+          tone: 'muted',
+          text: 'IV rank needs Alpaca market-data credentials — add them above to start collecting.'
+        })
+      } else {
+        setIvrMessage({
+          tone: batch.errorCount > 0 ? 'muted' : 'success',
+          text: `IV history refresh complete: ${batch.successCount} tickers updated, ${batch.errorCount} errors.`
+        })
+      }
     } catch (error) {
       setIvrMessage({ tone: 'error', text: getApiErrorMessage(error) })
     }

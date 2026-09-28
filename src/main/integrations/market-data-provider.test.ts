@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest'
 import type { Observable } from 'rxjs'
 import { MarketDataError } from './market-data-provider'
 import type {
+  DailyBar,
+  DailyBarRange,
+  IvHistoryBarSource,
   MarketCalendarDay,
   MarketCalendarRange,
   MarketDataFeed,
@@ -83,6 +86,16 @@ describe('MarketDataProvider market facts', () => {
       async getMarketCalendar(range: MarketCalendarRange): Promise<MarketCalendarDay[]> {
         return [{ date: range.start, close: '16:00' }]
       },
+      async getOptionDailyBars(
+        input: { symbols: string[] } & DailyBarRange
+      ): Promise<Map<string, DailyBar[]>> {
+        void input
+        return new Map()
+      },
+      async getStockDailyBars(input: { symbol: string } & DailyBarRange): Promise<DailyBar[]> {
+        void input
+        return []
+      },
       supportsStreaming(): boolean {
         return false
       },
@@ -156,5 +169,41 @@ describe('MarketDataProvider slim interface', () => {
       // greeks intentionally omitted — valid only after interface change
     }
     expect(snapshot.greeks).toBeUndefined()
+  })
+})
+
+// [US-121] Daily bars are market facts: they live on this port, never the broker.
+describe('MarketDataProvider daily bars', () => {
+  it('the fake exposes getOptionDailyBars and getStockDailyBars', () => {
+    const fake = new FakeMarketDataProvider()
+
+    expect(typeof (fake as unknown as Record<string, unknown>).getOptionDailyBars).toBe('function')
+    expect(typeof (fake as unknown as Record<string, unknown>).getStockDailyBars).toBe('function')
+  })
+
+  it('exports IvHistoryBarSource as the two-method bar slice, with an optional end', async () => {
+    const bar: DailyBar = {
+      date: '2026-03-12',
+      vwap: '200.4000',
+      close: '200.4000',
+      volume: 1,
+      tradeCount: 1
+    }
+    const openEnded: DailyBarRange = { start: '2026-03-12' }
+    const source: IvHistoryBarSource = {
+      async getOptionDailyBars({ symbols }) {
+        return new Map(symbols.map((symbol) => [symbol, [bar]]))
+      },
+      async getStockDailyBars() {
+        return [bar]
+      }
+    }
+
+    const options = await source.getOptionDailyBars({ symbols: ['X'], ...openEnded })
+    const stock = await source.getStockDailyBars({ symbol: 'AAPL', ...openEnded })
+
+    expect(options.get('X')).toEqual([bar])
+    expect(stock).toEqual([bar])
+    expect(openEnded.end).toBeUndefined()
   })
 })

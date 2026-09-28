@@ -85,7 +85,9 @@ const api = {
   },
   ivr: {
     collectNow: () => invoke('ivr:collect-now'),
-    onSnapshotUpdated: onIpcEvent<{ ticker: string }>('ivr:snapshot-updated')
+    // The `snapshot` name predates US-121 and is kept with its channel: it announces an
+    // IV-history run settling, not a stored snapshot.
+    onSnapshotUpdated: onIpcEvent<{ ticker: string | null }>('ivr:snapshot-updated')
   },
   // Dev-only scheduler inspection — backed by IPC handlers registered only when
   // NODE_ENV === 'test'. Safe to expose unconditionally (channels are absent in prod).
@@ -94,10 +96,16 @@ const api = {
   testSchedulerRunScheduled: (jobName: string) => invoke('_test:scheduler-run-scheduled', jobName),
   testSchedulerRegister: (job: unknown) => invoke('_test:scheduler-register', job),
   testSchedulerSimulateWake: (payload: unknown) => invoke('_test:scheduler-simulate-wake', payload),
-  testIvrSetOutcomes: (outcomes: unknown) => invoke('_test:ivr-set-outcomes', outcomes),
+  testIvSeriesSet: (fixture: unknown) => invoke('_test:iv-series-set', fixture),
   testIvrSetNow: (nowIso: unknown) => invoke('_test:ivr-set-now', nowIso),
-  testIvrSnapshots: () => invoke('_test:ivr-snapshots'),
-  testIvrFetchLog: () => invoke('_test:ivr-fetch-log'),
+  testIv30History: () => invoke('_test:iv30-history'),
+  testIv30Gaps: () => invoke('_test:iv30-gaps'),
+  testDailyBarRequests: () => invoke('_test:daily-bar-requests'),
+  testIvHistoryRecompute: (opts?: { force?: boolean }) =>
+    invoke('_test:iv-history-recompute', opts),
+  testIv30Corrupt: (payload: { ticker: string; session: string; iv30: string }) =>
+    invoke('_test:iv30-corrupt', payload),
+  testTableExists: (name: string) => invoke('_test:table-exists', name),
   testTradingSessionCount: () => invoke('_test:trading-session-count'),
   testMarketCalendarFetchCount: () => invoke('_test:market-calendar-fetch-count')
 }

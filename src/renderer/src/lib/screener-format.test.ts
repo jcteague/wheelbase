@@ -9,7 +9,8 @@ import {
   fmtQuoteTime,
   fmtScore,
   fmtSpread,
-  fmtYieldPercent
+  fmtYieldPercent,
+  formatIvrValue
 } from './screener-format'
 
 describe('fmtYieldPercent', () => {
@@ -168,5 +169,16 @@ describe('fmtCriteriaSummary', () => {
       'IVR ≥ 30',
       'Earnings Flag only'
     ])
+  })
+})
+
+describe('formatIvrValue', () => {
+  it('renders an integer rank as-is', () => {
+    expect(formatIvrValue('25')).toBe('25')
+  })
+
+  // [US-121] A flat 52-week window has no rank to show.
+  it('renders a withheld rank as n/a', () => {
+    expect(formatIvrValue(null)).toBe('n/a')
   })
 })

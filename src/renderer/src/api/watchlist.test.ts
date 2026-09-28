@@ -138,7 +138,10 @@ const SNAPSHOT_ROW = {
   entry: ENTRY,
   quote: { price: '178.40', prevClose: '176.98', timestamp: '2026-09-11T18:00:00.000Z' },
   ivRank: {
-    value: '62.0',
+    value: '62',
+    percentile: '70',
+    low: '0.1800',
+    high: '0.4500',
     observedAt: '2026-09-11T13:35:00.000Z',
     ageTradingDays: 0,
     state: 'fresh' as const

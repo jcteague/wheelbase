@@ -1,49 +1,37 @@
 ---
 page: docs/spec/features/us-16-cost-basis-sequential-rolls.md
-audited_at: 2026-06-27
-findings: 0
+audited_at: 2026-09-28
+findings: 3
 ---
 
 # Audit: docs/spec/features/us-16-cost-basis-sequential-rolls.md
 
-## Verified (12)
+## Verified (14)
 
-- ✓ All 6 cited source files exist (Glob): `src/main/core/costbasis.ts`,
-  `src/main/services/roll-csp-position.ts`, `roll-cc-position.ts`,
-  `assign-csp-position.ts`, `cost-basis-chain.test.ts`,
-  `e2e/cost-basis-sequential-rolls.spec.ts`.
-- ✓ `calculateRollBasis` accepts `legType: 'CSP' | 'CC'` and optional
-  `prevStrike` / `newStrike` on `RollBasisInput` (`costbasis.ts:217,223-225,235`).
-- ✓ CSP different-strike formula `prevBasis + (newStrike − prevStrike) − netCredit`
-  implemented (`costbasis.ts:263-266`: `round4(prev.plus(new Decimal(newStrike).minus(prevStrike)).minus(net))`
-  when `newStrike !== prevStrike`, else `prev.minus(net)`).
-- ✓ CC branch uses `prevBasis − netCredit` regardless of strike
-  (`costbasis.ts:255-258`).
-- ✓ CSP rolls require `prevStrike`/`newStrike` — throws when missing
-  (`costbasis.ts:236-241`); the "intentionally breaking" input claim holds.
-- ✓ `AssignmentBasisLeg` gains optional `label?: string` (`costbasis.ts:85-89`).
-- ✓ `calculateAssignmentBasis` prefers `leg.label ?? LEG_ROLE_LABEL[leg.legRole] ?? leg.legRole`
-  (`costbasis.ts:130`); `LEG_ROLE_LABEL` map present (`:110`).
-- ✓ `groupRollsByChain` private helper in `assign-csp-position.ts:16`; called at `:71`.
-- ✓ `ROLL_NET` synthetic leg emitted with `legRole: 'ROLL_NET'`,
-  `premiumPerContract` = net, and `label: 'Roll #N credit'|'debit'`
-  (`assign-csp-position.ts:69-72`); net computed as `rollTo.premium − rollFrom.premium`
-  (`:16-17`), negative → debit label — matches the page exactly.
-- ✓ Service callers `roll-csp-position.ts` and `roll-cc-position.ts` pass the new
-  `legType` / strike fields (both files exist and call `calculateRollBasis`).
-- ✓ `ROLL_NET` is in-memory only — not a stored `leg_role`; no migration. Consistent
-  with grep showing it only in `assign-csp-position.ts`, never in `migrations/`.
-- ✓ All `../` links resolve: `domain/cost-basis.md`, `./us-12-roll-csp.md`,
-  `./us-14-roll-cc.md`, `./us-6-record-assignment.md`.
+- ✓ All cited source files exist: `src/main/core/costbasis.ts`, `src/main/services/{roll-csp-position,roll-cc-position,assign-csp-position}.ts`, `src/main/services/cost-basis-chain.test.ts`, `e2e/cost-basis-sequential-rolls.spec.ts`
+- ✓ `RollBasisInput.legType: 'CSP' | 'CC'`, optional `prevStrike` / `newStrike` — `src/main/core/costbasis.ts:217-225`
+- ✓ `calculateRollBasis` throws when CSP roll lacks strikes — `costbasis.ts:236-241`
+- ✓ CSP different-strike formula `prev + (newStrike − prevStrike) − net`; same-strike `prev − net` — `costbasis.ts:259-262`
+- ✓ `netCredit = newPremium − costToClose` — `costbasis.ts:247`
+- ✓ `calculateRollBasis` extended in place (no `calculateCspRollBasis` / `calculateCcRollBasis`) — only one export at `costbasis.ts:235`
+- ✓ `roll-csp-position.ts:56-58` passes `legType: 'CSP'`, `prevStrike`, `newStrike`; `roll-cc-position.ts:64` passes `legType: 'CC'`
+- ✓ `AssignmentBasisLeg.label?: string` — `costbasis.ts:85-89`; waterfall uses `leg.label ?? LEG_ROLE_LABEL[leg.legRole] ?? leg.legRole` — `costbasis.ts:130`
+- ✓ Private `groupRollsByChain` in `assign-csp-position.ts:16`, used at `:71`
+- ✓ Synthetic `legRole: 'ROLL_NET'` with `label: 'Roll #N credit|debit'` — `assign-csp-position.ts:84-87`
+- ✓ `ROLL_NET` is not persisted / not a migration enum — no occurrence in `migrations/`
+- ✓ e2e covers AC1–AC9 by name — `e2e/cost-basis-sequential-rolls.spec.ts:177,213,245,293,328,437,550,584` (+ AC6 at `:372`)
+- ✓ Related pages exist: `us-12-roll-csp.md`, `us-14-roll-cc.md`, `us-6-record-assignment.md`, `domain/cost-basis.md`
+- ✓ No IPC / schema changes claimed — consistent
 
-## Drift (0)
+## Drift (1)
 
-## Unverifiable (0)
+- ✗ Page states CC rolls "always use `newBasis = prevBasis − netCredit`" and describes `RollBasisInput` as only adding `legType`/`prevStrike`/`newStrike`. Current code adds `positionContracts?: number` (`src/main/core/costbasis.ts:226-227`), required for CC rolls (throws at `:243-245`), and the CC branch prorates across all held shares: `prev − (net × rolledShares) / sharesFromContracts(positionContracts)` (`costbasis.ts:253-257`). `roll-cc-position.ts:65` passes `positionContracts: assignLeg.contracts`. Equals the documented formula only when rolled contracts = held contracts. Suggested fix: document `positionContracts` and the proration in the Contracts/What-was-built sections (likely a later story's change).
 
-- The numeric AC values (basis $47.30, $44.70 vs $47.70, etc.) are assertions
-  in `cost-basis-chain.test.ts` and were not re-derived here; the formulas that
-  produce them are verified above, and the test file exists to enforce them.
+## Unverifiable (2)
+
+- ? AC dollar figures ($47.30, $48.50, $46.70, $44.70, $45.00) — exercised by e2e/unit tests; not recomputed here.
+- ? "The engine remains pure and roll-agnostic" — narrative; `costbasis.ts` has no chain concept by grep, but purity is not mechanically proven.
 
 ## Missing files (0)
 
-Summary: page matches code precisely; no drift found.
+None.

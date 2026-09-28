@@ -29,6 +29,7 @@ function row(ticker: string, verdict: Partial<EntryVerdict> = {}): WatchlistSnap
     },
     quote: { price: '100.00', prevClose: '99.50', timestamp: '2026-09-11T18:00:00.000Z' },
     ivRank: null,
+    ivRankAbsence: { reason: 'not_collected' },
     earnings: { kind: 'unknown' },
     verdict: { ...NO_CONDITIONS, ...verdict }
   }
@@ -50,6 +51,7 @@ function candidate(ticker: string): ScreenerCandidate {
     openInterest: 1200,
     volume: 300,
     ivRank: null,
+    ivRankAbsence: { reason: 'not_collected' },
     capitalSecured: '9500.00',
     periodYield: '0.0111',
     annualizedYield: '0.1190',

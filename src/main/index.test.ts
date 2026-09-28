@@ -62,13 +62,21 @@ vi.mock('./ipc/watchlist', () => ({ registerWatchlistIpc: vi.fn() }))
 vi.mock('./ipc/screener', () => ({ registerScreenerIpc: vi.fn() }))
 
 // [US-96] The bench reads the watchlist snapshot and the screener at one clock, so the
-// fake-IVR collaborators are stubbed here to prove both registrations receive it.
+// fake clock is stubbed here to prove both registrations receive it.
 const fakeIvrNow = vi.fn(() => new Date('2026-07-23T15:30:00Z'))
-vi.mock('./integrations/fake-ivr', () => ({
-  createFakeIvrCollaborators: vi.fn(() => ({ clock: { now: fakeIvrNow } })),
-  setFakeIvrNow: vi.fn(),
-  setFakeIvrOutcomes: vi.fn()
+vi.mock('./integrations/fake-clock', () => ({
+  createFakeClock: vi.fn(() => ({ now: fakeIvrNow })),
+  setFakeNow: vi.fn()
 }))
+
+// [US-121] One run state per app: a sentinel instance proves every consumer got the same one.
+const ivRunState = {
+  markPending: vi.fn(),
+  markNoMarketData: vi.fn(),
+  settle: vi.fn(),
+  get: vi.fn()
+}
+vi.mock('./services/iv-run-state', () => ({ createIvRunState: vi.fn(() => ivRunState) }))
 
 vi.mock('./integrations/market-data-factory', () => ({
   marketDataFactory: {
@@ -109,7 +117,11 @@ vi.mock('./services/detect-assignments', () => ({
   detectAssignments: vi.fn().mockResolvedValue({ detected: 0, skipped: 0 })
 }))
 
-type IvrOnDemandDeps = { onCollected: (ticker: string) => void; clock?: { now: () => Date } }
+type IvrOnDemandDeps = {
+  onSettled: (ticker: string) => void
+  clock?: { now: () => Date }
+  runState?: unknown
+}
 const mockCreateIvrOnDemand = vi.fn(
   (deps: IvrOnDemandDeps): { collect: () => Promise<void>; deps: IvrOnDemandDeps } => ({
     collect: async (): Promise<void> => {},
@@ -120,7 +132,7 @@ vi.mock('./services/ivr-on-demand', () => ({ createIvrOnDemand: mockCreateIvrOnD
 
 vi.mock('./services/ivr-collector', () => ({
   IVR_COLLECT_JOB_NAME: 'ivr-collect',
-  collectIVRSnapshots: vi.fn().mockResolvedValue({
+  collectIvHistoryBatch: vi.fn().mockResolvedValue({
     successCount: 0,
     errorCount: 0,
     skippedCount: 0,
@@ -243,7 +255,7 @@ describe('main process bootstrap', () => {
     )
   })
 
-  it('ivr-collect job handler delegates to collectIVRSnapshots with db, logger, and abort signal', async () => {
+  it('ivr-collect job handler delegates to collectIvHistoryBatch with db, logger, and abort signal', async () => {
     await triggerBootstrap()
 
     const registration = mockSchedulerRegister.mock.calls
@@ -254,16 +266,37 @@ describe('main process bootstrap', () => {
 
     expect(registration).toBeDefined()
 
-    const { collectIVRSnapshots } = await import('./services/ivr-collector')
+    const { collectIvHistoryBatch } = await import('./services/ivr-collector')
     await registration!.handler({ trigger: 'scheduled' })
 
-    expect(vi.mocked(collectIVRSnapshots)).toHaveBeenCalledWith(
+    expect(vi.mocked(collectIvHistoryBatch)).toHaveBeenCalledWith(
       expect.objectContaining({
         db: expect.anything(),
         logger: expect.anything(),
         signal: expect.any(AbortSignal)
       })
     )
+  })
+
+  it('ivr-collect job pushes one batch-wide snapshot-updated event when the run completes', async () => {
+    await triggerBootstrap()
+    const registration = mockSchedulerRegister.mock.calls
+      .map(([job]) => job)
+      .find((job) => job.name === 'ivr-collect') as
+      | { handler: (ctx: { trigger: string }) => Promise<unknown> }
+      | undefined
+    const { collectIvHistoryBatch } = await import('./services/ivr-collector')
+    const { BrowserWindow } = await import('electron')
+    const win = (
+      BrowserWindow as unknown as {
+        instances: Array<{ webContents: { send: ReturnType<typeof vi.fn> } }>
+      }
+    ).instances.at(-1)!
+
+    await registration!.handler({ trigger: 'scheduled' })
+    vi.mocked(collectIvHistoryBatch).mock.calls.at(-1)?.[0].onCompleted?.()
+
+    expect(win.webContents.send).toHaveBeenCalledWith('ivr:snapshot-updated', { ticker: null })
   })
 
   // [US-116] The calendar is a market fact, so the collection job no longer reaches for
@@ -281,8 +314,8 @@ describe('main process bootstrap', () => {
     vi.mocked(brokerFactory.create).mockClear()
     await registration!.handler({ trigger: 'scheduled' })
 
-    const { collectIVRSnapshots } = await import('./services/ivr-collector')
-    expect(vi.mocked(collectIVRSnapshots)).toHaveBeenCalledWith(
+    const { collectIvHistoryBatch } = await import('./services/ivr-collector')
+    expect(vi.mocked(collectIvHistoryBatch)).toHaveBeenCalledWith(
       expect.objectContaining({ marketDataProvider: expect.anything() })
     )
     expect(vi.mocked(brokerFactory.create)).not.toHaveBeenCalled()
@@ -299,8 +332,8 @@ describe('main process bootstrap', () => {
     expect(registration).toBeDefined()
 
     await registration!.handler({ trigger: 'scheduled' })
-    const { collectIVRSnapshots } = await import('./services/ivr-collector')
-    const call = vi.mocked(collectIVRSnapshots).mock.calls.at(-1)?.[0] as { signal?: AbortSignal }
+    const { collectIvHistoryBatch } = await import('./services/ivr-collector')
+    const call = vi.mocked(collectIvHistoryBatch).mock.calls.at(-1)?.[0] as { signal?: AbortSignal }
     expect(call.signal).toBeDefined()
     expect(call.signal?.aborted).toBe(false)
 
@@ -501,10 +534,9 @@ describe('main process bootstrap', () => {
     expect(exitOrder).toBeGreaterThan(stopOrder)
   })
 
-  // [US-100] The scheduled after-close tick must keep the non-trading-day guard while
-  // "Refresh IVR now" bypasses it. Both arrive at the same handler, so the trigger the
-  // scheduler hands it is the only thing that tells them apart.
-  it('forwards the run trigger from the scheduler to the collector', async () => {
+  // [US-121] The closed-day guard is gone: a scheduled and an explicit run behave identically,
+  // so the scheduler's trigger no longer reaches the collector.
+  it('does not forward the run trigger to the collector', async () => {
     await triggerBootstrap()
 
     const registration = mockSchedulerRegister.mock.calls
@@ -513,17 +545,46 @@ describe('main process bootstrap', () => {
       | { handler: (ctx: { trigger: string }) => Promise<unknown> }
       | undefined
 
-    const { collectIVRSnapshots } = await import('./services/ivr-collector')
-
+    const { collectIvHistoryBatch } = await import('./services/ivr-collector')
     await registration!.handler({ trigger: 'explicit' })
-    expect(vi.mocked(collectIVRSnapshots)).toHaveBeenLastCalledWith(
-      expect.objectContaining({ trigger: 'explicit' })
-    )
 
+    expect(vi.mocked(collectIvHistoryBatch).mock.calls.at(-1)?.[0]).not.toHaveProperty('trigger')
+  })
+
+  it('hands one IV run state to the on-demand port, both read channels and the ivr-collect job', async () => {
+    await triggerBootstrap()
+
+    const { createIvRunState } = await import('./services/iv-run-state')
+    expect(vi.mocked(createIvRunState)).toHaveBeenCalledTimes(1)
+
+    const { registerWatchlistIpc } = await import('./ipc/watchlist')
+    const { registerScreenerIpc } = await import('./ipc/screener')
+    expect(mockCreateIvrOnDemand.mock.calls[0][0]).toMatchObject({ runState: ivRunState })
+    expect(vi.mocked(registerWatchlistIpc).mock.calls[0][0].runState).toBe(ivRunState)
+    expect(vi.mocked(registerScreenerIpc).mock.calls[0][0].runState).toBe(ivRunState)
+
+    const registration = mockSchedulerRegister.mock.calls
+      .map(([job]) => job)
+      .find((job) => job.name === 'ivr-collect') as
+      | { handler: (ctx: { trigger: string }) => Promise<unknown> }
+      | undefined
+    const { collectIvHistoryBatch } = await import('./services/ivr-collector')
     await registration!.handler({ trigger: 'scheduled' })
-    expect(vi.mocked(collectIVRSnapshots)).toHaveBeenLastCalledWith(
-      expect.objectContaining({ trigger: 'scheduled' })
-    )
+    expect(vi.mocked(collectIvHistoryBatch).mock.calls.at(-1)?.[0].runState).toBe(ivRunState)
+  })
+
+  it('no main-process source imports the retired Barchart scraper or fake', async () => {
+    const { readdirSync, readFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const root = join(process.cwd(), 'src')
+    const sources = readdirSync(root, { recursive: true, encoding: 'utf8' })
+      .filter((file) => /\.tsx?$/.test(file) && !file.endsWith('index.test.ts'))
+      .filter((file) => {
+        const text = readFileSync(join(root, file), 'utf8')
+        return /barchart-ivr-scraper|integrations\/fake-ivr/.test(text)
+      })
+
+    expect(sources).toEqual([])
   })
 
   it('shares one on-demand IVR port between the watchlist and positions registrations', async () => {
@@ -546,10 +607,10 @@ describe('main process bootstrap', () => {
     })
   })
 
-  it('pushes a snapshot-updated event to the renderer when a reading lands', async () => {
+  it('pushes a snapshot-updated event to the renderer when an IV run settles a ticker', async () => {
     await triggerBootstrap()
 
-    const { onCollected } = mockCreateIvrOnDemand.mock.calls[0][0]
+    const { onSettled } = mockCreateIvrOnDemand.mock.calls[0][0]
     const { BrowserWindow } = await import('electron')
     const win = (
       BrowserWindow as unknown as {
@@ -557,7 +618,7 @@ describe('main process bootstrap', () => {
       }
     ).instances.at(-1)!
 
-    onCollected('AAPL')
+    onSettled('AAPL')
 
     expect(win.webContents.send).toHaveBeenCalledWith('ivr:snapshot-updated', { ticker: 'AAPL' })
   })

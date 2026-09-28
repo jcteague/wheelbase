@@ -1,52 +1,72 @@
-// [US-100] IVR collected on watchlist add / position open, and outside market hours.
+// [US-100] IV history collected on watchlist add / position open, and outside market hours.
 //
-// One `it()` per acceptance scenario in Linear OPT-6, names verbatim. The suite boots
-// the real Electron app with the fake-IVR seam enabled, drives the production add and
-// create paths, and reads back both the persisted rows and the fake scraper's fetch log
-// — the log being the only way to assert a fetch did *not* happen, since a ticker
-// Barchart does not cover also writes no row.
+// One `it()` per acceptance scenario in Linear OPT-6, names verbatim (one renamed for
+// US-121, noted below). The suite boots the real Electron app with a fake IV series
+// (WHEELBASE_FAKE_IV_SERIES), drives the production add and create paths, and reads back
+// both the persisted `iv30_reading` rows and the fake's bar-request log — the log being
+// the only way to assert a fetch did *not* happen, since a ticker with no bar data also
+// writes no reading.
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ElectronApplication, Page } from 'playwright'
 import { cleanupDb, getPage, tmpDb } from './assignment-helpers'
 import { ivrCell } from './screener-helpers'
 import {
+  FAKE_NOW_DAY,
   collectIvrNow,
   collectIvrScheduled,
   launchIvrApp,
-  networkErrorOutcome,
-  notAvailableOutcome,
-  okOutcome,
-  readIvrFetchLog,
-  readIvrSnapshots,
+  readIv30Gaps,
+  readIv30History,
   removeFromWatchlist,
+  requestedUnderlyings,
   seedActivePosition,
   seedBenchAndSettle,
-  setIvrOutcomes,
-  fakeNowAt
+  seriesForRank,
+  setIvSeries,
+  type FakeIvSeries,
+  type FakeIvSeriesFixture
 } from './ivr-helpers'
 import {
   afterCloseOn,
   mostRecent,
   sessionCloseOn,
+  sessionsAgo,
   sessionsBefore,
   weekdayCalendar,
   BASE_DAY
 } from './trading-day-fixtures'
 
+/** KO's and MSFT's series, complete through the session `endingSessionsAgo` before
+ *  FAKE_NOW_DAY. */
+function background(endingSessionsAgo = 0): FakeIvSeriesFixture {
+  return {
+    KO: seriesForRank(38, { endingSessionsAgo }),
+    MSFT: seriesForRank(44, { endingSessionsAgo })
+  }
+}
+
 /**
- * Background for every scenario: an open CSP on MSFT and KO on the watchlist.
+ * Background for every scenario: an open CSP on MSFT and KO on the watchlist, each with
+ * IV history through `endingSessionsAgo` — so "KO already has a reading for the current
+ * trading day", which two scenarios turn on, is true rather than assumed.
  *
- * Outcomes are programmed *before* seeding on purpose. Seeding now triggers collection,
- * so with nothing programmed the background tickers would come back `not_available` and
- * land no rows — and "KO already has a reading for the current trading day", which two
- * scenarios turn on, would be quietly false.
+ * Seeding triggers collection, so this waits for both backfills to land; a scenario that
+ * then resets the request log with `setIvSeries` sees only its own work.
  */
-async function seedBackground(page: Page, observedAt = afterCloseOn(BASE_DAY)): Promise<void> {
-  await setIvrOutcomes(page, {
-    KO: okOutcome('KO', { ivr: 38, observedAt }),
-    MSFT: okOutcome('MSFT', { ivr: 44, observedAt })
-  })
+async function seedBackground(page: Page, endingSessionsAgo = 0): Promise<void> {
+  await setIvSeries(page, background(endingSessionsAgo))
   await seedBenchAndSettle(page, { positions: ['MSFT'], watchlist: ['KO'] })
+}
+
+/** Reset the request log with `extra` series added to the background. */
+async function programSeries(page: Page, extra: Record<string, FakeIvSeries>): Promise<void> {
+  await setIvSeries(page, { ...background(), ...extra })
+}
+
+async function readingsFor(page: Page, ticker: string): Promise<string[]> {
+  return (await readIv30History(page))
+    .filter((row) => row.underlying === ticker)
+    .map((row) => `${row.session}=${row.iv30}`)
 }
 
 /** Reveal the bench's add form, the way a trader does. */
@@ -83,34 +103,31 @@ describe('US-100: IVR on demand and outside market hours', () => {
     app = await launchIvrApp(dbPath)
     const page = await getPage(app)
     await seedBackground(page)
-    await setIvrOutcomes(page, {
-      AAPL: okOutcome('AAPL', { ivr: 62.5, observedAt: fakeNowAt('20:55:00.000Z') })
-    })
+    await programSeries(page, { AAPL: seriesForRank(62) })
 
     await addTickerViaForm(page, 'AAPL')
 
-    await expect
-      .poll(async () => (await readIvrSnapshots(page)).map((row) => row.underlying))
-      .toContain('AAPL')
+    await expect.poll(() => readingsFor(page, 'AAPL')).toHaveLength(253)
 
     // Without the ivr:snapshot-updated push the cell stays `n/a` until a reload, so
     // this assertion fails if the event is not wired — no reload happens here.
-    await expect.poll(async () => (await ivrCell(page, 'AAPL')).state).not.toBe('empty')
-    expect((await ivrCell(page, 'AAPL')).text).toContain('62.5')
+    await expect.poll(async () => (await ivrCell(page, 'AAPL')).state).toBe('fresh')
+    expect((await ivrCell(page, 'AAPL')).text).toBe('62')
   })
 
   it('Adding a ticker collects only that ticker', async () => {
     dbPath = tmpDb('wb-e2e-us100-only')
     app = await launchIvrApp(dbPath)
     const page = await getPage(app)
-    await seedBackground(page)
-    await setIvrOutcomes(page, {
-      AAPL: okOutcome('AAPL', { ivr: 62.5, observedAt: fakeNowAt('20:55:00.000Z') })
-    })
+    // The background stops a session short, so KO and MSFT each still have today's
+    // session to read: were the add to collect the whole bench, they would request it.
+    await seedBackground(page, 1)
+    await setIvSeries(page, { ...background(0), AAPL: seriesForRank(62) })
 
     await addTickerViaForm(page, 'AAPL')
 
-    await expect.poll(() => readIvrFetchLog(page)).toEqual(['AAPL'])
+    await expect.poll(() => readingsFor(page, 'AAPL')).toHaveLength(253)
+    expect(await requestedUnderlyings(page)).toEqual(['AAPL'])
   })
 
   it('Adding a ticker that already has a reading for the day does not refetch', async () => {
@@ -118,21 +135,15 @@ describe('US-100: IVR on demand and outside market hours', () => {
     app = await launchIvrApp(dbPath)
     const page = await getPage(app)
     await seedBackground(page)
-    await setIvrOutcomes(page, {
-      AAPL: okOutcome('AAPL', { ivr: 62.5, observedAt: fakeNowAt('20:55:00.000Z') })
-    })
+    await programSeries(page, { AAPL: seriesForRank(62) })
 
     await addTickerViaForm(page, 'AAPL')
-    await expect
-      .poll(async () => (await readIvrSnapshots(page)).map((row) => row.underlying))
-      .toContain('AAPL')
+    await expect.poll(() => readingsFor(page, 'AAPL')).toHaveLength(253)
+    const collected = await readingsFor(page, 'AAPL')
 
     await removeFromWatchlist(page, 'AAPL')
-    // A different value, so a refetch would be visible in the row as well as the log.
-    await setIvrOutcomes(page, {
-      AAPL: okOutcome('AAPL', { ivr: 11.1, observedAt: fakeNowAt('20:56:00.000Z') }),
-      NVDA: okOutcome('NVDA', { ivr: 21, observedAt: fakeNowAt('20:56:00.000Z') })
-    })
+    // A different series, so a refetch would be visible in the rows as well as the log.
+    await programSeries(page, { AAPL: seriesForRank(11), NVDA: seriesForRank(21) })
 
     await addTickerViaForm(page, 'AAPL')
 
@@ -141,12 +152,10 @@ describe('US-100: IVR on demand and outside market hours', () => {
     // for *it* to reach the log proves the queue has drained — without this the test
     // passes under load whether or not the dedupe works.
     await addTickerViaForm(page, 'NVDA')
-    await expect.poll(() => readIvrFetchLog(page)).toContain('NVDA')
+    await expect.poll(() => readingsFor(page, 'NVDA')).toHaveLength(253)
 
-    expect(await readIvrFetchLog(page)).not.toContain('AAPL')
-    const aapl = (await readIvrSnapshots(page)).filter((row) => row.underlying === 'AAPL')
-    expect(aapl).toHaveLength(1)
-    expect(aapl[0].ivr).toBe('62.5')
+    expect(await requestedUnderlyings(page)).toEqual(['NVDA'])
+    expect(await readingsFor(page, 'AAPL')).toEqual(collected)
   })
 
   it('The add succeeds even when the IVR fetch fails', async () => {
@@ -154,7 +163,7 @@ describe('US-100: IVR on demand and outside market hours', () => {
     app = await launchIvrApp(dbPath)
     const page = await getPage(app)
     await seedBackground(page)
-    await setIvrOutcomes(page, { AAPL: networkErrorOutcome('AAPL') })
+    await programSeries(page, { AAPL: { ...seriesForRank(62), failWith: 'network_error' } })
 
     await addTickerViaForm(page, 'AAPL')
 
@@ -163,20 +172,26 @@ describe('US-100: IVR on demand and outside market hours', () => {
     // no log seam.
     expect(await page.locator('[data-testid="watchlist-row-AAPL"]').isVisible()).toBe(true)
     expect(await page.locator('[role="alert"]').count()).toBe(0)
-    await expect.poll(() => readIvrFetchLog(page)).toContain('AAPL')
-    expect((await readIvrSnapshots(page)).map((row) => row.underlying)).not.toContain('AAPL')
+    await expect.poll(async () => (await ivrCell(page, 'AAPL')).reason).toBe('failed')
+    expect(await requestedUnderlyings(page)).toEqual(['AAPL'])
+    expect(await readingsFor(page, 'AAPL')).toEqual([])
   })
 
-  it('A ticker Barchart does not cover is added without an IV rank', async () => {
+  it('A ticker with no bar data is added without an IV rank', async () => {
     dbPath = tmpDb('wb-e2e-us100-uncovered')
     app = await launchIvrApp(dbPath)
     const page = await getPage(app)
     await seedBackground(page)
-    await setIvrOutcomes(page, { XYZ: notAvailableOutcome('XYZ') })
+    // XYZ has no series at all: every bar request for it comes back empty.
+    await programSeries(page, {})
 
     await addTickerViaForm(page, 'XYZ')
 
-    await expect.poll(() => readIvrFetchLog(page)).toContain('XYZ')
+    await expect
+      .poll(async () => (await readIv30Gaps(page)).some((gap) => gap.underlying === 'XYZ'))
+      .toBe(true)
+    expect(await requestedUnderlyings(page)).toEqual(['XYZ'])
+    expect(await readingsFor(page, 'XYZ')).toEqual([])
     const cell = await ivrCell(page, 'XYZ')
     expect(cell.state).toBe('empty')
     expect(cell.text).toBe('n/a')
@@ -187,16 +202,12 @@ describe('US-100: IVR on demand and outside market hours', () => {
     app = await launchIvrApp(dbPath)
     const page = await getPage(app)
     await seedBackground(page)
-    await setIvrOutcomes(page, {
-      TSLA: okOutcome('TSLA', { ivr: 71.2, observedAt: fakeNowAt('20:55:00.000Z') })
-    })
+    await programSeries(page, { TSLA: seriesForRank(71) })
 
     await seedActivePosition(page, 'TSLA')
 
-    await expect
-      .poll(async () => (await readIvrSnapshots(page)).map((row) => row.underlying))
-      .toContain('TSLA')
-    expect(await readIvrFetchLog(page)).toEqual(['TSLA'])
+    await expect.poll(() => readingsFor(page, 'TSLA')).toHaveLength(253)
+    expect(await requestedUnderlyings(page)).toEqual(['TSLA'])
   })
 
   it('Opening a position for an already-collected ticker does not refetch', async () => {
@@ -204,27 +215,20 @@ describe('US-100: IVR on demand and outside market hours', () => {
     app = await launchIvrApp(dbPath)
     const page = await getPage(app)
     await seedBackground(page)
-    // KO already has this session's reading. Programming a *different* value resets the
-    // log and makes a refetch visible in the row as well as in the log.
-    await setIvrOutcomes(page, {
-      KO: okOutcome('KO', { ivr: 99, observedAt: afterCloseOn(BASE_DAY) })
-    })
+    const collected = await readingsFor(page, 'KO')
+    // KO already has this session's reading. Programming a *different* series resets the
+    // log and makes a refetch visible in the rows as well as in the log.
+    await programSeries(page, { KO: seriesForRank(99), TSLA: seriesForRank(12) })
 
     await seedActivePosition(page, 'KO')
 
     // Let the detached collect finish before asserting it did not fetch: seed another
-    // ticker through the same path and wait for *that* one to appear in the log.
-    await setIvrOutcomes(page, {
-      KO: okOutcome('KO', { ivr: 99, observedAt: afterCloseOn(BASE_DAY) }),
-      TSLA: okOutcome('TSLA', { ivr: 12, observedAt: afterCloseOn(BASE_DAY) })
-    })
+    // ticker through the same path and wait for *that* one to land.
     await seedActivePosition(page, 'TSLA')
-    await expect.poll(() => readIvrFetchLog(page)).toContain('TSLA')
+    await expect.poll(() => readingsFor(page, 'TSLA')).toHaveLength(253)
 
-    expect(await readIvrFetchLog(page)).not.toContain('KO')
-    const ko = (await readIvrSnapshots(page)).filter((row) => row.underlying === 'KO')
-    expect(ko).toHaveLength(1)
-    expect(ko[0].ivr).toBe('38.0')
+    expect(await requestedUnderlyings(page)).toEqual(['TSLA'])
+    expect(await readingsFor(page, 'KO')).toEqual(collected)
   })
 
   it('The position is created even when the IVR fetch fails', async () => {
@@ -232,56 +236,55 @@ describe('US-100: IVR on demand and outside market hours', () => {
     app = await launchIvrApp(dbPath)
     const page = await getPage(app)
     await seedBackground(page)
-    await setIvrOutcomes(page, { TSLA: networkErrorOutcome('TSLA') })
+    await programSeries(page, { TSLA: { ...seriesForRank(12), failWith: 'network_error' } })
 
     const positionId = await seedActivePosition(page, 'TSLA')
 
     expect(positionId).toBeTruthy()
-    await expect.poll(() => readIvrFetchLog(page)).toContain('TSLA')
-    expect((await readIvrSnapshots(page)).map((row) => row.underlying)).not.toContain('TSLA')
+    await expect.poll(() => requestedUnderlyings(page)).toContain('TSLA')
+    expect(await readingsFor(page, 'TSLA')).toEqual([])
   })
 
+  // [US-121] Each manual-refresh scenario seeds history that stops a session short of the
+  // latest close, then publishes that session's bars: the refresh has exactly one session
+  // per ticker to read, and reading it on a closed day is the claim.
   it('Manual refresh works on a weekend', async () => {
     dbPath = tmpDb('wb-e2e-us100-weekend')
     const sunday = mostRecent(0)
+    const friday = sessionsBefore(sunday, 1)
     app = await launchIvrApp(dbPath, { fakeNow: afterCloseOn(sunday) })
     const page = await getPage(app)
-    await seedBackground(page, afterCloseOn(sunday))
-    // Re-programming resets the fetch log, so what follows is only this refresh's work.
-    await setIvrOutcomes(page, {
-      KO: okOutcome('KO', { ivr: 38, observedAt: afterCloseOn(sunday) }),
-      MSFT: okOutcome('MSFT', { ivr: 44, observedAt: afterCloseOn(sunday) })
-    })
+    await seedBackground(page, sessionsAgo(friday) + 1)
+    await setIvSeries(page, background(sessionsAgo(friday)))
 
     const batch = await collectIvrNow(page)
 
     expect(batch.skippedReason).toBeNull()
     expect(batch.successCount).toBe(2)
-    const log = await readIvrFetchLog(page)
-    expect(log).toContain('KO')
-    expect(log).toContain('MSFT')
+    expect(await requestedUnderlyings(page)).toEqual(['KO', 'MSFT'])
+    const fridayRows = (await readIv30History(page)).filter((row) => row.session === friday)
+    expect(fridayRows.map((row) => row.underlying)).toEqual(['KO', 'MSFT'])
   })
 
   it('Manual refresh works on a weekday market holiday', async () => {
     dbPath = tmpDb('wb-e2e-us100-holiday')
     const holiday = sessionsBefore(BASE_DAY, 2)
+    const openDay = sessionsBefore(holiday, 1)
     app = await launchIvrApp(dbPath, {
       fakeNow: afterCloseOn(holiday),
       marketCalendar: weekdayCalendar([holiday])
     })
     const page = await getPage(app)
-    await seedBackground(page, afterCloseOn(holiday))
-    await setIvrOutcomes(page, {
-      KO: okOutcome('KO', { ivr: 38, observedAt: afterCloseOn(holiday) }),
-      MSFT: okOutcome('MSFT', { ivr: 44, observedAt: afterCloseOn(holiday) })
-    })
+    await seedBackground(page, sessionsAgo(openDay) + 1)
+    await setIvSeries(page, background(sessionsAgo(openDay)))
 
     const batch = await collectIvrNow(page)
 
     expect(batch.skippedReason).toBeNull()
-    const log = await readIvrFetchLog(page)
-    expect(log).toContain('KO')
-    expect(log).toContain('MSFT')
+    expect(batch.successCount).toBe(2)
+    expect(await requestedUnderlyings(page)).toEqual(['KO', 'MSFT'])
+    const openDayRows = (await readIv30History(page)).filter((row) => row.session === openDay)
+    expect(openDayRows.map((row) => row.underlying)).toEqual(['KO', 'MSFT'])
   })
 
   it('A weekend reading is stored against the trading day it belongs to', async () => {
@@ -290,51 +293,29 @@ describe('US-100: IVR on demand and outside market hours', () => {
     const friday = sessionsBefore(sunday, 1)
     app = await launchIvrApp(dbPath, { fakeNow: afterCloseOn(sunday) })
     const page = await getPage(app)
-    await seedBackground(page, afterCloseOn(sunday))
-    await setIvrOutcomes(page, {
-      KO: okOutcome('KO', { ivr: 38, observedAt: afterCloseOn(sunday) }),
-      MSFT: okOutcome('MSFT', { ivr: 44, observedAt: afterCloseOn(sunday) })
-    })
+    await seedBackground(page, sessionsAgo(friday) + 1)
+    await setIvSeries(page, background(sessionsAgo(friday)))
 
     await collectIvrNow(page)
 
-    const koRows = (await readIvrSnapshots(page)).filter((row) => row.underlying === 'KO')
-    expect(koRows).toHaveLength(1)
-    expect(koRows[0].observed_at).toBe(sessionCloseOn(friday))
-  })
-
-  it('The scheduled run still skips a weekend', async () => {
-    dbPath = tmpDb('wb-e2e-us100-scheduled-weekend')
-    const saturday = mostRecent(6)
-    app = await launchIvrApp(dbPath, { fakeNow: afterCloseOn(saturday) })
-    const page = await getPage(app)
-    await seedBackground(page, afterCloseOn(saturday))
-    await setIvrOutcomes(page, {
-      KO: okOutcome('KO', { ivr: 38, observedAt: afterCloseOn(saturday) }),
-      MSFT: okOutcome('MSFT', { ivr: 44, observedAt: afterCloseOn(saturday) })
-    })
-
-    const batch = await collectIvrScheduled(page)
-
-    expect(batch.skippedReason).toBe('market_closed')
-    expect(await readIvrFetchLog(page)).toEqual([])
+    const koRows = await readIv30History(page)
+    const newest = koRows.filter((row) => row.underlying === 'KO').at(-1)
+    expect(newest?.session).toBe(friday)
+    expect(newest?.observed_at).toBe(sessionCloseOn(friday))
   })
 
   it('The scheduled run still fires after hours on a weekday', async () => {
     dbPath = tmpDb('wb-e2e-us100-scheduled-weekday')
     app = await launchIvrApp(dbPath)
     const page = await getPage(app)
-    await seedBackground(page)
-    await setIvrOutcomes(page, {
-      KO: okOutcome('KO', { ivr: 38, observedAt: fakeNowAt('20:55:00.000Z') }),
-      MSFT: okOutcome('MSFT', { ivr: 44, observedAt: fakeNowAt('20:55:00.000Z') })
-    })
+    await seedBackground(page, 1)
+    await setIvSeries(page, background(0))
 
     const batch = await collectIvrScheduled(page)
 
     expect(batch.successCount).toBe(2)
-    const log = await readIvrFetchLog(page)
-    expect(log).toContain('KO')
-    expect(log).toContain('MSFT')
+    expect(await requestedUnderlyings(page)).toEqual(['KO', 'MSFT'])
+    const todayRows = (await readIv30History(page)).filter((row) => row.session === FAKE_NOW_DAY)
+    expect(todayRows.map((row) => row.underlying)).toEqual(['KO', 'MSFT'])
   })
 })

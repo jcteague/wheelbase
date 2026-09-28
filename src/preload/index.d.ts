@@ -372,9 +372,36 @@ type IpcCollectIvrNowBatch = {
   successCount: number
   errorCount: number
   skippedCount: number
-  skippedReason: 'market_closed' | null
+  skippedReason: 'market_data_unavailable' | null
 }
 type IpcCollectIvrNowResult = IpcResult<{ batch: IpcCollectIvrNowBatch }>
+
+/** [US-121] One `iv30_reading` row as the dev-only `_test:iv30-history` channel returns it:
+ *  the table's snake_case columns. */
+type IpcTestIv30ReadingRow = {
+  underlying: string
+  session: string
+  method: string
+  engine_version: number
+  observed_at: string
+  iv30: string
+  underlying_vwap: string
+  expiration_tier: 'weekly' | 'monthly'
+  near_expiration: string
+  near_strike: string
+  near_call_vwap: string
+  near_call_trades: number
+  near_put_vwap: string
+  near_put_trades: number
+  far_expiration: string | null
+  far_strike: string | null
+  far_call_vwap: string | null
+  far_call_trades: number | null
+  far_put_vwap: string | null
+  far_put_trades: number | null
+  rate: string
+  dividend_yield: string
+}
 
 /** The editable fields keyed by the ticker. Add and update send the same shape. */
 interface IpcWatchlistEntryPayload {
@@ -403,11 +430,29 @@ type IpcWatchlistRemoveResult = IpcResult<{ ticker: string }>
  *  freshness verdict. Whether a state is fit to score on is derived at each end
  *  (`isUsableState` in main, the tone rule in `IvrCell`) rather than carried here. */
 interface IpcIvRank {
-  value: string // 1dp
-  observedAt: string // ISO timestamp of the scrape that produced it
+  value: string | null // integer IV rank as a string ('25'), not 1dp; null when the 252-session window is flat (high === low)
+  percentile: string // integer IV percentile as a string ('71')
+  low: string // 52-week (252-session) IV30 low, 4dp ('0.1800')
+  high: string // 52-week IV30 high, 4dp ('0.4500')
+  observedAt: string // ISO instant of the anchor session's close
   ageTradingDays: number
   state: 'fresh' | 'aging' | 'stale' | 'expired' | 'predates_earnings'
 }
+
+/** [US-121] Mirrors `IvRankAbsence` in `src/main/services/iv-rank-lookup.ts` — why a ticker has
+ *  no IV rank. Display-only: the verdict and the screener floor never read it. */
+type IpcIvRankAbsence =
+  | { reason: 'pending' } // a run for this ticker is in flight (backfill or catch-up)
+  | { reason: 'no_market_data' } // the last run had no Alpaca market-data credentials
+  | { reason: 'failed' } // the last run for this ticker failed
+  | { reason: 'insufficient_history'; coverage: number; window: number; required: number } // e.g. 150 / 252 / 200
+  | { reason: 'not_collected' } // no rows and no run known to this process (also a fresh relaunch)
+
+/** Mirrors `IvRankPair` in `src/main/services/iv-rank-lookup.ts` — exactly one of
+ *  `ivRank` / `ivRankAbsence` is non-null. */
+type IpcIvRankPair =
+  | { ivRank: IpcIvRank; ivRankAbsence: null }
+  | { ivRank: null; ivRankAbsence: IpcIvRankAbsence }
 
 /** [US-96] Mirrors `SnapshotQuote` in `src/main/services/watchlist-snapshot.ts` — the
  *  slice of the underlying quote the bench renders. */
@@ -438,15 +483,14 @@ type IpcEarningsDisplay =
   | { kind: 'unknown' }
 
 /** Mirrors `WatchlistSnapshotRow` — one watchlist entry judged at the request clock. */
-interface IpcWatchlistSnapshotRow {
+type IpcWatchlistSnapshotRow = {
   entry: IpcWatchlistEntry
   quote: IpcSnapshotQuote | null // null → the quote fetch failed for this ticker
-  ivRank: IpcIvRank | null // null → never collected or unreadable
   earnings: IpcEarningsDisplay
   verdict: IpcEntryVerdict
-}
+} & IpcIvRankPair
 
-// Every expected failure is modelled inside the payload — `quote: null`, `ivRank: null`,
+// Every expected failure is modelled inside the payload — `quote: null`, `ivRank: null` + its absence,
 // `{ kind: 'unknown' }` — so an `ok: false` envelope only ever means something unexpected.
 type IpcWatchlistSnapshotResult = IpcResult<{
   rows: IpcWatchlistSnapshotRow[] // watchlist order (added_at DESC)
@@ -463,7 +507,7 @@ type IpcCandidateEarnings =
 
 /** Mirrors `ScoredCandidate` in `src/main/core/screener.ts` — one surviving strike,
  *  fully scored. Delta is absolute. */
-interface IpcScoredCandidate {
+type IpcScoredCandidate = {
   ticker: string
   contractId: string
   strike: string // 4dp
@@ -477,14 +521,13 @@ interface IpcScoredCandidate {
   delta: string // 4dp, absolute
   openInterest: number | null
   volume: number | null
-  ivRank: IpcIvRank | null // null → render "n/a"
   capitalSecured: string // 2dp
   periodYield: string // 4dp fraction
   annualizedYield: string // 4dp fraction
   yieldPerDelta: string // 4dp — the rank score
   earnings: IpcCandidateEarnings
   timestamp: string // ISO
-}
+} & IpcIvRankPair
 
 /** Mirrors `ScreenerExclusion` in `src/main/services/screener.ts` — one row per
  *  non-ranking ticker, carrying the reason rendered verbatim. */
@@ -749,12 +792,40 @@ declare global {
       }
       ivr: {
         collectNow: () => Promise<IpcCollectIvrNowResult>
-        onSnapshotUpdated: (cb: (event: { ticker: string }) => void) => () => void
+        onSnapshotUpdated: (cb: (event: { ticker: string | null }) => void) => () => void // ticker null: a batch run settled
       }
-      testIvrSetOutcomes: (outcomes: unknown) => Promise<{ ok: boolean }>
+      /** Runs a job as the scheduler's own timer would. Only the IV-history batch is driven
+       *  this way, so the result is typed as its summary. */
+      testSchedulerRunScheduled: (jobName: 'ivr-collect') => Promise<IpcCollectIvrNowBatch>
+      testIvSeriesSet: (fixture: unknown) => Promise<{ ok: true } | { ok: false; error: string }>
       testIvrSetNow: (nowIso: unknown) => Promise<{ ok: true } | { ok: false; error: string }>
-      testIvrSnapshots: () => Promise<unknown[]>
-      testIvrFetchLog: () => Promise<string[]>
+      testIv30History: () => Promise<IpcTestIv30ReadingRow[]>
+      testIv30Gaps: () => Promise<
+        Array<{
+          underlying: string
+          session: string
+          method: string
+          reason: string
+          attempted_at: string
+        }>
+      >
+      testDailyBarRequests: () => Promise<
+        Array<{
+          kind: 'option' | 'stock'
+          underlying: string
+          start: string
+          end: string | null
+        }>
+      >
+      testIvHistoryRecompute: (opts?: {
+        force?: boolean
+      }) => Promise<{ recomputed: number; unrecomputable: number }>
+      testIv30Corrupt: (payload: {
+        ticker: string
+        session: string
+        iv30: string
+      }) => Promise<{ ok: true }>
+      testTableExists: (name: string) => Promise<boolean>
       testTradingSessionCount: () => Promise<number>
       testMarketCalendarFetchCount: () => Promise<number>
     }

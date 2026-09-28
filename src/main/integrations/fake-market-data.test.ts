@@ -1,9 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import Decimal from 'decimal.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { blackScholesPrice } from '../core/black-scholes'
 import {
   FakeMarketDataProvider,
+  dailyBarRequestCount,
+  dailyBarRequests,
   fakeStockTickSubject,
-  marketCalendarFetchCount
+  marketCalendarFetchCount,
+  setFakeIvSeries
 } from './fake-market-data'
 import {
   MarketDataError,
@@ -21,8 +26,8 @@ describe('FakeMarketDataProvider — interface shape', () => {
 
     expect(typeof provider.getMarketStatus).toBe('function')
     expect(typeof provider.getMarketCalendar).toBe('function')
-    expect((provider as unknown as Record<string, unknown>)['getAccountInfo']).toBeUndefined()
-    expect((provider as unknown as Record<string, unknown>)['getActivities']).toBeUndefined()
+    expect('getAccountInfo' in provider).toBe(false)
+    expect('getActivities' in provider).toBe(false)
   })
 })
 
@@ -435,5 +440,290 @@ describe('FakeMarketDataProvider — stock quotes, forced errors and streaming',
     subscription.unsubscribe()
 
     expect(received).toEqual(['AAPL'])
+  })
+})
+
+// [US-121] Bars synthesised from a programmed IV series — the offline seam for IV history.
+describe('FakeMarketDataProvider daily bars', () => {
+  const WEEKLY_CALL = 'AAPL260410C00200500' // Fri 2026-04-10 — not the third Friday
+  const WEEKLY_PUT = 'AAPL260410P00200500'
+  const MONTHLY_CALL = 'AAPL260417C00200500' // Fri 2026-04-17 — third Friday
+  // Juneteenth 2026 falls on the third Friday, so the June monthly expires Thursday 06-18.
+  const HOLIDAY_MONTHLY_CALL = 'AAPL260618C00200500'
+  const SESSION = '2026-03-12'
+
+  const bsVwap = (type: 'call' | 'put', expiryDays: number, iv: number): string =>
+    new Decimal(
+      blackScholesPrice({
+        type,
+        spot: 200.4,
+        strike: 200.5,
+        yearsToExpiry: expiryDays / 365,
+        rate: 0.045,
+        dividendYield: 0,
+        volatility: iv
+      })
+    ).toFixed(4)
+
+  beforeEach(() => {
+    setFakeIvSeries({})
+  })
+
+  afterEach(() => {
+    delete process.env.WHEELBASE_FAKE_IV_SERIES
+    delete process.env.FAKE_MARKET_DATA_ERROR
+    vi.useRealTimers()
+  })
+
+  it('prices one bar per symbol at the session IV with the default trade count', async () => {
+    setFakeIvSeries({ AAPL: { price: 200.4, sessions: { [SESSION]: 0.2475 } } })
+
+    const result = await new FakeMarketDataProvider().getOptionDailyBars({
+      symbols: [WEEKLY_CALL, WEEKLY_PUT],
+      start: SESSION
+    })
+
+    // 2026-03-12 → 2026-04-10 is 29 calendar days.
+    expect(result.get(WEEKLY_CALL)).toEqual([
+      {
+        date: SESSION,
+        vwap: bsVwap('call', 29, 0.2475),
+        close: bsVwap('call', 29, 0.2475),
+        volume: 100,
+        tradeCount: 100
+      }
+    ])
+    expect(result.get(WEEKLY_PUT)?.[0].vwap).toBe(bsVwap('put', 29, 0.2475))
+    expect(result.get(WEEKLY_PUT)?.[0].tradeCount).toBe(100)
+  })
+
+  it('reads the fixture from WHEELBASE_FAKE_IV_SERIES at construction', async () => {
+    process.env.WHEELBASE_FAKE_IV_SERIES = JSON.stringify({
+      AAPL: { price: 200.4, sessions: { [SESSION]: 0.2475 } }
+    })
+
+    const result = await new FakeMarketDataProvider().getOptionDailyBars({
+      symbols: [WEEKLY_CALL],
+      start: SESSION
+    })
+
+    expect(result.get(WEEKLY_CALL)).toHaveLength(1)
+  })
+
+  it('serves only fixture sessions within [start, end]', async () => {
+    setFakeIvSeries({
+      AAPL: {
+        price: 200.4,
+        sessions: { '2026-03-10': 0.2, '2026-03-11': 0.21, [SESSION]: 0.2475 }
+      }
+    })
+
+    const result = await new FakeMarketDataProvider().getOptionDailyBars({
+      symbols: [WEEKLY_CALL],
+      start: '2026-03-11',
+      end: '2026-03-11'
+    })
+
+    expect(result.get(WEEKLY_CALL)?.map((bar) => bar.date)).toEqual(['2026-03-11'])
+  })
+
+  it('returns no bar for a session absent from the fixture', async () => {
+    setFakeIvSeries({ AAPL: { price: 200.4, sessions: { [SESSION]: 0.2475 } } })
+
+    const result = await new FakeMarketDataProvider().getOptionDailyBars({
+      symbols: [WEEKLY_CALL],
+      start: '2026-03-13'
+    })
+
+    expect(result.has(WEEKLY_CALL)).toBe(false)
+  })
+
+  it('omits a symbol whose ticker is not in the fixture', async () => {
+    setFakeIvSeries({ AAPL: { price: 200.4, sessions: { [SESSION]: 0.2475 } } })
+
+    const result = await new FakeMarketDataProvider().getOptionDailyBars({
+      symbols: ['MSFT260410C00400000', WEEKLY_CALL],
+      start: SESSION
+    })
+
+    expect(result.has('MSFT260410C00400000')).toBe(false)
+    expect(result.has(WEEKLY_CALL)).toBe(true)
+  })
+
+  it('serves no bar for a session on or after expiration', async () => {
+    setFakeIvSeries({ AAPL: { price: 200.4, sessions: { '2026-04-10': 0.2475 } } })
+
+    const result = await new FakeMarketDataProvider().getOptionDailyBars({
+      symbols: [WEEKLY_CALL],
+      start: '2026-04-10'
+    })
+
+    expect(result.has(WEEKLY_CALL)).toBe(false)
+  })
+
+  it('gives an untraded leg no bar while its sibling still trades', async () => {
+    setFakeIvSeries({
+      AAPL: {
+        price: 200.4,
+        sessions: { [SESSION]: { iv: 0.2475, untraded: [{ strike: 200.5, type: 'call' }] } }
+      }
+    })
+
+    const result = await new FakeMarketDataProvider().getOptionDailyBars({
+      symbols: [WEEKLY_CALL, WEEKLY_PUT],
+      start: SESSION
+    })
+
+    expect(result.has(WEEKLY_CALL)).toBe(false)
+    expect(result.has(WEEKLY_PUT)).toBe(true)
+  })
+
+  it('weeklyTradeCount 0 leaves only third-Friday expirations (including holiday-shifted)', async () => {
+    setFakeIvSeries({
+      AAPL: { price: 200.4, sessions: { [SESSION]: { iv: 0.2475, weeklyTradeCount: 0 } } }
+    })
+
+    const result = await new FakeMarketDataProvider().getOptionDailyBars({
+      symbols: [WEEKLY_CALL, MONTHLY_CALL, HOLIDAY_MONTHLY_CALL],
+      start: SESSION
+    })
+
+    expect(result.has(WEEKLY_CALL)).toBe(false)
+    expect(result.get(MONTHLY_CALL)?.[0].tradeCount).toBe(100)
+    expect(result.get(HOLIDAY_MONTHLY_CALL)?.[0].tradeCount).toBe(100)
+  })
+
+  it('applies a series-level weeklyTradeCount to weeklies only', async () => {
+    setFakeIvSeries({
+      AAPL: { price: 200.4, tradeCount: 40, weeklyTradeCount: 3, sessions: { [SESSION]: 0.25 } }
+    })
+
+    const result = await new FakeMarketDataProvider().getOptionDailyBars({
+      symbols: [WEEKLY_CALL, MONTHLY_CALL],
+      start: SESSION
+    })
+
+    expect(result.get(WEEKLY_CALL)?.[0].tradeCount).toBe(3)
+    expect(result.get(MONTHLY_CALL)?.[0].tradeCount).toBe(40)
+  })
+
+  it('tradeCount 0 yields nothing for that session', async () => {
+    setFakeIvSeries({
+      AAPL: {
+        price: 200.4,
+        sessions: { '2026-03-11': 0.25, [SESSION]: { iv: 0.2475, tradeCount: 0 } }
+      }
+    })
+
+    const result = await new FakeMarketDataProvider().getOptionDailyBars({
+      symbols: [WEEKLY_CALL, MONTHLY_CALL],
+      start: '2026-03-11'
+    })
+
+    expect(result.get(WEEKLY_CALL)?.map((bar) => bar.date)).toEqual(['2026-03-11'])
+    expect(result.get(MONTHLY_CALL)?.map((bar) => bar.date)).toEqual(['2026-03-11'])
+  })
+
+  it('records each request and counts them', async () => {
+    setFakeIvSeries({ AAPL: { price: 200.4, sessions: { [SESSION]: 0.2475 } } })
+    const provider = new FakeMarketDataProvider()
+
+    await provider.getOptionDailyBars({ symbols: [WEEKLY_CALL], start: SESSION })
+    await provider.getStockDailyBars({ symbol: 'AAPL', start: '2026-03-01', end: SESSION })
+
+    expect(dailyBarRequests()).toEqual([
+      { kind: 'option', underlying: 'AAPL', start: SESSION, end: null },
+      { kind: 'stock', underlying: 'AAPL', start: '2026-03-01', end: SESSION }
+    ])
+    expect(dailyBarRequestCount()).toBe(2)
+  })
+
+  it('setFakeIvSeries resets the request log', async () => {
+    setFakeIvSeries({ AAPL: { price: 200.4, sessions: { [SESSION]: 0.2475 } } })
+    await new FakeMarketDataProvider().getStockDailyBars({ symbol: 'AAPL', start: SESSION })
+
+    setFakeIvSeries({})
+
+    expect(dailyBarRequests()).toEqual([])
+    expect(dailyBarRequestCount()).toBe(0)
+  })
+
+  it('failWith throws a MarketDataError for that ticker only', async () => {
+    setFakeIvSeries({
+      AAPL: { price: 200.4, failWith: 'network_error', sessions: { [SESSION]: 0.2475 } },
+      MSFT: { price: 400, sessions: { [SESSION]: 0.3 } }
+    })
+    const provider = new FakeMarketDataProvider()
+
+    const thrown = await provider
+      .getOptionDailyBars({ symbols: [WEEKLY_CALL], start: SESSION })
+      .catch((e: unknown) => e)
+    const msft = await provider.getOptionDailyBars({
+      symbols: ['MSFT260410C00400000'],
+      start: SESSION
+    })
+
+    expect(thrown).toBeInstanceOf(MarketDataError)
+    expect((thrown as MarketDataError).code).toBe('network_error')
+    expect(msft.has('MSFT260410C00400000')).toBe(true)
+  })
+
+  it('latencyMs delays the response', async () => {
+    vi.useFakeTimers()
+    setFakeIvSeries({ AAPL: { price: 200.4, latencyMs: 50, sessions: { [SESSION]: 0.2475 } } })
+    let settled = false
+
+    const pending = new FakeMarketDataProvider()
+      .getOptionDailyBars({ symbols: [WEEKLY_CALL], start: SESSION })
+      .then((result) => {
+        settled = true
+        return result
+      })
+    await vi.advanceTimersByTimeAsync(49)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(settled).toBe(true)
+    expect((await pending).has(WEEKLY_CALL)).toBe(true)
+  })
+
+  it('FAKE_MARKET_DATA_ERROR fails both bar methods', async () => {
+    process.env.FAKE_MARKET_DATA_ERROR = 'auth_failed'
+    const provider = new FakeMarketDataProvider()
+
+    await expect(
+      provider.getOptionDailyBars({ symbols: [WEEKLY_CALL], start: SESSION })
+    ).rejects.toMatchObject({ code: 'auth_failed' })
+    await expect(
+      provider.getStockDailyBars({ symbol: 'AAPL', start: SESSION })
+    ).rejects.toMatchObject({ code: 'auth_failed' })
+  })
+
+  it('getStockDailyBars returns one bar per fixture session at the series price', async () => {
+    setFakeIvSeries({
+      AAPL: { price: 200.4, sessions: { [SESSION]: 0.2475, '2026-03-11': 0.25 } }
+    })
+
+    const bars = await new FakeMarketDataProvider().getStockDailyBars({
+      symbol: 'AAPL',
+      start: '2026-03-01'
+    })
+
+    expect(bars).toEqual([
+      {
+        date: '2026-03-11',
+        vwap: '200.4000',
+        close: '200.4000',
+        volume: 1_000_000,
+        tradeCount: 10_000
+      },
+      { date: SESSION, vwap: '200.4000', close: '200.4000', volume: 1_000_000, tradeCount: 10_000 }
+    ])
+  })
+
+  it('getStockDailyBars returns [] for an unfixtured ticker', async () => {
+    expect(
+      await new FakeMarketDataProvider().getStockDailyBars({ symbol: 'ZZZ', start: SESSION })
+    ).toEqual([])
   })
 })

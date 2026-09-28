@@ -213,24 +213,26 @@ All Alpaca HTTP/SDK interaction stays inside `alpaca-broker.ts`, `alpaca-market-
 
 <!-- /generated -->
 
-<!-- generated:from us-99 -->
+<!-- generated:from us-99,us-121 -->
 
 ## Market-data adapter (US-99)
 
-`AlpacaMarketDataProvider` serves every `MarketDataProvider` method from Alpaca's free data plan. It takes `{ loadCredentials: () => AlpacaCredentials | null }` and resolves it on every REST call and inside `connect()`. Free-plan limits: IEX stock feed (not SIP), indicative option feed (not OPRA), 200 REST requests/min, one websocket connection, 30 streamed symbols.
+`AlpacaMarketDataProvider` serves every `MarketDataProvider` method from Alpaca's free data plan. It takes `{ loadCredentials: () => AlpacaCredentials | null }` and resolves it on every REST call and inside `connect()`. Free-plan limits: IEX stock feed (not SIP) for snapshots and streaming, indicative option feed (not OPRA), 200 REST requests/min, one websocket connection, 30 streamed symbols. [US-121] Historical **daily bars** are the exception: SIP daily stock bars and option daily bars are served on the free plan, provided `end` never names the current calendar day.
 
 ### Outbound HTTP
 
 All requests carry `APCA-API-KEY-ID` / `APCA-API-SECRET-KEY` headers; headers are never logged (`debug` logs `alpaca_api_request { url }` / `alpaca_api_response { url, status }`).
 
-| Interface method         | Request                                                                                                                                                                                                        |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `getStockQuotes`         | `GET https://data.alpaca.markets/v2/stocks/snapshots?symbols={A,B,…}&feed=iex` — **one** request for the whole ticker list; empty list ⇒ no request, empty `Map`                                               |
-| `getOptionChainSnapshot` | `GET https://data.alpaca.markets/v1beta1/options/snapshots/{underlying}?feed=indicative[&type=][&expiration_date_gte=][&expiration_date_lte=][&strike_price_gte=][&strike_price_lte=]&limit={n}[&page_token=]` |
-| `getOptionSnapshot`      | `GET https://data.alpaca.markets/v1beta1/options/snapshots?symbols={contractId}&feed=indicative`                                                                                                               |
-| (open interest)          | `GET {ALPACA_TRADING_BASE_URLS[env]}/v2/options/contracts?underlying_symbols={underlying}[…same filters…]&limit=10000[&page_token=]` — after a non-empty chain; failure ⇒ `openInterest: null` + `warn`        |
+| Interface method              | Request                                                                                                                                                                                                                                              |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getStockQuotes`              | `GET https://data.alpaca.markets/v2/stocks/snapshots?symbols={A,B,…}&feed=iex` — **one** request for the whole ticker list; empty list ⇒ no request, empty `Map`                                                                                     |
+| `getOptionChainSnapshot`      | `GET https://data.alpaca.markets/v1beta1/options/snapshots/{underlying}?feed=indicative[&type=][&expiration_date_gte=][&expiration_date_lte=][&strike_price_gte=][&strike_price_lte=]&limit={n}[&page_token=]`                                       |
+| `getOptionSnapshot`           | `GET https://data.alpaca.markets/v1beta1/options/snapshots?symbols={contractId}&feed=indicative`                                                                                                                                                     |
+| (open interest)               | `GET {ALPACA_TRADING_BASE_URLS[env]}/v2/options/contracts?underlying_symbols={underlying}[…same filters…]&limit=10000[&page_token=]` — after a non-empty chain; failure ⇒ `openInterest: null` + `warn`                                              |
+| `getOptionDailyBars` (US-121) | `GET https://data.alpaca.markets/v1beta1/options/bars?symbols={≤100 OCC}&timeframe=1Day&start={YYYY-MM-DD}[&end=]&limit=10000[&page_token=]` — symbols chunked 100 per request, batches sequential, pages merged per symbol; empty list ⇒ no request |
+| `getStockDailyBars` (US-121)  | `GET https://data.alpaca.markets/v2/stocks/bars?symbols={ticker}&timeframe=1Day&feed=sip&adjustment=raw&start=…[&end=]&limit=10000[&page_token=]`                                                                                                    |
 
-Chain pagination: no `filter.limit` → `limit=1000`, follow `next_page_token` until `null`; with `filter.limit` → `min(limit, 1000)` plus `filter.cursor` as `page_token`, first page only. Contracts always paginate to exhaustion. Empty chain ⇒ `[]` without a contracts request. Field mapping onto `StockQuote` / `OptionSnapshot` / `OptionChainQuote` is in [domain/market-data.md](../domain/market-data.md).
+Chain pagination: no `filter.limit` → `limit=1000`, follow `next_page_token` until `null`; with `filter.limit` → `min(limit, 1000)` plus `filter.cursor` as `page_token`, first page only. Contracts always paginate to exhaustion. Empty chain ⇒ `[]` without a contracts request. [US-121] Chain snapshots, open interest and daily bars share one `fetchPages` pagination helper (the chain's single-page rule is its `followPages` option). Daily bars: the raw shape is `{ bars: Record<symbol, Array<{ t, o, h, l, c, v, n, vw }>> | null, next_page_token }`; `mapDailyBar` maps `t` to the Eastern session day with `etDateOf` and drops bars with a non-finite `vw`/`c`. `end` is appended **only when the caller supplies one**; an `end` equal to the current calendar day returns `403 OPRA agreement is not signed`, which is why the IV-history service guarantees it never does (see [ADR daily-bars-on-market-data-provider](../architecture/02-adrs/daily-bars-on-market-data-provider.md)). Field mapping onto `StockQuote` / `OptionSnapshot` / `OptionChainQuote` is in [domain/market-data.md](../domain/market-data.md).
 
 ### Outbound websocket
 
@@ -263,7 +265,7 @@ Websocket — `connect()` rejects with `MarketDataError` (402 → `auth_failed`,
 
 ### Rate budget
 
-Per screener refresh: 2 requests per watchlist ticker (chain + contracts) at `CHAIN_FETCH_CONCURRENCY = 4`. Per alert-evaluation tick: 1 batched stock snapshot + 1 per open option leg. Per ticker-set change: 1 batched stock snapshot. A 405 from the socket is surfaced as a stream error, never truncated client-side.
+Per screener refresh: 2 requests per watchlist ticker (chain + contracts) at `CHAIN_FETCH_CONCURRENCY = 4`. [US-121] Per IV-history backfill: ~25–35 requests per ticker for a year (2,300–3,000 probed symbols / 100 per call); a nightly catch-up of one session is 2 requests per ticker; a ticker with nothing missing makes none. A full-bench fresh-install backfill can brush the 200/min limit — the worst case is a ticker reported `failed` and completed on the next run. Per alert-evaluation tick: 1 batched stock snapshot + 1 per open option leg. Per ticker-set change: 1 batched stock snapshot. A 405 from the socket is surfaced as a stream error, never truncated client-side.
 
 <!-- /generated -->
 
@@ -302,7 +304,7 @@ The broker adapter records **no explicit retry policy, no exponential backoff, a
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39,market-data-massive-migration,us-99 -->
+<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39,market-data-massive-migration,us-99,us-121 -->
 
 ## Source files
 
@@ -311,7 +313,8 @@ The broker adapter records **no explicit retry policy, no exponential backoff, a
 - `src/main/integrations/broker-factory.ts` — `brokerFactory` object with `configure()`, `create()`, and `recreate()`. Resolves the active environment via `src/main/services/settings.ts`; default env loader `loadAlpacaCredentialsFromEnv`.
 - `src/main/integrations/fake-broker.ts` — `FakeBrokerProvider` for e2e and dev; env-driven canned responses.
 - `src/main/integrations/alpaca-market-data.ts` — `AlpacaMarketDataProvider`: HTTP + 429 retry, websocket lifecycle, per-symbol subscription state (US-99).
-- `src/main/integrations/alpaca-market-data-mappers.ts` — pure vendor response types, URL builders, mappings onto domain types, frame parsing (US-99).
+- `src/main/integrations/alpaca-market-data-mappers.ts` — pure vendor response types, URL builders, mappings onto domain types, frame parsing (US-99); daily-bar URL builders and `mapDailyBar` (US-121).
+- `src/main/integrations/fake-market-data.ts` — `FakeMarketDataProvider`; since US-121 synthesises daily bars from a programmed IV series (`WHEELBASE_FAKE_IV_SERIES`) and records bar requests. `src/main/integrations/fake-clock.ts` holds the shared e2e clock (`WHEELBASE_FAKE_NOW`).
 - `src/main/integrations/alpaca-credentials.ts` — `loadAlpacaCredentialsFromEnv()`, the shared `process.env`-only fallback (US-99).
 - `src/main/integrations/alpaca-hosts.ts` — `ALPACA_TRADING_BASE_URLS` per-environment trading host map (US-99).
 - `src/main/integrations/market-data-factory.ts` — `marketDataFactory` (`configure({ loadActiveAlpacaCredentials })`, `create()`, `recreate()`, `disconnect()`); fake under `FAKE_MARKET_DATA=true`; never throws.
@@ -327,7 +330,7 @@ The broker adapter records **no explicit retry policy, no exponential backoff, a
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39,market-data-massive-migration,us-99 -->
+<!-- generated:from us-31,us-32,us-33,us-35,us-37,us-39,market-data-massive-migration,us-99,us-121 -->
 
 ## Driven by
 
@@ -339,6 +342,7 @@ The broker adapter records **no explicit retry policy, no exponential backoff, a
 - [us-39 — Massive Market Data Provider](../features/us-39-massive-market-data-provider.md) (superseded — broker split still current)
 - [market-data-massive-migration](../features/market-data-massive-migration.md) (superseded)
 - [us-99 — Alpaca as the sole market-data provider](../features/us-99-alpaca-market-data-provider.md)
+- [us-121 — IV rank from our own IV history](../features/us-121-iv-rank-from-own-iv-history.md) — daily option and SIP stock bars
 
 <!-- /generated -->
 

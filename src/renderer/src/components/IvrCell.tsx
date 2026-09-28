@@ -1,6 +1,7 @@
-import type { ScreenerIvRank } from '../api/screener'
+import type { IvRank, IvRankPair } from '../api/ivr'
 import {
   isUsableIvrState,
+  ivrAbsenceTitle,
   ivrTooltipCopy,
   observedDayLabel,
   tradingDaysLabel
@@ -10,10 +11,12 @@ import { FreshnessRing } from './FreshnessRing'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
 
 type IvrCellProps = {
-  ivRank: ScreenerIvRank | null
+  /** The row's reading or, when there is none, why — passed as one pair so the
+   *  exactly-one-non-null correlation survives the prop boundary. */
+  ivr: IvRankPair
 }
 
-const TIER_TEXT: Record<ScreenerIvRank['state'], string> = {
+const TIER_TEXT: Record<IvRank['state'], string> = {
   fresh: 'text-wb-green',
   aging: 'text-wb-text-secondary',
   stale: 'text-wb-text-muted',
@@ -21,10 +24,29 @@ const TIER_TEXT: Record<ScreenerIvRank['state'], string> = {
   predates_earnings: 'text-wb-gold'
 }
 
-export function IvrCell({ ivRank }: IvrCellProps): React.JSX.Element {
+export function IvrCell({ ivr }: IvrCellProps): React.JSX.Element {
+  const { ivRank, ivRankAbsence: absence } = ivr
+  // No reading: say why, with no ring and no tooltip — there is nothing to explain yet.
   if (ivRank === null) {
+    const absenceTitle = ivrAbsenceTitle(absence)
+    if (absence.reason === 'pending') {
+      return (
+        <span
+          data-ivr-state="pending"
+          className="text-wb-text-muted animate-wb-pulse"
+          title={absenceTitle}
+        >
+          …
+        </span>
+      )
+    }
     return (
-      <span data-ivr-state="empty" className="text-wb-text-muted" title="No IV rank collected">
+      <span
+        data-ivr-state="empty"
+        data-ivr-reason={absence.reason}
+        className="text-wb-text-muted"
+        title={absenceTitle}
+      >
         n/a
       </span>
     )
@@ -41,7 +63,7 @@ export function IvrCell({ ivRank }: IvrCellProps): React.JSX.Element {
   const expired = ivRank.state === 'expired'
   const value = expired ? 'exp' : formatIvrValue(ivRank.value)
   // The ring and the tooltip are sighted-only, so the label carries the whole reading.
-  const ariaLabel = `IV rank ${value}, ${tradingDaysLabel(ivRank.ageTradingDays)} old; Observed ${observedDayLabel(ivRank.observedAt)}`
+  const ariaLabel = `IV rank ${value}, ${tradingDaysLabel(ivRank.ageTradingDays)} old; Observed ${observedDayLabel(ivRank.observedAt)}; IV percentile ${ivRank.percentile}; 52-week IV ${ivRank.low} to ${ivRank.high}`
   const { title, body } = ivrTooltipCopy(ivRank)
 
   return (

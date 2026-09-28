@@ -1,7 +1,10 @@
 # Research: US-121 — Compute IV rank from our own IV history instead of scraping Barchart
 
 Story: [OPT-27](https://linear.app/optionswheel/issue/OPT-27/us-121-compute-iv-rank-from-our-own-iv-history-instead-of-scraping)
-(Linear is the only place the story is edited.) Planned 2026-09-20 against `main` at `55773d2`.
+(Linear is the only place the story is edited.) Planned 2026-09-20 against `main` at `55773d2`;
+revised 2026-09-26 against `ebc49b5` to carry the story's last amendment — the absence reasons
+(`pending` / `insufficient_history` / `no_market_data` / `failed` / `not_collected`), added to
+Linear after the plan was first committed.
 
 Primary sources, in order of authority: the Linear story (methodology, every numbered gate),
 `docs/opt-27-spike-results.md` + `scripts/spike-iv-history.mjs` (what Alpaca actually serves
@@ -13,18 +16,19 @@ live account (251/251 sessions, 0 inversion failures, 4 liquid + 8 thin names).
 
 ## Current state of the code (verified against `src/`)
 
-| Concern        | Today                                                                                                                                                             | What this story changes                                                                                                                               |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| IVR source     | `fetchIVR` in `integrations/barchart-ivr-scraper.ts`; dead behind AWS WAF                                                                                         | Deleted. IV30 computed in-house from Alpaca daily bars                                                                                                |
-| Storage        | `ivr_snapshot (underlying, observed_at, ivr, ivp, iv30, source)` — one derived rank per session                                                                   | New `iv30_reading` (series + inputs) and `iv30_gap`; `ivr_snapshot` dropped by the same migration                                                     |
-| Collector      | `collectIVRSnapshots` / `collectTicker` in `services/ivr-collector.ts`; fake seam `fake-ivr.ts` keyed on `WHEELBASE_FAKE_IVR`; scheduled runs refused on closures | Same job name (`ivr-collect`), same IPC (`ivr:collect-now`), same targets query; body becomes per-ticker `collectIvHistory`; closed-day guard removed |
-| On-demand      | `services/ivr-on-demand.ts` → `collectTicker`, skips when a same-session row exists                                                                               | Calls `collectIvHistory` (backfill or catch-up); the service's own `up_to_date` outcome replaces the same-session check                               |
-| Read path      | `getLatestIvrByUnderlying` → newest `ivr_snapshot` row → `assessIvRank`                                                                                           | `readIvMetricsByUnderlying` computes rank/percentile/range from the series; `assessIvRank` ages the anchor session                                    |
-| Reading shape  | `AssessedIvRank { value, observedAt, ageTradingDays, state }`, `IpcIvRank` mirror, `ScreenerIvRank` mirror                                                        | `value` becomes `string \| null` (flat window); `percentile`, `low`, `high` added                                                                     |
-| Provider       | `MarketDataProvider` has snapshots, chain, clock, calendar — **no bars**                                                                                          | `getOptionDailyBars`, `getStockDailyBars` added; `AlpacaMarketDataProvider` + `FakeMarketDataProvider` implement them                                 |
-| Calendar store | reads 45 back / 2 ahead; refreshes 120 back / 400 ahead, weekly                                                                                                   | reads 400 back / 50 ahead; refreshes 420 back; also refreshes when stored `first_day` is too late                                                     |
-| Renderer       | `IvrCell` renders `value` + freshness ring + tooltip (`lib/ivr-tooltip.ts`); `ReadingNote`                                                                        | Tooltip gains percentile and 52-week range; `null` rank renders `n/a` but keeps the tooltip                                                           |
-| E2E seam       | `_test:ivr-set-outcomes`, `_test:ivr-fetch-log`, `_test:ivr-set-now`, `okOutcome(...)` in 6 specs + 2 helpers                                                     | Fake provider synthesises bars from a programmed IV series; new `_test:iv-*` channels; fake clock survives as its own module                          |
+| Concern        | Today                                                                                                                                                                             | What this story changes                                                                                                                               |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| IVR source     | `fetchIVR` in `integrations/barchart-ivr-scraper.ts`; dead behind AWS WAF                                                                                                         | Deleted. IV30 computed in-house from Alpaca daily bars                                                                                                |
+| Storage        | `ivr_snapshot (underlying, observed_at, ivr, ivp, iv30, source)` — one derived rank per session                                                                                   | New `iv30_reading` (series + inputs) and `iv30_gap`; `ivr_snapshot` dropped by the same migration                                                     |
+| Collector      | `collectIVRSnapshots` / `collectTicker` in `services/ivr-collector.ts`; fake seam `fake-ivr.ts` keyed on `WHEELBASE_FAKE_IVR`; scheduled runs refused on closures                 | Same job name (`ivr-collect`), same IPC (`ivr:collect-now`), same targets query; body becomes per-ticker `collectIvHistory`; closed-day guard removed |
+| On-demand      | `services/ivr-on-demand.ts` → `collectTicker`, skips when a same-session row exists                                                                                               | Calls `collectIvHistory` (backfill or catch-up); the service's own `up_to_date` outcome replaces the same-session check                               |
+| Read path      | `getLatestIvrByUnderlying` → newest `ivr_snapshot` row → `assessIvRank`                                                                                                           | `readIvMetricsByUnderlying` computes rank/percentile/range from the series; `assessIvRank` ages the anchor session                                    |
+| Reading shape  | `AssessedIvRank { value, observedAt, ageTradingDays, state }`, `IpcIvRank` mirror, `ScreenerIvRank` mirror                                                                        | `value` becomes `string \| null` (flat window); `percentile`, `low`, `high` added                                                                     |
+| Provider       | `MarketDataProvider` has snapshots, chain, clock, calendar — **no bars**                                                                                                          | `getOptionDailyBars`, `getStockDailyBars` added; `AlpacaMarketDataProvider` + `FakeMarketDataProvider` implement them                                 |
+| Calendar store | reads 45 back / 2 ahead; refreshes 120 back / 400 ahead, weekly                                                                                                                   | reads 400 back / 50 ahead; refreshes 420 back; also refreshes when stored `first_day` is too late                                                     |
+| Renderer       | `IvrCell` renders `value` + freshness ring + tooltip (`lib/ivr-tooltip.ts`); `ReadingNote`                                                                                        | Tooltip gains percentile and 52-week range; `null` rank renders `n/a` but keeps the tooltip                                                           |
+| Absence        | `ivRank: null` on a bench row means any of: a backfill in flight, sparse history, no credentials, a failed run, never collected; `IvrCell` titles all five `No IV rank collected` | `ivRankAbsence` names which; `IvrCell` shows a computing state for `pending` and a reason-specific title otherwise; `ReadingNote` names the reason    |
+| E2E seam       | `_test:ivr-set-outcomes`, `_test:ivr-fetch-log`, `_test:ivr-set-now`, `okOutcome(...)` in 6 specs + 2 helpers                                                                     | Fake provider synthesises bars from a programmed IV series; new `_test:iv-*` channels; fake clock survives as its own module                          |
 
 Dependencies the story lists as Done are on `main`: `getMarketCalendar` is on `MarketDataProvider`
 (`integrations/market-data-provider.ts`), `persistSnapshot` stamps `observed_at` at the session
@@ -341,6 +345,42 @@ failWith?, sessions: Record<YYYY-MM-DD, number | { iv, untraded?, tradeCount?, w
   and `Decimal` owns that.
 - **Alternatives considered:** `Decimal` throughout (slow bisection, no gain); a dependency for
   Black–Scholes (thirty lines, and the spike already wrote them).
+
+### ADR: An absent rank carries a display-only reason; process state lives in memory, coverage is derived
+
+- **Decision:** Every bench row and ranked candidate carries `ivRankAbsence: IvRankAbsence | null`
+  beside `ivRank`, exactly one of the two non-null. The reasons are `pending` (a run for the
+  ticker is in flight), `no_market_data` (the last run could not build a provider or its first
+  request failed `auth_failed`), `failed` (the last run for the ticker failed), `insufficient_history`
+  (rows exist but fewer than 200 of the 252 window sessions have a reading — the reason carries
+  `coverage`, `window` and `required`) and `not_collected` (no rows and nothing known about a run).
+  `pending`, `no_market_data` and `failed` are **process state**: a `createIvRunState()` closure
+  over a `Map` in `services/iv-run-state.ts`, created once in `index.ts` and shared by the batch,
+  the on-demand path and both read paths. The two callers own the transitions — `markPending`
+  before each ticker's turn (the on-demand path does this synchronously before its first `await`,
+  so the snapshot the renderer refetches after `watchlist:add` already sees it), `settle(ticker,
+outcome)` after — and the batch marks every remaining target `no_market_data` when a ticker
+  reports it. A `collected` or `up_to_date` outcome clears the entry. `insufficient_history` is
+  derived on read from the stored series. Precedence when no reading is published: `pending` >
+  `no_market_data` > `failed` > `insufficient_history` > `not_collected`; a published reading
+  always wins over any run status (a catch-up in flight does not hide a rank). The reason is
+  display-only — `ivGate`, `usableIvRanks` and the screener floor read only `ivRank` and treat
+  every absence as `unknown`.
+- **Why:** `null` hid five situations behind one blank, and two of them (a backfill in flight,
+  missing credentials) are things the trader can act on or should wait for. Keeping process
+  state in memory rather than a table is honest by construction: a relaunch mid-backfill has no
+  run in flight, so `not_collected` is the truth until the next run, and there is no stale
+  `pending` row to expire. A sibling field rather than a discriminated `ivRank` keeps the
+  three-file ripple of the nullable-`value` ADR from becoming a twenty-file one — `IvrCell`,
+  `ivGate`, `usableIvRanks` and every fixture keep reading `ivRank` as they do today. Carrying
+  `window`/`required` on `insufficient_history` spares the renderer a copy of two core constants
+  it cannot import across the process boundary.
+- **Alternatives considered:** persisting run state in a table (needs expiry rules for a crashed
+  run and adds a write to every collection for a value nobody queries later); a discriminated
+  union on `ivRank` (touches every consumer for no domain gain); deriving `failed` from the
+  absence of a recent reading (indistinguishable from `not_collected`, which is the ambiguity
+  being removed); making the reason affect the verdict (the story says display-only, and the
+  gate engine's "absent is unknown" rule must not fork).
 
 ## Open Questions
 

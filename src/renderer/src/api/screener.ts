@@ -1,16 +1,9 @@
 // Adapter between the renderer and the screener IPC preload layer.
 
 import { type ApiError, throwMappedIpcErrors } from './error'
+import type { IvRankPair } from './ivr'
 
 export type { ApiError }
-
-// Field-for-field mirror of IpcIvRank (src/preload/index.d.ts).
-export type ScreenerIvRank = {
-  value: string // 1dp
-  observedAt: string // ISO timestamp of the scrape that produced it
-  ageTradingDays: number
-  state: 'fresh' | 'aging' | 'stale' | 'expired' | 'predates_earnings'
-}
 
 // Field-for-field mirror of IpcCandidateEarnings (src/preload/index.d.ts).
 // `flagged` only occurs when the saved criteria set earningsHandling: 'flag'.
@@ -36,14 +29,13 @@ export type ScreenerCandidate = {
   delta: string // 4dp, absolute
   openInterest: number | null
   volume: number | null
-  ivRank: ScreenerIvRank | null // null → render "n/a"
   capitalSecured: string // 2dp
   periodYield: string // 4dp fraction
   annualizedYield: string // 4dp fraction
   yieldPerDelta: string // 4dp — the rank score
   earnings: ScreenerCandidateEarnings
   timestamp: string // ISO quote time
-}
+} & IvRankPair
 
 // Field-for-field mirror of IpcScreenerExclusion (src/preload/index.d.ts).
 export type ScreenerExclusion = {

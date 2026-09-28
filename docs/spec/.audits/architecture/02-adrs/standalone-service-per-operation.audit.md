@@ -1,29 +1,28 @@
 ---
 page: docs/spec/architecture/02-adrs/standalone-service-per-operation.md
-audited_at: 2026-06-27
-findings: 0
+audited_at: 2026-09-28
+findings: 2
 ---
 
 # Audit: standalone-service-per-operation.md
 
-## Verified (4)
+## Verified (6)
 
-- ✓ Every named per-operation service file exists under `src/main/services/` — `close-csp-position.ts`, `expire-csp-position.ts`, `assign-csp-position.ts`, `open-covered-call-position.ts`, `close-covered-call-position.ts`, `expire-cc-position.ts`, `roll-csp-position.ts`, plus read-only `get-position.ts` and `list-positions.ts` (all confirmed present).
-- ✓ `src/main/services/positions.ts` is a barrel re-exporting the operations — `positions.ts:13-20` re-exports `listPositions`, `getPosition`, `closeCspPosition`, `expireCspPosition`, `assignCspPosition`, `openCoveredCallPosition`, `closeCoveredCallPosition`, `expireCcPosition`.
-- ✓ Read-only context loaders share SQL via `activeLegSubquery()` — `src/main/services/active-leg-sql.ts:6`; consumed by `get-position.ts:16,200` and `list-positions.ts:11,45` (also `evaluate-alerts.ts:18,46`).
-- ✓ Integration tests live next to each service — e.g. `close-csp-position.test.ts` pattern (corroborated by per-file test naming).
+- ✓ One file per operation exists in `src/main/services/`: `close-csp-position.ts`, `expire-csp-position.ts`, `assign-csp-position.ts`, `open-covered-call-position.ts`, `close-covered-call-position.ts`, `expire-cc-position.ts`, `roll-csp-position.ts` (plus later `roll-cc-position.ts`, `record-call-away-position.ts`); read helpers `get-position.ts`, `list-positions.ts`.
+- ✓ Each service loads context via `getPosition(db, positionId)` — e.g. `close-csp-position.ts:22`, `roll-csp-position.ts:22`, `expire-cc-position.ts:19`.
+- ✓ Writes happen in a single `db.transaction(() => …)` — `close-csp-position.ts:56`, `roll-csp-position.ts:67`, `open-covered-call-position.ts:68`, etc.
+- ✓ Integration tests live next to each service (`close-csp-position.test.ts`, `roll-csp-position.test.ts`, …).
+- ✓ `get-position.ts` and `list-positions.ts` share SQL via `activeLegSubquery()` — `src/main/services/active-leg-sql.ts:6`, used at `get-position.ts:16,203` and `list-positions.ts:11,45`.
+- ✓ Linked ADR `./active-leg-resolution.md`, extracts us-4/5/6/7/8/9/12 and feature pages exist.
 
-## Drift (0)
+## Drift (1)
 
-None.
+- ✗ Page says `src/main/services/positions.ts` re-exports "the operations" for IPC handlers (lines 7, 24), listing `roll-csp-position.ts` among them. The barrel (`positions.ts:14-21`) re-exports list/get/close-CSP/expire-CSP/assign/open-CC/close-CC/expire-CC only — not `rollCspPosition`, `rollCcPosition` or `recordCallAwayPosition`, which `src/main/ipc/positions.ts:27-30` imports directly from their service files (it also imports `closeCoveredCallPosition` directly). Suggested fix: say the barrel is partial, or complete it.
 
-Note (not drift): the barrel re-export block visible at `positions.ts:13-20` does not show an explicit `roll-csp-position` re-export in that range, but `roll-csp-position.ts` exists and `createPosition` is defined further down (`positions.ts:26`); the barrel's full surface was not exhaustively line-read. Flagged as low-confidence, likely complete.
+## Unverifiable (1)
 
-## Unverifiable (2)
-
-- ? "each service writes leg + snapshot + position update inside a single `db.transaction(() => {...})()`" — per-service transaction-composition claim; not line-verified across all seven files.
-- ? Historical narrative ("started as a method on a positions.ts god-object; by US-12 the pattern was clear") — not auditable.
+- ? Historical rationale (US-12 god-object split; group-by-phase rejected) and the "standard CC_OPEN setup" test seeding convention — narrative.
 
 ## Missing files (0)
 
-- ADR cross-link `./active-leg-resolution.md` and extract/feature references — not checked beyond code-claim scope.
+None.
