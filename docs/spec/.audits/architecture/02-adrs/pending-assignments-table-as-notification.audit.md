@@ -1,22 +1,27 @@
 ---
 page: docs/spec/architecture/02-adrs/pending-assignments-table-as-notification.md
-audited_at: 2026-06-27
-findings: 0
+audited_at: 2026-09-28
+findings: 1
 ---
 
 # Audit: pending-assignments-table-as-notification.md
 
-## Verified (4)
+## Verified (5)
 
-- ✓ `status` column with CHECK `IN ('pending', 'confirmed', 'dismissed')` exists, supporting the pending → confirmed | dismissed state machine (`migrations/008_create_pending_assignments.sql:9`).
-- ✓ No separate `notifications` table exists — grep of `migrations/` finds only `pending_assignments` for assignment surfacing.
-- ✓ Renderer polls every 30s via TanStack Query `refetchInterval: 30_000` (`src/renderer/src/api/assignments.ts:13`); also asserted in `src/renderer/src/components/AssignmentNotificationBanner.test.tsx:229,241`.
-- ✓ The table row carries banner fields (ticker via position, `broker_symbol`, `qty`, `transaction_time`) (`migrations/008_create_pending_assignments.sql:5-7`).
+- ✓ `status` column constrained to `('pending', 'confirmed', 'dismissed')` — `migrations/008_create_pending_assignments.sql:9`.
+- ✓ Confirm / dismiss are plain `UPDATE`s — `src/main/services/pending-assignments.ts:81, 85`.
+- ✓ Renderer polls via TanStack Query `refetchInterval: 30_000` — `src/renderer/src/api/assignments.ts:10-13` (asserted in `AssignmentNotificationBanner.test.tsx:229-241`).
+- ✓ Read path is request/response `assignments:list-pending` — `src/main/ipc/assignments.ts:16`; no push channel for assignments in `src/main/ipc/`.
+- ✓ Row carries `broker_symbol`, `qty`, `transaction_time` for the banner — `008_create_pending_assignments.sql:6-8`.
 
 ## Drift (0)
 
+None.
+
 ## Unverifiable (1)
 
-- ? "Notifications must survive app restart" and "no in-memory queue / no IPC pub/sub channel" are narrative/negative claims; the table-backed approach is consistent with this, but restart-resilience itself is not mechanically verifiable. Flag for human review only if doubted.
+- ? "Notification arrives at most a few times per day" / push events unnecessary — rationale.
 
-## Missing files (0)
+## Missing files (1)
+
+- ✗ Source `plans/us-35/research.md` — `plans/us-35/` no longer exists.

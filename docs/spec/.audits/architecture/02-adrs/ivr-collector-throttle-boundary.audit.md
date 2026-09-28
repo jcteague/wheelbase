@@ -1,25 +1,24 @@
 ---
 page: docs/spec/architecture/02-adrs/ivr-collector-throttle-boundary.md
-audited_at: 2026-06-27
-findings: 0
+audited_at: 2026-09-28
+findings: 4
 ---
 
-# Audit: ivr-collector-throttle-boundary.md
+# Audit: docs/spec/architecture/02-adrs/ivr-collector-throttle-boundary.md
 
-## Verified (3)
+## Verified (1)
 
-- ✓ `collectIVRSnapshots(...)` exists in `src/main/services/ivr-collector.ts:104`.
-- ✓ The collector enforces 1 req/sec at its own layer: `sleepBetweenRequests(clock, index, total)` calls `clock.sleep(1000)` (`ivr-collector.ts:98-100`) and is invoked once per underlying in a sequential loop (`:152`).
-- ✓ `fetchIVR` (the scraper, `src/main/integrations/barchart-ivr-scraper`) is imported and called per-underlying, consistent with the ADR's "even though fetchIVR already rate-limits internally" framing.
+- ✓ Cited `plans/us-44/research.md`, `src/main/services/ivr-collector.ts` and `docs/spec/features/us-44-ivr-snapshot-store-and-scheduler.md` exist.
 
-## Drift (0)
+## Drift (2)
 
-## Unverifiable (0)
+- ✗ The page states in the present tense that `collectIVRSnapshots(...)` enforces a 1 request/second rule at the collector layer via "an explicit sleep boundary", on top of `fetchIVR`'s limiter. None of this exists: the collector is `collectIvHistoryBatch` (`src/main/services/ivr-collector.ts:65`), its loop has no sleep/delay (`:108-140`), and `fetchIVR` / the Barchart scraper are retired (US-121). The collector-level sleep was already removed under US-97, as recorded in `./ivr-collector-per-ticker-failure-isolation.md` lines 34-38. The page carries no superseded banner. Suggested fix: add a "Superseded" status pointing at `ivr-collector-per-ticker-failure-isolation.md` (US-97, pacing moved to the scraper) and US-121 (scraper retired).
+- ✗ Rationale "guarantees the request spacing across scheduled and manual invocations alike" describes current behaviour that no longer holds; there is no spacing guarantee in `ivr-collector.ts` or `iv-history.ts` (grep for `sleep`/`delay`/`setTimeout` empty in both).
 
-- The "concurrent callers cannot bypass spacing" rationale is design narrative supported by the sequential-loop-with-sleep implementation; the mechanical claim (sleep boundary in collector) is verified above.
+## Unverifiable (1)
+
+- ? "US-44 requires the collector itself to own the cadence" — story-requirement history.
 
 ## Missing files (0)
 
-- ✓ `src/main/services/ivr-collector.ts` exists. `../../features/us-44-ivr-snapshot-store-and-scheduler.md` exists.
-
-One-line: Audited ivr-collector-throttle-boundary.md: 3 verified, 0 drift, 0 unverifiable, 0 missing.
+None.

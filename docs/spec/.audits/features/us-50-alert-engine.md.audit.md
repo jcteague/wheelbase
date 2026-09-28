@@ -1,35 +1,42 @@
 ---
 page: docs/spec/features/us-50-alert-engine.md
-audited_at: 2026-06-27
-findings: 1
+audited_at: 2026-09-28
+findings: 4
 ---
 
-# Audit: docs/spec/features/us-50-alert-engine.md
+# Audit: us-50-alert-engine.md
 
 ## Verified (18)
 
-- ✓ `src/main/core/alerts.ts` exists: pure `evaluatePosition(input): PositionEvaluation` (line 101), no DB/broker/logger imports.
-- ✓ Rule registry is an ordered list of predicate objects with `code`, `urgency`, `requiresDte`, `test`, `summary` (lines 73-100).
-- ✓ `EXPIRATION_IMMINENT` (DTE ≤ 5; `EXPIRATION_IMMINENT_MAX_DTE = 5`, line 14) and `MANAGEMENT_WINDOW` (6 … managementWindowDte, line 95) encoded as mutually-exclusive DTE ranges — matches precedence-without-early-return claim.
-- ✓ `DEFAULT_MANAGEMENT_WINDOW_DTE = 21` exported (line 17); used as default in `evaluatePosition` (line 102).
-- ✓ Missing-data path records a `SkippedRule` instead of throwing (`hasMissingData` line 103; skipped mapping line 106).
-- ✓ `src/main/core/dte.ts` exists: pure `computeDte(expiration, now?)` using `differenceInCalendarDays`/`parseISO` (lines 4, 11-13).
-- ✓ `src/main/services/list-positions.ts` adopts shared `computeDte` (import line 6, use line 78).
-- ✓ `src/main/services/alerts.ts` persistence primitives: `upsertOpenAlert` (68), `resolveAlertsNotIn` (115), `listOpenAlerts` (141), `alertKey(positionId, ruleCode)` (36), local `mapAlertRow` snake→camel (40).
-- ✓ `src/main/services/evaluate-alerts.ts`: `evaluateAlerts({ db, ... }): EvaluateAlertsResult` (74-79); two phases — compute (load via `activeLegSubquery()` line 46, per-position `try/catch`, DEBUG skip log) and a single `db.transaction` persist (line 113). Returns `{ createdCount, updatedCount, resolvedCount, skippedRuleCount }` (128). Exports `ALERT_EVAL_JOB_NAME = 'alert-evaluation'` (21).
-- ✓ `src/main/index.ts` registers `alert-evaluation` job with interval cadence `marketOpenMs: 60_000`, `extendedHoursMs: 300_000` (lines 220-224), and is not broker-gated.
-- ✓ `migrations/009_create_alerts.sql` defines `alerts` table with the eight content fields + audit columns, partial unique index `idx_alerts_open_unique` (WHERE status='open'), and `idx_alerts_status_urgency`.
-- ✓ `src/main/schemas.ts` adds `AlertRecord` (467), `EvaluateAlertsResult` (496) and re-exports `AlertUrgency`/`AlertStatus` from `./core/alerts` (line 465).
-- ✓ All ADR + domain + schema spec links resolve (8 ADRs, `domain/alerts.md`, `schema/tables.md`, `schema/migrations.md`, `./us-46-polling-scheduler.md`).
+- ✓ All 8 listed source files exist, including `migrations/009_create_alerts.sql`.
+- ✓ All 7 linked ADRs exist under `docs/spec/architecture/02-adrs/`, and `domain/alerts.md`, `schema/tables.md` and `schema/migrations.md` exist.
+- ✓ `alerts` table columns (id, position_id, rule_code, urgency, summary, quick_action, status default 'open', triggered_at, last_evaluated_at, resolved_at, created_at, updated_at) — `migrations/009_create_alerts.sql:1-14`.
+- ✓ Partial unique index on `(position_id, rule_code) WHERE status = 'open'` — `009_create_alerts.sql:18-19`; `idx_alerts_status_urgency` — `:22-23`.
+- ✓ The pure engine `evaluatePosition(input): PositionEvaluation` returns matches + skipped — `src/main/core/alerts.ts:302-330`. Its imports are only `decimal.js`, `./costbasis`, `./profit-target` and `./types` (no DB, broker or logger) — `alerts.ts:5-8`.
+- ✓ Types `AlertUrgency`, `AlertStatus`, `RuleCode`, `AlertEvaluationInput`, `AlertMatch`, `SkippedRule`, `PositionEvaluation` — `alerts.ts:10-12,52,95,102,107`.
+- ✓ `EXPIRATION_IMMINENT` (high) and `MANAGEMENT_WINDOW` (medium) use exclusive ranges `0 ≤ dte ≤ 5` and `5 < dte ≤ managementWindowDte` — `alerts.ts:21,232-250`.
+- ✓ `DEFAULT_MANAGEMENT_WINDOW_DTE = 21` — `alerts.ts:24`.
+- ✓ A missing DTE produces a `SkippedRule` rather than a throw — `alerts.ts:218-219,314-317`.
+- ✓ `computeDte(expiration, now?)` uses `differenceInCalendarDays` — `src/main/core/dte.ts:4,13-15`; adopted by `list-positions.ts:6,78` and `evaluate-alerts.ts:15`.
+- ✓ `upsertOpenAlert`, `resolveAlertsNotIn`, `listOpenAlerts` (status='open' only) and `alertKey` are exported — `src/main/services/alerts.ts:37,80,176,231-236`.
+- ✓ `ALERT_EVAL_JOB_NAME = 'alert-evaluation'` — `src/main/services/evaluate-alerts.ts:28`.
+- ✓ Positions are loaded via a join on `activeLegSubquery()` — `evaluate-alerts.ts:23,68`.
+- ✓ The engine is called per position inside try/catch, and a failure is logged without aborting the others — `evaluate-alerts.ts:240-265`; skips are DEBUG-logged — `:258`.
+- ✓ The persist phase is a single `db.transaction`: upsert matches, and keep-open = matches ∪ skipped keys, then `resolveAlertsNotIn` — `evaluate-alerts.ts:274-285`.
+- ✓ `EvaluateAlertsResult` has `createdCount`/`updatedCount`/`resolvedCount`/`skippedRuleCount` — `evaluate-alerts.ts:291`; the type is in `src/main/schemas.ts:634`.
+- ✓ `schemas.ts` has `AlertRecord` (`:591`) and re-exports `AlertUrgency`/`AlertStatus` (`:589`).
+- ✓ The job is registered with `{ kind: 'interval', marketOpenMs: 60_000, extendedHoursMs: 300_000, marketClosedMs: null }` — `src/main/index.ts:289-296`. It is not gated on the broker: it uses `marketDataFactory`, not `BrokerProvider`.
 
-## Drift (1)
+## Drift (4)
 
-- ✗ "Source files" section (lines 129-131) claims engine input/output types `AlertUrgency`, `AlertStatus`, `RuleCode`, `AlertEvaluationInput`, `AlertMatch`, `SkippedRule`, `PositionEvaluation` live in `src/main/core/types.ts`. Grep shows ALL of these are defined in `src/main/core/alerts.ts` (lines 8-10, 24, 33, 40, 45). `src/main/core/types.ts` is a Zod-schema file (StrategyType/WheelPhase/LegRole/etc.) and contains none of the alert types. Suggested fix: change the bullet to reference `src/main/core/alerts.ts` (or drop the separate `core/types.ts` bullet).
+- ✗ **Rule count.** The page says "The two in-scope rules are the only ones implemented" and calls the other four "later stories". `RULES` now holds six rules: `PROFIT_TARGET`, `STRIKE_PROXIMITY`, `EARNINGS_PROXIMITY` and `COVERED_CALL_BREACH` in addition to the two DTE rules — `src/main/core/alerts.ts:232-298`. Suggested fix: frame the two-rule scope as US-50's original delivery.
+- ✗ **Rule-definition shape.** The page says each registry entry has `code`, `urgency`, `requiresDte`, `test` and `summary`. The code's `RuleDefinition` has an optional `missingData?: (input) => string | null` guard instead of `requiresDte`, and `test(input, resolved)` receives `ResolvedThresholds` — `alerts.ts:209-216`.
+- ✗ **`evaluateAlerts` signature.** The page says `evaluateAlerts({ db, now?, managementWindowDte?, logger? }): EvaluateAlertsResult` (synchronous). The code is `async` and returns `Promise<EvaluateAlertsResult>`, with added inputs `provider?: MarketDataProvider`, `profitTargetPercentDefault?` and `fetchEarnings?` — `src/main/services/evaluate-alerts.ts:158-192`. The compute phase now also prefetches market data and earnings with degrade-to-fallback (`fetchOrDegrade`, `:171-182`).
+- ✗ **Upsert/resolve semantics widened.** The page says `upsertOpenAlert` does "SELECT existing open → UPDATE or INSERT" and that the persist phase resolves open alerts only. `upsertOpenAlert` now also looks up `dismissed` rows and can return `'suppressed'` (`src/main/services/alerts.ts:72,89-99`), and the transaction also calls `clearStaleDismissals` (`evaluate-alerts.ts:284`). These are US-59 additions and are not reflected here. Low severity.
 
-## Unverifiable (1)
+## Unverifiable (2)
 
-- ? "follows the same purity contract as costbasis.ts and lifecycle.ts" — narrative purity assertion (no I/O imports confirmed in alerts.ts, but the comparison itself is descriptive).
+- ? "Restart-safe" alert set and "a compute error must not leave partially written rows": the structure supports both (compute outside the transaction, single transaction to persist), but the runtime guarantee was not tested here.
+- ? "Rules slot in without schema changes or control-flow edits" is a design claim.
 
 ## Missing files (0)
-
-None.

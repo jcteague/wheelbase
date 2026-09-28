@@ -1,26 +1,24 @@
 ---
 page: docs/spec/architecture/02-adrs/assignment-polling-cadence.md
-audited_at: 2026-06-27
-findings: 0
+audited_at: 2026-09-28
+findings: 1
 ---
 
-# Audit: assignment-polling-cadence.md
+# Audit: docs/spec/architecture/02-adrs/assignment-polling-cadence.md
 
 ## Verified (3)
 
-- ✓ `detect-assignments` job (`DETECT_ASSIGNMENTS_JOB_NAME = 'detect-assignments'`, `src/main/services/detect-assignments.ts:8`) registered with cadence `{ kind: 'interval', marketOpenMs: 60_000, extendedHoursMs: 300_000, marketClosedMs: null }` — `src/main/index.ts:182-189`.
-- ✓ 60s regular / 5min extended / parked overnight (`marketClosedMs: null`) matches the policy values exactly — `index.ts:185-188`.
-- ✓ Single tick on start: `scheduler.start()` invoked once — `index.ts:251` (the scheduler's first-tick-on-start behavior is the scheduler contract; consistent with the ADR's "first tick fires once on scheduler.start()").
+- ✓ `detect-assignments` job registered with `{ kind: 'interval', marketOpenMs: 60_000, extendedHoursMs: 300_000, marketClosedMs: null }` — `src/main/index.ts:240-247`.
+- ✓ First tick fires on `scheduler.start()` regardless of session — `start()` calls `autoStart`, which for interval cadences does `scheduleTick(state, 0)` — `src/main/services/polling-scheduler.ts:226-233,245-249`.
+- ✓ Related ADR `polling-scheduler-settimeout-chain.md` exists.
 
 ## Drift (0)
 
-None.
-
 ## Unverifiable (2)
 
-- ? "OPASN events post overnight ... first poll of the next session catches everything" — broker/domain rationale; not auditable in this repo.
-- ? Alternatives ("single tick at open+30min", "always-on 60s") — deferred design notes.
+- ? OPASN events post overnight; early-exercise corner case — domain rationale.
+- ? "Single tick at market open + 30 minutes" deferred pending user feedback — planning note.
 
-## Missing files (0)
+## Missing files (1)
 
-Page references related ADR `polling-scheduler-settimeout-chain.md` (sibling); not opened in this audit.
+- ✗ Source `plans/us-35/research.md` does not exist (no `plans/us-35/` directory). `../../features/us-35-assignment-detection.md` exists.

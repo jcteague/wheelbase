@@ -1,27 +1,29 @@
 ---
 page: docs/spec/architecture/02-adrs/soft-client-side-warnings.md
-audited_at: 2026-06-27
+audited_at: 2026-09-28
 findings: 1
 ---
 
 # Audit: soft-client-side-warnings.md
 
-## Verified (4)
+## Verified (7)
 
-- ✓ Future assignment date warning is client-side and non-blocking — `src/renderer/src/components/AssignmentSheet.tsx:122` (`<AlertBox variant="warning">This date is in the future — are you sure?</AlertBox>`).
-- ✓ Cost-basis guardrail on CC open is a pure helper — `src/renderer/src/components/openCcGuardrail.ts:24` (`computeGuardrail(strikeStr, basisStr)`), consumed in `OpenCoveredCallSheet.tsx:37,105` (rendered, not gating submit).
-- ✓ Guardrail messages match the ADR — `openCcGuardrail.ts:32` ("...lock in a loss of $X/share if called away") and `:38` ("...at your cost basis — you would break even...").
-- ✓ `AssignCspPayloadSchema` accepts any ISO date string (no `max(today)` rule) — `src/main/schemas.ts:183-185` (`assignmentDate: z.string().regex(IsoDateRegex, ...)`, regex-only).
+- ✓ Future assignment date warning "This date is in the future — are you sure?" as `AlertBox variant="warning"` in `AssignmentSheet` — `src/renderer/src/components/AssignmentSheet.tsx:123`.
+- ✓ Cost-basis guardrail messages ("below your cost basis — you would lock in a loss of $X.XX/share if called away", "at your cost basis — you would break even") — `src/renderer/src/components/openCcGuardrail.ts:29-40`.
+- ✓ Pure helper `computeGuardrail(strike, basis)` in `openCcGuardrail.ts` — line 24; consumed by `OpenCoveredCallSheet.tsx:7,37`.
+- ✓ Gold warning vs info-blue for positive outcome — `OpenCcForm.tsx:92-98`; `AlertBox` variants `warning` → `--wb-gold`, `info` → `--wb-sky` (`src/renderer/src/components/ui/AlertBox.tsx:14-23`).
+- ✓ "Current state" note: no future-fill-date or zero-premium CC soft warning exists — grep for `fillDate >`/`premium === 0`/"are you sure" in `components/` finds only the assignment-date warning.
+- ✓ `AssignCspPayloadSchema` accepts any ISO date (regex only, no ≤ today rule) — `src/main/schemas.ts:209-212`.
+- ✓ Linked extracts (us-6, us-7) and feature pages exist.
 
-## Drift (1)
+## Drift (0)
 
-- ✗ Page lists "Future CC fill date" and "Zero CC premium ($0.00 — are you sure?)" as implemented soft warnings, but neither was found in the covered-call sheet/form. `OpenCoveredCallSheet.tsx` only has a _hard_ "Premium is required" error (`:42`) and the cost-basis guardrail (`:37`); no `fillDate > today` warning and no `premium === 0` "$0.00" warning exist (grep across `src/renderer/src/` for "in the future"/"Premium is $0"/"$0.00" returns only the `AssignmentSheet` future-date case). Suggested fix: drop the CC future-fill-date and zero-premium examples from the ADR, or implement them.
+None.
 
-## Unverifiable (2)
+## Unverifiable (1)
 
-- ? "Hard validation (negative price, contracts exceeding shares-held, fill-date before open) is enforced by the lifecycle engine" — engine-side enforcement claim, not audited in this page's scope.
-- ? "AlertBox colour token discriminates gold/info-blue" — design-token claim; `variant="warning"` confirmed on the assignment case, full palette mapping narrative.
+- ? "The submit button is never disabled by a soft warning" and "hard validation … enforced by the lifecycle engine" — `FormButton` usage in `OpenCcForm.tsx:160` and `AssignmentSheet.tsx:140` shows pending-state only, but not exhaustively audited across every form.
 
 ## Missing files (0)
 
-- Extract/feature references only.
+None.

@@ -1,6 +1,6 @@
 ---
 page: docs/spec/architecture/02-adrs/pct-of-max-formula.md
-audited_at: 2026-06-27
+audited_at: 2026-09-28
 findings: 0
 ---
 
@@ -8,16 +8,21 @@ findings: 0
 
 ## Verified (5)
 
-- ✓ Profit-branch "% of max" formula `(openPremium − closePrice) / openPremium × 100` — `src/renderer/src/components/ui/CcPnlPreview.tsx:33-39` (`open.minus(closeDecimal).div(open).times(100)`), label `${pct}% of max`.
-- ✓ Loss-branch "% above open" `(closePrice − openPremium) / openPremium × 100` — `CcPnlPreview.tsx:42-48`, label `${pct}% above open`.
-- ✓ e2e fixture uses `closePrice = $1.10` (not midpoint $1.15) and expects `52.2% of max` — `e2e/close-cc-early.spec.ts:86,91` (comment confirms `(2.30-1.10)/2.30*100 = 52.2%`).
-- ✓ Unit test includes a negative assertion that `47.8% of max` is NOT rendered — `src/renderer/src/components/ui/CcPnlPreview.test.tsx:14` (`queryByText(/47\.8% of max/)).not.toBeInTheDocument()`).
-- ✓ Renderer-only correction: formula lives in the renderer component; no IPC/schema/service involved.
+- ✓ Profit branch `pct = (openPremium − closePrice) / openPremium × 100`, label `… % of max` — `src/renderer/src/components/ui/CcPnlPreview.tsx:33-39`.
+- ✓ Loss branch `(closePrice − openPremium) / openPremium × 100` ("% above open") — `CcPnlPreview.tsx:42-46`.
+- ✓ e2e fixture uses `closePrice = 1.10` and asserts `52.2% of max` — `e2e/close-cc-early.spec.ts:84-91`.
+- ✓ Unit test negative assertion that `47.8% of max` is not rendered — `src/renderer/src/components/ui/CcPnlPreview.test.tsx:14`.
+- ✓ Renderer-only: formula lives in a renderer component; no IPC/schema involvement.
 
 ## Drift (0)
 
-(none)
+None.
 
-## Unverifiable (0)
+## Unverifiable (2)
 
-(none)
+- ? "Industry-standard tastytrade-popularised framing" / 50%-rule usage — domain claim.
+- ? History of the original `closePrice / openPremium` implementation — history.
+
+## Missing files (0)
+
+None. (Component lives at `components/ui/CcPnlPreview.tsx`; the page names only the component, not a path.)

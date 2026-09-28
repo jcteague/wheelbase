@@ -1,27 +1,28 @@
 ---
 page: docs/spec/architecture/02-adrs/subsume-greeks-into-cockpit.md
-audited_at: 2026-06-27
-findings: 0
+audited_at: 2026-09-28
+findings: 1
 ---
 
 # Audit: subsume-greeks-into-cockpit.md
 
-## Verified (4)
+## Verified (6)
 
-- ✓ `PositionCockpit` ships as a component at `src/renderer/src/components/position-cockpit/PositionCockpit.tsx`.
-- ✓ No `GreeksPanel` standalone component exists — `find` and `grep -rn "GreeksPanel" src/renderer/src` both return nothing, matching "is not shipped".
-- ✓ `RiskSnapshot` surface exists at `src/renderer/src/components/position-cockpit/RiskSnapshot.tsx` (delta gauge claim).
-- ✓ `ContextStrip` surface exists at `src/renderer/src/components/position-cockpit/ContextStrip.tsx` (theta/IV/vega/gamma claim).
+- ✓ No `GreeksPanel` exists — `grep -rn GreeksPanel src/renderer` returns nothing.
+- ✓ `PositionDetailContent` renders `<PositionCockpit>` — `src/renderer/src/pages/PositionDetailContent.tsx:7,50`.
+- ✓ Delta surfaces in `RiskSnapshot` via `DeltaGauge` — `src/renderer/src/components/position-cockpit/RiskSnapshot.tsx:5,36-37`.
+- ✓ Theta / IV / vega / gamma in `ContextStrip` — `ContextStrip.tsx:30-51`.
+- ✓ Notes, closed-position banner and `CloseCspForm` remain below the cockpit — `PositionDetailContent.tsx:64,72-74,79`.
+- ✓ Sources `docs/epics/06-stories/US-34-greeks-display.md` and `../../features/us-34-position-cockpit.md` exist.
 
 ## Drift (0)
 
 None.
 
-## Unverifiable (2)
+## Unverifiable (1)
 
-- ? "delta in the RiskSnapshot gauge, and theta / IV / vega / gamma in the ContextStrip" — component names verified, but the exact greek-to-surface mapping is a rendering detail not mechanically confirmed here.
-- ? "Notes, the closed-position banner, and CloseCspForm remain below the cockpit" — layout/ordering narrative; flag for human review.
+- ? Rationale (verdict-driven layout satisfies the original AC more comprehensively) — narrative; `plans/us-34/plan.md` is historical (dir not present, by design).
 
 ## Missing files (0)
 
-- Note: linked Source paths (`plans/us-34/plan.md`, `docs/epics/06-stories/US-34-greeks-display.md`, `../../features/us-34-position-cockpit.md`) were not in audit scope (src/ + migrations/ verification only).
+None.

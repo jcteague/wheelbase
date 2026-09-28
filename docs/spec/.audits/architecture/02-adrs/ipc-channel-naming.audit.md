@@ -1,27 +1,29 @@
 ---
 page: docs/spec/architecture/02-adrs/ipc-channel-naming.md
-audited_at: 2026-06-27
-findings: 0
+audited_at: 2026-09-28
+findings: 8
 ---
 
-# Audit: ipc-channel-naming.md
+# Audit: docs/spec/architecture/02-adrs/ipc-channel-naming.md
 
-## Verified (5)
+## Verified (6)
 
-- ✓ All listed position channels registered (non-test) in `src/main/ipc/`: `positions:create`, `positions:get`, `positions:list`, `positions:close-csp`, `positions:expire-csp`, `positions:assign-csp`, `positions:open-cc`, `positions:close-cc-early`, `positions:expire-cc`, `positions:roll-csp` (grep of `positions:` registrations matches all ten).
-- ✓ Market-data channels present: `market-data:stock-quotes`, `market-data:set-stock-quote-tickers`, `market-data:market-status`, `market-data:stock-quote` (push), `market-data:stream-error` (push).
-- ✓ Preload camelCase mirrors: `closeCoveredCallEarly`, `expireCc`, `rollCsp`, `setStockQuoteTickers` all in `src/preload/index.ts:25-30`.
-- ✓ Log labels snake-cased with `_unhandled_error` suffix: `positions_close_cc_early_unhandled_error` (`src/main/ipc/positions.ts:100`), `positions_roll_csp_unhandled_error` (`:123`), `positions_expire_cc_unhandled_error` (`:114`).
-- ✓ Pattern `{domain}:{verb}-{noun}` holds across the surface.
+- ✓ Position channels `positions:create`, `:get`, `:list`, `:close-csp`, `:expire-csp`, `:assign-csp`, `:open-cc`, `:close-cc-early`, `:expire-cc`, `:roll-csp` all registered — `src/main/ipc/positions.ts:54-131`.
+- ✓ Market-data channels `market-data:stock-quotes`, `:set-stock-quote-tickers`, `:market-status`, and push events `:stock-quote`, `:stream-error` present in `src/main/ipc/market-data.ts` / `src/main/index.ts`.
+- ✓ Preload methods `closeCoveredCallEarly`, `expireCc`, `rollCsp`, `setStockQuoteTickers` mirror their channels — `src/preload/index.ts:25-31`.
+- ✓ Log labels `positions_close_cc_early_unhandled_error` and `positions_roll_csp_unhandled_error` — `src/main/ipc/positions.ts:108,131`.
+- ✓ Later channels follow the pattern (`positions:roll-cc`, `positions:record-call-away`, `ivr:collect-now`, `screener:save-criteria`, `watchlist:snapshot`, …).
+- ✓ All linked extracts and features exist.
 
 ## Drift (0)
 
-(none — the registry also contains `positions:record-call-away` and `positions:roll-cc`, both of which follow the documented pattern; the ADR's channel list is illustrative, not exhaustive, so these are not drift.)
+None.
 
-## Unverifiable (0)
+## Unverifiable (2)
+
+- ? Log-label convention is not uniform: `market-data:set-stock-quote-tickers` uses `market_data_set_tickers_unhandled_error` (grep of `src/main/ipc/market-data.ts`). A code deviation from the stated convention rather than a false page claim; flag for review.
+- ? Rationale bullets (greppability, abbreviation choice) — narrative.
 
 ## Missing files (0)
 
-- ✓ Feature pages `us-4-close-csp.md`, `us-9-expire-cc.md`, `us-32-live-position-prices.md` all exist.
-
-One-line: Audited ipc-channel-naming.md: 5 verified, 0 drift, 0 unverifiable, 0 missing.
+None.

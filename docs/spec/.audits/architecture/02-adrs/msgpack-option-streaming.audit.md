@@ -1,20 +1,27 @@
 ---
 page: docs/spec/architecture/02-adrs/msgpack-option-streaming.md
-audited_at: 2026-06-27
-findings: 1
+audited_at: 2026-09-28
+findings: 3
 ---
 
 # Audit: msgpack-option-streaming.md
 
-## Verified (0)
+## Verified (3)
 
-(No claim in the page could be confirmed against current src.)
+- ✓ Status "Superseded — never shipped" — no `msgpack` / `decodeMulti` / `@msgpack/msgpack` reference anywhere in `src/`.
+- ✓ `@msgpack/msgpack` `^3.1.3` still declared — `package.json:34`.
+- ✓ No binary decode path: the live stream parses JSON text frames (`src/main/integrations/alpaca-market-data-mappers.ts:400-408`).
 
 ## Drift (1)
 
-- ✗ Page claims option WebSocket frames are decoded with `@msgpack/msgpack` using `decodeMulti()`. No `msgpack`, `decodeMulti`, or `@msgpack/msgpack` reference exists anywhere in `src/` (`grep -rn "msgpack\|decodeMulti" src/` returns nothing). The shipped market-data provider is **Massive**, which uses REST snapshots and an RxJS tick subject for streaming (`src/main/integrations/massive-market-data.ts:256-263`), not an Alpaca MessagePack option socket. The `@msgpack/msgpack` dependency does not appear to be used. Suggested fix: this ADR describes an Alpaca-streaming design that was not shipped; mark it superseded by the Massive provider or remove.
+- ✗ "Current state" (line 23) says in the present tense that the live provider is **Massive** (`src/main/integrations/massive-market-data.ts`) streaming `AM` bars at `wss://delayed.massive.com/stocks`. Massive was retired by US-99: the factory builds `AlpacaMarketDataProvider` (`src/main/integrations/market-data-factory.ts:17-22`), streaming per-symbol `bars` on `wss://stream.data.alpaca.markets/v2/iex` (`alpaca-market-data.ts:56`). The "never shipped / no MessagePack" conclusion still holds. Suggested fix: update the current-state paragraph to Alpaca IEX JSON.
 
 ## Unverifiable (2)
 
-- ? "Alpaca batches multiple packed objects per binary frame" and "naïve `decode()` throws RangeError" — Alpaca-behaviour narrative; not applicable to the shipped Massive provider and not checkable against src.
-- ? "Stock frames stay on JSON; only the option socket uses MessagePack" — no such split exists in code; effectively drift but rooted in the unshipped Alpaca design.
+- ? Why `decodeMulti()` over `decode()` and the `msgpack-lite` alternative — historical rationale for an unshipped design.
+- ? "Alpaca's documentation referenced" `@msgpack/msgpack` — external claim.
+
+## Missing files (2)
+
+- ✗ `src/main/integrations/massive-market-data.ts` (cited as the live provider) does not exist.
+- ✗ Source `plans/us-31/research.md` does not exist (`plans/us-31/` removed; durable source is `docs/spec/.extracts/us-31.md`). `plans/market-data-massive-migration/research.md` exists.

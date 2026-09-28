@@ -1,28 +1,29 @@
 ---
 page: docs/spec/architecture/02-adrs/client-side-pnl-preview.md
-audited_at: 2026-06-27
-findings: 1
+audited_at: 2026-09-28
+findings: 2
 ---
 
-# Audit: client-side-pnl-preview.md
+# Audit: docs/spec/architecture/02-adrs/client-side-pnl-preview.md
 
 ## Verified (6)
 
-- ✓ `CcPnlPreview` component exists and is consumed by the close-CC form: `src/renderer/src/components/ui/CcPnlPreview.tsx:9`, used at `src/renderer/src/components/CloseCcEarlyForm.tsx:8,119`.
-- ✓ `NetCreditDebitPreview` is rendered in both roll forms: `src/renderer/src/components/RollCspForm.tsx:33,220` and `RollCcForm.tsx:48,283`.
-- ✓ `computeGuardrail` exists in `src/renderer/src/components/openCcGuardrail.ts:24`.
-- ✓ `computeNetCreditDebit` exists in `src/renderer/src/lib/rolls.ts` (imported at `RollCspForm.tsx:5`, `RollCcForm.tsx:6`).
-- ✓ Renderer uses `decimal.js` for preview math (e.g. `CcPnlPreview.tsx:24-25`, plus ~10 other renderer files import decimal.js).
-- ✓ The corrected `% of max captured` formula `(openPremium − closePrice) / openPremium × 100` is present in `CcPnlPreview.tsx:33-35`; the `pct-of-max-formula.md` ADR it links to exists.
+- ✓ `CcPnlPreview` lives under `components/ui/` — `src/renderer/src/components/ui/CcPnlPreview.tsx`, computed with `decimal.js` and `ROUND_HALF_UP` (`CcPnlPreview.tsx:23-47`).
+- ✓ `NetCreditDebitPreview` is an inline component inside each roll form — `src/renderer/src/components/RollCspForm.tsx:33`, `src/renderer/src/components/RollCcForm.tsx:48`.
+- ✓ `computeGuardrail` in `src/renderer/src/components/openCcGuardrail.ts:24`.
+- ✓ `computeNetCreditDebit` in `src/renderer/src/lib/rolls.ts:40`.
+- ✓ `computePreview` is a local (non-exported) function in `src/renderer/src/components/CloseCspForm.tsx:42`, driven by `useWatch` (`:88`).
+- ✓ No IPC round-trip for previews — none of these helpers import from `api/` or call `window.api`.
 
-## Drift (1)
+## Drift (2)
 
-- ✗ The ADR describes `computePreview` as one of the extracted pure helpers in `src/renderer/src/lib/` (Consequences bullet: "Pure helper functions (`computeGuardrail`, `computeNetCreditDebit`, `computePreview`) are extracted to `src/renderer/src/lib/`..."). In code, `computePreview` is a **local function inside** `src/renderer/src/components/CloseCspForm.tsx:42`, not extracted to `lib/`. Minor: also `CcPnlPreview` lives under `components/ui/` rather than `components/` and `NetCreditDebitPreview` is an inline function within each roll form rather than a standalone shared component file. Suggested fix: soften the "extracted to lib/" wording for `computePreview` and note the actual locations.
+- ✗ Line 7 says all in-form previews are computed "using `decimal.js`", line 15 says they match the server "byte-for-byte (same `decimal.js` library, same `ROUND_HALF_UP`)", and line 21 lists native `number` math as a _rejected_ alternative. Only `CcPnlPreview` uses `decimal.js`. `computePreview` uses plain `number` arithmetic (`CloseCspForm.tsx:42-49`), `computeNetCreditDebit` does too (`rolls.ts:40-53`), and `computeGuardrail` / `getRollPreview` use `parseFloat` (`openCcGuardrail.ts:10-11,28`; `rolls.ts:15-19`). Suggested fix: scope the decimal.js claim to `CcPnlPreview`, or treat it as a code issue to fix.
+- ✗ Consequences line 26 ("The renderer imports `decimal.js` directly and applies `ROUND_HALF_UP` for parity") is true only for some components (e.g. `CcPnlPreview.tsx`, `src/renderer/src/lib/option-display.ts:3`). The four preview helpers the ADR names, apart from `CcPnlPreview`, do not. Same fix as above.
 
 ## Unverifiable (1)
 
-- ? "math runs on every keystroke via `useWatch`" and "no debounced IPC call" — the absence of a debounce/IPC preview endpoint is consistent with the code (all helpers are pure/renderer-local) but the per-keystroke timing is narrative.
+- ? "Renderer-side helpers are unit-tested with the same numeric fixtures the server tests use" — fixture parity not mechanically checkable.
 
 ## Missing files (0)
 
-- ✓ All four linked feature pages (us-4, us-7, us-8, us-12) and the `pct-of-max-formula.md` ADR exist.
+- (none) — `../../.extracts/us-{4,7,8,12}.md`, the four feature pages, and `./pct-of-max-formula.md` exist.

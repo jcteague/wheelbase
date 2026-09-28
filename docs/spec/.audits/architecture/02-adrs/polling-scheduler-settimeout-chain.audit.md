@@ -1,22 +1,27 @@
 ---
 page: docs/spec/architecture/02-adrs/polling-scheduler-settimeout-chain.md
-audited_at: 2026-06-27
-findings: 0
+audited_at: 2026-09-28
+findings: 3
 ---
 
 # Audit: polling-scheduler-settimeout-chain.md
 
 ## Verified (3)
 
-- ✓ Scheduler uses `setTimeout` (injectable `clock.setTimeout`), not `setInterval` (`src/main/services/polling-scheduler.ts:83,110`). Grep for `setInterval` in the file returns NONE.
-- ✓ Next tick is scheduled after the handler settles, forming a chain: `state.timerId = clock.setTimeout(() => void tick(state), delayMs)` re-armed inside `tick` (`src/main/services/polling-scheduler.ts:110-114`).
-- ✓ `node-cron` and `rxjs` are not used by the scheduler — grep of the file finds neither import; only plain timer primitives.
+- ✓ No `setInterval` in `src/main/services/polling-scheduler.ts`; each job has a single `clock.setTimeout` chain via `scheduleTick` — `polling-scheduler.ts:120-127`.
+- ✓ Handler rejection is caught and logged at WARN — `polling-scheduler.ts:141-148`.
+- ✓ Per-tick cadence re-evaluated against the current market session before scheduling the successor (`reschedule` → `decideNextCadenceMs`) — `polling-scheduler.ts:169-199`.
 
-## Drift (0)
+## Drift (1)
+
+- ✗ Alternatives (line 18): "rxjs `interval()` … the project does not already use rxjs". `rxjs` `^7.8.2` is a dependency (`package.json:51`) and is used by the market-data stream (`Subject`, `defer`, `filter` in `src/main/integrations/alpaca-market-data.ts:69, 519-521`; `Subscription` in `src/main/services/market-data.ts:22`). Suggested fix: drop or reword the "does not use rxjs" reason.
 
 ## Unverifiable (2)
 
-- ? "logged WARN on rejection" — plausible but the specific WARN log path was not grepped here; narrative-adjacent.
-- ? "system sleep cannot accumulate missed ticks" — a behavioral property of one pending timer per job; consistent with the single-`timerId`-per-job design (`src/main/services/polling-scheduler.ts:89`) but not directly testable by grep.
+- ? "System sleep cannot accumulate missed ticks" — runtime behaviour, not mechanically checked.
+- ? `node-cron` rejection rationale — design history.
 
-## Missing files (0)
+## Missing files (2)
+
+- ✗ Source `plans/us-35/research.md` — `plans/us-35/` no longer exists.
+- ✗ Source `plans/us-35/green-phase-results.md` — same.

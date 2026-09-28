@@ -1,57 +1,36 @@
 ---
 page: docs/spec/features/us-13-roll-down-and-out.md
-audited_at: 2026-06-27
-findings: 3
+audited_at: 2026-09-28
+findings: 2
 ---
 
 # Audit: docs/spec/features/us-13-roll-down-and-out.md
 
-The page declares itself **plan-only / not yet implemented** (line 5). The audit
-confirms that claim still holds at the engine level: the US-13-specific changes
-to `rollCsp` and the new `rollType.ts` module are genuinely absent.
+Page is explicitly **plan-only**. Planned-but-absent items are expected, not drift; only claims
+about the _current_ (US-12 baseline) code are audited as drift.
 
-## Verified (5)
+## Verified (10)
 
-- ✓ "plan-only" claim holds for `rollCsp`: `RollCspInput` (`src/main/core/lifecycle.ts:353-359`)
-  has **no** `currentStrike` / `newStrike` fields; `rollCsp` (`:365-382`) still uses the
-  US-12 `newExpiration <= currentExpiration` rule with code `must_be_after_current` (`:373`)
-  and has **no** `no_change` check and **no** positive-strike check — i.e. none of the
-  US-13 §"What is planned" engine work has landed. (NB: the `no_change` / `currentStrike` /
-  `newStrike` symbols that exist at lines 386-412 belong to `rollCc` / US-14, not `rollCsp`.)
-- ✓ Planned new module `src/renderer/src/lib/rollType.ts` is ABSENT (Glob). The
-  4-arg `getRollTypeLabel` it describes does not exist; the live `getRollTypeLabel`
-  in `src/renderer/src/lib/rolls.ts:25` is still the US-12 2-arg version
-  (`getRollTypeLabel(currentStrike, newStrike)`), exactly as the page implies.
-- ✓ Planned `rollCount` field is ABSENT from `get-position.ts` and `schemas.ts`
-  (grep for `rollCount` in both returns nothing) — consistent with "not yet implemented".
-- ✓ Planned E2E spec `e2e/roll-csp-down-and-out.spec.ts` is ABSENT (Glob), as the
-  page's "none verified against the working tree" caveat states.
-- ✓ All `./` and `../`-relative spec links resolve: `./us-12-roll-csp.md`,
-  `../domain/wheel-lifecycle.md`, `../contracts/ipc-handlers.md`,
-  `../domain/cost-basis.md`, `../schema/tables.md` all exist.
+- ✓ Status claim: `RollCspInput` has no `currentStrike`/`newStrike` (`src/main/core/lifecycle.ts:353-359`)
+- ✓ Status claim: `src/renderer/src/lib/rollType.ts` does not exist
+- ✓ Status claim: no `rollCount` on `positions:get` — the only `rollCount` in `src/` is the renderer leg-history summary (`src/renderer/src/lib/rollGroups.ts:43`)
+- ✓ `must_not_be_earlier` does not exist in `src/`; US-12's `must_be_after_current` is still the live code (`lifecycle.ts:372`)
+- ✓ `plans/us-13/` has been removed, as stated
+- ✓ Planned e2e `e2e/roll-csp-down-and-out.spec.ts` does not exist (consistent with plan-only)
+- ✓ `RollCspPayloadSchema` still declares `newStrike: z.number().positive().optional()` (`src/main/schemas.ts:333,348`)
+- ✓ Service defaults `newStrike` to the active leg's strike when omitted (`src/main/services/roll-csp-position.ts:34`)
+- ✓ Current debit copy is still US-12's "This roll costs more to close than the new premium provides" (`src/renderer/src/components/RollCspForm.tsx:81`)
+- ✓ Linked `mockups/us-12-13-roll-csp-form.mdx`, `./us-12-roll-csp.md`, `docs/spec/.extracts/us-12.md`, `../domain/wheel-lifecycle.md`, `../domain/cost-basis.md`, `../contracts/ipc-handlers.md`, `../schema/tables.md` exist
 
-## Drift (1)
+## Drift (2)
 
-- ✗ Page line 5 claims `plans/us-13/` "contains `plan.md`, `research.md`,
-  `data-model.md`, `contracts/positions-roll-csp.md`, and `quickstart.md`". The
-  directory **no longer exists** (`ls plans/us-13/` → "no such directory"). The
-  plan artifacts the page points readers to are gone. Suggested fix: update the
-  Status note to reflect that the plan dir has been removed (or restore it), and
-  drop the "Re-run `/update-spec us-13`" instruction since there is no plan dir to
-  re-extract.
+- ✗ Lines 27, 49, 70 name the existing US-12 service variable `formattedNewStrike`; the code calls it `newStrikeFormatted` (`src/main/services/roll-csp-position.ts:34`). Suggested fix: rename in page.
+- ✗ Lines 43, 55, 71 describe the current US-12 roll-type helper as an "inline 3-arg helper used by `RollCspSheet`". The live helper is a shared **2-arg** `getRollTypeLabel(currentStrike, newStrike)` in `src/renderer/src/lib/rolls.ts:25`, already consumed by `RollCspForm.tsx:107` and `RollCspSuccess.tsx:33`. Suggested fix: describe the baseline as the 2-arg `rolls.ts` helper (and consider extending it there rather than a new `rollType.ts`).
 
-## Unverifiable (1)
+## Unverifiable (3)
 
-- ? The page's "Open questions" about overlap with US-12's already-shipped
-  active-leg fix and error-code reconciliation are design-intent notes, not
-  mechanically verifiable claims about current code.
+- ? All "What is planned" / AC / planned-source-file content — design intent for unimplemented work.
+- ? Open questions referencing `plan.md`, `research.md`, `data-model.md`, `contracts/positions-roll-csp.md` — the plan dir is deleted, so those citations cannot be checked.
+- ? Partial overlap: `calculateRollBasis` already adds a strike delta for different-strike CSP rolls (`src/main/core/costbasis.ts:259-262`) — whether that was US-13 work is not determinable from code; the page's "absent" status is about the lifecycle/`rollType`/`rollCount` pieces and remains accurate.
 
-## Missing files (1)
-
-- ✗ `plans/us-13/` and all artifacts cited in the Status note and "Planned source
-  files" section do not exist on disk. (This is expected for genuinely
-  unimplemented work, but the page asserts the plan dir is present — see Drift.)
-
-Summary: page does NOT over-claim implementation — the "plan-only" status is
-accurate at the code level. The only real drift is the stale claim that the
-`plans/us-13/` directory still exists.
+## Missing files (0)

@@ -1,28 +1,27 @@
 ---
 page: docs/spec/architecture/02-adrs/spread-no-bid-renderer-predicates.md
-audited_at: 2026-06-27
-findings: 0
+audited_at: 2026-09-28
+findings: 1
 ---
 
 # Audit: spread-no-bid-renderer-predicates.md
 
 ## Verified (5)
 
-- ✓ Both helpers live in `src/renderer/src/lib/option-display.ts` — `isWideSpread` at `:18`, `hasNoBid` at `:28`.
-- ✓ `isWideSpread` returns true when `mid > 0 && (ask − bid)/mid > 0.10` — `option-display.ts:18-23` (`spread.dividedBy(m).gt(WIDE_SPREAD_THRESHOLD)`).
-- ✓ When `mid <= 0` the predicate returns `false` — `option-display.ts:20` (`if (m.lte(0)) return false`). (ADR says `mid === 0` returns false; code uses `<= 0`, a strict superset that includes the 0 case.)
-- ✓ `hasNoBid` returns true when `Decimal(bid).isZero()` — `option-display.ts:29` (`new Decimal(bid).isZero()`), so `'0'`/`'0.00'`/`'0.0000'` all match.
-- ✓ `WIDE_SPREAD_THRESHOLD = 0.1` exported alongside — `option-display.ts:5`.
+- ✓ `src/renderer/src/lib/option-display.ts` exists.
+- ✓ `isWideSpread({ bid, ask, mid })` returns `false` for `mid <= 0`, else `(ask − bid) / mid > WIDE_SPREAD_THRESHOLD` — `option-display.ts:18-23`.
+- ✓ `hasNoBid({ bid })` returns `new Decimal(bid).isZero()` — `option-display.ts:28-29`.
+- ✓ `WIDE_SPREAD_THRESHOLD = 0.1` exported — `option-display.ts:5`.
+- ✓ `OptMidCell` consumes both predicates — `src/renderer/src/components/OptMidCell.tsx:4,50-51`; feature page `../../features/us-33-option-mid-pnl.md` exists.
 
 ## Drift (0)
 
-None. (Minor wording: ADR says "When `mid === 0` ... returns false"; code guards `mid <= 0`. Behavior for `mid === 0` matches; the `< 0` extension is benign.)
+None.
 
-## Unverifiable (2)
+## Unverifiable (1)
 
-- ? "lets `OptMidCell` render the right state purely from inputs" — `OptMidCell.tsx` exists (`src/renderer/src/components/OptMidCell.tsx`); that it consumes these predicates was not line-verified.
-- ? "10% threshold is fixed by the story (not configurable)" — story-requirement rationale, narrative.
+- ? Rationale (fixed 10% threshold per story; server-side flags rejected) — narrative; `plans/us-33/*` sources are historical (dir not present, by design).
 
 ## Missing files (0)
 
-- `plans/us-33/...` and feature page — references.
+None.

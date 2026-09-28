@@ -1,35 +1,36 @@
 ---
 page: docs/spec/features/us-47-49-broker-ac-hardening.md
-audited_at: 2026-06-27
-findings: 0
+audited_at: 2026-09-28
+findings: 2
 ---
 
-# Audit: docs/spec/features/us-47-49-broker-ac-hardening.md
+# Audit: us-47-49-broker-ac-hardening.md
 
-## Verified (18)
+## Verified (14)
 
-- ✓ `src/main/integrations/broker-provider.ts` exists; `BrokerError` has readonly `deeplink?: string` field + 3-arg constructor `(code, message, deeplink?)` at lines 11-16.
-- ✓ `src/main/integrations/alpaca-broker.ts` exists with all cited members: `toMoney()` (line 83), `requireCredentials()` (111), `wrapError()` (121), `getAccountInfo()` (153), `getActivities()` (169), `getMarketStatus()` (196).
-- ✓ AC-1: `getAccountInfo` normalizes `buyingPower`/`portfolioValue`/`cash` via `toMoney(...)` (alpaca-broker.ts:158-160).
-- ✓ AC-2/AC-3: `requireCredentials()` throws with deeplink `'settings/credentials/alpaca'` (alpaca-broker.ts:116).
-- ✓ `getActivities()` and `getMarketStatus()` both call `this.requireCredentials()` as first line (alpaca-broker.ts:170, 197).
-- ✓ AC-4: paper + `AK`-key on auth error → `BrokerError('environment_mismatch', 'Environment mismatch — these are LIVE keys, not paper keys')` (wrapError, lines 125-131).
-- ✓ AC-5: paper + PK key does not match the `AK` branch nor the live branch, so it falls through to `throw new BrokerError('auth_failed', ...)` (line 138) — matches claim.
-- ✓ AC-3: `handleIpcCall` in `src/main/ipc/utils.ts` has a dedicated `BrokerError` branch (line 29) that spreads `deeplink` onto the `{ ok: false }` envelope when present (line 35); envelope type includes `code?` and `deeplink?` (line 14).
-- ✓ `src/main/services/polling-scheduler.ts` `reschedule()`/park-wake: computes `wakeDelayMs = nextOpenMs - clock.now()` (line 125); if `> 0` logs INFO `job {name} parked until next market open at {nextOpen}` and `scheduleTick(state, wakeDelayMs)` (lines 126-131); else logs WARN `nextOpen was unusable for {name}; scheduling fallback re-check...` and `scheduleTick(state, marketOpenMs)` (lines 134-137). Matches AC-1, AC-6, and architecture-decisions narrative.
-- ✓ `e2e/polling-scheduler.spec.ts` exists and contains US-49 park-wake scenarios (parked-job tests around lines 90-108, plus system-wake test at 208).
-- ✓ All spec links resolve: `../architecture/02-adrs/deeplink-in-ipc-error-envelope.md`, `../architecture/02-adrs/park-wake-reuses-scheduletick.md`, `../contracts/alpaca-integration.md`, `../contracts/ipc-handlers.md`, `./us-46-polling-scheduler.md`.
+- ✓ `BrokerError` has an optional `deeplink?: string` constructor param stored as a readonly field — `src/main/integrations/broker-provider.ts:9-16`.
+- ✓ `requireCredentials()` throws `BrokerError('auth_failed', 'Alpaca credentials not configured', 'settings/credentials/alpaca')` — `src/main/integrations/alpaca-broker.ts:84-92`.
+- ✓ `getAccountInfo()` and `getActivities()` call `this.requireCredentials()` first — `alpaca-broker.ts:127,143`.
+- ✓ Paper env with an `AK` key maps to `environment_mismatch` with the message `'Environment mismatch — these are LIVE keys, not paper keys'` — `alpaca-broker.ts:98-102`.
+- ✓ Live env with a `P…` key maps to `environment_mismatch` (the opposite direction) — `alpaca-broker.ts:104-108`.
+- ✓ A paper key on 401 falls through to `auth_failed` — `alpaca-broker.ts:110`.
+- ✓ `toMoney(value) = new Decimal(value).toFixed(4)` — `alpaca-broker.ts:56-58`, applied to `buyingPower`, `portfolioValue` and `cash` — `alpaca-broker.ts:131-133`.
+- ✓ Environment routing uses `paper: this.config.environment === 'paper'` — `alpaca-broker.ts:78`.
+- ✓ `handleIpcCall` has a dedicated `BrokerError` branch that spreads `deeplink` onto the `{ ok: false }` envelope — `src/main/ipc/utils.ts:34-42`; the envelope type is `{ ok: false; code?; deeplink?; errors }` — `utils.ts:11`.
+- ✓ US-49 park-wake: a `null` delay computes `wakeDelayMs = nextOpenMs - clock.now()` and calls `scheduleTick` (INFO `job {name} parked until next market open at {nextOpen}`); a non-positive delay falls back to `marketOpenMs` with WARN `nextOpen was unusable for {name}; scheduling fallback re-check at marketOpenMs` — `src/main/services/polling-scheduler.ts:152-168,193-195`.
+- ✓ The wake timer reuses `state.timerId`, which `stop()` clears — `polling-scheduler.ts:120-127,253-258`.
+- ✓ `e2e/polling-scheduler.spec.ts` contains US-49 AC-1, AC-4 and AC-5 scenarios — lines 260, 281, 299.
+- ✓ Linked ADRs `deeplink-in-ipc-error-envelope.md` and `park-wake-reuses-scheduletick.md`, `contracts/alpaca-integration.md`, `contracts/ipc-handlers.md` and `us-46-polling-scheduler.md` all exist.
+- ✓ All five listed source files exist.
 
-## Drift (0)
+## Drift (2)
 
-None.
+- ✗ **`getMarketStatus()` is no longer a broker method.** The page (What was built, Source files) says `AlpacaBrokerProvider.getMarketStatus()` calls `requireCredentials()`. `alpaca-broker.ts` has no `getMarketStatus`. It lives on the market-data adapter (`src/main/integrations/alpaca-market-data.ts:223`), and `alpaca-broker.test.ts:325` asserts `provider.getMarketStatus` is undefined. AC-2's "every broker method" now covers only `getAccountInfo` and `getActivities`. Suggested fix: drop `getMarketStatus` from the broker description, or frame it as history.
+- ✗ **The park-wake block has moved.** The page says the `else` branch inline in `reschedule()` computes `new Date(status.nextOpen).getTime() - clock.now()`. That logic is now a separate `parkUntilNextOpen(state, status, marketOpenMs)` helper (`polling-scheduler.ts:152`), called from `reschedule()` (`:195`). It also guards a missing `nextOpen` via `NaN` (`:153`). The behaviour matches. Low severity.
 
-## Unverifiable (3)
+## Unverifiable (2)
 
-- ? AC-5 wording: page asserts the paper+PK path returns `auth_failed`; code path confirms this by fall-through, but the live+PK branch uses `startsWith('P')` (not `'PK'`). Behavior matches the AC, but the "starts with `PK`" detail is narrative; flagged for awareness only.
-- ? AC-7 (system wake does not burst) is described as "structurally guaranteed" — a design assertion, not mechanically grepable.
-- ? "reuses the same `state.timerId` slot so `stop()` cancels at no extra cost" is verified structurally (no `parkTimerId` field exists; `scheduleTick` writes `state.timerId`), but the no-extra-cost claim is narrative.
+- ? "The `stop()` method and the `PollingScheduler` public interface are unchanged" is a historical claim about the US-49 diff. The interface has since gained a `runNow` `trigger` option (`polling-scheduler.ts:37`).
+- ? The US-49 AC-7 "no burst on system wake" guarantee is structural and argued, not statically checkable.
 
 ## Missing files (0)
-
-None.

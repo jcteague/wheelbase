@@ -1,27 +1,26 @@
 ---
 page: docs/spec/architecture/02-adrs/alert-evaluation-job-cadence.md
-audited_at: 2026-06-27
-findings: 0
+audited_at: 2026-09-28
+findings: 2
 ---
 
-# Audit: alert-evaluation-job-cadence.md
+# Audit: docs/spec/architecture/02-adrs/alert-evaluation-job-cadence.md
 
 ## Verified (5)
 
-- ✓ Single job `ALERT_EVAL_JOB_NAME = 'alert-evaluation'` — `src/main/services/evaluate-alerts.ts:21`; matches test fixture `index.test.ts:108`.
-- ✓ Registered on the shared `scheduler` singleton in `src/main/index.ts:219-228`.
-- ✓ Cadence `{ kind: 'interval', marketOpenMs: 60_000, extendedHoursMs: 300_000, marketClosedMs: null }` — `index.ts:222-226`.
-- ✓ Handler resolves in-scope `db` and calls `evaluateAlerts`: `handler: async () => evaluateAlerts({ db })` — `index.ts:227`.
-- ✓ Not broker-gated: handler has no `activeBrokerEnv`/`brokerFactory` guard, unlike `detect-assignments` (`index.ts:191-201`).
+- ✓ `ALERT_EVAL_JOB_NAME = 'alert-evaluation'` — `src/main/services/evaluate-alerts.ts:28`.
+- ✓ Registered on the shared `scheduler` in `src/main/index.ts:289-306`.
+- ✓ Cadence `{ kind: 'interval', marketOpenMs: 60_000, extendedHoursMs: 300_000, marketClosedMs: null }` — `src/main/index.ts:291-296`.
+- ✓ Handler uses in-scope `db` and calls `evaluateAlerts` — `src/main/index.ts:297-305` (it also reads `getAlertDefaults(db)` and passes `marketDataFactory.create()`, added by later stories).
+- ✓ Not broker-gated — comment at `src/main/index.ts:286-288` and no broker check around the registration.
 
 ## Drift (0)
 
-None.
+## Unverifiable (1)
 
-## Unverifiable (0)
+- ? "Alerts must reflect intraday state on the polling cadence" (alternative rejected) — rationale.
 
-None.
+## Missing files (2)
 
-## Missing files (0)
-
-None.
+- ✗ Source `plans/us-50/plan.md` does not exist (no `plans/us-50/` directory).
+- ✗ Source `plans/us-50/research.md` does not exist.

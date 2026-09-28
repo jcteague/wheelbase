@@ -1,27 +1,26 @@
 ---
 page: docs/spec/architecture/02-adrs/deeplink-in-ipc-error-envelope.md
-audited_at: 2026-06-27
+audited_at: 2026-09-28
 findings: 0
 ---
 
-# Audit: deeplink-in-ipc-error-envelope.md
+# Audit: docs/spec/architecture/02-adrs/deeplink-in-ipc-error-envelope.md
 
-## Verified (5)
+## Verified (6)
 
-- ✓ `handleIpcCall` has a dedicated `BrokerError` branch split from `MarketDataError`: `src/main/ipc/utils.ts:29` (BrokerError) and `:39` (MarketDataError).
-- ✓ The branch spreads deeplink as a top-level field: `...(err.deeplink ? { deeplink: err.deeplink } : {})` at `src/main/ipc/utils.ts:35`, alongside the `errors[]` entry with `field: '__root__'`.
-- ✓ The `{ ok: false }` return-type union includes `deeplink?: string`: `src/main/ipc/utils.ts:14`.
-- ✓ `BrokerError` carries an optional `deeplink`: `src/main/integrations/broker-provider.ts:11,13,16`.
-- ✓ `MarketDataError` branch does NOT add deeplink — its return at `src/main/ipc/utils.ts:46` has no deeplink spread, matching the "only BrokerError carries a deeplink" claim.
+- ✓ `handleIpcCall` has a dedicated `BrokerError` branch, separate from `MarketDataError`, spreading `...(err.deeplink ? { deeplink: err.deeplink } : {})` — `src/main/ipc/utils.ts:34-43`.
+- ✓ Envelope `errors: [{ field: '__root__', code: err.code, message }]` alongside `deeplink` — `src/main/ipc/utils.ts:38-42`.
+- ✓ `{ ok: false }` type includes `deeplink?: string` — `IpcErrorEnvelope` at `src/main/ipc/utils.ts:11`.
+- ✓ `BrokerError` carries an optional `deeplink` — `src/main/integrations/broker-provider.ts:11-16`.
+- ✓ Example value `'settings/credentials/alpaca'` is used on auth failure — `src/main/integrations/alpaca-broker.ts:89`.
+- ✓ `MarketDataError` has no deeplink and its branch omits one — `src/main/ipc/utils.ts:44-51`; no `deeplink` in `market-data-provider.ts`.
 
 ## Drift (0)
 
-None.
-
 ## Unverifiable (1)
 
-- ? "code (already top-level on some envelopes)" symmetry rationale — `code` is indeed top-level (`utils.ts:14,25`), but the broader design-justification framing is narrative.
+- ? "Top-level placement keeps it symmetric with `code`" and the race rationale for rejecting a separate IPC event — design narrative (`code?` is on the envelope type at `utils.ts:11`).
 
 ## Missing files (0)
 
-- ✓ Feature page `../../features/us-47-49-broker-ac-hardening.md` and ADR `ipc-envelope-contract.md` exist.
+- (none) — `../../.extracts/us-47-49.md`, `../../features/us-47-49-broker-ac-hardening.md`, `./ipc-envelope-contract.md` exist.

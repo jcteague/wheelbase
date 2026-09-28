@@ -1,27 +1,28 @@
 ---
 page: docs/spec/architecture/02-adrs/wouter-hash-routing-query-prefill.md
-audited_at: 2026-06-27
-findings: 1
+audited_at: 2026-09-28
+findings: 2
 ---
 
 # Audit: wouter-hash-routing-query-prefill.md
 
-## Verified (5)
+## Verified (6)
 
-- ✓ Renderer uses wouter with `useHashLocation` — `src/renderer/src/App.tsx:3` imports it from `wouter/use-hash-location`; `App.tsx:95` `<Router hook={useHashLocation}>`.
-- ✓ `NewWheelPage` reads the query string via `useSearch()` — `src/renderer/src/pages/NewWheelPage.tsx:1,14`.
-- ✓ Derives `defaultTicker` from `?ticker=` — `NewWheelPage.tsx:15` (`new URLSearchParams(search).get('ticker')`).
-- ✓ Forwards `defaultTicker` to the form — `NewWheelPage.tsx:20` (`<NewWheelForm navigate={navigate} defaultTicker={defaultTicker} />`).
-- ✓ No global state library (Zustand/Redux) introduced for this — `grep` finds no zustand/redux usage for nav context.
+- ✓ wouter with `useHashLocation` — `src/renderer/src/App.tsx:3,118`.
+- ✓ `NewWheelPage` reads `?ticker=` via `useSearch()` — `src/renderer/src/pages/NewWheelPage.tsx:2,16,25`.
+- ✓ Passes `defaultTicker` to `NewWheelForm`, which feeds `useForm` defaults — `NewWheelPage.tsx:42`; `NewWheelForm.tsx:60,67,91`.
+- ✓ `ExpirationSheet` navigates via `navigate(\`/new?ticker=${ticker}\`)`—`src/renderer/src/components/ExpirationSheet.tsx:56`.
+- ✓ `CallAwaySuccess` sets `window.location.hash = \`#/new?ticker=${ticker}\``—`src/renderer/src/components/CallAwaySuccess.tsx:127`.
+- ✓ Links `../../.extracts/us-5.md` and `../../features/us-5-expire-csp.md` exist.
 
 ## Drift (1)
 
-- ✗ The page states "The post-CSP-expiration success state navigates with `navigate('/new?ticker=' + ticker)`." The actual call sites diverge: `src/renderer/src/components/ExpirationSheet.tsx:55` uses `navigate(\`/new?ticker=${ticker}\`)` (template literal), and `src/renderer/src/components/CallAwaySuccess.tsx:127` sets `window.location.hash = \`#/new?ticker=${ticker}\``(direct hash mutation, not`navigate()`). Suggested fix: note the two mechanisms (wouter `navigate`in ExpirationSheet, direct`location.hash`in CallAwaySuccess) rather than a single`navigate()` form.
+- ✗ Page says "No global state library (Zustand, Redux) is introduced" (line 9). `zustand` is a declared dependency — `package.json:57` (`"zustand": "^5.0.11"`) — although `grep "from 'zustand'"` finds no import in `src/`, so it is not used for navigation context (or anything). The scoped claim ("for this kind of one-shot navigation context") holds; the dependency is unused. Suggested fix: note the unused dependency, or remove it from `package.json`.
 
 ## Unverifiable (1)
 
-- ? "browser-history routing breaks in packaged Electron builds (file://)" — environment/runtime narrative; flag for human review (it is also a CLAUDE.md architecture rule).
+- ? Rationale (router state fragile in hash routing; Context API rejected) — narrative.
 
 ## Missing files (0)
 
-None within src/ scope.
+None.

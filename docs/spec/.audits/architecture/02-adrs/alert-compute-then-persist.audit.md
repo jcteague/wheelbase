@@ -1,26 +1,24 @@
 ---
 page: docs/spec/architecture/02-adrs/alert-compute-then-persist.md
-audited_at: 2026-06-27
-findings: 0
+audited_at: 2026-09-28
+findings: 1
 ---
 
-# Audit: alert-compute-then-persist.md
+# Audit: docs/spec/architecture/02-adrs/alert-compute-then-persist.md
 
-## Verified (4)
+## Verified (6)
 
-- ✓ `evaluateAlerts` exists — `src/main/services/evaluate-alerts.ts:74`.
-- ✓ Compute phase calls `evaluatePosition` per position inside a per-position `try/catch` so one bad position cannot abort the run — `evaluate-alerts.ts:92-102`.
-- ✓ Persist phase is a single `db.transaction(...)` that upserts matches then resolves cleared alerts — `evaluate-alerts.ts:113-121`.
-- ✓ No DB writes before compute completes: `db.transaction` runs after the position loop accumulates matches — `evaluate-alerts.ts:107-121`.
+- ✓ `evaluateAlerts` loads evaluable positions (`EVALUABLE_QUERY`) — `src/main/services/evaluate-alerts.ts:54,196`.
+- ✓ Compute phase calls `evaluatePosition` per position inside a per-position `try/catch` — `evaluate-alerts.ts:240-265`.
+- ✓ Matches + skips accumulated before any write — `evaluate-alerts.ts:234-262`.
+- ✓ Persist phase is a single `db.transaction(...)` upserting matches then resolving everything not kept open — `evaluate-alerts.ts:274-284` (`upsertOpenAlert` :277, `resolveAlertsNotIn` :282).
+- ✓ Skipped rules are held open — `keepOpenKeys = new Set(skippedKeys)` at `evaluate-alerts.ts:275`.
+- ✓ Mirrors `detect-assignments` single-transaction pattern — `src/main/services/detect-assignments.ts:122`.
 
 ## Drift (0)
 
-None.
+## Unverifiable (0)
 
-## Unverifiable (1)
+## Missing files (1)
 
-- ? "Mirrors the `detect-assignments` pattern (build a map → single db.transaction)" — comparison/rationale, not audited against detect-assignments here.
-
-## Missing files (0)
-
-None.
+- ✗ Source `plans/us-50/research.md` does not exist (no `plans/us-50/` directory). `../../features/us-50-alert-engine.md` and `../../domain/alerts.md` exist.

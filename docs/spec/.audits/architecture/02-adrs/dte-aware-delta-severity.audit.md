@@ -1,28 +1,26 @@
 ---
 page: docs/spec/architecture/02-adrs/dte-aware-delta-severity.md
-audited_at: 2026-06-27
-findings: 0
+audited_at: 2026-09-28
+findings: 2
 ---
 
-# Audit: dte-aware-delta-severity.md
+# Audit: docs/spec/architecture/02-adrs/dte-aware-delta-severity.md
 
-## Verified (6)
+## Verified (5)
 
-- ✓ `deltaSeverity(absDelta, instrument, dte)` exists with that signature: `src/renderer/src/lib/verdict.ts:67-71`.
-- ✓ Thresholds shift down by 0.05 when `dte ≤ 7`: `tightDte: 7` and `tightDeltaShift: 0.05` (`verdict.ts:40,53`), applied as `shift = dte <= tightDte ? tightDeltaShift : 0` (`verdict.ts:72`).
-- ✓ CSP thresholds: warning 0.30 (`cspWarningDelta: 0.3`), danger 0.45 (`cspDangerDelta: 0.45`): `verdict.ts:45-46`.
-- ✓ CC thresholds: warning 0.35 (`ccWarningDelta: 0.35`), danger 0.50 (`ccDangerDelta: 0.5`): `verdict.ts:49-50`.
-- ✓ The worked example "CSP |delta|=0.41 at dte=5 → danger" is asserted in test: `verdict.spec.ts:134` (`expect(deltaSeverity(0.41, 'PUT', 5)).toBe('danger')`).
-- ✓ `DeltaGauge` label flips to `DELTA · TIGHT`: `DeltaGauge.tsx:44`, driven by `tight` (dte ≤ 7) per `RiskSnapshot.tsx:35`.
+- ✓ `deltaSeverity(absDelta, instrument, dte)` — `src/renderer/src/lib/verdict.ts:72-85`.
+- ✓ Shift of 0.05 when `dte <= 7` — `tightDte: 7`, `tightDeltaShift: 0.05` (`verdict.ts:45,58`), applied at `verdict.ts:77`.
+- ✓ Base thresholds CSP warning ≥ 0.30 / danger > 0.45; CC warning ≥ 0.35 / danger > 0.50 — `verdict.ts:50-55` with `>` danger and `>=` warning comparisons at `verdict.ts:82-83`.
+- ✓ Worked example holds: CSP `|delta| = 0.41`, `dte = 5` → danger threshold 0.40 → `danger`.
+- ✓ `DeltaGauge` label becomes `DELTA · TIGHT` when `tight` — `src/renderer/src/components/position-cockpit/DeltaGauge.tsx:44`, with `tight = dte <= MANAGEMENT_RULES.tightDte` computed in `RiskSnapshot.tsx:35`.
 
 ## Drift (0)
 
-None. (Minor: the ADR phrases the label as `DELTA` → `DELTA · TIGHT`; code matches exactly.)
-
 ## Unverifiable (1)
 
-- ? The gamma-risk justification for choosing a discrete 0.05 / 7-day shift is narrative.
+- ? Gamma rationale and choice of 0.05 — domain reasoning.
 
-## Missing files (0)
+## Missing files (2)
 
-- ✓ Feature page `../../features/us-34-position-cockpit.md` exists. (`plans/us-34/...` outside scope.)
+- ✗ Source `plans/us-34/data-model.md` does not exist (no `plans/us-34/` directory).
+- ✗ Source `plans/us-34/plan.md` does not exist. `../../features/us-34-position-cockpit.md` exists.

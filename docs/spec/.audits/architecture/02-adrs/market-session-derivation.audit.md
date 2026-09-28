@@ -1,21 +1,30 @@
 ---
 page: docs/spec/architecture/02-adrs/market-session-derivation.md
-audited_at: 2026-06-27
-findings: 2
+audited_at: 2026-09-28
+findings: 4
 ---
 
 # Audit: market-session-derivation.md
 
-## Verified (3)
+## Verified (6)
 
-- ✓ `MarketStatus.session` is one of `regular | pre | post | closed` — type at `src/main/integrations/broker-provider.ts:47`; `deriveSession` return type `src/main/integrations/alpaca-broker.ts:51`.
-- ✓ Session is derived in the provider rather than pushed to callers — `deriveSession(clock.is_open, clock.timestamp)` is called inside `getMarketStatus` — `src/main/integrations/alpaca-broker.ts:204`.
-- ✓ Alpaca `/v2/clock` returns `is_open`, `next_open`, `next_close` and these map onto `MarketStatus` — `src/main/integrations/alpaca-broker.ts:199-203`.
+- ✓ `session` enum `regular | pre | post | closed` — `src/renderer/src/api/market-data.ts:14-19`; `MarketStatus` in `src/main/integrations/market-data-provider.ts`.
+- ✓ `getMarketStatus()` is on `MarketDataProvider` — `market-data-provider.ts:134`; implemented by `AlpacaMarketDataProvider` — `src/main/integrations/alpaca-market-data.ts:223`.
+- ✓ `deriveSession` / `parseOffsetMinutes` in `src/main/integrations/alpaca-market-data-mappers.ts:257, 265`, fed `raw.is_open` + `raw.timestamp` (`:297`); clock URL `/v2/clock` on the trading host (`:281`).
+- ✓ Hardcoded ET constants `PRE_MARKET_START_HOUR = 4`, `REGULAR_MARKET_START_HOUR = 9.5`, `REGULAR_MARKET_END_HOUR = 16`, `POST_MARKET_END_HOUR = 20` — `alpaca-market-data-mappers.ts:252-255`; no calendar input.
+- ✓ Served on `market-data:market-status` — `src/main/ipc/market-data.ts:88-90`.
+- ✓ No `broker:market-status` channel — `src/main/ipc/broker.test.ts:111-120`.
 
-## Drift (1)
+## Drift (3)
 
-- ✗ Page (line 7) claims session is derived "by comparing the clock timestamp against **the calendar's** open/close times plus the known extended-hours windows". The implementation does NOT consult a calendar. `deriveSession(isOpen, timestamp)` takes only the boolean + timestamp and compares ET hours against hardcoded constants (`PRE_MARKET_START_HOUR`, `REGULAR_MARKET_START_HOUR`, `REGULAR_MARKET_END_HOUR`, `POST_MARKET_END_HOUR`) — `src/main/integrations/alpaca-broker.ts:51-61`. There is no calendar fetch/parameter. Suggested fix: drop "the calendar's open/close times" and describe the `is_open` + timestamp + hardcoded ET-window derivation.
+- ✗ "Current state" (line 15) places `deriveSession` in `src/main/integrations/alpaca-broker.ts`; it is in `alpaca-market-data-mappers.ts:265` (the page's own line 9 says so). `alpaca-broker.ts` has no `deriveSession`.
+- ✗ Line 17: "The renderer reads market status through `window.api.broker.marketStatus` … the handler lives in `src/main/ipc/broker.ts`." The bridge is `window.api.marketData.marketStatus` → `market-data:market-status` (`src/preload/index.ts:56`; `src/renderer/src/api/market-data.ts:59-60`); the handler is `src/main/ipc/market-data.ts:88`. `window.api.broker` exposes only `account` / `activities` (`preload/index.ts:36-38`).
+- ✗ "Why" (line 21) says the design keeps session "on the `BrokerProvider` interface (not `MarketDataProvider`) … quotes/snapshots come from Massive". Contradicts current code (on `MarketDataProvider`, `market-data-provider.ts:134`) and the page's own Decision; Massive is retired. Present-tense, not framed as history.
 
 ## Unverifiable (1)
 
-- ? Exact extended-hours windows "pre-market 4:00–9:30 AM ET, post-market 4:00–8:00 PM ET" — the constants exist (`alpaca-broker.ts:58-59`) but their numeric definitions were not read; the post-market "4:00 PM" start vs the page's "4:00 PM" is plausible but the page text reads "4:00–8:00 PM" which appears to be a typo for 16:00 start. Flag for human review.
+- ? Holiday/half-day trade-off note — design commentary.
+
+## Missing files (1)
+
+- ✗ Source cites `plans/us-31/research.md`; `plans/us-31/` no longer exists (the durable source is `docs/spec/.extracts/us-31.md`). `plans/market-data-massive-migration/research.md` and `../../features/us-31-market-data-provider-adapter.md` exist.

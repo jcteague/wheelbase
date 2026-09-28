@@ -1,26 +1,32 @@
 ---
 page: docs/spec/architecture/02-adrs/market-data-provider-interface.md
-audited_at: 2026-06-27
-findings: 3
+audited_at: 2026-09-28
+findings: 12
 ---
 
-# Audit: market-data-provider-interface.md
+# Audit: docs/spec/architecture/02-adrs/market-data-provider-interface.md
 
-## Verified (2)
+## Verified (9)
 
-- ✓ A provider-agnostic `MarketDataProvider` type/interface exists (`src/main/integrations/market-data-provider.ts:84`) and services consume it (handlers take `getProvider: () => MarketDataProvider`).
-- ✓ No service imports a concrete provider class — grep of `src/main/services/` for `AlpacaMarketDataProvider`/`MassiveMarketDataProvider` is empty; the factory hands back a `MarketDataProvider`.
+- ✓ `MarketDataProvider` declared as a `type` — `src/main/integrations/market-data-provider.ts:130`.
+- ✓ `getStockQuotes`, `getOptionSnapshot`, `getOptionChainSnapshot(filter)`, `supportsStreaming`, `connect`, `disconnect`, `stream(...): Observable<StreamEvent<StockQuote | OptionSnapshot>>` — `market-data-provider.ts:131-149`.
+- ✓ `OptionChainFilter` carries `underlying`, `expirationFrom/To`, `type`, `strikeFrom/To`, `limit`, `cursor` — `market-data-provider.ts:64-73`.
+- ✓ `getMarketStatus` and `getMarketCalendar` on `MarketDataProvider` (`:134,137`); `market-data:market-status` served (`src/main/ipc/market-data.ts:90`); trading-calendar store calls `getMarketCalendar` directly (`src/main/services/trading-calendar-store.ts:203`).
+- ✓ `BrokerProvider` is exactly `getAccountInfo` + `getActivities` — `src/main/integrations/broker-provider.ts:46-49`; no `broker:market-status` channel registered.
+- ✓ `marketDataFactory` exposes `configure` (resets cache; default `loadAlpacaCredentialsFromEnv`), cached `create()`, `recreate(): void`, `disconnect()` — `src/main/integrations/market-data-factory.ts:11-41`.
+- ✓ `create()` returns `FakeMarketDataProvider` when `FAKE_MARKET_DATA === 'true'`, else `new AlpacaMarketDataProvider({ loadCredentials })`, never throws — `market-data-factory.ts:17-22`.
+- ✓ Massive-era config/loader/throw no longer exist — grep for `massive` (case-insensitive) in non-test `src/` is empty. Vendor history (Alpaca → Massive → Alpaca) framed correctly.
+- ✓ Cited files exist: `alpaca-market-data.ts`, `alpaca-market-data-mappers.ts`, `alpaca-credentials.ts`, `plans/us-99/contracts/alpaca-market-data.md`, `plans/market-data-massive-migration/research.md`, feature pages us-31 and us-99.
 
-## Drift (3)
+## Drift (1)
 
-- ✗ Page claims the factory function is `createMarketDataProvider(config)`. No such function exists in `src/` (grep for `function createMarketDataProvider`/`createMarketDataProvider =` is empty). The actual factory is an object `marketDataFactory` with `create()/configure()/recreate()/disconnect()` in `src/main/integrations/market-data-factory.ts`. The only `createMarketDataProvider` mentions are `@deprecated` doc comments in `alpaca.ts`. Suggested fix: rename the documented API to `marketDataFactory.create()`.
-- ✗ Page claims the concrete implementation is `AlpacaMarketDataProvider`. No such class exists (grep empty). The concrete provider is `MassiveMarketDataProvider` (`src/main/integrations/massive-market-data.ts`); the in-memory fake is `FakeMarketDataProvider`. Market data has moved off Alpaca. Suggested fix: rewrite the ADR around Massive (Alpaca remains the broker/order layer only).
-- ✗ Page claims the factory "switches on `config.provider` (`'alpaca'`…); unknown providers throw." Actual `buildProvider()` switches on `process.env.FAKE_MARKET_DATA === 'true'` then on presence of `MASSIVE_API_KEY`, and throws "Market data provider not configured" when no key is set (`market-data-factory.ts:13-24`). There is no `config.provider` union and no `'alpaca'` branch. The `environment: 'paper'|'live'` / `paper` config-option rationale also no longer applies to the market-data factory.
+- ✗ "The interface surface" list (lines 9-15) omits `getOptionDailyBars(input: { symbols } & DailyBarRange): Promise<Map<string, DailyBar[]>>` and `getStockDailyBars(input: { symbol } & DailyBarRange): Promise<DailyBar[]>` added by US-121 (`src/main/integrations/market-data-provider.ts:140,142`), and lists `getMarketStatus`/`getMarketCalendar` only in prose. Suggested fix: add the daily-bar and calendar methods to the surface list (and `us-121` to the generated-from sources).
 
-## Unverifiable (0)
+## Unverifiable (1)
 
-## Missing files (0)
+- ? "swapped twice with no change to the IPC layer, hooks, or UI" — historical claim.
 
-- ✓ `../../features/us-31-market-data-provider-adapter.md` exists.
+## Missing files (2)
 
-One-line: Audited market-data-provider-interface.md: 2 verified, 3 drift, 0 unverifiable, 0 missing.
+- ✗ `plans/us-31/data-model.md` — `plans/us-31/` no longer exists (plan dirs retired).
+- ✗ `plans/us-31/plan.md` Area 5 — same.

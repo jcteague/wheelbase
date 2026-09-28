@@ -1,32 +1,29 @@
 ---
 page: docs/spec/features/us-43-barchart-ivr-scraper.md
-audited_at: 2026-06-27
-findings: 1
+audited_at: 2026-09-28
+findings: 7
 ---
 
-# Audit: us-43-barchart-ivr-scraper.md
+# Audit: docs/spec/features/us-43-barchart-ivr-scraper.md
 
-## Verified (13)
+The Barchart IVR scraper has been **retired**. US-121 now computes IV rank from the app's own IV30 history. This page has **no superseded/retired banner** and describes the module in the present tense ("US-43 implements `fetchIVR(ticker)` … in `src/main/integrations/barchart-ivr-scraper.ts`"), so its code claims are drift.
 
-- ✓ Both listed source files exist (`barchart-ivr-scraper.ts`, `barchart-ivr-scraper.test.ts`).
-- ✓ `export async function fetchIVR(ticker: string): Promise<IVRResult>` — `src/main/integrations/barchart-ivr-scraper.ts:356`.
-- ✓ `IVRResult` discriminated union (six variants begin at line 78) — `barchart-ivr-scraper.ts:78`.
-- ✓ `IVRDataSchema` Zod object with `source: z.literal('barchart')` — `barchart-ivr-scraper.ts:22-28`.
-- ✓ `getSession(): Promise<SessionResult>`, module-level `SessionCache` type + `sessionCache` cache var — `barchart-ivr-scraper.ts:213,91,133`.
-- ✓ `fetchApi(url, session, retryCount)`, `createRateLimiter()` factory + module singleton `const rateLimiter` — `barchart-ivr-scraper.ts:267,115,132`.
-- ✓ `parseIVRResponse(ticker, body)` exported — `barchart-ivr-scraper.ts:309`.
-- ✓ Endpoint path `proxies/core-api/v1/options/get` and field list `baseSymbol,impliedVolatilityRank1y,impliedVolatilityPercentile1y,historicVolatility20d` — `barchart-ivr-scraper.ts:11,18`.
-- ✓ XSRF harvesting (`XSRF-TOKEN` cookie → `X-XSRF-TOKEN` header) — `barchart-ivr-scraper.ts:204,209,276`.
-- ✓ `parse_error` keyed on missing/non-numeric `impliedVolatilityRank1y` — `barchart-ivr-scraper.ts:319`.
-- ✓ 46 tests in the test file (page claims "46 tests") — `grep -c` = 46.
-- ✓ "Contracts touched: None" is consistent — no IPC/migration references found for this module.
+## Verified (0)
 
-## Drift (1)
+None of the page's code claims hold against current `src/`.
 
-- ✗ Page endpoint block (line 43) shows `GET https://www.barchart.com/proxies/...` while the prose "Authentication" section (line 60) and Summary reference "barchart.com" generically; the session URL is actually `https://www.barchart.com/stocks/quotes/SPY/options` (`barchart-ivr-scraper.ts:10`). This is cosmetic — the host (`www.barchart.com`) is correct in code; only a human-review nit on consistent host spelling. Low severity.
+## Drift (3)
 
-## Unverifiable (1)
+- ✗ **The whole page presents the scraper as live code**: `fetchIVR`, `IVRResult`, `IVRDataSchema`, `getSession`, `SessionCache`, `fetchApi`, `createRateLimiter`, `parseIVRResponse`, and the Barchart endpoint and field mapping. `grep -rnI "fetchIVR\|IVRResult\|IVRDataSchema" src/` returns nothing. The module was deleted in commit `ba49a5c`. A regression test now asserts that no main-process source imports it: `src/main/index.test.ts:576-584` ("no main-process source imports the retired Barchart scraper or fake"). Suggested fix: add a "Retired — superseded by [US-121](./us-121-iv-rank-from-own-iv-history.md)" banner and frame the body as history.
+- ✗ **"Related stories … US-44 stores `fetchIVR` results to the database on a cron schedule."** No code path calls `fetchIVR`. See the US-44 audit.
+- ✗ **"46 tests … in `barchart-ivr-scraper.test.ts`"** and "All 7 Gherkin scenarios are covered". The test file no longer exists.
 
-- ? Retry/backoff math (`Math.random() * 1000 * 2^attempt`) and the "≥1000ms between API calls" behavior are present in code structure (`fetchApi` retryCount, `createRateLimiter`) but the exact timing is not asserted by static grep; covered by the module's own tests.
+## Unverifiable (2)
 
-## Missing files (0)
+- ? The Market Chameleon investigation, the XOR cipher and the Cloudflare/Playwright findings are historical narrative.
+- ? The rationale for rejecting Barchart OnDemand is narrative.
+
+## Missing files (2)
+
+- ✗ `src/main/integrations/barchart-ivr-scraper.ts`: does not exist (deleted in `ba49a5c`).
+- ✗ `src/main/integrations/barchart-ivr-scraper.test.ts`: does not exist.

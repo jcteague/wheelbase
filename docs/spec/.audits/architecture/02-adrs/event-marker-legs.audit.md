@@ -1,28 +1,29 @@
 ---
 page: docs/spec/architecture/02-adrs/event-marker-legs.md
-audited_at: 2026-06-27
-findings: 1
+audited_at: 2026-09-28
+findings: 9
 ---
 
-# Audit: event-marker-legs.md
+# Audit: docs/spec/architecture/02-adrs/event-marker-legs.md
 
 ## Verified (6)
 
-- ✓ EXPIRE leg: `action='EXPIRE'`, `leg_role='EXPIRE'`, `premium_per_contract='0.0000'`, `fill_price=NULL`, fill_date = recorded/expiration date: `src/main/services/expire-csp-position.ts:62` (`VALUES (?, ?, 'EXPIRE', 'EXPIRE', 'PUT', ...)`) with `'0.0000'` and `null` bound (lines ~69-70).
-- ✓ ASSIGN leg: `action='ASSIGN'`, `leg_role='ASSIGN'`, `instrument_type='STOCK'`, `premium_per_contract='0.0000'`, `fill_price=NULL`: `src/main/services/assign-csp-position.ts:106` (`VALUES (?, ?, 'ASSIGN', 'ASSIGN', 'STOCK', ?, ?, ?, '0.0000', ?, ...)`), fill_price `null` bound at line 113; also the returned object at `:153-159`.
-- ✓ `activeLeg` can be `null` (return type and mapper): `getPosition` returns `activeLeg: LegRecord | null` via `mapActiveLeg` (`src/main/services/get-position.ts:88,237,245`).
-- ✓ CC-expire writes an EXPIRE leg following the same pattern: `expire-cc-position.ts` references `'EXPIRE'` (confirmed in service grep).
-- ✓ `snapshot_at` offset handling exists via `makeSnapshotAt`: `src/main/services/expire-csp-position.ts:5,55` (helper from `../dates`).
-- ✓ `LegRole` already contains `EXPIRE`/`ASSIGN` (no new CHECK needed claim consistent with values in `src/main/core/types.ts`).
+- ✓ CSP EXPIRE leg: `leg_role='EXPIRE'`, `action='EXPIRE'`, premium `'0.0000'`, `fill_price NULL`, `fill_date` = expiration (or override) — `src/main/services/expire-csp-position.ts:37,62,69-70`.
+- ✓ ASSIGN leg: `leg_role='ASSIGN'`, `action='ASSIGN'`, `instrument_type='STOCK'`, premium `'0.0000'`, `fill_price NULL`, `fill_date` = assignment date — `src/main/services/assign-csp-position.ts:106,113-114`.
+- ✓ `activeLeg` is `null` outside `CSP_OPEN`/`CC_OPEN` (so `null` for `HOLDING_SHARES`) — `src/main/services/active-leg-sql.ts:6-14`, used by `src/main/services/get-position.ts:203,242`.
+- ✓ `LegAction` enum is `SELL | BUY | EXPIRE | ASSIGN | EXERCISE` — `src/main/core/types.ts:3,31`.
+- ✓ `LegRole` includes `EXPIRE` and `ASSIGN` — `src/main/core/types.ts:19-30`.
+- ✓ CC-expire flow writes only the leg (no new `cost_basis_snapshots` insert) — `src/main/services/expire-cc-position.ts:45-67`.
 
-## Drift (1)
+## Drift (2)
 
-- ✗ The ADR Consequences state "The `LegAction` enum extends to `SELL | BUY | EXPIRE | ASSIGN`." Current enum is `['SELL', 'BUY', 'EXPIRE', 'ASSIGN', 'EXERCISE']` (`src/main/core/types.ts:3`) — an `EXERCISE` value was added later and is not mentioned. Suggested fix: update the ADR enum list to include `EXERCISE` (or note it was added by a later story).
+- ✗ Line 9 says EXPIRE legs "(CSP or CC expiring worthless)" use `leg_role = 'EXPIRE'`. The CC path writes `leg_role = 'CC_EXPIRED'` with `action = 'EXPIRE'` — `src/main/services/expire-cc-position.ts:51,84-85`; `CC_EXPIRED` is a distinct `LegRole` value (`src/main/core/types.ts:24`). Suggested fix: note that the CC event marker uses role `CC_EXPIRED`.
+- ✗ Line 33: "The expiration snapshot uses `snapshot_at = now + 1ms`". The code uses `makeSnapshotAt(recordedDate)` — the event date plus the current wall-clock time — `src/main/services/expire-csp-position.ts:55`, `src/main/dates.ts:24-27`. No `+ 1ms` offset exists. Suggested fix: describe the `makeSnapshotAt` rule.
 
 ## Unverifiable (1)
 
-- ? "`snapshot_at = now + 1ms`" precise offset — `makeSnapshotAt` is used but the exact +1ms increment lives in `src/main/dates.ts`, not re-verified line-by-line here.
+- ? "the renderer already guards `activeLeg && ...` before rendering the open-leg card" — not traced; narrative.
 
 ## Missing files (0)
 
-- ✓ Feature pages us-5, us-6, us-9 and ADR `append-only-cost-basis-snapshots.md` exist.
+None.

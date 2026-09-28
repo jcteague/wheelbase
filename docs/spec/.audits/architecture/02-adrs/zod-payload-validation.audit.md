@@ -1,37 +1,29 @@
 ---
 page: docs/spec/architecture/02-adrs/zod-payload-validation.md
-audited_at: 2026-06-27
-findings: 0
+audited_at: 2026-09-28
+findings: 2
 ---
 
 # Audit: zod-payload-validation.md
 
-All schemas in `src/main/schemas.ts`.
+## Verified (7)
 
-## Verified (12)
+- ✓ Schemas live in `src/main/schemas.ts` with inferred types exported alongside — e.g. `CloseCspPayloadSchema` / `CloseCspPayload` at `schemas.ts:129-135`.
+- ✓ All named schemas exist: `CloseCspPayloadSchema` (129), `ExpireCspPayloadSchema` (186), `AssignCspPayloadSchema` (209), `OpenCcPayloadSchema` (233), `ExpireCcPayloadSchema` (280), `CloseCcPayloadSchema` (304), `RollCspPayloadSchema` (348), `GetStockQuotesPayloadSchema` (389), `SetStockQuoteTickersPayloadSchema` (394).
+- ✓ Zod failures map to `errors[]` with `field = issue.path[0]` and `code = issue.code` — `src/main/ipc/utils.ts:53-61`.
+- ✓ `PositionIdSchema = z.string().uuid()` shared across position schemas — `schemas.ts:40`.
+- ✓ `closePricePerContract: z.number().positive()` — `schemas.ts:131`; ISO date regex `/^\d{4}-\d{2}-\d{2}$/` — `schemas.ts:42`.
+- ✓ `RollCspPayloadSchema.newExpiration` uses the regex — via `RollPayloadBaseSchema`, `schemas.ts:328-332,348`.
+- ✓ Renderer forms use `zodResolver` — e.g. `src/renderer/src/components/NewWheelForm.tsx:1,87`; linked ADR `./react-hook-form-zod.md` and all extract/feature links exist.
 
-- ✓ `CloseCspPayloadSchema` — `schemas.ts:103`
-- ✓ `ExpireCspPayloadSchema` — `schemas.ts:160`
-- ✓ `AssignCspPayloadSchema` — `schemas.ts:183`
-- ✓ `OpenCcPayloadSchema` — `schemas.ts:207`
-- ✓ `CloseCcPayloadSchema` — `schemas.ts:278`
-- ✓ `ExpireCcPayloadSchema` — `schemas.ts:254`
-- ✓ `RollCspPayloadSchema` — `schemas.ts:322` (extends `RollPayloadBaseSchema`)
-- ✓ `GetStockQuotesPayloadSchema` — `schemas.ts:363`
-- ✓ `SetStockQuoteTickersPayloadSchema` — `schemas.ts:368`
-- ✓ Shared `PositionIdSchema = z.string().uuid()` reused across handlers — `schemas.ts:16`, referenced at `:104` and elsewhere. (Page describes it as exported; in code it is module-local `const`, not `export const` — see note below.)
-- ✓ Money field validated with `z.number().positive()` — `schemas.ts:105,280` (`closePricePerContract: z.number().positive()`), matching the example.
-- ✓ `RollCspPayloadSchema.newExpiration` uses an ISO-date regex — `schemas.ts:306` (`z.string().regex(IsoDateRegex, IsoDateMessage)`), matching the "re-tightened to `/^\d{4}-\d{2}-\d{2}$/`" claim (regex centralized as `IsoDateRegex`).
+## Drift (1)
 
-## Drift (0)
+- ✗ Page says "Every IPC handler that takes a payload validates it with a Zod schema … before invoking the service" (line 7). `positions:create` passes a TS-typed `CreatePositionPayload` straight to `createPosition` with no `.parse` (`src/main/ipc/positions.ts:56-60`), and `CreatePositionPayloadSchema` (`schemas.ts:45`) is never used for parsing (grep finds only its definition and `z.infer`). `positions:get` also reads `payload.positionId` unvalidated and builds its envelope by hand outside `handleIpcCall` (`positions.ts:62-71`). Suggested fix: parse both payloads, or scope the claim.
 
-None material. Minor wording note: the page says `PositionIdSchema` is "shared" and reused (true), but it is declared `const PositionIdSchema` (module-local), not exported. Not a drift in behavior.
+## Unverifiable (1)
 
-## Unverifiable (2)
-
-- ? "Zod failures are mapped into the IPC errors[] array using the issue's path as field and code as code" — handler/`handleIpcCall` error-mapping behavior; not verified in this schema-focused audit (would require auditing `src/main/ipc/utils.ts`).
-- ? "The renderer adapter coerces strings to numbers before calling window.api.\*" — renderer-adapter narrative; flag for human review.
+- ? "The renderer adapter coerces strings to numbers before calling `window.api.*`" and the post-review tightening history — not exhaustively audited.
 
 ## Missing files (0)
 
-None within src/ scope.
+None.

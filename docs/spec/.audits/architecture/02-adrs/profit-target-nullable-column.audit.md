@@ -1,22 +1,30 @@
 ---
 page: docs/spec/architecture/02-adrs/profit-target-nullable-column.md
-audited_at: 2026-06-27
-findings: 1
+audited_at: 2026-09-28
+findings: 2
 ---
 
 # Audit: profit-target-nullable-column.md
 
-## Verified (4)
+## Verified (7)
 
-- ✓ `positions.profit_target_percent INTEGER` added (nullable) via `migrations/005_add_profit_target_percent.sql` — `ALTER TABLE positions ADD COLUMN profit_target_percent INTEGER`.
-- ✓ `DEFAULT_PROFIT_TARGET_PERCENT = 50` hard-coded in `src/main/core/profit-target.ts:4`.
-- ✓ `resolveProfitTarget(override: number | null): number` exists, returns override when non-null via explicit `=== null` check (so `0` is a real override) (`src/main/core/profit-target.ts:6-7`).
-- ✓ Helper lives in `src/main/core/profit-target.ts` as a pure function (no DB/broker imports).
+- ✓ `positions.profit_target_percent INTEGER` nullable via `migrations/005_add_profit_target_percent.sql:1-2`.
+- ✓ `resolveProfitTarget(override: number | null, defaultPercent: number = DEFAULT_PROFIT_TARGET_PERCENT)` with explicit `override === null` check — `src/main/core/profit-target.ts:6-11`.
+- ✓ `DEFAULT_PROFIT_TARGET_PERCENT = 50` — `profit-target.ts:4`.
+- ✓ Saved global default key `alert_default_profit_target_percent` in `app_settings`, via `getAlertDefaults` / `saveAlertDefaults` — `src/main/services/alert-defaults.ts:15, 28, 37`.
+- ✓ `app_settings` created in `migrations/006_add_credential_settings.sql:13`.
+- ✓ Callers thread the default: alert engine `src/main/core/alerts.ts:308`, list badge `src/renderer/src/components/PositionCard.tsx:44`, detail overrides form `src/renderer/src/components/PositionAlertOverridesForm.tsx:32`.
+- ✓ "Superseded by" section links `configurable-alert-thresholds.md` and `us-57-58-configurable-alert-thresholds.md`, both present — supersession is recorded, not drift.
 
-## Drift (1)
+## Drift (0)
 
-- ✗ Decision states "No `app_settings` table is introduced." An `app_settings` table DOES now exist (`migrations/006_add_credential_settings.sql:13`, `CREATE TABLE app_settings`), introduced later for credential/settings storage (US-37 era). The claim was true for US-33 in isolation but reads as a false absolute against current code. Suggested fix: scope the statement to "no `app_settings` row/key is used for the profit target" or note that `app_settings` was later added for unrelated settings.
+None.
 
-## Unverifiable (0)
+## Unverifiable (1)
 
-## Missing files (0)
+- ? US-33 AC rationale and deferral of `app_settings` at US-33 time — history.
+
+## Missing files (2)
+
+- ✗ Source `plans/us-33/research.md` — `plans/us-33/` no longer exists.
+- ✗ Source `plans/us-33/data-model.md` — same.
