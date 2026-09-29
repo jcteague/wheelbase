@@ -123,6 +123,34 @@ Every task follows the **Red → Green → Refactor** cycle:
 
 All tests must pass before a task is considered done.
 
+### Property-Based Tests (core engines)
+
+The pure engines in `src/main/core/` also carry **property tests** with `fast-check`, in
+`<engine>.property.test.ts` beside the example-based `<engine>.test.ts`. A property states an
+invariant that must hold for _every_ generated input — an algebraic identity (basis + premium =
+strike), a round-trip (`buildOccSymbol` ∘ `parseOccSymbol`), a bound (put–call parity, rank in
+0..100), or a guard (every phase but the required one is rejected) — rather than one worked
+example.
+
+- Shared generators live in `src/main/core/test-fixtures/arbitraries.ts` (`positiveMoney`,
+  `contracts`, `isoDay`, `orderedDays`, `wheelPhase`, `ticker`). Money is generated as 4-dp
+  strings so properties can assert exact `Decimal` equality instead of float tolerances.
+- Compare against an **independent formula** (the documented cost-basis formula, `date-fns`, a
+  sibling engine function), never by re-running the function under test.
+- Put constraints in the generator, not in `fc.pre` — a `pre` that discards more than a few
+  percent of draws wastes the run budget and hides how narrow the test really is.
+- Engines return values **rounded to 4 dp**, so an "iff" over a rounded output is usually
+  wrong: a tiny spread over a long cycle annualises to `0.0000`, and a mid of `0.0001` on a
+  large premium rounds to `100.0000`. Assert the implication that survives rounding, or a
+  property rounding cannot break (contract scale-invariance, order independence).
+- The default 100 runs draw a fresh seed each run. Before trusting a float tolerance or a
+  new property, stress it: `fc.configureGlobal({ numRuns: 500, seed })` in a scratch setup
+  file across a handful of seeds, with `endOnFailure: true` so a failure prints instead of
+  shrinking for minutes.
+- When a new pure engine lands, add a property file for its invariants alongside its examples.
+- A failure prints `Counterexample:` plus a seed; replay it with
+  `fc.assert(fc.property(...), { seed, path })` while fixing, then drop the seed.
+
 ### Post-Change Checklist
 
 After every code change, run in order:

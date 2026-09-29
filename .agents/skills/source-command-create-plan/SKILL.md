@@ -153,6 +153,7 @@ Read these before starting implementation — they contain the decisions, data m
 
 - [Specific test case: what scenario, what assertion, what file it goes in]
 - [Each bullet is one distinct test case or test group]
+- [Core-engine areas only: the property to assert — round-trip, inverse, oracle, invariant/bound, order independence, or guard — and its file `src/main/core/<engine>.property.test.ts`; or "no property — <reason>"]
 
 **Green — implementation:**
 
@@ -177,6 +178,7 @@ Read these before starting implementation — they contain the decisions, data m
 - Every acceptance criterion from the user story must be covered by at least one area
 - Do not describe TDD phases abstractly — write what the tests check and what the code does
 - **If a mockup file was found in step 2**, every frontend area's Green section must reference the mockup: name the specific screens, component shapes, interaction patterns, and annotations that apply. Do not describe generic UI — describe the UI shown in the mockup. Include: component names derived from what the mockup shows (e.g. `ExpirationSheet`, not just "a modal"), the sheet/overlay pattern if used, the exact fields visible on each screen, post-success navigation and shortcuts, and error state visual treatments (color, tone).
+- **Core-engine areas name their properties.** For any area whose Green creates or changes a pure function in `src/main/core/`, the Red section names at least one property from the catalog (round-trip, inverse, oracle, invariant/bound, order independence, guard) and the `<engine>.property.test.ts` file it goes in, or states "no property — <reason>". A property is a rule over the whole input domain, not a worked example; see CLAUDE.md § Property-Based Tests.
 - **The last implementation area must always be "E2e Tests".** Unit/integration test areas are implementation-driven — Red bullets cover fine-grained code paths and edge cases. The E2e area is AC-driven — each Red bullet maps to exactly one AC from the user story, and the test name must mirror the AC language. Do not lump multiple ACs into a single e2e test.
 
 #### AC Audit (required before Phase 2 is done)

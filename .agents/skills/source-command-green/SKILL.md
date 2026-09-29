@@ -146,6 +146,7 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
    - Run tests every 2–5 minutes of coding
    - Let failing tests tell you exactly what to build next
    - If a test passes too easily, the test may be insufficient — flag it
+   - If a property test fails, classify the shrunk counterexample before changing anything: the property is wrong (an "iff" over a 4-dp rounded value is the usual case), the spec is ambiguous, or the code is wrong. Only the last is fixed in the implementation; a wrong property is fixed in the test and noted in `green-phase-results.md`
 
 3. **Functional Style**
    - Prefer pure functions that take input and return output

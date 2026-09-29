@@ -161,6 +161,8 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
 
     **Test Utilities**
     - Extract shared test data factories to a shared test helper file
+    - Shared `fast-check` arbitraries belong in `src/main/core/test-fixtures/arbitraries.ts` — extend it rather than duplicating a money or date generator inside a property file
+    - When a refactor extracts a pure calculation out of a service into `src/main/core/`, add `<engine>.property.test.ts` for the invariant that extraction exposed (an oracle against the pre-refactor behaviour is the strongest); see CLAUDE.md § Property-Based Tests
     - Reduce setup duplication with shared `beforeEach` helpers or Vitest fixtures
     - Ensure all `vi.mock()` mocks are reset between tests with `vi.clearAllMocks()` or `vi.restoreAllMocks()`
 

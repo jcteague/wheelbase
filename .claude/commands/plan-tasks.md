@@ -33,7 +33,7 @@ Derive the story directory from the plan path (e.g., `plans/us-3/plan.md` → `p
 Scan the plan's implementation steps. Group them into logical functional areas — each becomes one section in the task list. Common areas for this project:
 
 - Types / enums module
-- Core engine function (lifecycle, costbasis)
+- Core engine function (lifecycle, costbasis) — its Red task carries property cases as well as examples
 - Database migration
 - Service layer
 - IPC handler
@@ -86,6 +86,7 @@ Create `{story-dir}/tasks.md` with the following structure:
 
 - [ ] **[Red]** Write failing tests — `{test-file-path}`
   - Test cases: {specific cases from plan}
+  - Property cases (core engines only): {invariant from plan} — `{engine}.property.test.ts`; or "no property — {reason}"
   - Run `pnpm test {test-file}` — all new tests must fail
 - [ ] **[Green]** Implement — `{impl-file-path}` _(depends on: {Area Name 1} Red ✓)_
   - {key function signatures and logic from plan}
@@ -150,6 +151,7 @@ Create `{story-dir}/tasks.md` with the following structure:
 ## Completion Checklist
 
 - [ ] All Red tasks complete (tests written and failing for right reason)
+- [ ] Core-engine areas have property tests, or a stated "no property" reason
 - [ ] All Green tasks complete (all tests passing)
 - [ ] All Refactor tasks complete (lint + typecheck clean)
 - [ ] E2E tests cover every AC

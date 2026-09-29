@@ -50,6 +50,8 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
 
 **E2e tests are AC-driven** — there is exactly one `it()` per AC bullet from the user story. E2e test names must mirror the AC language directly so it is immediately clear which AC is covered. Do not lump multiple ACs into a single e2e test. When writing e2e tests, list every AC from the story and write a test for each one before considering the red phase done.
 
+**Property tests are invariant-driven** — for a pure engine in `src/main/core/`, a property states a rule that must hold for _every_ generated input (a round-trip, an inverse, an oracle, a bound, a phase guard) and lets `fast-check` hunt for the counterexample. They live in `<engine>.property.test.ts` beside the example file and complement the worked examples; they never replace them.
+
 ---
 
 ### Phase 2: Write Failing Tests
@@ -75,6 +77,10 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
    - Pass plain typed objects and primitives; never connect to the database
    - Verify exact numeric results using `decimal.js` — compare with `.equals()` or `.toFixed(4)`
    - Test every valid lifecycle phase transition and every illegal transition that must raise
+   - **Write property tests where the engine has an algebraic shape.** Before settling for examples only, check the property catalog: round-trip (`parse(build(x)) == x`), inverse, oracle against an independent formula or a sibling engine function, idempotence, invariant or bound, order independence, and guard (every phase but the required one is rejected). If one applies, add `<engine>.property.test.ts` using `fast-check` and the shared arbitraries in `src/main/core/test-fixtures/arbitraries.ts` — extend that module rather than hand-rolling a money or date generator
+   - A property must be falsifiable by a wrong implementation: compare against an independent formula, never by re-running the function under test; put constraints in the generator, not in `fc.pre`; engines round to 4 dp, so assert the implication that survives rounding rather than an "iff"
+   - If no property applies, say so in `red-phase-results.md` ("no property — <reason>"). "No crash" alone does not justify a property file
+   - Full rules and the stress procedure: CLAUDE.md § Property-Based Tests
 
 7. **Add Test Documentation**
    - Link test to user story: `# [US-301] Calculate effective cost basis`
@@ -179,6 +185,7 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
 - ✅ Zero test failures caused by bugs in the tests themselves
 - ✅ Test names clearly describe expected behaviour
 - ✅ Core engine tests have zero database or broker dependencies
+- ✅ Pure-engine changes carry property tests for their invariants, or `red-phase-results.md` states why none applies
 - ✅ Test output documented in `plans/<feature-dir>/red-phase-results.md`
 - ✅ Ready to proceed to GREEN phase
 
@@ -227,6 +234,12 @@ export class PhaseTransitionError extends Error {}
 - [x] CC premium further reduces cost basis
 - [x] Roll credit reduces cost basis; roll debit increases it
 - [x] Illegal phase transition throws PhaseTransitionError
+
+### Property Tests (src/main/core/\*.property.test.ts)
+
+- [x] `costbasis.property.test.ts` — basis + premiums recovers the strike (inverse); call-away P&L equals strike gain plus every premium (oracle)
+- [x] `lifecycle.property.test.ts` — every phase but CSP_OPEN is rejected by closeCsp (guard)
+- No property for `<engine>` — <reason, e.g. "rule lookup with no algebraic shape; examples cover every rule">
 
 ### IPC Handler Tests (src/main/ipc/)
 
