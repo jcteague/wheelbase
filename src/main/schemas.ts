@@ -419,7 +419,7 @@ export interface CloseCcPositionResult {
     status: 'ACTIVE'
     closedDate: null
   }
-  leg: LegRecord
+  leg: LegRecord & { fillPrice: string }
   ccLegPnl: string
 }
 
@@ -437,8 +437,8 @@ const RollPayloadBaseSchema = z.object({
 })
 
 interface RollResultBase {
-  rollFromLeg: LegRecord
-  rollToLeg: LegRecord
+  rollFromLeg: LegRecord & { legRole: 'ROLL_FROM'; action: 'BUY' }
+  rollToLeg: LegRecord & { legRole: 'ROLL_TO'; action: 'SELL' }
   rollChainId: string
   costBasisSnapshot: CostBasisSnapshotRecord
 }

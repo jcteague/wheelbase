@@ -4,6 +4,7 @@ import { vi } from 'vitest'
 import type { RollCcResponse } from '../api/positions'
 import { useRollCc } from '../hooks/useRollCc'
 import { RollCcSheet } from './RollCcSheet'
+import { legRecord, snapshotRecord } from '../test-fixtures/position-records'
 
 vi.mock('../hooks/useRollCc')
 vi.mock('@/components/ui/date-picker', () => ({
@@ -48,7 +49,7 @@ const DEFAULT_PROPS = {
 
 const SUCCESS_RESPONSE: RollCcResponse = {
   position: { id: 'pos-cc-1', ticker: 'NVDA', phase: 'CC_OPEN', status: 'ACTIVE' },
-  rollFromLeg: {
+  rollFromLeg: legRecord({
     id: 'leg-from-1',
     legRole: 'ROLL_FROM',
     action: 'BUY',
@@ -56,11 +57,10 @@ const SUCCESS_RESPONSE: RollCcResponse = {
     strike: '190.0000',
     expiration: '2026-04-18',
     contracts: 1,
-    premium_per_contract: '1.2000',
     premiumPerContract: '1.2000',
     fillDate: '2026-04-13'
-  },
-  rollToLeg: {
+  }),
+  rollToLeg: legRecord({
     id: 'leg-to-1',
     legRole: 'ROLL_TO',
     action: 'SELL',
@@ -68,12 +68,11 @@ const SUCCESS_RESPONSE: RollCcResponse = {
     strike: '195.0000',
     expiration: '2026-05-16',
     contracts: 1,
-    premium_per_contract: '2.8000',
     premiumPerContract: '2.8000',
     fillDate: '2026-04-13'
-  },
+  }),
   rollChainId: 'chain-uuid-abcd',
-  costBasisSnapshot: {
+  costBasisSnapshot: snapshotRecord({
     id: 'snap-1',
     positionId: 'pos-cc-1',
     basisPerShare: '174.9000',
@@ -81,7 +80,7 @@ const SUCCESS_RESPONSE: RollCcResponse = {
     finalPnl: null,
     snapshotAt: '2026-04-13T00:00:00.000Z',
     createdAt: '2026-04-13T00:00:00.000Z'
-  }
+  })
 }
 
 beforeEach(() => {

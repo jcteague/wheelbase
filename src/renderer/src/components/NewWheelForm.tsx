@@ -22,8 +22,8 @@ const API_TO_FORM_FIELD: Record<string, keyof NewWheelFormValues> = {
   strike: 'strike',
   expiration: 'expiration',
   contracts: 'contracts',
-  premium_per_contract: 'premiumPerContract',
-  fill_date: 'fillDate'
+  premiumPerContract: 'premiumPerContract',
+  fillDate: 'fillDate'
 }
 
 const EMPTY_DEFAULTS: NewWheelFormValues = {
@@ -149,8 +149,8 @@ export function NewWheelForm({
         strike: parseFloat(values.strike),
         expiration: values.expiration,
         contracts: parseInt(values.contracts, 10),
-        premium_per_contract: parseFloat(values.premiumPerContract),
-        fill_date: values.fillDate || undefined,
+        premiumPerContract: parseFloat(values.premiumPerContract),
+        fillDate: values.fillDate || undefined,
         thesis: values.thesis || undefined,
         notes: values.notes || undefined
       },
@@ -166,7 +166,7 @@ export function NewWheelForm({
 
   if (mutation.isSuccess && mutation.data) {
     const pos = mutation.data.position
-    const cb = mutation.data.cost_basis_snapshot
+    const cb = mutation.data.costBasisSnapshot
     const card = (
       <div
         className="px-6 py-5 rounded-lg bg-wb-green-dim border border-[rgba(63,185,80,0.25)]"
@@ -178,8 +178,8 @@ export function NewWheelForm({
         </div>
         <div className="flex flex-col gap-1.5">
           {[
-            ['Premium collected', cb.total_premium_collected],
-            ['Cost basis / share', cb.basis_per_share]
+            ['Premium collected', cb.totalPremiumCollected],
+            ['Cost basis / share', cb.basisPerShare]
           ].map(([k, v]) => (
             <div key={k} className="flex justify-between">
               <span className="text-xs text-wb-text-muted font-wb-mono">{k}</span>

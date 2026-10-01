@@ -4,6 +4,7 @@ import { vi } from 'vitest'
 import type { RollCspResponse } from '../api/positions'
 import { useRollCsp } from '../hooks/useRollCsp'
 import { RollCspSheet } from './RollCspSheet'
+import { legRecord, snapshotRecord } from '../test-fixtures/position-records'
 
 vi.mock('../hooks/useRollCsp')
 vi.mock('@/components/ui/date-picker', () => ({
@@ -48,7 +49,7 @@ const DEFAULT_PROPS = {
 
 const SUCCESS_DEBIT_RESPONSE: RollCspResponse = {
   position: { id: 'pos-123', ticker: 'AAPL', phase: 'CSP_OPEN', status: 'ACTIVE' },
-  rollFromLeg: {
+  rollFromLeg: legRecord({
     id: 'leg-from-2',
     legRole: 'ROLL_FROM',
     action: 'BUY',
@@ -56,11 +57,10 @@ const SUCCESS_DEBIT_RESPONSE: RollCspResponse = {
     strike: '180.0000',
     expiration: '2026-04-18',
     contracts: 1,
-    premium_per_contract: '3.0000',
     premiumPerContract: '3.0000',
     fillDate: '2026-04-04'
-  },
-  rollToLeg: {
+  }),
+  rollToLeg: legRecord({
     id: 'leg-to-2',
     legRole: 'ROLL_TO',
     action: 'SELL',
@@ -68,12 +68,11 @@ const SUCCESS_DEBIT_RESPONSE: RollCspResponse = {
     strike: '180.0000',
     expiration: '2026-05-16',
     contracts: 1,
-    premium_per_contract: '2.5000',
     premiumPerContract: '2.5000',
     fillDate: '2026-04-04'
-  },
+  }),
   rollChainId: 'chain-uuid-5678',
-  costBasisSnapshot: {
+  costBasisSnapshot: snapshotRecord({
     id: 'snap-2',
     positionId: 'pos-123',
     basisPerShare: '177.0000',
@@ -81,12 +80,12 @@ const SUCCESS_DEBIT_RESPONSE: RollCspResponse = {
     finalPnl: null,
     snapshotAt: '2026-04-04T00:00:00.000Z',
     createdAt: '2026-04-04T00:00:00.000Z'
-  }
+  })
 }
 
 const SUCCESS_CREDIT_RESPONSE: RollCspResponse = {
   position: { id: 'pos-123', ticker: 'AAPL', phase: 'CSP_OPEN', status: 'ACTIVE' },
-  rollFromLeg: {
+  rollFromLeg: legRecord({
     id: 'leg-from-1',
     legRole: 'ROLL_FROM',
     action: 'BUY',
@@ -94,11 +93,10 @@ const SUCCESS_CREDIT_RESPONSE: RollCspResponse = {
     strike: '180.0000',
     expiration: '2026-04-18',
     contracts: 1,
-    premium_per_contract: '1.2000',
     premiumPerContract: '1.2000',
     fillDate: '2026-04-04'
-  },
-  rollToLeg: {
+  }),
+  rollToLeg: legRecord({
     id: 'leg-to-1',
     legRole: 'ROLL_TO',
     action: 'SELL',
@@ -106,12 +104,11 @@ const SUCCESS_CREDIT_RESPONSE: RollCspResponse = {
     strike: '180.0000',
     expiration: '2026-05-16',
     contracts: 1,
-    premium_per_contract: '2.8000',
     premiumPerContract: '2.8000',
     fillDate: '2026-04-04'
-  },
+  }),
   rollChainId: 'chain-uuid-1234',
-  costBasisSnapshot: {
+  costBasisSnapshot: snapshotRecord({
     id: 'snap-1',
     positionId: 'pos-123',
     basisPerShare: '174.9000',
@@ -119,7 +116,7 @@ const SUCCESS_CREDIT_RESPONSE: RollCspResponse = {
     finalPnl: null,
     snapshotAt: '2026-04-04T00:00:00.000Z',
     createdAt: '2026-04-04T00:00:00.000Z'
-  }
+  })
 }
 
 beforeEach(() => {

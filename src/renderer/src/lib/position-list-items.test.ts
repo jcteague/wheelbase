@@ -6,24 +6,30 @@ import type {
   WheelListItem
 } from '../api/positions'
 import { insertPositionListItem, toPmccListItem, toWheelListItem } from './position-list-items'
+import { legRecord, positionRecord, snapshotRecord } from '../test-fixtures/position-records'
 
 const NOW = new Date(2026, 8, 14, 10, 0)
 
 const WHEEL_RESPONSE: CreatePositionResponse = {
-  position: { id: 'pos-1', ticker: 'AAPL', phase: 'CSP_OPEN', status: 'ACTIVE' },
-  leg: {
+  position: positionRecord({
+    id: 'pos-1',
+    ticker: 'AAPL',
+    strategyType: 'WHEEL',
+    phase: 'CSP_OPEN'
+  }),
+  leg: legRecord({
     id: 'leg-1',
     instrumentType: 'PUT',
     strike: '150.0000',
     expiration: '2026-10-16',
     contracts: 2,
-    premium_per_contract: '3.2500'
-  },
-  cost_basis_snapshot: {
+    premiumPerContract: '3.2500'
+  }),
+  costBasisSnapshot: snapshotRecord({
     id: 'snap-1',
-    basis_per_share: '146.7500',
-    total_premium_collected: '650.0000'
-  }
+    basisPerShare: '146.7500',
+    totalPremiumCollected: '650.0000'
+  })
 }
 
 function pmccResponse(overrides: { longExpiration?: string } = {}): CreatePmccPositionResponse {
@@ -116,7 +122,10 @@ describe('toWheelListItem', () => {
   })
 
   it('leaves instrumentType null when the leg is not an option', () => {
-    const res = { ...WHEEL_RESPONSE, leg: { ...WHEEL_RESPONSE.leg, instrumentType: 'STOCK' } }
+    const res = {
+      ...WHEEL_RESPONSE,
+      leg: { ...WHEEL_RESPONSE.leg, instrumentType: 'STOCK' as const }
+    }
     expect(toWheelListItem(res, NOW).instrumentType).toBeNull()
   })
 })

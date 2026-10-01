@@ -13,13 +13,14 @@ function daysFromToday(n: number): string {
 const baseLeg: LegDetail = {
   id: 'leg-1',
   positionId: 'pos-1',
-  legRole: 'OPEN',
+  legRole: 'CSP_OPEN',
   action: 'SELL',
   instrumentType: 'PUT',
   strike: '180.00',
   expiration: daysFromToday(30),
   contracts: 1,
   premiumPerContract: '3.50',
+  fillPrice: null,
   fillDate: '2024-01-15',
   rollChainId: null,
   fees: '0.0000',
@@ -33,6 +34,7 @@ const baseSnapshot: SnapshotDetail = {
   basisPerShare: '176.50',
   totalPremiumCollected: '350.00',
   finalPnl: null,
+  triggerEvent: 'CSP_OPEN',
   snapshotAt: '2024-01-15T00:00:00Z',
   createdAt: '2024-01-15T00:00:00Z'
 }

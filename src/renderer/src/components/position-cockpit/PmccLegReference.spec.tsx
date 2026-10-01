@@ -18,6 +18,7 @@ const leapsLeg: LegDetail = {
   expiration: localDate(368),
   contracts: 2,
   premiumPerContract: '25.0000',
+  fillPrice: '25.0000',
   fillDate: '2026-09-14',
   rollChainId: null,
   fees: '1.2500',

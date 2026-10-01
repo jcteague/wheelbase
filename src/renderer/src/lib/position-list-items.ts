@@ -15,14 +15,14 @@ import type {
 } from '../api/positions'
 
 export function toWheelListItem(res: CreatePositionResponse, now = new Date()): WheelListItem {
-  const { position, leg, cost_basis_snapshot: snapshot } = res
+  const { position, leg, costBasisSnapshot: snapshot } = res
   return {
     id: position.id,
     ticker: position.ticker,
     phase: position.phase,
     status: position.status,
-    premiumCollected: snapshot.total_premium_collected,
-    effectiveCostBasis: snapshot.basis_per_share,
+    premiumCollected: snapshot.totalPremiumCollected,
+    effectiveCostBasis: snapshot.basisPerShare,
     profitTargetPercent: null,
     strategyType: 'WHEEL',
     pmcc: null,
@@ -31,7 +31,7 @@ export function toWheelListItem(res: CreatePositionResponse, now = new Date()): 
     dte: computeDte(leg.expiration, now),
     instrumentType: isOptionInstrument(leg.instrumentType) ? leg.instrumentType : null,
     contracts: leg.contracts,
-    entryPremiumPerContract: leg.premium_per_contract
+    entryPremiumPerContract: leg.premiumPerContract
   }
 }
 

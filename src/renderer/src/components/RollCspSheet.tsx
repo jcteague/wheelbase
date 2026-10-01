@@ -96,12 +96,12 @@ export function RollCspSheet(props: RollCspSheetProps): React.JSX.Element | null
   function onSubmit(values: RollCspFormValues): void {
     setPrevBasis(props.basisPerShare)
     mutate({
-      position_id: props.positionId,
-      cost_to_close_per_contract: parseFloat(values.cost_to_close),
-      new_premium_per_contract: parseFloat(values.new_premium),
-      new_expiration: values.new_expiration,
-      new_strike: parseFloat(values.new_strike),
-      fill_date: values.fill_date || undefined
+      positionId: props.positionId,
+      costToClosePerContract: parseFloat(values.cost_to_close),
+      newPremiumPerContract: parseFloat(values.new_premium),
+      newExpiration: values.new_expiration,
+      newStrike: parseFloat(values.new_strike),
+      fillDate: values.fill_date || undefined
     })
   }
 

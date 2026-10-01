@@ -184,7 +184,7 @@ it('shows server validation error from the mutation error callback', async () =>
       body: {
         detail: [
           {
-            field: 'close_price_per_contract',
+            field: 'closePricePerContract',
             code: 'must_be_positive',
             message: 'Close price must be positive'
           }
@@ -222,7 +222,7 @@ it('maps server field errors from the mutation error callback', async () => {
       body: {
         detail: [
           {
-            field: 'close_price_per_contract',
+            field: 'closePricePerContract',
             code: 'must_be_positive',
             message: 'Close price must be positive'
           }

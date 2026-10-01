@@ -9,6 +9,9 @@ import { CcSuccess } from './OpenCcSuccess'
 import { getSheetPortal } from '../lib/portal'
 import { SheetOverlay, SheetPanel } from './ui/Sheet'
 
+// The handler names an invalid field by its payload key; the form's error slots use its own names.
+const PAYLOAD_TO_FORM_FIELD: Record<string, string> = { premiumPerContract: 'premium' }
+
 export interface OpenCoveredCallSheetProps {
   open: boolean
   positionId: string
@@ -57,12 +60,12 @@ export function OpenCoveredCallSheet(props: OpenCoveredCallSheetProps): React.JS
     setFieldErrors({})
     mutate(
       {
-        position_id: props.positionId,
+        positionId: props.positionId,
         strike: parseFloat(strike),
         expiration,
         contracts: contractsNum,
-        premium_per_contract: parseFloat(premium),
-        fill_date: fillDate || undefined
+        premiumPerContract: parseFloat(premium),
+        fillDate: fillDate || undefined
       },
       {
         onError: (error) => {
@@ -71,7 +74,7 @@ export function OpenCoveredCallSheet(props: OpenCoveredCallSheetProps): React.JS
           const body = apiErr.body as { detail?: ApiFieldError[] }
           const mapped: Record<string, string> = {}
           body.detail?.forEach((fe) => {
-            mapped[fe.field] = fe.message
+            mapped[PAYLOAD_TO_FORM_FIELD[fe.field] ?? fe.field] = fe.message
           })
           if (Object.keys(mapped).length > 0) setFieldErrors(mapped)
         }

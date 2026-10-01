@@ -95,8 +95,8 @@ describe('useRecordCallAway', () => {
       costBasisSnapshot: {
         id: 'snap-1',
         positionId: 'pos-1',
-        basis_per_share: '174.2000',
-        total_premium_collected: '5.8000',
+        basisPerShare: '174.2000',
+        totalPremiumCollected: '5.8000',
         finalPnl: '780.0000',
         snapshotAt: '2026-03-21',
         createdAt: '2026-03-21'
