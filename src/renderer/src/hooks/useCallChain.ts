@@ -1,7 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
 import type { ApiError } from '../api/error'
 import { getOptionChain, type OptionChainFilter, type OptionChainQuote } from '../api/market-data'
-import { chainWindow, filterCallChain, strikeBounds, type LegPreset } from '../lib/pmcc-entry'
+import {
+  chainWindow,
+  filterCallChain,
+  strikeBounds,
+  type ChainStatus,
+  type LegPreset
+} from '../lib/pmcc-entry'
 import { tickerSchema } from '../schemas/common'
 import { marketDataQueryKeys } from './marketDataQueryKeys'
 
@@ -21,7 +27,7 @@ export type UseCallChainInput = {
 
 export type UseCallChainResult = {
   /** `idle` while the ticker is empty or invalid: nothing is requested, nothing is loading. */
-  status: 'idle' | 'pending' | 'error' | 'success'
+  status: ChainStatus
   contracts: OptionChainQuote[]
   error: ApiError | null
 }

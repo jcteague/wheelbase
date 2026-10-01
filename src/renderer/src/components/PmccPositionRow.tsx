@@ -81,7 +81,7 @@ export function PmccPositionRow({ item, index, quote, session }: Props): React.J
 
       <TableCell className={CELL_CLASS}>
         <span className={`${VALUE_CLASS} text-wb-green font-medium`}>
-          {fmtMoney(item.premium_collected)}
+          {fmtMoney(item.premiumCollected)}
         </span>
       </TableCell>
 

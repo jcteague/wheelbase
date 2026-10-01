@@ -26,7 +26,7 @@ import {
   toCreatePmccPayload,
   type PmccEntryFormValues
 } from '../schemas/pmcc-entry'
-import type { SharedFieldsHandle } from './new-position-shared'
+import type { PmccRecorded, SharedFieldsHandle } from './new-position-shared'
 import { PmccCashFlows } from './PmccCashFlows'
 import { PmccLegSection } from './PmccLegSection'
 import { AlertBox } from './ui/AlertBox'
@@ -35,8 +35,6 @@ import { Field } from './ui/FormField'
 import { FormButton } from './ui/FormButton'
 import { NumberInput } from './ui/NumberInput'
 import { SheetBody, SheetFooter } from './ui/Sheet'
-
-export type PmccRecorded = { id: string; ticker: string; kind: 'PMCC' }
 
 type PmccEntryFormProps = {
   onRecorded: (recorded: PmccRecorded) => void
@@ -197,7 +195,7 @@ export function PmccEntryForm({
     mutate(toCreatePmccPayload(values), {
       onSuccess: ({ position }: CreatePmccPositionResponse) => {
         inFlight.current = false
-        onRecorded({ id: position.id, ticker: position.ticker, kind: 'PMCC' })
+        onRecorded({ id: position.id, ticker: position.ticker })
       },
       onError: (error) => {
         inFlight.current = false

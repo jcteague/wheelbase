@@ -6,7 +6,7 @@ import Decimal from 'decimal.js'
 import { computeDte } from '../core/dte'
 import { sortPositionsByDte } from '../core/position-order'
 import { isOptionInstrument } from '../core/types'
-import type { InstrumentType, StrategyType, WheelPhase, WheelStatus } from '../core/types'
+import type { InstrumentType, PmccPhase, StrategyPhase, WheelStatus } from '../core/types'
 import { logger } from '../logger'
 import type {
   PmccLegSummary,
@@ -27,11 +27,9 @@ import {
 // Internal DB row type
 // ---------------------------------------------------------------------------
 
-interface PositionRow {
+interface PositionRowBase {
   id: string
   ticker: string
-  strategy_type: StrategyType
-  phase: WheelPhase
   status: WheelStatus
   strike: string | null
   expiration: string | null
@@ -42,6 +40,14 @@ interface PositionRow {
   total_premium_collected: string | null
   profit_target_percent: number | null
 }
+
+type WheelPositionRow = PositionRowBase & {
+  strategy_type: 'WHEEL'
+  phase: StrategyPhase<'WHEEL'>
+}
+type PmccPositionRow = PositionRowBase & { strategy_type: 'PMCC'; phase: PmccPhase }
+// The strategy fixes which phases a row can hold, so a strategy_type check narrows the phase.
+type PositionRow = WheelPositionRow | PmccPositionRow
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -100,7 +106,6 @@ function toListItemBase(row: PositionRow): PositionListItemBase {
   return {
     id: row.id,
     ticker: row.ticker,
-    phase: row.phase,
     status: row.status,
     premiumCollected: new Decimal(row.total_premium_collected ?? '0').toFixed(4),
     effectiveCostBasis: new Decimal(row.basis_per_share ?? '0').toFixed(4),
@@ -108,10 +113,11 @@ function toListItemBase(row: PositionRow): PositionListItemBase {
   }
 }
 
-function toWheelItem(row: PositionRow): WheelListItem {
+function toWheelItem(row: WheelPositionRow): WheelListItem {
   return {
     ...toListItemBase(row),
     strategyType: 'WHEEL',
+    phase: row.phase,
     pmcc: null,
     strike: row.strike ? new Decimal(row.strike).toFixed(4) : null,
     expiration: row.expiration ?? null,
@@ -124,10 +130,11 @@ function toWheelItem(row: PositionRow): WheelListItem {
   }
 }
 
-function toPmccItem(row: PositionRow, summary: PmccListSummary): PmccListItem {
+function toPmccItem(row: PmccPositionRow, summary: PmccListSummary): PmccListItem {
   return {
     ...toListItemBase(row),
     strategyType: 'PMCC',
+    phase: row.phase,
     pmcc: summary,
     strike: null,
     expiration: null,

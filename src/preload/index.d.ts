@@ -1,50 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-
-interface IpcPmccLegSummary {
-  strike: string
-  expiration: string
-  dte: number
-  contracts: number
-}
-
-interface IpcPmccListSummary {
-  long: IpcPmccLegSummary
-  short: IpcPmccLegSummary
-  initialNetDebit: string
-}
-
-// Discriminated on strategyType — exactly one arm carries the PMCC summary, and the
-// wheel-only fields are typed null on the PMCC arm (the IpcIvRankPair pattern).
-type IpcPositionListItem = {
-  id: string
-  ticker: string
-  phase: string
-  status: string
-  premiumCollected: string
-  effectiveCostBasis: string
-  profitTargetPercent: number | null
-} & (
-  | {
-      strategyType: 'WHEEL'
-      pmcc: null
-      strike: string | null
-      expiration: string | null
-      dte: number | null
-      instrumentType: 'PUT' | 'CALL' | null
-      contracts: number | null
-      entryPremiumPerContract: string | null
-    }
-  | {
-      strategyType: 'PMCC'
-      pmcc: IpcPmccListSummary
-      strike: null
-      expiration: null
-      dte: null
-      instrumentType: null
-      contracts: null
-      entryPremiumPerContract: null
-    }
-)
+import type { PositionListItem } from '../main/schemas'
 
 interface IpcCreatePositionPayload {
   ticker: string
@@ -107,7 +62,7 @@ type IpcResult<T> =
   | { ok: false; errors: Array<{ field: string; code: string; message: string }> }
 
 type IpcCreatePositionResult = IpcResult<{
-  position: IpcPositionRecord
+  position: IpcPositionRecord & { phase: 'CSP_OPEN' }
   leg: IpcLegRecord
   costBasisSnapshot: IpcCostBasisSnapshotRecord
 }>
@@ -761,7 +716,7 @@ declare global {
     electron: ElectronAPI
     api: {
       ping: () => Promise<string>
-      listPositions: () => Promise<IpcPositionListItem[]>
+      listPositions: () => Promise<PositionListItem[]>
       createPosition: (payload: IpcCreatePositionPayload) => Promise<IpcCreatePositionResult>
       createPmccPosition: (
         payload: IpcCreatePmccPositionPayload

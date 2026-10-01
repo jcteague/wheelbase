@@ -616,44 +616,9 @@ describe('listPositions', () => {
     })
   })
 
-  it('maps a WHEEL item and a PMCC item into their renderer arms with snake_case money fields', async () => {
+  it("returns the handler's WHEEL and PMCC rows unchanged — the list row has one shape end to end", async () => {
     mockListPositions.mockResolvedValue([wheelItem, pmccItem])
 
-    const [wheel, pmcc] = await positionsApi.listPositions()
-
-    expect(wheel).toEqual({
-      id: 'wheel-1',
-      ticker: 'AAPL',
-      phase: 'CSP_OPEN',
-      status: 'ACTIVE',
-      premium_collected: '250.0000',
-      effective_cost_basis: '177.5000',
-      profitTargetPercent: 50,
-      strategyType: 'WHEEL',
-      pmcc: null,
-      strike: '180.0000',
-      expiration: '2026-10-16',
-      dte: 17,
-      instrumentType: 'PUT',
-      contracts: 1,
-      entryPremiumPerContract: '2.5000'
-    })
-    expect(pmcc).toEqual({
-      id: 'pmcc-1',
-      ticker: 'XYZ',
-      phase: 'PMCC_OPEN',
-      status: 'ACTIVE',
-      premium_collected: '200.0000',
-      effective_cost_basis: '23.0000',
-      profitTargetPercent: null,
-      strategyType: 'PMCC',
-      pmcc: pmccSummary,
-      strike: null,
-      expiration: null,
-      dte: null,
-      instrumentType: null,
-      contracts: null,
-      entryPremiumPerContract: null
-    })
+    expect(await positionsApi.listPositions()).toEqual([wheelItem, pmccItem])
   })
 })

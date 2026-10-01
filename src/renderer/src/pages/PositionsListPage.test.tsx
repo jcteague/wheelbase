@@ -60,12 +60,8 @@ vi.mock('../hooks/useCreatePosition', () => ({
   })
 }))
 vi.mock('../components/PmccEntryForm', () => ({
-  PmccEntryForm: ({
-    onRecorded
-  }: {
-    onRecorded: (r: { id: string; ticker: string; kind: 'PMCC' }) => void
-  }) => (
-    <button type="button" onClick={() => onRecorded({ id: 'pmcc-1', ticker: 'XYZ', kind: 'PMCC' })}>
+  PmccEntryForm: ({ onRecorded }: { onRecorded: (r: { id: string; ticker: string }) => void }) => (
+    <button type="button" onClick={() => onRecorded({ id: 'pmcc-1', ticker: 'XYZ' })}>
       fake record PMCC
     </button>
   )
@@ -176,8 +172,8 @@ const ITEM_1: PositionListItem = {
   instrumentType: 'PUT',
   contracts: 1,
   entryPremiumPerContract: '3.5000',
-  premium_collected: '250.0000',
-  effective_cost_basis: '177.5000',
+  premiumCollected: '250.0000',
+  effectiveCostBasis: '177.5000',
   profitTargetPercent: null
 }
 
@@ -194,8 +190,8 @@ const ITEM_2: PositionListItem = {
   instrumentType: 'PUT',
   contracts: 1,
   entryPremiumPerContract: '5.0000',
-  premium_collected: '300.0000',
-  effective_cost_basis: '397.0000',
+  premiumCollected: '300.0000',
+  effectiveCostBasis: '397.0000',
   profitTargetPercent: null
 }
 
@@ -212,8 +208,8 @@ const CLOSED_ITEM: PositionListItem = {
   instrumentType: null,
   contracts: null,
   entryPremiumPerContract: null,
-  premium_collected: '250.0000',
-  effective_cost_basis: '177.5000',
+  premiumCollected: '250.0000',
+  effectiveCostBasis: '177.5000',
   profitTargetPercent: null
 }
 
@@ -230,8 +226,8 @@ const TSLA_ITEM: PositionListItem = {
   instrumentType: 'PUT',
   contracts: 1,
   entryPremiumPerContract: '4.0000',
-  premium_collected: '100.0000',
-  effective_cost_basis: '198.0000',
+  premiumCollected: '100.0000',
+  effectiveCostBasis: '198.0000',
   profitTargetPercent: null
 }
 
@@ -248,8 +244,8 @@ const HOLDING_ITEM: PositionListItem = {
   instrumentType: null,
   contracts: null,
   entryPremiumPerContract: null,
-  premium_collected: '500.0000',
-  effective_cost_basis: '450.0000',
+  premiumCollected: '500.0000',
+  effectiveCostBasis: '450.0000',
   profitTargetPercent: null
 }
 

@@ -153,13 +153,13 @@ export function PositionRow({
 
       <TableCell className={CELL_CLASS}>
         <span className={`${VALUE_CLASS} text-wb-green font-medium`}>
-          {fmtMoney(item.premium_collected)}
+          {fmtMoney(item.premiumCollected)}
         </span>
       </TableCell>
 
       <TableCell className={CELL_CLASS}>
         <span className={`${VALUE_CLASS} text-wb-text-primary`}>
-          {fmtMoney(item.effective_cost_basis)}
+          {fmtMoney(item.effectiveCostBasis)}
         </span>
       </TableCell>
     </tr>

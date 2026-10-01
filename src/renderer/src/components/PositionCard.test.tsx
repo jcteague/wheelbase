@@ -40,8 +40,8 @@ const BASE_ITEM: WheelListItem = {
   instrumentType: 'PUT',
   contracts: 1,
   entryPremiumPerContract: '3.5000',
-  premium_collected: '250.0000',
-  effective_cost_basis: '177.5000',
+  premiumCollected: '250.0000',
+  effectiveCostBasis: '177.5000',
   profitTargetPercent: null
 }
 

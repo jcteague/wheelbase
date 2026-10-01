@@ -33,8 +33,8 @@ function makePosition(overrides: Partial<WheelListItem> = {}): WheelListItem {
     instrumentType: 'PUT',
     contracts: 1,
     entryPremiumPerContract: '2.10',
-    premium_collected: '210.00',
-    effective_cost_basis: '177.90',
+    premiumCollected: '210.00',
+    effectiveCostBasis: '177.90',
     profitTargetPercent: null,
     ...overrides
   }

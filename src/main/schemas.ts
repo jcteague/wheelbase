@@ -29,6 +29,8 @@ import type {
   LegAction,
   LegRole,
   InstrumentType,
+  PmccPhase,
+  StrategyPhase,
   StrategyType,
   WheelPhase,
   WheelStatus
@@ -121,7 +123,7 @@ export interface CostBasisSnapshotRecord {
 }
 
 export interface CreatePositionResult {
-  position: PositionRecord
+  position: PositionRecord & { strategyType: 'WHEEL'; phase: 'CSP_OPEN' }
   leg: LegRecord
   costBasisSnapshot: CostBasisSnapshotRecord
 }
@@ -179,7 +181,6 @@ export interface PmccListSummary {
 export interface PositionListItemBase {
   id: string
   ticker: string
-  phase: WheelPhase
   status: WheelStatus
   premiumCollected: string
   effectiveCostBasis: string
@@ -188,6 +189,7 @@ export interface PositionListItemBase {
 
 export interface WheelListItem extends PositionListItemBase {
   strategyType: 'WHEEL'
+  phase: StrategyPhase<'WHEEL'>
   pmcc: null
   strike: string | null
   expiration: string | null
@@ -200,6 +202,7 @@ export interface WheelListItem extends PositionListItemBase {
 /** Wheel-only fields are typed null so the calendar and option polling stay wheel-only. */
 export interface PmccListItem extends PositionListItemBase {
   strategyType: 'PMCC'
+  phase: PmccPhase
   pmcc: PmccListSummary
   strike: null
   expiration: null

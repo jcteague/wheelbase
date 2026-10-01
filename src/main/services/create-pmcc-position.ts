@@ -30,28 +30,31 @@ const INSERT_LEG_SQL = `INSERT INTO legs
    premium_per_contract, fill_price, fill_date, fees, created_at, updated_at)
  VALUES (?, ?, ?, ?, 'CALL', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-type PmccLegRole = 'LEAPS_OPEN' | 'SHORT_CALL_OPEN'
-type PmccLegRecord<R extends PmccLegRole, A extends 'BUY' | 'SELL'> = LegRecord & {
+// The LEAPS is bought and the short call sold: the role fixes the action.
+const PMCC_LEG_ACTION = { LEAPS_OPEN: 'BUY', SHORT_CALL_OPEN: 'SELL' } as const
+type PmccLegRole = keyof typeof PMCC_LEG_ACTION
+
+type PmccLegRecord<R extends PmccLegRole> = LegRecord & {
   legRole: R
-  action: A
+  action: (typeof PMCC_LEG_ACTION)[R]
   instrumentType: 'CALL'
   fillPrice: string
 }
 
-interface NewPmccLegRow<R extends PmccLegRole, A extends 'BUY' | 'SELL'> {
+interface NewPmccLegRow<R extends PmccLegRole> {
   id: string
   positionId: string
   legRole: R
-  action: A
   leg: OpenPmccLegInput
   now: string
 }
 
-function insertPmccLeg<R extends PmccLegRole, A extends 'BUY' | 'SELL'>(
+function insertPmccLeg<R extends PmccLegRole>(
   db: Database.Database,
-  row: NewPmccLegRow<R, A>
-): PmccLegRecord<R, A> {
-  const { id, positionId, legRole, action, leg, now } = row
+  row: NewPmccLegRow<R>
+): PmccLegRecord<R> {
+  const { id, positionId, legRole, leg, now } = row
+  const action = PMCC_LEG_ACTION[legRole]
   db.prepare(INSERT_LEG_SQL).run(
     id,
     positionId,
@@ -139,7 +142,6 @@ export function createPmccPosition(
       id: longLegId,
       positionId,
       legRole: 'LEAPS_OPEN',
-      action: 'BUY',
       leg: long,
       now
     })
@@ -147,7 +149,6 @@ export function createPmccPosition(
       id: shortLegId,
       positionId,
       legRole: 'SHORT_CALL_OPEN',
-      action: 'SELL',
       leg: short,
       now
     })

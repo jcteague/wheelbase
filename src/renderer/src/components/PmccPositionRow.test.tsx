@@ -21,8 +21,8 @@ const PMCC_ITEM: PmccListItem = {
   instrumentType: null,
   contracts: null,
   entryPremiumPerContract: null,
-  premium_collected: '200.0000',
-  effective_cost_basis: '2300.0000',
+  premiumCollected: '200.0000',
+  effectiveCostBasis: '2300.0000',
   profitTargetPercent: null
 }
 

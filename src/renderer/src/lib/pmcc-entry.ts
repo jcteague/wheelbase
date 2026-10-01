@@ -83,9 +83,11 @@ export function filterCallChain(
   return [...inBand, ...standard.filter((q) => !q.greeks)]
 }
 
+/** A leg's chain request; `idle` — no valid ticker yet, so nothing was requested. */
+export type ChainStatus = 'idle' | 'pending' | 'error' | 'success'
+
 export type ChainNoticeInput = {
-  /** `idle` — no valid ticker yet, so nothing was requested. */
-  status: 'idle' | 'pending' | 'error' | 'success'
+  status: ChainStatus
   contracts: OptionChainQuote[]
   selected?: OptionChainQuote
   now: Date

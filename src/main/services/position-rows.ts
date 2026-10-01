@@ -3,10 +3,10 @@
 // strategy and phase the caller opened with.
 
 import Database from 'better-sqlite3'
-import type { StrategyType, WheelPhase } from '../core/types'
+import type { StrategyPhase, StrategyType } from '../core/types'
 import type { PositionRecord } from '../schemas'
 
-export interface NewPositionRow<S extends StrategyType, P extends WheelPhase> {
+export interface NewPositionRow<S extends StrategyType, P extends StrategyPhase<S>> {
   id: string
   ticker: string
   strategyType: S
@@ -18,7 +18,10 @@ export interface NewPositionRow<S extends StrategyType, P extends WheelPhase> {
   now: string
 }
 
-export type OpenedPositionRecord<S extends StrategyType, P extends WheelPhase> = PositionRecord & {
+export type OpenedPositionRecord<
+  S extends StrategyType,
+  P extends StrategyPhase<S>
+> = PositionRecord & {
   strategyType: S
   phase: P
   status: 'ACTIVE'
@@ -29,7 +32,7 @@ const INSERT_POSITION_SQL = `INSERT INTO positions
   (id, ticker, strategy_type, status, phase, opened_date, account_id, notes, thesis, tags, created_at, updated_at)
  VALUES (?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, '[]', ?, ?)`
 
-export function insertPosition<S extends StrategyType, P extends WheelPhase>(
+export function insertPosition<S extends StrategyType, P extends StrategyPhase<S>>(
   db: Database.Database,
   row: NewPositionRow<S, P>
 ): OpenedPositionRecord<S, P> {

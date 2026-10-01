@@ -27,7 +27,7 @@ export interface OpenWheelInput {
 }
 
 export interface OpenWheelResult {
-  phase: WheelPhase
+  phase: 'CSP_OPEN'
 }
 
 const TICKER_RE = /^[A-Z]{1,5}$/

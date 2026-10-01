@@ -281,9 +281,7 @@ describe('PmccEntryForm — submit', () => {
     await enterFixture()
     await waitFor(() => expect(recordButton()).toBeEnabled())
     await userEvent.click(recordButton())
-    await waitFor(() =>
-      expect(onRecorded).toHaveBeenCalledWith({ id: 'pos-1', ticker: 'XYZ', kind: 'PMCC' })
-    )
+    await waitFor(() => expect(onRecorded).toHaveBeenCalledWith({ id: 'pos-1', ticker: 'XYZ' }))
   })
 
   it('shows an IPC short.expiration rejection inside the short leg’s Expiration field', async () => {

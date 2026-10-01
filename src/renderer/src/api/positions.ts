@@ -54,57 +54,20 @@ export type CostBasisSnapshotData = {
 }
 
 export type CreatePositionResponse = {
-  position: PositionData
+  position: PositionData & { phase: 'CSP_OPEN' }
   leg: LegData
   cost_basis_snapshot: CostBasisSnapshotData
 }
 
-export type PmccLegSummary = {
-  strike: string
-  expiration: string
-  dte: number
-  contracts: number
-}
-
-export type PmccListSummary = {
-  long: PmccLegSummary
-  short: PmccLegSummary
-  initialNetDebit: string
-}
-
-type PositionListItemBase = {
-  id: string
-  ticker: string
-  phase: WheelPhase
-  status: WheelStatus
-  premium_collected: string
-  effective_cost_basis: string
-  profitTargetPercent: number | null
-}
-
-export type WheelListItem = PositionListItemBase & {
-  strategyType: 'WHEEL'
-  pmcc: null
-  strike: string | null
-  expiration: string | null
-  dte: number | null
-  instrumentType: 'PUT' | 'CALL' | null
-  contracts: number | null
-  entryPremiumPerContract: string | null
-}
-
-export type PmccListItem = PositionListItemBase & {
-  strategyType: 'PMCC'
-  pmcc: PmccListSummary
-  strike: null
-  expiration: null
-  dte: null
-  instrumentType: null
-  contracts: null
-  entryPremiumPerContract: null
-}
-
-export type PositionListItem = WheelListItem | PmccListItem
+// The list row is camelCase end to end: the handler's own types are the renderer's.
+import type { PositionListItem } from '../../../main/schemas'
+export type {
+  PmccLegSummary,
+  PmccListItem,
+  PmccListSummary,
+  PositionListItem,
+  WheelListItem
+} from '../../../main/schemas'
 
 // IPC camelCase field names → renderer snake_case form field names
 const IPC_TO_FORM_FIELD: Record<string, string> = {
@@ -127,41 +90,7 @@ function mapIpcErrors(errors: ApiFieldError[]): ApiFieldError[] {
 }
 
 export async function listPositions(): Promise<PositionListItem[]> {
-  const items = await window.api.listPositions()
-  return items.map((item): PositionListItem => {
-    const base: PositionListItemBase = {
-      id: item.id,
-      ticker: item.ticker,
-      phase: item.phase as WheelPhase,
-      status: item.status as WheelStatus,
-      premium_collected: item.premiumCollected,
-      effective_cost_basis: item.effectiveCostBasis,
-      profitTargetPercent: item.profitTargetPercent
-    }
-    return item.strategyType === 'PMCC'
-      ? {
-          ...base,
-          strategyType: 'PMCC',
-          pmcc: item.pmcc,
-          strike: null,
-          expiration: null,
-          dte: null,
-          instrumentType: null,
-          contracts: null,
-          entryPremiumPerContract: null
-        }
-      : {
-          ...base,
-          strategyType: 'WHEEL',
-          pmcc: null,
-          strike: item.strike,
-          expiration: item.expiration,
-          dte: item.dte,
-          instrumentType: item.instrumentType,
-          contracts: item.contracts,
-          entryPremiumPerContract: item.entryPremiumPerContract
-        }
-  })
+  return window.api.listPositions()
 }
 
 export type LegDetail = {
@@ -652,7 +581,7 @@ export async function createPosition(
     position: {
       id: result.position.id,
       ticker: result.position.ticker,
-      phase: result.position.phase as WheelPhase,
+      phase: result.position.phase,
       status: result.position.status as WheelStatus
     },
     leg: {

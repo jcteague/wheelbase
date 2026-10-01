@@ -37,6 +37,11 @@ export const InstrumentType = z.enum(['PUT', 'CALL', 'STOCK'])
 export type StrategyType = z.infer<typeof StrategyType>
 export type WheelStatus = z.infer<typeof WheelStatus>
 export type WheelPhase = z.infer<typeof WheelPhase>
+export type PmccPhase = Extract<WheelPhase, 'PMCC_OPEN'>
+/** The phases a position of strategy `S` can be in: a PMCC never takes a wheel phase. */
+export type StrategyPhase<S extends StrategyType> = S extends 'PMCC'
+  ? PmccPhase
+  : Exclude<WheelPhase, PmccPhase>
 export type LegRole = z.infer<typeof LegRole>
 export type LegAction = z.infer<typeof LegAction>
 export type InstrumentType = z.infer<typeof InstrumentType>
