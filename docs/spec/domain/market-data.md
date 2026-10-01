@@ -796,7 +796,7 @@ lives in `src/renderer/src/hooks/useStockQuotes.ts` (with a sibling
 
 <!-- /generated -->
 
-<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration -->
+<!-- generated:from us-31,us-32,us-33,us-34,market-data-massive-migration,us-101 -->
 
 ## Consumers: how the UI uses market data
 
@@ -924,6 +924,57 @@ The cockpit's context strip surfaces three more greek-derived signals:
 
 For the full cockpit layout, severity bands, and acceptance criteria, see
 [`features/us-34-position-cockpit.md`](../features/us-34-position-cockpit.md).
+
+### PMCC call-chain picker — `useCallChain` + `useUnderlyingPrice` (US-101)
+
+[US-101] The New position sheet's PMCC mode is the first renderer consumer of
+`market-data:option-chain`. `getOptionChain(filter)` in
+`src/renderer/src/api/market-data.ts` returns `OptionChainQuote[]` (throws
+`ApiError` on `{ ok: false }`), keyed by `marketDataQueryKeys.optionChain(filter)`.
+
+`useCallChain({ ticker, preset, underlyingPrice, selectedContractId })` in
+`src/renderer/src/hooks/useCallChain.ts` wraps it once per leg:
+
+- **Request** — `{ underlying, type: 'call', ...chainWindow(preset),
+...strikeBounds(preset, underlyingPrice) }`: the DTE window comes from the
+  leg preset (`LEAPS_PRESET` 180+ DTE, `SHORT_PRESET` 20–45), and the strike is
+  bounded to one side of the underlying price. It carries **no `limit`**, so
+  the adapter follows every page — a 180+ DTE window on a liquid name runs
+  well past one 250-contract page.
+- **Delta band client-side** — the vendor chain filter has no delta
+  parameter, so `select: filterCallChain` keeps contracts whose absolute delta
+  sits inside the preset's band. Greek-less contracts are kept (listed last,
+  `Δ —`); quotes whose OCC root is not the ticker (adjusted contracts) are
+  dropped; the selected contract stays in the list even after a refetch moves
+  it out of the band.
+- **Refetch behaviour** — `staleTime` 30 s, `refetchInterval` 60 s.
+  `placeholderData` keeps the previous page while a re-keyed request for the
+  **same** ticker loads; another ticker's contracts are never carried over.
+- **`idle` until a valid ticker** — `enabled` on `tickerSchema`; a disabled
+  query reports `status: 'idle'`, so no "Loading…" shows before a ticker is
+  typed.
+
+Each leg shows one notice, derived by the pure `deriveChainNotice` in
+`src/renderer/src/lib/pmcc-entry.ts` in priority order `loading` →
+`unavailable` → `empty` → `stale` (the selected quote is older than
+`STALE_QUOTE_MS` = 5 min — the detail page's `SNAPSHOT_STALE_THRESHOLD_MS`);
+copy comes from `chainNoticeMessage`.
+
+`useUnderlyingPrice(ticker)` in `src/renderer/src/hooks/useUnderlyingPrice.ts`
+supplies the strike bound: a one-shot `getStockQuotes` snapshot on its own key
+(`marketDataQueryKeys.underlyingPrice`), `staleTime: Infinity`, never polled —
+a moving price would re-key the chain request and drop the selected
+contract's quote.
+
+**Single-subscriber constraint.** It is deliberately **not**
+`useStockQuotes`. That hook owns the main process's single stock-quote stream
+subscription (`setStockQuoteTickers(tickers)` on mount, `[]` on unmount), so a
+second consumer inside the sheet would replace the positions list's live feed
+and then clear it when the sheet closed. Any future concurrent consumer of the
+stream needs a reference-counted subscription in the main process.
+
+- **Driven by:** [us-101 — Open PMCC position](../features/us-101-open-pmcc-position.md),
+  [ADR: Call-chain picker — client-side delta band](../architecture/02-adrs/call-chain-picker-client-side-delta-band.md)
 
 <!-- /generated -->
 

@@ -1,4 +1,5 @@
-import { useMemo } from 'react'
+import { useMemo, useRef, useState, type Ref } from 'react'
+import { useLocation, useSearch } from 'wouter'
 import type { ApiError } from '../api/error'
 import type { PositionListItem } from '../api/positions'
 import type {
@@ -23,6 +24,10 @@ import { useAlertDefaults } from '../hooks/useSettings'
 import { useStockQuotes } from '../hooks/useStockQuotes'
 import { AssignmentNotificationBanner } from '../components/AssignmentNotificationBanner'
 import { ManagementQueue } from '../components/ManagementQueue'
+import { NewPositionSheet } from '../components/NewPositionSheet'
+import type { PmccRecorded } from '../components/new-position-shared'
+import { AlertBox } from '../components/ui/AlertBox'
+import { PHASE_LABEL } from '../lib/phase'
 import { usePendingAssignments } from '../api/assignments'
 
 const TABLE_COLUMNS = [
@@ -41,6 +46,7 @@ const TABLE_COLUMNS = [
 type PositionsHeaderProps = {
   count?: number
   marketStatusDisplay: MarketStatusDisplay
+  newWheelRef?: Ref<HTMLAnchorElement>
 }
 
 function getErrorCode(error: ApiError | Error | null): string | null {
@@ -49,7 +55,11 @@ function getErrorCode(error: ApiError | Error | null): string | null {
   return detail?.[0]?.code ?? null
 }
 
-function PositionsHeader({ count, marketStatusDisplay }: PositionsHeaderProps): React.JSX.Element {
+function PositionsHeader({
+  count,
+  marketStatusDisplay,
+  newWheelRef
+}: PositionsHeaderProps): React.JSX.Element {
   return (
     <PageHeader
       left={
@@ -62,6 +72,7 @@ function PositionsHeader({ count, marketStatusDisplay }: PositionsHeaderProps): 
         <div className="flex items-center gap-[10px]">
           <MarketStatusPill state={marketStatusDisplay} />
           <a
+            ref={newWheelRef}
             href="#/new"
             className="wb-hover-opacity flex items-center gap-[6px] px-[14px] py-[5px] rounded-md text-xs font-medium text-wb-bg-base bg-wb-gold no-underline tracking-[0.02em]"
           >
@@ -70,6 +81,24 @@ function PositionsHeader({ count, marketStatusDisplay }: PositionsHeaderProps): 
         </div>
       }
     />
+  )
+}
+
+/** [US-101] The list-level confirmation once the PMCC sheet has closed on success. */
+function PositionsRecordedBanner({ recorded }: { recorded: PmccRecorded }): React.JSX.Element {
+  return (
+    <div role="status" className="mx-[24px] mt-[16px]">
+      <AlertBox variant="success" data-testid="positions-recorded-banner">
+        <div className="flex items-center justify-between gap-4">
+          <span>
+            PMCC recorded — {recorded.ticker} · {PHASE_LABEL.PMCC_OPEN}
+          </span>
+          <a href={`#/positions/${recorded.id}`} className="text-wb-green">
+            View position →
+          </a>
+        </div>
+      </AlertBox>
+    </div>
   )
 }
 
@@ -155,6 +184,25 @@ function PositionTable({
 }
 
 export function PositionsListPage(): React.JSX.Element {
+  // [US-101] `/new` is this page with the New position sheet open, so the list (and its
+  // scroll) survives opening and closing it.
+  const [location, navigate] = useLocation()
+  // wouter's `navigate('/new?…')` puts the query in `location.search`; a hash written
+  // directly (`#/new?ticker=`, CallAwaySuccess) keeps it in the location instead.
+  const [path, hashQuery] = location.split('?')
+  const browserSearch = useSearch()
+  const search = hashQuery ?? browserSearch
+  const sheetOpen = path === '/new'
+  const newWheelRef = useRef<HTMLAnchorElement>(null)
+  const [recorded, setRecorded] = useState<PmccRecorded | null>(null)
+  // The banner belongs to the last save; opening the sheet again retires it.
+  const [wasOpen, setWasOpen] = useState(sheetOpen)
+  if (sheetOpen !== wasOpen) {
+    setWasOpen(sheetOpen)
+    if (sheetOpen) setRecorded(null)
+  }
+  const closeSheet = (): void => navigate('/', { replace: true })
+
   const { data, isLoading, isError } = usePositions()
   const alertDefaultsQuery = useAlertDefaults()
 
@@ -201,9 +249,17 @@ export function PositionsListPage(): React.JSX.Element {
 
   return (
     <PageLayout
-      header={<PositionsHeader count={activePositions.length} marketStatusDisplay={display} />}
+      header={
+        <PositionsHeader
+          count={activePositions.length}
+          marketStatusDisplay={display}
+          newWheelRef={newWheelRef}
+        />
+      }
     >
       <AssignmentNotificationBanner />
+
+      {recorded && <PositionsRecordedBanner recorded={recorded} />}
 
       <div className="mx-[24px] my-[16px]">
         <ManagementQueue />
@@ -274,6 +330,17 @@ export function PositionsListPage(): React.JSX.Element {
           )}
         </>
       )}
+
+      <NewPositionSheet
+        open={sheetOpen}
+        search={search}
+        onClose={closeSheet}
+        onRecorded={(r) => {
+          setRecorded(r)
+          closeSheet()
+        }}
+        returnFocusRef={newWheelRef}
+      />
     </PageLayout>
   )
 }

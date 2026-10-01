@@ -1,11 +1,12 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import type { RollCcResponse } from './RollCcSuccess'
+import type { RollCcResponse } from '../api/positions'
 import { RollCcSuccess } from './RollCcSuccess'
+import { legRecord, snapshotRecord } from '../test-fixtures/position-records'
 
 const mockResponse: RollCcResponse = {
   position: { id: 'pos-1', ticker: 'AAPL', phase: 'CC_OPEN', status: 'ACTIVE' },
-  rollFromLeg: {
+  rollFromLeg: legRecord({
     id: 'leg-from',
     legRole: 'ROLL_FROM',
     action: 'BUY',
@@ -15,8 +16,8 @@ const mockResponse: RollCcResponse = {
     contracts: 1,
     premiumPerContract: '1.5000',
     fillDate: '2026-04-13'
-  },
-  rollToLeg: {
+  }),
+  rollToLeg: legRecord({
     id: 'leg-to',
     legRole: 'ROLL_TO',
     action: 'SELL',
@@ -26,9 +27,9 @@ const mockResponse: RollCcResponse = {
     contracts: 1,
     premiumPerContract: '2.2000',
     fillDate: '2026-04-13'
-  },
+  }),
   rollChainId: 'chain-abc123',
-  costBasisSnapshot: {
+  costBasisSnapshot: snapshotRecord({
     id: 'cbs-1',
     positionId: 'pos-1',
     basisPerShare: '175.8000',
@@ -36,7 +37,7 @@ const mockResponse: RollCcResponse = {
     finalPnl: null,
     snapshotAt: '2026-04-13T00:00:00.000Z',
     createdAt: '2026-04-13T00:00:00.000Z'
-  }
+  })
 }
 
 const DEFAULT_PROPS = {

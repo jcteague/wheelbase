@@ -24,6 +24,11 @@ function round4(value: Decimal): Decimal {
   return value.toDecimalPlaces(4)
 }
 
+/** A money value rounded half-up to the 4-dp TEXT convention. */
+function money4(value: Decimal): string {
+  return round4(value).toFixed(4)
+}
+
 function sharesFromContracts(contracts: number): number {
   return contracts * SHARES_PER_CONTRACT
 }
@@ -132,9 +137,9 @@ export function calculateAssignmentBasis(input: AssignmentBasisInput): Assignmen
   }))
 
   return {
-    basisPerShare: round4(strike.minus(totalPremiumPerShare)).toFixed(4),
+    basisPerShare: money4(strike.minus(totalPremiumPerShare)),
     sharesHeld: sharesFromContracts(input.contracts),
-    totalPremiumCollected: round4(totalPremiumCollected).toFixed(4),
+    totalPremiumCollected: money4(totalPremiumCollected),
     premiumWaterfall
   }
 }
@@ -301,9 +306,9 @@ export function computeUnrealizedPnl(input: UnrealizedPnlInput): UnrealizedPnlRe
   const pnlPercentDec = pnlDec.dividedBy(maxProfitDec).times(100)
 
   return {
-    pnl: round4(pnlDec).toFixed(4),
-    pnlPercent: round4(pnlPercentDec).toFixed(4),
-    maxProfit: round4(maxProfitDec).toFixed(4)
+    pnl: money4(pnlDec),
+    pnlPercent: money4(pnlPercentDec),
+    maxProfit: money4(maxProfitDec)
   }
 }
 
@@ -331,5 +336,57 @@ export function calculateCallAway(input: CallAwayInput): CallAwayResult {
     capitalDeployed: capitalDeployed.toFixed(4),
     cycleDays,
     annualizedReturn: annualizedReturn.toFixed(4)
+  }
+}
+
+export interface PmccOpeningLegInput {
+  strike: string
+  fillPrice: string
+  fees: string
+}
+
+export interface PmccOpeningDebitInput {
+  contracts: number
+  long: PmccOpeningLegInput
+  short: PmccOpeningLegInput
+}
+
+export interface PmccOpeningDebitResult {
+  leapsCost: string
+  shortCredit: string
+  fees: string
+  initialNetDebit: string
+  netDebitBeforeFees: string
+  basisPerShare: string
+  strikeWidthPerShare: string
+  debitToWidthPercent: string | null
+}
+
+export function calculatePmccOpeningDebit(input: PmccOpeningDebitInput): PmccOpeningDebitResult {
+  const shares = sharesFromContracts(input.contracts)
+  const longFill = new Decimal(input.long.fillPrice)
+  const shortFill = new Decimal(input.short.fillPrice)
+
+  const leapsCost = longFill.times(shares)
+  const shortCredit = shortFill.times(shares)
+  const fees = new Decimal(input.long.fees).plus(input.short.fees)
+  const netDebitBeforeFees = leapsCost.minus(shortCredit)
+  const initialNetDebit = netDebitBeforeFees.plus(fees)
+  const strikeWidth = new Decimal(input.short.strike).minus(input.long.strike)
+
+  // Fees are excluded from the ratio: it compares the per-share spread paid to the strike width.
+  const debitToWidthPercent = strikeWidth.lte(0)
+    ? null
+    : money4(longFill.minus(shortFill).dividedBy(strikeWidth).times(100))
+
+  return {
+    leapsCost: money4(leapsCost),
+    shortCredit: money4(shortCredit),
+    fees: money4(fees),
+    initialNetDebit: money4(initialNetDebit),
+    netDebitBeforeFees: money4(netDebitBeforeFees),
+    basisPerShare: money4(initialNetDebit.dividedBy(shares)),
+    strikeWidthPerShare: money4(strikeWidth),
+    debitToWidthPercent
   }
 }

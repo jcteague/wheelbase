@@ -82,7 +82,7 @@ export function CcExpirationSheet({
       totalPremium={totalPremium}
       isPending={isPending}
       onClose={onClose}
-      onConfirm={() => mutate({ position_id: positionId })}
+      onConfirm={() => mutate({ positionId })}
     />
   )
 

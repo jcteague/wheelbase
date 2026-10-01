@@ -1,6 +1,6 @@
 import { parseISO } from 'date-fns'
 import { describe, expect, it } from 'vitest'
-import type { PositionListItem } from '../api/positions'
+import type { WheelListItem } from '../api/positions'
 import {
   AGENDA_HORIZON_DAYS,
   BUSY_WEEK_THRESHOLD,
@@ -13,20 +13,22 @@ import {
   type CalendarEntry
 } from './expiration-calendar'
 
-function makePosition(overrides: Partial<PositionListItem> = {}): PositionListItem {
+function makePosition(overrides: Partial<WheelListItem> = {}): WheelListItem {
   return {
     id: 'pos-1',
     ticker: 'AAPL',
     phase: 'CSP_OPEN',
     status: 'ACTIVE',
+    strategyType: 'WHEEL',
+    pmcc: null,
     strike: '180.00',
     expiration: '2026-08-14',
     dte: 6,
     instrumentType: 'PUT',
     contracts: 1,
     entryPremiumPerContract: '2.50',
-    premium_collected: '250.0000',
-    effective_cost_basis: '177.50',
+    premiumCollected: '250.0000',
+    effectiveCostBasis: '177.50',
     profitTargetPercent: null,
     ...overrides
   }
@@ -46,12 +48,14 @@ function makeEntry(overrides: Partial<CalendarEntry> = {}): CalendarEntry {
 
 describe('toCalendarEntries', () => {
   it('keeps only ACTIVE positions with a non-null expiration', () => {
-    const positions: PositionListItem[] = [
+    const positions: WheelListItem[] = [
       makePosition({ id: 'active-option', status: 'ACTIVE', expiration: '2026-08-14' }),
       makePosition({
         id: 'holding-shares',
         phase: 'HOLDING_SHARES',
         status: 'ACTIVE',
+        strategyType: 'WHEEL',
+        pmcc: null,
         expiration: null,
         strike: null,
         dte: null,
@@ -66,7 +70,7 @@ describe('toCalendarEntries', () => {
   })
 
   it('maps PositionListItem fields onto CalendarEntry', () => {
-    const positions: PositionListItem[] = [
+    const positions: WheelListItem[] = [
       makePosition({
         id: 'pos-42',
         ticker: 'MSFT',

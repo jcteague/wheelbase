@@ -174,11 +174,6 @@ interface SeedOpts {
 }
 
 async function seedPosition(page: Page, opts: SeedOpts = {}): Promise<string> {
-  await page.evaluate(() => {
-    location.hash = '#/new'
-  })
-  await page.waitForSelector('label:has-text("Ticker")')
-
   const result = (await page.evaluate(
     async (i: { expiration: string; thesis: string | null }) =>
       window.api.createPosition({

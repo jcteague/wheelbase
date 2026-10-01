@@ -554,7 +554,7 @@ between `006` and `008` without issue. The sequence is now contiguous again.
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50,us-59,us-121 -->
+<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50,us-59,us-121,us-101 -->
 
 ## Driven by
 
@@ -574,6 +574,8 @@ between `006` and `008` without issue. The sequence is now contiguous again.
   migration `011`
 - [us-121 — IV rank from our own IV history](../features/us-121-iv-rank-from-own-iv-history.md) —
   migration `016` (drops `007`'s `ivr_snapshot`)
+- [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md) —
+  migration `017`
 
 <!-- /generated -->
 
@@ -672,7 +674,32 @@ table's role, in the style of `015`. It is a pure create/drop — no backfill. S
 
 <!-- /generated -->
 
-<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50,us-59,us-121 -->
+<!-- generated:from us-101 -->
+
+## Migration 017 — `legs.fees`
+
+`migrations/017_add_leg_fees.sql` (introduced by [us-101](../features/us-101-open-pmcc-position.md)) adds a single column:
+
+```sql
+ALTER TABLE legs ADD COLUMN fees TEXT NOT NULL DEFAULT '0.0000';
+```
+
+Total fees for the leg in dollars, stored as 4-dp TEXT like every money column, never
+negative. The `DEFAULT` backfills every existing leg to `'0.0000'`, which is correct: the
+wheel flows never recorded fees and still do not write the column. PMCC entry
+(`createPmccPosition`) is the first writer, storing each leg's own fees so a later running
+basis can count each fee once, attached to its leg. An additive `ALTER TABLE` on a
+post-ship table, per the authoring policy above — no rebuild, no backfill beyond the
+default. **No other table changes:** `positions.strategy_type` and
+`cost_basis_snapshots.trigger_event` (migration 004) already existed, and the new
+`PMCC_OPEN` phase / `LEAPS_OPEN` / `SHORT_CALL_OPEN` roles / `PMCC_OPEN` trigger event are
+type-only because those columns carry no CHECK. The runner picks the file up by sorted
+filename after `016`. See [`schema/tables.md`](./tables.md#legs) and
+[per-leg-fees-on-legs-table](../architecture/02-adrs/per-leg-fees-on-legs-table.md).
+
+<!-- /generated -->
+
+<!-- generated:from us-6,us-33,us-35,us-37,us-44,us-50,us-59,us-121,us-101 -->
 
 ## See also
 
@@ -694,6 +721,8 @@ table's role, in the style of `015`. It is a pure create/drop — no backfill. S
   the feature that introduced migration `011`
 - [us-121 — IV rank from our own IV history](../features/us-121-iv-rank-from-own-iv-history.md) —
   the feature that introduced migration `016`
+- [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md) —
+  the feature that introduced migration `017`
 
 <!-- /generated -->
 

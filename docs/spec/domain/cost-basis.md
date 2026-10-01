@@ -1,6 +1,6 @@
 # Cost Basis
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101 -->
 
 ## Overview
 
@@ -47,9 +47,17 @@ the per-position `positions.profit_target_percent` override (added by
 migration `005`) and falls back to `DEFAULT_PROFIT_TARGET_PERCENT = 50` when
 `null`.
 
+A **PMCC** position (us-101) has its own opening math:
+`calculatePmccOpeningDebit` turns the two opening legs (long LEAPS call,
+short call) into the LEAPS cost, short credit, fees, initial net debit, basis
+per share and debit-to-width ratio. The service persists one `PMCC_OPEN`
+snapshot from it. The renderer preview, the positions list and the detail
+page call the same function, so all four surfaces show the same numbers. See
+[us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md).
+
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101 -->
 
 ## Key decisions
 
@@ -295,9 +303,48 @@ pnlPercent, maxProfit }` as 4-dp decimal strings. The renderer imports
   display a wrong number anywhere else.
 - **Driven by:** [us-8 — Close a covered call early](../features/us-8-close-covered-call-early.md)
 
+### One pure `calculatePmccOpeningDebit`, shared by service, preview, list and detail
+
+- **Decision:** PMCC opening math lives in one pure function in
+  `src/main/core/costbasis.ts`. The service uses it to build the snapshot;
+  the renderer's `PmccCashFlows` preview imports it directly (as
+  `PositionCard` imports `computeUnrealizedPnl`); list and detail recompute
+  the initial net debit from the legs' fills and fees through it. A
+  `money4(value)` helper owns the "4-dp TEXT money" convention across the
+  module.
+- **Why:** The AC pins five numbers, and two implementations would drift.
+  Recomputing from the legs also avoids the rounding loss of a per-share
+  basis (see [PMCC open](#pmcc-open-us-101)).
+- **ADR:** [shared-pure-pmcc-opening-debit](../architecture/02-adrs/shared-pure-pmcc-opening-debit.md)
+- **Driven by:** [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md)
+
+### PMCC opening snapshot follows US-103's ledger convention
+
+- **Decision:** The `PMCC_OPEN` snapshot stores `basis_per_share` as the
+  initial net debit per share (fees included) and `total_premium_collected`
+  as the short credit after short-leg fees.
+- **Why:** US-103's running PMCC basis must reproduce the fee-inclusive
+  $2,302.00 without adding fees a second time, and it defines
+  `total_premium_collected` as short credits after fees. Writing the first
+  row in that convention lets US-103 extend the chain rather than migrate it.
+- **ADR:** [pmcc-opening-snapshot-ledger-convention](../architecture/02-adrs/pmcc-opening-snapshot-ledger-convention.md)
+- **Driven by:** [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md)
+
+### Per-leg fees live on the leg, not the snapshot
+
+- **Decision:** Migration `017_add_leg_fees.sql` adds
+  `legs.fees TEXT NOT NULL DEFAULT '0.0000'` (dollars, 4 dp, never
+  negative). Wheel legs keep the default; the wheel never writes fees.
+- **Why:** US-103 needs each fee counted once, attached to its own leg, and
+  US-119 records fees on the buyback. A snapshot-level fees field would lose
+  per-leg attribution; folding fees into the fill price would break "actual
+  fill as recorded".
+- **ADR:** [per-leg-fees-on-legs-table](../architecture/02-adrs/per-leg-fees-on-legs-table.md)
+- **Driven by:** [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md)
+
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101 -->
 
 ## Cost basis on each lifecycle event
 
@@ -679,6 +726,76 @@ itself (`pnlPercent >= resolveProfitTarget(override)`) runs in the
 renderer to avoid an IPC round-trip on every quote update; the engine
 exposes the building blocks but does not gate the badge.
 
+### PMCC open (us-101)
+
+A PMCC position opens with two legs recorded together — a long LEAPS call
+(`LEAPS_OPEN`) and a short call (`SHORT_CALL_OPEN`) — by
+`createPmccPosition` in one transaction. The opening math is the pure
+`calculatePmccOpeningDebit` in `src/main/core/costbasis.ts`.
+
+**Inputs:** `contracts` (shared by both legs) plus, per leg (`long`,
+`short`), `strike`, `fillPrice` (per share) and `fees` (dollars, whole leg).
+
+**Outputs** (all 4-dp strings):
+
+```
+leapsCost           = longFill × 100 × contracts
+shortCredit         = shortFill × 100 × contracts
+fees                = longFees + shortFees
+netDebitBeforeFees  = leapsCost − shortCredit
+initialNetDebit     = netDebitBeforeFees + fees
+basisPerShare       = initialNetDebit / (100 × contracts)
+strikeWidthPerShare = shortStrike − longStrike
+debitToWidthPercent = (longFill − shortFill) / strikeWidthPerShare × 100
+                      (null when strikeWidthPerShare ≤ 0)
+```
+
+Fees are **excluded** from the debit-to-width ratio — it is a before-fees
+measure — so adding fees moves the debit but never the ratio. The function
+never throws on a net credit; rejecting one is `openPmcc`'s job (see
+[Wheel Lifecycle](wheel-lifecycle.md)).
+
+Worked example (US-101 fixture, 1 contract: LEAPS $80 call filled at
+$25.00, short $110 call filled at $2.00):
+
+```
+leapsCost           = $2,500.00
+shortCredit         = $200.00
+initialNetDebit     = $2,300.00     (no fees)
+strikeWidthPerShare = $30.00
+debitToWidthPercent = 76.67%        (76.6667)
+
+with $1.00 fees on each leg:
+initialNetDebit     = $2,302.00
+debitToWidthPercent = 76.67%        (unchanged)
+```
+
+Snapshot row written (`trigger_event = 'PMCC_OPEN'`):
+
+| Column                    | Value                                                       |
+| ------------------------- | ----------------------------------------------------------- |
+| `basis_per_share`         | `initialNetDebit / (contracts × 100)`, fees included (4 dp) |
+| `total_premium_collected` | `shortCredit − shortFees` (dollars, 4 dp)                   |
+| `final_pnl`               | `NULL` (position open)                                      |
+| `snapshot_at`             | `makeSnapshotAt(long fill date)`                            |
+
+For the fixture that is `23.0000` / `200.0000`, and `23.0200` / `199.0000`
+with the $1 + $1 fees. The position row is written with
+`strategy_type = 'PMCC'`, `phase = 'PMCC_OPEN'`, `status = 'ACTIVE'` and
+`opened_date = long fill date`. The two legs are not a roll pair
+(`roll_chain_id` is `NULL`) and each carries its own `fees`.
+
+**List and detail recompute from the legs.** The positions list
+(`PmccListSummary.initialNetDebit`) and the detail page do **not** multiply
+the rounded `basis_per_share` back up. They run the two legs' fills and fees
+through `calculatePmccOpeningDebit` again. Example: 3 contracts with $0.01
+fees per leg gives an initial net debit of $6,900.02, but `basis_per_share ×
+300` gives $6,900.00 or $6,900.03 depending on how the per-share value was
+rounded. On the list, a PMCC's `premiumCollected` is the short credit after
+fees and `effectiveCostBasis` is the snapshot's basis per share.
+
+See [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md).
+
 <!-- /generated -->
 
 <!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33 -->
@@ -908,7 +1025,7 @@ land in `cost_basis_snapshots`.
 
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101 -->
 
 ## Driven by
 
@@ -923,6 +1040,7 @@ land in `cost_basis_snapshots`.
 - [us-14 — Roll an open covered call](../features/us-14-roll-cc.md)
 - [us-16 — Sequential roll basis fix](../features/us-16-cost-basis-sequential-rolls.md)
 - [us-33 — Live option mid + unrealized P&L](../features/us-33-option-mid-pnl.md)
+- [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md)
 
 <!-- /generated -->
 

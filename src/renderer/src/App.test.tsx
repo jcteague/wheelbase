@@ -1,5 +1,8 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
+import { useEffect } from 'react'
 import { beforeEach, vi } from 'vitest'
+import { useLocation, useSearch } from 'wouter'
+import { navigate } from 'wouter/use-hash-location'
 import { App } from './App'
 import { useSettingsStatus } from './hooks/useSettings'
 
@@ -7,12 +10,17 @@ vi.mock('./hooks/useSettings', () => ({
   useSettingsStatus: vi.fn()
 }))
 
-vi.mock('./pages/PositionsListPage', () => ({
-  PositionsListPage: () => <div data-testid="positions-list-page" />
-}))
+const { listPageMounts } = vi.hoisted(() => ({ listPageMounts: vi.fn() }))
 
-vi.mock('./pages/NewWheelPage', () => ({
-  NewWheelPage: () => <div data-testid="new-wheel-page" />
+// Reports what the page reads from the router, and counts its own mounts so a
+// remount on the `/` ↔ `/new` flip would be visible.
+vi.mock('./pages/PositionsListPage', () => ({
+  PositionsListPage: function MockPositionsListPage() {
+    const [location] = useLocation()
+    const search = useSearch()
+    useEffect(() => listPageMounts(), [])
+    return <div data-testid="positions-list-page" data-location={location} data-search={search} />
+  }
 }))
 
 vi.mock('./pages/PositionDetailPage', () => ({
@@ -33,6 +41,7 @@ vi.mock('./pages/WatchlistPage', () => ({
 const mockUseSettingsStatus = vi.mocked(useSettingsStatus)
 
 beforeEach(() => {
+  listPageMounts.mockReset()
   window.location.hash = '#/'
   mockUseSettingsStatus.mockReturnValue({
     data: {
@@ -122,5 +131,65 @@ describe('App — the screener lives on the Watchlist page', () => {
     render(<App />)
 
     expect(screen.getByText('Dashboard')).toBeInTheDocument()
+  })
+})
+
+// [US-101] `#/new` is the positions list with the New position sheet open, not a page
+// of its own — one route, so the list is never remounted when the sheet opens or closes.
+describe('App — /new renders the positions list', () => {
+  it.each(['#/', '#/new'])('renders PositionsListPage at %s', (hash) => {
+    window.location.hash = hash
+
+    render(<App />)
+
+    expect(screen.getByTestId('positions-list-page')).toHaveAttribute(
+      'data-location',
+      hash.slice(1)
+    )
+  })
+
+  // `CallAwaySuccess` writes the query into the hash itself (`#/new?ticker=`), so the
+  // route must match a location that still carries it; the page splits it off.
+  it('routes a hash-embedded ?ticker= to the page', () => {
+    window.location.hash = '#/new?ticker=AAPL'
+
+    render(<App />)
+
+    expect(screen.getByTestId('positions-list-page')).toHaveAttribute(
+      'data-location',
+      '/new?ticker=AAPL'
+    )
+  })
+
+  // `ExpirationSheet` and the screener promote go through wouter's hash `navigate`, which
+  // writes the query into the real `location.search` instead.
+  it('hands the page a navigate()-written ?ticker= search', async () => {
+    render(<App />)
+
+    await act(async () => navigate('/new?ticker=AAPL'))
+
+    const page = screen.getByTestId('positions-list-page')
+    expect(page).toHaveAttribute('data-location', '/new')
+    expect(page).toHaveAttribute('data-search', 'ticker=AAPL')
+    window.history.replaceState(null, '', window.location.pathname)
+  })
+
+  it('keeps the same page instance across the / ↔ /new flip', async () => {
+    window.location.hash = '#/'
+    render(<App />)
+
+    await act(async () => {
+      window.location.hash = '#/new'
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+    })
+    expect(screen.getByTestId('positions-list-page')).toHaveAttribute('data-location', '/new')
+
+    await act(async () => {
+      window.location.hash = '#/'
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+    })
+
+    expect(screen.getByTestId('positions-list-page')).toHaveAttribute('data-location', '/')
+    expect(listPageMounts).toHaveBeenCalledOnce()
   })
 })

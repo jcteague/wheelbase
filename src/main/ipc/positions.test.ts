@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const assignCspPosition = vi.fn()
 const createPosition = vi.fn()
+const createPmccPosition = vi.fn()
 const closeCspPosition = vi.fn()
 const closeCoveredCallPosition = vi.fn()
 const expireCcPosition = vi.fn()
@@ -29,6 +30,7 @@ vi.mock('../logger', () => ({
 vi.mock('../services/positions', () => ({
   assignCspPosition,
   createPosition,
+  createPmccPosition,
   closeCspPosition,
   expireCcPosition,
   expireCspPosition,
@@ -69,6 +71,7 @@ describe('registerPositionsHandlers', () => {
     vi.clearAllMocks()
     assignCspPosition.mockReset()
     createPosition.mockReset()
+    createPmccPosition.mockReset()
     closeCspPosition.mockReset()
     closeCoveredCallPosition.mockReset()
     expireCcPosition.mockReset()
@@ -1107,5 +1110,119 @@ describe('registerPositionsHandlers', () => {
 
     expect(await handler?.(null, { positionId: 'p1', targetPercent: 40 })).toEqual({ ok: true })
     expect(run).toHaveBeenCalledWith(40, 'p1')
+  })
+
+  describe('positions:create-pmcc', () => {
+    const pmccLeg = (overrides: Record<string, unknown>): Record<string, unknown> => ({
+      underlying: 'XYZ',
+      instrumentType: 'CALL',
+      deliverableShares: 100,
+      contracts: 1,
+      fillDate: '2026-09-14',
+      fees: 0,
+      ...overrides
+    })
+    const validPayload = {
+      strategy: 'PMCC',
+      ticker: 'XYZ',
+      long: pmccLeg({ strike: 80, expiration: '2027-09-17', fillPrice: 25 }),
+      short: pmccLeg({ strike: 110, expiration: '2026-10-16', fillPrice: 2 })
+    }
+
+    async function registerAndGetHandler(
+      db: never,
+      deps: { ivrOnDemand?: { collect: () => Promise<void> } } = {}
+    ): Promise<((...args: unknown[]) => unknown) | undefined> {
+      const { ipcMain } = await import('electron')
+      const { registerPositionsHandlers } = await import('./positions')
+      registerPositionsHandlers(db, deps)
+      return getRegisteredHandler(
+        vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+        'positions:create-pmcc'
+      )
+    }
+
+    it('registers a positions:create-pmcc handler', async () => {
+      const { ipcMain } = await import('electron')
+      await registerAndGetHandler({} as never)
+
+      expect(vi.mocked(ipcMain.handle)).toHaveBeenCalledWith(
+        'positions:create-pmcc',
+        expect.any(Function)
+      )
+    })
+
+    it('calls createPmccPosition with the parsed payload and the IVR port, returning ok:true', async () => {
+      const db = {} as never
+      const ivrOnDemand = { collect: vi.fn(async () => {}) }
+      const result = {
+        position: { id: 'p1', ticker: 'XYZ', phase: 'PMCC_OPEN' },
+        openingDebit: { initialNetDebit: '2300.0000' }
+      }
+      createPmccPosition.mockReturnValue(result)
+
+      const handler = await registerAndGetHandler(db, { ivrOnDemand })
+
+      expect(await handler?.(null, validPayload)).toEqual({ ok: true, ...result })
+      expect(createPmccPosition).toHaveBeenCalledWith(db, validPayload, ivrOnDemand)
+    })
+
+    it('returns the LEAPS fill-price error at long.fillPrice without calling the service', async () => {
+      const handler = await registerAndGetHandler({} as never)
+      const result = await handler?.(null, {
+        ...validPayload,
+        long: { ...validPayload.long, fillPrice: undefined }
+      })
+
+      expect(result).toEqual({
+        ok: false,
+        errors: [
+          expect.objectContaining({
+            field: 'long.fillPrice',
+            message: 'Enter the actual LEAPS fill price.'
+          })
+        ]
+      })
+      expect(createPmccPosition).not.toHaveBeenCalled()
+    })
+
+    it('returns the service ValidationError as a field envelope', async () => {
+      const { ValidationError } = await import('../core/lifecycle')
+      createPmccPosition.mockImplementation(() => {
+        throw new ValidationError(
+          'short.strike',
+          'strike_not_above_long',
+          'Short-call strike must be above the LEAPS strike.'
+        )
+      })
+
+      const handler = await registerAndGetHandler({} as never)
+
+      expect(await handler?.(null, validPayload)).toEqual({
+        ok: false,
+        errors: [
+          {
+            field: 'short.strike',
+            code: 'strike_not_above_long',
+            message: 'Short-call strike must be above the LEAPS strike.'
+          }
+        ]
+      })
+    })
+
+    it('returns internal_error at __root__ when the service throws unexpectedly', async () => {
+      createPmccPosition.mockImplementation(() => {
+        throw new Error('disk full')
+      })
+
+      const handler = await registerAndGetHandler({} as never)
+
+      expect(await handler?.(null, validPayload)).toEqual({
+        ok: false,
+        errors: [
+          { field: '__root__', code: 'internal_error', message: 'An unexpected error occurred' }
+        ]
+      })
+    })
   })
 })

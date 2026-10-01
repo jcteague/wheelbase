@@ -219,6 +219,7 @@ function optionBarsFor(
  *   FAKE_MARKET_CALENDAR              JSON string: MarketCalendarDay[]
  *   FAKE_MARKET_DATA_ERROR            MarketDataErrorCode — when set, all calls throw this error
  *   FAKE_MARKET_CALENDAR_ERROR        MarketDataErrorCode — fails only getMarketCalendar
+ *   FAKE_OPTION_CHAIN_DELAY_MS        number — delays only getOptionChainSnapshot (default 0)
  *   WHEELBASE_FAKE_IV_SERIES          JSON string: FakeIvSeriesFixture — read at construction;
  *                                     setFakeIvSeries() replaces it at runtime
  */
@@ -250,6 +251,7 @@ export class FakeMarketDataProvider implements MarketDataProvider {
 
   async getOptionChainSnapshot(filter: OptionChainFilter): Promise<OptionChainQuote[]> {
     this.maybeThrow()
+    await delay(parseEnv<number>('FAKE_OPTION_CHAIN_DELAY_MS') ?? 0)
     const raw = process.env.WHEELBASE_MOCK_OPTION_SNAPSHOTS
     if (!raw) return []
     const all = JSON.parse(raw) as Record<string, OptionSnapshot | Partial<OptionChainQuote>>

@@ -37,6 +37,12 @@ function makeCloseCspSchema(
 
 type CloseCspFormValues = { close_price_per_contract: string; fill_date?: string }
 
+// The handler names an invalid field by its payload key; the form's fields are named differently.
+const PAYLOAD_TO_FORM_FIELD: Record<string, keyof CloseCspFormValues | undefined> = {
+  closePricePerContract: 'close_price_per_contract',
+  fillDate: 'fill_date'
+}
+
 type PnlPreview = { netPnl: number; totalPnl: number; pct: number }
 
 function computePreview(
@@ -90,16 +96,17 @@ export function CloseCspForm({
   function onSubmit(values: CloseCspFormValues): void {
     mutation.mutate(
       {
-        position_id: positionId,
-        close_price_per_contract: parseFloat(values.close_price_per_contract),
-        ...(values.fill_date && values.fill_date !== '' ? { fill_date: values.fill_date } : {})
+        positionId,
+        closePricePerContract: parseFloat(values.close_price_per_contract),
+        ...(values.fill_date && values.fill_date !== '' ? { fillDate: values.fill_date } : {})
       },
       {
         onSuccess: () => navigate('/'),
         onError: (error) => {
           const fieldErrors = extractFieldErrors(error as ApiError)
           fieldErrors.forEach((e) => {
-            setError(e.field as keyof CloseCspFormValues, { message: e.message })
+            const key = PAYLOAD_TO_FORM_FIELD[e.field]
+            if (key) setError(key, { message: e.message })
           })
         }
       }

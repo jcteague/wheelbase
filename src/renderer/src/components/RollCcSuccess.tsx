@@ -1,44 +1,9 @@
+import type { RollCcResponse } from '../api/positions'
 import { computeDte, fmtMoney } from '../lib/format'
 import { getCcRollTypeLabel, rollCreditDebitColors } from '../lib/rolls'
 import { SectionCard } from './ui/SectionCard'
 import { SheetBody, SheetHeader } from './ui/Sheet'
 import { SummaryRow } from './ui/SummaryRow'
-
-export type RollCcResponse = {
-  position: { id: string; ticker: string; phase: 'CC_OPEN'; status: 'ACTIVE' }
-  rollFromLeg: {
-    id: string
-    legRole: 'ROLL_FROM'
-    action: 'BUY'
-    instrumentType: string
-    strike: string
-    expiration: string
-    contracts: number
-    premiumPerContract: string
-    fillDate: string
-  }
-  rollToLeg: {
-    id: string
-    legRole: 'ROLL_TO'
-    action: 'SELL'
-    instrumentType: string
-    strike: string
-    expiration: string
-    contracts: number
-    premiumPerContract: string
-    fillDate: string
-  }
-  rollChainId: string
-  costBasisSnapshot: {
-    id: string
-    positionId: string
-    basisPerShare: string
-    totalPremiumCollected: string
-    finalPnl: null
-    snapshotAt: string
-    createdAt: string
-  }
-}
 
 type RollCcSuccessProps = {
   response: RollCcResponse

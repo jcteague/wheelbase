@@ -63,7 +63,7 @@ export function AssignmentSheet(props: AssignmentSheetProps): React.JSX.Element 
       return
     }
     setDateError(null)
-    mutate({ position_id: props.positionId, assignment_date: assignmentDate })
+    mutate({ positionId: props.positionId, assignmentDate })
   }
 
   const content = successState ? (

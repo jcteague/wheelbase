@@ -76,11 +76,11 @@ it('clicking Cancel calls onClose', async () => {
   await waitFor(() => expect(DEFAULT_PROPS.onClose).toHaveBeenCalled())
 })
 
-it('clicking Confirm Expiration calls mutation.mutate with position_id only — no expiration_date_override', async () => {
+it('clicking Confirm Expiration calls mutation.mutate with positionId only — no expirationDateOverride', async () => {
   const user = userEvent.setup()
   render(<ExpirationSheet {...DEFAULT_PROPS} />)
   await user.click(screen.getByRole('button', { name: /confirm expiration/i }))
-  expect(mockMutate).toHaveBeenCalledWith({ position_id: 'pos-123' })
+  expect(mockMutate).toHaveBeenCalledWith({ positionId: 'pos-123' })
 })
 
 it('shows "Cannot record expiration before the expiration date" error when mutation returns too_early', () => {

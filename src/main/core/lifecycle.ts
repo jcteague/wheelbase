@@ -2,7 +2,8 @@
 // Pure engine — no database or broker imports allowed here.
 
 import Decimal from 'decimal.js'
-import type { WheelPhase } from './types'
+import { pmccCrossLegIssues } from './pmcc-rules'
+import type { OptionInstrumentType, WheelPhase } from './types'
 
 export class ValidationError extends Error {
   constructor(
@@ -26,15 +27,16 @@ export interface OpenWheelInput {
 }
 
 export interface OpenWheelResult {
-  phase: WheelPhase
+  phase: 'CSP_OPEN'
 }
 
 const TICKER_RE = /^[A-Z]{1,5}$/
+const TICKER_MESSAGE = 'Ticker must be 1–5 uppercase letters'
 const NO_OPEN_COVERED_CALL_MESSAGE = 'No open covered call on this position'
 
-function requirePositiveStrike(strike: string): void {
+function requirePositiveStrike(strike: string, field: string = 'strike'): void {
   if (new Decimal(strike).lte(0)) {
-    throw new ValidationError('strike', 'must_be_positive', 'Strike must be positive')
+    throw new ValidationError(field, 'must_be_positive', 'Strike must be positive')
   }
 }
 
@@ -66,7 +68,7 @@ function requireFillDateOnOrAfterOpen(fillDate: string, openDate: string, messag
 
 export function openWheel(input: OpenWheelInput): OpenWheelResult {
   if (!TICKER_RE.test(input.ticker)) {
-    throw new ValidationError('ticker', 'invalid_format', 'Ticker must be 1–5 uppercase letters')
+    throw new ValidationError('ticker', 'invalid_format', TICKER_MESSAGE)
   }
 
   requirePositiveStrike(input.strike)
@@ -94,6 +96,121 @@ export function openWheel(input: OpenWheelInput): OpenWheelResult {
   }
 
   return { phase: 'CSP_OPEN' }
+}
+
+export interface OpenPmccLegInput {
+  underlying: string
+  instrumentType: OptionInstrumentType
+  deliverableShares: number
+  strike: string
+  expiration: string
+  contracts: number
+  fillPrice: string
+  fillDate: string
+  fees: string
+}
+
+export interface OpenPmccInput {
+  ticker: string
+  long: OpenPmccLegInput
+  short: OpenPmccLegInput
+  referenceDate: string
+}
+
+export interface OpenPmccResult {
+  phase: 'PMCC_OPEN'
+}
+
+type PmccSide = 'long' | 'short'
+
+/** Every field path `openPmcc` can reject on — a misspelled path is a typecheck failure. */
+export type PmccField = 'ticker' | '__pair__' | `${PmccSide}.${keyof OpenPmccLegInput}`
+
+const PMCC_SIDES: readonly PmccSide[] = ['long', 'short']
+
+function rejectPmcc(field: PmccField, code: string, message: string): never {
+  throw new ValidationError(field, code, message)
+}
+
+function requireCall(instrumentType: OptionInstrumentType, field: PmccField): void {
+  if (instrumentType !== 'CALL') {
+    rejectPmcc(field, 'not_a_call', 'PMCC entry requires two call options.')
+  }
+}
+
+function requireStandardDeliverable(deliverableShares: number, field: PmccField): void {
+  if (deliverableShares !== 100) {
+    rejectPmcc(
+      field,
+      'nonstandard_deliverable',
+      'This entry supports standard 100-share contracts only.'
+    )
+  }
+}
+
+function requirePositiveWholeContracts(contracts: number, field: PmccField): void {
+  if (!Number.isInteger(contracts) || contracts <= 0) {
+    rejectPmcc(field, 'must_be_positive_integer', 'Contracts must be a positive whole number.')
+  }
+}
+
+function requirePositiveFillPrice(fillPrice: string, field: PmccField): void {
+  if (new Decimal(fillPrice).lte(0)) {
+    rejectPmcc(field, 'must_be_positive', 'Actual fill price must be greater than zero.')
+  }
+}
+
+function requireNonNegativeFees(fees: string, field: PmccField): void {
+  if (new Decimal(fees).lt(0)) {
+    rejectPmcc(field, 'must_be_non_negative', 'Fees cannot be negative.')
+  }
+}
+
+/**
+ * Validates a poor man's covered call entry: a long LEAPS call plus a shorter-dated, higher-strike
+ * short call on the same underlying, opened for a net debit. Rules are checked in a fixed order
+ * (per-leg rules long then short, then the cross-leg rules shared with the entry form via
+ * `pmccCrossLegIssues`) and the first failure throws. ISO dates compare as strings.
+ */
+export function openPmcc(input: OpenPmccInput): OpenPmccResult {
+  const { long, short, referenceDate } = input
+  function eachLeg(check: (leg: OpenPmccLegInput, side: PmccSide) => void): void {
+    PMCC_SIDES.forEach((side) => check(input[side], side))
+  }
+
+  if (!TICKER_RE.test(input.ticker)) {
+    rejectPmcc('ticker', 'invalid_format', TICKER_MESSAGE)
+  }
+  eachLeg((leg, side) => {
+    if (leg.underlying !== input.ticker) {
+      rejectPmcc(
+        `${side}.underlying`,
+        'underlying_mismatch',
+        'Both calls must have the same underlying.'
+      )
+    }
+  })
+  eachLeg((leg, side) => requireCall(leg.instrumentType, `${side}.instrumentType`))
+  eachLeg((leg, side) =>
+    requireStandardDeliverable(leg.deliverableShares, `${side}.deliverableShares`)
+  )
+  eachLeg((leg, side) => requirePositiveWholeContracts(leg.contracts, `${side}.contracts`))
+  if (long.contracts !== short.contracts) {
+    rejectPmcc(
+      'short.contracts',
+      'quantity_mismatch',
+      'Opening quantities must match for this PMCC entry.'
+    )
+  }
+  eachLeg((leg, side) => requirePositiveStrike(leg.strike, `${side}.strike` satisfies PmccField))
+  eachLeg((leg, side) => requirePositiveFillPrice(leg.fillPrice, `${side}.fillPrice`))
+  eachLeg((leg, side) => requireNonNegativeFees(leg.fees, `${side}.fees`))
+  const [crossLegIssue] = pmccCrossLegIssues({ long, short, referenceDate })
+  if (crossLegIssue) {
+    rejectPmcc(crossLegIssue.field, crossLegIssue.code, crossLegIssue.message)
+  }
+
+  return { phase: 'PMCC_OPEN' }
 }
 
 export interface CloseCspInput {

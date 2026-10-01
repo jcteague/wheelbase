@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { isoDate, makeTestDb } from '../test-utils'
-import { createPosition } from './positions'
+import type { CreatePmccPositionPayload } from '../schemas'
+import { createPmccPosition, createPosition } from './positions'
 import { assignCspPosition } from './assign-csp-position'
 import { openCoveredCallPosition } from './open-covered-call-position'
 import { getPosition } from './get-position'
@@ -79,6 +80,43 @@ describe('getPosition', () => {
     expect(detail!.legs[0].legRole).toBe('CSP_OPEN')
     expect(detail!.legs[1].id).toBe(closeLegId)
     expect(detail!.legs[1].legRole).toBe('CSP_CLOSE')
+  })
+
+  it("returns fees = '0.0000' on legs and activeLeg for a wheel position from createPosition", () => {
+    const db = makeTestDb()
+    const created = createPosition(db, {
+      ticker: 'AAPL',
+      strike: 180,
+      expiration: isoDate(30),
+      contracts: 1,
+      premiumPerContract: 2.5,
+      fillDate: isoDate(0)
+    })
+
+    const detail = getPosition(db, created.position.id)
+
+    expect(detail!.legs[0].fees).toBe('0.0000')
+    expect(detail!.activeLeg!.fees).toBe('0.0000')
+  })
+
+  it('returns the stored fees on a seeded leg', () => {
+    const db = makeTestDb()
+    const positionId = randomUUID()
+    const now = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO positions
+        (id, ticker, strategy_type, status, phase, opened_date, tags, created_at, updated_at)
+       VALUES (?, 'AAPL', 'WHEEL', 'ACTIVE', 'CSP_OPEN', ?, '[]', ?, ?)`
+    ).run(positionId, isoDate(0), now, now)
+    db.prepare(
+      `INSERT INTO legs (id, position_id, leg_role, action, instrument_type, strike, expiration, contracts, premium_per_contract, fill_price, fill_date, fees, created_at, updated_at)
+       VALUES (?, ?, 'CSP_OPEN', 'SELL', 'PUT', '180.0000', ?, 1, '2.5000', '2.5000', ?, '1.0000', ?, ?)`
+    ).run(randomUUID(), positionId, isoDate(30), isoDate(0), now, now)
+
+    const detail = getPosition(db, positionId)
+
+    expect(detail!.legs[0].fees).toBe('1.0000')
+    expect(detail!.activeLeg!.fees).toBe('1.0000')
   })
 
   it('returns empty legs array when position has no legs', () => {
@@ -303,5 +341,56 @@ describe('getPosition', () => {
     expect(detail).not.toBeNull()
     expect(detail!.position.profitTargetPercent).toBeNull()
     expect(detail!.position.managementWindowDteOverride).toBeNull()
+  })
+})
+
+function makePmccPayload(contracts = 1, fees = 0): CreatePmccPositionPayload {
+  const leg = {
+    underlying: 'XYZ',
+    instrumentType: 'CALL' as const,
+    deliverableShares: 100,
+    contracts,
+    fillDate: isoDate(0),
+    fees
+  }
+  return {
+    strategy: 'PMCC',
+    ticker: 'XYZ',
+    long: { ...leg, strike: 80, expiration: isoDate(368), fillPrice: 25.0 },
+    short: { ...leg, strike: 110, expiration: isoDate(32), fillPrice: 2.0 }
+  }
+}
+
+describe('getPosition — PMCC initial net debit (US-101)', () => {
+  it('returns the initial net debit recomputed from both opening legs', () => {
+    const db = makeTestDb()
+    const { position } = createPmccPosition(db, makePmccPayload())
+    expect(getPosition(db, position.id)!.initialNetDebit).toBe('2300.0000')
+  })
+
+  it('computes the debit from the leg fills, not the rounded basis (3 contracts, $0.01 fees → 6900.0200)', () => {
+    const db = makeTestDb()
+    const { position } = createPmccPosition(db, makePmccPayload(3, 0.01))
+    expect(getPosition(db, position.id)!.initialNetDebit).toBe('6900.0200')
+  })
+
+  it('returns null when a PMCC opening leg is missing', () => {
+    const db = makeTestDb()
+    const { position, shortLeg } = createPmccPosition(db, makePmccPayload())
+    db.prepare('DELETE FROM legs WHERE id = ?').run(shortLeg.id)
+    expect(getPosition(db, position.id)!.initialNetDebit).toBeNull()
+  })
+
+  it('returns null for a wheel position', () => {
+    const db = makeTestDb()
+    const { position } = createPosition(db, {
+      ticker: 'AAPL',
+      strike: 180,
+      expiration: isoDate(30),
+      contracts: 1,
+      premiumPerContract: 2.5,
+      fillDate: isoDate(0)
+    })
+    expect(getPosition(db, position.id)!.initialNetDebit).toBeNull()
   })
 })

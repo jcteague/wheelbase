@@ -14,6 +14,7 @@ import type {
   WheelStatus
 } from '../core/types'
 import { activeLegSubquery } from './active-leg-sql'
+import { pmccInitialNetDebit, readPmccOpeningLegs } from './pmcc-opening-legs'
 import { logger } from '../logger'
 
 interface PositionRow {
@@ -43,6 +44,7 @@ interface PositionRow {
   premium_per_contract: string | null
   fill_price: string | null
   fill_date: string | null
+  fees: string | null
   leg_created_at: string | null
   leg_updated_at: string | null
   // snapshot columns (nullable)
@@ -69,6 +71,7 @@ function mapLegRow(r: LegRow): LegRecord {
     fillPrice: r.fill_price,
     fillDate: r.fill_date,
     rollChainId: r.roll_chain_id ?? null,
+    fees: r.fees,
     createdAt: r.created_at,
     updatedAt: r.updated_at
   }
@@ -105,6 +108,7 @@ function mapActiveLeg(row: PositionRow): LegRecord | null {
     fillPrice: row.fill_price,
     fillDate: row.fill_date!,
     rollChainId: null,
+    fees: row.fees!,
     createdAt: row.leg_created_at!,
     updatedAt: row.leg_updated_at!
   }
@@ -130,7 +134,7 @@ function mapLatestSnapshot(row: PositionRow): CostBasisSnapshotRecord | null {
 const GET_LEGS_QUERY = `
   SELECT
     id, position_id, leg_role, action, instrument_type, strike, expiration,
-    contracts, premium_per_contract, fill_price, fill_date, roll_chain_id, created_at, updated_at
+    contracts, premium_per_contract, fill_price, fill_date, roll_chain_id, fees, created_at, updated_at
   FROM legs
   WHERE position_id = ?
   ORDER BY fill_date ASC, created_at ASC
@@ -168,6 +172,7 @@ interface LegRow {
   fill_price: string | null
   fill_date: string
   roll_chain_id: string | null
+  fees: string
   created_at: string
   updated_at: string
 }
@@ -189,6 +194,7 @@ const GET_QUERY = `
     l.premium_per_contract,
     l.fill_price,
     l.fill_date,
+    l.fees,
     l.created_at   AS leg_created_at,
     l.updated_at   AS leg_updated_at,
     cbs.id         AS snapshot_id,
@@ -245,7 +251,12 @@ export function getPosition(db: Database.Database, positionId: string): GetPosit
   const legs: LegRecord[] = legRows.map(mapLegRow)
   const allSnapshots: CostBasisSnapshotRecord[] = snapshotRows.map(mapSnapshotRow)
 
+  const initialNetDebit =
+    position.strategyType === 'PMCC'
+      ? pmccInitialNetDebit(readPmccOpeningLegs(db, [positionId]).get(positionId))
+      : null
+
   logger.info({ positionId }, 'position_fetched')
 
-  return { position, activeLeg, costBasisSnapshot, legs, allSnapshots }
+  return { position, activeLeg, costBasisSnapshot, legs, allSnapshots, initialNetDebit }
 }

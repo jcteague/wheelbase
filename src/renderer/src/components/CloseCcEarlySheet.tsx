@@ -64,9 +64,9 @@ export function CloseCcEarlySheet(props: CloseCcEarlySheetProps): React.JSX.Elem
 
     mutate(
       {
-        position_id: props.positionId,
-        close_price_per_contract: Number.parseFloat(closePrice),
-        fill_date: fillDate || localToday()
+        positionId: props.positionId,
+        closePricePerContract: Number.parseFloat(closePrice),
+        fillDate: fillDate || localToday()
       },
       {
         onError: (mutationError) => {
@@ -78,8 +78,8 @@ export function CloseCcEarlySheet(props: CloseCcEarlySheetProps): React.JSX.Elem
             fieldErrors[fieldError.field] = fieldError.message
           })
 
-          setPriceError(fieldErrors.close_price_per_contract ?? null)
-          setDateError(fieldErrors.fill_date ?? null)
+          setPriceError(fieldErrors.closePricePerContract ?? null)
+          setDateError(fieldErrors.fillDate ?? null)
         }
       }
     )

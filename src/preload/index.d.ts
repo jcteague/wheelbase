@@ -1,213 +1,61 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-
-interface IpcPositionListItem {
-  id: string
-  ticker: string
-  phase: string
-  status: string
-  strike: string | null
-  expiration: string | null
-  dte: number | null
-  instrumentType: 'PUT' | 'CALL' | null
-  contracts: number | null
-  entryPremiumPerContract: string | null
-  premiumCollected: string
-  effectiveCostBasis: string
-  profitTargetPercent: number | null
-}
-
-interface IpcCreatePositionPayload {
-  ticker: string
-  strike: number
-  expiration: string
-  contracts: number
-  premiumPerContract: number
-  fillDate?: string
-  thesis?: string
-  notes?: string
-}
-
-interface IpcPositionRecord {
-  id: string
-  ticker: string
-  phase: string
-  status: string
-  strategyType: string
-  openedDate: string
-  closedDate: string | null
-  accountId: string | null
-  notes: string | null
-  thesis: string | null
-  tags: string[]
-  profitTargetPercent: number | null
-  managementWindowDteOverride: number | null
-  createdAt: string
-  updatedAt: string
-}
-
-interface IpcLegRecord {
-  id: string
-  positionId: string
-  legRole: string
-  action: string
-  instrumentType: string
-  strike: string
-  expiration: string
-  contracts: number
-  premiumPerContract: string
-  fillPrice?: string | null
-  fillDate: string
-  createdAt: string
-  updatedAt: string
-}
-
-interface IpcCostBasisSnapshotRecord {
-  id: string
-  positionId: string
-  basisPerShare: string
-  totalPremiumCollected: string
-  finalPnl: string | null
-  snapshotAt: string
-  createdAt: string
-}
+// Position payloads and results are the handlers' own types: each handler parses its payload
+// with the matching schema and returns its service result as-is.
+import type {
+  AssignCspPayload,
+  CloseCcPayload,
+  CloseCspPayload,
+  CreatePmccPositionPayload,
+  CreatePositionPayload,
+  ExpireCcPayload,
+  ExpireCspPayload,
+  OpenCcPayload,
+  RecordCallAwayPayload,
+  RollCcPayload,
+  RollCspPayload,
+  SaveAlertOverridesPayload,
+  AssignCspPositionResult,
+  CloseCcPositionResult,
+  CloseCspPositionResult,
+  CreatePmccPositionResult,
+  CreatePositionResult,
+  ExpireCcPositionResult,
+  ExpireCspPositionResult,
+  GetPositionResult,
+  OpenCcPositionResult,
+  PositionListItem,
+  RecordCallAwayResult,
+  RollCcResult,
+  RollCspResult
+} from '../main/schemas'
 
 type IpcResult<T> =
   | ({ ok: true } & T)
   | { ok: false; errors: Array<{ field: string; code: string; message: string }> }
 
-type IpcCreatePositionResult = IpcResult<{
-  position: IpcPositionRecord
-  leg: IpcLegRecord
-  costBasisSnapshot: IpcCostBasisSnapshotRecord
-}>
+type IpcCreatePositionResult = IpcResult<CreatePositionResult>
 
-type IpcGetPositionResult = IpcResult<{
-  position: IpcPositionRecord
-  activeLeg: IpcLegRecord | null
-  costBasisSnapshot: IpcCostBasisSnapshotRecord | null
-}>
+type IpcGetPositionResult = IpcResult<GetPositionResult>
 
-interface IpcCloseCspPayload {
-  positionId: string
-  closePricePerContract: number
-  fillDate?: string
-}
+type IpcCloseCspResult = IpcResult<CloseCspPositionResult>
 
-type IpcCloseCspResult = IpcResult<{
-  position: { id: string; ticker: string; phase: string; status: string; closedDate: string }
-  leg: IpcLegRecord
-  costBasisSnapshot: IpcCostBasisSnapshotRecord & { finalPnl: string }
-}>
+type IpcExpireCspResult = IpcResult<ExpireCspPositionResult>
 
-interface IpcExpireCspPayload {
-  positionId: string
-  expirationDateOverride?: string
-}
+type IpcAssignCspResult = IpcResult<AssignCspPositionResult>
 
-type IpcExpireCspResult = IpcResult<{
-  position: { id: string; ticker: string; phase: string; status: string; closedDate: string }
-  leg: IpcLegRecord
-  costBasisSnapshot: IpcCostBasisSnapshotRecord & { finalPnl: string }
-}>
+type IpcOpenCcResult = IpcResult<OpenCcPositionResult>
 
-interface IpcAssignCspPayload {
-  positionId: string
-  assignmentDate: string
-}
+type IpcCloseCcResult = IpcResult<CloseCcPositionResult>
 
-type IpcAssignCspResult = IpcResult<{
-  position: { id: string; ticker: string; phase: string; status: string }
-  leg: IpcLegRecord
-  costBasisSnapshot: IpcCostBasisSnapshotRecord
-  premiumWaterfall: Array<{ label: string; amount: string }>
-}>
+type IpcRecordCallAwayResult = IpcResult<RecordCallAwayResult>
 
-interface IpcOpenCcPayload {
-  positionId: string
-  strike: number
-  expiration: string
-  contracts: number
-  premiumPerContract: number
-  fillDate?: string
-}
+type IpcExpireCcResult = IpcResult<ExpireCcPositionResult>
 
-type IpcOpenCcResult = IpcResult<{
-  position: { id: string; ticker: string; phase: string; status: string; closedDate: null }
-  leg: IpcLegRecord
-  costBasisSnapshot: IpcCostBasisSnapshotRecord
-}>
+type IpcRollCspResult = IpcResult<RollCspResult>
 
-interface IpcCloseCcPayload {
-  positionId: string
-  closePricePerContract: number
-  fillDate?: string
-}
+type IpcRollCcResult = IpcResult<RollCcResult>
 
-type IpcCloseCcResult = IpcResult<{
-  position: { id: string; ticker: string; phase: string; status: string; closedDate: null }
-  leg: IpcLegRecord & { fillPrice: string }
-  ccLegPnl: string
-}>
-
-interface IpcRecordCallAwayPayload {
-  positionId: string
-}
-
-type IpcRecordCallAwayResult = IpcResult<{
-  position: { id: string; ticker: string; phase: string; status: string; closedDate: string }
-  leg: IpcLegRecord & { fillPrice: string }
-  costBasisSnapshot: IpcCostBasisSnapshotRecord & { finalPnl: string }
-  finalPnl: string
-  cycleDays: number
-  annualizedReturn: string
-  basisPerShare: string
-}>
-
-interface IpcExpireCcPayload {
-  positionId: string
-  expirationDateOverride?: string
-}
-
-type IpcExpireCcResult = IpcResult<{
-  position: { id: string; ticker: string; phase: string; status: string; closedDate: null }
-  leg: IpcLegRecord
-  costBasisSnapshot: IpcCostBasisSnapshotRecord
-  sharesHeld: number
-}>
-
-interface IpcRollCspPayload {
-  positionId: string
-  costToClosePerContract: number
-  newPremiumPerContract: number
-  newExpiration: string
-  newStrike?: number
-  fillDate?: string
-}
-
-type IpcRollCspResult = IpcResult<{
-  position: { id: string; ticker: string; phase: 'CSP_OPEN'; status: 'ACTIVE' }
-  rollFromLeg: IpcLegRecord
-  rollToLeg: IpcLegRecord
-  rollChainId: string
-  costBasisSnapshot: IpcCostBasisSnapshotRecord
-}>
-
-interface IpcRollCcPayload {
-  positionId: string
-  costToClosePerContract: number
-  newPremiumPerContract: number
-  newExpiration: string
-  newStrike?: number
-  fillDate?: string
-}
-
-type IpcRollCcResult = IpcResult<{
-  position: { id: string; ticker: string; phase: 'CC_OPEN'; status: 'ACTIVE' }
-  rollFromLeg: IpcLegRecord
-  rollToLeg: IpcLegRecord
-  rollChainId: string
-  costBasisSnapshot: IpcCostBasisSnapshotRecord
-}>
+type IpcCreatePmccPositionResult = IpcResult<CreatePmccPositionResult>
 
 interface IpcStockQuote {
   price: string
@@ -347,12 +195,6 @@ interface IpcAlertDefaults {
 }
 
 type IpcAlertDefaultsResult = IpcResult<{ defaults: IpcAlertDefaults }>
-
-interface IpcSaveAlertOverridesPayload {
-  positionId: string
-  profitTargetPercent: number | null
-  managementWindowDte: number | null
-}
 
 type IpcSaveAlertOverridesResult = IpcResult<{
   position: {
@@ -675,20 +517,23 @@ declare global {
     electron: ElectronAPI
     api: {
       ping: () => Promise<string>
-      listPositions: () => Promise<IpcPositionListItem[]>
-      createPosition: (payload: IpcCreatePositionPayload) => Promise<IpcCreatePositionResult>
+      listPositions: () => Promise<PositionListItem[]>
+      createPosition: (payload: CreatePositionPayload) => Promise<IpcCreatePositionResult>
+      createPmccPosition: (
+        payload: CreatePmccPositionPayload
+      ) => Promise<IpcCreatePmccPositionResult>
       getPosition: (positionId: string) => Promise<IpcGetPositionResult>
-      closePosition: (payload: IpcCloseCspPayload) => Promise<IpcCloseCspResult>
-      expirePosition: (payload: IpcExpireCspPayload) => Promise<IpcExpireCspResult>
-      assignPosition: (payload: IpcAssignCspPayload) => Promise<IpcAssignCspResult>
-      openCoveredCall: (payload: IpcOpenCcPayload) => Promise<IpcOpenCcResult>
-      closeCoveredCallEarly: (payload: IpcCloseCcPayload) => Promise<IpcCloseCcResult>
-      recordCallAway: (payload: IpcRecordCallAwayPayload) => Promise<IpcRecordCallAwayResult>
-      expireCc: (payload: IpcExpireCcPayload) => Promise<IpcExpireCcResult>
-      rollCsp: (payload: IpcRollCspPayload) => Promise<IpcRollCspResult>
-      rollCc: (payload: IpcRollCcPayload) => Promise<IpcRollCcResult>
+      closePosition: (payload: CloseCspPayload) => Promise<IpcCloseCspResult>
+      expirePosition: (payload: ExpireCspPayload) => Promise<IpcExpireCspResult>
+      assignPosition: (payload: AssignCspPayload) => Promise<IpcAssignCspResult>
+      openCoveredCall: (payload: OpenCcPayload) => Promise<IpcOpenCcResult>
+      closeCoveredCallEarly: (payload: CloseCcPayload) => Promise<IpcCloseCcResult>
+      recordCallAway: (payload: RecordCallAwayPayload) => Promise<IpcRecordCallAwayResult>
+      expireCc: (payload: ExpireCcPayload) => Promise<IpcExpireCcResult>
+      rollCsp: (payload: RollCspPayload) => Promise<IpcRollCspResult>
+      rollCc: (payload: RollCcPayload) => Promise<IpcRollCcResult>
       saveAlertOverrides: (
-        payload: IpcSaveAlertOverridesPayload
+        payload: SaveAlertOverridesPayload
       ) => Promise<IpcSaveAlertOverridesResult>
       setStockQuoteTickers: (
         payload: IpcSetStockQuoteTickersPayload

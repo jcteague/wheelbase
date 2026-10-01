@@ -13,8 +13,10 @@ import {
   calculateCspExpiration,
   calculateInitialCspBasis,
   calculateRollBasis,
-  computeUnrealizedPnl
+  computeUnrealizedPnl,
+  calculatePmccOpeningDebit
 } from './costbasis'
+import type { PmccOpeningDebitInput } from './costbasis'
 import {
   contracts,
   isoDay,
@@ -416,6 +418,98 @@ describe('full wheel cycle', () => {
           expectSameAmount(callAway.finalPnl, strikeGain.plus(afterCalls.totalPremiumCollected))
         }
       )
+    )
+  })
+})
+
+describe('calculatePmccOpeningDebit', () => {
+  const FOUR_DP = /^-?\d+\.\d{4}$/
+
+  const pmccInput: fc.Arbitrary<PmccOpeningDebitInput> = fc.record({
+    contracts,
+    long: fc.record({
+      strike: positiveMoney(),
+      fillPrice: positiveMoney(),
+      fees: nonNegativeMoney(50)
+    }),
+    short: fc.record({
+      strike: positiveMoney(),
+      fillPrice: positiveMoney(),
+      fees: nonNegativeMoney(50)
+    })
+  })
+
+  it('net debits are exact sums of the leg cash flows', () => {
+    fc.assert(
+      fc.property(pmccInput, (input) => {
+        const result = calculatePmccOpeningDebit(input)
+        const beforeFees = money(result.leapsCost).minus(result.shortCredit)
+        expect(money(result.netDebitBeforeFees).eq(beforeFees)).toBe(true)
+        expect(money(result.initialNetDebit).eq(beforeFees.plus(result.fees))).toBe(true)
+        expect(money(result.fees).eq(money(input.long.fees).plus(input.short.fees))).toBe(true)
+      })
+    )
+  })
+
+  it('leg cash flows are fill × 100 × contracts', () => {
+    fc.assert(
+      fc.property(pmccInput, (input) => {
+        const result = calculatePmccOpeningDebit(input)
+        const shares = SHARES_PER_CONTRACT * input.contracts
+        expectSameAmount(result.leapsCost, money(input.long.fillPrice).times(shares))
+        expectSameAmount(result.shortCredit, money(input.short.fillPrice).times(shares))
+      })
+    )
+  })
+
+  it('basis per share and ratio are invariant when the position is scaled by contracts', () => {
+    fc.assert(
+      fc.property(pmccInput, contracts, (input, n) => {
+        const scaleFees = (fees: string): string => money(fees).times(n).toFixed(4)
+        const one = calculatePmccOpeningDebit({ ...input, contracts: 1 })
+        const many = calculatePmccOpeningDebit({
+          contracts: n,
+          long: { ...input.long, fees: scaleFees(input.long.fees) },
+          short: { ...input.short, fees: scaleFees(input.short.fees) }
+        })
+        expect(many.basisPerShare).toBe(one.basisPerShare)
+        expect(many.debitToWidthPercent).toBe(one.debitToWidthPercent)
+      })
+    )
+  })
+
+  it('ratio is null exactly when the short strike is not above the long strike', () => {
+    fc.assert(
+      fc.property(pmccInput, (input) => {
+        const result = calculatePmccOpeningDebit(input)
+        const widthNotPositive = money(input.short.strike).lte(input.long.strike)
+        expect(result.debitToWidthPercent === null).toBe(widthNotPositive)
+      })
+    )
+  })
+
+  it('ratio ignores fees', () => {
+    fc.assert(
+      fc.property(pmccInput, nonNegativeMoney(50), nonNegativeMoney(50), (input, lf, sf) => {
+        const base = calculatePmccOpeningDebit(input)
+        const refeed = calculatePmccOpeningDebit({
+          ...input,
+          long: { ...input.long, fees: lf },
+          short: { ...input.short, fees: sf }
+        })
+        expect(refeed.debitToWidthPercent).toBe(base.debitToWidthPercent)
+      })
+    )
+  })
+
+  it('every output is a 4-dp decimal string', () => {
+    fc.assert(
+      fc.property(pmccInput, (input) => {
+        const result = calculatePmccOpeningDebit(input)
+        Object.values(result)
+          .filter((value): value is string => value !== null)
+          .forEach((value) => expect(value).toMatch(FOUR_DP))
+      })
     )
   })
 })

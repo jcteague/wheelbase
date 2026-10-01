@@ -143,8 +143,10 @@ const CSP_OPEN_DETAIL = {
     expiration: '2026-04-17',
     contracts: 1,
     premiumPerContract: '2.5000',
+    fillPrice: null,
     fillDate: '2026-03-01',
     rollChainId: null,
+    fees: '0.0000',
     createdAt: '2026-03-01T00:00:00.000Z',
     updatedAt: '2026-03-01T00:00:00.000Z'
   },
@@ -154,11 +156,13 @@ const CSP_OPEN_DETAIL = {
     basisPerShare: '177.5000',
     totalPremiumCollected: '250.0000',
     finalPnl: null,
+    triggerEvent: 'CSP_OPEN' as const,
     snapshotAt: '2026-03-01T00:00:00.000Z',
     createdAt: '2026-03-01T00:00:00.000Z'
   },
   legs: [],
-  allSnapshots: []
+  allSnapshots: [],
+  initialNetDebit: null
 }
 
 // RED: TypeScript will error here until PositionDetail gains the allSnapshots field

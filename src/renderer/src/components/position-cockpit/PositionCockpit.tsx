@@ -17,6 +17,7 @@ import { VerdictBlock } from './VerdictBlock'
 import { RiskSnapshot } from './RiskSnapshot'
 import { ContextStrip } from './ContextStrip'
 import { CollapsedDrawer } from './CollapsedDrawer'
+import { PmccLegReference } from './PmccLegReference'
 import { SectionCard } from '../ui/SectionCard'
 import { StatGrid } from '../ui/Stat'
 import { LegHistoryTable } from '../LegHistoryTable'
@@ -37,7 +38,10 @@ export function PositionCockpit({
   ivRank,
   pnlStale
 }: PositionCockpitProps): React.JSX.Element {
-  const { position, activeLeg, costBasisSnapshot, legs, allSnapshots } = detail
+  const { position, activeLeg, costBasisSnapshot, legs, allSnapshots, initialNetDebit } = detail
+  if (position.strategyType === 'PMCC') {
+    return <PmccLegReference legs={legs} initialNetDebit={initialNetDebit} />
+  }
   const phaseLabel = PHASE_LABEL[position.phase]
   const phaseColor = PHASE_COLOR[position.phase]
   const enrichedLegs = deriveRunningBasis(legs, allSnapshots ?? [])

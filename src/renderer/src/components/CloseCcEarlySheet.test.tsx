@@ -4,6 +4,7 @@ import { vi } from 'vitest'
 import type { CloseCcEarlyResponse } from '../api/positions'
 import { useCloseCoveredCallEarly } from '../hooks/useCloseCoveredCallEarly'
 import { CloseCcEarlySheet } from './CloseCcEarlySheet'
+import { legRecord } from '../test-fixtures/position-records'
 
 vi.mock('../hooks/useCloseCoveredCallEarly')
 vi.mock('@/components/ui/date-picker', () => ({
@@ -54,7 +55,7 @@ const SUCCESS_PROFIT_RESPONSE: CloseCcEarlyResponse = {
     status: 'ACTIVE',
     closedDate: null
   },
-  leg: {
+  leg: legRecord({
     id: 'leg-1',
     positionId: 'pos-123',
     legRole: 'CC_CLOSE',
@@ -63,13 +64,12 @@ const SUCCESS_PROFIT_RESPONSE: CloseCcEarlyResponse = {
     strike: '182.0000',
     expiration: '2026-02-21',
     contracts: 1,
-    premium_per_contract: '1.1000',
     premiumPerContract: '1.1000',
     fillPrice: '1.1000',
     fillDate: '2026-02-01',
     createdAt: '',
     updatedAt: ''
-  },
+  }),
   ccLegPnl: '120.0000'
 }
 
@@ -77,7 +77,6 @@ const SUCCESS_LOSS_RESPONSE: CloseCcEarlyResponse = {
   ...SUCCESS_PROFIT_RESPONSE,
   leg: {
     ...SUCCESS_PROFIT_RESPONSE.leg,
-    premium_per_contract: '3.5000',
     premiumPerContract: '3.5000',
     fillPrice: '3.5000'
   },
@@ -319,4 +318,35 @@ it('contracts field is read-only (displays value, not editable)', () => {
   render(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
   const contractsEl = screen.getByText(/^1$/)
   expect(contractsEl.tagName).not.toBe('INPUT')
+})
+
+it('shows server field errors from the handler beside the close price and fill date', async () => {
+  mockMutate.mockImplementation((_payload, options?: { onError?: (error: unknown) => void }) =>
+    options?.onError?.({
+      status: 400,
+      body: {
+        detail: [
+          {
+            field: 'closePricePerContract',
+            code: 'too_high',
+            message: 'Server: price too high'
+          },
+          { field: 'fillDate', code: 'before_open', message: 'Server: date before open' }
+        ]
+      }
+    })
+  )
+  const user = userEvent.setup()
+  render(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
+
+  const priceInput = screen.getByLabelText(/close price/i)
+  await user.clear(priceInput)
+  await user.type(priceInput, '1.10')
+  const dateInput = screen.getByLabelText(/fill date/i)
+  await user.clear(dateInput)
+  await user.type(dateInput, '2026-02-01')
+  await user.click(screen.getByRole('button', { name: /confirm close/i }))
+
+  expect(await screen.findByText('Server: price too high')).toBeInTheDocument()
+  expect(screen.getByText('Server: date before open')).toBeInTheDocument()
 })

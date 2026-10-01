@@ -36,7 +36,7 @@ export function CallAwaySheet(props: CallAwaySheetProps): React.JSX.Element | nu
   const capitalDeployed = basis.times(sharesHeld)
 
   const handleSubmit = (): void => {
-    mutate({ position_id: props.positionId }, {})
+    mutate({ positionId: props.positionId }, {})
   }
 
   return createPortal(

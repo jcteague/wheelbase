@@ -8,9 +8,16 @@ import {
   calculateCcClose,
   calculateCallAway,
   calculateRollBasis,
-  computeUnrealizedPnl
+  computeUnrealizedPnl,
+  calculatePmccOpeningDebit
 } from './costbasis'
-import type { CostBasisResult, CspLegInput, CcOpenBasisInput, RollBasisInput } from './costbasis'
+import type {
+  CostBasisResult,
+  CspLegInput,
+  CcOpenBasisInput,
+  RollBasisInput,
+  PmccOpeningDebitInput
+} from './costbasis'
 
 describe('calculateInitialCspBasis', () => {
   it('calculates basis per share', () => {
@@ -854,5 +861,99 @@ describe('computeUnrealizedPnl', () => {
     expect(() =>
       computeUnrealizedPnl({ entryPremium: '3.50', currentMid: '1.30', contracts: 1.5 })
     ).toThrow(/contracts/)
+  })
+})
+
+describe('calculatePmccOpeningDebit', () => {
+  function pmccInput(overrides: Partial<PmccOpeningDebitInput> = {}): PmccOpeningDebitInput {
+    return {
+      contracts: 1,
+      long: { strike: '80.00', fillPrice: '25.00', fees: '0.00' },
+      short: { strike: '110.00', fillPrice: '2.00', fees: '0.00' },
+      ...overrides
+    }
+  }
+
+  it('computes the initial cash flows for the fixture', () => {
+    expect(calculatePmccOpeningDebit(pmccInput())).toEqual({
+      leapsCost: '2500.0000',
+      shortCredit: '200.0000',
+      fees: '0.0000',
+      initialNetDebit: '2300.0000',
+      netDebitBeforeFees: '2300.0000',
+      basisPerShare: '23.0000',
+      strikeWidthPerShare: '30.0000',
+      debitToWidthPercent: '76.6667'
+    })
+  })
+
+  it('adds fees to the net debit and basis but excludes them from the ratio', () => {
+    const result = calculatePmccOpeningDebit(
+      pmccInput({
+        long: { strike: '80.00', fillPrice: '25.00', fees: '1.00' },
+        short: { strike: '110.00', fillPrice: '2.00', fees: '1.00' }
+      })
+    )
+    expect(result.fees).toBe('2.0000')
+    expect(result.initialNetDebit).toBe('2302.0000')
+    expect(result.netDebitBeforeFees).toBe('2300.0000')
+    expect(result.basisPerShare).toBe('23.0200')
+    expect(result.debitToWidthPercent).toBe('76.6667')
+  })
+
+  it('scales totals by contracts while basis stays per share', () => {
+    const result = calculatePmccOpeningDebit(pmccInput({ contracts: 3 }))
+    expect(result.leapsCost).toBe('7500.0000')
+    expect(result.shortCredit).toBe('600.0000')
+    expect(result.initialNetDebit).toBe('6900.0000')
+    expect(result.basisPerShare).toBe('23.0000')
+  })
+
+  it('returns a null ratio when the strike width is not positive', () => {
+    const result = calculatePmccOpeningDebit(
+      pmccInput({ short: { strike: '80.00', fillPrice: '2.00', fees: '0.00' } })
+    )
+    expect(result.debitToWidthPercent).toBeNull()
+    expect(result.strikeWidthPerShare).toBe('0.0000')
+    expect(result.initialNetDebit).toBe('2300.0000')
+    expect(result.basisPerShare).toBe('23.0000')
+  })
+
+  it('rounds every output to exactly 4 dp', () => {
+    const result = calculatePmccOpeningDebit(
+      pmccInput({
+        long: { strike: '80.00', fillPrice: '25.005', fees: '0.00' },
+        short: { strike: '110.00', fillPrice: '2.0049', fees: '0.00' }
+      })
+    )
+    expect(result).toEqual({
+      leapsCost: '2500.5000',
+      shortCredit: '200.4900',
+      fees: '0.0000',
+      initialNetDebit: '2300.0100',
+      netDebitBeforeFees: '2300.0100',
+      basisPerShare: '23.0001',
+      strikeWidthPerShare: '30.0000',
+      debitToWidthPercent: '76.6670'
+    })
+  })
+
+  it('rounds a half at the fifth decimal up', () => {
+    const result = calculatePmccOpeningDebit(
+      pmccInput({ long: { strike: '80.00', fillPrice: '25.00005', fees: '0.00' } })
+    )
+    // (2500.005 - 200) / 100 = 23.00005; 23.00005 / 30 × 100 = 76.666833…
+    expect(result.leapsCost).toBe('2500.0050')
+    expect(result.basisPerShare).toBe('23.0001')
+    expect(result.debitToWidthPercent).toBe('76.6668')
+  })
+
+  it('returns a negative net debit when the short credit exceeds the long cost', () => {
+    const input = pmccInput({
+      long: { strike: '80.00', fillPrice: '1.00', fees: '0.00' },
+      short: { strike: '110.00', fillPrice: '2.00', fees: '0.00' }
+    })
+    expect(() => calculatePmccOpeningDebit(input)).not.toThrow()
+    expect(calculatePmccOpeningDebit(input).netDebitBeforeFees).toBe('-100.0000')
   })
 })

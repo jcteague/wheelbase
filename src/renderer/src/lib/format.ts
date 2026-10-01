@@ -68,8 +68,25 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
  * which is exactly what the UTC basis produces for any trader west of UTC after
  * the UTC date has rolled over.
  */
-export function computeDteFromInput(expiration: string | undefined): number | null {
+export function computeDteFromInput(
+  expiration: string | undefined,
+  today: Date = new Date()
+): number | null {
   if (!expiration || !ISO_DATE.test(expiration)) return null
-  const days = differenceInCalendarDays(parseISO(expiration), new Date())
+  const days = differenceInCalendarDays(parseISO(expiration), today)
   return Number.isNaN(days) ? null : days
+}
+
+const GROUPED_MONEY = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+})
+
+/** `fmtMoney` with thousands separators: `2300.0000` → `$2,300.00`, `-5` → `-$5.00`. */
+export function fmtMoneyGrouped(value: string): string {
+  return GROUPED_MONEY.format(
+    new Decimal(value).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber()
+  )
 }

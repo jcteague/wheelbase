@@ -172,7 +172,7 @@ it('navigates to the created position 2 seconds after mutation success', async (
     const navigate = vi.fn()
     const successData = {
       position: { id: 'pos-456', ticker: 'AAPL', phase: 'CSP_OPEN' },
-      cost_basis_snapshot: { total_premium_collected: '350.00', basis_per_share: '146.50' }
+      costBasisSnapshot: { totalPremiumCollected: '350.00', basisPerShare: '146.50' }
     }
 
     const { rerender } = render(<NewWheelForm navigate={navigate} />)
@@ -210,7 +210,7 @@ it('shows success confirmation panel after successful submission', async () => {
     data: {
       position: { id: '1', ticker: 'AAPL', phase: 'CSP_OPEN', status: 'active' },
       leg: {},
-      cost_basis_snapshot: { basis_per_share: '146.5000', total_premium_collected: '350.0000' }
+      costBasisSnapshot: { basisPerShare: '146.5000', totalPremiumCollected: '350.0000' }
     },
     error: null
   } as unknown as ReturnType<typeof useCreatePosition>)
@@ -290,7 +290,7 @@ it('maps 400 field errors onto form fields from the mutation error callback', as
       body: {
         detail: [
           {
-            field: 'premium_per_contract',
+            field: 'premiumPerContract',
             code: 'must_be_positive',
             message: 'Premium must be positive'
           }
@@ -443,7 +443,7 @@ describe('NewWheelForm — promoted mode', () => {
       ticker: 'AAPL',
       strike: 180,
       contracts: 1,
-      premium_per_contract: 2.65
+      premiumPerContract: 2.65
     })
   })
 
@@ -609,7 +609,7 @@ it('navigates immediately when the success card’s View position action is used
     isError: false,
     data: {
       position: { id: 'pos-789', ticker: 'AAPL', phase: 'CSP_OPEN' },
-      cost_basis_snapshot: { total_premium_collected: '350.00', basis_per_share: '146.50' }
+      costBasisSnapshot: { totalPremiumCollected: '350.00', basisPerShare: '146.50' }
     },
     error: null
   } as unknown as ReturnType<typeof useCreatePosition>)
@@ -630,7 +630,7 @@ it('survives a successful mutation when no navigate handler was supplied', () =>
       isError: false,
       data: {
         position: { id: 'pos-000', ticker: 'AAPL', phase: 'CSP_OPEN' },
-        cost_basis_snapshot: { total_premium_collected: '350.00', basis_per_share: '146.50' }
+        costBasisSnapshot: { totalPremiumCollected: '350.00', basisPerShare: '146.50' }
       },
       error: null
     } as unknown as ReturnType<typeof useCreatePosition>)

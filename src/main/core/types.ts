@@ -14,7 +14,8 @@ export const WheelPhase = z.enum([
   'CC_EXPIRED',
   'CC_CLOSED_PROFIT',
   'CC_CLOSED_LOSS',
-  'WHEEL_COMPLETE'
+  'WHEEL_COMPLETE',
+  'PMCC_OPEN'
 ])
 export const LegRole = z.enum([
   'CSP_OPEN',
@@ -26,7 +27,9 @@ export const LegRole = z.enum([
   'CALLED_AWAY',
   'ROLL_FROM',
   'ROLL_TO',
-  'EXPIRE'
+  'EXPIRE',
+  'LEAPS_OPEN',
+  'SHORT_CALL_OPEN'
 ])
 export const LegAction = z.enum(LEG_ACTION_VALUES)
 export const InstrumentType = z.enum(['PUT', 'CALL', 'STOCK'])
@@ -34,6 +37,11 @@ export const InstrumentType = z.enum(['PUT', 'CALL', 'STOCK'])
 export type StrategyType = z.infer<typeof StrategyType>
 export type WheelStatus = z.infer<typeof WheelStatus>
 export type WheelPhase = z.infer<typeof WheelPhase>
+export type PmccPhase = Extract<WheelPhase, 'PMCC_OPEN'>
+/** The phases a position of strategy `S` can be in: a PMCC never takes a wheel phase. */
+export type StrategyPhase<S extends StrategyType> = S extends 'PMCC'
+  ? PmccPhase
+  : Exclude<WheelPhase, PmccPhase>
 export type LegRole = z.infer<typeof LegRole>
 export type LegAction = z.infer<typeof LegAction>
 export type InstrumentType = z.infer<typeof InstrumentType>

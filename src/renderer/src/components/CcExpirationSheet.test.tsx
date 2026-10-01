@@ -76,11 +76,11 @@ it('renders Cancel and "Confirm Expiration" footer buttons', () => {
   expect(screen.getByRole('button', { name: /confirm expiration/i })).toBeInTheDocument()
 })
 
-it('clicking "Confirm Expiration" calls useExpireCoveredCall.mutate with { position_id: positionId }', async () => {
+it('clicking "Confirm Expiration" calls useExpireCoveredCall.mutate with { positionId }', async () => {
   const user = userEvent.setup()
   render(<CcExpirationSheet {...DEFAULT_PROPS} />)
   await user.click(screen.getByRole('button', { name: /confirm expiration/i }))
-  expect(mockMutate).toHaveBeenCalledWith({ position_id: 'pos-123' })
+  expect(mockMutate).toHaveBeenCalledWith({ positionId: 'pos-123' })
 })
 
 // ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { PositionCockpit } from './PositionCockpit'
 import type { PositionDetail, LegDetail, SnapshotDetail } from '../../api/positions'
 import type { OptionSnapshot } from '../../api/market-data'
+import { SHARES_VERDICT } from '../../lib/verdict'
 
 function daysFromToday(n: number): string {
   const d = new Date()
@@ -12,15 +13,17 @@ function daysFromToday(n: number): string {
 const baseLeg: LegDetail = {
   id: 'leg-1',
   positionId: 'pos-1',
-  legRole: 'OPEN',
+  legRole: 'CSP_OPEN',
   action: 'SELL',
   instrumentType: 'PUT',
   strike: '180.00',
   expiration: daysFromToday(30),
   contracts: 1,
   premiumPerContract: '3.50',
+  fillPrice: null,
   fillDate: '2024-01-15',
   rollChainId: null,
+  fees: '0.0000',
   createdAt: '2024-01-15T00:00:00Z',
   updatedAt: '2024-01-15T00:00:00Z'
 }
@@ -31,6 +34,7 @@ const baseSnapshot: SnapshotDetail = {
   basisPerShare: '176.50',
   totalPremiumCollected: '350.00',
   finalPnl: null,
+  triggerEvent: 'CSP_OPEN',
   snapshotAt: '2024-01-15T00:00:00Z',
   createdAt: '2024-01-15T00:00:00Z'
 }
@@ -56,7 +60,8 @@ const baseDetail: PositionDetail = {
   activeLeg: baseLeg,
   costBasisSnapshot: baseSnapshot,
   legs: [baseLeg],
-  allSnapshots: [baseSnapshot]
+  allSnapshots: [baseSnapshot],
+  initialNetDebit: null
 }
 
 const baseOptionSnapshot: OptionSnapshot = {
@@ -330,5 +335,45 @@ describe('PositionCockpit', () => {
       })
       expect(screen.getByText('Context')).toBeInTheDocument()
     })
+  })
+})
+
+describe('PMCC position', () => {
+  const leapsLeg: LegDetail = {
+    ...baseLeg,
+    id: 'leg-leaps',
+    legRole: 'LEAPS_OPEN',
+    action: 'BUY',
+    instrumentType: 'CALL',
+    strike: '80.0000',
+    expiration: daysFromToday(368),
+    premiumPerContract: '25.0000'
+  }
+  const shortLeg: LegDetail = {
+    ...leapsLeg,
+    id: 'leg-short',
+    legRole: 'SHORT_CALL_OPEN',
+    action: 'SELL',
+    strike: '110.0000',
+    expiration: daysFromToday(32),
+    premiumPerContract: '2.0000'
+  }
+  const pmccDetail: PositionDetail = {
+    ...baseDetail,
+    position: { ...baseDetail.position, ticker: 'XYZ', phase: 'PMCC_OPEN', strategyType: 'PMCC' },
+    activeLeg: null,
+    costBasisSnapshot: { ...baseSnapshot, basisPerShare: '23.0000' },
+    legs: [leapsLeg, shortLeg],
+    initialNetDebit: '2300.0000'
+  }
+
+  it('renders PmccLegReference instead of the no-active-leg verdict', () => {
+    render(<PositionCockpit detail={pmccDetail} />)
+    expect(screen.getByText('Buy LEAPS call')).toBeInTheDocument()
+    expect(screen.getByText('Sell short call')).toBeInTheDocument()
+    expect(screen.getByText('$2,300.00')).toBeInTheDocument()
+    expect(screen.queryByText(SHARES_VERDICT.label)).not.toBeInTheDocument()
+    expect(screen.queryByText(SHARES_VERDICT.sub)).not.toBeInTheDocument()
+    expect(screen.queryByText('Cost basis & history')).not.toBeInTheDocument()
   })
 })

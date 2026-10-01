@@ -10,6 +10,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { localDate } from './dates'
+import { reloadPositionsList } from './helpers'
 
 export const APP_PATH = path.join(__dirname, '../out/main/index.js')
 export const APP_CWD = path.join(__dirname, '..')
@@ -211,14 +212,7 @@ export function makeOpasn(
 
 /** Navigate to the positions list, forcing a remount so usePositions re-fetches. */
 export async function goToPositionsList(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    location.hash = '#/new'
-  })
-  await page.waitForSelector('label:has-text("Ticker")')
-  await page.evaluate(() => {
-    location.hash = '#/'
-  })
-  await page.waitForFunction(() => location.hash === '#/')
+  await reloadPositionsList(page)
 }
 
 export async function runDetectionNow(page: Page): Promise<void> {

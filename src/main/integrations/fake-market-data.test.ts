@@ -727,3 +727,61 @@ describe('FakeMarketDataProvider daily bars', () => {
     ).toEqual([])
   })
 })
+
+// [US-101] Test seam: FAKE_OPTION_CHAIN_DELAY_MS holds only the chain response back, so the
+// "Loading call contracts…" notice is deterministically observable end to end.
+describe('FakeMarketDataProvider — FAKE_OPTION_CHAIN_DELAY_MS', () => {
+  afterEach(() => {
+    delete process.env.FAKE_OPTION_CHAIN_DELAY_MS
+    vi.useRealTimers()
+  })
+
+  function track<T>(promise: Promise<T>): { settled: () => boolean; promise: Promise<T> } {
+    let done = false
+    const tracked = promise.then((value) => {
+      done = true
+      return value
+    })
+    return { settled: () => done, promise: tracked }
+  }
+
+  it('getOptionChainSnapshot does not resolve before the configured delay elapses', async () => {
+    vi.useFakeTimers()
+    process.env.FAKE_OPTION_CHAIN_DELAY_MS = '50'
+
+    const call = track(new FakeMarketDataProvider().getOptionChainSnapshot({ underlying: 'AAPL' }))
+    await vi.advanceTimersByTimeAsync(49)
+    expect(call.settled()).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(call.settled()).toBe(true)
+    expect(await call.promise).toEqual([])
+  })
+
+  it('getOptionChainSnapshot resolves on the next tick without scheduling a timer when unset', async () => {
+    vi.useFakeTimers()
+
+    const call = track(new FakeMarketDataProvider().getOptionChainSnapshot({ underlying: 'AAPL' }))
+
+    expect(vi.getTimerCount()).toBe(0)
+    expect(await call.promise).toEqual([])
+  })
+
+  it('does not delay getOptionSnapshot or getStockQuotes', async () => {
+    vi.useFakeTimers()
+    process.env.FAKE_OPTION_CHAIN_DELAY_MS = '50'
+    process.env.WHEELBASE_MOCK_OPTION_SNAPSHOTS = JSON.stringify({ AAPL260905P00190000: SNAPSHOT })
+    const provider = new FakeMarketDataProvider()
+
+    try {
+      const snapshot = track(provider.getOptionSnapshot('AAPL260905P00190000'))
+      const quotes = track(provider.getStockQuotes(['AAPL']))
+
+      expect(vi.getTimerCount()).toBe(0)
+      await Promise.all([snapshot.promise, quotes.promise])
+      expect(snapshot.settled() && quotes.settled()).toBe(true)
+    } finally {
+      delete process.env.WHEELBASE_MOCK_OPTION_SNAPSHOTS
+    }
+  })
+})

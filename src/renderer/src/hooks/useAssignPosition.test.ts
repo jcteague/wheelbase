@@ -101,7 +101,7 @@ describe('useAssignPosition', () => {
         body: {
           detail: [
             {
-              field: 'assignment_date',
+              field: 'assignmentDate',
               code: 'date_before_open',
               message: 'Assignment date cannot be before the CSP open date'
             }

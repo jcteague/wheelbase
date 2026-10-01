@@ -7,7 +7,6 @@ import { MarketDataStatusDot } from './components/MarketDataStatusDot'
 import { NavItem } from './components/NavItem'
 import { useSettingsStatus } from './hooks/useSettings'
 import { CALENDAR_PAGE_TITLE, CalendarPage } from './pages/CalendarPage'
-import { NewWheelPage } from './pages/NewWheelPage'
 import { PositionDetailPage } from './pages/PositionDetailPage'
 import { PositionsListPage } from './pages/PositionsListPage'
 import { SettingsPage } from './pages/SettingsPage'
@@ -99,8 +98,10 @@ function AppShell(): React.JSX.Element {
       <main className="flex-1 overflow-hidden flex flex-col">
         <ShellHeader />
         <Switch>
-          <Route path="/" component={PositionsListPage} />
-          <Route path="/new" component={NewWheelPage} />
+          {/* [US-101] `/new` is the list with the New position sheet open — one route,
+              so the page is never remounted when the sheet opens or closes. The optional
+              query admits `#/new?ticker=` written straight into the hash. */}
+          <Route path={/^\/(new)?(\?.*)?$/} component={PositionsListPage} />
           <Route path="/settings" component={SettingsPage} />
           <Route path="/calendar" component={CalendarPage} />
           <Route path="/watchlist" component={WatchlistPage} />

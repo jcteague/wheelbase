@@ -1,4 +1,6 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { useEffect } from 'react'
 import { beforeEach, vi } from 'vitest'
 import type { PositionListItem } from '../api/positions'
 import type { OptionSnapshot, StockQuote } from '../api/market-data'
@@ -18,8 +20,51 @@ vi.mock('../hooks/useOptionSnapshots')
 vi.mock('../hooks/useSettings')
 vi.mock('../hooks/useManagementQueue')
 vi.mock('../hooks/useDismissAlert')
+
+// [US-101] `/` and `/new` are the same page: the location only decides whether the
+// New position sheet is open. `pageMounts` counts mounts of a child the page always
+// renders, so a remount on the hash flip would show up as 2.
+const { routing, pageMounts } = vi.hoisted(() => ({
+  routing: { location: '/', search: '', navigate: vi.fn() },
+  pageMounts: vi.fn()
+}))
+// The list is kept current by the create hooks' optimistic cache insert, never by a refetch.
+const { queryClient } = vi.hoisted(() => ({
+  queryClient: { refetchQueries: vi.fn(), invalidateQueries: vi.fn() }
+}))
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
+  useQueryClient: () => queryClient
+}))
+vi.mock('wouter', () => ({
+  useLocation: () => [routing.location, routing.navigate],
+  useSearch: () => routing.search
+}))
 vi.mock('../components/AssignmentNotificationBanner', () => ({
-  AssignmentNotificationBanner: () => null
+  AssignmentNotificationBanner: function MountSpy() {
+    useEffect(() => pageMounts(), [])
+    return null
+  }
+}))
+// The Standard form renders for real (its field ids are the contract the e2e specs
+// drive); only its mutation is stubbed. The PMCC form is exercised in its own test —
+// here it only has to be able to report a recorded position.
+vi.mock('../hooks/useCreatePosition', () => ({
+  useCreatePosition: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+    isSuccess: false,
+    isError: false,
+    data: undefined,
+    error: null
+  })
+}))
+vi.mock('../components/PmccEntryForm', () => ({
+  PmccEntryForm: ({ onRecorded }: { onRecorded: (r: { id: string; ticker: string }) => void }) => (
+    <button type="button" onClick={() => onRecorded({ id: 'pmcc-1', ticker: 'XYZ' })}>
+      fake record PMCC
+    </button>
+  )
 }))
 
 const { mockUsePendingAssignments } = vi.hoisted(() => ({
@@ -119,14 +164,16 @@ const ITEM_1: PositionListItem = {
   ticker: 'AAPL',
   phase: 'CSP_OPEN',
   status: 'ACTIVE',
+  strategyType: 'WHEEL',
+  pmcc: null,
   strike: '180.0000',
   expiration: '2026-04-17',
   dte: 40,
   instrumentType: 'PUT',
   contracts: 1,
   entryPremiumPerContract: '3.5000',
-  premium_collected: '250.0000',
-  effective_cost_basis: '177.5000',
+  premiumCollected: '250.0000',
+  effectiveCostBasis: '177.5000',
   profitTargetPercent: null
 }
 
@@ -135,14 +182,16 @@ const ITEM_2: PositionListItem = {
   ticker: 'MSFT',
   phase: 'CSP_OPEN',
   status: 'ACTIVE',
+  strategyType: 'WHEEL',
+  pmcc: null,
   strike: '400.0000',
   expiration: '2026-04-04',
   dte: 27,
   instrumentType: 'PUT',
   contracts: 1,
   entryPremiumPerContract: '5.0000',
-  premium_collected: '300.0000',
-  effective_cost_basis: '397.0000',
+  premiumCollected: '300.0000',
+  effectiveCostBasis: '397.0000',
   profitTargetPercent: null
 }
 
@@ -151,14 +200,16 @@ const CLOSED_ITEM: PositionListItem = {
   ticker: 'BBB',
   phase: 'WHEEL_COMPLETE',
   status: 'CLOSED',
+  strategyType: 'WHEEL',
+  pmcc: null,
   strike: null,
   expiration: null,
   dte: null,
   instrumentType: null,
   contracts: null,
   entryPremiumPerContract: null,
-  premium_collected: '250.0000',
-  effective_cost_basis: '177.5000',
+  premiumCollected: '250.0000',
+  effectiveCostBasis: '177.5000',
   profitTargetPercent: null
 }
 
@@ -167,14 +218,16 @@ const TSLA_ITEM: PositionListItem = {
   ticker: 'TSLA',
   phase: 'CSP_OPEN',
   status: 'ACTIVE',
+  strategyType: 'WHEEL',
+  pmcc: null,
   strike: '200.0000',
   expiration: '2026-04-17',
   dte: 40,
   instrumentType: 'PUT',
   contracts: 1,
   entryPremiumPerContract: '4.0000',
-  premium_collected: '100.0000',
-  effective_cost_basis: '198.0000',
+  premiumCollected: '100.0000',
+  effectiveCostBasis: '198.0000',
   profitTargetPercent: null
 }
 
@@ -183,14 +236,16 @@ const HOLDING_ITEM: PositionListItem = {
   ticker: 'NVDA',
   phase: 'HOLDING_SHARES',
   status: 'ACTIVE',
+  strategyType: 'WHEEL',
+  pmcc: null,
   strike: null,
   expiration: null,
   dte: null,
   instrumentType: null,
   contracts: null,
   entryPremiumPerContract: null,
-  premium_collected: '500.0000',
-  effective_cost_basis: '450.0000',
+  premiumCollected: '500.0000',
+  effectiveCostBasis: '450.0000',
   profitTargetPercent: null
 }
 
@@ -269,6 +324,12 @@ function makeOptionSnapshotsResult(
 }
 
 beforeEach(() => {
+  routing.location = '/'
+  routing.search = ''
+  routing.navigate.mockReset()
+  pageMounts.mockReset()
+  queryClient.refetchQueries.mockReset()
+  queryClient.invalidateQueries.mockReset()
   mockUseStockQuotes.mockReturnValue(makeStockQuotesResult())
   mockUseMarketStatus.mockReturnValue(makeMarketStatusResult())
   mockUseOptionSnapshots.mockReturnValue(makeOptionSnapshotsResult())
@@ -875,4 +936,134 @@ it('renders without pending-assignment indicators while pending assignments are 
   render(<PositionsListPage />)
 
   expect(screen.queryByTestId('pending-assignment-indicator-aaa')).not.toBeInTheDocument()
+})
+
+// [US-101] `#/new` is the positions list with the New position sheet open over it.
+describe('PositionsListPage — New position sheet', () => {
+  const renderAt = (location: string): ReturnType<typeof render> => {
+    routing.location = location
+    mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1, ITEM_2]))
+    return render(<PositionsListPage />)
+  }
+
+  it('shows no dialog at /', () => {
+    renderAt('/')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('opens the sheet over the list at /new, in Standard, with the wheel fields', () => {
+    renderAt('/new')
+
+    const dialog = screen.getByRole('dialog', { name: 'New position' })
+    expect(within(dialog).getByRole('group', { name: 'Position strategy' })).toBeInTheDocument()
+    expect(
+      within(dialog).getByRole('button', { name: 'Standard', pressed: true })
+    ).toBeInTheDocument()
+    ;['ticker', 'strike', 'contracts', 'premiumPerContract', 'expiration'].forEach((id) =>
+      expect(dialog.querySelector(`#${id}`)).not.toBeNull()
+    )
+    expect(within(dialog).getByRole('button', { name: 'Open wheel' })).toBeInTheDocument()
+    expect(screen.getAllByTestId('position-card')).toHaveLength(2)
+  })
+
+  it('pre-fills the ticker from the /new search', () => {
+    routing.search = 'ticker=AAPL'
+    renderAt('/new')
+
+    expect(document.getElementById('ticker')).toHaveValue('AAPL')
+  })
+
+  // `CallAwaySuccess` sets `#/new?ticker=` directly, so the query arrives in the location.
+  it('opens the sheet pre-filled from a query carried in the hash itself', () => {
+    renderAt('/new?ticker=SPY')
+
+    expect(screen.getByRole('dialog', { name: 'New position' })).toBeInTheDocument()
+    expect(document.getElementById('ticker')).toHaveValue('SPY')
+  })
+
+  it('closes the sheet on /new → / without remounting the page', () => {
+    const { rerender } = renderAt('/new')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    routing.location = '/'
+    rerender(<PositionsListPage />)
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getAllByTestId('position-card')).toHaveLength(2)
+    expect(pageMounts).toHaveBeenCalledOnce()
+  })
+
+  // The create hooks insert the recorded row into the cached list, so closing the sheet must
+  // not trigger a refetch — with 100+ positions that is a full list query for nothing.
+  it('never refetches queries when the sheet opens or closes', () => {
+    const { rerender } = renderAt('/new')
+    routing.location = '/'
+    rerender(<PositionsListPage />)
+    rerender(<PositionsListPage />)
+
+    expect(queryClient.refetchQueries).not.toHaveBeenCalled()
+    expect(queryClient.invalidateQueries).not.toHaveBeenCalled()
+  })
+
+  it('navigates back to / (replacing history) and refocuses + New Wheel on Cancel', async () => {
+    renderAt('/new')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(routing.navigate).toHaveBeenCalledWith('/', { replace: true })
+  })
+
+  it('returns focus to + New Wheel when the sheet closes', () => {
+    const { rerender } = renderAt('/new')
+
+    routing.location = '/'
+    rerender(<PositionsListPage />)
+
+    expect(screen.getByRole('link', { name: /\+ new wheel/i })).toHaveFocus()
+  })
+
+  it('announces a recorded PMCC above the list and closes the sheet', async () => {
+    const { rerender } = renderAt('/new')
+
+    await userEvent.click(screen.getByRole('button', { name: 'PMCC' }))
+    await userEvent.click(screen.getByRole('button', { name: 'fake record PMCC' }))
+    expect(routing.navigate).toHaveBeenCalledWith('/', { replace: true })
+    routing.location = '/'
+    rerender(<PositionsListPage />)
+
+    const banner = screen.getByRole('status')
+    expect(banner).toHaveTextContent('PMCC recorded — XYZ · LEAPS + short call open')
+    expect(within(banner).getByRole('link', { name: 'View position →' })).toHaveAttribute(
+      'href',
+      '#/positions/pmcc-1'
+    )
+  })
+
+  // The PMCC form is stubbed here, so its shared-fields handle is never attached:
+  // switching back finds nothing to carry and must leave the wheel draft alone.
+  it('keeps the typed wheel ticker when toggling to PMCC and back with no PMCC handle', async () => {
+    renderAt('/new')
+    const ticker = (): HTMLElement | null => document.getElementById('ticker')
+    await userEvent.type(ticker()!, 'QQQ')
+
+    await userEvent.click(screen.getByRole('button', { name: 'PMCC' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Standard' }))
+
+    expect(screen.getByRole('button', { name: 'Standard', pressed: true })).toBeInTheDocument()
+    expect(ticker()).toHaveValue('QQQ')
+  })
+
+  it('clears the recorded banner on the next open', async () => {
+    const { rerender } = renderAt('/new')
+    await userEvent.click(screen.getByRole('button', { name: 'PMCC' }))
+    await userEvent.click(screen.getByRole('button', { name: 'fake record PMCC' }))
+    routing.location = '/'
+    rerender(<PositionsListPage />)
+    expect(screen.getByText(/PMCC recorded/)).toBeInTheDocument()
+
+    routing.location = '/new'
+    rerender(<PositionsListPage />)
+
+    expect(screen.queryByText(/PMCC recorded/)).not.toBeInTheDocument()
+  })
 })

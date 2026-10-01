@@ -54,7 +54,7 @@ export async function handleIpcCall<T extends object>(
       return {
         ok: false,
         errors: err.issues.map((issue) => ({
-          field: String(issue.path[0] ?? '__root__'),
+          field: issue.path.map(String).join('.') || '__root__',
           code: issue.code,
           message: issue.message
         }))

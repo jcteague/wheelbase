@@ -31,7 +31,7 @@ async function openPosition(
     day: number
   }
 ): Promise<void> {
-  // Navigate via #/ to force NewWheelPage to unmount/remount (guards against
+  // Navigate via #/ to force the New position sheet to unmount/remount (guards against
   // the case where we're already at #/new in a success state — setting the
   // same hash value fires no hashchange event and wouter won't re-render).
   await page.evaluate(() => {

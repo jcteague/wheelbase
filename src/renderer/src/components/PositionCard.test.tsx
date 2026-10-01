@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react'
-import type { PositionListItem } from '../api/positions'
+import type { PmccListItem, PositionListItem, WheelListItem } from '../api/positions'
 import type { OptionSnapshot } from '../api/market-data'
 import { PositionRow } from './PositionCard'
 import type { StockQuote } from './PriceCell'
@@ -27,19 +27,21 @@ function renderRow(
   )
 }
 
-const BASE_ITEM: PositionListItem = {
+const BASE_ITEM: WheelListItem = {
   id: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
   ticker: 'AAPL',
   phase: 'CSP_OPEN',
   status: 'ACTIVE',
+  strategyType: 'WHEEL',
+  pmcc: null,
   strike: '180.0000',
   expiration: '2026-04-17',
   dte: 42,
   instrumentType: 'PUT',
   contracts: 1,
   entryPremiumPerContract: '3.5000',
-  premium_collected: '250.0000',
-  effective_cost_basis: '177.5000',
+  premiumCollected: '250.0000',
+  effectiveCostBasis: '177.5000',
   profitTargetPercent: null
 }
 
@@ -91,11 +93,13 @@ it('renders effective cost basis formatted as currency', () => {
 })
 
 it('renders — when dte is null', () => {
-  const item: PositionListItem = {
+  const item: WheelListItem = {
     ...BASE_ITEM,
     ticker: 'SPY',
     phase: 'WHEEL_COMPLETE',
     status: 'CLOSED',
+    strategyType: 'WHEEL',
+    pmcc: null,
     strike: null,
     expiration: null,
     dte: null,
@@ -109,10 +113,12 @@ it('renders — when dte is null', () => {
 })
 
 it('renders data-testid position-card-closed for a CLOSED position', () => {
-  const item: PositionListItem = {
+  const item: WheelListItem = {
     ...BASE_ITEM,
     phase: 'WHEEL_COMPLETE',
     status: 'CLOSED',
+    strategyType: 'WHEEL',
+    pmcc: null,
     strike: null,
     expiration: null,
     dte: null,
@@ -195,7 +201,7 @@ it('renders no TargetBadge when snapshot is undefined', () => {
 })
 
 it('renders dashes for HOLDING_SHARES row in Opt Mid and P&L cells', () => {
-  const item: PositionListItem = {
+  const item: WheelListItem = {
     ...BASE_ITEM,
     phase: 'HOLDING_SHARES',
     instrumentType: null,
@@ -220,7 +226,7 @@ it('renders unavailable helper copy for missing option snapshot on an active opt
 
 it('renders TargetBadge using per-position override when crossed', () => {
   // override 25%, entry 3.50, mid 2.50 -> ~28.57% (>= 25%)
-  const item: PositionListItem = { ...BASE_ITEM, profitTargetPercent: 25 }
+  const item: WheelListItem = { ...BASE_ITEM, profitTargetPercent: 25 }
   const snap: OptionSnapshot = { ...AAPL_SNAPSHOT, bid: '2.40', ask: '2.60', mid: '2.50' }
   renderRow(item, { snapshot: snap })
   expect(screen.getByTestId('target-badge')).toBeInTheDocument()
@@ -276,4 +282,28 @@ it('does not tint the row gold when outside the threshold', () => {
   renderRow({ ...BASE_ITEM, dte: 8 })
   const row = screen.getByTestId('position-card')
   expect(row.className).not.toContain('wb-position-row--soon')
+})
+
+it('delegates a PMCC item to PmccPositionRow', () => {
+  const item: PmccListItem = {
+    ...BASE_ITEM,
+    ticker: 'XYZ',
+    phase: 'PMCC_OPEN',
+    strategyType: 'PMCC',
+    pmcc: {
+      long: { strike: '80.0000', expiration: '2027-09-17', dte: 368, contracts: 1 },
+      short: { strike: '110.0000', expiration: '2026-10-16', dte: 32, contracts: 1 },
+      initialNetDebit: '2300.0000'
+    },
+    strike: null,
+    expiration: null,
+    dte: null,
+    instrumentType: null,
+    contracts: null,
+    entryPremiumPerContract: null
+  }
+  renderRow(item)
+  expect(screen.getByTestId('position-card')).toHaveTextContent('PMCC')
+  expect(screen.getByText('LEAPS · 2027-09-17')).toBeInTheDocument()
+  expect(screen.getByText('$2,300.00 net debit')).toBeInTheDocument()
 })

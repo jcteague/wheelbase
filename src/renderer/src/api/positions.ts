@@ -16,603 +16,205 @@ export type WheelPhase =
   | 'CC_CLOSED_PROFIT'
   | 'CC_CLOSED_LOSS'
   | 'WHEEL_COMPLETE'
+  | 'PMCC_OPEN'
 
 export type WheelStatus = 'ACTIVE' | 'CLOSED'
 
-export type CreatePositionPayload = {
-  ticker: string
-  strike: number
-  expiration: string
-  contracts: number
-  premium_per_contract: number
-  fill_date?: string
-  thesis?: string
-  notes?: string
-}
+export type CreatePositionPayload = IpcPayload<'createPosition'>
 
-export type PositionData = {
-  id: string
-  ticker: string
-  phase: WheelPhase
-  status: WheelStatus
-}
+export type CreatePositionResponse = IpcSuccess<'createPosition'>
 
-export type LegData = {
-  id: string
-  instrumentType: string
-  strike: string
-  expiration: string
-  contracts: number
-  premium_per_contract: string
-}
+// Responses are camelCase end to end: the handler's own types are the renderer's.
+import type { CostBasisSnapshotRecord, LegRecord, PositionListItem } from '../../../main/schemas'
 
-export type CostBasisSnapshotData = {
-  id: string
-  basis_per_share: string
-  total_premium_collected: string
-}
+/** What a handler accepts, exactly as the preload types it. */
+type IpcPayload<K extends keyof Window['api']> = Window['api'][K] extends (
+  payload: infer P
+) => Promise<unknown>
+  ? P
+  : never
 
-export type CreatePositionResponse = {
-  position: PositionData
-  leg: LegData
-  cost_basis_snapshot: CostBasisSnapshotData
-}
-
-export type PositionListItem = {
-  id: string
-  ticker: string
-  phase: WheelPhase
-  status: WheelStatus
-  strike: string | null
-  expiration: string | null
-  dte: number | null
-  instrumentType: 'PUT' | 'CALL' | null
-  contracts: number | null
-  entryPremiumPerContract: string | null
-  premium_collected: string
-  effective_cost_basis: string
-  profitTargetPercent: number | null
-}
-
-// IPC camelCase field names → renderer snake_case form field names
-const IPC_TO_FORM_FIELD: Record<string, string> = {
-  premiumPerContract: 'premium_per_contract',
-  fillDate: 'fill_date',
-  closePricePerContract: 'close_price_per_contract',
-  assignmentDate: 'assignment_date',
-  costToClosePerContract: 'cost_to_close_per_contract',
-  newExpiration: 'new_expiration',
-  newPremiumPerContract: 'new_premium_per_contract',
-  newStrike: 'new_strike'
-}
-
-function mapIpcErrors(errors: ApiFieldError[]): ApiFieldError[] {
-  return errors.map((e) => ({
-    field: IPC_TO_FORM_FIELD[e.field] ?? e.field,
-    code: e.code,
-    message: e.message
-  }))
-}
+/** A handler's success payload, exactly as the preload types it. */
+type IpcSuccess<K extends keyof Window['api']> = Window['api'][K] extends (
+  ...args: never[]
+) => Promise<infer R>
+  ? Omit<Extract<R, { ok: true }>, 'ok'>
+  : never
+export type {
+  PmccLegSummary,
+  PmccListItem,
+  PmccListSummary,
+  PositionListItem,
+  WheelListItem
+} from '../../../main/schemas'
 
 export async function listPositions(): Promise<PositionListItem[]> {
-  const items = await window.api.listPositions()
-  return items.map((item) => ({
-    id: item.id,
-    ticker: item.ticker,
-    phase: item.phase as WheelPhase,
-    status: item.status as WheelStatus,
-    strike: item.strike,
-    expiration: item.expiration,
-    dte: item.dte,
-    instrumentType: item.instrumentType,
-    contracts: item.contracts,
-    entryPremiumPerContract: item.entryPremiumPerContract,
-    premium_collected: item.premiumCollected,
-    effective_cost_basis: item.effectiveCostBasis,
-    profitTargetPercent: item.profitTargetPercent
-  }))
+  return window.api.listPositions()
 }
 
-export type LegDetail = {
-  id: string
-  positionId: string
-  legRole: string
-  action: string
-  instrumentType: string
-  strike: string
-  expiration: string
-  contracts: number
-  premiumPerContract: string
-  fillDate: string
-  rollChainId: string | null
-  createdAt: string
-  updatedAt: string
-}
+export type LegDetail = LegRecord
 
-export type SnapshotDetail = {
-  id: string
-  positionId: string
-  basisPerShare: string
-  totalPremiumCollected: string
-  finalPnl: string | null
-  snapshotAt: string
-  createdAt: string
-}
+export type SnapshotDetail = CostBasisSnapshotRecord
 
-export type PositionDetail = {
-  position: {
-    id: string
-    ticker: string
-    phase: WheelPhase
-    status: WheelStatus
-    strategyType: string
-    openedDate: string
-    closedDate: string | null
-    accountId: string | null
-    notes: string | null
-    thesis: string | null
-    tags: string[]
-    profitTargetPercent: number | null
-    managementWindowDteOverride: number | null
-    createdAt: string
-    updatedAt: string
-  }
-  activeLeg: LegDetail | null
-  costBasisSnapshot: SnapshotDetail | null
-  legs: LegDetail[]
-  allSnapshots: SnapshotDetail[]
-}
+export type PositionDetail = IpcSuccess<'getPosition'>
 
-export type CloseCspPayload = {
-  position_id: string
-  close_price_per_contract: number
-  fill_date?: string
-}
+export type CloseCspPayload = IpcPayload<'closePosition'>
 
-export type ClosedPositionData = {
-  id: string
-  ticker: string
-  phase: WheelPhase
-  status: WheelStatus
-  closedDate: string
-}
+export type CloseCspResponse = IpcSuccess<'closePosition'>
 
-export type ClosedSnapshotData = CostBasisSnapshotData & {
-  positionId: string
-  finalPnl: string
-  snapshotAt: string
-  createdAt: string
-}
+export type ExpireCspPayload = IpcPayload<'expirePosition'>
 
-export type CloseCspResponse = {
-  position: ClosedPositionData
-  leg: LegData & { fillDate: string; fillPrice: string }
-  costBasisSnapshot: ClosedSnapshotData
-}
+export type ExpireCspResponse = IpcSuccess<'expirePosition'>
 
-export type ExpireCspPayload = {
-  position_id: string
-  expiration_date_override?: string
-}
+export type AssignCspPayload = IpcPayload<'assignPosition'>
 
-export type ExpireCspResponse = {
-  position: ClosedPositionData
-  leg: LegData & {
-    positionId: string
-    legRole: string
-    action: string
-    instrumentType: string
-    premiumPerContract: string
-    fillDate: string
-    createdAt: string
-    updatedAt: string
-  }
-  costBasisSnapshot: ClosedSnapshotData
-}
-
-export type AssignCspPayload = {
-  position_id: string
-  assignment_date: string
-}
-
-export type AssignCspResponse = {
-  position: PositionData
-  leg: LegData & {
-    positionId: string
-    legRole: string
-    action: string
-    instrumentType: string
-    premiumPerContract: string
-    fillPrice: null
-    fillDate: string
-    createdAt: string
-    updatedAt: string
-  }
-  costBasisSnapshot: {
-    id: string
-    positionId: string
-    basisPerShare: string
-    totalPremiumCollected: string
-    finalPnl: null
-    snapshotAt: string
-    createdAt: string
-  }
-  premiumWaterfall: Array<{ label: string; amount: string }>
-}
+export type AssignCspResponse = IpcSuccess<'assignPosition'>
 
 export async function getPosition(positionId: string): Promise<PositionDetail> {
   const result = await window.api.getPosition(positionId)
   if (!result.ok) {
     throw apiError(404, { detail: result.errors })
   }
-  return result as unknown as PositionDetail
+  return result
 }
 
 export async function closePosition(payload: CloseCspPayload): Promise<CloseCspResponse> {
-  const result = await window.api.closePosition({
-    positionId: payload.position_id,
-    closePricePerContract: payload.close_price_per_contract,
-    fillDate: payload.fill_date
-  })
+  const result = await window.api.closePosition(payload)
   if (!result.ok) {
-    throwMappedIpcErrors(mapIpcErrors(result.errors))
+    throwMappedIpcErrors(result.errors)
   }
-  return result as unknown as CloseCspResponse
+  return result
 }
 
 export async function expirePosition(payload: ExpireCspPayload): Promise<ExpireCspResponse> {
-  const result = await window.api.expirePosition({
-    positionId: payload.position_id,
-    expirationDateOverride: payload.expiration_date_override
-  })
+  const result = await window.api.expirePosition(payload)
   if (!result.ok) {
-    throwMappedIpcErrors(mapIpcErrors(result.errors))
+    throwMappedIpcErrors(result.errors)
   }
-  return result as unknown as ExpireCspResponse
+  return result
 }
 
 export async function assignPosition(payload: AssignCspPayload): Promise<AssignCspResponse> {
-  const result = await window.api.assignPosition({
-    positionId: payload.position_id,
-    assignmentDate: payload.assignment_date
-  })
+  const result = await window.api.assignPosition(payload)
   if (!result.ok) {
-    throwMappedIpcErrors(mapIpcErrors(result.errors))
+    throwMappedIpcErrors(result.errors)
   }
-  return result as unknown as AssignCspResponse
+  return result
 }
 
-export type OpenCcPayload = {
-  position_id: string
-  strike: number
-  expiration: string
-  contracts: number
-  premium_per_contract: number
-  fill_date?: string
-}
+export type OpenCcPayload = IpcPayload<'openCoveredCall'>
 
-export type OpenCcResponse = {
-  position: { id: string; ticker: string; phase: 'CC_OPEN'; status: 'ACTIVE'; closedDate: null }
-  leg: LegData & {
-    positionId: string
-    legRole: string
-    action: string
-    instrumentType: string
-    premiumPerContract: string
-    fillDate: string
-    createdAt: string
-    updatedAt: string
-  }
-  costBasisSnapshot: {
-    id: string
-    positionId: string
-    basisPerShare: string
-    totalPremiumCollected: string
-    finalPnl: null
-    snapshotAt: string
-    createdAt: string
-  }
-}
+export type OpenCcResponse = IpcSuccess<'openCoveredCall'>
 
 export async function openCoveredCall(payload: OpenCcPayload): Promise<OpenCcResponse> {
-  const result = await window.api.openCoveredCall({
-    positionId: payload.position_id,
-    strike: payload.strike,
-    expiration: payload.expiration,
-    contracts: payload.contracts,
-    premiumPerContract: payload.premium_per_contract,
-    fillDate: payload.fill_date
-  })
+  const result = await window.api.openCoveredCall(payload)
   if (!result.ok) {
-    throwMappedIpcErrors(mapIpcErrors(result.errors))
+    throwMappedIpcErrors(result.errors)
   }
-  return result as unknown as OpenCcResponse
+  return result
 }
 
-export type CloseCcEarlyPayload = {
-  position_id: string
-  close_price_per_contract: number
-  fill_date?: string
-}
+export type CloseCcEarlyPayload = IpcPayload<'closeCoveredCallEarly'>
 
-export type CloseCcEarlyResponse = {
-  position: {
-    id: string
-    ticker: string
-    phase: 'HOLDING_SHARES'
-    status: 'ACTIVE'
-    closedDate: null
-  }
-  leg: FilledOptionCloseLegData
-  ccLegPnl: string
-}
+export type CloseCcEarlyResponse = IpcSuccess<'closeCoveredCallEarly'>
 
 export async function closeCoveredCallEarly(
   payload: CloseCcEarlyPayload
 ): Promise<CloseCcEarlyResponse> {
-  const result = await window.api.closeCoveredCallEarly({
-    positionId: payload.position_id,
-    closePricePerContract: payload.close_price_per_contract,
-    fillDate: payload.fill_date
-  })
+  const result = await window.api.closeCoveredCallEarly(payload)
   if (!result.ok) {
-    throwMappedIpcErrors(mapIpcErrors(result.errors))
+    throwMappedIpcErrors(result.errors)
   }
-  return result as unknown as CloseCcEarlyResponse
+  return result
 }
 
-export type RecordCallAwayPayload = {
-  position_id: string
-}
+export type RecordCallAwayPayload = IpcPayload<'recordCallAway'>
 
-type FilledOptionCloseLegData = LegData & {
-  positionId: string
-  legRole: string
-  action: string
-  instrumentType: string
-  premiumPerContract: string
-  fillPrice: string
-  fillDate: string
-  createdAt: string
-  updatedAt: string
-}
-
-export type RecordCallAwayResponse = {
-  position: {
-    id: string
-    ticker: string
-    phase: 'WHEEL_COMPLETE'
-    status: 'CLOSED'
-    closedDate: string
-  }
-  leg: FilledOptionCloseLegData
-  costBasisSnapshot: ClosedSnapshotData
-  finalPnl: string
-  cycleDays: number
-  annualizedReturn: string
-  basisPerShare: string
-}
+export type RecordCallAwayResponse = IpcSuccess<'recordCallAway'>
 
 export async function recordCallAway(
   payload: RecordCallAwayPayload
 ): Promise<RecordCallAwayResponse> {
-  const result = await window.api.recordCallAway({
-    positionId: payload.position_id
-  })
+  const result = await window.api.recordCallAway(payload)
   if (!result.ok) {
-    throwMappedIpcErrors(mapIpcErrors(result.errors))
+    throwMappedIpcErrors(result.errors)
   }
-  return result as unknown as RecordCallAwayResponse
+  return result
 }
 
-export type ExpireCcPayload = {
-  position_id: string
-  expiration_date_override?: string
-}
+export type ExpireCcPayload = IpcPayload<'expireCc'>
 
-export type ExpireCcResponse = {
-  position: {
-    id: string
-    ticker: string
-    phase: 'HOLDING_SHARES'
-    status: 'ACTIVE'
-    closedDate: null
-  }
-  leg: LegData & {
-    positionId: string
-    legRole: string
-    action: string
-    instrumentType: string
-    premiumPerContract: string
-    fillPrice: null
-    fillDate: string
-    createdAt: string
-    updatedAt: string
-  }
-  costBasisSnapshot: {
-    id: string
-    positionId: string
-    basisPerShare: string
-    totalPremiumCollected: string
-    finalPnl: null
-    snapshotAt: string
-    createdAt: string
-  }
-  sharesHeld: number
-}
+export type ExpireCcResponse = IpcSuccess<'expireCc'>
 
 export async function expireCc(payload: ExpireCcPayload): Promise<ExpireCcResponse> {
-  const result = await window.api.expireCc({
-    positionId: payload.position_id,
-    expirationDateOverride: payload.expiration_date_override
-  })
+  const result = await window.api.expireCc(payload)
   if (!result.ok) {
-    throwMappedIpcErrors(mapIpcErrors(result.errors))
+    throwMappedIpcErrors(result.errors)
   }
-  return result as unknown as ExpireCcResponse
+  return result
 }
 
-export type RollCspPayload = {
-  position_id: string
-  cost_to_close_per_contract: number
-  new_premium_per_contract: number
-  new_expiration: string
-  new_strike?: number
-  fill_date?: string
-}
+export type RollCspPayload = IpcPayload<'rollCsp'>
 
-export type RollCspResponse = {
-  position: { id: string; ticker: string; phase: 'CSP_OPEN'; status: 'ACTIVE' }
-  rollFromLeg: LegData & {
-    legRole: 'ROLL_FROM'
-    action: 'BUY'
-    fillDate: string
-    premiumPerContract: string
-  }
-  rollToLeg: LegData & {
-    legRole: 'ROLL_TO'
-    action: 'SELL'
-    fillDate: string
-    premiumPerContract: string
-  }
-  rollChainId: string
-  costBasisSnapshot: {
-    id: string
-    positionId: string
-    basisPerShare: string
-    totalPremiumCollected: string
-    finalPnl: null
-    snapshotAt: string
-    createdAt: string
-  }
-}
+export type RollCspResponse = IpcSuccess<'rollCsp'>
 
 export async function rollCsp(payload: RollCspPayload): Promise<RollCspResponse> {
-  const result = await window.api.rollCsp({
-    positionId: payload.position_id,
-    costToClosePerContract: payload.cost_to_close_per_contract,
-    newPremiumPerContract: payload.new_premium_per_contract,
-    newExpiration: payload.new_expiration,
-    newStrike: payload.new_strike,
-    fillDate: payload.fill_date
-  })
+  const result = await window.api.rollCsp(payload)
   if (!result.ok) {
-    throwMappedIpcErrors(mapIpcErrors(result.errors))
+    throwMappedIpcErrors(result.errors)
   }
-  return result as unknown as RollCspResponse
+  return result
 }
 
-export type RollCcPayload = {
-  position_id: string
-  cost_to_close_per_contract: number
-  new_premium_per_contract: number
-  new_expiration: string
-  new_strike?: number
-  fill_date?: string
-}
+export type RollCcPayload = IpcPayload<'rollCc'>
 
-export type RollCcResponse = {
-  position: { id: string; ticker: string; phase: 'CC_OPEN'; status: 'ACTIVE' }
-  rollFromLeg: LegData & {
-    legRole: 'ROLL_FROM'
-    action: 'BUY'
-    fillDate: string
-    premiumPerContract: string
-  }
-  rollToLeg: LegData & {
-    legRole: 'ROLL_TO'
-    action: 'SELL'
-    fillDate: string
-    premiumPerContract: string
-  }
-  rollChainId: string
-  costBasisSnapshot: {
-    id: string
-    positionId: string
-    basisPerShare: string
-    totalPremiumCollected: string
-    finalPnl: null
-    snapshotAt: string
-    createdAt: string
-  }
-}
+export type RollCcResponse = IpcSuccess<'rollCc'>
 
 export async function rollCc(payload: RollCcPayload): Promise<RollCcResponse> {
-  const result = await window.api.rollCc({
-    positionId: payload.position_id,
-    costToClosePerContract: payload.cost_to_close_per_contract,
-    newPremiumPerContract: payload.new_premium_per_contract,
-    newExpiration: payload.new_expiration,
-    newStrike: payload.new_strike,
-    fillDate: payload.fill_date
-  })
+  const result = await window.api.rollCc(payload)
   if (!result.ok) {
-    throwMappedIpcErrors(mapIpcErrors(result.errors))
+    throwMappedIpcErrors(result.errors)
   }
-  return result as unknown as RollCcResponse
+  return result
 }
 
-export type SaveAlertOverridesPayload = {
-  positionId: string
-  profitTargetPercent: number | null
-  managementWindowDte: number | null
-}
+export type SaveAlertOverridesPayload = IpcPayload<'saveAlertOverrides'>
 
-export type SaveAlertOverridesResponse = {
-  position: {
-    id: string
-    profitTargetPercent: number | null
-    managementWindowDteOverride: number | null
-  }
-}
+export type SaveAlertOverridesResponse = IpcSuccess<'saveAlertOverrides'>
 
 export async function saveAlertOverrides(
   payload: SaveAlertOverridesPayload
 ): Promise<SaveAlertOverridesResponse> {
   const result = await window.api.saveAlertOverrides(payload)
   if (!result.ok) {
-    throwMappedIpcErrors(mapIpcErrors(result.errors))
+    throwMappedIpcErrors(result.errors)
   }
-  return result as unknown as SaveAlertOverridesResponse
+  return result
 }
 
 export async function createPosition(
   payload: CreatePositionPayload
 ): Promise<CreatePositionResponse> {
-  const result = await window.api.createPosition({
-    ticker: payload.ticker,
-    strike: payload.strike,
-    expiration: payload.expiration,
-    contracts: payload.contracts,
-    premiumPerContract: payload.premium_per_contract,
-    fillDate: payload.fill_date,
-    thesis: payload.thesis,
-    notes: payload.notes
-  })
+  const result = await window.api.createPosition(payload)
 
   if (!result.ok) {
-    throwMappedIpcErrors(mapIpcErrors(result.errors))
+    throwMappedIpcErrors(result.errors)
   }
 
-  return {
-    position: {
-      id: result.position.id,
-      ticker: result.position.ticker,
-      phase: result.position.phase as WheelPhase,
-      status: result.position.status as WheelStatus
-    },
-    leg: {
-      id: result.leg.id,
-      instrumentType: result.leg.instrumentType,
-      strike: result.leg.strike,
-      expiration: result.leg.expiration,
-      contracts: result.leg.contracts,
-      premium_per_contract: result.leg.premiumPerContract
-    },
-    cost_basis_snapshot: {
-      id: result.costBasisSnapshot.id,
-      basis_per_share: result.costBasisSnapshot.basisPerShare,
-      total_premium_collected: result.costBasisSnapshot.totalPremiumCollected
-    }
+  return result
+}
+
+// PMCC is camelCase end to end, so the renderer types are the preload's wire types.
+export type CreatePmccPositionPayload = IpcPayload<'createPmccPosition'>
+
+export type CreatePmccPositionResponse = IpcSuccess<'createPmccPosition'>
+
+export async function createPmccPosition(
+  payload: CreatePmccPositionPayload
+): Promise<CreatePmccPositionResponse> {
+  const result = await window.api.createPmccPosition(payload)
+  if (!result.ok) {
+    throwMappedIpcErrors(result.errors)
   }
+  return result
 }

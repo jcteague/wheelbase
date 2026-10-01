@@ -9,7 +9,8 @@ import {
   openCoveredCall,
   closeCoveredCall,
   expireCc,
-  rollCc
+  rollCc,
+  openPmcc
 } from './lifecycle'
 import type {
   CloseCspInput,
@@ -19,7 +20,9 @@ import type {
   OpenWheelInput,
   OpenCoveredCallInput,
   RollCspInput,
-  RollCcInput
+  RollCcInput,
+  OpenPmccInput,
+  OpenPmccLegInput
 } from './lifecycle'
 
 // ---------------------------------------------------------------------------
@@ -955,3 +958,298 @@ function catchValidation(fn: () => unknown): ValidationError {
     throw e
   }
 }
+
+// ---------------------------------------------------------------------------
+// openPmcc
+// ---------------------------------------------------------------------------
+
+describe('openPmcc', () => {
+  const LONG: OpenPmccLegInput = {
+    underlying: 'XYZ',
+    instrumentType: 'CALL',
+    deliverableShares: 100,
+    strike: '80',
+    expiration: '2027-09-17',
+    contracts: 1,
+    fillPrice: '25.00',
+    fillDate: '2026-09-14',
+    fees: '0'
+  }
+  const SHORT: OpenPmccLegInput = {
+    ...LONG,
+    strike: '110',
+    expiration: '2026-10-16',
+    fillPrice: '2.00'
+  }
+
+  function validPmccInput(
+    overrides: {
+      ticker?: string
+      referenceDate?: string
+      long?: Partial<OpenPmccLegInput>
+      short?: Partial<OpenPmccLegInput>
+    } = {}
+  ): OpenPmccInput {
+    return {
+      ticker: overrides.ticker ?? 'XYZ',
+      referenceDate: overrides.referenceDate ?? '2026-09-14',
+      long: { ...LONG, ...overrides.long },
+      short: { ...SHORT, ...overrides.short }
+    }
+  }
+
+  it('opens a PMCC for the valid fixture', () => {
+    expect(openPmcc(validPmccInput())).toEqual({ phase: 'PMCC_OPEN' })
+  })
+
+  const TICKER_MSG = 'Ticker must be 1–5 uppercase letters'
+  const UNDERLYING_MSG = 'Both calls must have the same underlying.'
+  const CALL_MSG = 'PMCC entry requires two call options.'
+  const DELIVERABLE_MSG = 'This entry supports standard 100-share contracts only.'
+  const CONTRACTS_MSG = 'Contracts must be a positive whole number.'
+  const QUANTITY_MSG = 'Opening quantities must match for this PMCC entry.'
+  const STRIKE_MSG = 'Strike must be positive'
+  const FILL_MSG = 'Actual fill price must be greater than zero.'
+  const FEES_MSG = 'Fees cannot be negative.'
+  const FUTURE_MSG = 'Fill date cannot be in the future.'
+  const LONG_AFTER_SHORT_MSG = 'LEAPS must be acquired no later than the short-call fill.'
+  const EXP_AFTER_FILL_MSG = 'Expiration must be after the fill date.'
+  const EXPIRED_MSG = 'Use an unexpired contract for opening a current position.'
+  const SHORT_BEFORE_LONG_MSG = 'Short call must expire before the LEAPS call.'
+  const STRIKE_ABOVE_MSG = 'Short-call strike must be above the LEAPS strike.'
+  const NET_DEBIT_MSG = 'This PMCC entry requires a net debit before fees.'
+
+  it.each<[string, Parameters<typeof validPmccInput>[0], string, string, string]>([
+    ['1: lowercase ticker', { ticker: 'xyz' }, 'ticker', 'invalid_format', TICKER_MSG],
+    ['1: six-letter ticker', { ticker: 'ABCDEF' }, 'ticker', 'invalid_format', TICKER_MSG],
+    [
+      '2: long underlying differs',
+      { long: { underlying: 'ABC' } },
+      'long.underlying',
+      'underlying_mismatch',
+      UNDERLYING_MSG
+    ],
+    [
+      '2: short underlying differs',
+      { short: { underlying: 'ABC' } },
+      'short.underlying',
+      'underlying_mismatch',
+      UNDERLYING_MSG
+    ],
+    [
+      '3: long is a put',
+      { long: { instrumentType: 'PUT' } },
+      'long.instrumentType',
+      'not_a_call',
+      CALL_MSG
+    ],
+    [
+      '3: short is a put',
+      { short: { instrumentType: 'PUT' } },
+      'short.instrumentType',
+      'not_a_call',
+      CALL_MSG
+    ],
+    [
+      '4: long deliverable 50',
+      { long: { deliverableShares: 50 } },
+      'long.deliverableShares',
+      'nonstandard_deliverable',
+      DELIVERABLE_MSG
+    ],
+    [
+      '4: short deliverable 50',
+      { short: { deliverableShares: 50 } },
+      'short.deliverableShares',
+      'nonstandard_deliverable',
+      DELIVERABLE_MSG
+    ],
+    [
+      '5: long contracts 0',
+      { long: { contracts: 0 } },
+      'long.contracts',
+      'must_be_positive_integer',
+      CONTRACTS_MSG
+    ],
+    [
+      '5: short contracts 1.5',
+      { short: { contracts: 1.5 } },
+      'short.contracts',
+      'must_be_positive_integer',
+      CONTRACTS_MSG
+    ],
+    [
+      '6: long 1 / short 2 contracts',
+      { short: { contracts: 2 } },
+      'short.contracts',
+      'quantity_mismatch',
+      QUANTITY_MSG
+    ],
+    ['7: long strike 0', { long: { strike: '0' } }, 'long.strike', 'must_be_positive', STRIKE_MSG],
+    [
+      '7: short strike -1',
+      { short: { strike: '-1' } },
+      'short.strike',
+      'must_be_positive',
+      STRIKE_MSG
+    ],
+    [
+      '8: long fill price 0',
+      { long: { fillPrice: '0' } },
+      'long.fillPrice',
+      'must_be_positive',
+      FILL_MSG
+    ],
+    [
+      '8: short fill price -1',
+      { short: { fillPrice: '-1' } },
+      'short.fillPrice',
+      'must_be_positive',
+      FILL_MSG
+    ],
+    ['9: long fees -1', { long: { fees: '-1' } }, 'long.fees', 'must_be_non_negative', FEES_MSG],
+    ['9: short fees -1', { short: { fees: '-1' } }, 'short.fees', 'must_be_non_negative', FEES_MSG],
+    [
+      '10: long fill after reference date',
+      { long: { fillDate: '2026-09-15' } },
+      'long.fillDate',
+      'cannot_be_future',
+      FUTURE_MSG
+    ],
+    [
+      '10: short fill after reference date',
+      { short: { fillDate: '2026-09-15' } },
+      'short.fillDate',
+      'cannot_be_future',
+      FUTURE_MSG
+    ],
+    [
+      '11: long fill after short fill',
+      { short: { fillDate: '2026-09-13' } },
+      'short.fillDate',
+      'long_after_short',
+      LONG_AFTER_SHORT_MSG
+    ],
+    [
+      '12: long expiration equals its fill date',
+      { long: { expiration: '2026-09-14' } },
+      'long.expiration',
+      'expiration_not_after_fill',
+      EXP_AFTER_FILL_MSG
+    ],
+    [
+      '12: short expiration equals its fill date',
+      { short: { expiration: '2026-09-14' } },
+      'short.expiration',
+      'expiration_not_after_fill',
+      EXP_AFTER_FILL_MSG
+    ],
+    [
+      '13: long expiration before reference date',
+      {
+        long: { fillDate: '2026-09-01', expiration: '2026-09-10' },
+        short: { fillDate: '2026-09-01' }
+      },
+      'long.expiration',
+      'expired_contract',
+      EXPIRED_MSG
+    ],
+    [
+      '13: short expiration before reference date',
+      {
+        long: { fillDate: '2026-09-01' },
+        short: { fillDate: '2026-09-01', expiration: '2026-09-10' }
+      },
+      'short.expiration',
+      'expired_contract',
+      EXPIRED_MSG
+    ],
+    [
+      '13 before 12: long expiration before a fill date equal to the reference date',
+      { long: { expiration: '2026-09-11' } },
+      'long.expiration',
+      'expired_contract',
+      EXPIRED_MSG
+    ],
+    [
+      '13 before 12: short expiration before a fill date equal to the reference date',
+      { short: { expiration: '2026-09-11' } },
+      'short.expiration',
+      'expired_contract',
+      EXPIRED_MSG
+    ],
+    [
+      '14: short expiration equals LEAPS expiration',
+      { short: { expiration: '2027-09-17' } },
+      'short.expiration',
+      'short_not_before_long',
+      SHORT_BEFORE_LONG_MSG
+    ],
+    [
+      '14: short expiration after LEAPS expiration',
+      { short: { expiration: '2027-10-15' } },
+      'short.expiration',
+      'short_not_before_long',
+      SHORT_BEFORE_LONG_MSG
+    ],
+    [
+      '15: short strike below LEAPS strike',
+      { short: { strike: '75' } },
+      'short.strike',
+      'strike_not_above_long',
+      STRIKE_ABOVE_MSG
+    ],
+    [
+      '15: short strike equals LEAPS strike',
+      { short: { strike: '80' } },
+      'short.strike',
+      'strike_not_above_long',
+      STRIKE_ABOVE_MSG
+    ],
+    [
+      '16: short fill equals LEAPS fill',
+      { short: { fillPrice: '25.00' } },
+      '__pair__',
+      'not_net_debit',
+      NET_DEBIT_MSG
+    ],
+    [
+      '16: short fill above LEAPS fill',
+      { short: { fillPrice: '26.00' } },
+      '__pair__',
+      'not_net_debit',
+      NET_DEBIT_MSG
+    ]
+  ])('rule %s', (_name, overrides, field, code, message) => {
+    const e = catchValidation(() => openPmcc(validPmccInput(overrides)))
+    expect(e.field).toBe(field)
+    expect(e.code).toBe(code)
+    expect(e.message).toBe(message)
+  })
+
+  it('reports the strike rule before the net-debit rule when both are broken', () => {
+    const e = catchValidation(() =>
+      openPmcc(validPmccInput({ short: { strike: '75', fillPrice: '26.00' } }))
+    )
+    expect(e.field).toBe('short.strike')
+    expect(e.code).toBe('strike_not_above_long')
+  })
+
+  it('orders ISO dates across a year boundary by string comparison', () => {
+    const acrossYears = validPmccInput({
+      referenceDate: '2027-01-02',
+      long: { fillDate: '2026-12-31', expiration: '2028-01-21' },
+      short: { fillDate: '2027-01-02', expiration: '2027-01-15' }
+    })
+    expect(openPmcc(acrossYears)).toEqual({ phase: 'PMCC_OPEN' })
+
+    const e = catchValidation(() =>
+      openPmcc({
+        ...acrossYears,
+        long: { ...acrossYears.long, fillDate: '2027-01-02' },
+        short: { ...acrossYears.short, fillDate: '2026-12-31' }
+      })
+    )
+    expect(e.code).toBe('long_after_short')
+  })
+})

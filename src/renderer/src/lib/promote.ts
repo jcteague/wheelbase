@@ -21,7 +21,7 @@ export type PromoteSource = Pick<
   'ticker' | 'strike' | 'expiration' | 'mark' | 'timestamp'
 >
 
-/** The validated payload `NewWheelPage` hands to `NewWheelForm`. */
+/** The validated payload `NewPositionSheet` hands to `NewWheelForm`. */
 export type PromotedCandidate = {
   ticker: string
   strike: string

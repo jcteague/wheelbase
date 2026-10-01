@@ -2,31 +2,31 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as positionsApi from './positions'
 
 type AssignPositionFn = (payload: {
-  position_id: string
-  assignment_date: string
+  positionId: string
+  assignmentDate: string
 }) => Promise<unknown>
 
 type OpenCoveredCallFn = (payload: {
-  position_id: string
+  positionId: string
   strike: number
   expiration: string
   contracts: number
-  premium_per_contract: number
+  premiumPerContract: number
   fill_date?: string
 }) => Promise<unknown>
 
 type ExpireCcFn = (payload: {
-  position_id: string
+  positionId: string
   expiration_date_override?: string
 }) => Promise<unknown>
 
 type RollCcFn = (payload: {
-  position_id: string
-  cost_to_close_per_contract: number
-  new_premium_per_contract: number
-  new_expiration: string
-  new_strike: number
-  fill_date: string
+  positionId: string
+  costToClosePerContract: number
+  newPremiumPerContract: number
+  newExpiration: string
+  newStrike: number
+  fillDate: string
 }) => Promise<unknown>
 
 type PositionsModuleWithAssign = typeof positionsApi & {
@@ -92,13 +92,13 @@ describe('assignPosition', () => {
     expect(apiModule.assignPosition).toEqual(expect.any(Function))
   })
 
-  it('calls window.api.assignPosition with camelCase payload when given snake_case payload', async () => {
+  it('passes the payload through to window.api.assignPosition unchanged', async () => {
     expect(apiModule.assignPosition).toEqual(expect.any(Function))
     mockAssignPosition.mockResolvedValue(SUCCESS_RESPONSE)
 
     await apiModule.assignPosition?.({
-      position_id: 'pos-123',
-      assignment_date: '2026-04-17'
+      positionId: 'pos-123',
+      assignmentDate: '2026-04-17'
     })
 
     expect(mockAssignPosition).toHaveBeenCalledWith({
@@ -107,7 +107,7 @@ describe('assignPosition', () => {
     })
   })
 
-  it('throws apiError(400) and maps assignmentDate onto assignment_date when the IPC request fails', async () => {
+  it('throws apiError(400) carrying the handler field errors unchanged when the IPC request fails', async () => {
     expect(apiModule.assignPosition).toEqual(expect.any(Function))
     mockAssignPosition.mockResolvedValue({
       ok: false,
@@ -122,15 +122,15 @@ describe('assignPosition', () => {
 
     await expect(
       apiModule.assignPosition?.({
-        position_id: 'pos-123',
-        assignment_date: '2026-02-28'
+        positionId: 'pos-123',
+        assignmentDate: '2026-02-28'
       })
     ).rejects.toMatchObject({
       status: 400,
       body: {
         detail: [
           {
-            field: 'assignment_date',
+            field: 'assignmentDate',
             code: 'date_before_open',
             message: 'Assignment date cannot be before the CSP open date'
           }
@@ -155,7 +155,7 @@ describe('openCoveredCall', () => {
     expect(apiModule.openCoveredCall).toEqual(expect.any(Function))
   })
 
-  it('calls window.api.openCoveredCall with camelCase payload when given snake_case payload', async () => {
+  it('passes the payload through to window.api.openCoveredCall unchanged', async () => {
     expect(apiModule.openCoveredCall).toEqual(expect.any(Function))
     mockOpenCoveredCall.mockResolvedValue({
       ok: true,
@@ -171,12 +171,12 @@ describe('openCoveredCall', () => {
     })
 
     await apiModule.openCoveredCall?.({
-      position_id: 'pos-1',
+      positionId: 'pos-1',
       strike: 182,
       expiration: '2026-02-21',
       contracts: 1,
-      premium_per_contract: 2.3,
-      fill_date: '2026-01-20'
+      premiumPerContract: 2.3,
+      fillDate: '2026-01-20'
     })
 
     expect(mockOpenCoveredCall).toHaveBeenCalledWith({
@@ -189,7 +189,7 @@ describe('openCoveredCall', () => {
     })
   })
 
-  it('throws apiError(400) and maps field names when the IPC request fails', async () => {
+  it('throws apiError(400) carrying the handler field names unchanged when the IPC request fails', async () => {
     expect(apiModule.openCoveredCall).toEqual(expect.any(Function))
     mockOpenCoveredCall.mockResolvedValue({
       ok: false,
@@ -204,19 +204,19 @@ describe('openCoveredCall', () => {
 
     await expect(
       apiModule.openCoveredCall?.({
-        position_id: 'pos-1',
+        positionId: 'pos-1',
         strike: 182,
         expiration: '2026-02-21',
         contracts: 1,
-        premium_per_contract: 2.3,
-        fill_date: '2026-01-16'
+        premiumPerContract: 2.3,
+        fillDate: '2026-01-16'
       })
     ).rejects.toMatchObject({
       status: 400,
       body: {
         detail: [
           {
-            field: 'fill_date',
+            field: 'fillDate',
             code: 'before_assignment',
             message: 'Fill date cannot be before the assignment date'
           }
@@ -239,7 +239,7 @@ describe('expireCc', () => {
     })
   })
 
-  it('calls window.api.expireCc with camelCase positionId when given snake_case position_id', async () => {
+  it('passes positionId through to window.api.expireCc', async () => {
     mockExpireCc.mockResolvedValue({
       ok: true,
       position: {
@@ -254,7 +254,7 @@ describe('expireCc', () => {
       sharesHeld: 100
     })
 
-    await apiModule.expireCc?.({ position_id: VALID_UUID })
+    await apiModule.expireCc?.({ positionId: VALID_UUID })
 
     expect(mockExpireCc).toHaveBeenCalledWith({
       positionId: VALID_UUID,
@@ -262,7 +262,7 @@ describe('expireCc', () => {
     })
   })
 
-  it('maps expiration_date_override to expirationDateOverride in the camelCase call', async () => {
+  it('passes expirationDateOverride through to window.api.expireCc', async () => {
     mockExpireCc.mockResolvedValue({
       ok: true,
       position: {
@@ -277,7 +277,7 @@ describe('expireCc', () => {
       sharesHeld: 100
     })
 
-    await apiModule.expireCc?.({ position_id: VALID_UUID, expiration_date_override: '2026-02-21' })
+    await apiModule.expireCc?.({ positionId: VALID_UUID, expirationDateOverride: '2026-02-21' })
 
     expect(mockExpireCc).toHaveBeenCalledWith({
       positionId: VALID_UUID,
@@ -297,7 +297,7 @@ describe('expireCc', () => {
       ]
     })
 
-    await expect(apiModule.expireCc?.({ position_id: VALID_UUID })).rejects.toMatchObject({
+    await expect(apiModule.expireCc?.({ positionId: VALID_UUID })).rejects.toMatchObject({
       status: 400,
       body: {
         detail: [
@@ -327,7 +327,7 @@ describe('expireCc', () => {
     }
     mockExpireCc.mockResolvedValue(successPayload)
 
-    const result = await apiModule.expireCc?.({ position_id: VALID_UUID })
+    const result = await apiModule.expireCc?.({ positionId: VALID_UUID })
 
     expect(result).toMatchObject({
       position: { phase: 'HOLDING_SHARES' },
@@ -439,7 +439,7 @@ describe('rollCc', () => {
     })
   })
 
-  it('calls window.api.rollCc with mapped camelCase payload and returns RollCcResponse', async () => {
+  it('passes the payload through to window.api.rollCc and returns RollCcResponse', async () => {
     const mockResponse = {
       ok: true,
       position: { id: 'pos-1', ticker: 'AAPL', phase: 'CC_OPEN', status: 'ACTIVE' },
@@ -477,12 +477,12 @@ describe('rollCc', () => {
     mockRollCc.mockResolvedValue(mockResponse)
 
     const result = await apiModule.rollCc?.({
-      position_id: 'pos-1',
-      cost_to_close_per_contract: 1.5,
-      new_premium_per_contract: 2.0,
-      new_expiration: '2026-05-16',
-      new_strike: 185,
-      fill_date: '2026-04-13'
+      positionId: 'pos-1',
+      costToClosePerContract: 1.5,
+      newPremiumPerContract: 2.0,
+      newExpiration: '2026-05-16',
+      newStrike: 185,
+      fillDate: '2026-04-13'
     })
 
     expect(mockRollCc).toHaveBeenCalledWith({
@@ -495,5 +495,130 @@ describe('rollCc', () => {
     })
 
     expect(result).toMatchObject(mockResponse)
+  })
+})
+
+describe('createPmccPosition', () => {
+  const mockCreatePmccPosition = vi.fn()
+  const pmccLeg = {
+    underlying: 'XYZ',
+    instrumentType: 'CALL' as const,
+    deliverableShares: 100,
+    contracts: 1,
+    fillDate: '2026-09-14',
+    fees: 0
+  }
+  const payload: positionsApi.CreatePmccPositionPayload = {
+    strategy: 'PMCC',
+    ticker: 'XYZ',
+    long: { ...pmccLeg, strike: 80, expiration: '2027-09-17', fillPrice: 25 },
+    short: { ...pmccLeg, strike: 110, expiration: '2026-10-16', fillPrice: 2 },
+    thesis: 'Bullish on XYZ'
+  }
+
+  beforeEach(() => {
+    mockCreatePmccPosition.mockReset()
+    Object.assign(window, {
+      api: {
+        ...(window.api ?? {}),
+        createPmccPosition: mockCreatePmccPosition
+      }
+    })
+  })
+
+  it('passes the camelCase payload through to window.api.createPmccPosition unchanged', async () => {
+    mockCreatePmccPosition.mockResolvedValue({ ok: true, position: { id: 'p1' } })
+
+    await positionsApi.createPmccPosition(payload)
+
+    expect(mockCreatePmccPosition).toHaveBeenCalledWith(payload)
+  })
+
+  it('throws ApiError with status 400 carrying the dotted field errors on ok:false', async () => {
+    const errors = [
+      {
+        field: 'short.strike',
+        code: 'strike_not_above_long',
+        message: 'Short-call strike must be above the LEAPS strike.'
+      }
+    ]
+    mockCreatePmccPosition.mockResolvedValue({ ok: false, errors })
+
+    await expect(positionsApi.createPmccPosition(payload)).rejects.toEqual({
+      status: 400,
+      body: { detail: errors }
+    })
+  })
+
+  it('returns the result on success', async () => {
+    const success = {
+      position: { id: 'p1', ticker: 'XYZ', phase: 'PMCC_OPEN' },
+      openingDebit: { initialNetDebit: '2300.0000' }
+    }
+    mockCreatePmccPosition.mockResolvedValue({ ok: true, ...success })
+
+    await expect(positionsApi.createPmccPosition(payload)).resolves.toMatchObject(success)
+  })
+})
+
+describe('listPositions', () => {
+  const mockListPositions = vi.fn()
+  const base = {
+    phase: 'CSP_OPEN',
+    status: 'ACTIVE',
+    premiumCollected: '250.0000',
+    effectiveCostBasis: '177.5000',
+    profitTargetPercent: 50
+  }
+  const wheelItem = {
+    ...base,
+    id: 'wheel-1',
+    ticker: 'AAPL',
+    strategyType: 'WHEEL' as const,
+    pmcc: null,
+    strike: '180.0000',
+    expiration: '2026-10-16',
+    dte: 17,
+    instrumentType: 'PUT' as const,
+    contracts: 1,
+    entryPremiumPerContract: '2.5000'
+  }
+  const pmccSummary = {
+    long: { strike: '80.0000', expiration: '2027-09-17', dte: 353, contracts: 1 },
+    short: { strike: '110.0000', expiration: '2026-10-16', dte: 17, contracts: 1 },
+    initialNetDebit: '2300.0000'
+  }
+  const pmccItem = {
+    ...base,
+    id: 'pmcc-1',
+    ticker: 'XYZ',
+    phase: 'PMCC_OPEN',
+    premiumCollected: '200.0000',
+    effectiveCostBasis: '23.0000',
+    profitTargetPercent: null,
+    strategyType: 'PMCC' as const,
+    pmcc: pmccSummary,
+    strike: null,
+    expiration: null,
+    dte: null,
+    instrumentType: null,
+    contracts: null,
+    entryPremiumPerContract: null
+  }
+
+  beforeEach(() => {
+    mockListPositions.mockReset()
+    Object.assign(window, {
+      api: {
+        ...(window.api ?? {}),
+        listPositions: mockListPositions
+      }
+    })
+  })
+
+  it("returns the handler's WHEEL and PMCC rows unchanged — the list row has one shape end to end", async () => {
+    mockListPositions.mockResolvedValue([wheelItem, pmccItem])
+
+    expect(await positionsApi.listPositions()).toEqual([wheelItem, pmccItem])
   })
 })

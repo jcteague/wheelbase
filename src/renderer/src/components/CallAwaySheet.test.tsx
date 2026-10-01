@@ -4,6 +4,7 @@ import { vi } from 'vitest'
 import type { RecordCallAwayResponse } from '../api/positions'
 import { useRecordCallAway } from '../hooks/useRecordCallAway'
 import { CallAwaySheet } from './CallAwaySheet'
+import { legRecord, snapshotRecord } from '../test-fixtures/position-records'
 
 vi.mock('../hooks/useRecordCallAway')
 
@@ -31,7 +32,7 @@ const SUCCESS_PROFIT_RESPONSE: RecordCallAwayResponse = {
     status: 'CLOSED',
     closedDate: '2026-04-17'
   },
-  leg: {
+  leg: legRecord({
     id: 'leg-1',
     positionId: 'pos-123',
     legRole: 'CC_CLOSE',
@@ -40,22 +41,22 @@ const SUCCESS_PROFIT_RESPONSE: RecordCallAwayResponse = {
     strike: '182.0000',
     expiration: '2026-04-17',
     contracts: 1,
-    premium_per_contract: '0.0000',
     premiumPerContract: '0.0000',
     fillPrice: '182.0000',
     fillDate: '2026-04-17',
     createdAt: '',
     updatedAt: ''
-  },
-  costBasisSnapshot: {
+  }),
+  costBasisSnapshot: snapshotRecord({
     id: 'snap-1',
     positionId: 'pos-123',
-    basis_per_share: '174.2000',
-    total_premium_collected: '5.0000',
+    basisPerShare: '174.2000',
+    totalPremiumCollected: '5.0000',
     finalPnl: '780.0000',
+    triggerEvent: 'CALL_AWAY',
     snapshotAt: '2026-04-17',
     createdAt: ''
-  },
+  }),
   finalPnl: '780.0000',
   cycleDays: 99,
   annualizedReturn: '16.5084',
@@ -194,7 +195,7 @@ it('calls mutate with positionId when Confirm Call-Away is clicked', async () =>
 
   await waitFor(() => {
     expect(mockMutate).toHaveBeenCalledWith(
-      expect.objectContaining({ position_id: 'pos-123' }),
+      expect.objectContaining({ positionId: 'pos-123' }),
       expect.anything()
     )
   })

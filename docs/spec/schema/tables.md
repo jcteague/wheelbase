@@ -41,7 +41,7 @@ and [Cost Basis](../domain/cost-basis.md) for how snapshots are produced.
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-57-58 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-57-58,us-101 -->
 
 ## `positions`
 
@@ -55,8 +55,8 @@ list view can render an "Active" / "Closed" split.
 | -------------------------------- | ------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`                             | TEXT    | No       | UUID primary key                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `ticker`                         | TEXT    | No       | Equity symbol, uppercase                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `strategy_type`                  | TEXT    | No       | Strategy identifier (Phase 1: wheel)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `phase`                          | TEXT    | No       | Lifecycle phase (`CSP_OPEN`, `HOLDING_SHARES`, `CC_OPEN`, `WHEEL_COMPLETE`, `CSP_CLOSED_PROFIT`, `CSP_CLOSED_LOSS`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `strategy_type`                  | TEXT    | No       | Strategy identifier: `'WHEEL'` or `'PMCC'` (US-101 writes `'PMCC'`; column pre-dates it, no migration)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `phase`                          | TEXT    | No       | Lifecycle phase (`CSP_OPEN`, `HOLDING_SHARES`, `CC_OPEN`, `WHEEL_COMPLETE`, `CSP_CLOSED_PROFIT`, `CSP_CLOSED_LOSS`; `PMCC_OPEN` for `strategy_type = 'PMCC'`, US-101)                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `status`                         | TEXT    | No       | `ACTIVE` or `CLOSED`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `opened_date`                    | TEXT    | No       | ISO date when the wheel was opened                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `closed_date`                    | TEXT    | Yes      | ISO date set when the position transitions to a terminal phase                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
@@ -90,10 +90,20 @@ list view can render an "Active" / "Closed" split.
   `ROLL_TO` leg becomes the effective active leg.
 - **Roll CC** (US-14): no UPDATE — phase stays `CC_OPEN`; the new
   `ROLL_TO` leg becomes the effective active CC leg.
+- **Open PMCC** (US-101): row INSERT with `strategy_type='PMCC'`,
+  `phase='PMCC_OPEN'`, `status='ACTIVE'`, `opened_date = long.fillDate`,
+  `closed_date=NULL`, `tags='[]'`, written in one transaction with both
+  legs and the opening snapshot (see [`legs`](#legs)). No wheel mutation
+  applies to it — their phase guards reject `PMCC_OPEN`, and wheel-only
+  jobs filter `phase IN ('CSP_OPEN','CC_OPEN')` / `phase = 'CSP_OPEN'`, so
+  they skip it by construction. The `PMCC_` prefix is what keeps those
+  filters correct; see the
+  [phase and leg-role names ADR](../architecture/02-adrs/pmcc-phase-and-leg-role-names.md).
+  Driven by [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md).
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-101 -->
 
 ## `legs`
 
@@ -104,29 +114,32 @@ immutability is what lets cost basis and P&L be re-derived from leg history.
 
 ### Columns
 
-| Column                 | Type    | Nullable | Purpose                                                                                                                        |
-| ---------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `id`                   | TEXT    | No       | UUID primary key                                                                                                               |
-| `position_id`          | TEXT    | No       | FK → `positions.id`                                                                                                            |
-| `leg_role`             | TEXT    | No       | One of `CSP_OPEN`, `CSP_CLOSE`, `CC_OPEN`, `CC_CLOSE`, `CC_EXPIRED`, `CALLED_AWAY`, `ROLL_FROM`, `ROLL_TO`, `ASSIGN`, `EXPIRE` |
-| `action`               | TEXT    | No       | `SELL`, `BUY`, `EXPIRE`, `ASSIGN`, or `EXERCISE` (see enum evolution below)                                                    |
-| `instrument_type`      | TEXT    | No       | `PUT`, `CALL`, or `STOCK` (renamed from `option_type` in migration 003)                                                        |
-| `strike`               | TEXT    | No       | 4-dp Decimal string                                                                                                            |
-| `expiration`           | TEXT    | No       | ISO date                                                                                                                       |
-| `contracts`            | INTEGER | No       | Contract count for this leg                                                                                                    |
-| `premium_per_contract` | TEXT    | No       | 4-dp Decimal string; `'0.0000'` for `EXPIRE` and `ASSIGN` event markers                                                        |
-| `fill_price`           | TEXT    | Yes      | 4-dp Decimal string; `NULL` for `EXPIRE` and `ASSIGN` legs (no broker fill occurs)                                             |
-| `fill_date`            | TEXT    | No       | ISO date                                                                                                                       |
-| `order_id`             | TEXT    | Yes      | Broker order id for the fill; `NULL` for manually entered or event-marker legs                                                 |
-| `roll_chain_id`        | TEXT    | Yes      | Shared UUID stamped on both legs of a roll pair; lets the chain be queried as a unit                                           |
-| `created_at`           | TEXT    | No       | ISO timestamp                                                                                                                  |
-| `updated_at`           | TEXT    | No       | ISO timestamp                                                                                                                  |
+| Column                 | Type    | Nullable | Purpose                                                                                                                                                                        |
+| ---------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                   | TEXT    | No       | UUID primary key                                                                                                                                                               |
+| `position_id`          | TEXT    | No       | FK → `positions.id`                                                                                                                                                            |
+| `leg_role`             | TEXT    | No       | Wheel: `CSP_OPEN`, `CSP_CLOSE`, `CC_OPEN`, `CC_CLOSE`, `CC_EXPIRED`, `CALLED_AWAY`, `ROLL_FROM`, `ROLL_TO`, `ASSIGN`, `EXPIRE`; PMCC (US-101): `LEAPS_OPEN`, `SHORT_CALL_OPEN` |
+| `action`               | TEXT    | No       | `SELL`, `BUY`, `EXPIRE`, `ASSIGN`, or `EXERCISE` (see enum evolution below)                                                                                                    |
+| `instrument_type`      | TEXT    | No       | `PUT`, `CALL`, or `STOCK` (renamed from `option_type` in migration 003)                                                                                                        |
+| `strike`               | TEXT    | No       | 4-dp Decimal string                                                                                                                                                            |
+| `expiration`           | TEXT    | No       | ISO date                                                                                                                                                                       |
+| `contracts`            | INTEGER | No       | Contract count for this leg                                                                                                                                                    |
+| `premium_per_contract` | TEXT    | No       | 4-dp Decimal string; `'0.0000'` for `EXPIRE` and `ASSIGN` event markers                                                                                                        |
+| `fill_price`           | TEXT    | Yes      | 4-dp Decimal string; `NULL` for `EXPIRE` and `ASSIGN` legs (no broker fill occurs)                                                                                             |
+| `fill_date`            | TEXT    | No       | ISO date                                                                                                                                                                       |
+| `order_id`             | TEXT    | Yes      | Broker order id for the fill; `NULL` for manually entered or event-marker legs                                                                                                 |
+| `roll_chain_id`        | TEXT    | Yes      | Shared UUID stamped on both legs of a roll pair; lets the chain be queried as a unit                                                                                           |
+| `fees`                 | TEXT    | No       | Total fees for the leg, dollars, 4 dp, never negative; `NOT NULL DEFAULT '0.0000'` (migration 017, US-101). Wheel legs keep the default; PMCC legs carry their fees            |
+| `created_at`           | TEXT    | No       | ISO timestamp                                                                                                                                                                  |
+| `updated_at`           | TEXT    | No       | ISO timestamp                                                                                                                                                                  |
 
 ### CHECK constraints
 
 - `leg_role IN ('CSP_OPEN', 'CSP_CLOSE', 'CC_OPEN', 'CC_CLOSE', 'CC_EXPIRED', 'CALLED_AWAY', 'ROLL_FROM', 'ROLL_TO', 'ASSIGN', 'EXPIRE')` —
   enforced via the Zod `LegRole` enum; `CC_EXPIRED` and `CALLED_AWAY`
   were added by US-11 as type-only changes (no migration required).
+  US-101 added `LEAPS_OPEN` and `SHORT_CALL_OPEN` the same way — the
+  migrations declare no SQL CHECK on `leg_role`, so no migration was needed.
 - `action IN ('SELL', 'BUY', 'EXPIRE', 'ASSIGN', 'EXERCISE')` — enforced
   via the Zod `LegAction` enum; no DB CHECK exists on `action` at the SQL
   level (US-5 added `EXPIRE`, US-6 added `ASSIGN`, and US-10 added
@@ -191,6 +204,14 @@ pair be queried as a unit. The CSP and CC roll paths write identical row shapes 
   events use the distinct `CALLED_AWAY` / `CC_EXPIRED` roles so the
   renderer's leg-history table can label and annotate them per the
   US-11 mockup.
+- **US-101**: `LegRole` extended with `LEAPS_OPEN` (`BUY` / `CALL`) and
+  `SHORT_CALL_OPEN` (`SELL` / `CALL`) for the two opening legs of a PMCC.
+  Type-only change. `SHORT_CALL_CLOSE`, `SHORT_CALL_EXPIRED`, `LEAPS_CLOSE`
+  and `SHORT_CALL_ASSIGNED` are reserved by name for later Epic 09 stories
+  but not added. The same story added the `fees` column (migration 017) —
+  folding fees into `premium_per_contract` would hide them in the recorded
+  fill, and a separate fee table was overkill for one number; see the
+  [per-leg fees ADR](../architecture/02-adrs/per-leg-fees-on-legs-table.md).
 
 ### How rows are inserted
 
@@ -230,10 +251,23 @@ feature in [the feature pages](../features/); the common shape is:
 - `ROLL_FROM` / `ROLL_TO` (US-12 for CSP rolls, US-14 for CC rolls): pair
   inserted under one transaction; `instrument_type='PUT'` for the CSP
   roll path and `'CALL'` for the CC roll path. See "Rolls" above.
+- `LEAPS_OPEN` + `SHORT_CALL_OPEN` (US-101, `createPmccPosition`): two
+  rows inserted in the same transaction as the `positions` row and the
+  opening snapshot — **not** a roll pair, so `roll_chain_id` is `NULL` and
+  the legs are linked by `position_id` only. LEAPS: `action='BUY'`,
+  `instrument_type='CALL'`; short: `action='SELL'`, `instrument_type='CALL'`.
+  On both, `premium_per_contract` = `fill_price` = the actual per-share
+  fill (4 dp), `fees` = that leg's entered fees, `fill_date` / `strike` /
+  `expiration` / `contracts` from the payload. The LEAPS row is inserted
+  first and both share one `created_at`, so `GET_LEGS_QUERY`
+  (`fill_date ASC, created_at ASC`) returns the LEAPS first on tied fill
+  dates. Rows go through the shared `insertPosition` (`services/position-rows.ts`)
+  and `insertPmccLeg` helpers; any failure rolls back every row, so no
+  partial position or standalone leg is left behind. Driven by [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md).
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-101 -->
 
 ## `cost_basis_snapshots`
 
@@ -245,16 +279,17 @@ audit trail of how basis evolved over the life of the wheel.
 
 ### Columns
 
-| Column                    | Type | Nullable | Purpose                                                                      |
-| ------------------------- | ---- | -------- | ---------------------------------------------------------------------------- |
-| `id`                      | TEXT | No       | UUID primary key                                                             |
-| `position_id`             | TEXT | No       | FK → `positions.id`                                                          |
-| `basis_per_share`         | TEXT | No       | 4-dp Decimal string; effective per-share entry price after the event         |
-| `total_premium_collected` | TEXT | No       | 4-dp Decimal string; running sum of all premium credits net of debits        |
-| `final_pnl`               | TEXT | Yes      | 4-dp Decimal string; **only** set on terminal events (CSP close, CSP expiry) |
-| `annualized_return`       | TEXT | Yes      | Reserved for a future story; written as `NULL` today                         |
-| `snapshot_at`             | TEXT | No       | ISO timestamp used for "latest wins" ordering                                |
-| `created_at`              | TEXT | No       | ISO timestamp                                                                |
+| Column                    | Type | Nullable | Purpose                                                                                                          |
+| ------------------------- | ---- | -------- | ---------------------------------------------------------------------------------------------------------------- |
+| `id`                      | TEXT | No       | UUID primary key                                                                                                 |
+| `position_id`             | TEXT | No       | FK → `positions.id`                                                                                              |
+| `basis_per_share`         | TEXT | No       | 4-dp Decimal string; effective per-share entry price after the event                                             |
+| `total_premium_collected` | TEXT | No       | 4-dp Decimal string; running sum of all premium credits net of debits                                            |
+| `final_pnl`               | TEXT | Yes      | 4-dp Decimal string; **only** set on terminal events (CSP close, CSP expiry)                                     |
+| `annualized_return`       | TEXT | Yes      | Reserved for a future story; written as `NULL` today                                                             |
+| `trigger_event`           | TEXT | No       | Event that wrote the row (`TriggerEvent`); `NOT NULL DEFAULT 'UNKNOWN'` (migration 004). US-101 adds `PMCC_OPEN` |
+| `snapshot_at`             | TEXT | No       | ISO timestamp used for "latest wins" ordering                                                                    |
+| `created_at`              | TEXT | No       | ISO timestamp                                                                                                    |
 
 ### Which events write a snapshot
 
@@ -270,6 +305,7 @@ audit trail of how basis evolved over the life of the wheel.
 | **CC expires worthless (US-9)** | **No**      | n/a — CC_OPEN snapshot unchanged                                   |
 | Shares called away (US-10)      | Yes         | `(ccStrike − basisPerShare) × contracts × 100` — terminal          |
 | Roll CC (US-14)                 | Yes         | `NULL`                                                             |
+| PMCC open (US-101)              | Yes         | `NULL`                                                             |
 
 The two "no snapshot" cases are deliberate: at CC close / CC expiry the
 existing CC_OPEN snapshot already reflects the CC premium reduction, the
@@ -284,6 +320,19 @@ share-appreciation P&L `(ccStrike − basisPerShare) × sharesHeld`. The
 formula uses the **effective** `basisPerShare` from the latest
 pre-call-away snapshot — premium reductions are already baked in and
 are never re-added (US-10).
+
+The PMCC opening snapshot (US-101) is written in US-103's ledger
+convention so the later running PMCC basis extends this row rather than
+migrating it: one row with `trigger_event='PMCC_OPEN'`,
+`basis_per_share = initialNetDebit / (contracts × 100)` (fees included,
+4 dp — `23.0200` for the $2,302.00 fee example),
+`total_premium_collected = shortCredit − shortFees` in dollars
+(`200.0000` with no fees, `199.0000` with a $1.00 short-call fee),
+`snapshot_at = makeSnapshotAt(long.fillDate)` and `final_pnl = NULL`.
+Fees are counted once, on their own legs (`legs.fees`), never a second
+time here. See the
+[PMCC opening-snapshot ledger ADR](../architecture/02-adrs/pmcc-opening-snapshot-ledger-convention.md).
+Driven by [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md).
 
 ### Tie-breaking on simultaneous snapshots
 
