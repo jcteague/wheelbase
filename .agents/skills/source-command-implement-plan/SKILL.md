@@ -316,7 +316,7 @@ contains **only** artifacts the reviewer can read for itself:
 - The exact diff scope: `git diff main...HEAD` plus any uncommitted changes
 - `CLAUDE.md` as the standards reference
 
-Ask it for three things, in this order:
+Ask it for four things, in this order:
 
 1. **AC verification** — for each AC, is it actually implemented and correct? Judge the
    code, not the test names. Flag any AC that is only superficially satisfied.
@@ -324,12 +324,20 @@ Ask it for three things, in this order:
    invariants, violations of the Architecture Rules in `CLAUDE.md` (pure `core/`
    engines, thin IPC handlers, linked roll pairs, hash routing, RHF+Zod forms,
    Tailwind `wb-*` tokens, per-item failure isolation in batch jobs).
-3. **Refactor opportunities visible only at the whole-feature level** — duplication
+3. **Type design** — read `.agents/skills/typescript-advanced-types/SKILL.md` and the
+   plan's `data-model.md` § Type Design, then judge every type the diff adds or changes.
+   - **Blocking:**
+     - a type admits a state that the domain or an AC forbids, e.g. optional fields
+       where a discriminated union is needed
+     - a type departs from the Type Design without a recorded reason
+     - two layers hand-copy a shape that one of them could derive
+   - **Advisory:** stylistic type improvements.
+4. **Refactor opportunities visible only at the whole-feature level** — duplication
    across the layers this plan touched, an abstraction the layer-by-layer TDD passes
    could not see, a seam that is now obviously in the wrong place. Explicitly _not_
    speculative flexibility (see Simplicity First in `CLAUDE.md`).
 
-Require each finding to carry a severity: `blocking` (AC gap or bug) or `advisory`
+Require each finding to carry a severity: `blocking` (AC gap, bug, or type-design defect) or `advisory`
 (refactor opportunity).
 
 ### 5b — Triage

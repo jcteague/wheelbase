@@ -78,6 +78,11 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
    - `decimal.js` with `ROUND_HALF_UP` for all monetary values — never `number` for money
    - Functional style: pure functions over classes, `map`/`filter`/`reduce` over loops
    - No mutation — prefer returning new objects/values
+   - Build types the way the plan's `data-model.md` § Type Design specifies. Before
+     writing a generic, conditional, mapped or template-literal type, or a discriminated
+     union, invoke `/typescript-advanced-types`. A subagent that cannot invoke skills
+     should read `.agents/skills/typescript-advanced-types/SKILL.md` instead. Build only
+     the types the tests need; any wider type redesign belongs to Refactor
 
 8. **Enforce Single Responsibility — one file, one concern**
    - `core/` — pure domain logic only; no DB, no IPC, no Alpaca

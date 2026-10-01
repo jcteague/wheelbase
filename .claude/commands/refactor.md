@@ -133,6 +133,14 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
 
    **Improve Types**
    - TypeScript: replace `any` with specific types; use union/literal types for constrained values; prefer enums or const objects for phases and statuses
+   - Invoke `/typescript-advanced-types` and review every type this cycle added or
+     changed, comparing each against the plan's `data-model.md` § Type Design. Apply a
+     change only if it does one of these:
+     - makes an illegal state unrepresentable
+     - derives a type that is currently hand-duplicated
+     - removes a cast, `as unknown as` or non-null assertion
+
+     Do not add type-level machinery that buys none of these.
 
 10. **Layer-Specific Refactorings**
 

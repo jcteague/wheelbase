@@ -94,12 +94,28 @@ Write all artifacts to `plans/{story-id}/` where `{story-id}` is the lower-cased
    - Validation rules from acceptance criteria
    - State transitions if applicable
 
-2. **Define interface contracts** → `plans/{story-id}/contracts/`:
+2. **Design the types** → a `## Type Design` section in `data-model.md`:
+
+   Invoke `/typescript-advanced-types` and use it to decide how each new or changed type
+   is expressed. Choose the simplest type that encodes the domain's rules, and add an
+   advanced construct only when it earns its place in one of these ways:
+   - **Makes an illegal state unrepresentable.** For example, a discriminated union on
+     `phase` or leg role instead of a bag of optional fields.
+   - **Derives one type from another so the two cannot drift.** For example,
+     `z.infer`, `Pick`/`Omit` slices, or mapped types over an IPC channel map. A
+     hand-copied duplicate does not qualify.
+   - **Removes a cast that the current shape would force on a caller.**
+
+   For each type, record its name, its file, the construct it uses, and the invariant
+   or derivation that construct buys. If plain object types are enough, write "Plain
+   types — no advanced constructs needed".
+
+3. **Define interface contracts** → `plans/{story-id}/contracts/`:
    - Document the IPC channels, Zod payload schemas, and response shapes the story requires
    - Use the existing IPC handler patterns in `src/main/ipc/` and `src/main/schemas.ts` as the reference format
    - Skip if the story has no new IPC surface (pure engine or pure renderer work)
 
-3. **Write a quickstart** → `plans/{story-id}/quickstart.md`:
+4. **Write a quickstart** → `plans/{story-id}/quickstart.md`:
    - Step-by-step instructions to run the tests for this story locally
    - Any migrations, seed data, or environment setup required
    - Expected test command and passing criteria
@@ -176,6 +192,10 @@ Read these before starting implementation — they contain the decisions, data m
 - Red bullets must be specific enough to write actual test functions from (name the test file, the case, the assertion)
 - Green bullets must name the exact file and construct to build (e.g. "`PositionListItemSchema` Zod schema in `src/main/schemas.ts`" or "`positions:list` IPC handler in `src/main/ipc/positions.ts`"), not vague nouns
 - Every acceptance criterion from the user story must be covered by at least one area
+- **Green bullets that create a type name it as `data-model.md` § Type Design does.**
+  Give the type name, its file and its construct (e.g. "`LegEvent` discriminated union on
+  `kind` in `src/main/core/types.ts`"), so Green builds the designed type rather than
+  improvising one
 - Do not describe TDD phases abstractly — write what the tests check and what the code does
 - **If a mockup file was found in step 2**, every frontend area's Green section must reference the mockup: name the specific screens, component shapes, interaction patterns, and annotations that apply. Do not describe generic UI — describe the UI shown in the mockup. Include: component names derived from what the mockup shows (e.g. `ExpirationSheet`, not just "a modal"), the sheet/overlay pattern if used, the exact fields visible on each screen, post-success navigation and shortcuts, and error state visual treatments (color, tone).
 - **Core-engine areas name their properties.** For any area whose Green creates or changes a pure function in `src/main/core/`, the Red section names at least one property from the catalog (round-trip, inverse, oracle, invariant/bound, order independence, guard) and the `<engine>.property.test.ts` file it goes in, or states "no property — <reason>". A property is a rule over the whole input domain, not a worked example; see CLAUDE.md § Property-Based Tests.
