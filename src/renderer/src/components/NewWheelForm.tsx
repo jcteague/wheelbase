@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useEffect, useState } from 'react'
+import { useEffect, useImperativeHandle, useState, type Ref } from 'react'
 import { useForm, useWatch, Controller } from 'react-hook-form'
 
 import { DatePicker } from '@/components/ui/date-picker'
@@ -9,11 +9,13 @@ import type { ApiError, ApiFieldError } from '../api/positions'
 import { useCreatePosition } from '../hooks/useCreatePosition'
 import { computeDteFromInput } from '../lib/format'
 import { isPremiumOverridden, type PromotedCandidate } from '../lib/promote'
+import type { SharedFieldsHandle } from './new-position-shared'
 import { NewWheelDerivedRow } from './NewWheelDerivedRow'
 import { PromotedFormChrome } from './PromotedFormChrome'
 import { ErrorAlert } from './ui/ErrorAlert'
 import { Field } from './ui/FormField'
 import { FormButton } from './ui/FormButton'
+import { SheetBody, SheetFooter } from './ui/Sheet'
 import { NumberInput } from './ui/NumberInput'
 const API_TO_FORM_FIELD: Record<string, keyof NewWheelFormValues> = {
   ticker: 'ticker',
@@ -60,12 +62,21 @@ type NewWheelFormProps = {
   defaultTicker?: string
   /** [US-68] Present only when the trader arrived from a screener promote. */
   promoted?: PromotedCandidate
+  /** [US-101] Lets the New position sheet carry ticker/contracts across the strategy toggle. */
+  sharedRef?: Ref<SharedFieldsHandle>
+  onPendingChange?: (isPending: boolean) => void
+  /** [US-101] Inside the New position sheet: fields in the scrolling body, Cancel + submit in
+   *  the fixed footer. Absent, the form renders as a plain column. */
+  onCancel?: () => void
 }
 
 export function NewWheelForm({
   navigate = () => {},
   defaultTicker,
-  promoted
+  promoted,
+  sharedRef,
+  onPendingChange,
+  onCancel
 }: NewWheelFormProps): React.JSX.Element {
   // The seeded thesis lives in the Advanced section, so promoted mode opens it —
   // a pre-filled field the trader cannot see is worse than no pre-fill at all.
@@ -77,11 +88,17 @@ export function NewWheelForm({
     return () => clearTimeout(timer)
   }, [mutation.isSuccess, mutation.data, navigate])
 
+  useEffect(() => {
+    onPendingChange?.(mutation.isPending)
+  }, [mutation.isPending, onPendingChange])
+
   const {
     register,
     handleSubmit,
     setError,
     control,
+    getValues,
+    setValue,
     formState: { errors }
   } = useForm<NewWheelFormValues>({
     resolver: zodResolver(newWheelSchema),
@@ -90,6 +107,18 @@ export function NewWheelForm({
       ? promotedDefaults(promoted)
       : { ...EMPTY_DEFAULTS, ticker: defaultTicker ?? '' }
   })
+
+  useImperativeHandle(
+    sharedRef,
+    () => ({
+      getShared: () => ({ ticker: getValues('ticker'), contracts: getValues('contracts') }),
+      setShared: ({ ticker, contracts }) => {
+        setValue('ticker', ticker)
+        setValue('contracts', contracts)
+      }
+    }),
+    [getValues, setValue]
+  )
 
   // [US-68] The derived row and the banner track the live inputs, so an override
   // shows its consequence before the trader submits. The fresh quote is never
@@ -138,7 +167,7 @@ export function NewWheelForm({
   if (mutation.isSuccess && mutation.data) {
     const pos = mutation.data.position
     const cb = mutation.data.cost_basis_snapshot
-    return (
+    const card = (
       <div
         className="px-6 py-5 rounded-lg bg-wb-green-dim border border-[rgba(63,185,80,0.25)]"
         role="status"
@@ -166,10 +195,11 @@ export function NewWheelForm({
         </button>
       </div>
     )
+    return onCancel ? <SheetBody>{card}</SheetBody> : card
   }
 
-  return (
-    <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-6">
+  const fields = (
+    <>
       {isServerError && <ErrorAlert message="Something went wrong. Please try again." />}
 
       {promoted && <PromotedFormChrome promoted={promoted} currentPremium={premiumValue} />}
@@ -322,16 +352,49 @@ export function NewWheelForm({
           </div>
         )}
       </div>
+    </>
+  )
+
+  const submit = (
+    <FormButton
+      label="Open Wheel"
+      pendingLabel="Opening…"
+      isPending={mutation.isPending}
+      aria-label="Open wheel"
+    />
+  )
+
+  if (onCancel) {
+    return (
+      <form
+        onSubmit={handleSubmit(onSubmit)}
+        noValidate
+        className="flex h-full min-h-0 flex-1 flex-col"
+      >
+        <SheetBody>
+          <div className="flex flex-col gap-6">{fields}</div>
+        </SheetBody>
+        <SheetFooter>
+          <FormButton
+            label="Cancel"
+            variant="secondary"
+            disabled={mutation.isPending}
+            onClick={onCancel}
+          />
+          {submit}
+        </SheetFooter>
+      </form>
+    )
+  }
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-6">
+      {fields}
 
       {/* Divider */}
       <div className="border-t border-wb-border" />
 
-      <FormButton
-        label="Open Wheel"
-        pendingLabel="Opening…"
-        isPending={mutation.isPending}
-        aria-label="Open wheel"
-      />
+      {submit}
     </form>
   )
 }

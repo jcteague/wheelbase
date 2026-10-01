@@ -135,3 +135,20 @@ export async function reachCcOpenState(
 
   return today
 }
+
+const POSITIONS_LIST_HEADING = 'h1:has-text("Active Positions")'
+
+/** Remounts PositionsListPage so usePositions() refetches data seeded over raw IPC. */
+export async function reloadPositionsList(page: Page): Promise<void> {
+  // `#/new` is the list route with the sheet open, so hopping there remounts nothing.
+  // The watchlist is a separate route that does not observe the positions query.
+  await page.evaluate(() => {
+    location.hash = '#/watchlist'
+  })
+  await page.waitForSelector(POSITIONS_LIST_HEADING, { state: 'detached' })
+  await page.evaluate(() => {
+    location.hash = '#/'
+  })
+  await page.waitForFunction(() => location.hash === '#/')
+  await page.waitForSelector(POSITIONS_LIST_HEADING)
+}

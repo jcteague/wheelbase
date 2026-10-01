@@ -11,16 +11,20 @@ import {
   expireCc,
   expireCsp,
   openCoveredCall,
+  openPmcc,
   openWheel,
   recordAssignment,
   recordCallAway,
   rollCc,
   rollCsp
 } from './lifecycle'
+import type { OpenPmccInput, OpenPmccLegInput, PmccField } from './lifecycle'
+import { pmccCrossLegIssues } from './pmcc-rules'
 import type { WheelPhase } from './types'
 import {
   contracts,
   isoDay,
+  nonNegativeMoney,
   nonPositiveMoney,
   orderedDays,
   positiveMoney,
@@ -324,6 +328,231 @@ describe('rollCc', () => {
             expect(validationErrorOf(() => rollCc(input)).code).toBe('no_change')
           } else {
             expect(rollCc(input)).toEqual({ phase: 'CC_OPEN' })
+          }
+        }
+      )
+    )
+  })
+})
+
+describe('openPmcc', () => {
+  const plus = (a: string, b: string): string => new Decimal(a).plus(b).toFixed(4)
+
+  // Four distinct sorted days: long fill ≤ short fill (= reference) < short exp < long exp.
+  const validPmcc: fc.Arbitrary<OpenPmccInput> = fc
+    .record({
+      ticker,
+      days: fc.uniqueArray(isoDay, { minLength: 4, maxLength: 4 }).map((days) => [...days].sort()),
+      sameFillDay: fc.boolean(),
+      longStrike: positiveMoney(),
+      strikeGap: positiveMoney(),
+      shortFill: positiveMoney(),
+      debit: positiveMoney(),
+      contracts,
+      longFees: nonNegativeMoney(10),
+      shortFees: nonNegativeMoney(10)
+    })
+    .map(({ ticker, days: [first, shortFillDate, shortExpiration, longExpiration], ...r }) => {
+      const leg = {
+        underlying: ticker,
+        instrumentType: 'CALL' as const,
+        deliverableShares: 100,
+        contracts: r.contracts
+      }
+      return {
+        ticker,
+        referenceDate: shortFillDate,
+        long: {
+          ...leg,
+          strike: r.longStrike,
+          expiration: longExpiration,
+          fillPrice: plus(r.shortFill, r.debit),
+          fillDate: r.sameFillDay ? shortFillDate : first,
+          fees: r.longFees
+        },
+        short: {
+          ...leg,
+          strike: plus(r.longStrike, r.strikeGap),
+          expiration: shortExpiration,
+          fillPrice: r.shortFill,
+          fillDate: shortFillDate,
+          fees: r.shortFees
+        }
+      }
+    })
+
+  const withLeg = (
+    input: OpenPmccInput,
+    side: 'long' | 'short',
+    patch: Partial<OpenPmccLegInput>
+  ): OpenPmccInput => ({ ...input, [side]: { ...input[side], ...patch } })
+
+  it('accepts every valid PMCC entry', () => {
+    fc.assert(
+      fc.property(validPmcc, (input) => {
+        expect(openPmcc(input)).toEqual({ phase: 'PMCC_OPEN' })
+      })
+    )
+  })
+
+  it('rejects a short strike at or below the LEAPS strike', () => {
+    fc.assert(
+      fc.property(validPmcc, positiveMoney(), positiveMoney(), (input, a, b) => {
+        const [low, high] = new Decimal(a).lte(b) ? [a, b] : [b, a]
+        const error = validationErrorOf(() =>
+          openPmcc(withLeg(withLeg(input, 'long', { strike: high }), 'short', { strike: low }))
+        )
+        expect(error.field).toBe('short.strike')
+        expect(error.code).toBe('strike_not_above_long')
+      })
+    )
+  })
+
+  it('rejects a short expiration on or after the LEAPS expiration', () => {
+    fc.assert(
+      fc.property(validPmcc, fc.boolean(), (input, swap) => {
+        const shortExp = input.short.expiration
+        const longExp = input.long.expiration
+        const broken = swap
+          ? withLeg(withLeg(input, 'short', { expiration: longExp }), 'long', {
+              expiration: shortExp
+            })
+          : withLeg(input, 'short', { expiration: longExp })
+        const error = validationErrorOf(() => openPmcc(broken))
+        expect(error.field).toBe('short.expiration')
+        expect(error.code).toBe('short_not_before_long')
+      })
+    )
+  })
+
+  it('rejects a short fill at or above the LEAPS fill', () => {
+    fc.assert(
+      fc.property(validPmcc, nonNegativeMoney(), (input, excess) => {
+        const error = validationErrorOf(() =>
+          openPmcc(withLeg(input, 'short', { fillPrice: plus(input.long.fillPrice, excess) }))
+        )
+        expect(error.field).toBe('__pair__')
+        expect(error.code).toBe('not_net_debit')
+      })
+    )
+  })
+
+  it('rejects a put on either leg on that leg path', () => {
+    fc.assert(
+      fc.property(validPmcc, fc.constantFrom('long' as const, 'short' as const), (input, side) => {
+        const error = validationErrorOf(() =>
+          openPmcc(withLeg(input, side, { instrumentType: 'PUT' }))
+        )
+        expect(error.field).toBe(`${side}.instrumentType`)
+        expect(error.code).toBe('not_a_call')
+      })
+    )
+  })
+
+  // A valid entry with any of its cross-leg values (dates, strikes, fill prices) replaced —
+  // each per-leg rule still holds, so only the shared cross-leg rules can reject it.
+  const crossLegPerturbed: fc.Arbitrary<OpenPmccInput> = fc
+    .record({
+      input: validPmcc,
+      long: fc.record({
+        strike: fc.option(positiveMoney(), { nil: undefined }),
+        expiration: fc.option(isoDay, { nil: undefined }),
+        fillPrice: fc.option(positiveMoney(), { nil: undefined }),
+        fillDate: fc.option(isoDay, { nil: undefined })
+      }),
+      short: fc.record({
+        strike: fc.option(positiveMoney(), { nil: undefined }),
+        expiration: fc.option(isoDay, { nil: undefined }),
+        fillPrice: fc.option(positiveMoney(), { nil: undefined }),
+        fillDate: fc.option(isoDay, { nil: undefined })
+      })
+    })
+    .map(({ input, long, short }) => {
+      const merge = (leg: OpenPmccLegInput, patch: typeof long): OpenPmccLegInput => ({
+        ...leg,
+        strike: patch.strike ?? leg.strike,
+        expiration: patch.expiration ?? leg.expiration,
+        fillPrice: patch.fillPrice ?? leg.fillPrice,
+        fillDate: patch.fillDate ?? leg.fillDate
+      })
+      return { ...input, long: merge(input.long, long), short: merge(input.short, short) }
+    })
+
+  it('accepts exactly when the shared cross-leg rules report no issues, and throws the first', () => {
+    fc.assert(
+      fc.property(crossLegPerturbed, (input) => {
+        const [first] = pmccCrossLegIssues(input)
+        if (first === undefined) {
+          expect(openPmcc(input)).toEqual({ phase: 'PMCC_OPEN' })
+        } else {
+          const error = validationErrorOf(() => openPmcc(input))
+          expect({ field: error.field, code: error.code, message: error.message }).toEqual(first)
+        }
+      })
+    )
+  })
+
+  it('reports each cross-leg rule independently of the others', () => {
+    fc.assert(
+      fc.property(crossLegPerturbed, (input) => {
+        const codes = pmccCrossLegIssues(input).map(({ code }) => code)
+        const { long, short } = input
+        const expected = {
+          strike_not_above_long: new Decimal(short.strike).lte(long.strike),
+          not_net_debit: new Decimal(long.fillPrice).lte(short.fillPrice),
+          short_not_before_long: short.expiration >= long.expiration,
+          long_after_short: long.fillDate > short.fillDate
+        }
+        Object.entries(expected).forEach(([code, broken]) => {
+          expect(codes.includes(code)).toBe(broken)
+        })
+      })
+    )
+  })
+
+  it('only ever reports a field in PmccField', () => {
+    const legKeys = [
+      'underlying',
+      'instrumentType',
+      'deliverableShares',
+      'strike',
+      'expiration',
+      'contracts',
+      'fillPrice',
+      'fillDate',
+      'fees'
+    ] as const satisfies ReadonlyArray<keyof OpenPmccLegInput>
+    const pmccFields = new Set<string>([
+      'ticker',
+      '__pair__',
+      ...legKeys.flatMap((key) => [`long.${key}`, `short.${key}`] satisfies PmccField[])
+    ])
+    const money = fc.integer({ min: -5, max: 150 }).map(String)
+    const anyLeg: fc.Arbitrary<OpenPmccLegInput> = fc.record({
+      underlying: fc.constantFrom('XYZ', 'ABC'),
+      instrumentType: fc.constantFrom('CALL' as const, 'PUT' as const),
+      deliverableShares: fc.constantFrom(100, 50),
+      strike: money,
+      expiration: isoDay,
+      contracts: fc.constantFrom(0, 1, 2, 1.5),
+      fillPrice: money,
+      fillDate: isoDay,
+      fees: fc.integer({ min: -2, max: 2 }).map(String)
+    })
+    fc.assert(
+      fc.property(
+        fc.record({
+          ticker: fc.constantFrom('XYZ', 'xyz'),
+          long: anyLeg,
+          short: anyLeg,
+          referenceDate: isoDay
+        }),
+        (input) => {
+          try {
+            openPmcc(input)
+          } catch (error) {
+            if (!(error instanceof ValidationError)) throw error
+            expect(pmccFields).toContain(error.field)
           }
         }
       )

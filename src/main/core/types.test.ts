@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { InstrumentType, LegAction, LegRole } from './types'
+import { InstrumentType, LegAction, LegRole, WheelPhase } from './types'
 
 describe('InstrumentType', () => {
   it('accepts STOCK as a valid instrument type', () => {
@@ -38,5 +38,20 @@ describe('LegRole', () => {
 
   it('accepts CALLED_AWAY as a valid leg role', () => {
     expect(LegRole.parse('CALLED_AWAY')).toBe('CALLED_AWAY')
+  })
+
+  it('accepts the PMCC roles LEAPS_OPEN and SHORT_CALL_OPEN', () => {
+    expect(LegRole.parse('LEAPS_OPEN')).toBe('LEAPS_OPEN')
+    expect(LegRole.parse('SHORT_CALL_OPEN')).toBe('SHORT_CALL_OPEN')
+  })
+})
+
+describe('WheelPhase', () => {
+  it('accepts PMCC_OPEN as a valid phase', () => {
+    expect(WheelPhase.parse('PMCC_OPEN')).toBe('PMCC_OPEN')
+  })
+
+  it('rejects the reserved PMCC_LEAPS_ONLY phase, which is not added yet', () => {
+    expect(() => WheelPhase.parse('PMCC_LEAPS_ONLY')).toThrow()
   })
 })

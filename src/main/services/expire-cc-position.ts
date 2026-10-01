@@ -91,6 +91,7 @@ export function expireCcPosition(
       fillPrice: null,
       fillDate: recordedDate,
       rollChainId: null,
+      fees: '0.0000',
       createdAt: now,
       updatedAt: now
     },

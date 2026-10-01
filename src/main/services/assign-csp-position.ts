@@ -160,6 +160,7 @@ export function assignCspPosition(
       fillPrice: null,
       fillDate: payload.assignmentDate,
       rollChainId: null,
+      fees: '0.0000',
       createdAt: now,
       updatedAt: now
     },

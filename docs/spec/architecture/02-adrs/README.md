@@ -2,7 +2,7 @@
 
 Each ADR captures one architectural choice that emerged from a plan/story. Decisions are grouped below by theme; many ADRs are referenced by multiple feature pages.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,us-53-54-55,us-57-58,us-97,us-98,us-99,us-121,missing-ac -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,us-53-54-55,us-57-58,us-97,us-98,us-99,us-101,us-121,missing-ac -->
 
 ## Engine & architecture
 
@@ -20,6 +20,8 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [verdict-pure-compute](./verdict-pure-compute.md) — Verdict routing as a pure function in `src/renderer/src/lib/verdict.ts`.
 - [verdict-precedence-chain](./verdict-precedence-chain.md) — Six-rule first-match-wins precedence chain.
 - [dte-aware-delta-severity](./dte-aware-delta-severity.md) — Delta-severity thresholds drop by 0.05 when DTE ≤ 7; gauge appends `· TIGHT`.
+- [shared-pure-pmcc-opening-debit](./shared-pure-pmcc-opening-debit.md) — One pure `calculatePmccOpeningDebit` in `costbasis.ts` feeds the service, list, detail and form preview; list/detail recompute the debit from the legs, never from the rounded basis (US-101).
+- [pmcc-validation-pure-engine-mirrored-by-form-schema](./pmcc-validation-pure-engine-mirrored-by-form-schema.md) — `openPmcc` owns the entry rules with dotted `PmccField` paths and a typed `__pair__` slot; the renderer schema mirrors them in the same order; four rules are boundary-only; `handleIpcCall` joins Zod paths with `.` (US-101).
 
 ## Persistence & data model
 
@@ -35,6 +37,10 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [ivr-same-day-overwrite-delete-then-insert](./ivr-same-day-overwrite-delete-then-insert.md) — **Superseded by ivr-collector-idempotent-over-missing-sessions (US-121).** Same-session IVR refreshes deleted the prior row in the session window, then inserted the fresh snapshot.
 - [active-ivr-targets-from-positions](./active-ivr-targets-from-positions.md) — **Superseded by union-ivr-targets-positions-and-watchlist (US-97).** IVR collection targets come from distinct active `positions.ticker` values, not renderer list projections.
 - [union-ivr-targets-positions-and-watchlist](./union-ivr-targets-positions-and-watchlist.md) — IVR collection targets are the `UNION` of open-position tickers and every watchlist row, superseding the positions-only rule; the existing uppercase/`Set`/sort pipeline is what makes a held-and-watchlisted ticker fetch exactly once.
+- [pmcc-phase-and-leg-role-names](./pmcc-phase-and-leg-role-names.md) — `PMCC_OPEN` phase plus `LEAPS_OPEN` / `SHORT_CALL_OPEN` roles on the shared enums; later PMCC phases and roles reserved by name, not added (US-101).
+- [per-leg-fees-on-legs-table](./per-leg-fees-on-legs-table.md) — Migration 017 adds `legs.fees` (4-dp TEXT, default `'0.0000'`); fees attach to their own leg, never to the snapshot or the fill price (US-101).
+- [pmcc-opening-snapshot-ledger-convention](./pmcc-opening-snapshot-ledger-convention.md) — One `PMCC_OPEN` snapshot in US-103's convention (basis per share includes fees; premium = short credit after fees); displayed debit is recomputed from legs (US-101).
+- [pmcc-list-item-discriminated-union](./pmcc-list-item-discriminated-union.md) — `WheelListItem | PmccListItem` on `strategyType`; typed-null wheel fields let the calendar, polling and row display skip PMCC; wheel-only jobs untouched (US-101).
 
 ## IPC contracts
 
@@ -66,6 +72,9 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [no-active-leg-cockpit-branch](./no-active-leg-cockpit-branch.md) — No-active-leg branch renders verdict + cost-basis drawer only.
 - [cockpit-component-decomposition](./cockpit-component-decomposition.md) — Eight files under `position-cockpit/`; one per cockpit part.
 - [settings-market-data-action-placement](./settings-market-data-action-placement.md) — "Refresh IVR now" extends the Settings page Market Data section with inline feedback instead of a new page/panel.
+- [new-route-is-list-with-sheet-open](./new-route-is-list-with-sheet-open.md) — `#/new` renders the positions list with the New position sheet open via one RegExp route; no remount, refetch on close; `NewWheelPage` deleted (US-101).
+- [standard-mode-is-new-wheel-form](./standard-mode-is-new-wheel-form.md) — Standard mode is the shipped `NewWheelForm`, with its success card and redirect kept; `onCancel` adds a sheet-mode footer (US-101).
+- [draft-retention-both-forms-mounted](./draft-retention-both-forms-mounted.md) — Both entry forms stay mounted (`hidden`); an imperative handle carries ticker and contracts across the toggle; toggle disabled while pending; focus returns to the opener (US-101).
 
 ## Market data
 
@@ -95,6 +104,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [per-symbol-ws-subscription-reconciliation](./per-symbol-ws-subscription-reconciliation.md) — `stream()` sends only the unsubscribe/subscribe diff against a remembered set; 405/406 surface as `StreamError`s; socket-identity guard and a fresh `Subject` per fault.
 - [open-interest-from-contracts-endpoint](./open-interest-from-contracts-endpoint.md) — OI joined from the trading API's contracts endpoint by symbol, degrading to `null` with a warning so the screener's OI floor stays honest.
 - [alpaca-credentials-runtime-env-only](./alpaca-credentials-runtime-env-only.md) — The shared dev-fallback loader reads `process.env` only; `.env` can never configure keys because `electron-vite` inlines `MAIN_VITE_*` into the bundle.
+- [call-chain-picker-client-side-delta-band](./call-chain-picker-client-side-delta-band.md) — `useCallChain` requests every page (no `limit`) and applies the delta band client-side, keeping the selection across refetches; the underlying comes from a one-shot `useUnderlyingPrice`, not the single-subscriber `useStockQuotes` (US-101).
 
 ## IV history & IV rank (US-121)
 
@@ -137,6 +147,11 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [management-queue-read-path](./management-queue-read-path.md) — `listManagementQueue` joins open alerts to positions and sorts by urgency tier then `triggered_at`; dedicated `ManagementQueueItem` view-model leaves `listOpenAlerts` untouched.
 - [alert-evaluation-failure-isolation](./alert-evaluation-failure-isolation.md) — Batch evaluation isolates per-item failures and degrades boundary I/O (market-data prefetch, symbol building) to empty + log, never aborting the run; callers guard throwing pure helpers.
 - [configurable-alert-thresholds](./configurable-alert-thresholds.md) — Shared override→global-default→constant resolution precedence for both alert thresholds.
+
+## Testing seams (e2e)
+
+- [fake-provider-option-chain-delay](./fake-provider-option-chain-delay.md) — `FAKE_OPTION_CHAIN_DELAY_MS` delays only the fake's `getOptionChainSnapshot`, so the chain-loading notice is assertable (US-101).
+- [storage-failure-e2e-via-sqlite-trigger](./storage-failure-e2e-via-sqlite-trigger.md) — A `BEFORE INSERT … RAISE(ABORT)` trigger on `cost_basis_snapshots` replaces `chmod`; it fails the transaction's last write, so a pass proves the rollback (US-101).
 
 <!-- /generated -->
 

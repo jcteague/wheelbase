@@ -497,3 +497,163 @@ describe('rollCc', () => {
     expect(result).toMatchObject(mockResponse)
   })
 })
+
+describe('createPmccPosition', () => {
+  const mockCreatePmccPosition = vi.fn()
+  const pmccLeg = {
+    underlying: 'XYZ',
+    instrumentType: 'CALL' as const,
+    deliverableShares: 100,
+    contracts: 1,
+    fillDate: '2026-09-14',
+    fees: 0
+  }
+  const payload: positionsApi.CreatePmccPositionPayload = {
+    strategy: 'PMCC',
+    ticker: 'XYZ',
+    long: { ...pmccLeg, strike: 80, expiration: '2027-09-17', fillPrice: 25 },
+    short: { ...pmccLeg, strike: 110, expiration: '2026-10-16', fillPrice: 2 },
+    thesis: 'Bullish on XYZ'
+  }
+
+  beforeEach(() => {
+    mockCreatePmccPosition.mockReset()
+    Object.assign(window, {
+      api: {
+        ...(window.api ?? {}),
+        createPmccPosition: mockCreatePmccPosition
+      }
+    })
+  })
+
+  it('passes the camelCase payload through to window.api.createPmccPosition unchanged', async () => {
+    mockCreatePmccPosition.mockResolvedValue({ ok: true, position: { id: 'p1' } })
+
+    await positionsApi.createPmccPosition(payload)
+
+    expect(mockCreatePmccPosition).toHaveBeenCalledWith(payload)
+  })
+
+  it('throws ApiError with status 400 carrying the dotted field errors on ok:false', async () => {
+    const errors = [
+      {
+        field: 'short.strike',
+        code: 'strike_not_above_long',
+        message: 'Short-call strike must be above the LEAPS strike.'
+      }
+    ]
+    mockCreatePmccPosition.mockResolvedValue({ ok: false, errors })
+
+    await expect(positionsApi.createPmccPosition(payload)).rejects.toEqual({
+      status: 400,
+      body: { detail: errors }
+    })
+  })
+
+  it('returns the result on success', async () => {
+    const success = {
+      position: { id: 'p1', ticker: 'XYZ', phase: 'PMCC_OPEN' },
+      openingDebit: { initialNetDebit: '2300.0000' }
+    }
+    mockCreatePmccPosition.mockResolvedValue({ ok: true, ...success })
+
+    await expect(positionsApi.createPmccPosition(payload)).resolves.toMatchObject(success)
+  })
+})
+
+describe('listPositions', () => {
+  const mockListPositions = vi.fn()
+  const base = {
+    phase: 'CSP_OPEN',
+    status: 'ACTIVE',
+    premiumCollected: '250.0000',
+    effectiveCostBasis: '177.5000',
+    profitTargetPercent: 50
+  }
+  const wheelItem = {
+    ...base,
+    id: 'wheel-1',
+    ticker: 'AAPL',
+    strategyType: 'WHEEL' as const,
+    pmcc: null,
+    strike: '180.0000',
+    expiration: '2026-10-16',
+    dte: 17,
+    instrumentType: 'PUT' as const,
+    contracts: 1,
+    entryPremiumPerContract: '2.5000'
+  }
+  const pmccSummary = {
+    long: { strike: '80.0000', expiration: '2027-09-17', dte: 353, contracts: 1 },
+    short: { strike: '110.0000', expiration: '2026-10-16', dte: 17, contracts: 1 },
+    initialNetDebit: '2300.0000'
+  }
+  const pmccItem = {
+    ...base,
+    id: 'pmcc-1',
+    ticker: 'XYZ',
+    phase: 'PMCC_OPEN',
+    premiumCollected: '200.0000',
+    effectiveCostBasis: '23.0000',
+    profitTargetPercent: null,
+    strategyType: 'PMCC' as const,
+    pmcc: pmccSummary,
+    strike: null,
+    expiration: null,
+    dte: null,
+    instrumentType: null,
+    contracts: null,
+    entryPremiumPerContract: null
+  }
+
+  beforeEach(() => {
+    mockListPositions.mockReset()
+    Object.assign(window, {
+      api: {
+        ...(window.api ?? {}),
+        listPositions: mockListPositions
+      }
+    })
+  })
+
+  it('maps a WHEEL item and a PMCC item into their renderer arms with snake_case money fields', async () => {
+    mockListPositions.mockResolvedValue([wheelItem, pmccItem])
+
+    const [wheel, pmcc] = await positionsApi.listPositions()
+
+    expect(wheel).toEqual({
+      id: 'wheel-1',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      status: 'ACTIVE',
+      premium_collected: '250.0000',
+      effective_cost_basis: '177.5000',
+      profitTargetPercent: 50,
+      strategyType: 'WHEEL',
+      pmcc: null,
+      strike: '180.0000',
+      expiration: '2026-10-16',
+      dte: 17,
+      instrumentType: 'PUT',
+      contracts: 1,
+      entryPremiumPerContract: '2.5000'
+    })
+    expect(pmcc).toEqual({
+      id: 'pmcc-1',
+      ticker: 'XYZ',
+      phase: 'PMCC_OPEN',
+      status: 'ACTIVE',
+      premium_collected: '200.0000',
+      effective_cost_basis: '23.0000',
+      profitTargetPercent: null,
+      strategyType: 'PMCC',
+      pmcc: pmccSummary,
+      strike: null,
+      expiration: null,
+      dte: null,
+      instrumentType: null,
+      contracts: null,
+      entryPremiumPerContract: null
+    })
+  })
+})

@@ -155,3 +155,17 @@ describe('terminal phases show no action buttons', () => {
     expect(screen.queryByTestId('record-cc-expiration-btn')).not.toBeInTheDocument()
   })
 })
+
+it('PMCC_OPEN renders only the phase badge', () => {
+  render(<PositionDetailActions {...BASE_PROPS} phase="PMCC_OPEN" />)
+  expect(screen.getByText('LEAPS + short call open')).toBeInTheDocument()
+  expect(screen.queryAllByRole('button')).toHaveLength(0)
+  ;[
+    'record-call-away-btn',
+    'roll-cc-btn',
+    'open-covered-call-btn',
+    'roll-csp-btn',
+    'record-assignment-btn',
+    'record-expiration-btn'
+  ].forEach((testId) => expect(screen.queryByTestId(testId)).not.toBeInTheDocument())
+})

@@ -24,6 +24,7 @@ import {
   isPriceCeilingInRange,
   isSpreadPercentInRange
 } from './core/screening-criteria'
+import type { PmccOpeningDebitResult } from './core/costbasis'
 import type {
   LegAction,
   LegRole,
@@ -41,6 +42,7 @@ const PositionIdSchema = z.string().uuid()
 
 const IsoDateRegex = /^\d{4}-\d{2}-\d{2}$/
 const IsoDateMessage = 'Must be a valid date (YYYY-MM-DD)'
+const IsoDateSchema = z.string().regex(IsoDateRegex, IsoDateMessage)
 
 export const CreatePositionPayloadSchema = z.object({
   ticker: z.string(),
@@ -91,6 +93,7 @@ export interface LegRecord {
   fillPrice: string | null
   fillDate: string
   rollChainId: string | null
+  fees: string
   createdAt: string
   updatedAt: string
 }
@@ -104,6 +107,7 @@ export type TriggerEvent =
   | 'CC_OPEN'
   | 'CC_ROLL'
   | 'CALL_AWAY'
+  | 'PMCC_OPEN'
 
 export interface CostBasisSnapshotRecord {
   id: string
@@ -152,23 +156,60 @@ export interface GetPositionResult {
   costBasisSnapshot: CostBasisSnapshotRecord | null
   legs: LegRecord[]
   allSnapshots: CostBasisSnapshotRecord[]
+  /** PMCC only: dollars, 4 dp, recomputed from both opening legs (see PmccListSummary).
+   *  Null for a wheel, or a PMCC missing an opening leg or fill. */
+  initialNetDebit: string | null
 }
 
-export interface PositionListItem {
+export interface PmccLegSummary {
+  strike: string
+  expiration: string
+  dte: number
+  contracts: number
+}
+
+export interface PmccListSummary {
+  long: PmccLegSummary
+  short: PmccLegSummary
+  /** Dollars, 4 dp, recomputed from the two legs' fills and fees via calculatePmccOpeningDebit
+   *  (never from the rounded basis_per_share, which drifts). */
+  initialNetDebit: string
+}
+
+export interface PositionListItemBase {
   id: string
   ticker: string
   phase: WheelPhase
   status: WheelStatus
+  premiumCollected: string
+  effectiveCostBasis: string
+  profitTargetPercent: number | null
+}
+
+export interface WheelListItem extends PositionListItemBase {
+  strategyType: 'WHEEL'
+  pmcc: null
   strike: string | null
   expiration: string | null
   dte: number | null
   instrumentType: 'PUT' | 'CALL' | null
   contracts: number | null
   entryPremiumPerContract: string | null
-  premiumCollected: string
-  effectiveCostBasis: string
-  profitTargetPercent: number | null
 }
+
+/** Wheel-only fields are typed null so the calendar and option polling stay wheel-only. */
+export interface PmccListItem extends PositionListItemBase {
+  strategyType: 'PMCC'
+  pmcc: PmccListSummary
+  strike: null
+  expiration: null
+  dte: null
+  instrumentType: null
+  contracts: null
+  entryPremiumPerContract: null
+}
+
+export type PositionListItem = WheelListItem | PmccListItem
 
 export const CollectIvrNowBatchSchema = z.object({
   successCount: z.number().int().min(0),
@@ -208,7 +249,7 @@ export interface ExpireCspPositionResult {
 
 export const AssignCspPayloadSchema = z.object({
   positionId: PositionIdSchema,
-  assignmentDate: z.string().regex(IsoDateRegex, IsoDateMessage)
+  assignmentDate: IsoDateSchema
 })
 
 export type AssignCspPayload = z.infer<typeof AssignCspPayloadSchema>
@@ -245,6 +286,64 @@ export interface OpenCcPositionResult {
   position: { id: string; ticker: string; phase: 'CC_OPEN'; status: 'ACTIVE'; closedDate: null }
   leg: LegRecord
   costBasisSnapshot: CostBasisSnapshotRecord
+}
+
+// ---------------------------------------------------------------------------
+// Create PMCC schemas
+// ---------------------------------------------------------------------------
+
+// Numeric bounds (positive, integer, === 100, non-negative) are the openPmcc engine's, so Zod
+// carries none of them — only shape and the required, per-leg-worded fill price.
+const PmccLegPayloadSchema = z.object({
+  underlying: z.string(),
+  instrumentType: z.enum(['PUT', 'CALL']),
+  deliverableShares: z.number(),
+  strike: z.number(),
+  expiration: IsoDateSchema,
+  contracts: z.number(),
+  fillPrice: z.number(),
+  fillDate: IsoDateSchema,
+  fees: z.number()
+})
+
+export const CreatePmccPositionPayloadSchema = z.object({
+  // Redundant on a PMCC-only channel; kept so a later discriminatedUnion needs no wire change.
+  strategy: z.literal('PMCC'),
+  ticker: z.string(),
+  long: PmccLegPayloadSchema.extend({
+    fillPrice: z.number({ error: 'Enter the actual LEAPS fill price.' })
+  }),
+  short: PmccLegPayloadSchema.extend({
+    fillPrice: z.number({ error: 'Enter the actual short-call fill price.' })
+  }),
+  accountId: z.string().optional(),
+  thesis: z.string().optional(),
+  notes: z.string().optional()
+})
+
+export type CreatePmccPositionPayload = z.infer<typeof CreatePmccPositionPayloadSchema>
+
+export interface CreatePmccPositionResult {
+  position: PositionRecord & {
+    strategyType: 'PMCC'
+    phase: 'PMCC_OPEN'
+    status: 'ACTIVE'
+    closedDate: null
+  }
+  longLeg: LegRecord & {
+    legRole: 'LEAPS_OPEN'
+    action: 'BUY'
+    instrumentType: 'CALL'
+    fillPrice: string
+  }
+  shortLeg: LegRecord & {
+    legRole: 'SHORT_CALL_OPEN'
+    action: 'SELL'
+    instrumentType: 'CALL'
+    fillPrice: string
+  }
+  costBasisSnapshot: CostBasisSnapshotRecord & { triggerEvent: 'PMCC_OPEN'; finalPnl: null }
+  openingDebit: PmccOpeningDebitResult
 }
 
 // ---------------------------------------------------------------------------
@@ -329,7 +428,7 @@ const RollPayloadBaseSchema = z.object({
   positionId: PositionIdSchema,
   costToClosePerContract: z.number().positive(),
   newPremiumPerContract: z.number().positive(),
-  newExpiration: z.string().regex(IsoDateRegex, IsoDateMessage),
+  newExpiration: IsoDateSchema,
   newStrike: z.number().positive().optional(),
   fillDate: z.string().optional()
 })

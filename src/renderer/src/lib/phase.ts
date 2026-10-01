@@ -10,7 +10,8 @@ export const PHASE_COLOR: Record<WheelPhase, string> = {
   CC_EXPIRED: '#484f58',
   CC_CLOSED_PROFIT: '#3fb950',
   CC_CLOSED_LOSS: '#f85149',
-  WHEEL_COMPLETE: '#3fb950'
+  WHEEL_COMPLETE: '#3fb950',
+  PMCC_OPEN: '#2dd4bf'
 }
 
 export const PHASE_LABEL: Record<WheelPhase, string> = {
@@ -23,7 +24,8 @@ export const PHASE_LABEL: Record<WheelPhase, string> = {
   CC_EXPIRED: 'Call Expired',
   CC_CLOSED_PROFIT: 'Closed ✓',
   CC_CLOSED_LOSS: 'Closed ✗',
-  WHEEL_COMPLETE: 'Wheel Complete'
+  WHEEL_COMPLETE: 'Wheel Complete',
+  PMCC_OPEN: 'LEAPS + short call open'
 }
 
 export const ROLE_COLOR: Record<string, string> = {
@@ -45,7 +47,9 @@ export const LEG_ROLE_LABEL: Record<string, string> = {
   CALLED_AWAY: 'Called Away',
   EXPIRE: 'Expired',
   ROLL_FROM: 'Roll From',
-  ROLL_TO: 'Roll'
+  ROLL_TO: 'Roll',
+  LEAPS_OPEN: 'Buy LEAPS call',
+  SHORT_CALL_OPEN: 'Sell short call'
 }
 
 export const PHASE_LABEL_SHORT: Record<WheelPhase, string> = {
@@ -58,5 +62,6 @@ export const PHASE_LABEL_SHORT: Record<WheelPhase, string> = {
   CC_EXPIRED: 'CC Expired',
   CC_CLOSED_PROFIT: 'CC ✓',
   CC_CLOSED_LOSS: 'CC ✗',
-  WHEEL_COMPLETE: 'Complete'
+  WHEEL_COMPLETE: 'Complete',
+  PMCC_OPEN: 'LEAPS + short call open'
 }

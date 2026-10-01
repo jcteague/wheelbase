@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getMarketStatus, getStockQuotes, getOptionSnapshots } from './market-data'
+import { getMarketStatus, getOptionChain, getStockQuotes, getOptionSnapshots } from './market-data'
 
 const mockGetStockQuotes = vi.fn()
 const mockGetOptionSnapshots = vi.fn()
@@ -137,6 +137,40 @@ describe('getOptionSnapshots', () => {
     const errors = [{ field: '__root__', code: 'network_error', message: 'Connection refused' }]
     mockGetOptionSnapshots.mockResolvedValue({ ok: false, errors })
     await expect(getOptionSnapshots(['AAPL260516P00180000'])).rejects.toMatchObject({
+      status: 502,
+      body: { detail: errors }
+    })
+  })
+})
+
+describe('getOptionChain', () => {
+  const mockOptionChain = vi.fn()
+  const CHAIN_QUOTE = {
+    ...AAPL_OPTION_SNAPSHOT,
+    contractId: 'XYZ270917C00080000',
+    strike: '80.0000',
+    expiration: '2027-09-17',
+    contractType: 'call' as const
+  }
+  const FILTER = { underlying: 'XYZ', type: 'call' as const, limit: 250 }
+
+  beforeEach(() => {
+    mockOptionChain.mockReset()
+    window.api.marketData.optionChain = mockOptionChain
+  })
+
+  it('passes the filter through and returns the snapshots array', async () => {
+    mockOptionChain.mockResolvedValue({ ok: true, snapshots: [CHAIN_QUOTE], nextCursor: null })
+
+    expect(await getOptionChain(FILTER)).toEqual([CHAIN_QUOTE])
+    expect(mockOptionChain).toHaveBeenCalledWith(FILTER)
+  })
+
+  it('throws ApiError(502) on ok:false', async () => {
+    const errors = [{ field: '__root__', code: 'network_error', message: 'Connection refused' }]
+    mockOptionChain.mockResolvedValue({ ok: false, errors })
+
+    await expect(getOptionChain(FILTER)).rejects.toMatchObject({
       status: 502,
       body: { detail: errors }
     })

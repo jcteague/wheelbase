@@ -10,6 +10,7 @@ import { localToday, makeSnapshotAt } from '../dates'
 import { logger } from '../logger'
 import type { CreatePositionPayload, CreatePositionResult } from '../schemas'
 import type { IvrOnDemand } from './ivr-on-demand'
+import { insertPosition } from './position-rows'
 
 export { listPositions } from './list-positions'
 export { getPosition } from './get-position'
@@ -19,6 +20,7 @@ export { assignCspPosition } from './assign-csp-position'
 export { openCoveredCallPosition } from './open-covered-call-position'
 export { closeCoveredCallPosition } from './close-covered-call-position'
 export { expireCcPosition } from './expire-cc-position'
+export { createPmccPosition } from './create-pmcc-position'
 
 // ---------------------------------------------------------------------------
 // createPosition
@@ -69,22 +71,18 @@ export function createPosition(
   const basisFormatted = new Decimal(basisResult.basisPerShare).toFixed(4)
   const totalPremiumFormatted = new Decimal(basisResult.totalPremiumCollected).toFixed(4)
 
-  db.transaction(() => {
-    db.prepare(
-      `INSERT INTO positions
-        (id, ticker, strategy_type, status, phase, opened_date, account_id, notes, thesis, tags, created_at, updated_at)
-       VALUES (?, ?, 'WHEEL', 'ACTIVE', ?, ?, ?, ?, ?, '[]', ?, ?)`
-    ).run(
-      positionId,
-      payload.ticker,
-      lifecycleResult.phase,
-      fillDate,
-      payload.accountId ?? null,
-      payload.notes ?? null,
-      payload.thesis ?? null,
-      now,
+  const position = db.transaction(() => {
+    const inserted = insertPosition(db, {
+      id: positionId,
+      ticker: payload.ticker,
+      strategyType: 'WHEEL',
+      phase: lifecycleResult.phase,
+      openedDate: fillDate,
+      accountId: payload.accountId ?? null,
+      notes: payload.notes ?? null,
+      thesis: payload.thesis ?? null,
       now
-    )
+    })
 
     db.prepare(
       `INSERT INTO legs
@@ -114,6 +112,7 @@ export function createPosition(
       makeSnapshotAt(fillDate),
       now
     )
+    return inserted
   })()
 
   logger.info(
@@ -125,23 +124,7 @@ export function createPosition(
   void ivrOnDemand?.collect(payload.ticker)
 
   return {
-    position: {
-      id: positionId,
-      ticker: payload.ticker,
-      phase: lifecycleResult.phase,
-      status: 'ACTIVE',
-      strategyType: 'WHEEL',
-      openedDate: fillDate,
-      closedDate: null,
-      accountId: payload.accountId ?? null,
-      notes: payload.notes ?? null,
-      thesis: payload.thesis ?? null,
-      tags: [],
-      profitTargetPercent: null,
-      managementWindowDteOverride: null,
-      createdAt: now,
-      updatedAt: now
-    },
+    position,
     leg: {
       id: legId,
       positionId,
@@ -155,6 +138,7 @@ export function createPosition(
       fillPrice: premiumFormatted,
       fillDate,
       rollChainId: null,
+      fees: '0.0000',
       createdAt: now,
       updatedAt: now
     },

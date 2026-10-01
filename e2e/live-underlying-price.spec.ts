@@ -12,6 +12,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { localDate } from './dates'
+import { reloadPositionsList } from './helpers'
 
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
 const APP_CWD = path.join(__dirname, '..')
@@ -113,10 +114,9 @@ function launchWithMocks(
 
 // ── Page helpers ──────────────────────────────────────────────────────────────
 
+/** Seeding happens over raw IPC, so the list must remount to refetch it. */
 async function goToPositionsList(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    location.hash = '#/'
-  })
+  await reloadPositionsList(page)
 }
 
 async function triggerTick(
@@ -148,13 +148,6 @@ async function triggerStreamErr(page: Page): Promise<void> {
 async function seedPositions(page: Page, tickers: string[]): Promise<void> {
   const premiums: Record<string, number> = { AAPL: 3.5, MSFT: 5.0, TSLA: 2.5 }
   const strikes: Record<string, number> = { AAPL: 180, MSFT: 400, TSLA: 170 }
-
-  // Navigate to a different route so the final navigate to #/ forces a fresh
-  // mount of PositionsListPage and usePositions() re-fetches.
-  await page.evaluate(() => {
-    location.hash = '#/new'
-  })
-  await page.waitForSelector('label:has-text("Ticker")')
 
   for (const ticker of tickers) {
     await page.evaluate(

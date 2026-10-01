@@ -622,6 +622,51 @@ describe('evaluateAlerts', () => {
 })
 
 // ---------------------------------------------------------------------------
+// [US-101] PMCC positions are skipped by the wheel-only alert job
+// ---------------------------------------------------------------------------
+
+describe('evaluateAlerts — PMCC positions (US-101)', () => {
+  it('produces no alert and no error for a PMCC_OPEN position whose short call is in the window', async () => {
+    const db = makeTestDb()
+    db.prepare(
+      `INSERT INTO positions
+         (id, ticker, strategy_type, status, phase, opened_date, created_at, updated_at)
+       VALUES ('pos-pmcc', 'XYZ', 'PMCC', 'ACTIVE', 'PMCC_OPEN', '2026-06-01',
+               '2026-06-01T00:00:00.000Z', '2026-06-01T00:00:00.000Z')`
+    ).run()
+    const insertLeg = db.prepare(
+      `INSERT INTO legs
+         (id, position_id, leg_role, action, instrument_type, strike, expiration,
+          contracts, premium_per_contract, fill_date, created_at, updated_at)
+       VALUES (?, 'pos-pmcc', ?, ?, 'CALL', ?, ?, 1, ?, '2026-06-01',
+               '2026-06-01T00:00:00.000Z', '2026-06-01T00:00:00.000Z')`
+    )
+    insertLeg.run(randomUUID(), 'LEAPS_OPEN', 'BUY', '80.0000', expirationForDte(368), '25.0000')
+    insertLeg.run(
+      randomUUID(),
+      'SHORT_CALL_OPEN',
+      'SELL',
+      '110.0000',
+      expirationForDte(5),
+      '2.0000'
+    )
+
+    const logger = makeSpyLogger()
+    const result = await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings(),
+      logger
+    })
+
+    expect(result.createdCount).toBe(0)
+    expect(readAlertRows(db)).toHaveLength(0)
+    expect(logger.error).not.toHaveBeenCalled()
+  })
+})
+
+// ---------------------------------------------------------------------------
 // [US-54 / US-55] Live market-data enrichment — async pre-fetch + input mapping.
 // ---------------------------------------------------------------------------
 

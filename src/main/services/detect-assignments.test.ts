@@ -4,8 +4,8 @@ import type { BrokerActivity, BrokerProvider } from '../integrations/broker-prov
 import { BrokerError } from '../integrations/broker-provider'
 import { buildOccSymbol } from '../core/option-symbol'
 import { logger } from '../logger'
-import { makeTestDb } from '../test-utils'
-import { createPosition } from './positions'
+import { isoDate, makeTestDb } from '../test-utils'
+import { createPmccPosition, createPosition } from './positions'
 import { detectAssignments } from './detect-assignments'
 
 vi.mock('../logger', () => ({
@@ -52,6 +52,38 @@ function makeAaplPosition(db: ReturnType<typeof makeTestDb>): ReturnType<typeof 
 describe('detectAssignments', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  describe('PMCC positions (US-101)', () => {
+    it('does not select a PMCC_OPEN position as an assignment candidate', async () => {
+      const db = makeTestDb()
+      const leg = {
+        underlying: 'XYZ',
+        instrumentType: 'CALL' as const,
+        deliverableShares: 100,
+        contracts: 1,
+        fillDate: isoDate(0),
+        fees: 0
+      }
+      const { shortLeg } = createPmccPosition(db, {
+        strategy: 'PMCC',
+        ticker: 'XYZ',
+        long: { ...leg, strike: 80, expiration: isoDate(368), fillPrice: 25 },
+        short: { ...leg, strike: 110, expiration: isoDate(32), fillPrice: 2 }
+      })
+      const shortSymbol = buildOccSymbol({
+        ticker: 'XYZ',
+        expiration: shortLeg.expiration!,
+        strike: shortLeg.strike,
+        instrumentType: 'CALL'
+      })
+      const broker = makeBroker([makeActivity(shortSymbol)])
+
+      const result = await detectAssignments({ db, brokerProvider: broker, env: 'paper' })
+
+      expect(result.detected).toBe(0)
+      expect(db.prepare(`SELECT * FROM pending_assignments`).all()).toHaveLength(0)
+    })
   })
 
   describe('watermark handling', () => {

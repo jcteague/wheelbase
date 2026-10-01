@@ -22,4 +22,6 @@ export const positiveIntegerSchema = z
     'Value must be a positive integer'
   )
 
-export const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD')
+export const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/
+
+export const isoDateSchema = z.string().regex(ISO_DATE_REGEX, 'Date must be YYYY-MM-DD')

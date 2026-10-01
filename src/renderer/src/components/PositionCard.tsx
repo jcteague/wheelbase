@@ -6,11 +6,12 @@ import { isOptionInstrument } from '../../../main/core/types'
 import Decimal from 'decimal.js'
 import { isDteUrgent } from '../lib/dte'
 import { fmtMoney } from '../lib/format'
-import { PHASE_COLOR } from '../lib/phase'
 import { OptMidCell } from './OptMidCell'
+import { PmccPositionRow } from './PmccPositionRow'
 import { PhaseBadge } from './PhaseBadge'
 import { ExpiringSoonFlag } from './ExpiringSoonFlag'
 import { PriceCell, type StockQuote } from './PriceCell'
+import { CELL_CLASS, rowStyle, VALUE_CLASS } from './positionRowStyles'
 import { TargetBadge } from './TargetBadge'
 import { UnrealizedPnlCell } from './UnrealizedPnlCell'
 import { TableCell } from './ui/TablePrimitives'
@@ -25,9 +26,6 @@ type Props = {
   hasPendingAssignment?: boolean
   profitTargetDefault?: number
 }
-
-const CELL_CLASS = 'py-[10px] px-[16px] border-b-0'
-const VALUE_CLASS = 'font-wb-mono text-[0.8125rem]'
 
 type RowDisplay = {
   targetReached: boolean
@@ -64,16 +62,14 @@ export function PositionRow({
   hasPendingAssignment = false,
   profitTargetDefault
 }: Props): React.JSX.Element {
+  if (item.strategyType === 'PMCC') {
+    return <PmccPositionRow item={item} index={index} quote={quote} session={session} />
+  }
   const closed = isClosed ?? item.status === 'CLOSED'
   const dteUrgent = isDteUrgent(item.dte)
   const dteClass = dteUrgent
     ? `${VALUE_CLASS} font-semibold text-wb-gold`
     : `${VALUE_CLASS} font-normal text-wb-text-secondary`
-
-  const rowStyle = {
-    '--wb-row-bg': index % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)',
-    '--wb-row-phase-color': PHASE_COLOR[item.phase]
-  } as React.CSSProperties
 
   const effectiveSnapshot = closed ? undefined : snapshot
   const display = deriveRowDisplay(item, effectiveSnapshot, profitTargetDefault)
@@ -99,7 +95,7 @@ export function PositionRow({
       onClick={() => {
         window.location.hash = `/positions/${item.id}`
       }}
-      style={rowStyle}
+      style={rowStyle(index, item.phase)}
     >
       <TableCell className={CELL_CLASS}>
         <div className="flex flex-col gap-[1px]">

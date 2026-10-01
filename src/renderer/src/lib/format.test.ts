@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  fmtMoneyGrouped,
   computeDte,
   computeDteFromInput,
   fmtDate,
@@ -138,5 +139,16 @@ describe('parseFinite', () => {
     for (const input of inputs) {
       expect(Number.isNaN(parseFinite(input))).toBe(false)
     }
+  })
+})
+
+describe('fmtMoneyGrouped', () => {
+  it.each([
+    ['2300.0000', '$2,300.00'],
+    ['1234567.8950', '$1,234,567.90'],
+    ['200', '$200.00'],
+    ['-2302.5000', '-$2,302.50']
+  ])('%s → %s', (value, expected) => {
+    expect(fmtMoneyGrouped(value)).toBe(expected)
   })
 })

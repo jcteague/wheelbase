@@ -14,7 +14,8 @@ export const WheelPhase = z.enum([
   'CC_EXPIRED',
   'CC_CLOSED_PROFIT',
   'CC_CLOSED_LOSS',
-  'WHEEL_COMPLETE'
+  'WHEEL_COMPLETE',
+  'PMCC_OPEN'
 ])
 export const LegRole = z.enum([
   'CSP_OPEN',
@@ -26,7 +27,9 @@ export const LegRole = z.enum([
   'CALLED_AWAY',
   'ROLL_FROM',
   'ROLL_TO',
-  'EXPIRE'
+  'EXPIRE',
+  'LEAPS_OPEN',
+  'SHORT_CALL_OPEN'
 ])
 export const LegAction = z.enum(LEG_ACTION_VALUES)
 export const InstrumentType = z.enum(['PUT', 'CALL', 'STOCK'])

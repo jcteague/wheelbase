@@ -144,6 +144,7 @@ export function rollCspPosition(
       fillPrice: costToCloseFormatted,
       fillDate,
       rollChainId,
+      fees: '0.0000',
       createdAt: now,
       updatedAt: now
     },
@@ -160,6 +161,7 @@ export function rollCspPosition(
       fillPrice: newPremiumFormatted,
       fillDate,
       rollChainId,
+      fees: '0.0000',
       createdAt: now,
       updatedAt: now
     },

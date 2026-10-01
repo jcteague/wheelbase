@@ -195,7 +195,8 @@ describe('runMigrations', () => {
       '013_create_earnings_date.sql',
       '014_add_last_earnings.sql',
       '015_create_trading_session.sql',
-      '016_create_iv30_history.sql'
+      '016_create_iv30_history.sql',
+      '017_add_leg_fees.sql'
     ])
   })
 
@@ -482,5 +483,27 @@ describe('migration 016 — iv30_reading, iv30_gap, drop ivr_snapshot', () => {
     expect(listUserTables(db)).not.toContain('ivr_snapshot')
     expect(listUserTables(db)).toEqual(expect.arrayContaining(['iv30_reading', 'iv30_gap']))
     expect(listAppliedMigrations(db)).toContain('016_create_iv30_history.sql')
+  })
+})
+
+describe('migration 017 — legs.fees', () => {
+  it("adds legs.fees as NOT NULL TEXT defaulting to '0.0000'", () => {
+    const db = makeTestDb()
+    const fees = columnInfo(db, 'legs').find((c) => c.name === 'fees')
+
+    expect(fees).toMatchObject({ type: 'TEXT', notnull: 1 })
+    expect(columnDefault(db, 'legs', 'fees')).toBe("'0.0000'")
+  })
+
+  it("backfills a leg that existed before 017 with fees = '0.0000'", () => {
+    const db = makeDbThrough('016_create_iv30_history.sql')
+    insertPosition(db)
+    insertLeg(db)
+
+    runMigrations(db, MIGRATIONS_DIR)
+
+    const row = db.prepare(`SELECT fees FROM legs WHERE id = 'leg-1'`).get() as { fees: string }
+    expect(row.fees).toBe('0.0000')
+    expect(listAppliedMigrations(db)).toContain('017_add_leg_fees.sql')
   })
 })

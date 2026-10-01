@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   AssignCspPayloadSchema,
   CollectIvrNowBatchSchema,
+  CreatePmccPositionPayloadSchema,
   GetOptionSnapshotsPayloadSchema,
   GetStockQuotesPayloadSchema,
   OpenCcPayloadSchema,
@@ -426,5 +427,95 @@ describe('CollectIvrNowBatchSchema', () => {
 
   it.each(['barchart_down', 'market_closed'])('rejects %s', (skippedReason) => {
     expect(CollectIvrNowBatchSchema.safeParse({ ...batch, skippedReason }).success).toBe(false)
+  })
+})
+
+const PMCC_FIXTURE = {
+  strategy: 'PMCC',
+  ticker: 'XYZ',
+  long: {
+    underlying: 'XYZ',
+    instrumentType: 'CALL',
+    deliverableShares: 100,
+    strike: 80,
+    expiration: '2027-09-17',
+    contracts: 1,
+    fillPrice: 25.0,
+    fillDate: '2026-09-14',
+    fees: 0
+  },
+  short: {
+    underlying: 'XYZ',
+    instrumentType: 'CALL',
+    deliverableShares: 100,
+    strike: 110,
+    expiration: '2026-10-16',
+    contracts: 1,
+    fillPrice: 2.0,
+    fillDate: '2026-09-14',
+    fees: 0
+  }
+}
+
+describe('CreatePmccPositionPayloadSchema', () => {
+  it('parses the contract fixture payload', () => {
+    const result = CreatePmccPositionPayloadSchema.parse(PMCC_FIXTURE)
+    expect(result.long.fillPrice).toBe(25)
+    expect(result.short.strike).toBe(110)
+  })
+
+  it('rejects a non-PMCC strategy', () => {
+    const result = CreatePmccPositionPayloadSchema.safeParse({ ...PMCC_FIXTURE, strategy: 'WHEEL' })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0].path).toEqual(['strategy'])
+  })
+
+  it('reports a missing LEAPS fill price at long.fillPrice with the LEAPS message', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { fillPrice, ...long } = PMCC_FIXTURE.long
+    const result = CreatePmccPositionPayloadSchema.safeParse({ ...PMCC_FIXTURE, long })
+    expect(result.error?.issues).toHaveLength(1)
+    expect(result.error?.issues[0].path).toEqual(['long', 'fillPrice'])
+    expect(result.error?.issues[0].message).toBe('Enter the actual LEAPS fill price.')
+  })
+
+  it('reports a missing short-call fill price at short.fillPrice with the short-call message', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { fillPrice, ...short } = PMCC_FIXTURE.short
+    const result = CreatePmccPositionPayloadSchema.safeParse({ ...PMCC_FIXTURE, short })
+    expect(result.error?.issues).toHaveLength(1)
+    expect(result.error?.issues[0].path).toEqual(['short', 'fillPrice'])
+    expect(result.error?.issues[0].message).toBe('Enter the actual short-call fill price.')
+  })
+
+  it('rejects a malformed short expiration with the shared ISO-date message', () => {
+    const result = CreatePmccPositionPayloadSchema.safeParse({
+      ...PMCC_FIXTURE,
+      short: { ...PMCC_FIXTURE.short, expiration: '10/16/2026' }
+    })
+    expect(result.error?.issues).toHaveLength(1)
+    expect(result.error?.issues[0].path).toEqual(['short', 'expiration'])
+    expect(result.error?.issues[0].message).toBe('Must be a valid date (YYYY-MM-DD)')
+  })
+
+  it.each([
+    ['fees', -1],
+    ['contracts', 0],
+    ['strike', 0],
+    ['deliverableShares', 50]
+  ])('leaves %s = %s to the engine (passes Zod)', (field, value) => {
+    const result = CreatePmccPositionPayloadSchema.safeParse({
+      ...PMCC_FIXTURE,
+      long: { ...PMCC_FIXTURE.long, [field]: value }
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('does not require deliverableShares to be an integer', () => {
+    const result = CreatePmccPositionPayloadSchema.safeParse({
+      ...PMCC_FIXTURE,
+      short: { ...PMCC_FIXTURE.short, deliverableShares: 100.5 }
+    })
+    expect(result.success).toBe(true)
   })
 })

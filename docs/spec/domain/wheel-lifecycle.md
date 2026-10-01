@@ -1,6 +1,6 @@
 # Wheel Lifecycle
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-17 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-17,us-101 -->
 
 ## Overview
 
@@ -34,9 +34,17 @@ the wheel alive, while `recordCallAway` ends the wheel at `WHEEL_COMPLETE`.
 Within `CC_OPEN`, `rollCc` keeps the position in `CC_OPEN` and appends a
 linked CALL roll pair (us-14) — the CC analogue of `rollCsp`.
 
+The same `WheelPhase` enum also carries a second strategy: the **poor man's
+covered call** (PMCC, us-101). A PMCC position is opened in one step by
+`openPmcc` — a long LEAPS call plus a shorter-dated, higher-strike short call
+recorded together — and lands in `PMCC_OPEN`. Its phases carry a `PMCC_`
+prefix so wheel-only `phase IN (…)` filters exclude it by construction; later
+PMCC phases are reserved by name only (see [Phases](#phases)). See
+[us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md).
+
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-17 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-17,us-101 -->
 
 ## Phases
 
@@ -56,6 +64,7 @@ below lists every value and the broader `position.status` (`ACTIVE` /
 | `CC_CLOSED_PROFIT`  | Reserved phase value (referenced for completeness, not produced by any current transition).                                 | `CLOSED` |
 | `CC_CLOSED_LOSS`    | Reserved phase value (referenced for completeness, not produced by any current transition).                                 | `CLOSED` |
 | `WHEEL_COMPLETE`    | Terminal — the CSP expired worthless, or shares were called away.                                                           | `CLOSED` |
+| `PMCC_OPEN`         | PMCC strategy (us-101) — a long LEAPS call and a short call are both open. The only PMCC phase in the enum.                 | `ACTIVE` |
 
 Terminal phases set `status = 'CLOSED'` and stamp `closed_date`; non-terminal
 phases leave `status = 'ACTIVE'` and `closed_date = NULL`. The lifecycle
@@ -64,9 +73,19 @@ update the row. Reserved values are present in the enum because the
 phase-rejection test matrix (us-17) parameterises against the full set; live
 transitions only produce the phases marked above as terminal exits.
 
+**PMCC phases (us-101).** Only the phase a shipped transition produces enters
+the enum, so `Record<WheelPhase, …>` maps (`PHASE_LABEL`, `PHASE_COLOR`, …)
+stay honest. `PMCC_OPEN` is labelled `'LEAPS + short call open'` (long and
+short label alike) and has a `PHASE_COLOR` distinct from every wheel phase.
+Two further phases are **reserved by name, not added**: `PMCC_LEAPS_ONLY`
+(short call gone, LEAPS still held — US-119 / US-115) and `PMCC_CLOSED`
+(US-111 / US-120). The `PMCC_` prefix — rather than overloading `CC_OPEN` or
+adding a separate `PmccPhase` enum — is recorded in
+[pmcc-phase-and-leg-role-names](../architecture/02-adrs/pmcc-phase-and-leg-role-names.md).
+
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-101 -->
 
 ## Transitions
 
@@ -87,6 +106,8 @@ pure function in `src/main/core/lifecycle.ts`.
                                                                            |--expireCc--> HOLDING_SHARES
                                                                            |--rollCc--> CC_OPEN  (linked ROLL_FROM/ROLL_TO; phase unchanged)
                                                                            |--recordCallAway--> WHEEL_COMPLETE
+
+(new PMCC) --openPmcc--> PMCC_OPEN   (us-101; no further PMCC transitions yet)
 ```
 
 `HOLDING_SHARES → CC_OPEN → HOLDING_SHARES` is the **CC sub-loop**: the wheel
@@ -526,6 +547,87 @@ below basis in defensive scenarios; the warning is a UX nudge, not a rule.
 Active-leg resolution for CC rolls follows the same pattern as CSP rolls:
 `CC_OPEN → CC_OPEN | ROLL_TO` via `src/main/services/active-leg-sql.ts`.
 
+### `openPmcc` — creates `PMCC_OPEN` (us-101)
+
+Validates a poor man's covered call entry — a long LEAPS call plus a
+shorter-dated, higher-strike short call on the same underlying, opened for a
+net debit — and returns `{ phase: 'PMCC_OPEN' }`. Input is `OpenPmccInput`
+(`ticker`, a `long` and a `short` leg of type `OpenPmccLegInput`, and
+`referenceDate` = local today); see `src/main/core/lifecycle.ts`. There is no
+`currentPhase` input: like `openWheel`, it creates a position rather than
+moving one.
+
+On failure it throws `ValidationError(field, code, message)` with **dotted
+field paths** (`long.fillPrice`, `short.expiration`, …) plus the pair-level
+`__pair__` slot. Field paths are typed by the template-literal `PmccField`
+(`'ticker' | '__pair__' | '<long|short>.<leg field>'`), so a misspelled path
+is a typecheck failure. `handleIpcCall` joins Zod issue paths with `.` so Zod
+and engine errors share one addressing scheme, which maps 1:1 onto React Hook
+Form's nested `setError('long.fillPrice')`.
+
+Rules run in a fixed order and the **first failure throws**; per-leg rules
+check `long` then `short`. ISO dates compare as strings.
+
+| #   | Rule (fails when…)                                   | Field                      | Code                        | Message                                                   |
+| --- | ---------------------------------------------------- | -------------------------- | --------------------------- | --------------------------------------------------------- |
+| 1   | ticker is not 1–5 uppercase letters                  | `ticker`                   | `invalid_format`            | Ticker must be 1–5 uppercase letters                      |
+| 2   | `leg.underlying ≠ ticker`                            | `<side>.underlying`        | `underlying_mismatch`       | Both calls must have the same underlying.                 |
+| 3   | `leg.instrumentType ≠ CALL`                          | `<side>.instrumentType`    | `not_a_call`                | PMCC entry requires two call options.                     |
+| 4   | `leg.deliverableShares ≠ 100`                        | `<side>.deliverableShares` | `nonstandard_deliverable`   | This entry supports standard 100-share contracts only.    |
+| 5   | `leg.contracts` not a positive whole number          | `<side>.contracts`         | `must_be_positive_integer`  | Contracts must be a positive whole number.                |
+| 6   | `long.contracts ≠ short.contracts`                   | `short.contracts`          | `quantity_mismatch`         | Opening quantities must match for this PMCC entry.        |
+| 7   | `leg.strike ≤ 0`                                     | `<side>.strike`            | `must_be_positive`          | Strike must be positive                                   |
+| 8   | `leg.fillPrice ≤ 0`                                  | `<side>.fillPrice`         | `must_be_positive`          | Actual fill price must be greater than zero.              |
+| 9   | `leg.fees < 0`                                       | `<side>.fees`              | `must_be_non_negative`      | Fees cannot be negative.                                  |
+| 10  | `leg.fillDate > referenceDate`                       | `<side>.fillDate`          | `cannot_be_future`          | Fill date cannot be in the future.                        |
+| 11  | `long.fillDate > short.fillDate`                     | `short.fillDate`           | `long_after_short`          | LEAPS must be acquired no later than the short-call fill. |
+| 12  | `leg.expiration < referenceDate` (expired)           | `<side>.expiration`        | `expired_contract`          | Use an unexpired contract for opening a current position. |
+| 13  | `leg.expiration ≤ leg.fillDate`                      | `<side>.expiration`        | `expiration_not_after_fill` | Expiration must be after the fill date.                   |
+| 14  | `short.expiration ≥ long.expiration`                 | `short.expiration`         | `short_not_before_long`     | Short call must expire before the LEAPS call.             |
+| 15  | `short.strike ≤ long.strike`                         | `short.strike`             | `strike_not_above_long`     | Short-call strike must be above the LEAPS strike.         |
+| 16  | `long.fillPrice − short.fillPrice ≤ 0` (before fees) | `__pair__`                 | `not_net_debit`             | This PMCC entry requires a net debit before fees.         |
+
+Notable behaviours:
+
+- **Unexpired runs before expiration-after-fill** (rules 12 → 13), in both the
+  engine and the form schema: an already-expired contract entered with
+  today's fill date also fails rule 13, and the expired-contract message is
+  the one the trader needs.
+- **Net debit is judged before fees** (rule 16); fees never turn a credit
+  into a debit.
+- **Boundary-only rules.** Rules 2–4 and 6 have no form field — the form
+  always sends `underlying = ticker`, `'CALL'`, `100` and one shared
+  `contracts` — so they are reached only by programmatic IPC callers.
+  Missing fill prices are rejected earlier, by the IPC Zod schema (`Enter the
+actual LEAPS fill price.` / `Enter the actual short-call fill price.`).
+- **Mirrored by the form schema.** The renderer's `pmccEntrySchema` enforces
+  the same field rules with the same messages and the cross-leg rules via
+  `superRefine`, its paths pinned to `PmccField`; the engine remains the
+  authoritative check at the main-process boundary. See
+  [pmcc-validation-pure-engine-mirrored-by-form-schema](../architecture/02-adrs/pmcc-validation-pure-engine-mirrored-by-form-schema.md).
+
+On success the service (`createPmccPosition`) writes the position, both legs
+and the opening `PMCC_OPEN` cost-basis snapshot in one transaction — see
+[Cost Basis](cost-basis.md). This is journal entry, not order placement: no
+broker module is involved.
+
+**PMCC state transitions.**
+
+| From           | Event                                  | To                | Owner                       |
+| -------------- | -------------------------------------- | ----------------- | --------------------------- |
+| (new position) | `openPmcc` via `positions:create-pmcc` | `PMCC_OPEN`       | US-101 (shipped)            |
+| `PMCC_OPEN`    | short call closed / expired (reserved) | `PMCC_LEAPS_ONLY` | US-119 / US-115 (not built) |
+| PMCC phases    | position closed (reserved)             | `PMCC_CLOSED`     | US-111 / US-120 (not built) |
+
+**Wheel-only consumers see a `PMCC_OPEN` position as:** no active leg (the
+phase-aware active-leg subquery resolves only wheel phases), not selected by
+alert evaluation (`phase IN ('CSP_OPEN','CC_OPEN')`) or assignment detection
+(`phase = 'CSP_OPEN'`), badge-only actions on the detail page (no wheel
+action buttons), and skipped by the calendar (its wheel fields are `null`).
+None of those consumers was changed — tests prove the existing filters
+already exclude PMCC. See
+[us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md).
+
 <!-- /generated -->
 
 <!-- generated:from us-17 -->
@@ -558,7 +660,7 @@ and US-14 (CC roll) behaviour with parameterised tests across the full
 
 <!-- /generated -->
 
-<!-- generated:from us-5,us-6,us-8,us-9,us-10,us-11,us-14,us-15 -->
+<!-- generated:from us-5,us-6,us-8,us-9,us-10,us-11,us-14,us-15,us-101 -->
 
 ## Leg enums
 
@@ -613,18 +715,28 @@ a pair). The us-11 story added the explicit terminal roles `CALLED_AWAY` and
 Away", "CC Expired") and annotations — previously the call-away path emitted
 `CC_CLOSE` and the CC-expiry path emitted a generic `EXPIRE`.
 
-| Transition         | `legRole`               | `action`       | `instrumentType` |
-| ------------------ | ----------------------- | -------------- | ---------------- |
-| `openWheel`        | `CSP_OPEN`              | `SELL`         | `PUT`            |
-| `closeCsp`         | `CSP_CLOSE`             | `BUY`          | `PUT`            |
-| `expireCsp`        | `EXPIRE`                | `EXPIRE`       | `PUT`            |
-| `recordAssignment` | `ASSIGN`                | `ASSIGN`       | `STOCK`          |
-| `openCoveredCall`  | `CC_OPEN`               | `SELL`         | `CALL`           |
-| `closeCoveredCall` | `CC_CLOSE`              | `BUY`          | `CALL`           |
-| `expireCc`         | `CC_EXPIRED` (us-11)    | `EXPIRE`       | `CALL`           |
-| `recordCallAway`   | `CALLED_AWAY` (us-11)   | `EXERCISE`     | `CALL`           |
-| `rollCsp`          | `ROLL_FROM` + `ROLL_TO` | `BUY` + `SELL` | `PUT` + `PUT`    |
-| `rollCc` (us-14)   | `ROLL_FROM` + `ROLL_TO` | `BUY` + `SELL` | `CALL` + `CALL`  |
+| Transition          | `legRole`                        | `action`       | `instrumentType` |
+| ------------------- | -------------------------------- | -------------- | ---------------- |
+| `openWheel`         | `CSP_OPEN`                       | `SELL`         | `PUT`            |
+| `closeCsp`          | `CSP_CLOSE`                      | `BUY`          | `PUT`            |
+| `expireCsp`         | `EXPIRE`                         | `EXPIRE`       | `PUT`            |
+| `recordAssignment`  | `ASSIGN`                         | `ASSIGN`       | `STOCK`          |
+| `openCoveredCall`   | `CC_OPEN`                        | `SELL`         | `CALL`           |
+| `closeCoveredCall`  | `CC_CLOSE`                       | `BUY`          | `CALL`           |
+| `expireCc`          | `CC_EXPIRED` (us-11)             | `EXPIRE`       | `CALL`           |
+| `recordCallAway`    | `CALLED_AWAY` (us-11)            | `EXERCISE`     | `CALL`           |
+| `rollCsp`           | `ROLL_FROM` + `ROLL_TO`          | `BUY` + `SELL` | `PUT` + `PUT`    |
+| `rollCc` (us-14)    | `ROLL_FROM` + `ROLL_TO`          | `BUY` + `SELL` | `CALL` + `CALL`  |
+| `openPmcc` (us-101) | `LEAPS_OPEN` + `SHORT_CALL_OPEN` | `BUY` + `SELL` | `CALL` + `CALL`  |
+
+The two `openPmcc` legs are **not** a roll pair: they are linked by
+`position_id` only and `roll_chain_id` is `NULL`. Labels are
+`LEG_ROLE_LABEL.LEAPS_OPEN = 'Buy LEAPS call'` and
+`LEG_ROLE_LABEL.SHORT_CALL_OPEN = 'Sell short call'`. The close-side roles
+`SHORT_CALL_CLOSE`, `SHORT_CALL_EXPIRED`, `LEAPS_CLOSE` and
+`SHORT_CALL_ASSIGNED` are **reserved by name** for the later Epic 09 stories
+and not yet in the enum. PMCC legs also carry per-leg `fees` (migration 017,
+`legs.fees`); wheel legs keep the `'0.0000'` default.
 
 ### `rollChainId` exposure (us-15)
 
@@ -687,7 +799,7 @@ the new `cost_basis_snapshots` row commit or roll back together.
 
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-17 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-17,us-101 -->
 
 ## Driven by
 
@@ -704,5 +816,6 @@ the new `cost_basis_snapshots` row commit or roll back together.
 - [us-14 — Roll CC](../features/us-14-roll-cc.md)
 - [us-15 — Roll Pair Timeline](../features/us-15-roll-pair-timeline.md)
 - [us-17 — Reject Roll on Invalid Phase](../features/us-17-reject-roll-invalid-phase.md)
+- [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md)
 
 <!-- /generated -->

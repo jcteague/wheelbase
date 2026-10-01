@@ -16,6 +16,7 @@ export type WheelPhase =
   | 'CC_CLOSED_PROFIT'
   | 'CC_CLOSED_LOSS'
   | 'WHEEL_COMPLETE'
+  | 'PMCC_OPEN'
 
 export type WheelStatus = 'ACTIVE' | 'CLOSED'
 
@@ -58,21 +59,52 @@ export type CreatePositionResponse = {
   cost_basis_snapshot: CostBasisSnapshotData
 }
 
-export type PositionListItem = {
+export type PmccLegSummary = {
+  strike: string
+  expiration: string
+  dte: number
+  contracts: number
+}
+
+export type PmccListSummary = {
+  long: PmccLegSummary
+  short: PmccLegSummary
+  initialNetDebit: string
+}
+
+type PositionListItemBase = {
   id: string
   ticker: string
   phase: WheelPhase
   status: WheelStatus
+  premium_collected: string
+  effective_cost_basis: string
+  profitTargetPercent: number | null
+}
+
+export type WheelListItem = PositionListItemBase & {
+  strategyType: 'WHEEL'
+  pmcc: null
   strike: string | null
   expiration: string | null
   dte: number | null
   instrumentType: 'PUT' | 'CALL' | null
   contracts: number | null
   entryPremiumPerContract: string | null
-  premium_collected: string
-  effective_cost_basis: string
-  profitTargetPercent: number | null
 }
+
+export type PmccListItem = PositionListItemBase & {
+  strategyType: 'PMCC'
+  pmcc: PmccListSummary
+  strike: null
+  expiration: null
+  dte: null
+  instrumentType: null
+  contracts: null
+  entryPremiumPerContract: null
+}
+
+export type PositionListItem = WheelListItem | PmccListItem
 
 // IPC camelCase field names → renderer snake_case form field names
 const IPC_TO_FORM_FIELD: Record<string, string> = {
@@ -96,21 +128,40 @@ function mapIpcErrors(errors: ApiFieldError[]): ApiFieldError[] {
 
 export async function listPositions(): Promise<PositionListItem[]> {
   const items = await window.api.listPositions()
-  return items.map((item) => ({
-    id: item.id,
-    ticker: item.ticker,
-    phase: item.phase as WheelPhase,
-    status: item.status as WheelStatus,
-    strike: item.strike,
-    expiration: item.expiration,
-    dte: item.dte,
-    instrumentType: item.instrumentType,
-    contracts: item.contracts,
-    entryPremiumPerContract: item.entryPremiumPerContract,
-    premium_collected: item.premiumCollected,
-    effective_cost_basis: item.effectiveCostBasis,
-    profitTargetPercent: item.profitTargetPercent
-  }))
+  return items.map((item): PositionListItem => {
+    const base: PositionListItemBase = {
+      id: item.id,
+      ticker: item.ticker,
+      phase: item.phase as WheelPhase,
+      status: item.status as WheelStatus,
+      premium_collected: item.premiumCollected,
+      effective_cost_basis: item.effectiveCostBasis,
+      profitTargetPercent: item.profitTargetPercent
+    }
+    return item.strategyType === 'PMCC'
+      ? {
+          ...base,
+          strategyType: 'PMCC',
+          pmcc: item.pmcc,
+          strike: null,
+          expiration: null,
+          dte: null,
+          instrumentType: null,
+          contracts: null,
+          entryPremiumPerContract: null
+        }
+      : {
+          ...base,
+          strategyType: 'WHEEL',
+          pmcc: null,
+          strike: item.strike,
+          expiration: item.expiration,
+          dte: item.dte,
+          instrumentType: item.instrumentType,
+          contracts: item.contracts,
+          entryPremiumPerContract: item.entryPremiumPerContract
+        }
+  })
 }
 
 export type LegDetail = {
@@ -125,6 +176,7 @@ export type LegDetail = {
   premiumPerContract: string
   fillDate: string
   rollChainId: string | null
+  fees: string
   createdAt: string
   updatedAt: string
 }
@@ -145,7 +197,7 @@ export type PositionDetail = {
     ticker: string
     phase: WheelPhase
     status: WheelStatus
-    strategyType: string
+    strategyType: 'WHEEL' | 'PMCC'
     openedDate: string
     closedDate: string | null
     accountId: string | null
@@ -161,6 +213,8 @@ export type PositionDetail = {
   costBasisSnapshot: SnapshotDetail | null
   legs: LegDetail[]
   allSnapshots: SnapshotDetail[]
+  /** PMCC only: server-computed from both opening legs (4 dp); null for a wheel. */
+  initialNetDebit: string | null
 }
 
 export type CloseCspPayload = {
@@ -615,4 +669,22 @@ export async function createPosition(
       total_premium_collected: result.costBasisSnapshot.totalPremiumCollected
     }
   }
+}
+
+// PMCC is camelCase end to end, so the renderer types are the preload's wire types.
+export type CreatePmccPositionPayload = Parameters<Window['api']['createPmccPosition']>[0]
+
+export type CreatePmccPositionResponse = Omit<
+  Extract<Awaited<ReturnType<Window['api']['createPmccPosition']>>, { ok: true }>,
+  'ok'
+>
+
+export async function createPmccPosition(
+  payload: CreatePmccPositionPayload
+): Promise<CreatePmccPositionResponse> {
+  const result = await window.api.createPmccPosition(payload)
+  if (!result.ok) {
+    throwMappedIpcErrors(result.errors)
+  }
+  return result
 }

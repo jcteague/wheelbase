@@ -11,6 +11,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { localDate, localToday } from './dates'
+import { reloadPositionsList } from './helpers'
 
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
 const APP_CWD = path.join(__dirname, '..')
@@ -107,10 +108,9 @@ function launchWithMocks(
 
 // ── Page helpers ──────────────────────────────────────────────────────────────
 
+/** Seeding happens over raw IPC, so the list must remount to refetch it. */
 async function goToPositionsList(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    location.hash = '#/'
-  })
+  await reloadPositionsList(page)
 }
 
 async function goToPositionDetail(page: Page, positionId: string): Promise<void> {
@@ -148,11 +148,6 @@ async function seedPosition(page: Page, opts: SeedPositionOptions = {}): Promise
     contracts: opts.contracts ?? CONTRACTS,
     expiration: EXPIRATION_ISO
   }
-
-  await page.evaluate(() => {
-    location.hash = '#/new'
-  })
-  await page.waitForSelector('label:has-text("Ticker")')
 
   const result = (await page.evaluate(
     async (i: SeedPositionInput) =>
@@ -263,7 +258,7 @@ describe('US-33: option mid-price and unrealized P&L for open legs', () => {
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
 
-    // Seed position (leaves us on '#/new')
+    // Seed position
     const positionId = await seedPosition(page)
 
     // Set profit_target_percent = 25 via the test-only IPC handler

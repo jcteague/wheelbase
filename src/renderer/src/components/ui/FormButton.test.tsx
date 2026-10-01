@@ -27,6 +27,17 @@ describe('FormButton', () => {
     expect(style).toContain('var(--wb-gold)')
   })
 
+  it('uses an elevated background on a pending secondary button', () => {
+    const { container } = render(<FormButton label="Cancel" variant="secondary" isPending />)
+    const style = container.querySelector('button')?.getAttribute('style') ?? ''
+    expect(style).toContain('var(--wb-bg-elevated)')
+  })
+
+  it('reflects aria-pressed when set', () => {
+    render(<FormButton label="PMCC" variant="secondary" aria-pressed />)
+    expect(screen.getByRole('button', { name: 'PMCC', pressed: true })).toBeInTheDocument()
+  })
+
   it('calls onClick when clicked', async () => {
     const handler = vi.fn()
     render(<FormButton label="Go" onClick={handler} />)

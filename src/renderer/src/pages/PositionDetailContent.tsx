@@ -54,11 +54,13 @@ export function PositionDetailContent({
         pnlStale={pnlStale}
       />
 
-      <PositionAlertOverridesForm
-        positionId={position.id}
-        profitTargetPercent={position.profitTargetPercent}
-        managementWindowDteOverride={position.managementWindowDteOverride}
-      />
+      {position.strategyType === 'WHEEL' && (
+        <PositionAlertOverridesForm
+          positionId={position.id}
+          profitTargetPercent={position.profitTargetPercent}
+          managementWindowDteOverride={position.managementWindowDteOverride}
+        />
+      )}
 
       {(position.thesis || position.notes) && (
         <SectionCard header="Notes">

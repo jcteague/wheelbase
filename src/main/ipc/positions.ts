@@ -6,6 +6,7 @@ import {
   AssignCspPayloadSchema,
   CloseCcPayloadSchema,
   CloseCspPayloadSchema,
+  CreatePmccPositionPayloadSchema,
   ExpireCcPayloadSchema,
   ExpireCspPayloadSchema,
   OpenCcPayloadSchema,
@@ -17,6 +18,7 @@ import {
 import {
   assignCspPosition,
   closeCspPosition,
+  createPmccPosition,
   createPosition,
   expireCcPosition,
   expireCspPosition,
@@ -56,6 +58,12 @@ export function registerPositionsHandlers(
   ipcMain.handle('positions:create', (_, payload: CreatePositionPayload) =>
     handleIpcCall('positions_create_unhandled_error', () =>
       createPosition(db, payload, ivrOnDemand)
+    )
+  )
+
+  ipcMain.handle('positions:create-pmcc', (_, payload: unknown) =>
+    handleIpcCall('positions_create_pmcc_unhandled_error', () =>
+      createPmccPosition(db, CreatePmccPositionPayloadSchema.parse(payload), ivrOnDemand)
     )
   )
 

@@ -74,3 +74,30 @@ export async function getOptionSnapshots(symbols: string[]): Promise<OptionSnaps
     unavailable: result.unavailable ?? false
   }
 }
+
+// Hand-maintained mirror of `OptionChainQuote` / `OptionChainFilter` in
+// `src/main/integrations/market-data-provider.ts` — those types are the source of truth.
+export type OptionChainQuote = OptionSnapshot & {
+  contractId: string
+  strike: string
+  expiration: string
+  contractType: 'put' | 'call'
+}
+
+export type OptionChainFilter = {
+  underlying: string
+  expirationFrom?: string
+  expirationTo?: string
+  type?: 'put' | 'call'
+  strikeFrom?: string
+  strikeTo?: string
+  limit?: number
+}
+
+export async function getOptionChain(filter: OptionChainFilter): Promise<OptionChainQuote[]> {
+  const result = await window.api.marketData.optionChain(filter)
+  if (!result.ok) {
+    throw apiError(502, { detail: result.errors })
+  }
+  return result.snapshots
+}

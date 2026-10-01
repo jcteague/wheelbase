@@ -105,6 +105,7 @@ export function closeCoveredCallPosition(
       fillPrice: closePriceFormatted,
       fillDate,
       rollChainId: null,
+      fees: '0.0000',
       createdAt: now,
       updatedAt: now
     },

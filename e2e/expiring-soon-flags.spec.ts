@@ -19,6 +19,7 @@ import {
   seedCspPosition,
   seedHoldingSharesPosition
 } from './calendar-helpers'
+import { reloadPositionsList } from './helpers'
 
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
 const APP_CWD = path.join(__dirname, '..')
@@ -41,16 +42,8 @@ async function launchAndOpen(dbPath: string): Promise<{ app: ElectronApplication
 }
 
 async function goToDashboard(page: Page): Promise<void> {
-  // Round-trip through another route so PositionsListPage remounts and refetches
-  // positions seeded after the initial load (matches goToPositionsList in
-  // assignment-helpers).
-  await page.evaluate(() => {
-    location.hash = '#/new'
-  })
-  await page.waitForSelector('label:has-text("Ticker")')
-  await page.evaluate(() => {
-    location.hash = '#/'
-  })
+  // Remount PositionsListPage so it refetches positions seeded after the initial load.
+  await reloadPositionsList(page)
   await page.waitForSelector('[data-testid="position-card"]')
 }
 

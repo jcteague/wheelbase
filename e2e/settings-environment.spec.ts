@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { localDate } from './dates'
+import { reloadPositionsList } from './helpers'
 
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
 const APP_CWD = path.join(__dirname, '..')
@@ -162,13 +163,7 @@ async function clickBrokerEnvironmentToggle(
 }
 
 async function openPositions(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    location.hash = '#/new'
-  })
-  await page.waitForSelector('label:has-text("Ticker")')
-  await page.evaluate(() => {
-    location.hash = '#/'
-  })
+  await reloadPositionsList(page)
   await page.waitForSelector('text=Active Positions')
 }
 

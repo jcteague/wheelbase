@@ -17,6 +17,7 @@ const api = {
   ping: () => invoke('ping'),
   listPositions: () => invoke('positions:list'),
   createPosition: (payload: unknown) => invoke('positions:create', payload),
+  createPmccPosition: (payload: unknown) => invoke('positions:create-pmcc', payload),
   getPosition: (positionId: string) => invoke('positions:get', { positionId }),
   closePosition: (payload: unknown) => invoke('positions:close-csp', payload),
   expirePosition: (payload: unknown) => invoke('positions:expire-csp', payload),

@@ -1,20 +1,50 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 
-interface IpcPositionListItem {
+interface IpcPmccLegSummary {
+  strike: string
+  expiration: string
+  dte: number
+  contracts: number
+}
+
+interface IpcPmccListSummary {
+  long: IpcPmccLegSummary
+  short: IpcPmccLegSummary
+  initialNetDebit: string
+}
+
+// Discriminated on strategyType — exactly one arm carries the PMCC summary, and the
+// wheel-only fields are typed null on the PMCC arm (the IpcIvRankPair pattern).
+type IpcPositionListItem = {
   id: string
   ticker: string
   phase: string
   status: string
-  strike: string | null
-  expiration: string | null
-  dte: number | null
-  instrumentType: 'PUT' | 'CALL' | null
-  contracts: number | null
-  entryPremiumPerContract: string | null
   premiumCollected: string
   effectiveCostBasis: string
   profitTargetPercent: number | null
-}
+} & (
+  | {
+      strategyType: 'WHEEL'
+      pmcc: null
+      strike: string | null
+      expiration: string | null
+      dte: number | null
+      instrumentType: 'PUT' | 'CALL' | null
+      contracts: number | null
+      entryPremiumPerContract: string | null
+    }
+  | {
+      strategyType: 'PMCC'
+      pmcc: IpcPmccListSummary
+      strike: null
+      expiration: null
+      dte: null
+      instrumentType: null
+      contracts: null
+      entryPremiumPerContract: null
+    }
+)
 
 interface IpcCreatePositionPayload {
   ticker: string
@@ -57,6 +87,7 @@ interface IpcLegRecord {
   premiumPerContract: string
   fillPrice?: string | null
   fillDate: string
+  fees: string
   createdAt: string
   updatedAt: string
 }
@@ -85,6 +116,7 @@ type IpcGetPositionResult = IpcResult<{
   position: IpcPositionRecord
   activeLeg: IpcLegRecord | null
   costBasisSnapshot: IpcCostBasisSnapshotRecord | null
+  initialNetDebit: string | null
 }>
 
 interface IpcCloseCspPayload {
@@ -207,6 +239,60 @@ type IpcRollCcResult = IpcResult<{
   rollToLeg: IpcLegRecord
   rollChainId: string
   costBasisSnapshot: IpcCostBasisSnapshotRecord
+}>
+
+interface IpcPmccLegPayload {
+  underlying: string
+  instrumentType: 'PUT' | 'CALL'
+  deliverableShares: number
+  strike: number
+  expiration: string
+  contracts: number
+  fillPrice: number
+  fillDate: string
+  fees: number
+}
+
+interface IpcCreatePmccPositionPayload {
+  strategy: 'PMCC'
+  ticker: string
+  long: IpcPmccLegPayload
+  short: IpcPmccLegPayload
+  accountId?: string
+  thesis?: string
+  notes?: string
+}
+
+type IpcCreatePmccPositionResult = IpcResult<{
+  position: IpcPositionRecord & {
+    strategyType: 'PMCC'
+    phase: 'PMCC_OPEN'
+    status: 'ACTIVE'
+    closedDate: null
+  }
+  longLeg: IpcLegRecord & {
+    legRole: 'LEAPS_OPEN'
+    action: 'BUY'
+    instrumentType: 'CALL'
+    fillPrice: string
+  }
+  shortLeg: IpcLegRecord & {
+    legRole: 'SHORT_CALL_OPEN'
+    action: 'SELL'
+    instrumentType: 'CALL'
+    fillPrice: string
+  }
+  costBasisSnapshot: IpcCostBasisSnapshotRecord & { triggerEvent: 'PMCC_OPEN'; finalPnl: null }
+  openingDebit: {
+    leapsCost: string
+    shortCredit: string
+    fees: string
+    initialNetDebit: string
+    netDebitBeforeFees: string
+    basisPerShare: string
+    strikeWidthPerShare: string
+    debitToWidthPercent: string | null
+  }
 }>
 
 interface IpcStockQuote {
@@ -677,6 +763,9 @@ declare global {
       ping: () => Promise<string>
       listPositions: () => Promise<IpcPositionListItem[]>
       createPosition: (payload: IpcCreatePositionPayload) => Promise<IpcCreatePositionResult>
+      createPmccPosition: (
+        payload: IpcCreatePmccPositionPayload
+      ) => Promise<IpcCreatePmccPositionResult>
       getPosition: (positionId: string) => Promise<IpcGetPositionResult>
       closePosition: (payload: IpcCloseCspPayload) => Promise<IpcCloseCspResult>
       expirePosition: (payload: IpcExpireCspPayload) => Promise<IpcExpireCspResult>

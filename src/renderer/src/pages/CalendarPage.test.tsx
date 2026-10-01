@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { PositionListItem } from '../api/positions'
+import type { WheelListItem } from '../api/positions'
 import { usePositions } from '../hooks/usePositions'
 import { useMarketStatus } from '../hooks/useMarketStatus'
 import { useSettingsStatus } from '../hooks/useSettings'
@@ -19,12 +19,14 @@ const mockUseSettingsStatus = vi.mocked(useSettingsStatus)
 
 const STORAGE_KEY = 'wb.calendar.view'
 
-function makePosition(overrides: Partial<PositionListItem> = {}): PositionListItem {
+function makePosition(overrides: Partial<WheelListItem> = {}): WheelListItem {
   return {
     id: 'pos-1',
     ticker: 'AAPL',
     phase: 'CSP_OPEN',
     status: 'ACTIVE',
+    strategyType: 'WHEEL',
+    pmcc: null,
     strike: '180.00',
     expiration: '2026-08-14',
     dte: 6,
@@ -38,7 +40,7 @@ function makePosition(overrides: Partial<PositionListItem> = {}): PositionListIt
   }
 }
 
-function setPositions(positions: PositionListItem[]): void {
+function setPositions(positions: WheelListItem[]): void {
   mockUsePositions.mockReturnValue({
     data: positions,
     isLoading: false,

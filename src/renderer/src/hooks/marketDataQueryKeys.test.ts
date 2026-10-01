@@ -11,4 +11,16 @@ describe('marketDataQueryKeys', () => {
   it('market status is a market key', () => {
     expect(marketDataQueryKeys.marketStatus[0]).toBe('market')
   })
+
+  // [US-101] Its own key, so a live stock-quote tick never re-keys the PMCC chain request.
+  it('keeps the PMCC underlying-price snapshot apart from the stock-quote key', () => {
+    expect(marketDataQueryKeys.underlyingPrice('XYZ')).toEqual([
+      'market',
+      'underlying-price',
+      'XYZ'
+    ])
+    expect(marketDataQueryKeys.underlyingPrice('XYZ')).not.toEqual(
+      marketDataQueryKeys.stockQuotes(['XYZ'])
+    )
+  })
 })
