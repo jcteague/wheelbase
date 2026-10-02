@@ -41,6 +41,8 @@ import { PhaseBadge } from '../src/renderer/src/components/PhaseBadge'
 import { TargetBadge } from '../src/renderer/src/components/TargetBadge'
 import { ExpiringSoonFlag } from '../src/renderer/src/components/ExpiringSoonFlag'
 import { IvrCell } from '../src/renderer/src/components/IvrCell'
+
+export const ivrPair = (r) => (r === null || r === undefined ? { ivRank: null, ivRankAbsence: { reason: 'not_collected' } } : { ivRank: { percentile: '71', low: '0.2140', high: '0.4870', ...r }, ivRankAbsence: null })
 import { UrgencyPill } from '../src/renderer/src/components/UrgencyPill'
 import { Badge } from '../src/renderer/src/components/ui/Badge'
 import { SectionCard } from '../src/renderer/src/components/ui/SectionCard'
@@ -860,7 +862,7 @@ export function IvrFace({ x }) {
         <span className="font-wb-mono text-[12.5px] text-wb-text-muted">—</span>
       ) : (
         <span className="font-wb-mono text-[12.5px] font-semibold tabular-nums">
-          <IvrCell ivRank={x.ivRank} />
+          <IvrCell ivr={ivrPair(x.ivRank)} />
         </span>
       )}
       {x.closed || x.face.word == null ? null : <span className={`${SUB} ${TONE_CLASS[x.face.tone]}`}>{x.face.word}</span>}

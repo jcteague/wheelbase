@@ -36,6 +36,8 @@ import {
 import { PageHeader } from '../src/renderer/src/components/PageLayout'
 import { MarketStatusPill } from '../src/renderer/src/components/MarketStatusPill'
 import { IvrCell } from '../src/renderer/src/components/IvrCell'
+
+export const ivrPair = (r) => (r === null || r === undefined ? { ivRank: null, ivRankAbsence: { reason: 'not_collected' } } : { ivRank: { percentile: '71', low: '0.2140', high: '0.4870', ...r }, ivRankAbsence: null })
 import { GateBadge } from '../src/renderer/src/components/GateBadge'
 import { ReadingNote } from '../src/renderer/src/components/ReadingNote'
 import { EarningsBadge } from '../src/renderer/src/components/EarningsBadge'
@@ -129,6 +131,9 @@ export const SESSION = {
 
 export const ivr = (value, observedAt, ageTradingDays, state) => ({
   value,
+  percentile: '71',
+  low: '0.2140',
+  high: '0.4870',
   observedAt,
   ageTradingDays,
   state
@@ -439,6 +444,7 @@ export function snapshotFor(mode) {
     entry: s.entry,
     quote: mode === 'outage' || (mode === 'noquote' && s.entry.ticker === 'XLF') ? null : s.quote,
     ivRank: s.ivRank,
+    ivRankAbsence: s.ivRank === null ? { reason: 'not_collected' } : null,
     earnings: s.earnings,
     verdict: s.verdict
   }))
@@ -732,7 +738,7 @@ export function DiagonalBenchCard({ stock, selected, onSelect }) {
             {candidate !== null && <EarningsBadge earnings={candidate.earnings} />}
           </span>
           <span className="inline-flex shrink-0 items-center gap-1.5 font-wb-mono">
-            IVR <IvrCell ivRank={row.ivRank} />
+            IVR <IvrCell ivr={ivrPair(row.ivRank)} />
           </span>
         </div>
       </div>
@@ -922,7 +928,7 @@ export function DiagonalBenchDetail({ stock, onReview }) {
         <div>
           <p className="m-0 text-xs text-wb-text-muted">IV rank</p>
           <p className="m-0 mt-1 font-wb-mono text-lg">
-            <IvrCell ivRank={ivRank} />
+            <IvrCell ivr={ivrPair(ivRank)} />
           </p>
         </div>
       </div>

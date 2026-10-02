@@ -76,6 +76,8 @@ import { VerdictBlock } from '../src/renderer/src/components/position-cockpit/Ve
 import { LegHistoryTable } from '../src/renderer/src/components/LegHistoryTable'
 import { IvrCell } from '../src/renderer/src/components/IvrCell'
 
+export const ivrPair = (r) => (r === null || r === undefined ? { ivRank: null, ivRankAbsence: { reason: 'not_collected' } } : { ivRank: { percentile: '71', low: '0.2140', high: '0.4870', ...r }, ivRankAbsence: null })
+
 # Epic 09: PMCC Position Detail — Final Layout
 
 _The **XYZ** PMCC detail page as it looks once every Epic 09 story that touches it has shipped. One position, one history, one valuation date per preset; every figure on the page — lane statuses, P&L, guardrails, cycle nets, running basis, the six sheets' previews — is folded from the same legs and quotes, so the stories that share this page cannot disagree with each other._
@@ -91,6 +93,7 @@ The chrome is imported, not redrawn: `PageHeader`, `Breadcrumb`, `CollapsedDrawe
 | Guardrails strip: effective share cost, coverage, premium recovered, cycles | US-118 (figures from US-103 and US-109) |
 | `Leg reference` drawer | US-101 |
 | `Cost basis` drawer | US-103 |
+| `Timeline summary` drawer (between `Cost basis` and `Leg timeline`) | US-109 |
 | `Leg timeline` drawer, including the LEAPS track's `Sold to close` terminal row | US-109 |
 | Sell Short Call sheet | US-115 |
 | Close Short Early / Record Expiration sheets | US-119 |
@@ -1882,7 +1885,7 @@ export function IvrRollContext({ ivRank, nextEarnings, currentExpiration, replac
         <div className="flex flex-col gap-1">
           <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-wb-text-muted">IVR</span>
           <span className="text-base font-semibold">
-            <IvrCell ivRank={ivRank} />
+            <IvrCell ivr={ivrPair(ivRank)} />
           </span>
           <span className={`text-[11px] ${CTX_TONE[ctx.zoneTone]}`}>{ctx.zoneWord ?? ctx.title ?? ''}</span>
         </div>
@@ -2443,6 +2446,27 @@ export const WHEEL_LEGS = [
   { id: 'w4', positionId: 'p1', legRole: 'CC_CLOSE', action: 'BUY', instrumentType: 'CALL', strike: '182.0000', expiration: '2027-05-21', contracts: 1, premiumPerContract: '1.8000', fillDate: '2027-05-08', rollChainId: null, runningCostBasis: '174.2000' }
 ]
 
+export function TimelineSummary({ model }) {
+  return (
+    <div>
+      <StatGrid
+        minWidth={150}
+        items={[
+          { label: 'Cycles', value: `${model.cycles.length} · ${model.closedCount} closed${model.openCycle ? ' · 1 open' : ''}` },
+          { label: 'Realized net credits', value: <span className="text-wb-green">{signed(model.realized)} / share ({signed(model.realized * 100 * model.contracts)})</span> },
+          { label: 'Average per closed cycle', value: model.closedCount ? `${signed(model.average)} / share` : '—' },
+          { label: 'Open cycle credit', value: model.openCycle ? <span className="text-wb-gold">{signed(model.openCredit)} / share · open</span> : <span className="text-wb-text-muted">—</span> },
+          { label: 'LEAPS roll net', value: model.leapsRollNet === 0 ? <span className="text-wb-text-muted">no roll yet</span> : <span className="text-wb-green">{signed(model.leapsRollNet)} / share</span> },
+          { label: 'Coverage', value: `${model.covered} of ${model.totalDays} days · ${model.uncovered} uncovered` }
+        ]}
+      />
+      <div className="px-[18px] py-2.5 font-wb-mono text-[0.68rem] text-wb-text-secondary">
+        Realized {money(model.realized)} + open {money(model.openCredit)} = {money(model.credits)} short-call credits to date. LEAPS cost to date {money(model.leapsCost)} − {money(model.credits)} = <span className="text-wb-sky">{money(model.basis)}</span> cost basis per share.
+      </div>
+    </div>
+  )
+}
+
 export function Timeline({ model }) {
   return (
     <>
@@ -2473,26 +2497,6 @@ export function Timeline({ model }) {
             )
           })}
           {model.gaps.filter((g) => g.before === null && g.after !== null).map((g) => <GapRow key={`tail-${g.from}`} gap={g} />)}
-        </div>
-      </div>
-      <div className="border-t border-wb-blue-dim bg-[rgba(88,166,255,0.03)] px-5 py-3">
-        <div className="mb-2 flex items-baseline justify-between">
-          <Caption>Timeline summary</Caption>
-          <span className="font-wb-mono text-[0.65rem] text-wb-text-muted">reconciles to the Cost basis drawer above</span>
-        </div>
-        <StatGrid
-          minWidth={150}
-          items={[
-            { label: 'Cycles', value: `${model.cycles.length} · ${model.closedCount} closed${model.openCycle ? ' · 1 open' : ''}` },
-            { label: 'Realized net credits', value: <span className="text-wb-green">{signed(model.realized)} / share ({signed(model.realized * 100 * model.contracts)})</span> },
-            { label: 'Average per closed cycle', value: model.closedCount ? `${signed(model.average)} / share` : '—' },
-            { label: 'Open cycle credit', value: model.openCycle ? <span className="text-wb-gold">{signed(model.openCredit)} / share · open</span> : <span className="text-wb-text-muted">—</span> },
-            { label: 'LEAPS roll net', value: model.leapsRollNet === 0 ? <span className="text-wb-text-muted">no roll yet</span> : <span className="text-wb-green">{signed(model.leapsRollNet)} / share</span> },
-            { label: 'Coverage', value: `${model.covered} of ${model.totalDays} days · ${model.uncovered} uncovered` }
-          ]}
-        />
-        <div className="mt-2.5 font-wb-mono text-[0.68rem] text-wb-text-secondary">
-          Realized {money(model.realized)} + open {money(model.openCredit)} = {money(model.credits)} short-call credits to date. LEAPS cost to date {money(model.leapsCost)} − {money(model.credits)} = <span className="text-wb-sky">{money(model.basis)}</span> cost basis per share.
         </div>
       </div>
     </>
@@ -2545,7 +2549,7 @@ export function Mockup() {
               <Hero model={model} k={{ ...k, leapsDelta: q ? q.leapsDelta : null }} />
               <Guardrails model={model} k={k} />
 
-              <CollapsedDrawer key="pmcc-legref" title="Leg reference" fieldCount={model.openCycle ? 8 : 4}>
+              <CollapsedDrawer key="pmcc-legref" title="Leg reference" fieldCount={model.openCycle ? 8 : 4} defaultOpen>
                 <OwnerNote>US-101 · the contracts as recorded</OwnerNote>
                 <StatGrid
                   minWidth={130}
@@ -2581,7 +2585,12 @@ export function Mockup() {
                 />
               </CollapsedDrawer>
 
-              <TimelineDrawer title="Leg timeline" meta={`${model.cycles.length} ${model.cycles.length === 1 ? 'cycle' : 'cycles'} · ${model.uncovered}d uncovered`}>
+              <CollapsedDrawer key="pmcc-summary" title="Timeline summary" fieldCount={6} defaultOpen>
+                <OwnerNote>US-109 · reconciles to the Cost basis drawer above</OwnerNote>
+                <TimelineSummary model={model} />
+              </CollapsedDrawer>
+
+              <TimelineDrawer defaultOpen={false} title="Leg timeline" meta={`${model.cycles.length} ${model.cycles.length === 1 ? 'cycle' : 'cycles'} · ${model.uncovered}d uncovered`}>
                 <OwnerNote>US-109 · a roll stays inside its cycle</OwnerNote>
                 {model.positionClosed && (
                   <div className="border-b border-wb-border bg-wb-bg-elevated px-5 py-2 font-wb-mono text-[0.7rem] text-wb-text-secondary">
