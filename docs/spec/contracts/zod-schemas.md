@@ -1,6 +1,6 @@
 # Zod Schemas
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-44,us-101 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-44,us-101,us-103 -->
 
 ## Overview
 
@@ -12,13 +12,15 @@ Three classes of types are catalogued below: **core enums** (the discriminator v
 
 **Renderer form schemas (us-101).** The PMCC entry form is the first place a renderer schema deliberately **mirrors** a main-process engine rather than just shaping form input: `pmccEntrySchema(today)` in `src/renderer/src/schemas/pmcc-entry.ts` repeats the engine's cross-leg rules with the same messages and dotted paths so the form rejects before the IPC round-trip, while `openPmcc` in `src/main/core/lifecycle.ts` stays the authority at the boundary. See the [renderer PMCC entry schema](#renderer-pmcc-entry-schema--pmccentryschematoday) below and the [PMCC validation ADR](../architecture/02-adrs/pmcc-validation-pure-engine-mirrored-by-form-schema.md).
 
+**Dev-only test seam (us-103).** `src/main/schemas.ts` now ends with a dev-only section for payloads accepted only under `NODE_ENV === 'test'` — today `TestPmccLegEventPayloadSchema`, which lets e2e tests seed PMCC leg events that no production flow writes yet. See [`TestPmccLegEventPayloadSchema`](#dev-only-testpmcclegeventpayloadschema). Driven by [us-103 — PMCC cost-basis ledger](../features/us-103-pmcc-cost-basis.md).
+
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-101 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-101,us-103 -->
 
 ## Core enums
 
-The discriminators that drive the wheel lifecycle. All five live in `src/main/core/types.ts`; the schemas in `src/main/schemas.ts` import them rather than re-declaring.
+The discriminators that drive the wheel and PMCC lifecycles. They live in `src/main/core/types.ts` (except `TriggerEvent` / `PmccTriggerEvent`, which live in `src/main/schemas.ts`); the schemas import them rather than re-declaring.
 
 ### `WheelPhase`
 
@@ -32,13 +34,22 @@ The lifecycle state of a wheel. Values used across the extracted plans: `CSP_OPE
 
 ### `LegRole`
 
-The role each leg plays in the wheel history. Current values: `CSP_OPEN`, `CSP_CLOSE`, `ROLL_FROM`, `ROLL_TO`, `CC_OPEN`, `CC_CLOSE`, `CC_EXPIRED`, `CALLED_AWAY`, `EXPIRE`, `ASSIGN`. us-11 added `CC_EXPIRED` and `CALLED_AWAY` so terminal CC events render with their own row labels and annotations in the leg-history table — `expire-cc-position.ts` now persists `CC_EXPIRED` (was generic `EXPIRE`) and `record-call-away-position.ts` now persists `CALLED_AWAY` (was generic `CC_CLOSE`). Active-leg resolution is phase-aware (`CSP_OPEN → CSP_OPEN|ROLL_TO`, `CC_OPEN → CC_OPEN|ROLL_TO`) so the most recent roll's `ROLL_TO` leg becomes the effective open leg. us-13 (planned) widens the position-list active-leg subquery to include `ROLL_TO` as well — see `list-positions.ts` note in the [IPC handlers](./ipc-handlers.md) page.
+The role each leg plays in the wheel history. Wheel values: `CSP_OPEN`, `CSP_CLOSE`, `ROLL_FROM`, `ROLL_TO`, `CC_OPEN`, `CC_CLOSE`, `CC_EXPIRED`, `CALLED_AWAY`, `EXPIRE`, `ASSIGN`; the six PMCC values are below. us-11 added `CC_EXPIRED` and `CALLED_AWAY` so terminal CC events render with their own row labels and annotations in the leg-history table — `expire-cc-position.ts` now persists `CC_EXPIRED` (was generic `EXPIRE`) and `record-call-away-position.ts` now persists `CALLED_AWAY` (was generic `CC_CLOSE`). Active-leg resolution is phase-aware (`CSP_OPEN → CSP_OPEN|ROLL_TO`, `CC_OPEN → CC_OPEN|ROLL_TO`) so the most recent roll's `ROLL_TO` leg becomes the effective open leg. us-13 (planned) widens the position-list active-leg subquery to include `ROLL_TO` as well — see `list-positions.ts` note in the [IPC handlers](./ipc-handlers.md) page.
 
-**PMCC leg roles (us-101).** `LEAPS_OPEN` (`BUY` / `CALL`) and `SHORT_CALL_OPEN` (`SELL` / `CALL`) are the two roles `createPmccPosition` writes. Reserved by name for later stories, not added: `SHORT_CALL_CLOSE`, `SHORT_CALL_EXPIRED`, `LEAPS_CLOSE`, `SHORT_CALL_ASSIGNED`. Driven by [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md).
+**PMCC leg roles (us-101, us-103).** `LEAPS_OPEN` (`BUY` / `CALL`) and `SHORT_CALL_OPEN` (`SELL` / `CALL`) are the two roles `createPmccPosition` writes (us-101). us-103 added the four roles us-101 had only reserved — `LEAPS_CLOSE`, `SHORT_CALL_CLOSE`, `SHORT_CALL_EXPIRED`, `SHORT_CALL_ASSIGNED` — because the PMCC ledger is the first code that must _consume_ every PMCC role, even though later Epic 09 stories are the ones that _write_ them. `LegRole` has no SQL CHECK, so no migration; no `LEG_ROLE_LABEL` text was added for the new roles. Driven by [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md) and [us-103 — PMCC cost-basis ledger](../features/us-103-pmcc-cost-basis.md); see the [phase and leg-role names ADR](../architecture/02-adrs/pmcc-phase-and-leg-role-names.md).
 
-### `TriggerEvent`
+### `PmccLegRole` / `isPmccLegRole`
 
-A TypeScript union in `src/main/schemas.ts` (not a Zod enum) naming the event that wrote a `cost_basis_snapshots` row: `CSP_OPEN`, `CSP_CLOSE`, `CSP_EXPIRE`, `CSP_ASSIGN`, `CSP_ROLL`, `CC_OPEN`, `CC_ROLL`, `CALL_AWAY`, and — added by us-101 — `PMCC_OPEN` for the opening snapshot of a PMCC. The value set is the contract; the column is unconstrained TEXT (see [schema/tables](../schema/tables.md)).
+The PMCC slice of `LegRole`, in `src/main/core/types.ts` (us-103). Both are derived from one module-private list, `PMCC_LEG_ROLE_VALUES … as const satisfies readonly LegRole[]`: the type is that tuple's element union, and `isPmccLegRole(role): role is PmccLegRole` checks a `Set` built from it — so type and runtime guard cannot drift, and a misspelt role is a compile error. The ledger service keys an exhaustive `Record<PmccLegRole, PmccLedgerSide>` on it (`LEAPS_*` → `LONG`, `SHORT_CALL_*` → `SHORT`), so adding a PMCC role without a ledger side fails typecheck. Driven by [us-103 — PMCC cost-basis ledger](../features/us-103-pmcc-cost-basis.md).
+
+### `TriggerEvent` / `PmccTriggerEvent`
+
+`TriggerEvent` names the event that wrote a `cost_basis_snapshots` row. Since us-103 it is `TriggerEvent = WheelTriggerEvent | PmccTriggerEvent` in `src/main/schemas.ts`:
+
+- **`WheelTriggerEvent`** (module-private TypeScript union) — the eight wheel values: `CSP_OPEN`, `CSP_CLOSE`, `CSP_EXPIRE`, `CSP_ASSIGN`, `CSP_ROLL`, `CC_OPEN`, `CC_ROLL`, `CALL_AWAY`.
+- **`PmccTriggerEvent`** — a `z.enum` exported both as the Zod enum and as its `z.infer` type, with six values: `PMCC_OPEN` (added by us-101, moved here from the old flat union), `PMCC_SHORT_OPEN`, `PMCC_SHORT_EXPIRED`, `PMCC_SHORT_CLOSED`, `PMCC_SHORT_ROLL`, `PMCC_LEAPS_ROLL`. One list serves the snapshot writer's parameter type (`appendPmccSnapshot<T extends PmccTriggerEvent>`), the dev-only test payload schema, and `TriggerEvent`. us-103 owns the whole PMCC vocabulary up front so later stories pass a name (US-104 passes `'PMCC_SHORT_ROLL'`) rather than coining one — per-consumer coining would drift in a column with no CHECK.
+
+`TriggerEvent` is a strict superset of its pre-us-103 value set. The value set is the contract; the column is unconstrained TEXT (see [schema/tables](../schema/tables.md)). Driven by [us-101](../features/us-101-open-pmcc-position.md) and [us-103 — PMCC cost-basis ledger](../features/us-103-pmcc-cost-basis.md).
 
 ### `LegAction`
 
@@ -61,7 +72,7 @@ export type InstrumentType = z.infer<typeof InstrumentType>
 
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-12,us-13,us-14,us-32,us-33,us-44,us-57-58,us-121,us-101 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-12,us-13,us-14,us-32,us-33,us-44,us-57-58,us-121,us-101,us-103 -->
 
 ## Payload schemas
 
@@ -307,9 +318,18 @@ Lives in `src/renderer/src/schemas/pmcc-entry.ts`; drives `PmccEntryForm` throug
 - **Shared renderer regex:** `ISO_DATE_REGEX` (with `isoDateSchema`) is exported from `src/renderer/src/schemas/common.ts` (us-101 refactor) and used by both the field schema and the cross-leg date checks.
 - Driven by [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md); see the [PMCC validation ADR](../architecture/02-adrs/pmcc-validation-pure-engine-mirrored-by-form-schema.md).
 
+### Dev-only `TestPmccLegEventPayloadSchema`
+
+A test seam, not a production contract: bound to `_test:pmcc-record-leg-event`, which is registered only when `NODE_ENV === 'test'` (elsewhere the call fails with `__root__` / `not_registered`). It lets e2e tests insert arbitrary PMCC leg rows and append a ledger snapshot before the stories that write those legs exist. Lives in the dev-only section at the end of `src/main/schemas.ts`.
+
+- **`TestPmccLegEventPayloadSchema`** — `positionId` (`PositionIdSchema`), `triggerEvent` (`PmccTriggerEvent`), `eventDate` (`IsoDateSchema`; becomes the snapshot's `snapshot_at`), and `legs` — an array (empty allowed) of the module-private **`TestLegRowSchema`**: `legRole` (any `LegRole`), `action` (`LegAction`), `strike`, `expiration`, `contracts`, `premiumPerContract`, `fillDate`, plus `fees` defaulting to `'0.0000'` and `rollChainId` defaulting to `null`.
+- **Types:** `TestPmccLegEventPayload` (`z.infer`, the parsed output) and `TestPmccLegEventPayloadInput` (`z.input`, what an e2e helper may send — `fees` / `rollChainId` optional because of the defaults).
+- **Success:** `{ ok: true, ledger: PmccLedgerResult, snapshot: CostBasisSnapshotRecord }`. Full contract on [ipc-handlers](./ipc-handlers.md).
+- Driven by [us-103 — PMCC cost-basis ledger](../features/us-103-pmcc-cost-basis.md).
+
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-101 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-101,us-103 -->
 
 ## Result interfaces
 
@@ -375,8 +395,15 @@ interface PositionListItem {
 **us-101 changes to the building blocks.**
 
 - **`LegRecord.fees: string`** — total fees for the leg in dollars, 4 dp (`legs.fees`, migration 017). Wheel services never write fees, so every wheel leg literal carries `fees: '0.0000'`; PMCC legs carry the entered fees. See the [per-leg fees ADR](../architecture/02-adrs/per-leg-fees-on-legs-table.md).
-- **`PositionListItem` is now a discriminated union** `WheelListItem | PmccListItem` on `strategyType`. `PositionListItemBase` (exported) holds the shared fields — `id`, `ticker`, `phase`, `status`, `premiumCollected`, `effectiveCostBasis`, `profitTargetPercent`. `WheelListItem` adds `strategyType: 'WHEEL'`, `pmcc: null` and the nullable active-leg fields (`strike`, `expiration`, `dte`, `instrumentType`, `contracts`, `entryPremiumPerContract`). `PmccListItem` adds `strategyType: 'PMCC'`, `pmcc: PmccListSummary` and types those six fields as literal `null`. `PmccListSummary` is `{ long: PmccLegSummary; short: PmccLegSummary; initialNetDebit: string }`, and `PmccLegSummary` is `{ strike, expiration, dte, contracts }`. `initialNetDebit` (dollars, 4 dp) is recomputed from the legs' fills and fees via `calculatePmccOpeningDebit`. Contract detail is on [`positions:list`](./ipc-handlers.md#positionslist); see the [list-item union ADR](../architecture/02-adrs/pmcc-list-item-discriminated-union.md).
-- **`CostBasisSnapshotRecord.triggerEvent`** gains `'PMCC_OPEN'` (see [`TriggerEvent`](#triggerevent)).
+- **`PositionListItem` is now a discriminated union** `WheelListItem | PmccListItem` on `strategyType`. `PositionListItemBase` (exported) holds the shared fields — `id`, `ticker`, `phase`, `status`, `premiumCollected`, `effectiveCostBasis`, `profitTargetPercent`. `WheelListItem` adds `strategyType: 'WHEEL'`, `pmcc: null` and the nullable active-leg fields (`strike`, `expiration`, `dte`, `instrumentType`, `contracts`, `entryPremiumPerContract`). `PmccListItem` adds `strategyType: 'PMCC'`, `pmcc: PmccListSummary` and types those six fields as literal `null`. `PmccLegSummary` is `{ strike, expiration, dte, contracts }`; `PmccListSummary` was introduced with an `initialNetDebit` field, which us-103 replaced with the running basis (see below). Contract detail is on [`positions:list`](./ipc-handlers.md#positionslist); see the [list-item union ADR](../architecture/02-adrs/pmcc-list-item-discriminated-union.md).
+- **`CostBasisSnapshotRecord.triggerEvent`** gains `'PMCC_OPEN'` (see [`TriggerEvent`](#triggerevent--pmcctriggerevent)).
+
+**us-103 changes — the PMCC ledger.** Derived money lives in the main process; the renderer only formats. `PmccLedgerResult` is the pure engine's return type (`calculatePmccLedger` in `src/main/core/costbasis.ts`) — per-share and total basis, LEAPS cost, short-call credits, effective share cost, and premium recovered, as 4-dp strings (the last two nullable). See [cost basis](../domain/cost-basis.md) for the formula.
+
+- **`GetPositionResult.pmccLedger: PmccLedgerResult | null`** — recomputed from the position's legs on every read; `null` for a wheel or a PMCC with no legs. `initialNetDebit` stays on the detail result (the leg reference panel still shows it).
+- **`PmccListSummary = { long; short } & Pick<PmccLedgerResult, 'basisPerShare' | 'basisTotal'>`** — the list row's running basis, replacing `initialNetDebit`. Deriving it with `Pick` keeps the list and detail figures the same type by construction.
+- **`AppendPmccSnapshotResult<T extends PmccTriggerEvent = PmccTriggerEvent>`** (in `src/main/services/pmcc-ledger.ts`, not `schemas.ts`) — `{ ledger: PmccLedgerResult; snapshot: CostBasisSnapshotRecord & { triggerEvent: T; finalPnl: null } }`, returned by `appendPmccSnapshot`, the writer every PMCC leg event calls inside its own transaction. Generic over the trigger so `createPmccPosition` gets a snapshot narrowed to `'PMCC_OPEN'` without a cast.
+- Driven by [us-103 — PMCC cost-basis ledger](../features/us-103-pmcc-cost-basis.md).
 
 ### `GetPositionResult`
 
@@ -387,7 +414,8 @@ interface GetPositionResult {
   costBasisSnapshot: (CostBasisSnapshotRecord & { finalPnl: string | null }) | null
   legs: LegRecord[]
   allSnapshots: CostBasisSnapshotRecord[] // added by us-11; ordered snapshot_at ASC
-  initialNetDebit: string | null // us-101: PMCC only, from both opening legs (shared with positions:list); null for a wheel
+  initialNetDebit: string | null // us-101: PMCC only, from both opening legs; null for a wheel
+  pmccLedger: PmccLedgerResult | null // us-103: PMCC running ledger; null for a wheel or a PMCC with no legs
   // rollCount: number                              // planned by us-13, not yet implemented
 }
 ```
@@ -398,7 +426,7 @@ interface GetPositionResult {
 
 **Planned (us-13, not yet implemented):** add `rollCount: number` (count of `legs` with `leg_role = 'ROLL_TO'`) so the renderer can show a "Roll #N" badge in the roll sheet and an informational warning at `rollCount >= 3`. No new IPC channel; this is a response widening on `positions:get`.
 
-Returned by `positions:get`. Introduced by [us-4 — Close a CSP early](../features/us-4-close-csp.md); extended by [us-11 — Wheel leg chain display](../features/us-11-wheel-leg-chain-display.md) and [us-13 — Roll a CSP down and out](../features/us-13-roll-csp-down-and-out.md) (planned).
+Returned by `positions:get`. Introduced by [us-4 — Close a CSP early](../features/us-4-close-csp.md); extended by [us-11 — Wheel leg chain display](../features/us-11-wheel-leg-chain-display.md), [us-103 — PMCC cost-basis ledger](../features/us-103-pmcc-cost-basis.md) (`pmccLedger`), and [us-13 — Roll a CSP down and out](../features/us-13-roll-csp-down-and-out.md) (planned).
 
 ### `CloseCspPositionResult`
 
@@ -648,7 +676,7 @@ interface IpcStreamErrorEvent {
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-44,us-57-58,us-121,us-101 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-44,us-57-58,us-121,us-101,us-103 -->
 
 ## Driven by
 
@@ -673,6 +701,7 @@ interface IpcStreamErrorEvent {
 - [us-57-58 — Configurable alert thresholds](../features/us-57-58-configurable-alert-thresholds.md) — `SaveAlertDefaultsPayloadSchema`, `SaveAlertOverridesPayloadSchema`
 - [us-121 — IV rank from our own IV history](../features/us-121-iv-rank-from-own-iv-history.md) — `CollectIvrNowBatchSchema.skippedReason` narrowed to `'market_data_unavailable'`; the reshaped `IpcIvRank` / new `IpcIvRankAbsence` are TypeScript mirrors, not Zod schemas (see [ipc-handlers](./ipc-handlers.md))
 - [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md) — `CreatePmccPositionPayloadSchema` / `CreatePmccPositionPayload` / `CreatePmccPositionResult`, shared `IsoDateSchema`, `PmccLegSummary` / `PmccListSummary` / `PositionListItemBase` / `WheelListItem` / `PmccListItem`, `LegRecord.fees`, `WheelPhase + 'PMCC_OPEN'`, `LegRole + 'LEAPS_OPEN' / 'SHORT_CALL_OPEN'`, `TriggerEvent + 'PMCC_OPEN'`; renderer `pmccEntrySchema(today)`, `EMPTY_PMCC_DEFAULTS`, `toCreatePmccPayload`, `ISO_DATE_REGEX`
+- [us-103 — PMCC cost-basis ledger](../features/us-103-pmcc-cost-basis.md) — `LegRole + 'LEAPS_CLOSE' / 'SHORT_CALL_CLOSE' / 'SHORT_CALL_EXPIRED' / 'SHORT_CALL_ASSIGNED'`, `PmccLegRole` / `isPmccLegRole` (from `PMCC_LEG_ROLE_VALUES`), `PmccTriggerEvent` + `TriggerEvent = WheelTriggerEvent | PmccTriggerEvent`, `GetPositionResult.pmccLedger`, `PmccListSummary` basis fields, `AppendPmccSnapshotResult<T>`, dev-only `TestPmccLegEventPayloadSchema` / `TestPmccLegEventPayload` / `TestPmccLegEventPayloadInput`
 <!-- /generated -->
 
 <!-- generated:from us-35 -->

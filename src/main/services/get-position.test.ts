@@ -1,12 +1,15 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { isoDate, makeTestDb } from '../test-utils'
-import type { CreatePmccPositionPayload } from '../schemas'
+import type { CreatePmccPositionPayload, LegRecord } from '../schemas'
 import { createPmccPosition, createPosition } from './positions'
 import { assignCspPosition } from './assign-csp-position'
 import { openCoveredCallPosition } from './open-covered-call-position'
 import { getPosition } from './get-position'
 import { rollCspPosition } from './roll-csp-position'
+import { appendPmccSnapshot } from './pmcc-ledger'
+import { insertLegs, pmccFixtures } from './test-fixtures/pmcc-legs'
+import type Database from 'better-sqlite3'
 
 describe('getPosition', () => {
   it('returns position with activeLeg and costBasisSnapshot for a CSP_OPEN position', () => {
@@ -392,5 +395,122 @@ describe('getPosition — PMCC initial net debit (US-101)', () => {
       fillDate: isoDate(0)
     })
     expect(getPosition(db, position.id)!.initialNetDebit).toBeNull()
+  })
+})
+
+// [US-103] The detail read path returns the running PMCC ledger recomputed from the legs.
+type PmccTrigger = 'PMCC_SHORT_EXPIRED' | 'PMCC_SHORT_OPEN' | 'PMCC_SHORT_ROLL' | 'PMCC_LEAPS_ROLL'
+
+function recordLegEvent(
+  db: Database.Database,
+  positionId: string,
+  legs: LegRecord[],
+  triggerEvent: PmccTrigger
+): void {
+  db.transaction(() => {
+    insertLegs(db, legs)
+    appendPmccSnapshot(db, positionId, {
+      triggerEvent,
+      eventDate: legs[0].fillDate,
+      now: new Date().toISOString()
+    })
+  })()
+}
+
+function getDetail(
+  db: Database.Database,
+  positionId: string
+): NonNullable<ReturnType<typeof getPosition>> {
+  const detail = getPosition(db, positionId)
+  if (!detail) throw new Error(`getPosition returned null for ${positionId}`)
+  return detail
+}
+
+describe('getPosition — PMCC ledger (US-103)', () => {
+  it('returns the entry ledger right after createPmccPosition', () => {
+    const db = makeTestDb()
+    const { position } = createPmccPosition(db, makePmccPayload())
+
+    expect(getDetail(db, position.id).pmccLedger).toEqual({
+      basisPerShare: '23.0000',
+      basisTotal: '2300.0000',
+      leapsCostPerShare: '25.0000',
+      leapsCostTotal: '2500.0000',
+      shortCreditsPerShare: '2.0000',
+      shortCreditsTotal: '200.0000',
+      effectiveShareCost: '103.0000',
+      premiumRecoveredPercent: '8.0000'
+    })
+  })
+
+  it('returns the running ledger after an expiration, a new short, a short roll and a LEAPS roll', () => {
+    const db = makeTestDb()
+    const { position } = createPmccPosition(db, makePmccPayload())
+    const F = pmccFixtures(position.id, isoDate)
+    recordLegEvent(db, position.id, F.EXPIRE_1, 'PMCC_SHORT_EXPIRED')
+    recordLegEvent(db, position.id, F.SHORT_2, 'PMCC_SHORT_OPEN')
+    recordLegEvent(db, position.id, F.SHORT_ROLL, 'PMCC_SHORT_ROLL')
+    recordLegEvent(db, position.id, F.LEAPS_ROLL, 'PMCC_LEAPS_ROLL')
+
+    const ledger = getDetail(db, position.id).pmccLedger
+
+    expect(ledger).not.toBeNull()
+    if (!ledger) throw new Error('expected a PMCC ledger')
+    expect(ledger.basisPerShare).toBe('19.3000')
+    expect(ledger.effectiveShareCost).toBe('104.3000')
+    expect(ledger.leapsCostPerShare).toBe('22.5000')
+  })
+
+  it('keeps initialNetDebit at the entry debit after a later short opens', () => {
+    const db = makeTestDb()
+    const { position } = createPmccPosition(db, makePmccPayload())
+    const F = pmccFixtures(position.id, isoDate)
+    recordLegEvent(db, position.id, F.EXPIRE_1, 'PMCC_SHORT_EXPIRED')
+    recordLegEvent(db, position.id, F.SHORT_2, 'PMCC_SHORT_OPEN')
+
+    const detail = getDetail(db, position.id)
+
+    expect(detail.initialNetDebit).toBe('2300.0000')
+    expect(detail.pmccLedger?.basisPerShare).toBe('21.2000')
+  })
+
+  it('returns pmccLedger null for a wheel position', () => {
+    const db = makeTestDb()
+    const { position } = createPosition(db, {
+      ticker: 'AAPL',
+      strike: 180,
+      expiration: isoDate(30),
+      contracts: 1,
+      premiumPerContract: 2.5,
+      fillDate: isoDate(0)
+    })
+
+    expect(getDetail(db, position.id).pmccLedger).toBeNull()
+  })
+
+  it('returns pmccLedger null for a PMCC whose legs were deleted', () => {
+    const db = makeTestDb()
+    const { position } = createPmccPosition(db, makePmccPayload())
+    db.prepare('DELETE FROM legs WHERE position_id = ?').run(position.id)
+
+    expect(getDetail(db, position.id).pmccLedger).toBeNull()
+  })
+
+  it('returns the SHORT_CALL_EXPIRED leg with action EXPIRE in legs (no role filtering)', () => {
+    const db = makeTestDb()
+    const { position } = createPmccPosition(db, makePmccPayload())
+    const F = pmccFixtures(position.id, isoDate)
+    recordLegEvent(db, position.id, F.EXPIRE_1, 'PMCC_SHORT_EXPIRED')
+
+    const detail = getDetail(db, position.id)
+
+    expect(detail.legs.map((l) => l.legRole)).toEqual([
+      'LEAPS_OPEN',
+      'SHORT_CALL_OPEN',
+      'SHORT_CALL_EXPIRED'
+    ])
+    expect(detail.legs.find((l) => l.legRole === 'SHORT_CALL_EXPIRED')?.action).toBe('EXPIRE')
+    // The detail result carries the ledger alongside the expired leg.
+    expect(detail.pmccLedger?.basisPerShare).toBe('23.0000')
   })
 })

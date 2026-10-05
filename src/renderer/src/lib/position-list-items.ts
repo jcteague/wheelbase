@@ -62,7 +62,12 @@ export function toPmccListItem(
     effectiveCostBasis: snapshot.basisPerShare,
     profitTargetPercent: position.profitTargetPercent,
     strategyType: 'PMCC',
-    pmcc: { long, short, initialNetDebit: res.openingDebit.initialNetDebit },
+    pmcc: {
+      long,
+      short,
+      basisPerShare: snapshot.basisPerShare,
+      basisTotal: res.openingDebit.initialNetDebit
+    },
     strike: null,
     expiration: null,
     dte: null,

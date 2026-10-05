@@ -82,6 +82,19 @@ describe('assignCspPosition', () => {
     ).toThrow(ValidationError)
   })
 
+  it('throws ValidationError(no_active_leg) when a CSP_OPEN position has no open leg row', () => {
+    const db = makeTestDb()
+    const { position } = makeOpenPosition(db)
+    db.prepare('DELETE FROM legs WHERE position_id = ?').run(position.id)
+
+    expect(() =>
+      assignCspPosition(db, position.id, {
+        positionId: position.id,
+        assignmentDate: '2026-01-17'
+      })
+    ).toThrow(expect.objectContaining({ code: 'no_active_leg' }))
+  })
+
   it('throws ValidationError(invalid_phase) when the position is already HOLDING_SHARES', () => {
     expect.assertions(2)
     const db = makeTestDb()
@@ -265,5 +278,29 @@ describe('assignCspPosition — rolled positions', () => {
 
     // activeLeg.strike = 47; 47 - 2.00 - 0.30 = 44.70
     expect(result.costBasisSnapshot.basisPerShare).toBe('44.7000')
+  })
+
+  it('assignment with no CSP_OPEN leg row — waterfall carries only the roll net credit', () => {
+    const db = makeTestDb()
+    const { position } = makeRolledPosition(db)
+
+    // net credit = 1.50 - 1.20 = 0.30
+    rollCspPosition(db, position.id, {
+      positionId: position.id,
+      costToClosePerContract: 1.2,
+      newPremiumPerContract: 1.5,
+      newExpiration: '2026-02-28',
+      fillDate: '2026-01-10'
+    })
+    db.prepare("DELETE FROM legs WHERE position_id = ? AND leg_role = 'CSP_OPEN'").run(position.id)
+
+    const result = assignCspPosition(db, position.id, {
+      positionId: position.id,
+      assignmentDate: '2026-01-17'
+    })
+
+    // 50 - 0.30 = 49.70 — no CSP premium contributes
+    expect(result.costBasisSnapshot.basisPerShare).toBe('49.7000')
+    expect(result.premiumWaterfall).toEqual([{ label: 'Roll #1 credit', amount: '0.3000' }])
   })
 })

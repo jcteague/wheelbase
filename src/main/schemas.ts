@@ -24,10 +24,9 @@ import {
   isPriceCeilingInRange,
   isSpreadPercentInRange
 } from './core/screening-criteria'
-import type { PmccOpeningDebitResult } from './core/costbasis'
+import type { PmccLedgerResult, PmccOpeningDebitResult } from './core/costbasis'
+import { LegAction, LegRole } from './core/types'
 import type {
-  LegAction,
-  LegRole,
   InstrumentType,
   PmccPhase,
   StrategyPhase,
@@ -100,7 +99,17 @@ export interface LegRecord {
   updatedAt: string
 }
 
-export type TriggerEvent =
+export const PmccTriggerEvent = z.enum([
+  'PMCC_OPEN',
+  'PMCC_SHORT_OPEN',
+  'PMCC_SHORT_EXPIRED',
+  'PMCC_SHORT_CLOSED',
+  'PMCC_SHORT_ROLL',
+  'PMCC_LEAPS_ROLL'
+])
+export type PmccTriggerEvent = z.infer<typeof PmccTriggerEvent>
+
+type WheelTriggerEvent =
   | 'CSP_OPEN'
   | 'CSP_CLOSE'
   | 'CSP_EXPIRE'
@@ -109,7 +118,8 @@ export type TriggerEvent =
   | 'CC_OPEN'
   | 'CC_ROLL'
   | 'CALL_AWAY'
-  | 'PMCC_OPEN'
+
+export type TriggerEvent = WheelTriggerEvent | PmccTriggerEvent
 
 export interface CostBasisSnapshotRecord {
   id: string
@@ -158,9 +168,11 @@ export interface GetPositionResult {
   costBasisSnapshot: CostBasisSnapshotRecord | null
   legs: LegRecord[]
   allSnapshots: CostBasisSnapshotRecord[]
-  /** PMCC only: dollars, 4 dp, recomputed from both opening legs (see PmccListSummary).
+  /** PMCC only: the entry debit in dollars, 4 dp, recomputed from the first opening legs.
    *  Null for a wheel, or a PMCC missing an opening leg or fill. */
   initialNetDebit: string | null
+  /** PMCC only: the running cost-basis ledger recomputed from every leg; null for a wheel. */
+  pmccLedger: PmccLedgerResult | null
 }
 
 export interface PmccLegSummary {
@@ -170,13 +182,10 @@ export interface PmccLegSummary {
   contracts: number
 }
 
-export interface PmccListSummary {
-  long: PmccLegSummary
-  short: PmccLegSummary
-  /** Dollars, 4 dp, recomputed from the two legs' fills and fees via calculatePmccOpeningDebit
-   *  (never from the rounded basis_per_share, which drifts). */
-  initialNetDebit: string
-}
+export type PmccListSummary = { long: PmccLegSummary; short: PmccLegSummary } & Pick<
+  PmccLedgerResult,
+  'basisPerShare' | 'basisTotal'
+>
 
 export interface PositionListItemBase {
   id: string
@@ -739,3 +748,30 @@ export interface EvaluateAlertsResult {
   resolvedCount: number
   skippedRuleCount: number
 }
+
+// ---------------------------------------------------------------------------
+// Dev-only test seam schemas (NODE_ENV === 'test')
+// ---------------------------------------------------------------------------
+
+// [US-103] One leg row for `_test:pmcc-record-leg-event`. Contract:
+// plans/us-103/contracts/test-pmcc-record-leg-event.md.
+const TestLegRowSchema = z.object({
+  legRole: LegRole,
+  action: LegAction,
+  strike: z.string(),
+  expiration: IsoDateSchema,
+  contracts: z.number().int().positive(),
+  premiumPerContract: z.string(),
+  fillDate: IsoDateSchema,
+  fees: z.string().default('0.0000'),
+  rollChainId: z.string().nullable().default(null)
+})
+
+export const TestPmccLegEventPayloadSchema = z.object({
+  positionId: PositionIdSchema,
+  triggerEvent: PmccTriggerEvent,
+  eventDate: IsoDateSchema,
+  legs: z.array(TestLegRowSchema)
+})
+export type TestPmccLegEventPayload = z.infer<typeof TestPmccLegEventPayloadSchema>
+export type TestPmccLegEventPayloadInput = z.input<typeof TestPmccLegEventPayloadSchema>

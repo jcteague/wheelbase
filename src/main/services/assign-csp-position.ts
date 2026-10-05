@@ -5,42 +5,9 @@ import { calculateAssignmentBasis } from '../core/costbasis'
 import { ValidationError, recordAssignment } from '../core/lifecycle'
 import { makeSnapshotAt } from '../dates'
 import { logger } from '../logger'
-import type { AssignCspPayload, AssignCspPositionResult, LegRecord } from '../schemas'
+import type { AssignCspPayload, AssignCspPositionResult } from '../schemas'
 import { getPosition } from './get-position'
-
-interface RollChainEntry {
-  netCredit: string
-  contracts: number
-}
-
-function groupRollsByChain(legs: LegRecord[]): RollChainEntry[] {
-  const rollLegs = legs.filter((l) => l.legRole === 'ROLL_TO' || l.legRole === 'ROLL_FROM')
-
-  const chainMap = new Map<string, LegRecord[]>()
-  for (const leg of rollLegs) {
-    const key = leg.rollChainId ?? ''
-    if (!chainMap.has(key)) chainMap.set(key, [])
-    chainMap.get(key)!.push(leg)
-  }
-
-  return Array.from(chainMap.values())
-    .map((chainLegs) => {
-      const rollTo = chainLegs.find((l) => l.legRole === 'ROLL_TO')
-      const rollFrom = chainLegs.find((l) => l.legRole === 'ROLL_FROM')
-      if (!rollTo || !rollFrom) return null
-      const netCredit = new Decimal(rollTo.premiumPerContract)
-        .minus(rollFrom.premiumPerContract)
-        .toFixed(4)
-      const earliestDate = chainLegs.reduce(
-        (min, l) => (l.fillDate < min ? l.fillDate : min),
-        chainLegs[0].fillDate
-      )
-      return { netCredit, contracts: rollTo.contracts, earliestDate }
-    })
-    .filter((c): c is NonNullable<typeof c> => c !== null)
-    .sort((a, b) => a.earliestDate.localeCompare(b.earliestDate))
-    .map(({ netCredit, contracts }) => ({ netCredit, contracts }))
-}
+import { groupRollChains } from './roll-chains'
 
 export function assignCspPosition(
   db: Database.Database,
@@ -68,7 +35,7 @@ export function assignCspPosition(
   }
 
   const cspOpenLeg = positionDetail.legs.find((l) => l.legRole === 'CSP_OPEN')
-  const rollChains = groupRollsByChain(positionDetail.legs)
+  const rollChains = groupRollChains(positionDetail.legs)
 
   const premiumLegs = [
     ...(cspOpenLeg
@@ -80,11 +47,11 @@ export function assignCspPosition(
           }
         ]
       : []),
-    ...rollChains.map(({ netCredit, contracts }, idx) => ({
+    ...rollChains.map(({ netCreditPerShare, contracts }, idx) => ({
       legRole: 'ROLL_NET',
-      premiumPerContract: netCredit,
+      premiumPerContract: netCreditPerShare,
       contracts,
-      label: `Roll #${idx + 1} ${new Decimal(netCredit).isNegative() ? 'debit' : 'credit'}`
+      label: `Roll #${idx + 1} ${new Decimal(netCreditPerShare).isNegative() ? 'debit' : 'credit'}`
     }))
   ]
 

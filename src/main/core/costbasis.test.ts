@@ -9,14 +9,18 @@ import {
   calculateCallAway,
   calculateRollBasis,
   computeUnrealizedPnl,
-  calculatePmccOpeningDebit
+  calculatePmccOpeningDebit,
+  calculatePmccLedger
 } from './costbasis'
 import type {
   CostBasisResult,
   CspLegInput,
   CcOpenBasisInput,
   RollBasisInput,
-  PmccOpeningDebitInput
+  PmccOpeningDebitInput,
+  PmccContribution,
+  PmccLedgerInput,
+  PmccLedgerSide
 } from './costbasis'
 
 describe('calculateInitialCspBasis', () => {
@@ -955,5 +959,159 @@ describe('calculatePmccOpeningDebit', () => {
     })
     expect(() => calculatePmccOpeningDebit(input)).not.toThrow()
     expect(calculatePmccOpeningDebit(input).netDebitBeforeFees).toBe('-100.0000')
+  })
+})
+
+describe('calculatePmccLedger', () => {
+  const contribution =
+    (side: PmccLedgerSide) =>
+    (cashPerShare: string, contracts = 1, fees = '0.0000'): PmccContribution => ({
+      side,
+      cashPerShare,
+      contracts,
+      fees
+    })
+  const long = contribution('LONG')
+  const short = contribution('SHORT')
+  const ledger = (
+    contributions: PmccContribution[],
+    overrides: Partial<PmccLedgerInput> = {}
+  ): PmccLedgerInput => ({ leapsContracts: 1, longStrike: '80.0000', contributions, ...overrides })
+
+  // The XYZ fixture from research.md § Worked ledger, one event at a time.
+  const entry = [long('25.0000'), short('-2.0000')]
+  const afterExpiry = [...entry, short('0.0000')]
+  const afterSecondShort = [...afterExpiry, short('-1.8000')]
+  const afterShortRoll = [...afterSecondShort, short('0.6000')]
+  const afterLeapsRoll = [...afterShortRoll, long('-2.5000')]
+
+  it('computes every figure for the entry', () => {
+    expect(calculatePmccLedger(ledger(entry))).toEqual({
+      basisPerShare: '23.0000',
+      basisTotal: '2300.0000',
+      leapsCostPerShare: '25.0000',
+      leapsCostTotal: '2500.0000',
+      shortCreditsPerShare: '2.0000',
+      shortCreditsTotal: '200.0000',
+      effectiveShareCost: '103.0000',
+      premiumRecoveredPercent: '8.0000'
+    })
+  })
+
+  it('leaves the ledger unchanged when the short expires worthless', () => {
+    expect(calculatePmccLedger(ledger(afterExpiry))).toEqual(calculatePmccLedger(ledger(entry)))
+  })
+
+  it('lowers the basis by a subsequent short credit', () => {
+    const result = calculatePmccLedger(ledger(afterSecondShort))
+    expect(result.basisPerShare).toBe('21.2000')
+    expect(result.basisTotal).toBe('2120.0000')
+    expect(result.shortCreditsPerShare).toBe('3.8000')
+    expect(result.shortCreditsTotal).toBe('380.0000')
+    expect(result.effectiveShareCost).toBe('101.2000')
+    expect(result.premiumRecoveredPercent).toBe('15.2000')
+  })
+
+  it('applies a short roll as one net debit', () => {
+    const result = calculatePmccLedger(ledger(afterShortRoll))
+    expect(result.basisPerShare).toBe('21.8000')
+    expect(result.basisTotal).toBe('2180.0000')
+    expect(result.shortCreditsPerShare).toBe('3.2000')
+    expect(result.effectiveShareCost).toBe('101.8000')
+    expect(result.premiumRecoveredPercent).toBe('12.8000')
+  })
+
+  it('applies a LEAPS roll as one net credit against the new long strike', () => {
+    const result = calculatePmccLedger(ledger(afterLeapsRoll, { longStrike: '85.0000' }))
+    expect(result.basisPerShare).toBe('19.3000')
+    expect(result.basisTotal).toBe('1930.0000')
+    expect(result.leapsCostPerShare).toBe('22.5000')
+    expect(result.leapsCostTotal).toBe('2250.0000')
+    expect(result.effectiveShareCost).toBe('104.3000')
+    expect(result.premiumRecoveredPercent).toBe('14.2222')
+  })
+
+  it('adds no strike-delta term: the long strike moves only the effective share cost', () => {
+    const at85 = calculatePmccLedger(ledger(afterLeapsRoll, { longStrike: '85.0000' }))
+    const at80 = calculatePmccLedger(ledger(afterLeapsRoll, { longStrike: '80.0000' }))
+    expect(at80).toEqual({ ...at85, effectiveShareCost: '99.3000' })
+  })
+
+  it('reports a negative basis without clamping once credits exceed the LEAPS cost', () => {
+    const result = calculatePmccLedger(
+      ledger([...afterLeapsRoll, short('-19.7000')], { longStrike: '85.0000' })
+    )
+    expect(result.leapsCostTotal).toBe('2250.0000')
+    expect(result.shortCreditsTotal).toBe('2290.0000')
+    expect(result.basisPerShare).toBe('-0.4000')
+    expect(result.basisTotal).toBe('-40.0000')
+    expect(result.premiumRecoveredPercent).toBe('101.7778')
+    expect(result.effectiveShareCost).toBe('84.6000')
+  })
+
+  it('scales totals but not per-share figures with three contracts', () => {
+    const result = calculatePmccLedger(
+      ledger([long('25.0000', 3), short('-2.0000', 3)], { leapsContracts: 3 })
+    )
+    expect(result.basisPerShare).toBe('23.0000')
+    expect(result.basisTotal).toBe('6900.0000')
+    expect(result.leapsCostTotal).toBe('7500.0000')
+    expect(result.shortCreditsTotal).toBe('600.0000')
+    expect(result.premiumRecoveredPercent).toBe('8.0000')
+  })
+
+  it('adds fees to the LEAPS cost and subtracts them from the short credit', () => {
+    const result = calculatePmccLedger(
+      ledger([long('25.0000', 1, '1.0000'), short('-2.0000', 1, '1.0000')])
+    )
+    expect(result.basisPerShare).toBe('23.0200')
+    expect(result.basisTotal).toBe('2302.0000')
+    expect(result.leapsCostTotal).toBe('2501.0000')
+    expect(result.leapsCostPerShare).toBe('25.0100')
+    expect(result.shortCreditsTotal).toBe('199.0000')
+    expect(result.shortCreditsPerShare).toBe('1.9900')
+  })
+
+  it('divides by the LEAPS contracts under partial short coverage', () => {
+    const result = calculatePmccLedger(
+      ledger([long('25.0000', 3), short('-2.0000', 1)], { leapsContracts: 3 })
+    )
+    expect(result.basisTotal).toBe('7300.0000')
+    expect(result.basisPerShare).toBe('24.3333')
+  })
+
+  it('returns a null recovered percent when the LEAPS cost is zero', () => {
+    const result = calculatePmccLedger(ledger([long('0.0000'), short('-2.0000')]))
+    expect(result.leapsCostTotal).toBe('0.0000')
+    expect(result.premiumRecoveredPercent).toBeNull()
+  })
+
+  it('returns a null recovered percent when the LEAPS cost is negative', () => {
+    const result = calculatePmccLedger(ledger([long('-1.0000'), short('-2.0000')]))
+    expect(result.leapsCostTotal).toBe('-100.0000')
+    expect(result.premiumRecoveredPercent).toBeNull()
+  })
+
+  it('returns a null effective share cost when the long strike is unknown', () => {
+    expect(calculatePmccLedger(ledger(entry, { longStrike: null })).effectiveShareCost).toBeNull()
+  })
+
+  it.each([0, -1, 1.5])('throws for leapsContracts %s', (leapsContracts) => {
+    expect(() => calculatePmccLedger(ledger(entry, { leapsContracts }))).toThrow(
+      'leapsContracts must be a positive integer'
+    )
+  })
+
+  it('returns zero totals and a null recovered percent for no contributions', () => {
+    expect(calculatePmccLedger(ledger([]))).toEqual({
+      basisPerShare: '0.0000',
+      basisTotal: '0.0000',
+      leapsCostPerShare: '0.0000',
+      leapsCostTotal: '0.0000',
+      shortCreditsPerShare: '0.0000',
+      shortCreditsTotal: '0.0000',
+      effectiveShareCost: '80.0000',
+      premiumRecoveredPercent: null
+    })
   })
 })

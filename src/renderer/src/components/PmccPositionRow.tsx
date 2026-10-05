@@ -19,7 +19,7 @@ type Props = {
  * expiring-soon flag, option mid or P&L — PMCC valuation (US-118) replaces this row.
  */
 export function PmccPositionRow({ item, index, quote, session }: Props): React.JSX.Element {
-  const { long, short, initialNetDebit } = item.pmcc
+  const { long, short, basisTotal } = item.pmcc
 
   return (
     <tr
@@ -86,9 +86,7 @@ export function PmccPositionRow({ item, index, quote, session }: Props): React.J
       </TableCell>
 
       <TableCell className={CELL_CLASS}>
-        <span className={`${VALUE_CLASS} text-wb-text-primary`}>
-          {`${fmtMoneyGrouped(initialNetDebit)} net debit`}
-        </span>
+        <span className={`${VALUE_CLASS} text-wb-text-primary`}>{fmtMoneyGrouped(basisTotal)}</span>
       </TableCell>
     </tr>
   )

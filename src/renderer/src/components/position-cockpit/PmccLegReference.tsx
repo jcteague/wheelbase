@@ -39,6 +39,7 @@ function LegCard({ leg }: { leg: LegDetail }): React.JSX.Element {
 /**
  * The minimal PMCC detail: both opening legs as recorded plus the initial net debit.
  * No verdict or live P&L — PMCC valuation (US-118) replaces this view.
+ * Returns a fragment: the caller owns the surrounding stack.
  */
 export function PmccLegReference({
   legs,
@@ -48,7 +49,7 @@ export function PmccLegReference({
   const pmccLegs = [leaps, short].filter((leg): leg is LegDetail => leg !== undefined)
 
   return (
-    <div className="flex flex-col gap-3">
+    <>
       {pmccLegs.map((leg) => (
         <LegCard key={leg.id} leg={leg} />
       ))}
@@ -66,6 +67,6 @@ export function PmccLegReference({
           Live P&amp;L unavailable until PMCC valuation ships
         </p>
       </SectionCard>
-    </div>
+    </>
   )
 }

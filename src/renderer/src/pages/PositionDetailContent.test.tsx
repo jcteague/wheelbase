@@ -37,7 +37,8 @@ const WHEEL_DETAIL: PositionDetail = {
   costBasisSnapshot: null,
   legs: [],
   allSnapshots: [],
-  initialNetDebit: null
+  initialNetDebit: null,
+  pmccLedger: null
 }
 
 const PMCC_DETAIL: PositionDetail = {

@@ -162,7 +162,8 @@ const CSP_OPEN_DETAIL = {
   },
   legs: [],
   allSnapshots: [],
-  initialNetDebit: null
+  initialNetDebit: null,
+  pmccLedger: null
 }
 
 // RED: TypeScript will error here until PositionDetail gains the allSnapshots field

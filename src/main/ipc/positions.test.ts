@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { GetPositionResult } from '../schemas'
 
 const assignCspPosition = vi.fn()
 const createPosition = vi.fn()
@@ -1073,6 +1074,45 @@ describe('registerPositionsHandlers', () => {
       legs: []
     })
     expect(getPosition).toHaveBeenCalledWith(db, 'p1')
+  })
+
+  // [US-103] The detail envelope carries the PMCC running ledger through unchanged.
+  it('positions:get success envelope carries pmccLedger for a PMCC', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+    const pmccLedger = {
+      basisPerShare: '23.0000',
+      basisTotal: '2300.0000',
+      leapsCostPerShare: '25.0000',
+      leapsCostTotal: '2500.0000',
+      shortCreditsPerShare: '2.0000',
+      shortCreditsTotal: '200.0000',
+      effectiveShareCost: '103.0000',
+      premiumRecoveredPercent: '8.0000'
+    }
+    const pmccFields = {
+      initialNetDebit: '2300.0000',
+      pmccLedger
+    } satisfies Partial<GetPositionResult>
+    const result = {
+      position: { id: 'p1', ticker: 'XYZ', strategyType: 'PMCC' },
+      legs: [],
+      ...pmccFields
+    }
+    getPosition.mockReturnValue(result)
+
+    registerPositionsHandlers({} as never)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:get'
+    )
+
+    const envelope = (await handler?.(null, { positionId: 'p1' })) as {
+      ok: true
+    } & GetPositionResult
+    expect(envelope.ok).toBe(true)
+    expect(envelope.pmccLedger).toEqual(pmccLedger)
   })
 
   it('positions:get returns a not_found envelope for an unknown id', async () => {

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { differenceInCalendarDays, parseISO } from 'date-fns'
+import Decimal from 'decimal.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { computeDte } from '../core/dte'
 import { logger } from '../logger'
@@ -8,8 +9,10 @@ import { makeTestDb, isoDate } from '../test-utils'
 import { assignCspPosition } from './assign-csp-position'
 import { closeCspPosition } from './close-csp-position'
 import { openCoveredCallPosition } from './open-covered-call-position'
+import { appendPmccSnapshot } from './pmcc-ledger'
 import { createPmccPosition, createPosition, listPositions } from './positions'
 import { rollCspPosition } from './roll-csp-position'
+import { insertLegs, pmccFixtures } from './test-fixtures/pmcc-legs'
 
 const EXPIRATION = isoDate(37)
 
@@ -330,7 +333,7 @@ describe('listPositions — PMCC summary (US-101)', () => {
     vi.restoreAllMocks()
   })
 
-  it('lists a PMCC with strategyType PMCC, both leg summaries and the initial net debit', () => {
+  it('lists a PMCC with strategyType PMCC, both leg summaries and the running cost basis (US-103)', () => {
     const db = makeTestDb()
     createPmccPosition(db, makePmccPayload())
 
@@ -352,7 +355,8 @@ describe('listPositions — PMCC summary (US-101)', () => {
         dte: computeDte(shortExpiration),
         contracts: 1
       },
-      initialNetDebit: '2300.0000'
+      basisPerShare: '23.0000',
+      basisTotal: '2300.0000'
     })
     expect(item.pmcc?.long.dte).toBeTypeOf('number')
     expect(item.pmcc?.short.dte).toBeTypeOf('number')
@@ -389,7 +393,7 @@ describe('listPositions — PMCC summary (US-101)', () => {
 
     // Short calls expire in 32 days: between the 10-day and 60-day puts.
     expect(items.map((i) => i.ticker)).toEqual(['SOON', 'XYZ', 'XYZ', 'LATE'])
-    const summaryCalls = debug.mock.calls.filter((call) => call[1] === 'pmcc_opening_legs_read')
+    const summaryCalls = debug.mock.calls.filter((call) => call[1] === 'legs_by_position_read')
     expect(summaryCalls).toHaveLength(1)
     expect((summaryCalls[0][0] as { ids: string[] }).ids).toEqual(
       expect.arrayContaining([first.position.id, second.position.id])
@@ -401,19 +405,20 @@ describe('listPositions — PMCC summary (US-101)', () => {
     createPosition(db, VALID_PAYLOAD)
     const debug = vi.spyOn(logger, 'debug')
     listPositions(db)
-    expect(debug.mock.calls.some((call) => call[1] === 'pmcc_opening_legs_read')).toBe(false)
+    expect(debug.mock.calls.some((call) => call[1] === 'legs_by_position_read')).toBe(false)
   })
 
-  it('scales the initial net debit by contracts (3 contracts → 6900.0000)', () => {
+  it('scales the basis total by contracts (3 contracts → 6900.0000)', () => {
     const db = makeTestDb()
     createPmccPosition(db, makePmccPayload(3))
     const [item] = listPositions(db)
-    expect(item.pmcc?.initialNetDebit).toBe('6900.0000')
+    expect(item.pmcc?.basisTotal).toBe('6900.0000')
+    expect(item.pmcc?.basisPerShare).toBe('23.0000')
     expect(item.pmcc?.long.contracts).toBe(3)
     expect(item.pmcc?.short.contracts).toBe(3)
   })
 
-  it('computes the initial net debit from the leg fills, not the rounded basis (3 contracts, $0.01 fees → 6900.0200)', () => {
+  it('computes the basis total from the legs, not basis_per_share × 300 (3 contracts, $0.01 fees → 6900.0200)', () => {
     const db = makeTestDb()
     const payload = makePmccPayload(3)
     createPmccPosition(db, {
@@ -422,7 +427,11 @@ describe('listPositions — PMCC summary (US-101)', () => {
       short: { ...payload.short, fees: 0.01 }
     })
     const [item] = listPositions(db)
-    expect(item.pmcc?.initialNetDebit).toBe('6900.0200')
+    expect(item.pmcc?.basisTotal).toBe('6900.0200')
+    // basis_per_share rounds to 4 dp, so × 300 would drift away from the legs' cash total.
+    expect(item.pmcc?.basisTotal).not.toBe(
+      new Decimal(item.effectiveCostBasis).times(300).toFixed(4)
+    )
   })
 
   it('omits a PMCC whose short leg row is missing and warns pmcc_list_summary_incomplete', () => {
@@ -435,14 +444,21 @@ describe('listPositions — PMCC summary (US-101)', () => {
     expect(warn).toHaveBeenCalledWith({ positionId: position.id }, 'pmcc_list_summary_incomplete')
   })
 
-  it('omits a PMCC whose leg fill price is missing and warns pmcc_list_summary_incomplete', () => {
+  it('lists a PMCC whose leg fill price is missing, with the basis from its premiums (US-103)', () => {
     const db = makeTestDb()
     const { position, shortLeg } = createPmccPosition(db, makePmccPayload())
     db.prepare('UPDATE legs SET fill_price = NULL WHERE id = ?').run(shortLeg.id)
     const warn = vi.spyOn(logger, 'warn')
 
-    expect(listPositions(db)).toEqual([])
-    expect(warn).toHaveBeenCalledWith({ positionId: position.id }, 'pmcc_list_summary_incomplete')
+    const [item] = listPositions(db)
+
+    expect(item.id).toBe(position.id)
+    expect(item.pmcc?.basisPerShare).toBe('23.0000')
+    expect(item.pmcc?.basisTotal).toBe('2300.0000')
+    expect(warn).not.toHaveBeenCalledWith(
+      { positionId: position.id },
+      'pmcc_list_summary_incomplete'
+    )
   })
 
   it('omits a PMCC whose LEAPS expiration cannot be parsed into a DTE', () => {
@@ -455,7 +471,7 @@ describe('listPositions — PMCC summary (US-101)', () => {
     expect(warn).toHaveBeenCalledWith({ positionId: position.id }, 'pmcc_list_summary_incomplete')
   })
 
-  it('lists a PMCC with zeroed snapshot money fields (debit still from its legs) when its cost-basis snapshot is missing', () => {
+  it('lists a PMCC with zeroed snapshot money fields (basis still from its legs) when its cost-basis snapshot is missing', () => {
     const db = makeTestDb()
     const { position } = createPmccPosition(db, makePmccPayload())
     db.prepare('DELETE FROM cost_basis_snapshots WHERE position_id = ?').run(position.id)
@@ -463,8 +479,96 @@ describe('listPositions — PMCC summary (US-101)', () => {
     const [item] = listPositions(db)
 
     expect(item.id).toBe(position.id)
-    expect(item.pmcc?.initialNetDebit).toBe('2300.0000')
+    expect(item.pmcc?.basisPerShare).toBe('23.0000')
+    expect(item.pmcc?.basisTotal).toBe('2300.0000')
     expect(item.premiumCollected).toBe('0.0000')
     expect(item.effectiveCostBasis).toBe('0.0000')
+  })
+
+  it('omits a PMCC with no legs at all and warns pmcc_list_summary_incomplete', () => {
+    const db = makeTestDb()
+    const { position } = createPmccPosition(db, makePmccPayload())
+    db.prepare('DELETE FROM legs WHERE position_id = ?').run(position.id)
+    const warn = vi.spyOn(logger, 'warn')
+
+    expect(listPositions(db)).toEqual([])
+    expect(warn).toHaveBeenCalledWith({ positionId: position.id }, 'pmcc_list_summary_incomplete')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// US-103 Area 7 — running cost basis on PmccListSummary
+// ---------------------------------------------------------------------------
+
+describe('listPositions — PMCC running basis (US-103)', () => {
+  it('drops initialNetDebit from the PMCC summary', () => {
+    const db = makeTestDb()
+    createPmccPosition(db, makePmccPayload())
+    const [item] = listPositions(db)
+    expect(item.pmcc).not.toHaveProperty('initialNetDebit')
+  })
+
+  it('reads the running basis after an expiration, a new short and a short-call roll (21.8000 / 2180.0000)', () => {
+    const db = makeTestDb()
+    const { position } = createPmccPosition(db, makePmccPayload())
+    const [before] = listPositions(db)
+    const F = pmccFixtures(position.id, isoDate)
+    const record = (
+      legs: typeof F.OPEN,
+      triggerEvent: 'PMCC_SHORT_EXPIRED' | 'PMCC_SHORT_OPEN' | 'PMCC_SHORT_ROLL'
+    ): void =>
+      db.transaction(() => {
+        insertLegs(db, legs)
+        appendPmccSnapshot(db, position.id, {
+          triggerEvent,
+          eventDate: legs[0].fillDate,
+          now: new Date().toISOString()
+        })
+      })()
+    record(F.EXPIRE_1, 'PMCC_SHORT_EXPIRED')
+    record(F.SHORT_2, 'PMCC_SHORT_OPEN')
+    record(F.SHORT_ROLL, 'PMCC_SHORT_ROLL')
+
+    const [after] = listPositions(db)
+
+    expect(after.pmcc?.basisPerShare).toBe('21.8000')
+    expect(after.pmcc?.basisTotal).toBe('2180.0000')
+    expect(after.effectiveCostBasis).toBe('21.8000')
+    // No new LEAPS_OPEN, so the long summary is unchanged.
+    expect(after.pmcc?.long).toEqual(before.pmcc?.long)
+    // Shipped US-101 rule: the latest SHORT_CALL_OPEN (SHORT_2) supersedes the opening short.
+    const [short2] = F.SHORT_2
+    expect(after.pmcc?.short).toEqual({
+      strike: '108.0000',
+      expiration: short2.expiration,
+      dte: computeDte(short2.expiration),
+      contracts: short2.contracts
+    })
+  })
+
+  it('leaves wheel items deep-equal to their pre-US-103 shape alongside a PMCC', () => {
+    const db = makeTestDb()
+    createPmccPosition(db, makePmccPayload())
+    const { position } = createPosition(db, VALID_PAYLOAD)
+
+    const wheel = listPositions(db).find((i) => i.id === position.id)
+
+    expect(wheel).toEqual({
+      id: position.id,
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      status: 'ACTIVE',
+      premiumCollected: '250.0000',
+      effectiveCostBasis: '177.5000',
+      profitTargetPercent: null,
+      strategyType: 'WHEEL',
+      pmcc: null,
+      strike: '180.0000',
+      expiration: EXPIRATION,
+      dte: computeDte(EXPIRATION),
+      instrumentType: 'PUT',
+      contracts: 1,
+      entryPremiumPerContract: '2.5000'
+    })
   })
 })

@@ -293,7 +293,8 @@ it('delegates a PMCC item to PmccPositionRow', () => {
     pmcc: {
       long: { strike: '80.0000', expiration: '2027-09-17', dte: 368, contracts: 1 },
       short: { strike: '110.0000', expiration: '2026-10-16', dte: 32, contracts: 1 },
-      initialNetDebit: '2300.0000'
+      basisPerShare: '21.8000',
+      basisTotal: '2180.0000'
     },
     strike: null,
     expiration: null,
@@ -305,5 +306,6 @@ it('delegates a PMCC item to PmccPositionRow', () => {
   renderRow(item)
   expect(screen.getByTestId('position-card')).toHaveTextContent('PMCC')
   expect(screen.getByText('LEAPS · 2027-09-17')).toBeInTheDocument()
-  expect(screen.getByText('$2,300.00 net debit')).toBeInTheDocument()
+  expect(screen.getByText('$2,180.00')).toBeInTheDocument()
+  expect(screen.getByTestId('position-card')).not.toHaveTextContent('net debit')
 })

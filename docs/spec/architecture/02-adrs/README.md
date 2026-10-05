@@ -2,7 +2,7 @@
 
 Each ADR captures one architectural choice that emerged from a plan/story. Decisions are grouped below by theme; many ADRs are referenced by multiple feature pages.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,us-53-54-55,us-57-58,us-97,us-98,us-99,us-101,us-121,missing-ac -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,us-53-54-55,us-57-58,us-97,us-98,us-99,us-101,us-121,us-103,missing-ac -->
 
 ## Engine & architecture
 
@@ -22,6 +22,10 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [dte-aware-delta-severity](./dte-aware-delta-severity.md) — Delta-severity thresholds drop by 0.05 when DTE ≤ 7; gauge appends `· TIGHT`.
 - [shared-pure-pmcc-opening-debit](./shared-pure-pmcc-opening-debit.md) — One pure `calculatePmccOpeningDebit` in `costbasis.ts` feeds the service, list, detail and form preview; list/detail recompute the debit from the legs, never from the rounded basis (US-101).
 - [pmcc-validation-pure-engine-mirrored-by-form-schema](./pmcc-validation-pure-engine-mirrored-by-form-schema.md) — `openPmcc` owns the entry rules with dotted `PmccField` paths and a typed `__pair__` slot; the renderer schema mirrors them in the same order; four rules are boundary-only; `handleIpcCall` joins Zod paths with `.` (US-101).
+- [pure-pmcc-ledger-engine](./pure-pmcc-ledger-engine.md) — One pure `calculatePmccLedger` folds signed per-share contributions (positive = cash out) in dollars and divides once; it never sees legs, roles or strike deltas (US-103).
+- [pmcc-contributions-by-role-and-action](./pmcc-contributions-by-role-and-action.md) — Side comes from the leg role via an exhaustive `PMCC_LEG_SIDE` record, sign from the action; each roll chain is one contribution netted by action (US-103).
+- [shared-roll-chain-helper](./shared-roll-chain-helper.md) — `groupRollChains` in `services/roll-chains.ts` nets `SELL − BUY` for both wheel and PMCC (replacing the assignment service's private copy); `leg-rows.ts` is the one legs reader, replacing `readPmccOpeningLegs` (US-103).
+- [pmcc-effective-share-cost-anchors-on-newest-long-buy](./pmcc-effective-share-cost-anchors-on-newest-long-buy.md) — `Effective share cost` uses the strike of the newest long-side BUY leg (`LEAPS_OPEN` or a LEAPS roll's `ROLL_TO`); no strike-delta term in the basis (US-103).
 
 ## Persistence & data model
 
@@ -41,6 +45,8 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [per-leg-fees-on-legs-table](./per-leg-fees-on-legs-table.md) — Migration 017 adds `legs.fees` (4-dp TEXT, default `'0.0000'`); fees attach to their own leg, never to the snapshot or the fill price (US-101).
 - [pmcc-opening-snapshot-ledger-convention](./pmcc-opening-snapshot-ledger-convention.md) — One `PMCC_OPEN` snapshot in US-103's convention (basis per share includes fees; premium = short credit after fees); displayed debit is recomputed from legs (US-101).
 - [pmcc-list-item-discriminated-union](./pmcc-list-item-discriminated-union.md) — `WheelListItem | PmccListItem` on `strategyType`; typed-null wheel fields let the calendar, polling and row display skip PMCC; wheel-only jobs untouched (US-101).
+- [pmcc-snapshot-single-writer-in-caller-transaction](./pmcc-snapshot-single-writer-in-caller-transaction.md) — `appendPmccSnapshot` is the only PMCC snapshot writer; it re-reads legs and inserts one row inside the caller's `db.transaction`, owning none of its own; `createPmccPosition` now uses it (US-103).
+- [pmcc-ledger-recomputed-from-legs](./pmcc-ledger-recomputed-from-legs.md) — Detail `pmccLedger` and list `basisPerShare` / `basisTotal` are recomputed from legs server-side on every read; snapshots are the audit chain; the renderer formats only (US-103).
 
 ## IPC contracts
 
@@ -152,6 +158,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 
 - [fake-provider-option-chain-delay](./fake-provider-option-chain-delay.md) — `FAKE_OPTION_CHAIN_DELAY_MS` delays only the fake's `getOptionChainSnapshot`, so the chain-loading notice is assertable (US-101).
 - [storage-failure-e2e-via-sqlite-trigger](./storage-failure-e2e-via-sqlite-trigger.md) — A `BEFORE INSERT … RAISE(ABORT)` trigger on `cost_basis_snapshots` replaces `chmod`; it fails the transaction's last write, so a pass proves the rollback (US-101).
+- [dev-only-pmcc-leg-event-ipc](./dev-only-pmcc-leg-event-ipc.md) — `_test:pmcc-record-leg-event` (behind `NODE_ENV === 'test'`) inserts legs and calls the real writer in one transaction so e2e can land post-entry events before their stories ship (US-103).
 
 <!-- /generated -->
 

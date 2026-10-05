@@ -61,7 +61,8 @@ const baseDetail: PositionDetail = {
   costBasisSnapshot: baseSnapshot,
   legs: [baseLeg],
   allSnapshots: [baseSnapshot],
-  initialNetDebit: null
+  initialNetDebit: null,
+  pmccLedger: null
 }
 
 const baseOptionSnapshot: OptionSnapshot = {
@@ -375,5 +376,49 @@ describe('PMCC position', () => {
     expect(screen.queryByText(SHARES_VERDICT.label)).not.toBeInTheDocument()
     expect(screen.queryByText(SHARES_VERDICT.sub)).not.toBeInTheDocument()
     expect(screen.queryByText('Cost basis & history')).not.toBeInTheDocument()
+  })
+
+  // [US-103] The cash-ledger drawer stacks beneath the leg reference cards.
+  const pmccLedgerDetail: PositionDetail = {
+    ...pmccDetail,
+    pmccLedger: {
+      basisPerShare: '21.8000',
+      basisTotal: '2180.0000',
+      leapsCostPerShare: '25.0000',
+      leapsCostTotal: '2500.0000',
+      shortCreditsPerShare: '3.2000',
+      shortCreditsTotal: '320.0000',
+      effectiveShareCost: '101.8000',
+      premiumRecoveredPercent: '12.8000'
+    }
+  }
+
+  it('renders the Cost basis drawer after the Buy LEAPS call card', () => {
+    render(<PositionCockpit detail={pmccLedgerDetail} />)
+    const leapsHeading = screen.getByText('Buy LEAPS call')
+    const drawerButton = screen.getByRole('button', { name: /Cost basis\s*6 fields/ })
+    expect(
+      leapsHeading.compareDocumentPosition(drawerButton) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    expect(screen.getByText('Cost basis / share')).toBeVisible()
+    expect(screen.queryByText('Cost basis & history')).not.toBeInTheDocument()
+  })
+
+  it('renders no Cost basis drawer when pmccLedger is null', () => {
+    render(<PositionCockpit detail={pmccDetail} />)
+    expect(screen.queryByRole('button', { name: /Cost basis\s*6 fields/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('Cost basis / share')).not.toBeInTheDocument()
+  })
+})
+
+describe('wheel position never renders the PMCC ledger', () => {
+  it.each([
+    ['CSP_OPEN', baseDetail],
+    ['HOLDING_SHARES', noActiveLegDetail],
+    ['WHEEL_COMPLETE', wheelCompleteDetail]
+  ])('%s shows neither Cost basis / share nor Effective share cost', (_phase, detail) => {
+    render(<PositionCockpit detail={detail} />)
+    expect(screen.queryByText('Cost basis / share')).not.toBeInTheDocument()
+    expect(screen.queryByText('Effective share cost')).not.toBeInTheDocument()
   })
 })

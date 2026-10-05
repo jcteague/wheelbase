@@ -5,6 +5,7 @@
 import fc from 'fast-check'
 import Decimal from 'decimal.js'
 import { WheelPhase } from '../types'
+import type { PmccContribution } from '../costbasis'
 
 const MONEY_SCALE = 10_000
 const UPPERCASE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
@@ -47,3 +48,16 @@ export const wheelPhase = fc.constantFrom(...WheelPhase.options)
 export const ticker = fc
   .array(fc.constantFrom(...UPPERCASE), { minLength: 1, maxLength: 5 })
   .map((letters) => letters.join(''))
+
+/**
+ * One signed PMCC ledger contribution: a debit (+) or credit (−) per share on either side,
+ * with non-negative fees — what `calculatePmccLedger` folds.
+ */
+export const pmccContribution: fc.Arbitrary<PmccContribution> = fc.record({
+  side: fc.constantFrom('LONG' as const, 'SHORT' as const),
+  cashPerShare: fc
+    .tuple(positiveMoney(100), fc.boolean())
+    .map(([amount, negative]) => (negative ? `-${amount}` : amount)),
+  contracts,
+  fees: nonNegativeMoney(10)
+})

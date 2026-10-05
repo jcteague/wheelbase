@@ -6,6 +6,7 @@ import {
   fmtDate,
   fmtMoney,
   fmtPct,
+  fmtPct1,
   parseFinite,
   pnlClass,
   pnlColor
@@ -32,6 +33,25 @@ describe('fmtPct', () => {
 
   it('formats negative percentages without decimal places', () => {
     expect(fmtPct(-15)).toBe('-15%')
+  })
+})
+
+// [US-103] Premium recovered renders as a one-decimal percent, rounded half-up.
+describe('fmtPct1', () => {
+  it('keeps a trailing zero at one decimal', () => {
+    expect(fmtPct1('8.0000')).toBe('8.0%')
+  })
+
+  it('rounds a 4-dp value over 100 to one decimal', () => {
+    expect(fmtPct1('101.7778')).toBe('101.8%')
+  })
+
+  it('formats a one-decimal value unchanged', () => {
+    expect(fmtPct1('12.8000')).toBe('12.8%')
+  })
+
+  it('rounds a half up rather than to even', () => {
+    expect(fmtPct1('0.0500')).toBe('0.1%')
   })
 })
 

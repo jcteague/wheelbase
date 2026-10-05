@@ -15,6 +15,10 @@ export function fmtPct(value: number): string {
   return `${Math.round(value)}%`
 }
 
+export function fmtPct1(value: string): string {
+  return `${new Decimal(value).toFixed(1, Decimal.ROUND_HALF_UP)}%`
+}
+
 export function fmtDate(value: string): string {
   const [year, month, day] = value.split('-').map(Number)
   return new Date(year, month - 1, day).toLocaleDateString(undefined, {

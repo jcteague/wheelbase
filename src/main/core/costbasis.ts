@@ -390,3 +390,68 @@ export function calculatePmccOpeningDebit(input: PmccOpeningDebitInput): PmccOpe
     debitToWidthPercent
   }
 }
+
+export type PmccLedgerSide = 'LONG' | 'SHORT'
+
+/** One signed cash flow on a PMCC: `+` debit, `−` credit per share, plus fees in dollars. */
+export interface PmccContribution {
+  side: PmccLedgerSide
+  cashPerShare: string
+  contracts: number
+  fees: string
+}
+
+export interface PmccLedgerInput {
+  leapsContracts: number
+  longStrike: string | null
+  contributions: PmccContribution[]
+}
+
+export interface PmccLedgerResult {
+  basisPerShare: string
+  basisTotal: string
+  leapsCostPerShare: string
+  leapsCostTotal: string
+  shortCreditsPerShare: string
+  shortCreditsTotal: string
+  effectiveShareCost: string | null
+  premiumRecoveredPercent: string | null
+}
+
+function contributionDollars(contribution: PmccContribution): Decimal {
+  return new Decimal(contribution.cashPerShare)
+    .times(sharesFromContracts(contribution.contracts))
+    .plus(contribution.fees)
+}
+
+function sumSide(contributions: PmccContribution[], side: PmccLedgerSide): Decimal {
+  return contributions
+    .filter((contribution) => contribution.side === side)
+    .reduce((total, contribution) => total.plus(contributionDollars(contribution)), new Decimal(0))
+}
+
+export function calculatePmccLedger(input: PmccLedgerInput): PmccLedgerResult {
+  if (!Number.isInteger(input.leapsContracts) || input.leapsContracts <= 0) {
+    throw new Error('leapsContracts must be a positive integer')
+  }
+  const shares = sharesFromContracts(input.leapsContracts)
+
+  const leapsCostTotal = sumSide(input.contributions, 'LONG')
+  const shortCreditsTotal = sumSide(input.contributions, 'SHORT').negated()
+  const basisTotal = leapsCostTotal.minus(shortCreditsTotal)
+  const basisPerShare = basisTotal.dividedBy(shares)
+
+  return {
+    basisPerShare: money4(basisPerShare),
+    basisTotal: money4(basisTotal),
+    leapsCostPerShare: money4(leapsCostTotal.dividedBy(shares)),
+    leapsCostTotal: money4(leapsCostTotal),
+    shortCreditsPerShare: money4(shortCreditsTotal.dividedBy(shares)),
+    shortCreditsTotal: money4(shortCreditsTotal),
+    effectiveShareCost:
+      input.longStrike === null ? null : money4(basisPerShare.plus(input.longStrike)),
+    premiumRecoveredPercent: leapsCostTotal.lte(0)
+      ? null
+      : money4(shortCreditsTotal.dividedBy(leapsCostTotal).times(100))
+  }
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { InstrumentType, LegAction, LegRole, WheelPhase } from './types'
+import { InstrumentType, LegAction, LegRole, WheelPhase, isPmccLegRole } from './types'
 
 describe('InstrumentType', () => {
   it('accepts STOCK as a valid instrument type', () => {
@@ -44,6 +44,51 @@ describe('LegRole', () => {
     expect(LegRole.parse('LEAPS_OPEN')).toBe('LEAPS_OPEN')
     expect(LegRole.parse('SHORT_CALL_OPEN')).toBe('SHORT_CALL_OPEN')
   })
+})
+
+const PMCC_LEG_ROLES = [
+  'LEAPS_OPEN',
+  'LEAPS_CLOSE',
+  'SHORT_CALL_OPEN',
+  'SHORT_CALL_CLOSE',
+  'SHORT_CALL_EXPIRED',
+  'SHORT_CALL_ASSIGNED'
+] as const
+
+const WHEEL_LEG_ROLES = [
+  'CSP_OPEN',
+  'CSP_CLOSE',
+  'CC_OPEN',
+  'CC_CLOSE',
+  'CC_EXPIRED',
+  'ASSIGN',
+  'CALLED_AWAY',
+  'ROLL_FROM',
+  'ROLL_TO',
+  'EXPIRE'
+] as const
+
+describe('LegRole — PMCC roles', () => {
+  it('contains all six PMCC leg roles', () => {
+    expect(LegRole.options).toEqual(expect.arrayContaining([...PMCC_LEG_ROLES]))
+  })
+
+  it('still contains every wheel leg role', () => {
+    expect(LegRole.options).toEqual(expect.arrayContaining([...WHEEL_LEG_ROLES]))
+  })
+})
+
+describe('isPmccLegRole', () => {
+  it.each(PMCC_LEG_ROLES)('returns true for %s', (role) => {
+    expect(isPmccLegRole(role)).toBe(true)
+  })
+
+  it.each(['CSP_OPEN', 'ROLL_FROM', 'ROLL_TO', 'ASSIGN'] as const)(
+    'returns false for %s',
+    (role) => {
+      expect(isPmccLegRole(role)).toBe(false)
+    }
+  )
 })
 
 describe('WheelPhase', () => {

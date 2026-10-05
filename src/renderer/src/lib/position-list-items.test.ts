@@ -131,7 +131,7 @@ describe('toWheelListItem', () => {
 })
 
 describe('toPmccListItem', () => {
-  it('builds the PMCC list row with both leg summaries and the opening debit', () => {
+  it('builds the PMCC list row with both leg summaries and the running cost basis', () => {
     expect(toPmccListItem(pmccResponse(), NOW)).toEqual<PmccListItem>({
       id: 'pos-2',
       ticker: 'XYZ',
@@ -144,7 +144,8 @@ describe('toPmccListItem', () => {
       pmcc: {
         long: { strike: '80.0000', expiration: '2027-09-17', dte: 368, contracts: 1 },
         short: { strike: '110.0000', expiration: '2026-10-16', dte: 32, contracts: 1 },
-        initialNetDebit: '2300.0000'
+        basisPerShare: '23.0000',
+        basisTotal: '2300.0000'
       },
       strike: null,
       expiration: null,
@@ -153,6 +154,17 @@ describe('toPmccListItem', () => {
       contracts: null,
       entryPremiumPerContract: null
     })
+  })
+
+  it('fills basisPerShare from the opening snapshot and basisTotal from the opening debit (US-103)', () => {
+    const res = pmccResponse()
+    const item = toPmccListItem(res, NOW)
+    expect(item?.pmcc.basisPerShare).toBe(res.costBasisSnapshot.basisPerShare)
+    expect(item?.pmcc.basisTotal).toBe(res.openingDebit.initialNetDebit)
+  })
+
+  it('no longer carries initialNetDebit on the PMCC summary (US-103)', () => {
+    expect(toPmccListItem(pmccResponse(), NOW)?.pmcc).not.toHaveProperty('initialNetDebit')
   })
 
   it('returns null when a leg expiration cannot be turned into a DTE (the list omits it too)', () => {

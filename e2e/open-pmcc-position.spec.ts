@@ -4,9 +4,6 @@
 // 368 / 32 DTE labels hold; the money figures are date-independent.
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ElectronApplication, Locator, Page } from 'playwright'
-import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
 import { localDate, localToday } from './dates'
 import { selectDate } from './helpers'
 import {
@@ -18,6 +15,7 @@ import {
   fieldOf,
   fillPmccLegs,
   invokedIpcChannels,
+  closePmcc,
   launchPmcc,
   legSection,
   listPositions,
@@ -36,6 +34,7 @@ import {
   sqlite,
   switchLegToManual,
   tableCount,
+  tempDbPath,
   typeAndBlur,
   xyzChainFixtures,
   type PmccLegFixture
@@ -48,16 +47,12 @@ let app: ElectronApplication | undefined
 let dbPath: string
 
 afterEach(async () => {
-  await app?.close()
+  await closePmcc(app, dbPath)
   app = undefined
-  for (const suffix of ['', '-wal', '-shm']) {
-    const file = `${dbPath}${suffix}`
-    if (fs.existsSync(file)) fs.unlinkSync(file)
-  }
 })
 
 async function launch(opts: Parameters<typeof launchPmcc>[1] = {}): Promise<Page> {
-  dbPath = path.join(os.tmpdir(), `wheelbase-e2e-pmcc-${Date.now()}.db`)
+  dbPath = tempDbPath('pmcc')
   const launched = await launchPmcc(dbPath, opts)
   app = launched.app
   return launched.page
@@ -416,7 +411,8 @@ describe('Scenario: Record the position and view both legs', () => {
     const row = (await positionRows(page).first().textContent()) ?? ''
     expect(row).toContain('PMCC')
     expect(row).toContain('LEAPS + short call open')
-    expect(row).toContain('$2,300.00 net debit')
+    expect(row).toContain('$2,300.00')
+    expect(row).not.toContain('net debit')
   })
 
   it('its detail page shows both legs with their quantities, actual fills, fill dates, strikes, and expirations', async () => {

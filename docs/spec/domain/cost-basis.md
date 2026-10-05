@@ -1,6 +1,6 @@
 # Cost Basis
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101,us-103 -->
 
 ## Overview
 
@@ -47,17 +47,28 @@ the per-position `positions.profit_target_percent` override (added by
 migration `005`) and falls back to `DEFAULT_PROFIT_TARGET_PERCENT = 50` when
 `null`.
 
-A **PMCC** position (us-101) has its own opening math:
-`calculatePmccOpeningDebit` turns the two opening legs (long LEAPS call,
-short call) into the LEAPS cost, short credit, fees, initial net debit, basis
-per share and debit-to-width ratio. The service persists one `PMCC_OPEN`
-snapshot from it. The renderer preview, the positions list and the detail
-page call the same function, so all four surfaces show the same numbers. See
-[us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md).
+A **PMCC** position does not use the wheel formula. Its opening math
+(us-101) is `calculatePmccOpeningDebit`, which turns the two opening legs
+(long LEAPS call, short call) into the LEAPS cost, short credit, fees, initial
+net debit and debit-to-width ratio. From there on, its basis is a **cash
+ledger** (us-103): `calculatePmccLedger` sums every PMCC fill as signed cash —
+LEAPS debits plus fees, minus short-call credits, each roll chain counted
+once as its net — and divides by the LEAPS shares. There is no strike term,
+and the basis can go negative once short credits exceed what the LEAPS cost.
+
+One service-layer writer, `appendPmccSnapshot`, appends a `PMCC_*` snapshot
+inside the transaction of the leg event that triggered it, so a failed event
+leaves neither a leg nor a snapshot. The read paths (`getPosition`,
+`listPositions`) do **not** read the basis back from snapshots. They rebuild
+the ledger from the legs on every read, and the snapshots stay as the audit
+chain. The detail page shows the ledger in a six-cell `Cost basis` drawer;
+the list row shows the running total. See
+[us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md) and
+[us-103 — PMCC cost basis](../features/us-103-pmcc-cost-basis.md).
 
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101,us-103 -->
 
 ## Key decisions
 
@@ -326,9 +337,12 @@ pnlPercent, maxProfit }` as 4-dp decimal strings. The renderer imports
 - **Why:** US-103's running PMCC basis must reproduce the fee-inclusive
   $2,302.00 without adding fees a second time, and it defines
   `total_premium_collected` as short credits after fees. Writing the first
-  row in that convention lets US-103 extend the chain rather than migrate it.
+  row in that convention let US-103 extend the chain rather than migrate it.
+  Since US-103 the row is written by `appendPmccSnapshot`
+  (`triggerEvent: 'PMCC_OPEN'`), which produces the same values.
 - **ADR:** [pmcc-opening-snapshot-ledger-convention](../architecture/02-adrs/pmcc-opening-snapshot-ledger-convention.md)
-- **Driven by:** [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md)
+- **Driven by:** [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md),
+  [us-103 — PMCC cost basis](../features/us-103-pmcc-cost-basis.md)
 
 ### Per-leg fees live on the leg, not the snapshot
 
@@ -342,9 +356,114 @@ pnlPercent, maxProfit }` as 4-dp decimal strings. The renderer imports
 - **ADR:** [per-leg-fees-on-legs-table](../architecture/02-adrs/per-leg-fees-on-legs-table.md)
 - **Driven by:** [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md)
 
+### PMCC basis is a replay of signed cash, not a prev-snapshot delta
+
+- **Decision:** `calculatePmccLedger` in `src/main/core/costbasis.ts` folds
+  a list of signed per-share contributions (`side`, `cashPerShare`,
+  `contracts`, `fees`). It never sees legs, leg roles or strikes. It is not
+  an extension of `calculateRollBasis`.
+- **Why:** The story's formula — long debits plus fees, minus short credits,
+  plus or minus roll nets — is "sum the signed cash". Signing by action at
+  the boundary means one rule covers an opening debit, an opening credit, a
+  buyback, a short roll and a LEAPS roll, with no `kind` switch in the
+  engine. Because strike never enters the fold, "no strike-delta term on a
+  LEAPS roll" holds by construction. The wheel's `calculateRollBasis` is a
+  delta from the previous snapshot; the PMCC ledger replays every fill.
+- **ADR:** [pure-pmcc-ledger-engine](../architecture/02-adrs/pure-pmcc-ledger-engine.md)
+- **Driven by:** [us-103 — PMCC cost basis](../features/us-103-pmcc-cost-basis.md)
+
+### Side comes from the leg role, sign comes from the action
+
+- **Decision:** `buildPmccContributions` (service layer,
+  `src/main/services/pmcc-ledger.ts`) maps each PMCC leg role to a side
+  through an exhaustive `Record<PmccLegRole, PmccLedgerSide>` (`LEAPS_*` →
+  `LONG`, `SHORT_CALL_*` → `SHORT`). It signs the cash by action: `BUY` pays
+  out, `SELL` receives, and `EXPIRE` / `ASSIGN` / `EXERCISE` contribute zero.
+  A roll chain becomes **one** contribution of `Σ BUY − Σ SELL`, on the
+  `LONG` side when its `ROLL_FROM` is a `SELL` (closing the LEAPS), else
+  `SHORT`. A non-PMCC role is skipped with a WARN.
+- **Why:** A short-call buyback and a LEAPS purchase are both `BUY CALL`, so
+  the side cannot come from action or strike. Every PMCC event is cash with
+  a direction, so the sign must come from action. With an exhaustive record,
+  a new PMCC role that has no side fails to compile.
+- **ADR:** [pmcc-contributions-by-role-and-action](../architecture/02-adrs/pmcc-contributions-by-role-and-action.md)
+- **Driven by:** [us-103 — PMCC cost basis](../features/us-103-pmcc-cost-basis.md)
+
+### One shared roll-chain helper nets by action
+
+- **Decision:** `groupRollChains` in `src/main/services/roll-chains.ts`
+  replaced the private `groupRollsByChain` in `assignCspPosition`. It nets
+  each chain as `Σ SELL − Σ BUY` premiums (positive = credit). The wheel
+  assignment service and the PMCC ledger both use it.
+- **Why:** For a wheel roll, `ROLL_TO − ROLL_FROM` and `SELL − BUY` are the
+  same number, so the move does not change wheel behaviour. Netting by
+  action is also correct for the inverted LEAPS roll (`ROLL_FROM` = SELL,
+  `ROLL_TO` = BUY). US-16 had asked for the helper to be shared once a
+  second consumer arrived, and the PMCC ledger is that consumer.
+- **ADR:** [shared-roll-chain-helper](../architecture/02-adrs/shared-roll-chain-helper.md)
+- **Driven by:** [us-103 — PMCC cost basis](../features/us-103-pmcc-cost-basis.md),
+  [us-16 — Sequential roll basis fix](../features/us-16-cost-basis-sequential-rolls.md)
+
+### `appendPmccSnapshot` is the one writer, inside the caller's transaction
+
+- **Decision:** Every PMCC leg event inserts its legs and then calls
+  `appendPmccSnapshot(db, positionId, { triggerEvent, eventDate, now })`
+  inside its own `db.transaction(...)`. The writer re-reads the legs,
+  recomputes the ledger and inserts one snapshot. It opens no transaction
+  of its own. `createPmccPosition` uses it for the `PMCC_OPEN` row.
+- **Why:** The story requires the recalculation to share the transaction of
+  the triggering leg event, so a failure leaves neither a leg nor a
+  snapshot. With one writer, US-104/105/115/119 cannot restate the formula
+  or the column mapping. If the writer owned the transaction it would nest a
+  savepoint and hide the atomicity contract.
+- **ADR:** [pmcc-snapshot-single-writer-in-caller-transaction](../architecture/02-adrs/pmcc-snapshot-single-writer-in-caller-transaction.md)
+- **Driven by:** [us-103 — PMCC cost basis](../features/us-103-pmcc-cost-basis.md)
+
+### PMCC display figures are recomputed from legs; snapshots are the audit chain
+
+- **Decision:** `getPosition` returns `pmccLedger` and `listPositions`
+  returns `basisPerShare` / `basisTotal` on `PmccListSummary`. Both rebuild
+  them from the legs on every read (`pmccLedgerFromLegs`), not from the
+  latest snapshot. Snapshots remain the per-event audit chain, which US-109
+  will render.
+- **Why:** A rounded per-share basis drifts when multiplied back to a total
+  (3 contracts with $0.01 fees per leg → `6900.0200`). Recomputing from the
+  fills also keeps the drawer correct after a direct SQL import, or when a
+  consumer story forgets to write a snapshot. Tests check that the newest
+  snapshot's `basis_per_share` matches the ledger after every event.
+- **ADR:** [pmcc-ledger-recomputed-from-legs](../architecture/02-adrs/pmcc-ledger-recomputed-from-legs.md)
+- **Driven by:** [us-103 — PMCC cost basis](../features/us-103-pmcc-cost-basis.md)
+
+### `Effective share cost` anchors on the newest long-side BUY
+
+- **Decision:** `effectiveShareCost = currentLongStrike + basisPerShare`.
+  `currentLongStrike` is the strike of the newest long-side BUY leg: the
+  `LEAPS_OPEN` at entry, then the `ROLL_TO` of the latest LEAPS roll. A
+  short roll's BUY half does not count.
+- **Why:** The story says a LEAPS strike change surfaces through the
+  effective-share-cost line, not through the basis. Anchoring on the newest
+  long BUY re-anchors the line after a LEAPS roll ($104.30 in the fixture)
+  with no extra rule.
+- **ADR:** [pmcc-effective-share-cost-anchors-on-newest-long-buy](../architecture/02-adrs/pmcc-effective-share-cost-anchors-on-newest-long-buy.md)
+- **Driven by:** [us-103 — PMCC cost basis](../features/us-103-pmcc-cost-basis.md)
+
+### PMCC trigger-event vocabulary is owned by US-103
+
+- **Decision:** `PmccTriggerEvent` (`src/main/schemas.ts`) is a Zod enum:
+  `PMCC_OPEN`, `PMCC_SHORT_OPEN`, `PMCC_SHORT_EXPIRED`, `PMCC_SHORT_CLOSED`,
+  `PMCC_SHORT_ROLL`, `PMCC_LEAPS_ROLL`. `TriggerEvent` is the wheel values
+  plus these. The four reserved PMCC leg roles (`SHORT_CALL_CLOSE`,
+  `SHORT_CALL_EXPIRED`, `LEAPS_CLOSE`, `SHORT_CALL_ASSIGNED`) entered
+  `LegRole` at the same time. No migration was needed, because neither
+  column has a CHECK constraint.
+- **Why:** The `trigger_event` column has no CHECK, so letting each consumer
+  story coin its own name would guarantee drift. US-104 passes
+  `'PMCC_SHORT_ROLL'`; it does not define it.
+- **Driven by:** [us-103 — PMCC cost basis](../features/us-103-pmcc-cost-basis.md)
+
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101,us-103 -->
 
 ## Cost basis on each lifecycle event
 
@@ -770,7 +889,8 @@ initialNetDebit     = $2,302.00
 debitToWidthPercent = 76.67%        (unchanged)
 ```
 
-Snapshot row written (`trigger_event = 'PMCC_OPEN'`):
+Snapshot row written (`trigger_event = 'PMCC_OPEN'`, by `appendPmccSnapshot`
+after the two legs are inserted — see [PMCC running ledger](#pmcc-running-ledger-us-103)):
 
 | Column                    | Value                                                       |
 | ------------------------- | ----------------------------------------------------------- |
@@ -785,20 +905,147 @@ with the $1 + $1 fees. The position row is written with
 `opened_date = long fill date`. The two legs are not a roll pair
 (`roll_chain_id` is `NULL`) and each carries its own `fees`.
 
-**List and detail recompute from the legs.** The positions list
-(`PmccListSummary.initialNetDebit`) and the detail page do **not** multiply
-the rounded `basis_per_share` back up. They run the two legs' fills and fees
-through `calculatePmccOpeningDebit` again. Example: 3 contracts with $0.01
-fees per leg gives an initial net debit of $6,900.02, but `basis_per_share ×
-300` gives $6,900.00 or $6,900.03 depending on how the per-share value was
-rounded. On the list, a PMCC's `premiumCollected` is the short credit after
-fees and `effectiveCostBasis` is the snapshot's basis per share.
+**Detail recomputes from the legs.** The detail page's `initialNetDebit`
+(shown by `PmccLegReference`) does **not** multiply the rounded
+`basis_per_share` back up. It runs the opening legs' fills and fees through
+`calculatePmccOpeningDebit` again (`pmccInitialNetDebit`). Example: 3
+contracts with $0.01 fees per leg gives an initial net debit of $6,900.02, but
+`basis_per_share × 300` gives $6,900.00 or $6,900.03 depending on how the
+per-share value was rounded. Since us-103 the list row no longer carries
+`initialNetDebit`; it shows the running ledger total (`basisTotal`) instead.
+On the list, a PMCC's `premiumCollected` is still the latest snapshot's
+`total_premium_collected` and `effectiveCostBasis` its `basis_per_share`.
 
 See [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md).
 
+### PMCC running ledger (us-103)
+
+Every PMCC leg event after opening (a short expires, a new short is sold, a
+short is bought back, a short roll, a LEAPS roll) recomputes the basis from
+**all** of the position's legs and appends one snapshot. The production write
+paths for those events belong to US-104/105/111/115/119. US-103 ships the
+ledger, the writer, the vocabulary and the display. Its e2e drives the
+events through the dev-only `_test:pmcc-record-leg-event` channel.
+
+**Step 1 — legs → contributions** (`buildPmccContributions`, service layer):
+
+```
+for each leg with roll_chain_id = NULL and a PMCC leg role:
+  side          = LONG  if legRole ∈ { LEAPS_OPEN, LEAPS_CLOSE }
+                  SHORT if legRole ∈ { SHORT_CALL_OPEN, SHORT_CALL_CLOSE,
+                                       SHORT_CALL_EXPIRED, SHORT_CALL_ASSIGNED }
+  cashPerShare  = +premiumPerContract   if action = BUY    (cash paid out)
+                  −premiumPerContract   if action = SELL   (cash received)
+                  0                     if action ∈ { EXPIRE, ASSIGN, EXERCISE }
+  fees, contracts from the leg
+
+for each roll chain (groupRollChains — ROLL_FROM + ROLL_TO sharing roll_chain_id):
+  one contribution:
+  cashPerShare  = Σ BUY premiums − Σ SELL premiums       (= −netCreditPerShare)
+  fees          = ROLL_FROM.fees + ROLL_TO.fees
+  contracts     = ROLL_TO.contracts
+  side          = LONG  if ROLL_FROM.action = SELL       (LEAPS roll: sell old, buy new)
+                  SHORT otherwise                        (short roll: buy back, sell new)
+```
+
+Contributions are ordered by fill date then created-at, so the DEBUG log reads
+in order. The order does not change the result.
+
+**Step 2 — contributions → ledger** (`calculatePmccLedger`, pure engine):
+
+```
+contributionTotal       = cashPerShare × contracts × 100 + fees        (dollars)
+leapsCostTotal          =   Σ contributionTotal   over side = LONG
+shortCreditsTotal       = − Σ contributionTotal   over side = SHORT     (net credit is positive)
+basisTotal              = leapsCostTotal − shortCreditsTotal
+leapsShares             = leapsContracts × 100
+basisPerShare           = basisTotal        / leapsShares
+leapsCostPerShare       = leapsCostTotal    / leapsShares
+shortCreditsPerShare    = shortCreditsTotal / leapsShares
+effectiveShareCost      = currentLongStrike + basisPerShare
+                          (null when there is no current long strike)
+premiumRecoveredPercent = shortCreditsTotal / leapsCostTotal × 100
+                          (null when leapsCostTotal ≤ 0)
+```
+
+Each field is rounded once to 4 dp (`ROUND_HALF_UP`, via `money4`).
+`leapsContracts` must be a positive integer or the engine throws, so callers
+validate first. `leapsContracts` and `currentLongStrike` both come from the
+**newest long-side BUY leg**: the `LEAPS_OPEN` at entry, then the `ROLL_TO` of
+the latest LEAPS roll. A short roll's BUY half does not count. If there is no
+such leg, `pmccLedgerFromLegs` returns `null`.
+
+Rules that fall out of the formula:
+
+- **A roll chain is one net amount.** A short roll of BUY $3.00 + SELL $2.40
+  contributes +$0.60 per share (a net debit). It does not contribute two
+  gross amounts.
+- **No strike-delta term on any PMCC roll.** Strike never enters the fold. A
+  LEAPS roll moves the basis only by its net cash. The strike change shows up
+  through `effectiveShareCost`, which re-anchors to the new long strike. This
+  differs from the wheel's [CSP roll](#csp-roll).
+- **Expirations do not move basis** (`cashPerShare = 0`), but they still
+  append a snapshot.
+- **Fees are counted once**, on the leg that incurred them. They are never
+  added again at the snapshot level.
+- **Per-share figures divide by the LEAPS contracts**, so partial short
+  coverage prorates (3 LEAPS, 1 short at $2.00 → `basisPerShare 24.3333`).
+- **Negative basis is never clamped.** Once short credits exceed the LEAPS
+  cost, `basisPerShare` goes below zero and the renderer shows the sign
+  (`-$0.40`).
+
+Worked chain (US-103 fixture, 1 contract, no fees; LEAPS $80 call @ 25.00,
+short $110 call @ 2.00):
+
+| Event                                         | Trigger              | basis / share | Total    | Effective share cost |
+| --------------------------------------------- | -------------------- | ------------- | -------- | -------------------- |
+| Open (BUY LEAPS 25.00, SELL short 2.00)       | `PMCC_OPEN`          | 23.0000       | 2,300.00 | 103.0000             |
+| Short expires worthless                       | `PMCC_SHORT_EXPIRED` | 23.0000       | 2,300.00 | 103.0000             |
+| SELL $108 short @ 1.80                        | `PMCC_SHORT_OPEN`    | 21.2000       | 2,120.00 | 101.2000             |
+| Short roll: BUY $108 @ 3.00, SELL $112 @ 2.40 | `PMCC_SHORT_ROLL`    | 21.8000       | 2,180.00 | 101.8000             |
+| LEAPS roll: SELL $80 @ 26.00, BUY $85 @ 23.50 | `PMCC_LEAPS_ROLL`    | 19.3000       | 1,930.00 | 104.3000             |
+
+With $1.00 fees on each opening leg, the open row is `23.0200` / `2,302.00`,
+not `23.04`. With 3 contracts, the open row is `23.0000` / `6,900.00`.
+
+**Step 3 — the writer** (`appendPmccSnapshot`, service layer):
+
+```
+caller: db.transaction(() => {
+  insert the event's leg(s)
+  appendPmccSnapshot(db, positionId, { triggerEvent, eventDate, now })
+    legs    = readLegs(db, positionId)          # sees the just-inserted leg
+    ledger  = pmccLedgerFromLegs(legs)          # throws if no LEAPS leg
+    insert cost_basis_snapshots row:
+      basis_per_share         = ledger.basisPerShare
+      total_premium_collected = ledger.shortCreditsTotal
+      final_pnl               = NULL
+      trigger_event           = triggerEvent    # one PmccTriggerEvent
+      snapshot_at             = makeSnapshotAt(eventDate)
+      created_at              = now
+})
+```
+
+A throw anywhere rolls back the leg and the snapshot together. US-103's e2e
+proves this by aborting the snapshot insert with a SQLite trigger: the leg
+count and snapshot count stay unchanged. The writer accepts a PMCC position
+in any phase, and it changes no phase. Phase guards belong to the consumer
+stories' lifecycle functions. No US-103 event sets `final_pnl`. Terminal P&L
+belongs to US-111 / US-120.
+
+**Display.** The detail page's `Cost basis` drawer (`PmccCostBasis`, open by
+default) shows six cells: `Cost basis / share`, `Total`, `LEAPS cost to date`,
+`Short-call credits to date` (shown as its contribution to basis, so a $2.00
+credit reads `-$2.00`, with no green), `Effective share cost`, and `Premium
+recovered` (`fmtPct1`, `—` when null). It shows no profit / realized wording,
+max profit, breakeven or annualized return. The positions list row shows
+`basisTotal`. A classic wheel's `Cost basis & history` drawer is unchanged.
+
+See [us-103 — PMCC cost basis](../features/us-103-pmcc-cost-basis.md).
+
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101,us-103 -->
 
 ## Function signatures
 
@@ -938,6 +1185,21 @@ export interface UnrealizedPnlResult {
 export function computeUnrealizedPnl(input: UnrealizedPnlInput): UnrealizedPnlResult
 ```
 
+PMCC entry points in the same file (us-101, us-103). Named here, not
+expanded — read the file for the field lists:
+
+- `calculatePmccOpeningDebit(input)` — opening legs → LEAPS cost, short
+  credit, fees, initial net debit, basis per share, debit-to-width ratio.
+- `calculatePmccLedger(input: PmccLedgerInput): PmccLedgerResult` —
+  `PmccLedgerInput` is `{ leapsContracts, longStrike, contributions }`, and
+  each `PmccContribution` is `{ side: PmccLedgerSide ('LONG' | 'SHORT'),
+cashPerShare (signed, + = paid out), contracts, fees (dollars) }`.
+  `PmccLedgerResult` holds eight 4-dp strings: `basisPerShare`,
+  `basisTotal`, `leapsCostPerShare`, `leapsCostTotal`,
+  `shortCreditsPerShare`, `shortCreditsTotal`, `effectiveShareCost | null`,
+  `premiumRecoveredPercent | null`. It is re-exported to the renderer from
+  `api/positions.ts`.
+
 Profit-target resolver lives in `src/main/core/profit-target.ts`:
 
 ```typescript
@@ -949,14 +1211,32 @@ export function resolveProfitTarget(override: number | null): number
 
 ### Service-layer roll-chain grouping
 
-`assignCspPosition` in `src/main/services/assign-csp-position.ts` owns a
-private `groupRollsByChain` helper. It walks the position's legs ordered
-by `fill_date`, groups `ROLL_FROM` and `ROLL_TO` legs by
-`roll_chain_id`, and emits one `AssignmentBasisLeg` per chain with
-`legRole: 'ROLL_NET'`, `premiumPerContract = ROLL_TO.premium −
-ROLL_FROM.premium` (signed), and a `label` of `'Roll #N credit'` or
-`'Roll #N debit'`. This helper is intentionally co-located rather than
-shared — no other service needs it today.
+`groupRollChains(legs)` in `src/main/services/roll-chains.ts` groups
+`ROLL_FROM` and `ROLL_TO` legs by `roll_chain_id` into `RollChain` records
+(`rollFrom`, `rollTo`, `netCreditPerShare = Σ SELL − Σ BUY` premiums, signed,
+positive = credit; `contracts` from `rollTo`; summed `fees`; earliest
+`fillDate`). Chains are sorted by earliest fill date, then created-at, and
+chains missing either half are dropped. It has two consumers:
+
+- `assignCspPosition` maps each chain to an `AssignmentBasisLeg` with
+  `legRole: 'ROLL_NET'`, `premiumPerContract = netCreditPerShare`, and a
+  `'Roll #N credit'` / `'Roll #N debit'` label. For wheel rolls this equals
+  the earlier `ROLL_TO − ROLL_FROM`.
+- `buildPmccContributions` turns each chain into one PMCC contribution.
+
+(us-103 moved it out of `assignCspPosition`, where it was the private
+`groupRollsByChain`.)
+
+### Service-layer PMCC ledger
+
+`src/main/services/pmcc-ledger.ts` (us-103) exports
+`buildPmccContributions`, `currentLongStrike`, `leapsContracts`,
+`pmccLedgerFromLegs` (legs → `PmccLedgerResult | null`) and
+`appendPmccSnapshot` (generic over the `PmccTriggerEvent` it writes). Legs
+come from the shared `readLegs` / `readLegsByPosition` in
+`src/main/services/leg-rows.ts`. Logging: INFO `pmcc_basis_recalculated`;
+DEBUG `pmcc_ledger_contributions`, `pmcc_roll_chains`, `pmcc_snapshot_insert`;
+WARN `pmcc_ledger_unknown_leg_role`.
 
 ### Renderer derivation: `deriveRunningBasis`
 
@@ -982,7 +1262,7 @@ while later rows inherit the latest snapshot of the day.
 
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101,us-103 -->
 
 ## Snapshot row reference
 
@@ -1014,7 +1294,21 @@ Note: the expiration snapshot uses `snapshot_at = now + 1ms` so it sorts
 strictly after the opening snapshot in the same `ORDER BY snapshot_at DESC`
 query.
 
-Events that **do not** insert a row: CC close early, CC expiration. Their
+`trigger_event` values (`TriggerEvent` in `src/main/schemas.ts`; no SQL
+CHECK): wheel `CSP_OPEN`, `CSP_CLOSE`, `CSP_EXPIRE`, `CSP_ASSIGN`,
+`CSP_ROLL`, `CC_OPEN`, `CC_ROLL`, `CALL_AWAY`; PMCC (`PmccTriggerEvent`)
+`PMCC_OPEN`, `PMCC_SHORT_OPEN`, `PMCC_SHORT_EXPIRED`, `PMCC_SHORT_CLOSED`,
+`PMCC_SHORT_ROLL`, `PMCC_LEAPS_ROLL`.
+
+**PMCC rows** use the ledger convention. `basis_per_share` is
+`PmccLedgerResult.basisPerShare`, per share of LEAPS contract, and **may be
+negative**. `total_premium_collected` is `shortCreditsTotal`, the short-call
+credits to date in dollars after short-leg fees. `final_pnl` is `NULL`. Each
+PMCC leg event writes exactly one row, through `appendPmccSnapshot` only.
+Unlike the wheel, a PMCC expiration **does** write a row. For PMCC display,
+the read paths recompute from legs, and these rows are the audit chain.
+
+Events that **do not** insert a row: wheel CC close early, wheel CC expiration. Their
 P&L is returned in the IPC envelope (`ccLegPnl`) but not persisted — the
 CC_OPEN snapshot remains current until the wheel reaches a terminal event.
 
@@ -1025,7 +1319,7 @@ land in `cost_basis_snapshots`.
 
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101,us-103 -->
 
 ## Driven by
 
@@ -1041,6 +1335,7 @@ land in `cost_basis_snapshots`.
 - [us-16 — Sequential roll basis fix](../features/us-16-cost-basis-sequential-rolls.md)
 - [us-33 — Live option mid + unrealized P&L](../features/us-33-option-mid-pnl.md)
 - [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md)
+- [us-103 — PMCC cost basis](../features/us-103-pmcc-cost-basis.md)
 
 <!-- /generated -->
 

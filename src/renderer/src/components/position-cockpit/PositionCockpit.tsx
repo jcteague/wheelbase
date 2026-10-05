@@ -18,6 +18,7 @@ import { RiskSnapshot } from './RiskSnapshot'
 import { ContextStrip } from './ContextStrip'
 import { CollapsedDrawer } from './CollapsedDrawer'
 import { PmccLegReference } from './PmccLegReference'
+import { PmccCostBasis } from './PmccCostBasis'
 import { SectionCard } from '../ui/SectionCard'
 import { StatGrid } from '../ui/Stat'
 import { LegHistoryTable } from '../LegHistoryTable'
@@ -38,9 +39,22 @@ export function PositionCockpit({
   ivRank,
   pnlStale
 }: PositionCockpitProps): React.JSX.Element {
-  const { position, activeLeg, costBasisSnapshot, legs, allSnapshots, initialNetDebit } = detail
+  const {
+    position,
+    activeLeg,
+    costBasisSnapshot,
+    legs,
+    allSnapshots,
+    initialNetDebit,
+    pmccLedger
+  } = detail
   if (position.strategyType === 'PMCC') {
-    return <PmccLegReference legs={legs} initialNetDebit={initialNetDebit} />
+    return (
+      <div className="flex flex-col gap-3">
+        <PmccLegReference legs={legs} initialNetDebit={initialNetDebit} />
+        {pmccLedger ? <PmccCostBasis ledger={pmccLedger} /> : null}
+      </div>
+    )
   }
   const phaseLabel = PHASE_LABEL[position.phase]
   const phaseColor = PHASE_COLOR[position.phase]

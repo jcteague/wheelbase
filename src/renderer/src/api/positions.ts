@@ -48,6 +48,8 @@ export type {
   WheelListItem
 } from '../../../main/schemas'
 
+export type { PmccLedgerResult } from '../../../main/core/costbasis'
+
 export async function listPositions(): Promise<PositionListItem[]> {
   return window.api.listPositions()
 }

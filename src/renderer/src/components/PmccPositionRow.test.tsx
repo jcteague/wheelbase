@@ -13,7 +13,8 @@ const PMCC_ITEM: PmccListItem = {
   pmcc: {
     long: { strike: '80.0000', expiration: '2027-09-17', dte: 368, contracts: 1 },
     short: { strike: '110.0000', expiration: '2026-10-16', dte: 32, contracts: 1 },
-    initialNetDebit: '2300.0000'
+    basisPerShare: '21.8000',
+    basisTotal: '2180.0000'
   },
   strike: null,
   expiration: null,
@@ -106,9 +107,20 @@ it('premium cell shows the short-call credit', () => {
   expect(cells()[8]).toHaveTextContent('$200.00')
 })
 
-it('cost basis cell shows the grouped initial net debit', () => {
+// [US-103] The list row shows the running ledger basis, not the opening net debit
+it('cost basis cell shows the grouped running basis total with no net-debit suffix', () => {
   renderRow()
-  expect(cells()[9]).toHaveTextContent('$2,300.00 net debit')
+  expect(cells()[9]).toHaveTextContent('$2,180.00')
+  expect(cells()[9]).not.toHaveTextContent('net debit')
+})
+
+it('cost basis cell shows a negative basis total signed, not clamped to zero', () => {
+  renderRow({
+    ...PMCC_ITEM,
+    pmcc: { ...PMCC_ITEM.pmcc, basisPerShare: '-0.4000', basisTotal: '-40.0000' }
+  })
+  expect(cells()[9]).toHaveTextContent('-$40.00')
+  expect(cells()[9]).not.toHaveTextContent('$0.00')
 })
 
 it('clicking the row navigates to the position detail', async () => {

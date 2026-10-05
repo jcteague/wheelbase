@@ -14,6 +14,7 @@ import type {
   RollCcPayload,
   RollCspPayload,
   SaveAlertOverridesPayload,
+  TestPmccLegEventPayloadInput,
   AssignCspPositionResult,
   CloseCcPositionResult,
   CloseCspPositionResult,
@@ -28,6 +29,7 @@ import type {
   RollCcResult,
   RollCspResult
 } from '../main/schemas'
+import type { AppendPmccSnapshotResult } from '../main/services/pmcc-ledger'
 
 type IpcResult<T> =
   | ({ ok: true } & T)
@@ -643,6 +645,10 @@ declare global {
        *  this way, so the result is typed as its summary. */
       testSchedulerRunScheduled: (jobName: 'ivr-collect') => Promise<IpcCollectIvrNowBatch>
       testIvSeriesSet: (fixture: unknown) => Promise<{ ok: true } | { ok: false; error: string }>
+      /** [US-103] Records PMCC leg rows + their cost-basis snapshot in one transaction. */
+      testPmccRecordLegEvent: (
+        payload: TestPmccLegEventPayloadInput
+      ) => Promise<IpcResult<AppendPmccSnapshotResult>>
       testIvrSetNow: (nowIso: unknown) => Promise<{ ok: true } | { ok: false; error: string }>
       testIv30History: () => Promise<IpcTestIv30ReadingRow[]>
       testIv30Gaps: () => Promise<

@@ -3,6 +3,8 @@
 import { _electron as electron } from 'playwright'
 import type { ElectronApplication, Locator, Page } from 'playwright'
 import { execFileSync } from 'node:child_process'
+import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { localDate } from './dates'
 import { selectDate } from './helpers'
@@ -156,6 +158,23 @@ export async function launchPmcc(
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
   return { app, page }
+}
+
+/** A fresh SQLite path in the OS temp dir, e.g. `wheelbase-e2e-pmcc-<ms>.db`. */
+export function tempDbPath(label: string): string {
+  return path.join(os.tmpdir(), `wheelbase-e2e-${label}-${Date.now()}.db`)
+}
+
+/** Closes the app (if launched) and deletes the DB with its WAL and SHM files. */
+export async function closePmcc(
+  app: ElectronApplication | undefined,
+  dbPath: string
+): Promise<void> {
+  await app?.close()
+  for (const suffix of ['', '-wal', '-shm']) {
+    const file = `${dbPath}${suffix}`
+    if (fs.existsSync(file)) fs.unlinkSync(file)
+  }
 }
 
 // ── Sheet ────────────────────────────────────────────────────────────────────

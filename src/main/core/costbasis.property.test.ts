@@ -14,14 +14,16 @@ import {
   calculateInitialCspBasis,
   calculateRollBasis,
   computeUnrealizedPnl,
-  calculatePmccOpeningDebit
+  calculatePmccOpeningDebit,
+  calculatePmccLedger
 } from './costbasis'
-import type { PmccOpeningDebitInput } from './costbasis'
+import type { PmccContribution, PmccLedgerInput, PmccOpeningDebitInput } from './costbasis'
 import {
   contracts,
   isoDay,
   nonNegativeMoney,
   nonPositiveMoney,
+  pmccContribution,
   positiveMoney
 } from './test-fixtures/arbitraries'
 
@@ -509,6 +511,108 @@ describe('calculatePmccOpeningDebit', () => {
         Object.values(result)
           .filter((value): value is string => value !== null)
           .forEach((value) => expect(value).toMatch(FOUR_DP))
+      })
+    )
+  })
+})
+
+describe('calculatePmccLedger', () => {
+  const ledgerInput: fc.Arbitrary<PmccLedgerInput> = fc.record({
+    leapsContracts: contracts,
+    longStrike: fc.option(positiveMoney(), { nil: null }),
+    contributions: fc.array(pmccContribution, { maxLength: 8 })
+  })
+
+  /** Independent dollar amount of one contribution: cash × contracts × 100 + fees. */
+  const dollars = (c: PmccContribution): Decimal =>
+    money(c.cashPerShare)
+      .times(SHARES_PER_CONTRACT * c.contracts)
+      .plus(c.fees)
+
+  const sumOf = (contributions: PmccContribution[]): Decimal =>
+    contributions.reduce((total, c) => total.plus(dollars(c)), money(0))
+
+  it('basis total equals an independent fold of every contribution in dollars', () => {
+    fc.assert(
+      fc.property(ledgerInput, (input) => {
+        const result = calculatePmccLedger(input)
+        const longs = input.contributions.filter((c) => c.side === 'LONG')
+        const shorts = input.contributions.filter((c) => c.side === 'SHORT')
+        expectSameAmount(result.leapsCostTotal, sumOf(longs))
+        expectSameAmount(result.shortCreditsTotal, sumOf(shorts).negated())
+        expectSameAmount(result.basisTotal, sumOf(input.contributions))
+      })
+    )
+  })
+
+  it('basis is LEAPS cost minus credits, and per-share figures divide by the LEAPS shares', () => {
+    fc.assert(
+      fc.property(ledgerInput, (input) => {
+        const result = calculatePmccLedger(input)
+        const shares = SHARES_PER_CONTRACT * input.leapsContracts
+        // Round before formatting, so a tiny negative reads 0.0000, never -0.0000.
+        const perShare = (total: string): string =>
+          money(total).div(shares).toDecimalPlaces(4).toFixed(4)
+        expectSameAmount(
+          result.basisTotal,
+          money(result.leapsCostTotal).minus(result.shortCreditsTotal)
+        )
+        expect(result.basisPerShare).toBe(perShare(result.basisTotal))
+        expect(result.leapsCostPerShare).toBe(perShare(result.leapsCostTotal))
+        expect(result.shortCreditsPerShare).toBe(perShare(result.shortCreditsTotal))
+      })
+    )
+  })
+
+  it('is independent of contribution order', () => {
+    fc.assert(
+      fc.property(
+        ledgerInput.chain((input) =>
+          fc.tuple(
+            fc.constant(input),
+            fc.shuffledSubarray(input.contributions, {
+              minLength: input.contributions.length,
+              maxLength: input.contributions.length
+            })
+          )
+        ),
+        ([input, shuffled]) => {
+          expect(calculatePmccLedger({ ...input, contributions: shuffled })).toEqual(
+            calculatePmccLedger(input)
+          )
+        }
+      )
+    )
+  })
+
+  it('scaling every contract count by n scales totals and leaves per-share figures unchanged', () => {
+    fc.assert(
+      fc.property(ledgerInput, fc.integer({ min: 2, max: 20 }), (input, n) => {
+        const feeless = input.contributions.map((c) => ({ ...c, fees: '0.0000' }))
+        const one = calculatePmccLedger({ ...input, contributions: feeless })
+        const many = calculatePmccLedger({
+          ...input,
+          leapsContracts: input.leapsContracts * n,
+          contributions: feeless.map((c) => ({ ...c, contracts: c.contracts * n }))
+        })
+        expectSameAmount(many.basisTotal, money(one.basisTotal).times(n))
+        expectSameAmount(many.leapsCostTotal, money(one.leapsCostTotal).times(n))
+        expectSameAmount(many.shortCreditsTotal, money(one.shortCreditsTotal).times(n))
+        expect(many.basisPerShare).toBe(one.basisPerShare)
+        expect(many.leapsCostPerShare).toBe(one.leapsCostPerShare)
+        expect(many.shortCreditsPerShare).toBe(one.shortCreditsPerShare)
+        expect(many.effectiveShareCost).toBe(one.effectiveShareCost)
+        expect(many.premiumRecoveredPercent).toBe(one.premiumRecoveredPercent)
+      })
+    )
+  })
+
+  it('recovered percent is null iff LEAPS cost is not positive; effective cost iff no strike', () => {
+    fc.assert(
+      fc.property(ledgerInput, (input) => {
+        const result = calculatePmccLedger(input)
+        expect(result.premiumRecoveredPercent === null).toBe(money(result.leapsCostTotal).lte(0))
+        expect(result.effectiveShareCost === null).toBe(input.longStrike === null)
       })
     )
   })

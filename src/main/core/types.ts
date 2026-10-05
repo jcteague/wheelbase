@@ -29,7 +29,11 @@ export const LegRole = z.enum([
   'ROLL_TO',
   'EXPIRE',
   'LEAPS_OPEN',
-  'SHORT_CALL_OPEN'
+  'SHORT_CALL_OPEN',
+  'SHORT_CALL_CLOSE',
+  'SHORT_CALL_EXPIRED',
+  'LEAPS_CLOSE',
+  'SHORT_CALL_ASSIGNED'
 ])
 export const LegAction = z.enum(LEG_ACTION_VALUES)
 export const InstrumentType = z.enum(['PUT', 'CALL', 'STOCK'])
@@ -47,6 +51,24 @@ export type LegAction = z.infer<typeof LegAction>
 export type InstrumentType = z.infer<typeof InstrumentType>
 
 export type OptionInstrumentType = Extract<InstrumentType, 'PUT' | 'CALL'>
+
+const PMCC_LEG_ROLE_VALUES = [
+  'LEAPS_OPEN',
+  'LEAPS_CLOSE',
+  'SHORT_CALL_OPEN',
+  'SHORT_CALL_CLOSE',
+  'SHORT_CALL_EXPIRED',
+  'SHORT_CALL_ASSIGNED'
+] as const satisfies readonly LegRole[]
+
+/** The slice of `LegRole` a PMCC position writes; derived from the one list above. */
+export type PmccLegRole = (typeof PMCC_LEG_ROLE_VALUES)[number]
+
+const PMCC_LEG_ROLES: ReadonlySet<LegRole> = new Set(PMCC_LEG_ROLE_VALUES)
+
+export function isPmccLegRole(role: LegRole): role is PmccLegRole {
+  return PMCC_LEG_ROLES.has(role)
+}
 
 export function isOptionInstrument(
   value: string | null | undefined

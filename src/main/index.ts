@@ -17,6 +17,7 @@ import { registerScreenerIpc } from './ipc/screener'
 import { registerIvrIpc } from './ipc/ivr'
 import { registerTestSchedulerIpc, seedTestJobsFromEnv } from './ipc/test-scheduler'
 import { registerTestIvHistoryIpc } from './ipc/test-iv-history'
+import { registerTestPmccLedgerIpc } from './ipc/test-pmcc-ledger'
 import { createFakeClock } from './integrations/fake-clock'
 import { DETECT_ASSIGNMENTS_JOB_NAME, detectAssignments } from './services/detect-assignments'
 import { collectIvHistoryBatch, IVR_COLLECT_JOB_NAME } from './services/ivr-collector'
@@ -309,6 +310,7 @@ app.whenReady().then(() => {
     seedTestJobsFromEnv(scheduler)
     registerTestSchedulerIpc(scheduler)
     registerTestIvHistoryIpc(db)
+    registerTestPmccLedgerIpc(db)
 
     // Test-only: preseed an active broker environment so detect-assignments and
     // other broker-gated jobs run without going through the credential-save UI

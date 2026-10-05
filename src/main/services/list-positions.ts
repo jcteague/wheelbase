@@ -9,6 +9,7 @@ import { isOptionInstrument } from '../core/types'
 import type { InstrumentType, PmccPhase, StrategyPhase, WheelStatus } from '../core/types'
 import { logger } from '../logger'
 import type {
+  LegRecord,
   PmccLegSummary,
   PmccListItem,
   PmccListSummary,
@@ -17,11 +18,9 @@ import type {
   WheelListItem
 } from '../schemas'
 import { activeLegSubquery } from './active-leg-sql'
-import {
-  pmccInitialNetDebit,
-  readPmccOpeningLegs,
-  type PmccOpeningLegRow
-} from './pmcc-opening-legs'
+import { readLegsByPosition } from './leg-rows'
+import { pmccLedgerFromLegs } from './pmcc-ledger'
+import { pmccOpeningLegs } from './pmcc-opening-legs'
 
 // ---------------------------------------------------------------------------
 // Internal DB row type
@@ -72,7 +71,7 @@ const LIST_QUERY = `
   )
 `
 
-function toLegSummary(leg: PmccOpeningLegRow | undefined): PmccLegSummary | null {
+function toLegSummary(leg: LegRecord | undefined): PmccLegSummary | null {
   const dte = computeDte(leg?.expiration ?? null)
   if (!leg || dte === null) return null
   return {
@@ -88,16 +87,18 @@ function readPmccSummaries(
   rows: PositionRow[]
 ): Map<string, PmccListSummary> {
   const ids = rows.filter((row) => row.strategy_type === 'PMCC').map((row) => row.id)
-  const openingLegs = readPmccOpeningLegs(db, ids)
+  const legsByPosition = readLegsByPosition(db, ids)
 
   return new Map(
     ids.flatMap((id): [string, PmccListSummary][] => {
-      const legs = openingLegs.get(id)
-      const long = toLegSummary(legs?.long)
-      const short = toLegSummary(legs?.short)
-      const initialNetDebit = pmccInitialNetDebit(legs)
-      if (!long || !short || !initialNetDebit) return []
-      return [[id, { long, short, initialNetDebit }]]
+      const legs = legsByPosition.get(id) ?? []
+      const opening = pmccOpeningLegs(legs)
+      const long = toLegSummary(opening.long)
+      const short = toLegSummary(opening.short)
+      const ledger = pmccLedgerFromLegs(legs)
+      if (!long || !short || !ledger) return []
+      const { basisPerShare, basisTotal } = ledger
+      return [[id, { long, short, basisPerShare, basisTotal }]]
     })
   )
 }

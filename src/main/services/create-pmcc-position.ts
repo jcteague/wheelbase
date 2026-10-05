@@ -6,10 +6,11 @@ import Decimal from 'decimal.js'
 import { randomUUID } from 'node:crypto'
 import { calculatePmccOpeningDebit } from '../core/costbasis'
 import { openPmcc, ValidationError, type OpenPmccLegInput } from '../core/lifecycle'
-import { localToday, makeSnapshotAt } from '../dates'
+import { localToday } from '../dates'
 import { logger } from '../logger'
 import type { CreatePmccPositionPayload, CreatePmccPositionResult, LegRecord } from '../schemas'
 import type { IvrOnDemand } from './ivr-on-demand'
+import { appendPmccSnapshot } from './pmcc-ledger'
 import { insertPosition } from './position-rows'
 
 type PmccLegPayload = CreatePmccPositionPayload['long']
@@ -118,11 +119,7 @@ export function createPmccPosition(
   const positionId = randomUUID()
   const longLegId = randomUUID()
   const shortLegId = randomUUID()
-  const snapshotId = randomUUID()
   const now = new Date().toISOString()
-  const basisPerShare = openingDebit.basisPerShare
-  const totalPremiumCollected = money4(new Decimal(openingDebit.shortCredit).minus(short.fees))
-  const snapshotAt = makeSnapshotAt(long.fillDate)
 
   logger.debug({ positionId }, 'create_pmcc_position_tx_start')
   const rows = db.transaction(() => {
@@ -152,12 +149,12 @@ export function createPmccPosition(
       leg: short,
       now
     })
-    db.prepare(
-      `INSERT INTO cost_basis_snapshots
-        (id, position_id, basis_per_share, total_premium_collected, trigger_event, snapshot_at, created_at)
-       VALUES (?, ?, ?, ?, 'PMCC_OPEN', ?, ?)`
-    ).run(snapshotId, positionId, basisPerShare, totalPremiumCollected, snapshotAt, now)
-    return { position, longLeg, shortLeg }
+    const { snapshot } = appendPmccSnapshot(db, positionId, {
+      triggerEvent: 'PMCC_OPEN',
+      eventDate: long.fillDate,
+      now
+    })
+    return { position, longLeg, shortLeg, costBasisSnapshot: snapshot }
   })()
   logger.debug({ positionId }, 'create_pmcc_position_tx_committed')
 
@@ -167,18 +164,5 @@ export function createPmccPosition(
   )
   void ivrOnDemand?.collect(ticker)
 
-  return {
-    ...rows,
-    costBasisSnapshot: {
-      id: snapshotId,
-      positionId,
-      basisPerShare,
-      totalPremiumCollected,
-      finalPnl: null,
-      triggerEvent: 'PMCC_OPEN',
-      snapshotAt,
-      createdAt: now
-    },
-    openingDebit
-  }
+  return { ...rows, openingDebit }
 }
