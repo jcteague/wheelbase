@@ -16,7 +16,7 @@ import type {
 import { activeLegSubquery } from './active-leg-sql'
 import { readLegs } from './leg-rows'
 import { pmccInitialNetDebit } from './pmcc-opening-legs'
-import { pmccLedgerFromLegs } from './pmcc-ledger'
+import { pmccLedgerFromLegs, pmccOpenLegs } from './pmcc-ledger'
 import { logger } from '../logger'
 
 interface PositionRow {
@@ -208,6 +208,7 @@ export function getPosition(db: Database.Database, positionId: string): GetPosit
   const isPmcc = position.strategyType === 'PMCC'
   const initialNetDebit = isPmcc ? pmccInitialNetDebit(legs) : null
   const pmccLedger = isPmcc ? pmccLedgerFromLegs(legs) : null
+  const openLegs = isPmcc ? pmccOpenLegs(legs) : null
 
   logger.info({ positionId }, 'position_fetched')
 
@@ -218,6 +219,7 @@ export function getPosition(db: Database.Database, positionId: string): GetPosit
     legs,
     allSnapshots,
     initialNetDebit,
-    pmccLedger
+    pmccLedger,
+    pmccOpenLegs: openLegs
   }
 }

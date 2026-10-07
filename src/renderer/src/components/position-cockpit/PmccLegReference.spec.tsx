@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import { addDays, format } from 'date-fns'
-import type { LegDetail } from '../../api/positions'
+import type { PmccOpenLegs } from '../../api/positions'
 import { SHARES_VERDICT, WHEEL_COMPLETE_VERDICT } from '../../lib/verdict'
 import { PmccLegReference } from './PmccLegReference'
 
@@ -8,7 +8,7 @@ function localDate(days: number): string {
   return format(addDays(new Date(), days), 'yyyy-MM-dd')
 }
 
-const leapsLeg: LegDetail = {
+const leapsLeg: PmccOpenLegs['long'] = {
   id: 'leg-leaps',
   positionId: 'pmcc-1',
   legRole: 'LEAPS_OPEN',
@@ -26,7 +26,7 @@ const leapsLeg: LegDetail = {
   updatedAt: '2026-09-14T00:00:00Z'
 }
 
-const shortLeg: LegDetail = {
+const shortLeg: NonNullable<PmccOpenLegs['short']> = {
   ...leapsLeg,
   id: 'leg-short',
   legRole: 'SHORT_CALL_OPEN',
@@ -39,7 +39,9 @@ const shortLeg: LegDetail = {
 }
 
 function renderReference(): void {
-  render(<PmccLegReference legs={[leapsLeg, shortLeg]} initialNetDebit="4601.9000" />)
+  render(
+    <PmccLegReference openLegs={{ long: leapsLeg, short: shortLeg }} initialNetDebit="4601.9000" />
+  )
 }
 
 function section(title: string): HTMLElement {
@@ -88,7 +90,12 @@ describe('PmccLegReference', () => {
 
   it('shows the server value as given rather than recomputing it from the legs', () => {
     // The legs alone would give 2 × 100 × 23.00 + 1.90 = 4,601.90.
-    render(<PmccLegReference legs={[leapsLeg, shortLeg]} initialNetDebit="6900.0200" />)
+    render(
+      <PmccLegReference
+        openLegs={{ long: leapsLeg, short: shortLeg }}
+        initialNetDebit="6900.0200"
+      />
+    )
     const stat = screen.getByText('Initial net debit').parentElement
     expect(stat).toHaveTextContent('Initial net debit$6,900.02')
   })
@@ -96,7 +103,7 @@ describe('PmccLegReference', () => {
   it('shows — for the DTE of a leg whose expiration cannot be parsed', () => {
     render(
       <PmccLegReference
-        legs={[{ ...leapsLeg, expiration: 'not-a-date' }, shortLeg]}
+        openLegs={{ long: { ...leapsLeg, expiration: 'not-a-date' }, short: shortLeg }}
         initialNetDebit="4601.9000"
       />
     )
@@ -105,17 +112,44 @@ describe('PmccLegReference', () => {
   })
 
   it('shows — for the initial net debit when the server has none', () => {
-    render(<PmccLegReference legs={[leapsLeg]} initialNetDebit={null} />)
+    render(<PmccLegReference openLegs={{ long: leapsLeg, short: null }} initialNetDebit={null} />)
     const stat = screen.getByText('Initial net debit').parentElement
     expect(stat).toHaveTextContent('Initial net debit—')
   })
 
-  it('shows — for the initial net debit and no leg cards when there are no legs', () => {
-    render(<PmccLegReference legs={[]} initialNetDebit={null} />)
-    const stat = screen.getByText('Initial net debit').parentElement
-    expect(stat).toHaveTextContent('Initial net debit—')
-    expect(screen.queryByText('Buy LEAPS call')).not.toBeInTheDocument()
+  // [US-104] The cards follow the open legs, not the opening rows: a rolled short is the ROLL_TO.
+  it('a rolled short call still reads Sell short call and shows the replacement', () => {
+    const rolledShort: NonNullable<PmccOpenLegs['short']> = {
+      ...shortLeg,
+      id: 'leg-roll-to',
+      legRole: 'ROLL_TO',
+      strike: '112.0000',
+      premiumPerContract: '2.4000'
+    }
+    render(
+      <PmccLegReference
+        openLegs={{ long: leapsLeg, short: rolledShort }}
+        initialNetDebit="4601.9000"
+      />
+    )
+    const card = within(section('Sell short call'))
+    expect(card.getByText('$112.00')).toBeInTheDocument()
+    expect(card.getByText('$2.40')).toBeInTheDocument()
+    expect(card.queryByText('$110.00')).not.toBeInTheDocument()
+    expect(screen.getByText('Initial net debit').parentElement).toHaveTextContent(
+      'Initial net debit$4,601.90'
+    )
+  })
+
+  it('with no open short call renders only the LEAPS card and the net-debit card', () => {
+    render(
+      <PmccLegReference openLegs={{ long: leapsLeg, short: null }} initialNetDebit="4601.9000" />
+    )
+    expect(screen.getByText('Buy LEAPS call')).toBeInTheDocument()
     expect(screen.queryByText('Sell short call')).not.toBeInTheDocument()
+    expect(screen.getByText('Initial net debit').parentElement).toHaveTextContent(
+      'Initial net debit$4,601.90'
+    )
   })
 
   it('states that live P&L is unavailable', () => {

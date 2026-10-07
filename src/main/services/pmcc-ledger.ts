@@ -11,12 +11,18 @@ import {
   type PmccLedgerResult,
   type PmccLedgerSide
 } from '../core/costbasis'
-import { isPmccLegRole, type PmccLegRole } from '../core/types'
+import { isPmccLegRole, type LegRole, type PmccLegRole } from '../core/types'
 import { makeSnapshotAt } from '../dates'
 import { logger } from '../logger'
 import type { CostBasisSnapshotRecord, LegRecord, PmccTriggerEvent } from '../schemas'
 import { readLegs } from './leg-rows'
-import { earliestCreatedAt, groupRollChains, type RollChain } from './roll-chains'
+import {
+  earliestCreatedAt,
+  groupRollChains,
+  hasLegRole,
+  type LegWithRole,
+  type RollChain
+} from './roll-chains'
 
 const PMCC_LEG_SIDE: Record<PmccLegRole, PmccLedgerSide> = {
   LEAPS_OPEN: 'LONG',
@@ -56,14 +62,14 @@ function legContribution(leg: LegRecord & { legRole: PmccLegRole }): PmccContrib
   }
 }
 
-/** A LEAPS roll sells the old long; a short roll buys back the old short. */
-function isLeapsRoll(chain: RollChain): boolean {
-  return chain.rollFrom.action === 'SELL'
+/** A short roll buys back the old short; a LEAPS roll sells the old long. */
+export function isShortCallRoll(chain: RollChain): boolean {
+  return chain.rollFrom.action === 'BUY'
 }
 
 function chainContribution(chain: RollChain): PmccContribution {
   return {
-    side: isLeapsRoll(chain) ? 'LONG' : 'SHORT',
+    side: isShortCallRoll(chain) ? 'SHORT' : 'LONG',
     cashPerShare: new Decimal(chain.netCreditPerShare).negated().toFixed(4),
     contracts: chain.contracts,
     fees: chain.fees
@@ -79,22 +85,30 @@ function isKnownPmccLeg(leg: LegRecord): leg is LegRecord & { legRole: PmccLegRo
   return false
 }
 
-function contributionsFrom(legs: LegRecord[], chains: RollChain[]): PmccContribution[] {
-  logger.debug({ chains: chains.map((c) => c.rollChainId) }, 'pmcc_roll_chains')
+/** A non-roll leg or a paired roll chain, as the ledger replays them. */
+type LedgerEvent = { leg: LegRecord; chain?: never } | { chain: RollChain; leg?: never }
 
+/** Non-roll legs merged with roll chains, in fill-date then created-at order. */
+function orderedLedgerEvents(legs: LegRecord[], chains: RollChain[]): LedgerEvent[] {
   const legEntries = legs
     .filter((leg) => !isRollRole(leg))
-    .filter(isKnownPmccLeg)
-    .map((leg) => ({ ...leg, contribution: legContribution(leg) }))
+    .map((leg) => ({ fillDate: leg.fillDate, createdAt: leg.createdAt, event: { leg } }))
   const chainEntries = chains.map((chain) => ({
     fillDate: chain.fillDate,
     createdAt: earliestCreatedAt(chain),
-    contribution: chainContribution(chain)
+    event: { chain }
   }))
+  return [...legEntries, ...chainEntries].sort(byFillThenCreated).map((entry) => entry.event)
+}
 
-  const contributions = [...legEntries, ...chainEntries]
-    .sort(byFillThenCreated)
-    .map((entry) => entry.contribution)
+function eventContribution({ leg, chain }: LedgerEvent): PmccContribution[] {
+  if (chain) return [chainContribution(chain)]
+  return isKnownPmccLeg(leg) ? [legContribution(leg)] : []
+}
+
+function contributionsFrom(legs: LegRecord[], chains: RollChain[]): PmccContribution[] {
+  logger.debug({ chains: chains.map((c) => c.rollChainId) }, 'pmcc_roll_chains')
+  const contributions = orderedLedgerEvents(legs, chains).flatMap(eventContribution)
   logger.debug({ contributions }, 'pmcc_ledger_contributions')
   return contributions
 }
@@ -103,24 +117,72 @@ export function buildPmccContributions(legs: LegRecord[]): PmccContribution[] {
   return contributionsFrom(legs, groupRollChains(legs))
 }
 
+/** The leg holding the LEAPS: LEAPS_OPEN, or the ROLL_TO of a LEAPS roll. */
+export type PmccLongLeg = LegWithRole<'LEAPS_OPEN' | 'ROLL_TO'>
+
+/** The open short call: SHORT_CALL_OPEN, or the ROLL_TO of a short-call roll. */
+export type PmccShortLeg = LegWithRole<'SHORT_CALL_OPEN' | 'ROLL_TO'>
+
+function applyLeapsEvent(
+  open: PmccLongLeg | null,
+  { leg, chain }: LedgerEvent
+): PmccLongLeg | null {
+  if (chain) return isShortCallRoll(chain) ? open : chain.rollTo
+  return hasLegRole(leg, 'LEAPS_OPEN') ? leg : open
+}
+
 /** The leg that holds the LEAPS now: LEAPS_OPEN, or the BUY half of a LEAPS roll. */
-function newestLongBuy(legs: LegRecord[], chains = groupRollChains(legs)): LegRecord | null {
-  const leapsRollTos = chains.filter(isLeapsRoll).map((chain) => chain.rollTo)
-  const longBuys = [...legs.filter((leg) => leg.legRole === 'LEAPS_OPEN'), ...leapsRollTos]
-  return longBuys.sort(byFillThenCreated).at(-1) ?? null
+export function currentLeapsLeg(
+  legs: LegRecord[],
+  chains = groupRollChains(legs)
+): PmccLongLeg | null {
+  return orderedLedgerEvents(legs, chains).reduce<PmccLongLeg | null>(applyLeapsEvent, null)
+}
+
+const SHORT_CALL_CLOSING_ROLES: ReadonlySet<LegRole> = new Set([
+  'SHORT_CALL_EXPIRED',
+  'SHORT_CALL_CLOSE',
+  'SHORT_CALL_ASSIGNED'
+])
+
+function applyShortCallEvent(
+  open: PmccShortLeg | null,
+  { leg, chain }: LedgerEvent
+): PmccShortLeg | null {
+  if (chain) return isShortCallRoll(chain) ? chain.rollTo : open
+  if (hasLegRole(leg, 'SHORT_CALL_OPEN')) return leg
+  return SHORT_CALL_CLOSING_ROLES.has(leg.legRole) ? null : open
+}
+
+/** The open short call: SHORT_CALL_OPEN or a short roll's ROLL_TO, unless a later leg closed it. */
+export function currentShortCallLeg(
+  legs: LegRecord[],
+  chains = groupRollChains(legs)
+): PmccShortLeg | null {
+  return orderedLedgerEvents(legs, chains).reduce<PmccShortLeg | null>(applyShortCallEvent, null)
+}
+
+/** The PMCC's open legs now: the LEAPS and, if one is open, the short call. */
+export type PmccOpenLegs = { long: PmccLongLeg; short: PmccShortLeg | null }
+
+/** `null` when there is no LEAPS leg. */
+export function pmccOpenLegs(legs: LegRecord[]): PmccOpenLegs | null {
+  const chains = groupRollChains(legs)
+  const long = currentLeapsLeg(legs, chains)
+  return long === null ? null : { long, short: currentShortCallLeg(legs, chains) }
 }
 
 export function currentLongStrike(legs: LegRecord[]): string | null {
-  return newestLongBuy(legs)?.strike ?? null
+  return currentLeapsLeg(legs)?.strike ?? null
 }
 
 export function leapsContracts(legs: LegRecord[]): number {
-  return newestLongBuy(legs)?.contracts ?? 0
+  return currentLeapsLeg(legs)?.contracts ?? 0
 }
 
 export function pmccLedgerFromLegs(legs: LegRecord[]): PmccLedgerResult | null {
   const chains = groupRollChains(legs)
-  const long = newestLongBuy(legs, chains)
+  const long = currentLeapsLeg(legs, chains)
   if (long === null) return null
   return calculatePmccLedger({
     leapsContracts: long.contracts,

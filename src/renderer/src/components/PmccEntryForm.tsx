@@ -7,16 +7,16 @@ import {
   useForm,
   useWatch,
   type FieldPath,
-  type UseFormSetError,
   type UseFormSetValue
 } from 'react-hook-form'
 import {
   calculatePmccOpeningDebit,
   type PmccOpeningDebitResult
 } from '../../../main/core/costbasis'
-import type { ApiError, ApiFieldError, CreatePmccPositionResponse } from '../api/positions'
+import type { CreatePmccPositionResponse } from '../api/positions'
 import { useCreatePmccPosition } from '../hooks/useCreatePmccPosition'
 import { localToday } from '../lib/dates'
+import { applyIpcFieldErrors } from '../lib/ipc-field-errors'
 import { parseInputDecimal, parsePositiveInputDecimal } from '../lib/decimal-input'
 import { fmtMoneyGrouped } from '../lib/format'
 import { LEAPS_PRESET, SHORT_PRESET } from '../lib/pmcc-entry'
@@ -60,28 +60,13 @@ const FORM_PATHS: readonly FormPath[] = [
   ...LEG_FIELDS.flatMap((f) => [`long.${f}`, `short.${f}`] as const)
 ]
 
-/** Where an IPC field error is shown: a form field, the pair-level slot, or the save alert. */
-function errorTarget(field: string): FormPath | '__pair__' | 'save' {
+/** The form path an IPC field error is shown on; `null` is the save alert. */
+function errorTarget(field: string): FormPath | null {
   if (field === 'long.contracts' || field === 'short.contracts') return 'contracts'
-  if (field === '__root__') return 'save'
+  if (field === '__root__') return null
   // `__pair__` and the boundary-only rules (underlying, instrument, deliverable) have no
   // field of their own.
   return FORM_PATHS.find((p) => p === field) ?? '__pair__'
-}
-
-/** Routes a failed save's field errors onto the form; anything unplaceable is the save alert. */
-function showSaveErrors(error: ApiError, setError: UseFormSetError<PmccEntryFormValues>): void {
-  const fieldErrors =
-    (error.status === 400 && (error.body as { detail?: ApiFieldError[] }).detail) || []
-  if (fieldErrors.length === 0) {
-    setError('root.save', { message: SAVE_FAILED })
-    return
-  }
-  fieldErrors.forEach((fe) => {
-    const target = errorTarget(fe.field)
-    if (target === 'save') setError('root.save', { message: SAVE_FAILED })
-    else setError(target, { message: fe.message })
-  })
 }
 
 // A leg's chain pick and fill belong to the ticker they were entered for; fees and fill
@@ -199,7 +184,7 @@ export function PmccEntryForm({
       },
       onError: (error) => {
         inFlight.current = false
-        showSaveErrors(error, setError)
+        applyIpcFieldErrors(error, setError, { target: errorTarget, saveMessage: SAVE_FAILED })
       }
     })
   }

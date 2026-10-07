@@ -13,6 +13,7 @@ import {
   RecordCallAwayPayloadSchema,
   RollCcPayloadSchema,
   RollCspPayloadSchema,
+  RollPmccShortCallPayloadSchema,
   SaveAlertOverridesPayloadSchema
 } from '../schemas'
 import {
@@ -30,6 +31,7 @@ import { closeCoveredCallPosition } from '../services/close-covered-call-positio
 import { recordCallAwayPosition } from '../services/record-call-away-position'
 import { rollCspPosition } from '../services/roll-csp-position'
 import { rollCcPosition } from '../services/roll-cc-position'
+import { rollPmccShortCallPosition } from '../services/roll-pmcc-short-call-position'
 import { savePositionAlertOverrides } from '../services/save-position-alert-overrides'
 import type { CreatePositionPayload } from '../schemas'
 import type { IvrOnDemand } from '../services/ivr-on-demand'
@@ -147,6 +149,14 @@ export function registerPositionsHandlers(
     'positions_roll_cc_unhandled_error',
     RollCcPayloadSchema,
     rollCcPosition
+  )
+
+  registerParsedPositionHandler(
+    db,
+    'positions:roll-pmcc-short',
+    'positions_roll_pmcc_short_unhandled_error',
+    RollPmccShortCallPayloadSchema,
+    rollPmccShortCallPosition
   )
 
   registerParsedPositionHandler(

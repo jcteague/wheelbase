@@ -430,6 +430,11 @@ function sumSide(contributions: PmccContribution[], side: PmccLedgerSide): Decim
     .reduce((total, contribution) => total.plus(contributionDollars(contribution)), new Decimal(0))
 }
 
+/** With a known LEAPS strike the effective share cost is always reported. */
+export function calculatePmccLedger(
+  input: PmccLedgerInput & { longStrike: string }
+): PmccLedgerResult & { effectiveShareCost: string }
+export function calculatePmccLedger(input: PmccLedgerInput): PmccLedgerResult
 export function calculatePmccLedger(input: PmccLedgerInput): PmccLedgerResult {
   if (!Number.isInteger(input.leapsContracts) || input.leapsContracts <= 0) {
     throw new Error('leapsContracts must be a positive integer')

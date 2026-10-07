@@ -25,6 +25,8 @@ import {
   isSpreadPercentInRange
 } from './core/screening-criteria'
 import type { PmccLedgerResult, PmccOpeningDebitResult } from './core/costbasis'
+import type { PmccOpenLegs } from './services/pmcc-ledger'
+export type { PmccOpenLegs }
 import { LegAction, LegRole } from './core/types'
 import type {
   InstrumentType,
@@ -173,6 +175,8 @@ export interface GetPositionResult {
   initialNetDebit: string | null
   /** PMCC only: the running cost-basis ledger recomputed from every leg; null for a wheel. */
   pmccLedger: PmccLedgerResult | null
+  /** PMCC only: the open LEAPS and open short call; null for a wheel or a PMCC with no LEAPS. */
+  pmccOpenLegs: PmccOpenLegs | null
 }
 
 export interface PmccLegSummary {
@@ -445,7 +449,13 @@ const RollPayloadBaseSchema = z.object({
   fillDate: z.string().optional()
 })
 
-interface RollResultBase {
+export interface RollResultBase<Phase extends WheelPhase> {
+  position: {
+    id: string
+    ticker: string
+    phase: Phase
+    status: 'ACTIVE'
+  }
   rollFromLeg: LegRecord & { legRole: 'ROLL_FROM'; action: 'BUY' }
   rollToLeg: LegRecord & { legRole: 'ROLL_TO'; action: 'SELL' }
   rollChainId: string
@@ -460,14 +470,7 @@ export const RollCspPayloadSchema = RollPayloadBaseSchema
 
 export type RollCspPayload = z.infer<typeof RollCspPayloadSchema>
 
-export interface RollCspResult extends RollResultBase {
-  position: {
-    id: string
-    ticker: string
-    phase: 'CSP_OPEN'
-    status: 'ACTIVE'
-  }
-}
+export type RollCspResult = RollResultBase<'CSP_OPEN'>
 
 // ---------------------------------------------------------------------------
 // Roll CC schemas
@@ -477,13 +480,24 @@ export const RollCcPayloadSchema = RollPayloadBaseSchema
 
 export type RollCcPayload = z.infer<typeof RollCcPayloadSchema>
 
-export interface RollCcResult extends RollResultBase {
-  position: {
-    id: string
-    ticker: string
-    phase: 'CC_OPEN'
-    status: 'ACTIVE'
-  }
+export type RollCcResult = RollResultBase<'CC_OPEN'>
+
+// ---------------------------------------------------------------------------
+// Roll PMCC short call schemas
+// ---------------------------------------------------------------------------
+
+// The PMCC fill date drives open-short replay order, so it is ISO-checked here; the wheel
+// rolls keep the base schema's looser `fillDate` unchanged.
+export const RollPmccShortCallPayloadSchema = RollPayloadBaseSchema.extend({
+  fillDate: IsoDateSchema.optional()
+})
+
+export type RollPmccShortCallPayload = z.infer<typeof RollPmccShortCallPayloadSchema>
+
+export interface RollPmccShortCallResult extends RollResultBase<'PMCC_OPEN'> {
+  costBasisSnapshot: CostBasisSnapshotRecord & { triggerEvent: 'PMCC_SHORT_ROLL'; finalPnl: null }
+  ledger: PmccLedgerResult
+  shortCallRollNumber: number
 }
 
 // ---------------------------------------------------------------------------

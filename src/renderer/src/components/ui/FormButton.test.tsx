@@ -44,4 +44,26 @@ describe('FormButton', () => {
     await userEvent.click(screen.getByRole('button'))
     expect(handler).toHaveBeenCalledOnce()
   })
+
+  // [US-104] A disabled confirm reads as unavailable, not as an inert gold button
+  it('renders a disabled button with the opacity-40 and cursor-not-allowed treatment', () => {
+    render(<FormButton label="Confirm roll" disabled />)
+    const btn = screen.getByRole('button', { name: 'Confirm roll' })
+    expect(btn).toBeDisabled()
+    expect(btn).toHaveClass('opacity-40')
+    expect(btn).toHaveClass('cursor-not-allowed')
+  })
+
+  it('an enabled primary button has neither disabled class applied', () => {
+    render(<FormButton label="Confirm roll" />)
+    const btn = screen.getByRole('button', { name: 'Confirm roll' })
+    expect(btn).toBeEnabled()
+    expect(btn).not.toHaveClass('opacity-40')
+    expect(btn).not.toHaveClass('cursor-not-allowed')
+  })
+
+  it('still shows the pending label when isPending and disabled are both set', () => {
+    render(<FormButton label="Confirm roll" pendingLabel="Recording…" isPending disabled />)
+    expect(screen.getByRole('button')).toHaveTextContent('Recording…')
+  })
 })

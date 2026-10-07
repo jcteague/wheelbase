@@ -1,6 +1,6 @@
 # Cost Basis
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101,us-103 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101,us-103,us-104 -->
 
 ## Overview
 
@@ -66,9 +66,18 @@ the list row shows the running total. See
 [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md) and
 [us-103 — PMCC cost basis](../features/us-103-pmcc-cost-basis.md).
 
+The first production consumer of that writer is the **PMCC short-call roll**
+(us-104): the roll's linked BUY/SELL pair enters the ledger as one net
+contribution and appends a `PMCC_SHORT_ROLL` snapshot in the same
+transaction — the roll service computes no basis of its own. Before the
+trader confirms, the roll sheet previews the net debit/credit, the post-roll
+basis and the post-roll effective share cost, and shows an **advisory**
+warning when the replacement strike sits below that effective cost. See
+[us-104 — Roll a PMCC short call](../features/us-104-roll-pmcc-short-call.md).
+
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101,us-103 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101,us-103,us-104 -->
 
 ## Key decisions
 
@@ -461,9 +470,35 @@ pnlPercent, maxProfit }` as 4-dp decimal strings. The renderer imports
   `'PMCC_SHORT_ROLL'`; it does not define it.
 - **Driven by:** [us-103 — PMCC cost basis](../features/us-103-pmcc-cost-basis.md)
 
+### A PMCC short roll records basis only through `appendPmccSnapshot`
+
+- **Decision:** `rollPmccShortCallPosition` inserts the `ROLL_FROM` BUY /
+  `ROLL_TO` SELL pair and then calls
+  `appendPmccSnapshot(db, positionId, { triggerEvent: 'PMCC_SHORT_ROLL', eventDate: fillDate, now })`
+  inside one `db.transaction()`. It returns the recomputed `ledger` on the
+  IPC result so the success state needs no refetch.
+- **Why:** US-14's roll shape with US-103's writer in place of
+  `calculateRollBasis` — the story says it "must not compute a basis of its
+  own". A failed snapshot write rolls the two legs back.
+- **Driven by:** [us-104 — Roll a PMCC short call](../features/us-104-roll-pmcc-short-call.md),
+  [us-103 — PMCC cost basis](../features/us-103-pmcc-cost-basis.md)
+
+### The post-roll effective-share-cost warning is renderer-side and advisory
+
+- **Decision:** The roll sheet computes the post-roll basis and effective
+  share cost with pure helpers in `src/renderer/src/lib/pmcc-roll.ts` and
+  shows a warning (`AlertBox variant="warning"`) when the replacement strike
+  is below the post-roll effective share cost. It never disables confirm,
+  and it renders only once the roll is valid.
+- **Why:** The story calls the warning "advisory only — never blocks
+  confirm" (ADR `soft-client-side-warnings`), the PMCC analogue of
+  `RollCcForm`'s below-basis nudge. The figure is a preview; the recorded
+  basis still comes from the main-process ledger.
+- **Driven by:** [us-104 — Roll a PMCC short call](../features/us-104-roll-pmcc-short-call.md)
+
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101,us-103 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101,us-103,us-104 -->
 
 ## Cost basis on each lifecycle event
 
@@ -923,9 +958,10 @@ See [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md).
 Every PMCC leg event after opening (a short expires, a new short is sold, a
 short is bought back, a short roll, a LEAPS roll) recomputes the basis from
 **all** of the position's legs and appends one snapshot. The production write
-paths for those events belong to US-104/105/111/115/119. US-103 ships the
-ledger, the writer, the vocabulary and the display. Its e2e drives the
-events through the dev-only `_test:pmcc-record-leg-event` channel.
+paths for those events belong to US-104/105/111/115/119; the short roll
+(US-104) has shipped — see [PMCC short-call roll](#pmcc-short-call-roll-us-104).
+US-103 ships the ledger, the writer, the vocabulary and the display. Its e2e
+drives the events through the dev-only `_test:pmcc-record-leg-event` channel.
 
 **Step 1 — legs → contributions** (`buildPmccContributions`, service layer):
 
@@ -1043,9 +1079,75 @@ max profit, breakeven or annualized return. The positions list row shows
 
 See [us-103 — PMCC cost basis](../features/us-103-pmcc-cost-basis.md).
 
+### PMCC short-call roll (us-104)
+
+`positions:roll-pmcc-short` replaces the open short call (validated by
+`rollPmccShortCall` — see [Wheel Lifecycle](wheel-lifecycle.md)). Legs
+written (one shared fresh `roll_chain_id`, money formatted to 4 dp in the
+service, `fees '0.0000'` — there is no fees input):
+
+- `ROLL_FROM` — `BUY CALL`, the open short's strike / expiration / contracts,
+  `premium_per_contract = fill_price = costToClosePerContract`.
+- `ROLL_TO` — `SELL CALL`, `newStrike` (defaults to the current strike) /
+  `newExpiration`, same contracts, `premium_per_contract = fill_price =
+newPremiumPerContract`.
+
+Basis effect — no new math; the pair flows through the ledger above:
+
+```
+net (per share)    = newPremium − costToClose        # groupRollChains: Σ SELL − Σ BUY
+contribution       = SHORT side (ROLL_FROM.action = BUY), cashPerShare = −net
+basisPerShare'     = basisPerShare − net             # a debit (net < 0) raises basis
+effectiveShareCost'= currentLongStrike + basisPerShare'   # LEAPS strike unchanged by a short roll
+```
+
+Snapshot written by `appendPmccSnapshot` in the roll's transaction:
+`trigger_event = 'PMCC_SHORT_ROLL'`, `basis_per_share = ledger.basisPerShare`,
+`total_premium_collected = ledger.shortCreditsTotal`, `final_pnl = NULL`,
+`snapshot_at = makeSnapshotAt(fillDate)`. The `positions` row is untouched
+(phase stays `PMCC_OPEN`).
+
+Worked figures (1 contract, $0 fees, from basis 21.20 on a $80 LEAPS):
+
+| Roll                                         | Net per share | Total   | basis / share | Effective share cost |
+| -------------------------------------------- | ------------- | ------- | ------------- | -------------------- |
+| Up & out: BUY $108 @ 3.00, SELL $112 @ 2.40  | debit 0.60    | $60.00  | 21.80         | 101.80               |
+| Out: BUY $108 @ 1.10, SELL $108 @ 2.30       | credit 1.20   | $120.00 | 20.00         | 100.00               |
+| Down & out: BUY $108 @ 3.00, SELL $98 @ 2.50 | debit 0.50    | $50.00  | 21.70         | 101.70               |
+
+After the up-and-out roll the snapshot chain reads `PMCC_OPEN`,
+`PMCC_SHORT_EXPIRED`, `PMCC_SHORT_OPEN`, `PMCC_SHORT_ROLL` /
+`23.0000, 23.0000, 21.2000, 21.8000`, `basisTotal 2180.0000`, and the IPC
+result carries the post-roll `ledger` plus `shortCallRollNumber` (count of
+short-side chains, so `1` for the first) for the ledger line US-109 will
+render.
+
+**Renderer preview (not persisted).** The roll sheet derives, from the
+detail's `pmccLedger.basisPerShare`, the LEAPS strike and the typed values
+(`src/renderer/src/lib/pmcc-roll.ts`):
+
+```
+pmccRollNet             net = premium − costToClose; perShare, total = |net| × contracts × 100
+pmccPostRollEffectiveCost postBasis = basisPerShare − net
+                          effectiveAfter = leapsStrike + postBasis
+pmccStrikeShortfall     shortfall = effectiveAfter − newStrike   (null when newStrike ≥ effectiveAfter)
+```
+
+The net renders as `Net Debit: $0.60 per share ($60.00 total)` /
+`Net Credit: $1.20 per share ($120.00 total)`. When a shortfall exists the
+advisory warning reads `Short strike $98.00 is below your effective share
+cost of $101.70 after this roll. If assigned, covering from the LEAPS
+realizes roughly $3.70 per share of loss.` — confirm stays enabled. The
+sheet's context block also shows the current `Effective share cost` with a
+"not a guaranteed breakeven" note. After recording, a banner names the net
+line (`Short-call roll #1 debit · $0.60 per share ($60.00 total)`) and the
+drawer refetches to `$21.80`.
+
+See [us-104 — Roll a PMCC short call](../features/us-104-roll-pmcc-short-call.md).
+
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101,us-103 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101,us-103,us-104 -->
 
 ## Function signatures
 
@@ -1238,6 +1340,33 @@ come from the shared `readLegs` / `readLegsByPosition` in
 DEBUG `pmcc_ledger_contributions`, `pmcc_roll_chains`, `pmcc_snapshot_insert`;
 WARN `pmcc_ledger_unknown_leg_role`.
 
+Since us-104 the same file also exports the open-leg selectors
+`currentLeapsLeg` (the newest long-side BUY — the leg `currentLongStrike`
+anchors on), `currentShortCallLeg` and `pmccOpenLegs` (→ `PmccOpenLegs`,
+returned by `getPosition`). A private `orderedLedgerEvents` feeds the
+contribution builder and both selectors so the merge/sort of legs and roll
+chains exists once. `src/main/services/leg-rows.ts` gains `insertLegRow(db,
+leg)`, the single full-column leg insert used by the roll service and the
+PMCC open path.
+
+### Service-layer PMCC short roll (us-104)
+
+`rollPmccShortCallPosition(db, positionId, payload)` in
+`src/main/services/roll-pmcc-short-call-position.ts` → `RollPmccShortCallResult`
+(`RollResultBase<'PMCC_OPEN'>` plus the `PMCC_SHORT_ROLL` snapshot, `ledger`
+and `shortCallRollNumber`). Logging: INFO `pmcc_short_call_rolled
+{ positionId, rollChainId, netCreditPerShare, basisPerShare,
+shortCallRollNumber }` and `pmcc_short_roll_rejected`; DEBUG inputs and
+transaction checkpoints.
+
+### Renderer preview helpers: `pmcc-roll.ts` (us-104)
+
+`src/renderer/src/lib/pmcc-roll.ts` — display math for the roll sheet, not
+the engine: `pmccRollNet`, `pmccRecordedRollNet` (banner, from recorded
+legs), `pmccRollLabel`, `pmccPostRollEffectiveCost` (→ `{ postBasis,
+effectiveAfter }`) and `pmccStrikeShortfall`. Formulas are under
+[PMCC short-call roll](#pmcc-short-call-roll-us-104).
+
 ### Renderer derivation: `deriveRunningBasis`
 
 Pure helper in `src/renderer/src/lib/deriveRunningBasis.ts`. Not part of
@@ -1262,7 +1391,7 @@ while later rows inherit the latest snapshot of the day.
 
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101,us-103 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101,us-103,us-104 -->
 
 ## Snapshot row reference
 
@@ -1307,6 +1436,9 @@ credits to date in dollars after short-leg fees. `final_pnl` is `NULL`. Each
 PMCC leg event writes exactly one row, through `appendPmccSnapshot` only.
 Unlike the wheel, a PMCC expiration **does** write a row. For PMCC display,
 the read paths recompute from legs, and these rows are the audit chain.
+`PMCC_SHORT_ROLL` rows are written in production by the us-104 short-call
+roll (`snapshot_at` from the roll's fill date); the other post-open PMCC
+triggers still await their consumer stories.
 
 Events that **do not** insert a row: wheel CC close early, wheel CC expiration. Their
 P&L is returned in the IPC envelope (`ccLegPnl`) but not persisted — the
@@ -1319,7 +1451,7 @@ land in `cost_basis_snapshots`.
 
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101,us-103 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-10,us-11,us-12,us-14,us-16,us-33,us-101,us-103,us-104 -->
 
 ## Driven by
 
@@ -1336,6 +1468,7 @@ land in `cost_basis_snapshots`.
 - [us-33 — Live option mid + unrealized P&L](../features/us-33-option-mid-pnl.md)
 - [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md)
 - [us-103 — PMCC cost basis](../features/us-103-pmcc-cost-basis.md)
+- [us-104 — Roll a PMCC short call](../features/us-104-roll-pmcc-short-call.md)
 
 <!-- /generated -->
 

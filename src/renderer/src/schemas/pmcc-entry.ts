@@ -5,13 +5,7 @@ import { z } from 'zod'
 import { pmccCrossLegIssues, type PmccCrossLegValues } from '../../../main/core/pmcc-rules'
 import type { CreatePmccPositionPayload } from '../../../main/schemas'
 import { parseInputDecimal } from '../lib/decimal-input'
-import { ISO_DATE_REGEX, isoDateSchema, tickerSchema } from './common'
-
-const moneySchema = (message: string, test: (value: number) => boolean): z.ZodString =>
-  z.string().refine((v) => {
-    const parsed = parseInputDecimal(v)
-    return parsed !== null && test(parsed.toNumber())
-  }, message)
+import { ISO_DATE_REGEX, inputToNumber, isoDateSchema, moneySchema, tickerSchema } from './common'
 
 const positiveFillSchema = moneySchema('Actual fill price must be greater than zero.', (v) => v > 0)
 
@@ -95,20 +89,18 @@ export function EMPTY_PMCC_DEFAULTS(today: string): PmccEntryFormValues {
   return { ticker: '', contracts: '', long: leg, short: { ...leg }, thesis: '', notes: '' }
 }
 
-const toNumber = (value: string): number => parseInputDecimal(value)?.toNumber() ?? NaN
-
 export function toCreatePmccPayload(values: PmccEntryFormValues): CreatePmccPositionPayload {
-  const contracts = toNumber(values.contracts)
+  const contracts = inputToNumber(values.contracts)
   const toLeg = (leg: LegValues): CreatePmccPositionPayload['long'] => ({
     underlying: values.ticker,
     instrumentType: 'CALL',
     deliverableShares: 100,
-    strike: toNumber(leg.strike),
+    strike: inputToNumber(leg.strike),
     expiration: leg.expiration,
     contracts,
-    fillPrice: toNumber(leg.fillPrice),
+    fillPrice: inputToNumber(leg.fillPrice),
     fillDate: leg.fillDate,
-    fees: toNumber(leg.fees)
+    fees: inputToNumber(leg.fees)
   })
   return {
     strategy: 'PMCC',

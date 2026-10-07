@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import type { PositionDetail } from '../api/positions'
+import type { PositionDetail, RollPmccShortCallResponse } from '../api/positions'
 
 type PositionActiveLeg = NonNullable<PositionDetail['activeLeg']>
 type PositionSnapshot = NonNullable<PositionDetail['costBasisSnapshot']>
@@ -62,6 +62,11 @@ type PositionDetailSheetsResult = {
   rollCcOpen: boolean
   handleRollCc: () => void
   handleCloseRollCc: () => void
+  rollPmccShortOpen: boolean
+  handleRollPmccShort: () => void
+  handleCloseRollPmccShort: () => void
+  pmccRollRecorded: RollPmccShortCallResponse | null
+  handlePmccRollRecorded: (response: RollPmccShortCallResponse) => void
 }
 
 function getActiveLegSheetContext(data: PositionDetail | undefined): ActiveLegSheetContext | null {
@@ -114,6 +119,8 @@ export function usePositionDetailSheets(
   const [ccExpirationCtx, setCcExpirationCtx] = useState<ActiveLegSheetContext | null>(null)
   const [rollCspOpen, setRollCspOpen] = useState(false)
   const [rollCcOpen, setRollCcOpen] = useState(false)
+  const [rollPmccShortOpen, setRollPmccShortOpen] = useState(false)
+  const [pmccRollRecorded, setPmccRollRecorded] = useState<RollPmccShortCallResponse | null>(null)
 
   const assignmentWaterfall = useMemo(() => getAssignmentWaterfall(data), [data])
   const overlayOpen =
@@ -121,7 +128,8 @@ export function usePositionDetailSheets(
       (sheetCtx) => sheetCtx !== null
     ) ||
     rollCspOpen ||
-    rollCcOpen
+    rollCcOpen ||
+    rollPmccShortOpen
 
   const handleOpenCc = useCallback(() => {
     const assignLeg = data?.legs.find((leg) => leg.legRole === 'ASSIGN')
@@ -219,6 +227,17 @@ export function usePositionDetailSheets(
     handleCloseRollCsp: () => setRollCspOpen(false),
     rollCcOpen,
     handleRollCc: () => setRollCcOpen(true),
-    handleCloseRollCc: () => setRollCcOpen(false)
+    handleCloseRollCc: () => setRollCcOpen(false),
+    rollPmccShortOpen,
+    handleRollPmccShort: () => {
+      setPmccRollRecorded(null)
+      setRollPmccShortOpen(true)
+    },
+    handleCloseRollPmccShort: () => setRollPmccShortOpen(false),
+    pmccRollRecorded,
+    handlePmccRollRecorded: (response: RollPmccShortCallResponse) => {
+      setPmccRollRecorded(response)
+      setRollPmccShortOpen(false)
+    }
   }
 }

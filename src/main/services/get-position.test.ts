@@ -514,3 +514,43 @@ describe('getPosition — PMCC ledger (US-103)', () => {
     expect(detail.pmccLedger?.basisPerShare).toBe('23.0000')
   })
 })
+
+// [US-104] The detail read path returns the PMCC's open LEAPS and open short call.
+describe('getPosition — PMCC open legs (US-104)', () => {
+  it('returns the LEAPS_OPEN and SHORT_CALL_OPEN right after createPmccPosition', () => {
+    const db = makeTestDb()
+    const { position } = createPmccPosition(db, makePmccPayload())
+
+    const openLegs = getDetail(db, position.id).pmccOpenLegs
+
+    expect(openLegs?.long.legRole).toBe('LEAPS_OPEN')
+    expect(openLegs?.short?.legRole).toBe('SHORT_CALL_OPEN')
+  })
+
+  it("returns the short roll's ROLL_TO as the open short after a short roll", () => {
+    const db = makeTestDb()
+    const { position } = createPmccPosition(db, makePmccPayload())
+    const F = pmccFixtures(position.id, isoDate)
+    recordLegEvent(db, position.id, F.SHORT_ROLL, 'PMCC_SHORT_ROLL')
+
+    const openLegs = getDetail(db, position.id).pmccOpenLegs
+
+    expect(openLegs?.short?.legRole).toBe('ROLL_TO')
+    expect(openLegs?.short?.strike).toBe('112.0000')
+    expect(openLegs?.long.legRole).toBe('LEAPS_OPEN')
+  })
+
+  it('returns pmccOpenLegs null for a wheel position', () => {
+    const db = makeTestDb()
+    const { position } = createPosition(db, {
+      ticker: 'AAPL',
+      strike: 180,
+      expiration: isoDate(30),
+      contracts: 1,
+      premiumPerContract: 2.5,
+      fillDate: isoDate(0)
+    })
+
+    expect(getDetail(db, position.id).pmccOpenLegs).toBeNull()
+  })
+})

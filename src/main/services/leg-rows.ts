@@ -31,6 +31,9 @@ const LEG_COLUMNS = `
 
 const LEG_ORDER = 'ORDER BY fill_date ASC, created_at ASC'
 
+const INSERT_LEG_SQL = `INSERT INTO legs (${LEG_COLUMNS})
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
 const GET_LEGS_QUERY = `
   SELECT ${LEG_COLUMNS}
   FROM legs
@@ -62,6 +65,27 @@ function mapLegRow(r: LegRow): LegRecord {
 export function readLegs(db: Database.Database, positionId: string): LegRecord[] {
   const rows = db.prepare(GET_LEGS_QUERY).all(positionId) as LegRow[]
   return rows.map(mapLegRow)
+}
+
+/** Writes one leg row exactly as given — the inverse of readLegs' mapping. */
+export function insertLegRow(db: Database.Database, leg: LegRecord): void {
+  db.prepare(INSERT_LEG_SQL).run(
+    leg.id,
+    leg.positionId,
+    leg.legRole,
+    leg.action,
+    leg.instrumentType,
+    leg.strike,
+    leg.expiration,
+    leg.contracts,
+    leg.premiumPerContract,
+    leg.fillPrice,
+    leg.fillDate,
+    leg.rollChainId,
+    leg.fees,
+    leg.createdAt,
+    leg.updatedAt
+  )
 }
 
 /** One query for every listed position's legs, keyed by position id, in readLegs order. */

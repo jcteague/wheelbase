@@ -4,6 +4,8 @@ import { vi } from 'vitest'
 import { PositionDetailActions } from './PositionDetailActions'
 
 const BASE_PROPS = {
+  strategyType: 'WHEEL' as const,
+  hasOpenShortCall: false,
   hasCostBasis: true,
   ccExpired: false,
   onOpenCc: vi.fn(),
@@ -13,7 +15,8 @@ const BASE_PROPS = {
   onRecordCallAway: vi.fn(),
   onRecordCcExpiration: vi.fn(),
   onRollCsp: vi.fn(),
-  onRollCc: vi.fn()
+  onRollCc: vi.fn(),
+  onRollPmccShort: vi.fn()
 }
 
 beforeEach(() => {
@@ -25,6 +28,7 @@ beforeEach(() => {
   BASE_PROPS.onRecordCcExpiration.mockReset()
   BASE_PROPS.onRollCsp.mockReset()
   BASE_PROPS.onRollCc.mockReset()
+  BASE_PROPS.onRollPmccShort.mockReset()
 })
 
 it('renders "Close CC Early →" button when phase=CC_OPEN', () => {
@@ -168,4 +172,72 @@ it('PMCC_OPEN renders only the phase badge', () => {
     'record-assignment-btn',
     'record-expiration-btn'
   ].forEach((testId) => expect(screen.queryByTestId(testId)).not.toBeInTheDocument())
+})
+
+// [US-104] Roll Short Call header action
+describe('PMCC roll short call action', () => {
+  const WHEEL_TEST_IDS = [
+    'record-call-away-btn',
+    'roll-cc-btn',
+    'close-cc-early-btn',
+    'record-cc-expiration-btn',
+    'open-covered-call-btn',
+    'roll-csp-btn',
+    'record-assignment-btn',
+    'record-expiration-btn'
+  ]
+
+  it('PMCC with an open short call shows "Roll Short Call →" and no wheel buttons', () => {
+    render(
+      <PositionDetailActions
+        {...BASE_PROPS}
+        strategyType="PMCC"
+        phase="PMCC_OPEN"
+        hasOpenShortCall
+      />
+    )
+    expect(screen.getByTestId('roll-pmcc-short-btn')).toHaveTextContent('Roll Short Call →')
+    expect(screen.getAllByRole('button')).toHaveLength(1)
+    WHEEL_TEST_IDS.forEach((testId) => expect(screen.queryByTestId(testId)).not.toBeInTheDocument())
+  })
+
+  it('calls onRollPmccShort when "Roll Short Call →" is clicked', async () => {
+    const user = userEvent.setup()
+    render(
+      <PositionDetailActions
+        {...BASE_PROPS}
+        strategyType="PMCC"
+        phase="PMCC_OPEN"
+        hasOpenShortCall
+      />
+    )
+    await user.click(screen.getByTestId('roll-pmcc-short-btn'))
+    expect(BASE_PROPS.onRollPmccShort).toHaveBeenCalledOnce()
+  })
+
+  it('PMCC without an open short call shows no roll button', () => {
+    render(
+      <PositionDetailActions
+        {...BASE_PROPS}
+        strategyType="PMCC"
+        phase="PMCC_OPEN"
+        hasOpenShortCall={false}
+      />
+    )
+    expect(screen.queryByTestId('roll-pmcc-short-btn')).not.toBeInTheDocument()
+    expect(screen.queryAllByRole('button')).toHaveLength(0)
+  })
+
+  it('WHEEL in CC_OPEN still shows roll-cc-btn and never roll-pmcc-short-btn', () => {
+    render(
+      <PositionDetailActions
+        {...BASE_PROPS}
+        strategyType="WHEEL"
+        phase="CC_OPEN"
+        hasOpenShortCall
+      />
+    )
+    expect(screen.getByTestId('roll-cc-btn')).toBeInTheDocument()
+    expect(screen.queryByTestId('roll-pmcc-short-btn')).not.toBeInTheDocument()
+  })
 })

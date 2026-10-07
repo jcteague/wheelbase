@@ -10,6 +10,8 @@ import {
   closeCoveredCall,
   expireCc,
   rollCc,
+  requirePmccOpenPhase,
+  rollPmccShortCall,
   openPmcc
 } from './lifecycle'
 import type {
@@ -22,7 +24,8 @@ import type {
   RollCspInput,
   RollCcInput,
   OpenPmccInput,
-  OpenPmccLegInput
+  OpenPmccLegInput,
+  RollPmccShortCallInput
 } from './lifecycle'
 
 // ---------------------------------------------------------------------------
@@ -1251,5 +1254,297 @@ describe('openPmcc', () => {
       })
     )
     expect(e.code).toBe('long_after_short')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// [US-104] rollPmccShortCall
+// ---------------------------------------------------------------------------
+
+describe('requirePmccOpenPhase', () => {
+  it('accepts PMCC_OPEN', () => {
+    expect(() => requirePmccOpenPhase('PMCC_OPEN')).not.toThrow()
+  })
+
+  it('rejects any other phase with the PMCC_OPEN phase error', () => {
+    const e = catchValidation(() => requirePmccOpenPhase('CC_OPEN'))
+    expect({ field: e.field, code: e.code, message: e.message }).toEqual({
+      field: '__phase__',
+      code: 'invalid_phase',
+      message: 'Position is not in PMCC_OPEN phase'
+    })
+  })
+})
+
+describe('rollPmccShortCall', () => {
+  function validInput(overrides: Partial<RollPmccShortCallInput> = {}): RollPmccShortCallInput {
+    return {
+      currentPhase: 'PMCC_OPEN',
+      openShort: { strike: '108.0000', expiration: '2026-11-20', fillDate: '2026-10-01' },
+      leapsExpiration: '2027-09-17',
+      fillDate: '2026-11-13',
+      newStrike: '112.0000',
+      newExpiration: '2026-12-18',
+      costToClosePerContract: '3.0000',
+      newPremiumPerContract: '2.4000',
+      ...overrides
+    }
+  }
+
+  function expectRejection(
+    input: RollPmccShortCallInput,
+    expected: { field: string; code: string; message?: string }
+  ): void {
+    const e = catchValidation(() => rollPmccShortCall(input))
+    expect({ field: e.field, code: e.code, message: e.message }).toMatchObject(expected)
+  }
+
+  describe('accepts', () => {
+    it('a roll up & out paid as a debit, returning the validated short and new strike', () => {
+      expect(rollPmccShortCall(validInput())).toEqual({
+        phase: 'PMCC_OPEN',
+        openShort: { strike: '108.0000', expiration: '2026-11-20', fillDate: '2026-10-01' },
+        newStrike: '112.0000'
+      })
+    })
+
+    it('a roll filled on the day the short call opened', () => {
+      expect(rollPmccShortCall(validInput({ fillDate: '2026-10-01' })).phase).toBe('PMCC_OPEN')
+    })
+
+    it('a roll filled on the day the short call expires', () => {
+      expect(rollPmccShortCall(validInput({ fillDate: '2026-11-20' })).phase).toBe('PMCC_OPEN')
+    })
+
+    it("returns the caller's own open short, extra fields included", () => {
+      const openShort = {
+        strike: '108.0000',
+        expiration: '2026-11-20',
+        fillDate: '2026-10-01',
+        contracts: 2
+      }
+      expect(rollPmccShortCall(validInput({ openShort })).openShort).toBe(openShort)
+    })
+
+    it('a roll out with the new strike omitted keeps the current strike', () => {
+      expect(rollPmccShortCall(validInput({ newStrike: undefined })).newStrike).toBe('108.0000')
+    })
+
+    it('a roll out at the same strike', () => {
+      expect(
+        rollPmccShortCall(
+          validInput({
+            newStrike: '108.0000',
+            newExpiration: '2026-12-18',
+            costToClosePerContract: '1.1000',
+            newPremiumPerContract: '2.3000'
+          })
+        )
+      ).toMatchObject({ phase: 'PMCC_OPEN', newStrike: '108.0000' })
+    })
+
+    it('a roll up at the same expiration', () => {
+      expect(
+        rollPmccShortCall(validInput({ newStrike: '112.0000', newExpiration: '2026-11-20' }))
+      ).toMatchObject({ phase: 'PMCC_OPEN', newStrike: '112.0000' })
+    })
+  })
+
+  describe('rejects', () => {
+    it('a position that is not PMCC_OPEN', () => {
+      expectRejection(validInput({ currentPhase: 'CC_OPEN' }), {
+        field: '__phase__',
+        code: 'invalid_phase',
+        message: 'Position is not in PMCC_OPEN phase'
+      })
+    })
+
+    it('a PMCC with no open short call', () => {
+      expectRejection(validInput({ openShort: null }), {
+        field: '__root__',
+        code: 'no_open_short_call',
+        message: 'This PMCC has no open short call to roll.'
+      })
+    })
+
+    it('a roll filled before the open short call was filled', () => {
+      expectRejection(validInput({ fillDate: '2026-09-30' }), {
+        field: 'fillDate',
+        code: 'close_date_before_open',
+        message: 'Fill date cannot be before the short call open date'
+      })
+    })
+
+    it('a roll filled after the open short call expired', () => {
+      expectRejection(validInput({ fillDate: '2026-11-21' }), {
+        field: 'fillDate',
+        code: 'close_date_after_expiration',
+        message: 'Fill date cannot be after the short call expiration date'
+      })
+    })
+
+    it('a zero cost to close', () => {
+      expectRejection(validInput({ costToClosePerContract: '0.0000' }), {
+        field: 'costToClosePerContract',
+        code: 'must_be_positive',
+        message: 'Cost to close must be greater than zero'
+      })
+    })
+
+    it('a zero replacement premium', () => {
+      expectRejection(validInput({ newPremiumPerContract: '0.0000' }), {
+        field: 'newPremiumPerContract',
+        code: 'must_be_positive',
+        message: 'Replacement premium must be greater than zero'
+      })
+    })
+
+    it('a zero replacement strike', () => {
+      expectRejection(validInput({ newStrike: '0.0000' }), {
+        field: 'newStrike',
+        code: 'must_be_positive'
+      })
+    })
+
+    it.each(['2027-09-17', '2027-10-15'])(
+      'a replacement expiring on or after the LEAPS (%s)',
+      (newExpiration) => {
+        expectRejection(validInput({ newExpiration }), {
+          field: 'newExpiration',
+          code: 'short_not_before_long',
+          message: 'Short call must expire before the LEAPS call.'
+        })
+      }
+    )
+
+    it('a replacement expiring before the current short call', () => {
+      expectRejection(validInput({ newExpiration: '2026-11-13' }), {
+        field: 'newExpiration',
+        code: 'must_be_on_or_after_current',
+        message: 'Replacement expiration must be on or after the current expiration (Nov 20, 2026)'
+      })
+    })
+
+    // With the fill on/before the current expiration and the replacement on/after it, the
+    // replacement can only fail this rule by sharing the fill date with the current expiration.
+    it('a replacement expiring on the roll fill date', () => {
+      expectRejection(validInput({ fillDate: '2026-11-20', newExpiration: '2026-11-20' }), {
+        field: 'newExpiration',
+        code: 'expiration_not_after_fill',
+        message: 'Expiration must be after the fill date.'
+      })
+    })
+
+    it('a roll that changes neither strike nor expiration', () => {
+      expectRejection(validInput({ newStrike: '108.0000', newExpiration: '2026-11-20' }), {
+        field: '__roll__',
+        code: 'no_change',
+        message: 'Roll must change the strike, the expiration, or both'
+      })
+    })
+
+    it('an omitted new strike at the current expiration', () => {
+      expectRejection(validInput({ newStrike: undefined, newExpiration: '2026-11-20' }), {
+        field: '__roll__',
+        code: 'no_change'
+      })
+    })
+
+    it('an unchanged strike written at a different scale', () => {
+      expectRejection(validInput({ newStrike: '108', newExpiration: '2026-11-20' }), {
+        field: '__roll__',
+        code: 'no_change'
+      })
+    })
+  })
+
+  describe('rule order', () => {
+    it('reports the phase before a missing short call', () => {
+      expectRejection(validInput({ currentPhase: 'CC_OPEN', openShort: null }), {
+        field: '__phase__',
+        code: 'invalid_phase'
+      })
+    })
+
+    it('reports a missing short call before the fill date', () => {
+      expectRejection(validInput({ openShort: null, fillDate: '2000-01-01' }), {
+        field: '__root__',
+        code: 'no_open_short_call'
+      })
+    })
+
+    it('reports the fill date before the cost to close', () => {
+      expectRejection(validInput({ fillDate: '2026-09-30', costToClosePerContract: '0' }), {
+        field: 'fillDate',
+        code: 'close_date_before_open'
+      })
+    })
+
+    it('reports the open-date rule before the fill-after-expiration rule', () => {
+      expectRejection(
+        validInput({
+          openShort: { strike: '108.0000', expiration: '2026-09-25', fillDate: '2026-10-01' },
+          fillDate: '2026-09-28'
+        }),
+        { field: 'fillDate', code: 'close_date_before_open' }
+      )
+    })
+
+    it('reports the fill-after-expiration rule before the cost to close', () => {
+      expectRejection(validInput({ fillDate: '2026-11-21', costToClosePerContract: '0' }), {
+        field: 'fillDate',
+        code: 'close_date_after_expiration'
+      })
+    })
+
+    it('reports the fill-after-expiration rule before the expiration-after-fill rule', () => {
+      expectRejection(validInput({ fillDate: '2026-12-01', newExpiration: '2026-11-27' }), {
+        field: 'fillDate',
+        code: 'close_date_after_expiration'
+      })
+    })
+
+    it('reports the cost to close before the coverage rule', () => {
+      expectRejection(validInput({ costToClosePerContract: '0', newExpiration: '2027-09-17' }), {
+        field: 'costToClosePerContract',
+        code: 'must_be_positive'
+      })
+    })
+
+    it('reports the coverage rule before the expiration-after-fill rule', () => {
+      expectRejection(
+        validInput({
+          openShort: { strike: '108.0000', expiration: '2027-10-01', fillDate: '2026-10-01' },
+          fillDate: '2027-10-01',
+          newExpiration: '2027-09-17'
+        }),
+        { field: 'newExpiration', code: 'short_not_before_long' }
+      )
+    })
+
+    it('reports the on/after-current rule before the expiration-after-fill rule', () => {
+      expectRejection(validInput({ fillDate: '2026-11-18', newExpiration: '2026-11-13' }), {
+        field: 'newExpiration',
+        code: 'must_be_on_or_after_current'
+      })
+    })
+
+    it('reports the expiration-after-fill rule before no-change', () => {
+      expectRejection(
+        validInput({ fillDate: '2026-11-20', newStrike: '108.0000', newExpiration: '2026-11-20' }),
+        { field: 'newExpiration', code: 'expiration_not_after_fill' }
+      )
+    })
+
+    it('reports the coverage rule before no-change', () => {
+      expectRejection(
+        validInput({
+          openShort: { strike: '108.0000', expiration: '2027-09-17', fillDate: '2026-10-01' },
+          newStrike: '108.0000',
+          newExpiration: '2027-09-17'
+        }),
+        { field: 'newExpiration', code: 'short_not_before_long' }
+      )
+    })
   })
 })

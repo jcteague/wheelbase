@@ -4,16 +4,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type Database from 'better-sqlite3'
 import { logger } from '../logger'
+import type { LegRecord } from '../schemas'
 import { makeTestDb } from '../test-utils'
 import { readLegs } from './leg-rows'
 import {
   appendPmccSnapshot,
   buildPmccContributions,
+  currentLeapsLeg,
   currentLongStrike,
+  currentShortCallLeg,
+  isShortCallRoll,
   leapsContracts,
-  pmccLedgerFromLegs
+  pmccLedgerFromLegs,
+  pmccOpenLegs
 } from './pmcc-ledger'
 import { insertPosition } from './position-rows'
+import { groupRollChains } from './roll-chains'
 import { FIXED_DAY, insertLegs, makePmccLeg, pmccFixtures } from './test-fixtures/pmcc-legs'
 
 const POSITION_ID = 'pmcc-1'
@@ -489,5 +495,109 @@ describe('appendPmccSnapshot', () => {
     })
 
     expect(newestBases).toEqual(['23.0000', '23.0000', '21.2000', '21.8000', '19.3000', '-0.4000'])
+  })
+})
+
+// [US-104] Open-leg selectors — which LEAPS and which short call are open now.
+describe('currentShortCallLeg', () => {
+  const role = (legs: LegRecord[], legRole: string): LegRecord => {
+    const found = legs.find((l) => l.legRole === legRole)
+    if (!found) throw new Error(`fixture has no ${legRole}`)
+    return found
+  }
+
+  it('is the SHORT_CALL_OPEN after the opening legs', () => {
+    expect(currentShortCallLeg(F.OPEN)).toEqual(role(F.OPEN, 'SHORT_CALL_OPEN'))
+  })
+
+  it('is null after the short call expires', () => {
+    expect(currentShortCallLeg([...F.OPEN, ...F.EXPIRE_1])).toBeNull()
+  })
+
+  it('is the $108 SHORT_CALL_OPEN after a new short opens', () => {
+    const short = currentShortCallLeg([...F.OPEN, ...F.EXPIRE_1, ...F.SHORT_2])
+    expect(short).toEqual(F.SHORT_2[0])
+    expect(short?.strike).toBe('108.0000')
+  })
+
+  it("is the short roll's $112 ROLL_TO after a short roll", () => {
+    const short = currentShortCallLeg([...F.OPEN, ...F.EXPIRE_1, ...F.SHORT_2, ...F.SHORT_ROLL])
+    expect(short).toEqual(role(F.SHORT_ROLL, 'ROLL_TO'))
+    expect(short?.strike).toBe('112.0000')
+  })
+
+  it('is unchanged by a LEAPS roll (a long-side chain)', () => {
+    expect(currentShortCallLeg(THROUGH_LEAPS_ROLL)).toEqual(role(F.SHORT_ROLL, 'ROLL_TO'))
+  })
+
+  it('does not depend on input order', () => {
+    expect(currentShortCallLeg([...THROUGH_LEAPS_ROLL].reverse())).toEqual(
+      role(F.SHORT_ROLL, 'ROLL_TO')
+    )
+  })
+
+  it.each([
+    ['SHORT_CALL_CLOSE', 'BUY', '0.5000'],
+    ['SHORT_CALL_ASSIGNED', 'ASSIGN', '0.0000']
+  ] as const)('is null after a %s row closes it', (legRole, action, premium) => {
+    const close = makePmccLeg(POSITION_ID, {
+      legRole,
+      action,
+      strike: '110.0000',
+      expiration: FIXED_DAY(32),
+      fillDate: FIXED_DAY(20),
+      premiumPerContract: premium
+    })
+    expect(currentShortCallLeg([...F.OPEN, close])).toBeNull()
+  })
+
+  it('is null for no legs', () => {
+    expect(currentShortCallLeg([])).toBeNull()
+  })
+})
+
+describe('isShortCallRoll', () => {
+  it('is true for a short roll, whose ROLL_FROM buys back the short call', () => {
+    const [chain] = groupRollChains(F.SHORT_ROLL)
+    expect(isShortCallRoll(chain)).toBe(true)
+  })
+
+  it('is false for a LEAPS roll, whose ROLL_FROM sells the old LEAPS', () => {
+    const [chain] = groupRollChains(F.LEAPS_ROLL)
+    expect(isShortCallRoll(chain)).toBe(false)
+  })
+})
+
+describe('currentLeapsLeg', () => {
+  it('is the LEAPS_OPEN after the opening legs', () => {
+    expect(currentLeapsLeg(F.OPEN)?.legRole).toBe('LEAPS_OPEN')
+  })
+
+  it("is the LEAPS roll's $85 ROLL_TO after a LEAPS roll", () => {
+    const long = currentLeapsLeg(THROUGH_LEAPS_ROLL)
+    expect(long).toEqual(F.LEAPS_ROLL.find((l) => l.legRole === 'ROLL_TO'))
+    expect(long?.strike).toBe('85.0000')
+  })
+
+  it('is null when there is no long leg', () => {
+    expect(currentLeapsLeg([])).toBeNull()
+  })
+})
+
+describe('pmccOpenLegs', () => {
+  it('is null for no legs', () => {
+    expect(pmccOpenLegs([])).toBeNull()
+  })
+
+  it('is null when there is no long leg', () => {
+    expect(pmccOpenLegs([...F.SHORT_2])).toBeNull()
+  })
+
+  it('is the LEAPS and the open short after the opening legs', () => {
+    expect(pmccOpenLegs(F.OPEN)).toEqual({ long: F.OPEN[0], short: F.OPEN[1] })
+  })
+
+  it('has a null short after the short call expires', () => {
+    expect(pmccOpenLegs([...F.OPEN, ...F.EXPIRE_1])).toEqual({ long: F.OPEN[0], short: null })
   })
 })

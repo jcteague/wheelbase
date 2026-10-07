@@ -13,6 +13,7 @@ import type {
   RecordCallAwayPayload,
   RollCcPayload,
   RollCspPayload,
+  RollPmccShortCallPayload,
   SaveAlertOverridesPayload,
   TestPmccLegEventPayloadInput,
   AssignCspPositionResult,
@@ -27,7 +28,8 @@ import type {
   PositionListItem,
   RecordCallAwayResult,
   RollCcResult,
-  RollCspResult
+  RollCspResult,
+  RollPmccShortCallResult
 } from '../main/schemas'
 import type { AppendPmccSnapshotResult } from '../main/services/pmcc-ledger'
 
@@ -56,6 +58,8 @@ type IpcExpireCcResult = IpcResult<ExpireCcPositionResult>
 type IpcRollCspResult = IpcResult<RollCspResult>
 
 type IpcRollCcResult = IpcResult<RollCcResult>
+
+type IpcRollPmccShortCallResult = IpcResult<RollPmccShortCallResult>
 
 type IpcCreatePmccPositionResult = IpcResult<CreatePmccPositionResult>
 
@@ -534,6 +538,7 @@ declare global {
       expireCc: (payload: ExpireCcPayload) => Promise<IpcExpireCcResult>
       rollCsp: (payload: RollCspPayload) => Promise<IpcRollCspResult>
       rollCc: (payload: RollCcPayload) => Promise<IpcRollCcResult>
+      rollPmccShortCall: (payload: RollPmccShortCallPayload) => Promise<IpcRollPmccShortCallResult>
       saveAlertOverrides: (
         payload: SaveAlertOverridesPayload
       ) => Promise<IpcSaveAlertOverridesResult>

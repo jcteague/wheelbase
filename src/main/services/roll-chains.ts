@@ -1,10 +1,18 @@
 import Decimal from 'decimal.js'
+import type { LegRole } from '../core/types'
 import type { LegRecord } from '../schemas'
+
+/** A leg known to hold `R` — `legRole` narrowed by a role check, never by a cast. */
+export type LegWithRole<R extends LegRole> = LegRecord & { legRole: R }
+
+export function hasLegRole<R extends LegRole>(leg: LegRecord, role: R): leg is LegWithRole<R> {
+  return leg.legRole === role
+}
 
 export interface RollChain {
   rollChainId: string
-  rollFrom: LegRecord
-  rollTo: LegRecord
+  rollFrom: LegWithRole<'ROLL_FROM'>
+  rollTo: LegWithRole<'ROLL_TO'>
   netCreditPerShare: string
   contracts: number
   fees: string
@@ -24,8 +32,8 @@ const signedPremium = (leg: LegRecord): Decimal =>
 const earlier = (a: string, b: string): string => (a < b ? a : b)
 
 function toRollChain(rollChainId: string, legs: RollLeg[]): RollChain | null {
-  const rollFrom = legs.find((l) => l.legRole === 'ROLL_FROM')
-  const rollTo = legs.find((l) => l.legRole === 'ROLL_TO')
+  const rollFrom = legs.find((l) => hasLegRole(l, 'ROLL_FROM'))
+  const rollTo = legs.find((l) => hasLegRole(l, 'ROLL_TO'))
   if (!rollFrom || !rollTo) return null
   const pair = [rollFrom, rollTo]
   return {

@@ -6,6 +6,7 @@ import { useOptionSnapshots } from '../hooks/useOptionSnapshots'
 import { useStockQuotes } from '../hooks/useStockQuotes'
 import { PositionDetail } from '../api/positions'
 import type { OptionSnapshotsBySymbol, StockQuotesByTicker } from '../api/market-data'
+import { OPEN_LEAPS, OPEN_LEGS, OPEN_SHORT } from '../test-fixtures/pmcc-roll'
 import { PositionDetailPage } from './PositionDetailPage'
 
 vi.mock('../hooks/usePosition')
@@ -43,8 +44,28 @@ vi.mock('../components/CallAwaySheet', () => ({
 
 // Mock CcExpirationSheet to avoid testing it in isolation here
 vi.mock('../components/CcExpirationSheet', () => ({
-  CcExpirationSheet: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="cc-expiration-sheet">Expire CC Worthless</div> : null
+  CcExpirationSheet: ({ open, sharesHeld }: { open: boolean; sharesHeld: number }) =>
+    open ? (
+      <div data-testid="cc-expiration-sheet" data-shares-held={sharesHeld}>
+        Expire CC Worthless
+      </div>
+    ) : null
+}))
+
+vi.mock('../components/OpenCoveredCallSheet', () => ({
+  OpenCoveredCallSheet: ({ contracts, onClose }: { contracts: number; onClose: () => void }) => (
+    <div data-testid="open-cc-sheet" data-contracts={contracts}>
+      <button onClick={onClose}>close open cc</button>
+    </div>
+  )
+}))
+
+vi.mock('../components/RollCspSheet', () => ({
+  RollCspSheet: ({ strike, onClose }: { strike: string; onClose: () => void }) => (
+    <div data-testid="roll-csp-sheet" data-strike={strike}>
+      <button onClick={onClose}>close roll csp</button>
+    </div>
+  )
 }))
 
 // Mock RollCcSheet to avoid testing it in isolation here
@@ -58,6 +79,27 @@ vi.mock('../components/RollCcSheet', () => ({
       </div>
     ) : null
 }))
+
+// [US-104] Stand-in for the Roll Short Call sheet: a dialog of the same name whose buttons
+// report a recorded debit or credit roll, or close it.
+vi.mock('../components/RollPmccShortCallSheet', async () => {
+  const { UP_OUT_RESPONSE, OUT_CREDIT_RESPONSE } = await import('../test-fixtures/pmcc-roll')
+  return {
+    RollPmccShortCallSheet: ({
+      onClose,
+      onRecorded
+    }: {
+      onClose: () => void
+      onRecorded: (response: typeof UP_OUT_RESPONSE) => void
+    }) => (
+      <div role="dialog" aria-label="Roll Short Call">
+        <button onClick={() => onRecorded(UP_OUT_RESPONSE)}>record debit roll</button>
+        <button onClick={() => onRecorded(OUT_CREDIT_RESPONSE)}>record credit roll</button>
+        <button onClick={onClose}>close roll sheet</button>
+      </div>
+    )
+  }
+})
 
 // Mock PositionAlertOverridesForm to avoid testing it in isolation here
 vi.mock('../components/PositionAlertOverridesForm', () => ({
@@ -163,7 +205,8 @@ const CSP_OPEN_DETAIL = {
   legs: [],
   allSnapshots: [],
   initialNetDebit: null,
-  pmccLedger: null
+  pmccLedger: null,
+  pmccOpenLegs: null
 }
 
 // RED: TypeScript will error here until PositionDetail gains the allSnapshots field
@@ -1072,4 +1115,192 @@ it('does not render RiskSnapshot when snapshot is absent', () => {
   expect(screen.getByText('Awaiting market data')).toBeInTheDocument()
   // No "Risk snapshot" section — dist is null when underlying is null
   expect(screen.queryByText('Risk snapshot')).not.toBeInTheDocument()
+})
+
+// ---------------------------------------------------------------------------
+// [US-104] Roll Short Call — sheet state, overlay and the recorded banner
+// ---------------------------------------------------------------------------
+
+const PMCC_DETAIL: PositionDetail = {
+  ...CSP_OPEN_DETAIL,
+  position: {
+    ...CSP_OPEN_DETAIL.position,
+    id: 'pmcc-1',
+    ticker: 'XYZ',
+    phase: 'PMCC_OPEN',
+    strategyType: 'PMCC'
+  },
+  activeLeg: null,
+  costBasisSnapshot: null,
+  legs: [OPEN_LEAPS, OPEN_SHORT],
+  initialNetDebit: '2300.0000',
+  pmccLedger: {
+    basisPerShare: '21.2000',
+    basisTotal: '2120.0000',
+    leapsCostPerShare: '25.0000',
+    leapsCostTotal: '2500.0000',
+    shortCreditsPerShare: '3.8000',
+    shortCreditsTotal: '380.0000',
+    effectiveShareCost: '101.2000',
+    premiumRecoveredPercent: '15.2000'
+  },
+  pmccOpenLegs: OPEN_LEGS
+}
+
+function renderPmcc(detail: PositionDetail = PMCC_DETAIL): void {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: detail,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+  render(<PositionDetailPage />)
+}
+
+const UP_OUT_BANNER =
+  'Rolled — bought to close XYZ $108.00 CALL 2026-11-20 at $3.00, sold XYZ $112.00 CALL 2026-12-18 at $2.40. Short-call roll #1 debit · $0.60 per share ($60.00 total). Both legs share one roll chain.'
+
+describe('PositionDetailPage — Roll Short Call', () => {
+  it('opens the Roll Short Call sheet and blurs the content', async () => {
+    const user = userEvent.setup()
+    renderPmcc()
+    expect(screen.queryByRole('dialog', { name: 'Roll Short Call' })).not.toBeInTheDocument()
+    await user.click(screen.getByTestId('roll-pmcc-short-btn'))
+    expect(screen.getByRole('dialog', { name: 'Roll Short Call' })).toBeInTheDocument()
+    expect(screen.getByTestId('position-detail')).toHaveStyle({
+      filter: 'blur(1.5px)',
+      opacity: '0.35',
+      pointerEvents: 'none'
+    })
+  })
+
+  it('offers no roll when the PMCC has no open short call', () => {
+    renderPmcc({ ...PMCC_DETAIL, pmccOpenLegs: { long: OPEN_LEAPS, short: null } })
+    expect(screen.queryByTestId('roll-pmcc-short-btn')).not.toBeInTheDocument()
+  })
+
+  it('closes the sheet when cancelled', async () => {
+    const user = userEvent.setup()
+    renderPmcc()
+    await user.click(screen.getByTestId('roll-pmcc-short-btn'))
+    await user.click(screen.getByText('close roll sheet'))
+    expect(screen.queryByRole('dialog', { name: 'Roll Short Call' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('position-detail')).not.toHaveStyle({ filter: 'blur(1.5px)' })
+  })
+
+  it('a recorded debit roll closes the sheet and shows the banner', async () => {
+    const user = userEvent.setup()
+    renderPmcc()
+    await user.click(screen.getByTestId('roll-pmcc-short-btn'))
+    await user.click(screen.getByText('record debit roll'))
+    expect(screen.queryByRole('dialog', { name: 'Roll Short Call' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('pmcc-roll-recorded-banner')).toHaveTextContent(UP_OUT_BANNER)
+  })
+
+  it('a recorded credit roll reads credit in the banner', async () => {
+    const user = userEvent.setup()
+    renderPmcc()
+    await user.click(screen.getByTestId('roll-pmcc-short-btn'))
+    await user.click(screen.getByText('record credit roll'))
+    expect(screen.getByTestId('pmcc-roll-recorded-banner')).toHaveTextContent(
+      'Rolled — bought to close XYZ $108.00 CALL 2026-11-20 at $1.10, sold XYZ $108.00 CALL 2026-12-18 at $2.30. Short-call roll #1 credit · $1.20 per share ($120.00 total). Both legs share one roll chain.'
+    )
+  })
+
+  it('opening the sheet again clears the banner', async () => {
+    const user = userEvent.setup()
+    renderPmcc()
+    await user.click(screen.getByTestId('roll-pmcc-short-btn'))
+    await user.click(screen.getByText('record debit roll'))
+    expect(screen.getByTestId('pmcc-roll-recorded-banner')).toBeInTheDocument()
+    await user.click(screen.getByTestId('roll-pmcc-short-btn'))
+    expect(screen.queryByTestId('pmcc-roll-recorded-banner')).not.toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Sheet wiring the earlier stories left untested: Open Covered Call, Roll CSP, and the shares
+// a CC expiration reports; and which active legs are priced from an option snapshot.
+// ---------------------------------------------------------------------------
+
+const ASSIGN_LEG = {
+  ...CSP_OPEN_DETAIL.activeLeg,
+  id: 'leg-assign',
+  legRole: 'ASSIGN' as const,
+  action: 'ASSIGN' as const,
+  instrumentType: 'STOCK' as const,
+  contracts: 2,
+  premiumPerContract: '0.0000',
+  fillDate: '2026-04-17'
+}
+
+const HOLDING_SHARES_DETAIL = {
+  ...CSP_OPEN_DETAIL,
+  position: { ...CSP_OPEN_DETAIL.position, phase: 'HOLDING_SHARES' as const },
+  activeLeg: null,
+  legs: [CSP_OPEN_DETAIL.activeLeg, ASSIGN_LEG]
+}
+
+function renderDetail(data: unknown): void {
+  mockUsePosition.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data,
+    error: null
+  } as unknown as ReturnType<typeof usePosition>)
+  render(<PositionDetailPage />)
+}
+
+describe('PositionDetailPage — sheet wiring', () => {
+  it('Open Covered Call opens the sheet for the assigned contracts, and closing it clears it', async () => {
+    const user = userEvent.setup()
+    renderDetail(HOLDING_SHARES_DETAIL)
+
+    await user.click(screen.getByTestId('open-covered-call-btn'))
+    expect(screen.getByTestId('open-cc-sheet')).toHaveAttribute('data-contracts', '2')
+
+    await user.click(screen.getByText('close open cc'))
+    expect(screen.queryByTestId('open-cc-sheet')).not.toBeInTheDocument()
+  })
+
+  it('Roll CSP opens the sheet on the active put, and closing it clears it', async () => {
+    const user = userEvent.setup()
+    renderDetail(CSP_OPEN_DETAIL)
+    expect(screen.queryByTestId('roll-csp-sheet')).not.toBeInTheDocument()
+
+    await user.click(screen.getByTestId('roll-csp-btn'))
+    expect(screen.getByTestId('roll-csp-sheet')).toHaveAttribute('data-strike', '180.0000')
+
+    await user.click(screen.getByText('close roll csp'))
+    expect(screen.queryByTestId('roll-csp-sheet')).not.toBeInTheDocument()
+  })
+
+  it('CC expiration reports 100 shares per assigned contract', async () => {
+    const user = userEvent.setup()
+    renderDetail({ ...CC_OPEN_DETAIL, legs: [ASSIGN_LEG] })
+
+    await user.click(screen.getByTestId('record-cc-expiration-btn'))
+    expect(screen.getByTestId('cc-expiration-sheet')).toHaveAttribute('data-shares-held', '200')
+  })
+
+  it('CC expiration reports no shares when no assignment leg is recorded', async () => {
+    const user = userEvent.setup()
+    renderDetail(CC_OPEN_DETAIL)
+
+    await user.click(screen.getByTestId('record-cc-expiration-btn'))
+    expect(screen.getByTestId('cc-expiration-sheet')).toHaveAttribute('data-shares-held', '0')
+  })
+})
+
+describe('PositionDetailPage — option snapshot lookup', () => {
+  it('renders without a snapshot when the active leg cannot form an OCC symbol', () => {
+    mockSnapshots({ [AAPL_OCC]: PROFIT_SNAPSHOT })
+    renderDetail({
+      ...CSP_OPEN_DETAIL,
+      activeLeg: { ...CSP_OPEN_DETAIL.activeLeg, expiration: '04/17/2026' }
+    })
+
+    expect(screen.getByTestId('position-detail')).toBeInTheDocument()
+    expect(screen.queryByText(/captured/)).not.toBeInTheDocument()
+  })
 })

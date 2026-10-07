@@ -5,7 +5,9 @@
 import Database from 'better-sqlite3'
 import { addDays, format, parseISO } from 'date-fns'
 import { randomUUID } from 'node:crypto'
-import type { LegRecord } from '../../schemas'
+import type { CreatePmccPositionPayload, LegRecord, PmccTriggerEvent } from '../../schemas'
+import { insertLegRow } from '../leg-rows'
+import { appendPmccSnapshot } from '../pmcc-ledger'
 
 export type DayFn = (offset: number) => string
 
@@ -163,31 +165,40 @@ export function pmccFixtures(positionId: string, day: DayFn = FIXED_DAY): PmccFi
   }
 }
 
-const INSERT_LEG_SQL = `INSERT INTO legs
-  (id, position_id, leg_role, action, instrument_type, strike, expiration, contracts,
-   premium_per_contract, fill_price, fill_date, roll_chain_id, fees, created_at, updated_at)
- VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-
 /** Writes fixture legs straight into `legs`, as a consumer story's service would. */
 export function insertLegs(db: Database.Database, legs: LegRecord[]): void {
-  const insert = db.prepare(INSERT_LEG_SQL)
-  legs.forEach((l) =>
-    insert.run(
-      l.id,
-      l.positionId,
-      l.legRole,
-      l.action,
-      l.instrumentType,
-      l.strike,
-      l.expiration,
-      l.contracts,
-      l.premiumPerContract,
-      l.fillPrice,
-      l.fillDate,
-      l.rollChainId,
-      l.fees,
-      l.createdAt,
-      l.updatedAt
-    )
-  )
+  legs.forEach((leg) => insertLegRow(db, leg))
+}
+
+/** Fixture legs plus their PMCC snapshot in one transaction, as a recording service would. */
+export function recordPmccLegEvent(
+  db: Database.Database,
+  positionId: string,
+  legs: LegRecord[],
+  triggerEvent: PmccTriggerEvent
+): void {
+  db.transaction(() => {
+    insertLegs(db, legs)
+    appendPmccSnapshot(db, positionId, {
+      triggerEvent,
+      eventDate: legs[0].fillDate,
+      now: new Date().toISOString()
+    })
+  })()
+}
+
+/** The AC's XYZ opening as a createPmccPosition payload — the `OPEN` fixture's terms. */
+export function pmccOpenPayload(day: DayFn): CreatePmccPositionPayload {
+  const leg = {
+    underlying: 'XYZ',
+    instrumentType: 'CALL' as const,
+    deliverableShares: 100,
+    contracts: 1
+  }
+  return {
+    strategy: 'PMCC',
+    ticker: 'XYZ',
+    long: { ...leg, strike: 80, expiration: day(368), fillPrice: 25.0, fillDate: day(0), fees: 0 },
+    short: { ...leg, strike: 110, expiration: day(32), fillPrice: 2.0, fillDate: day(0), fees: 0 }
+  }
 }

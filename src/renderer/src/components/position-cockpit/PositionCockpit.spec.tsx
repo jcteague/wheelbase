@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import { PositionCockpit } from './PositionCockpit'
-import type { PositionDetail, LegDetail, SnapshotDetail } from '../../api/positions'
+import type { PositionDetail, LegDetail, PmccOpenLegs, SnapshotDetail } from '../../api/positions'
 import type { OptionSnapshot } from '../../api/market-data'
 import { SHARES_VERDICT } from '../../lib/verdict'
 
@@ -62,7 +62,8 @@ const baseDetail: PositionDetail = {
   legs: [baseLeg],
   allSnapshots: [baseSnapshot],
   initialNetDebit: null,
-  pmccLedger: null
+  pmccLedger: null,
+  pmccOpenLegs: null
 }
 
 const baseOptionSnapshot: OptionSnapshot = {
@@ -340,7 +341,7 @@ describe('PositionCockpit', () => {
 })
 
 describe('PMCC position', () => {
-  const leapsLeg: LegDetail = {
+  const leapsLeg: PmccOpenLegs['long'] = {
     ...baseLeg,
     id: 'leg-leaps',
     legRole: 'LEAPS_OPEN',
@@ -350,7 +351,7 @@ describe('PMCC position', () => {
     expiration: daysFromToday(368),
     premiumPerContract: '25.0000'
   }
-  const shortLeg: LegDetail = {
+  const shortLeg: NonNullable<PmccOpenLegs['short']> = {
     ...leapsLeg,
     id: 'leg-short',
     legRole: 'SHORT_CALL_OPEN',
@@ -365,7 +366,8 @@ describe('PMCC position', () => {
     activeLeg: null,
     costBasisSnapshot: { ...baseSnapshot, basisPerShare: '23.0000' },
     legs: [leapsLeg, shortLeg],
-    initialNetDebit: '2300.0000'
+    initialNetDebit: '2300.0000',
+    pmccOpenLegs: { long: leapsLeg, short: shortLeg }
   }
 
   it('renders PmccLegReference instead of the no-active-leg verdict', () => {
@@ -376,6 +378,32 @@ describe('PMCC position', () => {
     expect(screen.queryByText(SHARES_VERDICT.label)).not.toBeInTheDocument()
     expect(screen.queryByText(SHARES_VERDICT.sub)).not.toBeInTheDocument()
     expect(screen.queryByText('Cost basis & history')).not.toBeInTheDocument()
+  })
+
+  // [US-104] The leg reference follows the open legs: after a roll the short is the ROLL_TO,
+  // while the opening SHORT_CALL_OPEN row is still in `legs`.
+  it('passes detail.pmccOpenLegs to the leg reference', () => {
+    const rolledShort = {
+      ...shortLeg,
+      id: 'leg-roll-to',
+      legRole: 'ROLL_TO' as const,
+      strike: '112.0000',
+      premiumPerContract: '2.4000'
+    }
+    render(
+      <PositionCockpit
+        detail={{ ...pmccDetail, pmccOpenLegs: { long: leapsLeg, short: rolledShort } }}
+      />
+    )
+    expect(screen.getByText('$112.00')).toBeInTheDocument()
+    expect(screen.queryByText('$110.00')).not.toBeInTheDocument()
+  })
+
+  it('renders no leg reference when the PMCC has no open LEAPS', () => {
+    render(<PositionCockpit detail={{ ...pmccDetail, pmccOpenLegs: null }} />)
+    expect(screen.queryByText('Buy LEAPS call')).not.toBeInTheDocument()
+    expect(screen.queryByText('Sell short call')).not.toBeInTheDocument()
+    expect(screen.queryByText(SHARES_VERDICT.label)).not.toBeInTheDocument()
   })
 
   // [US-103] The cash-ledger drawer stacks beneath the leg reference cards.

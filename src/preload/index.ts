@@ -28,6 +28,7 @@ const api = {
   expireCc: (payload: unknown) => invoke('positions:expire-cc', payload),
   rollCsp: (payload: unknown) => invoke('positions:roll-csp', payload),
   rollCc: (payload: unknown) => invoke('positions:roll-cc', payload),
+  rollPmccShortCall: (payload: unknown) => invoke('positions:roll-pmcc-short', payload),
   saveAlertOverrides: (payload: unknown) => invoke('positions:save-alert-overrides', payload),
   setStockQuoteTickers: (payload: unknown) =>
     invoke('market-data:set-stock-quote-tickers', payload),

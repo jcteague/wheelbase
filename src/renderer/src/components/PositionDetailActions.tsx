@@ -1,8 +1,10 @@
-import type { WheelPhase } from '../../../main/core/types'
+import type { StrategyType, WheelPhase } from '../../../main/core/types'
 import { PhaseBadge } from './PhaseBadge'
 
 type PositionDetailActionsProps = {
+  strategyType: StrategyType
   phase: WheelPhase
+  hasOpenShortCall: boolean
   hasCostBasis: boolean
   ccExpired: boolean
   onOpenCc: () => void
@@ -13,6 +15,7 @@ type PositionDetailActionsProps = {
   onRollCsp: () => void
   onRecordAssignment: () => void
   onRecordExpiration: () => void
+  onRollPmccShort: () => void
 }
 
 type ActionButtonProps = {
@@ -34,7 +37,9 @@ function ActionButton({ testId, label, onClick }: ActionButtonProps): React.JSX.
 }
 
 export function PositionDetailActions({
+  strategyType,
   phase,
+  hasOpenShortCall,
   hasCostBasis,
   ccExpired,
   onOpenCc,
@@ -44,12 +49,20 @@ export function PositionDetailActions({
   onRecordCcExpiration,
   onRollCsp,
   onRecordAssignment,
-  onRecordExpiration
+  onRecordExpiration,
+  onRollPmccShort
 }: PositionDetailActionsProps): React.JSX.Element {
   return (
     <div className="flex items-center gap-2.5">
       <PhaseBadge phase={phase} />
       <div className="w-px h-4 bg-wb-border mx-1" />
+      {strategyType === 'PMCC' && hasOpenShortCall && (
+        <ActionButton
+          testId="roll-pmcc-short-btn"
+          label="Roll Short Call →"
+          onClick={onRollPmccShort}
+        />
+      )}
       {phase === 'CC_OPEN' && (
         <>
           <ActionButton testId="roll-cc-btn" label="Roll CC →" onClick={onRollCc} />

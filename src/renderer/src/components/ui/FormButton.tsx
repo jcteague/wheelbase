@@ -51,8 +51,11 @@ export function FormButton({
       aria-pressed={ariaPressed}
       className={[
         'font-wb-mono py-[11px] px-6 rounded-[6px] text-[0.9375rem] font-semibold tracking-[0.04em] transition-opacity duration-150',
-        isPending ? 'cursor-not-allowed' : 'cursor-pointer'
-      ].join(' ')}
+        isPending || disabled ? 'cursor-not-allowed' : 'cursor-pointer',
+        disabled && 'opacity-40'
+      ]
+        .filter(Boolean)
+        .join(' ')}
       style={{ ...variantStyles[variant](isPending), ...style }}
     >
       {isPending && pendingLabel ? pendingLabel : label}

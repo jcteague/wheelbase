@@ -14,6 +14,7 @@ const openCoveredCallPosition = vi.fn()
 const recordCallAwayPosition = vi.fn()
 const rollCspPosition = vi.fn()
 const rollCcPosition = vi.fn()
+const rollPmccShortCallPosition = vi.fn()
 const savePositionAlertOverrides = vi.fn()
 
 vi.mock('electron', () => ({
@@ -56,6 +57,10 @@ vi.mock('../services/roll-cc-position', () => ({
   rollCcPosition
 }))
 
+vi.mock('../services/roll-pmcc-short-call-position', () => ({
+  rollPmccShortCallPosition
+}))
+
 vi.mock('../services/save-position-alert-overrides', () => ({
   savePositionAlertOverrides
 }))
@@ -65,6 +70,22 @@ function getRegisteredHandler(
   channel: string
 ): ((...args: unknown[]) => unknown) | undefined {
   return calls.find(([registeredChannel]) => registeredChannel === channel)?.[1]
+}
+
+type IpcHandler = (...args: unknown[]) => unknown
+
+async function registerAndGetChannelHandler(
+  channel: string,
+  db: never,
+  deps: { ivrOnDemand?: { collect: () => Promise<void> } } = {}
+): Promise<IpcHandler | undefined> {
+  const { ipcMain } = await import('electron')
+  const { registerPositionsHandlers } = await import('./positions')
+  registerPositionsHandlers(db, deps)
+  return getRegisteredHandler(
+    vi.mocked(ipcMain.handle).mock.calls as Array<[string, IpcHandler]>,
+    channel
+  )
 }
 
 describe('registerPositionsHandlers', () => {
@@ -83,6 +104,7 @@ describe('registerPositionsHandlers', () => {
     recordCallAwayPosition.mockReset()
     rollCspPosition.mockReset()
     rollCcPosition.mockReset()
+    rollPmccShortCallPosition.mockReset()
     savePositionAlertOverrides.mockReset()
   })
 
@@ -1115,6 +1137,34 @@ describe('registerPositionsHandlers', () => {
     expect(envelope.pmccLedger).toEqual(pmccLedger)
   })
 
+  // [US-104] The detail envelope carries the PMCC open legs through unchanged.
+  it('positions:get success envelope carries pmccOpenLegs for a PMCC', async () => {
+    const { ipcMain } = await import('electron')
+    const { registerPositionsHandlers } = await import('./positions')
+    const pmccOpenLegs = {
+      long: { id: 'leaps-1', legRole: 'LEAPS_OPEN', strike: '80.0000' },
+      short: { id: 'short-1', legRole: 'SHORT_CALL_OPEN', strike: '108.0000' }
+    } as unknown as NonNullable<GetPositionResult['pmccOpenLegs']>
+    getPosition.mockReturnValue({
+      position: { id: 'p1', ticker: 'XYZ', strategyType: 'PMCC' },
+      legs: [],
+      pmccOpenLegs
+    })
+
+    registerPositionsHandlers({} as never)
+
+    const handler = getRegisteredHandler(
+      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
+      'positions:get'
+    )
+
+    const envelope = (await handler?.(null, { positionId: 'p1' })) as {
+      ok: true
+    } & GetPositionResult
+    expect(envelope.ok).toBe(true)
+    expect(envelope.pmccOpenLegs).toEqual(pmccOpenLegs)
+  })
+
   it('positions:get returns a not_found envelope for an unknown id', async () => {
     const { ipcMain } = await import('electron')
     const { registerPositionsHandlers } = await import('./positions')
@@ -1169,18 +1219,11 @@ describe('registerPositionsHandlers', () => {
       short: pmccLeg({ strike: 110, expiration: '2026-10-16', fillPrice: 2 })
     }
 
-    async function registerAndGetHandler(
+    const registerAndGetHandler = (
       db: never,
       deps: { ivrOnDemand?: { collect: () => Promise<void> } } = {}
-    ): Promise<((...args: unknown[]) => unknown) | undefined> {
-      const { ipcMain } = await import('electron')
-      const { registerPositionsHandlers } = await import('./positions')
-      registerPositionsHandlers(db, deps)
-      return getRegisteredHandler(
-        vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
-        'positions:create-pmcc'
-      )
-    }
+    ): Promise<IpcHandler | undefined> =>
+      registerAndGetChannelHandler('positions:create-pmcc', db, deps)
 
     it('registers a positions:create-pmcc handler', async () => {
       const { ipcMain } = await import('electron')
@@ -1252,6 +1295,100 @@ describe('registerPositionsHandlers', () => {
 
     it('returns internal_error at __root__ when the service throws unexpectedly', async () => {
       createPmccPosition.mockImplementation(() => {
+        throw new Error('disk full')
+      })
+
+      const handler = await registerAndGetHandler({} as never)
+
+      expect(await handler?.(null, validPayload)).toEqual({
+        ok: false,
+        errors: [
+          { field: '__root__', code: 'internal_error', message: 'An unexpected error occurred' }
+        ]
+      })
+    })
+  })
+
+  describe('positions:roll-pmcc-short', () => {
+    const positionId = '11111111-1111-4111-8111-111111111111'
+    const validPayload = {
+      positionId,
+      costToClosePerContract: 3,
+      newPremiumPerContract: 2.4,
+      newExpiration: '2026-12-18',
+      newStrike: 112,
+      fillDate: '2026-11-06'
+    }
+
+    const registerAndGetHandler = (db: never): Promise<IpcHandler | undefined> =>
+      registerAndGetChannelHandler('positions:roll-pmcc-short', db)
+
+    it('registers a positions:roll-pmcc-short handler', async () => {
+      const { ipcMain } = await import('electron')
+      await registerAndGetHandler({} as never)
+
+      expect(vi.mocked(ipcMain.handle)).toHaveBeenCalledWith(
+        'positions:roll-pmcc-short',
+        expect.any(Function)
+      )
+    })
+
+    it('calls rollPmccShortCallPosition with the db, positionId and parsed payload, returning ok:true', async () => {
+      const db = {} as never
+      const result = {
+        position: { id: positionId, ticker: 'XYZ', phase: 'PMCC_OPEN', status: 'ACTIVE' },
+        rollFromLeg: { id: 'leg-from', legRole: 'ROLL_FROM', action: 'BUY' },
+        rollToLeg: { id: 'leg-to', legRole: 'ROLL_TO', action: 'SELL' },
+        rollChainId: 'chain-1',
+        costBasisSnapshot: { basisPerShare: '21.8000', triggerEvent: 'PMCC_SHORT_ROLL' },
+        ledger: { basisTotal: '2180.0000' },
+        shortCallRollNumber: 1
+      }
+      rollPmccShortCallPosition.mockReturnValue(result)
+
+      const handler = await registerAndGetHandler(db)
+
+      expect(await handler?.(null, validPayload)).toEqual({ ok: true, ...result })
+      expect(rollPmccShortCallPosition).toHaveBeenCalledWith(db, positionId, validPayload)
+    })
+
+    it('rejects costToClosePerContract: 0 at that field without calling the service', async () => {
+      const handler = await registerAndGetHandler({} as never)
+      const result = await handler?.(null, { ...validPayload, costToClosePerContract: 0 })
+
+      expect(result).toEqual({
+        ok: false,
+        errors: [expect.objectContaining({ field: 'costToClosePerContract' })]
+      })
+      expect(rollPmccShortCallPosition).not.toHaveBeenCalled()
+    })
+
+    it('returns the service ValidationError as a field envelope', async () => {
+      const { ValidationError } = await import('../core/lifecycle')
+      rollPmccShortCallPosition.mockImplementation(() => {
+        throw new ValidationError(
+          'newExpiration',
+          'short_not_before_long',
+          'Short call must expire before the LEAPS call.'
+        )
+      })
+
+      const handler = await registerAndGetHandler({} as never)
+
+      expect(await handler?.(null, validPayload)).toEqual({
+        ok: false,
+        errors: [
+          {
+            field: 'newExpiration',
+            code: 'short_not_before_long',
+            message: 'Short call must expire before the LEAPS call.'
+          }
+        ]
+      })
+    })
+
+    it('returns internal_error at __root__ when the service throws unexpectedly', async () => {
+      rollPmccShortCallPosition.mockImplementation(() => {
         throw new Error('disk full')
       })
 

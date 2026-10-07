@@ -42,6 +42,7 @@ type IpcSuccess<K extends keyof Window['api']> = Window['api'][K] extends (
   : never
 export type {
   PmccLegSummary,
+  PmccOpenLegs,
   PmccListItem,
   PmccListSummary,
   PositionListItem,
@@ -174,6 +175,20 @@ export type RollCcResponse = IpcSuccess<'rollCc'>
 
 export async function rollCc(payload: RollCcPayload): Promise<RollCcResponse> {
   const result = await window.api.rollCc(payload)
+  if (!result.ok) {
+    throwMappedIpcErrors(result.errors)
+  }
+  return result
+}
+
+export type RollPmccShortCallPayload = IpcPayload<'rollPmccShortCall'>
+
+export type RollPmccShortCallResponse = IpcSuccess<'rollPmccShortCall'>
+
+export async function rollPmccShortCall(
+  payload: RollPmccShortCallPayload
+): Promise<RollPmccShortCallResponse> {
+  const result = await window.api.rollPmccShortCall(payload)
   if (!result.ok) {
     throwMappedIpcErrors(result.errors)
   }

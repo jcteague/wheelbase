@@ -10,6 +10,7 @@ import { localToday } from '../dates'
 import { logger } from '../logger'
 import type { CreatePmccPositionPayload, CreatePmccPositionResult, LegRecord } from '../schemas'
 import type { IvrOnDemand } from './ivr-on-demand'
+import { insertLegRow } from './leg-rows'
 import { appendPmccSnapshot } from './pmcc-ledger'
 import { insertPosition } from './position-rows'
 
@@ -25,11 +26,6 @@ function toLegInput(leg: PmccLegPayload): OpenPmccLegInput {
     fees: money4(leg.fees)
   }
 }
-
-const INSERT_LEG_SQL = `INSERT INTO legs
-  (id, position_id, leg_role, action, instrument_type, strike, expiration, contracts,
-   premium_per_contract, fill_price, fill_date, fees, created_at, updated_at)
- VALUES (?, ?, ?, ?, 'CALL', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 // The LEAPS is bought and the short call sold: the role fixes the action.
 const PMCC_LEG_ACTION = { LEAPS_OPEN: 'BUY', SHORT_CALL_OPEN: 'SELL' } as const
@@ -56,22 +52,7 @@ function insertPmccLeg<R extends PmccLegRole>(
 ): PmccLegRecord<R> {
   const { id, positionId, legRole, leg, now } = row
   const action = PMCC_LEG_ACTION[legRole]
-  db.prepare(INSERT_LEG_SQL).run(
-    id,
-    positionId,
-    legRole,
-    action,
-    leg.strike,
-    leg.expiration,
-    leg.contracts,
-    leg.fillPrice,
-    leg.fillPrice,
-    leg.fillDate,
-    leg.fees,
-    now,
-    now
-  )
-  return {
+  const record: PmccLegRecord<R> = {
     id,
     positionId,
     legRole,
@@ -88,6 +69,8 @@ function insertPmccLeg<R extends PmccLegRole>(
     createdAt: now,
     updatedAt: now
   }
+  insertLegRow(db, record)
+  return record
 }
 
 export function createPmccPosition(

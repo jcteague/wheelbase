@@ -25,6 +25,27 @@ export function throwMappedIpcErrors(errors: IpcFieldError[]): never {
   throw apiError(400, { detail: errors })
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isIpcFieldError(value: unknown): value is IpcFieldError {
+  return (
+    isRecord(value) &&
+    typeof value.field === 'string' &&
+    typeof value.code === 'string' &&
+    typeof value.message === 'string'
+  )
+}
+
+// The field errors a 400 thrown via throwMappedIpcErrors carries (body `{ detail: [...] }`);
+// empty for any other status, or a body that does not have exactly that shape.
+export function ipcFieldErrorsOf(error: ApiError): IpcFieldError[] {
+  if (error.status !== 400 || !isRecord(error.body)) return []
+  const { detail } = error.body
+  return Array.isArray(detail) && detail.every(isIpcFieldError) ? detail : []
+}
+
 // Extracts the first field error's message from an ApiError thrown via
 // throwMappedIpcErrors (body shape: { detail: IpcFieldError[] }), or falls
 // back when the error is absent or doesn't carry that shape.

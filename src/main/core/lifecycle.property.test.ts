@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import fc from 'fast-check'
 import Decimal from 'decimal.js'
+import { addDays, format, parseISO } from 'date-fns'
 import { calculateCspClose } from './costbasis'
 import {
   ValidationError,
@@ -16,7 +17,8 @@ import {
   recordAssignment,
   recordCallAway,
   rollCc,
-  rollCsp
+  rollCsp,
+  rollPmccShortCall
 } from './lifecycle'
 import type { OpenPmccInput, OpenPmccLegInput, PmccField } from './lifecycle'
 import { pmccCrossLegIssues } from './pmcc-rules'
@@ -28,6 +30,7 @@ import {
   nonPositiveMoney,
   orderedDays,
   positiveMoney,
+  strictlyOrderedDays,
   ticker,
   wheelPhase
 } from './test-fixtures/arbitraries'
@@ -134,6 +137,21 @@ describe('phase guards', () => {
           currentExpiration: DAY,
           newStrike: '105',
           newExpiration: DAY,
+          costToClosePerContract: '1',
+          newPremiumPerContract: '2'
+        })
+    },
+    {
+      name: 'rollPmccShortCall',
+      requiredPhase: 'PMCC_OPEN',
+      run: (currentPhase) =>
+        rollPmccShortCall({
+          currentPhase,
+          openShort: { strike: '100', expiration: DAY, fillDate: DAY },
+          leapsExpiration: '2027-01-15',
+          fillDate: DAY,
+          newStrike: '105',
+          newExpiration: '2026-02-15',
           costToClosePerContract: '1',
           newPremiumPerContract: '2'
         })
@@ -329,6 +347,193 @@ describe('rollCc', () => {
           } else {
             expect(rollCc(input)).toEqual({ phase: 'CC_OPEN' })
           }
+        }
+      )
+    )
+  })
+})
+
+// [US-104] The PMCC short-call roll: coverage is checked against the LEAPS regardless of the
+// current short, and every legal successor (on/after current, before LEAPS, changed) is accepted.
+describe('rollPmccShortCall', () => {
+  it('rejects a replacement expiring on or after the LEAPS, whatever the current short', () => {
+    fc.assert(
+      fc.property(
+        orderedDays(2),
+        positiveMoney(),
+        positiveMoney(),
+        positiveMoney(),
+        positiveMoney(),
+        // open fill ≤ roll fill ≤ current expiration, so no fill-date rule fires first.
+        orderedDays(3),
+        (
+          [leapsExpiration, newExpiration],
+          strike,
+          newStrike,
+          cost,
+          premium,
+          [openFillDate, fillDate, currentExpiration]
+        ) => {
+          const error = validationErrorOf(() =>
+            rollPmccShortCall({
+              currentPhase: 'PMCC_OPEN',
+              openShort: { strike, expiration: currentExpiration, fillDate: openFillDate },
+              leapsExpiration,
+              fillDate,
+              newStrike,
+              newExpiration,
+              costToClosePerContract: cost,
+              newPremiumPerContract: premium
+            })
+          )
+          expect(error.field).toBe('newExpiration')
+          expect(error.code).toBe('short_not_before_long')
+        }
+      )
+    )
+  })
+
+  it('accepts a changed strike expiring on/after the current short and before the LEAPS', () => {
+    fc.assert(
+      fc.property(
+        // The roll fills strictly before the replacement expires: earlierFill ≤ fill < earlier
+        // ≤ new expiration < LEAPS.
+        strictlyOrderedDays(5),
+        fc.boolean(),
+        fc.boolean(),
+        fc.uniqueArray(positiveMoney(), { minLength: 2, maxLength: 2 }),
+        positiveMoney(),
+        positiveMoney(),
+        (
+          [earlierFill, fillDate, earlier, newExpiration, leapsExpiration],
+          sameDay,
+          sameFillDay,
+          [strike, newStrike],
+          cost,
+          premium
+        ) => {
+          const openShort = {
+            strike,
+            expiration: sameDay ? newExpiration : earlier,
+            fillDate: sameFillDay ? fillDate : earlierFill
+          }
+          expect(
+            rollPmccShortCall({
+              currentPhase: 'PMCC_OPEN',
+              openShort,
+              leapsExpiration,
+              fillDate,
+              newStrike,
+              newExpiration,
+              costToClosePerContract: cost,
+              newPremiumPerContract: premium
+            })
+          ).toEqual({ phase: 'PMCC_OPEN', openShort, newStrike })
+        }
+      )
+    )
+  })
+  // The roll fills on/before the current expiration and the replacement expires on/after it,
+  // so expiring on/before the fill means all three fall on one day.
+  it('rejects a replacement expiring on the roll fill date and the current expiration', () => {
+    fc.assert(
+      fc.property(
+        // open fill ≤ current expiration = new expiration = roll fill < LEAPS
+        orderedDays(2),
+        fc.integer({ min: 1, max: 730 }),
+        fc.uniqueArray(positiveMoney(), { minLength: 2, maxLength: 2 }),
+        positiveMoney(),
+        positiveMoney(),
+        ([openFillDate, fillDate], leapsGap, [strike, newStrike], cost, premium) => {
+          const error = validationErrorOf(() =>
+            rollPmccShortCall({
+              currentPhase: 'PMCC_OPEN',
+              openShort: { strike, expiration: fillDate, fillDate: openFillDate },
+              leapsExpiration: format(addDays(parseISO(fillDate), leapsGap), 'yyyy-MM-dd'),
+              fillDate,
+              newStrike,
+              newExpiration: fillDate,
+              costToClosePerContract: cost,
+              newPremiumPerContract: premium
+            })
+          )
+          expect(error.field).toBe('newExpiration')
+          expect(error.code).toBe('expiration_not_after_fill')
+        }
+      )
+    )
+  })
+
+  it('rejects a roll filled after the open short call expired, whatever the other terms', () => {
+    fc.assert(
+      fc.property(
+        // open fill < current expiration < roll fill; the replacement and money are free.
+        strictlyOrderedDays(3),
+        isoDay,
+        isoDay,
+        positiveMoney(),
+        positiveMoney(),
+        nonNegativeMoney(),
+        nonNegativeMoney(),
+        (
+          [openFillDate, currentExpiration, fillDate],
+          newExpiration,
+          leapsExpiration,
+          strike,
+          newStrike,
+          cost,
+          premium
+        ) => {
+          const error = validationErrorOf(() =>
+            rollPmccShortCall({
+              currentPhase: 'PMCC_OPEN',
+              openShort: { strike, expiration: currentExpiration, fillDate: openFillDate },
+              leapsExpiration,
+              fillDate,
+              newStrike,
+              newExpiration,
+              costToClosePerContract: cost,
+              newPremiumPerContract: premium
+            })
+          )
+          expect(error.field).toBe('fillDate')
+          expect(error.code).toBe('close_date_after_expiration')
+        }
+      )
+    )
+  })
+
+  it('rejects a roll filled before the open short call, whatever the other terms', () => {
+    fc.assert(
+      fc.property(
+        strictlyOrderedDays(2),
+        orderedDays(3),
+        positiveMoney(),
+        positiveMoney(),
+        positiveMoney(),
+        positiveMoney(),
+        (
+          [fillDate, openFillDate],
+          [currentExpiration, newExpiration, leapsExpiration],
+          strike,
+          newStrike,
+          cost,
+          premium
+        ) => {
+          const error = validationErrorOf(() =>
+            rollPmccShortCall({
+              currentPhase: 'PMCC_OPEN',
+              openShort: { strike, expiration: currentExpiration, fillDate: openFillDate },
+              leapsExpiration,
+              fillDate,
+              newStrike,
+              newExpiration,
+              costToClosePerContract: cost,
+              newPremiumPerContract: premium
+            })
+          )
+          expect(error.field).toBe('fillDate')
+          expect(error.code).toBe('close_date_before_open')
         }
       )
     )

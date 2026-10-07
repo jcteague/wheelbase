@@ -1,25 +1,23 @@
-import type { LegDetail } from '../../api/positions'
+import type { LegDetail, PmccOpenLegs } from '../../api/positions'
 import { computeDteFromInput, fmtMoney, fmtMoneyGrouped } from '../../lib/format'
-import { LEG_ROLE_LABEL } from '../../lib/phase'
 import { SectionCard } from '../ui/SectionCard'
 import { StatGrid } from '../ui/Stat'
 
 type PmccLegReferenceProps = {
-  legs: LegDetail[]
+  /** The open LEAPS and short call — after a roll the short is its `ROLL_TO` leg. */
+  openLegs: PmccOpenLegs
   /** Computed by getPosition from both opening legs; null when it could not be derived. */
   initialNetDebit: string | null
 }
-
-const PMCC_LEG_ROLES = ['LEAPS_OPEN', 'SHORT_CALL_OPEN'] as const
 
 function dteLabel(expiration: string): string {
   const dte = computeDteFromInput(expiration)
   return dte === null ? '—' : `${dte}d`
 }
 
-function LegCard({ leg }: { leg: LegDetail }): React.JSX.Element {
+function LegCard({ header, leg }: { header: string; leg: LegDetail }): React.JSX.Element {
   return (
-    <SectionCard header={LEG_ROLE_LABEL[leg.legRole]}>
+    <SectionCard header={header}>
       <StatGrid
         minWidth={120}
         items={[
@@ -37,22 +35,18 @@ function LegCard({ leg }: { leg: LegDetail }): React.JSX.Element {
 }
 
 /**
- * The minimal PMCC detail: both opening legs as recorded plus the initial net debit.
+ * The minimal PMCC detail: the open LEAPS and short call plus the initial net debit.
  * No verdict or live P&L — PMCC valuation (US-118) replaces this view.
  * Returns a fragment: the caller owns the surrounding stack.
  */
 export function PmccLegReference({
-  legs,
+  openLegs,
   initialNetDebit
 }: PmccLegReferenceProps): React.JSX.Element {
-  const [leaps, short] = PMCC_LEG_ROLES.map((role) => legs.find((leg) => leg.legRole === role))
-  const pmccLegs = [leaps, short].filter((leg): leg is LegDetail => leg !== undefined)
-
   return (
     <>
-      {pmccLegs.map((leg) => (
-        <LegCard key={leg.id} leg={leg} />
-      ))}
+      <LegCard header="Buy LEAPS call" leg={openLegs.long} />
+      {openLegs.short ? <LegCard header="Sell short call" leg={openLegs.short} /> : null}
       <SectionCard>
         <StatGrid
           minWidth={160}

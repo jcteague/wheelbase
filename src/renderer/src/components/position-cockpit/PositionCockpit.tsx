@@ -20,7 +20,7 @@ import { CollapsedDrawer } from './CollapsedDrawer'
 import { PmccLegReference } from './PmccLegReference'
 import { PmccCostBasis } from './PmccCostBasis'
 import { SectionCard } from '../ui/SectionCard'
-import { StatGrid } from '../ui/Stat'
+import { type StatProps, StatGrid } from '../ui/Stat'
 import { LegHistoryTable } from '../LegHistoryTable'
 
 type PositionCockpitProps = {
@@ -46,19 +46,22 @@ export function PositionCockpit({
     legs,
     allSnapshots,
     initialNetDebit,
-    pmccLedger
+    pmccLedger,
+    pmccOpenLegs
   } = detail
   if (position.strategyType === 'PMCC') {
     return (
       <div className="flex flex-col gap-3">
-        <PmccLegReference legs={legs} initialNetDebit={initialNetDebit} />
+        {pmccOpenLegs ? (
+          <PmccLegReference openLegs={pmccOpenLegs} initialNetDebit={initialNetDebit} />
+        ) : null}
         {pmccLedger ? <PmccCostBasis ledger={pmccLedger} /> : null}
       </div>
     )
   }
   const phaseLabel = PHASE_LABEL[position.phase]
   const phaseColor = PHASE_COLOR[position.phase]
-  const enrichedLegs = deriveRunningBasis(legs, allSnapshots ?? [])
+  const enrichedLegs = deriveRunningBasis(legs, allSnapshots)
   const cycles = legs.filter((leg) => leg.legRole === 'CALLED_AWAY').length
 
   if (!activeLeg) {
@@ -186,6 +189,18 @@ function formatSignedMoney(value: number): string {
   return `${sign}$${Math.abs(value).toFixed(2)}`
 }
 
+/** The quote-dependent stats, shown only once the underlying has a price. */
+function marketStats(current: number, unrealized: number): StatProps[] {
+  const unrealizedClass = unrealized >= 0 ? 'text-wb-green' : 'text-wb-red'
+  return [
+    { label: 'Current', value: fmtMoney(String(current)) },
+    {
+      label: 'Unrealized',
+      value: <span className={unrealizedClass}>{formatSignedMoney(unrealized)}</span>
+    }
+  ]
+}
+
 function PositionStatsCard({
   assignLeg,
   snapshot,
@@ -194,8 +209,6 @@ function PositionStatsCard({
   const shares = assignLeg.contracts * 100
   const basis = parseFloat(snapshot.basisPerShare)
   const current = underlyingPrice ? parseFloat(underlyingPrice) : null
-  const unrealized = current != null ? (current - basis) * shares : null
-  const unrealizedClass = unrealized != null && unrealized >= 0 ? 'text-wb-green' : 'text-wb-red'
 
   return (
     <SectionCard header="Position">
@@ -207,17 +220,7 @@ function PositionStatsCard({
             label: 'Avg Basis',
             value: <span className="text-wb-sky">{fmtMoney(snapshot.basisPerShare)}</span>
           },
-          ...(current != null
-            ? [
-                { label: 'Current', value: fmtMoney(String(current)) },
-                {
-                  label: 'Unrealized',
-                  value: (
-                    <span className={unrealizedClass}>{formatSignedMoney(unrealized ?? 0)}</span>
-                  )
-                }
-              ]
-            : [])
+          ...(current === null ? [] : marketStats(current, (current - basis) * shares))
         ]}
       />
     </SectionCard>

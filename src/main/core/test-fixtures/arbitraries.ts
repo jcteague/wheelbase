@@ -42,6 +42,10 @@ export const isoDay = fc
 export const orderedDays = (count: number): fc.Arbitrary<string[]> =>
   fc.array(isoDay, { minLength: count, maxLength: count }).map((days) => [...days].sort())
 
+/** `count` distinct ISO days sorted ascending — each strictly before the next. */
+export const strictlyOrderedDays = (count: number): fc.Arbitrary<string[]> =>
+  fc.uniqueArray(isoDay, { minLength: count, maxLength: count }).map((days) => [...days].sort())
+
 export const wheelPhase = fc.constantFrom(...WheelPhase.options)
 
 /** 1–5 uppercase letters, the ticker shape the lifecycle engine accepts. */

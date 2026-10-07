@@ -8,6 +8,8 @@ import { ExpirationSheet } from '../components/ExpirationSheet'
 import { OpenCoveredCallSheet } from '../components/OpenCoveredCallSheet'
 import { RollCcSheet } from '../components/RollCcSheet'
 import { RollCspSheet } from '../components/RollCspSheet'
+import { PmccRollRecordedBanner } from '../components/PmccRollRecordedBanner'
+import { RollPmccShortCallSheet } from '../components/RollPmccShortCallSheet'
 import { PageHeader, PageLayout } from '../components/PageLayout'
 import { PositionDetailActions } from '../components/PositionDetailActions'
 import { Breadcrumb } from '../components/ui/Breadcrumb'
@@ -59,7 +61,6 @@ export function PositionDetailPage(): React.JSX.Element {
   const activeSnapshot = useMemo(() => {
     if (!data?.activeLeg) return undefined
     const leg = data.activeLeg
-    if (leg.instrumentType !== 'PUT' && leg.instrumentType !== 'CALL') return undefined
     if (!optionSnapshotsQuery.data) return undefined
     try {
       const occ = buildOccSymbol({
@@ -101,7 +102,12 @@ export function PositionDetailPage(): React.JSX.Element {
     handleCloseRollCsp,
     rollCcOpen,
     handleRollCc,
-    handleCloseRollCc
+    handleCloseRollCc,
+    rollPmccShortOpen,
+    handleRollPmccShort,
+    handleCloseRollPmccShort,
+    pmccRollRecorded,
+    handlePmccRollRecorded
   } = usePositionDetailSheets(data)
 
   if (isLoading) {
@@ -116,7 +122,7 @@ export function PositionDetailPage(): React.JSX.Element {
     )
   }
 
-  const { position, activeLeg, costBasisSnapshot, legs } = data
+  const { position, activeLeg, costBasisSnapshot, legs, pmccOpenLegs, pmccLedger } = data
   const ccExpired =
     position.phase === 'CC_OPEN' && activeLeg ? computeDte(activeLeg.expiration) <= 0 : false
   const assignLeg = legs.find((leg) => leg.legRole === 'ASSIGN')
@@ -128,7 +134,9 @@ export function PositionDetailPage(): React.JSX.Element {
           left={<Breadcrumb backTo="#/" backLabel="Positions" current={position.ticker} />}
           right={
             <PositionDetailActions
+              strategyType={position.strategyType}
               phase={position.phase}
+              hasOpenShortCall={Boolean(pmccOpenLegs?.short)}
               hasCostBasis={Boolean(costBasisSnapshot)}
               ccExpired={ccExpired}
               onOpenCc={handleOpenCc}
@@ -139,11 +147,17 @@ export function PositionDetailPage(): React.JSX.Element {
               onRecordCcExpiration={handleRecordCcExpiration}
               onRollCsp={handleRollCsp}
               onRollCc={handleRollCc}
+              onRollPmccShort={handleRollPmccShort}
             />
           }
         />
       }
     >
+      {pmccRollRecorded && (
+        <div className="px-6 pt-6">
+          <PmccRollRecordedBanner response={pmccRollRecorded} />
+        </div>
+      )}
       <PositionDetailContent
         detail={data}
         overlayOpen={overlayOpen}
@@ -257,6 +271,18 @@ export function PositionDetailPage(): React.JSX.Element {
           basisPerShare={costBasisSnapshot.basisPerShare}
           totalPremiumCollected={costBasisSnapshot.totalPremiumCollected}
           onClose={handleCloseRollCc}
+        />
+      )}
+      {rollPmccShortOpen && pmccOpenLegs?.short && pmccLedger?.effectiveShareCost && (
+        <RollPmccShortCallSheet
+          positionId={position.id}
+          ticker={position.ticker}
+          openShort={pmccOpenLegs.short}
+          leaps={pmccOpenLegs.long}
+          basisPerShare={pmccLedger.basisPerShare}
+          effectiveShareCost={pmccLedger.effectiveShareCost}
+          onClose={handleCloseRollPmccShort}
+          onRecorded={handlePmccRollRecorded}
         />
       )}
     </PageLayout>

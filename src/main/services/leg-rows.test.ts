@@ -1,7 +1,8 @@
 import type Database from 'better-sqlite3'
 import { describe, expect, it, vi } from 'vitest'
 import { makeTestDb } from '../test-utils'
-import { readLegs, readLegsByPosition } from './leg-rows'
+import type { LegRecord } from '../schemas'
+import { insertLegRow, readLegs, readLegsByPosition } from './leg-rows'
 
 const NOW = '2026-06-01T00:00:00.000Z'
 
@@ -144,5 +145,33 @@ describe('readLegsByPosition', () => {
 
     expect(readLegsByPosition(db, [])).toEqual(new Map())
     expect(prepare).not.toHaveBeenCalled()
+  })
+})
+
+describe('insertLegRow', () => {
+  it('writes a LegRecord that readLegs returns unchanged', () => {
+    const db = makeTestDb()
+    insertPosition(db, 'pos-a')
+    const leg: LegRecord = {
+      id: 'roll-from-1',
+      positionId: 'pos-a',
+      legRole: 'ROLL_FROM',
+      action: 'BUY',
+      instrumentType: 'CALL',
+      strike: '108.0000',
+      expiration: '2026-11-20',
+      contracts: 3,
+      premiumPerContract: '3.0000',
+      fillPrice: '3.0500',
+      fillDate: '2026-11-06',
+      rollChainId: 'chain-1',
+      fees: '1.9500',
+      createdAt: '2026-11-06T15:00:00.000Z',
+      updatedAt: '2026-11-06T15:00:01.000Z'
+    }
+
+    insertLegRow(db, leg)
+
+    expect(readLegs(db, 'pos-a')).toEqual([leg])
   })
 })

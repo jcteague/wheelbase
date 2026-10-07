@@ -561,6 +561,64 @@ describe('createPmccPosition', () => {
   })
 })
 
+describe('rollPmccShortCall', () => {
+  const mockRollPmccShortCall = vi.fn()
+  const payload: positionsApi.RollPmccShortCallPayload = {
+    positionId: '11111111-1111-4111-8111-111111111111',
+    costToClosePerContract: 3,
+    newPremiumPerContract: 2.4,
+    newExpiration: '2026-12-18',
+    newStrike: 112,
+    fillDate: '2026-11-06'
+  }
+
+  beforeEach(() => {
+    mockRollPmccShortCall.mockReset()
+    Object.assign(window, {
+      api: {
+        ...(window.api ?? {}),
+        rollPmccShortCall: mockRollPmccShortCall
+      }
+    })
+  })
+
+  it('passes the payload through to window.api.rollPmccShortCall unchanged', async () => {
+    mockRollPmccShortCall.mockResolvedValue({ ok: true, rollChainId: 'chain-1' })
+
+    await positionsApi.rollPmccShortCall(payload)
+
+    expect(mockRollPmccShortCall).toHaveBeenCalledWith(payload)
+  })
+
+  it('throws ApiError with status 400 carrying the field errors on ok:false', async () => {
+    const errors = [
+      {
+        field: 'newExpiration',
+        code: 'short_not_before_long',
+        message: 'Short call must expire before the LEAPS call.'
+      }
+    ]
+    mockRollPmccShortCall.mockResolvedValue({ ok: false, errors })
+
+    await expect(positionsApi.rollPmccShortCall(payload)).rejects.toEqual({
+      status: 400,
+      body: { detail: errors }
+    })
+  })
+
+  it('returns the result on success', async () => {
+    const success = {
+      position: { id: payload.positionId, ticker: 'XYZ', phase: 'PMCC_OPEN', status: 'ACTIVE' },
+      rollChainId: 'chain-1',
+      costBasisSnapshot: { basisPerShare: '21.8000', triggerEvent: 'PMCC_SHORT_ROLL' },
+      shortCallRollNumber: 1
+    }
+    mockRollPmccShortCall.mockResolvedValue({ ok: true, ...success })
+
+    await expect(positionsApi.rollPmccShortCall(payload)).resolves.toMatchObject(success)
+  })
+})
+
 describe('listPositions', () => {
   const mockListPositions = vi.fn()
   const base = {
@@ -620,5 +678,123 @@ describe('listPositions', () => {
     mockListPositions.mockResolvedValue([wheelItem, pmccItem])
 
     expect(await positionsApi.listPositions()).toEqual([wheelItem, pmccItem])
+  })
+})
+
+// Every write adapter is the same thin shape: forward the payload to its preload channel,
+// return the success envelope, and turn `{ ok: false }` into ApiError(400) carrying the
+// handler's field errors untouched.
+describe('write adapters — pass-through and ok:false → ApiError(400)', () => {
+  const positionId = '22222222-2222-4222-8222-222222222222'
+  const roll = {
+    positionId,
+    costToClosePerContract: 1.2,
+    newPremiumPerContract: 2.1,
+    newExpiration: '2026-12-18',
+    newStrike: 105,
+    fillDate: '2026-11-06'
+  }
+
+  interface AdapterCase {
+    channel: keyof Window['api']
+    payload: unknown
+    call: () => Promise<unknown>
+  }
+
+  function adapterCase<P>(
+    channel: keyof Window['api'],
+    adapter: (payload: P) => Promise<unknown>,
+    payload: P
+  ): AdapterCase {
+    return { channel, payload, call: () => adapter(payload) }
+  }
+
+  const cases: AdapterCase[] = [
+    adapterCase('createPosition', positionsApi.createPosition, {
+      ticker: 'AAPL',
+      strike: 180,
+      expiration: '2026-12-18',
+      contracts: 1,
+      premiumPerContract: 2.5
+    }),
+    adapterCase('closePosition', positionsApi.closePosition, {
+      positionId,
+      closePricePerContract: 0.5
+    }),
+    adapterCase('expirePosition', positionsApi.expirePosition, { positionId }),
+    adapterCase('assignPosition', positionsApi.assignPosition, {
+      positionId,
+      assignmentDate: '2026-12-18'
+    }),
+    adapterCase('closeCoveredCallEarly', positionsApi.closeCoveredCallEarly, {
+      positionId,
+      closePricePerContract: 0.4,
+      fillDate: '2026-11-06'
+    }),
+    adapterCase('recordCallAway', positionsApi.recordCallAway, { positionId }),
+    adapterCase('expireCc', positionsApi.expireCc, { positionId }),
+    adapterCase('rollCsp', positionsApi.rollCsp, roll),
+    adapterCase('rollCc', positionsApi.rollCc, roll),
+    adapterCase('rollPmccShortCall', positionsApi.rollPmccShortCall, roll)
+  ]
+
+  const channelMock = vi.fn()
+
+  beforeEach(() => {
+    channelMock.mockReset()
+  })
+
+  function installChannel(channel: keyof Window['api']): void {
+    Object.assign(window, { api: { ...(window.api ?? {}), [channel]: channelMock } })
+  }
+
+  it.each(cases)(
+    '$channel forwards its payload and returns the success envelope',
+    async ({ channel, payload, call }) => {
+      installChannel(channel)
+      const success = { ok: true, position: { id: positionId, ticker: 'AAPL' } }
+      channelMock.mockResolvedValue(success)
+
+      await expect(call()).resolves.toEqual(success)
+      expect(channelMock).toHaveBeenCalledWith(payload)
+    }
+  )
+
+  it.each(cases)(
+    '$channel throws ApiError(400) with the handler field errors on ok:false',
+    async ({ channel, call }) => {
+      installChannel(channel)
+      const errors = [{ field: 'positionId', code: 'not_found', message: 'Position not found' }]
+      channelMock.mockResolvedValue({ ok: false, errors })
+
+      await expect(call()).rejects.toEqual({ status: 400, body: { detail: errors } })
+    }
+  )
+})
+
+describe('getPosition', () => {
+  const mockGetPosition = vi.fn()
+
+  beforeEach(() => {
+    mockGetPosition.mockReset()
+    Object.assign(window, { api: { ...(window.api ?? {}), getPosition: mockGetPosition } })
+  })
+
+  it('asks window.api.getPosition for the id and returns the detail envelope', async () => {
+    const detail = { ok: true, position: { id: 'pos-9', ticker: 'XYZ' }, legs: [] }
+    mockGetPosition.mockResolvedValue(detail)
+
+    await expect(positionsApi.getPosition('pos-9')).resolves.toEqual(detail)
+    expect(mockGetPosition).toHaveBeenCalledWith('pos-9')
+  })
+
+  it('throws ApiError(404) carrying the errors when the position is not found', async () => {
+    const errors = [{ field: '__root__', code: 'not_found', message: 'Position not found' }]
+    mockGetPosition.mockResolvedValue({ ok: false, errors })
+
+    await expect(positionsApi.getPosition('missing')).rejects.toEqual({
+      status: 404,
+      body: { detail: errors }
+    })
   })
 })

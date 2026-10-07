@@ -2,7 +2,7 @@
 // Pure engine — no database or broker imports allowed here.
 
 import Decimal from 'decimal.js'
-import { pmccCrossLegIssues } from './pmcc-rules'
+import { pmccCrossLegIssues, pmccShortRollIssues, type PmccIssue } from './pmcc-rules'
 import type { OptionInstrumentType, WheelPhase } from './types'
 
 export class ValidationError extends Error {
@@ -132,6 +132,11 @@ function rejectPmcc(field: PmccField, code: string, message: string): never {
   throw new ValidationError(field, code, message)
 }
 
+/** Throws a shared-rule issue (`pmcc-rules.ts`) as the engine's `ValidationError`. */
+function throwIssue({ field, code, message }: PmccIssue<string>): never {
+  throw new ValidationError(field, code, message)
+}
+
 function requireCall(instrumentType: OptionInstrumentType, field: PmccField): void {
   if (instrumentType !== 'CALL') {
     rejectPmcc(field, 'not_a_call', 'PMCC entry requires two call options.')
@@ -206,9 +211,7 @@ export function openPmcc(input: OpenPmccInput): OpenPmccResult {
   eachLeg((leg, side) => requirePositiveFillPrice(leg.fillPrice, `${side}.fillPrice`))
   eachLeg((leg, side) => requireNonNegativeFees(leg.fees, `${side}.fees`))
   const [crossLegIssue] = pmccCrossLegIssues({ long, short, referenceDate })
-  if (crossLegIssue) {
-    rejectPmcc(crossLegIssue.field, crossLegIssue.code, crossLegIssue.message)
-  }
+  if (crossLegIssue) throwIssue(crossLegIssue)
 
   return { phase: 'PMCC_OPEN' }
 }
@@ -535,4 +538,77 @@ export function rollCc(input: RollCcInput): RollCcResult {
   requirePositiveDecimal(input.newPremiumPerContract, 'newPremiumPerContract', 'New premium')
 
   return { phase: 'CC_OPEN' }
+}
+
+/** [US-104] The PMCC phase guard — shared by `rollPmccShortCall` and its service's leg lookup. */
+export function requirePmccOpenPhase(currentPhase: WheelPhase): void {
+  if (currentPhase !== 'PMCC_OPEN') {
+    throw new ValidationError('__phase__', 'invalid_phase', 'Position is not in PMCC_OPEN phase')
+  }
+}
+
+/** The terms of a PMCC short call the roll rules read; callers may pass a richer leg. */
+export interface PmccShortCallTerms {
+  strike: string
+  expiration: string
+  fillDate: string
+}
+
+export interface RollPmccShortCallInput<S extends PmccShortCallTerms = PmccShortCallTerms> {
+  currentPhase: WheelPhase
+  /** The open short call being rolled; `null` when the PMCC holds only its LEAPS. */
+  openShort: S | null
+  leapsExpiration: string
+  /** The roll's fill date; must be on or after the open short's own fill date. */
+  fillDate: string
+  /** Omitted for a roll out at the current strike. */
+  newStrike?: string
+  newExpiration: string
+  costToClosePerContract: string
+  newPremiumPerContract: string
+}
+
+export interface RollPmccShortCallResult<S extends PmccShortCallTerms = PmccShortCallTerms> {
+  phase: 'PMCC_OPEN'
+  /** The caller's open short, now known to exist. */
+  openShort: S
+  /** The replacement strike — the current strike when the input omitted it. */
+  newStrike: string
+}
+
+/**
+ * [US-104] Validates rolling a PMCC's short call. Rules run in a fixed order and the first
+ * failure throws: phase → open short → fill date (on/after the open, on/before its expiration) →
+ * money → strike → LEAPS coverage → on/after current → after the roll fill → changed. The phase
+ * is unchanged.
+ */
+export function rollPmccShortCall<S extends PmccShortCallTerms>(
+  input: RollPmccShortCallInput<S>
+): RollPmccShortCallResult<S> {
+  requirePmccOpenPhase(input.currentPhase)
+
+  const { openShort } = input
+  if (openShort === null) {
+    throw new ValidationError(
+      '__root__',
+      'no_open_short_call',
+      'This PMCC has no open short call to roll.'
+    )
+  }
+  const newStrike = input.newStrike ?? openShort.strike
+  const [firstIssue] = pmccShortRollIssues({ ...input, openShort, newStrike })
+  // The fill-date rules lead the list and are checked before the money rules; the rest after.
+  if (firstIssue?.field === 'fillDate') throwIssue(firstIssue)
+
+  requirePositiveDecimal(input.costToClosePerContract, 'costToClosePerContract', 'Cost to close')
+  requirePositiveDecimal(
+    input.newPremiumPerContract,
+    'newPremiumPerContract',
+    'Replacement premium'
+  )
+  requirePositiveStrike(newStrike, 'newStrike')
+
+  if (firstIssue) throwIssue(firstIssue)
+
+  return { phase: 'PMCC_OPEN', openShort, newStrike }
 }

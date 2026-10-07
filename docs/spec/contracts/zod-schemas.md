@@ -1,6 +1,6 @@
 # Zod Schemas
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-44,us-101,us-103 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-44,us-101,us-103,us-104 -->
 
 ## Overview
 
@@ -13,6 +13,8 @@ Three classes of types are catalogued below: **core enums** (the discriminator v
 **Renderer form schemas (us-101).** The PMCC entry form is the first place a renderer schema deliberately **mirrors** a main-process engine rather than just shaping form input: `pmccEntrySchema(today)` in `src/renderer/src/schemas/pmcc-entry.ts` repeats the engine's cross-leg rules with the same messages and dotted paths so the form rejects before the IPC round-trip, while `openPmcc` in `src/main/core/lifecycle.ts` stays the authority at the boundary. See the [renderer PMCC entry schema](#renderer-pmcc-entry-schema--pmccentryschematoday) below and the [PMCC validation ADR](../architecture/02-adrs/pmcc-validation-pure-engine-mirrored-by-form-schema.md).
 
 **Dev-only test seam (us-103).** `src/main/schemas.ts` now ends with a dev-only section for payloads accepted only under `NODE_ENV === 'test'` — today `TestPmccLegEventPayloadSchema`, which lets e2e tests seed PMCC leg events that no production flow writes yet. See [`TestPmccLegEventPayloadSchema`](#dev-only-testpmcclegeventpayloadschema). Driven by [us-103 — PMCC cost-basis ledger](../features/us-103-pmcc-cost-basis.md).
+
+**Shared rule functions instead of mirrored rules (us-104).** The PMCC short-call roll goes one step past us-101's mirroring: the roll form schema `rollPmccShortCallSchema(ctx)` does not re-spell the engine's date and no-change rules — its `superRefine` calls the same pure `pmccShortRollIssues` from `src/main/core/pmcc-rules.ts` that the `rollPmccShortCall` engine throws from, so codes, messages and field paths have one home. On the main side the roll payload reuses the wheel rolls' base (`RollPmccShortCallPayloadSchema = RollPayloadBaseSchema.extend({ fillDate: IsoDateSchema.optional() })`) and the result reuses a now-generic `RollResultBase<Phase>`. See [us-104 — Roll a PMCC short call](../features/us-104-roll-pmcc-short-call.md).
 
 <!-- /generated -->
 
@@ -72,7 +74,7 @@ export type InstrumentType = z.infer<typeof InstrumentType>
 
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-12,us-13,us-14,us-32,us-33,us-44,us-57-58,us-121,us-101,us-103 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-12,us-13,us-14,us-32,us-33,us-44,us-57-58,us-121,us-101,us-103,us-104 -->
 
 ## Payload schemas
 
@@ -84,17 +86,18 @@ One `z.object({...})` per mutating IPC handler. Each schema exports a matching `
 export const IsoDateRegex = /^\d{4}-\d{2}-\d{2}$/
 export const IsoDateMessage = 'Must be a valid date (YYYY-MM-DD)'
 
-export const RollPayloadBaseSchema = z.object({
+// module-private
+const RollPayloadBaseSchema = z.object({
   positionId: PositionIdSchema,
   costToClosePerContract: z.number().positive(),
   newPremiumPerContract: z.number().positive(),
-  newExpiration: z.string().regex(IsoDateRegex, IsoDateMessage),
+  newExpiration: IsoDateSchema,
   newStrike: z.number().positive().optional(),
   fillDate: z.string().optional()
 })
 ```
 
-Extracted during the us-14 refactor pass after `RollCspPayloadSchema` and `RollCcPayloadSchema` proved field-for-field identical. Both roll schemas are now assigned from this base; the divergence between the two roll flows lives entirely in the lifecycle engine (expiration `>` vs `>=`, no-change guard on CC) and in the service layer. The `IsoDateRegex` / `IsoDateMessage` constants are also exported standalone for reuse in any future date-shaped payload field.
+Extracted during the us-14 refactor pass after `RollCspPayloadSchema` and `RollCcPayloadSchema` proved field-for-field identical. Both roll schemas are now assigned from this base; the divergence between the two roll flows lives entirely in the lifecycle engine (expiration `>` vs `>=`, no-change guard on CC) and in the service layer. The `IsoDateRegex` / `IsoDateMessage` constants are also exported standalone for reuse in any future date-shaped payload field. The base is module-private; consumers import the per-channel schemas. Its `fillDate` stays a bare optional string for the wheel rolls — us-104's PMCC roll tightens it only in its own `.extend()` (see [`RollPmccShortCallPayloadSchema`](#rollpmccshortcallpayloadschema)).
 
 ### `CloseCspPayloadSchema`
 
@@ -204,6 +207,17 @@ export type RollCcPayload = z.infer<typeof RollCcPayloadSchema>
 ```
 
 Mirror of `RollCspPayloadSchema` — every field is the same, only the lifecycle semantics differ (the CC roll engine accepts `newExpiration >= currentExpiration` so "Roll Up" / "Roll Down" with the same expiration are legal, and rejects the case where both strike and expiration are unchanged with `__roll__ / no_change`). `newStrike` is optional and defaults to the current CC strike service-side. Bound to `positions:roll-cc`. Driven by [us-14 — Roll an open covered call](../features/us-14-roll-cc.md).
+
+### `RollPmccShortCallPayloadSchema`
+
+```typescript
+export const RollPmccShortCallPayloadSchema = RollPayloadBaseSchema.extend({
+  fillDate: IsoDateSchema.optional()
+})
+export type RollPmccShortCallPayload = z.infer<typeof RollPmccShortCallPayloadSchema>
+```
+
+Same fields as the wheel roll schemas — `positionId`, `costToClosePerContract`, `newPremiumPerContract`, `newExpiration`, `newStrike?`, `fillDate?` — with money crossing the IPC as numbers, formatted to 4-dp strings in the service (the convention every roll channel and `positions:create-pmcc` already use). Only `fillDate` is tightened to `IsoDateSchema`, and only here, because the PMCC fill date drives the open-short replay order; the wheel rolls' validation is unchanged. Zod guards shape and positivity (`.positive()` fires before the engine for `0`); every cross-field rule — open short present, fill not before the open short's fill, replacement expiring on/after the current short, before the LEAPS and after the fill, strike or expiration changed — belongs to the pure `rollPmccShortCall` engine and `pmccShortRollIssues`. Error table: [`positions:roll-pmcc-short`](./ipc-handlers.md#positionsroll-pmcc-short). Mirrored in the renderer as `RollPmccShortCallPayload = IpcPayload<'rollPmccShortCall'>`. Bound to `positions:roll-pmcc-short`. Driven by [us-104 — Roll a PMCC short call](../features/us-104-roll-pmcc-short-call.md).
 
 ### `GetStockQuotesPayloadSchema`
 
@@ -316,7 +330,19 @@ Lives in `src/renderer/src/schemas/pmcc-entry.ts`; drives `PmccEntryForm` throug
 - **Defaults:** `EMPTY_PMCC_DEFAULTS(today)` is passed as `useForm` `defaultValues` (fees `'0.00'`, both fill dates today). The schema has **no `.default()`**, so its input and output types stay equal.
 - **Payload mapping:** `toCreatePmccPayload(values)` builds `CreatePmccPositionPayload` — `underlying: ticker`, `instrumentType: 'CALL'`, `deliverableShares: 100`, the shared `contracts` on both legs, numbers via `parseInputDecimal`. The boundary-only rules (underlying, call-only, quantity, deliverable) therefore have no form field.
 - **Shared renderer regex:** `ISO_DATE_REGEX` (with `isoDateSchema`) is exported from `src/renderer/src/schemas/common.ts` (us-101 refactor) and used by both the field schema and the cross-leg date checks.
+- **(us-104)** `moneySchema(message, test)` and `inputToNumber(value)` moved from `pmcc-entry.ts` to `src/renderer/src/schemas/common.ts`, shared with the roll schema below; `required` stays private to `pmcc-entry.ts`. Server field errors now reach the form through the shared `applyIpcFieldErrors` (`src/renderer/src/lib/ipc-field-errors.ts`) instead of a local `showSaveErrors`.
 - Driven by [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md); see the [PMCC validation ADR](../architecture/02-adrs/pmcc-validation-pure-engine-mirrored-by-form-schema.md).
+
+### Renderer PMCC roll schema — `rollPmccShortCallSchema(ctx)`
+
+Lives in `src/renderer/src/schemas/roll-pmcc-short-call.ts`; drives the `Roll Short Call` sheet through `useRollPmccShortCallForm(ctx, today)` (`mode: 'onChange'`, `zodResolver`).
+
+- **Factory over the open short:** `rollPmccShortCallSchema(ctx)` takes `RollPmccShortCallContext` (an alias of `PmccShortRollContext` — `{ openShort: PmccShortCallTerms; leapsExpiration }`) and returns the object schema with a `superRefine` attached. `RollPmccShortCallFormValues` is inferred from the underlying object schema.
+- **Field-level rules:** `costToClose`, `newStrike`, `newPremium` via `moneySchema` with the engine's positivity messages (`Cost to close must be greater than zero`, `Strike must be positive`, `Replacement premium must be greater than zero`); `newExpiration` / `fillDate` via `isoDateSchema`.
+- **Cross-field rules are the engine's, not a copy:** the `superRefine` calls `pmccShortRollIssues` with the context plus the decided values (an incomplete date or unparseable strike is passed as `undefined`, so its rule is skipped) and reports the **first issue per path**. The paths are `PmccShortRollField = Extract<keyof RollPmccShortCallInput, 'fillDate' | 'newExpiration'> | '__roll__'` — derived from the engine input, so the form paths and the engine's `ValidationError.field` cannot diverge.
+- **Typed `__roll__` slot:** an optional `__roll__` key that is never a real input, so `errors.__roll__` / `setError('__roll__')` are typed and a server `no_change` lands in the same slot as the client's. RHF `deps` re-run it when strike or expiration change.
+- **Defaults and payload:** `EMPTY_ROLL_PMCC_SHORT_CALL_DEFAULTS(today)` (empty inputs, `fillDate: today`; no `.default()` on the schema); `toRollPmccShortCallPayload(values, positionId)` maps `costToClose → costToClosePerContract`, `newPremium → newPremiumPerContract`, numbers via `inputToNumber`.
+- Driven by [us-104 — Roll a PMCC short call](../features/us-104-roll-pmcc-short-call.md).
 
 ### Dev-only `TestPmccLegEventPayloadSchema`
 
@@ -329,7 +355,7 @@ A test seam, not a production contract: bound to `_test:pmcc-record-leg-event`, 
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-101,us-103 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-101,us-103,us-104 -->
 
 ## Result interfaces
 
@@ -405,6 +431,8 @@ interface PositionListItem {
 - **`AppendPmccSnapshotResult<T extends PmccTriggerEvent = PmccTriggerEvent>`** (in `src/main/services/pmcc-ledger.ts`, not `schemas.ts`) — `{ ledger: PmccLedgerResult; snapshot: CostBasisSnapshotRecord & { triggerEvent: T; finalPnl: null } }`, returned by `appendPmccSnapshot`, the writer every PMCC leg event calls inside its own transaction. Generic over the trigger so `createPmccPosition` gets a snapshot narrowed to `'PMCC_OPEN'` without a cast.
 - Driven by [us-103 — PMCC cost-basis ledger](../features/us-103-pmcc-cost-basis.md).
 
+**us-104 changes — open legs.** `GetPositionResult.pmccOpenLegs: PmccOpenLegs | null` — `PmccOpenLegs = { long: LegRecord; short: LegRecord | null }` (declared in `src/main/services/pmcc-ledger.ts`, re-exported from `src/renderer/src/api/positions.ts`) is the PMCC's currently open LEAPS and short call, derived by replaying the legs (`pmccOpenLegs(legs)`); `null` for a wheel or a PMCC with no LEAPS leg. Contract detail on [`positions:get`](./ipc-handlers.md#positionsget). Driven by [us-104 — Roll a PMCC short call](../features/us-104-roll-pmcc-short-call.md).
+
 ### `GetPositionResult`
 
 ```typescript
@@ -416,6 +444,7 @@ interface GetPositionResult {
   allSnapshots: CostBasisSnapshotRecord[] // added by us-11; ordered snapshot_at ASC
   initialNetDebit: string | null // us-101: PMCC only, from both opening legs; null for a wheel
   pmccLedger: PmccLedgerResult | null // us-103: PMCC running ledger; null for a wheel or a PMCC with no legs
+  pmccOpenLegs: PmccOpenLegs | null // us-104: open LEAPS + open short call; null for a wheel or a PMCC with no LEAPS leg
   // rollCount: number                              // planned by us-13, not yet implemented
 }
 ```
@@ -426,7 +455,7 @@ interface GetPositionResult {
 
 **Planned (us-13, not yet implemented):** add `rollCount: number` (count of `legs` with `leg_role = 'ROLL_TO'`) so the renderer can show a "Roll #N" badge in the roll sheet and an informational warning at `rollCount >= 3`. No new IPC channel; this is a response widening on `positions:get`.
 
-Returned by `positions:get`. Introduced by [us-4 — Close a CSP early](../features/us-4-close-csp.md); extended by [us-11 — Wheel leg chain display](../features/us-11-wheel-leg-chain-display.md), [us-103 — PMCC cost-basis ledger](../features/us-103-pmcc-cost-basis.md) (`pmccLedger`), and [us-13 — Roll a CSP down and out](../features/us-13-roll-csp-down-and-out.md) (planned).
+Returned by `positions:get`. Introduced by [us-4 — Close a CSP early](../features/us-4-close-csp.md); extended by [us-11 — Wheel leg chain display](../features/us-11-wheel-leg-chain-display.md), [us-103 — PMCC cost-basis ledger](../features/us-103-pmcc-cost-basis.md) (`pmccLedger`), [us-104 — Roll a PMCC short call](../features/us-104-roll-pmcc-short-call.md) (`pmccOpenLegs`), and [us-13 — Roll a CSP down and out](../features/us-13-roll-csp-down-and-out.md) (planned).
 
 ### `CloseCspPositionResult`
 
@@ -566,30 +595,26 @@ The call-away service writes a final `cost_basis_snapshots` row carrying the pri
 ### Shared roll base — `RollResultBase`
 
 ```typescript
-interface RollResultBase {
+export interface RollResultBase<Phase extends WheelPhase> {
   position: {
     id: string
     ticker: string
-    phase: WheelPhase // narrowed by extenders to a literal
+    phase: Phase
     status: 'ACTIVE'
   }
-  rollFromLeg: LegRecord
-  rollToLeg: LegRecord
+  rollFromLeg: LegRecord & { legRole: 'ROLL_FROM'; action: 'BUY' }
+  rollToLeg: LegRecord & { legRole: 'ROLL_TO'; action: 'SELL' }
   rollChainId: string // shared UUID — links the leg pair
   costBasisSnapshot: CostBasisSnapshotRecord // finalPnl: null
 }
 ```
 
-Extracted during the us-14 refactor pass after `RollCspResult` and `RollCcResult` proved field-for-field identical apart from the `position.phase` literal. Both result interfaces now extend this base and add only their differing `position.phase` narrowing.
+Extracted during the us-14 refactor pass after `RollCspResult` and `RollCcResult` proved field-for-field identical apart from the `position.phase` literal. **us-104** made it generic over the phase (no default type parameter — nothing used one) because the `position` block was "written out by hand three times": the wheel results are now plain aliases and the PMCC result extends it. Exported names are unchanged for consumers.
 
 ### `RollCspResult`
 
 ```typescript
-interface RollCspResult extends RollResultBase {
-  position: { id: string; ticker: string; phase: 'CSP_OPEN'; status: 'ACTIVE' }
-  rollFromLeg: LegRecord // ROLL_FROM / BUY / PUT
-  rollToLeg: LegRecord // ROLL_TO / SELL / PUT
-}
+export type RollCspResult = RollResultBase<'CSP_OPEN'> // legs: ROLL_FROM / BUY / PUT, ROLL_TO / SELL / PUT
 ```
 
 Rolls are **always** stored as linked leg pairs sharing a `rollChainId`, never as in-place mutations of the previous leg (per CLAUDE.md). The position row is not updated — phase stays `CSP_OPEN` and the new `ROLL_TO` leg becomes the effective open leg via the phase-aware active-leg query. Driven by [us-12 — Roll an open CSP out](../features/us-12-roll-csp.md).
@@ -597,14 +622,24 @@ Rolls are **always** stored as linked leg pairs sharing a `rollChainId`, never a
 ### `RollCcResult`
 
 ```typescript
-interface RollCcResult extends RollResultBase {
-  position: { id: string; ticker: string; phase: 'CC_OPEN'; status: 'ACTIVE' }
-  rollFromLeg: LegRecord // ROLL_FROM / BUY / CALL
-  rollToLeg: LegRecord // ROLL_TO / SELL / CALL
-}
+export type RollCcResult = RollResultBase<'CC_OPEN'> // legs: ROLL_FROM / BUY / CALL, ROLL_TO / SELL / CALL
 ```
 
 Mirror of `RollCspResult` — the only differences are the `position.phase` literal (`'CC_OPEN'` not `'CSP_OPEN'`) and the leg `instrumentType` ('CALL' not 'PUT'). Same rules: linked leg pair sharing a `rollChainId`, new `ROLL_TO` leg becomes the effective open leg, `costBasisSnapshot.finalPnl` is `null` because the wheel is still open, `calculateRollBasis()` is reused from the cost-basis engine unchanged (net credit reduces basis per share, net debit increases it). Driven by [us-14 — Roll an open covered call](../features/us-14-roll-cc.md).
+
+### `RollPmccShortCallResult`
+
+```typescript
+export interface RollPmccShortCallResult extends RollResultBase<'PMCC_OPEN'> {
+  costBasisSnapshot: CostBasisSnapshotRecord & { triggerEvent: 'PMCC_SHORT_ROLL'; finalPnl: null }
+  ledger: PmccLedgerResult
+  shortCallRollNumber: number
+}
+```
+
+Returned by `positions:roll-pmcc-short`. The leg pair is the open short bought to close (`ROLL_FROM` / `BUY` / `CALL`, premium = fill = cost to close) and the replacement sold (`ROLL_TO` / `SELL` / `CALL`), sharing a fresh `rollChainId`, both with `fees '0.0000'`. Unlike the wheel rolls, the snapshot is written by US-103's `appendPmccSnapshot` (not `calculateRollBasis`), so the result carries its narrowed snapshot plus the post-roll `ledger` — letting the success banner show post-roll figures without a refetch — and `shortCallRollNumber`, the count of short-side roll chains (`rollFrom.action === 'BUY'`) including this one. The preload mirrors it as `IpcRollPmccShortCallResult`; the renderer as `RollPmccShortCallResponse = IpcSuccess<'rollPmccShortCall'>`.
+
+The pure engine's own result, also named `RollPmccShortCallResult<S>` but declared in `src/main/core/lifecycle.ts`, is a different type: `{ phase: 'PMCC_OPEN'; openShort: S; newStrike: string }` — the validated open short (narrowed to non-null) and the resolved strike (the current one when the payload omitted it). Driven by [us-104 — Roll a PMCC short call](../features/us-104-roll-pmcc-short-call.md).
 
 ### `CreatePmccPositionResult`
 
@@ -676,7 +711,7 @@ interface IpcStreamErrorEvent {
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-44,us-57-58,us-121,us-101,us-103 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-44,us-57-58,us-121,us-101,us-103,us-104 -->
 
 ## Driven by
 
@@ -702,6 +737,7 @@ interface IpcStreamErrorEvent {
 - [us-121 — IV rank from our own IV history](../features/us-121-iv-rank-from-own-iv-history.md) — `CollectIvrNowBatchSchema.skippedReason` narrowed to `'market_data_unavailable'`; the reshaped `IpcIvRank` / new `IpcIvRankAbsence` are TypeScript mirrors, not Zod schemas (see [ipc-handlers](./ipc-handlers.md))
 - [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md) — `CreatePmccPositionPayloadSchema` / `CreatePmccPositionPayload` / `CreatePmccPositionResult`, shared `IsoDateSchema`, `PmccLegSummary` / `PmccListSummary` / `PositionListItemBase` / `WheelListItem` / `PmccListItem`, `LegRecord.fees`, `WheelPhase + 'PMCC_OPEN'`, `LegRole + 'LEAPS_OPEN' / 'SHORT_CALL_OPEN'`, `TriggerEvent + 'PMCC_OPEN'`; renderer `pmccEntrySchema(today)`, `EMPTY_PMCC_DEFAULTS`, `toCreatePmccPayload`, `ISO_DATE_REGEX`
 - [us-103 — PMCC cost-basis ledger](../features/us-103-pmcc-cost-basis.md) — `LegRole + 'LEAPS_CLOSE' / 'SHORT_CALL_CLOSE' / 'SHORT_CALL_EXPIRED' / 'SHORT_CALL_ASSIGNED'`, `PmccLegRole` / `isPmccLegRole` (from `PMCC_LEG_ROLE_VALUES`), `PmccTriggerEvent` + `TriggerEvent = WheelTriggerEvent | PmccTriggerEvent`, `GetPositionResult.pmccLedger`, `PmccListSummary` basis fields, `AppendPmccSnapshotResult<T>`, dev-only `TestPmccLegEventPayloadSchema` / `TestPmccLegEventPayload` / `TestPmccLegEventPayloadInput`
+- [us-104 — Roll a PMCC short call](../features/us-104-roll-pmcc-short-call.md) — `RollPmccShortCallPayloadSchema` / `RollPmccShortCallPayload` / `RollPmccShortCallResult`, generic `RollResultBase<Phase>` (with `RollCspResult` / `RollCcResult` as aliases), `GetPositionResult.pmccOpenLegs` / `PmccOpenLegs`; renderer `rollPmccShortCallSchema(ctx)`, `RollPmccShortCallContext`, `EMPTY_ROLL_PMCC_SHORT_CALL_DEFAULTS`, `toRollPmccShortCallPayload`, `moneySchema` / `inputToNumber` moved to `schemas/common.ts`
 <!-- /generated -->
 
 <!-- generated:from us-35 -->

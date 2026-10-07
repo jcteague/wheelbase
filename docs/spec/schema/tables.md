@@ -1,6 +1,6 @@
 # Database Tables
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-35,us-37,us-44,us-50,us-121,us-101,us-103 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-35,us-37,us-44,us-50,us-121,us-101,us-103,us-104 -->
 
 ## Overview
 
@@ -35,7 +35,8 @@ on `legs.position_id` and `cost_basis_snapshots.position_id` reference
 and `cost_basis_snapshots.trigger_event` are plain `TEXT` whose vocabulary is
 enforced by the Zod/TypeScript enums, which is why new values (the wheel
 roles, the PMCC roles and PMCC trigger events of US-101 / US-103) ship
-without a migration.
+without a migration. The same holds for new row conventions: US-104's PMCC
+short-call roll writes only existing columns and values.
 
 Migrations are SQL files in `migrations/` discovered by filename order via
 `src/main/db/migrate.ts`. See [Migrations](./migrations.md) for the change
@@ -45,7 +46,7 @@ and [Cost Basis](../domain/cost-basis.md) for how snapshots are produced.
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-57-58,us-101 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-57-58,us-101,us-104 -->
 
 ## `positions`
 
@@ -104,10 +105,14 @@ list view can render an "Active" / "Closed" split.
   filters correct; see the
   [phase and leg-role names ADR](../architecture/02-adrs/pmcc-phase-and-leg-role-names.md).
   Driven by [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md).
+- **Roll PMCC short call** (US-104): no UPDATE — `phase` stays
+  `PMCC_OPEN` and `updated_at` is not bumped (parity with the wheel CC
+  roll). Driven by
+  [us-104 — Roll the short call on a PMCC](../features/us-104-roll-pmcc-short-call.md).
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-101,us-103 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-101,us-103,us-104 -->
 
 ## `legs`
 
@@ -179,6 +184,20 @@ only linkage between the paired legs — it lets the `ROLL_FROM` / `ROLL_TO`
 pair be queried as a unit. The CSP and CC roll paths write identical row shapes apart from
 `instrument_type` (`PUT` vs `CALL`) — the schema and the
 `calculateRollBasis()` math are shared (US-14 reuses both unchanged).
+
+PMCC short-call rolls (US-104) use the same pair shape on `instrument_type =
+'CALL'`, but `activeLegSubquery` deliberately does **not** resolve PMCC
+rows — it returns no leg for them, which keeps the alert, polling and
+calendar jobs off PMCC positions. The open LEAPS and open short of a PMCC
+are instead derived by replaying its legs (`currentLeapsLeg`,
+`currentShortCallLeg`, `pmccOpenLegs` in `src/main/services/pmcc-ledger.ts`):
+a `SHORT_CALL_OPEN` or the `ROLL_TO` of a chain whose `ROLL_FROM` is a `BUY`
+opens the short; `SHORT_CALL_EXPIRED` / `SHORT_CALL_CLOSE` /
+`SHORT_CALL_ASSIGNED` closes it. Because that replay runs in `fill_date`
+order, a roll's `fill_date` must not precede the open short's (engine rule
+`close_date_before_open`) and its `ROLL_TO` expiration must fall after the
+roll's `fill_date` (`expiration_not_after_fill`); otherwise the replay would
+misread which short is open.
 
 ### Enum evolution
 
@@ -272,7 +291,8 @@ feature in [the feature pages](../features/); the common shape is:
   first and both share one `created_at`, so `GET_LEGS_QUERY`
   (`fill_date ASC, created_at ASC`) returns the LEAPS first on tied fill
   dates. Rows go through the shared `insertPosition` (`services/position-rows.ts`)
-  and `insertPmccLeg` helpers; any failure rolls back every row, so no
+  and `insertPmccLeg` helpers (the latter builds a `LegRecord` and hands it
+  to the shared `insertLegRow`, see below); any failure rolls back every row, so no
   partial position or standalone leg is left behind. Driven by [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md).
 - Later PMCC leg events (row shapes fixed by US-103's ledger, written by
   the consumer stories): every PMCC leg is `instrument_type='CALL'`; the
@@ -283,13 +303,38 @@ feature in [the feature pages](../features/); the common shape is:
   `SELL` (US-120). PMCC rolls are an ordinary `ROLL_FROM` / `ROLL_TO` pair
   on one `roll_chain_id` — `BUY`+`SELL` for a short roll, `SELL`+`BUY` for
   a LEAPS roll, side read from the `ROLL_FROM` leg's `action` (US-104 /
-  US-105). Until those stories ship, e2e records these rows through the
+  US-105). Until each story ships, e2e records its rows through the
   dev-only `_test:pmcc-record-leg-event` seam. Driven by
   [us-103 — PMCC cost basis](../features/us-103-pmcc-cost-basis.md).
+- PMCC short-call roll `ROLL_FROM` + `ROLL_TO` (US-104,
+  `rollPmccShortCallPosition`): two rows sharing a fresh `roll_chain_id`,
+  both `instrument_type='CALL'`, both `fees='0.0000'` (the roll has no fees
+  input), same `contracts` and `fill_date` (default today).
+  - `ROLL_FROM` — `action='BUY'`, strike / expiration / contracts copied
+    from the open short, `premium_per_contract` = `fill_price` = the
+    cost to close (4 dp).
+  - `ROLL_TO` — `action='SELL'`, the replacement `strike` (defaults to the
+    open short's) and `expiration`, `premium_per_contract` = `fill_price` =
+    the new premium (4 dp).
+
+  `groupRollChains` nets the pair `SELL − BUY` (e.g. `2.40 − 3.00 =
+−0.6000`) and the ledger classifies it as the short side because the
+  `ROLL_FROM` is a `BUY`. Both rows and the `PMCC_SHORT_ROLL` snapshot are
+  written in one transaction; a failed snapshot rolls the legs back. No new
+  `leg_role` value. Driven by
+  [us-104 — Roll the short call on a PMCC](../features/us-104-roll-pmcc-short-call.md).
+
+**One full-column insert helper.** `insertLegRow(db, leg: LegRecord)`
+(`src/main/services/leg-rows.ts`, US-104) is the single INSERT built from
+the same column list `readLegs` maps back — the inverse of the reader. The
+PMCC roll service, `createPmccPosition`'s `insertPmccLeg`, the PMCC unit
+fixtures and the `_test:pmcc-record-leg-event` seam all go through it. The
+wheel open / roll services keep their own literal INSERTs, since they never
+build a `LegRecord` first.
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-101,us-103 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-101,us-103,us-104 -->
 
 ## `cost_basis_snapshots`
 
@@ -328,6 +373,7 @@ audit trail of how basis evolved over the life of the wheel.
 | Shares called away (US-10)                   | Yes                     | `(ccStrike − basisPerShare) × contracts × 100` — terminal          |
 | Roll CC (US-14)                              | Yes                     | `NULL`                                                             |
 | PMCC open (US-101)                           | Yes                     | `NULL`                                                             |
+| Roll PMCC short call (US-104)                | Yes — `PMCC_SHORT_ROLL` | `NULL`                                                             |
 | Any later PMCC leg event (US-103 convention) | Yes — one row per event | `NULL` (terminal PMCC P&L is US-111 / US-120)                      |
 
 The two "no snapshot" cases are deliberate: at CC close / CC expiry the
@@ -375,6 +421,15 @@ the [PMCC opening-snapshot ledger ADR](../architecture/02-adrs/pmcc-opening-snap
 and [Cost Basis](../domain/cost-basis.md). Driven by
 [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md) and
 [us-103 — PMCC cost basis](../features/us-103-pmcc-cost-basis.md).
+
+The first production writer after the opening row is US-104's short-call
+roll: one `PMCC_SHORT_ROLL` row per roll, written by `appendPmccSnapshot`
+inside the roll transaction — `basis_per_share` = the post-roll ledger basis
+(`21.8000` after a $0.60 debit roll from `21.2000`),
+`total_premium_collected` = `shortCreditsTotal` (`320.0000`), `final_pnl`
+`NULL`, `snapshot_at = makeSnapshotAt(fillDate)`. The roll contributes one
+net amount, never two gross ones. Driven by
+[us-104 — Roll the short call on a PMCC](../features/us-104-roll-pmcc-short-call.md).
 
 ### Tie-breaking on simultaneous snapshots
 
