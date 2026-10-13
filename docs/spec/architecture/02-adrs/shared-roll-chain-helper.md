@@ -42,3 +42,13 @@
 - [extract: us-103](../../.extracts/us-103.md)
 - [feature: us-103-pmcc-cost-basis](../../features/us-103-pmcc-cost-basis.md)
 <!-- /generated -->
+
+<!-- Hand-written notes below this line are preserved across regeneration. -->
+
+> **Update (US-105):** `pmccOpeningLegs` has been removed. `listPositions` now derives the PMCC
+> row's open legs from `pmccOpenLegs(legs)` in `src/main/services/pmcc-ledger.ts`, which replays the
+> same `readLegsByPosition` rows (rolls and expiries included); `pmcc-opening-legs.ts` keeps only
+> `pmccEntryLegs` / `pmccInitialNetDebit`. US-105's LEAPS roll is the inverted-pair consumer this
+> ADR anticipated: `groupRollChains` nets its `ROLL_FROM` SELL / `ROLL_TO` BUY pair as a credit with
+> no flag, and the service counts prior long-side chains for `leapsRollNumber`. See
+> [us-105 — Roll the PMCC LEAPS](../../features/us-105-roll-pmcc-leaps.md).

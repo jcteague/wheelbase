@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js'
+import { money4 } from '../../shared/decimal-text'
 import type { LegRole } from '../core/types'
 import type { LegRecord } from '../schemas'
 
@@ -40,11 +41,9 @@ function toRollChain(rollChainId: string, legs: RollLeg[]): RollChain | null {
     rollChainId,
     rollFrom,
     rollTo,
-    netCreditPerShare: pair
-      .reduce((sum, l) => sum.plus(signedPremium(l)), new Decimal(0))
-      .toFixed(4),
+    netCreditPerShare: money4(pair.reduce((sum, l) => sum.plus(signedPremium(l)), new Decimal(0))),
     contracts: rollTo.contracts,
-    fees: pair.reduce((sum, l) => sum.plus(l.fees), new Decimal(0)).toFixed(4),
+    fees: money4(pair.reduce((sum, l) => sum.plus(l.fees), new Decimal(0))),
     fillDate: earlier(rollFrom.fillDate, rollTo.fillDate)
   }
 }

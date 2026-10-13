@@ -40,6 +40,7 @@ export interface PmccFixtures {
   EXPIRE_1: LegRecord[]
   SHORT_2: LegRecord[]
   SHORT_ROLL: LegRecord[]
+  EXPIRE_2: LegRecord[]
   LEAPS_ROLL: LegRecord[]
   CYCLES: LegRecord[]
   FEES: LegRecord[]
@@ -123,6 +124,16 @@ export function pmccFixtures(positionId: string, day: DayFn = FIXED_DAY): PmccFi
         },
         1
       )
+    ],
+    EXPIRE_2: [
+      leg({
+        legRole: 'SHORT_CALL_EXPIRED',
+        action: 'EXPIRE',
+        strike: '112.0000',
+        expiration: day(95),
+        fillDate: day(95),
+        premiumPerContract: '0.0000'
+      })
     ],
     LEAPS_ROLL: [
       leg(

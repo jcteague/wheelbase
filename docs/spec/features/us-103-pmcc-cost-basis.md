@@ -373,3 +373,11 @@ Related stories:
 <!-- /generated -->
 
 <!-- Hand-written notes below this line are preserved across regeneration. -->
+
+> **Update (US-105):** the "Recorded limitation: list leg summaries are not roll-aware" above no
+> longer holds. US-105 removed `pmccOpeningLegs`; `listPositions` now builds each PMCC row's
+> `pmcc.long` / `pmcc.short` from the roll- and expiry-aware `pmccOpenLegs(legs)` in
+> `src/main/services/pmcc-ledger.ts` (the same answer `positions:get` exposes as `pmccOpenLegs`), and
+> `PmccListSummary.short` is `null` while no short call is open. `pmcc-opening-legs.ts` now holds only
+> `pmccEntryLegs` / `pmccInitialNetDebit`, which still read the entry pair for `initialNetDebit`. See
+> [us-105 — Roll the PMCC LEAPS](./us-105-roll-pmcc-leaps.md).

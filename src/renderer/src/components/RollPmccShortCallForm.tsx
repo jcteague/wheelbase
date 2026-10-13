@@ -11,6 +11,7 @@ import {
   pmccRollNet,
   pmccStrikeShortfall
 } from '../lib/pmcc-roll'
+import { shortRollCoverage } from '../lib/pmcc-roll-coverage'
 import type {
   RollPmccShortCallFormValues,
   RollPmccShortCallSchema
@@ -80,8 +81,8 @@ export function RollPmccShortCallForm({
   const shortDte = dte(openShort.expiration)
   const replacementDte = dte(newExpiration)
   const net = pmccRollNet({
-    costToClose: costToClosePerContract,
-    premium: newPremiumPerContract,
+    received: newPremiumPerContract,
+    paid: costToClosePerContract,
     contracts: openShort.contracts
   })
   const postRoll = net
@@ -94,7 +95,9 @@ export function RollPmccShortCallForm({
     : null
   const shortfall =
     valid && postRoll ? pmccStrikeShortfall(newStrike, postRoll.effectiveAfter) : null
-  const label = valid ? pmccRollLabel({ openShort, newStrike, newExpiration }) : null
+  const label = valid
+    ? pmccRollLabel(openShort, { strike: newStrike, expiration: newExpiration })
+    : null
   const expirationError = errors.newExpiration?.message
 
   return (
@@ -109,9 +112,12 @@ export function RollPmccShortCallForm({
         <SectionCard header="Coverage" headerVariant="emphasized">
           <PmccCoverageRuler
             today={today}
-            currentExpiration={openShort.expiration}
-            replacementExpiration={newExpiration}
-            leapsExpiration={leaps.expiration}
+            {...shortRollCoverage({
+              today,
+              currentExpiration: openShort.expiration,
+              replacementExpiration: newExpiration,
+              leapsExpiration: leaps.expiration
+            })}
           />
         </SectionCard>
 

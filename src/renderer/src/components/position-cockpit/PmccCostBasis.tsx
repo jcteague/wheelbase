@@ -4,6 +4,7 @@ import { fmtMoneyGrouped, fmtPct1 } from '../../lib/format'
 import { CollapsedDrawer } from './CollapsedDrawer'
 import { Caption } from '../ui/Caption'
 import { StatGrid } from '../ui/Stat'
+import { money4 } from '../../../../shared/decimal-text'
 
 type PmccCostBasisProps = { ledger: PmccLedgerResult }
 
@@ -25,7 +26,7 @@ export function PmccCostBasis({ ledger }: PmccCostBasisProps): React.JSX.Element
           { label: 'LEAPS cost to date', value: fmtMoneyGrouped(ledger.leapsCostPerShare) },
           {
             label: 'Short-call credits to date',
-            value: fmtMoneyGrouped(new Decimal(ledger.shortCreditsPerShare).neg().toFixed(4))
+            value: fmtMoneyGrouped(money4(new Decimal(ledger.shortCreditsPerShare).neg()))
           },
           {
             label: 'Effective share cost',

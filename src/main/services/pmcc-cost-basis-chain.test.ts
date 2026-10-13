@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import type Database from 'better-sqlite3'
 import { isoDate, makeTestDb } from '../test-utils'
 import { createPmccPosition } from './positions'
+import { rollPmccLeapsPosition } from './roll-pmcc-leaps-position'
 import { rollPmccShortCallPosition } from './roll-pmcc-short-call-position'
 import { pmccFixtures, pmccOpenPayload, recordPmccLegEvent } from './test-fixtures/pmcc-legs'
 
@@ -114,6 +115,40 @@ describe('PMCC cost-basis snapshot chain (US-103)', () => {
       'PMCC_SHORT_EXPIRED',
       'PMCC_SHORT_OPEN',
       'PMCC_SHORT_ROLL'
+    ])
+  })
+
+  it('records the LEAPS roll through rollPmccLeapsPosition as the fifth snapshot (US-105)', () => {
+    const db = makeTestDb()
+    const { position } = createPmccPosition(db, pmccOpenPayload(isoDate))
+    const F = pmccFixtures(position.id, isoDate)
+    recordPmccLegEvent(db, position.id, F.EXPIRE_1, 'PMCC_SHORT_EXPIRED')
+    recordPmccLegEvent(db, position.id, F.SHORT_2, 'PMCC_SHORT_OPEN')
+    recordPmccLegEvent(db, position.id, F.SHORT_ROLL, 'PMCC_SHORT_ROLL')
+
+    rollPmccLeapsPosition(db, position.id, {
+      positionId: position.id,
+      proceedsPerContract: 26.0,
+      replacementDebitPerContract: 23.5,
+      newStrike: 85,
+      newExpiration: isoDate(494),
+      fillDate: isoDate(84)
+    })
+
+    const rows = snapshotRows(db, position.id)
+    expect(rows.map((r) => r.basis_per_share)).toEqual([
+      '23.0000',
+      '23.0000',
+      '21.2000',
+      '21.8000',
+      '19.3000'
+    ])
+    expect(rows.map((r) => r.trigger_event)).toEqual([
+      'PMCC_OPEN',
+      'PMCC_SHORT_EXPIRED',
+      'PMCC_SHORT_OPEN',
+      'PMCC_SHORT_ROLL',
+      'PMCC_LEAPS_ROLL'
     ])
   })
 })

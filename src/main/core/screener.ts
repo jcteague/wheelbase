@@ -6,6 +6,7 @@ import Decimal from 'decimal.js'
 import { compareAsc, differenceInCalendarDays, format, parseISO, startOfDay } from 'date-fns'
 import type { CandidateStrike } from './candidate-chain'
 import { computeDte } from './dte'
+import { fixed4 } from '../../shared/decimal-text'
 
 /** Calendar-day annualization basis — the wheel is a calendar-time trade, so 365,
  *  never the 252 trading days used by the volatility work in Epic 12. */
@@ -392,14 +393,14 @@ export function scoreCandidate(
     mark: strike.mark,
     spreadAbsolute: spread.absolute.toFixed(2),
     spreadPercent: spread.percent.toFixed(2),
-    delta: delta.toFixed(4),
+    delta: fixed4(delta),
     openInterest: strike.openInterest,
     volume: strike.volume,
     ivRank,
     capitalSecured: new Decimal(strike.strike).times(SHARES_PER_CONTRACT).toFixed(2),
-    periodYield: periodYield.toFixed(4),
-    annualizedYield: annualizedYield.toFixed(4),
-    yieldPerDelta: annualizedYield.dividedBy(delta).toFixed(4),
+    periodYield: fixed4(periodYield),
+    annualizedYield: fixed4(annualizedYield),
+    yieldPerDelta: fixed4(annualizedYield.dividedBy(delta)),
     earnings,
     timestamp: strike.timestamp
   }

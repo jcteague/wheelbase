@@ -129,6 +129,42 @@ describe('RollPmccShortCallForm — header and context', () => {
     render(<Harness />)
     expect(screen.getByTestId('pmcc-coverage-ruler')).toBeInTheDocument()
   })
+
+  it('before a replacement is entered, the ruler ticks today, the short and the LEAPS and states both runs', () => {
+    render(<Harness />)
+    const ruler = screen.getByTestId('pmcc-coverage-ruler')
+    const ticks = Array.from(ruler.querySelectorAll('[data-mark]')).map((el) =>
+      el.getAttribute('data-mark')
+    )
+    expect(ticks).toEqual(['today', 'current', 'leaps'])
+    expect(within(ruler).getByText('Replacement short call').parentElement).toHaveTextContent(
+      'not entered'
+    )
+    expect(ruler).toHaveTextContent(
+      'Current short call expires in 14 days. The LEAPS covers 315 days.'
+    )
+    expect(ruler).toHaveAttribute('data-blocked', 'false')
+  })
+
+  it('a valid replacement adds its tick and states the remaining LEAPS coverage', async () => {
+    render(<Harness />)
+    await fill(UP_OUT)
+    const ruler = screen.getByTestId('pmcc-coverage-ruler')
+    expect(ruler.querySelector('[data-mark="replacement"]')).toHaveClass('bg-wb-gold')
+    expect(ruler).toHaveTextContent(
+      'Replacement short at 42 DTE. The LEAPS still covers it by 273 days.'
+    )
+  })
+
+  it('a replacement before the current short tints the ruler red as a buyback', async () => {
+    render(<Harness />)
+    await fill(ROLLS_IN)
+    const ruler = screen.getByTestId('pmcc-coverage-ruler')
+    expect(ruler).toHaveAttribute('data-blocked', 'true')
+    expect(ruler).toHaveTextContent(
+      'The replacement expires before the current short call — that is a buyback, not a roll.'
+    )
+  })
 })
 
 describe('RollPmccShortCallForm — fields', () => {
@@ -245,6 +281,9 @@ describe('RollPmccShortCallForm — rejections', () => {
       'Short call must expire before the LEAPS call.'
     )
     expect(screen.getByTestId('pmcc-coverage-ruler')).toHaveAttribute('data-blocked', 'true')
+    expect(screen.getByTestId('pmcc-coverage-ruler')).toHaveTextContent(
+      'The replacement short reaches the LEAPS. Past this point the short call is naked.'
+    )
     expect(
       screen.getByText(
         'The XYZ $108.00 short call stays open at 2026-11-20. No close or replacement leg is recorded.'

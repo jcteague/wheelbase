@@ -17,6 +17,7 @@ import { FormButton } from './ui/FormButton'
 import { SectionCard } from './ui/SectionCard'
 import { SheetOverlay, SheetPanel, SheetHeader, SheetBody, SheetFooter } from './ui/Sheet'
 import { DatePicker } from '@/components/ui/date-picker'
+import { money4 } from '../../../shared/decimal-text'
 
 export interface AssignmentSheetProps {
   open: boolean
@@ -47,7 +48,7 @@ export function AssignmentSheet(props: AssignmentSheetProps): React.JSX.Element 
   const todayIso = localToday()
   const isFutureDate = assignmentDate > todayIso
   const totalBasis = useMemo(
-    () => new Decimal(props.projectedBasisPerShare).times(sharesHeld).toFixed(4),
+    () => money4(new Decimal(props.projectedBasisPerShare).times(sharesHeld)),
     [props.projectedBasisPerShare, sharesHeld]
   )
 

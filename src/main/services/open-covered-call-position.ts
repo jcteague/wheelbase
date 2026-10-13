@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
-import Decimal from 'decimal.js'
+import { money4 } from '../../shared/decimal-text'
 import { calculateCcOpenBasis } from '../core/costbasis'
 import { ValidationError, openCoveredCall } from '../core/lifecycle'
 import { localToday, makeSnapshotAt } from '../dates'
@@ -62,8 +62,8 @@ export function openCoveredCallPosition(
   const legId = randomUUID()
   const snapshotId = randomUUID()
   const snapshotAt = makeSnapshotAt(fillDate)
-  const strikeFormatted = new Decimal(strikeStr).toFixed(4)
-  const premiumFormatted = new Decimal(premiumStr).toFixed(4)
+  const strikeFormatted = money4(strikeStr)
+  const premiumFormatted = money4(premiumStr)
 
   db.transaction(() => {
     db.prepare(

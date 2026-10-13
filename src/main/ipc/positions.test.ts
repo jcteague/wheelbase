@@ -15,6 +15,7 @@ const recordCallAwayPosition = vi.fn()
 const rollCspPosition = vi.fn()
 const rollCcPosition = vi.fn()
 const rollPmccShortCallPosition = vi.fn()
+const rollPmccLeapsPosition = vi.fn()
 const savePositionAlertOverrides = vi.fn()
 
 vi.mock('electron', () => ({
@@ -61,6 +62,10 @@ vi.mock('../services/roll-pmcc-short-call-position', () => ({
   rollPmccShortCallPosition
 }))
 
+vi.mock('../services/roll-pmcc-leaps-position', () => ({
+  rollPmccLeapsPosition
+}))
+
 vi.mock('../services/save-position-alert-overrides', () => ({
   savePositionAlertOverrides
 }))
@@ -105,6 +110,7 @@ describe('registerPositionsHandlers', () => {
     rollCspPosition.mockReset()
     rollCcPosition.mockReset()
     rollPmccShortCallPosition.mockReset()
+    rollPmccLeapsPosition.mockReset()
     savePositionAlertOverrides.mockReset()
   })
 
@@ -1389,6 +1395,99 @@ describe('registerPositionsHandlers', () => {
 
     it('returns internal_error at __root__ when the service throws unexpectedly', async () => {
       rollPmccShortCallPosition.mockImplementation(() => {
+        throw new Error('disk full')
+      })
+
+      const handler = await registerAndGetHandler({} as never)
+
+      expect(await handler?.(null, validPayload)).toEqual({
+        ok: false,
+        errors: [
+          { field: '__root__', code: 'internal_error', message: 'An unexpected error occurred' }
+        ]
+      })
+    })
+  })
+
+  // [US-105] Roll LEAPS: the handler only parses and delegates; the service owns every rule.
+  describe('positions:roll-pmcc-leaps', () => {
+    const positionId = '11111111-1111-4111-8111-111111111111'
+    const validPayload = {
+      positionId,
+      proceedsPerContract: 26,
+      replacementDebitPerContract: 23.5,
+      newExpiration: '2028-01-21',
+      newStrike: 85,
+      fillDate: '2027-07-09'
+    }
+
+    const registerAndGetHandler = (db: never): Promise<IpcHandler | undefined> =>
+      registerAndGetChannelHandler('positions:roll-pmcc-leaps', db)
+
+    it('registers a positions:roll-pmcc-leaps handler', async () => {
+      const { ipcMain } = await import('electron')
+      await registerAndGetHandler({} as never)
+
+      expect(vi.mocked(ipcMain.handle)).toHaveBeenCalledWith(
+        'positions:roll-pmcc-leaps',
+        expect.any(Function)
+      )
+    })
+
+    it('calls rollPmccLeapsPosition with the db, positionId and parsed payload, returning ok:true', async () => {
+      const db = {} as never
+      const result = {
+        position: { id: positionId, ticker: 'XYZ', phase: 'PMCC_OPEN', status: 'ACTIVE' },
+        rollFromLeg: { id: 'leg-from', legRole: 'ROLL_FROM', action: 'SELL' },
+        rollToLeg: { id: 'leg-to', legRole: 'ROLL_TO', action: 'BUY' },
+        rollChainId: 'chain-1',
+        costBasisSnapshot: { basisPerShare: '19.3000', triggerEvent: 'PMCC_LEAPS_ROLL' },
+        ledger: { basisTotal: '1930.0000' },
+        leapsRollNumber: 1
+      }
+      rollPmccLeapsPosition.mockReturnValue(result)
+
+      const handler = await registerAndGetHandler(db)
+
+      expect(await handler?.(null, validPayload)).toEqual({ ok: true, ...result })
+      expect(rollPmccLeapsPosition).toHaveBeenCalledWith(db, positionId, validPayload)
+    })
+
+    it('rejects proceedsPerContract: 0 at that field without calling the service', async () => {
+      const handler = await registerAndGetHandler({} as never)
+      const result = await handler?.(null, { ...validPayload, proceedsPerContract: 0 })
+
+      expect(result).toEqual({
+        ok: false,
+        errors: [expect.objectContaining({ field: 'proceedsPerContract' })]
+      })
+      expect(rollPmccLeapsPosition).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      {
+        field: 'newExpiration',
+        code: 'long_not_after_short',
+        message: 'LEAPS call must expire after the short call.'
+      },
+      {
+        field: 'newStrike',
+        code: 'strike_not_below_short',
+        message: 'LEAPS strike must be below the short-call strike ($112.00).'
+      }
+    ])('returns the service ValidationError $field/$code as a field envelope', async (error) => {
+      const { ValidationError } = await import('../core/lifecycle')
+      rollPmccLeapsPosition.mockImplementation(() => {
+        throw new ValidationError(error.field, error.code, error.message)
+      })
+
+      const handler = await registerAndGetHandler({} as never)
+
+      expect(await handler?.(null, validPayload)).toEqual({ ok: false, errors: [error] })
+    })
+
+    it('returns internal_error at __root__ when the service throws unexpectedly', async () => {
+      rollPmccLeapsPosition.mockImplementation(() => {
         throw new Error('disk full')
       })
 

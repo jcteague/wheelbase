@@ -5,6 +5,7 @@ type PositionDetailActionsProps = {
   strategyType: StrategyType
   phase: WheelPhase
   hasOpenShortCall: boolean
+  hasOpenLeaps: boolean
   hasCostBasis: boolean
   ccExpired: boolean
   onOpenCc: () => void
@@ -16,6 +17,7 @@ type PositionDetailActionsProps = {
   onRecordAssignment: () => void
   onRecordExpiration: () => void
   onRollPmccShort: () => void
+  onRollPmccLeaps: () => void
 }
 
 type ActionButtonProps = {
@@ -40,6 +42,7 @@ export function PositionDetailActions({
   strategyType,
   phase,
   hasOpenShortCall,
+  hasOpenLeaps,
   hasCostBasis,
   ccExpired,
   onOpenCc,
@@ -50,7 +53,8 @@ export function PositionDetailActions({
   onRollCsp,
   onRecordAssignment,
   onRecordExpiration,
-  onRollPmccShort
+  onRollPmccShort,
+  onRollPmccLeaps
 }: PositionDetailActionsProps): React.JSX.Element {
   return (
     <div className="flex items-center gap-2.5">
@@ -62,6 +66,9 @@ export function PositionDetailActions({
           label="Roll Short Call →"
           onClick={onRollPmccShort}
         />
+      )}
+      {strategyType === 'PMCC' && hasOpenLeaps && (
+        <ActionButton testId="roll-pmcc-leaps-btn" label="Roll LEAPS →" onClick={onRollPmccLeaps} />
       )}
       {phase === 'CC_OPEN' && (
         <>

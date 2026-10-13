@@ -5,21 +5,28 @@ import { sortPositionsByDte } from './position-order'
 const dteValue = fc.integer({ min: -30, max: 1200 })
 
 // A wheel row carries its own DTE (null once shares are held); a PMCC row carries none and
-// is ordered by its short call's DTE.
+// is ordered by its short call's DTE, or its LEAPS DTE while no short call is open.
 const item = fc.oneof(
   fc.record({ id: fc.uuid(), dte: fc.option(dteValue, { nil: null }), pmcc: fc.constant(null) }),
   fc.record({
     id: fc.uuid(),
     dte: fc.constant(null),
-    pmcc: fc.record({ short: fc.record({ dte: dteValue }) })
+    pmcc: fc.record({
+      long: fc.record({ dte: dteValue }),
+      short: fc.option(fc.record({ dte: dteValue }), { nil: null })
+    })
   })
 )
 
-type Item = { dte: number | null; pmcc: { short: { dte: number } } | null }
+type Item = {
+  dte: number | null
+  pmcc: { long: { dte: number }; short: { dte: number } | null } | null
+}
 
 // Independent statement of the order key, written from the list's documented rule.
 function orderDte(i: Item): number | null {
-  return i.pmcc !== null ? i.pmcc.short.dte : i.dte
+  if (i.pmcc === null) return i.dte
+  return i.pmcc.short !== null ? i.pmcc.short.dte : i.pmcc.long.dte
 }
 
 describe('sortPositionsByDte — properties', () => {

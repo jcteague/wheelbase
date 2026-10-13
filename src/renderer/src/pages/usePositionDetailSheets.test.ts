@@ -3,8 +3,9 @@
 // leaves its sheet closed.
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import type { LegDetail, PositionDetail } from '../api/positions'
-import { UP_OUT_RESPONSE } from '../test-fixtures/pmcc-roll'
+import type { LegDetail, PositionDetail, RollPmccLeapsResponse } from '../api/positions'
+import { OPEN_LEAPS, UP_OUT_RESPONSE } from '../test-fixtures/pmcc-roll'
+import { legRecord, snapshotRecord } from '../test-fixtures/position-records'
 import { usePositionDetailSheets } from './usePositionDetailSheets'
 
 const leg = (overrides: Partial<LegDetail>): LegDetail => ({
@@ -262,11 +263,54 @@ describe('usePositionDetailSheets — covered-call sheets', () => {
   })
 })
 
+/** Sell the $80 LEAPS at $26.00, buy the $85 · 2028-01-21 at $23.50 — a $2.50 credit. */
+const LEAPS_ROLL_RESPONSE: RollPmccLeapsResponse = {
+  position: UP_OUT_RESPONSE.position,
+  ledger: {
+    ...UP_OUT_RESPONSE.ledger,
+    basisPerShare: '19.3000',
+    leapsCostPerShare: '22.5000',
+    effectiveShareCost: '104.3000'
+  },
+  rollFromLeg: legRecord({
+    ...OPEN_LEAPS,
+    id: 'leg-leaps-roll-from',
+    legRole: 'ROLL_FROM',
+    action: 'SELL',
+    premiumPerContract: '26.0000',
+    fillPrice: '26.0000',
+    fillDate: '2026-11-06',
+    rollChainId: 'chain-leaps'
+  }),
+  rollToLeg: legRecord({
+    ...OPEN_LEAPS,
+    id: 'leg-leaps-roll-to',
+    legRole: 'ROLL_TO',
+    action: 'BUY',
+    strike: '85.0000',
+    expiration: '2028-01-21',
+    premiumPerContract: '23.5000',
+    fillPrice: '23.5000',
+    fillDate: '2026-11-06',
+    rollChainId: 'chain-leaps'
+  }),
+  rollChainId: 'chain-leaps',
+  costBasisSnapshot: snapshotRecord({
+    positionId: UP_OUT_RESPONSE.position.id,
+    basisPerShare: '19.3000',
+    totalPremiumCollected: '320.0000',
+    finalPnl: null,
+    triggerEvent: 'PMCC_LEAPS_ROLL'
+  }),
+  leapsRollNumber: 1
+}
+
 describe('usePositionDetailSheets — roll sheets', () => {
   it.each([
     ['handleRollCsp', 'rollCspOpen', 'handleCloseRollCsp'],
     ['handleRollCc', 'rollCcOpen', 'handleCloseRollCc'],
-    ['handleRollPmccShort', 'rollPmccShortOpen', 'handleCloseRollPmccShort']
+    ['handleRollPmccShort', 'rollPmccShortOpen', 'handleCloseRollPmccShort'],
+    ['handleRollPmccLeaps', 'rollPmccLeapsOpen', 'handleCloseRollPmccLeaps']
   ] as const)('%s opens %s over the content; %s closes it', (open, flag, close) => {
     const result = hookFor(CSP_DETAIL)
 
@@ -279,16 +323,51 @@ describe('usePositionDetailSheets — roll sheets', () => {
     expect(result.current.overlayOpen).toBe(false)
   })
 
-  it('a recorded PMCC roll closes its sheet and keeps the response for the banner', () => {
+  it('a recorded short-call roll closes its sheet and keeps the response as the short banner', () => {
     const result = hookFor(CSP_DETAIL)
 
     act(() => result.current.handleRollPmccShort())
-    act(() => result.current.handlePmccRollRecorded(UP_OUT_RESPONSE))
+    act(() => result.current.handlePmccShortRollRecorded(UP_OUT_RESPONSE))
 
     expect(result.current.rollPmccShortOpen).toBe(false)
-    expect(result.current.pmccRollRecorded).toBe(UP_OUT_RESPONSE)
+    expect(result.current.pmccRollRecorded).toEqual({ kind: 'short', result: UP_OUT_RESPONSE })
+  })
 
-    act(() => result.current.handleRollPmccShort())
-    expect(result.current.pmccRollRecorded).toBeNull()
+  // [US-105] The LEAPS roll shares the one banner slot with the short-call roll.
+  it('a recorded LEAPS roll closes its sheet and keeps the response as the leaps banner', () => {
+    const result = hookFor(CSP_DETAIL)
+
+    act(() => result.current.handleRollPmccLeaps())
+    act(() => result.current.handlePmccLeapsRollRecorded(LEAPS_ROLL_RESPONSE))
+
+    expect(result.current.rollPmccLeapsOpen).toBe(false)
+    expect(result.current.overlayOpen).toBe(false)
+    expect(result.current.pmccRollRecorded).toEqual({ kind: 'leaps', result: LEAPS_ROLL_RESPONSE })
+  })
+
+  it.each(['handleRollPmccShort', 'handleRollPmccLeaps'] as const)(
+    '%s clears a recorded banner of either kind',
+    (open) => {
+      const result = hookFor(CSP_DETAIL)
+
+      act(() => result.current.handlePmccShortRollRecorded(UP_OUT_RESPONSE))
+      act(() => result.current[open]())
+      expect(result.current.pmccRollRecorded).toBeNull()
+
+      act(() => result.current.handlePmccLeapsRollRecorded(LEAPS_ROLL_RESPONSE))
+      act(() => result.current[open]())
+      expect(result.current.pmccRollRecorded).toBeNull()
+    }
+  )
+
+  it('recording one roll kind after the other keeps only the latter banner', () => {
+    const result = hookFor(CSP_DETAIL)
+
+    act(() => result.current.handlePmccShortRollRecorded(UP_OUT_RESPONSE))
+    act(() => result.current.handlePmccLeapsRollRecorded(LEAPS_ROLL_RESPONSE))
+    expect(result.current.pmccRollRecorded).toEqual({ kind: 'leaps', result: LEAPS_ROLL_RESPONSE })
+
+    act(() => result.current.handlePmccShortRollRecorded(UP_OUT_RESPONSE))
+    expect(result.current.pmccRollRecorded).toEqual({ kind: 'short', result: UP_OUT_RESPONSE })
   })
 })

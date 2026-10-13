@@ -2,7 +2,6 @@
 // No Electron or broker imports here: recording a PMCC never submits an order.
 
 import Database from 'better-sqlite3'
-import Decimal from 'decimal.js'
 import { randomUUID } from 'node:crypto'
 import { calculatePmccOpeningDebit } from '../core/costbasis'
 import { openPmcc, ValidationError, type OpenPmccLegInput } from '../core/lifecycle'
@@ -10,13 +9,12 @@ import { localToday } from '../dates'
 import { logger } from '../logger'
 import type { CreatePmccPositionPayload, CreatePmccPositionResult, LegRecord } from '../schemas'
 import type { IvrOnDemand } from './ivr-on-demand'
+import { money4 } from '../../shared/decimal-text'
 import { insertLegRow } from './leg-rows'
 import { appendPmccSnapshot } from './pmcc-ledger'
 import { insertPosition } from './position-rows'
 
 type PmccLegPayload = CreatePmccPositionPayload['long']
-
-const money4 = (value: Decimal.Value): string => new Decimal(value).toFixed(4)
 
 function toLegInput(leg: PmccLegPayload): OpenPmccLegInput {
   return {

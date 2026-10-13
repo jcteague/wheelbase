@@ -4,6 +4,7 @@
 // Formula: assignment_strike - CSP_premiums - CC_premiums + roll_debits - roll_credits
 
 import Decimal from 'decimal.js'
+import { fixed4, money4 } from '../../shared/decimal-text'
 
 Decimal.set({ rounding: Decimal.ROUND_HALF_UP })
 
@@ -22,11 +23,6 @@ export interface CostBasisResult {
 
 function round4(value: Decimal): Decimal {
   return value.toDecimalPlaces(4)
-}
-
-/** A money value rounded half-up to the 4-dp TEXT convention. */
-function money4(value: Decimal): string {
-  return round4(value).toFixed(4)
 }
 
 function sharesFromContracts(contracts: number): number {
@@ -82,8 +78,8 @@ export function calculateCspClose(input: CspCloseInput): CspCloseResult {
   const pnlPercentage = round4(netPnlPerContract.dividedBy(openPremium).times(100))
 
   return {
-    finalPnl: finalPnl.toFixed(4),
-    pnlPercentage: pnlPercentage.toFixed(4)
+    finalPnl: money4(finalPnl),
+    pnlPercentage: fixed4(pnlPercentage)
   }
 }
 
@@ -170,8 +166,8 @@ export function calculateCcOpenBasis(input: CcOpenBasisInput): CcOpenBasisResult
   const totalPremiumCollected = round4(prevTotal.plus(totalCcIncome))
 
   return {
-    basisPerShare: basisPerShare.toFixed(4),
-    totalPremiumCollected: totalPremiumCollected.toFixed(4)
+    basisPerShare: money4(basisPerShare),
+    totalPremiumCollected: money4(totalPremiumCollected)
   }
 }
 
@@ -182,7 +178,7 @@ export function calculateCspExpiration(input: CspExpirationInput): CspExpiration
   const finalPnl = round4(openPremium.times(sharesFromContracts(input.contracts)))
 
   return {
-    finalPnl: finalPnl.toFixed(4),
+    finalPnl: money4(finalPnl),
     pnlPercentage: '100.0000'
   }
 }
@@ -201,7 +197,7 @@ export function calculateCcClose(input: CcCloseInput): CcCloseResult {
   const open = new Decimal(input.openPremiumPerContract)
   const close = new Decimal(input.closePricePerContract)
   const ccLegPnl = round4(open.minus(close).times(sharesFromContracts(input.contracts)))
-  return { ccLegPnl: ccLegPnl.toFixed(4) }
+  return { ccLegPnl: money4(ccLegPnl) }
 }
 
 export interface CallAwayInput {
@@ -270,8 +266,8 @@ export function calculateRollBasis(input: RollBasisInput): RollBasisResult {
   const totalPremiumCollected = round4(new Decimal(input.prevTotalPremiumCollected).plus(netTotal))
 
   return {
-    basisPerShare: basisPerShare.toFixed(4),
-    totalPremiumCollected: totalPremiumCollected.toFixed(4)
+    basisPerShare: money4(basisPerShare),
+    totalPremiumCollected: money4(totalPremiumCollected)
   }
 }
 
@@ -307,7 +303,7 @@ export function computeUnrealizedPnl(input: UnrealizedPnlInput): UnrealizedPnlRe
 
   return {
     pnl: money4(pnlDec),
-    pnlPercent: money4(pnlPercentDec),
+    pnlPercent: fixed4(pnlPercentDec),
     maxProfit: money4(maxProfitDec)
   }
 }
@@ -332,10 +328,10 @@ export function calculateCallAway(input: CallAwayInput): CallAwayResult {
         )
 
   return {
-    finalPnl: finalPnl.toFixed(4),
-    capitalDeployed: capitalDeployed.toFixed(4),
+    finalPnl: money4(finalPnl),
+    capitalDeployed: money4(capitalDeployed),
     cycleDays,
-    annualizedReturn: annualizedReturn.toFixed(4)
+    annualizedReturn: fixed4(annualizedReturn)
   }
 }
 
@@ -377,7 +373,7 @@ export function calculatePmccOpeningDebit(input: PmccOpeningDebitInput): PmccOpe
   // Fees are excluded from the ratio: it compares the per-share spread paid to the strike width.
   const debitToWidthPercent = strikeWidth.lte(0)
     ? null
-    : money4(longFill.minus(shortFill).dividedBy(strikeWidth).times(100))
+    : fixed4(longFill.minus(shortFill).dividedBy(strikeWidth).times(100))
 
   return {
     leapsCost: money4(leapsCost),
@@ -430,10 +426,13 @@ function sumSide(contributions: PmccContribution[], side: PmccLedgerSide): Decim
     .reduce((total, contribution) => total.plus(contributionDollars(contribution)), new Decimal(0))
 }
 
+/** A PMCC ledger computed with a known LEAPS strike: its effective share cost is always reported. */
+export type PmccLedgerWithStrike = PmccLedgerResult & { effectiveShareCost: string }
+
 /** With a known LEAPS strike the effective share cost is always reported. */
 export function calculatePmccLedger(
   input: PmccLedgerInput & { longStrike: string }
-): PmccLedgerResult & { effectiveShareCost: string }
+): PmccLedgerWithStrike
 export function calculatePmccLedger(input: PmccLedgerInput): PmccLedgerResult
 export function calculatePmccLedger(input: PmccLedgerInput): PmccLedgerResult {
   if (!Number.isInteger(input.leapsContracts) || input.leapsContracts <= 0) {
@@ -457,6 +456,6 @@ export function calculatePmccLedger(input: PmccLedgerInput): PmccLedgerResult {
       input.longStrike === null ? null : money4(basisPerShare.plus(input.longStrike)),
     premiumRecoveredPercent: leapsCostTotal.lte(0)
       ? null
-      : money4(shortCreditsTotal.dividedBy(leapsCostTotal).times(100))
+      : fixed4(shortCreditsTotal.dividedBy(leapsCostTotal).times(100))
   }
 }

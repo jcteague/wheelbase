@@ -2,7 +2,7 @@
 // No Electron or broker imports here.
 
 import Database from 'better-sqlite3'
-import Decimal from 'decimal.js'
+import { money4 } from '../../shared/decimal-text'
 import { computeDte } from '../core/dte'
 import { sortPositionsByDte } from '../core/position-order'
 import { isOptionInstrument } from '../core/types'
@@ -19,8 +19,7 @@ import type {
 } from '../schemas'
 import { activeLegSubquery } from './active-leg-sql'
 import { readLegsByPosition } from './leg-rows'
-import { pmccLedgerFromLegs } from './pmcc-ledger'
-import { pmccOpeningLegs } from './pmcc-opening-legs'
+import { pmccLedgerFromLegs, pmccOpenLegs } from './pmcc-ledger'
 
 // ---------------------------------------------------------------------------
 // Internal DB row type
@@ -71,11 +70,11 @@ const LIST_QUERY = `
   )
 `
 
-function toLegSummary(leg: LegRecord | undefined): PmccLegSummary | null {
-  const dte = computeDte(leg?.expiration ?? null)
-  if (!leg || dte === null) return null
+function toLegSummary(leg: LegRecord): PmccLegSummary | null {
+  const dte = computeDte(leg.expiration)
+  if (dte === null) return null
   return {
-    strike: new Decimal(leg.strike).toFixed(4),
+    strike: money4(leg.strike),
     expiration: leg.expiration,
     dte,
     contracts: leg.contracts
@@ -92,11 +91,14 @@ function readPmccSummaries(
   return new Map(
     ids.flatMap((id): [string, PmccListSummary][] => {
       const legs = legsByPosition.get(id) ?? []
-      const opening = pmccOpeningLegs(legs)
-      const long = toLegSummary(opening.long)
-      const short = toLegSummary(opening.short)
+      // The open legs the detail page shows: a roll's ROLL_TO, and no short between short calls.
+      const open = pmccOpenLegs(legs)
       const ledger = pmccLedgerFromLegs(legs)
-      if (!long || !short || !ledger) return []
+      if (!open || !ledger) return []
+      const long = toLegSummary(open.long)
+      const short = open.short === null ? null : toLegSummary(open.short)
+      // An unparseable expiration on either open leg leaves the summary incomplete.
+      if (!long || (open.short !== null && short === null)) return []
       const { basisPerShare, basisTotal } = ledger
       return [[id, { long, short, basisPerShare, basisTotal }]]
     })
@@ -108,8 +110,8 @@ function toListItemBase(row: PositionRow): PositionListItemBase {
     id: row.id,
     ticker: row.ticker,
     status: row.status,
-    premiumCollected: new Decimal(row.total_premium_collected ?? '0').toFixed(4),
-    effectiveCostBasis: new Decimal(row.basis_per_share ?? '0').toFixed(4),
+    premiumCollected: money4(row.total_premium_collected ?? '0'),
+    effectiveCostBasis: money4(row.basis_per_share ?? '0'),
     profitTargetPercent: row.profit_target_percent
   }
 }
@@ -120,14 +122,12 @@ function toWheelItem(row: WheelPositionRow): WheelListItem {
     strategyType: 'WHEEL',
     phase: row.phase,
     pmcc: null,
-    strike: row.strike ? new Decimal(row.strike).toFixed(4) : null,
+    strike: row.strike ? money4(row.strike) : null,
     expiration: row.expiration ?? null,
     dte: computeDte(row.expiration ?? null),
     instrumentType: isOptionInstrument(row.instrument_type) ? row.instrument_type : null,
     contracts: row.contracts ?? null,
-    entryPremiumPerContract: row.premium_per_contract
-      ? new Decimal(row.premium_per_contract).toFixed(4)
-      : null
+    entryPremiumPerContract: row.premium_per_contract ? money4(row.premium_per_contract) : null
   }
 }
 

@@ -7,6 +7,7 @@ import { CallAwayForm } from './CallAwayForm'
 import { CallAwaySuccess } from './CallAwaySuccess'
 import { getSheetPortal } from '../lib/portal'
 import { SheetOverlay, SheetPanel } from './ui/Sheet'
+import { money4 } from '../../../shared/decimal-text'
 
 export interface CallAwaySheetProps {
   open: boolean
@@ -62,10 +63,10 @@ export function CallAwaySheet(props: CallAwaySheetProps): React.JSX.Element | nu
             contracts={props.contracts}
             sharesHeld={sharesHeld}
             basisPerShare={props.basisPerShare}
-            appreciationPerShare={appreciationPerShare.toFixed(4)}
-            appreciationTotal={appreciationTotal.toFixed(4)}
-            finalPnl={finalPnl.toFixed(4)}
-            capitalDeployed={capitalDeployed.toFixed(4)}
+            appreciationPerShare={money4(appreciationPerShare)}
+            appreciationTotal={money4(appreciationTotal)}
+            finalPnl={money4(finalPnl)}
+            capitalDeployed={money4(capitalDeployed)}
             isPending={isPending}
             onSubmit={handleSubmit}
             onClose={props.onClose}

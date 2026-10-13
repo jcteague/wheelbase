@@ -4,12 +4,13 @@
 
 import Database from 'better-sqlite3'
 import Decimal from 'decimal.js'
+import { money4 } from '../../shared/decimal-text'
 import { randomUUID } from 'node:crypto'
 import {
   calculatePmccLedger,
   type PmccContribution,
-  type PmccLedgerResult,
-  type PmccLedgerSide
+  type PmccLedgerSide,
+  type PmccLedgerWithStrike
 } from '../core/costbasis'
 import { isPmccLegRole, type LegRole, type PmccLegRole } from '../core/types'
 import { makeSnapshotAt } from '../dates'
@@ -56,9 +57,9 @@ function signedCashPerShare(leg: LegRecord): Decimal {
 function legContribution(leg: LegRecord & { legRole: PmccLegRole }): PmccContribution {
   return {
     side: PMCC_LEG_SIDE[leg.legRole],
-    cashPerShare: signedCashPerShare(leg).toFixed(4),
+    cashPerShare: money4(signedCashPerShare(leg)),
     contracts: leg.contracts,
-    fees: new Decimal(leg.fees).toFixed(4)
+    fees: money4(leg.fees)
   }
 }
 
@@ -67,10 +68,18 @@ export function isShortCallRoll(chain: RollChain): boolean {
   return chain.rollFrom.action === 'BUY'
 }
 
+/** The number the next roll of that side takes: 1 + the rolls of that side already recorded. */
+export function nextPmccRollNumber(legs: LegRecord[], side: 'short' | 'leaps'): number {
+  const rolls = groupRollChains(legs).filter(
+    (chain) => isShortCallRoll(chain) === (side === 'short')
+  )
+  return rolls.length + 1
+}
+
 function chainContribution(chain: RollChain): PmccContribution {
   return {
     side: isShortCallRoll(chain) ? 'SHORT' : 'LONG',
-    cashPerShare: new Decimal(chain.netCreditPerShare).negated().toFixed(4),
+    cashPerShare: money4(new Decimal(chain.netCreditPerShare).negated()),
     contracts: chain.contracts,
     fees: chain.fees
   }
@@ -180,7 +189,7 @@ export function leapsContracts(legs: LegRecord[]): number {
   return currentLeapsLeg(legs)?.contracts ?? 0
 }
 
-export function pmccLedgerFromLegs(legs: LegRecord[]): PmccLedgerResult | null {
+export function pmccLedgerFromLegs(legs: LegRecord[]): PmccLedgerWithStrike | null {
   const chains = groupRollChains(legs)
   const long = currentLeapsLeg(legs, chains)
   if (long === null) return null
@@ -199,7 +208,7 @@ interface AppendPmccSnapshotOptions<T extends PmccTriggerEvent> {
 
 /** What appendPmccSnapshot returns: the recomputed ledger and the snapshot row it inserted. */
 export type AppendPmccSnapshotResult<T extends PmccTriggerEvent = PmccTriggerEvent> = {
-  ledger: PmccLedgerResult
+  ledger: PmccLedgerWithStrike
   snapshot: CostBasisSnapshotRecord & { triggerEvent: T; finalPnl: null }
 }
 

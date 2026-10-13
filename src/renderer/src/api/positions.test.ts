@@ -619,6 +619,65 @@ describe('rollPmccShortCall', () => {
   })
 })
 
+// [US-105] rollPmccLeaps adapter: pass-through on success, ApiError 400 on a field envelope.
+describe('rollPmccLeaps', () => {
+  const mockRollPmccLeaps = vi.fn()
+  const payload: positionsApi.RollPmccLeapsPayload = {
+    positionId: '11111111-1111-4111-8111-111111111111',
+    proceedsPerContract: 26,
+    replacementDebitPerContract: 23.5,
+    newExpiration: '2028-01-21',
+    newStrike: 85,
+    fillDate: '2027-07-09'
+  }
+
+  beforeEach(() => {
+    mockRollPmccLeaps.mockReset()
+    Object.assign(window, {
+      api: {
+        ...(window.api ?? {}),
+        rollPmccLeaps: mockRollPmccLeaps
+      }
+    })
+  })
+
+  it('passes the payload through to window.api.rollPmccLeaps unchanged', async () => {
+    mockRollPmccLeaps.mockResolvedValue({ ok: true, rollChainId: 'chain-1' })
+
+    await positionsApi.rollPmccLeaps(payload)
+
+    expect(mockRollPmccLeaps).toHaveBeenCalledWith(payload)
+  })
+
+  it('throws ApiError with status 400 carrying the field errors on ok:false', async () => {
+    const errors = [
+      {
+        field: 'newExpiration',
+        code: 'long_not_after_short',
+        message: 'LEAPS call must expire after the short call.'
+      }
+    ]
+    mockRollPmccLeaps.mockResolvedValue({ ok: false, errors })
+
+    await expect(positionsApi.rollPmccLeaps(payload)).rejects.toEqual({
+      status: 400,
+      body: { detail: errors }
+    })
+  })
+
+  it('returns the result on success', async () => {
+    const success = {
+      position: { id: payload.positionId, ticker: 'XYZ', phase: 'PMCC_OPEN', status: 'ACTIVE' },
+      rollChainId: 'chain-1',
+      costBasisSnapshot: { basisPerShare: '19.3000', triggerEvent: 'PMCC_LEAPS_ROLL' },
+      leapsRollNumber: 1
+    }
+    mockRollPmccLeaps.mockResolvedValue({ ok: true, ...success })
+
+    await expect(positionsApi.rollPmccLeaps(payload)).resolves.toMatchObject(success)
+  })
+})
+
 describe('listPositions', () => {
   const mockListPositions = vi.fn()
   const base = {
@@ -735,7 +794,13 @@ describe('write adapters — pass-through and ok:false → ApiError(400)', () =>
     adapterCase('expireCc', positionsApi.expireCc, { positionId }),
     adapterCase('rollCsp', positionsApi.rollCsp, roll),
     adapterCase('rollCc', positionsApi.rollCc, roll),
-    adapterCase('rollPmccShortCall', positionsApi.rollPmccShortCall, roll)
+    adapterCase('rollPmccShortCall', positionsApi.rollPmccShortCall, roll),
+    adapterCase('rollPmccLeaps', positionsApi.rollPmccLeaps, {
+      positionId,
+      proceedsPerContract: 26,
+      replacementDebitPerContract: 23.5,
+      newExpiration: '2028-01-21'
+    })
   ]
 
   const channelMock = vi.fn()

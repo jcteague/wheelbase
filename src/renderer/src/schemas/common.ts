@@ -27,6 +27,10 @@ export const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/
 
 export const isoDateSchema = z.string().regex(ISO_DATE_REGEX, 'Date must be YYYY-MM-DD')
 
+/** An incomplete date is undecided: the field-level schema reports it, the cross-field rules skip it. */
+export const decidedDate = (value: string): string | undefined =>
+  ISO_DATE_REGEX.test(value) ? value : undefined
+
 /** A money input as free text, valid only once it parses as a complete decimal passing `test`. */
 export const moneySchema = (message: string, test: (value: number) => boolean): z.ZodString =>
   z.string().refine((v) => {
