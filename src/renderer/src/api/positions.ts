@@ -195,6 +195,18 @@ export async function rollPmccShortCall(
   return result
 }
 
+export type RollPmccLeapsPayload = IpcPayload<'rollPmccLeaps'>
+
+export type RollPmccLeapsResponse = IpcSuccess<'rollPmccLeaps'>
+
+export async function rollPmccLeaps(payload: RollPmccLeapsPayload): Promise<RollPmccLeapsResponse> {
+  const result = await window.api.rollPmccLeaps(payload)
+  if (!result.ok) {
+    throwMappedIpcErrors(result.errors)
+  }
+  return result
+}
+
 export type SaveAlertOverridesPayload = IpcPayload<'saveAlertOverrides'>
 
 export type SaveAlertOverridesResponse = IpcSuccess<'saveAlertOverrides'>

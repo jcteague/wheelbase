@@ -9,7 +9,7 @@ const LABEL = 'Roll Up & Out: $108 to $112 strike, Nov to Dec expiration'
 function renderPreview(replacementDte: number | null): void {
   render(
     <PmccRollNetPreview
-      net={pmccRollNet({ costToClose: '3.00', premium: '2.40', contracts: 1 })}
+      net={pmccRollNet({ received: '2.40', paid: '3.00', contracts: 1 })}
       postRoll={{ postBasis: '21.80', effectiveAfter: '101.80' }}
       label={LABEL}
       replacementDte={replacementDte}

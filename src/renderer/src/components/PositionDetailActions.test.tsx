@@ -6,6 +6,7 @@ import { PositionDetailActions } from './PositionDetailActions'
 const BASE_PROPS = {
   strategyType: 'WHEEL' as const,
   hasOpenShortCall: false,
+  hasOpenLeaps: false,
   hasCostBasis: true,
   ccExpired: false,
   onOpenCc: vi.fn(),
@@ -16,8 +17,20 @@ const BASE_PROPS = {
   onRecordCcExpiration: vi.fn(),
   onRollCsp: vi.fn(),
   onRollCc: vi.fn(),
-  onRollPmccShort: vi.fn()
+  onRollPmccShort: vi.fn(),
+  onRollPmccLeaps: vi.fn()
 }
+
+const WHEEL_TEST_IDS = [
+  'record-call-away-btn',
+  'roll-cc-btn',
+  'close-cc-early-btn',
+  'record-cc-expiration-btn',
+  'open-covered-call-btn',
+  'roll-csp-btn',
+  'record-assignment-btn',
+  'record-expiration-btn'
+]
 
 beforeEach(() => {
   BASE_PROPS.onOpenCc.mockReset()
@@ -29,6 +42,7 @@ beforeEach(() => {
   BASE_PROPS.onRollCsp.mockReset()
   BASE_PROPS.onRollCc.mockReset()
   BASE_PROPS.onRollPmccShort.mockReset()
+  BASE_PROPS.onRollPmccLeaps.mockReset()
 })
 
 it('renders "Close CC Early →" button when phase=CC_OPEN', () => {
@@ -176,17 +190,6 @@ it('PMCC_OPEN renders only the phase badge', () => {
 
 // [US-104] Roll Short Call header action
 describe('PMCC roll short call action', () => {
-  const WHEEL_TEST_IDS = [
-    'record-call-away-btn',
-    'roll-cc-btn',
-    'close-cc-early-btn',
-    'record-cc-expiration-btn',
-    'open-covered-call-btn',
-    'roll-csp-btn',
-    'record-assignment-btn',
-    'record-expiration-btn'
-  ]
-
   it('PMCC with an open short call shows "Roll Short Call →" and no wheel buttons', () => {
     render(
       <PositionDetailActions
@@ -239,5 +242,80 @@ describe('PMCC roll short call action', () => {
     )
     expect(screen.getByTestId('roll-cc-btn')).toBeInTheDocument()
     expect(screen.queryByTestId('roll-pmcc-short-btn')).not.toBeInTheDocument()
+  })
+})
+
+// [US-105] Roll LEAPS header action
+describe('PMCC roll LEAPS action', () => {
+  it('PMCC with open LEAPS and short call shows both roll buttons, short first, and no wheel buttons', () => {
+    render(
+      <PositionDetailActions
+        {...BASE_PROPS}
+        strategyType="PMCC"
+        phase="PMCC_OPEN"
+        hasOpenShortCall
+        hasOpenLeaps
+      />
+    )
+    expect(screen.getAllByRole('button').map((b) => b.dataset.testid)).toEqual([
+      'roll-pmcc-short-btn',
+      'roll-pmcc-leaps-btn'
+    ])
+    expect(screen.getByTestId('roll-pmcc-leaps-btn')).toHaveTextContent('Roll LEAPS →')
+    WHEEL_TEST_IDS.forEach((testId) => expect(screen.queryByTestId(testId)).not.toBeInTheDocument())
+  })
+
+  it('PMCC with open LEAPS and no short call shows only "Roll LEAPS →"', () => {
+    render(
+      <PositionDetailActions
+        {...BASE_PROPS}
+        strategyType="PMCC"
+        phase="PMCC_OPEN"
+        hasOpenShortCall={false}
+        hasOpenLeaps
+      />
+    )
+    expect(screen.getAllByRole('button').map((b) => b.dataset.testid)).toEqual([
+      'roll-pmcc-leaps-btn'
+    ])
+  })
+
+  it('calls onRollPmccLeaps when "Roll LEAPS →" is clicked', async () => {
+    const user = userEvent.setup()
+    render(
+      <PositionDetailActions {...BASE_PROPS} strategyType="PMCC" phase="PMCC_OPEN" hasOpenLeaps />
+    )
+    await user.click(screen.getByTestId('roll-pmcc-leaps-btn'))
+    expect(BASE_PROPS.onRollPmccLeaps).toHaveBeenCalledOnce()
+  })
+
+  it('PMCC without open LEAPS shows no roll buttons', () => {
+    render(
+      <PositionDetailActions
+        {...BASE_PROPS}
+        strategyType="PMCC"
+        phase="PMCC_OPEN"
+        hasOpenShortCall={false}
+        hasOpenLeaps={false}
+      />
+    )
+    expect(screen.queryByTestId('roll-pmcc-leaps-btn')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('roll-pmcc-short-btn')).not.toBeInTheDocument()
+    expect(screen.queryAllByRole('button')).toHaveLength(0)
+  })
+
+  it('WHEEL in CC_OPEN shows roll-cc-btn and neither PMCC roll button', () => {
+    render(
+      <PositionDetailActions
+        {...BASE_PROPS}
+        strategyType="WHEEL"
+        phase="CC_OPEN"
+        hasOpenShortCall
+        hasOpenLeaps
+      />
+    )
+    expect(screen.getByTestId('roll-cc-btn')).toBeInTheDocument()
+    expect(screen.queryByTestId('roll-pmcc-short-btn')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('roll-pmcc-leaps-btn')).not.toBeInTheDocument()
   })
 })

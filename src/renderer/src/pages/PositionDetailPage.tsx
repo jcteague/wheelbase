@@ -9,6 +9,7 @@ import { OpenCoveredCallSheet } from '../components/OpenCoveredCallSheet'
 import { RollCcSheet } from '../components/RollCcSheet'
 import { RollCspSheet } from '../components/RollCspSheet'
 import { PmccRollRecordedBanner } from '../components/PmccRollRecordedBanner'
+import { RollPmccLeapsSheet } from '../components/RollPmccLeapsSheet'
 import { RollPmccShortCallSheet } from '../components/RollPmccShortCallSheet'
 import { PageHeader, PageLayout } from '../components/PageLayout'
 import { PositionDetailActions } from '../components/PositionDetailActions'
@@ -19,8 +20,10 @@ import { usePosition } from '../hooks/usePosition'
 import { useOptionSnapshots, type ActiveLegSummary } from '../hooks/useOptionSnapshots'
 import { useStockQuotes } from '../hooks/useStockQuotes'
 import { buildOccSymbol } from '../../../shared/option-symbol'
+import { latestFillDate } from '../../../main/core/pmcc-rules'
 import { isOptionInstrument } from '../../../main/core/types'
 import { computeDte, fmtDate } from '../lib/format'
+import { pmccLeapsLedger } from '../lib/pmcc-roll'
 import { PositionDetailContent } from './PositionDetailContent'
 import { usePositionDetailSheets } from './usePositionDetailSheets'
 
@@ -106,8 +109,12 @@ export function PositionDetailPage(): React.JSX.Element {
     rollPmccShortOpen,
     handleRollPmccShort,
     handleCloseRollPmccShort,
+    rollPmccLeapsOpen,
+    handleRollPmccLeaps,
+    handleCloseRollPmccLeaps,
     pmccRollRecorded,
-    handlePmccRollRecorded
+    handlePmccShortRollRecorded,
+    handlePmccLeapsRollRecorded
   } = usePositionDetailSheets(data)
 
   if (isLoading) {
@@ -126,6 +133,7 @@ export function PositionDetailPage(): React.JSX.Element {
   const ccExpired =
     position.phase === 'CC_OPEN' && activeLeg ? computeDte(activeLeg.expiration) <= 0 : false
   const assignLeg = legs.find((leg) => leg.legRole === 'ASSIGN')
+  const leapsLedger = pmccLeapsLedger(pmccLedger)
 
   return (
     <PageLayout
@@ -137,6 +145,7 @@ export function PositionDetailPage(): React.JSX.Element {
               strategyType={position.strategyType}
               phase={position.phase}
               hasOpenShortCall={Boolean(pmccOpenLegs?.short)}
+              hasOpenLeaps={Boolean(pmccOpenLegs)}
               hasCostBasis={Boolean(costBasisSnapshot)}
               ccExpired={ccExpired}
               onOpenCc={handleOpenCc}
@@ -148,6 +157,7 @@ export function PositionDetailPage(): React.JSX.Element {
               onRollCsp={handleRollCsp}
               onRollCc={handleRollCc}
               onRollPmccShort={handleRollPmccShort}
+              onRollPmccLeaps={handleRollPmccLeaps}
             />
           }
         />
@@ -155,7 +165,7 @@ export function PositionDetailPage(): React.JSX.Element {
     >
       {pmccRollRecorded && (
         <div className="px-6 pt-6">
-          <PmccRollRecordedBanner response={pmccRollRecorded} />
+          <PmccRollRecordedBanner recorded={pmccRollRecorded} />
         </div>
       )}
       <PositionDetailContent
@@ -273,16 +283,28 @@ export function PositionDetailPage(): React.JSX.Element {
           onClose={handleCloseRollCc}
         />
       )}
-      {rollPmccShortOpen && pmccOpenLegs?.short && pmccLedger?.effectiveShareCost && (
+      {rollPmccShortOpen && pmccOpenLegs?.short && leapsLedger && (
         <RollPmccShortCallSheet
           positionId={position.id}
           ticker={position.ticker}
           openShort={pmccOpenLegs.short}
           leaps={pmccOpenLegs.long}
-          basisPerShare={pmccLedger.basisPerShare}
-          effectiveShareCost={pmccLedger.effectiveShareCost}
+          basisPerShare={leapsLedger.basisPerShare}
+          effectiveShareCost={leapsLedger.effectiveShareCost}
           onClose={handleCloseRollPmccShort}
-          onRecorded={handlePmccRollRecorded}
+          onRecorded={handlePmccShortRollRecorded}
+        />
+      )}
+      {rollPmccLeapsOpen && pmccOpenLegs && leapsLedger && (
+        <RollPmccLeapsSheet
+          positionId={position.id}
+          ticker={position.ticker}
+          leaps={pmccOpenLegs.long}
+          openShort={pmccOpenLegs.short}
+          lastEventDate={latestFillDate(legs)}
+          ledger={leapsLedger}
+          onClose={handleCloseRollPmccLeaps}
+          onRecorded={handlePmccLeapsRollRecorded}
         />
       )}
     </PageLayout>

@@ -1,101 +1,58 @@
-// [US-104] Today, the current short call, the replacement and the LEAPS on one axis: the
-// replacement must land at or after the current short and strictly before the LEAPS.
-import { isBefore, parseISO } from 'date-fns'
-import { shortExpiresBeforeLeaps } from '../../../main/core/pmcc-rules'
+// [US-104][US-105] One axis from today to the furthest dated mark: a fill bar to `fillTo`, a tick
+// per dated mark, a legend row per mark and the caller's note. Each roll form supplies its own
+// marks and note; the `accent` mark is the proposed contract and takes the ruler's gold / red.
+import { parseISO } from 'date-fns'
 import { computeDteFromInput } from '../lib/format'
-import { ISO_DATE_REGEX } from '../schemas/common'
+import type { PmccRollCoverage, PmccRulerMark, PmccRulerTone } from '../lib/pmcc-roll-coverage'
 
-type PmccCoverageRulerProps = {
-  today: string
-  currentExpiration: string
-  /** Free text from the form; ignored until it is a complete `YYYY-MM-DD`. */
-  replacementExpiration: string
-  leapsExpiration: string
+type PmccCoverageRulerProps = PmccRollCoverage & { today: string }
+
+const PLAIN_TONE: Record<Exclude<PmccRulerTone, 'accent'>, string> = {
+  muted: 'bg-wb-text-muted',
+  secondary: 'bg-wb-text-secondary',
+  green: 'bg-wb-green'
 }
 
-type Mark = {
-  key: 'today' | 'current' | 'replacement' | 'leaps'
+type LegendItemProps = {
+  swatch: string
   label: string
   value: string
-  dte: number
-  tick: string
+  valueTone: string
 }
 
-/** The replacement short once its expiration parses: `naked` past the LEAPS, `buyback` before the current short. */
-type Replacement = { dte: number; naked: boolean; buyback: boolean }
-
-function coverageNote(
-  replacement: Replacement | null,
-  currentDte: number,
-  leapsDte: number
-): string {
-  if (replacement === null) {
-    return `Current short call expires in ${currentDte} days. The LEAPS covers ${leapsDte} days.`
-  }
-  if (replacement.naked) {
-    return 'The replacement short reaches the LEAPS. Past this point the short call is naked.'
-  }
-  if (replacement.buyback) {
-    return 'The replacement expires before the current short call — that is a buyback, not a roll.'
-  }
-  return `Replacement short at ${replacement.dte} DTE. The LEAPS still covers it by ${leapsDte - replacement.dte} days.`
+function LegendItem({ swatch, label, value, valueTone }: LegendItemProps): React.JSX.Element {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="flex w-2 shrink-0 justify-center">
+        <span className={swatch} />
+      </span>
+      <span className="text-wb-text-secondary">{label}</span>
+      <span className={`ml-auto ${valueTone}`}>{value}</span>
+    </div>
+  )
 }
 
 export function PmccCoverageRuler({
   today,
-  currentExpiration,
-  replacementExpiration,
-  leapsExpiration
+  blocked,
+  fillTo,
+  marks,
+  note
 }: PmccCoverageRulerProps): React.JSX.Element {
   const dte = (date: string): number => computeDteFromInput(date, parseISO(today)) ?? 0
-  const currentDte = dte(currentExpiration)
-  const leapsDte = dte(leapsExpiration)
-  const replacement: Replacement | null = ISO_DATE_REGEX.test(replacementExpiration)
-    ? {
-        dte: dte(replacementExpiration),
-        naked: !shortExpiresBeforeLeaps(replacementExpiration, leapsExpiration),
-        buyback: isBefore(parseISO(replacementExpiration), parseISO(currentExpiration))
-      }
-    : null
-  const blocked = replacement !== null && (replacement.naked || replacement.buyback)
-  const tone = blocked ? 'bg-wb-red' : 'bg-wb-gold'
+  const dated = marks.flatMap((mark) =>
+    mark.date === null ? [] : [{ ...mark, dte: dte(mark.date) }]
+  )
+  const span = Math.max(1, ...dated.map((mark) => mark.dte))
   const at = (days: number): string =>
-    `${Math.min(100, Math.max(0, (days / Math.max(leapsDte, 1)) * 100)).toFixed(2)}%`
-
-  const marks: Mark[] = [
-    {
-      key: 'today',
-      label: 'Today',
-      value: today,
-      dte: 0,
-      tick: 'top-1.5 h-3 w-px bg-wb-text-muted'
-    },
-    {
-      key: 'current',
-      label: 'Current short call',
-      value: `${currentExpiration} · ${currentDte} DTE`,
-      dte: currentDte,
-      tick: 'top-1.5 h-3 w-px bg-wb-text-secondary'
-    },
-    ...(replacement
-      ? [
-          {
-            key: 'replacement' as const,
-            label: 'Replacement short call',
-            value: `${replacementExpiration} · ${replacement.dte} DTE`,
-            dte: replacement.dte,
-            tick: `top-0 h-6 w-0.5 ${tone}`
-          }
-        ]
-      : []),
-    {
-      key: 'leaps',
-      label: 'LEAPS (covers)',
-      value: `${leapsExpiration} · ${leapsDte} DTE`,
-      dte: leapsDte,
-      tick: 'top-1.5 h-3 w-px bg-wb-green'
-    }
-  ]
+    `${Math.min(100, Math.max(0, (days / span) * 100)).toFixed(2)}%`
+  const accent = blocked ? 'bg-wb-red' : 'bg-wb-gold'
+  const isAccent = (mark: PmccRulerMark): boolean => mark.tone === 'accent'
+  const color = (mark: PmccRulerMark): string =>
+    mark.tone === 'accent' ? accent : PLAIN_TONE[mark.tone]
+  // An undated plain mark keeps its legend row but has nothing on the axis to match a swatch to.
+  const swatchColor = (mark: PmccRulerMark): string =>
+    mark.date === null && !isAccent(mark) ? 'bg-transparent' : color(mark)
 
   return (
     <div
@@ -106,40 +63,34 @@ export function PmccCoverageRuler({
       <div className="relative h-8">
         <div className="absolute inset-x-0 top-3 h-px bg-wb-border" />
         <div
-          className={`absolute left-0 top-3 h-px ${tone}`}
-          style={{ width: at(replacement?.dte ?? currentDte) }}
+          data-testid="pmcc-coverage-fill"
+          className={`absolute left-0 top-3 h-px ${accent}`}
+          style={{ width: at(dte(fillTo)) }}
         />
-        {marks.map((mark) => (
+        {dated.map((mark) => (
           <div
             key={mark.key}
             data-mark={mark.key}
-            className={`absolute ${mark.tick}`}
+            className={`absolute ${isAccent(mark) ? 'top-0 h-6 w-0.5' : 'top-1.5 h-3 w-px'} ${color(mark)}`}
             style={{ left: at(mark.dte) }}
           />
         ))}
       </div>
       <div className="flex flex-col gap-1 text-[10px] text-wb-text-muted">
         {marks.map((mark) => (
-          <div key={mark.key} className="flex items-center gap-2">
-            <span className="text-wb-text-secondary">{mark.label}</span>
-            <span
-              className={`ml-auto ${mark.key === 'replacement' && blocked ? 'text-wb-red' : ''}`}
-            >
-              {mark.value}
-            </span>
-          </div>
+          <LegendItem
+            key={mark.key}
+            swatch={`${isAccent(mark) ? 'h-4 w-0.5' : 'h-3 w-px'} ${swatchColor(mark)}`}
+            label={mark.label}
+            value={mark.value}
+            valueTone={isAccent(mark) && blocked ? 'text-wb-red' : ''}
+          />
         ))}
-        {replacement === null && (
-          <div className="flex items-center gap-2">
-            <span className="text-wb-text-secondary">Replacement short call</span>
-            <span className="ml-auto">not entered</span>
-          </div>
-        )}
       </div>
       <p
         className={`text-[11px] leading-relaxed ${blocked ? 'text-wb-red' : 'text-wb-text-secondary'}`}
       >
-        {coverageNote(replacement, currentDte, leapsDte)}
+        {note}
       </p>
     </div>
   )

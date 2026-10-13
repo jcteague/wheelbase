@@ -20,6 +20,7 @@ import {
 import { ALPACA_TRADING_BASE_URLS } from './alpaca-hosts'
 import { parseOccSymbol } from '../core/option-symbol'
 import { etDateOf } from '../core/trading-calendar'
+import { fixed4, money4 } from '../../shared/decimal-text'
 import type { AlpacaCredentials } from '../services/settings'
 
 export const DATA_BASE_URL = 'https://data.alpaca.markets'
@@ -67,7 +68,7 @@ export function mapStockSnapshot(snap: AlpacaStockSnapshot): StockQuote | null {
     change: change ? change.toFixed(2) : '',
     changePercent:
       change && prevClose && !prevClose.isZero()
-        ? change.dividedBy(prevClose).times(100).toFixed(4)
+        ? fixed4(change.dividedBy(prevClose).times(100))
         : '',
     volume: snap.dailyBar?.v ?? 0,
     timestamp: new Date(snap.latestTrade.t).toISOString()
@@ -157,14 +158,14 @@ export function mapOptionQuote(snap: AlpacaOptionSnapshot): OptionSnapshot {
   // dropped wholesale rather than emitted half-filled. `rho` is never surfaced.
   if (isCompleteGreeks(snap.greeks)) {
     quote.greeks = {
-      delta: new Decimal(snap.greeks.delta).toFixed(4),
-      gamma: new Decimal(snap.greeks.gamma).toFixed(4),
-      theta: new Decimal(snap.greeks.theta).toFixed(4),
-      vega: new Decimal(snap.greeks.vega).toFixed(4)
+      delta: fixed4(snap.greeks.delta),
+      gamma: fixed4(snap.greeks.gamma),
+      theta: fixed4(snap.greeks.theta),
+      vega: fixed4(snap.greeks.vega)
     }
   }
   if (isFiniteNumber(snap.impliedVolatility)) {
-    quote.impliedVolatility = new Decimal(snap.impliedVolatility).toFixed(4)
+    quote.impliedVolatility = fixed4(snap.impliedVolatility)
   }
   return quote
 }
@@ -371,8 +372,8 @@ export function mapDailyBar(raw: AlpacaDailyBar): DailyBar | null {
   if (date === '') return null
   return {
     date,
-    vwap: new Decimal(raw.vw).toFixed(4),
-    close: new Decimal(raw.c).toFixed(4),
+    vwap: money4(raw.vw),
+    close: money4(raw.c),
     volume: raw.v,
     tradeCount: raw.n
   }

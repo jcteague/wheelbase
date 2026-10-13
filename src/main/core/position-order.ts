@@ -2,17 +2,17 @@
 //
 // The positions list's display order: soonest expiration first, undated rows (shares held)
 // last. A PMCC carries no position-level DTE, so it is ordered by its short call — the leg
-// that needs managing first. `listPositions` sorts its result with it, and the renderer's
-// create hooks use the same comparator to slot a freshly recorded position into the cached
-// list without refetching the whole query.
+// that needs managing first — or by its LEAPS while no short call is open. `listPositions`
+// sorts its result with it, and the renderer's create hooks use the same comparator to slot a
+// freshly recorded position into the cached list without refetching the whole query.
 
 export interface PositionOrderInput {
   dte: number | null
-  pmcc?: { short: { dte: number } } | null
+  pmcc?: { long: { dte: number }; short: { dte: number } | null } | null
 }
 
 function orderDte(item: PositionOrderInput): number | null {
-  return item.pmcc ? item.pmcc.short.dte : item.dte
+  return item.pmcc ? (item.pmcc.short ?? item.pmcc.long).dte : item.dte
 }
 
 function compareByDte(a: PositionOrderInput, b: PositionOrderInput): number {

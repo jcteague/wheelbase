@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import Decimal from 'decimal.js'
+import { money4 } from '../../shared/decimal-text'
 import { randomUUID } from 'node:crypto'
 import { calculateCspClose } from '../core/costbasis'
 import { ValidationError, closeCsp } from '../core/lifecycle'
@@ -46,7 +46,7 @@ export function closeCspPosition(
     contracts: openLeg.contracts
   })
 
-  const closePriceFormatted = new Decimal(closePrice).toFixed(4)
+  const closePriceFormatted = money4(closePrice)
 
   const closeLegId = randomUUID()
   const snapshotId = randomUUID()

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LegRecord } from '../schemas'
-import { pmccInitialNetDebit, pmccOpeningLegs } from './pmcc-opening-legs'
+import { pmccInitialNetDebit } from './pmcc-opening-legs'
 
 function makeLeg(overrides: Partial<LegRecord> & Pick<LegRecord, 'id' | 'legRole'>): LegRecord {
   return {
@@ -23,31 +23,6 @@ function makeLeg(overrides: Partial<LegRecord> & Pick<LegRecord, 'id' | 'legRole
 
 const LONG = makeLeg({ id: 'long', legRole: 'LEAPS_OPEN' })
 const SHORT = makeLeg({ id: 'short', legRole: 'SHORT_CALL_OPEN' })
-
-describe('pmccOpeningLegs', () => {
-  it('picks the LEAPS_OPEN leg as long and the SHORT_CALL_OPEN leg as short', () => {
-    expect(pmccOpeningLegs([LONG, SHORT])).toEqual({ long: LONG, short: SHORT })
-  })
-
-  it('ignores legs in other roles', () => {
-    const close = makeLeg({ id: 'close', legRole: 'SHORT_CALL_CLOSE' })
-    expect(pmccOpeningLegs([LONG, close, SHORT])).toEqual({ long: LONG, short: SHORT })
-  })
-
-  it('lets later rows win, so a newer opening leg supersedes the first', () => {
-    const newerShort = makeLeg({ id: 'short-2', legRole: 'SHORT_CALL_OPEN', strike: '115.0000' })
-    const newerLong = makeLeg({ id: 'long-2', legRole: 'LEAPS_OPEN', strike: '75.0000' })
-    expect(pmccOpeningLegs([LONG, SHORT, newerShort, newerLong])).toEqual({
-      long: newerLong,
-      short: newerShort
-    })
-  })
-
-  it('leaves a side undefined when its leg is missing', () => {
-    expect(pmccOpeningLegs([LONG])).toEqual({ long: LONG, short: undefined })
-    expect(pmccOpeningLegs([])).toEqual({ long: undefined, short: undefined })
-  })
-})
 
 describe('pmccInitialNetDebit', () => {
   it('returns the net debit in dollars from both opening legs', () => {

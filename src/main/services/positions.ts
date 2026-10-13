@@ -2,7 +2,7 @@
 // No Electron or broker imports here.
 
 import Database from 'better-sqlite3'
-import Decimal from 'decimal.js'
+import { money4 } from '../../shared/decimal-text'
 import { randomUUID } from 'node:crypto'
 import { calculateInitialCspBasis } from '../core/costbasis'
 import { openWheel } from '../core/lifecycle'
@@ -66,10 +66,10 @@ export function createPosition(
   const positionId = randomUUID()
   const legId = randomUUID()
   const snapshotId = randomUUID()
-  const strikeFormatted = new Decimal(strikeStr).toFixed(4)
-  const premiumFormatted = new Decimal(premiumStr).toFixed(4)
-  const basisFormatted = new Decimal(basisResult.basisPerShare).toFixed(4)
-  const totalPremiumFormatted = new Decimal(basisResult.totalPremiumCollected).toFixed(4)
+  const strikeFormatted = money4(strikeStr)
+  const premiumFormatted = money4(premiumStr)
+  const basisFormatted = money4(basisResult.basisPerShare)
+  const totalPremiumFormatted = money4(basisResult.totalPremiumCollected)
 
   const position = db.transaction(() => {
     const inserted = insertPosition(db, {

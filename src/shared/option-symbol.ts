@@ -5,6 +5,7 @@
 // Example: AAPL260516P00180000 = AAPL 2026-05-16 PUT @ $180.00
 
 import Decimal from 'decimal.js'
+import { money4 } from './decimal-text'
 
 const EXPIRATION_RE = /^(\d{4})-(\d{2})-(\d{2})$/
 const STRIKE_SCALE = 1000
@@ -91,7 +92,7 @@ export function parseOccSymbol(symbol: string): OccIdentity | null {
   return {
     underlying,
     contractId: symbol,
-    strike: (Number(strikeThousandths) / STRIKE_SCALE).toFixed(4),
+    strike: money4(Number(strikeThousandths) / STRIKE_SCALE),
     expiration: `20${year}-${month}-${day}`,
     contractType: type === 'P' ? 'put' : 'call'
   }

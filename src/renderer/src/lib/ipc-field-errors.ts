@@ -2,7 +2,7 @@
 import type { FieldValues, Path, UseFormSetError } from 'react-hook-form'
 import { ipcFieldErrorsOf, type ApiError } from '../api/error'
 
-type IpcFieldErrorRouting<T extends FieldValues> = {
+export type IpcFieldErrorRouting<T extends FieldValues> = {
   /** The form path an IPC field error belongs on, or `null` when it has none. */
   target: (field: string) => Path<T> | null
   /** Shown as `root.save` for a failure with no field errors or an unplaceable one. */

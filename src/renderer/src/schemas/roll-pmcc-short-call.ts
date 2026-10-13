@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { pmccShortRollIssues, type PmccShortRollContext } from '../../../main/core/pmcc-rules'
 import type { RollPmccShortCallPayload } from '../api/positions'
 import { parseInputDecimal } from '../lib/decimal-input'
-import { ISO_DATE_REGEX, inputToNumber, isoDateSchema, moneySchema } from './common'
+import { decidedDate, inputToNumber, isoDateSchema, moneySchema } from './common'
 
 /** The open short and its LEAPS — the facts the cross-field rules judge the replacement by. */
 export type RollPmccShortCallContext = PmccShortRollContext
@@ -26,10 +26,6 @@ export type RollPmccShortCallFormValues = z.infer<typeof rollPmccShortCallObject
 
 /** The roll schema for one open short; built once per sheet by `useRollPmccShortCallForm`. */
 export type RollPmccShortCallSchema = typeof rollPmccShortCallObjectSchema
-
-/** An incomplete date is undecided: the field-level schema reports it, the cross-field rules skip it. */
-const decidedDate = (value: string): string | undefined =>
-  ISO_DATE_REGEX.test(value) ? value : undefined
 
 function crossFieldRules(
   ctx: RollPmccShortCallContext,

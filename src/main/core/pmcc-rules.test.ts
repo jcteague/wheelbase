@@ -1,13 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import {
   EXPIRATION_NOT_AFTER_FILL,
+  latestFillDate,
+  leapsStrikeNotBelowShortMessage,
+  LONG_NOT_AFTER_SHORT,
   pmccCrossLegIssues,
+  pmccLeapsRollIssues,
   pmccShortRollIssues,
+  ROLL_NO_CHANGE,
   SHORT_NOT_BEFORE_LONG,
   shortExpiresBeforeLeaps,
+  shortStrikeAboveLeaps,
+  STRIKE_NOT_BELOW_SHORT_CODE,
   type PmccCrossLegInput,
   type PmccCrossLegValues,
   type PmccIssue,
+  type PmccLeapsRollField,
+  type PmccLeapsRollInput,
   type PmccShortRollField,
   type PmccShortRollInput
 } from './pmcc-rules'
@@ -176,6 +185,50 @@ describe('SHORT_NOT_BEFORE_LONG', () => {
   })
 })
 
+// [US-105] The strike-ordering predicate and the long-side comparator, shared with the LEAPS roll.
+describe('shortStrikeAboveLeaps', () => {
+  it('accepts a short strike above the LEAPS strike', () => {
+    expect(shortStrikeAboveLeaps('112.0000', '85.0000')).toBe(true)
+  })
+
+  it('rejects equal strikes, compared numerically', () => {
+    expect(shortStrikeAboveLeaps('112.0000', '112')).toBe(false)
+  })
+
+  it('rejects a short strike below the LEAPS strike', () => {
+    expect(shortStrikeAboveLeaps('80.0000', '85.0000')).toBe(false)
+  })
+})
+
+describe('LONG_NOT_AFTER_SHORT', () => {
+  it('is the code and message for a LEAPS that does not outlast the short call', () => {
+    expect(LONG_NOT_AFTER_SHORT).toEqual({
+      code: 'long_not_after_short',
+      message: 'LEAPS call must expire after the short call.'
+    })
+  })
+})
+
+describe('STRIKE_NOT_BELOW_SHORT_CODE', () => {
+  it('is the stable code for a LEAPS strike not below the short strike', () => {
+    expect(STRIKE_NOT_BELOW_SHORT_CODE).toBe('strike_not_below_short')
+  })
+})
+
+describe('leapsStrikeNotBelowShortMessage', () => {
+  it('formats the short strike to cents', () => {
+    expect(leapsStrikeNotBelowShortMessage('112.0000')).toBe(
+      'LEAPS strike must be below the short-call strike ($112.00).'
+    )
+  })
+
+  it('pads a one-decimal strike', () => {
+    expect(leapsStrikeNotBelowShortMessage('112.5')).toBe(
+      'LEAPS strike must be below the short-call strike ($112.50).'
+    )
+  })
+})
+
 describe('pmccShortRollIssues', () => {
   const OPEN_SHORT = { strike: '108.0000', expiration: '2026-11-20', fillDate: '2026-10-02' }
   const VALID: PmccShortRollInput = {
@@ -289,5 +342,152 @@ describe('pmccShortRollIssues', () => {
     )
     expect(issues({ fillDate: undefined, newExpiration: '2026-11-27' })).toEqual([])
     expect(issues({ newStrike: undefined, newExpiration: '2026-11-20' })).toEqual([])
+  })
+})
+
+describe('latestFillDate', () => {
+  it('returns the latest fill date, whatever the leg order', () => {
+    expect(
+      latestFillDate([
+        { fillDate: '2026-09-14' },
+        { fillDate: '2026-11-16' },
+        { fillDate: '2026-10-16' }
+      ])
+    ).toBe('2026-11-16')
+  })
+
+  it('returns an empty string, before every date, for no legs', () => {
+    expect(latestFillDate([])).toBe('')
+  })
+})
+
+// [US-105] The LEAPS roll's rules: fill-date ordering against the LEAPS being sold, the two shape
+// rules against the open short, the replacement's own expiry, and no-change.
+describe('pmccLeapsRollIssues', () => {
+  const CURRENT_LEAPS = { strike: '80.0000', expiration: '2027-09-17', fillDate: '2026-09-14' }
+  const OPEN_SHORT = { strike: '112.0000', expiration: '2027-07-16' }
+  const VALID: PmccLeapsRollInput = {
+    currentLeaps: CURRENT_LEAPS,
+    openShort: OPEN_SHORT,
+    lastEventDate: '2027-06-18',
+    fillDate: '2027-07-09',
+    newStrike: '85',
+    newExpiration: '2028-01-21'
+  }
+  const issues = (patch: Partial<PmccLeapsRollInput>): PmccIssue<PmccLeapsRollField>[] =>
+    pmccLeapsRollIssues({ ...VALID, ...patch })
+  const codes = (patch: Partial<PmccLeapsRollInput>): string[] =>
+    issues(patch).map(({ code }) => code)
+
+  it('returns no issues for a valid roll up and out', () => {
+    expect(issues({})).toEqual([])
+  })
+
+  it('reports a fill date before the last recorded event, naming that date', () => {
+    expect(issues({ fillDate: '2027-06-17' })).toEqual([
+      {
+        field: 'fillDate',
+        code: 'before_last_event',
+        message: 'Fill date cannot be before the last recorded event (Jun 18, 2027)'
+      }
+    ])
+  })
+
+  it('with no recorded event, applies no last-event rule', () => {
+    expect(issues({ lastEventDate: '' })).toEqual([])
+  })
+
+  it('accepts a fill date on the last recorded event', () => {
+    expect(issues({ fillDate: '2027-06-18' })).toEqual([])
+  })
+
+  it('reports a fill date before the LEAPS was filled as before the last event', () => {
+    expect(
+      issues({ lastEventDate: CURRENT_LEAPS.fillDate, fillDate: '2026-09-13' }).map(
+        ({ code }) => code
+      )
+    ).toEqual(['before_last_event'])
+  })
+
+  it('accepts a fill date on the LEAPS fill date when nothing has happened since', () => {
+    expect(issues({ lastEventDate: CURRENT_LEAPS.fillDate, fillDate: '2026-09-14' })).toEqual([])
+  })
+
+  it('reports a fill date after the LEAPS expired', () => {
+    expect(issues({ openShort: null, fillDate: '2027-09-18' })).toEqual([
+      {
+        field: 'fillDate',
+        code: 'close_date_after_expiration',
+        message: 'Fill date cannot be after the LEAPS expiration date'
+      }
+    ])
+  })
+
+  it('accepts a fill date on the LEAPS expiration', () => {
+    expect(issues({ openShort: null, fillDate: '2027-09-17' })).toEqual([])
+  })
+
+  it('reports a replacement on or before the open short expiration with the coverage rule', () => {
+    expect(issues({ newExpiration: '2027-07-16' })).toEqual([
+      { field: 'newExpiration', ...LONG_NOT_AFTER_SHORT }
+    ])
+  })
+
+  it('reports a strike at the open short strike with its formatted message', () => {
+    expect(issues({ newStrike: '112' })).toEqual([
+      {
+        field: 'newStrike',
+        code: STRIKE_NOT_BELOW_SHORT_CODE,
+        message: leapsStrikeNotBelowShortMessage('112.0000')
+      }
+    ])
+  })
+
+  it('with no short open, applies neither shape rule', () => {
+    expect(issues({ openShort: null, newStrike: '112', newExpiration: '2027-07-16' })).toEqual([])
+  })
+
+  it('reports a replacement expiring on or before the roll fill date', () => {
+    expect(issues({ openShort: null, newExpiration: '2027-07-09' })).toEqual([
+      { field: 'newExpiration', ...EXPIRATION_NOT_AFTER_FILL }
+    ])
+    expect(codes({ openShort: null, newExpiration: '2027-07-01' })).toEqual([
+      EXPIRATION_NOT_AFTER_FILL.code
+    ])
+  })
+
+  it('reports a roll that changes neither strike nor expiration, comparing strikes as numbers', () => {
+    expect(issues({ newStrike: '80.00', newExpiration: '2027-09-17' })).toEqual([
+      { field: '__roll__', ...ROLL_NO_CHANGE }
+    ])
+  })
+
+  it('lists every broken rule in the engine order', () => {
+    expect(
+      codes({ fillDate: '2026-09-01', newStrike: '112', newExpiration: '2027-07-16' })
+    ).toEqual(['before_last_event', 'long_not_after_short', 'strike_not_below_short'])
+    expect(codes({ fillDate: '2027-10-01', newExpiration: '2027-07-16' })).toEqual([
+      'close_date_after_expiration',
+      'long_not_after_short',
+      'expiration_not_after_fill'
+    ])
+    expect(
+      codes({
+        openShort: { strike: '80.0000', expiration: '2027-07-16' },
+        newStrike: '80',
+        newExpiration: '2027-09-17'
+      })
+    ).toEqual(['strike_not_below_short', 'no_change'])
+  })
+
+  it('skips every rule that reads an undecided value', () => {
+    expect(issues({ fillDate: undefined, newStrike: undefined, newExpiration: undefined })).toEqual(
+      []
+    )
+    expect(issues({ fillDate: undefined, newExpiration: '2027-07-01', openShort: null })).toEqual(
+      []
+    )
+    expect(issues({ newStrike: undefined, newExpiration: '2027-09-17' })).toEqual([])
+    expect(issues({ newExpiration: undefined, newStrike: '80' })).toEqual([])
   })
 })

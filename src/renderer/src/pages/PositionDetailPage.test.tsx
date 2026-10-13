@@ -101,6 +101,35 @@ vi.mock('../components/RollPmccShortCallSheet', async () => {
   }
 })
 
+// [US-105] Stand-in for the Roll LEAPS sheet: a dialog of the same name whose buttons report a
+// recorded credit (Up & Out) or debit roll, or close it.
+vi.mock('../components/RollPmccLeapsSheet', async () => {
+  const { LEAPS_UP_OUT_RESPONSE } = await import('../test-fixtures/pmcc-leaps-roll')
+  // Buying the $85 back at $29.20 against $26.00 received: a $3.20 debit.
+  const LEAPS_DEBIT_RESPONSE = {
+    ...LEAPS_UP_OUT_RESPONSE,
+    rollToLeg: { ...LEAPS_UP_OUT_RESPONSE.rollToLeg, premiumPerContract: '29.2000' }
+  }
+  return {
+    RollPmccLeapsSheet: ({
+      lastEventDate,
+      onClose,
+      onRecorded
+    }: {
+      lastEventDate: string
+      onClose: () => void
+      onRecorded: (response: typeof LEAPS_UP_OUT_RESPONSE) => void
+    }) => (
+      <div role="dialog" aria-label="Roll LEAPS">
+        <output data-testid="leaps-sheet-last-event-date">{lastEventDate}</output>
+        <button onClick={() => onRecorded(LEAPS_UP_OUT_RESPONSE)}>record leaps credit roll</button>
+        <button onClick={() => onRecorded(LEAPS_DEBIT_RESPONSE)}>record leaps debit roll</button>
+        <button onClick={onClose}>close leaps sheet</button>
+      </div>
+    )
+  }
+})
+
 // Mock PositionAlertOverridesForm to avoid testing it in isolation here
 vi.mock('../components/PositionAlertOverridesForm', () => ({
   PositionAlertOverridesForm: ({
@@ -1121,6 +1150,17 @@ it('does not render RiskSnapshot when snapshot is absent', () => {
 // [US-104] Roll Short Call — sheet state, overlay and the recorded banner
 // ---------------------------------------------------------------------------
 
+const PMCC_LEDGER = {
+  basisPerShare: '21.2000',
+  basisTotal: '2120.0000',
+  leapsCostPerShare: '25.0000',
+  leapsCostTotal: '2500.0000',
+  shortCreditsPerShare: '3.8000',
+  shortCreditsTotal: '380.0000',
+  effectiveShareCost: '101.2000',
+  premiumRecoveredPercent: '15.2000'
+}
+
 const PMCC_DETAIL: PositionDetail = {
   ...CSP_OPEN_DETAIL,
   position: {
@@ -1134,16 +1174,7 @@ const PMCC_DETAIL: PositionDetail = {
   costBasisSnapshot: null,
   legs: [OPEN_LEAPS, OPEN_SHORT],
   initialNetDebit: '2300.0000',
-  pmccLedger: {
-    basisPerShare: '21.2000',
-    basisTotal: '2120.0000',
-    leapsCostPerShare: '25.0000',
-    leapsCostTotal: '2500.0000',
-    shortCreditsPerShare: '3.8000',
-    shortCreditsTotal: '380.0000',
-    effectiveShareCost: '101.2000',
-    premiumRecoveredPercent: '15.2000'
-  },
+  pmccLedger: PMCC_LEDGER,
   pmccOpenLegs: OPEN_LEGS
 }
 
@@ -1215,6 +1246,131 @@ describe('PositionDetailPage — Roll Short Call', () => {
     expect(screen.getByTestId('pmcc-roll-recorded-banner')).toBeInTheDocument()
     await user.click(screen.getByTestId('roll-pmcc-short-btn'))
     expect(screen.queryByTestId('pmcc-roll-recorded-banner')).not.toBeInTheDocument()
+  })
+})
+
+// [US-105] The Roll LEAPS action is offered whenever the PMCC holds an open LEAPS — with or
+// without a short call over it.
+describe('PositionDetailPage — Roll LEAPS button', () => {
+  it('offers Roll LEAPS while a short call is open', () => {
+    renderPmcc()
+    expect(screen.getByTestId('roll-pmcc-leaps-btn')).toBeInTheDocument()
+  })
+
+  it('offers Roll LEAPS when no short call is open', () => {
+    renderPmcc({ ...PMCC_DETAIL, pmccOpenLegs: { long: OPEN_LEAPS, short: null } })
+    expect(screen.getByTestId('roll-pmcc-leaps-btn')).toBeInTheDocument()
+  })
+
+  it('offers no Roll LEAPS when the PMCC has no open legs', () => {
+    renderPmcc({ ...PMCC_DETAIL, pmccOpenLegs: null })
+    expect(screen.queryByTestId('roll-pmcc-leaps-btn')).not.toBeInTheDocument()
+  })
+})
+
+// [US-105] Roll LEAPS — sheet state, overlay and the recorded banner
+const LEAPS_CREDIT_BANNER =
+  'Rolled — sold to close XYZ $80.00 CALL 2027-09-17 at $26.00, bought to open XYZ $85.00 CALL 2028-01-21 at $23.50. LEAPS roll #1 credit · $2.50 per share ($250.00 total). Both legs share one roll chain. Effective share cost if exercised: $104.30 — the $85.00 strike plus $19.30 basis.'
+
+describe('PositionDetailPage — Roll LEAPS', () => {
+  it('opens the Roll LEAPS sheet and blurs the content', async () => {
+    const user = userEvent.setup()
+    renderPmcc()
+    expect(screen.queryByRole('dialog', { name: 'Roll LEAPS' })).not.toBeInTheDocument()
+    await user.click(screen.getByTestId('roll-pmcc-leaps-btn'))
+    expect(screen.getByRole('dialog', { name: 'Roll LEAPS' })).toBeInTheDocument()
+    expect(screen.getByTestId('position-detail')).toHaveStyle({
+      filter: 'blur(1.5px)',
+      opacity: '0.35',
+      pointerEvents: 'none'
+    })
+  })
+
+  it('opens the Roll LEAPS sheet when no short call is open', async () => {
+    const user = userEvent.setup()
+    renderPmcc({ ...PMCC_DETAIL, pmccOpenLegs: { long: OPEN_LEAPS, short: null } })
+    await user.click(screen.getByTestId('roll-pmcc-leaps-btn'))
+    expect(screen.getByRole('dialog', { name: 'Roll LEAPS' })).toBeInTheDocument()
+    expect(screen.getByTestId('position-detail')).toHaveStyle({ filter: 'blur(1.5px)' })
+  })
+
+  it('passes the latest leg fill date to the sheet as the last recorded event', async () => {
+    const user = userEvent.setup()
+    renderPmcc({ ...PMCC_DETAIL, legs: [OPEN_SHORT, OPEN_LEAPS] })
+    await user.click(screen.getByTestId('roll-pmcc-leaps-btn'))
+    expect(screen.getByTestId('leaps-sheet-last-event-date')).toHaveTextContent(OPEN_SHORT.fillDate)
+  })
+
+  it('takes the last recorded event from every leg, not only the open ones', async () => {
+    const user = userEvent.setup()
+    const expired = { ...OPEN_SHORT, id: 'leg-expired', fillDate: '2026-11-20' }
+    renderPmcc({ ...PMCC_DETAIL, legs: [OPEN_LEAPS, expired, OPEN_SHORT] })
+    await user.click(screen.getByTestId('roll-pmcc-leaps-btn'))
+    expect(screen.getByTestId('leaps-sheet-last-event-date')).toHaveTextContent('2026-11-20')
+  })
+
+  it('does not mount the sheet without an effective share cost', async () => {
+    const user = userEvent.setup()
+    renderPmcc({
+      ...PMCC_DETAIL,
+      pmccLedger: { ...PMCC_LEDGER, effectiveShareCost: null }
+    })
+    await user.click(screen.getByTestId('roll-pmcc-leaps-btn'))
+    expect(screen.queryByRole('dialog', { name: 'Roll LEAPS' })).not.toBeInTheDocument()
+  })
+
+  it('closes the sheet when cancelled', async () => {
+    const user = userEvent.setup()
+    renderPmcc()
+    await user.click(screen.getByTestId('roll-pmcc-leaps-btn'))
+    await user.click(screen.getByText('close leaps sheet'))
+    expect(screen.queryByRole('dialog', { name: 'Roll LEAPS' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('position-detail')).not.toHaveStyle({ filter: 'blur(1.5px)' })
+  })
+
+  it('a recorded credit roll closes the sheet and shows the LEAPS banner', async () => {
+    const user = userEvent.setup()
+    renderPmcc()
+    await user.click(screen.getByTestId('roll-pmcc-leaps-btn'))
+    await user.click(screen.getByText('record leaps credit roll'))
+    expect(screen.queryByRole('dialog', { name: 'Roll LEAPS' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('pmcc-leaps-roll-recorded-banner')).toHaveTextContent(
+      LEAPS_CREDIT_BANNER
+    )
+  })
+
+  it('a recorded debit roll reads debit in the LEAPS banner', async () => {
+    const user = userEvent.setup()
+    renderPmcc()
+    await user.click(screen.getByTestId('roll-pmcc-leaps-btn'))
+    await user.click(screen.getByText('record leaps debit roll'))
+    expect(screen.getByTestId('pmcc-leaps-roll-recorded-banner')).toHaveTextContent(
+      'LEAPS roll #1 debit · $3.20 per share ($320.00 total). Both legs share one roll chain. Effective share cost if exercised: $104.30 — the $85.00 strike plus $19.30 basis.'
+    )
+  })
+
+  it('a LEAPS roll replaces the short-call banner', async () => {
+    const user = userEvent.setup()
+    renderPmcc()
+    await user.click(screen.getByTestId('roll-pmcc-short-btn'))
+    await user.click(screen.getByText('record debit roll'))
+    expect(screen.getByTestId('pmcc-roll-recorded-banner')).toBeInTheDocument()
+    await user.click(screen.getByTestId('roll-pmcc-leaps-btn'))
+    await user.click(screen.getByText('record leaps credit roll'))
+    expect(screen.getByTestId('pmcc-leaps-roll-recorded-banner')).toBeInTheDocument()
+    expect(screen.queryByTestId('pmcc-roll-recorded-banner')).not.toBeInTheDocument()
+  })
+
+  it('a short-call roll replaces the LEAPS banner', async () => {
+    const user = userEvent.setup()
+    renderPmcc()
+    await user.click(screen.getByTestId('roll-pmcc-leaps-btn'))
+    await user.click(screen.getByText('record leaps credit roll'))
+    expect(screen.getByTestId('pmcc-leaps-roll-recorded-banner')).toBeInTheDocument()
+    await user.click(screen.getByTestId('roll-pmcc-short-btn'))
+    await user.click(screen.getByText('record debit roll'))
+    expect(screen.getByTestId('pmcc-roll-recorded-banner')).toBeInTheDocument()
+    expect(screen.queryByTestId('pmcc-leaps-roll-recorded-banner')).not.toBeInTheDocument()
   })
 })
 

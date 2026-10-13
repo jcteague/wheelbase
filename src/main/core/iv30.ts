@@ -4,7 +4,6 @@
 // Rules: data-model.md §2 iv30.ts; research.md ADR "Contract selection is generic over candidate
 // expirations; one-sided brackets do not extrapolate".
 
-import Decimal from 'decimal.js'
 import { impliedVolatility, type OptionType } from './black-scholes'
 import {
   TARGET_DTE,
@@ -14,6 +13,7 @@ import {
   type SessionProbePlan
 } from './iv30-selection'
 import { buildOccSymbol } from './option-symbol'
+import { fixed4, money4 } from '../../shared/decimal-text'
 
 export const IV30_METHOD = 'daily_vwap'
 export const IV30_ENGINE_VERSION = 1
@@ -63,8 +63,6 @@ export type Iv30Outcome =
 type Market = { session: string; spot: number; rate: number; dividendYield: number }
 type ExpirationPoint = { yearsToExpiry: number; iv: number }
 
-const fourDp = (x: number | string): string => new Decimal(x).toFixed(4)
-
 /** mean(callIV, putIV) for one expiration's chosen strike; null when either leg fails to invert. */
 function expirationIv(leg: LegSelection, market: Market): ExpirationPoint | null {
   const yearsToExpiry = daysToExpiry(market.session, leg.expiration) / DAYS_PER_YEAR
@@ -109,7 +107,7 @@ function iv30Of(inputs: Iv30Inputs): number | null {
 /** Pure: the same arithmetic over stored inputs. null when an inversion fails on the stored inputs. */
 export function iv30FromInputs(inputs: Iv30Inputs): string | null {
   const iv30 = iv30Of(inputs)
-  return iv30 === null ? null : fourDp(iv30)
+  return iv30 === null ? null : fixed4(iv30)
 }
 
 type PricedLeg = { leg: LegSelection; point: ExpirationPoint }
@@ -133,7 +131,7 @@ function selectLeg(
     if (!traded(call) || !traded(put)) return null
     const leg: LegSelection = {
       expiration,
-      strike: fourDp(strike),
+      strike: money4(strike),
       callVwap: call.vwap,
       callTrades: call.tradeCount,
       putVwap: put.vwap,
@@ -169,8 +167,8 @@ export function computeIv30(input: {
   const { plan, underlyingBar, optionBars } = input
   if (underlyingBar === undefined) return { status: 'gap', reason: 'no_underlying_bar' }
 
-  const rate = fourDp(input.rate ?? DEFAULT_RISK_FREE_RATE)
-  const dividendYield = fourDp(input.dividendYield ?? DEFAULT_DIVIDEND_YIELD)
+  const rate = fixed4(input.rate ?? DEFAULT_RISK_FREE_RATE)
+  const dividendYield = fixed4(input.dividendYield ?? DEFAULT_DIVIDEND_YIELD)
   const market: Market = {
     session: plan.session,
     spot: Number(underlyingBar.vwap),
@@ -197,7 +195,7 @@ export function computeIv30(input: {
       far: priced.far?.leg ?? null,
       rate,
       dividendYield,
-      iv30: fourDp(iv30),
+      iv30: fixed4(iv30),
       engineVersion: IV30_ENGINE_VERSION
     }
   }

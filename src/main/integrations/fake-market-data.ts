@@ -1,4 +1,3 @@
-import Decimal from 'decimal.js'
 import {
   addDays,
   differenceInCalendarDays,
@@ -14,6 +13,7 @@ import { Observable, Subject } from 'rxjs'
 import { filter } from 'rxjs/operators'
 import { blackScholesPrice } from '../core/black-scholes'
 import { parseOccSymbol } from '../core/option-symbol'
+import { money4 } from '../../shared/decimal-text'
 import {
   MarketDataError,
   type DailyBar,
@@ -195,7 +195,7 @@ function optionBarsFor(
     const daysToExpiry = differenceInCalendarDays(parseISO(identity.expiration), parseISO(session))
     if (untraded || tradeCount === 0 || daysToExpiry <= 0) return []
 
-    const price = new Decimal(
+    const price = money4(
       blackScholesPrice({
         type: identity.contractType,
         spot: series.price,
@@ -205,7 +205,7 @@ function optionBarsFor(
         dividendYield: 0,
         volatility: iv
       })
-    ).toFixed(4)
+    )
     return [{ date: session, vwap: price, close: price, volume: tradeCount, tradeCount }]
   })
 }
@@ -326,7 +326,7 @@ export class FakeMarketDataProvider implements MarketDataProvider {
     if (!series) return []
     await delay(series.latencyMs ?? 0)
 
-    const price = new Decimal(series.price).toFixed(4)
+    const price = money4(series.price)
     return sessionsInRange(series, range).map((date) => ({
       date,
       vwap: price,

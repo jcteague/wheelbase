@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { pmccCrossLegIssues, type PmccCrossLegValues } from '../../../main/core/pmcc-rules'
 import type { CreatePmccPositionPayload } from '../../../main/schemas'
 import { parseInputDecimal } from '../lib/decimal-input'
-import { ISO_DATE_REGEX, inputToNumber, isoDateSchema, moneySchema, tickerSchema } from './common'
+import { decidedDate, inputToNumber, isoDateSchema, moneySchema, tickerSchema } from './common'
 
 const positiveFillSchema = moneySchema('Actual fill price must be greater than zero.', (v) => v > 0)
 
@@ -35,13 +35,12 @@ type LegValues = z.infer<typeof pmccLegSchema>
 /** A form leg as the shared rules read it: a value that is not yet a decided date or number
  *  is `undefined`, so its rules are skipped — the field-level schema already reports it. */
 function decidedLeg(leg: LegValues): PmccCrossLegValues {
-  const date = (v: string): string | undefined => (ISO_DATE_REGEX.test(v) ? v : undefined)
   const decimal = (v: string): string | undefined => parseInputDecimal(v)?.toString()
   return {
     strike: decimal(leg.strike),
-    expiration: date(leg.expiration),
+    expiration: decidedDate(leg.expiration),
     fillPrice: decimal(leg.fillPrice),
-    fillDate: date(leg.fillDate)
+    fillDate: decidedDate(leg.fillDate)
   }
 }
 

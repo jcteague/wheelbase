@@ -29,10 +29,14 @@ describe('sortPositionsByDte', () => {
     const pmcc = (
       id: string,
       shortDte: number
-    ): { id: string; dte: null; pmcc: { short: { dte: number } } } => ({
+    ): {
+      id: string
+      dte: null
+      pmcc: { long: { dte: number }; short: { dte: number } }
+    } => ({
       id,
       dte: null,
-      pmcc: { short: { dte: shortDte } }
+      pmcc: { long: { dte: 400 }, short: { dte: shortDte } }
     })
     const items = [
       { id: 'shares', dte: null, pmcc: null },
@@ -44,6 +48,20 @@ describe('sortPositionsByDte', () => {
     expect(sortPositionsByDte(items).map((i) => i.id)).toEqual([
       'csp-5',
       'pmcc-21',
+      'csp-40',
+      'shares'
+    ])
+  })
+
+  it('orders a PMCC with no open short call by its LEAPS DTE', () => {
+    const items = [
+      { id: 'csp-40', dte: 40, pmcc: null },
+      { id: 'pmcc-leaps-30', dte: null, pmcc: { long: { dte: 30 }, short: null } },
+      { id: 'shares', dte: null, pmcc: null }
+    ]
+
+    expect(sortPositionsByDte(items).map((i) => i.id)).toEqual([
+      'pmcc-leaps-30',
       'csp-40',
       'shares'
     ])

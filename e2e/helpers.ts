@@ -17,7 +17,7 @@ export async function selectDate(page: Page, triggerSelector: string, iso: strin
     year: 'numeric'
   })
 
-  for (let i = 0; i < 24; i++) {
+  for (let i = 0; i < 36; i++) {
     const heading = await popover.locator('.rdp-month_caption').textContent()
     if (heading?.includes(targetHeading)) break
     const currentDate = heading ? new Date(`${heading} 1`) : new Date()

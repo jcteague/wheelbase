@@ -15,8 +15,9 @@ type Props = {
 }
 
 /**
- * The minimal list row for a PMCC: both legs side by side, no wheel-only target badge,
- * expiring-soon flag, option mid or P&L — PMCC valuation (US-118) replaces this row.
+ * The minimal list row for a PMCC: both open legs side by side (the LEAPS alone, short side
+ * "No short open", between short calls), no wheel-only target badge, expiring-soon flag, option mid or
+ * P&L — PMCC valuation (US-118) replaces this row.
  */
 export function PmccPositionRow({ item, index, quote, session }: Props): React.JSX.Element {
   const { long, short, basisTotal } = item.pmcc
@@ -61,21 +62,26 @@ export function PmccPositionRow({ item, index, quote, session }: Props): React.J
 
       <TableCell className={CELL_CLASS}>
         <span className={`${VALUE_CLASS} text-wb-text-primary`}>
-          {`${fmtMoney(long.strike)} / ${fmtMoney(short.strike)}`}
+          {`${fmtMoney(long.strike)} / `}
+          {short ? (
+            fmtMoney(short.strike)
+          ) : (
+            <span className="text-wb-text-muted">No short open</span>
+          )}
         </span>
       </TableCell>
 
       <TableCell className={CELL_CLASS}>
         <div className={`${VALUE_CLASS} flex flex-col text-wb-text-secondary tracking-[0.03em]`}>
           <span>{`LEAPS · ${long.expiration}`}</span>
-          <span>{`Short · ${short.expiration}`}</span>
+          {short && <span>{`Short · ${short.expiration}`}</span>}
         </div>
       </TableCell>
 
       <TableCell className={CELL_CLASS}>
         <div className={`${VALUE_CLASS} flex flex-col font-normal text-wb-text-secondary`}>
           <span>{`${long.dte}d`}</span>
-          <span>{`${short.dte}d`}</span>
+          {short && <span>{`${short.dte}d`}</span>}
         </div>
       </TableCell>
 

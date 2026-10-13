@@ -2,7 +2,12 @@
 // Pure engine — no database or broker imports allowed here.
 
 import Decimal from 'decimal.js'
-import { pmccCrossLegIssues, pmccShortRollIssues, type PmccIssue } from './pmcc-rules'
+import {
+  pmccCrossLegIssues,
+  pmccLeapsRollIssues,
+  pmccShortRollIssues,
+  type PmccIssue
+} from './pmcc-rules'
 import type { OptionInstrumentType, WheelPhase } from './types'
 
 export class ValidationError extends Error {
@@ -547,12 +552,19 @@ export function requirePmccOpenPhase(currentPhase: WheelPhase): void {
   }
 }
 
-/** The terms of a PMCC short call the roll rules read; callers may pass a richer leg. */
-export interface PmccShortCallTerms {
+/** The strike and expiration of a PMCC leg — what the LEAPS roll rules compare. */
+export interface PmccLegTerms {
   strike: string
   expiration: string
+}
+
+/** A PMCC leg's terms and the day it was filled — what a roll's fill-date rules compare. */
+export interface PmccFilledLegTerms extends PmccLegTerms {
   fillDate: string
 }
+
+/** The terms of a PMCC short call the roll rules read; callers may pass a richer leg. */
+export type PmccShortCallTerms = PmccFilledLegTerms
 
 export interface RollPmccShortCallInput<S extends PmccShortCallTerms = PmccShortCallTerms> {
   currentPhase: WheelPhase
@@ -568,7 +580,7 @@ export interface RollPmccShortCallInput<S extends PmccShortCallTerms = PmccShort
   newPremiumPerContract: string
 }
 
-export interface RollPmccShortCallResult<S extends PmccShortCallTerms = PmccShortCallTerms> {
+export interface RollPmccShortCallAccepted<S extends PmccShortCallTerms = PmccShortCallTerms> {
   phase: 'PMCC_OPEN'
   /** The caller's open short, now known to exist. */
   openShort: S
@@ -584,7 +596,7 @@ export interface RollPmccShortCallResult<S extends PmccShortCallTerms = PmccShor
  */
 export function rollPmccShortCall<S extends PmccShortCallTerms>(
   input: RollPmccShortCallInput<S>
-): RollPmccShortCallResult<S> {
+): RollPmccShortCallAccepted<S> {
   requirePmccOpenPhase(input.currentPhase)
 
   const { openShort } = input
@@ -611,4 +623,47 @@ export function rollPmccShortCall<S extends PmccShortCallTerms>(
   if (firstIssue) throwIssue(firstIssue)
 
   return { phase: 'PMCC_OPEN', openShort, newStrike }
+}
+
+export interface RollPmccLeapsInput {
+  currentPhase: WheelPhase
+  /** The open LEAPS being rolled. */
+  currentLeaps: PmccLegTerms
+  /** The open short call the replacement must cover; `null` when the PMCC holds only its LEAPS. */
+  openShort: PmccLegTerms | null
+  /** The latest fill date among the position's legs (`latestFillDate`); never before the LEAPS' fill. */
+  lastEventDate: string
+  /** The roll's fill date; on/before the current LEAPS' expiration, on/after `lastEventDate`. */
+  fillDate: string
+  newStrike: string
+  newExpiration: string
+  proceedsPerContract: string
+  replacementDebitPerContract: string
+}
+
+export interface RollPmccLeapsAccepted {
+  phase: 'PMCC_OPEN'
+}
+
+/**
+ * [US-105] Validates rolling a PMCC's LEAPS. Rules run in a fixed order and the first failure
+ * throws: phase → proceeds → replacement debit → strike positive → fill date (on/before the
+ * LEAPS' expiration, on/after the last recorded event) → covers the open short → strike below the open short →
+ * after the roll fill → changed. The two shape rules are skipped with no open short. There is
+ * deliberately no on-or-after-current rule. The phase is unchanged.
+ */
+export function rollPmccLeaps(input: RollPmccLeapsInput): RollPmccLeapsAccepted {
+  requirePmccOpenPhase(input.currentPhase)
+  requirePositiveDecimal(input.proceedsPerContract, 'proceedsPerContract', 'Proceeds from close')
+  requirePositiveDecimal(
+    input.replacementDebitPerContract,
+    'replacementDebitPerContract',
+    'Replacement debit'
+  )
+  requirePositiveStrike(input.newStrike, 'newStrike')
+
+  const [firstIssue] = pmccLeapsRollIssues(input)
+  if (firstIssue) throwIssue(firstIssue)
+
+  return { phase: 'PMCC_OPEN' }
 }

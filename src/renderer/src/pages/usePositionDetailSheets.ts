@@ -1,5 +1,10 @@
 import { useCallback, useMemo, useState } from 'react'
-import type { PositionDetail, RollPmccShortCallResponse } from '../api/positions'
+import type {
+  PositionDetail,
+  RollPmccLeapsResponse,
+  RollPmccShortCallResponse
+} from '../api/positions'
+import type { PmccRecordedRoll } from '../lib/pmcc-roll-recorded'
 
 type PositionActiveLeg = NonNullable<PositionDetail['activeLeg']>
 type PositionSnapshot = NonNullable<PositionDetail['costBasisSnapshot']>
@@ -34,6 +39,9 @@ type CallAwayContext = {
   positionOpenedDate: string
 }
 
+/** The roll sheets share one slot, so two can never be open at once. */
+type RollSheet = 'csp' | 'cc' | 'pmccShort' | 'pmccLeaps' | null
+
 type PositionDetailSheetsResult = {
   assignmentWaterfall: Array<{ label: string; amount: string }>
   overlayOpen: boolean
@@ -65,8 +73,13 @@ type PositionDetailSheetsResult = {
   rollPmccShortOpen: boolean
   handleRollPmccShort: () => void
   handleCloseRollPmccShort: () => void
-  pmccRollRecorded: RollPmccShortCallResponse | null
-  handlePmccRollRecorded: (response: RollPmccShortCallResponse) => void
+  rollPmccLeapsOpen: boolean
+  handleRollPmccLeaps: () => void
+  handleCloseRollPmccLeaps: () => void
+  /** One banner slot, so a short-call and a LEAPS roll confirmation can never show at once. */
+  pmccRollRecorded: PmccRecordedRoll | null
+  handlePmccShortRollRecorded: (response: RollPmccShortCallResponse) => void
+  handlePmccLeapsRollRecorded: (response: RollPmccLeapsResponse) => void
 }
 
 function getActiveLegSheetContext(data: PositionDetail | undefined): ActiveLegSheetContext | null {
@@ -117,19 +130,14 @@ export function usePositionDetailSheets(
   const [closeCcCtx, setCloseCcCtx] = useState<CloseCoveredCallContext | null>(null)
   const [callAwayCtx, setCallAwayCtx] = useState<CallAwayContext | null>(null)
   const [ccExpirationCtx, setCcExpirationCtx] = useState<ActiveLegSheetContext | null>(null)
-  const [rollCspOpen, setRollCspOpen] = useState(false)
-  const [rollCcOpen, setRollCcOpen] = useState(false)
-  const [rollPmccShortOpen, setRollPmccShortOpen] = useState(false)
-  const [pmccRollRecorded, setPmccRollRecorded] = useState<RollPmccShortCallResponse | null>(null)
+  const [rollSheet, setRollSheet] = useState<RollSheet>(null)
+  const [pmccRollRecorded, setPmccRollRecorded] = useState<PmccRecordedRoll | null>(null)
 
   const assignmentWaterfall = useMemo(() => getAssignmentWaterfall(data), [data])
   const overlayOpen =
     [expirationCtx, assignmentCtx, openCcCtx, closeCcCtx, callAwayCtx, ccExpirationCtx].some(
       (sheetCtx) => sheetCtx !== null
-    ) ||
-    rollCspOpen ||
-    rollCcOpen ||
-    rollPmccShortOpen
+    ) || rollSheet !== null
 
   const handleOpenCc = useCallback(() => {
     const assignLeg = data?.legs.find((leg) => leg.legRole === 'ASSIGN')
@@ -197,6 +205,17 @@ export function usePositionDetailSheets(
     }
   }, [data])
 
+  const closeRollSheet = (): void => setRollSheet(null)
+  // A new PMCC roll replaces the last one's confirmation.
+  const openPmccRollSheet = (sheet: 'pmccShort' | 'pmccLeaps'): void => {
+    setPmccRollRecorded(null)
+    setRollSheet(sheet)
+  }
+  const recordPmccRoll = (recorded: PmccRecordedRoll): void => {
+    setPmccRollRecorded(recorded)
+    setRollSheet(null)
+  }
+
   return {
     assignmentWaterfall,
     overlayOpen,
@@ -222,22 +241,22 @@ export function usePositionDetailSheets(
       setAssignmentCtx(null)
       setOpenCcCtx(nextContext)
     },
-    rollCspOpen,
-    handleRollCsp: () => setRollCspOpen(true),
-    handleCloseRollCsp: () => setRollCspOpen(false),
-    rollCcOpen,
-    handleRollCc: () => setRollCcOpen(true),
-    handleCloseRollCc: () => setRollCcOpen(false),
-    rollPmccShortOpen,
-    handleRollPmccShort: () => {
-      setPmccRollRecorded(null)
-      setRollPmccShortOpen(true)
-    },
-    handleCloseRollPmccShort: () => setRollPmccShortOpen(false),
+    rollCspOpen: rollSheet === 'csp',
+    handleRollCsp: () => setRollSheet('csp'),
+    handleCloseRollCsp: closeRollSheet,
+    rollCcOpen: rollSheet === 'cc',
+    handleRollCc: () => setRollSheet('cc'),
+    handleCloseRollCc: closeRollSheet,
+    rollPmccShortOpen: rollSheet === 'pmccShort',
+    handleRollPmccShort: () => openPmccRollSheet('pmccShort'),
+    handleCloseRollPmccShort: closeRollSheet,
+    rollPmccLeapsOpen: rollSheet === 'pmccLeaps',
+    handleRollPmccLeaps: () => openPmccRollSheet('pmccLeaps'),
+    handleCloseRollPmccLeaps: closeRollSheet,
     pmccRollRecorded,
-    handlePmccRollRecorded: (response: RollPmccShortCallResponse) => {
-      setPmccRollRecorded(response)
-      setRollPmccShortOpen(false)
-    }
+    handlePmccShortRollRecorded: (result: RollPmccShortCallResponse) =>
+      recordPmccRoll({ kind: 'short', result }),
+    handlePmccLeapsRollRecorded: (result: RollPmccLeapsResponse) =>
+      recordPmccRoll({ kind: 'leaps', result })
   }
 }

@@ -1,6 +1,6 @@
 // [US-63] Watchlist service — add / list / remove; update is [US-69]
 import Database from 'better-sqlite3'
-import Decimal from 'decimal.js'
+import { money4 } from '../../shared/decimal-text'
 import { ValidationError } from '../core/lifecycle'
 import { logger } from '../logger'
 import type { WatchlistEntryPayload, WatchlistEntryRecord } from '../schemas'
@@ -72,8 +72,7 @@ function toStoredFields(payload: WatchlistEntryPayload): {
 } {
   return {
     notes: payload.notes ? payload.notes : null,
-    ownBelowPrice:
-      payload.ownBelowPrice == null ? null : new Decimal(payload.ownBelowPrice).toFixed(4),
+    ownBelowPrice: payload.ownBelowPrice == null ? null : money4(payload.ownBelowPrice),
     ivrTrigger: payload.ivrTrigger ?? null,
     postEarningsOnly: payload.postEarningsOnly ? 1 : 0,
     coreHolding: payload.coreHolding ? 1 : 0

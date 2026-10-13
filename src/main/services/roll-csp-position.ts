@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import Decimal from 'decimal.js'
+import { money4 } from '../../shared/decimal-text'
 import { randomUUID } from 'node:crypto'
 import { calculateRollBasis } from '../core/costbasis'
 import { ValidationError, rollCsp } from '../core/lifecycle'
@@ -29,9 +29,9 @@ export function rollCspPosition(
     throw new ValidationError('__root__', 'no_active_leg', 'Position has no active leg')
   }
 
-  const costToCloseFormatted = new Decimal(payload.costToClosePerContract).toFixed(4)
-  const newPremiumFormatted = new Decimal(payload.newPremiumPerContract).toFixed(4)
-  const newStrikeFormatted = new Decimal(payload.newStrike ?? activeLeg.strike).toFixed(4)
+  const costToCloseFormatted = money4(payload.costToClosePerContract)
+  const newPremiumFormatted = money4(payload.newPremiumPerContract)
+  const newStrikeFormatted = money4(payload.newStrike ?? activeLeg.strike)
 
   // Lifecycle validation
   rollCsp({

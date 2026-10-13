@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js'
+import { fixed4 } from '../../shared/decimal-text'
 
 export const RANK_WINDOW_SESSIONS = 252
 export const MIN_WINDOW_COVERAGE = 200
@@ -50,8 +51,8 @@ export function computeIvMetrics(input: {
   return {
     rank,
     percentile: roundHalfUp(new Decimal(below).div(window.length).times(HUNDRED)),
-    low: low.toFixed(4),
-    high: high.toFixed(4),
+    low: fixed4(low),
+    high: fixed4(high),
     coverage: window.length
   }
 }

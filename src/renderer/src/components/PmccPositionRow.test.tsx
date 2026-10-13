@@ -4,6 +4,8 @@ import type { PmccListItem } from '../api/positions'
 import { PmccPositionRow } from './PmccPositionRow'
 import type { StockQuote } from './PriceCell'
 
+const SHORT = { strike: '110.0000', expiration: '2026-10-16', dte: 32, contracts: 1 }
+
 const PMCC_ITEM: PmccListItem = {
   id: 'pmcc-1',
   ticker: 'XYZ',
@@ -12,7 +14,7 @@ const PMCC_ITEM: PmccListItem = {
   strategyType: 'PMCC',
   pmcc: {
     long: { strike: '80.0000', expiration: '2027-09-17', dte: 368, contracts: 1 },
-    short: { strike: '110.0000', expiration: '2026-10-16', dte: 32, contracts: 1 },
+    short: SHORT,
     basisPerShare: '21.8000',
     basisTotal: '2180.0000'
   },
@@ -132,9 +134,20 @@ it('clicking the row navigates to the position detail', async () => {
 it('renders no target badge and no expiring-soon flag, even with a short call inside 7 DTE', () => {
   renderRow({
     ...PMCC_ITEM,
-    pmcc: { ...PMCC_ITEM.pmcc, short: { ...PMCC_ITEM.pmcc.short, dte: 5 } }
+    pmcc: { ...PMCC_ITEM.pmcc, short: { ...SHORT, dte: 5 } }
   })
   expect(screen.getByText('5d')).toBeInTheDocument()
   expect(screen.queryByTestId('target-badge')).not.toBeInTheDocument()
   expect(screen.queryByTestId('expiring-soon-flag')).not.toBeInTheDocument()
+})
+
+// [US-105] Once the short call expires the row carries the LEAPS only
+it('renders the LEAPS only, with a muted "No short open" for the short side, when no short call is open', () => {
+  renderRow({ ...PMCC_ITEM, pmcc: { ...PMCC_ITEM.pmcc, short: null } })
+  expect(cells()).toHaveLength(10)
+  expect(cells()[5]).toHaveTextContent('$80.00 / No short open')
+  expect(screen.getByText('LEAPS · 2027-09-17')).toBeInTheDocument()
+  expect(screen.queryByText(/^Short · /)).not.toBeInTheDocument()
+  expect(screen.getByText('368d')).toBeInTheDocument()
+  expect(cells()[5].querySelector('.text-wb-text-muted')).toHaveTextContent(/^No short open$/)
 })

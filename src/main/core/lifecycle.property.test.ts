@@ -18,6 +18,7 @@ import {
   recordCallAway,
   rollCc,
   rollCsp,
+  rollPmccLeaps,
   rollPmccShortCall
 } from './lifecycle'
 import type { OpenPmccInput, OpenPmccLegInput, PmccField } from './lifecycle'
@@ -154,6 +155,22 @@ describe('phase guards', () => {
           newExpiration: '2026-02-15',
           costToClosePerContract: '1',
           newPremiumPerContract: '2'
+        })
+    },
+    {
+      name: 'rollPmccLeaps',
+      requiredPhase: 'PMCC_OPEN',
+      run: (currentPhase) =>
+        rollPmccLeaps({
+          currentPhase,
+          currentLeaps: { strike: '80', expiration: '2027-01-15' },
+          openShort: { strike: '110', expiration: DAY },
+          lastEventDate: DAY,
+          fillDate: DAY,
+          newStrike: '85',
+          newExpiration: '2027-06-18',
+          proceedsPerContract: '26',
+          replacementDebitPerContract: '23.5'
         })
     }
   ]
@@ -759,6 +776,188 @@ describe('openPmcc', () => {
             if (!(error instanceof ValidationError)) throw error
             expect(pmccFields).toContain(error.field)
           }
+        }
+      )
+    )
+  })
+})
+
+// [US-105] The LEAPS roll's shape rules hold for every open short call and are skipped without one.
+describe('rollPmccLeaps', () => {
+  // Before every `isoDay` (2020+): the LEAPS and the roll fill then, so no fill-date rule fires
+  // and no generated replacement expires on or before the fill.
+  const BEFORE_EVERY_DAY = '2019-12-31'
+  const plus = (a: string, b: string): string => new Decimal(a).plus(b).toFixed(4)
+
+  /** A current LEAPS and a replacement that differ in strike, expiration, or both. */
+  const changedRoll = fc.oneof(
+    fc.record({
+      strikes: fc.uniqueArray(positiveMoney(), { minLength: 2, maxLength: 2 }),
+      days: fc.tuple(isoDay, isoDay)
+    }),
+    fc.record({
+      strikes: positiveMoney().map((strike) => [strike, strike]),
+      days: fc.uniqueArray(isoDay, { minLength: 2, maxLength: 2 })
+    })
+  )
+
+  it('rejects a replacement expiring on or before the open short, whatever the current LEAPS', () => {
+    fc.assert(
+      fc.property(
+        orderedDays(2),
+        positiveMoney(),
+        positiveMoney(),
+        positiveMoney(),
+        positiveMoney(),
+        positiveMoney(),
+        isoDay,
+        (
+          [newExpiration, shortExpiration],
+          newStrike,
+          strikeGap,
+          currentStrike,
+          proceeds,
+          debit,
+          currentExpiration
+        ) => {
+          const error = validationErrorOf(() =>
+            rollPmccLeaps({
+              currentPhase: 'PMCC_OPEN',
+              currentLeaps: {
+                strike: currentStrike,
+                expiration: currentExpiration
+              },
+              fillDate: BEFORE_EVERY_DAY,
+              lastEventDate: BEFORE_EVERY_DAY,
+              openShort: { strike: plus(newStrike, strikeGap), expiration: shortExpiration },
+              newStrike,
+              newExpiration,
+              proceedsPerContract: proceeds,
+              replacementDebitPerContract: debit
+            })
+          )
+          expect(error.field).toBe('newExpiration')
+          expect(error.code).toBe('long_not_after_short')
+        }
+      )
+    )
+  })
+
+  it('rejects a replacement strike at or above the open short strike', () => {
+    fc.assert(
+      fc.property(
+        strictlyOrderedDays(2),
+        positiveMoney(),
+        nonNegativeMoney(),
+        positiveMoney(),
+        positiveMoney(),
+        positiveMoney(),
+        isoDay,
+        (
+          [shortExpiration, newExpiration],
+          shortStrike,
+          strikeGap,
+          currentStrike,
+          proceeds,
+          debit,
+          currentExpiration
+        ) => {
+          const error = validationErrorOf(() =>
+            rollPmccLeaps({
+              currentPhase: 'PMCC_OPEN',
+              currentLeaps: {
+                strike: currentStrike,
+                expiration: currentExpiration
+              },
+              fillDate: BEFORE_EVERY_DAY,
+              lastEventDate: BEFORE_EVERY_DAY,
+              openShort: { strike: shortStrike, expiration: shortExpiration },
+              newStrike: plus(shortStrike, strikeGap),
+              newExpiration,
+              proceedsPerContract: proceeds,
+              replacementDebitPerContract: debit
+            })
+          )
+          expect(error.field).toBe('newStrike')
+          expect(error.code).toBe('strike_not_below_short')
+        }
+      )
+    )
+  })
+
+  it('applies no shape rule when no short call is open', () => {
+    fc.assert(
+      fc.property(
+        changedRoll,
+        positiveMoney(),
+        positiveMoney(),
+        (
+          { strikes: [currentStrike, newStrike], days: [currentExpiration, newExpiration] },
+          proceeds,
+          debit
+        ) => {
+          expect(
+            rollPmccLeaps({
+              currentPhase: 'PMCC_OPEN',
+              currentLeaps: {
+                strike: currentStrike,
+                expiration: currentExpiration
+              },
+              fillDate: BEFORE_EVERY_DAY,
+              lastEventDate: BEFORE_EVERY_DAY,
+              openShort: null,
+              newStrike,
+              newExpiration,
+              proceedsPerContract: proceeds,
+              replacementDebitPerContract: debit
+            })
+          ).toEqual({ phase: 'PMCC_OPEN' })
+        }
+      )
+    )
+  })
+
+  it('accepts a changed replacement below the short strike and expiring after the short', () => {
+    fc.assert(
+      fc.property(
+        // The current and replacement LEAPS both expire after the short, on distinct days in
+        // either order, so the roll changes its expiration even at an unchanged strike.
+        strictlyOrderedDays(3),
+        fc.boolean(),
+        fc.oneof(
+          fc.uniqueArray(positiveMoney(), { minLength: 2, maxLength: 2 }),
+          positiveMoney().map((strike) => [strike, strike])
+        ),
+        positiveMoney(),
+        positiveMoney(),
+        positiveMoney(),
+        (
+          [shortExpiration, earlier, later],
+          extendsCoverage,
+          [currentStrike, newStrike],
+          strikeGap,
+          proceeds,
+          debit
+        ) => {
+          const [currentExpiration, newExpiration] = extendsCoverage
+            ? [earlier, later]
+            : [later, earlier]
+          expect(
+            rollPmccLeaps({
+              currentPhase: 'PMCC_OPEN',
+              currentLeaps: {
+                strike: currentStrike,
+                expiration: currentExpiration
+              },
+              fillDate: BEFORE_EVERY_DAY,
+              lastEventDate: BEFORE_EVERY_DAY,
+              openShort: { strike: plus(newStrike, strikeGap), expiration: shortExpiration },
+              newStrike,
+              newExpiration,
+              proceedsPerContract: proceeds,
+              replacementDebitPerContract: debit
+            })
+          ).toEqual({ phase: 'PMCC_OPEN' })
         }
       )
     )

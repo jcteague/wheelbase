@@ -24,7 +24,11 @@ import {
   isPriceCeilingInRange,
   isSpreadPercentInRange
 } from './core/screening-criteria'
-import type { PmccLedgerResult, PmccOpeningDebitResult } from './core/costbasis'
+import type {
+  PmccLedgerResult,
+  PmccLedgerWithStrike,
+  PmccOpeningDebitResult
+} from './core/costbasis'
 import type { PmccOpenLegs } from './services/pmcc-ledger'
 export type { PmccOpenLegs }
 import { LegAction, LegRole } from './core/types'
@@ -186,7 +190,8 @@ export interface PmccLegSummary {
   contracts: number
 }
 
-export type PmccListSummary = { long: PmccLegSummary; short: PmccLegSummary } & Pick<
+/** `short` is null between short calls — after one expires or closes and before the next opens. */
+export type PmccListSummary = { long: PmccLegSummary; short: PmccLegSummary | null } & Pick<
   PmccLedgerResult,
   'basisPerShare' | 'basisTotal'
 >
@@ -449,16 +454,26 @@ const RollPayloadBaseSchema = z.object({
   fillDate: z.string().optional()
 })
 
-export interface RollResultBase<Phase extends WheelPhase> {
+// `From`/`To` default to the short-side pair (buy-to-close, sell-to-open); a PMCC LEAPS roll
+// inverts it (sell-to-close the long call, buy-to-open its replacement).
+/** The linked ROLL_FROM / ROLL_TO legs every roll records, under one roll chain. */
+export interface RollLegPair<From extends LegAction = 'BUY', To extends LegAction = 'SELL'> {
+  rollFromLeg: LegRecord & { legRole: 'ROLL_FROM'; action: From }
+  rollToLeg: LegRecord & { legRole: 'ROLL_TO'; action: To }
+  rollChainId: string
+}
+
+export interface RollResultBase<
+  Phase extends WheelPhase,
+  From extends LegAction = 'BUY',
+  To extends LegAction = 'SELL'
+> extends RollLegPair<From, To> {
   position: {
     id: string
     ticker: string
     phase: Phase
     status: 'ACTIVE'
   }
-  rollFromLeg: LegRecord & { legRole: 'ROLL_FROM'; action: 'BUY' }
-  rollToLeg: LegRecord & { legRole: 'ROLL_TO'; action: 'SELL' }
-  rollChainId: string
   costBasisSnapshot: CostBasisSnapshotRecord
 }
 
@@ -481,6 +496,31 @@ export const RollCcPayloadSchema = RollPayloadBaseSchema
 export type RollCcPayload = z.infer<typeof RollCcPayloadSchema>
 
 export type RollCcResult = RollResultBase<'CC_OPEN'>
+
+// ---------------------------------------------------------------------------
+// Roll PMCC LEAPS schemas
+// ---------------------------------------------------------------------------
+
+// Not derived from RollPayloadBaseSchema: a LEAPS roll sells the long call to close and buys the
+// replacement, so the money fields are proceeds and a debit rather than a cost to close and a
+// new premium. The fill date is ISO-checked like the PMCC short roll's, since it orders legs.
+export const RollPmccLeapsPayloadSchema = z.object({
+  positionId: PositionIdSchema,
+  proceedsPerContract: z.number().positive(),
+  replacementDebitPerContract: z.number().positive(),
+  newExpiration: IsoDateSchema,
+  newStrike: z.number().positive().optional(),
+  fillDate: IsoDateSchema.optional()
+})
+
+export type RollPmccLeapsPayload = z.infer<typeof RollPmccLeapsPayloadSchema>
+
+export interface RollPmccLeapsResult extends RollResultBase<'PMCC_OPEN', 'SELL', 'BUY'> {
+  costBasisSnapshot: CostBasisSnapshotRecord & { triggerEvent: 'PMCC_LEAPS_ROLL'; finalPnl: null }
+  /** A LEAPS is open after the roll, so the effective share cost is always known. */
+  ledger: PmccLedgerWithStrike
+  leapsRollNumber: number
+}
 
 // ---------------------------------------------------------------------------
 // Roll PMCC short call schemas

@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
-import Decimal from 'decimal.js'
+import { money4 } from '../../shared/decimal-text'
 import { calculateCallAway } from '../core/costbasis'
 import { recordCallAway, ValidationError } from '../core/lifecycle'
 import { makeSnapshotAt } from '../dates'
@@ -52,7 +52,7 @@ export function recordCallAwayPosition(
   }
 
   const ccStrikeStr = ccOpenLeg.strike
-  const ccStrikeFormatted = new Decimal(ccStrikeStr).toFixed(4)
+  const ccStrikeFormatted = money4(ccStrikeStr)
 
   const existingSnapshot = positionDetail.costBasisSnapshot
   const basisPerShare = existingSnapshot?.basisPerShare ?? '0.0000'

@@ -105,6 +105,22 @@ export const SHORT_ROLL = (): PmccLegEvent => ({
   ]
 })
 
+/** The $112 short from `SHORT_ROLL` expires worthless, leaving only the LEAPS open. */
+export const EXPIRE_2 = (): PmccLegEvent => ({
+  triggerEvent: 'PMCC_SHORT_EXPIRED',
+  eventDate: localDate(95),
+  legs: [
+    row({
+      legRole: 'SHORT_CALL_EXPIRED',
+      action: 'EXPIRE',
+      strike: '112.0000',
+      expiration: localDate(95),
+      premiumPerContract: '0.0000',
+      fillDate: localDate(95)
+    })
+  ]
+})
+
 export const LEAPS_ROLL = (): PmccLegEvent => ({
   triggerEvent: 'PMCC_LEAPS_ROLL',
   eventDate: localDate(84),

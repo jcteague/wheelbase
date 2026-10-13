@@ -12,6 +12,7 @@ import {
   rollCc,
   requirePmccOpenPhase,
   rollPmccShortCall,
+  rollPmccLeaps,
   openPmcc
 } from './lifecycle'
 import type {
@@ -25,7 +26,8 @@ import type {
   RollCcInput,
   OpenPmccInput,
   OpenPmccLegInput,
-  RollPmccShortCallInput
+  RollPmccShortCallInput,
+  RollPmccLeapsInput
 } from './lifecycle'
 
 // ---------------------------------------------------------------------------
@@ -1545,6 +1547,305 @@ describe('rollPmccShortCall', () => {
         }),
         { field: 'newExpiration', code: 'short_not_before_long' }
       )
+    })
+  })
+})
+
+// [US-105] Roll the LEAPS of a PMCC — research.md § ADR "`rollPmccLeaps`" rule table.
+describe('rollPmccLeaps', () => {
+  function validInput(overrides: Partial<RollPmccLeapsInput> = {}): RollPmccLeapsInput {
+    return {
+      currentPhase: 'PMCC_OPEN',
+      currentLeaps: { strike: '80.0000', expiration: '2027-09-17' },
+      openShort: { strike: '112.0000', expiration: '2027-07-16' },
+      lastEventDate: '2027-06-18',
+      fillDate: '2027-07-09',
+      newStrike: '85.0000',
+      newExpiration: '2028-01-21',
+      proceedsPerContract: '26.0000',
+      replacementDebitPerContract: '23.5000',
+      ...overrides
+    }
+  }
+
+  function expectRejection(
+    input: RollPmccLeapsInput,
+    expected: { field: string; code: string; message?: string }
+  ): void {
+    const e = catchValidation(() => rollPmccLeaps(input))
+    expect({ field: e.field, code: e.code, message: e.message }).toMatchObject(expected)
+  }
+
+  const STRIKE_BELOW_SHORT_MESSAGE = 'LEAPS strike must be below the short-call strike ($112.00).'
+  const NO_CHANGE = {
+    field: '__roll__',
+    code: 'no_change',
+    message: 'Roll must change the strike, the expiration, or both'
+  }
+
+  describe('accepts', () => {
+    it('a roll up & out', () => {
+      expect(rollPmccLeaps(validInput())).toEqual({ phase: 'PMCC_OPEN' })
+    })
+
+    it('a roll out at the same strike paid as a debit', () => {
+      expect(
+        rollPmccLeaps(
+          validInput({
+            newStrike: '80.0000',
+            newExpiration: '2028-01-21',
+            proceedsPerContract: '26.0000',
+            replacementDebitPerContract: '29.2000'
+          })
+        )
+      ).toEqual({ phase: 'PMCC_OPEN' })
+    })
+
+    it('a replacement expiring before the current LEAPS but after the short call', () => {
+      expect(
+        rollPmccLeaps(
+          validInput({
+            newStrike: '80.0000',
+            newExpiration: '2027-08-20',
+            proceedsPerContract: '26.0000',
+            replacementDebitPerContract: '26.6000'
+          })
+        )
+      ).toEqual({ phase: 'PMCC_OPEN' })
+    })
+
+    it('a roll up at the same expiration', () => {
+      expect(rollPmccLeaps(validInput({ newExpiration: '2027-09-17' }))).toEqual({
+        phase: 'PMCC_OPEN'
+      })
+    })
+  })
+
+  describe('rejects', () => {
+    it('a position that is not PMCC_OPEN', () => {
+      expectRejection(validInput({ currentPhase: 'CC_OPEN' }), {
+        field: '__phase__',
+        code: 'invalid_phase',
+        message: 'Position is not in PMCC_OPEN phase'
+      })
+    })
+
+    it('zero proceeds from close', () => {
+      expectRejection(validInput({ proceedsPerContract: '0.0000' }), {
+        field: 'proceedsPerContract',
+        code: 'must_be_positive',
+        message: 'Proceeds from close must be greater than zero'
+      })
+    })
+
+    it('a zero replacement debit', () => {
+      expectRejection(validInput({ replacementDebitPerContract: '0.0000' }), {
+        field: 'replacementDebitPerContract',
+        code: 'must_be_positive',
+        message: 'Replacement debit must be greater than zero'
+      })
+    })
+
+    it('a zero replacement strike', () => {
+      expectRejection(validInput({ newStrike: '0.0000' }), {
+        field: 'newStrike',
+        code: 'must_be_positive',
+        message: 'Strike must be positive'
+      })
+    })
+
+    it.each(['2027-07-16', '2027-07-02'])(
+      'a replacement expiring on or before the open short call (%s)',
+      (newExpiration) => {
+        expectRejection(validInput({ newExpiration }), {
+          field: 'newExpiration',
+          code: 'long_not_after_short',
+          message: 'LEAPS call must expire after the short call.'
+        })
+      }
+    )
+
+    it.each(['112.0000', '115.0000'])(
+      'a replacement strike at or above the open short strike (%s)',
+      (newStrike) => {
+        expectRejection(validInput({ newStrike }), {
+          field: 'newStrike',
+          code: 'strike_not_below_short',
+          message: STRIKE_BELOW_SHORT_MESSAGE
+        })
+      }
+    )
+
+    it('a roll that changes neither strike nor expiration', () => {
+      expectRejection(validInput({ newStrike: '80.0000', newExpiration: '2027-09-17' }), NO_CHANGE)
+    })
+
+    it('a fill date before the last recorded event', () => {
+      expectRejection(validInput({ fillDate: '2027-06-17' }), {
+        field: 'fillDate',
+        code: 'before_last_event',
+        message: 'Fill date cannot be before the last recorded event (Jun 18, 2027)'
+      })
+    })
+
+    it('a fill date before the LEAPS was filled, as before the last recorded event', () => {
+      expectRejection(validInput({ lastEventDate: '2026-09-14', fillDate: '2026-09-13' }), {
+        field: 'fillDate',
+        code: 'before_last_event',
+        message: 'Fill date cannot be before the last recorded event (Sep 14, 2026)'
+      })
+    })
+
+    it('a fill date after the LEAPS expired', () => {
+      expectRejection(validInput({ openShort: null, fillDate: '2027-09-18' }), {
+        field: 'fillDate',
+        code: 'close_date_after_expiration',
+        message: 'Fill date cannot be after the LEAPS expiration date'
+      })
+    })
+
+    it('with no short open, a replacement expiring on the roll fill date', () => {
+      expectRejection(validInput({ openShort: null, newExpiration: '2027-07-09' }), {
+        field: 'newExpiration',
+        code: 'expiration_not_after_fill',
+        message: 'Expiration must be after the fill date.'
+      })
+    })
+
+    it('an unchanged strike written at a different scale', () => {
+      expectRejection(validInput({ newStrike: '80', newExpiration: '2027-09-17' }), NO_CHANGE)
+    })
+  })
+
+  describe('rule order', () => {
+    it('reports the phase before the proceeds', () => {
+      expectRejection(validInput({ currentPhase: 'CC_OPEN', proceedsPerContract: '0' }), {
+        field: '__phase__',
+        code: 'invalid_phase'
+      })
+    })
+
+    it('reports the proceeds before the coverage rule', () => {
+      expectRejection(validInput({ proceedsPerContract: '0', newExpiration: '2027-07-16' }), {
+        field: 'proceedsPerContract',
+        code: 'must_be_positive'
+      })
+    })
+
+    it('reports the proceeds before the replacement debit', () => {
+      expectRejection(validInput({ proceedsPerContract: '0', replacementDebitPerContract: '0' }), {
+        field: 'proceedsPerContract',
+        code: 'must_be_positive'
+      })
+    })
+
+    it('reports the replacement debit before a non-positive strike', () => {
+      expectRejection(validInput({ replacementDebitPerContract: '0', newStrike: '0' }), {
+        field: 'replacementDebitPerContract',
+        code: 'must_be_positive'
+      })
+    })
+
+    it('reports a non-positive strike before the coverage rule', () => {
+      expectRejection(validInput({ newStrike: '0', newExpiration: '2027-07-16' }), {
+        field: 'newStrike',
+        code: 'must_be_positive'
+      })
+    })
+
+    it('reports a non-positive strike before the fill-date rule', () => {
+      expectRejection(validInput({ newStrike: '0', fillDate: '2026-09-01' }), {
+        field: 'newStrike',
+        code: 'must_be_positive'
+      })
+    })
+
+    it('reports the proceeds before the fill-date rule', () => {
+      expectRejection(validInput({ proceedsPerContract: '0', fillDate: '2026-09-01' }), {
+        field: 'proceedsPerContract',
+        code: 'must_be_positive'
+      })
+    })
+
+    it('reports the fill-date rule before the coverage rule', () => {
+      expectRejection(validInput({ fillDate: '2026-09-01', newExpiration: '2027-07-16' }), {
+        field: 'fillDate',
+        code: 'before_last_event'
+      })
+    })
+
+    it('reports the strike rule before an expiration on/before the fill', () => {
+      expectRejection(
+        validInput({ fillDate: '2027-09-17', newStrike: '112.0000', newExpiration: '2027-09-17' }),
+        { field: 'newStrike', code: 'strike_not_below_short' }
+      )
+    })
+
+    it('reports the coverage rule before the strike rule', () => {
+      expectRejection(validInput({ newExpiration: '2027-07-16', newStrike: '112.0000' }), {
+        field: 'newExpiration',
+        code: 'long_not_after_short'
+      })
+    })
+
+    it('reports the strike rule at the current expiration, not no-change', () => {
+      expectRejection(validInput({ newStrike: '112.0000', newExpiration: '2027-09-17' }), {
+        field: 'newStrike',
+        code: 'strike_not_below_short'
+      })
+    })
+
+    it('reports the strike rule before no-change for an unchanged LEAPS', () => {
+      expectRejection(
+        validInput({
+          openShort: { strike: '80.0000', expiration: '2027-07-16' },
+          newStrike: '80.0000',
+          newExpiration: '2027-09-17'
+        }),
+        { field: 'newStrike', code: 'strike_not_below_short' }
+      )
+    })
+
+    it('reports the coverage rule before no-change for an unchanged LEAPS', () => {
+      expectRejection(
+        validInput({
+          currentLeaps: { strike: '80.0000', expiration: '2027-07-16' },
+          newStrike: '80.0000',
+          newExpiration: '2027-07-16'
+        }),
+        { field: 'newExpiration', code: 'long_not_after_short' }
+      )
+    })
+  })
+
+  describe('with no open short call', () => {
+    it('accepts a strike at the former short strike', () => {
+      expect(
+        rollPmccLeaps(
+          validInput({ openShort: null, newStrike: '112.0000', newExpiration: '2028-01-21' })
+        )
+      ).toEqual({ phase: 'PMCC_OPEN' })
+    })
+
+    it('accepts an expiration that an open short would leave uncovered', () => {
+      expect(rollPmccLeaps(validInput({ openShort: null, newExpiration: '2027-07-16' }))).toEqual({
+        phase: 'PMCC_OPEN'
+      })
+    })
+
+    it('still rejects a roll that changes neither strike nor expiration', () => {
+      expectRejection(
+        validInput({ openShort: null, newStrike: '80.0000', newExpiration: '2027-09-17' }),
+        NO_CHANGE
+      )
+    })
+
+    it('still rejects zero proceeds from close', () => {
+      expectRejection(validInput({ openShort: null, proceedsPerContract: '0.0000' }), {
+        field: 'proceedsPerContract',
+        code: 'must_be_positive',
+        message: 'Proceeds from close must be greater than zero'
+      })
     })
   })
 })

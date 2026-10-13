@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
-import Decimal from 'decimal.js'
+import { money4 } from '../../shared/decimal-text'
 import { calculateCcClose } from '../core/costbasis'
 import { ValidationError, closeCoveredCall } from '../core/lifecycle'
 import { localToday } from '../dates'
@@ -47,7 +47,7 @@ export function closeCoveredCallPosition(
   })
 
   const closePriceStr = String(payload.closePricePerContract)
-  const closePriceFormatted = new Decimal(closePriceStr).toFixed(4)
+  const closePriceFormatted = money4(closePriceStr)
 
   const { ccLegPnl } = calculateCcClose({
     openPremiumPerContract: ccOpenLeg.premiumPerContract,

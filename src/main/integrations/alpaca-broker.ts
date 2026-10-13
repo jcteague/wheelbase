@@ -1,4 +1,3 @@
-import { Decimal } from 'decimal.js'
 import { createClient } from '@alpacahq/typescript-sdk'
 import {
   BrokerError,
@@ -8,6 +7,7 @@ import {
   type BrokerProvider
 } from './broker-provider'
 import { isNetworkError } from './integration-errors'
+import { money4 } from '../../shared/decimal-text'
 
 export type AlpacaBrokerConfig = {
   keyId: string
@@ -51,10 +51,6 @@ function isAuthError(err: unknown): boolean {
     }
   }
   return false
-}
-
-function toMoney(value: string): string {
-  return new Decimal(value).toFixed(4)
 }
 
 function maskAccountNumber(accountNumber: string): string {
@@ -128,9 +124,9 @@ export class AlpacaBrokerProvider implements BrokerProvider {
     try {
       const account = (await this.lazyClient.getAccount()) as AlpacaAccount
       return {
-        buyingPower: toMoney(account.buying_power),
-        portfolioValue: toMoney(account.portfolio_value),
-        cash: toMoney(account.cash),
+        buyingPower: money4(account.buying_power),
+        portfolioValue: money4(account.portfolio_value),
+        cash: money4(account.cash),
         environment: this.config.environment,
         accountNumberMasked: maskAccountNumber(account.account_number ?? '')
       }

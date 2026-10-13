@@ -12,7 +12,7 @@ import { openCoveredCallPosition } from './open-covered-call-position'
 import { appendPmccSnapshot } from './pmcc-ledger'
 import { createPmccPosition, createPosition, listPositions } from './positions'
 import { rollCspPosition } from './roll-csp-position'
-import { insertLegs, pmccFixtures } from './test-fixtures/pmcc-legs'
+import { insertLegs, pmccFixtures, recordPmccLegEvent } from './test-fixtures/pmcc-legs'
 
 const EXPIRATION = isoDate(37)
 
@@ -359,7 +359,7 @@ describe('listPositions — PMCC summary (US-101)', () => {
       basisTotal: '2300.0000'
     })
     expect(item.pmcc?.long.dte).toBeTypeOf('number')
-    expect(item.pmcc?.short.dte).toBeTypeOf('number')
+    expect(item.pmcc?.short?.dte).toBeTypeOf('number')
     expect(item).toMatchObject({
       strike: null,
       expiration: null,
@@ -415,7 +415,7 @@ describe('listPositions — PMCC summary (US-101)', () => {
     expect(item.pmcc?.basisTotal).toBe('6900.0000')
     expect(item.pmcc?.basisPerShare).toBe('23.0000')
     expect(item.pmcc?.long.contracts).toBe(3)
-    expect(item.pmcc?.short.contracts).toBe(3)
+    expect(item.pmcc?.short?.contracts).toBe(3)
   })
 
   it('computes the basis total from the legs, not basis_per_share × 300 (3 contracts, $0.01 fees → 6900.0200)', () => {
@@ -434,14 +434,16 @@ describe('listPositions — PMCC summary (US-101)', () => {
     )
   })
 
-  it('omits a PMCC whose short leg row is missing and warns pmcc_list_summary_incomplete', () => {
+  it('lists a PMCC whose short leg row is missing with the LEAPS only (short null)', () => {
     const db = makeTestDb()
     const { position, shortLeg } = createPmccPosition(db, makePmccPayload())
     db.prepare('DELETE FROM legs WHERE id = ?').run(shortLeg.id)
-    const warn = vi.spyOn(logger, 'warn')
 
-    expect(listPositions(db)).toEqual([])
-    expect(warn).toHaveBeenCalledWith({ positionId: position.id }, 'pmcc_list_summary_incomplete')
+    const [item] = listPositions(db)
+
+    expect(item.id).toBe(position.id)
+    expect(item.pmcc?.long.strike).toBe('80.0000')
+    expect(item.pmcc?.short).toBeNull()
   })
 
   it('lists a PMCC whose leg fill price is missing, with the basis from its premiums (US-103)', () => {
@@ -534,15 +536,15 @@ describe('listPositions — PMCC running basis (US-103)', () => {
     expect(after.pmcc?.basisPerShare).toBe('21.8000')
     expect(after.pmcc?.basisTotal).toBe('2180.0000')
     expect(after.effectiveCostBasis).toBe('21.8000')
-    // No new LEAPS_OPEN, so the long summary is unchanged.
+    // No LEAPS roll, so the long summary is unchanged.
     expect(after.pmcc?.long).toEqual(before.pmcc?.long)
-    // Shipped US-101 rule: the latest SHORT_CALL_OPEN (SHORT_2) supersedes the opening short.
-    const [short2] = F.SHORT_2
+    // The short-call roll's ROLL_TO is the open short, not the rolled-away SHORT_2.
+    const [, rollTo] = F.SHORT_ROLL
     expect(after.pmcc?.short).toEqual({
-      strike: '108.0000',
-      expiration: short2.expiration,
-      dte: computeDte(short2.expiration),
-      contracts: short2.contracts
+      strike: '112.0000',
+      expiration: rollTo.expiration,
+      dte: computeDte(rollTo.expiration),
+      contracts: rollTo.contracts
     })
   })
 
@@ -570,5 +572,51 @@ describe('listPositions — PMCC running basis (US-103)', () => {
       contracts: 1,
       entryPremiumPerContract: '2.5000'
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// US-105 — the PMCC row's leg summaries follow rolls and expirations
+// ---------------------------------------------------------------------------
+
+describe('listPositions — PMCC open legs (US-105)', () => {
+  it('reports the LEAPS roll ROLL_TO as the long leg ($80 → $85, new expiration)', () => {
+    const db = makeTestDb()
+    const { position } = createPmccPosition(db, makePmccPayload())
+    const F = pmccFixtures(position.id, isoDate)
+    recordPmccLegEvent(db, position.id, F.LEAPS_ROLL, 'PMCC_LEAPS_ROLL')
+
+    const [item] = listPositions(db)
+
+    const [, rollTo] = F.LEAPS_ROLL
+    expect(item.pmcc?.long).toEqual({
+      strike: '85.0000',
+      expiration: rollTo.expiration,
+      dte: computeDte(rollTo.expiration),
+      contracts: 1
+    })
+    expect(item.pmcc?.short?.strike).toBe('110.0000')
+  })
+
+  it('reports no short leg once the short call expired, and still lists the LEAPS', () => {
+    const db = makeTestDb()
+    const { position } = createPmccPosition(db, makePmccPayload())
+    const warn = vi.spyOn(logger, 'warn')
+    recordPmccLegEvent(
+      db,
+      position.id,
+      pmccFixtures(position.id, isoDate).EXPIRE_1,
+      'PMCC_SHORT_EXPIRED'
+    )
+
+    const [item] = listPositions(db)
+
+    expect(item.id).toBe(position.id)
+    expect(item.pmcc?.long.strike).toBe('80.0000')
+    expect(item.pmcc?.short).toBeNull()
+    expect(warn).not.toHaveBeenCalledWith(
+      { positionId: position.id },
+      'pmcc_list_summary_incomplete'
+    )
   })
 })
