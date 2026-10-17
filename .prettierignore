@@ -10,3 +10,7 @@ docs/spec/.extracts/*.md
 # formatter rewrites JSX comments and emphasis chars (*/_), corrupting valid
 # files, so we keep it away from them.
 mockups/*.mdx
+
+# Mutation testing (Stryker) sandbox and reports
+.stryker-tmp
+reports/mutation

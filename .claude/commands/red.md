@@ -56,6 +56,12 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
    - Follow naming: `<module>.test.ts` or `<module>.test.tsx`
    - Use `describe` / `it` / `expect` from Vitest
    - For async tests, use `async`/`await` — no special decorator needed
+   - **Stub the interface before writing tests.** Create every exported function, type and
+     component the tests will import, with its real signature and a body that throws
+     `new Error('not implemented')` (or returns an obviously wrong default such as `null` or
+     `[]` for a renderer hook). Tests then import the real types directly. Never reach a
+     function through a cast like `{ recordAssignment?: … }`, call it with `?.()`, or write
+     an "exports X" test — that scaffolding outlives the red phase and weakens type checking
 
 5. **Write Test Cases**
    - Write tests that describe EXPECTED behaviour, not current behaviour
@@ -63,6 +69,11 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
      - Happy path
      - Edge cases (zero premiums, multiple rolls, negative cost basis)
      - Error / invalid input conditions
+     - Every comparison boundary: a test _at_ the threshold and one either side
+     - Rounding, with an input whose fifth decimal is 5, whenever a test claims to exercise it
+   - Apply the **Test Quality Checklist** in CLAUDE.md to every assertion: assert the value
+     you know (not `toBeDefined`), assert an error's `code` and `field`, pin the clock, query
+     the renderer by role and label
    - Follow project conventions:
      - **TypeScript**: Vitest + `@testing-library/react` for components
      - Descriptive test names: `calculates cost basis after CSP premium collection`
@@ -90,15 +101,20 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
 9. **Every Test Must Fail Because the Feature Doesn't Exist Yet**
    - **CRITICAL**: This is a hard gate. Do not proceed until every new test fails for the correct reason.
    - Acceptable failures:
-     - `ReferenceError` / module-not-found — implementation file doesn't exist yet
-     - Type error — function or type not yet defined
-     - Assertion error — implementation is stubbed and returns wrong result
+     - The stub's `not implemented` error — the interface exists (step 4) but has no behaviour
+     - Assertion error — the stub returns a wrong or default result
+   - **Not acceptable:** module-not-found, `ReferenceError` or a type error. Those prove a file
+     is missing, not that the test can catch a wrong answer — create the typed stub and re-run
    - **Unacceptable failures — fix immediately and re-run:**
      - Syntax errors in the test file itself
      - Broken imports caused by test setup mistakes
      - Fixture errors or missing test dependencies
      - Any failure caused by a bug in the test, not the missing feature
    - Keep fixing and re-running until the only failures are "feature not implemented yet"
+
+9a. **Falsifiability Review** - For each new test ask: _if the implementation returned a plausible wrong value — off by
+one at a boundary, unrounded, an empty list, a different error code, placeholder text —
+would this assertion fail?_ If not, strengthen it (CLAUDE.md § Test Quality Checklist) - Any test whose inputs or expectations depend on today's date pins the clock - Record any assertion deliberately kept weak, and why, in `red-phase-results.md`
 
 10. **Document Test Results**
     - Create `plans/<feature-dir>/red-phase-results.md` with:
@@ -168,7 +184,8 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
 ## Error Conditions
 
 - **ERROR**: User story or plan doesn't exist → request these documents first
-- **ERROR**: Tests pass immediately → implementation already exists (skip red phase or add more tests)
+- **ERROR**: Tests pass immediately → implementation already exists (skip red phase or add more tests). **Exception:** a test written to kill a surviving mutant passes against the real code by design — prove it instead by re-running `pnpm test:mutation --mutate <file>` and confirming the mutant is now `Killed`
+- **ERROR**: A test fails only with module-not-found or a type error → create the typed stub first
 - **ERROR**: Any test fails for a reason other than missing implementation → fix the test, re-run; do not proceed until clean
 - **ERROR**: Core engine test imports from `src/main/db` or `src/main/integrations` → architectural violation, fix the test design
 
@@ -178,6 +195,8 @@ You are implementing the **RED phase** of Test-Driven Development for Wheelbase 
 - ✅ Tests comprehensively cover specified behaviours and edge cases
 - ✅ Every new test fails — and every failure is because the feature is not yet implemented
 - ✅ Zero test failures caused by bugs in the tests themselves
+- ✅ Every interface the tests import exists as a typed stub — no casts or `?.()` to reach it
+- ✅ Every assertion passes the falsifiability review (CLAUDE.md § Test Quality Checklist)
 - ✅ Test names clearly describe expected behaviour
 - ✅ Core engine tests have zero database or broker dependencies
 - ✅ Pure-engine changes carry property tests for their invariants, or `red-phase-results.md` states why none applies

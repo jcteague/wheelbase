@@ -109,6 +109,13 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
    - No regressions in any previously passing tests
    - Run the full suite: `pnpm test`
 
+8a. **Mutation Sweep** (only when this task changed `src/main/core/`) - Run Stryker over the core files you changed — comma-separate several:
+`pnpm test:mutation --mutate src/main/core/<engine>.ts` - It needs no sqlite rebuild: the mutation config runs the pure core suites only - For each `Survived` or `NoCoverage` mutant **on a line this task wrote**, write a test
+that kills it (see `/red` — such a test passes immediately by design), then re-run the
+sweep and confirm it is `Killed`. Never change production code to make a mutant die - A mutant that cannot change behaviour (equivalent) gets
+`// Stryker disable next-line <Mutator>: <reason>` and a line in `green-phase-results.md` - Survivors on lines this task did not touch are pre-existing — list them under
+"Known Limitations" rather than fixing them here
+
 ### Phase 4: Quality Gates
 
 9. **Run All Quality Checks — fix any failures before documenting**
@@ -127,6 +134,8 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
       - Any deviations from the plan and why
       - Known limitations or tech debt (primary input for refactor phase)
       - Full test execution output (all passing)
+      - Mutation sweep result for changed core files: score, mutants killed by new tests,
+        equivalent mutants disabled (with reasons), pre-existing survivors left alone
 
 11. **Prepare for Refactor Phase**
     - Note any code smells introduced in the interest of "minimum viable"
@@ -145,7 +154,8 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
 2. **Test-Driven Behaviour**
    - Run tests every 2–5 minutes of coding
    - Let failing tests tell you exactly what to build next
-   - If a test passes too easily, the test may be insufficient — flag it
+   - If a test passes too easily, the test may be insufficient — the mutation sweep (step 8a)
+     is how you find out; a surviving mutant is a test the red phase still owes
    - If a property test fails, classify the shrunk counterexample before changing anything: the property is wrong (an "iff" over a 4-dp rounded value is the usual case), the spec is ambiguous, or the code is wrong. Only the last is fixed in the implementation; a wrong property is fixed in the test and noted in `green-phase-results.md`
 
 3. **Functional Style**
@@ -196,6 +206,7 @@ You are implementing the **GREEN phase** of Test-Driven Development for Wheelbas
 
 - ✅ Every test from the red phase is now passing
 - ✅ No regressions in previously passing tests
+- ✅ No surviving mutants on core lines this task wrote (or each is recorded as equivalent)
 - ✅ `pnpm lint` passes with no errors
 - ✅ `pnpm typecheck` passes with no errors
 - ✅ Implementation follows architecture rules (pure engines, isolated Alpaca, linked roll pairs, decimal.js money)

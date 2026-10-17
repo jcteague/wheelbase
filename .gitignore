@@ -41,3 +41,7 @@ coverage/
 .claude/settings.local.json
 .env
 .pnpm-store/
+
+# Mutation testing (Stryker)
+.stryker-tmp
+reports/mutation
