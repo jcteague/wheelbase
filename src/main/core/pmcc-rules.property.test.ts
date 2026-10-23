@@ -33,6 +33,14 @@ describe('shortExpiresBeforeLeaps', () => {
       })
     )
   })
+
+  it('always rejects equal expiration dates', () => {
+    fc.assert(
+      fc.property(isoDay, (expiration) => {
+        expect(shortExpiresBeforeLeaps(expiration, expiration)).toBe(false)
+      })
+    )
+  })
 })
 
 describe('pmccCrossLegIssues — coverage rule', () => {
@@ -45,7 +53,9 @@ describe('pmccCrossLegIssues — coverage rule', () => {
           referenceDate: REFERENCE_DATE
         })
         const reported = issues.some(({ code }) => code === SHORT_NOT_BEFORE_LONG.code)
-        expect(reported).toBe(!shortExpiresBeforeLeaps(shortExpiration, longExpiration))
+        const onOrAfter =
+          new Date(`${shortExpiration}T00:00:00Z`) >= new Date(`${longExpiration}T00:00:00Z`)
+        expect(reported).toBe(onOrAfter)
       })
     )
   })

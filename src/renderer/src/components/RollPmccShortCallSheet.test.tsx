@@ -50,7 +50,7 @@ function mockHook(isPending = false): void {
 const onClose = vi.fn()
 const onRecorded = vi.fn()
 
-function renderSheet(): void {
+function renderSheet({ today = TODAY }: { today?: string | null } = {}): void {
   render(
     <RollPmccShortCallSheet
       positionId={PMCC_ID}
@@ -59,7 +59,7 @@ function renderSheet(): void {
       leaps={OPEN_LEAPS}
       basisPerShare="21.2000"
       effectiveShareCost="101.2000"
-      today={TODAY}
+      today={today ?? undefined}
       onClose={onClose}
       onRecorded={onRecorded}
     />
@@ -117,6 +117,24 @@ beforeEach(() => {
 })
 
 describe('RollPmccShortCallSheet — dialog', () => {
+  it('defaults the review and fill date to the New York day at UTC midnight', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-15T01:00:00Z'))
+    try {
+      renderSheet({ today: null })
+      expect(input('pmcc-roll-fill-date')).toHaveValue('2026-09-14')
+      expect(screen.getByTestId('pmcc-coverage-ruler')).toHaveTextContent('2026-09-14')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('uses an explicit valuation date for the review and default fill date', () => {
+    renderSheet({ today: '2026-09-14' })
+    expect(input('pmcc-roll-fill-date')).toHaveValue('2026-09-14')
+    expect(screen.getByTestId('pmcc-coverage-ruler')).toHaveTextContent('2026-09-14')
+  })
+
   it('renders a dialog named Roll Short Call', () => {
     renderSheet()
     expect(screen.getByRole('dialog', { name: 'Roll Short Call' })).toBeInTheDocument()
@@ -206,7 +224,7 @@ describe('RollPmccShortCallSheet — fill date rule', () => {
 })
 
 describe('RollPmccShortCallSheet — server errors', () => {
-  it('a newExpiration error lands beside the expiration', async () => {
+  it('a newExpiration rejection preserves the draft and permits a corrected submission', async () => {
     rejectWith(fieldError('newExpiration', 'Short call must expire before the LEAPS call.'))
     await submitUpOut()
     await waitFor(() =>
@@ -214,6 +232,24 @@ describe('RollPmccShortCallSheet — server errors', () => {
         'Short call must expire before the LEAPS call.'
       )
     )
+    expect(input('pmcc-roll-cost-to-close')).toHaveValue('3.00')
+    expect(input('pmcc-roll-strike')).toHaveValue('112')
+    expect(input('pmcc-roll-premium')).toHaveValue('2.40')
+    expect(input('pmcc-roll-expiration')).toHaveValue('2026-12-18')
+    expect(input('pmcc-roll-fill-date')).toHaveValue(TODAY)
+    expect(screen.getByTestId('pmcc-roll-net')).toHaveTextContent('Net Debit: $0.60')
+    expect(onClose).not.toHaveBeenCalled()
+    expect(onRecorded).not.toHaveBeenCalled()
+
+    fireEvent.change(input('pmcc-roll-expiration'), { target: { value: '2027-02-19' } })
+    await waitFor(() =>
+      expect(fieldOf('pmcc-roll-expiration')).not.toHaveTextContent(
+        'Short call must expire before the LEAPS call.'
+      )
+    )
+    await userEvent.click(confirm())
+    await waitFor(() => expect(mockMutate).toHaveBeenCalledTimes(2))
+    expect(mockMutate.mock.calls[1][0]).toMatchObject({ newExpiration: '2027-02-19' })
   })
 
   it('a fillDate error lands beside the fill date', async () => {

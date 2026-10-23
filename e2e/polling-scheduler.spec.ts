@@ -122,12 +122,16 @@ describe('US-46: PollingScheduler — registry and lifecycle', () => {
     })
     const page = await getPage(app)
 
-    await waitForInvocations(page, 'ext-job', 1)
+    const observationStartedAt = Date.now()
+    const initialCount = await waitForInvocations(page, 'ext-job', 1)
     await new Promise((r) => setTimeout(r, 600))
     const registry = await getSchedulerRegistry(page)
     const job = registry.find((j) => j.name === 'ext-job')
-    // At extendedHoursMs=1000, only the initial tick should have fired within 600ms.
-    expect(job?.invocations).toBe(1)
+    // Boot and IPC can take more than a cadence under load. Measure ticks in the
+    // observation window instead of assuming the browser attached before tick 2.
+    const elapsedMs = Date.now() - observationStartedAt
+    expect(initialCount).toBeGreaterThanOrEqual(1)
+    expect(job!.invocations - initialCount).toBeLessThanOrEqual(Math.ceil(elapsedMs / 1_000))
     expect((job?.cadence as { extendedHoursMs?: number }).extendedHoursMs).toBe(1_000)
   })
 

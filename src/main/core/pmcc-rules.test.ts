@@ -168,6 +168,28 @@ describe('shortExpiresBeforeLeaps', () => {
   it('rejects a short call expiring after the LEAPS', () => {
     expect(shortExpiresBeforeLeaps('2027-10-15', '2027-09-17')).toBe(false)
   })
+
+  it.each([
+    ['2026-10-15', '2026-10-16'],
+    ['2026-09-30', '2026-10-01'],
+    ['2026-12-31', '2027-01-01'],
+    ['2028-02-28', '2028-02-29'],
+    ['2028-02-29', '2028-03-01']
+  ])('preserves strict coverage across calendar boundaries (%s, %s)', (earlier, later) => {
+    expect(shortExpiresBeforeLeaps(earlier, later)).toBe(true)
+    expect(shortExpiresBeforeLeaps(later, earlier)).toBe(false)
+    expect(shortExpiresBeforeLeaps(earlier, earlier)).toBe(false)
+  })
+
+  it.each([
+    ['2027-02-29', '2027-03-01'],
+    ['2027-04-31', '2027-05-01'],
+    ['2027-09-17', '2027-13-01'],
+    ['', '2027-09-17'],
+    ['2027-09-17', 'not-a-date']
+  ])('cannot establish coverage with an invalid calendar date (%s, %s)', (short, long) => {
+    expect(shortExpiresBeforeLeaps(short, long)).toBe(false)
+  })
 })
 
 describe('SHORT_NOT_BEFORE_LONG', () => {

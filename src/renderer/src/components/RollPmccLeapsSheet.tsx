@@ -6,7 +6,7 @@ import type { LegDetail, RollPmccLeapsPayload, RollPmccLeapsResponse } from '../
 import { useRollPmccLeaps } from '../hooks/useRollPmccLeaps'
 import { useRollPmccLeapsForm } from '../hooks/useRollPmccLeapsForm'
 import { useRollSheetSubmit } from '../hooks/useRollSheetSubmit'
-import { localToday } from '../lib/dates'
+import { newYorkToday } from '../lib/dates'
 import type { PmccLeapsLedger } from '../lib/pmcc-roll'
 import { toRollPmccLeapsPayload, type RollPmccLeapsFormValues } from '../schemas/roll-pmcc-leaps'
 import { PmccRollSheetDialog } from './PmccRollSheetDialog'
@@ -55,7 +55,7 @@ export function RollPmccLeapsSheet({
   openShort,
   lastEventDate,
   ledger,
-  today = localToday(),
+  today = newYorkToday(),
   onClose,
   onRecorded
 }: RollPmccLeapsSheetProps): React.JSX.Element {
