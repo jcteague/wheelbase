@@ -16,6 +16,7 @@ export type RuleCode =
   | 'STRIKE_PROXIMITY' // US-55
   | 'EARNINGS_PROXIMITY' // US-56
   | 'COVERED_CALL_BREACH' // US-62
+  | 'PMCC_ASSIGNMENT_RISK' // US-106
 
 /** Largest DTE that still counts as "expiration imminent" (inclusive). */
 const EXPIRATION_IMMINENT_MAX_DTE = 5
@@ -34,6 +35,10 @@ export function resolveManagementWindowDte(
 
 /** Widest gap between stock price and CSP strike that still warns, as a percent. */
 const STRIKE_PROXIMITY_MAX_PERCENT = 1
+
+/** Widest gap below a PMCC short-call strike that still warns, as a percent.
+ *  There is no upper bound: any price at or above the strike also warns. */
+const PMCC_ASSIGNMENT_RISK_MAX_PERCENT_BELOW = 2
 
 /** Largest days-to-earnings that still counts as "earnings proximity" (inclusive). */
 const EARNINGS_PROXIMITY_MAX_DAYS = 10
@@ -91,6 +96,9 @@ export type EarningsProximityInput = Pick<AlertEvaluationInput, 'daysToEarnings'
 
 /** Exactly the fields the COVERED_CALL_BREACH (US-62) helpers read. */
 export type CoveredCallBreachInput = PriceVsStrikeInput
+
+/** Exactly the fields the PMCC_ASSIGNMENT_RISK (US-106) helpers read. */
+export type PmccAssignmentRiskInput = PriceVsStrikeInput
 
 export interface AlertMatch {
   ruleCode: RuleCode
@@ -169,17 +177,35 @@ function proximityPercent(input: PriceVsStrikeInput): Decimal {
   return price.minus(strike).abs().dividedBy(strike).times(100)
 }
 
+/** Which side of the strike the stock trades on; at-the-money reads 'above'. */
+function priceDirection(input: PriceVsStrikeInput): 'above' | 'below' {
+  return new Decimal(input.currentUnderlyingPrice!).gte(input.strike!) ? 'above' : 'below'
+}
+
 function strikeProximitySummary(input: StrikeProximityInput): string {
-  const price = new Decimal(input.currentUnderlyingPrice!)
-  const strike = new Decimal(input.strike!)
   const pct = proximityPercent(input).toFixed(1)
-  const direction = price.gte(strike) ? 'above' : 'below'
+  const direction = priceDirection(input)
   const base = `Stock is ${pct}% ${direction} the ${formatStrike(input.strike)} put strike`
   return direction === 'below' ? `${base} — now in the money` : base
 }
 
 function coveredCallBreachSummary(input: CoveredCallBreachInput): string {
   return `Stock is ${proximityPercent(input).toFixed(1)}% above the ${formatStrike(input.strike)} call strike — shares may be called away`
+}
+
+function pmccAssignmentRiskSummary(input: PmccAssignmentRiskInput): string {
+  const direction = priceDirection(input)
+  const base = `Stock is ${proximityPercent(input).toFixed(1)}% ${direction} the ${formatStrike(input.strike)} short-call strike`
+  return direction === 'below'
+    ? `${base} — approaching assignment`
+    : `${base} — in the money, LEAPS would have to cover`
+}
+
+/** Signed gap of the price below the strike, as an unrounded percent Decimal —
+ *  negative once the price is above the strike. */
+function percentBelowStrike(input: PmccAssignmentRiskInput): Decimal {
+  const strike = new Decimal(input.strike!)
+  return strike.minus(input.currentUnderlyingPrice!).dividedBy(strike).times(100)
 }
 
 function earningsProximitySummary(input: EarningsProximityInput): string {
@@ -217,9 +243,10 @@ const missingDteReason = (input: AlertEvaluationInput): string | null =>
   input.dte === null ? MISSING_DTE : null
 
 /** Skip guard shared by the price-vs-strike rules (STRIKE_PROXIMITY,
- *  COVERED_CALL_BREACH). When the rule's phase is active, both the underlying
- *  price and the strike must be numeric, else the rule skips with a reason
- *  rather than throwing on a malformed value or silently resolving on a null. */
+ *  COVERED_CALL_BREACH, PMCC_ASSIGNMENT_RISK). When the rule's phase is
+ *  active, both the underlying price and the strike must be numeric, else the
+ *  rule skips with a reason rather than throwing on a malformed value or
+ *  silently resolving on a null. */
 const priceVsStrikeMissingData =
   (phase: WheelPhase) =>
   (input: AlertEvaluationInput): string | null => {
@@ -296,6 +323,15 @@ const RULES: RuleDefinition[] = [
     test: (input) =>
       input.phase === 'CC_OPEN' && new Decimal(input.currentUnderlyingPrice!).gte(input.strike!),
     summary: coveredCallBreachSummary
+  },
+  {
+    code: 'PMCC_ASSIGNMENT_RISK',
+    urgency: 'medium',
+    missingData: priceVsStrikeMissingData('PMCC_OPEN'),
+    test: (input) =>
+      input.phase === 'PMCC_OPEN' &&
+      percentBelowStrike(input).lte(PMCC_ASSIGNMENT_RISK_MAX_PERCENT_BELOW),
+    summary: pmccAssignmentRiskSummary
   }
 ]
 

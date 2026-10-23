@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { evaluatePosition } from './alerts'
-import type { AlertEvaluationInput } from './alerts'
+import type { AlertEvaluationInput, AlertMatch, SkippedRule } from './alerts'
+import { WheelPhase } from './types'
 
 function makeInput(overrides: Partial<AlertEvaluationInput> = {}): AlertEvaluationInput {
   return {
@@ -693,5 +694,126 @@ describe('evaluatePosition — resolved thresholds (US-57/58)', () => {
   it('pre-existing default-21 MANAGEMENT_WINDOW behavior is unchanged when no override is passed', () => {
     const { matches } = evaluatePosition(makeInput({ dte: 21 }))
     expect(matches.find((m) => m.ruleCode === 'MANAGEMENT_WINDOW')).toBeDefined()
+  })
+})
+
+// [US-106] PMCC short-call assignment-risk alert
+describe('evaluatePosition — PMCC_ASSIGNMENT_RISK (US-106)', () => {
+  const pmccInput = (overrides: Partial<AlertEvaluationInput> = {}): AlertEvaluationInput =>
+    makeInput({
+      phase: 'PMCC_OPEN',
+      instrumentType: 'CALL',
+      strike: '110.0000',
+      dte: 18,
+      expiration: '2026-10-16',
+      currentUnderlyingPrice: '105.00',
+      ...overrides
+    })
+
+  const pmccMatch = (input: AlertEvaluationInput): AlertMatch | undefined =>
+    evaluatePosition(input).matches.find((m) => m.ruleCode === 'PMCC_ASSIGNMENT_RISK')
+
+  const pmccSkip = (input: AlertEvaluationInput): SkippedRule | undefined =>
+    evaluatePosition(input).skipped.find((s) => s.ruleCode === 'PMCC_ASSIGNMENT_RISK')
+
+  it.each([
+    ['107.80', 'Stock is 2.0% below the $110.00 short-call strike — approaching assignment'],
+    ['108.35', 'Stock is 1.5% below the $110.00 short-call strike — approaching assignment'],
+    [
+      '110.00',
+      'Stock is 0.0% above the $110.00 short-call strike — in the money, LEAPS would have to cover'
+    ],
+    [
+      '112.53',
+      'Stock is 2.3% above the $110.00 short-call strike — in the money, LEAPS would have to cover'
+    ],
+    [
+      '118.80',
+      'Stock is 8.0% above the $110.00 short-call strike — in the money, LEAPS would have to cover'
+    ]
+  ])('fires at price %s with medium urgency and the story summary', (price, summary) => {
+    expect(pmccMatch(pmccInput({ currentUnderlyingPrice: price }))).toEqual({
+      ruleCode: 'PMCC_ASSIGNMENT_RISK',
+      urgency: 'medium',
+      summary,
+      quickAction: 'Review position'
+    })
+  })
+
+  it.each(['107.70', '105.00'])('does not fire at price %s (more than 2%% below)', (price) => {
+    expect(pmccMatch(pmccInput({ currentUnderlyingPrice: price }))).toBeUndefined()
+  })
+
+  it('does not fire at 107.7999 — a value that only displays as 2.0% below must not enter through rounding', () => {
+    expect(pmccMatch(pmccInput({ currentUnderlyingPrice: '107.7999' }))).toBeUndefined()
+  })
+
+  it.each([null, 'N/A', 'NaN', 'Infinity'])(
+    'skips with missing_underlying_price (never throws) when the price is %s',
+    (price) => {
+      const input = pmccInput({ currentUnderlyingPrice: price })
+      expect(pmccMatch(input)).toBeUndefined()
+      expect(pmccSkip(input)).toEqual({
+        ruleCode: 'PMCC_ASSIGNMENT_RISK',
+        reason: 'missing_underlying_price'
+      })
+    }
+  )
+
+  it.each([null, 'bad'])(
+    'skips with missing_strike when the strike is %s but the price is valid',
+    (strike) => {
+      const input = pmccInput({ strike, currentUnderlyingPrice: '112.53' })
+      expect(pmccMatch(input)).toBeUndefined()
+      expect(pmccSkip(input)).toEqual({
+        ruleCode: 'PMCC_ASSIGNMENT_RISK',
+        reason: 'missing_strike'
+      })
+    }
+  )
+
+  it.each(WheelPhase.options.filter((phase) => phase !== 'PMCC_OPEN'))(
+    'produces neither a match nor a skip for %s, even without a quote',
+    (phase) => {
+      for (const price of ['118.80', null]) {
+        const input = pmccInput({ phase, currentUnderlyingPrice: price })
+        expect(pmccMatch(input)).toBeUndefined()
+        expect(pmccSkip(input)).toBeUndefined()
+      }
+    }
+  )
+
+  it('co-fires with EXPIRATION_IMMINENT at 4 DTE and never fires the wheel price-vs-strike rules', () => {
+    const { matches } = evaluatePosition(pmccInput({ dte: 4, currentUnderlyingPrice: '112.53' }))
+    const codes = matches.map((m) => m.ruleCode).sort()
+    expect(codes).toEqual(['EXPIRATION_IMMINENT', 'PMCC_ASSIGNMENT_RISK'])
+    expect(matches.find((m) => m.ruleCode === 'EXPIRATION_IMMINENT')?.summary).toBe(
+      'Expires in 4 days at $110.00 strike'
+    )
+  })
+
+  it('leaves the wheel rules unchanged: MSFT CC $420 at $415 has no breach, AAPL CSP $180 at $178.50 keeps its put summary', () => {
+    const msft = evaluatePosition(
+      makeInput({
+        phase: 'CC_OPEN',
+        instrumentType: 'CALL',
+        dte: 30,
+        strike: '420.0000',
+        currentUnderlyingPrice: '415.00'
+      })
+    )
+    expect(msft.matches.map((m) => m.ruleCode)).toEqual([])
+
+    const aapl = evaluatePosition(
+      makeInput({ dte: 30, strike: '180.0000', currentUnderlyingPrice: '178.50' })
+    )
+    expect(aapl.matches).toEqual([
+      {
+        ruleCode: 'STRIKE_PROXIMITY',
+        urgency: 'medium',
+        summary: 'Stock is 0.8% below the $180.00 put strike — now in the money',
+        quickAction: 'Review position'
+      }
+    ])
   })
 })

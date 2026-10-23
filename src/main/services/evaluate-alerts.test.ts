@@ -38,6 +38,29 @@ vi.mock('../integrations/finnhub-earnings', () => ({
   fetchEarningsCalendar: vi.fn(async () => ({}))
 }))
 
+// Evaluation-failure seam: `evaluatePosition` throws for the listed position ids and
+// runs the real engine for every other row.
+const { evaluationFailure } = vi.hoisted(() => ({
+  evaluationFailure: { positionIds: new Set<string>() }
+}))
+
+vi.mock('../core/alerts', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../core/alerts')>()
+  return {
+    ...original,
+    evaluatePosition: (input: Parameters<typeof original.evaluatePosition>[0]) => {
+      if (evaluationFailure.positionIds.has(input.positionId)) {
+        throw new Error('simulated evaluation failure')
+      }
+      return original.evaluatePosition(input)
+    }
+  }
+})
+
+beforeEach(() => {
+  evaluationFailure.positionIds.clear()
+})
+
 // ---------------------------------------------------------------------------
 // Fixtures + raw-insert seed helpers (fully deterministic DTE control)
 // ---------------------------------------------------------------------------
@@ -489,6 +512,50 @@ describe('evaluateAlerts', () => {
     expect(open.find((a) => a.positionId === 'pos-badstrike')?.ruleCode).toBe('EXPIRATION_IMMINENT')
   })
 
+  it('keeps a position’s open alert when its evaluation throws, while other positions still evaluate', async () => {
+    seedEvaluablePosition(db, {
+      id: 'pos-broken',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      strike: '180.0000',
+      expiration: expirationForDte(5)
+    })
+    seedEvaluablePosition(db, {
+      id: 'pos-healthy',
+      ticker: 'MSFT',
+      phase: 'CSP_OPEN',
+      strike: '400.0000',
+      expiration: expirationForDte(5)
+    })
+    await evaluateAlerts({
+      db,
+      now: NOW,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings()
+    })
+    evaluationFailure.positionIds.add('pos-broken')
+    const logger = makeSpyLogger()
+
+    const result = await evaluateAlerts({
+      db,
+      now: LATER,
+      provider: inertProvider(),
+      fetchEarnings: inertEarnings(),
+      logger
+    })
+
+    expect(result.resolvedCount).toBe(0)
+    expect(
+      listOpenAlerts(db)
+        .map((a) => a.positionId)
+        .sort()
+    ).toEqual(['pos-broken', 'pos-healthy'])
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ positionId: 'pos-broken' }),
+      'alert_evaluation_failed'
+    )
+  })
+
   // ---------------------------------------------------------------------------
   // [US-59] Dismissal-aware evaluation — clearStaleDismissals wired into the
   // persist transaction alongside resolveAlertsNotIn.
@@ -622,11 +689,12 @@ describe('evaluateAlerts', () => {
 })
 
 // ---------------------------------------------------------------------------
-// [US-101] PMCC positions are skipped by the wheel-only alert job
+// [US-101 → US-106] A PMCC is evaluated through its short call, by the generic
+// short-leg rules only — never the wheel-specific ones
 // ---------------------------------------------------------------------------
 
-describe('evaluateAlerts — PMCC positions (US-101)', () => {
-  it('produces no alert and no error for a PMCC_OPEN position whose short call is in the window', async () => {
+describe('evaluateAlerts — PMCC positions (US-101, US-106)', () => {
+  it('fires EXPIRATION_IMMINENT for a 5-DTE PMCC short call, with no wheel-specific rule and no error', async () => {
     const db = makeTestDb()
     db.prepare(
       `INSERT INTO positions
@@ -660,8 +728,14 @@ describe('evaluateAlerts — PMCC positions (US-101)', () => {
       logger
     })
 
-    expect(result.createdCount).toBe(0)
-    expect(readAlertRows(db)).toHaveLength(0)
+    expect(result.createdCount).toBe(1)
+    expect(readAlertRows(db)).toEqual([
+      expect.objectContaining({
+        position_id: 'pos-pmcc',
+        rule_code: 'EXPIRATION_IMMINENT',
+        summary: 'Expires in 5 days at $110.00 strike'
+      })
+    ])
     expect(logger.error).not.toHaveBeenCalled()
   })
 })

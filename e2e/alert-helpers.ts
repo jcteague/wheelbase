@@ -91,7 +91,8 @@ export function readAlertRows(dbPath: string): AlertRow[] {
       encoding: 'utf8'
     }
   )
-  return JSON.parse(output) as AlertRow[]
+  // `sqlite3 -json` prints nothing at all, not `[]`, for an empty result.
+  return output.trim() === '' ? [] : (JSON.parse(output) as AlertRow[])
 }
 
 /**

@@ -35,6 +35,15 @@ Do not infer closure merely from a past expiration date: closure follows recorde
 leg events. Do not introduce a new PMCC phase for this story. Do not populate the
 legacy `GetPositionResult.activeLeg` for PMCC.
 
+**Known gap (accepted at review, 2026-10-17).** When US-106 shipped, no production
+path wrote `SHORT_CALL_EXPIRED`, `SHORT_CALL_CLOSE` or `SHORT_CALL_ASSIGNED`; only the
+`_test:pmcc-record-leg-event` hook did. Until US-119 ([OPT-25](https://linear.app/optionswheel/issue/OPT-25))
+records expiration/close and US-111 ([OPT-19](https://linear.app/optionswheel/issue/OPT-19))
+records assignment, a short past its expiration date remains the current short, and
+`PMCC_ASSIGNMENT_RISK` keeps firing while the stock is above its strike. Those stories
+close the gap by writing the closing leg; the alert service needs no change. Both
+issues carry a comment with the details and the e2e follow-up for S6.
+
 Selection failure is not a null short. Track failed candidate ids in a local
 `Set<string>`, log `alert_evaluation_failed`, and preserve the keys of their existing
 open/dismissed rows in the final keep-open set. Read those keys only for failed ids,

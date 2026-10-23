@@ -1,12 +1,13 @@
 # Management Alerts
 
-<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56,us-59,us-62,us-70 -->
+<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56,us-59,us-62,us-70,us-106 -->
 
 ## Overview
 
 Management alerts are the queue of "something needs your attention" signals the
-app raises against active wheel positions. A scheduled job evaluates every active
-CSP/CC position against a set of built-in rules and persists the results in the
+app raises against active positions. A scheduled job evaluates every active
+CSP/CC wheel position — and, since US-106, every active PMCC's current short call —
+against a set of built-in rules and persists the results in the
 `alerts` table, where each alert is deduplicated per `(position, rule)`, updated
 in place while its condition holds, and resolved (never deleted) once the
 condition clears. The evaluation engine is a pure function; persistence,
@@ -68,24 +69,40 @@ up-and-out or accept the shares being called away. It reuses the `strike` and
 `currentUnderlyingPrice` inputs the market-data rules already carry, needs no
 schema/IPC/renderer change, and co-fires independently of the DTE rules.
 
+US-106 adds `PMCC_ASSIGNMENT_RISK` and, with it, makes PMCC positions evaluable for
+the first time. The evaluated leg is the PMCC's **current short call**, chosen by
+replaying the position's leg ledger (`currentShortCallLeg`) — never the LEAPS. The
+rule is a one-sided floor: it opens once the underlying is within 2% **below** the
+short strike and stays open at any price at or above it, because a PMCC has no
+shares to deliver and the time to roll up-and-out is on the way up. The generic
+short-leg rules (`EXPIRATION_IMMINENT`, `MANAGEMENT_WINDOW`, `PROFIT_TARGET`,
+`EARNINGS_PROXIMITY`) ride along on that short; the wheel-only rules stay
+phase-gated. The management queue shows a `PMCC · short call` badge in place of
+the phase badge on PMCC rows. No schema, migration, or production IPC change. See
+[US-106](../features/us-106-pmcc-assignment-risk-alert.md) and
+[pmcc-alerts-select-current-short-by-ledger-replay](../architecture/02-adrs/pmcc-alerts-select-current-short-by-ledger-replay.md).
+
 <!-- /generated -->
 
-<!-- generated:from us-50,us-52,us-53-54-55,us-56,us-57-58,us-62 -->
+<!-- generated:from us-50,us-52,us-53-54-55,us-56,us-57-58,us-62,us-106 -->
 
 ## Built-in rules
 
 Each rule is a pure predicate over a position's current active option leg (plus,
 for the market-data rules, the pre-fetched live prices, and for the earnings
-rule, the pre-fetched next-earnings date).
+rule, the pre-fetched next-earnings date). For a PMCC the "active leg" is its
+current short call (US-106); "any open short leg" below therefore covers CSP, CC,
+and the PMCC short call.
 
-| Rule code             | Urgency | Applies to                    | Triggers when                                                                                                     | Summary template                                                              | Quick action      |
-| --------------------- | ------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------- |
-| `EXPIRATION_IMMINENT` | high    | any open short leg (CSP / CC) | active leg `0 ≤ dte ≤ 5`                                                                                          | `Expires in {dte} days at ${strike} strike`                                   | `Review position` |
-| `MANAGEMENT_WINDOW`   | medium  | any open short leg (CSP / CC) | active leg `6 ≤ dte ≤ managementWindowDte` (resolved: per-position override → saved global default → built-in 21) | `{dte} DTE remaining — review for roll or close`                              | `Review position` |
-| `PROFIT_TARGET`       | low     | any open short leg (CSP / CC) | captured profit `% ≥ target` (resolved: per-position override → saved global default → built-in 50%)              | `{pct}% of max profit captured — consider closing`                            | `Review position` |
-| `STRIKE_PROXIMITY`    | medium  | CSP only (`CSP_OPEN`)         | `proximityPct = \|price − strike\| / strike × 100 ≤ 1`                                                            | `Stock is {pct}% {above\|below} the ${strike} put strike`                     | `Review position` |
-| `EARNINGS_PROXIMITY`  | medium  | any open short leg (CSP / CC) | `0 ≤ daysToEarnings ≤ 10` **and** `daysToEarnings ≤ dte`                                                          | `Earnings {today\|in 1 day\|in {N} days} before your {YYYY-MM-DD} expiration` | `Review position` |
-| `COVERED_CALL_BREACH` | medium  | CC only (`CC_OPEN`)           | `price ≥ strike` (the short call is at/in the money)                                                              | `Stock is {pct}% above the ${strike} call strike — shares may be called away` | `Review position` |
+| Rule code              | Urgency | Applies to                                  | Triggers when                                                                                                     | Summary template                                                                                                                                                                     | Quick action      |
+| ---------------------- | ------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- |
+| `EXPIRATION_IMMINENT`  | high    | any open short leg (CSP / CC)               | active leg `0 ≤ dte ≤ 5`                                                                                          | `Expires in {dte} days at ${strike} strike`                                                                                                                                          | `Review position` |
+| `MANAGEMENT_WINDOW`    | medium  | any open short leg (CSP / CC)               | active leg `6 ≤ dte ≤ managementWindowDte` (resolved: per-position override → saved global default → built-in 21) | `{dte} DTE remaining — review for roll or close`                                                                                                                                     | `Review position` |
+| `PROFIT_TARGET`        | low     | any open short leg (CSP / CC)               | captured profit `% ≥ target` (resolved: per-position override → saved global default → built-in 50%)              | `{pct}% of max profit captured — consider closing`                                                                                                                                   | `Review position` |
+| `STRIKE_PROXIMITY`     | medium  | CSP only (`CSP_OPEN`)                       | `proximityPct = \|price − strike\| / strike × 100 ≤ 1`                                                            | `Stock is {pct}% {above\|below} the ${strike} put strike`                                                                                                                            | `Review position` |
+| `EARNINGS_PROXIMITY`   | medium  | any open short leg (CSP / CC)               | `0 ≤ daysToEarnings ≤ 10` **and** `daysToEarnings ≤ dte`                                                          | `Earnings {today\|in 1 day\|in {N} days} before your {YYYY-MM-DD} expiration`                                                                                                        | `Review position` |
+| `COVERED_CALL_BREACH`  | medium  | CC only (`CC_OPEN`)                         | `price ≥ strike` (the short call is at/in the money)                                                              | `Stock is {pct}% above the ${strike} call strike — shares may be called away`                                                                                                        | `Review position` |
+| `PMCC_ASSIGNMENT_RISK` | medium  | PMCC only (`PMCC_OPEN`), current short call | unrounded signed `(strike − price) / strike × 100 ≤ 2` (no upper bound)                                           | `Stock is {pct}% below the ${strike} short-call strike — approaching assignment` / `Stock is {pct}% above the ${strike} short-call strike — in the money, LEAPS would have to cover` | `Review position` |
 
 `{strike}` is formatted to two decimals with a leading `$` via `decimal.js`
 (`new Decimal(strike).toFixed(2)`); `{pct}` is formatted to one decimal. The two
@@ -137,6 +154,20 @@ open alert resolves on the next run. The 10-day bound is the fixed built-in
 adapts to the day count — `Earnings today …` at 0, `Earnings in 1 day …` at 1,
 plural `Earnings in {N} days …` otherwise (post-review fix; the original
 always-plural template rendered "Earnings in 1 days" at the most urgent moment).
+
+`PMCC_ASSIGNMENT_RISK` (US-106) matches only `PMCC_OPEN`; every other phase gets
+neither a match nor a skip. Its threshold is the fixed built-in
+`PMCC_ASSIGNMENT_RISK_MAX_PERCENT_BELOW = 2` (`src/main/core/alerts.ts`) — not
+configurable. The predicate uses the **signed, unrounded** Decimal distance, so a
+deep-in-the-money call (negative distance) stays matched and a price such as
+107.7999 against a $110 strike — which _displays_ as "2.0% below" — stays outside
+the band. The summary shows the rounded magnitude via the shared
+`proximityPercent` and the direction via `priceDirection` (shared with
+`STRIKE_PROXIMITY`; at-the-money reads "0.0% above"). Unlike `STRIKE_PROXIMITY`'s
+two-sided band, this is a floor with no ceiling: a stock running through the strike
+keeps the alert open. It co-fires with the generic rules — a 4-DTE PMCC short can
+hold a HIGH `EXPIRATION_IMMINENT` and a MED `PMCC_ASSIGNMENT_RISK` at once — while
+`STRIKE_PROXIMITY` and `COVERED_CALL_BREACH` never fire on a PMCC.
 
 <!-- /generated -->
 
@@ -196,7 +227,7 @@ an e2e test for each direction.
 
 <!-- /generated -->
 
-<!-- generated:from us-50,us-59 -->
+<!-- generated:from us-50,us-59,us-106 -->
 
 ## Alert lifecycle
 
@@ -247,9 +278,19 @@ then reopen the alert with a fresh `triggered_at` on a transient snapshot gap
 "condition cleared" means precisely the same thing for a dismissed alert as it
 already does for an open one.
 
+A position that drops out of the evaluable set resolves the same way. For a PMCC
+(US-106) that means: once replay finds **no current short call** (expired, closed,
+or assigned leg recorded), the position is excluded and its prior alerts resolve;
+rolling the short to a strike outside the band resolves `PMCC_ASSIGNMENT_RISK` on
+the next run. A PMCC whose leg history **cannot be read or replayed** is different
+— its state is unknown, not confirmed closed — so the keys of its existing
+open/dismissed rows are added to the keep-open set and nothing resolves for it.
+(The pre-existing wheel behaviour, where a row whose `evaluatePosition` throws
+still has its alerts resolved, is unchanged.)
+
 <!-- /generated -->
 
-<!-- generated:from us-53-54-55,us-56,us-62,us-70 -->
+<!-- generated:from us-53-54-55,us-56,us-62,us-70,us-106 -->
 
 ## Skip reasons & missing-data handling
 
@@ -259,16 +300,17 @@ logs each skip at DEBUG (`alert_rule_skipped`). US-50 shipped this for DTE; the
 market-data rules generalized it from a single `requiresDte` boolean into a
 per-rule `missingData` function that returns a reason string (or `null` to
 proceed). Each rule owns its own guard, so one rule's missing input never
-suppresses another's alert. The six reason strings and the rule each guards:
+suppresses another's alert. The reason strings and the rule each guards:
 
-| Reason string                 | Rule guarded                                                     | Fires when                                                                                       |
-| ----------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `missing_dte`                 | `EXPIRATION_IMMINENT`, `MANAGEMENT_WINDOW`, `EARNINGS_PROXIMITY` | `dte` is null (expiration unknown or unparseable — `computeDte` returns null, never NaN)         |
-| `missing_option_mark`         | `PROFIT_TARGET`                                                  | entry premium, contracts, or the live option mid is absent                                       |
-| `invalid_profit_target_input` | `PROFIT_TARGET`                                                  | premium is non-positive or contracts is not a positive integer (would throw the P&L math)        |
-| `missing_underlying_price`    | `STRIKE_PROXIMITY`, `COVERED_CALL_BREACH`                        | position is `CSP_OPEN` (proximity) or `CC_OPEN` (breach) and the live underlying price is absent |
-| `missing_expiration`          | `EARNINGS_PROXIMITY`                                             | `expiration` is null while `dte` is not — the summary interpolates it, so it is guarded          |
-| `missing_earnings_date`       | `EARNINGS_PROXIMITY`                                             | `daysToEarnings` is null (no event in the fetch window, feed failed, or unparseable date)        |
+| Reason string                 | Rule guarded                                                      | Fires when                                                                                                                    |
+| ----------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `missing_dte`                 | `EXPIRATION_IMMINENT`, `MANAGEMENT_WINDOW`, `EARNINGS_PROXIMITY`  | `dte` is null (expiration unknown or unparseable — `computeDte` returns null, never NaN)                                      |
+| `missing_option_mark`         | `PROFIT_TARGET`                                                   | entry premium, contracts, or the live option mid is absent                                                                    |
+| `invalid_profit_target_input` | `PROFIT_TARGET`                                                   | premium is non-positive or contracts is not a positive integer (would throw the P&L math)                                     |
+| `missing_underlying_price`    | `STRIKE_PROXIMITY`, `COVERED_CALL_BREACH`, `PMCC_ASSIGNMENT_RISK` | position is in the rule's phase (`CSP_OPEN` / `CC_OPEN` / `PMCC_OPEN`) and the live underlying price is absent or non-numeric |
+| `missing_strike`              | `STRIKE_PROXIMITY`, `COVERED_CALL_BREACH`, `PMCC_ASSIGNMENT_RISK` | position is in the rule's phase and the leg strike is non-numeric                                                             |
+| `missing_expiration`          | `EARNINGS_PROXIMITY`                                              | `expiration` is null while `dte` is not — the summary interpolates it, so it is guarded                                       |
+| `missing_earnings_date`       | `EARNINGS_PROXIMITY`                                              | `daysToEarnings` is null (no event in the fetch window, feed failed, or unparseable date)                                     |
 
 `invalid_profit_target_input` came from the post-review hardening pass: without it
 a stored non-positive premium/contracts would make `computeUnrealizedPnl` throw
@@ -281,11 +323,45 @@ flat `null → skip` matches every existing rule input. The earnings fetch windo
 7-day lookback exists so a just-passed event still produces a (negative)
 `daysToEarnings` and resolves the open alert rather than freezing it on a skip.
 
+The three price-vs-strike rules share one guard factory,
+`priceVsStrikeMissingData(phase)`; outside its phase a rule returns neither a skip
+nor a match. US-106 added no new reason: a PMCC with a missing quote records
+`missing_underlying_price` (logged as DEBUG `alert_rule_skipped`), and the open
+`PMCC_ASSIGNMENT_RISK` alert keeps its previous summary. (`missing_strike` predates
+US-106 and is listed here for completeness.)
+
 <!-- /generated -->
 
-<!-- generated:from us-53-54-55,us-56,us-62,us-70 -->
+<!-- generated:from us-53-54-55,us-56,us-62,us-70,us-106 -->
 
-## Live market-data enrichment & failure isolation
+## Evaluable-position selection, live market-data enrichment & failure isolation
+
+### Selecting evaluable positions
+
+Wheel positions are selected by the existing `EVALUABLE_QUERY` with the shared
+`activeLegSubquery()` (`src/main/services/active-leg-sql.ts`), deliberately left
+unchanged by US-106 — it also serves `get-position.ts` and `list-positions.ts`,
+and broadening it would populate PMCC's intentionally null legacy `activeLeg`.
+PMCCs are selected separately in `evaluate-alerts.ts`: `PMCC_CANDIDATE_QUERY`
+picks ACTIVE PMCC positions in `PMCC_OPEN`, their legs are bulk-loaded with
+`readLegsByPosition`, and `currentShortCallLeg` (`src/main/services/pmcc-ledger.ts`)
+replays each history to find the current short — handling paired rolls, ignoring
+LEAPS rolls, and clearing expired/closed/assigned shorts. A non-null short is
+mapped onto the ordinary `EvaluableRow` shape (its strike, expiration, premium,
+contracts, and CALL OCC symbol) before the market-data prefetch, so only the
+short's OCC symbol is ever requested; a null short excludes the position. This is
+the module-private `loadPmccEvaluableRows({ db, failedIds, logger })`. See
+[pmcc-alerts-select-current-short-by-ledger-replay](../architecture/02-adrs/pmcc-alerts-select-current-short-by-ledger-replay.md).
+
+Closure follows **recorded leg events, not dates**. Known gap accepted at ship
+time: no production path yet writes `SHORT_CALL_EXPIRED`, `SHORT_CALL_CLOSE`, or
+`SHORT_CALL_ASSIGNED` (only the dev-only `_test:pmcc-record-leg-event` hook does),
+so a PMCC short past its expiration date remains the current short and
+`PMCC_ASSIGNMENT_RISK` keeps firing while the stock is above its strike. US-119
+(OPT-25, expiration/close) and US-111 (OPT-19, assignment) close the gap by
+writing the closing leg; the alert service needs no change.
+
+### Live market-data enrichment
 
 `PROFIT_TARGET` needs the live option mid, `STRIKE_PROXIMITY` and
 `COVERED_CALL_BREACH` need the live underlying price, and `EARNINGS_PROXIMITY`
@@ -340,11 +416,19 @@ their log events:
   above.
 - `alert_evaluation_failed` (ERROR) — a single position threw mid-compute; caught
   per-position so the persist phase still runs for the rest (unchanged US-50
-  behavior).
+  behavior). US-106 reuses the same event for PMCC selection failures: a single
+  replay that throws (e.g. `groupRollChains` parsing bad Decimal data) logs with
+  the `positionId` and marks that candidate failed; a failed bulk leg-history read
+  logs the `positionIds` and marks every PMCC candidate failed while wheel rows
+  continue. Failed ids feed the keep-open set (see
+  [Alert lifecycle](#alert-lifecycle)) via a prepared, parameter-bound read of
+  their existing open/dismissed keys; no new skip reason or response field is
+  introduced. See
+  [alert-evaluation-failure-isolation](../architecture/02-adrs/alert-evaluation-failure-isolation.md).
 
 <!-- /generated -->
 
-<!-- generated:from us-50,us-51,us-53-54-55,us-56,us-59,us-62,us-70 -->
+<!-- generated:from us-50,us-51,us-53-54-55,us-56,us-59,us-62,us-70,us-106 -->
 
 ## Key decisions
 
@@ -471,7 +555,7 @@ their log events:
   `STRIKE_PROXIMITY` was rejected for that reason. The absolute-value
   `proximityPercent` equals the signed percent-above once `price ≥ strike`, so no
   new signed helper was needed. PMCC short-call-against-LEAPS assignment is a
-  distinct concern deferred to Epic 09.
+  distinct concern, later shipped as `PMCC_ASSIGNMENT_RISK` (US-106).
 - **Driven by:** [us-62](../features/us-62-covered-call-breach-alert.md) ·
   [alert-rule-registry](../architecture/02-adrs/alert-rule-registry.md)
 
@@ -553,6 +637,59 @@ their log events:
 - **Driven by:** [us-56](../features/us-56-earnings-proximity-alert.md) ·
   [alert-engine-pure-matches-skips](../architecture/02-adrs/alert-engine-pure-matches-skips.md)
 
+### `PMCC_ASSIGNMENT_RISK` is a one-sided floor on the signed, unrounded distance
+
+- **Decision:** One new medium-urgency registry entry, `PMCC_OPEN` only, firing when
+  the unrounded signed `(strike − price) / strike × 100 ≤ 2`; reuses
+  `priceVsStrikeMissingData`, `proximityPercent`, `formatStrike`, and the Review
+  position action. The threshold is fixed, not configurable; urgency does not
+  escalate with DTE.
+- **Why:** A PMCC has no shares to deliver — assignment forces exercising or selling
+  the LEAPS and ends the position — so the warning belongs on the way up. A
+  two-sided band (US-55's CSP rule) would resolve the alert as the stock ran through
+  the strike, and an absolute-distance predicate would clear a deep-ITM call;
+  predicating on the unrounded value stops display rounding from admitting a price
+  just outside the band.
+- **Driven by:** [us-106](../features/us-106-pmcc-assignment-risk-alert.md) ·
+  [alert-rule-registry](../architecture/02-adrs/alert-rule-registry.md)
+
+### PMCCs are evaluated through their current short call, chosen by ledger replay
+
+- **Decision:** Leave the wheel `EVALUABLE_QUERY` / `activeLegSubquery()` untouched;
+  select `PMCC_OPEN` candidates separately, bulk-load their legs, and resolve the
+  short with the existing `currentShortCallLeg` replay. The generic short-leg rules
+  ride along on that short; the wheel-only rules stay phase-gated.
+- **Why:** `PMCC_OPEN` alone does not prove a short exists; picking the newest CALL
+  or ROLL_TO in SQL could select the LEAPS or resurrect a closed short, and
+  reimplementing replay in SQL would duplicate established behaviour. Broadening the
+  shared subquery would leak into `get-position` / `list-positions`. The story
+  explicitly requires the generic rules to apply to the PMCC short.
+- **Driven by:** [us-106](../features/us-106-pmcc-assignment-risk-alert.md) ·
+  [pmcc-alerts-select-current-short-by-ledger-replay](../architecture/02-adrs/pmcc-alerts-select-current-short-by-ledger-replay.md)
+
+### A PMCC replay failure keeps its alerts open; a null short resolves them
+
+- **Decision:** Track failed PMCC candidate ids, log `alert_evaluation_failed`, and
+  add their existing open/dismissed keys to the keep-open set; a bulk history-read
+  failure marks every PMCC candidate failed while wheel rows proceed. A successful
+  replay that returns null excludes the position and resolves normally.
+- **Why:** Replay parses Decimal data and can throw before the per-position loop; a
+  failed position is unknown, not confirmed closed, so resolving its alerts would
+  churn them with fresh `triggered_at` values on a transient error.
+- **Driven by:** [us-106](../features/us-106-pmcc-assignment-risk-alert.md) ·
+  [alert-evaluation-failure-isolation](../architecture/02-adrs/alert-evaluation-failure-isolation.md) ·
+  [alert-resolution-global](../architecture/02-adrs/alert-resolution-global.md)
+
+### The queue badge branches on phase, not rule code
+
+- **Decision:** `ManagementQueueRow` renders a compact gold-dot `PMCC · short call`
+  `Badge` when `item.phase === 'PMCC_OPEN'` and keeps `PhaseBadge` for wheel rows;
+  no `strategyType` field or new storage was added.
+- **Why:** `phase` already identifies the strategy and is already in the queue item;
+  keying on phase means every PMCC row (including a HIGH `EXPIRATION_IMMINENT`) gets
+  the same badge. A strategy component hierarchy was judged unnecessary.
+- **Driven by:** [us-106](../features/us-106-pmcc-assignment-risk-alert.md)
+
 <!-- /generated -->
 
 <!-- generated:from us-50,us-59 -->
@@ -571,7 +708,7 @@ column (nullable, set once, never cleared) and a second partial unique index,
 
 <!-- /generated -->
 
-<!-- generated:from us-51 -->
+<!-- generated:from us-51,us-106 -->
 
 ## Management-queue read path
 
@@ -591,9 +728,19 @@ audit fields (`lastEvaluatedAt`, `resolvedAt`, `createdAt`, `updatedAt`,
 (one row per open alert in US-51 scope). An empty result is valid and drives the
 dashboard's empty state.
 
+New rule codes and phases flow through unchanged: US-106's `PMCC_ASSIGNMENT_RISK`
+rows needed no read-path, IPC (`alerts:list` / `alerts:dismiss`), or persistence
+change, and dismissal, dedupe, and clear/refire are rule-neutral. On the renderer,
+`ManagementQueueRow` (`src/renderer/src/components/ManagementQueueRow.tsx`) shows a
+`PMCC · short call` badge in place of the wheel `PhaseBadge` when
+`phase === 'PMCC_OPEN'` (badge column widened to fit). The preload global
+`ManagementQueueItem` (`src/preload/index.d.ts`) is now an alias of the schema type,
+so `phase` is typed as `WheelPhase` rather than `string` and the PMCC branch is
+type-checked.
+
 <!-- /generated -->
 
-<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56,us-57-58,us-59,us-62 -->
+<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56,us-57-58,us-59,us-62,us-70,us-106 -->
 
 ## Driven by
 
@@ -605,6 +752,8 @@ dashboard's empty state.
 - [US-57/58 — Configurable alert thresholds](../features/us-57-58-configurable-alert-thresholds.md)
 - [US-59 — Dismiss an alert with a record of the dismissal](../features/us-59-dismiss-alert.md)
 - [US-62 — Covered-call breach alert](../features/us-62-covered-call-breach-alert.md)
+- [US-70 — Earnings-in-window warning](../features/us-70-earnings-in-window-warning.md)
+- [US-106 — PMCC assignment-risk alert](../features/us-106-pmcc-assignment-risk-alert.md)
 
 <!-- /generated -->
 

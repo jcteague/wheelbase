@@ -136,25 +136,41 @@ export function upsertOpenAlert(
   return 'inserted'
 }
 
+/** What a run keeps as-is: the `(positionId, ruleCode)` keys that matched or were
+ *  skipped, plus every alert of a held position — one whose evaluation failed this
+ *  run, which says nothing about its rules. */
+export type AlertsToKeep = {
+  keys: ReadonlySet<string>
+  positionIds?: ReadonlySet<string>
+}
+
 /**
- * Resolves every alert in `fromStatus` whose `(positionId, ruleCode)` key is
- * absent from `keepOpenKeys` — shared by `resolveAlertsNotIn` (open → resolved)
- * and `clearStaleDismissals` (dismissed → resolved). Rows whose key is present
- * are left untouched. Returns the number transitioned.
+ * Resolves every alert in `fromStatus` that `keep` does not cover — shared by
+ * `resolveAlertsNotIn` (open → resolved) and `clearStaleDismissals`
+ * (dismissed → resolved). Covered rows are left untouched. Returns the number
+ * transitioned.
  */
-function resolveStaleRows(
-  db: Database.Database,
-  fromStatus: 'open' | 'dismissed',
-  keepOpenKeys: Set<string>,
-  now: string,
+function resolveStaleRows({
+  db,
+  fromStatus,
+  keep,
+  now,
+  logEvent
+}: {
+  db: Database.Database
+  fromStatus: 'open' | 'dismissed'
+  keep: AlertsToKeep
+  now: string
   logEvent: string
-): number {
+}): number {
   const rows = db
     .prepare(`SELECT id, position_id, rule_code FROM alerts WHERE status = ?`)
     .all(fromStatus) as Array<{ id: string; position_id: string; rule_code: string }>
 
   const toResolve = rows.filter(
-    (row) => !keepOpenKeys.has(alertKey(row.position_id, row.rule_code))
+    (row) =>
+      !keep.keys.has(alertKey(row.position_id, row.rule_code)) &&
+      !keep.positionIds?.has(row.position_id)
   )
 
   const update = db.prepare(
@@ -167,32 +183,34 @@ function resolveStaleRows(
 }
 
 /**
- * Marks every currently-open alert whose `(positionId, ruleCode)` key is absent
- * from `keepOpenKeys` as resolved. Alerts whose key is present stay open — this
- * covers both rules that matched this run and rules that were skipped for missing
- * data (a skipped rule wasn't evaluated, so it must not be treated as cleared).
- * Already-resolved / dismissed rows are untouched. Returns the number resolved.
+ * Marks every currently-open alert that `keep` does not cover as resolved. Alerts
+ * it covers stay open — rules that matched this run, rules skipped for missing
+ * data (a skipped rule wasn't evaluated, so it must not be treated as cleared),
+ * and every alert of a held position. Already-resolved / dismissed rows are
+ * untouched. Returns the number resolved.
  */
-export function resolveAlertsNotIn(
-  db: Database.Database,
-  keepOpenKeys: Set<string>,
-  now: string
-): number {
-  return resolveStaleRows(db, 'open', keepOpenKeys, now, 'alerts_resolved')
+export function resolveAlertsNotIn(db: Database.Database, keep: AlertsToKeep, now: string): number {
+  return resolveStaleRows({ db, fromStatus: 'open', keep, now, logEvent: 'alerts_resolved' })
 }
 
 /**
- * Marks every currently-dismissed alert whose `(positionId, ruleCode)` key is
- * absent from `keepOpenKeys` as resolved — retiring a stale dismissal once its
- * triggering condition has cleared. Dismissed rows whose key is still present
- * (the condition is still true) stay dismissed. Returns the number cleared.
+ * Marks every currently-dismissed alert that `keep` does not cover as resolved —
+ * retiring a stale dismissal once its triggering condition has cleared. Dismissed
+ * rows it covers (the condition is still true, or the position is held) stay
+ * dismissed. Returns the number cleared.
  */
 export function clearStaleDismissals(
   db: Database.Database,
-  keepOpenKeys: Set<string>,
+  keep: AlertsToKeep,
   now: string
 ): number {
-  return resolveStaleRows(db, 'dismissed', keepOpenKeys, now, 'alerts_dismissals_cleared')
+  return resolveStaleRows({
+    db,
+    fromStatus: 'dismissed',
+    keep,
+    now,
+    logEvent: 'alerts_dismissals_cleared'
+  })
 }
 
 /**

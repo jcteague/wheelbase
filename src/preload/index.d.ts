@@ -25,6 +25,7 @@ import type {
   ExpireCcPositionResult,
   ExpireCspPositionResult,
   GetPositionResult,
+  ManagementQueueItem as SchemaManagementQueueItem,
   OpenCcPositionResult,
   PositionListItem,
   RecordCallAwayResult,
@@ -477,16 +478,7 @@ declare global {
     positionId: string
   }
 
-  interface ManagementQueueItem {
-    alertId: string
-    positionId: string
-    ticker: string
-    phase: string
-    urgency: 'high' | 'medium' | 'low'
-    summary: string
-    quickAction: string
-    triggeredAt: string
-  }
+  type ManagementQueueItem = SchemaManagementQueueItem
 
   interface IpcAlertRecord {
     id: string

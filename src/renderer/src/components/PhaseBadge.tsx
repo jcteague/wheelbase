@@ -5,11 +5,13 @@ import { Badge } from './ui/Badge'
 type Props = {
   phase: WheelPhase
   variant?: 'default' | 'short'
+  /** Shown in place of the phase label, in the phase's colour. */
+  label?: string
 }
 
-export function PhaseBadge({ phase, variant = 'default' }: Props): React.JSX.Element {
+export function PhaseBadge({ phase, variant = 'default', label }: Props): React.JSX.Element {
   const color = PHASE_COLOR[phase]
-  const label = (variant === 'short' ? PHASE_LABEL_SHORT : PHASE_LABEL)[phase]
+  const text = label ?? (variant === 'short' ? PHASE_LABEL_SHORT : PHASE_LABEL)[phase]
 
   return (
     <Badge
@@ -20,7 +22,7 @@ export function PhaseBadge({ phase, variant = 'default' }: Props): React.JSX.Ele
       ].join(' ')}
     >
       <span className="w-[5px] h-[5px] shrink-0 rounded-full" style={{ background: color }} />
-      {label}
+      {text}
     </Badge>
   )
 }
