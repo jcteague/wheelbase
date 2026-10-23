@@ -32,7 +32,7 @@
 
 ### A. Pure PMCC assignment-risk rule
 
-- [ ] **A-Red [Red]** Write failing examples and properties — `src/main/core/alerts.test.ts`, `src/main/core/alerts.property.test.ts`.
+- [x] **A-Red [Red]** Write failing examples and properties — `src/main/core/alerts.test.ts`, `src/main/core/alerts.property.test.ts`.
   - Against strike `110.0000`, cover prices 107.80, 108.35, 110.00, 112.53 and
     118.80; assert medium urgency, Review position and exact Linear summaries.
   - Exclude 107.70, 105.00 and 107.7999; the predicate must not use display rounding.
@@ -47,7 +47,7 @@
   - Run `pnpm test src/main/core/alerts.test.ts src/main/core/alerts.property.test.ts`;
     record failures demonstrating the absent PMCC rule. Guard-only properties may
     pass before implementation and supplement the positive oracle cases.
-- [ ] **A-Green [Green]** Implement — `src/main/core/alerts.ts`. _(depends on: A-Red ✓)_
+- [x] **A-Green [Green]** Implement — `src/main/core/alerts.ts`. _(depends on: A-Red ✓)_
   - Extend `RuleCode`; add `PMCC_ASSIGNMENT_RISK_MAX_PERCENT_BELOW = 2` and
     `PmccAssignmentRiskInput = PriceVsStrikeInput` per Type Design.
   - Add `pmccAssignmentRiskSummary` reusing magnitude and strike formatting;
@@ -56,7 +56,7 @@
     `priceVsStrikeMissingData('PMCC_OPEN')` and signed unrounded Decimal predicate
     `(strike - price) / strike * 100 <= 2`. Reuse Review position.
   - Run the A-Red command; all tests must pass. No core logging or I/O.
-- [ ] **A-Refactor [Refactor]** `/refactor` — `src/main/core/alerts.ts` and its tests. _(depends on: A-Green ✓)_
+- [x] **A-Refactor [Refactor]** `/refactor` — `src/main/core/alerts.ts` and its tests. _(depends on: A-Green ✓)_
   - **Invoke `source-command-refactor` (the migrated `/refactor` command)**;
     do not substitute manual cleanup or only the code-simplifier skill.
   - Retain shared guards/slices; update comments and avoid unrelated rule changes.
@@ -67,7 +67,7 @@
 
 ### B. PMCC management-queue badge
 
-- [ ] **B-Red [Red]** Write failing component tests — `src/renderer/src/components/ManagementQueueRow.test.tsx`.
+- [x] **B-Red [Red]** Write failing component tests — `src/renderer/src/components/ManagementQueueRow.test.tsx`.
   - Assert XYZ, MED, `PMCC · short call`, full summary and Review position;
     the badge cell must not show the wheel phase label.
   - Assert Review position sets the existing detail hash and Dismiss passes the
@@ -76,7 +76,7 @@
     not summary text or an added queue rule-code field.
   - Run `pnpm test src/renderer/src/components/ManagementQueueRow.test.tsx`;
     record the missing PMCC badge failure while existing actions remain green.
-- [ ] **B-Green [Green]** Implement — `src/renderer/src/components/ManagementQueueRow.tsx`. _(depends on: B-Red ✓)_
+- [x] **B-Green [Green]** Implement — `src/renderer/src/components/ManagementQueueRow.tsx`. _(depends on: B-Red ✓)_
   - Follow `QueueRow` in `mockups/us-106-pmcc-assignment-risk-alert.mdx`: existing
     ticker/urgency, 150px badge column, summary, Review position and Dismiss.
   - For `PMCC_OPEN`, render existing `Badge` with compact gold dot and
@@ -84,7 +84,7 @@
   - Preserve hash navigation/dismissal. No explanatory ruler, preset controls,
     new form, overlay, success banner or detail-page alert.
   - Run the B-Red command; all tests must pass.
-- [ ] **B-Refactor [Refactor]** `/refactor` — queue row and component tests. _(depends on: B-Green ✓)_
+- [x] **B-Refactor [Refactor]** `/refactor` — queue row and component tests. _(depends on: B-Green ✓)_
   - **Invoke `source-command-refactor` (the migrated `/refactor` command)**;
     do not substitute manual cleanup or only the code-simplifier skill.
   - Keep the inline badge branch, accessible action names and existing test hooks;
@@ -103,7 +103,7 @@
 **Requires:** A-Green ✓. Owns `src/main/services/evaluate-alerts.ts`,
 `evaluate-alerts-pmcc.test.ts` and the existing `evaluate-alerts.test.ts`.
 
-- [ ] **C-Red [Red]** Write failing service tests — `src/main/services/evaluate-alerts-pmcc.test.ts`; revise the obsolete US-101 exclusion test in `src/main/services/evaluate-alerts.test.ts`. _(depends on: A-Green ✓)_
+- [x] **C-Red [Red]** Write failing service tests — `src/main/services/evaluate-alerts-pmcc.test.ts`; revise the obsolete US-101 exclusion test in `src/main/services/evaluate-alerts.test.ts`. _(depends on: A-Green ✓)_
   - Use the fixed New York calendar fixtures in quickstart and injected providers
     and logger. Assert only the current short CALL OCC is fetched, never the LEAPS.
   - Verify assignment risk plus generic short-leg rules: 18-DTE management window,
@@ -127,7 +127,7 @@
     EXPIRATION_IMMINENT match and no wheel-specific rule or error.
   - Run `TZ=America/New_York pnpm test src/main/services/evaluate-alerts-pmcc.test.ts src/main/services/evaluate-alerts.test.ts`;
     record failures caused by missing PMCC target selection.
-- [ ] **C-Green [Green]** Implement — `src/main/services/evaluate-alerts.ts`. _(depends on: C-Red ✓)_
+- [x] **C-Green [Green]** Implement — `src/main/services/evaluate-alerts.ts`. _(depends on: C-Red ✓)_
   - Define `PmccCandidateRow` using the Pick/intersection in data-model Type Design.
     Query ACTIVE/PMCC/PMCC_OPEN candidates without changing the wheel query.
   - Add module-private `loadPmccEvaluableRows`: bulk `readLegsByPosition`, isolated
@@ -142,7 +142,7 @@
   - Preserve generic INFO/DEBUG logs and per-item isolation; selection failures log
     `alert_evaluation_failed`. No broker gate, new provider method or IPC change.
   - Run the C-Red command; all tests must pass.
-- [ ] **C-Refactor [Refactor]** `/refactor` — service and focused tests. _(depends on: C-Green ✓)_
+- [x] **C-Refactor [Refactor]** `/refactor` — service and focused tests. _(depends on: C-Green ✓)_
   - **Invoke `source-command-refactor` (the migrated `/refactor` command)**;
     do not substitute manual cleanup or only the code-simplifier skill.
   - Reuse existing replay, bulk reader and persistence helpers; avoid duplicate
@@ -160,7 +160,7 @@ before rebuilding the native SQLite module for Electron.
 
 ### D. E2E Tests
 
-- [ ] **D-Red [Red]** Write acceptance tests — `e2e/pmcc-assignment-risk-alert.spec.ts`. _(depends on: A-Green ✓, B-Green ✓, C-Green ✓)_
+- [x] **D-Red [Red]** Write acceptance tests — `e2e/pmcc-assignment-risk-alert.spec.ts`. _(depends on: A-Green ✓, B-Green ✓, C-Green ✓)_
   - Use one named test per scenario; `it.each` expands outline examples into
     separately named tests. Read expected summary literals from Linear, never
     from production helpers. The mapping below covers nine families / 15 cases.
@@ -190,7 +190,7 @@ before rebuilding the native SQLite module for Electron.
   - Run `pnpm rebuild:electron`, then
     `TZ=America/New_York MAIN_VITE_LOG_LEVEL=debug pnpm test:e2e e2e/pmcc-assignment-risk-alert.spec.ts`.
     Record actual results and meaningful baseline failures as described in How to Use.
-- [ ] **D-Green [Green]** Make acceptance tests pass. _(depends on: D-Red ✓)_
+- [x] **D-Green [Green]** Make acceptance tests pass. _(depends on: D-Red ✓)_
   - Follow quickstart: temporary DB, fake market data, closed fake session,
     explicit scheduler runs, real PMCC creation/roll and existing leg-event seam.
   - Use relative Electron dates preserving 18/4 DTE; fixed dates remain covered
@@ -204,7 +204,7 @@ before rebuilding the native SQLite module for Electron.
     do not loosen assertions or add production test-control APIs.
   - Run the D-Red E2E command until all 15 cases pass, then
     `TZ=America/New_York MAIN_VITE_LOG_LEVEL=debug pnpm test:e2e` for the full suite.
-- [ ] **D-Refactor [Refactor]** `/refactor` — E2E suite. _(depends on: D-Green ✓)_
+- [x] **D-Refactor [Refactor]** `/refactor` — E2E suite. _(depends on: D-Green ✓)_
   - **Invoke `source-command-refactor` (the migrated `/refactor` command)**;
     do not substitute manual cleanup or only the code-simplifier skill.
   - Keep tests independently seeded/named; clean up Electron and temporary DBs.
@@ -217,16 +217,16 @@ before rebuilding the native SQLite module for Electron.
 
 ## Completion Checklist
 
-- [ ] All Red tasks have recorded meaningful failure evidence or documented
+- [x] All Red tasks have recorded meaningful failure evidence or documented
       already-green regression/baseline verification.
-- [ ] Core properties cover threshold oracle, monotonicity and phase guards;
+- [x] Core properties cover threshold oracle, monotonicity and phase guards;
       seeded stress checks passed and temporary setup was removed.
-- [ ] All Green tasks complete and tests passing.
-- [ ] All four Refactor tasks invoked `source-command-refactor` and completed.
-- [ ] All nine Linear scenario families / 15 E2E cases are covered.
-- [ ] Full unit/integration and E2E suites pass; lint and typecheck are clean;
+- [x] All Green tasks complete and tests passing.
+- [x] All four Refactor tasks invoked `source-command-refactor` and completed.
+- [x] All nine Linear scenario families / 15 E2E cases are covered.
+- [x] Full unit/integration and E2E suites pass; lint and typecheck are clean;
       formatting and service logging checks are complete.
-- [ ] `/update-spec us-106` captures the implemented behavior after verification.
+- [x] `/update-spec us-106` captures the implemented behavior after verification.
 
 ## Execution Summary
 

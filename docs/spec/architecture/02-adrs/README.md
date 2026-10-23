@@ -2,7 +2,7 @@
 
 Each ADR captures one architectural choice that emerged from a plan/story. Decisions are grouped below by theme; many ADRs are referenced by multiple feature pages.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,us-53-54-55,us-57-58,us-97,us-98,us-99,us-101,us-121,us-103,missing-ac -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,us-53-54-55,us-57-58,us-97,us-98,us-99,us-101,us-121,us-103,us-106,missing-ac -->
 
 ## Engine & architecture
 
@@ -153,6 +153,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [management-queue-read-path](./management-queue-read-path.md) — `listManagementQueue` joins open alerts to positions and sorts by urgency tier then `triggered_at`; dedicated `ManagementQueueItem` view-model leaves `listOpenAlerts` untouched.
 - [alert-evaluation-failure-isolation](./alert-evaluation-failure-isolation.md) — Batch evaluation isolates per-item failures and degrades boundary I/O (market-data prefetch, symbol building) to empty + log, never aborting the run; callers guard throwing pure helpers.
 - [configurable-alert-thresholds](./configurable-alert-thresholds.md) — Shared override→global-default→constant resolution precedence for both alert thresholds.
+- [pmcc-alerts-select-current-short-by-ledger-replay](./pmcc-alerts-select-current-short-by-ledger-replay.md) — PMCC rows are selected by replaying legs with `currentShortCallLeg`, not by broadening the wheel active-leg SQL; a replay failure keeps the alerts open rather than resolving them; the generic short-leg rules evaluate the short call, never the LEAPS; closure comes only from the ledger (US-106).
 
 ## Testing seams (e2e)
 

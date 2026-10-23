@@ -317,7 +317,7 @@ describe('clearStaleDismissals', () => {
       dismissedAt: NOW
     })
 
-    const count = clearStaleDismissals(db, new Set(), LATER)
+    const count = clearStaleDismissals(db, { keys: new Set() }, LATER)
 
     expect(count).toBe(1)
     const row = readAlertRows(db)[0]
@@ -336,7 +336,7 @@ describe('clearStaleDismissals', () => {
     })
     const keepOpenKeys = new Set([alertKey(positionId, 'EXPIRATION_IMMINENT')])
 
-    const count = clearStaleDismissals(db, keepOpenKeys, LATER)
+    const count = clearStaleDismissals(db, { keys: keepOpenKeys }, LATER)
 
     expect(count).toBe(0)
     const row = readAlertRows(db)[0]
@@ -351,7 +351,7 @@ describe('clearStaleDismissals', () => {
     upsertOpenAlert(db, EXPIRATION_MATCH, openPos, NOW)
     rawInsertAlert(db, resolvedPos, { ruleCode: 'EXPIRATION_IMMINENT', status: 'resolved' })
 
-    const count = clearStaleDismissals(db, new Set(), LATER)
+    const count = clearStaleDismissals(db, { keys: new Set() }, LATER)
 
     expect(count).toBe(0)
     const rows = readAlertRows(db)
@@ -373,7 +373,7 @@ describe('resolveAlertsNotIn', () => {
     rawInsertAlert(db, matchedPos, { ruleCode: 'MANAGEMENT_WINDOW', status: 'resolved' })
 
     const matchedKeys = new Set([alertKey(matchedPos, 'EXPIRATION_IMMINENT')])
-    const resolvedCount = resolveAlertsNotIn(db, matchedKeys, LATER)
+    const resolvedCount = resolveAlertsNotIn(db, { keys: matchedKeys }, LATER)
 
     expect(resolvedCount).toBe(1)
     const rows = readAlertRows(db)
@@ -390,6 +390,48 @@ describe('resolveAlertsNotIn', () => {
     // already-resolved row keeps its original (null resolved_at from the raw seed)
     expect(preResolved.status).toBe('resolved')
     expect(preResolved.resolved_at).toBeNull()
+  })
+})
+
+// [US-106] A held position — one whose evaluation failed this run — keeps every
+// alert as-is, whatever its keys, since a failed run says nothing about its rules.
+describe('held positions', () => {
+  it('resolveAlertsNotIn leaves a held position’s open alerts open', () => {
+    const db = makeTestDb()
+    const heldPos = seedPositionId(db)
+    const stalePos = seedPositionId(db)
+    upsertOpenAlert(db, EXPIRATION_MATCH, heldPos, NOW)
+    upsertOpenAlert(db, EXPIRATION_MATCH, stalePos, NOW)
+
+    const count = resolveAlertsNotIn(
+      db,
+      { keys: new Set(), positionIds: new Set([heldPos]) },
+      LATER
+    )
+
+    expect(count).toBe(1)
+    const rows = readAlertRows(db)
+    expect(rows.find((r) => r.position_id === heldPos)!.status).toBe('open')
+    expect(rows.find((r) => r.position_id === stalePos)!.status).toBe('resolved')
+  })
+
+  it('clearStaleDismissals leaves a held position’s dismissed alerts dismissed', () => {
+    const db = makeTestDb()
+    const heldPos = seedPositionId(db)
+    rawInsertAlert(db, heldPos, {
+      ruleCode: 'EXPIRATION_IMMINENT',
+      status: 'dismissed',
+      dismissedAt: NOW
+    })
+
+    const count = clearStaleDismissals(
+      db,
+      { keys: new Set(), positionIds: new Set([heldPos]) },
+      LATER
+    )
+
+    expect(count).toBe(0)
+    expect(readAlertRows(db)[0].status).toBe('dismissed')
   })
 })
 

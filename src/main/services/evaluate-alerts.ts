@@ -18,12 +18,14 @@ import type { WheelPhase } from '../core/types'
 import { marketDataFactory } from '../integrations/market-data-factory'
 import type { MarketDataProvider, OptionSnapshot } from '../integrations/market-data-provider'
 import { logger as defaultLogger, type LoggerLike } from '../logger'
-import type { EvaluateAlertsResult } from '../schemas'
+import type { EvaluateAlertsResult, LegRecord } from '../schemas'
 import { buildOccSymbol } from '../../shared/option-symbol'
 import { activeLegSubquery } from './active-leg-sql'
 import { alertKey, clearStaleDismissals, resolveAlertsNotIn, upsertOpenAlert } from './alerts'
 import { getEarnings } from './earnings-dates'
+import { readLegsByPosition } from './leg-rows'
 import { fetchOptionSnapshots, fetchStockQuotes, type IpcStockQuote } from './market-data'
+import { currentShortCallLeg } from './pmcc-ledger'
 
 export const ALERT_EVAL_JOB_NAME = 'alert-evaluation'
 
@@ -39,29 +41,29 @@ const EARNINGS_HORIZON_DAYS = 30
 // ---------------------------------------------------------------------------
 
 interface EvaluableRow {
-  position_id: string
+  positionId: string
   ticker: string
   phase: WheelPhase
-  profit_target_percent: number | null
-  management_window_dte_override: number | null
-  instrument_type: 'PUT' | 'CALL' | 'STOCK' | null
+  profitTargetPercent: number | null
+  managementWindowDteOverride: number | null
+  instrumentType: 'PUT' | 'CALL'
   strike: string | null
   expiration: string | null
-  premium_per_contract: string | null
+  premiumPerContract: string | null
   contracts: number | null
 }
 
 const EVALUABLE_QUERY = `
   SELECT
-    p.id   AS position_id,
+    p.id                             AS positionId,
     p.ticker,
     p.phase,
-    p.profit_target_percent,
-    p.management_window_dte_override,
-    l.instrument_type,
+    p.profit_target_percent          AS profitTargetPercent,
+    p.management_window_dte_override AS managementWindowDteOverride,
+    l.instrument_type                AS instrumentType,
     l.strike,
     l.expiration,
-    l.premium_per_contract,
+    l.premium_per_contract           AS premiumPerContract,
     l.contracts
   FROM positions p
   JOIN legs l ON l.id = (
@@ -69,29 +71,90 @@ const EVALUABLE_QUERY = `
   )
   WHERE p.status = 'ACTIVE'
     AND p.phase IN ('CSP_OPEN', 'CC_OPEN')
+    AND l.instrument_type IN ('PUT', 'CALL')
 `
 
-/** OCC symbol for a row's active option leg, or null when it isn't an option or
- *  the leg data can't form a valid symbol (logged, never thrown — so one bad
- *  leg can't abort the whole batch or suppress its OCC-independent DTE rules). */
-function occSymbolForRow(row: EvaluableRow, logger: LoggerLike): string | null {
-  if (
-    row.instrument_type === null ||
-    row.instrument_type === 'STOCK' ||
-    row.strike === null ||
-    !row.expiration
-  ) {
-    return null
+// ---------------------------------------------------------------------------
+// [US-106] PMCC selection — a PMCC is evaluated through its current short call,
+// never the LEAPS. The short is found by replaying the position's leg history
+// (rolls, expirations, closes, assignments), not by the wheel SQL subquery.
+// ---------------------------------------------------------------------------
+
+type PmccCandidateRow = Pick<
+  EvaluableRow,
+  'positionId' | 'ticker' | 'profitTargetPercent' | 'managementWindowDteOverride'
+> & { phase: 'PMCC_OPEN' }
+
+const PMCC_CANDIDATE_QUERY = `
+  SELECT
+    id                             AS positionId,
+    ticker,
+    phase,
+    profit_target_percent          AS profitTargetPercent,
+    management_window_dte_override AS managementWindowDteOverride
+  FROM positions
+  WHERE status = 'ACTIVE'
+    AND strategy_type = 'PMCC'
+    AND phase = 'PMCC_OPEN'
+`
+
+/** Evaluable rows for every PMCC with an open short call. A PMCC with no open
+ *  short contributes nothing (so its alerts resolve); a PMCC whose history can't
+ *  be read or replayed is logged and added to `heldIds` instead, so its alerts
+ *  are kept rather than treated as cleared. */
+function loadPmccEvaluableRows({
+  db,
+  heldIds,
+  logger
+}: {
+  db: Database.Database
+  heldIds: Set<string>
+  logger: LoggerLike
+}): EvaluableRow[] {
+  const candidates = db.prepare(PMCC_CANDIDATE_QUERY).all() as PmccCandidateRow[]
+  if (candidates.length === 0) return []
+
+  const positionIds = candidates.map((candidate) => candidate.positionId)
+  let legsByPosition: Map<string, LegRecord[]>
+  try {
+    legsByPosition = readLegsByPosition(db, positionIds)
+  } catch (error) {
+    logger.error({ positionIds, error }, 'alert_evaluation_failed')
+    positionIds.forEach((id) => heldIds.add(id))
+    return []
   }
+
+  return candidates.flatMap((candidate): EvaluableRow[] => {
+    try {
+      const short = currentShortCallLeg(legsByPosition.get(candidate.positionId) ?? [])
+      if (short === null) return []
+      // The ledger picks the short by role (SHORT_CALL_OPEN / short-side ROLL_TO), so it is a call.
+      const { strike, expiration, premiumPerContract, contracts } = short
+      return [
+        { ...candidate, instrumentType: 'CALL', strike, expiration, premiumPerContract, contracts }
+      ]
+    } catch (error) {
+      logger.error({ positionId: candidate.positionId, error }, 'alert_evaluation_failed')
+      heldIds.add(candidate.positionId)
+      return []
+    }
+  })
+}
+
+/** OCC symbol for a row's active option leg, or null when the leg data can't
+ *  form a valid symbol (logged, never thrown — so one bad leg can't abort the
+ *  whole batch or suppress its OCC-independent DTE rules). */
+function occSymbolForRow(row: EvaluableRow, logger: LoggerLike): string | null {
+  if (row.strike === null || !row.expiration) return null
   try {
     return buildOccSymbol({
       ticker: row.ticker,
       expiration: row.expiration,
       strike: row.strike,
-      instrumentType: row.instrument_type
+      instrumentType: row.instrumentType
     })
   } catch (error) {
-    logger.warn({ positionId: row.position_id, error }, 'alert_evaluation_occ_symbol_invalid')
+    logger.warn({ positionId: row.positionId, error }, 'alert_evaluation_occ_symbol_invalid')
     return null
   }
 }
@@ -130,17 +193,17 @@ function toEvaluationInput({
   earningsByTicker
 }: ToEvaluationInputParams): AlertEvaluationInput {
   return {
-    positionId: row.position_id,
+    positionId: row.positionId,
     phase: row.phase,
-    instrumentType: row.instrument_type === 'STOCK' ? null : row.instrument_type,
+    instrumentType: row.instrumentType,
     strike: row.strike,
     dte: computeDte(row.expiration, now),
     managementWindowDte,
-    managementWindowDteOverride: row.management_window_dte_override,
-    entryPremiumPerContract: row.premium_per_contract,
+    managementWindowDteOverride: row.managementWindowDteOverride,
+    entryPremiumPerContract: row.premiumPerContract,
     contracts: row.contracts,
     currentOptionMid: occ ? (midByOccSymbol[occ]?.mid ?? null) : null,
-    profitTargetPercentOverride: row.profit_target_percent,
+    profitTargetPercentOverride: row.profitTargetPercent,
     profitTargetPercentDefault,
     currentUnderlyingPrice: priceByTicker[row.ticker]?.price ?? null,
     daysToEarnings: computeDte(earningsDateFor(earningsByTicker, row.ticker), now),
@@ -193,14 +256,18 @@ export async function evaluateAlerts({
   const nowIso = now.toISOString()
   logger.debug({ now: nowIso, managementWindowDte }, 'alert_evaluation_start')
 
-  const rows = db.prepare(EVALUABLE_QUERY).all() as EvaluableRow[]
+  // Positions whose selection or evaluation fails this run — every alert of theirs
+  // is kept as-is, since a failure says nothing about whether a rule cleared.
+  const heldPositionIds = new Set<string>()
+  const rows = [
+    ...(db.prepare(EVALUABLE_QUERY).all() as EvaluableRow[]),
+    ...loadPmccEvaluableRows({ db, heldIds: heldPositionIds, logger })
+  ]
   logger.debug({ count: rows.length }, 'alert_evaluation_targets_loaded')
 
   // Build each row's OCC symbol once (non-throwing) so a single malformed leg
   // can't abort the batch when collecting the symbol set below or mapping inputs.
-  const occByPositionId = new Map(
-    rows.map((row) => [row.position_id, occSymbolForRow(row, logger)])
-  )
+  const occByPositionId = new Map(rows.map((row) => [row.positionId, occSymbolForRow(row, logger)]))
 
   // Pre-fetch live market data once for the whole batch (US-54/US-55/US-56).
   // All three feeds run concurrently and each degrades to empty on failure, so a
@@ -245,28 +312,30 @@ export async function evaluateAlerts({
           now,
           managementWindowDte,
           profitTargetPercentDefault,
-          occ: occByPositionId.get(row.position_id) ?? null,
+          occ: occByPositionId.get(row.positionId) ?? null,
           priceByTicker,
           midByOccSymbol,
           earningsByTicker
         })
       )
-      evaluation.matches.forEach((match) => matches.push({ positionId: row.position_id, match }))
+      evaluation.matches.forEach((match) => matches.push({ positionId: row.positionId, match }))
       evaluation.skipped.forEach((skip) => {
         skippedRuleCount++
-        skippedKeys.add(alertKey(row.position_id, skip.ruleCode))
+        skippedKeys.add(alertKey(row.positionId, skip.ruleCode))
         logger.debug(
-          { positionId: row.position_id, ruleCode: skip.ruleCode, reason: skip.reason },
+          { positionId: row.positionId, ruleCode: skip.ruleCode, reason: skip.reason },
           'alert_rule_skipped'
         )
       })
     } catch (error) {
-      logger.error({ positionId: row.position_id, error }, 'alert_evaluation_failed')
+      logger.error({ positionId: row.positionId, error }, 'alert_evaluation_failed')
+      heldPositionIds.add(row.positionId)
     }
   }
 
   // Persist phase — single transaction: upsert every match, then resolve any
-  // open or dismissed alert whose condition no longer matches this run.
+  // open or dismissed alert whose condition no longer matches this run, except
+  // those of held positions.
   let createdCount = 0
   let updatedCount = 0
   let resolvedCount = 0
@@ -279,8 +348,9 @@ export async function evaluateAlerts({
       else if (outcome === 'updated') updatedCount++
       keepOpenKeys.add(alertKey(positionId, match.ruleCode))
     }
-    resolvedCount = resolveAlertsNotIn(db, keepOpenKeys, nowIso)
-    resolvedCount += clearStaleDismissals(db, keepOpenKeys, nowIso)
+    const keep = { keys: keepOpenKeys, positionIds: heldPositionIds }
+    resolvedCount = resolveAlertsNotIn(db, keep, nowIso)
+    resolvedCount += clearStaleDismissals(db, keep, nowIso)
   })()
 
   logger.info(

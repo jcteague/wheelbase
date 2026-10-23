@@ -32,4 +32,13 @@ describe('PhaseBadge', () => {
     expect(dot).not.toBeNull()
     expect(dot).toHaveStyle({ background: PHASE_COLOR.CSP_OPEN })
   })
+
+  it('shows a label override in place of the phase label, keeping the phase colour', () => {
+    render(<PhaseBadge phase="PMCC_OPEN" variant="short" label="PMCC · short call" />)
+
+    expect(screen.queryByText('LEAPS + short call open')).not.toBeInTheDocument()
+    expect(screen.getByText('PMCC · short call').closest('span')).toHaveStyle({
+      color: PHASE_COLOR.PMCC_OPEN
+    })
+  })
 })
