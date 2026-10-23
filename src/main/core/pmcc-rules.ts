@@ -5,7 +5,7 @@
 // [US-105] And the LEAPS roll's rules, shared by `rollPmccLeaps` and the Roll LEAPS schema.
 // Pure: no database, broker or logging imports.
 import Decimal from 'decimal.js'
-import { format, parseISO } from 'date-fns'
+import { format, isBefore, parseISO } from 'date-fns'
 import type {
   PmccField,
   PmccLegTerms,
@@ -66,9 +66,9 @@ export const ROLL_NO_CHANGE = {
 // US-102 — PMCC coverage comparator: a short call is covered only while it expires strictly
 // before its LEAPS. One predicate, reported from whichever side moved.
 
-/** A short call is covered only if it expires strictly before the LEAPS. ISO dates compare as strings. */
+/** A short call is covered only if both calendar dates are valid and it expires before the LEAPS. */
 export const shortExpiresBeforeLeaps = (shortExpiration: string, longExpiration: string): boolean =>
-  shortExpiration < longExpiration
+  isBefore(parseISO(shortExpiration), parseISO(longExpiration))
 
 /** Reported against the short call — by `openPmcc` and the PMCC short-call roll (US-104). */
 export const SHORT_NOT_BEFORE_LONG = {

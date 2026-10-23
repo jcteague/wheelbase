@@ -12,6 +12,7 @@ import { isoDate, makeTestDb } from '../test-utils'
 import { getPosition } from './get-position'
 import { createPmccPosition, createPosition } from './positions'
 import { rollPmccLeapsPosition } from './roll-pmcc-leaps-position'
+import { rollPmccShortCallPosition } from './roll-pmcc-short-call-position'
 import { pmccFixtures, pmccOpenPayload, recordPmccLegEvent } from './test-fixtures/pmcc-legs'
 
 // ── Background ──────────────────────────────────────────────────────────────────
@@ -505,6 +506,48 @@ describe('rollPmccLeapsPosition — atomicity (US-105)', () => {
       .get(positionId)
     expect(orphans).toEqual({ n: 0 })
   })
+})
+
+// [US-102] The service must cover the replacement short, including after another roll.
+describe('rollPmccLeapsPosition — live expiration coverage (US-102)', () => {
+  it.each([130, 110])(
+    'rejects replacement day %i against the rolled short without changing persisted state',
+    (day) => {
+      const db = makeTestDb()
+      const positionId = seedBackground(db)
+      rollPmccShortCallPosition(db, positionId, {
+        positionId,
+        costToClosePerContract: 2,
+        newPremiumPerContract: 2.5,
+        newExpiration: isoDate(130),
+        fillDate: isoDate(80)
+      })
+      const readState = (): unknown => ({
+        position: db.prepare('SELECT * FROM positions WHERE id = ?').get(positionId),
+        legs: db.prepare('SELECT * FROM legs WHERE position_id = ? ORDER BY id').all(positionId),
+        snapshots: db
+          .prepare('SELECT * FROM cost_basis_snapshots WHERE position_id = ? ORDER BY id')
+          .all(positionId),
+        openLegs: getPosition(db, positionId)?.pmccOpenLegs
+      })
+      const before = readState()
+
+      const err = captureValidationError(() =>
+        rollPmccLeapsPosition(db, positionId, {
+          ...upAndOut(positionId),
+          newExpiration: isoDate(day)
+        })
+      )
+
+      expect(err).toMatchObject({
+        field: 'newExpiration',
+        code: 'long_not_after_short',
+        message: 'LEAPS call must expire after the short call.'
+      })
+      expect(readState()).toEqual(before)
+      db.close()
+    }
+  )
 })
 
 // ── Logging ─────────────────────────────────────────────────────────────────────

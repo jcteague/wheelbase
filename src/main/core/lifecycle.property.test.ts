@@ -373,6 +373,34 @@ describe('rollCc', () => {
 // [US-104] The PMCC short-call roll: coverage is checked against the LEAPS regardless of the
 // current short, and every legal successor (on/after current, before LEAPS, changed) is accepted.
 describe('rollPmccShortCall', () => {
+  it('accepts exactly the replacement dates before the live LEAPS by independent UTC chronology', () => {
+    fc.assert(
+      fc.property(isoDay, isoDay, (newExpiration, leapsExpiration) => {
+        const input = {
+          currentPhase: 'PMCC_OPEN' as const,
+          openShort: { strike: '100', expiration: '2019-12-31', fillDate: '2019-12-29' },
+          leapsExpiration,
+          fillDate: '2019-12-30',
+          newStrike: '110',
+          newExpiration,
+          costToClosePerContract: '1',
+          newPremiumPerContract: '2'
+        }
+        const covered =
+          new Date(`${newExpiration}T00:00:00Z`) < new Date(`${leapsExpiration}T00:00:00Z`)
+        if (covered) {
+          expect(rollPmccShortCall(input).phase).toBe('PMCC_OPEN')
+        } else {
+          expect(validationErrorOf(() => rollPmccShortCall(input))).toMatchObject({
+            field: 'newExpiration',
+            code: 'short_not_before_long',
+            message: 'Short call must expire before the LEAPS call.'
+          })
+        }
+      })
+    )
+  })
+
   it('rejects a replacement expiring on or after the LEAPS, whatever the current short', () => {
     fc.assert(
       fc.property(
@@ -788,6 +816,61 @@ describe('rollPmccLeaps', () => {
   // and no generated replacement expires on or before the fill.
   const BEFORE_EVERY_DAY = '2019-12-31'
   const plus = (a: string, b: string): string => new Decimal(a).plus(b).toFixed(4)
+
+  it('accepts exactly the replacement dates after the live short by independent UTC chronology', () => {
+    fc.assert(
+      fc.property(isoDay, isoDay, (newExpiration, shortExpiration) => {
+        const input = {
+          currentPhase: 'PMCC_OPEN' as const,
+          currentLeaps: { strike: '80', expiration: '2099-01-01' },
+          openShort: { strike: '110', expiration: shortExpiration },
+          lastEventDate: BEFORE_EVERY_DAY,
+          fillDate: BEFORE_EVERY_DAY,
+          newStrike: '85',
+          newExpiration,
+          proceedsPerContract: '26',
+          replacementDebitPerContract: '25'
+        }
+        const covered =
+          new Date(`${shortExpiration}T00:00:00Z`) < new Date(`${newExpiration}T00:00:00Z`)
+        if (covered) {
+          expect(rollPmccLeaps(input)).toEqual({ phase: 'PMCC_OPEN' })
+        } else {
+          expect(validationErrorOf(() => rollPmccLeaps(input))).toMatchObject({
+            field: 'newExpiration',
+            code: 'long_not_after_short',
+            message: 'LEAPS call must expire after the short call.'
+          })
+        }
+      })
+    )
+  })
+
+  it('without an open short, still rejects a replacement expiring on or before its fill', () => {
+    fc.assert(
+      fc.property(orderedDays(2), ([newExpiration, fillDate]) => {
+        expect(
+          validationErrorOf(() =>
+            rollPmccLeaps({
+              currentPhase: 'PMCC_OPEN',
+              currentLeaps: { strike: '80', expiration: '2099-01-01' },
+              openShort: null,
+              lastEventDate: BEFORE_EVERY_DAY,
+              fillDate,
+              newStrike: '85',
+              newExpiration,
+              proceedsPerContract: '26',
+              replacementDebitPerContract: '25'
+            })
+          )
+        ).toMatchObject({
+          field: 'newExpiration',
+          code: 'expiration_not_after_fill',
+          message: 'Expiration must be after the fill date.'
+        })
+      })
+    )
+  })
 
   /** A current LEAPS and a replacement that differ in strike, expiration, or both. */
   const changedRoll = fc.oneof(

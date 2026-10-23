@@ -102,6 +102,10 @@ describe('computeDte', () => {
 // so it agrees with the screener row it was promoted from — the engine
 // (src/main/core/dte.ts) counts the same way.
 describe('computeDteFromInput', () => {
+  it('counts the subsequent-short review from the explicit market day (US-102)', () => {
+    expect(computeDteFromInput('2026-11-20', new Date(2026, 8, 14))).toBe(67)
+  })
+
   it('counts local calendar days to a future expiration', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2026, 6, 15, 23, 30)) // 15 Jul, late local evening

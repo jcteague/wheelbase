@@ -11,6 +11,7 @@ import type { RollPmccShortCallPayload } from '../schemas'
 import { isoDate, makeTestDb } from '../test-utils'
 import { getPosition } from './get-position'
 import { createPmccPosition, createPosition } from './positions'
+import { rollPmccLeapsPosition } from './roll-pmcc-leaps-position'
 import { rollPmccShortCallPosition } from './roll-pmcc-short-call-position'
 import { pmccFixtures, pmccOpenPayload, recordPmccLegEvent } from './test-fixtures/pmcc-legs'
 
@@ -459,6 +460,73 @@ describe('rollPmccShortCallPosition — atomicity (US-104)', () => {
       .prepare(`SELECT COUNT(*) AS n FROM legs WHERE position_id = ? AND leg_role = 'ROLL_FROM'`)
       .get(positionId)
     expect(orphans).toEqual({ n: 0 })
+  })
+})
+
+// [US-102] Coverage follows the live LEAPS after it rolls, rather than entry context.
+describe('rollPmccShortCallPosition — live expiration coverage (US-102)', () => {
+  it.each([494, 520])(
+    'rejects replacement day %i against the rolled LEAPS without changing persisted state',
+    (day) => {
+      const db = makeTestDb()
+      const positionId = seedBackground(db)
+      rollPmccLeapsPosition(db, positionId, {
+        positionId,
+        proceedsPerContract: 26,
+        replacementDebitPerContract: 23.5,
+        newExpiration: isoDate(494),
+        fillDate: isoDate(50)
+      })
+      const readState = (): unknown => ({
+        position: db.prepare('SELECT * FROM positions WHERE id = ?').get(positionId),
+        legs: db.prepare('SELECT * FROM legs WHERE position_id = ? ORDER BY id').all(positionId),
+        snapshots: db
+          .prepare('SELECT * FROM cost_basis_snapshots WHERE position_id = ? ORDER BY id')
+          .all(positionId),
+        openLegs: getPosition(db, positionId)?.pmccOpenLegs
+      })
+      const before = readState()
+
+      const err = captureValidationError(() =>
+        rollPmccShortCallPosition(db, positionId, {
+          ...upAndOut(positionId),
+          newExpiration: isoDate(day)
+        })
+      )
+
+      expect(err).toMatchObject({
+        field: 'newExpiration',
+        code: 'short_not_before_long',
+        message: 'Short call must expire before the LEAPS call.'
+      })
+      expect(readState()).toEqual(before)
+      db.close()
+    }
+  )
+
+  it('accepts a short after the original LEAPS expiration when the rolled LEAPS covers it', () => {
+    const db = makeTestDb()
+    const positionId = seedBackground(db)
+    const leapsRoll = rollPmccLeapsPosition(db, positionId, {
+      positionId,
+      proceedsPerContract: 26,
+      replacementDebitPerContract: 23.5,
+      newExpiration: isoDate(494),
+      fillDate: isoDate(50)
+    })
+
+    const result = rollPmccShortCallPosition(db, positionId, {
+      ...upAndOut(positionId),
+      newExpiration: isoDate(400)
+    })
+
+    expect(result.rollFromLeg.rollChainId).toBe(result.rollToLeg.rollChainId)
+    expect(result.rollToLeg.expiration).toBe(isoDate(400))
+    expect(getPosition(db, positionId)?.pmccOpenLegs).toMatchObject({
+      long: { id: leapsRoll.rollToLeg.id, expiration: isoDate(494) },
+      short: { id: result.rollToLeg.id, expiration: isoDate(400) }
+    })
+    db.close()
   })
 })
 

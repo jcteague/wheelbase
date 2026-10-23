@@ -46,6 +46,8 @@ const onSubmit = vi.fn()
 type HarnessProps = {
   openShort?: LegDetail | null
   isPending?: boolean
+  today?: string
+  lastEventDate?: string
   children?: React.ReactNode
 }
 
@@ -65,11 +67,13 @@ function ServerExpirationError(): React.JSX.Element {
 function Harness({
   openShort = LEAPS_OPEN_SHORT,
   isPending = false,
+  today = TODAY,
+  lastEventDate = LEAPS_LAST_EVENT_DATE,
   children
 }: HarnessProps): React.JSX.Element {
   const { methods, schema } = useRollPmccLeapsForm(
-    { leaps: LEAPS_LEG, openShort, lastEventDate: LEAPS_LAST_EVENT_DATE },
-    TODAY
+    { leaps: LEAPS_LEG, openShort, lastEventDate },
+    today
   )
   return (
     <FormProvider {...methods}>
@@ -79,7 +83,7 @@ function Harness({
         leaps={LEAPS_LEG}
         openShort={openShort}
         ledger={LEAPS_LEDGER}
-        today={TODAY}
+        today={today}
         isPending={isPending}
         onSubmit={onSubmit}
         onClose={onClose}
@@ -303,6 +307,23 @@ describe('RollPmccLeapsForm — fields', () => {
 })
 
 describe('RollPmccLeapsForm — net preview', () => {
+  it('reviews the January replacement as 494 DTE from September 14, 2026', async () => {
+    render(
+      <Harness
+        today="2026-09-14"
+        lastEventDate="2026-09-14"
+        openShort={{ ...LEAPS_OPEN_SHORT, expiration: '2026-10-16', fillDate: '2026-09-14' }}
+      />
+    )
+    await fill(UP_OUT)
+    expect(within(fieldOf('pmcc-leaps-roll-expiration')).getByText('494 DTE')).toBeInTheDocument()
+    expect(row('Replacement LEAPS (buying)', ruler())).toHaveTextContent('2028-01-21 · 494 DTE')
+    const short = section('Open short call')
+    expect(row('Expiration', short)).toHaveTextContent('2026-10-16 (32 DTE)')
+    expect(short).toHaveTextContent('Read-only.')
+    await waitFor(() => expect(confirm()).toBeEnabled())
+  })
+
   it('a roll up and out previews a net credit and re-anchors the effective share cost', async () => {
     render(<Harness />)
     await fill(UP_OUT)
@@ -422,20 +443,44 @@ describe('RollPmccLeapsForm — rejections', () => {
     await waitFor(() => expect(confirm()).toBeDisabled())
   })
 
-  it('a replacement expiring with the short is blocked at the field, the ruler and the footer', async () => {
-    render(<Harness />)
-    await fill(UNCOVERS)
-    expect(fieldOf('pmcc-leaps-roll-expiration')).toHaveTextContent(
-      'LEAPS call must expire after the short call.'
-    )
-    expect(fieldOf('pmcc-leaps-roll-expiration')).not.toHaveTextContent('DTE')
-    expect(ruler()).toHaveAttribute('data-blocked', 'true')
-    expect(ruler()).toHaveTextContent(
-      'The replacement LEAPS expires on or before the short call. Past this point the short call is naked.'
-    )
-    expect(screen.getByText(STAYS_OPEN)).toBeInTheDocument()
-    await waitFor(() => expect(confirm()).toBeDisabled())
-  })
+  it.each(['2027-07-16', '2027-07-15'])(
+    'replacement %s is blocked while the draft remains available for correction',
+    async (expiration) => {
+      render(<Harness />)
+      await fill({ ...UNCOVERS, expiration })
+      const message = 'LEAPS call must expire after the short call.'
+      expect(within(fieldOf('pmcc-leaps-roll-expiration')).getByRole('alert')).toHaveTextContent(
+        message
+      )
+      expect(within(fieldOf('pmcc-leaps-roll-expiration')).getByRole('alert')).toHaveClass(
+        'text-wb-red'
+      )
+      expect(fieldOf('pmcc-leaps-roll-expiration')).not.toHaveTextContent('DTE')
+      expect(ruler()).toHaveAttribute('data-blocked', 'true')
+      expect(ruler()).toHaveTextContent(
+        'The replacement LEAPS expires on or before the short call. Past this point the short call is naked.'
+      )
+      expect(screen.getByText(STAYS_OPEN)).toBeInTheDocument()
+      await waitFor(() => expect(confirm()).toBeDisabled())
+      expect(confirm()).toHaveClass('opacity-40', 'cursor-not-allowed')
+      expect(input('pmcc-leaps-roll-proceeds')).toHaveValue(UNCOVERS.proceeds)
+      expect(input('pmcc-leaps-roll-strike')).toHaveValue(UNCOVERS.strike)
+      expect(input('pmcc-leaps-roll-debit')).toHaveValue(UNCOVERS.debit)
+      expect(input('pmcc-leaps-roll-expiration')).toHaveValue(expiration)
+      expect(input('pmcc-leaps-roll-fill-date')).toHaveValue(TODAY)
+      expect(screen.getByTestId('pmcc-leaps-roll-net')).toHaveTextContent('Net Credit: $5.80')
+      await userEvent.click(confirm())
+      expect(onSubmit).not.toHaveBeenCalled()
+      expect(onClose).not.toHaveBeenCalled()
+
+      await userEvent.clear(input('pmcc-leaps-roll-expiration'))
+      await userEvent.type(input('pmcc-leaps-roll-expiration'), UP_OUT.expiration)
+      await waitFor(() => expect(confirm()).toBeEnabled())
+      expect(fieldOf('pmcc-leaps-roll-expiration')).not.toHaveTextContent(message)
+      expect(ruler()).toHaveAttribute('data-blocked', 'false')
+      expect(screen.getByTestId('pmcc-leaps-roll-net')).toHaveTextContent('Net Credit: $5.80')
+    }
+  )
 
   it('a strike that is not positive is rejected at the field without the stays-open footer', async () => {
     render(<Harness />)

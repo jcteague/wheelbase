@@ -10,7 +10,7 @@ import type {
 import { useRollPmccShortCall } from '../hooks/useRollPmccShortCall'
 import { useRollPmccShortCallForm } from '../hooks/useRollPmccShortCallForm'
 import { useRollSheetSubmit } from '../hooks/useRollSheetSubmit'
-import { localToday } from '../lib/dates'
+import { newYorkToday } from '../lib/dates'
 import { toRollPmccShortCallPayload } from '../schemas/roll-pmcc-short-call'
 import { PmccRollSheetDialog } from './PmccRollSheetDialog'
 import { RollPmccShortCallForm } from './RollPmccShortCallForm'
@@ -57,7 +57,7 @@ export function RollPmccShortCallSheet({
   leaps,
   basisPerShare,
   effectiveShareCost,
-  today = localToday(),
+  today = newYorkToday(),
   onClose,
   onRecorded
 }: RollPmccShortCallSheetProps): React.JSX.Element {

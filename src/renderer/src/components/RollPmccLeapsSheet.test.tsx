@@ -57,7 +57,10 @@ function mockHook(isPending = false): void {
 const onClose = vi.fn()
 const onRecorded = vi.fn()
 
-function renderSheet(openShort: LegDetail | null = LEAPS_OPEN_SHORT): void {
+function renderSheet(
+  openShort: LegDetail | null = LEAPS_OPEN_SHORT,
+  { today = TODAY }: { today?: string | null } = {}
+): void {
   render(
     <RollPmccLeapsSheet
       positionId={LEAPS_PMCC_ID}
@@ -66,7 +69,7 @@ function renderSheet(openShort: LegDetail | null = LEAPS_OPEN_SHORT): void {
       openShort={openShort}
       lastEventDate={LEAPS_LAST_EVENT_DATE}
       ledger={LEAPS_LEDGER}
-      today={TODAY}
+      today={today ?? undefined}
       onClose={onClose}
       onRecorded={onRecorded}
     />
@@ -125,6 +128,24 @@ beforeEach(() => {
 })
 
 describe('RollPmccLeapsSheet — dialog', () => {
+  it('defaults the review and fill date to the New York day at UTC midnight', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-15T01:00:00Z'))
+    try {
+      renderSheet(LEAPS_OPEN_SHORT, { today: null })
+      expect(input('pmcc-leaps-roll-fill-date')).toHaveValue('2026-09-14')
+      expect(screen.getByTestId('pmcc-coverage-ruler')).toHaveTextContent('2026-09-14')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('uses an explicit valuation date for the review and default fill date', () => {
+    renderSheet(LEAPS_OPEN_SHORT, { today: '2026-09-14' })
+    expect(input('pmcc-leaps-roll-fill-date')).toHaveValue('2026-09-14')
+    expect(screen.getByTestId('pmcc-coverage-ruler')).toHaveTextContent('2026-09-14')
+  })
+
   it('renders a dialog named Roll LEAPS in the sheet portal', () => {
     renderSheet()
     const dialog = screen.getByRole('dialog', { name: 'Roll LEAPS' })
@@ -210,8 +231,30 @@ describe('RollPmccLeapsSheet — submit', () => {
 })
 
 describe('RollPmccLeapsSheet — server errors', () => {
+  it('a newExpiration rejection preserves the draft and permits a corrected submission', async () => {
+    const message = 'LEAPS call must expire after the short call.'
+    rejectWith(fieldError('newExpiration', message))
+    await submitUpOut()
+    await waitFor(() => expect(fieldOf('pmcc-leaps-roll-expiration')).toHaveTextContent(message))
+    expect(input('pmcc-leaps-roll-proceeds')).toHaveValue('26.00')
+    expect(input('pmcc-leaps-roll-strike')).toHaveValue('85')
+    expect(input('pmcc-leaps-roll-debit')).toHaveValue('23.50')
+    expect(input('pmcc-leaps-roll-expiration')).toHaveValue('2028-01-21')
+    expect(input('pmcc-leaps-roll-fill-date')).toHaveValue(TODAY)
+    expect(screen.getByTestId('pmcc-leaps-roll-net')).toHaveTextContent('Net Credit: $2.50')
+    expect(onClose).not.toHaveBeenCalled()
+    expect(onRecorded).not.toHaveBeenCalled()
+
+    fireEvent.change(input('pmcc-leaps-roll-expiration'), { target: { value: '2028-02-18' } })
+    await waitFor(() =>
+      expect(fieldOf('pmcc-leaps-roll-expiration')).not.toHaveTextContent(message)
+    )
+    await userEvent.click(confirm())
+    await waitFor(() => expect(mockMutate).toHaveBeenCalledTimes(2))
+    expect(mockMutate.mock.calls[1][0]).toMatchObject({ newExpiration: '2028-02-18' })
+  })
+
   it.each([
-    ['newExpiration', 'pmcc-leaps-roll-expiration', 'LEAPS call must expire after the short call.'],
     [
       'newStrike',
       'pmcc-leaps-roll-strike',
