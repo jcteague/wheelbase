@@ -1,5 +1,5 @@
 ---
-description: Implements tasks from a plan file in TDD order, then loops on verification gates (AC coverage, e2e, 95% code coverage) and a fresh-context code review until all gates pass. Finishes by updating documentation and the spec wiki.
+description: Implements tasks from a plan file in TDD order, then loops on verification gates (AC coverage, e2e, 95% code coverage, mutation) and a fresh-context code review until all gates pass. Finishes by updating documentation and the spec wiki.
 argument-hint: <us-id|plan-file-path> [all|red|green|refactor|layer-N]
 allowed-tools:
   - Read
@@ -194,7 +194,7 @@ When verification passes, update tasks.md by changing `- [ ]` to `- [x]` for the
 
 ## Step 4 — Verification Loop
 
-**Run gates A–D in order. On the first failure, remediate and restart the loop from
+**Run gates A–E in order. On the first failure, remediate and restart the loop from
 Gate A** — a fix for one gate routinely breaks another, so gates are never assumed
 still-passing from a prior cycle.
 
@@ -292,6 +292,49 @@ restart the loop. Do **not** close the gap by deleting code, loosening the thres
 adding the file to `coverage.exclude`. If a branch is genuinely unreachable, delete the
 dead branch rather than test it — and say so in the report.
 
+### Gate E — No surviving mutants on changed core lines
+
+Coverage proves a line ran; it does not prove a test would notice the line being wrong.
+Take the Gate D changed-code set and keep only `src/main/core/**/*.ts` (no tests, no
+`test-fixtures/`). If that set is empty, print `Mutation Gate: skipped — no core changes`
+and continue.
+
+Otherwise run Stryker over those files (comma-separated). It runs the pure core suites
+only, so it needs no sqlite rebuild:
+
+```bash
+pnpm test:mutation --mutate src/main/core/<a>.ts,src/main/core/<b>.ts
+```
+
+List every `Survived` and `NoCoverage` mutant from `reports/mutation/mutation.json`:
+
+```bash
+jq -r '.files | to_entries[] | .key as $f | .value.mutants[]
+  | select(.status == "Survived" or .status == "NoCoverage")
+  | "\($f):\(.location.start.line)  \(.mutatorName)  → \(.replacement // "")"' \
+  reports/mutation/mutation.json
+```
+
+A mutant **blocks** when its line falls inside a hunk this branch added or changed
+(`git diff -U0 main...HEAD` plus uncommitted changes). Survivors on untouched lines are
+pre-existing debt: list them as advisory in the final report, do not fix them here.
+
+Print the report:
+
+```
+Mutation Gate (cycle <n>) — changed core lines
+  ✓ src/main/core/pmcc-rules.ts   score 94.1   0 blocking survivors
+  ✗ src/main/core/alerts.ts       score 81.3   2 blocking survivors
+      alerts.ts:271  EqualityOperator  lte → lt
+      alerts.ts:262  ConditionalExpression  → false
+```
+
+Any `✗` → write a test that kills each blocking mutant through `/red` → `/green` (it passes
+against the real code by design; the proof is the re-run showing `Killed`), then restart
+the loop. Never kill a mutant by changing production code. A mutant that cannot change
+behaviour (equivalent) may be disabled with `// Stryker disable next-line <Mutator>: <reason>`
+— list each one in the final report so the user can check the reasoning.
+
 ### Loop exhaustion
 
 If cycle 3 ends with a gate still failing, stop and print:
@@ -300,7 +343,7 @@ If cycle 3 ends with a gate still failing, stop and print:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 implement-plan BLOCKED after 3 verification cycles
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Failing gate: <A|B|C|D>
+Failing gate: <A|B|C|D|E>
 What was attempted each cycle: <one line per cycle>
 Why it did not resolve: <diagnosis>
 Suggested next step: <concrete action for the user>
@@ -312,7 +355,7 @@ Leave the work in place; do not revert. Do not proceed to Step 5.
 
 ## Step 5 — Code Review Loop (fresh-context subagent)
 
-Only after all four gates pass. The reviewer **must not** be a fork of this
+Only after all five gates pass. The reviewer **must not** be a fork of this
 conversation — it reviews the diff cold, with no memory of why any decision was made,
 so implementation rationale cannot paper over a real defect.
 
@@ -348,8 +391,18 @@ Ask it for four things, in this order:
    could not see, a seam that is now obviously in the wrong place. Explicitly _not_
    speculative flexibility (see Simplicity First in `CLAUDE.md`).
 
-Require each finding to carry a severity: `blocking` (AC gap, bug, or type-design defect) or `advisory`
-(refactor opportunity).
+5. **Test quality** — judge every test the diff adds or changes against `CLAUDE.md`
+   § Test Quality Checklist.
+   - **Blocking:**
+     - a test that cannot fail: an assertion a plausible wrong implementation still
+       satisfies, a `try/catch` with no `expect.fail`, a test with no assertion, a
+       renderer assertion that a mocked child or placeholder text satisfies
+     - a test that reads the real clock, so its inputs change from day to day
+     - red-phase scaffolding left in place: `{ fn?: … }` casts, `?.()` calls, "exports X" tests
+   - **Advisory:** duplicate tests, test IDs where a role and name would do, repeated setup.
+
+Require each finding to carry a severity: `blocking` (AC gap, bug, type-design defect, or a
+test that cannot fail) or `advisory` (refactor opportunity, test readability).
 
 ### 5b — Triage
 
@@ -411,12 +464,19 @@ Review cycles:       <n>   (0 blocking findings)
 
 AC coverage:   <N>/<N> covered by passing e2e tests
 Code coverage: <N>/<N> changed files ≥95% lines + branches
+Mutation:      <N>/<N> changed core files with 0 blocking survivors (or "skipped — no core changes")
 Suite:         test ✓  lint ✓  typecheck ✓  e2e ✓
 
 Docs updated:  docs/<stem>-implementation.md, docs/spec/<pages>
 
 Advisory findings not applied (<N>):
   - <finding> — <file:line>
+
+Equivalent mutants disabled (<N>):
+  - <file:line> <Mutator> — <reason>
+
+Pre-existing surviving mutants in touched core files (<N>):
+  - <file:line> <Mutator>
 ```
 
 If the run was a filtered slice (Step 0), print instead:

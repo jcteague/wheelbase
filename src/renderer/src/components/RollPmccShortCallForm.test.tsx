@@ -4,6 +4,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { FormProvider } from 'react-hook-form'
 import { vi } from 'vitest'
+import type { LegDetail } from '../api/positions'
 import { useRollPmccShortCallForm } from '../hooks/useRollPmccShortCallForm'
 import { OPEN_LEAPS as LEAPS, OPEN_SHORT } from '../test-fixtures/pmcc-roll'
 import { RollPmccShortCallForm } from './RollPmccShortCallForm'
@@ -34,21 +35,29 @@ const NO_CHANGE: Draft = { ...UP_OUT, strike: '108', expiration: '2026-11-20' }
 const onClose = vi.fn()
 const onSubmit = vi.fn()
 
-function Harness({ isPending = false }: { isPending?: boolean }): React.JSX.Element {
+function Harness({
+  isPending = false,
+  today = TODAY,
+  openShort = OPEN_SHORT
+}: {
+  isPending?: boolean
+  today?: string
+  openShort?: LegDetail
+}): React.JSX.Element {
   const { methods, schema } = useRollPmccShortCallForm(
-    { openShort: OPEN_SHORT, leapsExpiration: LEAPS.expiration },
-    TODAY
+    { openShort, leapsExpiration: LEAPS.expiration },
+    today
   )
   return (
     <FormProvider {...methods}>
       <RollPmccShortCallForm
         schema={schema}
         ticker="XYZ"
-        openShort={OPEN_SHORT}
+        openShort={openShort}
         leaps={LEAPS}
         basisPerShare="21.2000"
         effectiveShareCost="101.2000"
-        today={TODAY}
+        today={today}
         isPending={isPending}
         onSubmit={onSubmit}
         onClose={onClose}
@@ -211,6 +220,22 @@ describe('RollPmccShortCallForm — fields', () => {
 })
 
 describe('RollPmccShortCallForm — net preview', () => {
+  it('reviews the February replacement as 158 DTE from September 14, 2026', async () => {
+    render(
+      <Harness
+        today="2026-09-14"
+        openShort={{ ...OPEN_SHORT, expiration: '2026-10-16', fillDate: '2026-09-14' }}
+      />
+    )
+    await fill({ ...UP_OUT, expiration: '2027-02-19' })
+    expect(within(fieldOf('pmcc-roll-expiration')).getByText('158 DTE')).toBeInTheDocument()
+    expect(screen.getByTestId('pmcc-coverage-ruler')).toHaveTextContent(
+      'Replacement short at 158 DTE. The LEAPS still covers it by 210 days.'
+    )
+    expect(row('LEAPS · read-only')).toHaveTextContent('$80.00 · 2027-09-17')
+    await waitFor(() => expect(confirm()).toBeEnabled())
+  })
+
   it('a roll up and out previews a net debit, its label, DTE and the post-roll costs', async () => {
     render(<Harness />)
     await fill(UP_OUT)
@@ -274,23 +299,43 @@ describe('RollPmccShortCallForm — rejections', () => {
     await waitFor(() => expect(confirm()).toBeDisabled())
   })
 
-  it('a replacement that outlasts the LEAPS is blocked at the field, the ruler and the footer', async () => {
-    render(<Harness />)
-    await fill(OUTLASTS)
-    expect(fieldOf('pmcc-roll-expiration')).toHaveTextContent(
-      'Short call must expire before the LEAPS call.'
-    )
-    expect(screen.getByTestId('pmcc-coverage-ruler')).toHaveAttribute('data-blocked', 'true')
-    expect(screen.getByTestId('pmcc-coverage-ruler')).toHaveTextContent(
-      'The replacement short reaches the LEAPS. Past this point the short call is naked.'
-    )
-    expect(
-      screen.getByText(
-        'The XYZ $108.00 short call stays open at 2026-11-20. No close or replacement leg is recorded.'
+  it.each(['2027-09-17', '2027-10-15'])(
+    'replacement %s is blocked while the draft remains available for correction',
+    async (expiration) => {
+      render(<Harness />)
+      await fill({ ...OUTLASTS, expiration })
+      const message = 'Short call must expire before the LEAPS call.'
+      expect(within(fieldOf('pmcc-roll-expiration')).getByRole('alert')).toHaveTextContent(message)
+      expect(within(fieldOf('pmcc-roll-expiration')).getByRole('alert')).toHaveClass('text-wb-red')
+      expect(screen.getByTestId('pmcc-coverage-ruler')).toHaveAttribute('data-blocked', 'true')
+      expect(screen.getByTestId('pmcc-coverage-ruler')).toHaveTextContent(
+        'The replacement short reaches the LEAPS. Past this point the short call is naked.'
       )
-    ).toBeInTheDocument()
-    await waitFor(() => expect(confirm()).toBeDisabled())
-  })
+      expect(
+        screen.getByText(
+          'The XYZ $108.00 short call stays open at 2026-11-20. No close or replacement leg is recorded.'
+        )
+      ).toBeInTheDocument()
+      await waitFor(() => expect(confirm()).toBeDisabled())
+      expect(confirm()).toHaveClass('opacity-40', 'cursor-not-allowed')
+      expect(input('pmcc-roll-cost-to-close')).toHaveValue(OUTLASTS.cost)
+      expect(input('pmcc-roll-strike')).toHaveValue(OUTLASTS.strike)
+      expect(input('pmcc-roll-premium')).toHaveValue(OUTLASTS.premium)
+      expect(input('pmcc-roll-expiration')).toHaveValue(expiration)
+      expect(input('pmcc-roll-fill-date')).toHaveValue(TODAY)
+      expect(screen.getByTestId('pmcc-roll-net')).toHaveTextContent('Net Credit: $3.80')
+      await userEvent.click(confirm())
+      expect(onSubmit).not.toHaveBeenCalled()
+      expect(onClose).not.toHaveBeenCalled()
+
+      await userEvent.clear(input('pmcc-roll-expiration'))
+      await userEvent.type(input('pmcc-roll-expiration'), UP_OUT.expiration)
+      await waitFor(() => expect(confirm()).toBeEnabled())
+      expect(fieldOf('pmcc-roll-expiration')).not.toHaveTextContent(message)
+      expect(screen.getByTestId('pmcc-coverage-ruler')).toHaveAttribute('data-blocked', 'false')
+      expect(screen.getByTestId('pmcc-roll-net')).toHaveTextContent('Net Credit: $3.80')
+    }
+  )
 
   it('a zero cost to close reports beside the field', async () => {
     render(<Harness />)

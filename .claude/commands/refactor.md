@@ -169,6 +169,20 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
     - Reduce setup duplication with shared `beforeEach` helpers or Vitest fixtures
     - Ensure all `vi.mock()` mocks are reset between tests with `vi.clearAllMocks()` or `vi.restoreAllMocks()`
 
+    **Test Code** — the tests written for this feature are in scope, not just shared helpers
+    - Remove red-phase scaffolding: `{ fn?: … }` casts, `?.()` calls, "exports X" tests,
+      `// RED:` and "TypeScript will error here until…" comments, abandoned working-out
+    - Delete a test that only repeats another test's assertions (a happy path re-checking
+      what dedicated tests cover, a per-case test a table test already runs) — one
+      regression should fail one test
+    - Move repeated Arrange blocks into the file's existing helper or a `given…()` builder,
+      keeping the values that matter to each test visible in the test
+    - Strengthen any assertion that fails CLAUDE.md § Test Quality Checklist (a known value
+      asserted with `toBeDefined`, an error asserted only as `ok: false`). That is a test
+      change, so confirm the strengthened test still passes and would fail against a wrong value
+    - If production code in `src/main/core/` was refactored, re-run
+      `pnpm test:mutation --mutate <changed files>` — a refactor must not create survivors
+
 ### Phase 5: Continuous Verification
 
 11. **Run Quality Checks After Each Refactoring**
@@ -225,6 +239,7 @@ You are implementing the **REFACTOR phase** of Test-Driven Development for Wheel
 - ✅ All tests remain passing throughout every step of refactoring
 - ✅ Code quality improved: reduced duplication, better names, stronger types, no magic values
 - ✅ Architecture rules verified: pure engines, isolated Alpaca, linked roll pairs, Decimal money
+- ✅ No red-phase scaffolding or duplicate tests left in the feature's test files
 - ✅ `pnpm lint` passes with no errors
 - ✅ `pnpm typecheck` passes with no errors
 - ✅ Results documented in `plans/<feature-dir>/refactor-phase-results.md`

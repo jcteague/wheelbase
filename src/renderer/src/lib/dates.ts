@@ -9,3 +9,18 @@ export function localToday(): string {
 export function localDate(offsetDays: number): string {
   return format(addDays(new Date(), offsetDays), 'yyyy-MM-dd')
 }
+
+/** The market calendar day used by PMCC roll reviews and their default fill dates. */
+export function newYorkToday(now = new Date()): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    })
+      .formatToParts(now)
+      .map(({ type, value }) => [type, value])
+  )
+  return `${parts.year}-${parts.month}-${parts.day}`
+}

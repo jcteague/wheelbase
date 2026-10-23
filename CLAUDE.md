@@ -151,6 +151,59 @@ example.
 - A failure prints `Counterexample:` plus a seed; replay it with
   `fc.assert(fc.property(...), { seed, path })` while fixing, then drop the seed.
 
+### Test Quality Checklist
+
+Every test must be able to fail. A test that still passes when the code returns a
+plausible wrong value is worse than no test: it reports coverage that is not there. The
+TDD skills (`/red`, `/green`, `/refactor`, `/implement-plan`) all apply this list.
+
+- **Assert the value you know.** `toBeDefined`, `toBeTruthy`, a bare `toHaveBeenCalled()`,
+  `length > 0`, or a shape regex (`/^\d+\.\d{4}$/`) is allowed only when existence _is_ the
+  behaviour. Otherwise assert the literal, or `toEqual` / `expect.objectContaining` with
+  the fields that matter (urgency, summary, `code`, `field`).
+- **Errors.** Use `expect(() => …).toThrow(…)` or `catchValidation`, never a `try/catch`
+  without `expect.fail`. An `{ ok: false }` envelope assertion names the `code` and `field`
+  — `errors).toBeDefined()` passes for any failure.
+- **Boundaries.** Every `<`, `<=`, `>`, `>=` gets a test _at_ the threshold and one either
+  side (1% strike proximity, 50% profit target, DTE 21/22).
+- **Rounding.** A test that claims to exercise rounding uses an input whose fifth decimal
+  is 5 and asserts the literal result. A name must not claim behaviour the inputs do not
+  exercise.
+- **Time.** Never read the real clock. Pin it (`vi.useFakeTimers({ toFake: ['Date'] })` +
+  `vi.setSystemTime`) or inject `today`, and write fixture dates as literals — a fixture
+  relative to `new Date()` changes every day and silently goes vacuous when it passes.
+- **Expected values** are literals or an independent formula, never the output of the
+  function under test.
+- **Renderer.** Query by role and label (`getByRole('button', { name })`), not test IDs, for
+  anything a user sees. Loading, error and empty states assert their copy, not just a role.
+  A `queryBy… not.toBeInTheDocument()` needs a positive control proving the region rendered;
+  text a mocked child or placeholder also renders cannot be the assertion.
+- **Mocks** sit at real boundaries (`window.api`, market data, Finnhub, the clock), typed
+  so the test needs no `as unknown as`. Assert observable results over mock-call internals.
+- **One reason to fail.** A happy-path test does not re-assert what a dedicated test
+  covers; one regression should fail one test.
+- **No red-phase scaffolding** survives the refactor: no `{ fn?: … }` casts, `?.()` calls,
+  "exports X" tests, `// RED:` / "TypeScript will error here until…" comments, or
+  abandoned working-out.
+
+### Mutation Testing (core engines)
+
+`pnpm test:mutation` runs [StrykerJS](https://stryker-mutator.io) over `src/main/core/`: it
+flips operators, rounding modes and guards one at a time and reruns the core suites
+(`vitest.mutation.config.ts`, property seeds pinned). A **surviving mutant** is a change no
+test noticed — usually a missing boundary test or a weak assertion.
+
+- Scope a run to the files you changed: `pnpm test:mutation --mutate src/main/core/alerts.ts`.
+  Runs are incremental (`reports/mutation/stryker-incremental.json`), so unchanged mutants
+  are reused.
+- The HTML report is `reports/mutation/index.html`; survivors are listed by file and line.
+- **Kill a survivor with a test**, not by changing the code. If the mutant is _equivalent_
+  (cannot change behaviour, e.g. `contracts < 1` vs `<= 0` on an integer), record it in the
+  phase results with the reason — or mark it in source with
+  `// Stryker disable next-line <Mutator>: <reason>`.
+- Mutation testing cannot see missing code (an unvalidated input with no guard at all), so
+  it complements the checklist above rather than replacing it.
+
 ### Post-Change Checklist
 
 After every code change, run in order:
