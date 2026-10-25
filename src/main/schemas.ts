@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { AlertStatus, AlertUrgency } from './core/alerts'
+import type { AlertStatus, AlertUrgency, RuleCode } from './core/alerts'
 import {
   MANAGEMENT_WINDOW_MAX,
   MANAGEMENT_WINDOW_MIN,
@@ -789,6 +789,7 @@ export interface ManagementQueueItem {
   positionId: string
   ticker: string
   phase: WheelPhase
+  ruleCode: RuleCode
   urgency: AlertUrgency
   summary: string
   quickAction: string

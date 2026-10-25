@@ -45,4 +45,5 @@ the PMCC badge's leg label (`PMCC · LEAPS` vs `PMCC · short call`).
 
 - Handler: `src/main/ipc/alerts.ts` (unchanged)
 - Service: `src/main/services/alerts.ts` — `listManagementQueue`, `mapQueueRow`, `QueueRow`
-- Types: `src/main/schemas.ts` `ManagementQueueItem`; `src/preload/index.d.ts` `ManagementQueueItem`
+- Types: `src/main/schemas.ts` `ManagementQueueItem`. The preload global in
+  `src/preload/index.d.ts` is an alias of that type since US-106 and needs no edit.

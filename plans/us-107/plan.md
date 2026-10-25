@@ -29,14 +29,17 @@ families pass as 12 named e2e cases, with wheel output unchanged.
 
 ## Prerequisites
 
-- **US-106 must be merged first.** This plan uses its planned names:
-  `PMCC_ASSIGNMENT_RISK`, `loadPmccEvaluableRows`, `PmccCandidateRow`, the failed-selection
-  keep-open set, `evaluate-alerts-pmcc.test.ts`, the PMCC badge branch in
-  `ManagementQueueRow`, and `e2e/pmcc-assignment-risk-alert.spec.ts` (research § Starting point).
-  Branch `wb-107` from `main` after it lands.
+- **US-106 is merged** (`18e1617`, 2026-10-23). Every name below is the one US-106
+  shipped, re-verified against `main` on 2026-10-24 (research § Starting point):
+  `PMCC_ASSIGNMENT_RISK`, `priceVsStrikeMissingData`, the camelCase `EvaluableRow`,
+  `loadPmccEvaluableRows({ db, heldIds, logger })`, `heldPositionIds` /
+  `AlertsToKeep.positionIds`, `evaluate-alerts-pmcc.test.ts`, `alerts.property.test.ts`,
+  `PhaseBadge`'s `label` prop in `ManagementQueueRow`, the preload `ManagementQueueItem`
+  alias, and `e2e/pmcc-assignment-risk-alert.spec.ts`.
 - Already on `main`: US-101 PMCC entry (`PMCC_OPEN`), US-103 `pmccOpenLegs` /
-  `currentLeapsLeg` replay, US-104 short roll, US-105 `rollPmccLeaps` IPC, the US-50/51/52/59
-  alert engine, queue and dismissal, and `computeDte`.
+  `currentLeapsLeg` replay, US-104 short roll, US-105 `rollPmccLeapsPosition` service and
+  `positions:roll-pmcc-leaps` IPC (`window.api.rollPmccLeaps`), the US-50/51/52/59 alert
+  engine, queue and dismissal, and `computeDte`.
 - No migration.
 
 ## Acceptance coverage audit
@@ -62,7 +65,8 @@ Total: 8 families, 12 named e2e cases.
 
 - `src/main/core/alerts.ts` — inputs, rule code, constant, `inDays`, summary helper, registry entry.
 - `src/main/core/alerts.test.ts` — `makeInput` gains `leapsDte: null, leapsStrike: null`; new describe block.
-- `src/main/core/alerts.property.test.ts` — new properties (file created by US-106).
+- `src/main/core/alerts.property.test.ts` — US-106's local `input()` builder gains
+  `leapsDte: null, leapsStrike: null`; new properties appended.
 
 **Red — tests to write:**
 
@@ -82,12 +86,11 @@ Total: 8 families, 12 named e2e cases.
 - Existing EARNINGS_PROXIMITY summaries (`today`, `in 1 day`, `in N days`) still pass after
   `inDays` is extracted.
 - `alerts.property.test.ts` (use `fc.integer({ min: -400, max: 800 })` for DTE and
-  `positiveMoney` for strike):
+  `positiveMoney` for strike; the file's `nonPmccPhase` arbitrary already exists):
   - **Oracle:** for every PMCC input, the rule matches ⇔ `0 <= leapsDte && leapsDte <= 60`.
     The oracle is the literal inequality from the story, not a call to the predicate.
-  - **Guard:** for every wheel phase (`wheelPhase` arbitrary filtered by construction to
-    `CSP_OPEN | CC_OPEN`) and any `leapsDte`/`leapsStrike` including null, there is no match
-    or skip with this code.
+  - **Guard:** for every non-PMCC phase (`nonPmccPhase`) and any `leapsDte`/`leapsStrike`
+    including null, there is no match or skip with this code.
   - **Invariant (leg independence):** for any PMCC input, arbitrary `leapsDte`/`leapsStrike`
     leave the set of non-LEAPS-rule matches and skips unchanged. Compare evaluations
     with the LEAPS fields set against the same input with them nulled; this is order- and
@@ -133,6 +136,10 @@ Total: 8 families, 12 named e2e cases.
   `missing_dte`, `missing_option_mark`, `missing_strike` or `missing_underlying_price` skip
   from EXPIRATION_IMMINENT, MANAGEMENT_WINDOW, PROFIT_TARGET, EARNINGS_PROXIMITY or
   PMCC_ASSIGNMENT_RISK.
+- Explicit US-106 hazard case: the same LEAPS-only input at `currentUnderlyingPrice: '118.80'`
+  (deep above the absent $112 short) records **no** `PMCC_ASSIGNMENT_RISK` match and **no**
+  skip — US-106's shipped `priceVsStrikeMissingData('PMCC_OPEN')` would return
+  `missing_strike` on the null short strike if the rule still ran.
 - Wheel regression: a CSP_OPEN input with `dte: null` still skips EXPIRATION_IMMINENT and
   MANAGEMENT_WINDOW with `missing_dte` (short leg present, so the rules apply). Existing
   suite stays green unchanged except for the `makeInput` defaults.
@@ -165,54 +172,67 @@ Total: 8 families, 12 named e2e cases.
 
 **Files to create or modify:**
 
-- `src/main/services/evaluate-alerts.ts` — `EvaluableRow` LEAPS columns, wheel SQL NULLs,
-  `loadPmccEvaluableRows` via `pmccOpenLegs`, `toEvaluationInput` LEAPS fields.
-- `src/main/services/evaluate-alerts-pmcc.test.ts` — new LEAPS-window describe block.
-- `src/main/services/evaluate-alerts.test.ts` — wheel regression only if fixtures need the new columns.
+- `src/main/services/evaluate-alerts.ts` — `EvaluableRow` LEAPS fields and nullable
+  `instrumentType`, wheel SQL NULLs, `occSymbolForRow` guard, `loadPmccEvaluableRows` via
+  `pmccOpenLegs`, `toEvaluationInput` LEAPS fields.
+- `src/main/services/evaluate-alerts-pmcc.test.ts` — new LEAPS-window describe block (own
+  $112 / 2027-08-20 short fixtures; do not edit US-106's constants).
+- `src/main/services/evaluate-alerts.test.ts` — wheel regression only if fixtures need the new fields.
 
-**Red — tests to write** (issue calendar, `TZ=America/New_York`, `now` at 16:00Z):
+**Red — tests to write** (issue calendar, `TZ=America/New_York`, `now` at 16:00Z; reuse
+US-106's `seedPmccPosition` / `openingLegs` / `seedBackground` / `rollLegs` / `run` /
+`rowsFor` / `openRule` shape on `makePmccLeg` + `insertLegs`, `stubProvider`,
+`inertEarnings`, `makeSpyLogger`):
 
 - Window boundary: on 2027-07-19 / -07-20 / -08-18 an open MED PMCC_LEAPS_ROLL_WINDOW
   alert exists for XYZ with the exact S1 summary. On 2027-07-18 and 2027-07-09 none exists.
 - Refresh in place: evaluate 2027-07-19 then 2027-07-20, and the same alert id and
-  `triggered_at` carry the summary `…in 59 days…`. With dismiss between runs, it stays
-  `dismissed` and no new open row appears.
+  `triggered_at` carry the summary `…in 59 days…`. With `dismissAlert` between runs, it
+  stays `dismissed` and no new open row appears.
 - LEAPS-only (S4): evaluate 2027-08-19 (EXPIRATION_IMMINENT open for the short at 1 DTE),
-  record `SHORT_CALL_EXPIRED`, evaluate 2027-09-15. Expect EXPIRATION_IMMINENT `resolved`,
-  LEAPS row open with `…in 2 days at $80.00…`, and no other open XYZ alert. Also assert
-  `fetchOptionSnapshots` was called with no XYZ symbol and never the LEAPS OCC.
+  insert a `SHORT_CALL_EXPIRED` leg with `makePmccLeg`, evaluate 2027-09-15. Expect
+  EXPIRATION_IMMINENT `resolved`, LEAPS row open with `…in 2 days at $80.00…`, and no other
+  open XYZ alert. Also assert the provider's `fetchOptionSnapshots` spy was called with no
+  XYZ symbol and never the LEAPS OCC (`occFor` the LEAPS).
 - US-106 regression: a LEAPS-only PMCC with quote 118.80 does not produce
   PMCC_ASSIGNMENT_RISK and records no skip for it; a previously open assignment alert
   resolves.
 - Co-fire (S6) on 2027-08-18: HIGH EXPIRATION_IMMINENT `Expires in 2 days at $112.00 strike`
   plus MED LEAPS row; no EXPIRATION_IMMINENT/MANAGEMENT_WINDOW summary contains `$80.00`
   or `2027-09-17`.
-- Roll (S5): open on 2027-07-20, call the real `rollPmccLeapsPosition` to $85 / 2028-01-21,
-  re-evaluate the same day → alert `resolved`, no new PMCC_LEAPS_ROLL_WINDOW row
-  (185 DTE).
+- Roll (S5): open on 2027-07-20, call the real `rollPmccLeapsPosition`
+  (`./roll-pmcc-leaps-position`) to $85 / 2028-01-21, re-evaluate the same day → alert
+  `resolved`, no new PMCC_LEAPS_ROLL_WINDOW row (185 DTE).
 - Unreadable (S7): open on 2027-07-20, `UPDATE legs SET expiration = 'unreadable'` on the
   LEAPS leg id only, re-evaluate. The row stays `open` with the previous summary, the spy
   logger has `alert_rule_skipped` with `ruleCode: 'PMCC_LEAPS_ROLL_WINDOW'` and
   `reason: 'missing_leaps_dte'`, and `skippedRuleCount` ≥ 1. This also proves
   `pmccOpenLegs` tolerates a non-date expiration. If it throws instead, stop and revisit
   research ADR 6.
-- No LEAPS: a PMCC candidate whose legs have no LEAPS yields no evaluation and no failure log.
+- No LEAPS: a PMCC candidate whose legs have no LEAPS yields no evaluation and no
+  `alert_evaluation_failed` log.
 - Wheel (S8): mixed batch with MSFT CC_OPEN 59 DTE and AAPL CSP_OPEN 20 DTE → MSFT has no
   alert, AAPL has exactly `20 DTE remaining — review for roll or close`, and neither has a
   LEAPS-rule row or skip.
 
 **Green — implementation:**
 
-- `EvaluableRow` gains `leaps_strike: string | null` and `leaps_expiration: string | null`;
-  `EVALUABLE_QUERY` adds `NULL AS leaps_strike, NULL AS leaps_expiration`.
-- In US-106's `loadPmccEvaluableRows`, replace `currentShortCallLeg(legs)` with
-  `pmccOpenLegs(legs)`. Return no row for `null`; otherwise map `short` (or nulls when
-  absent, with `instrument_type: short ? 'CALL' : null`) plus `long.strike` and
-  `long.expiration` into the row. Keep US-106's per-candidate catch and failed-id set.
-- `toEvaluationInput` adds `leapsDte: computeDte(row.leaps_expiration, now)` and
-  `leapsStrike: row.leaps_strike`.
-- Update the module header comment ("positions with an active short option leg") to
-  "wheel positions with an active short leg, and PMCCs with an open LEAPS".
+- `EvaluableRow` gains `leapsStrike: string | null` and `leapsExpiration: string | null`;
+  `instrumentType` widens to `'PUT' | 'CALL' | null`. `EVALUABLE_QUERY` adds
+  `NULL AS leapsStrike, NULL AS leapsExpiration`.
+- `occSymbolForRow` returns `null` when `row.instrumentType === null` (ahead of the
+  existing strike/expiration check), so `buildOccSymbol` never sees a null type.
+- In US-106's `loadPmccEvaluableRows({ db, heldIds, logger })`, replace
+  `currentShortCallLeg(legs)` with `pmccOpenLegs(legs)`. Return no row for `null`;
+  otherwise spread the candidate and map `short` (or nulls when absent, with
+  `instrumentType: short ? 'CALL' : null`) plus `leapsStrike: long.strike` and
+  `leapsExpiration: long.expiration`. Keep US-106's per-candidate catch and `heldIds.add`.
+- `toEvaluationInput` adds `leapsDte: computeDte(row.leapsExpiration, now)` and
+  `leapsStrike: row.leapsStrike`.
+- Update the module header and the `[US-106] PMCC selection` comment ("evaluated through
+  its current short call, never the LEAPS") to "wheel positions with an active short leg,
+  and PMCCs with an open LEAPS; the short-leg rules read the short, the LEAPS rule reads
+  the LEAPS".
 
 **Refactor — cleanup to consider:**
 
@@ -227,8 +247,8 @@ Total: 8 families, 12 named e2e cases.
 
 **Files to create or modify:**
 
-- `src/main/schemas.ts` — `ManagementQueueItem.ruleCode: RuleCode`.
-- `src/preload/index.d.ts` — duplicated `ManagementQueueItem` gains `ruleCode: string`.
+- `src/main/schemas.ts` — `ManagementQueueItem.ruleCode: RuleCode` (import the type from
+  `./core/alerts`). The preload global is already an alias of this type; no preload edit.
 - `src/main/services/alerts.ts` — `QueueRow.rule_code`, select `a.rule_code AS rule_code`, `mapQueueRow`.
 - `src/main/services/alerts.test.ts`, `src/main/ipc/alerts.test.ts` — expectations.
 
@@ -241,14 +261,14 @@ Total: 8 families, 12 named e2e cases.
 
 **Green — implementation:**
 
-- Per `contracts/alerts-list.md`: add the field to both interfaces, the SQL select and
+- Per `contracts/alerts-list.md`: add the field to the schema interface, the SQL select and
   `mapQueueRow`. Handler file unchanged.
 
 **Refactor — cleanup to consider:**
 
-- Update renderer test fixtures (`ManagementQueue.test.tsx`, `api/alerts.test.ts`,
-  `PositionsListPage.test.tsx`) that build `ManagementQueueItem` literals so typecheck passes.
-  Note the preload duplication in the PR rather than fixing it.
+- Update renderer fixtures that build `ManagementQueueItem` literals so typecheck passes:
+  `ManagementQueueRow.test.tsx`, `ManagementQueue.test.tsx`, `api/alerts.test.ts`,
+  `PositionsListPage.test.tsx`, and any literal in `hooks/useManagementQueue.ts`.
 
 **Acceptance criteria covered:** S3 (data the badge needs).
 
@@ -261,24 +281,29 @@ Total: 8 families, 12 named e2e cases.
 
 **Red — tests to write:**
 
-- A PMCC_LEAPS_ROLL_WINDOW item (`phase: 'PMCC_OPEN'`, `urgency: 'medium'`) renders `XYZ`,
-  the MED pill, the badge text `PMCC · LEAPS` and the full summary. It does **not** render
-  `short call` or the wheel `PhaseBadge`.
-- An EXPIRATION_IMMINENT PMCC item renders `PMCC · short call` (US-106 regression).
+- A PMCC_LEAPS_ROLL_WINDOW item (`phase: 'PMCC_OPEN'`, `urgency: 'medium'`,
+  `ruleCode: 'PMCC_LEAPS_ROLL_WINDOW'`) renders `XYZ`, the MED pill, the badge text
+  `PMCC · LEAPS` and the full summary. `queryByText('PMCC · short call')` and the wheel
+  label `LEAPS + short call open` are absent.
+- An EXPIRATION_IMMINENT PMCC item renders `PMCC · short call` (US-106 regression). Rename
+  US-106's test "a HIGH expiration row on a PMCC gets the same badge — the branch follows
+  phase, not rule or summary" to "a HIGH expiration row on a PMCC reads `PMCC · short call`
+  — short-leg rules name the short leg"; its assertions stay.
+- US-106's tint test (`PHASE_COLOR.PMCC_OPEN` on badge and dot) still passes for both labels.
 - Review position sets `window.location.hash` to `/positions/<id>`; Dismiss calls back
   with the alert id.
-- CSP/CC rows still render `PhaseBadge`.
+- CSP/CC rows still render `PhaseBadge` with the phase label.
 
 **Green — implementation:**
 
 - Follow the `QueueRow` screen in `mockups/us-107-pmcc-leaps-dte-alert.mdx`: ticker over
-  the `UrgencyPill` in the 96px cell, then the 150px badge cell with the existing `Badge`
-  and its 5px gold dot (`bg-wb-gold`), then the summary, then the right-aligned Review
-  position (gold) and Dismiss (red) buttons. This is the same layout US-106 ships.
-  The only change is the label, taken from
-  `PMCC_LEG_LABEL[item.ruleCode === 'PMCC_LEAPS_ROLL_WINDOW' ? 'leaps' : 'short']`
-  (data-model § Type Design). Per the user's decision, use the leg-aware label instead
-  of the mockup's plain `PMCC`.
+  the `UrgencyPill` in the 96px cell, then the 150px badge cell, then the summary, then
+  the right-aligned Review position (gold) and Dismiss (red) buttons. This is the layout
+  US-106 ships. The only change is the `label` passed to US-106's `PhaseBadge`:
+  `label={item.phase === 'PMCC_OPEN' ? pmccBadgeLabel(item.ruleCode) : undefined}` with
+  `PMCC_LEG_LABEL` / `pmccBadgeLabel` from data-model § Type Design. Tint, dot and column
+  width are untouched. Per the user's decision, use the leg-aware label instead of the
+  mockup's plain `PMCC`.
 - Do not ship the mockup's prototype-only pieces: the gold row highlight, the
   "why the LEAPS is in the queue" `StatGrid`, the `DteRuler`, the explanation
   `AlertBox`es and the preset controls. There is no new sheet, overlay or post-success
@@ -298,10 +323,16 @@ Total: 8 families, 12 named e2e cases.
 
 - `e2e/pmcc-leaps-roll-window-alert.spec.ts` — new.
 - `e2e/alert-helpers.ts` — add `setLegExpiration(dbPath, legId, expiration)` (single leg,
-  bound by id; same `sqlite3` + escaping style as `setActiveLegExpiration`).
-- Reuse `runAlertEvaluation`, `listManagementQueueItems`, `readAlertRows`, `QUEUE_ROW`,
-  `recordEvent` (`testPmccRecordLegEvent`) and US-106's PMCC launch/seed setup. If both
-  PMCC alert specs need the same seeding helper, extract it into `e2e/pmcc-helpers.ts`.
+  bound by id) implemented with `sqlite(dbPath, sql)` from `e2e/pmcc-helpers.ts` and the
+  file's existing `escapeSqlString`.
+- Reuse `runAlertEvaluation`, `listManagementQueueItems`, `readAlertRows`, `QUEUE_ROW`
+  (`alert-helpers`), `recordEvent` (`pmcc-ledger-helpers`), `rollLeaps`
+  (`pmcc-roll-helpers`), `localDate` / `localToday` (`dates`), and `tmpDb` /
+  `buildLaunchEnv` / `launchElectron` / `getPage` / `cleanupDb` / `seedCsp` /
+  `CLOSED_SESSION` (`assignment-helpers`). Copy US-106's spec-local `launch` and
+  `createXyzPmcc` shape; extract both into `e2e/pmcc-alert-helpers.ts` only if the new spec
+  lifts them verbatim (US-107's short is $112 at a per-scenario DTE, US-106's is $110 at 18
+  DTE, so `createXyzPmcc` likely takes parameters rather than being shared as-is).
 
 Electron dates are run-day relative (quickstart). Each case seeds the LEAPS at the
 scenario's DTE and the short 28 days earlier, which keeps the issue's calendar gap (for
@@ -317,18 +348,18 @@ strings from Linear, never built with the production helper.
 - **S2** `it.each` — `Alert does not fire while the LEAPS has more than 60 days left — <n> days`
   for n = 61, 70: there is no `PMCC_LEAPS_ROLL_WINDOW` row of any status for XYZ. For
   falsifiability, the same run must create a MANAGEMENT_WINDOW row for a sibling CSP at
-  20 DTE, which proves evaluation ran.
+  20 DTE (`seedCsp(page, cspAtDte(...))`), which proves evaluation ran.
 - **S3** — `The queue row identifies the position as a PMCC and the LEAPS as the leg`:
   LEAPS at 59 DTE. The dashboard row containing the exact summary shows `MED`,
   `PMCC · LEAPS` and the summary. Clicking its `Review position` navigates to
   `#/positions/<xyzId>` and the XYZ detail header renders.
 - **S4** — `A PMCC with only the LEAPS open is still evaluated for this rule`: LEAPS
   `localDate(2)` and short `localDate(1)`. Evaluate and assert EXPIRATION_IMMINENT is
-  open. Record `SHORT_CALL_EXPIRED` and evaluate again. EXPIRATION_IMMINENT is now
+  open. `recordEvent` a `SHORT_CALL_EXPIRED` and evaluate again. EXPIRATION_IMMINENT is now
   `resolved`, the LEAPS row is open with `LEAPS expires in 2 days at $80.00 strike — review for roll or close`,
   and it is the only open XYZ alert.
 - **S5** — `Alert resolves when the LEAPS is rolled out past the window`: LEAPS at 59 DTE.
-  Evaluate (row open), then `window.api.rollPmccLeaps` to $85 at `localDate(185)`, then
+  Evaluate (row open), then `rollLeaps(page, payload)` to $85 at `localDate(185)`, then
   evaluate again. The row is `resolved`, no XYZ queue row has a `LEAPS expires` summary,
   and no new open `PMCC_LEAPS_ROLL_WINDOW` row exists.
 - **S6** — `The short-call rules and the LEAPS rule co-fire without reading each other's leg`:
@@ -343,9 +374,10 @@ strings from Linear, never built with the production helper.
   `alert_rule_skipped` with XYZ's position id, `PMCC_LEAPS_ROLL_WINDOW` and
   `missing_leaps_dte`.
 - **S8** `it.each` — `Classic wheel positions do not use the PMCC rule — <ticker> <phase>`:
-  MSFT CC_OPEN at 59 DTE produces no alert rows at all and no LEAPS-rule skip in the
-  DEBUG log. AAPL CSP_OPEN at 20 DTE produces exactly one open MANAGEMENT_WINDOW row with
-  `20 DTE remaining — review for roll or close`, plus no LEAPS-rule row or skip.
+  MSFT CC_OPEN at 59 DTE (US-106's `seedMsftCoveredCall` pattern) produces no alert rows
+  at all and no LEAPS-rule skip in the DEBUG log. AAPL CSP_OPEN at 20 DTE produces exactly
+  one open MANAGEMENT_WINDOW row with `20 DTE remaining — review for roll or close`, plus
+  no LEAPS-rule row or skip.
 
 **Green — implementation:**
 

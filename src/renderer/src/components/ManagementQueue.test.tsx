@@ -36,6 +36,7 @@ function makeItem(overrides: Partial<ManagementQueueItem>): ManagementQueueItem 
     positionId: 'p',
     ticker: 'AAPL',
     phase: 'CSP_OPEN',
+    ruleCode: 'EXPIRATION_IMMINENT',
     urgency: 'high',
     summary: 'summary',
     quickAction: 'Review position',

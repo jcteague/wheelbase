@@ -49,3 +49,27 @@
 - Feature page: [us-106-pmcc-assignment-risk-alert](../../features/us-106-pmcc-assignment-risk-alert.md)
 - Domain page: [alerts](../../domain/alerts.md)
 <!-- /generated -->
+
+<!-- generated:from us-107 -->
+
+## Amendment (US-107): PMCCs are selected by open LEAPS
+
+US-107 widens the selection above. A PMCC is now evaluable whenever its **LEAPS** is open, whether or not a short call is open. The ledger-replay approach, the untouched wheel SQL and the failure isolation all stand; what changes is which replay is called and what an absent short means.
+
+- **`pmccOpenLegs` replaces `currentShortCallLeg`** in `loadPmccEvaluableRows({ db, heldIds, logger })` (`src/main/services/evaluate-alerts.ts`). It replays both sides of the ledger in one pass over the shared roll chains, so a US-105 LEAPS roll is followed (a roll to 2028-01-21 reads as 185 DTE and the LEAPS alert resolves).
+  - `null` (no LEAPS) → no row; the position's alerts resolve.
+  - `{ long, short }` → one `EvaluableRow`. Its short-leg fields come from `short`, or are all `null` with `instrumentType: null` when no short is open. New `leapsStrike` / `leapsExpiration` fields come from `long`.
+  - A throw keeps the held path: `alert_evaluation_failed` is logged and the id joins `heldIds`, which reaches resolution as `AlertsToKeep.positionIds`, so the position's existing alerts are kept.
+- **"No current short" no longer excludes the position.** Point 4 of the decision above now applies only when there is no LEAPS. A LEAPS-only PMCC stays evaluable. Its short-leg rules are made _inapplicable_ by the engine rather than skipped, so the expired short's `EXPIRATION_IMMINENT` and any `PMCC_ASSIGNMENT_RISK` still resolve, as US-106 intended. See [alert-rules-declare-their-leg](./alert-rules-declare-their-leg.md).
+- **The LEAPS is now fed to the engine, but only to the LEAPS rule.** It arrives as separate `leapsDte` / `leapsStrike` inputs that no short-leg rule reads; the short-leg rules still see only the short. The LEAPS OCC symbol is still never requested: `occSymbolForRow` returns `null` when `instrumentType` is null, so a LEAPS-only PMCC requests no option snapshot at all.
+- **`EvaluableRow.instrumentType` widens** to `'PUT' | 'CALL' | null`; the wheel `EVALUABLE_QUERY` selects `NULL` for the two LEAPS columns and is otherwise unchanged.
+- **The SQL alternative was rejected again.** The Linear technical note for US-107 again suggested extending `EVALUABLE_QUERY` and `activeLegSubquery`; the reasons above still hold, and a second SQL join for the LEAPS would duplicate replay and mishandle LEAPS rolls.
+
+The known gap above is unchanged in kind: closure still follows recorded leg events. Until a production writer records `SHORT_CALL_EXPIRED`, a short past its date remains current and keeps its short-leg alerts.
+
+### Sources
+
+- [extract: us-107](../../.extracts/us-107.md): ADR "A PMCC is evaluable whenever its LEAPS is open"
+- `plans/us-107/research.md` (ADR 3), `plans/us-107/data-model.md` (§ Selection)
+- Feature page: [us-107-pmcc-leaps-roll-window-alert](../../features/us-107-pmcc-leaps-roll-window-alert.md)
+<!-- /generated -->

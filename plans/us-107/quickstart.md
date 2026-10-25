@@ -1,7 +1,7 @@
 # US-107 — Implementation verification
 
-Planning only; nothing below exists yet. Prerequisite: **US-106 merged to `main`**, then
-branch `wb-107` from it.
+Planning only; nothing below exists yet. Prerequisite: **US-106 is merged** (`18e1617`,
+2026-10-23); `wb-107` branches from `main` after it.
 
 ## Setup
 
@@ -24,10 +24,15 @@ TZ=America/New_York pnpm exec vitest run \
 
 Service fixtures (issue calendar): LEAPS `$80.0000` exp `2027-09-17` bought `25.0000`,
 short `$112.0000` exp `2027-08-20` sold `2.1000`, 1 contract. `now` values at 16:00Z on
-2027-07-09, -07-18, -07-19, -07-20, -08-18, -08-19, -09-15. Use US-106's
-`evaluate-alerts-pmcc.test.ts` helpers plus `makePmccLeg`/`insertLegRow`,
-`stubProvider`, `stubEarnings` and a spy logger; the LEAPS roll uses the real
-`rollPmccLeapsPosition` service.
+2027-07-09, -07-18, -07-19, -07-20, -08-18, -08-19, -09-15. Reuse US-106's
+`evaluate-alerts-pmcc.test.ts` shape — `seedPmccPosition`, `openingLegs`, `seedBackground`,
+`rollLegs`, `run`, `rowsFor`, `openRule` — built on `makePmccLeg` / `insertLegs`
+(`test-fixtures/pmcc-legs.ts`) and `stubProvider` / `inertEarnings` / `occFor` /
+`readAlertRows` (`evaluate-alerts-test-utils.ts`), with `makeSpyLogger` from
+`src/main/test-utils`. The US-107 fixtures use their own $112 / 2027-08-20 short, so keep
+them in a new describe block (or a sibling file) rather than editing US-106's constants.
+The LEAPS roll uses the real `rollPmccLeapsPosition` service
+(`./roll-pmcc-leaps-position`), the way US-106 calls `rollPmccShortCallPosition`.
 
 Property stress (then remove the setup file; leave normal runs unseeded):
 
@@ -58,20 +63,25 @@ pnpm rebuild:electron
 TZ=America/New_York MAIN_VITE_LOG_LEVEL=debug pnpm test:e2e e2e/pmcc-leaps-roll-window-alert.spec.ts
 ```
 
-- Launch with `buildLaunchEnv` / `launchElectron`, `NODE_ENV=test`, inherited `VITEST`
-  cleared (so pino emits DEBUG), and a closed fake market session so the interval job
-  doesn't race `runAlertEvaluation`.
-- Seed XYZ with `window.api.createPmccPosition`: LEAPS $80 @ 25.00, short $112 @ 2.10,
-  1 contract, 0 fees, at run-day-relative expirations chosen per scenario (e.g. LEAPS
-  `localDate(59)`, short `localDate(31)`). The alert job uses the real clock; exact
-  calendar dates are covered by the service tests.
-- Short expired (S4): `testPmccRecordLegEvent` with `SHORT_CALL_EXPIRED`.
-- LEAPS roll (S5): `window.api.rollPmccLeaps` to $85 at `localDate(185)`.
-- Unreadable expiration (S7): new `setLegExpiration(dbPath, leapsLegId, 'unreadable')`.
+- Launch as US-106's spec does: `tmpDb` + `buildLaunchEnv(dbPath, { marketStatus: CLOSED_SESSION })`
+  from `e2e/assignment-helpers.ts`, `delete env.VITEST` (so pino emits DEBUG), capture
+  `app.process().stdout` for the S7 log check, closed fake market session so the interval
+  job doesn't race `runAlertEvaluation`.
+- Seed XYZ with `window.api.createPmccPosition` (US-106's local `createXyzPmcc` is the
+  template): LEAPS $80 @ 25.00, short $112 @ 2.10, 1 contract, 0 fees, at run-day-relative
+  expirations chosen per scenario (e.g. LEAPS `localDate(59)`, short `localDate(31)` from
+  `e2e/dates.ts`). The alert job uses the real clock; exact calendar dates are covered by
+  the service tests.
+- Short expired (S4): `recordEvent` from `e2e/pmcc-ledger-helpers.ts` with
+  `SHORT_CALL_EXPIRED` (the `_test:pmcc-record-leg-event` seam).
+- LEAPS roll (S5): `rollLeaps(page, payload)` from `e2e/pmcc-roll-helpers.ts` to $85 at
+  `localDate(185)`.
+- Unreadable expiration (S7): new `setLegExpiration(dbPath, leapsLegId, 'unreadable')` in
+  `e2e/alert-helpers.ts`, implemented with `sqlite(dbPath, sql)` from `e2e/pmcc-helpers.ts`.
   Never `setActiveLegExpiration`, which rewrites every leg.
 - Read stored alerts with `readAlertRows`; read the queue with `listManagementQueueItems`
-  and the `[data-testid="management-queue-row"]` locator; correlate rows by `ruleCode`
-  or exact summary, not ticker alone (XYZ can have two rows).
+  and the `QUEUE_ROW` locator; correlate rows by `ruleCode` or exact summary, not ticker
+  alone (XYZ can have two rows).
 
 Regressions to rerun:
 

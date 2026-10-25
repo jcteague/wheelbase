@@ -1,5 +1,10 @@
+import type { RuleCode } from '../../../main/core/alerts'
 import { PhaseBadge } from './PhaseBadge'
 import { UrgencyPill } from './UrgencyPill'
+
+const PMCC_LEG_LABEL = { short: 'PMCC · short call', leaps: 'PMCC · LEAPS' } as const
+const pmccBadgeLabel = (ruleCode: RuleCode): string =>
+  PMCC_LEG_LABEL[ruleCode === 'PMCC_LEAPS_ROLL_WINDOW' ? 'leaps' : 'short']
 
 export function ManagementQueueRow({
   item,
@@ -21,7 +26,7 @@ export function ManagementQueueRow({
       <PhaseBadge
         phase={item.phase}
         variant="short"
-        label={item.phase === 'PMCC_OPEN' ? 'PMCC · short call' : undefined}
+        label={item.phase === 'PMCC_OPEN' ? pmccBadgeLabel(item.ruleCode) : undefined}
       />
       <span className="leading-relaxed text-wb-text-secondary">{item.summary}</span>
       <div className="flex justify-self-end gap-2">

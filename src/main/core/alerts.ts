@@ -17,6 +17,7 @@ export type RuleCode =
   | 'EARNINGS_PROXIMITY' // US-56
   | 'COVERED_CALL_BREACH' // US-62
   | 'PMCC_ASSIGNMENT_RISK' // US-106
+  | 'PMCC_LEAPS_ROLL_WINDOW' // US-107
 
 /** Largest DTE that still counts as "expiration imminent" (inclusive). */
 const EXPIRATION_IMMINENT_MAX_DTE = 5
@@ -43,6 +44,9 @@ const PMCC_ASSIGNMENT_RISK_MAX_PERCENT_BELOW = 2
 /** Largest days-to-earnings that still counts as "earnings proximity" (inclusive). */
 const EARNINGS_PROXIMITY_MAX_DAYS = 10
 
+/** Largest LEAPS DTE that still falls inside the PMCC roll window (inclusive). */
+const PMCC_LEAPS_ROLL_WINDOW_MAX_DTE = 60
+
 const QUICK_ACTION_REVIEW = 'Review position'
 
 const MISSING_DTE = 'missing_dte'
@@ -52,6 +56,7 @@ const MISSING_STRIKE = 'missing_strike'
 const MISSING_EARNINGS_DATE = 'missing_earnings_date'
 const MISSING_EXPIRATION = 'missing_expiration'
 const INVALID_PROFIT_TARGET_INPUT = 'invalid_profit_target_input'
+const MISSING_LEAPS_DTE = 'missing_leaps_dte'
 
 /** Plain values the engine evaluates — no DB rows. */
 export interface AlertEvaluationInput {
@@ -76,6 +81,11 @@ export interface AlertEvaluationInput {
   // US-56 EARNINGS_PROXIMITY inputs
   daysToEarnings: number | null // calendar days to next earnings; null when unknown
   expiration: string | null // legs.expiration as YYYY-MM-DD; null when unknown
+
+  // US-107 PMCC_LEAPS_ROLL_WINDOW inputs — the PMCC long leg. Every other
+  // strike/dte/expiration field above describes the short leg only.
+  leapsDte: number | null // calendar days to the LEAPS expiration; null when unknown
+  leapsStrike: string | null // LEAPS legs.strike (TEXT 4dp)
 }
 
 /** Exactly the fields the PROFIT_TARGET (US-54) helpers read. */
@@ -99,6 +109,9 @@ export type CoveredCallBreachInput = PriceVsStrikeInput
 
 /** Exactly the fields the PMCC_ASSIGNMENT_RISK (US-106) helpers read. */
 export type PmccAssignmentRiskInput = PriceVsStrikeInput
+
+/** Exactly the fields the PMCC_LEAPS_ROLL_WINDOW (US-107) helpers read. */
+export type PmccLeapsRollWindowInput = Pick<AlertEvaluationInput, 'leapsDte' | 'leapsStrike'>
 
 export interface AlertMatch {
   ruleCode: RuleCode
@@ -208,10 +221,19 @@ function percentBelowStrike(input: PmccAssignmentRiskInput): Decimal {
   return strike.minus(input.currentUnderlyingPrice!).dividedBy(strike).times(100)
 }
 
+/** Relative-day copy: "today", "in 1 day", "in N days". */
+function inDays(days: number): string {
+  if (days === 0) return 'today'
+  if (days === 1) return 'in 1 day'
+  return `in ${days} days`
+}
+
 function earningsProximitySummary(input: EarningsProximityInput): string {
-  const days = input.daysToEarnings!
-  const when = days === 0 ? 'today' : days === 1 ? 'in 1 day' : `in ${days} days`
-  return `Earnings ${when} before your ${input.expiration} expiration`
+  return `Earnings ${inDays(input.daysToEarnings!)} before your ${input.expiration} expiration`
+}
+
+function pmccLeapsRollWindowSummary(input: PmccLeapsRollWindowInput): string {
+  return `LEAPS expires ${inDays(input.leapsDte!)} at ${formatStrike(input.leapsStrike)} strike — review for roll or close`
 }
 
 // ---------------------------------------------------------------------------
@@ -221,6 +243,10 @@ function earningsProximitySummary(input: EarningsProximityInput): string {
 // PROFIT_TARGET and STRIKE_PROXIMITY are independent and may co-fire with them.
 // Each rule declares its own `missingData` guard, so a rule is skipped only when
 // its own required inputs are absent.
+// Each rule declares the leg it reads; a rule whose leg is absent produces
+// neither a match nor a skip, so its stale alert resolves. Every rule reads the
+// short leg (`dte`, `strike`, `expiration`) except PMCC_LEAPS_ROLL_WINDOW, which
+// reads the PMCC LEAPS only (`leapsDte`, `leapsStrike`).
 // ---------------------------------------------------------------------------
 
 /** Per-position thresholds resolved once per evaluation, combining each
@@ -230,9 +256,20 @@ interface ResolvedThresholds {
   profitTargetPercent: number
 }
 
+/** The leg of the position a rule reads. */
+type RuleLeg = 'short' | 'leaps'
+
+/** Whether the leg a rule reads is open on this position: a short option is
+ *  present when the input carries its instrument type; only a PMCC holds a LEAPS. */
+const LEG_PRESENT: Record<RuleLeg, (input: AlertEvaluationInput) => boolean> = {
+  short: (input) => input.instrumentType !== null,
+  leaps: (input) => input.phase === 'PMCC_OPEN'
+}
+
 interface RuleDefinition {
   code: RuleCode
   urgency: AlertUrgency
+  leg: RuleLeg
   // Returns a skip reason when a required input is absent, else null.
   missingData?: (input: AlertEvaluationInput) => string | null
   test: (input: AlertEvaluationInput, resolved: ResolvedThresholds) => boolean
@@ -260,6 +297,7 @@ const RULES: RuleDefinition[] = [
   {
     code: 'EXPIRATION_IMMINENT',
     urgency: 'high',
+    leg: 'short',
     missingData: missingDteReason,
     test: (input) =>
       input.dte !== null && input.dte >= 0 && input.dte <= EXPIRATION_IMMINENT_MAX_DTE,
@@ -268,6 +306,7 @@ const RULES: RuleDefinition[] = [
   {
     code: 'MANAGEMENT_WINDOW',
     urgency: 'medium',
+    leg: 'short',
     missingData: missingDteReason,
     test: (input, resolved) =>
       input.dte !== null &&
@@ -278,6 +317,7 @@ const RULES: RuleDefinition[] = [
   {
     code: 'PROFIT_TARGET',
     urgency: 'low',
+    leg: 'short',
     missingData: (input) => {
       if (
         input.entryPremiumPerContract === null ||
@@ -294,6 +334,7 @@ const RULES: RuleDefinition[] = [
   {
     code: 'STRIKE_PROXIMITY',
     urgency: 'medium',
+    leg: 'short',
     missingData: priceVsStrikeMissingData('CSP_OPEN'),
     test: (input) =>
       input.phase === 'CSP_OPEN' && proximityPercent(input).lte(STRIKE_PROXIMITY_MAX_PERCENT),
@@ -302,6 +343,7 @@ const RULES: RuleDefinition[] = [
   {
     code: 'EARNINGS_PROXIMITY',
     urgency: 'medium',
+    leg: 'short',
     // Guards every field the test and summary read: dte, expiration (interpolated
     // into the summary), and the earnings date itself.
     missingData: (input) =>
@@ -319,6 +361,7 @@ const RULES: RuleDefinition[] = [
   {
     code: 'COVERED_CALL_BREACH',
     urgency: 'medium',
+    leg: 'short',
     missingData: priceVsStrikeMissingData('CC_OPEN'),
     test: (input) =>
       input.phase === 'CC_OPEN' && new Decimal(input.currentUnderlyingPrice!).gte(input.strike!),
@@ -327,11 +370,27 @@ const RULES: RuleDefinition[] = [
   {
     code: 'PMCC_ASSIGNMENT_RISK',
     urgency: 'medium',
+    leg: 'short',
     missingData: priceVsStrikeMissingData('PMCC_OPEN'),
     test: (input) =>
       input.phase === 'PMCC_OPEN' &&
       percentBelowStrike(input).lte(PMCC_ASSIGNMENT_RISK_MAX_PERCENT_BELOW),
     summary: pmccAssignmentRiskSummary
+  },
+  {
+    code: 'PMCC_LEAPS_ROLL_WINDOW',
+    urgency: 'medium',
+    leg: 'leaps',
+    missingData: (input) => {
+      if (input.leapsDte === null) return MISSING_LEAPS_DTE
+      return isNumeric(input.leapsStrike) ? null : MISSING_STRIKE
+    },
+    test: (input) =>
+      // Stryker disable next-line ConditionalExpression: missingData skips a null leapsDte first; this only narrows the type
+      input.leapsDte !== null &&
+      input.leapsDte >= 0 &&
+      input.leapsDte <= PMCC_LEAPS_ROLL_WINDOW_MAX_DTE,
+    summary: pmccLeapsRollWindowSummary
   }
 ]
 
@@ -349,21 +408,23 @@ export function evaluatePosition(input: AlertEvaluationInput): PositionEvaluatio
   const skipReason = (rule: RuleDefinition): string | null =>
     rule.missingData ? rule.missingData(input) : null
 
-  const skipped = RULES.flatMap((rule): SkippedRule[] => {
+  const applicable = RULES.filter((rule) => LEG_PRESENT[rule.leg](input))
+
+  const skipped = applicable.flatMap((rule): SkippedRule[] => {
     const reason = skipReason(rule)
     return reason === null ? [] : [{ ruleCode: rule.code, reason }]
   })
 
-  const matches = RULES.filter(
-    (rule) => skipReason(rule) === null && rule.test(input, resolved)
-  ).map(
-    (rule): AlertMatch => ({
-      ruleCode: rule.code,
-      urgency: rule.urgency,
-      summary: rule.summary(input),
-      quickAction: QUICK_ACTION_REVIEW
-    })
-  )
+  const matches = applicable
+    .filter((rule) => skipReason(rule) === null && rule.test(input, resolved))
+    .map(
+      (rule): AlertMatch => ({
+        ruleCode: rule.code,
+        urgency: rule.urgency,
+        summary: rule.summary(input),
+        quickAction: QUICK_ACTION_REVIEW
+      })
+    )
 
   return { matches, skipped }
 }

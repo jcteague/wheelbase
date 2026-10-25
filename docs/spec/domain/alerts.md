@@ -1,13 +1,13 @@
 # Management Alerts
 
-<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56,us-59,us-62,us-70,us-106 -->
+<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56,us-59,us-62,us-70,us-106,us-107 -->
 
 ## Overview
 
 Management alerts are the queue of "something needs your attention" signals the
 app raises against active positions. A scheduled job evaluates every active
-CSP/CC wheel position — and, since US-106, every active PMCC's current short call —
-against a set of built-in rules and persists the results in the
+CSP/CC wheel position — and, since US-106, every active PMCC (since US-107, every
+PMCC whose LEAPS is open) — against a set of built-in rules and persists the results in the
 `alerts` table, where each alert is deduplicated per `(position, rule)`, updated
 in place while its condition holds, and resolved (never deleted) once the
 condition clears. The evaluation engine is a pure function; persistence,
@@ -82,27 +82,43 @@ the phase badge on PMCC rows. No schema, migration, or production IPC change. Se
 [US-106](../features/us-106-pmcc-assignment-risk-alert.md) and
 [pmcc-alerts-select-current-short-by-ledger-replay](../architecture/02-adrs/pmcc-alerts-select-current-short-by-ledger-replay.md).
 
+US-107 adds `PMCC_LEAPS_ROLL_WINDOW`, the first rule that reads the PMCC's **LEAPS**:
+a medium-urgency alert while the LEAPS has `0 ≤ DTE ≤ 60`, whether or not a short
+call is open, so the routine LEAPS roll is not missed. To support it, every rule now
+declares the leg it reads (`short` or `leaps`); a rule whose leg is absent is
+_inapplicable_ — neither a match nor a skip — so a LEAPS-only PMCC's stale short-leg
+alerts resolve instead of being held open. PMCC selection widens from "current short
+call open" to "LEAPS open" (via `pmccOpenLegs`), with the short-leg fields null when
+no short is open; the LEAPS is never quoted. The queue item gains an additive
+`ruleCode`, and the PMCC badge becomes leg-aware (`PMCC · LEAPS` / `PMCC · short
+call`). No schema or migration change. See
+[US-107](../features/us-107-pmcc-leaps-roll-window-alert.md) and
+[alert-rules-declare-their-leg](../architecture/02-adrs/alert-rules-declare-their-leg.md).
+
 <!-- /generated -->
 
-<!-- generated:from us-50,us-52,us-53-54-55,us-56,us-57-58,us-62,us-106 -->
+<!-- generated:from us-50,us-52,us-53-54-55,us-56,us-57-58,us-62,us-106,us-107 -->
 
 ## Built-in rules
 
-Each rule is a pure predicate over a position's current active option leg (plus,
-for the market-data rules, the pre-fetched live prices, and for the earnings
-rule, the pre-fetched next-earnings date). For a PMCC the "active leg" is its
-current short call (US-106); "any open short leg" below therefore covers CSP, CC,
-and the PMCC short call.
+Each rule is a pure predicate over one leg of the position (plus, for the
+market-data rules, the pre-fetched live prices, and for the earnings rule, the
+pre-fetched next-earnings date). Every rule declares that leg (US-107): all rules
+but one read the **short** leg — the active CSP/CC leg, or a PMCC's current short
+call (US-106) — so "any open short leg" below covers CSP, CC, and the PMCC short
+call. `PMCC_LEAPS_ROLL_WINDOW` alone reads the PMCC's **LEAPS**. A rule whose leg is
+not open on the position is inapplicable: no match and no skip.
 
-| Rule code              | Urgency | Applies to                                  | Triggers when                                                                                                     | Summary template                                                                                                                                                                     | Quick action      |
-| ---------------------- | ------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- |
-| `EXPIRATION_IMMINENT`  | high    | any open short leg (CSP / CC)               | active leg `0 ≤ dte ≤ 5`                                                                                          | `Expires in {dte} days at ${strike} strike`                                                                                                                                          | `Review position` |
-| `MANAGEMENT_WINDOW`    | medium  | any open short leg (CSP / CC)               | active leg `6 ≤ dte ≤ managementWindowDte` (resolved: per-position override → saved global default → built-in 21) | `{dte} DTE remaining — review for roll or close`                                                                                                                                     | `Review position` |
-| `PROFIT_TARGET`        | low     | any open short leg (CSP / CC)               | captured profit `% ≥ target` (resolved: per-position override → saved global default → built-in 50%)              | `{pct}% of max profit captured — consider closing`                                                                                                                                   | `Review position` |
-| `STRIKE_PROXIMITY`     | medium  | CSP only (`CSP_OPEN`)                       | `proximityPct = \|price − strike\| / strike × 100 ≤ 1`                                                            | `Stock is {pct}% {above\|below} the ${strike} put strike`                                                                                                                            | `Review position` |
-| `EARNINGS_PROXIMITY`   | medium  | any open short leg (CSP / CC)               | `0 ≤ daysToEarnings ≤ 10` **and** `daysToEarnings ≤ dte`                                                          | `Earnings {today\|in 1 day\|in {N} days} before your {YYYY-MM-DD} expiration`                                                                                                        | `Review position` |
-| `COVERED_CALL_BREACH`  | medium  | CC only (`CC_OPEN`)                         | `price ≥ strike` (the short call is at/in the money)                                                              | `Stock is {pct}% above the ${strike} call strike — shares may be called away`                                                                                                        | `Review position` |
-| `PMCC_ASSIGNMENT_RISK` | medium  | PMCC only (`PMCC_OPEN`), current short call | unrounded signed `(strike − price) / strike × 100 ≤ 2` (no upper bound)                                           | `Stock is {pct}% below the ${strike} short-call strike — approaching assignment` / `Stock is {pct}% above the ${strike} short-call strike — in the money, LEAPS would have to cover` | `Review position` |
+| Rule code                | Urgency | Applies to                                  | Triggers when                                                                                                     | Summary template                                                                                                                                                                     | Quick action      |
+| ------------------------ | ------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- |
+| `EXPIRATION_IMMINENT`    | high    | any open short leg (CSP / CC)               | active leg `0 ≤ dte ≤ 5`                                                                                          | `Expires in {dte} days at ${strike} strike`                                                                                                                                          | `Review position` |
+| `MANAGEMENT_WINDOW`      | medium  | any open short leg (CSP / CC)               | active leg `6 ≤ dte ≤ managementWindowDte` (resolved: per-position override → saved global default → built-in 21) | `{dte} DTE remaining — review for roll or close`                                                                                                                                     | `Review position` |
+| `PROFIT_TARGET`          | low     | any open short leg (CSP / CC)               | captured profit `% ≥ target` (resolved: per-position override → saved global default → built-in 50%)              | `{pct}% of max profit captured — consider closing`                                                                                                                                   | `Review position` |
+| `STRIKE_PROXIMITY`       | medium  | CSP only (`CSP_OPEN`)                       | `proximityPct = \|price − strike\| / strike × 100 ≤ 1`                                                            | `Stock is {pct}% {above\|below} the ${strike} put strike`                                                                                                                            | `Review position` |
+| `EARNINGS_PROXIMITY`     | medium  | any open short leg (CSP / CC)               | `0 ≤ daysToEarnings ≤ 10` **and** `daysToEarnings ≤ dte`                                                          | `Earnings {today\|in 1 day\|in {N} days} before your {YYYY-MM-DD} expiration`                                                                                                        | `Review position` |
+| `COVERED_CALL_BREACH`    | medium  | CC only (`CC_OPEN`)                         | `price ≥ strike` (the short call is at/in the money)                                                              | `Stock is {pct}% above the ${strike} call strike — shares may be called away`                                                                                                        | `Review position` |
+| `PMCC_ASSIGNMENT_RISK`   | medium  | PMCC only (`PMCC_OPEN`), current short call | unrounded signed `(strike − price) / strike × 100 ≤ 2` (no upper bound)                                           | `Stock is {pct}% below the ${strike} short-call strike — approaching assignment` / `Stock is {pct}% above the ${strike} short-call strike — in the money, LEAPS would have to cover` | `Review position` |
+| `PMCC_LEAPS_ROLL_WINDOW` | medium  | PMCC only (`PMCC_OPEN`), the LEAPS          | `0 ≤ leapsDte ≤ 60`                                                                                               | `LEAPS expires {today\|in 1 day\|in {N} days} at ${strike} strike — review for roll or close`                                                                                        | `Review position` |
 
 `{strike}` is formatted to two decimals with a leading `$` via `decimal.js`
 (`new Decimal(strike).toFixed(2)`); `{pct}` is formatted to one decimal. The two
@@ -169,6 +185,34 @@ keeps the alert open. It co-fires with the generic rules — a 4-DTE PMCC short 
 hold a HIGH `EXPIRATION_IMMINENT` and a MED `PMCC_ASSIGNMENT_RISK` at once — while
 `STRIKE_PROXIMITY` and `COVERED_CALL_BREACH` never fire on a PMCC.
 
+`PMCC_LEAPS_ROLL_WINDOW` (US-107) reads separate engine inputs, `leapsDte` and
+`leapsStrike`; the existing `dte` / `strike` / `expiration` / `instrumentType` keep
+meaning the short leg, so no short-leg rule can read the LEAPS and the LEAPS rule
+cannot read the short. Its 60-day bound is the fixed built-in
+`PMCC_LEAPS_ROLL_WINDOW_MAX_DTE = 60` — inclusive, not configurable, no escalation
+tier. The `≥ 0` lower bound mirrors `EXPIRATION_IMMINENT`, so an expired LEAPS nobody
+recorded stops matching and resolves. The day phrase comes from `inDays`, shared with
+`EARNINGS_PROXIMITY`'s summary. It fires on a LEAPS-only PMCC as well as one with a
+short open, and co-fires independently with the short-leg rules: on a PMCC with a
+2-DTE short and a 30-DTE LEAPS, a HIGH `EXPIRATION_IMMINENT` names the short's strike
+and a MED `PMCC_LEAPS_ROLL_WINDOW` names the LEAPS strike, each as its own row.
+
+**Leg applicability (US-107).** `RuleDefinition` carries a required
+`leg: 'short' | 'leaps'`, and `evaluatePosition` filters `RULES` through a
+`LEG_PRESENT` table before computing skips and matches:
+
+```text
+short present ⇔ instrumentType ≠ null      (always true for a wheel row; false on a LEAPS-only PMCC)
+leaps present ⇔ phase = 'PMCC_OPEN'
+```
+
+So on a LEAPS-only PMCC every short-leg rule — including `PMCC_ASSIGNMENT_RISK`,
+whose `priceVsStrikeMissingData('PMCC_OPEN')` guard would otherwise skip with
+`missing_strike` — is inapplicable, and on a wheel position the LEAPS rule is. LEAPS
+presence is keyed on the phase rather than on `leapsDte`, so a PMCC whose LEAPS
+expiration is unreadable still _skips_ (keeping its alert) instead of resolving it.
+See [alert-rules-declare-their-leg](../architecture/02-adrs/alert-rules-declare-their-leg.md).
+
 <!-- /generated -->
 
 <!-- generated:from us-57-58 -->
@@ -227,7 +271,7 @@ an e2e test for each direction.
 
 <!-- /generated -->
 
-<!-- generated:from us-50,us-59,us-106 -->
+<!-- generated:from us-50,us-59,us-106,us-107 -->
 
 ## Alert lifecycle
 
@@ -279,18 +323,27 @@ then reopen the alert with a fresh `triggered_at` on a transient snapshot gap
 already does for an open one.
 
 A position that drops out of the evaluable set resolves the same way. For a PMCC
-(US-106) that means: once replay finds **no current short call** (expired, closed,
-or assigned leg recorded), the position is excluded and its prior alerts resolve;
-rolling the short to a strike outside the band resolves `PMCC_ASSIGNMENT_RISK` on
-the next run. A PMCC whose leg history **cannot be read or replayed** is different
-— its state is unknown, not confirmed closed — so the keys of its existing
-open/dismissed rows are added to the keep-open set and nothing resolves for it.
-(The pre-existing wheel behaviour, where a row whose `evaluatePosition` throws
-still has its alerts resolved, is unchanged.)
+that means: once replay finds **no open LEAPS**, the position is excluded and its
+prior alerts resolve. A PMCC whose short call has closed (expired, closed, or
+assigned leg recorded) but whose LEAPS is still open stays evaluable (US-107); its
+short-leg rules are then _inapplicable_ — they produce no key — so the short's
+`EXPIRATION_IMMINENT` / `PMCC_ASSIGNMENT_RISK` rows resolve while the LEAPS rule keeps
+evaluating. Rolling the short to a strike outside the band resolves
+`PMCC_ASSIGNMENT_RISK`, and rolling the LEAPS past 60 DTE resolves
+`PMCC_LEAPS_ROLL_WINDOW`, on the next run. Inapplicable differs from skipped: an
+unreadable LEAPS expiration skips with `missing_leaps_dte`, so that alert keeps its
+previous summary.
+
+A position whose selection or evaluation **fails** this run is _held_: its state is
+unknown, not confirmed closed. The service collects such ids in `heldPositionIds` —
+a PMCC whose leg history cannot be read or replayed, every PMCC candidate when the
+bulk leg read fails, and any row whose `evaluatePosition` throws — and passes them to
+`resolveAlertsNotIn` / `clearStaleDismissals` as `AlertsToKeep.positionIds`, so every
+alert of a held position is kept as-is.
 
 <!-- /generated -->
 
-<!-- generated:from us-53-54-55,us-56,us-62,us-70,us-106 -->
+<!-- generated:from us-53-54-55,us-56,us-62,us-70,us-106,us-107 -->
 
 ## Skip reasons & missing-data handling
 
@@ -302,15 +355,16 @@ per-rule `missingData` function that returns a reason string (or `null` to
 proceed). Each rule owns its own guard, so one rule's missing input never
 suppresses another's alert. The reason strings and the rule each guards:
 
-| Reason string                 | Rule guarded                                                      | Fires when                                                                                                                    |
-| ----------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `missing_dte`                 | `EXPIRATION_IMMINENT`, `MANAGEMENT_WINDOW`, `EARNINGS_PROXIMITY`  | `dte` is null (expiration unknown or unparseable — `computeDte` returns null, never NaN)                                      |
-| `missing_option_mark`         | `PROFIT_TARGET`                                                   | entry premium, contracts, or the live option mid is absent                                                                    |
-| `invalid_profit_target_input` | `PROFIT_TARGET`                                                   | premium is non-positive or contracts is not a positive integer (would throw the P&L math)                                     |
-| `missing_underlying_price`    | `STRIKE_PROXIMITY`, `COVERED_CALL_BREACH`, `PMCC_ASSIGNMENT_RISK` | position is in the rule's phase (`CSP_OPEN` / `CC_OPEN` / `PMCC_OPEN`) and the live underlying price is absent or non-numeric |
-| `missing_strike`              | `STRIKE_PROXIMITY`, `COVERED_CALL_BREACH`, `PMCC_ASSIGNMENT_RISK` | position is in the rule's phase and the leg strike is non-numeric                                                             |
-| `missing_expiration`          | `EARNINGS_PROXIMITY`                                              | `expiration` is null while `dte` is not — the summary interpolates it, so it is guarded                                       |
-| `missing_earnings_date`       | `EARNINGS_PROXIMITY`                                              | `daysToEarnings` is null (no event in the fetch window, feed failed, or unparseable date)                                     |
+| Reason string                 | Rule guarded                                                                                | Fires when                                                                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `missing_dte`                 | `EXPIRATION_IMMINENT`, `MANAGEMENT_WINDOW`, `EARNINGS_PROXIMITY`                            | `dte` is null (expiration unknown or unparseable — `computeDte` returns null, never NaN)                                      |
+| `missing_option_mark`         | `PROFIT_TARGET`                                                                             | entry premium, contracts, or the live option mid is absent                                                                    |
+| `invalid_profit_target_input` | `PROFIT_TARGET`                                                                             | premium is non-positive or contracts is not a positive integer (would throw the P&L math)                                     |
+| `missing_underlying_price`    | `STRIKE_PROXIMITY`, `COVERED_CALL_BREACH`, `PMCC_ASSIGNMENT_RISK`                           | position is in the rule's phase (`CSP_OPEN` / `CC_OPEN` / `PMCC_OPEN`) and the live underlying price is absent or non-numeric |
+| `missing_strike`              | `STRIKE_PROXIMITY`, `COVERED_CALL_BREACH`, `PMCC_ASSIGNMENT_RISK`, `PMCC_LEAPS_ROLL_WINDOW` | position is in the rule's phase and the leg strike is non-numeric (for the LEAPS rule, `leapsStrike`)                         |
+| `missing_leaps_dte`           | `PMCC_LEAPS_ROLL_WINDOW`                                                                    | `leapsDte` is null on a PMCC (LEAPS expiration unreadable — `computeDte` returns null)                                        |
+| `missing_expiration`          | `EARNINGS_PROXIMITY`                                                                        | `expiration` is null while `dte` is not — the summary interpolates it, so it is guarded                                       |
+| `missing_earnings_date`       | `EARNINGS_PROXIMITY`                                                                        | `daysToEarnings` is null (no event in the fetch window, feed failed, or unparseable date)                                     |
 
 `invalid_profit_target_input` came from the post-review hardening pass: without it
 a stored non-positive premium/contracts would make `computeUnrealizedPnl` throw
@@ -330,9 +384,18 @@ nor a match. US-106 added no new reason: a PMCC with a missing quote records
 `PMCC_ASSIGNMENT_RISK` alert keeps its previous summary. (`missing_strike` predates
 US-106 and is listed here for completeness.)
 
+US-107 adds `missing_leaps_dte`: a PMCC whose LEAPS expiration cannot be read keeps
+its open `PMCC_LEAPS_ROLL_WINDOW` alert unchanged and logs DEBUG `alert_rule_skipped`
+with that reason. The LEAPS rule's `missing_strike` guard only stops `formatStrike`
+rendering a fake `$0.00`. **A skip is not the same as an inapplicable rule:** a rule
+whose leg is absent (US-107 leg applicability) is filtered out before the guards run,
+so it records no skip and its prior alert resolves. That is why a LEAPS-only PMCC
+records no `missing_dte` / `missing_strike` / `missing_option_mark` skips from the
+short-leg rules.
+
 <!-- /generated -->
 
-<!-- generated:from us-53-54-55,us-56,us-62,us-70,us-106 -->
+<!-- generated:from us-53-54-55,us-56,us-62,us-70,us-106,us-107 -->
 
 ## Evaluable-position selection, live market-data enrichment & failure isolation
 
@@ -344,14 +407,22 @@ unchanged by US-106 — it also serves `get-position.ts` and `list-positions.ts`
 and broadening it would populate PMCC's intentionally null legacy `activeLeg`.
 PMCCs are selected separately in `evaluate-alerts.ts`: `PMCC_CANDIDATE_QUERY`
 picks ACTIVE PMCC positions in `PMCC_OPEN`, their legs are bulk-loaded with
-`readLegsByPosition`, and `currentShortCallLeg` (`src/main/services/pmcc-ledger.ts`)
-replays each history to find the current short — handling paired rolls, ignoring
-LEAPS rolls, and clearing expired/closed/assigned shorts. A non-null short is
-mapped onto the ordinary `EvaluableRow` shape (its strike, expiration, premium,
-contracts, and CALL OCC symbol) before the market-data prefetch, so only the
-short's OCC symbol is ever requested; a null short excludes the position. This is
-the module-private `loadPmccEvaluableRows({ db, failedIds, logger })`. See
-[pmcc-alerts-select-current-short-by-ledger-replay](../architecture/02-adrs/pmcc-alerts-select-current-short-by-ledger-replay.md).
+`readLegsByPosition`, and `pmccOpenLegs` (`src/main/services/pmcc-ledger.ts`)
+replays each history to find the open LEAPS and the current short — handling paired
+rolls on both sides and clearing expired/closed/assigned shorts. US-106 called
+`currentShortCallLeg` here and excluded a PMCC with no short; US-107 widened it so a
+PMCC is evaluable whenever its **LEAPS** is open. Each result maps onto one
+`EvaluableRow`: the short-leg fields (strike, expiration, premium, contracts,
+`instrumentType: 'CALL'`) come from the short, or are all `null` — with
+`instrumentType: null` — when no short is open; the new `leapsStrike` /
+`leapsExpiration` come from the LEAPS. No LEAPS excludes the position. The wheel
+`EVALUABLE_QUERY` selects `NULL` for the two LEAPS columns. `occSymbolForRow` returns
+`null` when `instrumentType` is null, so only a short's OCC symbol is ever requested
+and a LEAPS-only PMCC requests none; the LEAPS is never quoted. `toEvaluationInput`
+adds `leapsDte = computeDte(leapsExpiration, now)` and `leapsStrike`. This is the
+module-private `loadPmccEvaluableRows({ db, heldIds, logger })`. See
+[pmcc-alerts-select-current-short-by-ledger-replay](../architecture/02-adrs/pmcc-alerts-select-current-short-by-ledger-replay.md)
+and its US-107 amendment.
 
 Closure follows **recorded leg events, not dates**. Known gap accepted at ship
 time: no production path yet writes `SHORT_CALL_EXPIRED`, `SHORT_CALL_CLOSE`, or
@@ -418,17 +489,17 @@ their log events:
   per-position so the persist phase still runs for the rest (unchanged US-50
   behavior). US-106 reuses the same event for PMCC selection failures: a single
   replay that throws (e.g. `groupRollChains` parsing bad Decimal data) logs with
-  the `positionId` and marks that candidate failed; a failed bulk leg-history read
-  logs the `positionIds` and marks every PMCC candidate failed while wheel rows
-  continue. Failed ids feed the keep-open set (see
-  [Alert lifecycle](#alert-lifecycle)) via a prepared, parameter-bound read of
-  their existing open/dismissed keys; no new skip reason or response field is
-  introduced. See
+  the `positionId` and holds that candidate; a failed bulk leg-history read
+  logs the `positionIds` and holds every PMCC candidate while wheel rows
+  continue. Held ids (`heldPositionIds`, which also collects any row whose
+  `evaluatePosition` throws) reach resolution as `AlertsToKeep.positionIds`, so
+  every alert of a held position is kept (see [Alert lifecycle](#alert-lifecycle));
+  no new skip reason or response field is introduced. See
   [alert-evaluation-failure-isolation](../architecture/02-adrs/alert-evaluation-failure-isolation.md).
 
 <!-- /generated -->
 
-<!-- generated:from us-50,us-51,us-53-54-55,us-56,us-59,us-62,us-70,us-106 -->
+<!-- generated:from us-50,us-51,us-53-54-55,us-56,us-59,us-62,us-70,us-106,us-107 -->
 
 ## Key decisions
 
@@ -655,6 +726,10 @@ their log events:
 
 ### PMCCs are evaluated through their current short call, chosen by ledger replay
 
+> **Widened by [us-107](../features/us-107-pmcc-leaps-roll-window-alert.md).** A PMCC
+> is now evaluable whenever its LEAPS is open, via `pmccOpenLegs`; see the US-107
+> decision below. The ledger-replay approach and untouched wheel SQL still stand.
+
 - **Decision:** Leave the wheel `EVALUABLE_QUERY` / `activeLegSubquery()` untouched;
   select `PMCC_OPEN` candidates separately, bulk-load their legs, and resolve the
   short with the existing `currentShortCallLeg` replay. The generic short-leg rules
@@ -682,13 +757,67 @@ their log events:
 
 ### The queue badge branches on phase, not rule code
 
-- **Decision:** `ManagementQueueRow` renders a compact gold-dot `PMCC · short call`
-  `Badge` when `item.phase === 'PMCC_OPEN'` and keeps `PhaseBadge` for wheel rows;
-  no `strategyType` field or new storage was added.
-- **Why:** `phase` already identifies the strategy and is already in the queue item;
-  keying on phase means every PMCC row (including a HIGH `EXPIRATION_IMMINENT`) gets
-  the same badge. A strategy component hierarchy was judged unnecessary.
+> **Superseded in part by [us-107](../features/us-107-pmcc-leaps-roll-window-alert.md).**
+> The PMCC branch still keys on phase, but the label now reads the rule code; see
+> "Leg-aware PMCC badge" below.
+
+- **Decision:** `ManagementQueueRow` shows a `PMCC · short call` label in the PMCC
+  phase colour when `item.phase === 'PMCC_OPEN'` (US-106's `PhaseBadge` `label`
+  override) and the ordinary phase label for wheel rows; no `strategyType` field or
+  new storage was added.
+- **Why:** `phase` already identifies the strategy and is already in the queue item.
+  A strategy component hierarchy was judged unnecessary.
 - **Driven by:** [us-106](../features/us-106-pmcc-assignment-risk-alert.md)
+
+### Rules declare the leg they read; an absent leg makes a rule inapplicable
+
+- **Decision:** `RuleDefinition` gains a required `leg: 'short' | 'leaps'`;
+  `evaluatePosition` filters `RULES` through `LEG_PRESENT` (`short` ⇔
+  `instrumentType ≠ null`, `leaps` ⇔ `PMCC_OPEN`) before computing skips and matches.
+  Every pre-existing rule is `short`; `PMCC_LEAPS_ROLL_WINDOW` is `leaps`.
+- **Why:** On a LEAPS-only PMCC the short-leg rules would otherwise skip for missing
+  data, and the keep-open set would hold the expired short's `EXPIRATION_IMMINENT` and
+  `PMCC_ASSIGNMENT_RISK` open forever. One table makes "neither rule reads the other's
+  leg" a registry property; a required field makes forgetting it a compile error.
+  A per-rule null check (five copies) and a new LEAPS-only phase were rejected.
+- **Driven by:** [us-107](../features/us-107-pmcc-leaps-roll-window-alert.md) ·
+  [alert-rules-declare-their-leg](../architecture/02-adrs/alert-rules-declare-their-leg.md)
+
+### `PMCC_LEAPS_ROLL_WINDOW` reads separate LEAPS inputs over a fixed 0–60 window
+
+- **Decision:** One new medium-urgency registry entry, `leg: 'leaps'`, firing when
+  `0 ≤ leapsDte ≤ 60`; new `leapsDte` / `leapsStrike` engine inputs; skip
+  `missing_leaps_dte` on a null DTE; summary shares the extracted `inDays` phrase.
+- **Why:** Separate inputs leave every short-leg rule untouched; feeding the LEAPS
+  through `dte` / `strike` would trip the DTE rules on it. Inclusive 60 matches how
+  every rule fires at its named number. A configurable threshold, 90/60/45
+  escalation, and the renderer's 90-day decay window were out of scope or a
+  different purpose.
+- **Driven by:** [us-107](../features/us-107-pmcc-leaps-roll-window-alert.md) ·
+  [alert-rule-registry](../architecture/02-adrs/alert-rule-registry.md)
+
+### A PMCC is evaluable whenever its LEAPS is open
+
+- **Decision:** `loadPmccEvaluableRows` calls `pmccOpenLegs` instead of
+  `currentShortCallLeg`; no LEAPS excludes the position; the short-leg fields are null
+  when no short is open, and `occSymbolForRow` requests no snapshot for a null
+  `instrumentType`.
+- **Why:** A LEAPS-only PMCC is the most exposed case — no short-call rule brings it
+  into the queue. `pmccOpenLegs` already replays both sides, including LEAPS rolls.
+  Extending `activeLegSubquery` was rejected again for US-106's reasons.
+- **Driven by:** [us-107](../features/us-107-pmcc-leaps-roll-window-alert.md) ·
+  [pmcc-alerts-select-current-short-by-ledger-replay](../architecture/02-adrs/pmcc-alerts-select-current-short-by-ledger-replay.md)
+
+### Leg-aware PMCC badge, carried by `ruleCode` on the queue item
+
+- **Decision:** `ManagementQueueItem` gains `ruleCode: RuleCode`; on `PMCC_OPEN` rows
+  the badge label is `PMCC · LEAPS` for `PMCC_LEAPS_ROLL_WINDOW` and
+  `PMCC · short call` otherwise. Tint, dot and the 150px column are unchanged.
+- **Why:** A user decision: a phase-only label would call the LEAPS row "short call",
+  and the queue item had no other way to tell the rows apart. Parsing the summary was
+  rejected as brittle; the mockup's plain `PMCC` would drop the short-call label.
+- **Driven by:** [us-107](../features/us-107-pmcc-leaps-roll-window-alert.md) ·
+  [management-queue-read-path](../architecture/02-adrs/management-queue-read-path.md)
 
 <!-- /generated -->
 
@@ -708,7 +837,7 @@ column (nullable, set once, never cleared) and a second partial unique index,
 
 <!-- /generated -->
 
-<!-- generated:from us-51,us-106 -->
+<!-- generated:from us-51,us-106,us-107 -->
 
 ## Management-queue read path
 
@@ -722,7 +851,8 @@ to add `ticker` and the current `phase`, orders by urgency tier
 
 `ManagementQueueItem` is a purpose-built view-model — not the persisted
 `AlertRecord`. It carries only `alertId`, `positionId`, `ticker`, `phase`,
-`urgency`, `summary`, `quickAction`, and `triggeredAt`, deliberately excluding the
+`ruleCode` (US-107), `urgency`, `summary`, `quickAction`, and `triggeredAt`,
+deliberately excluding the
 audit fields (`lastEvaluatedAt`, `resolvedAt`, `createdAt`, `updatedAt`,
 `status`) that the queue never displays. `alertId` serves as the stable React key
 (one row per open alert in US-51 scope). An empty result is valid and drives the
@@ -730,17 +860,21 @@ dashboard's empty state.
 
 New rule codes and phases flow through unchanged: US-106's `PMCC_ASSIGNMENT_RISK`
 rows needed no read-path, IPC (`alerts:list` / `alerts:dismiss`), or persistence
-change, and dismissal, dedupe, and clear/refire are rule-neutral. On the renderer,
-`ManagementQueueRow` (`src/renderer/src/components/ManagementQueueRow.tsx`) shows a
-`PMCC · short call` badge in place of the wheel `PhaseBadge` when
-`phase === 'PMCC_OPEN'` (badge column widened to fit). The preload global
-`ManagementQueueItem` (`src/preload/index.d.ts`) is now an alias of the schema type,
-so `phase` is typed as `WheelPhase` rather than `string` and the PMCC branch is
-type-checked.
+change, and dismissal, dedupe, and clear/refire are rule-neutral. US-107 added the
+one field the renderer could not do without: `ruleCode`, selected as `a.rule_code`
+and typed as the core `RuleCode` union (additive; ordering unchanged). On the
+renderer, `ManagementQueueRow` (`src/renderer/src/components/ManagementQueueRow.tsx`)
+passes a `label` to `PhaseBadge` when `phase === 'PMCC_OPEN'` — `PMCC · LEAPS` for a
+`PMCC_LEAPS_ROLL_WINDOW` row, `PMCC · short call` for every other PMCC row — keeping
+the PMCC phase colour and the 150px badge column; wheel rows show the phase label.
+The component imports `RuleCode` as a type only. The preload global
+`ManagementQueueItem` (`src/preload/index.d.ts`) is an alias of the schema type
+(US-106), so `phase` is typed as `WheelPhase` and `ruleCode` as `RuleCode` with no
+preload edit, and the PMCC branch is type-checked.
 
 <!-- /generated -->
 
-<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56,us-57-58,us-59,us-62,us-70,us-106 -->
+<!-- generated:from us-50,us-51,us-52,us-53-54-55,us-56,us-57-58,us-59,us-62,us-70,us-106,us-107 -->
 
 ## Driven by
 
@@ -754,6 +888,7 @@ type-checked.
 - [US-62 — Covered-call breach alert](../features/us-62-covered-call-breach-alert.md)
 - [US-70 — Earnings-in-window warning](../features/us-70-earnings-in-window-warning.md)
 - [US-106 — PMCC assignment-risk alert](../features/us-106-pmcc-assignment-risk-alert.md)
+- [US-107 — PMCC LEAPS roll-window alert](../features/us-107-pmcc-leaps-roll-window-alert.md)
 
 <!-- /generated -->
 

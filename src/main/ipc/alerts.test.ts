@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type Database from 'better-sqlite3'
+import type { ManagementQueueItem } from '../schemas'
 
 const listManagementQueue = vi.fn()
 const dismissAlert = vi.fn()
@@ -44,18 +45,30 @@ describe('registerAlertsHandlers', () => {
     db = {} as Database.Database
   })
 
-  it('alerts:list returns { ok: true, items } sorted for the queue', async () => {
+  it("alerts:list returns { ok: true, items } with each item's ruleCode passed through", async () => {
     const { ipcMain } = await import('electron')
     const { registerAlertsHandlers } = await import('./alerts')
 
-    const items = [
+    const items: ManagementQueueItem[] = [
       {
         alertId: 'a1',
         positionId: 'p1',
         ticker: 'AAPL',
         phase: 'CSP_OPEN',
+        ruleCode: 'EXPIRATION_IMMINENT',
         urgency: 'high',
         summary: 'Expires in 3 days at $180.00 strike',
+        quickAction: 'Review position',
+        triggeredAt: '2026-06-25T12:00:00.000Z'
+      },
+      {
+        alertId: 'a2',
+        positionId: 'p2',
+        ticker: 'XYZ',
+        phase: 'PMCC_OPEN',
+        ruleCode: 'PMCC_LEAPS_ROLL_WINDOW',
+        urgency: 'medium',
+        summary: 'LEAPS expires in 60 days at $80.00 strike — review for roll or close',
         quickAction: 'Review position',
         triggeredAt: '2026-06-25T12:00:00.000Z'
       }
@@ -72,7 +85,7 @@ describe('registerAlertsHandlers', () => {
     const result = await handler?.(null)
 
     expect(listManagementQueue).toHaveBeenCalledWith(db)
-    expect(result).toMatchObject({ ok: true, items })
+    expect(result).toEqual({ ok: true, items })
   })
 
   it('alerts:list returns an internal_error envelope when the query throws', async () => {

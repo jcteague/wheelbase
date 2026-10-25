@@ -15,10 +15,12 @@ import {
   occFor,
   readAlertRows,
   seedShortOptionAtPremium,
+  seedShortOptionWithOcc,
   stubEarnings,
   stubProvider,
   type AlertRow
 } from './evaluate-alerts-test-utils'
+import { rollPmccLeapsPosition } from './roll-pmcc-leaps-position'
 import { rollPmccShortCallPosition } from './roll-pmcc-short-call-position'
 import { insertLegs, makePmccLeg } from './test-fixtures/pmcc-legs'
 
@@ -173,7 +175,7 @@ function run({
   midBySymbol = {},
   fetchEarnings = inertEarnings(),
   logger = makeSpyLogger()
-}: RunInput): Promise<unknown> {
+}: RunInput): ReturnType<typeof evaluateAlerts> {
   return evaluateAlerts({
     db,
     now,
@@ -624,5 +626,314 @@ describe('evaluateAlerts — PMCC alongside wheel positions (US-106)', () => {
     expect(readAlertRows(db).filter((r) => r.rule_code === RULE)).toEqual([
       expect.objectContaining({ position_id: PMCC_ID })
     ])
+  })
+})
+
+// ── [US-107] LEAPS roll window ──────────────────────────────────────────────────
+// Issue calendar: XYZ PMCC, $80 LEAPS expiring 2027-09-17 bought at $25, $112 short call
+// expiring 2027-08-20 sold at $2.10, 1 contract. Every valuation is 16:00Z (New York noon).
+
+const LEAPS_RULE = 'PMCC_LEAPS_ROLL_WINDOW'
+const WINDOW_SHORT_EXPIRATION = '2027-08-20'
+const WINDOW_SHORT_OCC = occFor({
+  ticker: 'XYZ',
+  expiration: WINDOW_SHORT_EXPIRATION,
+  strike: '112.0000',
+  instrumentType: 'CALL'
+})
+
+const valuedAt = (day: string): Date => new Date(`${day}T16:00:00.000Z`)
+
+/** The issue's opening legs: the $80 LEAPS and the $112 short call. */
+function windowLegs(positionId: string): { leaps: LegRecord; short: LegRecord } {
+  return {
+    leaps: makePmccLeg(
+      positionId,
+      {
+        legRole: 'LEAPS_OPEN',
+        action: 'BUY',
+        strike: '80.0000',
+        expiration: LEAPS_EXPIRATION,
+        fillDate: '2026-09-14',
+        premiumPerContract: '25.0000'
+      },
+      0
+    ),
+    short: makePmccLeg(
+      positionId,
+      {
+        legRole: 'SHORT_CALL_OPEN',
+        action: 'SELL',
+        strike: '112.0000',
+        expiration: WINDOW_SHORT_EXPIRATION,
+        fillDate: '2027-06-18',
+        premiumPerContract: '2.1000'
+      },
+      1
+    )
+  }
+}
+
+function seedWindowPmcc(db: Database.Database): { leaps: LegRecord; short: LegRecord } {
+  seedPmccPosition(db)
+  const legs = windowLegs(PMCC_ID)
+  insertLegs(db, [legs.leaps, legs.short])
+  return legs
+}
+
+/** The XYZ PMCC's open row for `ruleCode`; throws when there is none, so a missing
+ *  precondition fails with its rule name rather than a property read on undefined. */
+function openRow(db: Database.Database, ruleCode: string): AlertRow {
+  const row = openRule(db, ruleCode)
+  if (row === undefined) throw new Error(`no open ${ruleCode} row for ${PMCC_ID}`)
+  return row
+}
+
+const openRowsFor = (db: Database.Database, positionId: string): AlertRow[] =>
+  rowsFor(db, positionId).filter((r) => r.status === 'open')
+
+const requestedSymbols = (provider: MarketDataProvider): string[] =>
+  vi.mocked(provider.getOptionSnapshot).mock.calls.map(([symbol]) => symbol)
+
+describe('evaluateAlerts — PMCC LEAPS roll window (US-107)', () => {
+  let db: Database.Database
+
+  beforeEach(() => {
+    db = makeTestDb()
+  })
+
+  it.each([
+    ['2027-07-19', 'LEAPS expires in 60 days at $80.00 strike — review for roll or close'],
+    ['2027-07-20', 'LEAPS expires in 59 days at $80.00 strike — review for roll or close'],
+    ['2027-08-18', 'LEAPS expires in 30 days at $80.00 strike — review for roll or close']
+  ])('opens a MED PMCC_LEAPS_ROLL_WINDOW alert for XYZ on %s', async (day, summary) => {
+    seedWindowPmcc(db)
+
+    await run({ db, now: valuedAt(day) })
+
+    expect(rowsFor(db, PMCC_ID, LEAPS_RULE)).toEqual([
+      expect.objectContaining({ status: 'open', urgency: 'medium', summary })
+    ])
+  })
+
+  it.each(['2027-07-18', '2027-07-09'])(
+    'raises no LEAPS alert on %s, while the LEAPS has more than 60 days left',
+    async (day) => {
+      seedWindowPmcc(db)
+      const logger = makeSpyLogger()
+
+      await run({ db, now: valuedAt(day), logger })
+
+      expect(rowsFor(db, PMCC_ID, LEAPS_RULE)).toEqual([])
+      // Positive control: the PMCC was loaded and its LEAPS rule evaluated, not skipped.
+      expect(logger.debug).toHaveBeenCalledWith({ count: 1 }, 'alert_evaluation_targets_loaded')
+      expect(logger.debug).not.toHaveBeenCalledWith(
+        expect.objectContaining({ ruleCode: LEAPS_RULE }),
+        'alert_rule_skipped'
+      )
+      expect(logger.error).not.toHaveBeenCalled()
+    }
+  )
+
+  it('refreshes the open alert in place from 60 to 59 days, keeping its id and triggered_at', async () => {
+    seedWindowPmcc(db)
+    await run({ db, now: valuedAt('2027-07-19') })
+    const first = openRow(db, LEAPS_RULE)
+
+    await run({ db, now: valuedAt('2027-07-20') })
+
+    expect(rowsFor(db, PMCC_ID, LEAPS_RULE)).toEqual([
+      expect.objectContaining({
+        id: first.id,
+        status: 'open',
+        triggered_at: '2027-07-19T16:00:00.000Z',
+        summary: 'LEAPS expires in 59 days at $80.00 strike — review for roll or close'
+      })
+    ])
+  })
+
+  it('keeps a dismissed LEAPS alert dismissed, with no new open row, while still in the window', async () => {
+    seedWindowPmcc(db)
+    await run({ db, now: valuedAt('2027-07-19') })
+    const first = openRow(db, LEAPS_RULE)
+    dismissAlert(db, first.id, '2027-07-19T17:00:00.000Z')
+
+    await run({ db, now: valuedAt('2027-07-20') })
+
+    expect(rowsFor(db, PMCC_ID, LEAPS_RULE)).toEqual([
+      expect.objectContaining({ id: first.id, status: 'dismissed', resolved_at: null })
+    ])
+  })
+
+  it('keeps the LEAPS alert once the short expires, resolving the short-leg alert and requesting no XYZ option (S4)', async () => {
+    seedWindowPmcc(db)
+    const provider = stubProvider()
+    await run({ db, now: valuedAt('2027-08-19'), provider })
+    const imminent = openRow(db, 'EXPIRATION_IMMINENT')
+
+    insertLegs(db, [
+      makePmccLeg(PMCC_ID, {
+        legRole: 'SHORT_CALL_EXPIRED',
+        action: 'EXPIRE',
+        strike: '112.0000',
+        expiration: WINDOW_SHORT_EXPIRATION,
+        fillDate: WINDOW_SHORT_EXPIRATION,
+        premiumPerContract: '0.0000'
+      })
+    ])
+    await run({ db, now: valuedAt('2027-09-15'), provider })
+
+    expect(rowsFor(db, PMCC_ID, 'EXPIRATION_IMMINENT')).toEqual([
+      expect.objectContaining({ id: imminent.id, status: 'resolved' })
+    ])
+    expect(openRowsFor(db, PMCC_ID).map((r) => [r.rule_code, r.summary])).toEqual([
+      [LEAPS_RULE, 'LEAPS expires in 2 days at $80.00 strike — review for roll or close']
+    ])
+    // Only the 08-19 run's short was requested; the LEAPS-only run asks for no XYZ option.
+    expect(requestedSymbols(provider)).toEqual([WINDOW_SHORT_OCC])
+    expect(requestedSymbols(provider)).not.toContain(LEAPS_OCC)
+  })
+
+  it('does not evaluate PMCC_ASSIGNMENT_RISK on a LEAPS-only PMCC at $118.80, and resolves the prior assignment alert', async () => {
+    seedWindowPmcc(db)
+    await run({ db, now: valuedAt('2027-07-20'), price: '112.53' })
+    const assignment = openRow(db, RULE)
+
+    insertLegs(db, [
+      makePmccLeg(PMCC_ID, {
+        legRole: 'SHORT_CALL_CLOSE',
+        action: 'BUY',
+        strike: '112.0000',
+        expiration: WINDOW_SHORT_EXPIRATION,
+        fillDate: '2027-07-21',
+        premiumPerContract: '1.0000'
+      })
+    ])
+    const logger = makeSpyLogger()
+    await run({ db, now: valuedAt('2027-07-22'), price: '118.80', logger })
+
+    expect(rowsFor(db, PMCC_ID, RULE)).toEqual([
+      expect.objectContaining({ id: assignment.id, status: 'resolved' })
+    ])
+    expect(logger.debug).not.toHaveBeenCalledWith(
+      expect.objectContaining({ ruleCode: RULE }),
+      'alert_rule_skipped'
+    )
+    // Positive control: the LEAPS-only PMCC was evaluated this run.
+    expect(openRow(db, LEAPS_RULE).summary).toBe(
+      'LEAPS expires in 57 days at $80.00 strike — review for roll or close'
+    )
+  })
+
+  it('co-fires the HIGH short expiration alert with the MED LEAPS alert on 2027-08-18, each naming its own leg (S6)', async () => {
+    seedWindowPmcc(db)
+
+    await run({ db, now: valuedAt('2027-08-18') })
+
+    expect(openRowsFor(db, PMCC_ID).map((r) => [r.rule_code, r.urgency, r.summary])).toEqual([
+      ['EXPIRATION_IMMINENT', 'high', 'Expires in 2 days at $112.00 strike'],
+      [LEAPS_RULE, 'medium', 'LEAPS expires in 30 days at $80.00 strike — review for roll or close']
+    ])
+  })
+
+  it('resolves the LEAPS alert without refiring once the LEAPS is rolled to $85 / 2028-01-21 (S5)', async () => {
+    seedWindowPmcc(db)
+    await run({ db, now: valuedAt('2027-07-20') })
+    const fired = openRow(db, LEAPS_RULE)
+
+    rollPmccLeapsPosition(db, PMCC_ID, {
+      positionId: PMCC_ID,
+      proceedsPerContract: 26,
+      replacementDebitPerContract: 23.5,
+      newStrike: 85,
+      newExpiration: '2028-01-21',
+      fillDate: '2027-07-20'
+    })
+    await run({ db, now: valuedAt('2027-07-20') })
+
+    expect(rowsFor(db, PMCC_ID, LEAPS_RULE)).toEqual([
+      expect.objectContaining({ id: fired.id, status: 'resolved' })
+    ])
+  })
+
+  it('keeps the LEAPS alert open with its previous summary and logs a missing_leaps_dte skip when the LEAPS expiration is unreadable (S7)', async () => {
+    const { leaps } = seedWindowPmcc(db)
+    // A quote and a short mark keep every short-leg rule evaluable, so the LEAPS skip is the only one.
+    const market = { price: '100.00', midBySymbol: { [WINDOW_SHORT_OCC]: '1.8000' } }
+    await run({ db, now: valuedAt('2027-07-20'), ...market })
+    const fired = openRow(db, LEAPS_RULE)
+
+    db.prepare(`UPDATE legs SET expiration = 'unreadable' WHERE id = ?`).run(leaps.id)
+    const logger = makeSpyLogger()
+    const result = await run({ db, now: valuedAt('2027-07-21'), ...market, logger })
+
+    expect(rowsFor(db, PMCC_ID, LEAPS_RULE)).toEqual([
+      expect.objectContaining({
+        id: fired.id,
+        status: 'open',
+        summary: 'LEAPS expires in 59 days at $80.00 strike — review for roll or close'
+      })
+    ])
+    expect(logger.debug).toHaveBeenCalledWith(
+      { positionId: PMCC_ID, ruleCode: LEAPS_RULE, reason: 'missing_leaps_dte' },
+      'alert_rule_skipped'
+    )
+    expect(result.skippedRuleCount).toBe(1)
+  })
+
+  it('does not evaluate a PMCC candidate with no LEAPS leg, and logs no error', async () => {
+    seedPmccPosition(db)
+    insertLegs(db, [windowLegs(PMCC_ID).short])
+    const logger = makeSpyLogger()
+
+    await run({ db, now: valuedAt('2027-08-18'), logger })
+
+    expect(logger.debug).toHaveBeenCalledWith({ count: 0 }, 'alert_evaluation_targets_loaded')
+    expect(rowsFor(db, PMCC_ID)).toEqual([])
+    expect(logger.error).not.toHaveBeenCalled()
+  })
+
+  it('keeps wheel positions on short-leg rules in a mixed batch: MSFT CC at 59 DTE silent, AAPL CSP at 20 DTE in the window (S8)', async () => {
+    seedWindowPmcc(db)
+    const msftOcc = seedShortOptionWithOcc(db, {
+      id: 'pos-msft',
+      ticker: 'MSFT',
+      phase: 'CC_OPEN',
+      strike: '420.0000',
+      contracts: 1,
+      entryPremium: '5.0000',
+      expiration: '2027-09-17'
+    })
+    const aaplOcc = seedShortOptionWithOcc(db, {
+      id: 'pos-aapl',
+      ticker: 'AAPL',
+      phase: 'CSP_OPEN',
+      strike: '180.0000',
+      contracts: 1,
+      entryPremium: '3.5000',
+      expiration: '2027-08-09'
+    })
+    const provider = stubProvider({
+      priceByTicker: { MSFT: '300.00', AAPL: '250.00' },
+      midBySymbol: { [msftOcc]: '9.0000', [aaplOcc]: '9.0000' }
+    })
+    const logger = makeSpyLogger()
+
+    await run({ db, now: valuedAt('2027-07-20'), provider, logger })
+
+    expect(rowsFor(db, 'pos-msft')).toEqual([])
+    expect(rowsFor(db, 'pos-aapl').map((r) => [r.rule_code, r.summary])).toEqual([
+      ['MANAGEMENT_WINDOW', '20 DTE remaining — review for roll or close']
+    ])
+    const wheelSkips = vi
+      .mocked(logger.debug)
+      .mock.calls.filter(
+        ([fields, event]) => event === 'alert_rule_skipped' && fields.positionId !== PMCC_ID
+      )
+    expect(wheelSkips).toEqual([])
+    // Positive control: the LEAPS rule was live in this batch.
+    expect(openRow(db, LEAPS_RULE).summary).toBe(
+      'LEAPS expires in 59 days at $80.00 strike — review for roll or close'
+    )
   })
 })

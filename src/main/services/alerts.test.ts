@@ -236,6 +236,17 @@ describe('upsertOpenAlert', () => {
   })
 })
 
+describe('AlertError', () => {
+  it('falls back to the code as its message when no message is given', () => {
+    const error = new AlertError('NOT_FOUND')
+
+    expect(error).toBeInstanceOf(Error)
+    expect(error.message).toBe('NOT_FOUND')
+    expect(error.code).toBe('NOT_FOUND')
+    expect(error.name).toBe('AlertError')
+  })
+})
+
 describe('dismissAlert', () => {
   it('transitions an open alert to dismissed with a dismissed_at timestamp', () => {
     const db = makeTestDb()
@@ -456,6 +467,7 @@ describe('listManagementQueue', () => {
       positionId: aaplId,
       ticker: 'AAPL',
       phase: 'CSP_OPEN',
+      ruleCode: 'EXPIRATION_IMMINENT',
       urgency: 'high',
       summary: 'Expires in 5 days at $180.00 strike',
       quickAction: 'Review position',
@@ -490,6 +502,32 @@ describe('listManagementQueue', () => {
     const queue = listManagementQueue(db)
 
     expect(queue.map((item) => item.positionId)).toEqual([earlierId, laterId])
+  })
+
+  it("carries each alert's rule code, keeping HIGH before MED on the same position", () => {
+    const db = makeTestDb()
+    const positionId = seedPositionWithTicker(db, 'XYZ')
+    upsertOpenAlert(
+      db,
+      {
+        ruleCode: 'PMCC_LEAPS_ROLL_WINDOW',
+        urgency: 'medium',
+        summary: 'LEAPS expires in 60 days at $80.00 strike — review for roll or close',
+        quickAction: 'Review position'
+      },
+      positionId,
+      NOW
+    )
+    upsertOpenAlert(db, EXPIRATION_MATCH, positionId, LATER)
+
+    const queue = listManagementQueue(db)
+
+    expect(
+      queue.map(({ ruleCode, urgency, triggeredAt }) => ({ ruleCode, urgency, triggeredAt }))
+    ).toEqual([
+      { ruleCode: 'EXPIRATION_IMMINENT', urgency: 'high', triggeredAt: LATER },
+      { ruleCode: 'PMCC_LEAPS_ROLL_WINDOW', urgency: 'medium', triggeredAt: NOW }
+    ])
   })
 
   it('excludes non-open alerts', () => {

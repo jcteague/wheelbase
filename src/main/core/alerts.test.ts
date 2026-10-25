@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { evaluatePosition } from './alerts'
-import type { AlertEvaluationInput, AlertMatch, SkippedRule } from './alerts'
+import type { AlertEvaluationInput, AlertMatch, RuleCode, SkippedRule } from './alerts'
 import { WheelPhase } from './types'
 
 function makeInput(overrides: Partial<AlertEvaluationInput> = {}): AlertEvaluationInput {
@@ -28,6 +28,10 @@ function makeInput(overrides: Partial<AlertEvaluationInput> = {}): AlertEvaluati
     // purely from managementWindowDte/DEFAULT_MANAGEMENT_WINDOW_DTE unless a
     // test overrides it.
     managementWindowDteOverride: null,
+    // Inert default for PMCC_LEAPS_ROLL_WINDOW (US-107): no LEAPS leg, so the
+    // rule has nothing to read unless a test supplies one.
+    leapsDte: null,
+    leapsStrike: null,
     ...overrides
   }
 }
@@ -814,6 +818,162 @@ describe('evaluatePosition — PMCC_ASSIGNMENT_RISK (US-106)', () => {
         summary: 'Stock is 0.8% below the $180.00 put strike — now in the money',
         quickAction: 'Review position'
       }
+    ])
+  })
+})
+
+// [US-107] Fire alert when LEAPS DTE drops below 60 days
+describe('evaluatePosition — PMCC_LEAPS_ROLL_WINDOW (US-107)', () => {
+  // Short call far from expiration and well below the stock, so only the LEAPS
+  // rule has anything to say unless a test moves the short leg.
+  const leapsInput = (overrides: Partial<AlertEvaluationInput> = {}): AlertEvaluationInput =>
+    makeInput({
+      phase: 'PMCC_OPEN',
+      instrumentType: 'CALL',
+      strike: '112.0000',
+      dte: 42,
+      expiration: '2027-08-20',
+      currentUnderlyingPrice: '100.00',
+      leapsDte: 70,
+      leapsStrike: '80.0000',
+      ...overrides
+    })
+
+  const leapsMatches = (input: AlertEvaluationInput): AlertMatch[] =>
+    evaluatePosition(input).matches.filter((m) => m.ruleCode === 'PMCC_LEAPS_ROLL_WINDOW')
+
+  const leapsSkips = (input: AlertEvaluationInput): SkippedRule[] =>
+    evaluatePosition(input).skipped.filter((s) => s.ruleCode === 'PMCC_LEAPS_ROLL_WINDOW')
+
+  it.each([
+    [60, 'LEAPS expires in 60 days at $80.00 strike — review for roll or close'],
+    [59, 'LEAPS expires in 59 days at $80.00 strike — review for roll or close'],
+    [30, 'LEAPS expires in 30 days at $80.00 strike — review for roll or close'],
+    [2, 'LEAPS expires in 2 days at $80.00 strike — review for roll or close'],
+    [1, 'LEAPS expires in 1 day at $80.00 strike — review for roll or close'],
+    [0, 'LEAPS expires today at $80.00 strike — review for roll or close']
+  ])('fires once at leapsDte %i with medium urgency and the story summary', (leapsDte, summary) => {
+    const input = leapsInput({ leapsDte })
+    expect(leapsMatches(input)).toEqual([
+      {
+        ruleCode: 'PMCC_LEAPS_ROLL_WINDOW',
+        urgency: 'medium',
+        summary,
+        quickAction: 'Review position'
+      }
+    ])
+    expect(leapsSkips(input)).toEqual([])
+  })
+
+  it.each([61, 70, 185, -1])('neither matches nor skips at leapsDte %i', (leapsDte) => {
+    const input = leapsInput({ leapsDte })
+    expect(leapsMatches(input)).toEqual([])
+    expect(leapsSkips(input)).toEqual([])
+  })
+
+  it('skips with missing_leaps_dte when the LEAPS DTE is unknown', () => {
+    const input = leapsInput({ leapsDte: null })
+    expect(leapsMatches(input)).toEqual([])
+    expect(leapsSkips(input)).toEqual([
+      { ruleCode: 'PMCC_LEAPS_ROLL_WINDOW', reason: 'missing_leaps_dte' }
+    ])
+  })
+
+  it.each([null, 'bad'])(
+    'skips with missing_strike (no $0.00 summary) when the LEAPS strike is %s',
+    (leapsStrike) => {
+      const input = leapsInput({ leapsDte: 30, leapsStrike })
+      expect(leapsSkips(input)).toEqual([
+        { ruleCode: 'PMCC_LEAPS_ROLL_WINDOW', reason: 'missing_strike' }
+      ])
+      expect(leapsMatches(input)).toEqual([])
+      expect(evaluatePosition(input).matches.some((m) => m.summary.includes('$0.00'))).toBe(false)
+    }
+  )
+
+  it.each(['CSP_OPEN', 'CC_OPEN'] as const)(
+    'produces neither a match nor a skip for %s, with or without a LEAPS DTE',
+    (phase) => {
+      for (const leapsDte of [59, null]) {
+        const input = makeInput({ phase, leapsDte, leapsStrike: '80.0000' })
+        expect(leapsMatches(input)).toEqual([])
+        expect(leapsSkips(input)).toEqual([])
+      }
+    }
+  )
+
+  it('reads the LEAPS strike only for the LEAPS rule and the short strike for the short-leg rules', () => {
+    const { matches } = evaluatePosition(
+      leapsInput({ dte: 2, strike: '112.0000', leapsDte: 30, leapsStrike: '80.0000' })
+    )
+    const summaryOf = (code: RuleCode): string | undefined =>
+      matches.find((m) => m.ruleCode === code)?.summary
+    expect(summaryOf('EXPIRATION_IMMINENT')).toBe('Expires in 2 days at $112.00 strike')
+    expect(summaryOf('PMCC_LEAPS_ROLL_WINDOW')).toBe(
+      'LEAPS expires in 30 days at $80.00 strike — review for roll or close'
+    )
+    const shortLegSummaries = matches
+      .filter((m) => m.ruleCode === 'EXPIRATION_IMMINENT' || m.ruleCode === 'MANAGEMENT_WINDOW')
+      .map((m) => m.summary)
+    expect(shortLegSummaries).toHaveLength(1)
+    expect(shortLegSummaries.some((summary) => summary.includes('$80.00'))).toBe(false)
+  })
+})
+
+// [US-107] Rules declare the leg they read; a rule whose leg is absent is inapplicable
+describe('evaluatePosition — leg applicability (US-107)', () => {
+  // A PMCC whose short call has expired or closed: only the LEAPS remains, so
+  // every short-leg field is null. The stock sits deep above the absent $112 short.
+  const leapsOnlyInput = (overrides: Partial<AlertEvaluationInput> = {}): AlertEvaluationInput =>
+    makeInput({
+      phase: 'PMCC_OPEN',
+      instrumentType: null,
+      strike: null,
+      dte: null,
+      expiration: null,
+      entryPremiumPerContract: null,
+      contracts: null,
+      currentOptionMid: null,
+      currentUnderlyingPrice: '118.80',
+      daysToEarnings: 3,
+      leapsDte: 2,
+      leapsStrike: '80.0000',
+      ...overrides
+    })
+
+  it('evaluates only the LEAPS rule when the PMCC has no short call: one LEAPS match, no skips', () => {
+    expect(evaluatePosition(leapsOnlyInput())).toEqual({
+      matches: [
+        {
+          ruleCode: 'PMCC_LEAPS_ROLL_WINDOW',
+          urgency: 'medium',
+          summary: 'LEAPS expires in 2 days at $80.00 strike — review for roll or close',
+          quickAction: 'Review position'
+        }
+      ],
+      skipped: []
+    })
+  })
+
+  it.each(['118.80', null])(
+    'records neither a PMCC_ASSIGNMENT_RISK match nor a skip for the absent short at price %s',
+    (price) => {
+      const { matches, skipped } = evaluatePosition(
+        leapsOnlyInput({ currentUnderlyingPrice: price })
+      )
+      expect(matches.filter((m) => m.ruleCode === 'PMCC_ASSIGNMENT_RISK')).toEqual([])
+      expect(skipped.filter((s) => s.ruleCode === 'PMCC_ASSIGNMENT_RISK')).toEqual([])
+    }
+  )
+
+  it('still skips the short-leg DTE rules with missing_dte on a wheel CC_OPEN whose dte is unknown', () => {
+    const { skipped } = evaluatePosition(
+      makeInput({ phase: 'CC_OPEN', instrumentType: 'CALL', dte: null })
+    )
+    expect(skipped).toEqual([
+      { ruleCode: 'EXPIRATION_IMMINENT', reason: 'missing_dte' },
+      { ruleCode: 'MANAGEMENT_WINDOW', reason: 'missing_dte' },
+      { ruleCode: 'EARNINGS_PROXIMITY', reason: 'missing_dte' }
     ])
   })
 })
