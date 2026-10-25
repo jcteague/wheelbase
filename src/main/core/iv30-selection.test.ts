@@ -1,6 +1,6 @@
 // [US-121] Calculate IV30 from option prices — expiration and strike selection
 import { addDays, eachDayOfInterval, format, isWeekend, parseISO } from 'date-fns'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { buildOccSymbol } from './option-symbol'
 import {
   MIN_DTE,
@@ -11,7 +11,8 @@ import {
   planSessionProbe,
   selectExpirationPair,
   strikeCandidates,
-  weeklyCandidates
+  weeklyCandidates,
+  type SessionProbePlan
 } from './iv30-selection'
 
 const HOLIDAYS_2026 = new Set([
@@ -217,11 +218,16 @@ describe('strikeCandidates', () => {
 })
 
 describe('planSessionProbe', () => {
-  const plan = planSessionProbe({
-    underlying: 'AAPL',
-    session: '2026-03-12',
-    underlyingPrice: 200.4,
-    sessions: SESSIONS_2026
+  // Built in a hook, not the describe body: a throw at collection time fails the file
+  // with zero tests run, which a mutation run reads as a surviving mutant.
+  let plan: SessionProbePlan
+  beforeAll(() => {
+    plan = planSessionProbe({
+      underlying: 'AAPL',
+      session: '2026-03-12',
+      underlyingPrice: 200.4,
+      sessions: SESSIONS_2026
+    })
   })
 
   const expectedSymbols = (pair: { near: string; far: string | null }): string[] =>

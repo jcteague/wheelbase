@@ -22,6 +22,7 @@
     "!src/main/core/test-fixtures/**"
   ],
   "coverageAnalysis": "perTest",
+  "timeoutMS": 30000,
   "incremental": true,
   "incrementalFile": "reports/mutation/stryker-incremental.json",
   "reporters": ["clear-text", "progress", "html", "json"],

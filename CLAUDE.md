@@ -180,6 +180,12 @@ TDD skills (`/red`, `/green`, `/refactor`, `/implement-plan`) all apply this lis
   text a mocked child or placeholder also renders cannot be the assertion.
 - **Mocks** sit at real boundaries (`window.api`, market data, Finnhub, the clock), typed
   so the test needs no `as unknown as`. Assert observable results over mock-call internals.
+- **No engine calls at collection time.** Code in a `describe` body or at module level
+  runs while Vitest collects the file. If it throws, the file fails with zero tests run —
+  and a mutation run counts that as a _surviving_ mutant, hiding a real kill. Build shared
+  fixtures that call `src/main/` code (including `makeTradingCalendar`, which runs
+  `etInstantAt`) in `beforeAll` / `beforeEach` or inside the `it`; plain object literals
+  are fine anywhere.
 - **One reason to fail.** A happy-path test does not re-assert what a dedicated test
   covers; one regression should fail one test.
 - **No red-phase scaffolding** survives the refactor: no `{ fn?: … }` casts, `?.()` calls,
@@ -201,6 +207,11 @@ test noticed — usually a missing boundary test or a weak assertion.
   (cannot change behaviour, e.g. `contracts < 1` vs `<= 0` on an integer), record it in the
   phase results with the reason — or mark it in source with
   `// Stryker disable next-line <Mutator>: <reason>`.
+- **A survivor must be reproducible before you act on it.** `timeoutMS` is 30 s because
+  Stryker counts a timeout as a kill: at the default budget, parallel workers starved for
+  CPU timed out on mutants no test detects (an error-message string flipping between
+  `Timeout` and `Survived` run to run). A `Timeout` on a mutant that cannot loop is
+  suspect, not a kill.
 - Mutation testing cannot see missing code (an unvalidated input with no guard at all), so
   it complements the checklist above rather than replacing it.
 

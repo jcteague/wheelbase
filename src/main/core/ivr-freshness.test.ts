@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 import { makeTradingCalendar } from '../test-utils'
+import type { TradingCalendar } from './trading-calendar'
 import {
   AGING_MAX_AGE,
   FRESH_MAX_AGE,
@@ -16,7 +17,12 @@ import {
 const now = new Date('2026-09-23T14:00:00.000Z')
 // Labor Day 2026 closes the 7th, which is what makes the 11-session case land past the
 // stale boundary rather than on it.
-const calendar = makeTradingCalendar('2026-08-24', '2026-09-24', { closures: ['2026-09-07'] })
+// Built in a hook: makeTradingCalendar runs engine code (etInstantAt), and a throw at
+// collection time fails the file with zero tests run, which reads as a surviving mutant.
+let calendar: TradingCalendar
+beforeAll(() => {
+  calendar = makeTradingCalendar('2026-08-24', '2026-09-24', { closures: ['2026-09-07'] })
+})
 // [US-121] A reading carries the metrics derived from the 252-session IV30 window: an
 // integer rank (null when the window is flat), an integer percentile and the 4 dp range.
 const METRICS = { percentile: '71', low: '0.1800', high: '0.4500' }

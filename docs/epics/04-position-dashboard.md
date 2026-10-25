@@ -29,7 +29,7 @@ A trader opens the app and immediately sees all active positions, key portfolio 
 
 ## Stories
 
-- [ ] US-18: Display all active positions as cards with phase badge, ticker, strike, DTE, premium
+- [ ] US-18: Display positions as a card grid with live price, option mark, P&L and action strip — ported to Linear as OPT-30 on 2026-10-24, reconciled against `mockups/epic-09-pmcc-dashboard.mdx`; blocks US-108
 - [ ] US-19: Show portfolio summary bar with capital deployed, premium MTD/YTD, active count
 - [ ] US-20: Filter positions by lifecycle phase
 - [ ] US-21: Sort positions by DTE, ticker, or premium collected
