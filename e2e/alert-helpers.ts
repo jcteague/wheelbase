@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import type { Page } from 'playwright'
 import { seedCsp, type CspFixture } from './assignment-helpers'
 import { localDate } from './dates'
+import { sqlite } from './pmcc-helpers'
 
 export const QUEUE_ROW = '[data-testid="management-queue-row"]'
 
@@ -73,6 +74,16 @@ export function setActiveLegExpiration(
        SET expiration = '${escapeSqlString(expiration)}'
      WHERE position_id = '${escapeSqlString(positionId)}';`
   ])
+}
+
+/** Overwrites one leg's expiration, by leg id — e.g. to make it unreadable. */
+export function setLegExpiration(dbPath: string, legId: string, expiration: string): void {
+  sqlite(
+    dbPath,
+    `UPDATE legs
+       SET expiration = '${escapeSqlString(expiration)}'
+     WHERE id = '${escapeSqlString(legId)}';`
+  )
 }
 
 /** Click Dismiss on the queue row for `ticker`, then confirm — waits for the row to disappear. */

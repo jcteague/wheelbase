@@ -1,6 +1,8 @@
-// Service layer — alert evaluation orchestration. Loads evaluable positions,
-// runs the pure rule engine over each, and persists the resulting alert set
-// atomically (upsert open matches + resolve cleared conditions).
+// Service layer — alert evaluation orchestration. Loads evaluable positions —
+// wheel positions with an active short leg, and PMCCs with an open LEAPS; the
+// short-leg rules read the short, the LEAPS rule reads the LEAPS — runs the pure
+// rule engine over each, and persists the resulting alert set atomically
+// (upsert open matches + resolve cleared conditions).
 // No Electron or broker imports here.
 
 import Database from 'better-sqlite3'
@@ -25,7 +27,7 @@ import { alertKey, clearStaleDismissals, resolveAlertsNotIn, upsertOpenAlert } f
 import { getEarnings } from './earnings-dates'
 import { readLegsByPosition } from './leg-rows'
 import { fetchOptionSnapshots, fetchStockQuotes, type IpcStockQuote } from './market-data'
-import { currentShortCallLeg } from './pmcc-ledger'
+import { pmccOpenLegs } from './pmcc-ledger'
 
 export const ALERT_EVAL_JOB_NAME = 'alert-evaluation'
 
@@ -35,9 +37,11 @@ export const ALERT_EVAL_JOB_NAME = 'alert-evaluation'
 const EARNINGS_HORIZON_DAYS = 30
 
 // ---------------------------------------------------------------------------
-// Evaluable-position selection — positions with an active short option leg.
-// An inner JOIN on the phase-aware active-leg subquery drops positions with no
-// open option leg (e.g. HOLDING_SHARES without a covered call).
+// Evaluable-position selection — wheel positions with an active short leg, and
+// PMCCs with an open LEAPS. The short-leg fields describe the short option (null
+// on a PMCC with no open short); the LEAPS fields are set only for a PMCC.
+// For wheel positions, an inner JOIN on the phase-aware active-leg subquery
+// drops positions with no open option leg (e.g. HOLDING_SHARES without a CC).
 // ---------------------------------------------------------------------------
 
 interface EvaluableRow {
@@ -46,11 +50,13 @@ interface EvaluableRow {
   phase: WheelPhase
   profitTargetPercent: number | null
   managementWindowDteOverride: number | null
-  instrumentType: 'PUT' | 'CALL'
+  instrumentType: 'PUT' | 'CALL' | null
   strike: string | null
   expiration: string | null
   premiumPerContract: string | null
   contracts: number | null
+  leapsStrike: string | null
+  leapsExpiration: string | null
 }
 
 const EVALUABLE_QUERY = `
@@ -64,7 +70,9 @@ const EVALUABLE_QUERY = `
     l.strike,
     l.expiration,
     l.premium_per_contract           AS premiumPerContract,
-    l.contracts
+    l.contracts,
+    NULL                             AS leapsStrike,
+    NULL                             AS leapsExpiration
   FROM positions p
   JOIN legs l ON l.id = (
     ${activeLegSubquery()}
@@ -75,9 +83,10 @@ const EVALUABLE_QUERY = `
 `
 
 // ---------------------------------------------------------------------------
-// [US-106] PMCC selection — a PMCC is evaluated through its current short call,
-// never the LEAPS. The short is found by replaying the position's leg history
-// (rolls, expirations, closes, assignments), not by the wheel SQL subquery.
+// [US-106/US-107] PMCC selection — a PMCC is evaluable whenever its LEAPS is
+// open; the short-leg rules read the current short call, the LEAPS rule reads the
+// LEAPS. Both are found by replaying the position's leg history (rolls,
+// expirations, closes, assignments), not by the wheel SQL subquery.
 // ---------------------------------------------------------------------------
 
 type PmccCandidateRow = Pick<
@@ -98,10 +107,11 @@ const PMCC_CANDIDATE_QUERY = `
     AND phase = 'PMCC_OPEN'
 `
 
-/** Evaluable rows for every PMCC with an open short call. A PMCC with no open
- *  short contributes nothing (so its alerts resolve); a PMCC whose history can't
- *  be read or replayed is logged and added to `heldIds` instead, so its alerts
- *  are kept rather than treated as cleared. */
+/** Evaluable rows for every PMCC with an open LEAPS, with the short-leg fields
+ *  null when no short call is open. A PMCC with no LEAPS contributes nothing (so
+ *  its alerts resolve); a PMCC whose history can't be read or replayed is logged
+ *  and added to `heldIds` instead, so its alerts are kept rather than treated as
+ *  cleared. */
 function loadPmccEvaluableRows({
   db,
   heldIds,
@@ -126,12 +136,21 @@ function loadPmccEvaluableRows({
 
   return candidates.flatMap((candidate): EvaluableRow[] => {
     try {
-      const short = currentShortCallLeg(legsByPosition.get(candidate.positionId) ?? [])
-      if (short === null) return []
-      // The ledger picks the short by role (SHORT_CALL_OPEN / short-side ROLL_TO), so it is a call.
-      const { strike, expiration, premiumPerContract, contracts } = short
+      const open = pmccOpenLegs(legsByPosition.get(candidate.positionId) ?? [])
+      if (open === null) return []
+      const { long, short } = open
       return [
-        { ...candidate, instrumentType: 'CALL', strike, expiration, premiumPerContract, contracts }
+        {
+          ...candidate,
+          // The ledger picks the short by role (SHORT_CALL_OPEN / short-side ROLL_TO), so it is a call.
+          instrumentType: short ? 'CALL' : null,
+          strike: short?.strike ?? null,
+          expiration: short?.expiration ?? null,
+          premiumPerContract: short?.premiumPerContract ?? null,
+          contracts: short?.contracts ?? null,
+          leapsStrike: long.strike,
+          leapsExpiration: long.expiration
+        }
       ]
     } catch (error) {
       logger.error({ positionId: candidate.positionId, error }, 'alert_evaluation_failed')
@@ -141,11 +160,12 @@ function loadPmccEvaluableRows({
   })
 }
 
-/** OCC symbol for a row's active option leg, or null when the leg data can't
- *  form a valid symbol (logged, never thrown — so one bad leg can't abort the
- *  whole batch or suppress its OCC-independent DTE rules). */
+/** OCC symbol for a row's active short option leg, or null when there is none
+ *  (a LEAPS-only PMCC — the LEAPS is never quoted) or the leg data can't form a
+ *  valid symbol (logged, never thrown — so one bad leg can't abort the whole
+ *  batch or suppress its OCC-independent DTE rules). */
 function occSymbolForRow(row: EvaluableRow, logger: LoggerLike): string | null {
-  if (row.strike === null || !row.expiration) return null
+  if (row.instrumentType === null || row.strike === null || !row.expiration) return null
   try {
     return buildOccSymbol({
       ticker: row.ticker,
@@ -207,7 +227,9 @@ function toEvaluationInput({
     profitTargetPercentDefault,
     currentUnderlyingPrice: priceByTicker[row.ticker]?.price ?? null,
     daysToEarnings: computeDte(earningsDateFor(earningsByTicker, row.ticker), now),
-    expiration: row.expiration
+    expiration: row.expiration,
+    leapsDte: computeDte(row.leapsExpiration, now),
+    leapsStrike: row.leapsStrike
   }
 }
 

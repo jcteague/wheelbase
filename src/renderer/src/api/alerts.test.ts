@@ -23,6 +23,7 @@ const ITEM: ManagementQueueItem = {
   positionId: 'p1',
   ticker: 'AAPL',
   phase: 'CSP_OPEN',
+  ruleCode: 'EXPIRATION_IMMINENT',
   urgency: 'high',
   summary: 'Expires in 3 days at $180.00 strike',
   quickAction: 'Review position',

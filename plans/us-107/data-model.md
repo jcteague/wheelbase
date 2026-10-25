@@ -1,21 +1,21 @@
 # US-107 — Data model and type design
 
 Requirements: [OPT-15](https://linear.app/optionswheel/issue/OPT-15). Decisions:
-[research.md](./research.md). Builds on US-106's planned names (research § Starting point).
+[research.md](./research.md). Builds on US-106 as shipped (research § Starting point).
 
 No migration, table or settings field. One response field is added to `alerts:list`
 (see [contracts/alerts-list.md](./contracts/alerts-list.md)).
 
 ## Entities touched
 
-| Entity                 | Change                                                                                                                      |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `AlertEvaluationInput` | `+ leapsDte: number \| null`, `+ leapsStrike: string \| null`. `dte`/`strike`/`expiration`/`instrumentType` stay short-leg. |
-| `RuleDefinition`       | `+ leg: RuleLeg` (required).                                                                                                |
-| `RuleCode`             | `+ 'PMCC_LEAPS_ROLL_WINDOW'`.                                                                                               |
-| `EvaluableRow`         | `+ leaps_strike: string \| null`, `+ leaps_expiration: string \| null`. Short-leg columns may all be null for a PMCC.       |
-| `ManagementQueueItem`  | `+ ruleCode: RuleCode`.                                                                                                     |
-| `alerts` table         | Unchanged; `rule_code` is TEXT.                                                                                             |
+| Entity                 | Change                                                                                                                                                                   |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AlertEvaluationInput` | `+ leapsDte: number \| null`, `+ leapsStrike: string \| null`. `dte`/`strike`/`expiration`/`instrumentType` stay short-leg.                                              |
+| `RuleDefinition`       | `+ leg: RuleLeg` (required).                                                                                                                                             |
+| `RuleCode`             | `+ 'PMCC_LEAPS_ROLL_WINDOW'`.                                                                                                                                            |
+| `EvaluableRow`         | `+ leapsStrike: string \| null`, `+ leapsExpiration: string \| null`; `instrumentType` widens to `'PUT' \| 'CALL' \| null`. Short-leg fields may all be null for a PMCC. |
+| `ManagementQueueItem`  | `+ ruleCode: RuleCode` (schema type; the preload global is an alias and needs no edit).                                                                                  |
+| `alerts` table         | Unchanged; `rule_code` is TEXT.                                                                                                                                          |
 
 ## Rule: PMCC_LEAPS_ROLL_WINDOW
 
@@ -43,7 +43,9 @@ null strike. In practice a LEAPS leg always has a strike.
 | PMCC, no LEAPS / position inactive | not evaluated          | not evaluated                   |
 
 Inapplicable rules contribute no key, so their prior alerts resolve (the S4 expired short's
-EXPIRATION_IMMINENT). Skipped rules contribute a keep-open key (S7).
+EXPIRATION_IMMINENT, and US-106's PMCC_ASSIGNMENT_RISK — whose shipped
+`priceVsStrikeMissingData('PMCC_OPEN')` guard would otherwise skip with `missing_strike` on
+a null short). Skipped rules contribute a keep-open key (S7).
 
 ### Worked examples (issue calendar, LEAPS 2027-09-17 @ $80, short 2027-08-20 @ $112)
 
@@ -59,16 +61,21 @@ EXPIRATION_IMMINENT). Skipped rules contribute a keep-open key (S7).
 
 ## Selection (service)
 
-1. Wheel rows: existing `EVALUABLE_QUERY` + `NULL AS leaps_strike, NULL AS leaps_expiration`.
-2. PMCC candidates (US-106 query, ACTIVE + `PMCC_OPEN`); bulk legs via `readLegsByPosition`.
-3. Per candidate, in its own try/catch: `pmccOpenLegs(legs)`.
+1. Wheel rows: existing `EVALUABLE_QUERY` + `NULL AS leapsStrike, NULL AS leapsExpiration`.
+2. PMCC candidates (US-106's `PMCC_CANDIDATE_QUERY`, ACTIVE + `PMCC_OPEN`); bulk legs via
+   `readLegsByPosition`.
+3. Per candidate, in its own try/catch inside `loadPmccEvaluableRows({ db, heldIds, logger })`:
+   `pmccOpenLegs(legs)`.
    - `null` → skip the candidate (no LEAPS; not evaluable).
-   - `{ long, short }` → `EvaluableRow` with short columns from `short ?? null-fields`,
-     `instrument_type: short ? 'CALL' : null`, `leaps_strike: long.strike`,
-     `leaps_expiration: long.expiration`.
-   - throw → US-106 failed-id path (log `alert_evaluation_failed`, keep existing keys).
-4. `occSymbolForRow` already returns `null` for a null instrument type, so a LEAPS-only
-   PMCC requests no option snapshot. The LEAPS OCC is never built.
+   - `{ long, short }` → `EvaluableRow` with `instrumentType: short ? 'CALL' : null`,
+     `strike` / `expiration` / `premiumPerContract` / `contracts` from `short` (or `null`),
+     `leapsStrike: long.strike`, `leapsExpiration: long.expiration`.
+   - throw → US-106 held path (log `alert_evaluation_failed`, `heldIds.add(positionId)`;
+     the set reaches `resolveAlertsNotIn` / `clearStaleDismissals` as
+     `AlertsToKeep.positionIds`, so existing keys are kept).
+4. `occSymbolForRow` returns `null` when `instrumentType` is null (new guard, ahead of the
+   existing `strike`/`expiration` check), so a LEAPS-only PMCC requests no option snapshot.
+   The LEAPS OCC is never built.
 
 ## Lifecycle (all existing US-50/US-59 behaviour)
 
@@ -93,17 +100,24 @@ else is a plain field addition.
 | `LEG_PRESENT`                   | `src/main/core/alerts.ts`              | `Record<RuleLeg, (input: AlertEvaluationInput) => boolean>`                      | Exhaustive: adding a leg kind without a presence test fails to compile.                                                                                                      |
 | `PmccLeapsRollWindowInput`      | `src/main/core/alerts.ts`              | `Pick<AlertEvaluationInput, 'leapsDte' \| 'leapsStrike'>`                        | The summary helper takes exactly the slice it reads (project convention, like `EarningsProximityInput`); can't drift from the engine input.                                  |
 | `AlertEvaluationInput`          | `src/main/core/alerts.ts`              | Two plain nullable fields                                                        | Plain types. A nested `short: {...} \| null` object would make "short absent" unrepresentable-with-fields, but would rewrite every rule and fixture; out of proportion here. |
-| `EvaluableRow`                  | `src/main/services/evaluate-alerts.ts` | Two plain nullable columns                                                       | Plain types — no advanced constructs needed.                                                                                                                                 |
+| `EvaluableRow`                  | `src/main/services/evaluate-alerts.ts` | Two plain nullable fields; `instrumentType` gains `\| null`                      | Plain types — no advanced constructs needed.                                                                                                                                 |
 | `ManagementQueueItem`           | `src/main/schemas.ts`                  | `ruleCode: RuleCode` (imported type from core)                                   | Renderer branches on the same union the engine emits; no string compare against an unchecked literal.                                                                        |
-| `ManagementQueueItem` (preload) | `src/preload/index.d.ts`               | Hand-copied global interface gains `ruleCode: string`                            | The preload d.ts is a duplicate today (it cannot import main types). Match that existing pattern and note the duplication; don't widen scope to fix it.                      |
+| `ManagementQueueItem` (preload) | `src/preload/index.d.ts`               | Already `type ManagementQueueItem = SchemaManagementQueueItem` (US-106)          | No edit. The alias carries `ruleCode` through, so the renderer branch is type-checked for free.                                                                              |
 
 Renderer label map, in `ManagementQueueRow.tsx`:
 
 ```ts
 const PMCC_LEG_LABEL = { short: 'PMCC · short call', leaps: 'PMCC · LEAPS' } as const
-const pmccBadgeLabel = (ruleCode: string): string =>
+const pmccBadgeLabel = (ruleCode: RuleCode): string =>
   PMCC_LEG_LABEL[ruleCode === 'PMCC_LEAPS_ROLL_WINDOW' ? 'leaps' : 'short']
+
+// in the JSX — US-106's PhaseBadge keeps tint, dot and the 150px column:
+<PhaseBadge
+  phase={item.phase}
+  variant="short"
+  label={item.phase === 'PMCC_OPEN' ? pmccBadgeLabel(item.ruleCode) : undefined}
+/>
 ```
 
-Plain types; the rule→leg decision mirrors `RULES` but the renderer cannot import core.
-One literal compare is enough.
+Plain types; the rule→leg decision mirrors `RULES` but the renderer cannot import core
+values. One literal compare is enough.

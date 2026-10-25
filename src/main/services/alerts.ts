@@ -4,7 +4,7 @@
 
 import { randomUUID } from 'node:crypto'
 import Database from 'better-sqlite3'
-import type { AlertMatch, AlertUrgency } from '../core/alerts'
+import type { AlertMatch, AlertUrgency, RuleCode } from '../core/alerts'
 import type { WheelPhase } from '../core/types'
 import { logger } from '../logger'
 import type { AlertRecord, DismissedAlertRecord, ManagementQueueItem } from '../schemas'
@@ -259,12 +259,14 @@ export function listOpenAlerts(db: Database.Database): AlertRecord[] {
 
 // Joined alerts→positions row backing a `ManagementQueueItem`. `phase` and
 // `urgency` carry their domain types (the DB columns are constrained to those
-// values), so the mapper is a pure snake→camel rename.
+// values), as does `rule_code` (only ever written from an engine `AlertMatch`),
+// so the mapper is a pure snake→camel rename.
 interface QueueRow {
   alert_id: string
   position_id: string
   ticker: string
   phase: WheelPhase
+  rule_code: RuleCode
   urgency: AlertUrgency
   summary: string
   quick_action: string
@@ -277,6 +279,7 @@ function mapQueueRow(row: QueueRow): ManagementQueueItem {
     positionId: row.position_id,
     ticker: row.ticker,
     phase: row.phase,
+    ruleCode: row.rule_code,
     urgency: row.urgency,
     summary: row.summary,
     quickAction: row.quick_action,
@@ -285,9 +288,9 @@ function mapQueueRow(row: QueueRow): ManagementQueueItem {
 }
 
 /**
- * Returns every open alert enriched with its position's ticker and phase,
- * sorted by urgency tier (high → medium → low) then `triggered_at` ascending,
- * for the dashboard management queue.
+ * Returns every open alert, with its rule code, enriched with its position's
+ * ticker and phase, sorted by urgency tier (high → medium → low) then
+ * `triggered_at` ascending, for the dashboard management queue.
  */
 export function listManagementQueue(db: Database.Database): ManagementQueueItem[] {
   const rows = db
@@ -297,6 +300,7 @@ export function listManagementQueue(db: Database.Database): ManagementQueueItem[
          a.position_id  AS position_id,
          p.ticker       AS ticker,
          p.phase        AS phase,
+         a.rule_code    AS rule_code,
          a.urgency      AS urgency,
          a.summary      AS summary,
          a.quick_action AS quick_action,

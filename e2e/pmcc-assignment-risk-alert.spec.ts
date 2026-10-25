@@ -7,26 +7,24 @@
 // run-day-relative dates that keep the story's 18 DTE on the short call and a distant LEAPS.
 // The expected summaries are the story's literals, not the production summary helper's output.
 import { afterEach, describe, expect, it } from 'vitest'
-import type { ElectronApplication, Locator, Page } from 'playwright'
-import {
-  CLOSED_SESSION,
-  buildLaunchEnv,
-  cleanupDb,
-  getPage,
-  goToPositionsList,
-  launchElectron,
-  seedCsp,
-  tmpDb
-} from './assignment-helpers'
+import type { ElectronApplication, Page } from 'playwright'
+import { seedCsp } from './assignment-helpers'
 import {
   cspAtDte,
   listManagementQueueItems,
-  QUEUE_ROW,
   readAlertRows,
   runAlertEvaluation,
   type AlertRow
 } from './alert-helpers'
 import { localDate, localToday } from './dates'
+import {
+  disposeHarness,
+  launch,
+  queueRowWith,
+  ruleSkips,
+  seedMsftCoveredCall,
+  type Harness
+} from './pmcc-alert-helpers'
 import { sqlite } from './pmcc-helpers'
 import { recordEvent } from './pmcc-ledger-helpers'
 import { rollShortCall } from './pmcc-roll-helpers'
@@ -40,36 +38,9 @@ const LEAPS_EXPIRATION = localDate(LEAPS_DTE)
 const ABOVE_112_53 =
   'Stock is 2.3% above the $110.00 short-call strike — in the money, LEAPS would have to cover'
 
-// ── Launch, quotes and logs ──────────────────────────────────────────────────
+// ── Quotes ───────────────────────────────────────────────────────────────────
 
-interface Harness {
-  app: ElectronApplication
-  page: Page
-  dbPath: string
-  /** Main-process stdout collected since launch (pino JSON lines). */
-  logs: () => string[]
-}
-
-let harness: Harness | undefined
-
-async function launch(label: string): Promise<Harness> {
-  const dbPath = tmpDb(`wb-e2e-us106-${label}`)
-  const env = buildLaunchEnv(dbPath, { marketStatus: CLOSED_SESSION })
-  // Vitest's own flag would silence pino in the child process; the S7 check reads its DEBUG lines.
-  delete env.VITEST
-  const app = await launchElectron(env)
-  const lines: string[] = []
-  app.process().stdout?.on('data', (chunk: Buffer) => lines.push(...chunk.toString().split('\n')))
-  const page = await getPage(app)
-  harness = { app, page, dbPath, logs: () => lines }
-  return harness
-}
-
-afterEach(async () => {
-  await harness?.app.close()
-  if (harness) cleanupDb(harness.dbPath)
-  harness = undefined
-})
+afterEach(disposeHarness)
 
 function quote(price: string): Record<string, string | number> {
   return {
@@ -131,27 +102,6 @@ async function createXyzPmcc(page: Page): Promise<string> {
   return result.position.id
 }
 
-/** MSFT as a classic wheel in CC_OPEN at the $420 strike: CSP, assignment, covered call. */
-async function seedMsftCoveredCall(page: Page): Promise<void> {
-  const positionId = await seedCsp(page, cspAtDte('MSFT', 420, 30))
-  await page.evaluate(
-    async ({ id, today, expiration }) => {
-      const assigned = await window.api.assignPosition({ positionId: id, assignmentDate: today })
-      if (!assigned.ok) throw new Error(`assign failed: ${JSON.stringify(assigned)}`)
-      const opened = await window.api.openCoveredCall({
-        positionId: id,
-        strike: 420,
-        expiration,
-        contracts: 1,
-        premiumPerContract: 5,
-        fillDate: today
-      })
-      if (!opened.ok) throw new Error(`openCoveredCall failed: ${JSON.stringify(opened)}`)
-    },
-    { id: positionId, today: localToday(), expiration: localDate(30) }
-  )
-}
-
 // ── Reading alerts ───────────────────────────────────────────────────────────
 
 function rulesFor(dbPath: string, positionId: string): AlertRow[] {
@@ -170,12 +120,6 @@ function expectNoLeapsReference(dbPath: string, positionId: string): void {
     .filter((r) => r.position_id === positionId)
     .map((r) => r.summary)
   expect(summaries.filter((s) => s.includes('$80.00') || s.includes(LEAPS_EXPIRATION))).toEqual([])
-}
-
-/** The dashboard queue row carrying `summary` — XYZ can have other alerts beside it. */
-async function queueRowWith(page: Page, summary: string): Promise<Locator> {
-  await goToPositionsList(page)
-  return page.locator(QUEUE_ROW).filter({ hasText: summary })
 }
 
 async function openXyzWithAlert(h: Harness): Promise<[string, AlertRow]> {
@@ -210,7 +154,7 @@ describe('US-106: PMCC short-call assignment-risk alert', () => {
   ])(
     'Alert fires as the stock approaches or passes the short-call strike — $price',
     async ({ price, summary }) => {
-      const h = await launch(`fires-${price}`)
+      const h = await launch(`us106-fires-${price}`)
       const positionId = await createXyzPmcc(h.page)
 
       await evaluateAt(h, { XYZ: price })
@@ -226,7 +170,7 @@ describe('US-106: PMCC short-call assignment-risk alert', () => {
   it.each([{ price: '107.70' }, { price: '105.00' }])(
     'Alert does not fire while the stock is more than 2% below the strike — $price',
     async ({ price }) => {
-      const h = await launch(`quiet-${price}`)
+      const h = await launch(`us106-quiet-${price}`)
       const positionId = await createXyzPmcc(h.page)
 
       await evaluateAt(h, { XYZ: price })
@@ -236,7 +180,7 @@ describe('US-106: PMCC short-call assignment-risk alert', () => {
   )
 
   it('The queue row identifies the position as a PMCC', async () => {
-    const h = await launch('queue-row')
+    const h = await launch('us106-queue-row')
     const [positionId] = await openXyzWithAlert(h)
 
     const row = await queueRowWith(h.page, ABOVE_112_53)
@@ -252,7 +196,7 @@ describe('US-106: PMCC short-call assignment-risk alert', () => {
   })
 
   it('Alert resolves when the stock retreats below the band', async () => {
-    const h = await launch('retreat')
+    const h = await launch('us106-retreat')
     const [positionId, fired] = await openXyzWithAlert(h)
 
     await evaluateAt(h, { XYZ: '106.00' })
@@ -266,7 +210,7 @@ describe('US-106: PMCC short-call assignment-risk alert', () => {
   })
 
   it('Alert resolves when the short call is rolled further from the money', async () => {
-    const h = await launch('rolled')
+    const h = await launch('us106-rolled')
     const [positionId, fired] = await openXyzWithAlert(h)
 
     const rolled = await rollShortCall(h.page, {
@@ -288,7 +232,7 @@ describe('US-106: PMCC short-call assignment-risk alert', () => {
   })
 
   it('A PMCC with no open short call is not evaluated', async () => {
-    const h = await launch('no-short')
+    const h = await launch('us106-no-short')
     const [positionId, fired] = await openXyzWithAlert(h)
 
     const expired = await recordEvent(h.page, positionId, {
@@ -318,7 +262,7 @@ describe('US-106: PMCC short-call assignment-risk alert', () => {
   })
 
   it('A missing quote keeps the alert open instead of resolving it', async () => {
-    const h = await launch('missing-quote')
+    const h = await launch('us106-missing-quote')
     const [positionId, fired] = await openXyzWithAlert(h)
 
     await evaluateAt(h, {})
@@ -327,11 +271,7 @@ describe('US-106: PMCC short-call assignment-risk alert', () => {
       id: fired.id,
       summary: ABOVE_112_53
     })
-    const skips = h
-      .logs()
-      .filter((line) => line.includes('"msg":"alert_rule_skipped"'))
-      .map((line) => JSON.parse(line) as Record<string, unknown>)
-    expect(skips).toContainEqual(
+    expect(ruleSkips(h)).toContainEqual(
       expect.objectContaining({
         positionId,
         ruleCode: RULE,
@@ -344,7 +284,7 @@ describe('US-106: PMCC short-call assignment-risk alert', () => {
   it.each([
     {
       ticker: 'MSFT',
-      seed: seedMsftCoveredCall,
+      seed: (page: Page): Promise<string> => seedMsftCoveredCall(page, 30),
       price: '415.00',
       // No COVERED_CALL_BREACH: the stock is below the strike.
       wheelRule: 'COVERED_CALL_BREACH',
@@ -367,7 +307,7 @@ describe('US-106: PMCC short-call assignment-risk alert', () => {
   ])(
     'Classic wheel positions do not use the PMCC rule — $ticker',
     async ({ ticker, seed, price, wheelRule, wheelOutcome }) => {
-      const h = await launch(`wheel-${ticker}`)
+      const h = await launch(`us106-wheel-${ticker}`)
       await seed(h.page)
 
       await evaluateAt(h, { [ticker]: price })
@@ -379,7 +319,7 @@ describe('US-106: PMCC short-call assignment-risk alert', () => {
   )
 
   it('The existing short-leg rules evaluate the PMCC short call, never the LEAPS', async () => {
-    const h = await launch('short-leg-rules')
+    const h = await launch('us106-short-leg-rules')
     const positionId = await createXyzPmcc(h.page)
     // Four days to the short's expiration; only the short call's row moves, the LEAPS stays put.
     sqlite(
