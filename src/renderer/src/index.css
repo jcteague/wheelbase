@@ -207,25 +207,6 @@ body {
   color: var(--wb-nav-link-hover-color, var(--wb-text-primary));
 }
 
-.wb-position-row {
-  cursor: pointer;
-  transition:
-    background 0.1s,
-    border-left-color 0.1s;
-  background: var(--wb-row-bg, transparent);
-  border-left: 3px solid transparent;
-}
-
-.wb-position-row:hover {
-  background: var(--wb-bg-hover);
-  border-left-color: var(--wb-row-phase-color, transparent);
-}
-
-.wb-position-row--soon {
-  background: var(--wb-gold-subtle);
-  border-left-color: var(--wb-gold);
-}
-
 .wb-hover-opacity {
   transition: opacity 0.15s;
 }

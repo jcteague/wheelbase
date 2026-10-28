@@ -194,12 +194,12 @@ describe('FakeMarketDataProvider.getOptionSnapshot', () => {
     expect(result).toEqual(SNAPSHOT)
   })
 
-  it('throws MarketDataError when symbol is not in env var', async () => {
+  it('throws not_found, as the Alpaca adapter does, when symbol is not in env var', async () => {
     delete process.env.WHEELBASE_MOCK_OPTION_SNAPSHOTS
 
     const provider = new FakeMarketDataProvider()
     await expect(provider.getOptionSnapshot('AAPL260516P00180000')).rejects.toMatchObject({
-      code: 'unknown'
+      code: 'not_found'
     })
   })
 })

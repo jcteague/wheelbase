@@ -1,6 +1,15 @@
+import { readFileSync } from 'fs'
+import { join } from 'path'
 import { describe, expect, it } from 'vitest'
 import type { WheelPhase } from '../api/positions'
-import { PHASE_COLOR, PHASE_LABEL, PHASE_LABEL_SHORT, ROLE_COLOR, LEG_ROLE_LABEL } from './phase'
+import {
+  PHASE_COLOR,
+  PHASE_LABEL,
+  PHASE_LABEL_SHORT,
+  PHASE_TOKEN,
+  ROLE_COLOR,
+  LEG_ROLE_LABEL
+} from './phase'
 
 const ALL_PHASES = [
   'CSP_OPEN',
@@ -48,6 +57,32 @@ describe('PHASE_COLOR', () => {
     const wheelColors = ALL_PHASES.filter((p) => p !== 'PMCC_OPEN').map((p) => PHASE_COLOR[p])
     expect(PHASE_COLOR.PMCC_OPEN).toMatch(/^#[0-9a-f]{6}$/i)
     expect(wheelColors).not.toContain(PHASE_COLOR.PMCC_OPEN)
+  })
+})
+
+describe('PHASE_TOKEN', () => {
+  /** The hex a `--wb-<token>` custom property is declared with in the design system. */
+  function cssHex(token: string): string | undefined {
+    const css = readFileSync(join(__dirname, '../index.css'), 'utf-8')
+    return new RegExp(`--wb-${token}:\\s*(#[0-9a-f]{6});`, 'i').exec(css)?.[1]
+  }
+
+  it('covers every WheelPhase value', () => {
+    expect(Object.keys(PHASE_TOKEN).sort()).toEqual([...ALL_PHASES].sort())
+  })
+
+  it('draws each open phase in its own design token', () => {
+    expect(PHASE_TOKEN).toMatchObject({
+      CSP_OPEN: 'gold',
+      HOLDING_SHARES: 'sky',
+      CC_OPEN: 'violet',
+      WHEEL_COMPLETE: 'green',
+      PMCC_OPEN: 'teal'
+    })
+  })
+
+  it.each(ALL_PHASES)("PHASE_COLOR.%s is its token's --wb-* hex in index.css", (phase) => {
+    expect(PHASE_COLOR[phase]).toBe(cssHex(PHASE_TOKEN[phase]))
   })
 })
 

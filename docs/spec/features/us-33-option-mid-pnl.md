@@ -1,10 +1,10 @@
 # US-33: Show current option mid-price and unrealized P&L for open legs
 
-<!-- generated:from us-33 -->
+<!-- generated:from us-33,us-18 -->
 
 ## Summary
 
-Adds live option pricing and unrealized P&L to every position with an open option leg. Two new columns — `Opt Mid` and `P&L` — sit between `Price` and `Strike` on the positions list, and the position-detail Open Leg section gains three matching stats (`Current Mid`, `Unrealized P&L`, `% of Max Profit`). A new `market-data:option-snapshots` IPC channel polls the [us-31-market-data-provider-adapter](./us-31-market-data-provider-adapter.md) `MarketDataProvider.getOptionSnapshot()` (singular, called once per symbol) every 60 s for OCC symbols built from each active leg. A gold `TARGET` badge fires when P&L crosses the position's profit target (default 50 %, optional per-position override stored on a new nullable column). HOLDING_SHARES rows and rows with no snapshot render `—` without breaking the rest of the layout.
+Adds live option pricing and unrealized P&L to every position with an open option leg. On the positions list the option mid is the mark in each wheel card's leg block (`$2.60 · $3.50 credit`) and the unrealized P&L is the card's headline figure (since [us-18](./us-18-position-cards.md); they shipped as `Opt Mid` and `P&L` table columns between `Price` and `Strike`), and the position-detail Open Leg section gains three matching stats (`Current Mid`, `Unrealized P&L`, `% of Max Profit`). A new `market-data:option-snapshots` IPC channel polls the [us-31-market-data-provider-adapter](./us-31-market-data-provider-adapter.md) `MarketDataProvider.getOptionSnapshot()` (singular, called once per symbol) every 60 s for OCC symbols built from each active leg. A gold `TARGET` badge in the card header fires when P&L crosses the position's profit target (default 50 %, optional per-position override stored on a new nullable column). HOLDING_SHARES cards and cards with no snapshot render `—` without breaking the rest of the layout.
 
 This story also prototyped a "Triage Cockpit" redesign of `PositionDetailContent` inside `plans/us-33/handoff/`. The cockpit itself — verdict engine, delta gauge, distance thermometer, context strip, collapsible drawers — was **not** shipped under us-33; it was ported and finished under us-34 (see [us-34-position-cockpit](./us-34-position-cockpit.md)). Everything below covers the data layer us-33 actually shipped.
 
@@ -25,6 +25,11 @@ Background: the trader has an open CSP on AAPL with strike `180.00`, expiration 
 
 (Source: `docs/epics/06-stories/US-33-option-price-unrealized-pnl.md` via `plans/us-33/plan.md`)
 
+## Revisions
+
+- **us-33** (original): shipped the option-snapshots channel, P&L math, profit-target column, and the `Opt Mid` / `P&L` table cells (`OptMidCell`, `UnrealizedPnlCell`) on `PositionRow`, plus the detail-page Open Leg stats.
+- **us-18**: the positions table became a card grid. `OptMidCell`, `UnrealizedPnlCell`, `PositionRow` and `derivePositionRowDisplay` are deleted; the mid (with its `no bid` / wide-spread `⚠` note) now renders in the wheel card's leg block, the P&L as the card's headline figure with a `% of max profit` line, and the `TARGET` badge in the card header — all derived by the pure `deriveWheelCardDisplay` view model. Every e2e test id is preserved. `useOptionSnapshots` builds symbols through the shared `occSymbolForLeg`, and the fake provider throws `not_found` for a missing snapshot.
+
 ## Architecture decisions
 
 - OCC option symbol building lives in a pure leaf module `src/shared/option-symbol.ts` (format `{TICKER}{YYMMDD}{P|C}{STRIKE×1000 padded 8}`), re-exported through `src/main/core/option-symbol.ts` and imported by both main and renderer — domain rule, single source of truth → [[occ-symbol-pure-leaf]]
@@ -36,6 +41,7 @@ Background: the trader has an open CSP on AAPL with strike `180.00`, expiration 
 - Active-leg metadata (`instrumentType`, `contracts`, `entryPremiumPerContract`, `profitTargetPercent`) flows through `positions:list` by extending the existing active-leg subquery — no second query → [[active-leg-metadata-via-positions-list]]
 - `market-data:option-snapshots` returns the provider's full `OptionSnapshot` 1:1 including `greeks`, `lastTrade`, `openInterest`, `volume` — no flattening, so us-34 can read Greeks without a contract change → [[ipc-returns-full-option-snapshot]]
 - Wide-spread (`(ask − bid) / mid > 0.10`) and no-bid (`Decimal(bid).isZero()`) are pure renderer predicates in `src/renderer/src/lib/option-display.ts`, directly testable without React state → [[spread-no-bid-renderer-predicates]]
+- The card's display is a discriminated union (`closed | shares | option`) from `deriveWheelCardDisplay` (`src/renderer/src/lib/wheel-card-display.ts`), so a closed or shares-only card cannot carry a TARGET badge or a live P&L → [us-18-position-cards](./us-18-position-cards.md)
 - Per-position override is read-only this story — no editing UI; AC-5 is verified by seeding the column directly. Editing is a future ticket.
 - The "Triage Cockpit" prototype in `plans/us-33/handoff/` (verdict engine + cockpit components) is **not** part of us-33's shipped surface; see [us-34-position-cockpit](./us-34-position-cockpit.md).
 
@@ -49,7 +55,7 @@ Background: the trader has an open CSP on AAPL with strike `180.00`, expiration 
 - `buildOccSymbol({ ticker, expiration, strike, instrumentType })` — pure function; trims/uppercases ticker, validates `YYYY-MM-DD`, requires `strike > 0` and `instrumentType ∈ {PUT, CALL}`; supports up to 4-decimal strikes; only imports `decimal.js`. Defined in `src/shared/option-symbol.ts` and re-exported through `src/main/core/option-symbol.ts` (a barrel)
 - `computeUnrealizedPnl({ entryPremium, currentMid, contracts })` → `{ pnl, pnlPercent, maxProfit }` — all `Decimal.toFixed(4)` strings; `pnlPercent` on the 0–100 scale; `Decimal.ROUND_HALF_UP`; validates `entryPremium > 0`, `currentMid ≥ 0`, `contracts ≥ 1` → [domain/cost-basis.md](../domain/cost-basis.md)
 - `resolveProfitTarget(override: number | null) → number` — returns `DEFAULT_PROFIT_TARGET_PERCENT = 50` when override is `null`; explicit `=== null` so `0` is honored as a real override → `src/main/core/profit-target.ts`
-- `useOptionSnapshots(legs, { session })` — renderer hook; `useMemo`-builds OCC symbols (per-leg try/catch skips legs that throw), `enabled: symbols.length > 0`, `refetchInterval: session === 'closed' ? false : 60_000`, `staleTime: 30_000`, `refetchOnWindowFocus: true`. Exports `legsToOccSymbols(legs)` for direct unit testing.
+- `useOptionSnapshots(legs, { session })` — renderer hook; `useMemo`-builds sorted OCC symbols through the shared `occSymbolForLeg(leg)` (`src/shared/option-symbol.ts`, [us-18]), which returns `null` — and the leg is skipped — for a non-option leg or one `buildOccSymbol` rejects; `enabled: symbols.length > 0`, `refetchInterval: session === 'closed' ? false : 60_000`, `staleTime: 30_000`, `refetchOnWindowFocus: true`. `PositionsGrid` uses the same helper to look up each wheel card's snapshot.
 - TanStack Query key — `['market-data', 'option-snapshots', symbols.slice().sort().join(',')]` (sorted to keep the cache stable across input ordering).
 
 ## Schema changes
@@ -74,23 +80,23 @@ ALTER TABLE positions
 - **Wide-spread predicate** — `mid > 0 && (ask − bid) / mid > 0.10`; `WIDE_SPREAD_THRESHOLD = 0.1`. When `mid === 0` the predicate returns `false` and the "no bid" indicator owns the case.
 - **No-bid predicate** — `Decimal(bid).isZero()` — `'0'`, `'0.00'`, `'0.0000'` all match.
 - **Target tooltip text** — `${pnlPercentForDisplay}% of max profit ($${maxProfitWholeOrCents}) — target is ${targetPercent}%`; percent rounded to one decimal with trailing `.0` stripped (`'62.8571'` → `'62.9'`, `'50.0000'` → `'50'`); `maxProfit` drops cents when whole (`'350.0000'` → `'350'`).
-- **`OptionPnlDisplay` state table** — `noLeg` (leg null) → `—` mid + `—` P&L; `noQuote` (leg present, snapshot undefined) → `—` mid with `unavailable` caption + `—` P&L; `noBid` → mid + "no bid" subtext; `wideSpread` → mid + amber `⚠`; `normal` → mid + signed P&L.
-- **Target-reached predicate** — `pnlPercent >= (leg.profitTargetPercent ?? 50)`; `resolveProfitTarget(0)` returns `0` (explicit `=== null`, not falsy-coalesced).
-- **Column order on the positions list** — `['Ticker', 'Phase', 'Price', 'Opt Mid', 'P&L', 'Strike', 'Expiration', 'DTE', 'Premium', 'Cost Basis']` — the new pair sits between `Price` (from [us-32-live-position-prices](./us-32-live-position-prices.md)) and `Strike`.
-- **`TargetBadge` placement and styling** — Rendered after the ticker text on line 1, `flex items-center gap-1.5`; gold pill mirroring `MarketStatusPill` shape (`text-[0.6rem] font-bold tracking-[0.1em] px-2 py-0.5 rounded-[10px] bg-wb-gold-dim text-wb-gold border border-wb-gold-border`); static, no leading dot, no pulse.
-- **`OptMidCell` two-line layout** — Line 1: mid `$1.30` in `text-[0.8125rem] font-semibold tracking-[0.02em]`. Line 2 (`mt-px`): empty in the normal case; muted `no bid` when `hasNoBid`; amber `⚠` with `title` tooltip when `isWideSpread`; `noQuote` shows `—` on line 1 and `unavailable` caption on line 2 with `cursor-help` and `title="Option snapshot unavailable"`.
-- **`UnrealizedPnlCell` two-line layout** — Line 1: signed dollar `+$220.00` in `text-wb-green` (or `text-wb-red`) `text-[0.8125rem] font-semibold`. Line 2: signed percent `+62.9%` matching color, `text-[0.68rem] font-medium mt-px`. The `<td>` carries `title="62.9% of max profit"`. Closed and HOLDING_SHARES rows pass `snapshot={undefined}` → both cells render `—`.
+- **Card display states** ([us-18]) — `deriveWheelCardDisplay(item, snapshot, quote, { closed, profitTargetDefault })` returns one of: `shares` (no option leg) → leg `no option leg open — sell a covered call` with `—` DTE and mark, P&L `—` / `no option leg open`; `closed` → `—` mark and P&L `—` / `closed — no live marks` (no snapshot is requested for closed items); `option` → a mark that is either `'unavailable'` (no snapshot, or one whose bid/ask/mid do not parse) or `{ mid, note }`, and a P&L that is either `'unavailable'` or a valued `{ amount, tone, target, percentLine }`. The mark note is `noBid` or `wideSpread`; **`no bid` wins over the wide-spread warning** (a zero bid always reads as wide).
+- **Target-reached predicate** — `pnlPercent >= resolveProfitTarget(item.profitTargetPercent, profitTargetDefault)`, where `profitTargetDefault` is the global alert default from settings; an explicit per-position `0` is honoured (explicit `=== null`, not falsy-coalesced).
+- **Where the figures sit** ([us-18]) — the table's `['Ticker', 'Phase', 'Price', 'Opt Mid', 'P&L', 'Strike', …]` column order is gone. On a wheel card the header carries the ticker, `PhaseBadge`, then the `TARGET` badge and `Expiring soon` flag; the `Unrealized P&L` headline figure sits under the header; the leg block reads `$180.00 put · 2027-09-12 · 30d · $2.60 · $3.50 credit` (tag, title, DTE, mark, credit).
+- **`TargetBadge` styling** — gold pill mirroring `MarketStatusPill` shape (`bg-wb-gold-dim text-wb-gold border border-wb-gold-border`); static, no leading dot, no pulse; tooltip from `formatTargetTooltip`.
+- **Mark** ([us-18], `MarkText` in `WheelCard.tsx`) — the mid via `fmtMoney`; muted ` no bid` subtext when `hasNoBid`; amber `⚠` (`opt-mid-spread-warning`) with the spread tooltip when `isWideSpread`; when unavailable, `— unavailable` with `cursor-help` and `title="Option snapshot unavailable"`.
+- **P&L figure** ([us-18], `PnlFigure` in `WheelCard.tsx`) — the signed dollar amount (`+$220.00`) in `text-wb-green` / `text-wb-red` as the card's headline figure, over a `+62.9% of max profit` line in the same tone. The percent is signed by the P&L's tone, not the rounded figure, so a tiny loss reads `-0%`, never `+0%`. Blank states show a muted `—` over the state text (`unavailable`, `no option leg open`, `closed — no live marks`).
 - **Spread-warning tooltip** — `Wide spread: $0.50 × $1.50 — P&L may be unreliable` (formatted from `bid`/`ask` via `fmtMoney`). E2E selects via `data-testid="opt-mid-spread-warning"`.
-- **Test IDs added for e2e** — `position-card-{TICKER}-opt-mid`, `position-card-{TICKER}-pnl`, `target-badge`, `opt-mid-spread-warning`.
-- **Refactor extractions** — `derivePositionRowDisplay(item, snapshot)` returns `{ targetReached, pnlPercent, maxProfit, targetPercent }` to keep JSX clean and testable; `formatSignedMoney(value)` moved to `src/renderer/src/lib/format.ts` for reuse between `UnrealizedPnlCell` and the detail-page Open Leg stats.
-- **`FakeMarketDataProvider.getOptionSnapshot`** (singular) — Reads `WHEELBASE_MOCK_OPTION_SNAPSHOTS` (JSON map keyed by OCC) and returns the `OptionSnapshot` for the requested contract id, throwing an `unknown` `MarketDataError` when the symbol is absent. Matches the env-driven pattern `getStockQuotes` uses from [us-32-live-position-prices](./us-32-live-position-prices.md).
-- **E2E mocking strategy** — `e2e/option-pnl.spec.ts` sets `WHEELBASE_MARKET_MOCK=true` (the us-32 lever) plus `WHEELBASE_MOCK_OPTION_SNAPSHOTS`; each test seeds positions via `createPosition` IPC and hard-codes OCC symbols verified by `option-symbol.test.ts`. AC-5 writes `profit_target_percent=25` directly to SQLite via `better-sqlite3` (cleaner than a test-only IPC handler).
+- **Test IDs added for e2e** — `position-card-{TICKER}-opt-mid`, `position-card-{TICKER}-pnl`, `target-badge`, `opt-mid-spread-warning`. [us-18] preserved all four on the card (the mark span, the P&L figure, the header badge, the `⚠`).
+- **Refactor extractions** — `formatSignedMoney(value)` lives in `src/renderer/src/lib/format.ts`, shared by the card's P&L figure and the detail-page Open Leg stats. us-33's `derivePositionRowDisplay` was superseded by [us-18]'s `deriveWheelCardDisplay`.
+- **`FakeMarketDataProvider.getOptionSnapshot`** (singular) — Reads `WHEELBASE_MOCK_OPTION_SNAPSHOTS` (JSON map keyed by OCC) and returns the `OptionSnapshot` for the requested contract id, throwing a `not_found` `MarketDataError` when the symbol is absent ([us-18]; was `unknown`), matching the Alpaca adapter so one missing contract does not fail the whole batch. Matches the env-driven pattern `getStockQuotes` uses from [us-32-live-position-prices](./us-32-live-position-prices.md).
+- **E2E mocking strategy** — [us-18] AC-1 now asserts the card's mid (and that no table header exists) rather than the `Opt Mid` column header. `e2e/option-pnl.spec.ts` sets `WHEELBASE_MARKET_MOCK=true` (the us-32 lever) plus `WHEELBASE_MOCK_OPTION_SNAPSHOTS`; each test seeds positions via `createPosition` IPC and hard-codes OCC symbols verified by `option-symbol.test.ts`. AC-5 writes `profit_target_percent=25` directly to SQLite via `better-sqlite3` (cleaner than a test-only IPC handler).
 
 ## Source code references
 
 Files this plan introduced or modified:
 
-- `src/shared/option-symbol.ts` — pure module defining `buildOccSymbol`; re-exported through the `src/main/core/option-symbol.ts` barrel
+- `src/shared/option-symbol.ts` — pure module defining `buildOccSymbol` and ([us-18]) `occSymbolForLeg`; re-exported through the `src/main/core/option-symbol.ts` barrel
 - `src/main/core/profit-target.ts` — new pure module: `DEFAULT_PROFIT_TARGET_PERCENT`, `resolveProfitTarget`
 - `src/main/core/costbasis.ts` — added `computeUnrealizedPnl` + types
 - `src/main/schemas.ts` — `GetOptionSnapshotsPayloadSchema`; `PositionListItem` extended with `instrumentType`, `contracts`, `entryPremiumPerContract`, `profitTargetPercent`
@@ -103,14 +109,15 @@ Files this plan introduced or modified:
 - `src/preload/index.d.ts` — `IpcOptionSnapshot`, `IpcGetOptionSnapshotsPayload`, `IpcGetOptionSnapshotsResult`; `Window['api']` extension
 - `src/renderer/src/api/market-data.ts` — `getOptionSnapshots`, `OptionSnapshot` / `OptionSnapshotsBySymbol` type aliases
 - `src/renderer/src/hooks/marketDataQueryKeys.ts` — `optionSnapshots(symbols)` key
-- `src/renderer/src/hooks/useOptionSnapshots.ts` — new hook (REST poll, session-aware refetch); exports `legsToOccSymbols`
+- `src/renderer/src/hooks/useOptionSnapshots.ts` — new hook (REST poll, session-aware refetch)
 - `src/renderer/src/lib/option-display.ts` — `formatPnlPercentForDisplay`, `isWideSpread`, `hasNoBid`, `formatTargetTooltip`, `WIDE_SPREAD_THRESHOLD`
 - `src/renderer/src/lib/format.ts` — added `formatSignedMoney`
-- `src/renderer/src/components/OptMidCell.tsx` — two-line cell with wide-spread / no-bid / unavailable states
-- `src/renderer/src/components/UnrealizedPnlCell.tsx` — two-line signed dollar + percent cell
-- `src/renderer/src/components/TargetBadge.tsx` — gold pill rendered when `targetReached`
-- `src/renderer/src/components/PositionCard.tsx` (`PositionRow`) — accepts `snapshot?: OptionSnapshot`, renders `<TargetBadge>` after ticker, inserts `<OptMidCell>` and `<UnrealizedPnlCell>` after `<PriceCell>`
-- `src/renderer/src/pages/PositionsListPage.tsx` — extended `TABLE_COLUMNS`; derives `legs` via `useMemo`; wires `useOptionSnapshots(legs, { session })`; passes snapshots per row
+- `src/renderer/src/components/TargetBadge.tsx` — gold pill rendered when the target is reached
+- `src/renderer/src/lib/wheel-card-display.ts` — [us-18] `deriveWheelCardDisplay`: mark, P&L and target per card
+- `src/renderer/src/components/position-card/WheelCard.tsx` — [us-18] renders the mark in the leg block, the P&L figure and the `TARGET` badge
+- `src/renderer/src/components/PositionsGrid.tsx` — [us-18] looks up each wheel card's snapshot by `occSymbolForLeg`
+- `src/renderer/src/pages/PositionsListPage.tsx` — derives `legs` via `useMemo`; wires `useOptionSnapshots(legs, { session })`; passes snapshots to the grid
+- Deleted by [us-18]: `OptMidCell.tsx`, `UnrealizedPnlCell.tsx`, `PositionCard.tsx` (`PositionRow`) and the page's `TABLE_COLUMNS`
 - `src/renderer/src/pages/PositionDetailContent.tsx` — appended three `StatGrid` items to the Open Leg section when snapshot present
 - `src/renderer/src/pages/PositionDetailPage.tsx` — invokes `useOptionSnapshots([leg])` and threads the snapshot down
 - `e2e/option-pnl.spec.ts` — 10 e2e tests, one per AC

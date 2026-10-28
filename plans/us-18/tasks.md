@@ -27,19 +27,19 @@ so Areas 4 and 5 never edit the same file.
 
 ### 1. `ruleCode` on the management-queue read
 
-- [ ] **[Red]** Write failing tests — `src/main/services/alerts.test.ts`, `src/main/ipc/alerts.test.ts`
+- [x] **[Red]** Write failing tests — `src/main/services/alerts.test.ts`, `src/main/ipc/alerts.test.ts`
   - Test cases:
     - `listManagementQueue`: upsert an open `MANAGEMENT_WINDOW` and an open `EXPIRATION_IMMINENT` alert on two positions → each item `toEqual(expect.objectContaining({ ruleCode: '<stored rule_code>', summary: … }))`; ordering unchanged (high urgency first)
     - a dismissed and a resolved alert still do not appear, with the open one present as positive control
     - `alerts:list` IPC → `{ ok: true, items: [expect.objectContaining({ ruleCode: 'MANAGEMENT_WINDOW' })] }`
   - No property — service/IPC projection, not a core engine
   - Run `pnpm test src/main/services/alerts.test.ts src/main/ipc/alerts.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/services/alerts.ts`, `src/main/schemas.ts` _(depends on: 1 Red ✓)_
+- [x] **[Green]** Implement — `src/main/services/alerts.ts`, `src/main/schemas.ts` _(depends on: 1 Red ✓)_
   - `listManagementQueue` selects `a.rule_code AS rule_code`; private `QueueRow` gains `rule_code`; `mapQueueRow` sets `ruleCode: row.rule_code`
   - `ManagementQueueItem.ruleCode: RuleCode` in `src/main/schemas.ts` (import `RuleCode` from `./core/alerts`); preload alias and `api/alerts.ts` unchanged
   - DEBUG `management_queue_listed` log unchanged
   - Run `pnpm test src/main/services/alerts.test.ts src/main/ipc/alerts.test.ts` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — `src/main/services/alerts.ts` _(depends on: 1 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `src/main/services/alerts.ts` _(depends on: 1 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Check `QueueRow` is still the only hand-written row type in the file
   - Run `pnpm test && pnpm lint && pnpm typecheck`
@@ -52,7 +52,7 @@ so Areas 4 and 5 never edit the same file.
 
 **Requires:** 1 Green ✓ (`QueueRowForCard` is a `Pick` of `ManagementQueueItem` including `ruleCode`)
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/lib/card-actions.test.ts` _(depends on: 1 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/renderer/src/lib/card-actions.test.ts` _(depends on: 1 Green ✓)_
   - Test cases (literal `toEqual`):
     - `MANAGEMENT_WINDOW` with summary `10 DTE remaining — review for roll or close`, ctx `{ price: '421.50', strike: '430.0000' }` → `[{ glyph: '◷', statusWord: 'MANAGEMENT WINDOW', tone: 'gold', rank: 5, summary: '10 DTE remaining — review for roll or close' }]`
     - `EXPIRATION_IMMINENT` → `◷ EXPIRING` gold rank 4; `COVERED_CALL_BREACH` → `▲ CALL BREACHED` red rank 1
@@ -62,13 +62,13 @@ so Areas 4 and 5 never edit the same file.
     - `formatActionLine({ glyph: '◷', statusWord: 'EXPIRING', summary: 'Expires in 4 days at $430.00 strike', … })` → `'◷ EXPIRING · Expires in 4 days at $430.00 strike'`
   - No property — renderer lib over a finite enum; every branch has an example test
   - Run `pnpm test src/renderer/src/lib/card-actions.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/renderer/src/lib/card-actions.ts` _(depends on: 2 Red ✓)_
+- [x] **[Green]** Implement — `src/renderer/src/lib/card-actions.ts` _(depends on: 2 Red ✓)_
   - Types per `data-model.md` § Type Design: `CardTone = 'red' | 'gold'`, `CardAction` interface, `QueueRowForCard = Pick<ManagementQueueItem, 'ruleCode' | 'summary'>`
   - `WHEEL_LANES`: ordered registry of `{ ruleCode, glyph, statusWord, tone: (ctx) => CardTone, rank: (tone) => number }` for the four codes in `data-model.md` § 2 (registry pattern, no `if/return` chain)
   - `rankWheelActions(rows: QueueRowForCard[], ctx: { price: string | null; strike: string | null }): CardAction[]` — `flatMap` to lane entries, compute tone/rank, stable sort by rank; ITM via `Decimal(price).lt(strike)`
   - `formatActionLine(a: CardAction): string` → `` `${glyph} ${statusWord} · ${summary}` ``
   - Run `pnpm test src/renderer/src/lib/card-actions.test.ts` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — `src/renderer/src/lib/card-actions.ts` _(depends on: 2 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `src/renderer/src/lib/card-actions.ts` _(depends on: 2 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Lane numbers as named constants (`LANE_RED_ASSIGNMENT = 1` …) so US-108 can import them for ✕ 0 / ◆ 3
   - Run `pnpm test && pnpm lint && pnpm typecheck`
@@ -81,7 +81,7 @@ so Areas 4 and 5 never edit the same file.
 
 **Requires:** 2 Green ✓ (`CardTone`, `CardAction`, `formatActionLine`)
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/components/position-card/*.test.tsx` (one per component) _(depends on: 2 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/renderer/src/components/position-card/*.test.tsx` (one per component) _(depends on: 2 Green ✓)_
   - Test cases:
     - `CardShell`: `accent="CSP_OPEN"` → `data-testid="position-card"`, `data-edge="CSP_OPEN"`, class `border-l-wb-gold`; `edge="red"` → `border-l-4 border-l-wb-red`, `data-edge="red"`; `muted` → `opacity-50`, no hover class; `clickable` + `onClick` fires on click; `testId="position-card-closed"` honoured; renders a `div`, never a `tr`
     - `ActionStrip`: one action → `role="status"`, `data-tone="gold"`, text `◷ MANAGEMENT WINDOW · 10 DTE remaining — review for roll or close`, no `+N` chip; two → leads with rank-1 text, chip `+1`, chip `title` = `Also open:\n◷ EXPIRING · Expires in 4 days at $430.00 strike`; three → `+2` with two lines (two-action case is the chip's positive control)
@@ -90,13 +90,13 @@ so Areas 4 and 5 never edit the same file.
     - `PriceBlock`: `price="182.45"` + `sub="30d to expiration"` → `$182.45` and sub text; `price={null}` → `—`; `testId` forwarded; change line when `quote.prevClose` present and session not closed (carried over from `PriceCell`)
     - `CardFooterCell`: label eyebrow and children render
   - Run `pnpm test src/renderer/src/components/position-card` — all new tests must fail
-- [ ] **[Green]** Implement — `src/renderer/src/components/position-card/{types.ts,CardShell,CardHeader,PriceBlock,ActionStrip,LegTag,LegBlock,CardFooterCell}.tsx` _(depends on: 3 Red ✓)_
+- [x] **[Green]** Implement — `src/renderer/src/components/position-card/{types.ts,CardShell,CardHeader,PriceBlock,ActionStrip,LegTag,LegBlock,CardFooterCell}.tsx` _(depends on: 3 Red ✓)_
   - `types.ts`: `CardAccent = WheelPhase | 'PMCC'`; re-export `CardTone` from `lib/card-actions`
   - Tailwind + `wb-*` tokens only; class maps `Record<CardTone, string>` (`STRIP_CLASS`, `CHIP_CLASS`, `EDGE_CLASS`, `LEG_ACTION_CLASS`) and `Record<CardAccent, string>` (`ACCENT_CLASS`)
   - `CardShell({ accent, edge, muted, clickable, onClick, testId, children })`; `ActionStrip({ actions: CardAction[] })` using `formatActionLine` for the chip tooltip; `LegBlock({ tag, actions, title, dte, mark, trailing, testId })` with `LegMarks` inline; `PriceBlock` takes `quote` + `session` for the change line
   - Shapes per mockup `CardShell`, `ActionStrip`, `LegTag`, `FootCell`, `PriceBlock` and `research.md` § 2
   - Run `pnpm test src/renderer/src/components/position-card` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — `src/renderer/src/components/position-card/` _(depends on: 3 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `src/renderer/src/components/position-card/` _(depends on: 3 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Collapse `EYEBROW` / `SUB` class strings into `position-card/styles.ts` shared by every primitive
   - Run `pnpm test && pnpm lint && pnpm typecheck`
@@ -111,7 +111,7 @@ so Areas 4 and 5 never edit the same file.
 
 **Requires:** 3 Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/lib/wheel-card-display.test.ts`, `src/renderer/src/components/position-card/WheelCard.test.tsx` _(depends on: 3 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/renderer/src/lib/wheel-card-display.test.ts`, `src/renderer/src/components/position-card/WheelCard.test.tsx` _(depends on: 3 Green ✓)_
   - `wheel-card-display.test.ts`:
     - AAPL (`entryPremiumPerContract '3.5000'`, 1 contract, mid `2.60`) → `pnl: { amount: '+$90.00', percentOfMax: '+25.7' }`, `pnlSubline: '+25.7% of max profit'`, `targetReached: false`
     - mid `5.20` → `'-$170.00'`, `'-48.6% of max profit'`
@@ -136,11 +136,11 @@ so Areas 4 and 5 never edit the same file.
     - click on card body, ticker link and `Open ↗` each navigate to `/positions/<id>`
   - No property — renderer lib composing existing tested helpers
   - Run `pnpm test src/renderer/src/lib/wheel-card-display.test.ts src/renderer/src/components/position-card/WheelCard.test.tsx` — all new tests must fail
-- [ ] **[Green]** Implement — `src/renderer/src/lib/wheel-card-display.ts`, `src/renderer/src/components/position-card/WheelCard.tsx` _(depends on: 4 Red ✓)_
+- [x] **[Green]** Implement — `src/renderer/src/lib/wheel-card-display.ts`, `src/renderer/src/components/position-card/WheelCard.tsx` _(depends on: 4 Red ✓)_
   - `deriveWheelCardDisplay(item, snapshot, quote, { closed, profitTargetDefault }): WheelCardDisplay` per `data-model.md` § 3, from `computeUnrealizedPnl`, `resolveProfitTarget`, `formatSignedMoney`, `formatPnlPercentForDisplay`, `isWideSpread`, `hasNoBid`, `isDteUrgent`, `fmtMoney` (extends today's `deriveRowDisplay`; leave the old one in `PositionCard.tsx` until Area 6 deletes it)
   - `WheelCard` composed from Area 3 primitives per mockup `WheelCard`: `CardShell accent={item.phase}` with `edge = actions[0]?.tone` when not closed; `ActionStrip` when actions and not closed; `CardHeader` (ticker `<a>`, pending dot, `PhaseBadge variant="short"`, `TargetBadge`, `ExpiringSoonFlag compact`, `PriceBlock testId="position-card-{T}-price"`, `Open ↗`); P&L figure `position-card-{T}-pnl` + sub-line; one `LegBlock` (`P`/`C`/`·`, mark span `position-card-{T}-opt-mid` with `opt-mid-spread-warning` or `no bid`); two `CardFooterCell`s
   - Run the two test files — all tests must pass
-- [ ] **[Refactor]** `/refactor` — `wheel-card-display.ts`, `WheelCard.tsx` _(depends on: 4 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `wheel-card-display.ts`, `WheelCard.tsx` _(depends on: 4 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - `WheelCard` is composition only; any arithmetic belongs in `wheel-card-display.ts`
   - Run `pnpm test && pnpm lint && pnpm typecheck`
@@ -149,7 +149,7 @@ so Areas 4 and 5 never edit the same file.
 
 **Requires:** 3 Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/components/position-card/PmccCard.test.tsx` _(depends on: 3 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/renderer/src/components/position-card/PmccCard.test.tsx` _(depends on: 3 Green ✓)_
   - Test cases:
     - `position-card` with `data-edge="PMCC"`, `position-ticker` `XYZ`, badge `PMCC`, state `LEAPS + short call open`; `getByText('CSP Open')` absent (positive control: the PMCC state text present)
     - `position-card-XYZ-price` `$104.20` + `7d to next decision` (short DTE 7, LEAPS 161); `short: null` → `161d to next decision`
@@ -159,10 +159,10 @@ so Areas 4 and 5 never edit the same file.
     - `isClosed` → `position-card-closed`, muted, price `—` / `closed`
     - card click navigates to `#/positions/<id>`
   - Run `pnpm test src/renderer/src/components/position-card/PmccCard.test.tsx` — all new tests must fail
-- [ ] **[Green]** Implement — `src/renderer/src/components/position-card/PmccCard.tsx` _(depends on: 5 Red ✓)_
+- [x] **[Green]** Implement — `src/renderer/src/components/position-card/PmccCard.tsx` _(depends on: 5 Red ✓)_
   - `PmccCard({ item: PmccListItem, quote, session, isClosed })`: `CardShell accent="PMCC"`, `Badge color={PHASE_COLOR.PMCC_OPEN}`, state `PHASE_LABEL[item.phase]`, `PriceBlock` with next-decision DTE `item.pmcc.short?.dte ?? item.pmcc.long.dte`, `LegBlock`s tagged `L` / `S`, marks `—`, footer `fmtMoneyGrouped(item.pmcc.basisTotal)` + `fmtMoney(item.pmcc.basisPerShare)`
   - Run `pnpm test src/renderer/src/components/position-card/PmccCard.test.tsx` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — `PmccCard.tsx` _(depends on: 5 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `PmccCard.tsx` _(depends on: 5 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Share layout with `WheelCard` through the primitives only; no `PositionCardBase` abstraction
   - Run `pnpm test && pnpm lint && pnpm typecheck`
@@ -175,18 +175,18 @@ so Areas 4 and 5 never edit the same file.
 
 **Requires:** 2 Green ✓, 4 Green ✓, 5 Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/components/PositionsGrid.test.tsx`, `src/renderer/src/pages/PositionsListPage.test.tsx`, `src/renderer/src/lib/card-actions.test.ts` _(depends on: 4 Green ✓, 5 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/renderer/src/components/PositionsGrid.test.tsx`, `src/renderer/src/pages/PositionsListPage.test.tsx`, `src/renderer/src/lib/card-actions.test.ts` _(depends on: 4 Green ✓, 5 Green ✓)_
   - `PositionsGrid.test.tsx`: three wheel items + one PMCC → four `position-card`s in input order inside an element with class `grid`; `queryByRole('columnheader')` null (positive control: `getAllByTestId('position-card')` length 4); wheel items → `WheelCard` stub, PMCC → `PmccCard` stub; `isClosed` passes through; `actionsByPosition.get(item.id)` reaches only that wheel card (stub prints `mock-actions-{T}` with status words), PMCC stub receives none
   - `PositionsListPage.test.tsx`: `useManagementQueue` returns `MANAGEMENT_WINDOW` for AAPL and `EXPIRATION_IMMINENT` for MSFT → AAPL stub shows `MANAGEMENT WINDOW`, MSFT `EXPIRING`; a `PROFIT_TARGET` row for AAPL does not appear; `mock-quote-AAPL` / `mock-snapshot-AAPL` plumbing unchanged; closed section renders `position-card-closed` stubs without snapshots; order `[MSFT 10, AAPL 30, NVDA null]` preserved
   - `card-actions.test.ts`: `actionsByPosition(rows, ctxById)` groups by `positionId`, ranks each group with that position's price/strike, omits positions with only dropped codes
   - Run `pnpm test` on the three files — all new tests must fail
-- [ ] **[Green]** Implement — `PositionsGrid.tsx`, `PositionsListPage.tsx`, `lib/card-actions.ts`; delete table-era files _(depends on: 6 Red ✓)_
+- [x] **[Green]** Implement — `PositionsGrid.tsx`, `PositionsListPage.tsx`, `lib/card-actions.ts`; delete table-era files _(depends on: 6 Red ✓)_
   - `PositionsGrid({ items, isClosed, quotes, session, snapshots, pendingPositionIds, profitTargetDefault, actionsByPosition: ReadonlyMap<string, CardAction[]> })` → `div.grid.grid-cols-[repeat(auto-fill,minmax(400px,1fr))].gap-3.px-[24px]`, branches on `item.strategyType` (mockup `PositionsGrid`)
   - `actionsByPosition(rows, ctxById)` pure helper in `lib/card-actions.ts` built on `rankWheelActions`
   - `PositionsListPage`: `useManagementQueue()`; `useMemo` the map from queue rows + each item's `strike` and quote price; replace `PositionTable` / `TABLE_COLUMNS` / `TableHeader` import; keep `snapshotForItem`; section headers unchanged; closed grid `pb-[24px]`
   - **Delete** (moved here from plan Areas 4–5): `components/PositionCard.tsx(+test)`, `OptMidCell.tsx(+test)`, `UnrealizedPnlCell.tsx(+test)`, `positionRowStyles.ts(+test)`, `PriceCell.tsx(+test)`, `PmccPositionRow.tsx(+test)`, `.wb-position-row*` rules in `src/renderer/src/index.css`; remove now-unused imports (`TablePrimitives` stays — `LegHistoryTable` uses it)
   - Run `pnpm test && pnpm typecheck` — all tests must pass, no dangling imports
-- [ ] **[Refactor]** `/refactor` — `PositionsGrid.tsx`, `PositionsListPage.tsx`, `lib/card-actions.ts` _(depends on: 6 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `PositionsGrid.tsx`, `PositionsListPage.tsx`, `lib/card-actions.ts` _(depends on: 6 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Page stays wiring-only; no grouping logic inline
   - Run `pnpm test && pnpm lint && pnpm typecheck`
@@ -199,7 +199,7 @@ so Areas 4 and 5 never edit the same file.
 
 ### 7. E2E Tests
 
-- [ ] **[Red]** Write failing e2e tests — `e2e/position-cards.spec.ts` (new), `e2e/option-pnl.spec.ts` (AC-1 rewrite) _(depends on: all Green tasks ✓)_
+- [x] **[Red]** Write failing e2e tests — `e2e/position-cards.spec.ts` (new), `e2e/option-pnl.spec.ts` (AC-1 rewrite) _(depends on: all Green tasks ✓)_
   - Launch with `FAKE_MARKET_DATA`, `WHEELBASE_MOCK_STOCK_QUOTES`, `WHEELBASE_MOCK_OPTION_SNAPSHOTS`; seed with `seedCsp` / `cspAtDte`, `seedCcOpenPosition`, `seedHoldingSharesPosition`, `createPmccPosition`; queue rows via `runAlertEvaluation`; dismissal via `dismissAlertViaQueue`; pending via `seedAssignmentFixture` + `runDetectionNow`; closed via the US-4 close flow
   - `option-pnl.spec.ts` AC-1: replace the `thead th` / `Opt Mid` assertion with `position-card-AAPL-opt-mid` containing `$1.30` and `expect(await page.$('thead')).toBeNull()`
   - AC coverage (one `it()` each, assertions per `plan.md` Area 7):
@@ -226,9 +226,9 @@ so Areas 4 and 5 never edit the same file.
     - S20: Cards keep the list's sort order → `it("S20: cards keep the list's sort order")`
     - S21: A PMCC renders as a minimal card in the same shell until US-108 → `it('S21: a PMCC renders as a minimal card in the same shell until US-108')`
   - Run `pnpm test:e2e -- e2e/position-cards.spec.ts e2e/option-pnl.spec.ts` — new tests fail only for missing fixtures/assertions, not launch errors (UI already shipped by Layers 1–5, so most will pass on first write; confirm each can fail by flipping one expected literal)
-- [ ] **[Green]** Make e2e tests pass _(depends on: 7 Red ✓)_
+- [x] **[Green]** Make e2e tests pass _(depends on: 7 Red ✓)_
   - Run `pnpm test:e2e -- e2e/position-cards.spec.ts e2e/option-pnl.spec.ts e2e/expiring-soon-flags.spec.ts e2e/position-management.spec.ts e2e/management-queue.spec.ts e2e/live-underlying-price.spec.ts e2e/open-pmcc-position.spec.ts` — all pass; the pre-existing list specs stay green with only the `option-pnl.spec.ts` AC-1 header assertion rewritten
-- [ ] **[Refactor]** `/refactor` e2e tests _(depends on: 7 Green ✓)_
+- [x] **[Refactor]** `/refactor` e2e tests _(depends on: 7 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Lift launch/seed helpers into `e2e/position-card-helpers.ts` if `position-cards.spec.ts` exceeds ~400 lines
 

@@ -105,6 +105,17 @@ export async function seedCcOpenPosition(page: Page, opts: SeedCcOptions): Promi
   return positionId
 }
 
+/** Seed a position through CC_OPEN, then record the call-away → WHEEL_COMPLETE, CLOSED. */
+export async function seedWheelCompletePosition(page: Page, opts: SeedCcOptions): Promise<string> {
+  const positionId = await seedCcOpenPosition(page, opts)
+  const result = (await page.evaluate(
+    async (posId: string) => window.api.recordCallAway({ positionId: posId }),
+    positionId
+  )) as { ok: boolean }
+  if (!result.ok) throw new Error(`recordCallAway failed for ${opts.ticker}`)
+  return positionId
+}
+
 interface SeedHoldingSharesOptions {
   ticker: string
   strike: number

@@ -174,7 +174,7 @@ function profitTargetSummary(input: ProfitTargetInput): string {
 
 /** True when the string parses to a finite Decimal — the precondition every
  *  Decimal-backed rule needs before parsing to avoid a throw on malformed data. */
-function isNumeric(value: string | null): boolean {
+export function isNumeric(value: string | null): boolean {
   if (value === null) return false
   try {
     return new Decimal(value).isFinite()
@@ -191,11 +191,11 @@ function proximityPercent(input: PriceVsStrikeInput): Decimal {
 }
 
 /** Which side of the strike the stock trades on; at-the-money reads 'above'. */
-function priceDirection(input: PriceVsStrikeInput): 'above' | 'below' {
+export function priceDirection(input: PriceVsStrikeInput): 'above' | 'below' {
   return new Decimal(input.currentUnderlyingPrice!).gte(input.strike!) ? 'above' : 'below'
 }
 
-function strikeProximitySummary(input: StrikeProximityInput): string {
+export function strikeProximitySummary(input: StrikeProximityInput): string {
   const pct = proximityPercent(input).toFixed(1)
   const direction = priceDirection(input)
   const base = `Stock is ${pct}% ${direction} the ${formatStrike(input.strike)} put strike`

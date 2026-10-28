@@ -5,18 +5,34 @@
 import type { Locator, Page } from 'playwright'
 import { localDate, localToday } from './dates'
 import { openDetailFor } from './helpers'
-import { pmccFixture } from './pmcc-helpers'
+import { pmccFixture, type PmccLegFixture } from './pmcc-helpers'
 
 // ── Opening legs ─────────────────────────────────────────────────────────────
 
 type CreatePmccPayload = Parameters<typeof window.api.createPmccPosition>[0]
 
-/** Opens the XYZ PMCC ($80 LEAPS @ 25.00, $110 short @ 2.00) and returns its position id. */
+/** Opens the XYZ PMCC ($80 LEAPS @ 25.00, $110 short @ 2.00) and returns its position id;
+ *  `long` / `short` override fields of either leg's fixture. */
 export async function createXyzPmcc(
   page: Page,
-  { contracts = 1, fees = 0 }: { contracts?: number; fees?: number } = {}
+  {
+    contracts = 1,
+    fees = 0,
+    long = {},
+    short = {}
+  }: {
+    contracts?: number
+    fees?: number
+    long?: Partial<PmccLegFixture>
+    short?: Partial<PmccLegFixture>
+  } = {}
 ): Promise<string> {
-  const fixture = pmccFixture(localToday())
+  const base = pmccFixture(localToday())
+  const fixture = {
+    ...base,
+    long: { ...base.long, ...long },
+    short: { ...base.short, ...short }
+  }
   const leg = (l: typeof fixture.long): CreatePmccPayload['long'] => ({
     underlying: fixture.ticker,
     instrumentType: 'CALL',

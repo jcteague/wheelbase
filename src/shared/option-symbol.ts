@@ -53,6 +53,31 @@ export function buildOccSymbol(input: BuildOccSymbolInput): string {
   return `${ticker}${yy}${mm}${dd}${optionLetter}${strikeInt}`
 }
 
+/** A list row's current leg: any part but the ticker may be absent, and it is never stock. */
+export type OccLegInput = Pick<BuildOccSymbolInput, 'ticker'> & {
+  [K in 'expiration' | 'strike']: BuildOccSymbolInput[K] | null
+} & {
+  instrumentType: Exclude<BuildOccSymbolInput['instrumentType'], 'STOCK'> | null
+}
+
+/**
+ * The leg's OCC symbol, or null when it is not an option leg (no instrument type, expiration
+ * or strike) or fails `buildOccSymbol`'s validation (e.g. strike <= 0).
+ */
+export function occSymbolForLeg(leg: OccLegInput): string | null {
+  if (!leg.instrumentType || !leg.expiration || !leg.strike) return null
+  try {
+    return buildOccSymbol({
+      ticker: leg.ticker,
+      expiration: leg.expiration,
+      strike: leg.strike,
+      instrumentType: leg.instrumentType
+    })
+  } catch {
+    return null
+  }
+}
+
 function optionLetterFor(instrumentType: BuildOccSymbolInput['instrumentType']): 'P' | 'C' {
   switch (instrumentType) {
     case 'PUT':

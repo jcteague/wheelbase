@@ -1,6 +1,6 @@
 # US-51: Display Management Queue on Dashboard Ordered by Urgency Tier
 
-<!-- generated:from us-51 -->
+<!-- generated:from us-51,us-18 -->
 
 ## Summary
 
@@ -13,6 +13,12 @@ preload bridge, a renderer adapter, and a polling TanStack Query hook
 above the positions grid. Each row shows ticker, phase badge, trigger summary,
 an urgency pill, and a "Review position" action that navigates to the position
 detail page; an empty state renders when no alerts are open.
+
+Since [US-18](us-18-position-cards.md) the same queue rows also ride on the
+wheel position cards below it: each queue item now carries its `ruleCode`, and
+a wheel card shows its position's open rows as an **action strip** (worst row
+first, the summary verbatim) — so the queue's verdict appears on the position
+itself as well as in the queue.
 
 No new migration or engine work is required — the entire alert backend (table,
 engine, scheduled evaluation) shipped in [US-50](us-50-alert-engine.md). US-51
@@ -46,8 +52,8 @@ result well-formed.
 **View-model.** A dedicated `ManagementQueueItem` type (defined in
 `src/main/schemas.ts`, mirrored in `src/preload/index.d.ts`, re-exported from
 the renderer adapter) carries exactly the fields the UI needs — `alertId`,
-`positionId`, `ticker`, `phase`, `urgency`, `summary`, `quickAction`,
-`triggeredAt` — and deliberately omits `AlertRecord` audit fields
+`positionId`, `ticker`, `phase`, `ruleCode` (added by US-18), `urgency`,
+`summary`, `quickAction`, `triggeredAt` — and deliberately omits `AlertRecord` audit fields
 (`lastEvaluatedAt`, `resolvedAt`, `createdAt`, `updatedAt`, `status`). `alertId`
 is included specifically to serve as a stable React key (one row per open alert
 in US-51 scope). The `summary` string (e.g. "Expires in 3 days at $180.00
@@ -75,6 +81,32 @@ and renders one `ManagementQueueRow` per item inside `ManagementQueue`.
 `ManagementQueue` is mounted in `PositionsListPage` immediately after
 `AssignmentNotificationBanner` and above the Active section; it self-fetches and
 owns its loading and empty states.
+
+**Queue rows on the cards (US-18).** `listManagementQueue` also selects
+`a.rule_code`, so every item names the rule that raised it (`ruleCode:
+RuleCode`). `PositionsListPage` calls `useManagementQueue` a second time
+(TanStack Query dedupes it with the queue panel's subscription) and groups the
+items by position with the pure `actionsByPosition(rows, ctxById)` in
+`src/renderer/src/lib/card-actions.ts`. Each row maps by `ruleCode` through the
+`WHEEL_LANES` registry to a glyph, status word, tone and rank —
+`COVERED_CALL_BREACH` ▲ `CALL BREACHED` red; `STRIKE_PROXIMITY` ▲ `STRIKE
+PROXIMITY` red when the live quote is below the put strike, else gold;
+`EXPIRATION_IMMINENT` ◷ `EXPIRING` gold; `MANAGEMENT_WINDOW` ◷ `MANAGEMENT
+WINDOW` gold. Any other code (`PROFIT_TARGET`, `EARNINGS_PROXIMITY`, `PMCC_*`)
+is dropped. The wheel card's `ActionStrip` shows the worst row as `glyph WORD ·
+summary` with a `+N` chip for the rest, tints the leg block and the card edge in
+its tone. Dismissing a row removes it from the queue and therefore from the
+strip; the queue panel itself is unchanged. The minimal PMCC card gets no strip.
+
+## Revisions
+
+- **us-51** (original): shipped the `alerts:list` read path, the
+  `ManagementQueueItem` view-model and the `ManagementQueue` panel above the
+  positions list.
+- **us-18**: added `ruleCode` to `ManagementQueueItem` (selected from the
+  already-stored `alerts.rule_code`; no migration, handler unchanged) and
+  mirrored each wheel position's open queue rows onto its card as an action
+  strip.
 
 ## Architecture decisions
 
@@ -112,6 +144,11 @@ owns its loading and empty states.
   the mockup's inline styles was rejected — it violates the
   Tailwind-tokens-not-inline-styles rule and duplicates `PhaseBadge`.
 
+- **The wheel card strip mirrors the queue rather than re-evaluating rules
+  (US-18)** — see [ADR: Wheel card strip mirrors the management queue](../architecture/02-adrs/wheel-card-strip-mirrors-management-queue.md).
+  Rows map to lanes by `ruleCode`, never by parsing the summary, so the strip
+  text is the queue's text verbatim and dismissals are honoured for free.
+
 - **Mount the queue unconditionally above the positions grid.** `ManagementQueue`
   is always mounted and owns its own loading/empty rendering, so the empty-alerts
   state shows even when positions exist. Gating it behind the positions-present
@@ -133,9 +170,10 @@ items: ManagementQueueItem[] } | { ok: false; errors: [...] }>`. Defined in
   `src/preload/index.ts`, typed in `src/preload/index.d.ts`.
 
 - **`ManagementQueueItem` (view-model type)** — `alertId`, `positionId`,
-  `ticker`, `phase` (`WheelPhase`), `urgency` (`'high' | 'medium' | 'low'`),
+  `ticker`, `phase` (`WheelPhase`), `ruleCode` (`RuleCode`, from
+  `alerts.rule_code`; added by US-18), `urgency` (`'high' | 'medium' | 'low'`),
   `summary`, `quickAction`, `triggeredAt` (ISO string). Defined in
-  `src/main/schemas.ts`, mirrored in `src/preload/index.d.ts`, re-exported from
+  `src/main/schemas.ts`, aliased in `src/preload/index.d.ts`, re-exported from
   `src/renderer/src/api/alerts.ts`. See [alerts domain](../domain/alerts.md).
 
 - **`listManagementQueue()` (renderer adapter)** — `() =>
@@ -148,8 +186,8 @@ Promise<ManagementQueueItem[]>`; reads `window.api.alerts.list()` and returns
 
 ## Source files
 
-- `src/main/schemas.ts` — added `ManagementQueueItem` interface
-- `src/main/services/alerts.ts` — added `listManagementQueue(db)` + snake→camel mapper
+- `src/main/schemas.ts` — added `ManagementQueueItem` interface (US-18: `ruleCode`)
+- `src/main/services/alerts.ts` — added `listManagementQueue(db)` + snake→camel mapper (US-18: selects `rule_code`)
 - `src/main/ipc/alerts.ts` — new `registerAlertsHandlers({ db })`, `alerts:list` channel
 - `src/main/index.ts` — wired `registerAlertsHandlers({ db })`
 - `src/preload/index.ts` — added `api.alerts.list`
@@ -159,7 +197,10 @@ Promise<ManagementQueueItem[]>`; reads `window.api.alerts.list()` and returns
 - `src/renderer/src/components/UrgencyPill.tsx`
 - `src/renderer/src/components/ManagementQueueRow.tsx`
 - `src/renderer/src/components/ManagementQueue.tsx`
-- `src/renderer/src/pages/PositionsListPage.tsx` — mounted `<ManagementQueue />`
+- `src/renderer/src/pages/PositionsListPage.tsx` — mounted `<ManagementQueue />`; (US-18) groups the queue into card actions
+- `src/renderer/src/lib/card-actions.ts` — (US-18) `WHEEL_LANES`, `rankWheelActions`, `actionsByPosition`
+- `src/renderer/src/components/position-card/ActionStrip.tsx` — (US-18) the card's strip
+- `e2e/position-cards.spec.ts` — (US-18) strip scenarios
 - `e2e/management-queue.spec.ts` — Playwright/`_electron` spec, one test per AC
 
 <!-- /generated -->

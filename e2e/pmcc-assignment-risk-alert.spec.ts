@@ -25,6 +25,7 @@ import {
   seedMsftCoveredCall,
   type Harness
 } from './pmcc-alert-helpers'
+import { flatStockQuote } from './market-data-fixtures'
 import { sqlite } from './pmcc-helpers'
 import { recordEvent } from './pmcc-ledger-helpers'
 import { rollShortCall } from './pmcc-roll-helpers'
@@ -42,23 +43,10 @@ const ABOVE_112_53 =
 
 afterEach(disposeHarness)
 
-function quote(price: string): Record<string, string | number> {
-  return {
-    price,
-    bid: price,
-    ask: price,
-    change: '0',
-    changePercent: '0',
-    prevClose: price,
-    volume: 0,
-    timestamp: new Date().toISOString()
-  }
-}
-
 /** Replaces the fake provider's stock quotes; it reads them on every request. */
 async function setQuotes(app: ElectronApplication, prices: Record<string, string>): Promise<void> {
   const quotes = Object.fromEntries(
-    Object.entries(prices).map(([ticker, price]) => [ticker, quote(price)])
+    Object.entries(prices).map(([ticker, price]) => [ticker, flatStockQuote(price)])
   )
   await app.evaluate((_electron, json) => {
     process.env.WHEELBASE_MOCK_STOCK_QUOTES = json

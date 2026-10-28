@@ -1,6 +1,6 @@
 # US-103: Calculate and display PMCC cost basis
 
-<!-- generated:from us-103 -->
+<!-- generated:from us-103,us-18 -->
 
 ## Summary
 
@@ -22,7 +22,8 @@ Three pieces carry it:
   snapshot.
 - **Two read surfaces.**
   - The PMCC detail page gains a `Cost basis` drawer with six cells, below the leg reference.
-  - The PMCC list row shows the running total in place of the US-101 `net debit`.
+  - The PMCC list card shows the running total in place of the US-101 `net debit` (a table row
+    until [US-18](./us-18-position-cards.md); now the `Cost basis` footer cell of `PmccCard`).
 
 The trader sees this behaviour today:
 
@@ -188,8 +189,10 @@ with $0.01 fees per leg give `6900.0200`). Snapshots are the audit chain.
   - `Premium recovered` uses the new `fmtPct1` (one decimal, half-up).
   - `Effective share cost` and `Premium recovered` show `—` when null.
   - The strike is not named inside the `Effective share cost` cell.
-- **`PmccPositionRow`** shows `fmtMoneyGrouped(basisTotal)` in its last cell, with no ` net debit`
-  suffix.
+- **List card.** US-103 put `fmtMoneyGrouped(basisTotal)` in `PmccPositionRow`'s last cell, with no
+  ` net debit` suffix. Since [US-18](./us-18-position-cards.md) the minimal `PmccCard` shows it as
+  the footer's `Cost basis` cell (`text-wb-sky`), with `fmtMoney(basisPerShare) / share` beneath and
+  `Premium collected` beside it.
 
 Green made two deliberate departures from the mockup: the mockup's `OwnerNote` became the
 production `Caption`, and the green credits colour was dropped because the story rules it out.
@@ -245,9 +248,15 @@ production.
 - Out of scope per Linear: rendering the snapshot history (US-109), recording leg events in
   production (US-104/105/111/115/119), live or unrealized P&L, max profit, breakeven, annualized
   return, the "LEAPS fully paid for" state, final P&L on close, alerts, tax lots and editing fills.
-- The US-101 e2e still asserts `'$2,300.00 net debit'` on the list row
-  (`e2e/open-pmcc-position.spec.ts`). That assertion is stale since this story; whether to rename
-  the `it` or amend OPT-7 is a story-owner decision.
+- The US-101 e2e scenario is still titled "… initial net debit $2,300.00", but its list assertion
+  now checks the card contains `$2,300.00` and not `net debit` (`e2e/open-pmcc-position.spec.ts`).
+
+## Revisions
+
+- **us-103** (original): shipped the PMCC ledger engine, `appendPmccSnapshot`, the detail-page
+  `Cost basis` drawer, and the running total on the PMCC list row.
+- **us-18**: the list row became the minimal `PmccCard`; `PmccPositionRow.tsx` is deleted and the
+  running `basisTotal` / `basisPerShare` render in the card's `Cost basis` footer cell.
 
 ## Architecture decisions
 
@@ -352,7 +361,8 @@ See [domain/cost-basis](../domain/cost-basis.md) for the ledger in context with 
   - `src/renderer/src/lib/position-list-items.ts` (`toPmccListItem`)
   - `src/renderer/src/components/position-cockpit/PmccCostBasis.tsx`, `PositionCockpit.tsx`,
     `PmccLegReference.tsx`
-  - `src/renderer/src/components/PmccPositionRow.tsx`
+  - `src/renderer/src/components/position-card/PmccCard.tsx` ([us-18]; replaces the deleted
+    `PmccPositionRow.tsx`)
 - **E2E:**
   - `e2e/pmcc-cost-basis.spec.ts`, which covers all 13 scenarios
   - `e2e/pmcc-ledger-helpers.ts`, `e2e/pmcc-helpers.ts`
@@ -369,6 +379,7 @@ Related stories:
   `groupRollChains`.
 - [us-34](./us-34-position-cockpit.md): the cockpit that hosts the new drawer.
 - [us-2](./us-2-position-list.md): the list that shows the running total.
+- [us-18](./us-18-position-cards.md): the card grid whose `PmccCard` footer shows it.
 
 <!-- /generated -->
 

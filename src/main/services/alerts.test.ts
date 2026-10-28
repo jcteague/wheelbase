@@ -478,6 +478,39 @@ describe('listManagementQueue', () => {
     expect(tsla.phase).toBe('CSP_OPEN')
   })
 
+  it("carries each alert's stored rule code, keeping high urgency first", () => {
+    const db = makeTestDb()
+    const msftId = seedPositionWithTicker(db, 'MSFT')
+    const aaplId = seedPositionWithTicker(db, 'AAPL')
+    upsertOpenAlert(
+      db,
+      {
+        ruleCode: 'MANAGEMENT_WINDOW',
+        urgency: 'medium',
+        summary: '10 DTE remaining — review for roll or close',
+        quickAction: 'Review position'
+      },
+      msftId,
+      NOW
+    )
+    upsertOpenAlert(db, EXPIRATION_MATCH, aaplId, LATER)
+
+    const queue = listManagementQueue(db)
+
+    expect(queue).toEqual([
+      expect.objectContaining({
+        positionId: aaplId,
+        ruleCode: 'EXPIRATION_IMMINENT',
+        summary: 'Expires in 5 days at $180.00 strike'
+      }),
+      expect.objectContaining({
+        positionId: msftId,
+        ruleCode: 'MANAGEMENT_WINDOW',
+        summary: '10 DTE remaining — review for roll or close'
+      })
+    ])
+  })
+
   it('orders by urgency tier high → medium → low', () => {
     const db = makeTestDb()
     const lowId = seedPositionWithTicker(db, 'LOW')
@@ -539,8 +572,9 @@ describe('listManagementQueue', () => {
 
     const queue = listManagementQueue(db)
 
-    expect(queue).toHaveLength(1)
-    expect(queue[0].positionId).toBe(positionId)
+    expect(queue).toEqual([
+      expect.objectContaining({ positionId, ruleCode: 'EXPIRATION_IMMINENT' })
+    ])
   })
 
   it('returns an empty array when there are no open alerts', () => {

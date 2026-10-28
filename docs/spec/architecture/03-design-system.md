@@ -1,16 +1,16 @@
 # Design System
 
-<!-- generated:from design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse -->
+<!-- generated:from design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse,us-18 -->
 
 ## Overview
 
 The renderer's visual layer is a Tailwind v4 + `wb-*` token design system layered on top of shadcn/ui primitives. The current state is the product of four overlapping refactors: a frontend cleanup that introduced shared formatters and UI primitives (`PhaseBadge`, `SectionCard`, `LoadingState`, `ErrorAlert`) and pulled hover state into CSS; a portal-target diagnostic that moved sheet portals from `document.body` into a `#sheet-portal` div inside `#root` so Tailwind utilities inside sheets land in the same `@layer` scope; a sheet-primitive extraction that consolidated five duplicated sheet-layout components (`SheetOverlay`, `SheetPanel`, `SheetHeader`, `SheetBody`, `SheetFooter`, plus `SheetCloseButton`) into one `Sheet.tsx` module; and a global design-system migration that exposed every `wb-*` color token plus a monospace font and a sheet shadow as Tailwind utilities via `@theme inline`, then walked the renderer area by area replacing 367 static inline `style={{}}` blocks with class names.
 
-The done state — encoded as architectural rule rather than aspiration — is that every static structural style is a Tailwind utility; only genuinely runtime-dynamic values (prop-driven widths, computed colors set via CSS custom properties) remain as inline `style`. Components stay under a 200-line budget. Formatting and phase-label logic live once in `src/renderer/src/lib/`. Hover effects are CSS pseudo-classes, not React state.
+The done state — encoded as architectural rule rather than aspiration — is that every static structural style is a Tailwind utility; only genuinely runtime-dynamic values (prop-driven widths, computed colors set via CSS custom properties) remain as inline `style`. Components stay under a 200-line budget. Formatting and phase-label logic live once in `src/renderer/src/lib/`. Hover effects are CSS pseudo-classes, not React state. Positions render as cards built from one shared set of position-card primitives (US-18), whose colour variants are static Tailwind class maps keyed by a typed tone or accent — so the card grid needs no inline styles at all.
 
 <!-- /generated -->
 
-<!-- generated:from design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse -->
+<!-- generated:from design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse,us-18 -->
 
 ## Key decisions
 
@@ -40,9 +40,9 @@ The done state — encoded as architectural rule rather than aspiration — is t
 
 ### Inline `style` is reserved for runtime-dynamic values
 
-- **Decision:** Static structural styles must be Tailwind classes. Inline `style` is acceptable only when a value is unknown at build time: `SheetPanel.width` (runtime prop), `SheetHeader.eyebrowColor` / `borderBottomColor` (runtime prop), the Wheelbase logo dot's `boxShadow` glow (no Tailwind equivalent without custom config), per-row CSS custom properties on `PositionRow` (`--wb-row-bg`, `--wb-row-phase-color`), and multi-stop linear gradients used in success hero cards.
+- **Decision:** Static structural styles must be Tailwind classes. Inline `style` is acceptable only when a value is unknown at build time: `SheetPanel.width` (runtime prop), `SheetHeader.eyebrowColor` / `borderBottomColor` (runtime prop), the Wheelbase logo dot's `boxShadow` glow (no Tailwind equivalent without custom config), and multi-stop linear gradients used in success hero cards. (The positions table's per-row CSS custom properties, `--wb-row-bg` / `--wb-row-phase-color` on `PositionRow`, were removed with the table in US-18; the card's per-phase colour is a static class map instead.)
 - **Why:** Tailwind v4's JIT scanner reads source statically — runtime-computed class names like `` `w-[${width}px]` `` never produce CSS. Inline styles are the correct tool for those genuinely dynamic cases, and the architectural rule (in `CLAUDE.md`) draws the line cleanly so reviewers know which inline styles are intentional. Conditional class strings where both branches are present in source (e.g. `pnl >= 0 ? 'text-wb-green' : 'text-wb-red'`) are JIT-safe and remain the preferred pattern.
-- **Driven by:** [us-2 — Position list](../features/us-2-position-list.md), [us-12 — Roll a CSP](../features/us-12-roll-csp.md)
+- **Driven by:** [us-2 — Position list](../features/us-2-position-list.md), [us-12 — Roll a CSP](../features/us-12-roll-csp.md), [us-18 — Position cards](../features/us-18-position-cards.md)
 
 ### Class-name assertions are the migration's TDD signal
 
@@ -58,9 +58,15 @@ The done state — encoded as architectural rule rather than aspiration — is t
 
 ### Hover is CSS, not React state
 
-- **Decision:** Hover effects use `:hover` pseudo-class utility rules (e.g. `wb-nav-link`, `wb-position-row` defined in `index.css`), never `useState(false)` + `onMouseEnter`/`onMouseLeave`. The `PositionRow` phase-coloured left border on hover is the one exception: the color is per-row dynamic, so the row sets `--wb-row-phase-color` as an inline CSS custom property and the hover rule reads it via `border-left-color: var(--wb-row-phase-color)` — no React state involved.
-- **Why:** React state for transient hover is a Vercel `rerender-use-ref-transient-values` violation — every mouse enter/leave triggers a full re-render, which adds up across a multi-row position table. CSS hover is zero-cost from React's perspective and matches the existing Tailwind-first stack.
-- **Driven by:** [us-2 — Position list](../features/us-2-position-list.md)
+- **Decision:** Hover effects use `:hover` — either Tailwind `hover:` variants or a named rule in `index.css` (e.g. `wb-nav-link`, `wb-hover-opacity`) — never `useState(false)` + `onMouseEnter`/`onMouseLeave`. A position card brightens its top, right and bottom borders on hover (`hover:border-t-/r-/b-wb-text-muted/60` on `CardShell`, suppressed when closed), never the left border, so the phase accent or action edge survives hover. The positions table's `.wb-position-row*` rules, and the inline `--wb-row-phase-color` custom property they read, were deleted with the table in US-18: the card's phase-coloured left edge is always visible and comes from a static class map, so no runtime colour is needed.
+- **Why:** React state for transient hover is a Vercel `rerender-use-ref-transient-values` violation — every mouse enter/leave triggers a full re-render, which adds up across a multi-card position list. CSS hover is zero-cost from React's perspective and matches the existing Tailwind-first stack.
+- **Driven by:** [us-2 — Position list](../features/us-2-position-list.md), [us-18 — Position cards](../features/us-18-position-cards.md)
+
+### Position-card primitives carry variants as typed class maps
+
+- **Decision:** Wheel and PMCC cards compose one set of primitives in `src/renderer/src/components/position-card/` (`CardShell`, `CardHeader`, `PriceBlock`, `ActionStrip`, `LegBlock`, `LegTag`, `CardFooter`, `CardFooterCell`), typed on plain props with no knowledge of queue rows or list items. Every colour variant is a complete Tailwind class string in a `Record` keyed by a closed union — `Record<CardAccent, string>` for the phase/strategy edge, `Record<CardTone, string>` (`'red' | 'gold'`) for action tints, `Record<LegTagValue, string>` for leg tags — and shared typography class strings live once in `styles.ts`.
+- **Why:** A keyed record makes a missing or misspelled variant a compile error, and because every class string appears whole in source, Tailwind's JIT scanner emits it — no inline `style` and no runtime-built class names. One primitive set means US-108's full PMCC card reuses the same shell, strip and leg blocks rather than branching a single `PositionCard`. See [ADR: position-card primitives shared across strategies](./02-adrs/position-card-primitives-shared-across-strategies.md).
+- **Driven by:** [us-18 — Position cards](../features/us-18-position-cards.md)
 
 ### Effect-to-callback discipline for mutation side effects
 
@@ -76,7 +82,7 @@ The done state — encoded as architectural rule rather than aspiration — is t
 
 <!-- /generated -->
 
-<!-- generated:from design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse -->
+<!-- generated:from design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse,us-18 -->
 
 ## Token catalogue
 
@@ -115,7 +121,7 @@ Standardised in `plans/design-system/data-model.md` and applied through every mi
 | `opacity: 0.5`                         | `opacity-50`              |
 | `left: 200` (sidebar offset)           | `left-[200px]`            |
 
-`SheetPanel.width`, `SheetHeader.eyebrowColor` / `borderBottomColor`, the logo-dot glow, per-row phase-colour custom properties, and multi-stop linear gradients are intentionally NOT converted — they are documented dynamic exceptions (see Key decisions).
+`SheetPanel.width`, `SheetHeader.eyebrowColor` / `borderBottomColor`, the logo-dot glow, and multi-stop linear gradients are intentionally NOT converted — they are documented dynamic exceptions (see Key decisions).
 
 ## Sheet primitives
 
@@ -136,7 +142,7 @@ The 200 px sidebar left-offset is a hardcoded `left-[200px]` Tailwind arbitrary 
 
 Reusable components above shadcn that the design system relies on. Located in `src/renderer/src/components/` (top-level) or `src/renderer/src/components/ui/` (lower-level primitives):
 
-- `PhaseBadge({ phase, variant?: 'default' | 'short' })` — phase colour dot + label + tinted background. `short` variant is used in `PositionCard` table rows; `default` on detail pages.
+- `PhaseBadge({ phase, variant?: 'default' | 'short' })` — phase colour dot + label + tinted background. `short` variant is used in the wheel card header and the management-queue rows; `default` on detail pages.
 - `LoadingState({ message? })` — `role="status"` pulsing gold dot + message; default "Loading…".
 - `ErrorAlert({ children })` — `role="alert"` `bg-wb-red-dim` / `text-wb-red` block for inline errors.
 - `SectionCard({ header?, children })` — bordered surface card with optional uppercase header bar.
@@ -144,6 +150,20 @@ Reusable components above shadcn that the design system relies on. Located in `s
 - `PageLayout`, `StatGrid`, `Stat`, `Breadcrumb`, `FormField`, `FormButton`, `AlertBox`, `Caption`, `NumberInput`, `DatePicker`, `CcPnlPreview`, `TablePrimitives`, `Badge` — all live in `components/ui/`. Referenced for completeness; not exhaustively detailed here.
 
 `src/renderer/src/lib/format.ts` (`fmtMoney`, `fmtPct`, `fmtDate`, `pnlColor`, `computeDte`) and `src/renderer/src/lib/phase.ts` (`PHASE_LABEL`, `PHASE_LABEL_SHORT`, `PHASE_COLOR`) are the canonical pure-function modules every page imports.
+
+## Position-card primitives
+
+`src/renderer/src/components/position-card/` (US-18) holds the pieces both position cards compose; `PositionsGrid` lays them out in a responsive grid and picks `WheelCard` or `PmccCard` by `strategyType`:
+
+- `CardShell({ accent, edge?, closed?, href })` — a `div` (never a `tr`) with a coloured left border: `border-l-2` in the strategy accent (`CardAccent` = a wheel phase or `'PMCC'`, coloured by `PHASE_TOKEN` in `lib/phase.ts`, the same source `PHASE_COLOR` derives from), or `border-l-4` in the worst open action's tone when `edge` is set; `data-edge` reports which. A click anywhere navigates to `href`; `closed` renders at `opacity-50` with test id `position-card-closed`.
+- `CardHeader({ href, ticker, price, children })` — the ticker link, badges, the price block and the `Open ↗` link, shared by both cards.
+- `CardHeader`, `CardFooter`, `CardFooterCell({ label, valueClassName, sub })` — layout rows; the footer is a two-column hairline grid.
+- `PriceBlock({ price, sub, closed?, quote?, session? })` — price, signed day-change line, subline; an open card with no price shows `—` over a visible `unavailable` line with `title="Price unavailable"`; a closed card shows `—` / `closed` with no tooltip and no change line.
+- `ActionStrip({ actions })` — `role="status"`, `data-tone`; the worst action as `glyph WORD · summary` plus a `+N` chip (`STRIP_CLASS`, `CHIP_CLASS`).
+- `LegBlock({ tag, actions?, title, dte, mark, trailing? })` and `LegTag` — one leg row; an action tints it via `LEG_ACTION_CLASS`, `data-action` reports the tone; tags are `P` / `C` / `·` / `L` / `S` with tooltips.
+- `styles.ts` — shared class strings `EYEBROW`, `HEADLINE_FIGURE`, `SUB`, `TICKER_LINK`, `OPEN_LINK`, and `TONE_TEXT_CLASS: Record<CardTone, string>`.
+
+`CardTone` and `CardAction` come from `src/renderer/src/lib/card-actions.ts`; `CardAccent` is defined in `position-card/types.ts`. Referenced for completeness — the card anatomy is on [us-18 — Position cards](../features/us-18-position-cards.md).
 
 ## Mount-point contract
 
@@ -163,7 +183,7 @@ Every Sheet's `createPortal(..., document.getElementById('sheet-portal'))` mount
 
 <!-- /generated -->
 
-<!-- generated:from design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse -->
+<!-- generated:from design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse,us-18 -->
 
 ## Driven by
 
@@ -178,6 +198,7 @@ Every Sheet's `createPortal(..., document.getElementById('sheet-portal'))` mount
 - [us-11 — Wheel leg-chain display](../features/us-11-leg-history.md)
 - [us-12 — Roll a CSP](../features/us-12-roll-csp.md)
 - [us-34 — Position cockpit](../features/us-34-position-cockpit.md)
+- [us-18 — Position cards](../features/us-18-position-cards.md)
 
 ## Related ADRs
 
@@ -185,6 +206,7 @@ Every Sheet's `createPortal(..., document.getElementById('sheet-portal'))` mount
 - [React Hook Form + Zod resolver](./02-adrs/react-hook-form-zod.md) — the form layer the design system styles.
 - [shadcn collapsible drawers](./02-adrs/shadcn-collapsible-drawers.md) — where shadcn primitives sit beneath the `wb-*` token surface.
 - [wouter hash routing](./02-adrs/wouter-hash-routing-query-prefill.md) — the routing layer the layout primitives live inside.
+- [Position-card primitives shared across strategies](./02-adrs/position-card-primitives-shared-across-strategies.md) — one card primitive set for wheel and PMCC cards.
 
 <!-- /generated -->
 

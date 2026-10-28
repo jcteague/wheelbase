@@ -244,7 +244,10 @@ export class FakeMarketDataProvider implements MarketDataProvider {
     const map = buildMockMap<OptionSnapshot>('WHEELBASE_MOCK_OPTION_SNAPSHOTS', [contractId])
     const snapshot = map.get(contractId)
     if (!snapshot) {
-      throw new MarketDataError('unknown', `FakeMarketDataProvider: no snapshot for ${contractId}`)
+      throw new MarketDataError(
+        'not_found',
+        `FakeMarketDataProvider: no snapshot for ${contractId}`
+      )
     }
     return snapshot
   }

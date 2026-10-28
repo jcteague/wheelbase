@@ -225,10 +225,10 @@ describe('US-105 — Roll the PMCC LEAPS', () => {
       location.hash = '#/'
     })
     const row = positionRows(page).filter({ hasText: 'XYZ' })
-    await row.filter({ hasText: '$85.00 / $112.00' }).waitFor()
+    // [US-18] The row is a card with one leg block per open leg.
+    await row.filter({ hasText: `$85.00 LEAPS · ${UP_OUT_EXP}` }).waitFor()
     const rowText = (await row.textContent()) ?? ''
-    expect(rowText).toContain(`LEAPS · ${UP_OUT_EXP}`)
-    expect(rowText).toContain(`Short · ${SHORT_EXP}`)
+    expect(rowText).toContain(`$112.00 call · ${SHORT_EXP}`)
     expect(rowText).not.toContain('$80.00')
     expect(rowText).not.toContain(`LEAPS · ${LEAPS_EXP}`)
   })

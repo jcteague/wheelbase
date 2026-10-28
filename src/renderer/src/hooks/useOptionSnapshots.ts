@@ -1,6 +1,6 @@
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
 import { useMemo } from 'react'
-import { buildOccSymbol } from '../../../shared/option-symbol'
+import { occSymbolForLeg, type OccLegInput } from '../../../shared/option-symbol'
 import {
   getOptionSnapshots,
   type OptionSnapshotsBySymbol,
@@ -8,12 +8,7 @@ import {
 } from '../api/market-data'
 import { marketDataQueryKeys } from './marketDataQueryKeys'
 
-export type ActiveLegSummary = {
-  ticker: string
-  expiration: string | null
-  strike: string | null
-  instrumentType: 'PUT' | 'CALL' | null
-}
+export type ActiveLegSummary = OccLegInput
 
 type UseOptionSnapshotsOptions = {
   session?: 'regular' | 'pre' | 'post' | 'closed'
@@ -23,23 +18,7 @@ const POLL_INTERVAL_MS = 60_000
 const STALE_TIME_MS = 30_000
 
 function legsToOccSymbols(legs: ActiveLegSummary[]): string[] {
-  const symbols: string[] = []
-  for (const leg of legs) {
-    if (!leg.instrumentType || !leg.expiration || !leg.strike) continue
-    try {
-      symbols.push(
-        buildOccSymbol({
-          ticker: leg.ticker,
-          expiration: leg.expiration,
-          strike: leg.strike,
-          instrumentType: leg.instrumentType
-        })
-      )
-    } catch {
-      // Skip legs that fail validation (e.g. strike <= 0).
-    }
-  }
-  return symbols.sort()
+  return legs.flatMap((leg) => occSymbolForLeg(leg) ?? []).sort()
 }
 
 export type UseOptionSnapshotsResult = Omit<

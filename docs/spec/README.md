@@ -2,7 +2,7 @@
 
 This directory is a generated source-of-truth wiki for the Wheelbase application. Pages are synthesized from the per-story plan dirs under `plans/` via the `/build-spec` (initial) and `/update-spec` (incremental) skills; each page's body sits between `<!-- generated:from <plan-list> -->` markers and is re-generated when any listed plan changes. Browse by topic (architecture, domain, contracts, schema) for cross-cutting concerns, or by feature (US-N) for story-level behaviour.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-16,us-17,us-31,us-32,us-33,us-34,us-35,us-37,us-39,us-43,us-44,us-50,us-51,us-52,us-53-54-55,us-56,us-57-58,us-59,us-60,us-62,us-63,us-64,us-65,us-66,us-67,us-68,us-70,us-96,us-97,us-98,us-99,us-100,us-117,market-data-massive-migration,missing-ac,design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse,us-121,us-101,us-102,us-103,us-104,us-105,us-106,us-107 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-16,us-17,us-31,us-32,us-33,us-34,us-35,us-37,us-39,us-43,us-44,us-50,us-51,us-52,us-53-54-55,us-56,us-57-58,us-59,us-60,us-62,us-63,us-64,us-65,us-66,us-67,us-68,us-70,us-96,us-97,us-98,us-99,us-100,us-117,market-data-massive-migration,missing-ac,design-system,extract-sheet-primitives,fix-sheet-portal-styles,frontend-perf-reuse,us-121,us-101,us-102,us-103,us-104,us-105,us-106,us-107,us-18 -->
 
 ## Maintenance
 
@@ -62,6 +62,10 @@ Generated regions are bounded by `<!-- generated:from ... -->` / `<!-- /generate
 - [US-15 — Roll Pair Timeline](features/us-15-roll-pair-timeline.md) — render linked ROLL_FROM/ROLL_TO pairs as grouped sections with cumulative roll summary in the leg-history table
 - [US-16 — Cost Basis After Sequential Rolls](features/us-16-cost-basis-sequential-rolls.md) — fix `calculateRollBasis` for CSP different-strike rolls and `calculateAssignmentBasis` to net ROLL_FROM cost against ROLL_TO premium
 - [US-17 — Reject Roll in Invalid Phase](features/us-17-reject-roll-invalid-phase.md) — comprehensive engine/service/component test coverage that rolls are rejected from every non-rollable phase
+
+### Epic 04 — Position dashboard
+
+- [US-18 — Positions as a card grid](features/us-18-position-cards.md) — the ten-column positions table is replaced by one responsive card grid. A wheel card carries live price, option mark, unrealized P&L as the headline figure, one leg block, a cost-basis / premium footer, and an **action strip that mirrors the position's open management-queue rows** in the queue's own words (worst first by a `RuleCode`-keyed lane registry, rest on a `+N` chip; dismissed rows vanish for free; `STRIKE_PROXIMITY` tone from the live quote). A PMCC renders as a minimal card in the same shared `CardShell` / `ActionStrip` / `LegBlock` primitives until US-108 replaces it; `WheelCardDisplay` is a `closed | shares | option` union; the table rows, cells and CSS are deleted. Only main-process change: additive `ruleCode` on the `alerts:list` item — no migration. Covered by 22 e2e cases (S1–S21, S13a/b)
 
 ### Epic 06 — Live market data
 

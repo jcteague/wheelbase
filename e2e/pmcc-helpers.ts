@@ -54,7 +54,7 @@ export function pmccFixture(today: string): PmccFixture {
 }
 
 /** `XYZ270917C00080000` — OCC symbol, the key the fake provider parses identity from. */
-function occSymbol(
+export function occSymbol(
   underlying: string,
   expiration: string,
   type: 'C' | 'P',

@@ -1,17 +1,51 @@
 import type { WheelPhase } from '../api/positions'
 
+/** A `wb-*` design-system colour token (`--wb-<token>` in index.css) a phase can be drawn in. */
+export type PhaseToken = 'gold' | 'text-muted' | 'green' | 'red' | 'sky' | 'violet' | 'teal'
+
+/**
+ * The one phase → colour mapping. `PHASE_COLOR` resolves it to hex for inline tints; the position
+ * card resolves it to a `border-l-wb-*` class.
+ */
+export const PHASE_TOKEN: Record<WheelPhase, PhaseToken> = {
+  CSP_OPEN: 'gold',
+  CSP_EXPIRED: 'text-muted',
+  CSP_CLOSED_PROFIT: 'green',
+  CSP_CLOSED_LOSS: 'red',
+  HOLDING_SHARES: 'sky',
+  CC_OPEN: 'violet',
+  CC_EXPIRED: 'text-muted',
+  CC_CLOSED_PROFIT: 'green',
+  CC_CLOSED_LOSS: 'red',
+  WHEEL_COMPLETE: 'green',
+  PMCC_OPEN: 'teal'
+}
+
+/** Each token's `--wb-*` value; hex because `tintFromColor` appends an alpha to it. */
+const TOKEN_HEX: Record<PhaseToken, string> = {
+  gold: '#e6a817',
+  'text-muted': '#484f58',
+  green: '#3fb950',
+  red: '#f85149',
+  sky: '#79c0ff',
+  violet: '#d2a8ff',
+  teal: '#2dd4bf'
+}
+
+const phaseHex = (phase: WheelPhase): string => TOKEN_HEX[PHASE_TOKEN[phase]]
+
 export const PHASE_COLOR: Record<WheelPhase, string> = {
-  CSP_OPEN: '#e6a817',
-  CSP_EXPIRED: '#484f58',
-  CSP_CLOSED_PROFIT: '#3fb950',
-  CSP_CLOSED_LOSS: '#f85149',
-  HOLDING_SHARES: '#79c0ff',
-  CC_OPEN: '#d2a8ff',
-  CC_EXPIRED: '#484f58',
-  CC_CLOSED_PROFIT: '#3fb950',
-  CC_CLOSED_LOSS: '#f85149',
-  WHEEL_COMPLETE: '#3fb950',
-  PMCC_OPEN: '#2dd4bf'
+  CSP_OPEN: phaseHex('CSP_OPEN'),
+  CSP_EXPIRED: phaseHex('CSP_EXPIRED'),
+  CSP_CLOSED_PROFIT: phaseHex('CSP_CLOSED_PROFIT'),
+  CSP_CLOSED_LOSS: phaseHex('CSP_CLOSED_LOSS'),
+  HOLDING_SHARES: phaseHex('HOLDING_SHARES'),
+  CC_OPEN: phaseHex('CC_OPEN'),
+  CC_EXPIRED: phaseHex('CC_EXPIRED'),
+  CC_CLOSED_PROFIT: phaseHex('CC_CLOSED_PROFIT'),
+  CC_CLOSED_LOSS: phaseHex('CC_CLOSED_LOSS'),
+  WHEEL_COMPLETE: phaseHex('WHEEL_COMPLETE'),
+  PMCC_OPEN: phaseHex('PMCC_OPEN')
 }
 
 export const PHASE_LABEL: Record<WheelPhase, string> = {

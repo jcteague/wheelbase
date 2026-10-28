@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { evaluatePosition } from './alerts'
+import { evaluatePosition, isNumeric } from './alerts'
 import type { AlertEvaluationInput, AlertMatch, RuleCode, SkippedRule } from './alerts'
 import { WheelPhase } from './types'
 
@@ -975,5 +975,19 @@ describe('evaluatePosition — leg applicability (US-107)', () => {
       { ruleCode: 'MANAGEMENT_WINDOW', reason: 'missing_dte' },
       { ruleCode: 'EARNINGS_PROXIMITY', reason: 'missing_dte' }
     ])
+  })
+})
+
+describe('isNumeric', () => {
+  it.each([
+    { value: '180.0000', expected: true },
+    { value: '-0.0001', expected: true },
+    { value: null, expected: false },
+    { value: '', expected: false },
+    { value: 'n/a', expected: false },
+    { value: 'Infinity', expected: false },
+    { value: 'NaN', expected: false }
+  ])('$value → $expected', ({ value, expected }) => {
+    expect(isNumeric(value)).toBe(expected)
   })
 })

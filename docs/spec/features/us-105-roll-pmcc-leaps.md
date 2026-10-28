@@ -1,6 +1,6 @@
 # US-105: Roll the PMCC LEAPS to a further expiration
 
-<!-- generated:from us-105 -->
+<!-- generated:from us-105,us-18 -->
 
 ## Summary
 
@@ -39,9 +39,13 @@ The trader sees this behaviour today:
   below it. With no short open, both checks are skipped and the sheet says so.
 - **A recorded roll closes the sheet** and shows a banner naming the ledger line (`LEAPS roll #1
 credit · $2.50 per share ($250.00 total)`) and the effective share cost if exercised.
-- **The positions list follows the roll.** The PMCC row shows the open legs (the replacement LEAPS),
-  and a PMCC with no open short reads `$80.00 / No short open`. Such a row still sorts by its LEAPS
-  DTE; follow-up US-123 (Linear OPT-29) adds a `NO_SHORT_OPEN` alert and sorts it as DTE 0.
+- **The positions list follows the roll.** The PMCC list card shows the open legs: after the roll
+  its `L` leg block reads `$85.00 LEAPS · <replacement exp>` beside the `S` block's
+  `$112.00 call · <exp>`. A PMCC with no open short shows only the `L` block, the state label
+  `No short open`, and `Nd to next decision` from the LEAPS DTE (since
+  [US-18](./us-18-position-cards.md); the table row read `$80.00 / No short open`). Such a card
+  still sorts by its LEAPS DTE; follow-up US-123 (Linear OPT-29) adds a `NO_SHORT_OPEN` alert and
+  sorts it as DTE 0.
 - **A classic wheel is unchanged.** No `Roll LEAPS` action appears on it.
 
 **No migration.** `legs` and `cost_basis_snapshots` already hold everything the roll writes, and
@@ -214,8 +218,9 @@ the defaults. `PmccShortCallTerms` is now an alias of the new `PmccFilledLegTerm
 
 `listPositions` now builds each PMCC row's leg summaries from `pmccOpenLegs(legs)` — the same answer
 the detail page reads — so a rolled LEAPS shows its replacement and an expired short disappears.
-`PmccListSummary.short` is nullable; `PmccPositionRow` renders `$80.00 / No short open` and omits the short's
-expiration and DTE lines; `position-order.ts` orders such a row by its LEAPS DTE (follow-up US-123
+`PmccListSummary.short` is nullable. US-105's `PmccPositionRow` rendered `$80.00 / No short open`;
+since [US-18](./us-18-position-cards.md) the minimal `PmccCard` renders one `L` leg block, omits the
+`S` block, labels the state `No short open` and takes its `Nd to next decision` from the LEAPS; `position-order.ts` orders such a row by its LEAPS DTE (follow-up US-123
 / OPT-29 will sort it as DTE 0 and raise a `NO_SHORT_OPEN` alert). US-103's
 `pmccOpeningLegs` ("later rows win", rolls not consulted) was removed; `pmccEntryLegs` remains for
 the entry net debit.
@@ -340,6 +345,15 @@ After the up-and-out roll the snapshot chain reads `PMCC_OPEN`, `PMCC_SHORT_EXPI
 - The plan's contract error table predates rules 5, 6 and 9, and its renderer schema spread
   individual constants rather than one rule list; the code is authoritative.
 
+## Revisions
+
+- **us-105** (original): shipped `positions:roll-pmcc-leaps`, the `Roll LEAPS` sheet, roll-aware
+  list leg summaries and the `$80.00 / No short open` list row.
+- **us-18**: the list row became the minimal `PmccCard`; `PmccPositionRow.tsx` is deleted. The
+  rolled LEAPS and open short render as `L` / `S` leg blocks (`$85.00 LEAPS · exp`,
+  `$112.00 call · exp`), and a no-short PMCC shows only the `L` block with `No short open`.
+  `e2e/pmcc-leaps-roll.spec.ts` asserts the leg-block text.
+
 ## Architecture decisions
 
 Recorded in this story:
@@ -445,7 +459,9 @@ See [domain/cost-basis](../domain/cost-basis.md) and
     `RollPmccLeapsFields.tsx`, `RollPmccLeapsNetPreview.tsx`, `PmccRollSheetDialog.tsx`,
     `PmccRollFields.tsx`, `RollPmccShortCallFields.tsx`,
     `PmccCoverageRuler.tsx`, `PmccRollRecordedBanner.tsx`, `PositionDetailActions.tsx`,
-    `PmccPositionRow.tsx`, `RollPmccShortCallSheet.tsx`, `RollPmccShortCallForm.tsx`
+    `RollPmccShortCallSheet.tsx`, `RollPmccShortCallForm.tsx`
+  - `src/renderer/src/components/position-card/PmccCard.tsx` ([us-18]; replaces the deleted
+    `PmccPositionRow.tsx`)
   - `src/renderer/src/hooks/useRollPmccLeaps.ts`, `useRollPmccLeapsForm.ts`, `useRollSheetSubmit.ts`
   - `src/renderer/src/lib/pmcc-roll.ts`, `src/renderer/src/lib/pmcc-roll-coverage.ts`,
     `src/renderer/src/lib/pmcc-leaps-roll-view.ts`, `src/renderer/src/lib/pmcc-roll-recorded.ts`,
@@ -470,6 +486,7 @@ Related stories:
   `PMCC_LEAPS_ROLL` trigger this story writes through.
 - [us-101](./us-101-open-pmcc-position.md): opens the position and the LEAPS being rolled.
 - [us-14](./us-14-roll-cc.md): the wheel's covered-call roll, left unchanged.
+- [us-18](./us-18-position-cards.md): the card grid whose `PmccCard` shows the rolled legs.
 
 <!-- /generated -->
 

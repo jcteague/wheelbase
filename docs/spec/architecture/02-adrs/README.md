@@ -2,7 +2,7 @@
 
 Each ADR captures one architectural choice that emerged from a plan/story. Decisions are grouped below by theme; many ADRs are referenced by multiple feature pages.
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,us-53-54-55,us-57-58,us-97,us-98,us-99,us-101,us-121,us-103,us-106,us-107,missing-ac -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-8-pct-fix,us-9,us-12,us-12-refactor,us-31,us-32,us-33,us-34,us-35,us-37,us-44,us-50,us-51,us-53-54-55,us-57-58,us-97,us-98,us-99,us-101,us-121,us-103,us-106,us-107,us-18,missing-ac -->
 
 ## Engine & architecture
 
@@ -81,6 +81,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [new-route-is-list-with-sheet-open](./new-route-is-list-with-sheet-open.md) — `#/new` renders the positions list with the New position sheet open via one RegExp route; no remount, refetch on close; `NewWheelPage` deleted (US-101).
 - [standard-mode-is-new-wheel-form](./standard-mode-is-new-wheel-form.md) — Standard mode is the shipped `NewWheelForm`, with its success card and redirect kept; `onCancel` adds a sheet-mode footer (US-101).
 - [draft-retention-both-forms-mounted](./draft-retention-both-forms-mounted.md) — Both entry forms stay mounted (`hidden`); an imperative handle carries ticker and contracts across the toggle; toggle disabled while pending; focus returns to the opener (US-101).
+- [position-card-primitives-shared-across-strategies](./position-card-primitives-shared-across-strategies.md) — One `CardShell` / `ActionStrip` / `LegBlock` set in `components/position-card/`, typed on plain props, builds both the wheel card and the minimal PMCC card (replaced by US-108); `WheelCardDisplay` is a `closed | shares | option` union so impossible card states don't type-check; the table cells were deleted, not wrapped (US-18).
 
 ## Market data
 
@@ -151,6 +152,7 @@ Each ADR captures one architectural choice that emerged from a plan/story. Decis
 - [alerts-partial-unique-open](./alerts-partial-unique-open.md) — Partial unique index `(position_id, rule_code) WHERE status='open'` allows one open alert per pair plus historical resolved rows.
 - [shared-dte-helper](./shared-dte-helper.md) — `computeDte` extracted into a pure `src/main/core/dte.ts` shared by the positions list and the alert engine.
 - [management-queue-read-path](./management-queue-read-path.md) — `listManagementQueue` joins open alerts to positions and sorts by urgency tier then `triggered_at`; dedicated `ManagementQueueItem` view-model leaves `listOpenAlerts` untouched.
+- [wheel-card-strip-mirrors-management-queue](./wheel-card-strip-mirrors-management-queue.md) — A wheel card's action strip mirrors its open queue rows (summary verbatim, dismissals free) via `ruleCode` on `ManagementQueueItem` and a `RuleCode`-keyed lane registry (lanes 0/3 reserved for US-108); `STRIKE_PROXIMITY` tone comes from the live quote, so it can briefly disagree with the last-evaluated summary near the strike (US-18).
 - [alert-evaluation-failure-isolation](./alert-evaluation-failure-isolation.md) — Batch evaluation isolates per-item failures and degrades boundary I/O (market-data prefetch, symbol building) to empty + log, never aborting the run; callers guard throwing pure helpers.
 - [configurable-alert-thresholds](./configurable-alert-thresholds.md) — Shared override→global-default→constant resolution precedence for both alert thresholds.
 - [pmcc-alerts-select-current-short-by-ledger-replay](./pmcc-alerts-select-current-short-by-ledger-replay.md) — PMCC rows are selected by replaying legs with `currentShortCallLeg`, not by broadening the wheel active-leg SQL; a replay failure keeps the alerts open rather than resolving them; the generic short-leg rules evaluate the short call, never the LEAPS; closure comes only from the ledger (US-106). Amended by US-107: a PMCC is selected whenever its LEAPS is open, via `pmccOpenLegs`, with nullable short-leg fields.

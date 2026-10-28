@@ -643,9 +643,10 @@ describe('US-37 Layer 5 e2e coverage', () => {
     const relaunchedPage = await getPage(app)
     await openPositions(relaunchedPage)
 
-    expect(await relaunchedPage.getByTestId('position-card-AAPL-price').textContent()).toContain(
-      'unavailable'
-    )
+    // [US-18] The card's price block keeps the old cell's tooltip, not its `unavailable` sub-line.
+    const price = relaunchedPage.getByTestId('position-card-AAPL-price')
+    expect(await price.textContent()).toContain('—')
+    expect(await price.getAttribute('title')).toBe('Price unavailable')
   })
 
   it('Expired Alpaca credentials surface a re-entry prompt', async () => {

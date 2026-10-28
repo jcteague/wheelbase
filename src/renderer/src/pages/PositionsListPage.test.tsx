@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useEffect } from 'react'
 import { beforeEach, vi } from 'vitest'
-import type { PositionListItem } from '../api/positions'
+import type { PositionListItem, WheelListItem } from '../api/positions'
 import type { OptionSnapshot, StockQuote } from '../api/market-data'
 import { usePositions } from '../hooks/usePositions'
 import { useMarketStatus } from '../hooks/useMarketStatus'
@@ -11,6 +11,9 @@ import { useOptionSnapshots } from '../hooks/useOptionSnapshots'
 import { useAlertDefaults, useSettingsStatus } from '../hooks/useSettings'
 import { useManagementQueue } from '../hooks/useManagementQueue'
 import { useDismissAlert } from '../hooks/useDismissAlert'
+import type { PmccCardProps } from '../components/position-card/PmccCard'
+import type { WheelCardProps } from '../components/position-card/WheelCard'
+import { AAPL, AAPL_QUOTE as STORY_AAPL_QUOTE, MSFT, NVDA, XYZ } from '../test-fixtures/wheel-cards'
 import { PositionsListPage } from './PositionsListPage'
 
 vi.mock('../hooks/usePositions')
@@ -73,22 +76,20 @@ const { mockUsePendingAssignments } = vi.hoisted(() => ({
 vi.mock('../api/assignments', () => ({
   usePendingAssignments: mockUsePendingAssignments
 }))
-vi.mock('../components/PositionCard', () => ({
-  PositionRow: ({
+vi.mock('../components/position-card/WheelCard', () => ({
+  WheelCard: ({
     item,
+    actions,
     isClosed,
     quote,
     snapshot,
     hasPendingAssignment
-  }: {
-    item: PositionListItem
-    isClosed?: boolean
-    quote?: StockQuote
-    snapshot?: OptionSnapshot
-    hasPendingAssignment?: boolean
-  }) => (
-    <tr data-testid={isClosed ? 'position-card-closed' : 'position-card'}>
-      <td>
+  }: WheelCardProps) => (
+    <div
+      data-testid={isClosed ? 'position-card-closed' : 'position-card'}
+      data-ticker={item.ticker}
+    >
+      <span>
         {item.ticker}
         {hasPendingAssignment && (
           <span
@@ -97,10 +98,26 @@ vi.mock('../components/PositionCard', () => ({
             aria-label="Assignment pending"
           />
         )}
-      </td>
-      <td data-testid={`mock-quote-${item.ticker}`}>{quote?.price ?? 'NO_QUOTE'}</td>
-      <td data-testid={`mock-snapshot-${item.ticker}`}>{snapshot?.mid ?? 'NO_SNAPSHOT'}</td>
-    </tr>
+      </span>
+      <span data-testid={`mock-quote-${item.ticker}`}>{quote?.price ?? 'NO_QUOTE'}</span>
+      <span data-testid={`mock-snapshot-${item.ticker}`}>{snapshot?.mid ?? 'NO_SNAPSHOT'}</span>
+      <span data-testid={`mock-actions-${item.ticker}`}>
+        {actions.length > 0
+          ? actions.map((a) => `${a.statusWord} (${a.tone})`).join(' | ')
+          : 'NO_ACTIONS'}
+      </span>
+    </div>
+  )
+}))
+vi.mock('../components/position-card/PmccCard', () => ({
+  PmccCard: ({ item, isClosed, quote }: PmccCardProps) => (
+    <div
+      data-testid={isClosed ? 'position-card-closed' : 'position-card'}
+      data-ticker={item.ticker}
+    >
+      <span>{item.ticker}</span>
+      <span data-testid={`mock-quote-${item.ticker}`}>{quote?.price ?? 'NO_QUOTE'}</span>
+    </div>
   )
 }))
 
@@ -554,7 +571,7 @@ it('does not render StaleDataBanner when not stale', () => {
 
 // ── Area 13: quote passing ───────────────────────────────────────────────────
 
-it('passes quote to each PositionRow', () => {
+it('passes quote to each card', () => {
   mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1, ITEM_2]))
   mockUseStockQuotes.mockReturnValue(
     makeStockQuotesResult({ data: { AAPL: AAPL_QUOTE, MSFT: MSFT_QUOTE } })
@@ -581,25 +598,102 @@ it('derives ticker list from active positions only', () => {
   expect(mockUseStockQuotes).toHaveBeenCalledWith(['AAPL'])
 })
 
-// ── Area 14: column order with Opt Mid + P&L ────────────────────────────────
+// ── US-18: the list is a card grid ─────────────────────────────────────────────
 
-it('header row contains Ticker, Phase, Price, Opt Mid, P&L, Strike, Expiration, DTE, Premium, Cost Basis', () => {
-  mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1]))
+it('renders the positions as cards with no table column headers', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1, ITEM_2]))
 
   render(<PositionsListPage />)
-  const headers = screen.getAllByRole('columnheader').map((h) => h.textContent?.trim())
-  expect(headers).toEqual([
-    'Ticker',
-    'Phase',
-    'Price',
-    'Opt Mid',
-    'P&L',
-    'Strike',
-    'Expiration',
-    'DTE',
-    'Premium',
-    'Cost Basis'
+  expect(screen.getAllByTestId('position-card')).toHaveLength(2)
+  expect(screen.queryByRole('columnheader')).not.toBeInTheDocument()
+})
+
+it('keeps the list order, a PMCC card included', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([MSFT, AAPL, XYZ, NVDA]))
+
+  render(<PositionsListPage />)
+  expect(screen.getAllByTestId('position-card').map((c) => c.dataset.ticker)).toEqual([
+    'MSFT',
+    'AAPL',
+    'XYZ',
+    'NVDA'
   ])
+})
+
+// ── US-18: queue rows reach their wheel card ─────────────────────────────────
+
+function queueRow(
+  item: PositionListItem,
+  ruleCode: ManagementQueueItem['ruleCode'],
+  summary: string
+): ManagementQueueItem {
+  return {
+    ...QUEUE_ITEM,
+    alertId: `${item.id}-${ruleCode}`,
+    positionId: item.id,
+    ticker: item.ticker,
+    ruleCode,
+    summary
+  }
+}
+
+it('hands each wheel card its own queue rows as actions, without PROFIT_TARGET', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([MSFT, AAPL, NVDA]))
+  mockUseManagementQueue.mockReturnValue(
+    makeQueueResult([
+      queueRow(AAPL, 'MANAGEMENT_WINDOW', '30 DTE remaining — review for roll or close'),
+      queueRow(AAPL, 'PROFIT_TARGET', '52.0% of max profit captured — consider closing'),
+      queueRow(MSFT, 'EXPIRATION_IMMINENT', 'Expires in 10 days at $430.00 strike')
+    ])
+  )
+
+  render(<PositionsListPage />)
+  expect(screen.getByTestId('mock-actions-AAPL')).toHaveTextContent(/^MANAGEMENT WINDOW \(gold\)$/)
+  expect(screen.getByTestId('mock-actions-MSFT')).toHaveTextContent(/^EXPIRING \(gold\)$/)
+  expect(screen.getByTestId('mock-actions-NVDA')).toHaveTextContent(/^NO_ACTIONS$/)
+})
+
+it("tones STRIKE_PROXIMITY by each position's live price against its own strike", () => {
+  // STRIKE_PROXIMITY only fires on CSP_OPEN, within 1% of the put strike: AAPL $181.20 sits
+  // just above its $180 put, and a MSFT $430 put with the stock at $427.00 just below it.
+  const msftPut: WheelListItem = { ...MSFT, phase: 'CSP_OPEN', instrumentType: 'PUT' }
+  mockUsePositions.mockReturnValue(makePositionsResult([AAPL, msftPut]))
+  mockUseStockQuotes.mockReturnValue(
+    makeStockQuotesResult({
+      data: {
+        AAPL: { ...STORY_AAPL_QUOTE, price: '181.20' },
+        MSFT: { ...STORY_AAPL_QUOTE, price: '427.00' }
+      }
+    })
+  )
+  mockUseManagementQueue.mockReturnValue(
+    makeQueueResult([
+      queueRow(AAPL, 'STRIKE_PROXIMITY', 'Stock is 0.7% above the $180.00 put strike'),
+      queueRow(
+        msftPut,
+        'STRIKE_PROXIMITY',
+        'Stock is 0.7% below the $430.00 put strike — now in the money'
+      )
+    ])
+  )
+
+  render(<PositionsListPage />)
+  expect(screen.getByTestId('mock-actions-AAPL')).toHaveTextContent(/^STRIKE PROXIMITY \(gold\)$/)
+  expect(screen.getByTestId('mock-actions-MSFT')).toHaveTextContent(/^STRIKE PROXIMITY \(red\)$/)
+})
+
+it('gives closed cards no actions', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([ITEM_1, CLOSED_ITEM]))
+  mockUseManagementQueue.mockReturnValue(
+    makeQueueResult([
+      queueRow(ITEM_1, 'MANAGEMENT_WINDOW', '21 DTE remaining — review for roll or close'),
+      queueRow(CLOSED_ITEM, 'MANAGEMENT_WINDOW', '21 DTE remaining — review for roll or close')
+    ])
+  )
+
+  render(<PositionsListPage />)
+  expect(screen.getByTestId('mock-actions-AAPL')).toHaveTextContent(/^MANAGEMENT WINDOW \(gold\)$/)
+  expect(screen.getByTestId('mock-actions-BBB')).toHaveTextContent(/^NO_ACTIONS$/)
 })
 
 // ── Area 14: derive ActiveLegSummary[] from active positions ────────────────

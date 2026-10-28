@@ -15,6 +15,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { localDate, localToday } from './dates'
+import { optionSnapshot } from './market-data-fixtures'
 
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
 const APP_CWD = path.join(__dirname, '..')
@@ -49,17 +50,10 @@ function occSym(
 // [US-117] Implied volatility is a sibling of `greeks`, not a member: the provider supplies
 // the two independently, so either may arrive without the other.
 function makeSnapshot(bid: string, ask: string, mid: string, delta: string): object {
-  return {
-    bid,
-    ask,
-    mid,
-    lastTrade: mid,
-    openInterest: null,
-    volume: null,
+  return optionSnapshot(bid, ask, mid, {
     greeks: { delta, gamma: '0.02', theta: '-0.05', vega: '0.10' },
-    impliedVolatility: '0.2500',
-    timestamp: new Date().toISOString()
-  }
+    impliedVolatility: '0.2500'
+  })
 }
 
 type Snapshot = { greeks: Record<string, string>; impliedVolatility?: string }

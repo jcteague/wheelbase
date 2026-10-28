@@ -1,6 +1,6 @@
 # US-101: Open a PMCC position with two linked opening legs
 
-<!-- generated:from us-101 -->
+<!-- generated:from us-101,us-18 -->
 
 ## Summary
 
@@ -38,7 +38,7 @@ The trader sees this behaviour today:
 - **Closing the sheet returns focus to the element that opened it.** That can be the sidebar item,
   the header link or the empty-state link, with the header trigger as the fallback.
 
-A `PMCC_OPEN` position gets a minimal row and detail page that report only what is true. Every
+A `PMCC_OPEN` position gets a minimal list card (a table row until [US-18](./us-18-position-cards.md)) and detail page that report only what is true. Every
 wheel-only job (alerts, assignment detection, option polling, the calendar) skips it by
 construction.
 
@@ -270,14 +270,20 @@ Market-data layer context: [domain/market-data](../domain/market-data.md).
     `instrumentType`, `contracts` and `entryPremiumPerContract`.
   - PMCC rows sort by their short call's DTE among the wheel rows (`sortPositionsByDte`).
   - A PMCC whose leg rows are missing is dropped from the list with a WARN.
-- **List row.** `PositionCard` hands PMCC rows to `PmccPositionRow`, which shows:
-  - a `PMCC` badge and `LEAPS + short call open`;
-  - both strikes, with expiration and DTE labelled `LEAPS ·` / `Short ·`;
-  - Premium, the short credit after fees;
-  - `$2,300.00 net debit`;
-  - `—` for option mid and P&L, with no target badge and no expiring flag.
+- **List card.** Since [US-18](./us-18-position-cards.md), `PositionsGrid` renders a PMCC item
+  as the minimal `PmccCard` (`src/renderer/src/components/position-card/PmccCard.tsx`), in the same
+  `CardShell` as the wheel card with the teal `PMCC` accent. It shows:
+  - a `PMCC` badge, the live price over `Nd to next decision` (the short call's DTE, or the
+    LEAPS DTE with no short open), and an `Open ↗` link;
+  - the state label `LEAPS + short call open` (`No short open` between short calls);
+  - one leg block per open leg: `L` `$80.00 LEAPS · <exp>` then `S` `$110.00 call · <exp>`,
+    each with its own DTE and a `—` mark;
+  - `Net P&L` `—` with `no valuation yet`;
+  - a footer with `Cost basis` (the running `basisTotal` — `$2,300.00` at open, US-103 — over
+    `$X / share`) and `Premium collected` `to date`;
+  - no action strip, no TARGET badge and no expiring flag.
 
-  `rowStyle` is shared with the wheel row. See [us-2](./us-2-position-list.md).
+  US-108 replaces it with the full PMCC card. See [us-2](./us-2-position-list.md).
 
 - **Detail page.** The detail page shows `PmccLegReference`: two section cards listing each leg's
   strike, expiration, DTE, contracts, actual fill, fill date and fees. Below them are
@@ -299,7 +305,8 @@ The PMCC list item types the wheel's expiration, DTE and instrument fields as `n
 
 - the calendar never plots a PMCC;
 - `useOptionSnapshots` never polls one;
-- `deriveRowDisplay` never renders one through wheel copy such as "CC expiring".
+- the wheel card's display (`deriveWheelCardDisplay`, US-18) never renders one through wheel copy;
+  `PositionsGrid` branches on `strategyType` before it.
 
 The `PMCC_` phase prefix is what keeps every `phase IN (…)` filter correct.
 
@@ -332,9 +339,17 @@ Follow-up stories:
 | Story                          | Adds                                                            |
 | ------------------------------ | --------------------------------------------------------------- |
 | US-103                         | running PMCC basis and the history drawer                       |
-| US-108, US-118                 | the full PMCC row and cockpit                                   |
+| US-108, US-118                 | the full PMCC card and cockpit                                  |
 | US-113, US-122                 | the IV block, and promoting into PMCC from this sheet           |
 | US-115, US-119, US-120, US-111 | the reserved `PMCC_LEAPS_ONLY` / `PMCC_CLOSED` phases and roles |
+
+## Revisions
+
+- **us-101** (original): shipped the New position sheet, `positions:create-pmcc`, migration 017
+  and the minimal PMCC list row (`PmccPositionRow`) and detail page.
+- **us-18**: the positions table became a card grid. `PmccPositionRow`, `PositionCard.tsx` and
+  `positionRowStyles.ts` are deleted; a PMCC now renders as the minimal `PmccCard` with `L` / `S`
+  leg blocks and a basis footer, sharing the wheel card's primitives.
 
 ## Architecture decisions
 
@@ -427,8 +442,9 @@ Follow-up stories:
 - **Renderer components:**
   - `src/renderer/src/components/NewPositionSheet.tsx`, `StrategyToggle.tsx`, `NewWheelForm.tsx`
   - `PmccEntryForm.tsx`, `PmccLegSection.tsx`, `CallContractPicker.tsx`, `PmccCashFlows.tsx`
-  - `PmccPositionRow.tsx`, `positionRowStyles.ts`, `PositionCard.tsx`,
-    `PositionDetailActions.tsx`
+  - `PositionDetailActions.tsx`
+  - `position-card/PmccCard.tsx`, `PositionsGrid.tsx` ([us-18]; replace the deleted
+    `PmccPositionRow.tsx`, `positionRowStyles.ts` and `PositionCard.tsx`)
   - `components/position-cockpit/PmccLegReference.tsx`, `PositionCockpit.tsx`
 - **Renderer pages:**
   - `src/renderer/src/pages/PositionsListPage.tsx`, `PositionDetailContent.tsx`
@@ -447,6 +463,7 @@ Related stories:
 - [us-64](./us-64-pull-option-chains-for-watchlist.md): its chain IPC is reused here.
 - [us-2](./us-2-position-list.md)
 - [us-34](./us-34-position-cockpit.md)
+- [us-18](./us-18-position-cards.md): the card grid that now renders the PMCC list card.
 
 <!-- /generated -->
 

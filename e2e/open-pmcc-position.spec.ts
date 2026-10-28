@@ -451,12 +451,13 @@ describe('Scenario: Record the position and view both legs', () => {
     await row.waitFor()
     expect(await row.getByTestId('position-ticker').textContent()).toBe('XYZ')
     expect(await row.locator('span', { hasText: /^PMCC$/ }).count()).toBeGreaterThan(0)
-    expect(await row.textContent()).toContain('$80.00 / $110.00')
-    expect(await row.locator('span', { hasText: /^LEAPS · / }).textContent()).toBe(
-      `LEAPS · ${FIXTURE.long.expiration}`
+    // [US-18] The row is a card: one leg block per leg, each with its own strike and expiration.
+    const legs = row.getByTestId('leg-block')
+    expect(await legs.nth(0).textContent()).toContain(
+      `$${FIXTURE.long.strike} LEAPS · ${FIXTURE.long.expiration}`
     )
-    expect(await row.locator('span', { hasText: /^Short · / }).textContent()).toBe(
-      `Short · ${FIXTURE.short.expiration}`
+    expect(await legs.nth(1).textContent()).toContain(
+      `$${FIXTURE.short.strike} call · ${FIXTURE.short.expiration}`
     )
     expect(await row.locator('span', { hasText: /^\d+d$/ }).allTextContents()).toEqual([
       `${LEAPS_DTE}d`,

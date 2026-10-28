@@ -1,10 +1,10 @@
 # US-32: Live Position Prices
 
-<!-- generated:from us-32,market-data-massive-migration,us-116 -->
+<!-- generated:from us-32,market-data-massive-migration,us-116,us-18 -->
 
 ## Summary
 
-Adds a live `Price` column to the Positions list (between `Phase` and `Strike`) showing real-time underlying price and signed daily change, plus a session-aware market status pill in the page header. The renderer's TanStack Query cache is seeded once via REST and then continuously updated by WebSocket ticks bridged through push events from the US-31 `MarketDataProvider`. A stale-data banner surfaces when no quotes have arrived for >5 minutes or a stream error fires.
+Adds the live underlying price to every active position on the Positions list — today the `PriceBlock` in each position card's header (since [us-18](./us-18-position-cards.md); it shipped as a `Price` table column) — showing the real-time price and signed daily change, plus a session-aware market status pill in the page header. The renderer's TanStack Query cache is seeded once via REST and then continuously updated by WebSocket ticks bridged through push events from the US-31 `MarketDataProvider`. A stale-data banner surfaces when no quotes have arrived for >5 minutes or a stream error fires.
 
 ## Acceptance criteria
 
@@ -19,12 +19,13 @@ Adds a live `Price` column to the Positions list (between `Phase` and `Strike`) 
 
 A stream-first market-data pipeline for stock quotes. The main process owns a single `MarketDataProvider` instance — today a `MassiveMarketDataProvider` built lazily via `marketDataFactory.create()` and connected on first subscription request. `src/main/ipc/market-data.ts` exposes two request/response handlers (`stock-quotes`, `set-stock-quote-tickers`) plus two fire-and-forget push events (`stock-quote`, `stream-error`); [US-116] market-status is served by `market-data:market-status` in the same handler module. On every active-ticker change the renderer calls `setStockQuoteTickers`, which tears down the prior subscription, subscribes to the provider's RxJS `Observable` (`provider.stream('stockQuotes', tickers)`, fed by Massive's single JSON WebSocket aggregate-minute frames), and forwards each frame as a `market-data:stock-quote` event.
 
-The renderer's `useStockQuotes` hook uses TanStack Query as the single cache: a REST seed (via `queryFn`) populates `prevClose` once per ticker from Massive's stock snapshot endpoint; subsequent stream ticks merge into the cache via `setQueryData`, carrying `prevClose` forward. `change` and `changePercent` are computed at render time from `(price, prevClose)`. Staleness is detected from `dataUpdatedAt` against `STALE_THRESHOLD_MS` (5 min → `DELAYED`), and `useMarketStatus` polls `market-data:market-status` every 60s for session boundaries ([US-116] moved it off the broker namespace). Three new presentational components — `MarketStatusPill`, `PriceCell`, `StaleDataBanner` — plus changes to `PositionCard` and `PositionsListPage` deliver the UI.
+The renderer's `useStockQuotes` hook uses TanStack Query as the single cache: a REST seed (via `queryFn`) populates `prevClose` once per ticker from Massive's stock snapshot endpoint; subsequent stream ticks merge into the cache via `setQueryData`, carrying `prevClose` forward. The daily change is computed at render time from `(price, prevClose)` (`PriceBlock` shows the signed dollar change only). Staleness is detected from `dataUpdatedAt` against `STALE_THRESHOLD_MS` (5 min → `DELAYED`), and `useMarketStatus` polls `market-data:market-status` every 60s for session boundaries ([US-116] moved it off the broker namespace). `MarketStatusPill` and `StaleDataBanner` deliver the page-level UI. The per-position price is the `PriceBlock` primitive (`src/renderer/src/components/position-card/PriceBlock.tsx`) in the card header, right-aligned beside the `Open ↗` link: the price via `fmtMoney`, then — only when the quote carries a `prevClose` and the session is not `closed` — a signed dollar change line (`+$1.45` in `text-wb-green`, `-$1.70` in `text-wb-red`), then the card's subline (`30d to expiration`, `shares held · no option leg`, or a PMCC's `Nd to next decision`). With no quote it renders `—` and carries `title="Price unavailable"`. Closed cards pass no quote, so they show `—` / `closed` and no change line. `PositionsListPage` derives the active tickers and passes `quotes` and `session` down through `PositionsGrid`; the test id `position-card-{TICKER}-price` is unchanged from the table era.
 
 ## Revisions
 
 - **us-32** (original): shipped the live Price column, market-status pill, and stale-data banner against the Alpaca-era `MarketDataProvider` — REST seed via Alpaca `getStocksSnapshots` (`prev_daily_bar.c`) and the Alpaca streaming socket.
 - **market-data-massive-migration**: re-pointed the whole pipeline at the Massive provider. `getStockQuotes` now returns `Promise<Map<string, StockQuote>>` from `MassiveMarketDataProvider`; the REST seed reads Massive's snapshot endpoint (`/v2/snapshot/locale/us/markets/stocks/tickers/{ticker}`) for `prevClose`; streaming is a single JSON WebSocket (`wss://delayed.massive.com/stocks`, aggregate-minute `AM` frames) exposed as an RxJS `Observable`; the provider is built via `marketDataFactory.create()` (not `createMarketDataProvider`); and market status moved off `market-data:*` onto the broker namespace as `broker:market-status`. **[US-116] reversed that**: Massive is gone (US-99) and the exchange session is a market fact, so the channel is `market-data:market-status` again and there is no `broker:market-status`.
+- **us-18**: the positions table became a card grid. `PriceCell` (a `<td>`) and `PositionCard` (`PositionRow`) are deleted; the same price, change line and `Price unavailable` tooltip now render in the card header's `PriceBlock`, with the subline carrying the card's DTE or state. The `unavailable` caption under `—` is gone; the tooltip remains.
 
 ## Architecture decisions
 
@@ -36,6 +37,7 @@ The renderer's `useStockQuotes` hook uses TanStack Query as the single cache: a 
   - **Daily change computed renderer-side** from `(price, prevClose)`; stream ticks emit `prevClose: null` and the renderer carries the seed value forward.
   - **Stale precedence** — `streamError != null` or `now − dataUpdatedAt > 300_000` overrides `session` and forces the pill to `DELAYED`.
   - **Type sharing** — IPC-flat types live in `src/preload/index.d.ts`; renderer re-exports aliases from `src/renderer/src/api/market-data.ts` so renderer code never imports from `src/main/`.
+- The price is a card-header primitive shared by the wheel and PMCC cards, not a table cell → [ADR: position-card primitives shared across strategies](../architecture/02-adrs/position-card-primitives-shared-across-strategies.md)
 
 ## Contracts touched
 
@@ -47,8 +49,8 @@ The renderer's `useStockQuotes` hook uses TanStack Query as the single cache: a 
 - `GetStockQuotesPayloadSchema` / `SetStockQuoteTickersPayloadSchema` — Zod: `tickers: TickerListSchema` = `z.array(z.string().min(1).max(MAX_TICKER_LENGTH)).max(MAX_TICKERS_PER_REQUEST)`, where the constants are `MAX_TICKER_LENGTH = 10` and `MAX_TICKERS_PER_REQUEST = 50` → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
 - `StockQuote` (provider type) — extended with `prevClose: string` → [domain/market-data.md](../domain/market-data.md)
 - `IpcStockQuote` — IPC-flat shape with `prevClose: string | null` (set on REST seed, null on tick) → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
-- Preload bridge: stock quotes are namespaced as `window.api.marketData.stockQuotes` and market status as `window.api.broker.marketStatus`; `setStockQuoteTickers`, `onStockQuote`, `onStreamError` are flat on `window.api` → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
-- `marketDataQueryKeys.stockQuotes` — `['market', 'stock-quotes', [...tickers].sort().join(',')]` (prefix is `'market'`). Market status is not in `marketDataQueryKeys`; it lives in `brokerQueryKeys.marketStatus = ['broker', 'market-status']`, consumed by `useMarketStatus`.
+- Preload bridge: stock quotes and market status are namespaced as `window.api.marketData.stockQuotes` and [US-116] `window.api.marketData.marketStatus`; `setStockQuoteTickers`, `onStockQuote`, `onStreamError` are flat on `window.api` → [contracts/ipc-handlers.md](../contracts/ipc-handlers.md)
+- `marketDataQueryKeys.stockQuotes` — `['market', 'stock-quotes', [...tickers].sort().join(',')]` (prefix is `'market'`). [US-116] Market status is `marketDataQueryKeys.marketStatus = ['market', 'status']` (moved from `brokerQueryKeys`), consumed by `useMarketStatus`.
 
 ## Source files
 
@@ -65,9 +67,9 @@ The renderer's `useStockQuotes` hook uses TanStack Query as the single cache: a 
 - `src/renderer/src/hooks/useMarketStatus.ts`
 - `src/renderer/src/hooks/useStockQuotes.ts` — REST seed + stream bridge
 - `src/renderer/src/components/MarketStatusPill.tsx`
-- `src/renderer/src/components/PriceCell.tsx`
 - `src/renderer/src/components/StaleDataBanner.tsx`
-- `src/renderer/src/components/PositionCard.tsx` — inserted `PriceCell` between Phase and Strike
+- `src/renderer/src/components/position-card/PriceBlock.tsx` — [us-18] the card header's price + change line (replaces the deleted `PriceCell.tsx`, which `PositionCard.tsx` rendered between Phase and Strike)
+- `src/renderer/src/components/PositionsGrid.tsx` — [us-18] passes `quotes` / `session` to each card
 - `src/renderer/src/pages/PositionsListPage.tsx` — derives tickers, mounts pill + banner
 - `src/renderer/src/lib/market-status.ts` — `deriveMarketStatusDisplay` (refactor extraction)
 - `src/renderer/src/index.css` — `@keyframes wb-pulse`

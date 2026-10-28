@@ -12,6 +12,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { localDate, localToday } from './dates'
 import { reloadPositionsList } from './helpers'
+import { optionSnapshot } from './market-data-fixtures'
 
 const APP_PATH = path.join(__dirname, '../out/main/index.js')
 const APP_CWD = path.join(__dirname, '..')
@@ -38,30 +39,16 @@ function occSym(
 
 const AAPL_OCC = occSym('AAPL', EXPIRATION_ISO, 'PUT', STRIKE)
 
-// Full OptionSnapshot shape required by FakeMarketDataProvider
-function makeSnapshot(bid: string, ask: string, mid: string): object {
-  return {
-    bid,
-    ask,
-    mid,
-    lastTrade: mid,
-    openInterest: null,
-    volume: null,
-    greeks: { delta: '-0.30', gamma: '0.02', theta: '-0.05', vega: '0.10', iv: '0.25' },
-    timestamp: new Date().toISOString()
-  }
-}
-
 // AC-1/2/4/6: mid=1.30 → pnl = (3.50-1.30)*100 = +$220.00 → 62.86% of max → hits 50% target
-const SNAP_NORMAL = makeSnapshot('1.20', '1.40', '1.30')
+const SNAP_NORMAL = optionSnapshot('1.20', '1.40', '1.30')
 // AC-3: mid=5.20 → pnl = (3.50-5.20)*100 = -$170.00
-const SNAP_LOSS = makeSnapshot('5.10', '5.30', '5.20')
+const SNAP_LOSS = optionSnapshot('5.10', '5.30', '5.20')
 // AC-7: spread = (1.50-0.50)/1.00 = 100% > 10% → wide spread warning
-const SNAP_WIDE = makeSnapshot('0.50', '1.50', '1.00')
+const SNAP_WIDE = optionSnapshot('0.50', '1.50', '1.00')
 // AC-8: bid=0 → no bid; mid=0.03 → pnl = (3.50-0.03)*100 = +$347.00
-const SNAP_NO_BID = makeSnapshot('0', '0.05', '0.03')
+const SNAP_NO_BID = optionSnapshot('0', '0.05', '0.03')
 // AC-5: mid=2.50 → pnl = (3.50-2.50)*100 = +$100 → 28.57% of max → hits override 25% target
-const SNAP_TARGET_OVERRIDE = makeSnapshot('2.45', '2.55', '2.50')
+const SNAP_TARGET_OVERRIDE = optionSnapshot('2.45', '2.55', '2.50')
 
 const AAPL_STOCK_QUOTE = {
   price: '182.45',
@@ -185,7 +172,7 @@ describe('US-33: option mid-price and unrealized P&L for open legs', () => {
     if (dbPath && fs.existsSync(dbPath)) fs.unlinkSync(dbPath)
   })
 
-  it('AC-1: displays option mid-price as $1.30 in the Opt Mid column for an open CSP', async () => {
+  it('AC-1: displays option mid-price as $1.30 on the card for an open CSP', async () => {
     dbPath = path.join(os.tmpdir(), `wb-e2e-us33-ac1-${Date.now()}.db`)
     app = await launchWithMocks(dbPath, { optionSnapshots: { [AAPL_OCC]: SNAP_NORMAL } })
     const page = await app.firstWindow()
@@ -196,8 +183,9 @@ describe('US-33: option mid-price and unrealized P&L for open legs', () => {
 
     await page.waitForSelector('[data-testid="position-card-AAPL-opt-mid"]:has-text("$1.30")')
 
-    const headers = await page.$$eval('thead th', (ths) => ths.map((th) => th.textContent?.trim()))
-    expect(headers).toContain('Opt Mid')
+    // The mid's own text node: this fixture's 15% spread also renders AC-7's ⚠ beside it.
+    const mid = page.getByTestId('position-card-AAPL-opt-mid')
+    expect(await mid.evaluate((el) => el.firstChild?.textContent)).toBe('$1.30')
   })
 
   it('AC-2: shows unrealized P&L of +$220.00 in green when option has decayed below entry premium', async () => {

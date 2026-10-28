@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildOccSymbol } from './option-symbol'
+import { buildOccSymbol, occSymbolForLeg } from './option-symbol'
 
 describe('buildOccSymbol', () => {
   it('returns standard OCC string for whole-dollar PUT', () => {
@@ -116,5 +116,27 @@ describe('buildOccSymbol', () => {
         instrumentType: 'STOCK'
       })
     ).toThrow()
+  })
+})
+
+describe('occSymbolForLeg', () => {
+  const PUT_LEG = {
+    ticker: 'AAPL',
+    expiration: '2027-09-12',
+    strike: '180.0000',
+    instrumentType: 'PUT' as const
+  }
+
+  it("returns an option leg's OCC symbol", () => {
+    expect(occSymbolForLeg(PUT_LEG)).toBe('AAPL270912P00180000')
+  })
+
+  it.each([
+    { label: 'no instrument type (shares)', leg: { ...PUT_LEG, instrumentType: null } },
+    { label: 'no expiration', leg: { ...PUT_LEG, expiration: null } },
+    { label: 'no strike', leg: { ...PUT_LEG, strike: null } },
+    { label: 'a strike that fails validation', leg: { ...PUT_LEG, strike: '0.0000' } }
+  ])('returns null for $label', ({ leg }) => {
+    expect(occSymbolForLeg(leg)).toBeNull()
   })
 })

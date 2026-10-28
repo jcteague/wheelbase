@@ -11,6 +11,7 @@ export interface QueueItem {
   positionId: string
   ticker: string
   phase: string
+  ruleCode: string
   urgency: 'high' | 'medium' | 'low'
   summary: string
   quickAction: string

@@ -1,22 +1,14 @@
 import { useMemo, useRef, useState, type Ref } from 'react'
 import { useLocation, useSearch } from 'wouter'
 import type { ApiError } from '../api/error'
-import type { PositionListItem } from '../api/positions'
-import type {
-  OptionSnapshot,
-  OptionSnapshotsBySymbol,
-  StockQuote,
-  StockQuotesByTicker
-} from '../api/market-data'
-import { buildOccSymbol } from '../../../shared/option-symbol'
-import { PositionRow } from '../components/PositionCard'
 import { MarketStatusPill, type MarketStatusDisplay } from '../components/MarketStatusPill'
 import { PageHeader, PageLayout } from '../components/PageLayout'
+import { PositionsGrid } from '../components/PositionsGrid'
 import { StaleDataBanner } from '../components/StaleDataBanner'
 import { Badge } from '../components/ui/Badge'
 import { ErrorAlert } from '../components/ui/ErrorAlert'
 import { LoadingState } from '../components/ui/LoadingState'
-import { TableHeader } from '../components/ui/TablePrimitives'
+import { useManagementQueue } from '../hooks/useManagementQueue'
 import { useMarketStatusDisplay } from '../hooks/useMarketStatusDisplay'
 import { useOptionSnapshots, type ActiveLegSummary } from '../hooks/useOptionSnapshots'
 import { usePositions } from '../hooks/usePositions'
@@ -27,21 +19,9 @@ import { ManagementQueue } from '../components/ManagementQueue'
 import { NewPositionSheet } from '../components/NewPositionSheet'
 import type { PmccRecorded } from '../components/new-position-shared'
 import { AlertBox } from '../components/ui/AlertBox'
+import { actionsByPosition, type LaneContext } from '../lib/card-actions'
 import { PHASE_LABEL } from '../lib/phase'
 import { usePendingAssignments } from '../api/assignments'
-
-const TABLE_COLUMNS = [
-  'Ticker',
-  'Phase',
-  'Price',
-  'Opt Mid',
-  'P&L',
-  'Strike',
-  'Expiration',
-  'DTE',
-  'Premium',
-  'Cost Basis'
-]
 
 type PositionsHeaderProps = {
   count?: number
@@ -110,79 +90,6 @@ function SectionHeader({ title }: { title: string }): React.JSX.Element {
   )
 }
 
-function snapshotForItem(
-  item: PositionListItem,
-  snapshots: OptionSnapshotsBySymbol | undefined
-): OptionSnapshot | undefined {
-  if (!snapshots) return undefined
-  if (item.instrumentType !== 'PUT' && item.instrumentType !== 'CALL') return undefined
-  if (!item.expiration || !item.strike) return undefined
-  try {
-    const symbol = buildOccSymbol({
-      ticker: item.ticker,
-      expiration: item.expiration,
-      strike: item.strike,
-      instrumentType: item.instrumentType
-    })
-    return snapshots[symbol]
-  } catch {
-    return undefined
-  }
-}
-
-type PositionTableProps = {
-  items: PositionListItem[]
-  isClosed?: boolean
-  quotes?: StockQuotesByTicker
-  session?: string
-  snapshots?: OptionSnapshotsBySymbol
-  pendingPositionIds?: ReadonlySet<string>
-  profitTargetDefault?: number
-}
-
-function PositionTable({
-  items,
-  isClosed,
-  quotes = {},
-  session,
-  snapshots,
-  pendingPositionIds,
-  profitTargetDefault
-}: PositionTableProps): React.JSX.Element {
-  return (
-    <table
-      className={['w-full border-collapse text-[0.8125rem]', isClosed ? 'opacity-[0.55]' : '']
-        .filter(Boolean)
-        .join(' ')}
-    >
-      <thead>
-        <tr className="bg-wb-bg-surface border-b border-wb-border">
-          {TABLE_COLUMNS.map((col) => (
-            <TableHeader key={col} className="px-[16px] py-[8px]">
-              {col}
-            </TableHeader>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {items.map((item, i) => (
-          <PositionRow
-            key={item.id}
-            item={item}
-            index={i}
-            isClosed={isClosed}
-            quote={quotes[item.ticker] as StockQuote | undefined}
-            session={session}
-            snapshot={isClosed ? undefined : snapshotForItem(item, snapshots)}
-            hasPendingAssignment={pendingPositionIds?.has(item.id) ?? false}
-            profitTargetDefault={profitTargetDefault}
-          />
-        ))}
-      </tbody>
-    </table>
-  )
-}
-
 export function PositionsListPage(): React.JSX.Element {
   // [US-101] `/new` is this page with the New position sheet open, so the list (and its
   // scroll) survives opening and closing it.
@@ -235,6 +142,18 @@ export function PositionsListPage(): React.JSX.Element {
     () => new Set((pendingAssignmentsQuery.data ?? []).map((a) => a.positionId)),
     [pendingAssignmentsQuery.data]
   )
+
+  const queueQuery = useManagementQueue()
+  const cardActions = useMemo(() => {
+    const ctxById = new Map<string, LaneContext>(
+      activePositions.flatMap((p) =>
+        p.strategyType === 'WHEEL'
+          ? [[p.id, { price: quotesQuery.data?.[p.ticker]?.price ?? null, strike: p.strike }]]
+          : []
+      )
+    )
+    return actionsByPosition(queueQuery.data ?? [], ctxById)
+  }, [activePositions, quotesQuery.data, queueQuery.data])
 
   const { stale, minutesAgo } = quotesQuery
   const showNoBrokerBanner = settingsQuery.data?.activeBrokerEnv === 'none'
@@ -309,19 +228,20 @@ export function PositionsListPage(): React.JSX.Element {
             </div>
           )}
           <SectionHeader title="Active" />
-          <PositionTable
+          <PositionsGrid
             items={activePositions}
             quotes={quotesQuery.data}
             session={statusQuery.data?.session}
             snapshots={snapshotsQuery.data}
             pendingPositionIds={pendingPositionIds}
             profitTargetDefault={alertDefaultsQuery.data?.profitTargetPercent}
+            actionsByPosition={cardActions}
           />
 
           {closedPositions.length > 0 && (
             <>
               <SectionHeader title="Closed" />
-              <PositionTable
+              <PositionsGrid
                 items={closedPositions}
                 isClosed
                 profitTargetDefault={alertDefaultsQuery.data?.profitTargetPercent}
