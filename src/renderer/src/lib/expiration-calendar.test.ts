@@ -1,6 +1,7 @@
 import { parseISO } from 'date-fns'
 import { describe, expect, it } from 'vitest'
 import type { WheelListItem } from '../api/positions'
+import { XYZ_BACKGROUND } from '../test-fixtures/wheel-cards'
 import {
   AGENDA_HORIZON_DAYS,
   BUSY_WEEK_THRESHOLD,
@@ -30,6 +31,7 @@ function makePosition(overrides: Partial<WheelListItem> = {}): WheelListItem {
     premiumCollected: '250.0000',
     effectiveCostBasis: '177.50',
     profitTargetPercent: null,
+    nextEarnings: null,
     ...overrides
   }
 }
@@ -67,6 +69,12 @@ describe('toCalendarEntries', () => {
     const entries = toCalendarEntries(positions)
 
     expect(entries.map((e) => e.id)).toEqual(['active-option'])
+  })
+
+  it('leaves an active PMCC off the calendar beside an active wheel', () => {
+    const entries = toCalendarEntries([XYZ_BACKGROUND, makePosition({ id: 'wheel' })])
+
+    expect(entries.map((e) => e.id)).toEqual(['wheel'])
   })
 
   it('maps PositionListItem fields onto CalendarEntry', () => {

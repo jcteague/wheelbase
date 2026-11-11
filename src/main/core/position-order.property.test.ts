@@ -1,33 +1,59 @@
 import { describe, expect, it } from 'vitest'
 import fc from 'fast-check'
-import { sortPositionsByDte } from './position-order'
+import {
+  pmccNextDecisionDte,
+  sortPositionsByDte,
+  type PmccOrderLeg,
+  type PmccOrderLegs
+} from './position-order'
 
 const dteValue = fc.integer({ min: -30, max: 1200 })
 
+// A PMCC holds at least one LEAPS and any number of short calls, in no particular order.
+const pmccLegs: fc.Arbitrary<PmccOrderLegs> = fc
+  .tuple(fc.array(dteValue, { minLength: 1, maxLength: 2 }), fc.array(dteValue, { maxLength: 3 }))
+  .chain(([longDtes, shortDtes]) => {
+    const legs: PmccOrderLeg[] = [
+      ...longDtes.map((dte): PmccOrderLeg => ({ side: 'LONG', dte })),
+      ...shortDtes.map((dte): PmccOrderLeg => ({ side: 'SHORT', dte }))
+    ]
+    // At least one LEAPS above, so the shuffle always has a head.
+    return fc
+      .shuffledSubarray(legs, { minLength: legs.length, maxLength: legs.length })
+      .map(([head, ...tail]): PmccOrderLegs => [head, ...tail])
+  })
+
 // A wheel row carries its own DTE (null once shares are held); a PMCC row carries none and
-// is ordered by its short call's DTE, or its LEAPS DTE while no short call is open.
+// is ordered by its legs.
 const item = fc.oneof(
   fc.record({ id: fc.uuid(), dte: fc.option(dteValue, { nil: null }), pmcc: fc.constant(null) }),
-  fc.record({
-    id: fc.uuid(),
-    dte: fc.constant(null),
-    pmcc: fc.record({
-      long: fc.record({ dte: dteValue }),
-      short: fc.option(fc.record({ dte: dteValue }), { nil: null })
-    })
-  })
+  fc.record({ id: fc.uuid(), dte: fc.constant(null), pmcc: fc.record({ legs: pmccLegs }) })
 )
 
-type Item = {
-  dte: number | null
-  pmcc: { long: { dte: number }; short: { dte: number } | null } | null
+type Item = { dte: number | null; pmcc: { legs: PmccOrderLegs } | null }
+
+const dtesOf = (legs: readonly PmccOrderLeg[], side: PmccOrderLeg['side']): number[] =>
+  legs.filter((l) => l.side === side).map((l) => l.dte)
+
+// Independent statement of the order key, written from the list's documented rule: the
+// nearest short call, or the nearest LEAPS while no short call is open.
+function nextDecisionOracle(legs: readonly PmccOrderLeg[]): number {
+  const shorts = dtesOf(legs, 'SHORT')
+  return Math.min(...(shorts.length > 0 ? shorts : dtesOf(legs, 'LONG')))
 }
 
-// Independent statement of the order key, written from the list's documented rule.
-function orderDte(i: Item): number | null {
-  if (i.pmcc === null) return i.dte
-  return i.pmcc.short !== null ? i.pmcc.short.dte : i.pmcc.long.dte
-}
+const orderDte = (i: Item): number | null =>
+  i.pmcc === null ? i.dte : nextDecisionOracle(i.pmcc.legs)
+
+describe('pmccNextDecisionDte — properties', () => {
+  it('is the smallest short call DTE when any short is open, else the smallest LEAPS DTE', () => {
+    fc.assert(
+      fc.property(pmccLegs, (legs) => {
+        expect(pmccNextDecisionDte(legs)).toBe(nextDecisionOracle(legs))
+      })
+    )
+  })
+})
 
 describe('sortPositionsByDte — properties', () => {
   it('is a permutation of its input', () => {

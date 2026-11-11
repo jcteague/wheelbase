@@ -29,12 +29,12 @@ import type {
   PmccLedgerWithStrike,
   PmccOpeningDebitResult
 } from './core/costbasis'
+import type { PmccListPhase } from './pmcc-phase'
 import type { PmccOpenLegs } from './services/pmcc-ledger'
 export type { PmccOpenLegs }
 import { LegAction, LegRole } from './core/types'
 import type {
   InstrumentType,
-  PmccPhase,
   StrategyPhase,
   StrategyType,
   WheelPhase,
@@ -183,17 +183,48 @@ export interface GetPositionResult {
   pmccOpenLegs: PmccOpenLegs | null
 }
 
+/** One open PMCC leg on the list row: the LEAPS (`LONG`) or a short call (`SHORT`). */
 export interface PmccLegSummary {
+  legId: string
+  side: 'LONG' | 'SHORT'
   strike: string
   expiration: string
   dte: number
   contracts: number
+  /** The LEAPS debit or the short call's credit per share, 4 dp. */
+  fillPerShare: string
 }
 
-/** `short` is null between short calls — after one expires or closes and before the next opens. */
-export type PmccListSummary = { long: PmccLegSummary; short: PmccLegSummary | null } & Pick<
+/** Both figures come from one opening-debit calculation over the entry legs' fills and fees:
+ *  `perShare` 4 dp, `total` dollars 4 dp — never per share × 100 × contracts, which drifts on
+ *  the rounded per-share figure. */
+export type PmccEntryDebit = { perShare: string; total: string }
+
+export type PmccLongLegSummary = PmccLegSummary & { side: 'LONG' }
+export type PmccShortLegSummary = PmccLegSummary & { side: 'SHORT' }
+
+/**
+ * `legs` is exactly one LEAPS first, then the open short calls by expiration — no SHORT entry
+ * between short calls; the tuple makes an empty or short-first list unrepresentable. The ledger
+ * figures are the running US-103 ledger, so the names cannot drift.
+ */
+export type PmccListSummary = {
+  legs: [PmccLongLegSummary, ...PmccShortLegSummary[]]
+  /** SHORT_CALL_OPEN legs to date; a roll's ROLL_TO stays in its cycle. */
+  cycles: number
+  /** The entry legs' net debit; null when an entry leg or fill is missing. */
+  entryDebit: PmccEntryDebit | null
+  openedAt: string
+  /** The position's override, else the global default. */
+  managementWindowDte: number
+} & Pick<
   PmccLedgerResult,
-  'basisPerShare' | 'basisTotal'
+  | 'basisPerShare'
+  | 'basisTotal'
+  | 'leapsCostPerShare'
+  | 'shortCreditsPerShare'
+  | 'shortCreditsTotal'
+  | 'premiumRecoveredPercent'
 >
 
 export interface PositionListItemBase {
@@ -203,6 +234,8 @@ export interface PositionListItemBase {
   premiumCollected: string
   effectiveCostBasis: string
   profitTargetPercent: number | null
+  /** The stored next earnings date on or after today (ET); null when none is known. */
+  nextEarnings: string | null
 }
 
 export interface WheelListItem extends PositionListItemBase {
@@ -220,7 +253,8 @@ export interface WheelListItem extends PositionListItemBase {
 /** Wheel-only fields are typed null so the calendar and option polling stay wheel-only. */
 export interface PmccListItem extends PositionListItemBase {
   strategyType: 'PMCC'
-  phase: PmccPhase
+  /** The stored phase as read: a phase this build does not know renders the neutral card. */
+  phase: PmccListPhase
   pmcc: PmccListSummary
   strike: null
   expiration: null
@@ -365,6 +399,9 @@ export interface CreatePmccPositionResult {
   }
   costBasisSnapshot: CostBasisSnapshotRecord & { triggerEvent: 'PMCC_OPEN'; finalPnl: null }
   openingDebit: PmccOpeningDebitResult
+  /** The new position's `positions:list` row, built by the list's own code (management window,
+   *  earnings and ledger resolved as the list does); null when the list would omit it. */
+  listItem: PmccListItem | null
 }
 
 // ---------------------------------------------------------------------------

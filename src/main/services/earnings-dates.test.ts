@@ -8,7 +8,12 @@ import type { EarningsLookup } from '../core/screener'
 import type { EarningsCalendarRead } from '../integrations/finnhub-earnings'
 import { logger } from '../logger'
 import { makeTestDb } from '../test-utils'
-import { getEarnings, getEarningsCalendar, type EarningsCalendarFetcher } from './earnings-dates'
+import {
+  getEarnings,
+  getEarningsCalendar,
+  readStoredNextEarnings,
+  type EarningsCalendarFetcher
+} from './earnings-dates'
 
 vi.mock('../logger', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
@@ -697,5 +702,51 @@ describe('getEarnings — the fetch path is held to the same invariant as the st
     // The engine's holding window opens at startOfDay(now), so today's print is real
     // gap risk, not history.
     expect(result.get('AAPL')).toEqual({ status: 'found', date: '2026-08-17' })
+  })
+})
+
+// [US-108] The positions list's synchronous read of the store — never a fetch.
+describe('readStoredNextEarnings', () => {
+  const LIST_NOW = parseISO('2026-11-06T12:00:00')
+
+  it('returns only the stored next prints on or after today', () => {
+    const db = makeTestDb()
+    seedEarnings(db, [
+      { ticker: 'XYZ', nextEarnings: '2026-11-18', checkedThrough: '2026-12-31' },
+      { ticker: 'AAPL', nextEarnings: '2026-10-01', checkedThrough: '2026-12-31' },
+      { ticker: 'MSFT', nextEarnings: null, checkedThrough: '2026-12-31' }
+    ])
+
+    const result = readStoredNextEarnings(db, ['XYZ', 'AAPL', 'MSFT', 'TSLA'], LIST_NOW)
+
+    expect([...result]).toEqual([['XYZ', '2026-11-18']])
+  })
+
+  it('returns a print landing today — the boundary is inclusive', () => {
+    const db = makeTestDb()
+    seedEarnings(db, [{ ticker: 'XYZ', nextEarnings: '2026-11-06', checkedThrough: '2026-12-31' }])
+
+    expect(readStoredNextEarnings(db, ['XYZ'], LIST_NOW).get('XYZ')).toBe('2026-11-06')
+  })
+
+  it('returns a print the day before today as absent', () => {
+    const db = makeTestDb()
+    seedEarnings(db, [{ ticker: 'XYZ', nextEarnings: '2026-11-05', checkedThrough: '2026-12-31' }])
+
+    expect(readStoredNextEarnings(db, ['XYZ'], LIST_NOW).has('XYZ')).toBe(false)
+  })
+
+  it('degrades to an empty map and logs earnings_date_read_failed when the read throws', () => {
+    const db = makeTestDb()
+    seedEarnings(db, [{ ticker: 'XYZ', nextEarnings: '2026-11-18', checkedThrough: '2026-12-31' }])
+    vi.spyOn(db, 'prepare').mockImplementation(() => {
+      throw new Error('database is locked')
+    })
+
+    expect(readStoredNextEarnings(db, ['XYZ'], LIST_NOW).size).toBe(0)
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ tickers: ['XYZ'] }),
+      'earnings_date_read_failed'
+    )
   })
 })

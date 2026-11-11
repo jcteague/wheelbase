@@ -24,6 +24,7 @@ import {
   seedWheelCompletePosition
 } from './calendar-helpers'
 import { localDate } from './dates'
+import { buildEarningsFixtures, type EarningsFixture } from './earnings-fixtures'
 import { reloadPositionsList } from './helpers'
 import { flatStockQuote, optionSnapshot } from './market-data-fixtures'
 import { occSymbol } from './pmcc-helpers'
@@ -54,6 +55,11 @@ export interface BackgroundOptions {
   aaplPut?: OptionQuote | null
   /** Snapshots for positions a scenario seeds beyond the Background, by OCC symbol. */
   extraSnapshots?: Record<string, OptionQuote>
+  /** Whole snapshot fields (e.g. `greeks`) replacing a snapshot's defaults, by OCC symbol. */
+  snapshotOverrides?: Record<string, Record<string, unknown>>
+  /** [US-108] The fake earnings calendar by ticker, day offsets from the run day. Omitted, the
+   *  calendar is not faked at all (the US-18 specs' default). */
+  earnings?: Record<string, EarningsFixture>
   activities?: ActivityFixture[]
 }
 
@@ -78,6 +84,8 @@ export async function launchBackground(
     msftCall = MSFT_CALL,
     aaplPut = AAPL_PUT,
     extraSnapshots = {},
+    snapshotOverrides = {},
+    earnings,
     activities
   }: BackgroundOptions = {}
 ): Promise<CardsHarness> {
@@ -97,9 +105,15 @@ export async function launchBackground(
   )
   env.WHEELBASE_MOCK_OPTION_SNAPSHOTS = JSON.stringify(
     Object.fromEntries(
-      Object.entries(optionQuotes).map(([symbol, quote]) => [symbol, optionSnapshot(...quote)])
+      Object.entries(optionQuotes).map(([symbol, quote]) => [
+        symbol,
+        optionSnapshot(...quote, snapshotOverrides[symbol])
+      ])
     )
   )
+  if (earnings) {
+    env.WHEELBASE_MOCK_EARNINGS = JSON.stringify(buildEarningsFixtures(earnings, localDate))
+  }
   const app = await launchElectron(env)
   const page = await getPage(app)
 
@@ -152,7 +166,8 @@ export function cardFor(page: Page, ticker: string): Locator {
     .filter({ has: page.locator(`[data-testid="position-ticker"]:text-is("${ticker}")`) })
 }
 
-async function childTexts(locator: Locator): Promise<string[]> {
+/** The text of each of `locator`'s child elements, in DOM order. */
+export async function childTexts(locator: Locator): Promise<string[]> {
   return locator.evaluate((el) => Array.from(el.children).map((child) => child.textContent ?? ''))
 }
 

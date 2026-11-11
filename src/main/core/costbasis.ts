@@ -5,6 +5,7 @@
 
 import Decimal from 'decimal.js'
 import { fixed4, money4 } from '../../shared/decimal-text'
+import { toFiniteDecimal } from './finite-decimal'
 
 Decimal.set({ rounding: Decimal.ROUND_HALF_UP })
 
@@ -27,6 +28,21 @@ function round4(value: Decimal): Decimal {
 
 function sharesFromContracts(contracts: number): number {
   return contracts * SHARES_PER_CONTRACT
+}
+
+/** An option mid as a Decimal; throws `<name> must be >= 0` unless it is a finite, non-negative number. */
+function parseMid(value: string, name: string): Decimal {
+  const mid = toFiniteDecimal(value)
+  if (mid === null || mid.lt(0)) {
+    throw new Error(`${name} must be >= 0`)
+  }
+  return mid
+}
+
+function assertPositiveContracts(contracts: number, name = 'contracts'): void {
+  if (!Number.isInteger(contracts) || contracts < 1) {
+    throw new Error(`${name} must be a positive integer`)
+  }
 }
 
 function calculateCycleDays(positionOpenedDate: string, fillDate: string): number {
@@ -288,13 +304,8 @@ export function computeUnrealizedPnl(input: UnrealizedPnlInput): UnrealizedPnlRe
   if (!entry.isFinite() || entry.lte(0)) {
     throw new Error('entryPremium must be > 0')
   }
-  const current = new Decimal(input.currentMid)
-  if (!current.isFinite() || current.lt(0)) {
-    throw new Error('currentMid must be >= 0')
-  }
-  if (!Number.isInteger(input.contracts) || input.contracts < 1) {
-    throw new Error('contracts must be a positive integer')
-  }
+  const current = parseMid(input.currentMid, 'currentMid')
+  assertPositiveContracts(input.contracts)
 
   const shares = sharesFromContracts(input.contracts)
   const maxProfitDec = entry.times(shares)
@@ -305,6 +316,46 @@ export function computeUnrealizedPnl(input: UnrealizedPnlInput): UnrealizedPnlRe
     pnl: money4(pnlDec),
     pnlPercent: fixed4(pnlPercentDec),
     maxProfit: money4(maxProfitDec)
+  }
+}
+
+export interface PmccUnrealizedPnlInput {
+  legs: { side: 'LONG' | 'SHORT'; mid: string; contracts: number }[]
+  basisTotal: string
+}
+
+export interface PmccUnrealizedPnlResult {
+  gross: string
+  pnl: string
+  pnlPercentOfBasis: string | null
+}
+
+/** One leg's signed mark in dollars: `+` for the LEAPS, `−` for a short. Throws on a bad mid or count. */
+function legMarkDollars(leg: PmccUnrealizedPnlInput['legs'][number]): Decimal {
+  const mid = parseMid(leg.mid, 'mid')
+  assertPositiveContracts(leg.contracts)
+  const dollars = mid.times(sharesFromContracts(leg.contracts))
+  return leg.side === 'SHORT' ? dollars.negated() : dollars
+}
+
+/** Marks every open PMCC leg at its mid and nets the result against the position's cost basis. */
+export function computePmccUnrealizedPnl(input: PmccUnrealizedPnlInput): PmccUnrealizedPnlResult {
+  const basisTotal = toFiniteDecimal(input.basisTotal)
+  if (basisTotal === null) {
+    throw new Error('basisTotal must be a finite number')
+  }
+  if (!input.legs.some((leg) => leg.side === 'LONG')) {
+    throw new Error('legs must include a LONG leg')
+  }
+  const marks = input.legs.map(legMarkDollars)
+
+  const gross = marks.reduce((total, mark) => total.plus(mark), new Decimal(0))
+  const pnl = gross.minus(basisTotal)
+
+  return {
+    gross: money4(gross),
+    pnl: money4(pnl),
+    pnlPercentOfBasis: basisTotal.gt(0) ? fixed4(pnl.dividedBy(basisTotal).times(100)) : null
   }
 }
 
@@ -435,9 +486,7 @@ export function calculatePmccLedger(
 ): PmccLedgerWithStrike
 export function calculatePmccLedger(input: PmccLedgerInput): PmccLedgerResult
 export function calculatePmccLedger(input: PmccLedgerInput): PmccLedgerResult {
-  if (!Number.isInteger(input.leapsContracts) || input.leapsContracts <= 0) {
-    throw new Error('leapsContracts must be a positive integer')
-  }
+  assertPositiveContracts(input.leapsContracts, 'leapsContracts')
   const shares = sharesFromContracts(input.leapsContracts)
 
   const leapsCostTotal = sumSide(input.contributions, 'LONG')

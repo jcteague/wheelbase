@@ -14,6 +14,7 @@ import { useDismissAlert } from '../hooks/useDismissAlert'
 import type { PmccCardProps } from '../components/position-card/PmccCard'
 import type { WheelCardProps } from '../components/position-card/WheelCard'
 import { AAPL, AAPL_QUOTE as STORY_AAPL_QUOTE, MSFT, NVDA, XYZ } from '../test-fixtures/wheel-cards'
+import { occSymbolForLeg } from '../../../shared/option-symbol'
 import { PositionsListPage } from './PositionsListPage'
 
 vi.mock('../hooks/usePositions')
@@ -88,6 +89,7 @@ vi.mock('../components/position-card/WheelCard', () => ({
     <div
       data-testid={isClosed ? 'position-card-closed' : 'position-card'}
       data-ticker={item.ticker}
+      data-kind="wheel"
     >
       <span>
         {item.ticker}
@@ -110,13 +112,21 @@ vi.mock('../components/position-card/WheelCard', () => ({
   )
 }))
 vi.mock('../components/position-card/PmccCard', () => ({
-  PmccCard: ({ item, isClosed, quote }: PmccCardProps) => (
+  PmccCard: (props: PmccCardProps) => (
     <div
-      data-testid={isClosed ? 'position-card-closed' : 'position-card'}
-      data-ticker={item.ticker}
+      data-testid={props.isClosed ? 'position-card-closed' : 'position-card'}
+      data-ticker={props.item.ticker}
+      data-kind="pmcc"
+      data-target={props.profitTargetDefault}
     >
-      <span>{item.ticker}</span>
-      <span data-testid={`mock-quote-${item.ticker}`}>{quote?.price ?? 'NO_QUOTE'}</span>
+      <span>{props.item.ticker}</span>
+      <span data-testid={`mock-quote-${props.item.ticker}`}>
+        {props.quote?.price ?? 'NO_QUOTE'}
+      </span>
+      <span data-testid={`mock-snapshots-${props.item.ticker}`}>
+        {props.snapshots ? Object.keys(props.snapshots).join(' ') : 'NO_SNAPSHOTS'}
+      </span>
+      {'actions' in props && <span data-testid={`mock-pmcc-actions-${props.item.ticker}`} />}
     </div>
   )
 }))
@@ -192,7 +202,8 @@ const ITEM_1: PositionListItem = {
   entryPremiumPerContract: '3.5000',
   premiumCollected: '250.0000',
   effectiveCostBasis: '177.5000',
-  profitTargetPercent: null
+  profitTargetPercent: null,
+  nextEarnings: null
 }
 
 const ITEM_2: PositionListItem = {
@@ -210,7 +221,8 @@ const ITEM_2: PositionListItem = {
   entryPremiumPerContract: '5.0000',
   premiumCollected: '300.0000',
   effectiveCostBasis: '397.0000',
-  profitTargetPercent: null
+  profitTargetPercent: null,
+  nextEarnings: null
 }
 
 const CLOSED_ITEM: PositionListItem = {
@@ -228,7 +240,8 @@ const CLOSED_ITEM: PositionListItem = {
   entryPremiumPerContract: null,
   premiumCollected: '250.0000',
   effectiveCostBasis: '177.5000',
-  profitTargetPercent: null
+  profitTargetPercent: null,
+  nextEarnings: null
 }
 
 const TSLA_ITEM: PositionListItem = {
@@ -246,7 +259,8 @@ const TSLA_ITEM: PositionListItem = {
   entryPremiumPerContract: '4.0000',
   premiumCollected: '100.0000',
   effectiveCostBasis: '198.0000',
-  profitTargetPercent: null
+  profitTargetPercent: null,
+  nextEarnings: null
 }
 
 const HOLDING_ITEM: PositionListItem = {
@@ -264,7 +278,8 @@ const HOLDING_ITEM: PositionListItem = {
   entryPremiumPerContract: null,
   premiumCollected: '500.0000',
   effectiveCostBasis: '450.0000',
-  profitTargetPercent: null
+  profitTargetPercent: null,
+  nextEarnings: null
 }
 
 function makeOptionSnapshot(mid: string): OptionSnapshot {
@@ -710,6 +725,66 @@ it('derives ActiveLegSummary[] from active positions and passes to useOptionSnap
     { ticker: 'AAPL', expiration: '2026-04-17', strike: '180.0000', instrumentType: 'PUT' },
     { ticker: 'MSFT', expiration: '2026-04-04', strike: '400.0000', instrumentType: 'PUT' }
   ])
+})
+
+// ── US-108: both PMCC legs are quoted ───────────────────────────────────────
+
+it('asks useOptionSnapshots for the wheel leg and one CALL per PMCC leg', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([AAPL, XYZ]))
+
+  render(<PositionsListPage />)
+  const legsArg = mockUseOptionSnapshots.mock.calls.at(-1)?.[0]
+  expect(legsArg).toEqual([
+    { ticker: 'AAPL', expiration: '2027-09-12', strike: '180.0000', instrumentType: 'PUT' },
+    { ticker: 'XYZ', expiration: '2028-01-21', strike: '80.0000', instrumentType: 'CALL' },
+    { ticker: 'XYZ', expiration: '2027-08-20', strike: '118.0000', instrumentType: 'CALL' }
+  ])
+  expect(legsArg?.map(occSymbolForLeg)).toEqual([
+    'AAPL270912P00180000',
+    'XYZ280121C00080000',
+    'XYZ270820C00118000'
+  ])
+})
+
+it('hands the PMCC card the snapshot map and the profit-target default', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([AAPL, XYZ]))
+  mockUseOptionSnapshots.mockReturnValue(
+    makeOptionSnapshotsResult({
+      AAPL270912P00180000: makeOptionSnapshot('1.30'),
+      XYZ280121C00080000: makeOptionSnapshot('26.10')
+    })
+  )
+
+  render(<PositionsListPage />)
+  expect(screen.getByTestId('mock-snapshots-XYZ')).toHaveTextContent(
+    /^AAPL270912P00180000 XYZ280121C00080000$/
+  )
+  const xyz = screen.getAllByTestId('position-card')[1]
+  expect(xyz).toHaveAttribute('data-kind', 'pmcc')
+  expect(xyz).toHaveAttribute('data-target', '50')
+})
+
+it('never routes a PMCC queue row to a wheel card or to the PMCC card as actions', () => {
+  mockUsePositions.mockReturnValue(makePositionsResult([AAPL, XYZ]))
+  mockUseManagementQueue.mockReturnValue(
+    makeQueueResult([
+      {
+        ...queueRow(XYZ, 'MANAGEMENT_WINDOW', '14 DTE remaining — review for roll or close'),
+        phase: 'PMCC_OPEN'
+      },
+      queueRow(AAPL, 'MANAGEMENT_WINDOW', '30 DTE remaining — review for roll or close')
+    ])
+  )
+
+  render(<PositionsListPage />)
+  const cards = screen.getAllByTestId('position-card')
+  expect(cards.map((c) => [c.dataset.ticker, c.dataset.kind])).toEqual([
+    ['AAPL', 'wheel'],
+    ['XYZ', 'pmcc']
+  ])
+  expect(screen.getByTestId('mock-actions-AAPL')).toHaveTextContent(/^MANAGEMENT WINDOW \(gold\)$/)
+  expect(screen.queryByTestId('mock-actions-XYZ')).not.toBeInTheDocument()
+  expect(screen.queryByTestId('mock-pmcc-actions-XYZ')).not.toBeInTheDocument()
 })
 
 it('passes session to useOptionSnapshots so polling stops when market is closed', () => {

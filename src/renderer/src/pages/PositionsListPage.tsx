@@ -10,7 +10,7 @@ import { ErrorAlert } from '../components/ui/ErrorAlert'
 import { LoadingState } from '../components/ui/LoadingState'
 import { useManagementQueue } from '../hooks/useManagementQueue'
 import { useMarketStatusDisplay } from '../hooks/useMarketStatusDisplay'
-import { useOptionSnapshots, type ActiveLegSummary } from '../hooks/useOptionSnapshots'
+import { useOptionSnapshots } from '../hooks/useOptionSnapshots'
 import { usePositions } from '../hooks/usePositions'
 import { useAlertDefaults } from '../hooks/useSettings'
 import { useStockQuotes } from '../hooks/useStockQuotes'
@@ -21,6 +21,7 @@ import type { PmccRecorded } from '../components/new-position-shared'
 import { AlertBox } from '../components/ui/AlertBox'
 import { actionsByPosition, type LaneContext } from '../lib/card-actions'
 import { PHASE_LABEL } from '../lib/phase'
+import { legsForSnapshots } from '../lib/snapshot-legs'
 import { usePendingAssignments } from '../api/assignments'
 
 type PositionsHeaderProps = {
@@ -121,16 +122,7 @@ export function PositionsListPage(): React.JSX.Element {
     [activePositions]
   )
 
-  const legs = useMemo<ActiveLegSummary[]>(
-    () =>
-      activePositions.map((p) => ({
-        ticker: p.ticker,
-        expiration: p.expiration,
-        strike: p.strike,
-        instrumentType: p.instrumentType
-      })),
-    [activePositions]
-  )
+  const legs = useMemo(() => legsForSnapshots(activePositions), [activePositions])
 
   const quotesQuery = useStockQuotes(tickers)
   const { settingsQuery, hasMarketData, statusQuery, display } = useMarketStatusDisplay(

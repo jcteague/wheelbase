@@ -15,7 +15,7 @@ import type {
 } from '../core/types'
 import { activeLegSubquery } from './active-leg-sql'
 import { readLegs } from './leg-rows'
-import { pmccInitialNetDebit } from './pmcc-opening-legs'
+import { pmccEntryDebit } from './pmcc-opening-legs'
 import { pmccLedgerFromLegs, pmccOpenLegs } from './pmcc-ledger'
 import { logger } from '../logger'
 
@@ -206,7 +206,7 @@ export function getPosition(db: Database.Database, positionId: string): GetPosit
   const allSnapshots: CostBasisSnapshotRecord[] = snapshotRows.map(mapSnapshotRow)
 
   const isPmcc = position.strategyType === 'PMCC'
-  const initialNetDebit = isPmcc ? pmccInitialNetDebit(legs) : null
+  const initialNetDebit = isPmcc ? (pmccEntryDebit(legs)?.total ?? null) : null
   const pmccLedger = isPmcc ? pmccLedgerFromLegs(legs) : null
   const openLegs = isPmcc ? pmccOpenLegs(legs) : null
 

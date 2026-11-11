@@ -48,8 +48,12 @@ vi.mock('./position-card/PmccCard', () => ({
       data-testid={props.isClosed ? 'position-card-closed' : 'position-card'}
       data-ticker={props.item.ticker}
       data-kind="pmcc"
+      data-target={props.profitTargetDefault}
     >
       {'actions' in props && <span data-testid={`mock-actions-${props.item.ticker}`} />}
+      <span data-testid={`mock-snapshots-${props.item.ticker}`}>
+        {props.snapshots ? Object.keys(props.snapshots).join(' ') : 'NO_SNAPSHOTS'}
+      </span>
       <span data-testid={`mock-quote-${props.item.ticker}`}>
         {props.quote?.price ?? 'NO_QUOTE'}
       </span>
@@ -149,5 +153,39 @@ describe('PositionsGrid', () => {
 
     expect(screen.getByTestId('position-card-closed')).toHaveAttribute('data-ticker', 'AAPL')
     expect(screen.getByTestId('mock-snapshot-AAPL')).toHaveTextContent('NO_SNAPSHOT')
+  })
+
+  // [US-108] The PMCC card looks up each leg's OCC symbol itself, so it gets the whole map.
+  it('hands an active PMCC card the whole snapshot map and the profit-target default', () => {
+    render(
+      <PositionsGrid
+        items={[AAPL, XYZ]}
+        snapshots={{
+          AAPL270912P00180000: optionSnapshot('1.25', '1.35', '1.30'),
+          XYZ280121C00080000: optionSnapshot('25.70', '26.50', '26.10')
+        }}
+        profitTargetDefault={60}
+      />
+    )
+
+    expect(screen.getByTestId('mock-snapshots-XYZ')).toHaveTextContent(
+      /^AAPL270912P00180000 XYZ280121C00080000$/
+    )
+    const xyz = screen.getAllByTestId('position-card')[1]
+    expect(cardSummary(xyz)).toEqual(['XYZ', 'pmcc'])
+    expect(xyz).toHaveAttribute('data-target', '60')
+  })
+
+  it('withholds snapshots from a closed PMCC card', () => {
+    render(
+      <PositionsGrid
+        items={[{ ...XYZ, status: 'CLOSED' }]}
+        isClosed
+        snapshots={{ XYZ280121C00080000: optionSnapshot('25.70', '26.50', '26.10') }}
+      />
+    )
+
+    expect(cardSummary(screen.getByTestId('position-card-closed'))).toEqual(['XYZ', 'pmcc'])
+    expect(screen.getByTestId('mock-snapshots-XYZ')).toHaveTextContent(/^NO_SNAPSHOTS$/)
   })
 })

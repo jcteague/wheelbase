@@ -60,4 +60,13 @@ describe('LegBlock', () => {
     )
     expect(marks).toHaveClass('text-wb-red')
   })
+
+  it("a mark's title is each action's own tooltip when it carries one", () => {
+    renderLeg([{ ...CALL_BREACHED, tooltip: 'Stock is 1.2% above the strike' }, EXPIRING])
+
+    expect(screen.getByText('▲ ◷')).toHaveAttribute(
+      'title',
+      'Stock is 1.2% above the strike\n◷ EXPIRING · Expires in 4 days at $430.00 strike'
+    )
+  })
 })

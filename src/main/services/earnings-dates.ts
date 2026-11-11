@@ -302,3 +302,24 @@ export async function getEarnings(
   const calendar = await getEarningsCalendar(db, tickers, options)
   return new Map([...calendar].map(([ticker, knowledge]) => [ticker, knowledge.next]))
 }
+
+/**
+ * The stored next print on or after today (ET) per ticker — a synchronous read of the store
+ * that never fetches, for the positions list. A ticker with no row, a null date or a print
+ * already past is absent; a read failure degrades to an empty map (logged by `readRows`).
+ */
+export function readStoredNextEarnings(
+  db: Database.Database,
+  tickers: readonly string[],
+  now: Date
+): Map<string, string> {
+  const rows = readRows(db, [...new Set(tickers)])
+  return new Map(
+    [...rows].flatMap(
+      ([ticker, row]): Array<[string, string]> =>
+        row.next_earnings !== null && answersNextPrint(row.next_earnings, now)
+          ? [[ticker, row.next_earnings]]
+          : []
+    )
+  )
+}

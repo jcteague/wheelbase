@@ -1,9 +1,9 @@
 // [US-64] candidate-chain — pure helpers for screening a watchlist ticker's put chain.
 // No I/O, no logging: takes plain values (adapter quotes, error codes) and returns
 // plain results. Type-only imports keep this decoupled from the provider vendor.
-import Decimal from 'decimal.js'
 import { addDays, format } from 'date-fns'
 import type { MarketDataErrorCode, OptionChainQuote } from '../integrations/market-data-provider'
+import { toFiniteDecimal } from './finite-decimal'
 
 export type DteWindow = { min: number; max: number }
 
@@ -35,17 +35,6 @@ export function dteWindowToExpirationRange(
   return {
     from: format(addDays(currentDate, window.min), 'yyyy-MM-dd'),
     to: format(addDays(currentDate, window.max), 'yyyy-MM-dd')
-  }
-}
-
-/** The quote string as a finite Decimal, or null when it does not parse to one —
- *  Decimal accepts 'NaN'/'Infinity' without throwing, so finiteness is checked too. */
-function toFiniteDecimal(value: string): Decimal | null {
-  try {
-    const parsed = new Decimal(value)
-    return parsed.isFinite() ? parsed : null
-  } catch {
-    return null
   }
 }
 

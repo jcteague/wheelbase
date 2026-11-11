@@ -1,4 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
+import type { PmccAction } from '../../../main/core/pmcc-card'
 import {
   actionsByPosition,
   formatActionLine,
@@ -320,14 +321,30 @@ describe('actionsByPosition', () => {
   })
 })
 
-describe('CardAction — rank and status word are closed sets', () => {
-  it('ranks only into the four wheel lanes', () => {
-    expectTypeOf<CardAction['rank']>().toEqualTypeOf<1 | 2 | 4 | 5>()
+// [US-108] The PMCC card reuses the wheel card's lanes: ✕ BELOW BREAKEVEN and ◆ ROLL WINDOW
+// take the reserved ranks 0 and 3. Compile-time pins, enforced by `pnpm typecheck`.
+describe('CardAction — lanes, glyphs and status words are closed sets', () => {
+  it('ranks into the six card lanes', () => {
+    expectTypeOf<CardAction['rank']>().toEqualTypeOf<0 | 1 | 2 | 3 | 4 | 5>()
   })
 
-  it('names only the four wheel status words', () => {
+  it('draws the four lane glyphs', () => {
+    expectTypeOf<CardAction['glyph']>().toEqualTypeOf<'✕' | '▲' | '◆' | '◷'>()
+  })
+
+  it('names the wheel and PMCC status words', () => {
     expectTypeOf<CardAction['statusWord']>().toEqualTypeOf<
-      'CALL BREACHED' | 'STRIKE PROXIMITY' | 'EXPIRING' | 'MANAGEMENT WINDOW'
+      | 'BELOW BREAKEVEN'
+      | 'CALL BREACHED'
+      | 'STRIKE PROXIMITY'
+      | 'ASSIGNMENT RISK'
+      | 'ROLL WINDOW'
+      | 'EXPIRING'
+      | 'MANAGEMENT WINDOW'
     >()
+  })
+
+  it('accepts a PMCC action as a card action with no mapping', () => {
+    expectTypeOf<PmccAction>().toExtend<CardAction>()
   })
 })

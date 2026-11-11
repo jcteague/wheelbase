@@ -39,13 +39,15 @@ export function CardShell({
   href,
   children
 }: CardShellProps): React.JSX.Element {
+  function navigateToHref(): void {
+    window.location.hash = href
+  }
+
   return (
     <div
       data-testid={closed ? 'position-card-closed' : 'position-card'}
       data-edge={edge ?? accent}
-      onClick={() => {
-        window.location.hash = href
-      }}
+      onClick={navigateToHref}
       className={[
         'flex cursor-pointer flex-col overflow-hidden rounded-[10px] border border-wb-border bg-wb-bg-surface transition-colors',
         edge

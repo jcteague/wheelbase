@@ -27,6 +27,7 @@ import {
   type WatchlistConditions
 } from './ivr-helpers'
 import { BASE_DAY, sessionsBefore } from './trading-day-fixtures'
+import { buildEarningsFixtures, type EarningsFixture } from './earnings-fixtures'
 
 /** Every fixture quote carries the same stamp so `quoteTimestamp` (the newest ranked
  *  strike's timestamp) is deterministic for the stale-caption assertion. Pinned to the
@@ -356,41 +357,6 @@ export type ScreenerLaunchOpts = {
   earningsUnreachable?: boolean
 }
 
-/** [US-70] An earnings date as a day offset from today, so a fixture lands the same
- *  number of days out on any run date — the same technique as `dteOffset`. `null` is
- *  a failed request for that ticker.
- *
- *  [US-98] `{ next, last }` states both sides explicitly, for the specs that care which
- *  side of an observation a print fell on. `dayOffset` cannot express that: it is one
- *  date the fake reads as answering whichever side of today it lands on. */
-export type EarningsFixture =
-  | { dayOffset: number }
-  | { next: string | null; last: string | null }
-  | null
-
-/** Day offsets → the `EarningsLookup` record the fake calendar reads. */
-type EarningsFeedFixture =
-  | { status: 'found'; date: string }
-  | { status: 'read'; next: string | null; last: string | null }
-  | { status: 'unavailable' }
-
-function toFeedFixture(fixture: EarningsFixture): EarningsFeedFixture {
-  if (fixture === null) return { status: 'unavailable' }
-  if ('dayOffset' in fixture) return { status: 'found', date: screenerDate(fixture.dayOffset) }
-  return { status: 'read', next: fixture.next, last: fixture.last }
-}
-
-function buildEarningsFixtures(
-  byTicker: Record<string, EarningsFixture>
-): Record<string, EarningsFeedFixture> {
-  return Object.fromEntries(
-    Object.entries(byTicker).map(([ticker, fixture]) => [
-      ticker.toUpperCase(),
-      toFeedFixture(fixture)
-    ])
-  )
-}
-
 /**
  * [US-70] Days out the default earnings fixture sits — past every fixture's expiry (the
  * furthest is 44 DTE) and inside the screener's lookahead, so an ordinary candidate
@@ -627,7 +593,7 @@ function screenerLaunchEnv(dbPath: string, opts: ScreenerLaunchOpts): Record<str
   // `earnings` explicitly — including `{}`, which leaves every ticker `unknown` — opts
   // out of the all-clear default.
   env.WHEELBASE_MOCK_EARNINGS = JSON.stringify(
-    buildEarningsFixtures(opts.earnings ?? clearEarningsFor(fixtures))
+    buildEarningsFixtures(opts.earnings ?? clearEarningsFor(fixtures), screenerDate)
   )
   if (opts.earningsUnreachable) env.WHEELBASE_MOCK_EARNINGS_UNREACHABLE = '1'
   return env

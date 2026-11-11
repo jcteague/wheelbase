@@ -53,6 +53,8 @@ export function PositionsGrid({
             quote={quotes[item.ticker]}
             session={session}
             isClosed={isClosed}
+            snapshots={isClosed ? undefined : snapshots}
+            profitTargetDefault={profitTargetDefault}
           />
         ) : (
           <WheelCard

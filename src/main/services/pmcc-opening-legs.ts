@@ -1,10 +1,11 @@
-// Pure PMCC entry-leg selectors. pmccEntryLegs (first rows win) feeds getPosition's initial net
-// debit, which must stay the entry figure after later shorts or rolls land. The current open
+// Pure PMCC entry-leg selectors. pmccEntryLegs (first rows win) feeds the entry debit that
+// getPosition and the list card read, which must stay the entry figure after later shorts or
+// rolls land. The current open
 // legs (listPositions' and the detail page's) come from pmccOpenLegs, and the running basis
 // from pmccLedgerFromLegs — both in pmcc-ledger.ts.
 
 import { calculatePmccOpeningDebit } from '../core/costbasis'
-import type { LegRecord } from '../schemas'
+import type { LegRecord, PmccEntryDebit } from '../schemas'
 
 export interface PmccOpeningLegs {
   long?: LegRecord
@@ -20,15 +21,17 @@ export function pmccEntryLegs(legs: LegRecord[]): PmccOpeningLegs {
 }
 
 /**
- * Dollars, 4 dp, recomputed from both legs' fills and fees — never from the rounded
- * basis_per_share, which drifts. Null when either leg or its fill price is missing.
+ * The entry pair's net debit, from one opening-debit calculation over both legs' fills and
+ * fees — the total never from the rounded basis_per_share, which drifts. Null when either
+ * leg or its fill price is missing.
  */
-export function pmccInitialNetDebit(legs: LegRecord[]): string | null {
+export function pmccEntryDebit(legs: LegRecord[]): PmccEntryDebit | null {
   const { long, short } = pmccEntryLegs(legs)
   if (!long?.fillPrice || !short?.fillPrice) return null
-  return calculatePmccOpeningDebit({
+  const debit = calculatePmccOpeningDebit({
     contracts: long.contracts,
     long: { strike: long.strike, fillPrice: long.fillPrice, fees: long.fees },
     short: { strike: short.strike, fillPrice: short.fillPrice, fees: short.fees }
-  }).initialNetDebit
+  })
+  return { perShare: debit.basisPerShare, total: debit.initialNetDebit }
 }

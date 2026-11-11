@@ -10,7 +10,8 @@ import {
   calculateRollBasis,
   computeUnrealizedPnl,
   calculatePmccOpeningDebit,
-  calculatePmccLedger
+  calculatePmccLedger,
+  computePmccUnrealizedPnl
 } from './costbasis'
 import type {
   CostBasisResult,
@@ -20,7 +21,8 @@ import type {
   PmccOpeningDebitInput,
   PmccContribution,
   PmccLedgerInput,
-  PmccLedgerSide
+  PmccLedgerSide,
+  PmccUnrealizedPnlInput
 } from './costbasis'
 
 describe('calculateInitialCspBasis', () => {
@@ -855,6 +857,12 @@ describe('computeUnrealizedPnl', () => {
     ).toThrow(/currentMid/)
   })
 
+  it('throws on a non-numeric currentMid', () => {
+    expect(() =>
+      computeUnrealizedPnl({ entryPremium: '3.50', currentMid: 'abc', contracts: 1 })
+    ).toThrow('currentMid must be >= 0')
+  })
+
   it('throws on contracts < 1', () => {
     expect(() =>
       computeUnrealizedPnl({ entryPremium: '3.50', currentMid: '1.30', contracts: 0 })
@@ -1113,5 +1121,152 @@ describe('calculatePmccLedger', () => {
       effectiveShareCost: '80.0000',
       premiumRecoveredPercent: null
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// computePmccUnrealizedPnl — [US-108] net P&L marks the diagonal against the cost basis
+// ---------------------------------------------------------------------------
+
+describe('computePmccUnrealizedPnl', () => {
+  type Leg = PmccUnrealizedPnlInput['legs'][number]
+  const long = (mid: string, contracts = 1): Leg => ({ side: 'LONG', mid, contracts })
+  const short = (mid: string, contracts = 1): Leg => ({ side: 'SHORT', mid, contracts })
+
+  it('marks the Background diagonal against its basis', () => {
+    // gross = (26.10 − 0.90) × 100 = 2520; pnl = 2520 − 2120 = 400; 400 / 2120 × 100 = 18.86792…
+    expect(
+      computePmccUnrealizedPnl({ legs: [long('26.10'), short('0.90')], basisTotal: '2120' })
+    ).toEqual({ gross: '2520.0000', pnl: '400.0000', pnlPercentOfBasis: '18.8679' })
+  })
+
+  it('reports a loss when the stock falls', () => {
+    // gross = (16.40 − 0.20) × 100 = 1620; pnl = 1620 − 2120 = −500; −500 / 2120 × 100 = −23.58490…
+    expect(
+      computePmccUnrealizedPnl({ legs: [long('16.40'), short('0.20')], basisTotal: '2120' })
+    ).toEqual({ gross: '1620.0000', pnl: '-500.0000', pnlPercentOfBasis: '-23.5849' })
+  })
+
+  it('marks a PMCC with only the LEAPS open', () => {
+    // gross = 25.40 × 100 = 2540; pnl = 240; 240 / 2300 × 100 = 10.43478…
+    expect(computePmccUnrealizedPnl({ legs: [long('25.40')], basisTotal: '2300' })).toEqual({
+      gross: '2540.0000',
+      pnl: '240.0000',
+      pnlPercentOfBasis: '10.4348'
+    })
+  })
+
+  it('scales the totals with contracts and leaves the percent unchanged', () => {
+    // gross = (26.10 − 0.90) × 100 × 3 = 7560; pnl = 7560 − 6360 = 1200; 1200 / 6360 × 100 = 18.86792…
+    expect(
+      computePmccUnrealizedPnl({ legs: [long('26.10', 3), short('0.90', 3)], basisTotal: '6360' })
+    ).toEqual({ gross: '7560.0000', pnl: '1200.0000', pnlPercentOfBasis: '18.8679' })
+  })
+
+  it('subtracts every open short from the gross', () => {
+    // gross = 28.40 × 200 − 1.20 × 100 − 1.05 × 100 = 5680 − 120 − 105 = 5455
+    // pnl = 5455 − 4240 = 1215; 1215 / 4240 × 100 = 28.65566…
+    expect(
+      computePmccUnrealizedPnl({
+        legs: [long('28.40', 2), short('1.20'), short('1.05')],
+        basisTotal: '4240'
+      })
+    ).toEqual({ gross: '5455.0000', pnl: '1215.0000', pnlPercentOfBasis: '28.6557' })
+  })
+
+  it('weights each leg by its own contracts under partial coverage', () => {
+    // gross = 26.10 × 300 − 0.90 × 100 = 7830 − 90 = 7740; pnl = 1380; 1380 / 6360 × 100 = 21.69811…
+    expect(
+      computePmccUnrealizedPnl({ legs: [long('26.10', 3), short('0.90', 1)], basisTotal: '6360' })
+    ).toEqual({ gross: '7740.0000', pnl: '1380.0000', pnlPercentOfBasis: '21.6981' })
+  })
+
+  it('adds a negative basis to the P&L and reports no percent', () => {
+    // gross = (33.40 − 0.95) × 100 = 3245; pnl = 3245 − (−40) = 3285
+    expect(
+      computePmccUnrealizedPnl({ legs: [long('33.40'), short('0.95')], basisTotal: '-40' })
+    ).toEqual({ gross: '3245.0000', pnl: '3285.0000', pnlPercentOfBasis: null })
+  })
+
+  it('reports no percent when the basis is exactly zero', () => {
+    expect(computePmccUnrealizedPnl({ legs: [long('25.40')], basisTotal: '0' })).toEqual({
+      gross: '2540.0000',
+      pnl: '2540.0000',
+      pnlPercentOfBasis: null
+    })
+  })
+
+  it('reports a percent for the smallest positive basis', () => {
+    // pnl = 1.0000 − 0.0001 = 0.9999; 0.9999 / 0.0001 × 100 = 999900
+    expect(
+      computePmccUnrealizedPnl({ legs: [long('0.01')], basisTotal: '0.0001' }).pnlPercentOfBasis
+    ).toBe('999900.0000')
+  })
+
+  it('keeps a sub-cent mid at its exact 4-dp gross', () => {
+    // 0.00005 × 100 = 0.005 exactly
+    expect(computePmccUnrealizedPnl({ legs: [long('0.00005')], basisTotal: '0' }).gross).toBe(
+      '0.0050'
+    )
+  })
+
+  it('rounds a gross whose fifth decimal is 5 half up', () => {
+    // 0.0000005 × 100 = 0.00005 → ROUND_HALF_UP → 0.0001 (half-even or truncation give 0.0000)
+    expect(computePmccUnrealizedPnl({ legs: [long('0.0000005')], basisTotal: '0' })).toEqual({
+      gross: '0.0001',
+      pnl: '0.0001',
+      pnlPercentOfBasis: null
+    })
+  })
+
+  it('rounds a percent whose fifth decimal is 5 half up', () => {
+    // gross = 20.00001 × 100 = 2000.001; pnl = 0.001; 0.001 / 2000 × 100 = 0.00005 → 0.0001
+    expect(computePmccUnrealizedPnl({ legs: [long('20.00001')], basisTotal: '2000' })).toEqual({
+      gross: '2000.0010',
+      pnl: '0.0010',
+      pnlPercentOfBasis: '0.0001'
+    })
+  })
+
+  it('accepts a zero mid', () => {
+    expect(
+      computePmccUnrealizedPnl({ legs: [long('25.40'), short('0')], basisTotal: '2300' }).gross
+    ).toBe('2540.0000')
+  })
+
+  it.each(['-0.0001', 'abc', 'NaN', 'Infinity'])('throws for mid %s', (mid) => {
+    expect(() =>
+      computePmccUnrealizedPnl({ legs: [long('26.10'), short(mid)], basisTotal: '2120' })
+    ).toThrow('mid must be >= 0')
+  })
+
+  it.each([0, -1, 1.5])('throws for contracts %s', (contracts) => {
+    expect(() =>
+      computePmccUnrealizedPnl({ legs: [long('26.10', contracts)], basisTotal: '2120' })
+    ).toThrow('contracts must be a positive integer')
+  })
+
+  it('throws when a short leg has an invalid contract count', () => {
+    expect(() =>
+      computePmccUnrealizedPnl({ legs: [long('26.10'), short('0.90', 0)], basisTotal: '2120' })
+    ).toThrow('contracts must be a positive integer')
+  })
+
+  it('throws when no LONG leg is present', () => {
+    expect(() => computePmccUnrealizedPnl({ legs: [short('0.90')], basisTotal: '2120' })).toThrow(
+      'legs must include a LONG leg'
+    )
+  })
+
+  it('throws for an empty legs array', () => {
+    expect(() => computePmccUnrealizedPnl({ legs: [], basisTotal: '2120' })).toThrow(
+      'legs must include a LONG leg'
+    )
+  })
+
+  it.each(['abc', 'NaN', 'Infinity'])('throws for basisTotal %s', (basisTotal) => {
+    expect(() => computePmccUnrealizedPnl({ legs: [long('26.10')], basisTotal })).toThrow(
+      'basisTotal must be a finite number'
+    )
   })
 })

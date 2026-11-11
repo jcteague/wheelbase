@@ -42,6 +42,8 @@ type IpcSuccess<K extends keyof Window['api']> = Window['api'][K] extends (
   : never
 export type {
   PmccLegSummary,
+  PmccLongLegSummary,
+  PmccShortLegSummary,
   PmccOpenLegs,
   PmccListItem,
   PmccListSummary,

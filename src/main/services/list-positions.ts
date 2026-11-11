@@ -6,11 +6,10 @@ import { money4 } from '../../shared/decimal-text'
 import { computeDte } from '../core/dte'
 import { sortPositionsByDte } from '../core/position-order'
 import { isOptionInstrument } from '../core/types'
-import type { InstrumentType, PmccPhase, StrategyPhase, WheelStatus } from '../core/types'
+import type { InstrumentType, StrategyPhase, WheelStatus } from '../core/types'
 import { logger } from '../logger'
+import { toPmccListPhase } from '../pmcc-phase'
 import type {
-  LegRecord,
-  PmccLegSummary,
   PmccListItem,
   PmccListSummary,
   PositionListItem,
@@ -18,8 +17,8 @@ import type {
   WheelListItem
 } from '../schemas'
 import { activeLegSubquery } from './active-leg-sql'
-import { readLegsByPosition } from './leg-rows'
-import { pmccLedgerFromLegs, pmccOpenLegs } from './pmcc-ledger'
+import { readStoredNextEarnings } from './earnings-dates'
+import { readPmccSummaries } from './list-positions-pmcc'
 
 // ---------------------------------------------------------------------------
 // Internal DB row type
@@ -37,13 +36,16 @@ interface PositionRowBase {
   basis_per_share: string | null
   total_premium_collected: string | null
   profit_target_percent: number | null
+  opened_date: string
+  management_window_dte_override: number | null
 }
 
 type WheelPositionRow = PositionRowBase & {
   strategy_type: 'WHEEL'
   phase: StrategyPhase<'WHEEL'>
 }
-type PmccPositionRow = PositionRowBase & { strategy_type: 'PMCC'; phase: PmccPhase }
+// `phase` is free TEXT: a PMCC phase from a later story is read as data, not trusted as known.
+type PmccPositionRow = PositionRowBase & { strategy_type: 'PMCC'; phase: string }
 // The strategy fixes which phases a row can hold, so a strategy_type check narrows the phase.
 type PositionRow = WheelPositionRow | PmccPositionRow
 
@@ -54,7 +56,7 @@ type PositionRow = WheelPositionRow | PmccPositionRow
 const LIST_QUERY = `
   SELECT
     p.id, p.ticker, p.strategy_type, p.phase, p.status,
-    p.profit_target_percent,
+    p.profit_target_percent, p.opened_date, p.management_window_dte_override,
     l.strike, l.expiration,
     l.instrument_type, l.contracts, l.premium_per_contract,
     cbs.basis_per_share, cbs.total_premium_collected
@@ -70,55 +72,21 @@ const LIST_QUERY = `
   )
 `
 
-function toLegSummary(leg: LegRecord): PmccLegSummary | null {
-  const dte = computeDte(leg.expiration)
-  if (dte === null) return null
-  return {
-    strike: money4(leg.strike),
-    expiration: leg.expiration,
-    dte,
-    contracts: leg.contracts
-  }
-}
-
-function readPmccSummaries(
-  db: Database.Database,
-  rows: PositionRow[]
-): Map<string, PmccListSummary> {
-  const ids = rows.filter((row) => row.strategy_type === 'PMCC').map((row) => row.id)
-  const legsByPosition = readLegsByPosition(db, ids)
-
-  return new Map(
-    ids.flatMap((id): [string, PmccListSummary][] => {
-      const legs = legsByPosition.get(id) ?? []
-      // The open legs the detail page shows: a roll's ROLL_TO, and no short between short calls.
-      const open = pmccOpenLegs(legs)
-      const ledger = pmccLedgerFromLegs(legs)
-      if (!open || !ledger) return []
-      const long = toLegSummary(open.long)
-      const short = open.short === null ? null : toLegSummary(open.short)
-      // An unparseable expiration on either open leg leaves the summary incomplete.
-      if (!long || (open.short !== null && short === null)) return []
-      const { basisPerShare, basisTotal } = ledger
-      return [[id, { long, short, basisPerShare, basisTotal }]]
-    })
-  )
-}
-
-function toListItemBase(row: PositionRow): PositionListItemBase {
+function toListItemBase(row: PositionRow, nextEarnings: string | null): PositionListItemBase {
   return {
     id: row.id,
     ticker: row.ticker,
     status: row.status,
     premiumCollected: money4(row.total_premium_collected ?? '0'),
     effectiveCostBasis: money4(row.basis_per_share ?? '0'),
-    profitTargetPercent: row.profit_target_percent
+    profitTargetPercent: row.profit_target_percent,
+    nextEarnings
   }
 }
 
-function toWheelItem(row: WheelPositionRow): WheelListItem {
+function toWheelItem(row: WheelPositionRow, nextEarnings: string | null): WheelListItem {
   return {
-    ...toListItemBase(row),
+    ...toListItemBase(row, nextEarnings),
     strategyType: 'WHEEL',
     phase: row.phase,
     pmcc: null,
@@ -131,11 +99,15 @@ function toWheelItem(row: WheelPositionRow): WheelListItem {
   }
 }
 
-function toPmccItem(row: PmccPositionRow, summary: PmccListSummary): PmccListItem {
+function toPmccItem(
+  row: PmccPositionRow,
+  summary: PmccListSummary,
+  nextEarnings: string | null
+): PmccListItem {
   return {
-    ...toListItemBase(row),
+    ...toListItemBase(row, nextEarnings),
     strategyType: 'PMCC',
-    phase: row.phase,
+    phase: toPmccListPhase(row.phase),
     pmcc: summary,
     strike: null,
     expiration: null,
@@ -150,25 +122,48 @@ function toPmccItem(row: PmccPositionRow, summary: PmccListSummary): PmccListIte
 // listPositions
 // ---------------------------------------------------------------------------
 
-export function listPositions(db: Database.Database): PositionListItem[] {
-  logger.debug('list_positions_query_start')
+/** The list rows for `rows`, unordered; a PMCC whose summary is incomplete is omitted. */
+function toListItems(db: Database.Database, rows: PositionRow[], now: Date): PositionListItem[] {
+  const pmccSummaries = readPmccSummaries(
+    db,
+    rows.filter((row): row is PmccPositionRow => row.strategy_type === 'PMCC'),
+    now
+  )
+  const earnings = readStoredNextEarnings(
+    db,
+    rows.map((row) => row.ticker),
+    now
+  )
+  logger.debug({ count: earnings.size }, 'list_positions_earnings_joined')
 
-  const rows = db.prepare(LIST_QUERY).all() as PositionRow[]
-
-  logger.debug({ count: rows.length }, 'list_positions_query_complete')
-
-  const pmccSummaries = readPmccSummaries(db, rows)
-
-  const items = rows.flatMap((row): PositionListItem[] => {
-    if (row.strategy_type !== 'PMCC') return [toWheelItem(row)]
+  return rows.flatMap((row): PositionListItem[] => {
+    const nextEarnings = earnings.get(row.ticker) ?? null
+    if (row.strategy_type !== 'PMCC') return [toWheelItem(row, nextEarnings)]
     const summary = pmccSummaries.get(row.id)
-    if (summary) return [toPmccItem(row, summary)]
+    if (summary) return [toPmccItem(row, summary, nextEarnings)]
     logger.warn({ positionId: row.id }, 'pmcc_list_summary_incomplete')
     return []
   })
+}
 
-  const ordered = sortPositionsByDte(items)
+export function listPositions(db: Database.Database): PositionListItem[] {
+  logger.debug('list_positions_query_start')
+
+  const rows = db.prepare<[], PositionRow>(LIST_QUERY).all()
+
+  logger.debug({ count: rows.length }, 'list_positions_query_complete')
+
+  const ordered = sortPositionsByDte(toListItems(db, rows, new Date()))
 
   logger.info({ count: ordered.length }, 'positions_listed')
   return ordered
+}
+
+/** The PMCC row `listPositions` returns for one position; null for a wheel, or when the list omits or lacks it. */
+export function readPmccListItem(db: Database.Database, positionId: string): PmccListItem | null {
+  const rows = db.prepare<[string], PositionRow>(`${LIST_QUERY} WHERE p.id = ?`).all(positionId)
+  const [item = null] = toListItems(db, rows, new Date())
+  const pmcc = item?.strategyType === 'PMCC' ? item : null
+  logger.debug({ positionId, found: pmcc !== null }, 'pmcc_list_item_read')
+  return pmcc
 }

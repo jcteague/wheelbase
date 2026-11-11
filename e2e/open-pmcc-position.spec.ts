@@ -419,7 +419,8 @@ describe('Scenario: Record the position and view both legs', () => {
     const page = await launchFilledPmcc()
     await recordPmcc(page)
 
-    await positionRows(page).first().click()
+    // [US-108] A click on the PMCC card opens tier 2; the ticker link opens the detail page.
+    await positionRows(page).first().getByTestId('position-ticker').click()
     const detail = page.locator('[data-testid="position-detail"]')
     await detail.waitFor()
 
@@ -459,7 +460,7 @@ describe('Scenario: Record the position and view both legs', () => {
     expect(await legs.nth(1).textContent()).toContain(
       `$${FIXTURE.short.strike} call · ${FIXTURE.short.expiration}`
     )
-    expect(await row.locator('span', { hasText: /^\d+d$/ }).allTextContents()).toEqual([
+    expect(await legs.locator(':scope > :nth-child(3)').allTextContents()).toEqual([
       `${LEAPS_DTE}d`,
       `${SHORT_DTE}d`
     ])

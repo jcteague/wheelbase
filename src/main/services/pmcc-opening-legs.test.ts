@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LegRecord } from '../schemas'
-import { pmccInitialNetDebit } from './pmcc-opening-legs'
+import { pmccEntryDebit } from './pmcc-opening-legs'
 
 function makeLeg(overrides: Partial<LegRecord> & Pick<LegRecord, 'id' | 'legRole'>): LegRecord {
   return {
@@ -24,9 +24,9 @@ function makeLeg(overrides: Partial<LegRecord> & Pick<LegRecord, 'id' | 'legRole
 const LONG = makeLeg({ id: 'long', legRole: 'LEAPS_OPEN' })
 const SHORT = makeLeg({ id: 'short', legRole: 'SHORT_CALL_OPEN' })
 
-describe('pmccInitialNetDebit', () => {
-  it('returns the net debit in dollars from both opening legs', () => {
-    expect(pmccInitialNetDebit([LONG, SHORT])).toBe('2300.0000')
+describe('pmccEntryDebit', () => {
+  it('returns the net debit in dollars and per share from both opening legs', () => {
+    expect(pmccEntryDebit([LONG, SHORT])).toEqual({ perShare: '23.0000', total: '2300.0000' })
   })
 
   it('keeps the entry debit when a later SHORT_CALL_OPEN follows the opening legs', () => {
@@ -37,23 +37,44 @@ describe('pmccInitialNetDebit', () => {
       fillPrice: '1.8000',
       premiumPerContract: '1.8000'
     })
-    expect(pmccInitialNetDebit([LONG, SHORT, laterShort])).toBe('2300.0000')
+    expect(pmccEntryDebit([LONG, SHORT, laterShort])).toEqual({
+      perShare: '23.0000',
+      total: '2300.0000'
+    })
   })
 
-  it('scales by contracts and adds each leg’s fees', () => {
+  it('scales the total by contracts and adds each leg’s fees (0.01 + 0.01 over 300 shares → 23.0001 / share)', () => {
     const long = { ...LONG, contracts: 3, fees: '0.0100' }
     const short = { ...SHORT, contracts: 3, fees: '0.0100' }
-    expect(pmccInitialNetDebit([long, short])).toBe('6900.0200')
+    expect(pmccEntryDebit([long, short])).toEqual({ perShare: '23.0001', total: '6900.0200' })
   })
 
   it('is null when either opening leg is missing', () => {
-    expect(pmccInitialNetDebit([LONG])).toBeNull()
-    expect(pmccInitialNetDebit([SHORT])).toBeNull()
-    expect(pmccInitialNetDebit([])).toBeNull()
+    expect(pmccEntryDebit([LONG])).toBeNull()
+    expect(pmccEntryDebit([SHORT])).toBeNull()
+    expect(pmccEntryDebit([])).toBeNull()
   })
 
   it('is null when either opening leg has no fill price', () => {
-    expect(pmccInitialNetDebit([{ ...LONG, fillPrice: null }, SHORT])).toBeNull()
-    expect(pmccInitialNetDebit([LONG, { ...SHORT, fillPrice: null }])).toBeNull()
+    expect(pmccEntryDebit([{ ...LONG, fillPrice: null }, SHORT])).toBeNull()
+    expect(pmccEntryDebit([LONG, { ...SHORT, fillPrice: null }])).toBeNull()
+  })
+})
+
+// [US-108] The tier-2 "Entry net debit … / share" figure.
+describe('pmccEntryDebit — the US-103 fixture ($25.00 LEAPS, $1.80 short, 1 contract)', () => {
+  const short180 = { ...SHORT, fillPrice: '1.8000', premiumPerContract: '1.8000' }
+
+  it('returns the entry debit per share and in dollars (25.00 − 1.80)', () => {
+    expect(pmccEntryDebit([LONG, short180])).toEqual({ perShare: '23.2000', total: '2320.0000' })
+  })
+
+  it('adds both legs’ fees (1.00 + 1.00 on 1 contract → 23.2200 / share)', () => {
+    expect(
+      pmccEntryDebit([
+        { ...LONG, fees: '1.0000' },
+        { ...short180, fees: '1.0000' }
+      ])
+    ).toEqual({ perShare: '23.2200', total: '2322.0000' })
   })
 })

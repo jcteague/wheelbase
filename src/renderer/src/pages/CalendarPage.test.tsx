@@ -36,6 +36,7 @@ function makePosition(overrides: Partial<WheelListItem> = {}): WheelListItem {
     premiumCollected: '210.00',
     effectiveCostBasis: '177.90',
     profitTargetPercent: null,
+    nextEarnings: null,
     ...overrides
   }
 }

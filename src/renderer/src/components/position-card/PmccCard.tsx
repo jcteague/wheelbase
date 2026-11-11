@@ -1,15 +1,22 @@
-import type { MarketStatus, StockQuote } from '../../api/market-data'
+import { useEffect, useState } from 'react'
+import type { MarketStatus, OptionSnapshotsBySymbol, StockQuote } from '../../api/market-data'
 import type { PmccListItem } from '../../api/positions'
-import { fmtMoney, fmtMoneyGrouped } from '../../lib/format'
-import { PHASE_COLOR, PHASE_LABEL } from '../../lib/phase'
+import { derivePmccCardDisplay, type PmccCardDisplay } from '../../lib/pmcc-card-display'
+import { PHASE_COLOR } from '../../lib/phase'
 import { Badge } from '../ui/Badge'
+import { ActionStrip } from './ActionStrip'
 import { CardFooter } from './CardFooter'
 import { CardFooterCell } from './CardFooterCell'
 import { CardHeader } from './CardHeader'
 import { CardShell } from './CardShell'
-import { LegBlock } from './LegBlock'
+import { DetailBar } from './DetailBar'
+import { PmccDashedLegBlock, PmccOpenLegBlock } from './PmccLegBlock'
+import { PnlFigure } from './PnlFigure'
 import { PriceBlock } from './PriceBlock'
-import { EYEBROW, HEADLINE_FIGURE, SUB } from './styles'
+import { RecoveryMeter } from './RecoveryMeter'
+import { SignalTags } from './SignalTags'
+import { EYEBROW, SUB } from './styles'
+import { Tier2Panel } from './Tier2Panel'
 
 export type PmccCardProps = {
   item: PmccListItem
@@ -17,88 +24,111 @@ export type PmccCardProps = {
   session?: MarketStatus['session']
   /** Renders the card closed; defaults to whether the item's status is CLOSED. */
   isClosed?: boolean
+  /** Option snapshots by OCC symbol; each open leg reads its own. */
+  snapshots?: OptionSnapshotsBySymbol
+  profitTargetDefault?: number
 }
 
-/**
- * The minimal PMCC card: both open legs in the card grid's shell, with no valuation, action
- * strip, TARGET badge or expiring-soon flag — US-108's full PMCC card replaces it.
- */
-export function PmccCard({ item, quote, session, isClosed }: PmccCardProps): React.JSX.Element {
-  const { long, short, basisPerShare, basisTotal } = item.pmcc
+function stopPropagation(event: React.MouseEvent): void {
+  event.stopPropagation()
+}
+
+function stateLabel(display: PmccCardDisplay): string {
+  return display.kind === 'neutral' ? display.stateLabel : display.state
+}
+
+export function PmccCard({
+  item,
+  quote,
+  session,
+  isClosed,
+  snapshots,
+  profitTargetDefault
+}: PmccCardProps): React.JSX.Element {
   const closed = isClosed ?? item.status === 'CLOSED'
+  const display = derivePmccCardDisplay(item, snapshots, quote, { closed, profitTargetDefault })
+  const open = display.kind === 'open' ? display : null
+  const [tier2Requested, setTier2Requested] = useState(false)
+  const tier2Open = open !== null && tier2Requested
   const href = `#/positions/${item.id}`
-  const nextDecisionDte = short?.dte ?? long.dte
-  const legDte = (dte: number): string => (closed ? '—' : `${dte}d`)
+  const { basis, credits } = display
+
+  useEffect(() => {
+    if (!tier2Open) return
+    function closeOnEscape(event: KeyboardEvent): void {
+      if (event.key === 'Escape') setTier2Requested(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [tier2Open])
 
   return (
-    <CardShell accent="PMCC" closed={closed} href={href}>
+    <CardShell accent="PMCC" edge={open?.signals.actions[0]?.tone} closed={closed} href={href}>
+      {open && <ActionStrip actions={open.signals.actions} />}
       <CardHeader
         href={href}
         ticker={item.ticker}
+        onLinkClick={stopPropagation}
         price={
           <PriceBlock
-            price={closed ? null : (quote?.price ?? null)}
-            sub={closed ? 'closed' : `${nextDecisionDte}d to next decision`}
+            price={display.price}
+            sub={display.priceSubline}
             testId={`position-card-${item.ticker}-price`}
-            closed={closed}
+            closed={open === null}
             quote={quote}
             session={session}
           />
         }
       >
         <Badge color={PHASE_COLOR.PMCC_OPEN}>PMCC</Badge>
+        {open && <SignalTags tags={open.signals.awareness} />}
       </CardHeader>
       <div className="grid gap-[9px] px-[13px] py-[11px]">
         <div className="flex items-end justify-between gap-3">
           <div>
-            <div className={`${EYEBROW} mb-[3px]`}>Net P&L</div>
-            <div
-              data-testid={`position-card-${item.ticker}-pnl`}
-              className={`${HEADLINE_FIGURE} text-wb-text-muted`}
-            >
-              —
-            </div>
-            <div className={SUB}>{closed ? 'closed — no live marks' : 'no valuation yet'}</div>
+            <div className={`${EYEBROW} mb-[3px]`}>Net P&L · marked against basis</div>
+            <PnlFigure pnl={display.pnl} testId={`position-card-${item.ticker}-pnl`} />
           </div>
-          <span className={`${SUB} text-right`}>
-            {short ? PHASE_LABEL[item.phase] : 'No short open'}
-          </span>
+          <div className={`${SUB} text-right`}>
+            <div>{stateLabel(display)}</div>
+            <div>{display.coverage}</div>
+          </div>
         </div>
-        <LegBlock
-          tag="L"
-          title={
-            <>
-              {fmtMoney(long.strike)} LEAPS<span className={SUB}> · {long.expiration}</span>
-            </>
-          }
-          dte={legDte(long.dte)}
-          mark="—"
-        />
-        {short && (
-          <LegBlock
-            tag="S"
-            title={
-              <>
-                {fmtMoney(short.strike)} call<span className={SUB}> · {short.expiration}</span>
-              </>
-            }
-            dte={legDte(short.dte)}
-            mark="—"
-          />
-        )}
+        {display.kind === 'open'
+          ? display.legs.map((leg) => <PmccOpenLegBlock key={leg.legId} leg={leg} />)
+          : display.legs.map((leg) => <PmccDashedLegBlock key={leg.legId} leg={leg} />)}
       </div>
       <CardFooter>
         <CardFooterCell
           label="Cost basis"
-          valueClassName="text-wb-sky"
-          sub={`${fmtMoney(basisPerShare)} / share`}
+          valueClassName={basis.paidFor ? 'text-wb-gold' : 'text-wb-sky'}
+          sub={basis.paidFor ? <span className="text-wb-gold">{basis.sub}</span> : basis.sub}
         >
-          {fmtMoneyGrouped(basisTotal)}
+          {basis.total}
         </CardFooterCell>
-        <CardFooterCell label="Premium collected" valueClassName="text-wb-green" sub="to date">
-          {fmtMoneyGrouped(item.premiumCollected)}
+        <CardFooterCell
+          label="Credits collected"
+          valueClassName="text-wb-green"
+          sub={credits.sub}
+          extra={
+            credits.meterFraction !== null && (
+              <RecoveryMeter
+                fraction={credits.meterFraction}
+                gold={credits.meterGold}
+                title={`Recovery meter — ${credits.sub}; gold at 100%`}
+              />
+            )
+          }
+        >
+          {credits.total}
         </CardFooterCell>
       </CardFooter>
+      {open && (
+        <>
+          <DetailBar open={tier2Open} onToggle={() => setTier2Requested((wasOpen) => !wasOpen)} />
+          {tier2Open && <Tier2Panel cells={open.tier2} />}
+        </>
+      )}
     </CardShell>
   )
 }

@@ -18,7 +18,7 @@ function LegMarks({ actions }: { actions: CardAction[] }): React.JSX.Element | n
   if (actions.length === 0) return null
   return (
     <span
-      title={actions.map(formatActionLine).join('\n')}
+      title={actions.map((action) => action.tooltip ?? formatActionLine(action)).join('\n')}
       className={`mr-[6px] cursor-help ${TONE_TEXT_CLASS[actions[0].tone]}`}
     >
       {actions.map((action) => action.glyph).join(' ')}

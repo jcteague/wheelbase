@@ -11,7 +11,7 @@ import {
   startOfMonth,
   startOfWeek
 } from 'date-fns'
-import type { PositionListItem, WheelPhase } from '../api/positions'
+import type { PositionListItem, WheelListItem, WheelPhase } from '../api/positions'
 
 export const CHIP_LIMIT = 3
 export const BUSY_WEEK_THRESHOLD = 3
@@ -48,17 +48,24 @@ export interface AgendaWeek {
   isBusy: boolean
 }
 
+/** Only a wheel's open option leg has an expiration to place; a PMCC never does. */
+function isActiveWheelLeg(
+  position: PositionListItem
+): position is WheelListItem & { expiration: string } {
+  return (
+    position.strategyType === 'WHEEL' && position.status === 'ACTIVE' && position.expiration != null
+  )
+}
+
 export function toCalendarEntries(positions: PositionListItem[]): CalendarEntry[] {
-  return positions
-    .filter((position) => position.status === 'ACTIVE' && position.expiration != null)
-    .map((position) => ({
-      id: position.id,
-      ticker: position.ticker,
-      phase: position.phase,
-      strike: position.strike,
-      dte: position.dte,
-      expiration: position.expiration as string
-    }))
+  return positions.filter(isActiveWheelLeg).map((position) => ({
+    id: position.id,
+    ticker: position.ticker,
+    phase: position.phase,
+    strike: position.strike,
+    dte: position.dte,
+    expiration: position.expiration
+  }))
 }
 
 export function groupByExpiration(entries: CalendarEntry[]): Map<string, CalendarEntry[]> {
@@ -105,18 +112,17 @@ export function buildAgendaWeeks(
     return expiration >= startOfToday && expiration <= horizonEnd
   })
 
-  const byDay = groupByExpiration(inWindow)
-  const dayKeys = Array.from(byDay.keys()).sort()
+  const byDay = Array.from(groupByExpiration(inWindow)).sort(([a], [b]) => a.localeCompare(b))
   const weekKeyOf = (isoDate: string): string =>
     format(startOfWeek(parseISO(isoDate)), 'yyyy-MM-dd')
-  const weekKeys = Array.from(new Set(dayKeys.map(weekKeyOf))).sort()
+  const weekKeys = Array.from(new Set(byDay.map(([isoDate]) => weekKeyOf(isoDate)))).sort()
 
   return weekKeys.map((weekKey) => {
     const weekStart = parseISO(weekKey)
     const weekEnd = endOfWeek(weekStart)
-    const days: AgendaDay[] = dayKeys
-      .filter((isoDate) => weekKeyOf(isoDate) === weekKey)
-      .map((isoDate) => ({ date: parseISO(isoDate), entries: byDay.get(isoDate) ?? [] }))
+    const days: AgendaDay[] = byDay
+      .filter(([isoDate]) => weekKeyOf(isoDate) === weekKey)
+      .map(([isoDate, entries]) => ({ date: parseISO(isoDate), entries }))
     const total = days.reduce((sum, day) => sum + day.entries.length, 0)
     const weekEndFormat = isSameMonth(weekStart, weekEnd) ? 'd' : 'MMM d'
 

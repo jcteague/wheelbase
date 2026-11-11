@@ -14,18 +14,31 @@ type CardHeaderProps = {
   price: ReactNode
   /** Badges and flags that follow the ticker. */
   children?: ReactNode
+  /** Runs on a click on either link, e.g. to keep it from reaching the card. */
+  onLinkClick?: (event: React.MouseEvent) => void
 }
 
-export function CardHeader({ href, ticker, price, children }: CardHeaderProps): React.JSX.Element {
+export function CardHeader({
+  href,
+  ticker,
+  price,
+  children,
+  onLinkClick
+}: CardHeaderProps): React.JSX.Element {
   return (
     <div className="flex items-center gap-2 border-b border-wb-border-subtle px-[13px] py-[11px]">
-      <a href={href} data-testid="position-ticker" className={TICKER_LINK}>
+      <a href={href} data-testid="position-ticker" onClick={onLinkClick} className={TICKER_LINK}>
         {ticker}
       </a>
       {children}
       <span className="ml-auto" />
       {price}
-      <a href={href} title="Open the position detail page" className={OPEN_LINK}>
+      <a
+        href={href}
+        title="Open the position detail page"
+        onClick={onLinkClick}
+        className={OPEN_LINK}
+      >
         Open ↗
       </a>
     </div>

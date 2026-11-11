@@ -4,6 +4,7 @@
 
 import Decimal from 'decimal.js'
 import { computeUnrealizedPnl } from './costbasis'
+import { toFiniteDecimal } from './finite-decimal'
 import { DEFAULT_PROFIT_TARGET_PERCENT, resolveProfitTarget } from './profit-target'
 import type { WheelPhase } from './types'
 
@@ -45,7 +46,7 @@ const PMCC_ASSIGNMENT_RISK_MAX_PERCENT_BELOW = 2
 const EARNINGS_PROXIMITY_MAX_DAYS = 10
 
 /** Largest LEAPS DTE that still falls inside the PMCC roll window (inclusive). */
-const PMCC_LEAPS_ROLL_WINDOW_MAX_DTE = 60
+export const PMCC_LEAPS_ROLL_WINDOW_MAX_DTE = 60
 
 const QUICK_ACTION_REVIEW = 'Review position'
 
@@ -87,6 +88,12 @@ export interface AlertEvaluationInput {
   leapsDte: number | null // calendar days to the LEAPS expiration; null when unknown
   leapsStrike: string | null // LEAPS legs.strike (TEXT 4dp)
 }
+
+/** Exactly the fields the EXPIRATION_IMMINENT helpers read. */
+export type ExpirationImminentInput = Pick<AlertEvaluationInput, 'dte' | 'strike'>
+
+/** Exactly the fields the MANAGEMENT_WINDOW helpers read. */
+export type ManagementWindowInput = Pick<AlertEvaluationInput, 'dte'>
 
 /** Exactly the fields the PROFIT_TARGET (US-54) helpers read. */
 export type ProfitTargetInput = Pick<
@@ -131,18 +138,51 @@ export interface PositionEvaluation {
 }
 
 // ---------------------------------------------------------------------------
+// Bound predicates — the one statement of each rule's threshold, shared by the
+// RULES registry below and the US-108 PMCC card's signal registry.
+// ---------------------------------------------------------------------------
+
+/** EXPIRATION_IMMINENT: 0 to 5 days to expiration, inclusive. */
+export function isExpirationImminent(dte: number): boolean {
+  return dte >= 0 && dte <= EXPIRATION_IMMINENT_MAX_DTE
+}
+
+/** MANAGEMENT_WINDOW: past the imminent range, up to the window's DTE inclusive. */
+export function isInManagementWindow(dte: number, windowDte: number): boolean {
+  return dte > EXPIRATION_IMMINENT_MAX_DTE && dte <= windowDte
+}
+
+/** EARNINGS_PROXIMITY: earnings 0 to 10 days out, on or before the expiration. */
+export function isEarningsProximate(daysToEarnings: number, dte: number): boolean {
+  return (
+    daysToEarnings >= 0 && daysToEarnings <= EARNINGS_PROXIMITY_MAX_DAYS && daysToEarnings <= dte
+  )
+}
+
+/** PMCC_LEAPS_ROLL_WINDOW: 0 to 60 days left on the LEAPS, inclusive. */
+export function isInLeapsRollWindow(leapsDte: number): boolean {
+  return leapsDte >= 0 && leapsDte <= PMCC_LEAPS_ROLL_WINDOW_MAX_DTE
+}
+
+/** PMCC_ASSIGNMENT_RISK: the price at most 2% below the short-call strike, at or above it.
+ *  Both fields must be numeric — the caller guards that first. */
+export function isPmccAssignmentRisk(input: PmccAssignmentRiskInput): boolean {
+  return percentBelowStrike(input).lte(PMCC_ASSIGNMENT_RISK_MAX_PERCENT_BELOW)
+}
+
+// ---------------------------------------------------------------------------
 // Summary builders (named pure helpers)
 // ---------------------------------------------------------------------------
 
-function formatStrike(strike: string | null): string {
+export function formatStrike(strike: string | null): string {
   return `$${new Decimal(strike ?? '0').toFixed(2)}`
 }
 
-function expirationImminentSummary(input: AlertEvaluationInput): string {
+export function expirationImminentSummary(input: ExpirationImminentInput): string {
   return `Expires in ${input.dte} days at ${formatStrike(input.strike)} strike`
 }
 
-function managementWindowSummary(input: AlertEvaluationInput): string {
+export function managementWindowSummary(input: ManagementWindowInput): string {
   return `${input.dte} DTE remaining — review for roll or close`
 }
 
@@ -175,12 +215,7 @@ function profitTargetSummary(input: ProfitTargetInput): string {
 /** True when the string parses to a finite Decimal — the precondition every
  *  Decimal-backed rule needs before parsing to avoid a throw on malformed data. */
 export function isNumeric(value: string | null): boolean {
-  if (value === null) return false
-  try {
-    return new Decimal(value).isFinite()
-  } catch {
-    return false
-  }
+  return toFiniteDecimal(value) !== null
 }
 
 /** Absolute gap between the stock price and the strike, as a percent Decimal. */
@@ -206,17 +241,28 @@ function coveredCallBreachSummary(input: CoveredCallBreachInput): string {
   return `Stock is ${proximityPercent(input).toFixed(1)}% above the ${formatStrike(input.strike)} call strike — shares may be called away`
 }
 
-function pmccAssignmentRiskSummary(input: PmccAssignmentRiskInput): string {
+/** Assignment-risk copy around a named short-call strike — the queue summary names
+ *  its figure, the card tooltip sits on the leg that already shows it. */
+function pmccAssignmentRiskCopy(input: PmccAssignmentRiskInput, strikeName: string): string {
   const direction = priceDirection(input)
-  const base = `Stock is ${proximityPercent(input).toFixed(1)}% ${direction} the ${formatStrike(input.strike)} short-call strike`
+  const base = `Stock is ${proximityPercent(input).toFixed(1)}% ${direction} the ${strikeName}`
   return direction === 'below'
     ? `${base} — approaching assignment`
     : `${base} — in the money, LEAPS would have to cover`
 }
 
+function pmccAssignmentRiskSummary(input: PmccAssignmentRiskInput): string {
+  return pmccAssignmentRiskCopy(input, `${formatStrike(input.strike)} short-call strike`)
+}
+
+/** The US-108 card's ▲ leg-mark tooltip: the summary without the strike figure. */
+export function pmccAssignmentRiskTooltip(input: PmccAssignmentRiskInput): string {
+  return pmccAssignmentRiskCopy(input, 'short-call strike')
+}
+
 /** Signed gap of the price below the strike, as an unrounded percent Decimal —
  *  negative once the price is above the strike. */
-function percentBelowStrike(input: PmccAssignmentRiskInput): Decimal {
+export function percentBelowStrike(input: PmccAssignmentRiskInput): Decimal {
   const strike = new Decimal(input.strike!)
   return strike.minus(input.currentUnderlyingPrice!).dividedBy(strike).times(100)
 }
@@ -228,7 +274,7 @@ function inDays(days: number): string {
   return `in ${days} days`
 }
 
-function earningsProximitySummary(input: EarningsProximityInput): string {
+export function earningsProximitySummary(input: EarningsProximityInput): string {
   return `Earnings ${inDays(input.daysToEarnings!)} before your ${input.expiration} expiration`
 }
 
@@ -299,8 +345,7 @@ const RULES: RuleDefinition[] = [
     urgency: 'high',
     leg: 'short',
     missingData: missingDteReason,
-    test: (input) =>
-      input.dte !== null && input.dte >= 0 && input.dte <= EXPIRATION_IMMINENT_MAX_DTE,
+    test: (input) => input.dte !== null && isExpirationImminent(input.dte),
     summary: expirationImminentSummary
   },
   {
@@ -309,9 +354,7 @@ const RULES: RuleDefinition[] = [
     leg: 'short',
     missingData: missingDteReason,
     test: (input, resolved) =>
-      input.dte !== null &&
-      input.dte > EXPIRATION_IMMINENT_MAX_DTE &&
-      input.dte <= resolved.managementWindowDte,
+      input.dte !== null && isInManagementWindow(input.dte, resolved.managementWindowDte),
     summary: managementWindowSummary
   },
   {
@@ -353,9 +396,7 @@ const RULES: RuleDefinition[] = [
     test: (input) =>
       input.daysToEarnings !== null &&
       input.dte !== null &&
-      input.daysToEarnings >= 0 &&
-      input.daysToEarnings <= EARNINGS_PROXIMITY_MAX_DAYS &&
-      input.daysToEarnings <= input.dte,
+      isEarningsProximate(input.daysToEarnings, input.dte),
     summary: earningsProximitySummary
   },
   {
@@ -372,9 +413,7 @@ const RULES: RuleDefinition[] = [
     urgency: 'medium',
     leg: 'short',
     missingData: priceVsStrikeMissingData('PMCC_OPEN'),
-    test: (input) =>
-      input.phase === 'PMCC_OPEN' &&
-      percentBelowStrike(input).lte(PMCC_ASSIGNMENT_RISK_MAX_PERCENT_BELOW),
+    test: (input) => input.phase === 'PMCC_OPEN' && isPmccAssignmentRisk(input),
     summary: pmccAssignmentRiskSummary
   },
   {
@@ -387,9 +426,7 @@ const RULES: RuleDefinition[] = [
     },
     test: (input) =>
       // Stryker disable next-line ConditionalExpression: missingData skips a null leapsDte first; this only narrows the type
-      input.leapsDte !== null &&
-      input.leapsDte >= 0 &&
-      input.leapsDte <= PMCC_LEAPS_ROLL_WINDOW_MAX_DTE,
+      input.leapsDte !== null && isInLeapsRollWindow(input.leapsDte),
     summary: pmccLeapsRollWindowSummary
   }
 ]

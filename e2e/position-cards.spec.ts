@@ -433,9 +433,9 @@ describe('US-18: position cards', () => {
     ).toEqual(['MSFT', 'AAPL', 'NVDA'])
   })
 
-  it('S21: a PMCC renders as a minimal card in the same shell until US-108', async () => {
-    // XYZ at $117.00 is 0.8% below the $118 short call, so PMCC_ASSIGNMENT_RISK opens a queue
-    // row; its 7-DTE short would flag on a wheel card.
+  it('S21: a PMCC renders the full US-108 card in the same shell', async () => {
+    // XYZ at $117.00 is 0.8% below the $118 short call, so US-108's ▲ ASSIGNMENT RISK leads the
+    // PMCC card's own strip, with the 7-DTE short's MANAGEMENT WINDOW behind it on the +1 chip.
     const { page } = await start('s21', {
       msftDte: 4,
       msftCall: MSFT_AT_TARGET,
@@ -451,32 +451,37 @@ describe('US-18: position cards', () => {
     await expectMsftMarkersRender(page)
 
     const xyz = cardFor(page, 'XYZ')
-    expect(await xyz.getAttribute('data-edge')).toBe('PMCC')
     expect(await xyz.getByText('PMCC', { exact: true }).count()).toBe(1)
     expect(await xyz.getByText('LEAPS + short call open', { exact: true }).count()).toBe(1)
     await expect.poll(async () => (await priceLines(xyz, 'XYZ'))[0], POLL).toBe('$117.00')
 
     const legs = legOf(xyz)
     expect(await legs.count()).toBe(2)
-    expect(await legCells(legs.nth(0))).toEqual([
+    expect((await legCells(legs.nth(0))).slice(0, 3)).toEqual([
       'L',
       `$80.00 LEAPS · ${leapsExpiration}`,
-      '161d',
-      '—'
+      '161d'
     ])
-    expect(await legCells(legs.nth(1))).toEqual([
+    expect((await legCells(legs.nth(1))).slice(0, 3)).toEqual([
       'S',
-      `$118.00 call · ${shortExpiration}`,
-      '7d',
-      '—'
+      `▲ ◷$118.00 call · ${shortExpiration}`,
+      '7d'
     ])
-    expect(await xyz.getByTestId('position-card-XYZ-pnl').textContent()).toBe('—')
-    expect(await footerText(xyz)).toBe(
-      'Cost basis$2,300.00$23.00 / sharePremium collected$200.00to date'
+
+    const strip = xyz.getByTestId('action-strip')
+    expect(await strip.getAttribute('data-tone')).toBe('gold')
+    expect(await stripLine(xyz)).toBe(
+      '▲ ASSIGNMENT RISK · stock 0.8% below the $118.00 strike · plan the roll'
     )
+    expect(await stripChip(xyz).getAttribute('title')).toBe(
+      'Also open:\n◷ MANAGEMENT WINDOW · 7 DTE remaining — review for roll or close'
+    )
+    expect(await legs.nth(0).getAttribute('data-action')).toBeNull()
+    expect(await legs.nth(1).getAttribute('data-action')).toBe('gold')
+    expect(await xyz.getAttribute('data-edge')).toBe('gold')
 
     expect(await ruleCodesFor(page, 'XYZ')).toContain('PMCC_ASSIGNMENT_RISK')
-    expect(await markerCounts(xyz)).toEqual({ strip: 0, badge: 0, flag: 0 })
+    expect(await markerCounts(xyz)).toEqual({ strip: 1, badge: 0, flag: 0 })
     for (const wheelBadge of ['CSP Open', 'CC Open', 'Shares', 'Complete']) {
       expect(await xyz.getByText(wheelBadge, { exact: true }).count()).toBe(0)
     }

@@ -6,7 +6,7 @@ import {
   type PositionListItem,
   createPmccPosition
 } from '../api/positions'
-import { insertPositionListItem, toPmccListItem } from '../lib/position-list-items'
+import { insertPositionListItem } from '../lib/position-list-items'
 import { positionQueryKeys } from './positionQueryKeys'
 
 export function useCreatePmccPosition(): ReturnType<
@@ -16,12 +16,11 @@ export function useCreatePmccPosition(): ReturnType<
 
   return useMutation<CreatePmccPositionResponse, ApiError, CreatePmccPositionPayload>({
     mutationFn: createPmccPosition,
-    // Slot the recorded row into the cached list rather than refetching every position:
-    // the response is the handler's own record of what was written, so it is authoritative.
-    onSuccess: (res) => {
-      const item = toPmccListItem(res)
+    // Slot the recorded row into the cached list rather than refetching every position: the
+    // service built `listItem` with the list's own code, so it is the row a refetch would return.
+    onSuccess: ({ listItem }) => {
       queryClient.setQueryData<PositionListItem[]>(positionQueryKeys.all, (prev) =>
-        prev && item ? insertPositionListItem(prev, item) : prev
+        prev && listItem ? insertPositionListItem(prev, listItem) : prev
       )
     }
   })

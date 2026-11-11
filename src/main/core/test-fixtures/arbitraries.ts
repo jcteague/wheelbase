@@ -5,7 +5,8 @@
 import fc from 'fast-check'
 import Decimal from 'decimal.js'
 import { WheelPhase } from '../types'
-import type { PmccContribution } from '../costbasis'
+import type { PmccContribution, PmccUnrealizedPnlInput } from '../costbasis'
+import type { PmccSignalInput, PmccSignalShort } from '../pmcc-card'
 
 const MONEY_SCALE = 10_000
 const UPPERCASE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
@@ -23,6 +24,10 @@ export const nonNegativeMoney = (maxDollars = 1000): fc.Arbitrary<string> =>
 /** Zero or negative money — what a "must be positive" guard has to reject. */
 export const nonPositiveMoney = (maxDollars = 1000): fc.Arbitrary<string> =>
   fc.integer({ min: -maxDollars * MONEY_SCALE, max: 0 }).map(scaled)
+
+/** Money of either sign, −maxDollars … maxDollars, as a 4-dp string. */
+export const signedMoney = (maxDollars = 1000): fc.Arbitrary<string> =>
+  fc.integer({ min: -maxDollars * MONEY_SCALE, max: maxDollars * MONEY_SCALE }).map(scaled)
 
 export const contracts = fc.integer({ min: 1, max: 50 })
 
@@ -64,4 +69,44 @@ export const pmccContribution: fc.Arbitrary<PmccContribution> = fc.record({
     .map(([amount, negative]) => (negative ? `-${amount}` : amount)),
   contracts,
   fees: nonNegativeMoney(10)
+})
+
+type PmccMarkedLeg = PmccUnrealizedPnlInput['legs'][number]
+
+/** One open PMCC leg on `side` with a non-negative mid — what `computePmccUnrealizedPnl` marks. */
+export const pmccMarkedLeg = (side: PmccMarkedLeg['side']): fc.Arbitrary<PmccMarkedLeg> =>
+  fc.record({ side: fc.constant(side), mid: nonNegativeMoney(100), contracts })
+
+/** One open PMCC short call, dte −5 … 60 so the expiring and management windows both draw. */
+export const pmccSignalShort: fc.Arbitrary<PmccSignalShort> = fc.record({
+  legId: fc.uuid(),
+  strike: positiveMoney(500),
+  dte: fc.integer({ min: -5, max: 60 }),
+  expiration: isoDay
+})
+
+/**
+ * Any PMCC card's signal input: 0–3 shorts sorted nearest first, an optional delta in [0, 1],
+ * an optional LEAPS spread, a basis of either sign, and earnings around the short windows.
+ */
+export const pmccSignalInput: fc.Arbitrary<PmccSignalInput> = fc.record({
+  leaps: fc.record({
+    strike: positiveMoney(500),
+    dte: fc.integer({ min: -5, max: 800 }),
+    delta: fc.option(nonNegativeMoney(1)),
+    spread: fc.option(
+      fc.record({
+        bid: nonNegativeMoney(100),
+        ask: nonNegativeMoney(100),
+        mid: nonNegativeMoney(100)
+      })
+    )
+  }),
+  shorts: fc
+    .array(pmccSignalShort, { maxLength: 3 })
+    .map((shorts) => [...shorts].sort((a, b) => a.dte - b.dte)),
+  price: fc.option(positiveMoney(500)),
+  basisPerShare: signedMoney(100),
+  managementWindowDte: fc.integer({ min: 0, max: 45 }),
+  daysToEarnings: fc.option(fc.integer({ min: -5, max: 30 }))
 })

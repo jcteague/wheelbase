@@ -11,6 +11,7 @@ import type { CreatePmccPositionPayload, CreatePmccPositionResult, LegRecord } f
 import type { IvrOnDemand } from './ivr-on-demand'
 import { money4 } from '../../shared/decimal-text'
 import { insertLegRow } from './leg-rows'
+import { readPmccListItem } from './list-positions'
 import { appendPmccSnapshot } from './pmcc-ledger'
 import { insertPosition } from './position-rows'
 
@@ -139,11 +140,14 @@ export function createPmccPosition(
   })()
   logger.debug({ positionId }, 'create_pmcc_position_tx_committed')
 
+  // The list row is built by the list's own code, so the renderer can insert it as-is.
+  const listItem = readPmccListItem(db, positionId)
+
   logger.info(
     { positionId, ticker, phase, initialNetDebit: openingDebit.initialNetDebit },
     'pmcc_position_created'
   )
   void ivrOnDemand?.collect(ticker)
 
-  return { ...rows, openingDebit }
+  return { ...rows, openingDebit, listItem }
 }

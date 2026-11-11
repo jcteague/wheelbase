@@ -4,9 +4,7 @@ import { fmtMoneyGrouped } from '../../lib/format'
 import {
   deriveWheelCardDisplay,
   type OptionCardDisplay,
-  type PnlTone,
-  type WheelCardDisplay,
-  type WheelCardMark
+  type WheelCardDisplay
 } from '../../lib/wheel-card-display'
 import { ExpiringSoonFlag } from '../ExpiringSoonFlag'
 import { PhaseBadge } from '../PhaseBadge'
@@ -17,14 +15,11 @@ import { CardFooterCell } from './CardFooterCell'
 import { CardHeader } from './CardHeader'
 import { CardShell } from './CardShell'
 import { LegBlock } from './LegBlock'
+import { OptionMarkText } from './OptionMarkText'
+import { PnlFigure } from './PnlFigure'
 import { PriceBlock } from './PriceBlock'
-import { EYEBROW, HEADLINE_FIGURE, SUB } from './styles'
+import { EYEBROW, SUB } from './styles'
 import type { CardAction } from './types'
-
-const PNL_TONE_CLASS: Record<PnlTone, string> = {
-  gain: 'text-wb-green',
-  loss: 'text-wb-red'
-}
 
 export type WheelCardProps = {
   item: WheelListItem
@@ -39,32 +34,6 @@ export type WheelCardProps = {
   profitTargetDefault?: number
 }
 
-function MarkText({ mark, testId }: { mark: WheelCardMark; testId: string }): React.JSX.Element {
-  if (mark === 'unavailable') {
-    return (
-      <span data-testid={testId} title="Option snapshot unavailable" className="cursor-help">
-        — unavailable
-      </span>
-    )
-  }
-  const { note } = mark
-  return (
-    <span data-testid={testId}>
-      {mark.mid}
-      {note?.kind === 'noBid' && <span className={SUB}> no bid</span>}
-      {note?.kind === 'wideSpread' && (
-        <span
-          data-testid="opt-mid-spread-warning"
-          title={note.tooltip}
-          className="ml-1 text-wb-gold"
-        >
-          ⚠
-        </span>
-      )}
-    </span>
-  )
-}
-
 /** The header's TARGET badge and expiring-soon flag; only an open option leg has either. */
 function OptionLegFlags({ pnl, leg }: Pick<OptionCardDisplay, 'pnl' | 'leg'>): React.JSX.Element {
   return (
@@ -72,23 +41,6 @@ function OptionLegFlags({ pnl, leg }: Pick<OptionCardDisplay, 'pnl' | 'leg'>): R
       {pnl !== 'unavailable' && pnl.target && <TargetBadge targetReached {...pnl.target} />}
       {leg.dteUrgent && <ExpiringSoonFlag compact />}
     </>
-  )
-}
-
-function PnlFigure({
-  pnl,
-  testId
-}: {
-  pnl: WheelCardDisplay['pnl']
-  testId: string
-}): React.JSX.Element {
-  const blank = typeof pnl === 'string'
-  const tone = blank ? 'text-wb-text-muted' : PNL_TONE_CLASS[pnl.tone]
-  return (
-    <div data-testid={testId}>
-      <div className={`${HEADLINE_FIGURE} ${tone}`}>{blank ? '—' : pnl.amount}</div>
-      <div className={`font-wb-mono text-[10.5px] ${tone}`}>{blank ? pnl : pnl.percentLine}</div>
-    </div>
   )
 }
 
@@ -130,7 +82,7 @@ function WheelLeg({
           {leg.dte}
         </span>
       }
-      mark={<MarkText mark={leg.mark} testId={markTestId} />}
+      mark={<OptionMarkText mark={leg.mark} testId={markTestId} />}
       trailing={<span className={SUB}> · {leg.credit} credit</span>}
     />
   )

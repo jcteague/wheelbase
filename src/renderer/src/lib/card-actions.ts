@@ -7,28 +7,35 @@ import {
   strikeProximitySummary,
   type PriceVsStrikeInput
 } from '../../../main/core/alerts'
+import {
+  LANE_EXPIRING,
+  LANE_GOLD_ASSIGNMENT,
+  LANE_MANAGEMENT_WINDOW,
+  LANE_RED_ASSIGNMENT,
+  type PmccActionGlyph,
+  type PmccLaneRank,
+  type PmccStatusWord,
+  type PmccTone
+} from '../../../main/core/pmcc-card'
 
-export type CardTone = 'red' | 'gold'
+// The lanes, tones, glyphs and PMCC status words are defined once in the PMCC engine;
+// the wheel card adds its own two status words.
+export type CardTone = PmccTone
 
-// Lane order on the card, lowest first. 0 and 3 are reserved for US-108's
-// ✕ and ◆ lanes.
-export const LANE_RED_ASSIGNMENT = 1
-export const LANE_GOLD_ASSIGNMENT = 2
-export const LANE_EXPIRING = 4
-export const LANE_MANAGEMENT_WINDOW = 5
+export type LaneRank = PmccLaneRank
 
 type AssignmentRank = typeof LANE_RED_ASSIGNMENT | typeof LANE_GOLD_ASSIGNMENT
 
-export type LaneRank = AssignmentRank | typeof LANE_EXPIRING | typeof LANE_MANAGEMENT_WINDOW
-
-export type StatusWord = 'CALL BREACHED' | 'STRIKE PROXIMITY' | 'EXPIRING' | 'MANAGEMENT WINDOW'
+export type StatusWord = PmccStatusWord | 'CALL BREACHED' | 'STRIKE PROXIMITY'
 
 export interface CardAction {
-  glyph: '▲' | '◷'
+  glyph: PmccActionGlyph
   statusWord: StatusWord
   tone: CardTone
   rank: LaneRank
   summary: string
+  /** The leg mark's hover sentence; the action line when absent. */
+  tooltip?: string
 }
 
 export type QueueRowForCard = Pick<ManagementQueueItem, 'ruleCode' | 'summary'>

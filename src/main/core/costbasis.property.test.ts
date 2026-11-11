@@ -15,16 +15,24 @@ import {
   calculateRollBasis,
   computeUnrealizedPnl,
   calculatePmccOpeningDebit,
-  calculatePmccLedger
+  calculatePmccLedger,
+  computePmccUnrealizedPnl
 } from './costbasis'
-import type { PmccContribution, PmccLedgerInput, PmccOpeningDebitInput } from './costbasis'
+import type {
+  PmccContribution,
+  PmccLedgerInput,
+  PmccOpeningDebitInput,
+  PmccUnrealizedPnlInput
+} from './costbasis'
 import {
   contracts,
   isoDay,
   nonNegativeMoney,
   nonPositiveMoney,
   pmccContribution,
-  positiveMoney
+  pmccMarkedLeg,
+  positiveMoney,
+  signedMoney
 } from './test-fixtures/arbitraries'
 
 const SHARES_PER_CONTRACT = 100
@@ -614,6 +622,104 @@ describe('calculatePmccLedger', () => {
         expect(result.premiumRecoveredPercent === null).toBe(money(result.leapsCostTotal).lte(0))
         expect(result.effectiveShareCost === null).toBe(input.longStrike === null)
       })
+    )
+  })
+})
+
+describe('computePmccUnrealizedPnl', () => {
+  /** At least one LONG leg, followed by any mix of further LONG and SHORT legs. */
+  const markedInput: fc.Arbitrary<PmccUnrealizedPnlInput> = fc.record({
+    legs: fc
+      .tuple(
+        pmccMarkedLeg('LONG'),
+        fc.array(fc.oneof(pmccMarkedLeg('LONG'), pmccMarkedLeg('SHORT')), { maxLength: 4 })
+      )
+      .map(([first, rest]) => [first, ...rest]),
+    basisTotal: signedMoney(10_000)
+  })
+
+  it('P&L is the long mid less the short mid, times shares, less the basis', () => {
+    fc.assert(
+      fc.property(
+        nonNegativeMoney(100),
+        nonNegativeMoney(100),
+        contracts,
+        signedMoney(10_000),
+        (midL, midS, c, basisTotal) => {
+          const result = computePmccUnrealizedPnl({
+            legs: [
+              { side: 'LONG', mid: midL, contracts: c },
+              { side: 'SHORT', mid: midS, contracts: c }
+            ],
+            basisTotal
+          })
+          const gross = money(midL)
+            .minus(midS)
+            .times(SHARES_PER_CONTRACT * c)
+          const pnl = gross.minus(basisTotal)
+          expectSameAmount(result.gross, gross)
+          expectSameAmount(result.pnl, pnl)
+          expect(result.pnlPercentOfBasis).toBe(
+            money(basisTotal).gt(0)
+              ? pnl
+                  .dividedBy(basisTotal)
+                  .times(100)
+                  .toDecimalPlaces(4, Decimal.ROUND_HALF_UP)
+                  .toFixed(4)
+              : null
+          )
+        }
+      )
+    )
+  })
+
+  it('is independent of leg order', () => {
+    fc.assert(
+      fc.property(
+        markedInput.chain((input) =>
+          fc.tuple(
+            fc.constant(input),
+            fc.shuffledSubarray(input.legs, {
+              minLength: input.legs.length,
+              maxLength: input.legs.length
+            })
+          )
+        ),
+        ([input, shuffled]) => {
+          expect(computePmccUnrealizedPnl({ ...input, legs: shuffled })).toEqual(
+            computePmccUnrealizedPnl(input)
+          )
+        }
+      )
+    )
+  })
+
+  it('scaling every contract count and the basis by k scales gross and P&L and keeps the percent', () => {
+    fc.assert(
+      fc.property(markedInput, fc.integer({ min: 2, max: 20 }), (input, k) => {
+        const one = computePmccUnrealizedPnl(input)
+        const many = computePmccUnrealizedPnl({
+          legs: input.legs.map((leg) => ({ ...leg, contracts: leg.contracts * k })),
+          basisTotal: money(input.basisTotal).times(k).toFixed(4)
+        })
+        expectSameAmount(many.gross, money(one.gross).times(k))
+        expectSameAmount(many.pnl, money(one.pnl).times(k))
+        expect(many.pnlPercentOfBasis).toBe(one.pnlPercentOfBasis)
+      })
+    )
+  })
+
+  it('rejects any legs without a LONG leg', () => {
+    fc.assert(
+      fc.property(
+        fc.array(pmccMarkedLeg('SHORT'), { maxLength: 4 }),
+        signedMoney(10_000),
+        (legs, basisTotal) => {
+          expect(() => computePmccUnrealizedPnl({ legs, basisTotal })).toThrow(
+            'legs must include a LONG leg'
+          )
+        }
+      )
     )
   })
 })

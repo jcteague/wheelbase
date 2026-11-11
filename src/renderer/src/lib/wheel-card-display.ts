@@ -9,12 +9,8 @@ import { computeUnrealizedPnl } from '../../../main/core/costbasis'
 import { resolveProfitTarget } from '../../../main/core/profit-target'
 import { isDteUrgent } from './dte'
 import { fmtMoney, formatSignedMoney } from './format'
-import {
-  formatPnlPercentForDisplay,
-  hasNoBid,
-  isWideSpread,
-  type TargetTooltipInput
-} from './option-display'
+import { formatPnlPercentForDisplay, type TargetTooltipInput } from './option-display'
+import { optionMark, usableSnapshot, type OptionMark } from './option-mark'
 
 export type PnlTone = 'gain' | 'loss'
 
@@ -29,10 +25,7 @@ export type ValuedPnl = {
   percentLine: string
 }
 
-/** `no bid` wins over the wide-spread warning: a zero bid always reads as wide. */
-export type MarkNote = { kind: 'noBid' } | { kind: 'wideSpread'; tooltip: string }
-
-export type WheelCardMark = { mid: string; note: MarkNote | null } | 'unavailable'
+export type WheelCardMark = OptionMark
 
 export type OptionLeg = {
   tag: 'P' | 'C'
@@ -93,11 +86,6 @@ function closedDisplay(phase: WheelListItem['phase']): ClosedCardDisplay {
   }
 }
 
-/** A snapshot every helper below can parse without throwing. */
-function isUsableSnapshot({ bid, ask, mid }: OptionSnapshot): boolean {
-  return [bid, ask, mid].every(isNumeric) && new Decimal(mid).gte(0)
-}
-
 /** `computeUnrealizedPnl`'s preconditions on the stored leg: it throws otherwise. */
 function pnlLeg(item: WheelListItem): { entryPremium: string; contracts: number } | null {
   const { entryPremiumPerContract: entryPremium, contracts } = item
@@ -133,17 +121,6 @@ function derivePnl(
   }
 }
 
-function markNote(snapshot: OptionSnapshot): MarkNote | null {
-  if (hasNoBid(snapshot)) return { kind: 'noBid' }
-  if (isWideSpread(snapshot)) {
-    return {
-      kind: 'wideSpread',
-      tooltip: `Wide spread: ${fmtMoney(snapshot.bid)} × ${fmtMoney(snapshot.ask)} — P&L may be unreliable`
-    }
-  }
-  return null
-}
-
 export function deriveWheelCardDisplay(
   item: WheelListItem,
   snapshot: OptionSnapshot | undefined,
@@ -163,7 +140,7 @@ export function deriveWheelCardDisplay(
     }
   }
 
-  const live = snapshot !== undefined && isUsableSnapshot(snapshot) ? snapshot : null
+  const live = usableSnapshot(snapshot)
   const isPut = item.instrumentType === 'PUT'
 
   return {
@@ -177,7 +154,7 @@ export function deriveWheelCardDisplay(
       expiration: item.expiration ?? DASH,
       dte: item.dte === null ? DASH : `${item.dte}d`,
       dteUrgent: isDteUrgent(item.dte),
-      mark: live === null ? 'unavailable' : { mid: fmtMoney(live.mid), note: markNote(live) },
+      mark: optionMark(live),
       credit: item.entryPremiumPerContract === null ? DASH : fmtMoney(item.entryPremiumPerContract)
     }
   }

@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { evaluatePosition, isNumeric } from './alerts'
+import {
+  earningsProximitySummary,
+  evaluatePosition,
+  expirationImminentSummary,
+  isEarningsProximate,
+  isExpirationImminent,
+  isInLeapsRollWindow,
+  isInManagementWindow,
+  isNumeric,
+  isPmccAssignmentRisk,
+  managementWindowSummary,
+  percentBelowStrike
+} from './alerts'
 import type { AlertEvaluationInput, AlertMatch, RuleCode, SkippedRule } from './alerts'
 import { WheelPhase } from './types'
 
@@ -989,5 +1001,113 @@ describe('isNumeric', () => {
     { value: 'NaN', expected: false }
   ])('$value → $expected', ({ value, expected }) => {
     expect(isNumeric(value)).toBe(expected)
+  })
+})
+
+describe('exported short-leg summaries (US-108)', () => {
+  it('expirationImminentSummary names the DTE and the strike to 2 dp', () => {
+    expect(expirationImminentSummary({ dte: 4, strike: '108.0000' })).toBe(
+      'Expires in 4 days at $108.00 strike'
+    )
+  })
+
+  it('managementWindowSummary names the DTE remaining', () => {
+    expect(managementWindowSummary({ dte: 14 })).toBe('14 DTE remaining — review for roll or close')
+  })
+
+  it('earningsProximitySummary names the days to earnings and the expiration', () => {
+    expect(earningsProximitySummary({ daysToEarnings: 2, expiration: '2026-11-20' })).toBe(
+      'Earnings in 2 days before your 2026-11-20 expiration'
+    )
+  })
+})
+
+describe('percentBelowStrike (US-108)', () => {
+  it('is the unrounded percent the price sits below the strike', () => {
+    // (108 − 106.10) / 108 × 100 = 1.759259…
+    expect(
+      percentBelowStrike({ strike: '108.0000', currentUnderlyingPrice: '106.10' }).toFixed(4)
+    ).toBe('1.7593')
+  })
+
+  it('is negative once the price is above the strike', () => {
+    // (108 − 111.40) / 108 × 100 = −3.148148…
+    expect(
+      percentBelowStrike({ strike: '108.0000', currentUnderlyingPrice: '111.40' }).toFixed(4)
+    ).toBe('-3.1481')
+  })
+})
+
+// [US-108] The bound predicates the alert rules and the PMCC card both call, so the
+// card's ◷ ◆ ▲ ⚑ states cannot drift from the queue's thresholds.
+describe('isExpirationImminent', () => {
+  it.each([
+    [-1, false],
+    [0, true],
+    [1, true],
+    [4, true],
+    [5, true],
+    [6, false]
+  ])('dte %i → %s', (dte, expected) => {
+    expect(isExpirationImminent(dte)).toBe(expected)
+  })
+})
+
+describe('isInManagementWindow', () => {
+  it.each([
+    [5, 21, false],
+    [6, 21, true],
+    [7, 21, true],
+    [20, 21, true],
+    [21, 21, true],
+    [22, 21, false],
+    [30, 30, true],
+    [31, 30, false]
+  ])('dte %i with a %i-day window → %s', (dte, windowDte, expected) => {
+    expect(isInManagementWindow(dte, windowDte)).toBe(expected)
+  })
+})
+
+describe('isEarningsProximate', () => {
+  it.each([
+    [-1, 30, false],
+    [0, 30, true],
+    [1, 30, true],
+    [9, 30, true],
+    [10, 30, true],
+    [11, 30, false],
+    [3, 2, false],
+    [3, 3, true],
+    [3, 4, true]
+  ])('%i days to earnings with dte %i → %s', (daysToEarnings, dte, expected) => {
+    expect(isEarningsProximate(daysToEarnings, dte)).toBe(expected)
+  })
+})
+
+describe('isInLeapsRollWindow', () => {
+  it.each([
+    [-1, false],
+    [0, true],
+    [1, true],
+    [59, true],
+    [60, true],
+    [61, false]
+  ])('LEAPS dte %i → %s', (leapsDte, expected) => {
+    expect(isInLeapsRollWindow(leapsDte)).toBe(expected)
+  })
+})
+
+describe('isPmccAssignmentRisk', () => {
+  it.each([
+    // (100 − price) / 100 × 100 = percent below the $100 strike
+    ['97.9900', false], // 2.01% below
+    ['98.0000', true], // exactly 2% below
+    ['98.0100', true], // 1.99% below
+    ['100.0000', true], // at the money
+    ['103.0000', true] // above the strike
+  ])('price %s against a $100 strike → %s', (price, expected) => {
+    expect(isPmccAssignmentRisk({ strike: '100.0000', currentUnderlyingPrice: price })).toBe(
+      expected
+    )
   })
 })

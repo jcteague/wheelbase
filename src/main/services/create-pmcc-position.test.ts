@@ -1,11 +1,12 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { openPmcc, ValidationError } from '../core/lifecycle'
 import { logger } from '../logger'
 import type { CreatePmccPositionPayload } from '../schemas'
 import { isoDate, makeTestDb } from '../test-utils'
 import { createPmccPosition, getPosition, listPositions } from './positions'
+import { saveAlertDefaults } from './alert-defaults'
 import type { IvrOnDemand } from './ivr-on-demand'
 
 vi.mock('../core/lifecycle', async (importOriginal) => {
@@ -266,6 +267,55 @@ describe('createPmccPosition', () => {
 
     expect(items).toHaveLength(1)
     expect(items[0].ticker).toBe('XYZ')
+  })
+
+  describe('the list item for the new position (US-108)', () => {
+    // 2026-11-06: the short call expires 2026-12-01, 25 DTE — inside a 30-day window.
+    const ENTRY = {
+      long: { expiration: '2027-11-19', fillDate: '2026-11-06' },
+      short: { expiration: '2026-12-01', fillDate: '2026-11-06' }
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date(2026, 10, 6, 12, 0))
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('resolves the saved management window (30) and the stored next earnings date', () => {
+      const db = makeTestDb()
+      saveAlertDefaults(db, { profitTargetPercent: 50, managementWindowDte: 30 })
+      db.prepare(
+        `INSERT INTO earnings_date (ticker, next_earnings, checked_through, checked_at, source)
+         VALUES ('XYZ', '2026-11-18', '2026-12-31', '2026-11-06T12:00:00.000Z', 'finnhub')`
+      ).run()
+
+      const { position, listItem } = createPmccPosition(db, makePayload(ENTRY))
+
+      expect(listItem).toMatchObject({
+        id: position.id,
+        strategyType: 'PMCC',
+        nextEarnings: '2026-11-18',
+        pmcc: {
+          managementWindowDte: 30,
+          legs: [
+            { side: 'LONG', expiration: '2027-11-19', dte: 378 },
+            { side: 'SHORT', expiration: '2026-12-01', dte: 25 }
+          ]
+        }
+      })
+    })
+
+    it('is the row listPositions returns for the new position', () => {
+      const db = makeTestDb()
+
+      const { listItem } = createPmccPosition(db, makePayload(ENTRY))
+
+      expect(listPositions(db)).toEqual([listItem])
+    })
   })
 
   it('logs pmcc_position_created on success', () => {

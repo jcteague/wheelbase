@@ -50,4 +50,14 @@ describe('formatTargetTooltip', () => {
       })
     ).toBe('62.9% of max profit ($350) — target is 50%')
   })
+
+  it('shows a fractional max profit to the cent, rounded half-up', () => {
+    expect(
+      formatTargetTooltip({
+        pnlPercent: '50.0000',
+        maxProfit: '262.5050',
+        targetPercent: 50
+      })
+    ).toBe('50% of max profit ($262.51) — target is 50%')
+  })
 })
