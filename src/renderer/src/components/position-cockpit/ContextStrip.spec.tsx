@@ -1,13 +1,23 @@
 import { render, screen } from '@testing-library/react'
+import { addDays, format, parseISO } from 'date-fns'
 import { ContextStrip } from './ContextStrip'
 import { MANAGEMENT_RULES } from '../../lib/verdict'
 import type { CockpitInput } from '../../lib/verdict'
 
+const TODAY = parseISO('2026-01-15')
+
 function daysFromToday(n: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() + n)
-  return d.toISOString().slice(0, 10)
+  return format(addDays(TODAY, n), 'yyyy-MM-dd')
 }
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-01-15T12:00:00Z'))
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 const TIGHT_DTE = MANAGEMENT_RULES.tightDte - 2 // well inside tight window
 const NORMAL_DTE = MANAGEMENT_RULES.tightDte + 10 // well outside tight window
