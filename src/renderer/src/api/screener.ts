@@ -5,6 +5,15 @@ import type { IvRankPair } from './ivr'
 
 export type { ApiError }
 
+type ScreenerApi = Window['api']['screener']
+
+/** A screener channel's success payload, exactly as the preload types it. */
+export type ScreenerSuccess<K extends keyof ScreenerApi> = ScreenerApi[K] extends (
+  ...args: never[]
+) => Promise<infer R>
+  ? Omit<Extract<R, { ok: true }>, 'ok'>
+  : never
+
 // Field-for-field mirror of IpcCandidateEarnings (src/preload/index.d.ts).
 // `flagged` only occurs when the saved criteria set earningsHandling: 'flag'.
 export type ScreenerCandidateEarnings =
@@ -37,22 +46,9 @@ export type ScreenerCandidate = {
   timestamp: string // ISO quote time
 } & IvRankPair
 
-// Field-for-field mirror of IpcScreenerExclusion (src/preload/index.d.ts).
-export type ScreenerExclusion = {
-  ticker: string
-  code:
-    | 'price_ceiling'
-    | 'iv_rank_floor'
-    | 'earnings_in_window'
-    | 'dte_window'
-    | 'delta_unavailable'
-    | 'delta_band'
-    | 'open_interest'
-    | 'spread'
-    | 'no_options_listed'
-    | 'data_unavailable'
-  reason: string // rendered verbatim — the engine owns the wording
-}
+// One row per non-ranking ticker, shared by the wheel and PMCC lenses. `reason` is rendered
+// verbatim — the engine owns the wording.
+export type ScreenerExclusion = ScreenerSuccess<'results'>['excluded'][number]
 
 // A provider outage is data (`status: 'provider_unavailable'`), not an error —
 // it always arrives with empty ranked/excluded and a null quoteTimestamp.

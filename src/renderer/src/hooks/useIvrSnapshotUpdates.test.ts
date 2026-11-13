@@ -1,9 +1,10 @@
-import { renderHook, act } from '@testing-library/react'
+import { renderHook, act, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screenerQueryKeys } from './screenerQueryKeys'
 import { useIvrSnapshotUpdates } from './useIvrSnapshotUpdates'
+import { usePmccScreenerResults } from './usePmccScreenerResults'
 import { watchlistQueryKeys } from './watchlistQueryKeys'
 
 let onSnapshotUpdatedCallback: ((event: { ticker: string }) => void) | null = null
@@ -53,6 +54,38 @@ describe('useIvrSnapshotUpdates', () => {
 
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: watchlistQueryKeys.snapshot })
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: screenerQueryKeys.results })
+  })
+
+  // [US-110] A new reading can move a ticker into or out of the PMCC IV-rank band, so the
+  // PMCC lens re-screens just as the wheel lens does.
+  it('re-screens the PMCC lens when a reading lands', async () => {
+    const mockPmccResults = vi.fn<Window['api']['screener']['pmccResults']>()
+    mockPmccResults.mockResolvedValue({
+      ok: true,
+      status: 'ok',
+      ranked: [],
+      excluded: [],
+      quoteTimestamp: null
+    })
+    Object.assign(window, {
+      api: { ...window.api, screener: { ...window.api.screener, pmccResults: mockPmccResults } }
+    })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+    renderHook(
+      () => {
+        usePmccScreenerResults()
+        useIvrSnapshotUpdates()
+      },
+      { wrapper: makeWrapper(queryClient) }
+    )
+    await waitFor(() => expect(mockPmccResults).toHaveBeenCalledTimes(1))
+
+    act(() => {
+      onSnapshotUpdatedCallback?.({ ticker: 'AAPL' })
+    })
+
+    await waitFor(() => expect(mockPmccResults).toHaveBeenCalledTimes(2))
   })
 
   it('unsubscribes on unmount', () => {

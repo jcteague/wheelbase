@@ -9,16 +9,22 @@ import {
   PROFIT_TARGET_RANGE_MESSAGE
 } from './core/alert-thresholds'
 import {
+  DEBIT_TO_WIDTH_MESSAGE,
   DELTA_RANGE_MESSAGE,
   DTE_MAX,
   DTE_MAX_MESSAGE,
   DTE_MIN,
   DTE_MIN_MESSAGE,
+  IV_RANK_CEILING_MESSAGE,
   IV_RANK_MESSAGE,
+  LONG_DTE_MAX,
+  LONG_DTE_MAX_MESSAGE,
   OPEN_INTEREST_MESSAGE,
   PRICE_CEILING_MESSAGE,
   SPREAD_PERCENT_MESSAGE,
+  isDebitToWidthInRange,
   isDeltaInRange,
+  isIvRankCeilingInRange,
   isIvRankFloorInRange,
   isOpenInterestInRange,
   isPriceCeilingInRange,
@@ -783,6 +789,43 @@ export const SaveScreeningCriteriaPayloadSchema = z.object({
   earningsHandling: z.enum(['exclude', 'flag'])
 })
 export type SaveScreeningCriteriaPayload = z.infer<typeof SaveScreeningCriteriaPayloadSchema>
+
+// ---------------------------------------------------------------------------
+// PMCC screening criteria (US-110)
+// ---------------------------------------------------------------------------
+
+// Same split as the wheel schema above: per-field bounds here, the six cross-field
+// rules (inverted bands, overlapping DTE windows) in `savePmccScreeningCriteria` so
+// they reach the renderer with their own codes. Like the wheel schema this is a
+// plain (stripping) `z.object`, so a stray `maxSpreadAbsolute` is dropped, not
+// rejected — the service supplies that field itself.
+export const SavePmccScreeningCriteriaPayloadSchema = z.object({
+  longDeltaMin: z.string().refine(isDeltaInRange, DELTA_RANGE_MESSAGE),
+  longDeltaMax: z.string().refine(isDeltaInRange, DELTA_RANGE_MESSAGE),
+  longDteMin: z
+    .number()
+    .int()
+    .min(DTE_MIN, DTE_MIN_MESSAGE)
+    .max(LONG_DTE_MAX, LONG_DTE_MAX_MESSAGE),
+  longDteMax: z
+    .number()
+    .int()
+    .min(DTE_MIN, DTE_MIN_MESSAGE)
+    .max(LONG_DTE_MAX, LONG_DTE_MAX_MESSAGE),
+  shortDeltaMin: z.string().refine(isDeltaInRange, DELTA_RANGE_MESSAGE),
+  shortDeltaMax: z.string().refine(isDeltaInRange, DELTA_RANGE_MESSAGE),
+  shortDteMin: z.number().int().min(DTE_MIN, DTE_MIN_MESSAGE).max(DTE_MAX, DTE_MAX_MESSAGE),
+  shortDteMax: z.number().int().min(DTE_MIN, DTE_MIN_MESSAGE).max(DTE_MAX, DTE_MAX_MESSAGE),
+  maxDebitToWidthPercent: z.string().refine(isDebitToWidthInRange, DEBIT_TO_WIDTH_MESSAGE),
+  minOpenInterest: z.number().int().refine(isOpenInterestInRange, OPEN_INTEREST_MESSAGE),
+  maxSpreadPercent: z.string().refine(isSpreadPercentInRange, SPREAD_PERCENT_MESSAGE),
+  minIvRank: z.string().refine(isIvRankFloorInRange, IV_RANK_MESSAGE).nullable(),
+  maxIvRank: z.string().refine(isIvRankCeilingInRange, IV_RANK_CEILING_MESSAGE).nullable(),
+  earningsHandling: z.enum(['exclude', 'flag'])
+})
+export type SavePmccScreeningCriteriaPayload = z.infer<
+  typeof SavePmccScreeningCriteriaPayloadSchema
+>
 
 // ---------------------------------------------------------------------------
 // Alerts (US-50)

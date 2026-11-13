@@ -25,8 +25,11 @@ vi.mock('./WatchlistEntryForm', () => ({
   )
 }))
 
+import type { PmccScreenerCandidate } from '../api/pmcc-screener'
+import type { Bench, BenchStock } from '../lib/bench'
+import { XLF_DIAGONAL } from '../test-fixtures/pmcc-diagonals'
 import { BenchGrid } from './BenchGrid'
-import { meets, waiting } from './bench-test-utils'
+import { entry, meets, row, waiting } from './bench-test-utils'
 
 // [US-96] The grid owns which stock the detail panel is showing. The page hands it a
 // ticker the trader clicked, but that ticker can go stale — a removal takes its stock off
@@ -35,11 +38,14 @@ import { meets, waiting } from './bench-test-utils'
 
 const noop = (): void => {}
 
+type GridProps = Parameters<typeof BenchGrid>[0]
+
 function renderGrid(
-  props: Partial<Parameters<typeof BenchGrid>[0]> = {}
+  props: Partial<Extract<GridProps, { strategy: 'WHEEL' }>> = {}
 ): ReturnType<typeof render> {
   return render(
     <BenchGrid
+      strategy="WHEEL"
       bench={{ meets: [meets()], waiting: [waiting({ ticker: 'AAPL' })] }}
       selected={null}
       onSelect={noop}
@@ -160,5 +166,78 @@ describe('BenchGrid', () => {
     await user.click(screen.getByTestId('bench-review-KO'))
 
     expect(onReview).toHaveBeenCalledWith(expect.objectContaining({ ticker: 'KO' }))
+  })
+
+  // [US-110] The PMCC lens: the same grid, a diagonal per card, and its own empty copy —
+  // the knobs it names are the PMCC sheet's, not the wheel's.
+  describe('through the PMCC lens', () => {
+    const XLF: BenchStock<PmccScreenerCandidate> = {
+      ...meets({ ticker: 'XLF', row: row({ entry: entry({ ticker: 'XLF' }) }) }),
+      candidate: XLF_DIAGONAL
+    }
+    const AMD: BenchStock<PmccScreenerCandidate> = {
+      ...waiting({ ticker: 'AMD', reason: 'debit 93.84% of width exceeds 90%' }),
+      candidate: null
+    }
+
+    function renderPmccGrid(
+      bench: Bench<PmccScreenerCandidate>,
+      props: Partial<Extract<GridProps, { strategy: 'PMCC' }>> = {}
+    ): void {
+      render(
+        <BenchGrid
+          strategy="PMCC"
+          bench={bench}
+          selected={null}
+          onSelect={noop}
+          onRemove={noop}
+          onAdjustCriteria={noop}
+          criteriaUnloadable={false}
+          screened
+          editing={null}
+          onEdit={noop}
+          onEditDone={noop}
+          {...props}
+        />
+      )
+    }
+
+    it('names the PMCC knobs to loosen when a screen ran and no diagonal met them', () => {
+      renderPmccGrid({ meets: [], waiting: [AMD] })
+
+      const empty = within(section('Meets criteria')).getByTestId('screener-empty')
+      expect(empty).toHaveTextContent('No diagonals match your PMCC criteria')
+      expect(empty).toHaveTextContent(
+        'Every LEAPS and short-call pair on your watchlist was filtered out. Loosen a delta band, a DTE window, or the debit-to-width limit.'
+      )
+      expect(empty).not.toHaveTextContent('No candidates match your criteria')
+      expect(within(empty).getByRole('button', { name: 'Adjust criteria' })).toBeEnabled()
+    })
+
+    it('waits for market data instead of blaming the PMCC criteria when no screen ran', () => {
+      renderPmccGrid({ meets: [], waiting: [AMD] }, { screened: false })
+
+      const meetsSection = section('Meets criteria')
+      expect(within(meetsSection).queryByTestId('screener-empty')).toBeNull()
+      expect(meetsSection).toHaveTextContent('Waiting for market data')
+    })
+
+    it('summarises each card as a diagonal and titles its rank with the score', () => {
+      renderPmccGrid({ meets: [XLF], waiting: [AMD] })
+
+      const card = within(section('Meets criteria')).getByTestId('watchlist-row-XLF')
+      expect(within(card).getByTestId('watchlist-contract')).toHaveTextContent(
+        '$42.00 LEAPS · $53.00 short Oct 23 · 6.63% on debit'
+      )
+      expect(within(card).getByTestId('watchlist-rank')).toHaveAttribute('title', '2.38')
+    })
+
+    it('opens the detail on the matching diagonal, with no Review trade', () => {
+      renderPmccGrid({ meets: [XLF], waiting: [AMD] })
+
+      expect(screen.getByTestId('bench-detail-ticker')).toHaveTextContent('XLF')
+      expect(screen.getByTestId('bench-detail-diagonal')).toHaveTextContent('$53.00 CALL')
+      expect(screen.queryByRole('button', { name: /Review trade/ })).toBeNull()
+    })
   })
 })

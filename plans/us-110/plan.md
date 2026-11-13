@@ -18,7 +18,7 @@ Estimated at **8 points**. Areas 1–6 are main-process and observable only thro
 
 Read these before starting implementation — they contain the decisions, data model, and API contract:
 
-- **User Story & Acceptance Criteria:** Linear [OPT-18](https://linear.app/optionswheel/issue/OPT-18/us-110-add-pmcc-screening-criteria-to-candidate-screener) — saved 2026-09-20; there is no archived markdown story for US-110
+- **User Story & Acceptance Criteria:** Linear [OPT-18](https://linear.app/optionswheel/issue/OPT-18/us-110-add-pmcc-screening-criteria-to-candidate-screener) — saved 2026-09-20, plan re-verified against `main` 2026-11-11 (see "Revision 2026-11-11" below); there is no archived markdown story for US-110
 - **Mockups:** `mockups/us-110-pmcc-screening-bench.mdx`, `mockups/us-110-pmcc-criteria-sheet.mdx`
 - **Research & Design Decisions:** `plans/us-110/research.md`
 - **Data Model, Funnel Table & Fixture Numbers:** `plans/us-110/data-model.md`
@@ -27,7 +27,21 @@ Read these before starting implementation — they contain the decisions, data m
 
 ## Prerequisites
 
-None — all required schema and infrastructure already exists. `app_settings` (migration 006) holds the new document; `getOptionChainSnapshot` already takes `type: 'call'`; `fetchIsolatedStockQuotes`, `readEarningsOrEmpty`, `getAssessedIvrByUnderlying`, `ensureTradingCalendar` are reused as-is; `SheetPanel width={460}` and the `Sheet*` primitives exist. US-101 (PMCC entry form) is **not** a prerequisite — promotion is US-122.
+None — all required schema and infrastructure already exists. `app_settings` (migration 006) holds the new document; `getOptionChainSnapshot` already takes `type: 'call'`, and the fake provider already honours both `expirationFrom` and `expirationTo` (`integrations/fake-market-data.ts:271-272`); `fetchIsolatedStockQuotes`, `readEarningsOrEmpty`, `ensureTradingCalendar` and the US-121 IV-rank read path (`readIvRankLookup` / `lookupOf` in `services/iv-rank-lookup.ts`, which needs the process's `IvRunState`) are reused as-is; `SheetPanel width={460}` and the `Sheet*` primitives exist. Shared helpers the engine reuses: `fixed4` / `money4` (`src/shared/decimal-text.ts`), `toFiniteDecimal` (`core/finite-decimal.ts`), `shortStrikeAboveLeaps` (`core/pmcc-rules.ts`). US-101/US-103 (PMCC entry) have since shipped but are **not** prerequisites — promotion is US-122.
+
+## Revision 2026-11-11
+
+The plan was written 2026-09-20. Re-checked against `main` at `29d2754`; what changed underneath it and how the areas below now read:
+
+| Change on `main`                                                                                                                                                                                                                                                                                                                                                                                     | Effect on this plan                                                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| US-121 replaced the Barchart scrape with an IV rank computed from the app's own IV30 history. `getAssessedIvrByUnderlying` / `ivr-snapshots.ts` are gone; the read is `readIvRankLookup(db, tickers, { now, calendar, lastEarnings, runState })`, and each row carries `IvRankPair` (`ivRank` **plus** `ivRankAbsence`). The research claim that the consumer interface "is not changing" was wrong. | Area 5 calls `readIvRankLookup` and spreads `lookupOf(...)` onto each ranked candidate; `screenWatchlistPmccCandidates` and `registerScreenerIpc`'s PMCC handler take `runState`. Area 6/7 types use `IpcIvRankPair` / `IvRankPair`.                                                            |
+| IV rank is now an integer string (`'58'`, not `'58.0'`); the wheel reason reads `IV rank 22 (May 29) below 30`.                                                                                                                                                                                                                                                                                      | Every PMCC IV reason is `IV rank 58 (Sep 17) above 55`. The Linear AC still says `58.0` / `46.0` and needs the same one-character edit.                                                                                                                                                         |
+| e2e fixtures are anchored to `BASE_DAY` = the most recent **real** weekday (`e2e/trading-day-fixtures.ts:43`), not a pinned date; IVR is seeded through `BENCH_IVR` → `WHEELBASE_FAKE_IV_SERIES`.                                                                                                                                                                                                    | Area 10 keeps every DTE fixed by day offset (35 / 364 / 490), so all money and yield literals are stable, but asserts **date labels** computed from `screenerDate(offset)` and the IVR anchor label from `BASE_DAY`. The AC's "Fri 2026-09-18" valuation date is a unit-test fixture date only. |
+| `expirationTo` landed in the fake provider.                                                                                                                                                                                                                                                                                                                                                          | Area 4 shrinks to the `type` parameter.                                                                                                                                                                                                                                                         |
+| `fixed4` / `money4`, `toFiniteDecimal`, `shortStrikeAboveLeaps`, `shortExtrinsic` were added.                                                                                                                                                                                                                                                                                                        | Area 2 reuses them rather than re-deriving.                                                                                                                                                                                                                                                     |
+| CLAUDE.md now requires property tests for new pure engines.                                                                                                                                                                                                                                                                                                                                          | Areas 1 and 2 name their properties.                                                                                                                                                                                                                                                            |
+| The stock-quote seam is `ScreenerLaunchOpts.stockQuotes`; an absent ticker yields no quote.                                                                                                                                                                                                                                                                                                          | Area 10 drops the proposed `stockQuoteError` option.                                                                                                                                                                                                                                            |
 
 ## Implementation Areas
 
@@ -43,6 +57,7 @@ None — all required schema and infrastructure already exists. `app_settings` (
 - same file: `isDebitToWidthInRange` accepts `'1'`, `'90'`, `'100'`; rejects `'0'`, `'100.01'`, `''`, `'9e1'`
 - same file: `isIvRankCeilingInRange` matches `isIvRankFloorInRange` on `'0'`, `'100'`, `'100.1'`, `'-1'`
 - same file: the five message constants equal the exact strings in `contracts/screener-pmcc.md` (`LEAPS DTE must be at most 730`, `Max debit / width must be between 1% and 100%`, `IV rank ceiling must be between 0 and 100`, `IV-rank floor must be less than IV-rank ceiling`, `LEAPS minimum DTE must exceed short-call maximum DTE`)
+- `src/main/core/screening-criteria.property.test.ts` — **new** (bound/oracle): for every integer `n` in `-100..1000`, `isLongDteInRange(n) === (n >= 1 && n <= 730)` — compared against the literal bounds, not `LONG_DTE_MAX`; for every 2-dp string in `0.00..150.00`, `isDebitToWidthInRange(s) === (1 <= Number(s) && Number(s) <= 100)`; `isIvRankCeilingInRange` and `isIvRankFloorInRange` agree on every generated string (one domain, two names)
 
 **Green — implementation:**
 
@@ -72,27 +87,37 @@ None — all required schema and infrastructure already exists. `app_settings` (
 - `screenPmccTicker` with a LEAPS at delta `0.62` → `excluded[0]` reason `LEAPS delta 0.62 outside 0.70–0.85` (en dash) and `stage: 'long'`
 - `screenPmccTicker` with a short at OI `120` and `minOpenInterest 200` → `short call open interest 120 below 200`
 - `screenPmccTicker` with a short strike `$40` against a `$42` LEAPS → `short_strike_not_above_long`, reason `short strike $40.00 not above LEAPS strike $42.00`
-- `screenPmccTicker` with `maxIvRank '55'` and `ivRank { value: '58.0', observedAt: '2026-09-17T20:00:00Z' }` → single excluded row `{ stage: 'ticker', code: 'iv_rank_ceiling', reason: 'IV rank 58.0 (Sep 17) above 55' }`, nothing leg-level evaluated
+- `screenPmccTicker` with `maxIvRank '55'` and `ivRank { value: '58', observedAt: '2026-09-17T20:00:00Z' }` → single excluded row `{ stage: 'ticker', code: 'iv_rank_ceiling', reason: 'IV rank 58 (Sep 17) above 55' }`, nothing leg-level evaluated
 - `screenPmccTicker` with `maxIvRank '55'` and `ivRank null` → not excluded on IV (the `applies` guard)
-- `screenPmccTicker` with `minIvRank '50'`, `maxIvRank '55'`, value exactly `'55.0'` → passes (inclusive both ends)
+- `screenPmccTicker` with `minIvRank '50'`, `maxIvRank '55'`, value exactly `'55'` → passes (inclusive both ends)
 - `screenPmccTicker` earnings `{ status: 'found', date }` inside the short window, `exclude` → `stage: 'short'`, code `earnings_in_window`; the same date beyond the short expiry but inside the LEAPS life → **not** excluded
 - `screenPmccTicker` earnings inside the window, `flag` → `best.earnings.status === 'flagged'` with `daysBeforeExpiry`
 - best-pair choice: two shorts survive (`$53C 0.64 Δ0.29` score 2.38 vs `$52C 0.90 Δ0.36` → delta band fails) and two LEAPS survive (`$42C` vs `$40C 12.10 Δ0.83`): the winner is the highest `returnPerDelta`; on an exact tie the lower `debitToWidthPercent`, then the lower LEAPS strike
 - `rankPmccCandidates([KO, XLF, AAPL])` → `[XLF, AAPL, KO]` (2.38, 2.18, 2.06); a `flagged` candidate sorts after every `clear` one regardless of score
 - module purity: `pmcc-screener.ts` has no import from `services/`, `integrations/`, `../logger`, or `better-sqlite3` (assert with a source read, as `screener.test.ts` does if it already does; otherwise a `grep`-style test)
 
+Properties (`src/main/core/pmcc-screener.property.test.ts`, generators from `test-fixtures/arbitraries.ts` plus a local `callStrike` arbitrary built on `positiveMoney`):
+
+- **oracle** — for any generated long/short pair with `short.strike > long.strike` and `long.mark > short.mark`, `scorePmccPair` gives `netDebit = long.mark − short.mark`, `strikeWidth = short.strike − long.strike` and `debitToWidthPercent = netDebit ÷ width × 100`, each computed independently with `Decimal` and rounded half-up to 2 dp
+- **guard** — every `best` returned by `screenPmccTicker` satisfies `short.strike > long.strike`, both deltas inside their bands, both DTEs inside their windows, and `debitToWidthPercent ≤ maxDebitToWidthPercent` (an implication on a rounded output that rounding cannot break, since the filter runs on the unrounded value)
+- **invariant (the "extrinsic is display-only" rule)** — for any input, `screenPmccTicker({ …input, underlyingPrice: null })` and `screenPmccTicker({ …input, underlyingPrice: p })` for any generated `p` return the same `best` contract pair and the same `excluded` codes; only `longExtrinsic` / `extrinsicCoverage` differ
+- **order independence** — shuffling `longCalls` and `shortCalls` (`fc.shuffledSubarray` at full length) leaves `best` unchanged; shuffling the input to `rankPmccCandidates` leaves its output order unchanged
+- **bound** — `longExtrinsic`, when non-null, is `≥ 0`; `extrinsicCoverage`, when non-null, is `> 0`
+
 **Green — implementation:**
 
 - `TICKER_FILTERS: PmccFilter<TickerContext>[]`, `LEG_FILTERS: PmccFilter<LegContext>[]` parameterised by `{ role: 'long' | 'short' }` so one registry serves both legs with `criteria.longDelta*`/`shortDelta*` chosen by role and the reason prefixed `LEAPS ` / `short call `; `PAIR_FILTERS: PmccFilter<PairContext>[]`. Each entry is `{ code, applies, test, reason }` exactly like `FilterDefinition`.
 - `evaluateStage(filters, ctx, criteria): { code, reason, index } | null` — one generic `findIndex`, reused by all three stages
 - `screenPmccTicker`: ticker stage → per-leg stage over `longCalls` and `shortCalls` (`computeDte` from `core/dte.ts` for each expiration) → pairs = surviving longs × surviving shorts → pair stage → `scorePmccPair` → sort `earningsTier`, `returnPerDelta` desc, `debitToWidthPercent` asc, `long.strike` asc → `best = survivors[0] ?? null`; `excluded` sorted by stage depth then index, deepest first
-- `scorePmccPair`: one unrounded `Decimal` chain; round only on the way out (4dp fractions, 2dp money/percent); `extrinsicCoverage` only when `longExtrinsic.gt(0)`
+- `scorePmccPair`: one unrounded `Decimal` chain; round only on the way out — 4 dp fractions through `fixed4` from `src/shared/decimal-text.ts` (as `core/screener.ts` now does), 2 dp money/percent with `toDecimalPlaces(2, ROUND_HALF_UP)`; quote strings parsed with `toFiniteDecimal` (`core/finite-decimal.ts`); `extrinsicCoverage` only when `longExtrinsic.gt(0)`. LEAPS extrinsic is the same formula as `shortExtrinsic` in `core/pmcc-card.ts` (`mark − max(0, price − strike)`), clamped at 0 here
+- the `short_strike_not_above_long` pair filter's `test` is `shortStrikeAboveLeaps(short.strike, long.strike)` from `core/pmcc-rules.ts` — the same rule the entry form enforces, so screener and entry cannot disagree
 - `rankPmccCandidates`: `earningsTier`, then `returnPerDelta` desc, then `ticker.localeCompare`
 
 **Refactor — cleanup to consider:**
 
 - If `evaluateStage` is a clean generic, `core/screener.ts`'s `evaluateFilters` could delegate to it — only if the diff is a pure extraction with `screener.test.ts` unchanged.
 - Keep `PmccFilter<C>` a local type; do not generalise `FilterDefinition` in `screener.ts`.
+- `shortExtrinsic` in `core/pmcc-card.ts` is now a misnomer if the LEAPS uses the same formula. If the two call sites read the same, rename it `legExtrinsic` (one rename, `pmcc-card` tests the regression net) and apply the 0-clamp at the screener call site.
 
 **Acceptance criteria covered:** "A diagonal is ranked by annualized cycle yield per unit of short delta", "An excluded diagonal names the stage that refused it", "Extrinsic is display-only", "An IV-rank ceiling excludes a rich underlying".
 
@@ -129,17 +154,17 @@ None — all required schema and infrastructure already exists. `app_settings` (
 
 ---
 
-### 4. Chain pull takes a contract type; fake provider honours `expirationTo`
+### 4. Chain pull takes a contract type
 
 **Files to create or modify:**
 
 - `src/main/services/candidate-chains.ts` — `PullOptions` gains `type?: 'put' | 'call'` (default `'put'`); `pullTickerChain` passes it to `getOptionChainSnapshot`; `no_options_listed` debug log includes the type
-- `src/main/integrations/fake-market-data.ts` — add the missing `if (filter.expirationTo && quote.expiration > filter.expirationTo) return []` beside the `expirationFrom` check (line ~114)
+- ~~`src/main/integrations/fake-market-data.ts`~~ — no change: the `expirationTo` check this area used to add is already at line 272
 
 **Red — tests to write:**
 
 - `src/main/services/candidate-chains.integration.test.ts`: `pullWatchlistChains(provider, db, { type: 'call', window: { min: 180, max: 540 } })` calls the provider with `type: 'call'` and the range `today+180 .. today+540`; omitting `type` still sends `'put'` (US-64 callers unchanged)
-- `src/main/integrations/fake-market-data.test.ts`: a fixture map holding a 35-DTE call and a 490-DTE call returns only the 490 one for `expirationFrom = +180, expirationTo = +540`, only the 35 one for `+20 .. +45`, and both with no range
+- same file: against the fake provider holding a 35-DTE and a 490-DTE call for one ticker, the `180–540` call pull returns only the 490-DTE strike and the `20–45` pull only the 35-DTE one (pins the two windows apart through the real seam)
 
 **Green — implementation:**
 
@@ -157,7 +182,7 @@ None — all required schema and infrastructure already exists. `app_settings` (
 
 **Files to create or modify:**
 
-- `src/main/services/pmcc-screener.ts` — **new**: `RankedPmccCandidate`, `PmccScreenerResults`, `screenWatchlistPmccCandidates(getProvider, db, opts)`; reuse `dataUnavailable`, `representativeExclusion`-style helpers (export from `services/screener.ts` or lift into a small `services/screener-shared.ts`), `readAssessedIvr`, `usableIvRanks`, `readEarningsOrEmpty`, `ensureTradingCalendar`, `fetchIsolatedStockQuotes`
+- `src/main/services/pmcc-screener.ts` — **new**: `RankedPmccCandidate`, `PmccScreenerResults`, `PmccScreenOptions = { criteria?: PmccScreeningCriteria; currentDate?: Date; runState: IvRunState }` (`runState` required, as `screenWatchlistCandidates` now has it), `screenWatchlistPmccCandidates(getProvider, db, opts)`; reuse `dataUnavailable`, `representativeExclusion`-style helpers (export from `services/screener.ts` or lift into a small `services/screener-shared.ts`), `readIvRanks`, `usableIvRanks`, `readEarningsOrEmpty`, `ensureTradingCalendar`, `fetchIsolatedStockQuotes`, and `lookupOf` from `services/iv-rank-lookup.ts`
 - `src/main/services/screener.ts` — `ScreenerExclusionCode` widens to include `PmccExclusionCode` (or the PMCC service declares `PmccScreenerExclusionCode` and the IPC type unions them — pick the one that leaves `screener.ts`'s tests untouched)
 
 **Red — tests to write** (`src/main/services/pmcc-screener.integration.test.ts`, fake provider + in-memory DB, fixtures = the data-model table keyed by OCC call symbols):
@@ -170,19 +195,22 @@ None — all required schema and infrastructure already exists. `app_settings` (
 - stock quotes are fetched **without** a price ceiling being set (they are always needed here)
 - the long-window pull returns `provider_unavailable` → results `provider_unavailable`, empty lists, null timestamp; same when only the short-window pull does
 - `getProvider` throws → `provider_unavailable`
-- a stale/expired/predates-earnings IVR reaches `ranked[i].ivRank` with its `state` but never reaches the engine (assert the ceiling is not applied to a stale `58.0`)
+- a stale/expired/predates-earnings IVR reaches `ranked[i].ivRank` with its `state` but never reaches the engine (assert the ceiling is not applied to a stale `58`)
+- a ticker with no IV history ranks with `ivRank: null` and `ivRankAbsence: { reason: 'not_collected' }`; one whose collection is in flight (`runState` reports `pending`) carries `ivRankAbsence: { reason: 'pending' }` — the pair is passed through, never rebuilt
+- `runState` is forwarded to `readIvRankLookup` (the same object, not a copy)
 - `quoteTimestamp` is the newest of the ranked legs' timestamps
 - `opts.criteria` overrides the persisted document; absent, `getPmccScreeningCriteria(db)` is read (spy)
 
 **Green — implementation:**
 
 - `criteria = opts.criteria ?? getPmccScreeningCriteria(db)`; `provider = getProvider()` in try/catch; `Promise.all` of `[pullWatchlistChains(long window, 'call'), pullWatchlistChains(short window, 'call'), fetchIsolatedStockQuotes, readEarningsOrEmpty(shortDteMax horizon), ensureTradingCalendar]` — the two chain pulls run sequentially inside one promise to keep the burst at `CHAIN_FETCH_CONCURRENCY`
-- zip per ticker → `PmccTickerScreeningInput` or a chain-level exclusion; `screenPmccTicker` per ticker in its own try/catch (`data_unavailable` on throw, as US-65) → `rankPmccCandidates` → re-attach assessed IVR → `representativeExclusion` per non-ranking ticker → `quoteTimestamp`
+- `ivRankLookups = readIvRanks(db, tickers, currentDate, earnings, opts.runState)`; engine input takes `usableIvRanks(ivRankLookups)`
+- zip per ticker → `PmccTickerScreeningInput` or a chain-level exclusion; `screenPmccTicker` per ticker in its own try/catch (`data_unavailable` on throw, as US-65) → `rankPmccCandidates` → `{ ...candidate, ...lookupOf(ivRankLookups, candidate.ticker) }` → `representativeExclusion` per non-ranking ticker → `quoteTimestamp`
 - INFO log `PMCC screen completed` with counts; DEBUG for criteria in use, per-ticker chain sizes, and each ticker's verdict
 
 **Refactor — cleanup to consider:**
 
-- `services/screener.ts` and this file will share `readAssessedIvr`, `usableIvRanks`, `dataUnavailable`, `newestTimestamp`, `representativeExclusion`. Move them to `services/screener-shared.ts` once both compile; the wheel service's tests are the regression net.
+- `services/screener.ts` and this file will share `readIvRanks`, `usableIvRanks`, `dataUnavailable`, `newestTimestamp` (already widened to `Pick<…, 'timestamp'>[]`), `representativeExclusion`. Move them to `services/screener-shared.ts` once both compile; the wheel service's tests are the regression net.
 
 **Acceptance criteria covered:** all ranked/excluded/outage scenarios at the IPC boundary: "Switch the bench to the PMCC lens", "A diagonal is ranked…", "An excluded diagonal…", "Extrinsic is display-only", "An IV-rank ceiling…", "A provider outage degrades the PMCC lens like the wheel".
 
@@ -192,12 +220,13 @@ None — all required schema and infrastructure already exists. `app_settings` (
 
 **Files to create or modify:**
 
-- `src/main/ipc/screener.ts` — three new `ipcMain.handle` registrations inside `registerScreenerIpc`: `'screener:pmcc-results'`, `'screener:get-pmcc-criteria'`, `'screener:save-pmcc-criteria'` (Zod parse + one service call, wrapped in `handleIpcCall`)
-- `src/preload/index.ts`, `src/preload/index.d.ts` — `pmccResults`, `getPmccCriteria`, `savePmccCriteria`; `IpcPmccLeg`, `IpcPmccScoredCandidate`, `IpcPmccScreenerResultsResult`, `IpcPmccScreeningCriteria`, `IpcPmccScreeningCriteriaResult`; `IpcScreenerExclusion.code` widened
+- `src/main/ipc/screener.ts` — three new `ipcMain.handle` registrations inside `registerScreenerIpc`: `'screener:pmcc-results'` (passes `{ currentDate: getCurrentDate(), runState }`, exactly as `screener:results` now does), `'screener:get-pmcc-criteria'`, `'screener:save-pmcc-criteria'` (Zod parse + one service call, wrapped in `handleIpcCall`). `registerScreenerIpc` already receives `runState`; `src/main/index.ts` needs no change
+- `src/preload/index.ts`, `src/preload/index.d.ts` — `pmccResults`, `getPmccCriteria`, `savePmccCriteria`; `IpcPmccLeg`, `IpcPmccScoredCandidate` (`{ … } & IpcIvRankPair`, the way `IpcScreenerCandidate` is built at `index.d.ts:344`), `IpcPmccScreenerResultsResult`, `IpcPmccScreeningCriteria`, `IpcPmccScreeningCriteriaResult`; `IpcScreenerExclusion.code` widened
 
 **Red — tests to write** (`src/main/ipc/screener.test.ts`):
 
 - `screener:pmcc-results` returns `{ ok: true, status, ranked, excluded, quoteTimestamp }` from a stubbed service, and `{ ok: false, errors: [{ field: '__root__', code: 'internal_error' }] }` when the service throws
+- `screener:pmcc-results` hands the service the registered `runState` (`toBe(RUN_STATE)`, as the wheel channel's test at `ipc/screener.test.ts:142` does) and the injected `getCurrentDate()`
 - `screener:get-pmcc-criteria` returns `{ ok: true, criteria }`
 - `screener:save-pmcc-criteria` with a valid payload returns the stored document; with `maxIvRank: '120'` returns `ok: false` and an error row with `field 'maxIvRank'` and the ceiling message; with an overlapping window returns `field 'longDteMin'`, `code 'overlapping_windows'`
 - the wheel channels' existing tests are untouched and green
@@ -218,7 +247,7 @@ None — all required schema and infrastructure already exists. `app_settings` (
 
 **Files to create or modify:**
 
-- `src/renderer/src/api/pmcc-screener.ts` — **new**: renderer aliases of the IPC types, `getPmccScreenerResults()` (throws `ApiError` only on `ok: false`)
+- `src/renderer/src/api/pmcc-screener.ts` — **new**: renderer aliases of the IPC types (`PmccScreenerCandidate = { … } & IvRankPair` from `api/ivr.ts`, so `IvrCell ivr={candidate}` takes it unchanged), `getPmccScreenerResults()` (throws `ApiError` only on `ok: false`)
 - `src/renderer/src/api/pmcc-screening-criteria.ts` — **new**: `PmccScreeningCriteria`, `SavePmccScreeningCriteriaPayload`, `getPmccScreeningCriteria`, `savePmccScreeningCriteria`
 - `src/renderer/src/api/screener.ts` — `ScreenerExclusion['code']` widened
 - `src/renderer/src/hooks/screenerQueryKeys.ts` — `pmccResults: ['screener', 'pmcc-results']`, `pmccCriteria: ['screener', 'pmcc-criteria']`
@@ -319,29 +348,31 @@ None — all required schema and infrastructure already exists. `app_settings` (
 
 **Files to create or modify:**
 
-- `e2e/pmcc-screener-helpers.ts` — **new**: `CallFixtureSpec` (`ticker, strike, expirationOffset, bid, ask, mid, delta (positive), openInterest`), `occCallSymbol`, `buildCallFixtures`, the nine-stock `BENCH_DIAGONALS` (long + short spec per ticker from the data-model table; XYZ short-only; MSFT with earnings at `+3` days), `selectStrategy(page, 'PMCC' | 'WHEEL')`, `detailDiagonalMetrics(page)`, `legRow(page, 'long' | 'short')`, `setPmccCriteriaValues`, `pmccCriteriaChips`
-- `e2e/screener-helpers.ts` — `ScreenerLaunchOpts` gains `callFixtures?: CallFixtureSpec[]` and `stockQuoteError?: string[]` (tickers whose quote the fake provider rejects), merged into `WHEELBASE_MOCK_OPTION_SNAPSHOTS` alongside the puts
+- `e2e/pmcc-screener-helpers.ts` — **new**: `CallFixtureSpec` (`ticker, strike, expirationOffset, bid, ask, mid, delta (positive), openInterest`), `occCallSymbol`, `buildCallFixtures` (expirations via `screenerDate(offset)`), the nine-stock `BENCH_DIAGONALS` (long + short spec per ticker from the data-model table; short offset `35`, LEAPS offsets `364` / `490`; XYZ short-only; MSFT with earnings at `+3` days), label helpers `shortLabel(offset)` (`MMM d`), `longLabel(offset)` (`MMM d, yyyy`) and `ivrAnchorLabel()` (`format(parseISO(BASE_DAY), 'MMM d')`), `selectStrategy(page, 'PMCC' | 'WHEEL')`, `detailDiagonalMetrics(page)`, `legRow(page, 'long' | 'short')`, `setPmccCriteriaValues`, `pmccCriteriaChips`
+- `e2e/screener-helpers.ts` — `ScreenerLaunchOpts` gains `callFixtures?: CallFixtureSpec[]`, merged into `WHEELBASE_MOCK_OPTION_SNAPSHOTS` alongside the puts. No quote-failure option: pass `stockQuotes` without the ticker (an absent key yields no quote)
 - `e2e/pmcc-screener.spec.ts` — **new**, one `it()` per AC, named verbatim
 
-**Red — tests to write** (each maps to exactly one AC; Background = the US-96 nine-stock bench plus `BENCH_DIAGONALS`, fake clock Fri 2026-09-18, LIVE):
+**Dates in this suite.** `BASE_DAY` is the most recent real weekday, so the AC's calendar literals (`Oct 23`, `Jan 21, 2028`, `Sep 17`) cannot be asserted verbatim. Every DTE is fixed by offset, so every money, percent and score literal below **is** asserted verbatim; every date is the label helper's output for that offset. In the bullets below, `‹short›` is `shortLabel(35)`, `‹short, yyyy›` is `longLabel(35)`, `‹leaps›` is `longLabel(490)` and `‹anchor›` is `ivrAnchorLabel()`.
+
+**Red — tests to write** (each maps to exactly one AC; Background = the US-96 nine-stock bench (`BENCH_CONDITIONS`, `BENCH_IVR`, `BENCH_QUOTES`, `BENCH_EARNINGS`) plus `BENCH_DIAGONALS`, fake clock `DEFAULT_FAKE_NOW`, LIVE):
 
 - `Switch the bench to the PMCC lens` — click `bench-strategy-pmcc`; strip label `PMCC criteria` and chips equal the nine default PMCC chips; `meetsTickers()` is `['XLF', 'KO']`; no card text contains ` put ·`; `bench-strategy-pmcc` has `aria-pressed="true"`
-- `A diagonal is ranked by annualized cycle yield per unit of short delta` — XLF card `watchlist-rank` text `#1` with `title '2.38'`, KO `#2` with `title '2.06'`; XLF `watchlist-contract` reads `$42.00 LEAPS · $53.00 short Oct 23 · 6.63% on debit`
-- `The detail panel shows both legs and the spread metrics` — select XLF; `bench-leg-long` contains `$42.00 CALL`, `Jan 21, 2028 · 490 DTE`, `Δ 0.81`; `bench-leg-short` contains `$53.00 CALL`, `Oct 23, 2026 · 35 DTE`, `Δ 0.29`, `2,140`; metrics read `$9.66`, `$966.00`, `$11.00`, `87.82%`, `6.63%`, `69.09%/yr`, `$1.10`, `58.18%`, `0.29`; no `bench-review-XLF` button exists
+- `A diagonal is ranked by annualized cycle yield per unit of short delta` — XLF card `watchlist-rank` text `#1` with `title '2.38'`, KO `#2` with `title '2.06'`; XLF `watchlist-contract` reads `` `$42.00 LEAPS · $53.00 short ${‹short›} · 6.63% on debit` ``
+- `The detail panel shows both legs and the spread metrics` — select XLF; `bench-leg-long` contains `$42.00 CALL`, `` `${‹leaps›} · 490 DTE` ``, `Δ 0.81`; `bench-leg-short` contains `$53.00 CALL`, `` `${‹short, yyyy›} · 35 DTE` ``, `Δ 0.29`, `2,140`; metrics read `$9.66`, `$966.00`, `$11.00`, `87.82%`, `6.63%`, `69.09%/yr`, `$1.10`, `58.18%`, `0.29`; no `bench-review-XLF` button exists
 - `An excluded diagonal names the stage that refused it` — `cardReason('AMD')` is `debit 93.84% of width exceeds 90%`; `cardReason('XYZ')` is `no calls quoted in the 180–540 DTE window`
-- `Entry conditions gate a PMCC match exactly as they gate a put` — AAPL in `waitingTickers()`, `cardReason('AAPL')` is `Price $178.40 above $170 target`; select AAPL; `bench-detail-held-back` reads the diagonal held-back copy with `$140.00 LEAPS · $190.00 short · Oct 23, 2026 · 5.64% on debit`
-- `Extrinsic is display-only` — launch with `stockQuoteError: ['XLF']`; XLF still `#1` with `title '2.38'`; select XLF; Extrinsic in LEAPS and Recovered per cycle both read `—`
+- `Entry conditions gate a PMCC match exactly as they gate a put` — AAPL in `waitingTickers()`, `cardReason('AAPL')` is `Price $178.40 above $170 target`; select AAPL; `bench-detail-held-back` reads the diagonal held-back copy with `` `$140.00 LEAPS · $190.00 short · ${‹short, yyyy›} · 5.64% on debit` ``
+- `Extrinsic is display-only` — launch with `stockQuotes` = `BENCH_QUOTES` minus `XLF` (XLF has no entry conditions, so its verdict does not depend on a price); XLF still `#1` with `title '2.38'`; select XLF; Extrinsic in LEAPS and Recovered per cycle both read `—`
 - `Edit PMCC criteria and re-screen` — open the sheet from `bench-criteria`; subtitle contains `PMCC · LEAPS + short call`; set `Max debit / width` to `85`; save; `Screening criteria saved` visible; chip `Debit ≤ 85% width`; `meetsTickers()` is `['KO']`; `cardReason('XLF')` is `debit 87.82% of width exceeds 85%`
 - `The wheel criteria are untouched by a PMCC save` — after the save above, click `bench-strategy-wheel`; `criteriaChips()` equals `['Δ 0.20–0.30', 'DTE 30–45', 'OI ≥ 500', 'Spread ≤ 10%', 'Earnings Exclude']`; `meetsTickers()` equals the US-96 Background's wheel result
 - `Saved PMCC criteria survive a restart, the lens does not` — save `85`; `relaunchScreener`; `bench-strategy-wheel` is pressed and the wheel chips show; select PMCC; chip `Debit ≤ 85% width` present
-- `An IV-rank ceiling excludes a rich underlying` — from defaults, open the sheet, `iv-rank-ceiling-on`, `IV-rank ceiling` = `55`, save; `cardReason('KO')` is `IV rank 58.0 (Sep 17) above 55`; XLF still `#1`
+- `An IV-rank ceiling excludes a rich underlying` — from defaults, open the sheet, `iv-rank-ceiling-on`, `IV-rank ceiling` = `55`, save; `cardReason('KO')` is `` `IV rank 58 (${‹anchor›}) above 55` `` (KO's `BENCH_IVR` reading is 58, fresh; XLF's is 46); XLF still `#1`
 - `Reject an overlapping or inverted PMCC window` — for each row of the outline (`LEAPS minimum DTE` `40` → overlap message; `LEAPS maximum DTE` `800` → `LEAPS DTE must be at most 730`; `Max debit / width` `0` → the ratio message; floor `60` + ceiling `40` both on → the IV-band message; `Short-call minimum delta` `0.35` with max `0.25` → `Minimum delta must be less than maximum delta`): the message is visible inline, `SAVE_CRITERIA_BUTTON` is disabled, `Fix the highlighted fields.` shows; dismiss; chips unchanged
 - `A provider outage degrades the PMCC lens like the wheel` — launch with `marketDataError`; select PMCC; Meets section shows the waiting-for-market-data `AlertBox`; every card reason is `Data unavailable · not evaluated`; `meetsTickers()` is `[]`
 
 **Green — implementation:**
 
 - Fixtures calibrated so the real engine emits the exact strings above (the same "AC numbers through the real engine" technique as US-66); falsify each assertion once against a flipped expectation before trusting it
-- Confirm `e2e/watchlist-bench.spec.ts`, `screening-criteria.spec.ts`, `screener-results.spec.ts`, `promote-to-trade.spec.ts`, `screener-earnings.spec.ts`, `ivr-staleness.spec.ts` pass unmodified — the wheel lens is the default, so their seams are untouched
+- Confirm `e2e/watchlist-bench.spec.ts`, `screening-criteria.spec.ts`, `screener-results.spec.ts`, `promote-to-trade.spec.ts`, `screener-earnings.spec.ts`, `ivr-staleness.spec.ts`, `ivr-watchlist-collection.spec.ts`, `iv-history.spec.ts` pass unmodified — the wheel lens is the default, so their seams are untouched
 
 **Refactor — cleanup to consider:**
 

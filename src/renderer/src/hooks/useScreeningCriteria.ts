@@ -12,10 +12,13 @@ type SaveScreeningCriteriaOptions = {
   onSuccess?: (criteria: ScreeningCriteria) => void
 }
 
-export function useScreeningCriteria(): ReturnType<typeof useQuery<ScreeningCriteria, ApiError>> {
+export function useScreeningCriteria({ enabled = true }: { enabled?: boolean } = {}): ReturnType<
+  typeof useQuery<ScreeningCriteria, ApiError>
+> {
   return useQuery<ScreeningCriteria, ApiError>({
     queryKey: screenerQueryKeys.criteria,
-    queryFn: getScreeningCriteria
+    queryFn: getScreeningCriteria,
+    enabled
   })
 }
 

@@ -5,10 +5,13 @@ import type Database from 'better-sqlite3'
 import type { MarketDataProvider } from '../integrations/market-data-provider'
 import { DEFAULT_SCREENING_CRITERIA, type CandidateEarnings } from '../core/screener'
 import type { RankedCandidate, ScreenerExclusion, ScreenerResults } from '../services/screener'
+import { DEFAULT_PMCC_SCREENING_CRITERIA, type PmccLeg } from '../core/pmcc-screener'
+import type { PmccScreenerResults, RankedPmccCandidate } from '../services/pmcc-screener'
 import { makeTestDb } from '../test-utils'
 import { createIvRunState } from '../services/iv-run-state'
 
 const screenWatchlistCandidates = vi.fn()
+const screenWatchlistPmccCandidates = vi.fn()
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() }
@@ -20,6 +23,10 @@ vi.mock('../logger', () => ({
 
 vi.mock('../services/screener', () => ({
   screenWatchlistCandidates
+}))
+
+vi.mock('../services/pmcc-screener', () => ({
+  screenWatchlistPmccCandidates
 }))
 
 type IpcHandler = (...args: unknown[]) => unknown
@@ -353,6 +360,247 @@ describe('registerScreenerIpc — screening criteria', () => {
       ok: false,
       errors: [
         { field: '__root__', code: 'internal_error', message: 'An unexpected error occurred' }
+      ]
+    })
+  })
+})
+
+// [US-110] screener:pmcc-results — the PMCC lens's delivery surface. Same thin contract
+// as screener:results: no payload, one service call, every expected failure modelled
+// inside the success payload. Contract: plans/us-110/contracts/screener-pmcc.md
+describe('registerScreenerIpc — PMCC results', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  function leg(overrides: Partial<PmccLeg> = {}): PmccLeg {
+    return {
+      contractId: 'XLF270115C00042000',
+      strike: '42.0000',
+      expiration: '2027-01-15',
+      dte: 248,
+      bid: '8.10',
+      ask: '8.30',
+      mark: '8.20',
+      spreadAbsolute: '0.20',
+      spreadPercent: '2.44',
+      delta: '0.8100',
+      openInterest: 4200,
+      volume: 310,
+      timestamp: '2026-05-12T19:58:00.000Z',
+      ...overrides
+    }
+  }
+
+  const SAMPLE_DIAGONAL: RankedPmccCandidate = {
+    ticker: 'XLF',
+    long: leg(),
+    short: leg({
+      contractId: 'XLF261023C00053000',
+      strike: '53.0000',
+      expiration: '2026-10-23',
+      dte: 29,
+      bid: '0.52',
+      ask: '0.56',
+      mark: '0.54',
+      spreadAbsolute: '0.04',
+      spreadPercent: '7.41',
+      delta: '0.2800',
+      openInterest: 1800,
+      volume: 95,
+      timestamp: '2026-05-12T19:59:00.000Z'
+    }),
+    netDebit: '7.66',
+    capitalAtRisk: '766.00',
+    strikeWidth: '11.00',
+    debitToWidthPercent: '69.64',
+    cycleYield: '0.0705',
+    annualizedYield: '0.8873',
+    returnPerDelta: '3.1689',
+    longExtrinsic: '0.95',
+    extrinsicCoverage: '0.5684',
+    earnings: { status: 'clear' },
+    timestamp: '2026-05-12T19:59:00.000Z',
+    ivRank: null,
+    ivRankAbsence: { reason: 'not_collected' }
+  }
+
+  const PMCC_RESULTS: PmccScreenerResults = {
+    status: 'ok',
+    ranked: [SAMPLE_DIAGONAL],
+    excluded: [
+      {
+        ticker: 'KO',
+        code: 'short_strike_not_above_long',
+        reason: 'no short call strike above the LEAPS strike'
+      }
+    ],
+    quoteTimestamp: '2026-05-12T19:59:00.000Z'
+  }
+
+  it('screener:pmcc-results returns { ok: true, status, ranked, excluded, quoteTimestamp }', async () => {
+    screenWatchlistPmccCandidates.mockResolvedValue(PMCC_RESULTS)
+
+    const handler = await registerAndGetHandler('screener:pmcc-results')
+    const result = await handler(null)
+
+    expect(result).toEqual({ ok: true, ...PMCC_RESULTS })
+  })
+
+  it('screener:pmcc-results hands the service the registered runState and the injected clock', async () => {
+    const currentDate = new Date('2026-05-12T14:00:00.000Z')
+    screenWatchlistPmccCandidates.mockResolvedValue(PMCC_RESULTS)
+
+    const handler = await registerAndGetHandler('screener:pmcc-results', db, currentDate)
+    await handler(null)
+
+    expect(screenWatchlistPmccCandidates).toHaveBeenCalledTimes(1)
+    expect(screenWatchlistPmccCandidates).toHaveBeenCalledWith(getProvider, db, {
+      currentDate,
+      runState: RUN_STATE
+    })
+    // toHaveBeenCalledWith compares by value — only identity proves it is the shared state.
+    expect(screenWatchlistPmccCandidates.mock.calls[0][2].runState).toBe(RUN_STATE)
+  })
+
+  it('screener:pmcc-results maps a service throw to { ok: false, errors } without rejecting', async () => {
+    screenWatchlistPmccCandidates.mockRejectedValue(new Error('SQLITE_BUSY'))
+
+    const handler = await registerAndGetHandler('screener:pmcc-results')
+    const result = await handler(null)
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        { field: '__root__', code: 'internal_error', message: 'An unexpected error occurred' }
+      ]
+    })
+  })
+})
+
+// [US-110] screener:get-pmcc-criteria / screener:save-pmcc-criteria — the PMCC criteria
+// sheet's transport. Real persistence service, real in-memory DB, so these assert only
+// the envelope the renderer sees. Contract: plans/us-110/contracts/screener-pmcc.md
+describe('registerScreenerIpc — PMCC screening criteria', () => {
+  let criteriaDb: Database.Database
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    criteriaDb = makeTestDb()
+  })
+
+  afterEach(() => {
+    if (criteriaDb.open) criteriaDb.close()
+  })
+
+  /** A valid save payload that differs from the defaults in every field, so a handler
+   *  that echoed the defaults back could not pass. */
+  function pmccSavePayload(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      longDeltaMin: '0.75',
+      longDeltaMax: '0.90',
+      longDteMin: 200,
+      longDteMax: 600,
+      shortDeltaMin: '0.20',
+      shortDeltaMax: '0.30',
+      shortDteMin: 25,
+      shortDteMax: 40,
+      maxDebitToWidthPercent: '75',
+      minOpenInterest: 500,
+      maxSpreadPercent: '8',
+      minIvRank: '30',
+      maxIvRank: '55',
+      earningsHandling: 'flag',
+      ...overrides
+    }
+  }
+
+  async function readPmccCriteria(): Promise<unknown> {
+    const handler = await registerAndGetHandler('screener:get-pmcc-criteria', criteriaDb)
+    return handler(null, undefined)
+  }
+
+  it('screener:get-pmcc-criteria returns { ok: true, criteria } with the PMCC defaults on a fresh DB', async () => {
+    expect(await readPmccCriteria()).toEqual({
+      ok: true,
+      criteria: DEFAULT_PMCC_SCREENING_CRITERIA
+    })
+  })
+
+  it('screener:save-pmcc-criteria returns { ok: true, criteria } with the stored document', async () => {
+    const handler = await registerAndGetHandler('screener:save-pmcc-criteria', criteriaDb)
+
+    const result = await handler(null, pmccSavePayload())
+
+    expect(result).toEqual({
+      ok: true,
+      criteria: {
+        longDeltaMin: '0.75',
+        longDeltaMax: '0.90',
+        longDteMin: 200,
+        longDteMax: 600,
+        shortDeltaMin: '0.20',
+        shortDeltaMax: '0.30',
+        shortDteMin: 25,
+        shortDteMax: 40,
+        maxDebitToWidthPercent: '75',
+        minOpenInterest: 500,
+        maxSpreadPercent: '8',
+        // Not in the payload — the service fills it from the shipped defaults.
+        maxSpreadAbsolute: DEFAULT_PMCC_SCREENING_CRITERIA.maxSpreadAbsolute,
+        minIvRank: '30',
+        maxIvRank: '55',
+        earningsHandling: 'flag'
+      }
+    })
+  })
+
+  it('screener:save-pmcc-criteria persists the document for the next PMCC read', async () => {
+    const save = await registerAndGetHandler('screener:save-pmcc-criteria', criteriaDb)
+    await save(null, pmccSavePayload())
+
+    expect(await readPmccCriteria()).toMatchObject({
+      ok: true,
+      criteria: { longDteMin: 200, shortDteMax: 40, maxIvRank: '55' }
+    })
+  })
+
+  it('screener:save-pmcc-criteria rejects an IV-rank ceiling of 120 on maxIvRank and persists nothing', async () => {
+    const handler = await registerAndGetHandler('screener:save-pmcc-criteria', criteriaDb)
+
+    const result = await handler(null, pmccSavePayload({ maxIvRank: '120' }))
+
+    // Zod catches the bound at the boundary, so the code is Zod's `custom`; the sheet
+    // binds by field and message, never by code.
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        {
+          field: 'maxIvRank',
+          code: 'custom',
+          message: 'IV rank ceiling must be between 0 and 100'
+        }
+      ]
+    })
+    expect(await readPmccCriteria()).toEqual({
+      ok: true,
+      criteria: DEFAULT_PMCC_SCREENING_CRITERIA
+    })
+  })
+
+  it('screener:save-pmcc-criteria rejects a LEAPS window overlapping the short window on longDteMin', async () => {
+    const handler = await registerAndGetHandler('screener:save-pmcc-criteria', criteriaDb)
+
+    const result = await handler(null, pmccSavePayload({ longDteMin: 40, shortDteMax: 40 }))
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        {
+          field: 'longDteMin',
+          code: 'overlapping_windows',
+          message: 'LEAPS minimum DTE must exceed short-call maximum DTE'
+        }
       ]
     })
   })

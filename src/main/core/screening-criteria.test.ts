@@ -4,19 +4,27 @@
 import Decimal from 'decimal.js'
 import { describe, expect, it } from 'vitest'
 import {
+  DEBIT_TO_WIDTH_MESSAGE,
   DELTA_INVERTED_MESSAGE,
   DELTA_RANGE_MESSAGE,
   DTE_INVERTED_MESSAGE,
   DTE_MAX_MESSAGE,
   DTE_MIN_MESSAGE,
+  DTE_WINDOWS_OVERLAP_MESSAGE,
+  IV_RANK_CEILING_MESSAGE,
+  IV_RANK_INVERTED_MESSAGE,
   IV_RANK_MESSAGE,
+  LONG_DTE_MAX_MESSAGE,
   OPEN_INTEREST_MESSAGE,
   PRICE_CEILING_MESSAGE,
   SPREAD_PERCENT_MESSAGE,
   isAscending,
+  isDebitToWidthInRange,
   isDeltaInRange,
   isDteInRange,
+  isIvRankCeilingInRange,
   isIvRankFloorInRange,
+  isLongDteInRange,
   isOpenInterestInRange,
   isPriceCeilingInRange,
   isSpreadAbsoluteInRange,
@@ -157,6 +165,72 @@ describe('isSpreadAbsoluteInRange', () => {
   })
 })
 
+// [US-110] PMCC screening criteria — the LEAPS DTE window reaches past the
+// wheel's 365-day cap, and two PMCC-only fields get their own bounds.
+describe('isLongDteInRange', () => {
+  it.each([180, '540', 730])('accepts %s', (value) => {
+    expect(isLongDteInRange(value)).toBe(true)
+  })
+
+  it('accepts the lower bound 1', () => {
+    expect(isLongDteInRange(1)).toBe(true)
+  })
+
+  it('rejects 0 (below the lower bound)', () => {
+    expect(isLongDteInRange(0)).toBe(false)
+  })
+
+  it('rejects 731 (above the upper bound)', () => {
+    expect(isLongDteInRange(731)).toBe(false)
+  })
+
+  it('rejects a non-integer inside the bounds', () => {
+    expect(isLongDteInRange('180.5')).toBe(false)
+  })
+
+  it('rejects a whitespace-padded value', () => {
+    expect(isLongDteInRange(' 180')).toBe(false)
+  })
+})
+
+describe('isDebitToWidthInRange', () => {
+  it.each(['1', '90', '100'])('accepts %s', (value) => {
+    expect(isDebitToWidthInRange(value)).toBe(true)
+  })
+
+  it('rejects 0.99 (just below the lower bound)', () => {
+    expect(isDebitToWidthInRange('0.99')).toBe(false)
+  })
+
+  it('rejects 0', () => {
+    expect(isDebitToWidthInRange('0')).toBe(false)
+  })
+
+  it('rejects 100.01 (just above the upper bound)', () => {
+    expect(isDebitToWidthInRange('100.01')).toBe(false)
+  })
+
+  it('rejects an empty string', () => {
+    expect(isDebitToWidthInRange('')).toBe(false)
+  })
+
+  it('rejects exponent notation decimal.js would not round-trip', () => {
+    expect(isDebitToWidthInRange('9e1')).toBe(false)
+  })
+})
+
+describe('isIvRankCeilingInRange', () => {
+  it.each([
+    ['0', true],
+    ['100', true],
+    ['100.1', false],
+    ['-1', false]
+  ])('returns %s → %s, the same as the floor', (value, expected) => {
+    expect(isIvRankCeilingInRange(value)).toBe(expected)
+    expect(isIvRankFloorInRange(value)).toBe(expected)
+  })
+})
+
 describe('isAscending', () => {
   it('returns true when the minimum is strictly less than the maximum', () => {
     expect(isAscending('0.20', '0.30')).toBe(true)
@@ -207,6 +281,26 @@ describe('message constants', () => {
   it('DTE_INVERTED_MESSAGE matches the acceptance-criteria string', () => {
     expect(DTE_INVERTED_MESSAGE).toBe('Minimum DTE must be less than maximum DTE')
   })
+
+  it('LONG_DTE_MAX_MESSAGE matches the acceptance-criteria string', () => {
+    expect(LONG_DTE_MAX_MESSAGE).toBe('LEAPS DTE must be at most 730')
+  })
+
+  it('DEBIT_TO_WIDTH_MESSAGE matches the acceptance-criteria string', () => {
+    expect(DEBIT_TO_WIDTH_MESSAGE).toBe('Max debit / width must be between 1% and 100%')
+  })
+
+  it('IV_RANK_CEILING_MESSAGE matches the acceptance-criteria string', () => {
+    expect(IV_RANK_CEILING_MESSAGE).toBe('IV rank ceiling must be between 0 and 100')
+  })
+
+  it('IV_RANK_INVERTED_MESSAGE matches the acceptance-criteria string', () => {
+    expect(IV_RANK_INVERTED_MESSAGE).toBe('IV-rank floor must be less than IV-rank ceiling')
+  })
+
+  it('DTE_WINDOWS_OVERLAP_MESSAGE matches the acceptance-criteria string', () => {
+    expect(DTE_WINDOWS_OVERLAP_MESSAGE).toBe('LEAPS minimum DTE must exceed short-call maximum DTE')
+  })
 })
 
 describe('non-numeric input', () => {
@@ -219,7 +313,10 @@ describe('non-numeric input', () => {
     ['isSpreadPercentInRange', isSpreadPercentInRange],
     ['isPriceCeilingInRange', isPriceCeilingInRange],
     ['isIvRankFloorInRange', isIvRankFloorInRange],
-    ['isSpreadAbsoluteInRange', isSpreadAbsoluteInRange]
+    ['isSpreadAbsoluteInRange', isSpreadAbsoluteInRange],
+    ['isLongDteInRange', isLongDteInRange],
+    ['isDebitToWidthInRange', isDebitToWidthInRange],
+    ['isIvRankCeilingInRange', isIvRankCeilingInRange]
   ]
 
   it.each(predicates)('%s returns false for a non-numeric string', (_name, predicate) => {
@@ -243,7 +340,10 @@ describe('decimal.js parse safety', () => {
     ['isSpreadPercentInRange', isSpreadPercentInRange],
     ['isPriceCeilingInRange', isPriceCeilingInRange],
     ['isIvRankFloorInRange', isIvRankFloorInRange],
-    ['isSpreadAbsoluteInRange', isSpreadAbsoluteInRange]
+    ['isSpreadAbsoluteInRange', isSpreadAbsoluteInRange],
+    ['isLongDteInRange', isLongDteInRange],
+    ['isDebitToWidthInRange', isDebitToWidthInRange],
+    ['isIvRankCeilingInRange', isIvRankCeilingInRange]
   ]
 
   // Values `Number()` happily coerces but `new Decimal()` throws on.
@@ -300,6 +400,7 @@ describe('decimal.js parse safety', () => {
     'the numeric predicates return false for %p',
     (value) => {
       expect(isDteInRange(value)).toBe(false)
+      expect(isLongDteInRange(value)).toBe(false)
       expect(isOpenInterestInRange(value)).toBe(false)
     }
   )

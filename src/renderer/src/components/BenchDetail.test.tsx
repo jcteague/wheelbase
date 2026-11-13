@@ -2,6 +2,9 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { IvRankAbsence } from '../api/ivr'
+import type { PmccScreenerCandidate } from '../api/pmcc-screener'
+import type { BenchStock } from '../lib/bench'
+import { AAPL_DIAGONAL, XLF_DIAGONAL } from '../test-fixtures/pmcc-diagonals'
 import { BenchDetail } from './BenchDetail'
 import {
   candidate,
@@ -29,7 +32,7 @@ const MSFT_QUOTE = { price: '505.10', prevClose: '511.24', timestamp: KO_QUOTE.t
 describe('BenchDetail', () => {
   describe('header', () => {
     it('names the stock in the gold mono treatment', () => {
-      render(<BenchDetail stock={meets()} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={meets()} onReview={noop} onEdit={noop} />)
 
       const ticker = screen.getByTestId('bench-detail-ticker')
       expect(ticker).toHaveTextContent('KO')
@@ -40,6 +43,7 @@ describe('BenchDetail', () => {
     it('badges a stock that meets criteria in green and states which verdict it cleared', () => {
       render(
         <BenchDetail
+          strategy="WHEEL"
           stock={meets({ verdictCopy: 'Screening criteria met' })}
           onReview={noop}
           onEdit={noop}
@@ -52,7 +56,7 @@ describe('BenchDetail', () => {
     })
 
     it('badges a waiting stock as Watching', () => {
-      render(<BenchDetail stock={waiting()} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={waiting()} onReview={noop} onEdit={noop} />)
 
       expect(screen.getByText('Watching')).toBeInTheDocument()
       expect(screen.queryByText('Meets criteria')).toBeNull()
@@ -64,6 +68,7 @@ describe('BenchDetail', () => {
     it('shows the last price', () => {
       render(
         <BenchDetail
+          strategy="WHEEL"
           stock={meets({ row: row({ quote: AAPL_QUOTE }) })}
           onReview={noop}
           onEdit={noop}
@@ -76,7 +81,12 @@ describe('BenchDetail', () => {
 
     it('shows an em dash for a price that could not be fetched', () => {
       render(
-        <BenchDetail stock={meets({ row: row({ quote: null }) })} onReview={noop} onEdit={noop} />
+        <BenchDetail
+          strategy="WHEEL"
+          stock={meets({ row: row({ quote: null }) })}
+          onReview={noop}
+          onEdit={noop}
+        />
       )
 
       expect(screen.getByTestId('bench-last-price')).toHaveTextContent('—')
@@ -85,6 +95,7 @@ describe('BenchDetail', () => {
     it('shows an up day in green', () => {
       render(
         <BenchDetail
+          strategy="WHEEL"
           stock={meets({ row: row({ quote: AAPL_QUOTE }) })}
           onReview={noop}
           onEdit={noop}
@@ -100,6 +111,7 @@ describe('BenchDetail', () => {
     it('shows a down day in red', () => {
       render(
         <BenchDetail
+          strategy="WHEEL"
           stock={meets({ row: row({ quote: MSFT_QUOTE }) })}
           onReview={noop}
           onEdit={noop}
@@ -114,7 +126,14 @@ describe('BenchDetail', () => {
 
     it('shows an em dash when there is no previous close to compare against', () => {
       const quote = { ...KO_QUOTE, prevClose: null }
-      render(<BenchDetail stock={meets({ row: row({ quote }) })} onReview={noop} onEdit={noop} />)
+      render(
+        <BenchDetail
+          strategy="WHEEL"
+          stock={meets({ row: row({ quote }) })}
+          onReview={noop}
+          onEdit={noop}
+        />
+      )
 
       const change = screen.getByTestId('bench-day-change')
       expect(change).toHaveTextContent('—')
@@ -122,7 +141,7 @@ describe('BenchDetail', () => {
     })
 
     it('shows the IV rank reading', () => {
-      render(<BenchDetail stock={meets()} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={meets()} onReview={noop} onEdit={noop} />)
 
       expect(screen.getByText('IV rank')).toBeInTheDocument()
       expect(screen.getByTestId('ivr-cell')).toBeInTheDocument()
@@ -131,7 +150,7 @@ describe('BenchDetail', () => {
 
   describe('thesis', () => {
     it('shows the saved note', () => {
-      render(<BenchDetail stock={meets()} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={meets()} onReview={noop} onEdit={noop} />)
 
       expect(screen.getByText('Your thesis')).toBeInTheDocument()
       expect(screen.getByTestId('bench-detail-thesis')).toHaveTextContent(
@@ -141,7 +160,7 @@ describe('BenchDetail', () => {
 
     it('says so when no thesis was written', () => {
       const stock = meets({ row: row({ entry: entry({ notes: null }) }) })
-      render(<BenchDetail stock={stock} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={stock} onReview={noop} onEdit={noop} />)
 
       expect(screen.getByTestId('bench-detail-thesis')).toHaveTextContent('No thesis yet.')
     })
@@ -156,7 +175,7 @@ describe('BenchDetail', () => {
           verdict: verdict({ price: unmet('Price $178.40 above $170 target') })
         })
       })
-      render(<BenchDetail stock={stock} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={stock} onReview={noop} onEdit={noop} />)
 
       const gate = screen.getByTestId('bench-gate-price')
       expect(gate).toHaveTextContent('≤ $170 · not met')
@@ -170,7 +189,7 @@ describe('BenchDetail', () => {
           verdict: verdict({ iv: unmet('IV low') })
         })
       })
-      render(<BenchDetail stock={stock} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={stock} onReview={noop} onEdit={noop} />)
 
       const gate = screen.getByTestId('bench-gate-iv')
       expect(gate).toHaveTextContent('IVR ≥ 50 · not met')
@@ -178,7 +197,7 @@ describe('BenchDetail', () => {
     })
 
     it('tints a met IV condition green', () => {
-      render(<BenchDetail stock={meets()} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={meets()} onReview={noop} onEdit={noop} />)
 
       const gate = screen.getByTestId('bench-gate-iv')
       expect(gate).toHaveTextContent('IVR ≥ 40 · met')
@@ -197,7 +216,7 @@ describe('BenchDetail', () => {
           verdict: verdict({ iv: unknown('IV too old to judge') })
         })
       })
-      render(<BenchDetail stock={stock} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={stock} onReview={noop} onEdit={noop} />)
 
       const gate = screen.getByTestId('bench-gate-iv')
       expect(gate).toHaveTextContent('IVR ≥ 45 · unknown')
@@ -212,7 +231,7 @@ describe('BenchDetail', () => {
           verdict: verdict({ earnings: unmet('Earnings in 3 days') })
         })
       })
-      render(<BenchDetail stock={stock} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={stock} onReview={noop} onEdit={noop} />)
 
       const gate = screen.getByTestId('bench-gate-earnings')
       expect(gate).toHaveTextContent('Post-earnings only · not met')
@@ -220,7 +239,7 @@ describe('BenchDetail', () => {
     })
 
     it('omits a condition the trader never set', () => {
-      render(<BenchDetail stock={meets()} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={meets()} onReview={noop} onEdit={noop} />)
 
       expect(screen.queryByTestId('bench-gate-price')).toBeNull()
       expect(screen.queryByTestId('bench-gate-earnings')).toBeNull()
@@ -228,7 +247,7 @@ describe('BenchDetail', () => {
 
     it('chips the conditions no gate speaks for', () => {
       const stock = meets({ row: row({ entry: entry({ coreHolding: true }) }) })
-      render(<BenchDetail stock={stock} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={stock} onReview={noop} onEdit={noop} />)
 
       const tags = screen.getAllByTestId('watchlist-tag')
       expect(tags.map((tag) => tag.textContent)).toEqual(['core'])
@@ -240,7 +259,7 @@ describe('BenchDetail', () => {
       const stock = meets({
         row: row({ entry: entry({ ivrTrigger: null }), verdict: verdict({ iv: none }) })
       })
-      render(<BenchDetail stock={stock} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={stock} onReview={noop} onEdit={noop} />)
 
       expect(screen.getByText('No personal conditions')).toBeInTheDocument()
     })
@@ -255,7 +274,12 @@ describe('BenchDetail', () => {
         withinWindow: true
       }
       render(
-        <BenchDetail stock={meets({ row: row({ earnings }) })} onReview={noop} onEdit={noop} />
+        <BenchDetail
+          strategy="WHEEL"
+          stock={meets({ row: row({ earnings }) })}
+          onReview={noop}
+          onEdit={noop}
+        />
       )
 
       const line = screen.getByTestId('bench-detail-earnings')
@@ -267,7 +291,7 @@ describe('BenchDetail', () => {
     })
 
     it('shows a report outside the window as a plain date', () => {
-      render(<BenchDetail stock={meets()} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={meets()} onReview={noop} onEdit={noop} />)
 
       const line = screen.getByTestId('bench-detail-earnings')
       expect(line).toHaveTextContent('Nov 3')
@@ -285,7 +309,12 @@ describe('BenchDetail', () => {
         withinWindow: true
       }
       render(
-        <BenchDetail stock={meets({ row: row({ earnings }) })} onReview={noop} onEdit={noop} />
+        <BenchDetail
+          strategy="WHEEL"
+          stock={meets({ row: row({ earnings }) })}
+          onReview={noop}
+          onEdit={noop}
+        />
       )
 
       const line = screen.getByTestId('bench-detail-earnings')
@@ -301,7 +330,12 @@ describe('BenchDetail', () => {
         withinWindow: true
       }
       render(
-        <BenchDetail stock={meets({ row: row({ earnings }) })} onReview={noop} onEdit={noop} />
+        <BenchDetail
+          strategy="WHEEL"
+          stock={meets({ row: row({ earnings }) })}
+          onReview={noop}
+          onEdit={noop}
+        />
       )
 
       expect(screen.getByTestId('bench-detail-earnings')).toHaveTextContent('Sep 14 · in 1 day')
@@ -309,7 +343,7 @@ describe('BenchDetail', () => {
 
     it('asks for verification when the date is unknown', () => {
       const stock = meets({ row: row({ earnings: { kind: 'unknown' } }) })
-      render(<BenchDetail stock={stock} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={stock} onReview={noop} onEdit={noop} />)
 
       const line = screen.getByTestId('bench-detail-earnings')
       expect(line).toHaveTextContent('Unknown · needs verification')
@@ -320,7 +354,7 @@ describe('BenchDetail', () => {
 
   describe('reading note', () => {
     it('says nothing about a fresh reading', () => {
-      render(<BenchDetail stock={meets()} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={meets()} onReview={noop} onEdit={noop} />)
 
       expect(screen.queryByTestId('bench-reading-note')).toBeNull()
     })
@@ -329,6 +363,7 @@ describe('BenchDetail', () => {
       const ivRank = { ...FRESH_IVR, state: 'aging' as const, ageTradingDays: 2 }
       render(
         <BenchDetail
+          strategy="WHEEL"
           stock={meets({ row: row({ ivRank, ivRankAbsence: null }) })}
           onReview={noop}
           onEdit={noop}
@@ -342,6 +377,7 @@ describe('BenchDetail', () => {
       const ivRank = { ...FRESH_IVR, state: 'stale' as const, ageTradingDays: 6 }
       render(
         <BenchDetail
+          strategy="WHEEL"
           stock={waiting({ row: row({ ivRank, ivRankAbsence: null }) })}
           onReview={noop}
           onEdit={noop}
@@ -362,7 +398,7 @@ describe('BenchDetail', () => {
           verdict: verdict({ iv: none })
         })
       })
-      render(<BenchDetail stock={stock} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={stock} onReview={noop} onEdit={noop} />)
 
       expect(screen.getByTestId('bench-reading-note')).toHaveTextContent(
         'it cannot satisfy an IV condition'
@@ -373,6 +409,7 @@ describe('BenchDetail', () => {
       const ivRank = { ...FRESH_IVR, state: 'expired' as const, ageTradingDays: 12 }
       render(
         <BenchDetail
+          strategy="WHEEL"
           stock={waiting({ row: row({ ivRank, ivRankAbsence: null }) })}
           onReview={noop}
           onEdit={noop}
@@ -388,6 +425,7 @@ describe('BenchDetail', () => {
       const ivRank = { ...FRESH_IVR, state: 'predates_earnings' as const, ageTradingDays: 1 }
       render(
         <BenchDetail
+          strategy="WHEEL"
           stock={waiting({ row: row({ ivRank, ivRankAbsence: null }) })}
           onReview={noop}
           onEdit={noop}
@@ -413,6 +451,7 @@ describe('BenchDetail', () => {
     ])('explains a missing reading by its reason (%o)', (absence, tone, phrase) => {
       render(
         <BenchDetail
+          strategy="WHEEL"
           stock={waiting({ row: row({ ivRank: null, ivRankAbsence: absence }) })}
           onReview={noop}
           onEdit={noop}
@@ -433,6 +472,7 @@ describe('BenchDetail', () => {
       const ivRank = { ...FRESH_IVR, value: null }
       render(
         <BenchDetail
+          strategy="WHEEL"
           stock={waiting({ row: row({ ivRank, ivRankAbsence: null }) })}
           onReview={noop}
           onEdit={noop}
@@ -449,6 +489,7 @@ describe('BenchDetail', () => {
       const ivRank = { ...FRESH_IVR, value: '25' }
       render(
         <BenchDetail
+          strategy="WHEEL"
           stock={meets({ row: row({ ivRank, ivRankAbsence: null }) })}
           onReview={noop}
           onEdit={noop}
@@ -461,7 +502,7 @@ describe('BenchDetail', () => {
 
   describe('the matching put', () => {
     it('pins the contract and its metrics', () => {
-      render(<BenchDetail stock={meets()} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={meets()} onReview={noop} onEdit={noop} />)
 
       const put = screen.getByTestId('bench-detail-put')
       expect(put).toHaveTextContent('$60.00 PUT')
@@ -484,7 +525,7 @@ describe('BenchDetail', () => {
     })
 
     it('states the cash the trade ties up and how the yield was computed', () => {
-      render(<BenchDetail stock={meets()} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={meets()} onReview={noop} onEdit={noop} />)
 
       expect(screen.getByTestId('bench-detail-put')).toHaveTextContent(
         'Cash to secure 1 contract: $6000.00. Yield uses mark ÷ strike, before fees.'
@@ -494,7 +535,7 @@ describe('BenchDetail', () => {
     it('hands the candidate to onReview', async () => {
       const onReview = vi.fn()
       const stock = meets()
-      render(<BenchDetail stock={stock} onReview={onReview} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={stock} onReview={onReview} onEdit={noop} />)
 
       await userEvent.click(screen.getByTestId('bench-review-KO'))
 
@@ -504,7 +545,14 @@ describe('BenchDetail', () => {
 
   describe('a stock still waiting', () => {
     it('warns with the reason and says the stock stays on the watchlist', () => {
-      render(<BenchDetail stock={waiting({ reason: 'IV low' })} onReview={noop} onEdit={noop} />)
+      render(
+        <BenchDetail
+          strategy="WHEEL"
+          stock={waiting({ reason: 'IV low' })}
+          onReview={noop}
+          onEdit={noop}
+        />
+      )
 
       expect(screen.getByTestId('bench-detail-waiting')).toHaveTextContent(
         'IV low. This stock stays on your watchlist while you wait.'
@@ -519,7 +567,7 @@ describe('BenchDetail', () => {
         reason: 'IV too old to judge',
         candidate: candidate({ strike: '150.0000', periodYield: '0.0119' })
       })
-      render(<BenchDetail stock={held} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={held} onReview={noop} onEdit={noop} />)
 
       expect(screen.getByTestId('bench-detail-held-back')).toHaveTextContent(
         'A qualifying put exists ($150.00 · Oct 16 · 1.19% yield) but is held back by the entry conditions above.'
@@ -545,7 +593,7 @@ describe('BenchDetail', () => {
         }),
         candidate: candidate()
       })
-      render(<BenchDetail stock={held} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={held} onReview={noop} onEdit={noop} />)
 
       const line = screen.getByTestId('bench-detail-held-back')
       expect(line).not.toHaveTextContent('until the IV condition can be judged')
@@ -554,7 +602,7 @@ describe('BenchDetail', () => {
     })
 
     it('says nothing about a held-back put when the screener ranked none', () => {
-      render(<BenchDetail stock={waiting()} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={waiting()} onReview={noop} onEdit={noop} />)
 
       expect(screen.queryByTestId('bench-detail-held-back')).toBeNull()
     })
@@ -565,7 +613,7 @@ describe('BenchDetail', () => {
   // form it opens is the grid's business, not this component's.
   describe('editing', () => {
     it('offers an edit affordance for a stock that meets criteria', () => {
-      render(<BenchDetail stock={meets()} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={meets()} onReview={noop} onEdit={noop} />)
 
       const button = screen.getByTestId('bench-detail-edit')
       expect(button).toHaveAccessibleName('Edit thesis and conditions')
@@ -573,7 +621,7 @@ describe('BenchDetail', () => {
     })
 
     it('offers the same affordance for a stock that is still waiting', () => {
-      render(<BenchDetail stock={waiting()} onReview={noop} onEdit={noop} />)
+      render(<BenchDetail strategy="WHEEL" stock={waiting()} onReview={noop} onEdit={noop} />)
 
       expect(screen.getByTestId('bench-detail-edit')).toBeTruthy()
     })
@@ -581,12 +629,65 @@ describe('BenchDetail', () => {
     it('calls onEdit when the affordance is clicked, and never onReview', async () => {
       const onEdit = vi.fn()
       const onReview = vi.fn()
-      render(<BenchDetail stock={meets()} onReview={onReview} onEdit={onEdit} />)
+      render(<BenchDetail strategy="WHEEL" stock={meets()} onReview={onReview} onEdit={onEdit} />)
 
       await userEvent.click(screen.getByTestId('bench-detail-edit'))
 
       expect(onEdit).toHaveBeenCalledTimes(1)
       expect(onReview).not.toHaveBeenCalled()
+    })
+  })
+
+  // [US-110] The same panel through the PMCC lens: everything above the matching contract
+  // is the stock's, so only that card and the held-back line change.
+  describe('through the PMCC lens', () => {
+    it('shows the matching diagonal, not a put, for a stock that meets criteria', () => {
+      const xlf: BenchStock<PmccScreenerCandidate> = {
+        ...meets({ ticker: 'XLF', row: row({ entry: entry({ ticker: 'XLF' }) }) }),
+        candidate: XLF_DIAGONAL
+      }
+      render(<BenchDetail strategy="PMCC" stock={xlf} onEdit={noop} />)
+
+      expect(screen.getByTestId('bench-detail-diagonal')).toHaveTextContent('$42.00 CALL')
+      expect(screen.queryByTestId('bench-detail-put')).toBeNull()
+      expect(screen.queryByRole('button', { name: /Review trade/ })).toBeNull()
+    })
+
+    it('names the diagonal being held back by the entry conditions', () => {
+      const aapl: BenchStock<PmccScreenerCandidate> = {
+        ...waiting({
+          ticker: 'AAPL',
+          reason: 'Price $178.40 above $170 target',
+          row: row({
+            entry: entry({ ticker: 'AAPL', ownBelowPrice: '170.0000' }),
+            quote: AAPL_QUOTE,
+            verdict: verdict({ price: unmet('Price $178.40 above $170 target') })
+          })
+        }),
+        candidate: AAPL_DIAGONAL
+      }
+      render(<BenchDetail strategy="PMCC" stock={aapl} onEdit={noop} />)
+
+      expect(screen.getByTestId('bench-detail-waiting')).toHaveTextContent(
+        'Price $178.40 above $170 target. This stock stays on your watchlist while you wait.'
+      )
+      expect(screen.getByTestId('bench-detail-held-back')).toHaveTextContent(
+        'A qualifying diagonal exists ($140.00 LEAPS · $190.00 short · Oct 23, 2026 · 5.64% on debit) but is held back by the entry conditions above.'
+      )
+      expect(screen.queryByTestId('bench-detail-diagonal')).toBeNull()
+    })
+
+    it('says nothing about a held-back diagonal when the screener ranked none', () => {
+      const amd: BenchStock<PmccScreenerCandidate> = {
+        ...waiting({ ticker: 'AMD', reason: 'debit 93.84% of width exceeds 90%' }),
+        candidate: null
+      }
+      render(<BenchDetail strategy="PMCC" stock={amd} onEdit={noop} />)
+
+      expect(screen.getByTestId('bench-detail-waiting')).toHaveTextContent(
+        'debit 93.84% of width exceeds 90%. This stock stays on your watchlist while you wait.'
+      )
+      expect(screen.queryByTestId('bench-detail-held-back')).toBeNull()
     })
   })
 })

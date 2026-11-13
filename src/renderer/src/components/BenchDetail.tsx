@@ -1,15 +1,11 @@
 import type { EarningsDisplay, Gate } from '../api/watchlist'
-import type { ScreenerCandidate } from '../api/screener'
-import type { BenchStock } from '../lib/bench'
 import { benchConditions } from '../lib/bench-conditions'
 import { dayChange, type DayChange } from '../lib/day-change'
 import { fmtDate, fmtMoney } from '../lib/format'
-import { fmtYieldPercent } from '../lib/screener-format'
+import { BenchDetailMatch, type BenchDetailLens } from './BenchDetailMatch'
 import { GateBadge, type DecidedGate } from './GateBadge'
 import { IvrCell } from './IvrCell'
-import { MatchingPutCard } from './MatchingPutCard'
 import { ReadingNote } from './ReadingNote'
-import { AlertBox } from './ui/AlertBox'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/button'
 
@@ -20,9 +16,7 @@ import { Button } from './ui/button'
 // what they said they were waiting for, and then either the contract on offer or what is
 // holding it back.
 
-type BenchDetailProps = {
-  stock: BenchStock
-  onReview: (candidate: ScreenerCandidate) => void
+type BenchDetailProps = BenchDetailLens & {
   /** [US-69] Opens the entry form over this panel. The panel owns the affordance because
    *  it is where the thesis and the conditions are read; the grid owns the swap. */
   onEdit: () => void
@@ -64,8 +58,9 @@ function earningsLine(earnings: EarningsDisplay): { text: string; caution: boole
   return { text: `${fmtDate(earnings.date)} · ${countdown(earnings.daysUntil)}`, caution: true }
 }
 
-export function BenchDetail({ stock, onReview, onEdit }: BenchDetailProps): React.JSX.Element {
-  const { ticker, row, candidate, rank, reason, verdictCopy } = stock
+export function BenchDetail(props: BenchDetailProps): React.JSX.Element {
+  const { stock, onEdit } = props
+  const { ticker, row, rank, verdictCopy } = stock
   const { entry, quote, earnings, verdict } = row
   const meets = rank !== null
   const conditions = benchConditions(entry)
@@ -187,26 +182,7 @@ export function BenchDetail({ stock, onReview, onEdit }: BenchDetailProps): Reac
         </span>
       </div>
 
-      {meets && candidate !== null ? (
-        <MatchingPutCard candidate={candidate} onReview={onReview} />
-      ) : (
-        <div className="flex flex-col gap-3">
-          <AlertBox variant="warning" data-testid="bench-detail-waiting">
-            {`${reason}. This stock stays on your watchlist while you wait.`}
-          </AlertBox>
-          {candidate !== null && (
-            <p
-              data-testid="bench-detail-held-back"
-              className="m-0 text-xs leading-relaxed text-wb-text-muted"
-            >
-              {/* Points back at the reason rather than restating one: this line renders for
-                  any held-back stock, so naming a specific gate here would be a guess that
-                  contradicts the box directly above it whenever the guess is wrong. */}
-              {`A qualifying put exists (${fmtMoney(candidate.strike)} · ${fmtDate(candidate.expiration)} · ${fmtYieldPercent(candidate.periodYield)} yield) but is held back by the entry conditions above.`}
-            </p>
-          )}
-        </div>
-      )}
+      <BenchDetailMatch {...props} />
     </div>
   )
 }

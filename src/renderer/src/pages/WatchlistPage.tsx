@@ -3,8 +3,9 @@ import { useLocation } from 'wouter'
 
 import { firstErrorMessage } from '../api/error'
 import type { ScreenerCandidate } from '../api/screener'
-import { BenchGrid } from '../components/BenchGrid'
+import { BenchGrid, type BenchGridLens } from '../components/BenchGrid'
 import { BenchHeader } from '../components/BenchHeader'
+import { EmptyGuidance, SavedBanner } from '../components/BenchNotices'
 import { MarketDataOutage } from '../components/MarketDataOutage'
 import { PageLayout } from '../components/PageLayout'
 import { ScreeningCriteriaSheet } from '../components/ScreeningCriteriaSheet'
@@ -13,14 +14,17 @@ import { ErrorAlert } from '../components/ui/ErrorAlert'
 import { LoadingState } from '../components/ui/LoadingState'
 import { useIvrSnapshotUpdates } from '../hooks/useIvrSnapshotUpdates'
 import { useMarketStatusDisplay } from '../hooks/useMarketStatusDisplay'
+import { usePmccScreenerResults } from '../hooks/usePmccScreenerResults'
+import { usePmccScreeningCriteria } from '../hooks/usePmccScreeningCriteria'
 import { useRemoveFromWatchlist } from '../hooks/useRemoveFromWatchlist'
 import { useScreenerResults } from '../hooks/useScreenerResults'
 import { useScreeningCriteria } from '../hooks/useScreeningCriteria'
 import { useSettingsStatus } from '../hooks/useSettings'
 import { useWatchlistSnapshot } from '../hooks/useWatchlistSnapshot'
-import { type Bench, buildBench } from '../lib/bench'
+import { buildBench } from '../lib/bench'
+import type { BenchStrategy } from '../lib/bench-strategy'
 import { buildPromoteSearch } from '../lib/promote'
-import { fmtQuoteTime } from '../lib/screener-format'
+import { fmtCriteriaSummary, fmtPmccCriteriaSummary, fmtQuoteTime } from '../lib/screener-format'
 
 // [US-96] One live bench. The watchlist and the screener answer halves of the same
 // question — "what am I watching?" and "what is worth selling today?" — so they share
@@ -33,46 +37,25 @@ import { fmtQuoteTime } from '../lib/screener-format'
 // [US-69] One entry form at a time. Opening either form closes the other, and leaving a
 // stock — by selecting another or removing it — closes the edit rather than leaving it
 // pointing at something the trader is no longer looking at.
+//
+// [US-110] Two lenses on one bench. Both lenses' queries stay mounted, but only the active
+// one is enabled, so the hidden lens never fetches. The lens is plain page state: the
+// bench always opens on the wheel.
 
 export const WATCHLIST_PAGE_TITLE = 'Watchlist'
 
-const EMPTY_BENCH: Bench = { meets: [], waiting: [] }
-
 const FOOTER_COPY =
-  'Meets criteria = saved stock conditions pass on a usable IV reading + a qualifying put. Aging readings (2–3 sessions) still count; a stale, earnings-predating, or missing reading is unknown and never satisfies a condition. Stocks without personal conditions use screening defaults.'
-
-function EmptyGuidance(): React.JSX.Element {
-  return (
-    <div className="flex flex-col items-center gap-3 rounded-[10px] border border-dashed border-wb-gold-border bg-wb-bg-surface px-8 py-8 text-center">
-      <div className="flex h-11 w-11 items-center justify-center rounded-full border border-wb-gold-border bg-wb-gold-dim text-xl text-wb-gold">
-        ☰
-      </div>
-      <div className="text-base font-semibold text-wb-text-primary">No tickers yet</div>
-      <div className="max-w-[420px] text-sm leading-relaxed text-wb-text-secondary">
-        Add tickers you&rsquo;d consider selling puts on, with the conditions you&rsquo;re waiting
-        for. The screener pulls option chains for every name and ranks the best entries.
-      </div>
-    </div>
-  )
-}
-
-/** Confirms a save on the page itself — the sheet closes, so it cannot confirm its own success. */
-function SavedBanner(): React.JSX.Element {
-  return (
-    <div className="flex items-center gap-[10px] rounded-md border border-wb-green-border bg-wb-green-subtle px-[14px] py-[10px]">
-      <span className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-wb-green-dim font-wb-mono text-[0.7rem] font-bold text-wb-green">
-        ✓
-      </span>
-      <span className="text-[0.8125rem] font-semibold text-wb-green">Screening criteria saved</span>
-    </div>
-  )
-}
+  'Meets criteria = saved stock conditions pass on a usable IV reading + a qualifying contract for the selected strategy. Aging readings (2–3 sessions) still count; a stale, earnings-predating, or missing reading is unknown and never satisfies a condition. Stocks without personal conditions use screening defaults.'
 
 export function WatchlistPage(): React.JSX.Element {
+  const [strategy, setStrategy] = useState<BenchStrategy>('WHEEL')
+  const wheel = strategy === 'WHEEL'
   const snapshotQuery = useWatchlistSnapshot()
-  const screenerQuery = useScreenerResults()
+  const wheelResults = useScreenerResults({ enabled: wheel })
+  const pmccResults = usePmccScreenerResults({ enabled: !wheel })
   useIvrSnapshotUpdates()
-  const { data: criteria, isError: isCriteriaError } = useScreeningCriteria()
+  const wheelCriteria = useScreeningCriteria({ enabled: wheel })
+  const pmccCriteria = usePmccScreeningCriteria({ enabled: !wheel })
   const { data: credentialStatus } = useSettingsStatus()
   const { display } = useMarketStatusDisplay()
   const removeMutation = useRemoveFromWatchlist()
@@ -86,13 +69,30 @@ export function WatchlistPage(): React.JSX.Element {
 
   const snapshot = snapshotQuery.data
   const rows = snapshot?.rows ?? []
+  // The active lens's pair. The two envelopes share a shape, so everything that reads
+  // only the envelope — loading, errors, status, quote time, refetch — reads it here.
+  const screenerQuery = wheel ? wheelResults : pmccResults
+  const criteriaQuery = wheel ? wheelCriteria : pmccCriteria
   const results = screenerQuery.data
-  const bench = snapshot === undefined ? EMPTY_BENCH : buildBench(snapshot, results)
+  const lens: BenchGridLens = wheel
+    ? {
+        strategy: 'WHEEL',
+        bench: snapshot ? buildBench(snapshot, wheelResults.data) : { meets: [], waiting: [] },
+        onReview: handleReview
+      }
+    : {
+        strategy: 'PMCC',
+        bench: snapshot ? buildBench(snapshot, pmccResults.data) : { meets: [], waiting: [] }
+      }
+  const bench = lens.bench
+  const criteriaChips = wheel
+    ? wheelCriteria.data && fmtCriteriaSummary(wheelCriteria.data)
+    : pmccCriteria.data && fmtPmccCriteriaSummary(pmccCriteria.data)
 
   // Both conditions, not just the flag: a query that has succeeded once keeps serving its
   // data when a later refetch fails, so `isError` alone would call usable criteria
   // unloadable and disable every entry point into the sheet.
-  const criteriaUnloadable = isCriteriaError && criteria === undefined
+  const criteriaUnloadable = criteriaQuery.isError && criteriaQuery.data === undefined
   // `!== 'missing'`, not `=== 'configured'`: an unresolved status must not claim the trader
   // has no credentials, since that swaps a usable Retry for a pointless trip to Settings.
   const marketDataConfigured = credentialStatus?.marketData !== 'missing'
@@ -107,6 +107,12 @@ export function WatchlistPage(): React.JSX.Element {
   function openSheet(): void {
     setSavedConfirmed(false)
     setSheetOpen(true)
+  }
+
+  // A confirmation belongs to the lens it was saved through.
+  function handleStrategyChange(next: BenchStrategy): void {
+    setStrategy(next)
+    setSavedConfirmed(false)
   }
 
   function handleEdit(ticker: string): void {
@@ -158,13 +164,23 @@ export function WatchlistPage(): React.JSX.Element {
     navigate(`/new?${buildPromoteSearch(candidate, notes)}`)
   }
 
+  const sheet = {
+    open: sheetOpen,
+    watchlistCount: rows.length,
+    onClose: () => setSheetOpen(false),
+    onSaved: handleSaved
+  }
+
   return (
     <PageLayout
       header={
         <BenchHeader
           title={WATCHLIST_PAGE_TITLE}
           watchlistCount={rows.length}
-          criteria={criteria}
+          strategy={strategy}
+          onStrategyChange={handleStrategyChange}
+          criteriaChips={criteriaChips}
+          criteriaLabel={wheel ? 'Criteria' : 'PMCC criteria'}
           criteriaUnloadable={criteriaUnloadable}
           staleQuoteTime={staleQuoteTime}
           marketStatus={display}
@@ -217,11 +233,10 @@ export function WatchlistPage(): React.JSX.Element {
 
         {rows.length > 0 && (
           <BenchGrid
-            bench={bench}
+            {...lens}
             selected={selected}
             onSelect={handleSelect}
             onRemove={handleRemove}
-            onReview={handleReview}
             editing={editing}
             onEdit={handleEdit}
             onEditDone={handleEditDone}
@@ -236,14 +251,11 @@ export function WatchlistPage(): React.JSX.Element {
         {FOOTER_COPY}
       </footer>
 
-      {criteria && (
-        <ScreeningCriteriaSheet
-          open={sheetOpen}
-          criteria={criteria}
-          watchlistCount={rows.length}
-          onClose={() => setSheetOpen(false)}
-          onSaved={handleSaved}
-        />
+      {wheel && wheelCriteria.data && (
+        <ScreeningCriteriaSheet {...sheet} strategy="WHEEL" criteria={wheelCriteria.data} />
+      )}
+      {!wheel && pmccCriteria.data && (
+        <ScreeningCriteriaSheet {...sheet} strategy="PMCC" pmccCriteria={pmccCriteria.data} />
       )}
     </PageLayout>
   )

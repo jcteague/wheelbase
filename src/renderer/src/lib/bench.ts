@@ -1,4 +1,4 @@
-import type { ScreenerCandidate, ScreenerResults } from '../api/screener'
+import type { ScreenerCandidate, ScreenerCandidateEarnings, ScreenerResults } from '../api/screener'
 import type { EntryVerdict, Gate, WatchlistSnapshot, WatchlistSnapshotRow } from '../api/watchlist'
 
 /**
@@ -7,14 +7,26 @@ import type { EntryVerdict, Gate, WatchlistSnapshot, WatchlistSnapshotRow } from
  * The snapshot answers "do the trader's own conditions hold?", the screener answers "is
  * there a put worth selling today?". Only a stock both halves clear reaches Meets criteria;
  * every other stock waits with the single most decisive reason why.
+ *
+ * [US-110] The join does not care what was ranked: a wheel put and a PMCC diagonal both
+ * carry a ticker (the join key) and an earnings verdict (the card's badge and demotion),
+ * and the bench reads nothing else.
  */
-export type BenchStock = {
+export type BenchCandidate = { ticker: string; earnings: ScreenerCandidateEarnings }
+
+/** Either lens's screen: the same envelope, ranking its own kind of candidate. */
+export type BenchResults<C extends BenchCandidate = ScreenerCandidate> = Omit<
+  ScreenerResults,
+  'ranked'
+> & { ranked: C[] }
+
+export type BenchStock<C extends BenchCandidate = ScreenerCandidate> = {
   ticker: string
   row: WatchlistSnapshotRow
-  /** The ranked put, when the screener produced one — carried even while the stock waits,
-   *  so the detail panel can show what is being held back. */
-  candidate: ScreenerCandidate | null
-  /** The screener's own 1-based rank; null while the stock waits. */
+  /** The ranked candidate, when the screener produced one — carried even while the stock
+   *  waits, so the detail panel can show what is being held back. */
+  candidate: C | null
+  /** The stock's 1-based place in Meets criteria; null while the stock waits. */
   rank: number | null
   /** Why the stock is waiting; '' once it meets criteria. */
   reason: string
@@ -22,9 +34,9 @@ export type BenchStock = {
   verdictCopy: string | null
 }
 
-export type Bench = {
-  meets: BenchStock[] // screener rank order
-  waiting: BenchStock[] // watchlist order
+export type Bench<C extends BenchCandidate = ScreenerCandidate> = {
+  meets: BenchStock<C>[] // screener rank order, numbered 1..n
+  waiting: BenchStock<C>[] // watchlist order
 }
 
 const OUTAGE_REASON = 'Data unavailable \u00b7 not evaluated'
@@ -64,68 +76,76 @@ function meetsCopy(verdict: EntryVerdict): string {
     : 'Screening criteria met'
 }
 
-type Ranking = { candidate: ScreenerCandidate; rank: number }
-
-type RankedBenchStock = BenchStock & { rank: number }
+/** A candidate and its place in the engine's order — the order Meets criteria follows. */
+type Ranking<C> = { candidate: C; enginePosition: number }
 
 /** First occurrence wins: `ranked` is already in the engine's order and the renderer never
  *  re-sorts it, so the best contract for a ticker is the first one it appears in. */
-function rankingsByTicker(results: ScreenerResults | undefined): Map<string, Ranking> {
-  const rankings = new Map<string, Ranking>()
-  results?.ranked.forEach((candidate, index) => {
+function rankingsByTicker<C extends BenchCandidate>(
+  results: BenchResults<C> | undefined
+): Map<string, Ranking<C>> {
+  const rankings = new Map<string, Ranking<C>>()
+  results?.ranked.forEach((candidate, enginePosition) => {
     if (!rankings.has(candidate.ticker)) {
-      rankings.set(candidate.ticker, { candidate, rank: index + 1 })
+      rankings.set(candidate.ticker, { candidate, enginePosition })
     }
   })
   return rankings
 }
 
-function exclusionsByTicker(results: ScreenerResults | undefined): Map<string, string> {
+function exclusionsByTicker(
+  results: BenchResults<BenchCandidate> | undefined
+): Map<string, string> {
   return new Map(results?.excluded.map((exclusion) => [exclusion.ticker, exclusion.reason]) ?? [])
 }
 
-export function buildBench(
+export function buildBench<C extends BenchCandidate>(
   snapshot: WatchlistSnapshot,
-  results: ScreenerResults | undefined
-): Bench {
+  results: BenchResults<C> | undefined
+): Bench<C> {
   const rankings = rankingsByTicker(results)
   const exclusions = exclusionsByTicker(results)
 
-  const stocks = snapshot.rows.map((row): BenchStock => {
-    const ticker = row.entry.ticker
-    const ranking = rankings.get(ticker) ?? null
-    const meets = results?.status === 'ok' && allGatesPass(row.verdict) && ranking !== null
-
-    if (meets) {
-      return {
-        ticker,
-        row,
-        candidate: ranking.candidate,
-        rank: ranking.rank,
-        reason: '',
-        verdictCopy: meetsCopy(row.verdict)
-      }
-    }
-
-    return {
-      ticker,
-      row,
-      candidate: ranking?.candidate ?? null,
-      rank: null,
-      reason: waitingReason(row.verdict, results?.status, exclusions.get(ticker)),
-      verdictCopy: null
-    }
+  // A stock meets criteria only when both halves clear it; `qualifying` is its ranking
+  // then, and null for every stock that waits.
+  const judged = snapshot.rows.map((row) => {
+    const ranking = rankings.get(row.entry.ticker) ?? null
+    const clears = results?.status === 'ok' && allGatesPass(row.verdict)
+    return { row, ranking, qualifying: clears ? ranking : null }
   })
 
-  // A rank is exactly what a stock gets for clearing both halves, so it doubles as the
-  // partition. `meets` follows the screener's ranking, not the watchlist's order — the
-  // bench is a queue of what to sell next; `waiting` keeps the trader's own order.
-  const ranked = stocks.filter((stock): stock is RankedBenchStock => stock.rank !== null)
+  // `meets` follows the screener's ranking, not the watchlist's order — the bench is a
+  // queue of what to sell next — and the rank is the stock's place in that queue, so a
+  // better-scored stock the trader's conditions hold back leaves no gap in the numbering.
+  const meets = judged
+    .flatMap(({ row, qualifying }) => (qualifying === null ? [] : [{ row, qualifying }]))
+    .sort((a, b) => a.qualifying.enginePosition - b.qualifying.enginePosition)
+    .map(
+      ({ row, qualifying }, index): BenchStock<C> => ({
+        ticker: row.entry.ticker,
+        row,
+        candidate: qualifying.candidate,
+        rank: index + 1,
+        reason: '',
+        verdictCopy: meetsCopy(row.verdict)
+      })
+    )
 
-  return {
-    meets: ranked.sort((a, b) => a.rank - b.rank),
-    waiting: stocks.filter((stock) => stock.rank === null)
-  }
+  // `waiting` keeps the trader's own order.
+  const waiting = judged
+    .filter(({ qualifying }) => qualifying === null)
+    .map(
+      ({ row, ranking }): BenchStock<C> => ({
+        ticker: row.entry.ticker,
+        row,
+        candidate: ranking?.candidate ?? null,
+        rank: null,
+        reason: waitingReason(row.verdict, results?.status, exclusions.get(row.entry.ticker)),
+        verdictCopy: null
+      })
+    )
+
+  return { meets, waiting }
 }
 
 /**
@@ -136,7 +156,7 @@ export function buildBench(
  */
 function waitingReason(
   verdict: EntryVerdict,
-  status: ScreenerResults['status'] | undefined, // undefined while the screen is still loading
+  status: BenchResults['status'] | undefined, // undefined while the screen is still loading
   exclusion: string | undefined
 ): string {
   if (status === 'provider_unavailable') return OUTAGE_REASON
@@ -147,8 +167,8 @@ function waitingReason(
   return exclusion ?? UNSCREENED_REASON
 }
 
-/** The stock the page opens on: the best put on the bench, else the first stock the trader
- *  is watching, else nothing to show. */
-export function defaultSelection(bench: Bench): string | null {
+/** The stock the page opens on: the best candidate on the bench, else the first stock the
+ *  trader is watching, else nothing to show. */
+export function defaultSelection<C extends BenchCandidate>(bench: Bench<C>): string | null {
   return bench.meets[0]?.ticker ?? bench.waiting[0]?.ticker ?? null
 }

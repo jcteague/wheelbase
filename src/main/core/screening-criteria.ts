@@ -1,6 +1,7 @@
 // Shared bounds, messages, and predicates for screening-criteria inputs (delta
 // band, DTE band, open-interest floor, max spread %, price ceiling, IV rank
-// floor). Pure constants and functions — imported by the IPC schemas, the DB
+// floor, and the PMCC-only LEAPS DTE window, max debit / width and IV rank
+// ceiling). Pure constants and functions — imported by the IPC schemas, the DB
 // services, and the renderer form schema so every validation layer stays in
 // lockstep. Change a bound here and all call sites move together.
 
@@ -14,6 +15,9 @@ export const SPREAD_PERCENT_MAX = 50
 export const IV_RANK_MIN = 0
 export const IV_RANK_MAX = 100
 export const SPREAD_ABSOLUTE_MIN = 0
+export const LONG_DTE_MAX = 730
+export const DEBIT_TO_WIDTH_MIN = 1
+export const DEBIT_TO_WIDTH_MAX = 100
 
 /**
  * The only string shape these predicates accept: an optional sign, then plain
@@ -33,6 +37,11 @@ export const PRICE_CEILING_MESSAGE = 'Price ceiling must be greater than zero'
 export const IV_RANK_MESSAGE = `IV rank floor must be between ${IV_RANK_MIN} and ${IV_RANK_MAX}`
 export const DELTA_INVERTED_MESSAGE = 'Minimum delta must be less than maximum delta'
 export const DTE_INVERTED_MESSAGE = 'Minimum DTE must be less than maximum DTE'
+export const LONG_DTE_MAX_MESSAGE = `LEAPS DTE must be at most ${LONG_DTE_MAX}`
+export const DEBIT_TO_WIDTH_MESSAGE = `Max debit / width must be between ${DEBIT_TO_WIDTH_MIN}% and ${DEBIT_TO_WIDTH_MAX}%`
+export const IV_RANK_CEILING_MESSAGE = `IV rank ceiling must be between ${IV_RANK_MIN} and ${IV_RANK_MAX}`
+export const IV_RANK_INVERTED_MESSAGE = 'IV-rank floor must be less than IV-rank ceiling'
+export const DTE_WINDOWS_OVERLAP_MESSAGE = 'LEAPS minimum DTE must exceed short-call maximum DTE'
 
 /**
  * Parses a criteria field value, returning null when it is blank, malformed, or
@@ -50,6 +59,12 @@ function parseNumeric(value: number | string): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+/** True when a value is a whole number within the inclusive range `min`…`max`. */
+function isWholeNumberInRange(value: number | string, min: number, max: number): boolean {
+  const parsed = parseNumeric(value)
+  return parsed !== null && Number.isInteger(parsed) && parsed >= min && parsed <= max
+}
+
 /** True when a delta is within the inclusive allowed range. */
 export function isDeltaInRange(value: number | string): boolean {
   const parsed = parseNumeric(value)
@@ -58,8 +73,13 @@ export function isDeltaInRange(value: number | string): boolean {
 
 /** True when a DTE is a whole number within the inclusive allowed range. */
 export function isDteInRange(value: number | string): boolean {
-  const parsed = parseNumeric(value)
-  return parsed !== null && Number.isInteger(parsed) && parsed >= DTE_MIN && parsed <= DTE_MAX
+  return isWholeNumberInRange(value, DTE_MIN, DTE_MAX)
+}
+
+/** True when a LEAPS DTE is a whole number within the inclusive allowed range —
+ *  the PMCC long window reaches past the wheel's one-year DTE cap. */
+export function isLongDteInRange(value: number | string): boolean {
+  return isWholeNumberInRange(value, DTE_MIN, LONG_DTE_MAX)
 }
 
 /** True when an open-interest floor is a whole number at or above zero. */
@@ -92,6 +112,19 @@ export function isPriceCeilingInRange(value: number | string): boolean {
 export function isIvRankFloorInRange(value: number | string): boolean {
   const parsed = parseNumeric(value)
   return parsed !== null && parsed >= IV_RANK_MIN && parsed <= IV_RANK_MAX
+}
+
+/** True when an IV rank ceiling is within the inclusive allowed range — the same
+ *  domain as the floor. */
+export function isIvRankCeilingInRange(value: number | string): boolean {
+  return isIvRankFloorInRange(value)
+}
+
+/** True when a max net debit as a percent of strike width is within the inclusive
+ *  allowed range. */
+export function isDebitToWidthInRange(value: number | string): boolean {
+  const parsed = parseNumeric(value)
+  return parsed !== null && parsed >= DEBIT_TO_WIDTH_MIN && parsed <= DEBIT_TO_WIDTH_MAX
 }
 
 /** True when a band's minimum is strictly less than its maximum. */

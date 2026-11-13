@@ -52,6 +52,21 @@ describe('useScreeningCriteria hooks', () => {
     expect(options.queryFn).toBe(getScreeningCriteria)
   })
 
+  // [US-110] The page mounts both lenses' hooks; only the active lens may fetch.
+  it('useScreeningCriteria is enabled by default, so existing callers keep fetching', () => {
+    useScreeningCriteria()
+
+    const [options] = mockUseQuery.mock.calls[0] as [{ enabled: boolean }]
+    expect(options.enabled).toBe(true)
+  })
+
+  it('useScreeningCriteria stays idle while the PMCC lens is showing', () => {
+    useScreeningCriteria({ enabled: false })
+
+    const [options] = mockUseQuery.mock.calls[0] as [{ enabled: boolean }]
+    expect(options.enabled).toBe(false)
+  })
+
   it('useSaveScreeningCriteria uses saveScreeningCriteria as its mutation function', () => {
     useSaveScreeningCriteria()
 

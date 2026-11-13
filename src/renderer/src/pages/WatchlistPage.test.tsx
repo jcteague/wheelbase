@@ -5,13 +5,20 @@ import { format, parseISO } from 'date-fns'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiError } from '../api/error'
+import type { PmccScreenerResults } from '../api/pmcc-screener'
+import type { PmccScreeningCriteria } from '../api/pmcc-screening-criteria'
 import type { ScreenerResults } from '../api/screener'
 import type { ScreeningCriteria } from '../api/screening-criteria'
 import type { WatchlistSnapshot, WatchlistSnapshotRow } from '../api/watchlist'
 import type { MarketStatusDisplay } from '../components/MarketStatusPill'
-import { candidate, entry, row, unmet, verdict } from '../components/bench-test-utils'
+import { candidate, entry, none, row, unmet, verdict } from '../components/bench-test-utils'
 import { useAddToWatchlist } from '../hooks/useAddToWatchlist'
 import { useMarketStatusDisplay } from '../hooks/useMarketStatusDisplay'
+import { usePmccScreenerResults } from '../hooks/usePmccScreenerResults'
+import {
+  usePmccScreeningCriteria,
+  useSavePmccScreeningCriteria
+} from '../hooks/usePmccScreeningCriteria'
 import { useRemoveFromWatchlist } from '../hooks/useRemoveFromWatchlist'
 import { useUpdateWatchlistEntry } from '../hooks/useUpdateWatchlistEntry'
 import { useScreenerResults } from '../hooks/useScreenerResults'
@@ -19,6 +26,7 @@ import { useSaveScreeningCriteria, useScreeningCriteria } from '../hooks/useScre
 import { useSettingsStatus } from '../hooks/useSettings'
 import { useWatchlistSnapshot } from '../hooks/useWatchlistSnapshot'
 import { parsePromotedParams } from '../lib/promote'
+import { XLF_DIAGONAL } from '../test-fixtures/pmcc-diagonals'
 import { WatchlistPage } from './WatchlistPage'
 
 // [US-96] The combined bench: the watchlist and the screener on one page. Every data
@@ -30,6 +38,8 @@ vi.mock('../hooks/useWatchlistSnapshot')
 vi.mock('../hooks/useIvrSnapshotUpdates')
 vi.mock('../hooks/useScreenerResults')
 vi.mock('../hooks/useScreeningCriteria')
+vi.mock('../hooks/usePmccScreenerResults')
+vi.mock('../hooks/usePmccScreeningCriteria')
 vi.mock('../hooks/useMarketStatusDisplay')
 vi.mock('../hooks/useSettings')
 // The add form and the card's ✕ own these; the page never calls IPC itself.
@@ -44,6 +54,9 @@ const mockUseWatchlistSnapshot = vi.mocked(useWatchlistSnapshot)
 const mockUseScreenerResults = vi.mocked(useScreenerResults)
 const mockUseScreeningCriteria = vi.mocked(useScreeningCriteria)
 const mockUseSaveScreeningCriteria = vi.mocked(useSaveScreeningCriteria)
+const mockUsePmccScreenerResults = vi.mocked(usePmccScreenerResults)
+const mockUsePmccScreeningCriteria = vi.mocked(usePmccScreeningCriteria)
+const mockUseSavePmccScreeningCriteria = vi.mocked(useSavePmccScreeningCriteria)
 const mockUseMarketStatusDisplay = vi.mocked(useMarketStatusDisplay)
 const mockUseSettingsStatus = vi.mocked(useSettingsStatus)
 const mockUseAddToWatchlist = vi.mocked(useAddToWatchlist)
@@ -101,8 +114,10 @@ const PERSISTED_CRITERIA: ScreeningCriteria = {
 const OUTAGE_COPY =
   'Market data is unavailable. Saved stocks and theses are still here. Prices are last-known; IV ranks come from the local snapshot store and keep their own age. No stocks are marked as meeting criteria.'
 
+// [US-110] "a qualifying contract for the selected strategy", not "a qualifying put": the
+// same footer serves both lenses.
 const FOOTER_COPY =
-  'Meets criteria = saved stock conditions pass on a usable IV reading + a qualifying put. Aging readings (2–3 sessions) still count; a stale, earnings-predating, or missing reading is unknown and never satisfies a condition. Stocks without personal conditions use screening defaults.'
+  'Meets criteria = saved stock conditions pass on a usable IV reading + a qualifying contract for the selected strategy. Aging readings (2–3 sessions) still count; a stale, earnings-predating, or missing reading is unknown and never satisfies a condition. Stocks without personal conditions use screening defaults.'
 
 const DETAIL_CAPTION =
   'Select a stock to see its thesis, condition checks, IV-reading status, and matching contract here.'
@@ -268,6 +283,23 @@ beforeEach(() => {
   setCriteria(PERSISTED_CRITERIA)
   setMarketDisplay('LIVE')
   setMarketDataCredential('configured')
+  // The PMCC lens is mounted but idle by default: a disabled query has no data.
+  mockUsePmccScreenerResults.mockReturnValue({
+    data: undefined,
+    isLoading: false,
+    isPending: true,
+    isError: false,
+    error: null,
+    refetch: vi.fn()
+  } as unknown as ReturnType<typeof usePmccScreenerResults>)
+  mockUsePmccScreeningCriteria.mockReturnValue({
+    data: undefined,
+    isLoading: false,
+    isPending: true,
+    isError: false,
+    error: null,
+    refetch: vi.fn()
+  } as unknown as ReturnType<typeof usePmccScreeningCriteria>)
 
   mockUseAddToWatchlist.mockReturnValue({
     mutate: vi.fn(),
@@ -808,5 +840,307 @@ describe('WatchlistPage — query states', () => {
       expect(mockRemoveMutate).toHaveBeenCalledWith('KO')
       expect(screen.queryByTestId('watchlist-edit-submit')).toBeNull()
     })
+  })
+})
+
+// [US-110] The PMCC lens. These tests run the real query hooks against a mocked
+// `window.api`, so "which screen fetched" is read off the IPC channels actually invoked —
+// a hook called with the wrong `enabled` flag, or a refetch on the hidden lens, shows up
+// as a channel call that should not have happened.
+describe('WatchlistPage — strategy lens', () => {
+  type ScreenerApi = Window['api']['screener']
+
+  const api = {
+    results: vi.fn<ScreenerApi['results']>(),
+    getCriteria: vi.fn<ScreenerApi['getCriteria']>(),
+    saveCriteria: vi.fn<ScreenerApi['saveCriteria']>(),
+    pmccResults: vi.fn<ScreenerApi['pmccResults']>(),
+    getPmccCriteria: vi.fn<ScreenerApi['getPmccCriteria']>(),
+    savePmccCriteria: vi.fn<ScreenerApi['savePmccCriteria']>()
+  }
+
+  const XLF_ROW = row({
+    entry: entry({ ticker: 'XLF', notes: 'Broad financial exposure.', ivrTrigger: null }),
+    verdict: verdict({ iv: none })
+  })
+
+  const PMCC_RESULTS: PmccScreenerResults = {
+    status: 'ok',
+    ranked: [XLF_DIAGONAL],
+    excluded: [
+      { ticker: 'KO', code: 'debit_to_width', reason: 'debit 93.84% of width exceeds 90%' }
+    ],
+    quoteTimestamp: QUOTE_TIMESTAMP
+  }
+
+  const PMCC_CRITERIA: PmccScreeningCriteria = {
+    longDeltaMin: '0.70',
+    longDeltaMax: '0.85',
+    longDteMin: 180,
+    longDteMax: 540,
+    shortDeltaMin: '0.25',
+    shortDeltaMax: '0.35',
+    shortDteMin: 20,
+    shortDteMax: 45,
+    maxDebitToWidthPercent: '90',
+    minOpenInterest: 200,
+    maxSpreadPercent: '10',
+    maxSpreadAbsolute: '0.10',
+    minIvRank: null,
+    maxIvRank: null,
+    earningsHandling: 'exclude'
+  }
+
+  const WHEEL_CHIPS = ['Δ 0.20–0.30', 'DTE 30–45', 'OI ≥ 500', 'Spread ≤ 10%', 'Earnings Exclude']
+
+  const PMCC_CHIPS = [
+    'LEAPS Δ 0.70–0.85',
+    'LEAPS 180–540 DTE',
+    'Short Δ 0.25–0.35',
+    'Short 20–45 DTE',
+    'Debit ≤ 90% width',
+    'OI ≥ 200',
+    'Spread ≤ 10%',
+    'Earnings Exclude'
+  ]
+
+  /** The strip as the trader reads it: its label, then its chips (no `Edit →`). */
+  function strip(): string[] {
+    const spans = screen.getByTestId('screener-criteria-strip').querySelectorAll('span')
+    return Array.from(spans, (span) => span.textContent ?? '').slice(0, -1)
+  }
+
+  const lens = (name: 'Wheel' | 'PMCC'): HTMLElement =>
+    within(screen.getByRole('group', { name: 'Screening strategy' })).getByRole('button', {
+      name
+    })
+
+  async function selectPmcc(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+    await screen.findByText('Δ 0.20–0.30')
+    await user.click(lens('PMCC'))
+    await screen.findByText('PMCC criteria')
+  }
+
+  beforeEach(async () => {
+    const wheelResults = await vi.importActual<typeof import('../hooks/useScreenerResults')>(
+      '../hooks/useScreenerResults'
+    )
+    const wheelCriteria = await vi.importActual<typeof import('../hooks/useScreeningCriteria')>(
+      '../hooks/useScreeningCriteria'
+    )
+    const pmccResults = await vi.importActual<typeof import('../hooks/usePmccScreenerResults')>(
+      '../hooks/usePmccScreenerResults'
+    )
+    const pmccCriteria = await vi.importActual<typeof import('../hooks/usePmccScreeningCriteria')>(
+      '../hooks/usePmccScreeningCriteria'
+    )
+    mockUseScreenerResults.mockImplementation(wheelResults.useScreenerResults)
+    mockUseScreeningCriteria.mockImplementation(wheelCriteria.useScreeningCriteria)
+    mockUseSaveScreeningCriteria.mockImplementation(wheelCriteria.useSaveScreeningCriteria)
+    mockUsePmccScreenerResults.mockImplementation(pmccResults.usePmccScreenerResults)
+    mockUsePmccScreeningCriteria.mockImplementation(pmccCriteria.usePmccScreeningCriteria)
+    mockUseSavePmccScreeningCriteria.mockImplementation(pmccCriteria.useSavePmccScreeningCriteria)
+
+    api.results.mockReset().mockResolvedValue({ ok: true, ...OK_RESULTS })
+    api.getCriteria.mockReset().mockResolvedValue({ ok: true, criteria: PERSISTED_CRITERIA })
+    api.saveCriteria.mockReset().mockResolvedValue({ ok: true, criteria: PERSISTED_CRITERIA })
+    api.pmccResults.mockReset().mockResolvedValue({ ok: true, ...PMCC_RESULTS })
+    api.getPmccCriteria.mockReset().mockResolvedValue({ ok: true, criteria: PMCC_CRITERIA })
+    api.savePmccCriteria.mockReset().mockResolvedValue({ ok: true, criteria: PMCC_CRITERIA })
+    Object.assign(window, { api: { ...(window.api ?? {}), screener: api } })
+
+    setSnapshot([KO_ROW, XLF_ROW])
+  })
+
+  it('opens on the Wheel lens and fetches only the wheel screen and criteria', async () => {
+    renderPage()
+
+    expect(await screen.findByText('Δ 0.20–0.30')).toBeInTheDocument()
+    expect(lens('Wheel')).toHaveAttribute('aria-pressed', 'true')
+    expect(lens('PMCC')).toHaveAttribute('aria-pressed', 'false')
+    expect(api.results).toHaveBeenCalledTimes(1)
+    expect(api.getCriteria).toHaveBeenCalledTimes(1)
+    expect(api.pmccResults).not.toHaveBeenCalled()
+    expect(api.getPmccCriteria).not.toHaveBeenCalled()
+  })
+
+  it('fetches the PMCC screen and criteria once PMCC is selected, and swaps the strip', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await selectPmcc(user)
+
+    expect(strip()).toEqual(['PMCC criteria', ...PMCC_CHIPS])
+    expect(lens('PMCC')).toHaveAttribute('aria-pressed', 'true')
+    expect(api.pmccResults).toHaveBeenCalledTimes(1)
+    expect(api.getPmccCriteria).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-sections the bench by the PMCC screen', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('Δ 0.20–0.30')
+    expect(within(section('Meets criteria')).getByTestId('watchlist-row-KO')).toBeInTheDocument()
+
+    await selectPmcc(user)
+
+    const xlf = await within(section('Meets criteria')).findByTestId('watchlist-row-XLF')
+    expect(within(xlf).getByTestId('watchlist-contract')).toHaveTextContent(
+      '$42.00 LEAPS · $53.00 short Oct 23 · 6.63% on debit'
+    )
+    const ko = within(section('Stocks of interest')).getByTestId('watchlist-row-KO')
+    expect(within(ko).getByTestId('watchlist-reason')).toHaveTextContent(
+      'debit 93.84% of width exceeds 90%'
+    )
+  })
+
+  it('opens the PMCC criteria sheet from the header', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await selectPmcc(user)
+
+    await user.click(criteriaButton())
+
+    expect(
+      await screen.findByText('Applies to all 2 watchlist tickers · PMCC · LEAPS + short call')
+    ).toBeInTheDocument()
+  })
+
+  it('confirms a PMCC save on the page and re-screens only the PMCC lens', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await selectPmcc(user)
+    await screen.findByTestId('watchlist-row-XLF')
+
+    await user.click(criteriaButton())
+    await screen.findByText('Screening Criteria')
+    await user.click(screen.getByRole('button', { name: 'Save & re-screen' }))
+
+    expect(await screen.findByText('Screening criteria saved')).toBeInTheDocument()
+    expect(api.savePmccCriteria).toHaveBeenCalledTimes(1)
+    expect(api.saveCriteria).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(api.pmccResults).toHaveBeenCalledTimes(2))
+    expect(api.results).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the wheel chips unchanged after a PMCC save', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await selectPmcc(user)
+    await user.click(criteriaButton())
+    await screen.findByText('Screening Criteria')
+    await user.click(screen.getByRole('button', { name: 'Save & re-screen' }))
+    await screen.findByText('Screening criteria saved')
+
+    await user.click(lens('Wheel'))
+
+    expect(await screen.findByText('Δ 0.20–0.30')).toBeInTheDocument()
+    expect(strip()).toEqual(['Criteria', ...WHEEL_CHIPS])
+    expect(lens('Wheel')).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  // A confirmation names the lens it was saved through; carried into the other lens it
+  // would claim a save that lens never had.
+  it('retires the save confirmation when the lens changes', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await selectPmcc(user)
+    await user.click(criteriaButton())
+    await screen.findByText('Screening Criteria')
+    await user.click(screen.getByRole('button', { name: 'Save & re-screen' }))
+    await screen.findByText('Screening criteria saved')
+
+    await user.click(lens('Wheel'))
+
+    expect(lens('Wheel')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByText('Screening criteria saved')).toBeNull()
+  })
+
+  it('refreshes the PMCC screen, not the hidden wheel one', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await selectPmcc(user)
+    await screen.findByTestId('watchlist-row-XLF')
+
+    await user.click(screen.getByTestId('bench-refresh'))
+
+    await vi.waitFor(() => expect(api.pmccResults).toHaveBeenCalledTimes(2))
+    expect(api.results).toHaveBeenCalledTimes(1)
+    expect(snapshotRefetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('degrades the PMCC lens like the wheel when market data is unavailable', async () => {
+    const user = userEvent.setup()
+    api.pmccResults.mockResolvedValue({
+      ok: true,
+      status: 'provider_unavailable',
+      ranked: [],
+      excluded: [],
+      quoteTimestamp: null
+    })
+    renderPage()
+    await selectPmcc(user)
+
+    expect(await screen.findByTestId('screener-unavailable')).toHaveTextContent(
+      'Market data unavailable'
+    )
+    const meetsSection = section('Meets criteria')
+    expect(meetsSection).toHaveTextContent('Waiting for market data')
+    expect(within(meetsSection).queryByTestId('screener-empty')).toBeNull()
+    const reasons = within(section('Stocks of interest')).getAllByTestId('watchlist-reason')
+    expect(reasons.map((reason) => reason.textContent)).toEqual([
+      'Data unavailable · not evaluated',
+      'Data unavailable · not evaluated'
+    ])
+  })
+
+  it('retries the PMCC screen from the outage card', async () => {
+    const user = userEvent.setup()
+    api.pmccResults.mockResolvedValue({
+      ok: true,
+      status: 'provider_unavailable',
+      ranked: [],
+      excluded: [],
+      quoteTimestamp: null
+    })
+    renderPage()
+    await selectPmcc(user)
+
+    await user.click(await screen.findByRole('button', { name: 'Retry refresh' }))
+
+    await vi.waitFor(() => expect(api.pmccResults).toHaveBeenCalledTimes(2))
+    expect(api.results).toHaveBeenCalledTimes(1)
+  })
+
+  it('badges the PMCC lens stale from its own quote time when the market is closed', async () => {
+    const user = userEvent.setup()
+    setMarketDisplay('CLOSED')
+    api.results.mockResolvedValue({ ok: true, ...OK_RESULTS, ranked: [], quoteTimestamp: null })
+    renderPage()
+    await screen.findByText('Δ 0.20–0.30')
+    expect(screen.queryByTestId('screener-stale-badge')).toBeNull()
+
+    await selectPmcc(user)
+
+    expect(await screen.findByTestId('screener-stale-caption')).toHaveTextContent(
+      `quoted ${QUOTE_TIME}`
+    )
+  })
+
+  it('disables the criteria entry points when the PMCC criteria cannot load', async () => {
+    const user = userEvent.setup()
+    api.getPmccCriteria.mockResolvedValue({
+      ok: false,
+      errors: [{ field: 'criteria', code: 'read_failed', message: 'unreadable' }]
+    })
+    renderPage()
+    await screen.findByText('Δ 0.20–0.30')
+    expect(criteriaButton()).toBeEnabled()
+
+    await user.click(lens('PMCC'))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/screening criteria/i)
+    expect(criteriaButton()).toBeDisabled()
+    expect(screen.queryByTestId('screener-criteria-strip')).toBeNull()
   })
 })

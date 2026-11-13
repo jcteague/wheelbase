@@ -1,14 +1,17 @@
-import type { BenchStock } from '../lib/bench'
+import type { BenchCandidate, BenchStock } from '../lib/bench'
 import { BenchCard } from './BenchCard'
+import type { CardSummary } from './bench-card-summary'
 import { Badge } from './ui/Badge'
 
 // [US-96] One half of the bench: a titled, counted list of cards with its own empty
 // state. The two halves answer different questions — "what can I sell today?" and "what
 // am I still waiting on?" — so each owns the message it shows when it has nothing.
 
-type BenchSectionProps = {
+type BenchSectionProps<C extends BenchCandidate> = {
   title: string
-  stocks: BenchStock[]
+  stocks: BenchStock<C>[]
+  /** [US-110] The lens's card summary, forwarded to every card. */
+  summary: CardSummary<C>
   /** The ticker whose detail panel is open, or null while nothing is selected. */
   selected: string | null
   /** Shown in place of the cards when the section is empty; `BenchGrid` owns the copy,
@@ -20,15 +23,16 @@ type BenchSectionProps = {
   accent?: boolean
 }
 
-export function BenchSection({
+export function BenchSection<C extends BenchCandidate>({
   title,
   stocks,
+  summary,
   selected,
   empty,
   onSelect,
   onRemove,
   accent = false
-}: BenchSectionProps): React.JSX.Element {
+}: BenchSectionProps<C>): React.JSX.Element {
   return (
     <section aria-label={title} className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
@@ -43,6 +47,7 @@ export function BenchSection({
             <BenchCard
               key={stock.ticker}
               stock={stock}
+              summary={summary}
               selected={stock.ticker === selected}
               onSelect={onSelect}
               onRemove={onRemove}

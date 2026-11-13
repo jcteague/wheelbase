@@ -3,37 +3,38 @@
 // screening engine per ticker, and returns a ranked candidate list plus one explained
 // exclusion for every ticker that did not make it.
 import type Database from 'better-sqlite3'
-import { compareAsc, parseISO } from 'date-fns'
 import type { MarketDataProvider } from '../integrations/market-data-provider'
-import { isWellFormedStrike } from '../core/candidate-chain'
+import type { DteWindow } from '../core/candidate-chain'
 import {
   rankCandidates,
   screenTicker,
-  type EarningsLookup,
-  type ExclusionCode,
-  type IvRank,
   type ScoredCandidate,
   type ScreeningCriteria,
   type TickerScreeningResult
 } from '../core/screener'
-import { isUsableState } from '../core/ivr-freshness'
 import { logger } from '../logger'
 import { pullWatchlistChains, type TickerChainResult } from './candidate-chains'
-import type { EarningsCalendarKnowledge } from './earnings-dates'
 import { readEarningsOrEmpty } from './earnings-horizon'
 import { getScreeningCriteria } from './screening-criteria'
 import { fetchIsolatedStockQuotes } from './underlying-quotes'
 import type { IvRunState } from './iv-run-state'
-import { lookupOf, readIvRankLookup, type IvRankPair } from './iv-rank-lookup'
-import { ensureTradingCalendar, readTradingCalendar } from './trading-calendar-store'
+import { lookupOf, type IvRankPair } from './iv-rank-lookup'
+import {
+  chainFailureExclusion,
+  dataUnavailable,
+  newestTimestamp,
+  partitionOutcomes,
+  readIvRanks,
+  usableIvRanks,
+  wellFormedStrikes,
+  type ScreenContext,
+  type ScreenerExclusion,
+  type TickerOutcome
+} from './screener-shared'
+import { ensureTradingCalendar } from './trading-calendar-store'
 
-export type ScreenerExclusionCode = ExclusionCode | 'no_options_listed' | 'data_unavailable'
-
-export type ScreenerExclusion = {
-  ticker: string
-  code: ScreenerExclusionCode
-  reason: string
-}
+// The exclusion row is part of this service's result, so its type is re-exported here.
+export type { ScreenerExclusion, ScreenerExclusionCode } from './screener-shared'
 
 export type RankedCandidate = Omit<ScoredCandidate, 'ivRank'> & IvRankPair
 
@@ -46,24 +47,8 @@ export type ScreenerResults = {
 
 type ScreenOptions = { criteria?: ScreeningCriteria; currentDate?: Date; runState: IvRunState }
 
-// A ticker either got screened or never made it far enough to be — the second case
-// carries the reason straight into the excluded list.
-type TickerOutcome = { screened: TickerScreeningResult } | { exclusion: ScreenerExclusion }
-
-// Everything the screener needs to judge one chain, past the boundary reads.
-type ScreenContext = {
-  ivRanks: Map<string, IvRank>
-  prices: Map<string, string>
-  earnings: Map<string, EarningsLookup>
-  criteria: ScreeningCriteria
-  currentDate: Date
-}
-
-/** The verdict for a ticker we could not get usable data for — whether its chain never
- *  arrived or the engine choked on a quote. Both paths must read identically to the
- *  trader, so the code and its wording stay together here. */
-function dataUnavailable(ticker: string): ScreenerExclusion {
-  return { ticker, code: 'data_unavailable', reason: 'market data unavailable' }
+function putWindow(criteria: ScreeningCriteria): DteWindow {
+  return { min: criteria.dteMin, max: criteria.dteMax }
 }
 
 /**
@@ -83,80 +68,12 @@ async function readUnderlyingPrices(
   return new Map([...quotes].map(([ticker, quote]) => [ticker, quote.price]))
 }
 
-/**
- * Freshness-assessed IV rank per ticker — or why it is absent — judged against the cached
- * exchange calendar and what the earnings store knows about each ticker's last print.
- *
- * Both reads degrade internally to "unknown for everyone" rather than sinking the run:
- * IVR is display-only and never a hard filter, so losing it must not cost the trader
- * the whole screen. The refresh feeding this read is likewise best-effort and logs its
- * own outcomes. That is why there is no catch here — a second one could only ever be
- * reached by a test mock, and would hide a genuine defect if one appeared.
- */
-function readIvRanks(
-  db: Database.Database,
-  tickers: string[],
-  currentDate: Date,
-  earnings: Map<string, EarningsCalendarKnowledge>,
-  runState: IvRunState
-): Map<string, IvRankPair> {
-  return readIvRankLookup(db, tickers, {
-    now: currentDate,
-    calendar: readTradingCalendar(db, currentDate),
-    lastEarnings: new Map([...earnings].map(([ticker, known]) => [ticker, known.last])),
-    runState
-  })
-}
-
-/** Only a usable reading with a rank is scored — a flat window withholds the rank, so the
- *  IV-rank floor has nothing to judge. The rest still reach the trader through
- *  `RankedCandidate.ivRank`, marked rather than silently priced in. */
-function usableIvRanks(lookups: Map<string, IvRankPair>): Map<string, IvRank> {
-  return new Map(
-    [...lookups].flatMap(([ticker, { ivRank }]): Array<[string, IvRank]> => {
-      if (ivRank === null || ivRank.value === null || !isUsableState(ivRank.state)) return []
-      return [[ticker, { value: ivRank.value, observedAt: ivRank.observedAt }]]
-    })
-  )
-}
-
-// A chain that never made it far enough to screen. Excluding the `ok` case here is what
-// lets `chainStatusExclusion` promise a real exclusion rather than a maybe-undefined one.
-type FailedChain = Exclude<TickerChainResult, { status: 'ok' }>
-
-/** The exclusion a ticker-level chain failure reports to the trader. The chain query
- *  is bounded to the criteria DTE window, so an empty result means nothing is quoted
- *  *in that window* — the ticker may well list options at other expirations. */
-function chainStatusExclusion(chain: FailedChain, criteria: ScreeningCriteria): ScreenerExclusion {
-  switch (chain.status) {
-    case 'no_options_listed':
-      return {
-        ticker: chain.ticker,
-        code: 'no_options_listed',
-        reason: `no puts quoted in the ${criteria.dteMin}–${criteria.dteMax} DTE window`
-      }
-    case 'data_unavailable':
-      return dataUnavailable(chain.ticker)
-  }
-}
-
-/** The strikes the engine can safely do Decimal math on. A malformed quote drops
- *  only itself (logged), never the ticker's other strikes — the engine throws on
- *  bad input, so the validation happens here rather than in a catch downstream. */
-function wellFormedStrikes(chain: TickerChainResult & { status: 'ok' }): typeof chain.strikes {
-  return chain.strikes.filter((strike) => {
-    if (isWellFormedStrike(strike)) return true
-    logger.warn(
-      { ticker: chain.ticker, contractId: strike.contractId },
-      'screener_malformed_strike_dropped'
-    )
-    return false
-  })
-}
-
-function screenChain(chain: TickerChainResult, ctx: ScreenContext): TickerOutcome {
+function screenChain(
+  chain: TickerChainResult,
+  ctx: ScreenContext<ScreeningCriteria>
+): TickerOutcome<TickerScreeningResult> {
   if (chain.status !== 'ok') {
-    return { exclusion: chainStatusExclusion(chain, ctx.criteria) }
+    return { exclusion: chainFailureExclusion(chain, 'puts', putWindow(ctx.criteria)) }
   }
 
   // A ticker the store said nothing about is `unavailable`, never "no earnings" —
@@ -190,27 +107,6 @@ function screenChain(chain: TickerChainResult, ctx: ScreenContext): TickerOutcom
     logger.error({ ticker: chain.ticker, err }, 'screen_ticker_failed')
     return { exclusion: dataUnavailable(chain.ticker) }
   }
-}
-
-/** A screened ticker with no survivor reports its closest miss — `excluded[0]`, the
- *  strike that got furthest through the filter funnel. A ticker whose strikes were
- *  all dropped before screening (every quote malformed) still gets a row: every
- *  non-ranking ticker must appear in the excluded list, never vanish. */
-function representativeExclusion(screened: TickerScreeningResult): ScreenerExclusion[] {
-  if (screened.best !== null) return []
-  if (screened.excluded.length === 0) return [dataUnavailable(screened.ticker)]
-  const closest = screened.excluded[0]
-  return [{ ticker: screened.ticker, code: closest.code, reason: closest.reason }]
-}
-
-function newestTimestamp(candidates: Pick<ScoredCandidate, 'timestamp'>[]): string | null {
-  return candidates.reduce<string | null>(
-    (newest, candidate) =>
-      newest === null || compareAsc(parseISO(candidate.timestamp), parseISO(newest)) > 0
-        ? candidate.timestamp
-        : newest,
-    null
-  )
 }
 
 function complete(results: ScreenerResults): ScreenerResults {
@@ -251,7 +147,7 @@ export async function screenWatchlistCandidates(
   }
 
   const chains = await pullWatchlistChains(provider, db, {
-    window: { min: criteria.dteMin, max: criteria.dteMax },
+    window: putWindow(criteria),
     currentDate
   })
 
@@ -275,7 +171,7 @@ export async function screenWatchlistCandidates(
     ensureTradingCalendar(db, () => provider, currentDate)
   ])
   const ivRankLookups = readIvRanks(db, screenable, currentDate, earnings, opts.runState)
-  const ctx: ScreenContext = {
+  const ctx: ScreenContext<ScreeningCriteria> = {
     ivRanks: usableIvRanks(ivRankLookups),
     prices,
     earnings: new Map([...earnings].map(([ticker, known]) => [ticker, known.next])),
@@ -285,13 +181,12 @@ export async function screenWatchlistCandidates(
 
   const outcomes = chains.tickers.map((chain) => screenChain(chain, ctx))
 
-  const ranked = rankCandidates(
-    outcomes.flatMap((outcome) => ('screened' in outcome ? [outcome.screened] : []))
-  ).map((candidate): RankedCandidate => {
-    return { ...candidate, ...lookupOf(ivRankLookups, candidate.ticker) }
-  })
-  const excluded = outcomes.flatMap((outcome) =>
-    'screened' in outcome ? representativeExclusion(outcome.screened) : [outcome.exclusion]
+  const { screened, excluded } = partitionOutcomes(outcomes)
+  const ranked = rankCandidates(screened).map(
+    (candidate): RankedCandidate => ({
+      ...candidate,
+      ...lookupOf(ivRankLookups, candidate.ticker)
+    })
   )
 
   return complete({ status: 'ok', ranked, excluded, quoteTimestamp: newestTimestamp(ranked) })

@@ -1,7 +1,7 @@
-import type { BenchStock } from '../lib/bench'
+import type { BenchCandidate, BenchStock } from '../lib/bench'
 import { benchConditions } from '../lib/bench-conditions'
-import { fmtDate, fmtMoney } from '../lib/format'
-import { fmtScore, fmtYieldPercent } from '../lib/screener-format'
+import { fmtMoney } from '../lib/format'
+import type { CardSummary } from './bench-card-summary'
 import { EarningsBadge } from './EarningsBadge'
 import { IvrCell } from './IvrCell'
 import { SectionCard } from './ui/SectionCard'
@@ -20,25 +20,31 @@ import { Button } from './ui/button'
 // ticker button stays the keyboard path — it carries the accessible name and
 // `aria-pressed`, and its click bubbles here like any other — so pointer users get the
 // whole surface without costing keyboard users the semantics.
+//
+// [US-110] The card does not know which lens ranked its candidate: the second line and
+// the rank pill's score are handed in, so a put and a diagonal share every other pixel.
 
 /** [US-70] The rank pill, and the muted treatment a demoted candidate falls back to. */
 const RANK_PILL =
   'inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-[5px] bg-wb-gold-dim text-wb-gold text-[0.68rem] font-bold'
 const DEMOTED_RANK = 'font-wb-mono text-[0.72rem] text-wb-text-muted'
 
-type BenchCardProps = {
-  stock: BenchStock
+type BenchCardProps<C extends BenchCandidate> = {
+  stock: BenchStock<C>
+  /** How this lens describes its candidate: the put, or the diagonal. */
+  summary: CardSummary<C>
   selected: boolean
   onSelect: (ticker: string) => void
   onRemove: (ticker: string) => void
 }
 
-export function BenchCard({
+export function BenchCard<C extends BenchCandidate>({
   stock,
+  summary,
   selected,
   onSelect,
   onRemove
-}: BenchCardProps): React.JSX.Element {
+}: BenchCardProps<C>): React.JSX.Element {
   const { ticker, row, candidate, rank, reason } = stock
   // A rank is exactly what a stock gets for clearing both halves, so it is also what
   // decides which section the card sits in and which second line it shows.
@@ -79,7 +85,7 @@ export function BenchCard({
             {meets && (
               <span
                 data-testid="watchlist-rank"
-                title={candidate === null ? undefined : fmtScore(candidate.yieldPerDelta)}
+                title={candidate === null ? undefined : summary.score(candidate)}
                 className={demoted ? DEMOTED_RANK : RANK_PILL}
               >
                 {demoted ? '—' : `#${rank}`}
@@ -105,7 +111,7 @@ export function BenchCard({
 
         {meets && candidate !== null ? (
           <p data-testid="watchlist-contract" className="text-xs text-wb-text-secondary">
-            {`${fmtMoney(candidate.strike)} put · ${fmtDate(candidate.expiration)} · ${fmtYieldPercent(candidate.periodYield)} yield`}
+            {summary.describeMatch(candidate)}
           </p>
         ) : (
           <p data-testid="watchlist-reason" className="text-xs text-wb-text-secondary">

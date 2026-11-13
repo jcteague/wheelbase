@@ -1,8 +1,13 @@
-// [US-64] candidate-chains — pull each watchlist ticker's put chain through the
+// [US-64] candidate-chains — pull each watchlist ticker's option chain (puts unless a
+// caller asks for calls, as the US-110 PMCC screener does) through the
 // MarketDataProvider adapter, isolating per-ticker failures and distinguishing a
 // whole-provider outage from a legitimately empty result.
 import type Database from 'better-sqlite3'
-import { MarketDataError, type MarketDataProvider } from '../integrations/market-data-provider'
+import {
+  MarketDataError,
+  type MarketDataProvider,
+  type OptionChainFilter
+} from '../integrations/market-data-provider'
 import {
   DEFAULT_DTE_WINDOW,
   classifyChainFailure,
@@ -29,7 +34,10 @@ export type WatchlistChainsResult = {
 // `failure` is 'provider' only when the fetch threw a provider-level MarketDataError.
 type TickerOutcome = { result: TickerChainResult; failure: 'ticker' | 'provider' | null }
 
-type PullOptions = { window?: DteWindow; currentDate?: Date }
+type PullOptions = { window?: DteWindow; currentDate: Date; type?: OptionChainFilter['type'] }
+
+// One pull asks every ticker for the same expiration range and contract type.
+type ChainQuery = Omit<OptionChainFilter, 'underlying'>
 
 // Each ticker's chain is a fully-paginated walk, so an unbounded fan-out over a large
 // watchlist bursts hundreds of requests and earns a 429 from a healthy provider —
@@ -39,22 +47,20 @@ export const CHAIN_FETCH_CONCURRENCY = 4
 async function pullTickerChain(
   provider: MarketDataProvider,
   ticker: string,
-  range: { from: string; to: string }
+  query: ChainQuery
 ): Promise<TickerOutcome> {
   try {
-    const quotes = await provider.getOptionChainSnapshot({
-      underlying: ticker,
-      expirationFrom: range.from,
-      expirationTo: range.to,
-      type: 'put'
-    })
+    const quotes = await provider.getOptionChainSnapshot({ underlying: ticker, ...query })
 
     // An empty raw chain and a chain whose quotes are all untradeable both leave
     // nothing to screen in the window — an `ok` result always carries ≥1 strike, so
     // the ticker downstream can never vanish from both the ranked and excluded lists.
     const strikes = toCandidateStrikes(quotes)
     if (strikes.length === 0) {
-      logger.debug({ ticker, quoteCount: quotes.length }, 'chain_pull_no_options_listed')
+      logger.debug(
+        { ticker, type: query.type, quoteCount: quotes.length },
+        'chain_pull_no_options_listed'
+      )
       return { result: { ticker, status: 'no_options_listed' }, failure: null }
     }
 
@@ -78,16 +84,20 @@ async function pullTickerChain(
 export async function pullWatchlistChains(
   provider: MarketDataProvider,
   db: Database.Database,
-  opts: PullOptions = {}
+  opts: PullOptions
 ): Promise<WatchlistChainsResult> {
   const tickers = listWatchlist(db).map((entry) => entry.ticker)
   const window = opts.window ?? DEFAULT_DTE_WINDOW
-  const currentDate = opts.currentDate ?? new Date()
-  const range = dteWindowToExpirationRange(currentDate, window)
-  logger.debug({ tickers, range }, 'pull_watchlist_chains_request')
+  const range = dteWindowToExpirationRange(opts.currentDate, window)
+  const query: ChainQuery = {
+    expirationFrom: range.from,
+    expirationTo: range.to,
+    type: opts.type ?? 'put'
+  }
+  logger.debug({ tickers, query }, 'pull_watchlist_chains_request')
 
   const outcomes = await mapWithConcurrency(tickers, CHAIN_FETCH_CONCURRENCY, (ticker) =>
-    pullTickerChain(provider, ticker, range)
+    pullTickerChain(provider, ticker, query)
   )
 
   // Any ticker the provider actually answered for — with strikes or a legitimately

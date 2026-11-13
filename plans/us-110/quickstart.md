@@ -18,6 +18,8 @@ Wrong ABI shows as `NODE_MODULE_VERSION` from Vitest or a hang on `waiting for e
 ```bash
 # Engine and bounds (pure)
 pnpm vitest run src/main/core/pmcc-screener.test.ts src/main/core/screening-criteria.test.ts
+pnpm vitest run src/main/core/pmcc-screener.property.test.ts src/main/core/screening-criteria.property.test.ts
+pnpm test:mutation --mutate src/main/core/pmcc-screener.ts --mutate src/main/core/screening-criteria.ts
 
 # Persistence, chain pull, service
 pnpm vitest run src/main/services/pmcc-screening-criteria.test.ts
@@ -48,7 +50,7 @@ pnpm test:e2e -- e2e/screening-criteria.spec.ts # US-67 must still pass untouche
 pnpm test:e2e                                    # full suite before calling it done
 ```
 
-Call fixtures are served through the same `WHEELBASE_MOCK_OPTION_SNAPSHOTS` seam the put fixtures use, keyed by OCC symbol with `C`. The fake provider filters on `type` and `expirationFrom`; area 5 adds the `expirationTo` check it currently lacks so the two windows do not bleed into each other.
+Call fixtures are served through the same `WHEELBASE_MOCK_OPTION_SNAPSHOTS` seam the put fixtures use, keyed by OCC symbol with `C`. The fake provider filters on `type`, `expirationFrom` and `expirationTo`, so the two windows do not bleed into each other. Fixtures are anchored to `BASE_DAY` (the most recent real weekday), so the suite asserts date labels computed from each fixture's day offset; money, percent and score literals are fixed because every DTE is.
 
 ## Manual check
 

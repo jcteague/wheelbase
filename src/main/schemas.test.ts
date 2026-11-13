@@ -8,6 +8,7 @@ import {
   OpenCcPayloadSchema,
   RollCcPayloadSchema,
   RollCspPayloadSchema,
+  SavePmccScreeningCriteriaPayloadSchema,
   SetStockQuoteTickersPayloadSchema,
   WatchlistEntryPayloadSchema,
   WatchlistRemovePayloadSchema
@@ -517,5 +518,84 @@ describe('CreatePmccPositionPayloadSchema', () => {
       short: { ...PMCC_FIXTURE.short, deliverableShares: 100.5 }
     })
     expect(result.success).toBe(true)
+  })
+})
+
+// [US-110] The PMCC save payload — the document minus maxSpreadAbsolute; per-field
+// bounds only, the cross-field rules are the service's.
+const PMCC_CRITERIA_PAYLOAD = {
+  longDeltaMin: '0.70',
+  longDeltaMax: '0.85',
+  longDteMin: 180,
+  longDteMax: 540,
+  shortDeltaMin: '0.25',
+  shortDeltaMax: '0.35',
+  shortDteMin: 20,
+  shortDteMax: 45,
+  maxDebitToWidthPercent: '90',
+  minOpenInterest: 200,
+  maxSpreadPercent: '10',
+  minIvRank: '30',
+  maxIvRank: '55',
+  earningsHandling: 'exclude'
+}
+
+describe('SavePmccScreeningCriteriaPayloadSchema', () => {
+  it('parses a full payload unchanged', () => {
+    expect(SavePmccScreeningCriteriaPayloadSchema.parse(PMCC_CRITERIA_PAYLOAD)).toEqual(
+      PMCC_CRITERIA_PAYLOAD
+    )
+  })
+
+  it('accepts both IV-rank ends disabled as null', () => {
+    const result = SavePmccScreeningCriteriaPayloadSchema.safeParse({
+      ...PMCC_CRITERIA_PAYLOAD,
+      minIvRank: null,
+      maxIvRank: null
+    })
+    expect(result.data).toMatchObject({ minIvRank: null, maxIvRank: null })
+  })
+
+  it('strips an extra maxSpreadAbsolute key, as the wheel schema does', () => {
+    const result = SavePmccScreeningCriteriaPayloadSchema.safeParse({
+      ...PMCC_CRITERIA_PAYLOAD,
+      maxSpreadAbsolute: '0.50'
+    })
+    expect(result.data).toEqual(PMCC_CRITERIA_PAYLOAD)
+  })
+
+  it.each([
+    ['maxIvRank', '120', 'IV rank ceiling must be between 0 and 100'],
+    ['minIvRank', '101', 'IV rank floor must be between 0 and 100'],
+    ['longDteMax', 731, 'LEAPS DTE must be at most 730'],
+    ['longDteMin', 0, 'DTE must be at least 1'],
+    ['shortDteMax', 366, 'DTE must be at most 365'],
+    ['maxDebitToWidthPercent', '0', 'Max debit / width must be between 1% and 100%'],
+    ['longDeltaMax', '1.5', 'Delta must be between 0.01 and 0.99'],
+    ['maxSpreadPercent', '51', 'Max spread must be between 1% and 50%'],
+    ['minOpenInterest', -1, 'Open interest floor cannot be negative']
+  ])('rejects %s = %j at that path with %j', (field, value, message) => {
+    const result = SavePmccScreeningCriteriaPayloadSchema.safeParse({
+      ...PMCC_CRITERIA_PAYLOAD,
+      [field]: value
+    })
+    expect(result.error?.issues).toHaveLength(1)
+    expect(result.error?.issues[0]).toMatchObject({ path: [field], message })
+  })
+
+  it('accepts a LEAPS DTE maximum of exactly 730', () => {
+    const result = SavePmccScreeningCriteriaPayloadSchema.safeParse({
+      ...PMCC_CRITERIA_PAYLOAD,
+      longDteMax: 730
+    })
+    expect(result.data).toMatchObject({ longDteMax: 730 })
+  })
+
+  it('leaves an overlapping window to the service', () => {
+    const result = SavePmccScreeningCriteriaPayloadSchema.safeParse({
+      ...PMCC_CRITERIA_PAYLOAD,
+      longDteMin: 40
+    })
+    expect(result.data).toMatchObject({ longDteMin: 40, shortDteMax: 45 })
   })
 })

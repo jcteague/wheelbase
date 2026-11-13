@@ -1,12 +1,21 @@
 import { format, parseISO } from 'date-fns'
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_PMCC_SCREENING_CRITERIA } from '../../../main/core/pmcc-screener'
 import { DEFAULT_SCREENING_CRITERIA } from '../../../main/core/screener'
+import type { PmccScreeningCriteria } from '../api/pmcc-screening-criteria'
 import type { ScreeningCriteria } from '../api/screening-criteria'
+import { candidate } from '../components/bench-test-utils'
+import { XLF_DIAGONAL } from '../test-fixtures/pmcc-diagonals'
 import {
   fmtCriteriaSummary,
   fmtDelta,
+  fmtDiagonalLine,
+  fmtLongDate,
   fmtOpenInterest,
+  fmtPmccCriteriaSummary,
+  fmtPutLine,
   fmtQuoteTime,
+  fmtRatioPercent,
   fmtScore,
   fmtSpread,
   fmtYieldPercent,
@@ -169,6 +178,144 @@ describe('fmtCriteriaSummary', () => {
       'IVR ≥ 30',
       'Earnings Flag only'
     ])
+  })
+})
+
+// [US-110] The PMCC criteria strip. Same glyphs as the wheel's strip (EN-DASH bands, ≥ / ≤),
+// each band prefixed with the leg it constrains.
+describe('fmtPmccCriteriaSummary', () => {
+  const pmccCriteria = (overrides: Partial<PmccScreeningCriteria> = {}): PmccScreeningCriteria => ({
+    ...DEFAULT_PMCC_SCREENING_CRITERIA,
+    ...overrides
+  })
+
+  it('renders the shipped defaults as the eight-chip PMCC strip', () => {
+    expect(fmtPmccCriteriaSummary(pmccCriteria())).toEqual([
+      'LEAPS Δ 0.70–0.85',
+      'LEAPS 180–540 DTE',
+      'Short Δ 0.25–0.35',
+      'Short 20–45 DTE',
+      'Debit ≤ 90% width',
+      'OI ≥ 200',
+      'Spread ≤ 10%',
+      'Earnings Exclude'
+    ])
+  })
+
+  it('places an enabled IV-rank floor and ceiling between the spread and earnings chips', () => {
+    expect(fmtPmccCriteriaSummary(pmccCriteria({ minIvRank: '30', maxIvRank: '55' }))).toEqual([
+      'LEAPS Δ 0.70–0.85',
+      'LEAPS 180–540 DTE',
+      'Short Δ 0.25–0.35',
+      'Short 20–45 DTE',
+      'Debit ≤ 90% width',
+      'OI ≥ 200',
+      'Spread ≤ 10%',
+      'IVR ≥ 30',
+      'IVR ≤ 55',
+      'Earnings Exclude'
+    ])
+  })
+
+  it('shows only the ceiling chip when the floor is off', () => {
+    const chips = fmtPmccCriteriaSummary(pmccCriteria({ maxIvRank: '55' }))
+
+    expect(chips.filter((chip) => chip.startsWith('IVR'))).toEqual(['IVR ≤ 55'])
+  })
+
+  it('reflects saved bands, windows and ratio, padding deltas to two decimals', () => {
+    expect(
+      fmtPmccCriteriaSummary(
+        pmccCriteria({
+          longDeltaMin: '0.8',
+          longDeltaMax: '0.9',
+          longDteMin: 270,
+          longDteMax: 730,
+          shortDeltaMin: '0.2',
+          shortDeltaMax: '0.3',
+          shortDteMin: 30,
+          shortDteMax: 60,
+          maxDebitToWidthPercent: '85',
+          minOpenInterest: 1500,
+          maxSpreadPercent: '7.5'
+        })
+      ).slice(0, 7)
+    ).toEqual([
+      'LEAPS Δ 0.80–0.90',
+      'LEAPS 270–730 DTE',
+      'Short Δ 0.20–0.30',
+      'Short 30–60 DTE',
+      'Debit ≤ 85% width',
+      'OI ≥ 1,500',
+      'Spread ≤ 7.5%'
+    ])
+  })
+
+  it('renders the flag-only earnings policy as its own chip wording', () => {
+    expect(fmtPmccCriteriaSummary(pmccCriteria({ earningsHandling: 'flag' })).at(-1)).toBe(
+      'Earnings Flag only'
+    )
+  })
+})
+
+// [US-110] A ratio the engine already expresses in percent (debit / width, 2 dp).
+describe('fmtRatioPercent', () => {
+  it('keeps two significant decimals', () => {
+    expect(fmtRatioPercent('87.82')).toBe('87.82%')
+  })
+
+  it('trims a trailing zero after the point', () => {
+    expect(fmtRatioPercent('87.50')).toBe('87.5%')
+  })
+
+  it('drops the decimal point entirely on a whole percent', () => {
+    expect(fmtRatioPercent('90.00')).toBe('90%')
+  })
+})
+
+// [US-110] The diagonal's one-line summary on a bench card.
+describe('fmtDiagonalLine', () => {
+  it('names both strikes as money, the short expiry and the cycle yield on debit', () => {
+    expect(fmtDiagonalLine(XLF_DIAGONAL)).toBe(
+      '$42.00 LEAPS · $53.00 short Oct 23 · 6.63% on debit'
+    )
+  })
+
+  it('reads the short leg, not the LEAPS, for the expiry it names', () => {
+    const line = fmtDiagonalLine({
+      ...XLF_DIAGONAL,
+      long: { ...XLF_DIAGONAL.long, strike: '140.0000', expiration: '2027-09-17' },
+      short: { ...XLF_DIAGONAL.short, strike: '190.0000', expiration: '2026-11-06' },
+      cycleYield: '0.0564'
+    })
+
+    expect(line).toBe('$140.00 LEAPS · $190.00 short Nov 6 · 5.64% on debit')
+  })
+})
+
+// [US-96] The wheel card's second line, lifted out of `BenchCard` so the bench can hand each
+// lens its own summary. The wording must not change by a byte.
+describe('fmtPutLine', () => {
+  it('names the strike as money, the expiry and the period yield', () => {
+    expect(fmtPutLine(candidate())).toBe('$60.00 put · Oct 16 · 1.58% yield')
+  })
+
+  it('trims trailing zeros from the period yield', () => {
+    expect(fmtPutLine(candidate({ strike: '150.0000', periodYield: '0.0150' }))).toBe(
+      '$150.00 put · Oct 16 · 1.5% yield'
+    )
+  })
+})
+
+// [US-110] The diagonal detail names its expiries with the year — a LEAPS is a year or more
+// out, so "Jan 21" alone would not say which January.
+describe('fmtLongDate', () => {
+  it('formats an ISO day as month, day and year', () => {
+    expect(fmtLongDate('2026-10-23')).toBe('Oct 23, 2026')
+  })
+
+  it('does not pad a single-digit day', () => {
+    expect(fmtLongDate('2028-01-06')).toBe('Jan 6, 2028')
   })
 })
 

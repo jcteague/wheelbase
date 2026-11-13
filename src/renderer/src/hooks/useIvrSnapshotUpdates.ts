@@ -16,6 +16,7 @@ export function useIvrSnapshotUpdates(): void {
     return window.api.ivr.onSnapshotUpdated(() => {
       void queryClient.invalidateQueries({ queryKey: watchlistQueryKeys.snapshot })
       void queryClient.invalidateQueries({ queryKey: screenerQueryKeys.results })
+      void queryClient.invalidateQueries({ queryKey: screenerQueryKeys.pmccResults })
     })
   }, [queryClient])
 }

@@ -32,9 +32,13 @@ import type {
   RollCcResult,
   RollCspResult,
   RollPmccLeapsResult,
-  RollPmccShortCallResult
+  RollPmccShortCallResult,
+  SavePmccScreeningCriteriaPayload
 } from '../main/schemas'
 import type { AppendPmccSnapshotResult } from '../main/services/pmcc-ledger'
+import type { PmccScreeningCriteria } from '../main/core/pmcc-screener'
+import type { PmccScreenerResults } from '../main/services/pmcc-screener'
+import type { ScreenerExclusion } from '../main/services/screener-shared'
 
 type IpcResult<T> =
   | ({ ok: true } & T)
@@ -382,23 +386,9 @@ type IpcScoredCandidate = {
   timestamp: string // ISO
 } & IpcIvRankPair
 
-/** Mirrors `ScreenerExclusion` in `src/main/services/screener.ts` — one row per
- *  non-ranking ticker, carrying the reason rendered verbatim. */
-interface IpcScreenerExclusion {
-  ticker: string
-  code:
-    | 'price_ceiling'
-    | 'iv_rank_floor'
-    | 'earnings_in_window'
-    | 'dte_window'
-    | 'delta_unavailable'
-    | 'delta_band'
-    | 'open_interest'
-    | 'spread'
-    | 'no_options_listed'
-    | 'data_unavailable'
-  reason: string
-}
+/** `ScreenerExclusion` from `src/main/services/screener-shared.ts` — one row per
+ *  non-ranking ticker, carrying the reason rendered verbatim. Both lenses report it. */
+type IpcScreenerExclusion = ScreenerExclusion
 
 // `provider_unavailable` always arrives with empty `ranked`/`excluded` and a null
 // timestamp — the outage state, rendered distinctly from an empty-but-successful screen.
@@ -425,6 +415,14 @@ interface IpcScreeningCriteria {
 }
 
 type IpcScreeningCriteriaResult = IpcResult<{ criteria: IpcScreeningCriteria }>
+
+// [US-110] The PMCC channels return their service results as-is, so their types are the
+// main process's own. A ranked diagonal is `RankedPmccCandidate`
+// (`Omit<PmccScoredCandidate, 'ivRank'> & IvRankPair`) — built the way `IpcScoredCandidate`
+// is, with the same IV-rank pair every bench row carries.
+type IpcPmccScreenerResultsResult = IpcResult<PmccScreenerResults>
+
+type IpcPmccScreeningCriteriaResult = IpcResult<{ criteria: PmccScreeningCriteria }>
 
 interface IpcGetOptionSnapshotsPayload {
   symbols: string[]
@@ -638,6 +636,11 @@ declare global {
         saveCriteria: (
           payload: Omit<IpcScreeningCriteria, 'maxSpreadAbsolute'>
         ) => Promise<IpcScreeningCriteriaResult>
+        pmccResults: () => Promise<IpcPmccScreenerResultsResult>
+        getPmccCriteria: () => Promise<IpcPmccScreeningCriteriaResult>
+        savePmccCriteria: (
+          payload: SavePmccScreeningCriteriaPayload
+        ) => Promise<IpcPmccScreeningCriteriaResult>
       }
       ivr: {
         collectNow: () => Promise<IpcCollectIvrNowResult>

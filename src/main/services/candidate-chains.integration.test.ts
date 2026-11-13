@@ -1,7 +1,9 @@
 // [US-64] AC integration — real pullWatchlistChains against an in-memory watchlist
 // (migration 012) driven by a scripted MarketDataProvider. One it() per acceptance
-// criterion; names mirror the Gherkin scenarios.
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+// criterion; names mirror the Gherkin scenarios. The US-110 contract-type block runs
+// through FakeMarketDataProvider instead, so the window and type filters are real.
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { FakeMarketDataProvider } from '../integrations/fake-market-data'
 import {
   MarketDataError,
   type OptionChainFilter,
@@ -149,5 +151,102 @@ describe('US-64 pullWatchlistChains — acceptance criteria', () => {
       expect(ids).toContain('AAPL260905P00190000')
       expect(ids).not.toContain('AAPL260905P00185000') // no reliable mark
     }
+  })
+})
+
+// [US-110] The PMCC screener pulls call chains over two DTE windows (LEAPS 180–540,
+// short call 20–45). From CURRENT_DATE 2026-07-23: 180–540 → [2027-01-19, 2028-01-14];
+// 20–45 → [2026-08-12, 2026-09-06].
+describe('US-110 pullWatchlistChains — contract type', () => {
+  const SHORT_CALL_35_DTE = 'AAPL260827C00210000' // 2026-08-27 = today + 35
+  const LEAPS_CALL_490_DTE = 'AAPL271125C00180000' // 2027-11-25 = today + 490
+  const LEAPS_PUT_490_DTE = 'AAPL271125P00180000'
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  function stubChainFixture(quotes: OptionChainQuote[]): void {
+    vi.stubEnv(
+      'WHEELBASE_MOCK_OPTION_SNAPSHOTS',
+      JSON.stringify(Object.fromEntries(quotes.map((q) => [q.contractId, q])))
+    )
+  }
+
+  it('requests the given contract type over the window’s expiration range', async () => {
+    const db = makeTestDb()
+    seedWatchlist(db, ['AAPL'])
+    stubChainFixture([])
+    const provider = new FakeMarketDataProvider()
+    const chainSpy = vi.spyOn(provider, 'getOptionChainSnapshot')
+
+    await pullWatchlistChains(provider, db, {
+      type: 'call',
+      window: { min: 180, max: 540 },
+      currentDate: CURRENT_DATE
+    })
+
+    expect(chainSpy).toHaveBeenCalledExactlyOnceWith({
+      underlying: 'AAPL',
+      expirationFrom: '2027-01-19',
+      expirationTo: '2028-01-14',
+      type: 'call'
+    })
+  })
+
+  it('requests puts when no contract type is given', async () => {
+    const db = makeTestDb()
+    seedWatchlist(db, ['AAPL'])
+    stubChainFixture([])
+    const provider = new FakeMarketDataProvider()
+    const chainSpy = vi.spyOn(provider, 'getOptionChainSnapshot')
+
+    await pullWatchlistChains(provider, db, { currentDate: CURRENT_DATE })
+
+    expect(chainSpy).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'put' }))
+  })
+
+  it('a 35-DTE and a 490-DTE call each come back only from their own window', async () => {
+    const db = makeTestDb()
+    seedWatchlist(db, ['AAPL'])
+    stubChainFixture([
+      putQuote({
+        contractId: SHORT_CALL_35_DTE,
+        contractType: 'call',
+        strike: '210.00',
+        expiration: '2026-08-27'
+      }),
+      putQuote({
+        contractId: LEAPS_CALL_490_DTE,
+        contractType: 'call',
+        strike: '180.00',
+        expiration: '2027-11-25'
+      }),
+      // A put in the LEAPS window proves the call pull filters by type, not just by date.
+      putQuote({ contractId: LEAPS_PUT_490_DTE, strike: '180.00', expiration: '2027-11-25' })
+    ])
+    const provider = new FakeMarketDataProvider()
+
+    const long = await pullWatchlistChains(provider, db, {
+      type: 'call',
+      window: { min: 180, max: 540 },
+      currentDate: CURRENT_DATE
+    })
+    const short = await pullWatchlistChains(provider, db, {
+      type: 'call',
+      window: { min: 20, max: 45 },
+      currentDate: CURRENT_DATE
+    })
+
+    expect(byTicker(long.tickers, 'AAPL')).toEqual({
+      ticker: 'AAPL',
+      status: 'ok',
+      strikes: [expect.objectContaining({ contractId: LEAPS_CALL_490_DTE, strike: '180.00' })]
+    })
+    expect(byTicker(short.tickers, 'AAPL')).toEqual({
+      ticker: 'AAPL',
+      status: 'ok',
+      strikes: [expect.objectContaining({ contractId: SHORT_CALL_35_DTE, strike: '210.00' })]
+    })
   })
 })

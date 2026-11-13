@@ -21,10 +21,10 @@ export type ScreeningCriteria = {
 // The sheet has no input for maxSpreadAbsolute — the service supplies it.
 export type SaveScreeningCriteriaPayload = Omit<ScreeningCriteria, 'maxSpreadAbsolute'>
 
-// Both criteria channels return the same `{ criteria }` envelope; failures are
-// validation-style, so they surface as 400 (like screener.ts, not the 502 that
+// Every criteria channel, either lens, returns the same `{ criteria }` envelope; failures
+// are validation-style, so they surface as 400 (like screener.ts, not the 502 that
 // settings.ts uses for broker operations).
-function unwrapCriteria(result: IpcResult<{ criteria: ScreeningCriteria }>): ScreeningCriteria {
+export function unwrapCriteria<C>(result: IpcResult<{ criteria: C }>): C {
   if (!result.ok) {
     throwMappedIpcErrors(result.errors)
   }

@@ -5,9 +5,11 @@
 // exists today. A stock only reaches "meets criteria" when both agree.
 
 import { describe, expect, it } from 'vitest'
+import type { PmccScreenerResults } from '../api/pmcc-screener'
 import type { ScreenerCandidate, ScreenerExclusion, ScreenerResults } from '../api/screener'
 import type { EntryVerdict, Gate, WatchlistSnapshot, WatchlistSnapshotRow } from '../api/watchlist'
-import { buildBench, defaultSelection, type BenchStock } from './bench'
+import { XLF_DIAGONAL, diagonal } from '../test-fixtures/pmcc-diagonals'
+import { buildBench, defaultSelection, type BenchCandidate, type BenchStock } from './bench'
 
 const MET: Gate = { verdict: 'met', label: null }
 const NONE: Gate = { verdict: 'none', label: null }
@@ -97,7 +99,7 @@ const RESULTS: ScreenerResults = {
   quoteTimestamp: '2026-09-11T18:00:00.000Z'
 }
 
-function find(stocks: BenchStock[], ticker: string): BenchStock {
+function find<C extends BenchCandidate>(stocks: BenchStock<C>[], ticker: string): BenchStock<C> {
   const stock = stocks.find((entry) => entry.ticker === ticker)
   if (!stock) throw new Error(`${ticker} is not on this half of the bench`)
   return stock
@@ -109,6 +111,20 @@ describe('buildBench', () => {
 
     expect(bench.meets.map((stock) => stock.ticker)).toEqual(['KO', 'XLF'])
     expect(bench.meets.map((stock) => stock.rank)).toEqual([1, 2])
+  })
+
+  // The pill numbers a stock by its place in Meets criteria: a better-scored put the
+  // trader's own conditions hold back must not leave a gap in the queue.
+  it('numbers meets-criteria stocks past a higher-ranked put held back by a gate', () => {
+    const bench = buildBench(SNAPSHOT, {
+      ...RESULTS,
+      ranked: [PEP_CANDIDATE, candidate('AAPL'), KO_CANDIDATE, XLF_CANDIDATE]
+    })
+
+    expect(bench.meets.map(({ ticker, rank }) => ({ ticker, rank }))).toEqual([
+      { ticker: 'KO', rank: 1 },
+      { ticker: 'XLF', rank: 2 }
+    ])
   })
 
   it('carries the ranked candidate on each meets-criteria stock with no reason', () => {
@@ -216,6 +232,95 @@ describe('buildBench', () => {
     expect(find(bench.waiting, 'AAPL')).toMatchObject({
       reason: 'Price $178.40 above $170 target · IV low'
     })
+  })
+})
+
+// [US-110] The PMCC lens joins the same snapshot to ranked diagonals. Entry conditions gate
+// a diagonal exactly as they gate a put, so the partition must not care what it ranks.
+describe('buildBench over PMCC diagonals', () => {
+  const PMCC_ROWS: WatchlistSnapshotRow[] = [
+    row('AAPL', { price: unmet('Price $178.40 above $170 target') }),
+    row('KO', { iv: MET }),
+    row('AMD'),
+    row('XLF')
+  ]
+  const PMCC_SNAPSHOT: WatchlistSnapshot = { rows: PMCC_ROWS, asOf: '2026-09-18T20:00:00.000Z' }
+  const KO_DIAGONAL = diagonal('KO')
+  const AAPL_DIAGONAL = diagonal('AAPL')
+  const PMCC_RESULTS: PmccScreenerResults = {
+    status: 'ok',
+    ranked: [XLF_DIAGONAL, AAPL_DIAGONAL, KO_DIAGONAL],
+    excluded: [exclusion('AMD', 'debit_to_width', 'debit 93.84% of width exceeds 90%')],
+    quoteTimestamp: '2026-09-18T20:00:00.000Z'
+  }
+
+  it('ranks a diagonal whose gates all pass, in screener order, carrying the diagonal', () => {
+    const bench = buildBench(PMCC_SNAPSHOT, PMCC_RESULTS)
+
+    expect(bench.meets.map(({ ticker, rank, candidate }) => ({ ticker, rank, candidate }))).toEqual(
+      [
+        { ticker: 'XLF', rank: 1, candidate: XLF_DIAGONAL },
+        { ticker: 'KO', rank: 2, candidate: KO_DIAGONAL }
+      ]
+    )
+  })
+
+  // The story's bench: the engine ranks XLF, AAPL, PEP, DIS, KO, but the trader's own
+  // conditions hold the middle three back, so KO is second in Meets criteria — #2, not #5.
+  it('numbers each diagonal by its place in Meets criteria, not the engine rank', () => {
+    const snapshot: WatchlistSnapshot = {
+      rows: [
+        row('KO', { iv: MET }),
+        row('AAPL', { price: unmet('Price $178.40 above $170 target') }),
+        row('PEP', { iv: unknown('IV too old to judge') }),
+        row('DIS', { earnings: unmet('Earnings in 3 days') }),
+        row('XLF')
+      ],
+      asOf: '2026-09-18T20:00:00.000Z'
+    }
+
+    const bench = buildBench(snapshot, {
+      ...PMCC_RESULTS,
+      ranked: [XLF_DIAGONAL, AAPL_DIAGONAL, diagonal('PEP'), diagonal('DIS'), KO_DIAGONAL]
+    })
+
+    expect(bench.meets.map(({ ticker, rank }) => ({ ticker, rank }))).toEqual([
+      { ticker: 'XLF', rank: 1 },
+      { ticker: 'KO', rank: 2 }
+    ])
+  })
+
+  it('holds back a ranked diagonal behind a blocking price gate, keeping the diagonal attached', () => {
+    const bench = buildBench(PMCC_SNAPSHOT, PMCC_RESULTS)
+
+    expect(find(bench.waiting, 'AAPL')).toMatchObject({
+      reason: 'Price $178.40 above $170 target',
+      rank: null,
+      candidate: AAPL_DIAGONAL
+    })
+  })
+
+  it('shows an excluded ticker the engine’s reason verbatim', () => {
+    const bench = buildBench(PMCC_SNAPSHOT, PMCC_RESULTS)
+
+    expect(find(bench.waiting, 'AMD')).toMatchObject({
+      reason: 'debit 93.84% of width exceeds 90%',
+      candidate: null
+    })
+  })
+
+  it('claims nothing about any stock when the provider is unavailable', () => {
+    const bench = buildBench(PMCC_SNAPSHOT, {
+      status: 'provider_unavailable',
+      ranked: [],
+      excluded: [],
+      quoteTimestamp: null
+    })
+
+    expect(bench.meets).toEqual([])
+    expect(bench.waiting.map((stock) => stock.reason)).toEqual(
+      PMCC_ROWS.map(() => 'Data unavailable · not evaluated')
+    )
   })
 })
 

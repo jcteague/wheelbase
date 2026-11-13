@@ -7,7 +7,15 @@ import type { MarketDataProvider } from '../integrations/market-data-provider'
 import type { IvRunState } from '../services/iv-run-state'
 import { screenWatchlistCandidates } from '../services/screener'
 import { getScreeningCriteria, saveScreeningCriteria } from '../services/screening-criteria'
-import { SaveScreeningCriteriaPayloadSchema } from '../schemas'
+import { screenWatchlistPmccCandidates } from '../services/pmcc-screener'
+import {
+  getPmccScreeningCriteria,
+  savePmccScreeningCriteria
+} from '../services/pmcc-screening-criteria'
+import {
+  SavePmccScreeningCriteriaPayloadSchema,
+  SaveScreeningCriteriaPayloadSchema
+} from '../schemas'
 import { logger } from '../logger'
 import { handleIpcCall } from './utils'
 
@@ -45,6 +53,30 @@ export function registerScreenerIpc({
       const parsed = SaveScreeningCriteriaPayloadSchema.parse(payload)
       logger.debug(parsed, 'screener_save_criteria_requested')
       return { criteria: saveScreeningCriteria(db, parsed) }
+    })
+  )
+
+  // [US-110] The PMCC lens — the same three channels over the PMCC service and its own
+  // criteria document. See plans/us-110/contracts/screener-pmcc.md.
+  ipcMain.handle('screener:pmcc-results', () =>
+    handleIpcCall('screener_pmcc_results_error', () =>
+      screenWatchlistPmccCandidates(getProvider, db, { currentDate: getCurrentDate(), runState })
+    )
+  )
+
+  ipcMain.handle('screener:get-pmcc-criteria', () =>
+    handleIpcCall('screener_get_pmcc_criteria_error', () => ({
+      criteria: getPmccScreeningCriteria(db)
+    }))
+  )
+
+  // Per-field bounds are the schema's; the band and overlapping-window rules are the
+  // service's, raised with the `inverted_band` / `overlapping_windows` codes.
+  ipcMain.handle('screener:save-pmcc-criteria', (_, payload: unknown) =>
+    handleIpcCall('screener_save_pmcc_criteria_error', () => {
+      const parsed = SavePmccScreeningCriteriaPayloadSchema.parse(payload)
+      logger.debug(parsed, 'screener_save_pmcc_criteria_requested')
+      return { criteria: savePmccScreeningCriteria(db, parsed) }
     })
   )
 }

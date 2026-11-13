@@ -10,9 +10,9 @@ import { fixed4 } from '../../shared/decimal-text'
 
 /** Calendar-day annualization basis — the wheel is a calendar-time trade, so 365,
  *  never the 252 trading days used by the volatility work in Epic 12. */
-const DAYS_PER_YEAR = 365
+export const DAYS_PER_YEAR = 365
 
-const SHARES_PER_CONTRACT = 100
+export const SHARES_PER_CONTRACT = 100
 
 export type EarningsHandling = 'exclude' | 'flag'
 
@@ -143,9 +143,9 @@ type Spread = { absolute: Decimal; percent: Decimal }
 /** The two derived values both the filters and the scorer read. Each stage derives
  *  them straight from the quote strings, so neither ever reads a value the other
  *  already rounded. */
-type StrikeMetrics = { absDelta: Decimal | null; spread: Spread }
+export type StrikeMetrics = { absDelta: Decimal | null; spread: Spread }
 
-function computeStrikeMetrics(strike: CandidateStrike): StrikeMetrics {
+export function computeStrikeMetrics(strike: CandidateStrike): StrikeMetrics {
   const absolute = new Decimal(strike.ask).minus(strike.bid)
   return {
     absDelta: strike.delta === null ? null : new Decimal(strike.delta).abs(),
@@ -159,20 +159,20 @@ function computeStrikeMetrics(strike: CandidateStrike): StrikeMetrics {
 // load-bearing.
 // ---------------------------------------------------------------------------
 
-const EN_DASH = '–'
+export const EN_DASH = '–'
 
-function formatBand(min: string, max: string): string {
+export function formatBand(min: string, max: string): string {
   return `${new Decimal(min).toFixed(2)}${EN_DASH}${new Decimal(max).toFixed(2)}`
 }
 
 // Rounds UP at 2dp, then trims trailing zeros. Rounding half-up could render an
 // observed value equal to the limit it exceeds ("spread 10% exceeds 10%"); rounding
 // up keeps the observed side strictly above the limit's rendering.
-function formatPercent(percent: Decimal | string): string {
+export function formatPercent(percent: Decimal | string): string {
   return `${new Decimal(percent).toDecimalPlaces(2, Decimal.ROUND_UP).toString()}%`
 }
 
-function formatMoney(amount: string): string {
+export function formatMoney(amount: string): string {
   return `$${new Decimal(amount).toFixed(2)}`
 }
 
@@ -182,14 +182,14 @@ function formatMoney(amount: string): string {
 // reading dropped a candidate. Age no longer runs unbounded — [US-98] withholds any
 // reading past STALE_MAX_AGE — but the exclusion reason still names the day, and the
 // IVR cell carries the freshness state alongside it.
-function formatObservedOn(observedAt: string): string {
+export function formatObservedOn(observedAt: string): string {
   return format(parseISO(observedAt), 'MMM d')
 }
 
 /** Whether an earnings print lands inside the holding window — on or after the
  *  trader's current calendar day, and on or before the strike's expiry. A print
  *  already in the past is history, not gap risk, even if the feed still reports it. */
-function earningsWithinHolding(
+export function earningsWithinHolding(
   earningsDate: string,
   expiration: string,
   currentDate: Date
@@ -208,7 +208,7 @@ function earningsWithinHolding(
  * `none` and `unavailable` demote but never exclude: a gap in the feed is not
  * evidence of safety, and it is not evidence of risk either.
  */
-function candidateEarnings(
+export function candidateEarnings(
   earnings: EarningsLookup,
   handling: EarningsHandling,
   expiration: string,
@@ -422,7 +422,7 @@ type StrikeVerdict =
  *  yield-per-delta: pre-earnings IV inflation is precisely what lifts these candidates
  *  up the score, so a high score must never rescue a tier. `unknown` and `unavailable`
  *  share a tier — the trader's next move is the same for both, go look it up. */
-function earningsTier(candidate: ScoredCandidate): 0 | 1 | 2 {
+export function earningsTier(candidate: Pick<ScoredCandidate, 'earnings'>): 0 | 1 | 2 {
   switch (candidate.earnings.status) {
     case 'clear':
       return 0

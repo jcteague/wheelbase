@@ -47,11 +47,11 @@ type IpcPmccLeg = {
   timestamp: string
 }
 
+// [rev 2026-11-11] `ivRank` / `ivRankAbsence` come from `& IpcIvRankPair`, as screener:results ships them since US-121
 type IpcPmccScoredCandidate = {
   ticker: string
   long: IpcPmccLeg
   short: IpcPmccLeg
-  ivRank: IpcIvRank | null // the assessed reading, as screener:results ships it (US-98)
   netDebit: string // 2dp per share
   capitalAtRisk: string // 2dp, netDebit × 100
   strikeWidth: string // 2dp
@@ -63,7 +63,7 @@ type IpcPmccScoredCandidate = {
   extrinsicCoverage: string | null // 4dp fraction; null when extrinsic is null or ≤ 0
   earnings: IpcCandidateEarnings // judged on the short leg
   timestamp: string
-}
+} & IpcIvRankPair
 ```
 
 **`IpcScreenerExclusion.code`** widens to the PMCC codes: `iv_rank_floor`, `iv_rank_ceiling`, `earnings_in_window`, `dte_window`, `delta_unavailable`, `delta_band`, `open_interest`, `spread`, `short_strike_not_above_long`, `debit_to_width`, plus the chain-level `no_options_listed` and `data_unavailable`. `reason` is rendered verbatim by the bench; leg-level reasons are prefixed `LEAPS ` or `short call ` (see `plans/us-110/data-model.md` funnel table).

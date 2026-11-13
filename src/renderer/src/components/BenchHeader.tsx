@@ -1,4 +1,5 @@
-import type { ScreeningCriteria } from '../api/screening-criteria'
+import type { BenchStrategy } from '../lib/bench-strategy'
+import { BenchStrategyToggle } from './BenchStrategyToggle'
 import { type MarketStatusDisplay, MarketStatusPill } from './MarketStatusPill'
 import { PageHeader } from './PageLayout'
 import { ScreenerCriteriaStrip } from './ScreenerCriteriaStrip'
@@ -18,8 +19,13 @@ type BenchHeaderProps = {
   title: string
   /** Saved stocks, not bench cards: the count answers "how many am I watching?". */
   watchlistCount: number
-  /** Undefined until the criteria load — only the strip needs them. */
-  criteria: ScreeningCriteria | undefined
+  /** The lens the bench screens through, and how the trader switches it. */
+  strategy: BenchStrategy
+  onStrategyChange: (strategy: BenchStrategy) => void
+  /** The active lens's criteria as chips; undefined until they load — only the strip needs them. */
+  criteriaChips: string[] | undefined
+  /** What the chips describe: `Criteria` for the wheel, `PMCC criteria` for the PMCC lens. */
+  criteriaLabel: string
   /** Keeps every entry point into the sheet inert while the criteria cannot be loaded. */
   criteriaUnloadable: boolean
   /** The formatted time the marks were quoted, or null while they are current. */
@@ -34,7 +40,10 @@ type BenchHeaderProps = {
 export function BenchHeader({
   title,
   watchlistCount,
-  criteria,
+  strategy,
+  onStrategyChange,
+  criteriaChips,
+  criteriaLabel,
   criteriaUnloadable,
   staleQuoteTime,
   marketStatus,
@@ -50,6 +59,7 @@ export function BenchHeader({
           <div className="flex items-center gap-[10px]">
             <h1 className="m-0 text-sm font-semibold text-wb-text-primary">{title}</h1>
             <Badge data-testid="bench-count">{watchlistCount}</Badge>
+            <BenchStrategyToggle value={strategy} onChange={onStrategyChange} />
             {staleQuoteTime && (
               <span
                 data-testid="screener-stale-badge"
@@ -94,9 +104,15 @@ export function BenchHeader({
           </div>
         }
       />
-      {(criteria || staleQuoteTime) && (
+      {(criteriaChips || staleQuoteTime) && (
         <div className="flex shrink-0 items-center gap-3 border-b border-wb-border bg-wb-bg-surface px-6 py-3">
-          {criteria && <ScreenerCriteriaStrip criteria={criteria} onClick={onOpenCriteria} />}
+          {criteriaChips && (
+            <ScreenerCriteriaStrip
+              label={criteriaLabel}
+              chips={criteriaChips}
+              onClick={onOpenCriteria}
+            />
+          )}
           {staleQuoteTime && (
             <span
               data-testid="screener-stale-caption"

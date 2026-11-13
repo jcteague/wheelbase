@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { BenchSection } from './BenchSection'
+import { WHEEL_CARD_SUMMARY } from './bench-card-summary'
 import { meets } from './bench-test-utils'
 
 // [US-96] The bench is two labelled sections — Meets criteria and Stocks of interest —
@@ -15,6 +16,7 @@ describe('BenchSection', () => {
   it('labels the region with its title', () => {
     render(
       <BenchSection
+        summary={WHEEL_CARD_SUMMARY}
         title="Meets criteria"
         stocks={[meets()]}
         selected={null}
@@ -31,6 +33,7 @@ describe('BenchSection', () => {
   it('counts the stocks it holds', () => {
     render(
       <BenchSection
+        summary={WHEEL_CARD_SUMMARY}
         title="Stocks of interest"
         stocks={[meets(), meets({ ticker: 'PEP' })]}
         selected={null}
@@ -47,6 +50,7 @@ describe('BenchSection', () => {
   it('tints the count green when the section is accented', () => {
     render(
       <BenchSection
+        summary={WHEEL_CARD_SUMMARY}
         title="Meets criteria"
         accent
         stocks={[meets()]}
@@ -65,6 +69,7 @@ describe('BenchSection', () => {
   it('leaves the count in the default treatment without the accent', () => {
     render(
       <BenchSection
+        summary={WHEEL_CARD_SUMMARY}
         title="Stocks of interest"
         stocks={[meets()]}
         selected={null}
@@ -82,6 +87,7 @@ describe('BenchSection', () => {
   it('renders a card per stock', () => {
     render(
       <BenchSection
+        summary={WHEEL_CARD_SUMMARY}
         title="Meets criteria"
         stocks={[meets(), meets({ ticker: 'PEP' })]}
         selected={null}
@@ -96,9 +102,28 @@ describe('BenchSection', () => {
     expect(screen.queryByTestId('section-empty')).toBeNull()
   })
 
+  // [US-110] The section only forwards the lens's summary; the card renders it.
+  it("hands each card the lens's match summary", () => {
+    render(
+      <BenchSection
+        title="Meets criteria"
+        stocks={[meets()]}
+        summary={{ describeMatch: () => 'a diagonal', score: () => '9.99' }}
+        selected={null}
+        empty={EMPTY}
+        onSelect={noop}
+        onRemove={noop}
+      />
+    )
+
+    expect(screen.getByTestId('watchlist-contract')).toHaveTextContent('a diagonal')
+    expect(screen.getByTestId('watchlist-rank')).toHaveAttribute('title', '9.99')
+  })
+
   it('renders the empty node instead of cards when the section is empty', () => {
     render(
       <BenchSection
+        summary={WHEEL_CARD_SUMMARY}
         title="Meets criteria"
         stocks={[]}
         selected={null}
@@ -115,6 +140,7 @@ describe('BenchSection', () => {
   it('marks the selected card', () => {
     render(
       <BenchSection
+        summary={WHEEL_CARD_SUMMARY}
         title="Meets criteria"
         stocks={[meets(), meets({ ticker: 'PEP' })]}
         selected="PEP"

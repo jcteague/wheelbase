@@ -9,6 +9,8 @@ import { watchlistQueryKeys } from './watchlistQueryKeys'
  * The watchlist and the screener answer halves of one question (US-96), and every entry
  * write — add, remove, edit — can change both answers: the snapshot has to re-quote and
  * re-judge, and the screener has to re-run so the ticker gains, keeps or loses its rank.
+ * Both lenses' screens are invalidated (US-110); only the one showing is enabled, so the
+ * hidden lens is marked stale rather than fetched.
  * `all` is a prefix of `snapshot`, so that key is already covered; it is named anyway so
  * the dependency is visible rather than inferred from key ordering.
  */
@@ -28,6 +30,7 @@ export function useBenchMutation<TData, TVariables>(
       queryClient.invalidateQueries({ queryKey: watchlistQueryKeys.all })
       queryClient.invalidateQueries({ queryKey: watchlistQueryKeys.snapshot })
       queryClient.invalidateQueries({ queryKey: screenerQueryKeys.results })
+      queryClient.invalidateQueries({ queryKey: screenerQueryKeys.pmccResults })
     }
   })
 }

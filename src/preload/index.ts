@@ -84,7 +84,10 @@ const api = {
   screener: {
     results: () => invoke('screener:results'),
     getCriteria: () => invoke('screener:get-criteria'),
-    saveCriteria: (payload: unknown) => invoke('screener:save-criteria', payload)
+    saveCriteria: (payload: unknown) => invoke('screener:save-criteria', payload),
+    pmccResults: () => invoke('screener:pmcc-results'),
+    getPmccCriteria: () => invoke('screener:get-pmcc-criteria'),
+    savePmccCriteria: (payload: unknown) => invoke('screener:save-pmcc-criteria', payload)
   },
   ivr: {
     collectNow: () => invoke('ivr:collect-now'),

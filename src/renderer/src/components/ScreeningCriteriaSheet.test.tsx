@@ -3,9 +3,11 @@
 // cross-field band rules gating "Save & re-screen", the two optional toggles,
 // "Reset to defaults", all three dismissal paths, and the save round trip.
 
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { PmccScreeningCriteria } from '../api/pmcc-screening-criteria'
 import type { ScreeningCriteria } from '../api/screening-criteria'
 import { useSaveScreeningCriteria } from '../hooks/useScreeningCriteria'
 import { ScreeningCriteriaSheet } from './ScreeningCriteriaSheet'
@@ -47,7 +49,7 @@ const PERSISTED_OPTIONALS_ON: ScreeningCriteria = {
 }
 
 function renderSheet(criteria: ScreeningCriteria = PERSISTED): void {
-  render(<ScreeningCriteriaSheet open criteria={criteria} onClose={onClose} />)
+  render(<ScreeningCriteriaSheet open strategy="WHEEL" criteria={criteria} onClose={onClose} />)
 }
 
 const saveButton = (): HTMLElement => screen.getByRole('button', { name: 'Save & re-screen' })
@@ -81,7 +83,9 @@ beforeEach(() => {
 })
 
 it('renders nothing when open is false', () => {
-  render(<ScreeningCriteriaSheet open={false} criteria={PERSISTED} onClose={onClose} />)
+  render(
+    <ScreeningCriteriaSheet open={false} strategy="WHEEL" criteria={PERSISTED} onClose={onClose} />
+  )
   expect(screen.queryByText('Screening Criteria')).not.toBeInTheDocument()
 })
 
@@ -357,4 +361,67 @@ it('surfaces a fallback form-level alert when the failure carries no usable deta
 
   expect(await screen.findByRole('alert')).toBeInTheDocument()
   expect(onClose).not.toHaveBeenCalled()
+})
+
+// [US-110] The same sheet edits whichever lens the bench is on.
+describe('strategy', () => {
+  const PMCC_PERSISTED: PmccScreeningCriteria = {
+    longDeltaMin: '0.70',
+    longDeltaMax: '0.85',
+    longDteMin: 180,
+    longDteMax: 540,
+    shortDeltaMin: '0.25',
+    shortDeltaMax: '0.35',
+    shortDteMin: 20,
+    shortDteMax: 45,
+    maxDebitToWidthPercent: '90',
+    minOpenInterest: 200,
+    maxSpreadPercent: '10',
+    maxSpreadAbsolute: '0.10',
+    minIvRank: null,
+    maxIvRank: null,
+    earningsHandling: 'exclude'
+  }
+
+  function renderPmccSheet(): void {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ScreeningCriteriaSheet
+          open
+          strategy="PMCC"
+          pmccCriteria={PMCC_PERSISTED}
+          watchlistCount={9}
+          onClose={onClose}
+        />
+      </QueryClientProvider>
+    )
+  }
+
+  // The panel is the element the form fills; its width is the sheet's width.
+  const panel = (): Element | null | undefined =>
+    screen.getByRole('button', { name: 'Close sheet' }).closest('form')?.parentElement
+
+  it('renders the PMCC form for the PMCC lens', () => {
+    renderPmccSheet()
+
+    expect(screen.getByLabelText('LEAPS minimum DTE')).toHaveValue('180')
+    expect(screen.queryByLabelText('Minimum delta')).not.toBeInTheDocument()
+  })
+
+  it('renders the wheel form for the wheel lens', () => {
+    renderSheet()
+
+    expect(screen.getByLabelText('Minimum delta')).toHaveValue('0.20')
+    expect(screen.queryByLabelText('LEAPS minimum DTE')).not.toBeInTheDocument()
+  })
+
+  it('opens the PMCC form at 460px', () => {
+    renderPmccSheet()
+    expect(panel()).toHaveStyle({ width: '460px' })
+  })
+
+  it('opens the wheel form at 460px', () => {
+    renderSheet()
+    expect(panel()).toHaveStyle({ width: '460px' })
+  })
 })

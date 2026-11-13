@@ -103,7 +103,7 @@ export type PmccTickerScreeningInput = {
   ticker: string
   longCalls: CandidateStrike[] // every call quoted in the LEAPS window
   shortCalls: CandidateStrike[] // every call quoted in the short window
-  ivRank: IvRank | null // usable readings only (service filters, as US-98)
+  ivRank: IvRank | null // usable readings only (service filters, as US-98); value is an integer string since US-121
   underlyingPrice: string | null // for extrinsic; null never excludes
   earnings: EarningsLookup
 }
@@ -185,7 +185,7 @@ export function rankPmccCandidates(results: PmccTickerScreeningResult[]): PmccSc
 | Stage  | #   | Code                          | Applies when                              | Excludes when                                              | Reason (verbatim shape)                                   |
 | ------ | --- | ----------------------------- | ----------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------- |
 | ticker | 0   | `iv_rank_floor`               | `minIvRank !== null && ivRank !== null`   | `ivRank.value < minIvRank`                                 | `IV rank 22.0 (Sep 17) below 30`                          |
-| ticker | 1   | `iv_rank_ceiling`             | `maxIvRank !== null && ivRank !== null`   | `ivRank.value > maxIvRank`                                 | `IV rank 58.0 (Sep 17) above 55`                          |
+| ticker | 1   | `iv_rank_ceiling`             | `maxIvRank !== null && ivRank !== null`   | `ivRank.value > maxIvRank`                                 | `IV rank 58 (Sep 17) above 55`                            |
 | long   | 0   | `dte_window`                  | always                                    | dte null or outside `longDteMin–longDteMax`                | `LEAPS DTE 120 outside 180–540` / `LEAPS DTE unavailable` |
 | long   | 1   | `delta_unavailable`           | always                                    | delta null                                                 | `LEAPS delta unavailable`                                 |
 | long   | 2   | `delta_band`                  | delta known                               | outside `longDeltaMin–longDeltaMax`                        | `LEAPS delta 0.62 outside 0.70–0.85`                      |
@@ -209,9 +209,9 @@ Mirrors `services/screener.ts:199`: `excluded[0]` of the ticker result, else `da
 ## Service result — `src/main/services/pmcc-screener.ts`
 
 ```typescript
-export type RankedPmccCandidate = Omit<PmccScoredCandidate, 'ivRank'> & {
-  ivRank: AssessedIvRank | null // the full assessed reading, as RankedCandidate does
-}
+// [rev 2026-11-11] US-121: the ranked row carries the lookup pair — exactly one of
+// `ivRank` / `ivRankAbsence` is non-null — exactly as `RankedCandidate` does today.
+export type RankedPmccCandidate = Omit<PmccScoredCandidate, 'ivRank'> & IvRankPair // services/iv-rank-lookup.ts
 
 export type PmccScreenerResults = {
   status: 'ok' | 'provider_unavailable'

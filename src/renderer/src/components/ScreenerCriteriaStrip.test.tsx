@@ -16,7 +16,13 @@ describe('ScreenerCriteriaStrip', () => {
   }
 
   it('renders one chip per fmtCriteriaSummary entry plus the Edit affordance', () => {
-    render(<ScreenerCriteriaStrip criteria={criteria} onClick={vi.fn()} />)
+    render(
+      <ScreenerCriteriaStrip
+        label="Criteria"
+        chips={fmtCriteriaSummary(criteria)}
+        onClick={vi.fn()}
+      />
+    )
 
     const expected = fmtCriteriaSummary(criteria)
     expect(expected.length).toBeGreaterThan(0)
@@ -26,10 +32,34 @@ describe('ScreenerCriteriaStrip', () => {
     expect(screen.getByText('Edit →')).toBeInTheDocument()
   })
 
+  // [US-110] The strip is lens-agnostic: the page names what the chips describe.
+  it('leads with the label it is given', () => {
+    render(
+      <ScreenerCriteriaStrip
+        label="PMCC criteria"
+        chips={['Debit ≤ 90% width']}
+        onClick={vi.fn()}
+      />
+    )
+
+    const spans = screen.getByTestId('screener-criteria-strip').querySelectorAll('span')
+    expect(Array.from(spans, (span) => span.textContent)).toEqual([
+      'PMCC criteria',
+      'Debit ≤ 90% width',
+      'Edit →'
+    ])
+  })
+
   it('calls onClick when the strip is clicked', async () => {
     const user = userEvent.setup()
     const onClick = vi.fn()
-    render(<ScreenerCriteriaStrip criteria={criteria} onClick={onClick} />)
+    render(
+      <ScreenerCriteriaStrip
+        label="Criteria"
+        chips={fmtCriteriaSummary(criteria)}
+        onClick={onClick}
+      />
+    )
 
     await user.click(screen.getByTestId('screener-criteria-strip'))
 
@@ -39,7 +69,13 @@ describe('ScreenerCriteriaStrip', () => {
   it('renders the strip as a button so it is keyboard-reachable', async () => {
     const user = userEvent.setup()
     const onClick = vi.fn()
-    render(<ScreenerCriteriaStrip criteria={criteria} onClick={onClick} />)
+    render(
+      <ScreenerCriteriaStrip
+        label="Criteria"
+        chips={fmtCriteriaSummary(criteria)}
+        onClick={onClick}
+      />
+    )
 
     const strip = screen.getByTestId('screener-criteria-strip')
     expect(strip.tagName).toBe('BUTTON')

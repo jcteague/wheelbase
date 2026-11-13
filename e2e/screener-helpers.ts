@@ -217,16 +217,20 @@ type OptionSnapshotFixture = {
   timestamp: string
 }
 
-/** OCC symbol: <root><YYMMDD><P|C><strike × 1000, 8 digits>. */
-function occPutSymbol(spec: PutFixtureSpec): string {
-  const [year, month, day] = screenerDate(spec.dteOffset).split('-')
-  const strikeThousandths = String(Math.round(spec.strike * 1000)).padStart(8, '0')
-  return `${spec.ticker}${year.slice(2)}${month}${day}P${strikeThousandths}`
+/** OCC symbol: <root><YYMMDD><P|C><strike × 1000, 8 digits>. The expiry is a day offset from
+ *  the fixture day, so every fixture's DTE is the same on any run date. */
+function occSymbol(ticker: string, offsetDays: number, right: 'P' | 'C', strike: number): string {
+  const [year, month, day] = screenerDate(offsetDays).split('-')
+  const strikeThousandths = String(Math.round(strike * 1000)).padStart(8, '0')
+  return `${ticker}${year.slice(2)}${month}${day}${right}${strikeThousandths}`
 }
+
+/** The quote fields a put or call fixture states; everything else is a fixed filler. */
+type QuoteSpec = Pick<PutFixtureSpec, 'bid' | 'ask' | 'mid' | 'delta' | 'openInterest' | 'quotedAt'>
 
 /** The quote body of one snapshot. Strike, expiration and contract type are derived by
  *  the fake provider from the OCC key, so only the quote is stated here. */
-function putSnapshot(spec: PutFixtureSpec): OptionSnapshotFixture {
+function snapshotOf(spec: QuoteSpec): OptionSnapshotFixture {
   return {
     bid: spec.bid,
     ask: spec.ask,
@@ -241,7 +245,31 @@ function putSnapshot(spec: PutFixtureSpec): OptionSnapshotFixture {
 }
 
 function buildPutFixtures(specs: PutFixtureSpec[]): Record<string, OptionSnapshotFixture> {
-  return Object.fromEntries(specs.map((spec) => [occPutSymbol(spec), putSnapshot(spec)]))
+  return Object.fromEntries(
+    specs.map((spec) => [
+      occSymbol(spec.ticker, spec.dteOffset, 'P', spec.strike),
+      snapshotOf(spec)
+    ])
+  )
+}
+
+/** [US-110] One call strike as the provider would quote it — a LEAPS or a short call of a
+ *  PMCC diagonal. Served through the same OCC-keyed seam as the puts; the fake provider
+ *  filters on contract type and expiration range, so the two never bleed into each other. */
+export type CallFixtureSpec = Omit<QuoteSpec, 'quotedAt'> & {
+  ticker: string
+  strike: number
+  /** Calendar days from the fixture day to expiry. */
+  expirationOffset: number
+}
+
+function buildCallFixtures(specs: CallFixtureSpec[]): Record<string, OptionSnapshotFixture> {
+  return Object.fromEntries(
+    specs.map((spec) => [
+      occSymbol(spec.ticker, spec.expirationOffset, 'C', spec.strike),
+      snapshotOf(spec)
+    ])
+  )
 }
 
 // ── Seeding ───────────────────────────────────────────────────────────────────
@@ -314,6 +342,9 @@ export type ScreenerLaunchOpts = {
   /** Put chains the fake provider serves; their tickers are the seeded watchlist.
    *  Defaults to the three ranking fixtures. */
   fixtures?: PutFixtureSpec[]
+  /** [US-110] Call chains the fake provider serves beside the puts — the PMCC lens's
+   *  LEAPS and short calls. They add no watchlist tickers: `fixtures` still decides those. */
+  callFixtures?: CallFixtureSpec[]
   /** IV ranks to persist, keyed by ticker. Tickers omitted here render `n/a`. Launch waits
    *  for each one's backfill to land. */
   ivr?: Record<string, IvrFixture>
@@ -585,7 +616,10 @@ function screenerLaunchEnv(dbPath: string, opts: ScreenerLaunchOpts): Record<str
     marketCalendar: opts.marketCalendar,
     ivSeries: { ...opts.ivSeries, ...ivSeriesFor(opts.ivr ?? {}) }
   })
-  env.WHEELBASE_MOCK_OPTION_SNAPSHOTS = JSON.stringify(buildPutFixtures(fixtures))
+  env.WHEELBASE_MOCK_OPTION_SNAPSHOTS = JSON.stringify({
+    ...buildPutFixtures(fixtures),
+    ...buildCallFixtures(opts.callFixtures ?? [])
+  })
   env.WHEELBASE_MOCK_STOCK_QUOTES = JSON.stringify(opts.stockQuotes ?? flatQuotesFor(fixtures))
   if (opts.marketDataError) env.FAKE_MARKET_DATA_ERROR = opts.marketDataError
   if (opts.marketCalendarError) env.FAKE_MARKET_CALENDAR_ERROR = opts.marketCalendarError
