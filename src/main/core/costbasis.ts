@@ -26,7 +26,8 @@ function round4(value: Decimal): Decimal {
   return value.toDecimalPlaces(4)
 }
 
-function sharesFromContracts(contracts: number): number {
+/** The shares `contracts` option contracts cover: 100 each. */
+export function sharesFromContracts(contracts: number): number {
   return contracts * SHARES_PER_CONTRACT
 }
 
@@ -465,7 +466,8 @@ export interface PmccLedgerResult {
   premiumRecoveredPercent: string | null
 }
 
-function contributionDollars(contribution: PmccContribution): Decimal {
+/** A contribution's signed dollars: `+` debit, `−` credit, fees included. */
+export function contributionDollars(contribution: PmccContribution): Decimal {
   return new Decimal(contribution.cashPerShare)
     .times(sharesFromContracts(contribution.contracts))
     .plus(contribution.fees)

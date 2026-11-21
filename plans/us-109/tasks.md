@@ -31,7 +31,7 @@ Shared files to watch when areas run in parallel:
 
 ### Area 1 — Core engine: ordering, tracks, cycles and replayed basis
 
-- [ ] **[Red]** Write failing tests — `src/main/core/pmcc-timeline.test.ts`
+- [x] **[Red]** Write failing tests — `src/main/core/pmcc-timeline.test.ts`
   - Create `src/main/core/test-fixtures/pmcc-timeline-events.ts`: the XYZ Background as literal events (`data-model.md` § 5) plus variant builders. Build engine results in `beforeAll`, never in a `describe` body
   - Test cases (full list in `plan.md` Area 1 Red):
     - 9 cycles; cycle 2 has `rollCount` 1 and rows `OPEN`, `ROLL` #1, `END`; the roll creates no cycle
@@ -49,20 +49,20 @@ Shared files to watch when areas run in parallel:
     - 3 contracts: c1 `2.0000`/`600.0000`, every `basisAfter` unchanged
   - Property cases: none in this task — the properties need the summary and are written in Area 2 Red
   - Run `pnpm test src/main/core/pmcc-timeline.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/core/pmcc-timeline.ts` _(depends on: Area 1 Red ✓)_
+- [x] **[Green]** Implement — `src/main/core/pmcc-timeline.ts` _(depends on: Area 1 Red ✓)_
   - Types per `data-model.md` § Type Design: `PmccTimelineEvent` (union on `kind`), `PmccShortOutcome`, `PmccCycle` (common shape ∩ union on `status`), `PmccLeapsRow`, `PmccCycleRow`, roll `coverage` (union on `unbroken`), `PmccNet`, `PmccLeapsTrack`, `PmccTimeline`, `PmccTimelineInput`
   - `buildPmccTimeline(input: PmccTimelineInput): PmccTimeline`: sort by date → rank → `seq` (research ADR "Timeline order"); one `reduce` carrying the contribution prefix; `calculatePmccLedger({ leapsContracts, longStrike: null, contributions })` for `basisAfter`; `SHORT_OPEN` starts a cycle, `SHORT_ROLL` / `SHORT_END` attach to the open one, `UNKNOWN` attaches to the cycle open on its date else the LEAPS track
   - Nets in dollars from contributions, per share ÷ `100 × leapsContracts`; days via `differenceInCalendarDays(parseISO(b), parseISO(a))`; known rows carry `fees`
   - No logging, no I/O
   - Run `pnpm test src/main/core/pmcc-timeline.test.ts` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — `src/main/core/pmcc-timeline.ts` _(depends on: Area 1 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `src/main/core/pmcc-timeline.ts` _(depends on: Area 1 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Consider: named per-event steps (`applyLeapsEvent`, `applyShortEvent`); compare the net-direction helper with `netDirection` in `src/renderer/src/lib/pmcc-roll.ts` and move one copy to `src/shared/` if identical
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
 ### Area 5 — Test-only seed channel
 
-- [ ] **[Red]** Write failing tests — `src/main/ipc/test-pmcc-seed.test.ts`
+- [x] **[Red]** Write failing tests — `src/main/ipc/test-pmcc-seed.test.ts`
   - Test cases:
     - registers exactly one channel, `_test:pmcc-seed-position`
     - two legs → `{ ok: true, positionId }`; `getPosition` returns strategy `PMCC`, phase `PMCC_OPEN`, status `ACTIVE`, both legs in the given order
@@ -70,27 +70,27 @@ Shared files to watch when areas run in parallel:
     - a LEAPS fill date after today and a short expiring after the LEAPS are both accepted
     - empty `legs` → `ok: false` with a validation error naming `legs` (assert `code` and `field`)
   - Run `pnpm test src/main/ipc/test-pmcc-seed.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/services/test-pmcc-seed.ts`, `src/main/ipc/test-pmcc-seed.ts` _(depends on: Area 5 Red ✓)_
+- [x] **[Green]** Implement — `src/main/services/test-pmcc-seed.ts`, `src/main/ipc/test-pmcc-seed.ts` _(depends on: Area 5 Red ✓)_
   - `TestPmccSeedPositionPayloadSchema` in `src/main/schemas.ts` (`z.infer` → `TestPmccSeedPositionPayload`), reusing `TestLegRowSchema`, per `contracts/test-pmcc-seed-position.md`
   - `seedPmccPosition(db, payload, now)`: one transaction; position insert (`opened_date` = earliest leg `fillDate`) then `insertLegRow` per leg with `createdAt` = `now` + index ms; no snapshot
   - Thin handler through `handleIpcCall`; register in `src/main/index.ts` beside `registerTestPmccLedgerIpc`, only when `NODE_ENV === 'test'`; expose `testPmccSeedPosition` in `src/preload/index.ts`
   - Run `pnpm test src/main/ipc/test-pmcc-seed.test.ts` — all tests must pass
-- [ ] **[Refactor]** `/refactor` _(depends on: Area 5 Green ✓)_
+- [x] **[Refactor]** `/refactor` _(depends on: Area 5 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Consider: share `toLegRecord` with `src/main/ipc/test-pmcc-ledger.ts` instead of copying it
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
 ### Area 7 — `CollapsedDrawer` meta label
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/components/position-cockpit/CollapsedDrawer.spec.tsx`
+- [x] **[Red]** Write failing tests — `src/renderer/src/components/position-cockpit/CollapsedDrawer.spec.tsx`
   - Test cases:
     - `meta="9 cycles · 44d uncovered"` shows that text and `9 fields` is absent (positive control: the title renders)
     - without `meta`, `fieldCount={6}` still shows `6 fields`
   - Run `pnpm test src/renderer/src/components/position-cockpit/CollapsedDrawer.spec.tsx` — the new tests must fail
-- [ ] **[Green]** Implement — `src/renderer/src/components/position-cockpit/CollapsedDrawer.tsx` _(depends on: Area 7 Red ✓)_
+- [x] **[Green]** Implement — `src/renderer/src/components/position-cockpit/CollapsedDrawer.tsx` _(depends on: Area 7 Red ✓)_
   - Optional `meta?: string`; render `meta ?? \`${fieldCount} fields\``; `fieldCount`optional when`meta`is given (the mockup's`TimelineDrawer`)
   - Run the spec — all tests must pass
-- [ ] **[Refactor]** `/refactor` _(depends on: Area 7 Green ✓)_
+- [x] **[Refactor]** `/refactor` _(depends on: Area 7 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
@@ -104,7 +104,7 @@ Shared files to watch when areas run in parallel:
 
 **Requires:** Area 1 Refactor ✓
 
-- [ ] **[Red]** Write failing tests — `src/main/core/pmcc-timeline.test.ts`, `src/main/core/pmcc-timeline.property.test.ts` _(depends on: Area 1 Refactor ✓)_
+- [x] **[Red]** Write failing tests — `src/main/core/pmcc-timeline.test.ts`, `src/main/core/pmcc-timeline.property.test.ts` _(depends on: Area 1 Refactor ✓)_
   - Test cases (full list in `plan.md` Area 2 Red):
     - Background gaps 7, 17, 3, 3, 3, 4, 7; none between cycles 6 and 7; `uncoveredDays` 44, `totalDays` 333, `coveredDays` 289
     - gap boundary: next cycle sold the day before / same day / day after → none, none, 1 day
@@ -122,11 +122,11 @@ Shared files to watch when areas run in parallel:
     - **Scale invariance:** contracts and fees × `k` leave per-share figures and `basisAfter` unchanged and multiply totals by `k`
     - **Guard:** `cycles.length` equals the number of `SHORT_OPEN` events
   - Run `pnpm test src/main/core/pmcc-timeline` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/core/pmcc-timeline.ts` _(depends on: Area 2 Red ✓)_
+- [x] **[Green]** Implement — `src/main/core/pmcc-timeline.ts` _(depends on: Area 2 Red ✓)_
   - `PmccGap`, `PmccTimelineSummary` and the cycle `flag` per `data-model.md` § 2; gap rules from its table; `windowEnd = closedDate ?? valuationDate`
   - Summary sums in dollars and divides once; ledger fields from one `calculatePmccLedger` call over every contribution
   - Run `pnpm test src/main/core/pmcc-timeline` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — `src/main/core/pmcc-timeline.ts` _(depends on: Area 2 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `src/main/core/pmcc-timeline.ts` _(depends on: Area 2 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Stress the properties: `numRuns: 500` across several seeds with `endOnFailure: true`
   - Run `pnpm test:mutation --mutate src/main/core/pmcc-timeline.ts`; kill reproducible survivors with tests, record equivalent mutants with their reason
@@ -142,7 +142,7 @@ Shared files to watch when areas run in parallel:
 
 **Requires:** Area 2 Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/main/services/pmcc-timeline.test.ts` _(depends on: Area 2 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/main/services/pmcc-timeline.test.ts` _(depends on: Area 2 Green ✓)_
   - Add the legs these cases need to `src/main/services/test-fixtures/pmcc-legs.ts`
   - Test cases:
     - `LEAPS_OPEN` + `SHORT_CALL_OPEN` → one LEAPS row, one open cycle whose opening price is the leg's `premiumPerContract`
@@ -152,12 +152,12 @@ Shared files to watch when areas run in parallel:
     - fees on both legs of a short roll are summed once into that cycle's net
     - no LEAPS leg → `null`
   - Run `pnpm test src/main/services/pmcc-timeline.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/services/pmcc-timeline.ts` _(depends on: Area 3 Red ✓)_
+- [x] **[Green]** Implement — `src/main/services/pmcc-timeline.ts` _(depends on: Area 3 Red ✓)_
   - Export `orderedLedgerEvents`, `eventContribution` and `LedgerEvent` from `src/main/services/pmcc-ledger.ts`
   - `pmccTimelineFromLegs(legs: LegRecord[], opts: { valuationDate: string; closedDate: string | null }): PmccTimeline | null`: `groupRollChains`, map each ledger event to a `PmccTimelineEvent` (`seq` = index, `contribution` from `eventContribution`), add `UNKNOWN` for non-PMCC roles and unpaired roll legs, call `buildPmccTimeline`
   - DEBUG log `pmcc_timeline_events` (kinds and dates); no INFO
   - Run `pnpm test src/main/services/pmcc-timeline.test.ts` — all tests must pass
-- [ ] **[Refactor]** `/refactor` _(depends on: Area 3 Green ✓)_
+- [x] **[Refactor]** `/refactor` _(depends on: Area 3 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Check `pmcc_ledger_unknown_leg_role` is not logged twice for one request
   - Run `pnpm test && pnpm lint && pnpm typecheck`
@@ -166,7 +166,7 @@ Shared files to watch when areas run in parallel:
 
 **Requires:** Area 2 Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/lib/pmcc-timeline-display.test.ts` _(depends on: Area 2 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/renderer/src/lib/pmcc-timeline-display.test.ts` _(depends on: Area 2 Green ✓)_
   - Inputs are literal `PmccTimeline` slices; outputs are the AC's literal strings (full list in `plan.md` Area 6 Red):
     - `timelineDrawerMeta` → `9 cycles · 44d uncovered`; singular `1 cycle · 0d uncovered`
     - `leapsTrackHeader` → `open $85.00 call · 2028-01-21 · LEAPS cost to date $22.50 / share`; `closed …` when closed
@@ -181,10 +181,10 @@ Shared files to watch when areas run in parallel:
     - `reconciliationLine` → `Realized $14.00 + open $1.95 = $15.95 short-call credits to date. LEAPS cost to date $22.50 − $15.95 = $6.55 cost basis per share.`
     - rounding: `1.2350` → `$1.24`
   - Run `pnpm test src/renderer/src/lib/pmcc-timeline-display.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/renderer/src/lib/pmcc-timeline-display.ts` _(depends on: Area 6 Red ✓)_
+- [x] **[Green]** Implement — `src/renderer/src/lib/pmcc-timeline-display.ts` _(depends on: Area 6 Red ✓)_
   - The functions above, taking `Pick`-derived slices of `PmccTimeline`; reuse `signedMoneyGrouped` from `src/renderer/src/lib/pmcc-card-tier2.ts`; formatting only, no totals computed
   - Run the test file — all tests must pass
-- [ ] **[Refactor]** `/refactor` _(depends on: Area 6 Green ✓)_
+- [x] **[Refactor]** `/refactor` _(depends on: Area 6 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Consider moving `signedMoneyGrouped` to a neutral module now that two features use it
   - Run `pnpm test && pnpm lint && pnpm typecheck`
@@ -199,18 +199,18 @@ Shared files to watch when areas run in parallel:
 
 **Requires:** Area 3 Green ✓ (and Area 5 Refactor ✓, which also edits `schemas.ts` and `index.ts`)
 
-- [ ] **[Red]** Write failing tests — `src/main/services/get-position.test.ts`, `src/main/ipc/positions.test.ts` _(depends on: Area 3 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/main/services/get-position.test.ts`, `src/main/ipc/positions.test.ts` _(depends on: Area 3 Green ✓)_
   - Test cases:
     - `get-position.test.ts`: a PMCC returns `pmccTimeline` with the `valuationDate` passed in and `summary.basisPerShare` equal to `pmccLedger.basisPerShare`; a wheel returns `pmccTimeline: null`; a `CLOSED` PMCC's timeline carries its literal `closedDate`
     - `positions.test.ts`: `getCurrentDate` returning `2027-08-14T02:30:00Z` → `pmccTimeline.valuationDate` `2027-08-13`; `2027-08-14T05:00:00Z` → `2027-08-14`
   - Run both files — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/services/get-position.ts`, `src/main/ipc/positions.ts` _(depends on: Area 4 Red ✓)_
+- [x] **[Green]** Implement — `src/main/services/get-position.ts`, `src/main/ipc/positions.ts` _(depends on: Area 4 Red ✓)_
   - `pmccTimeline: PmccTimeline | null` on `GetPositionResult` in `src/main/schemas.ts` (`contracts/positions-get.md`)
   - `getPosition(db, positionId, opts?: { valuationDate?: string })`, default `etDateOf(new Date())` so existing callers are untouched
   - `registerPositionsHandlers(db, { ivrOnDemand, getCurrentDate })`; the `positions:get` handler passes `etDateOf(now)`; `src/main/index.ts` passes `fakeClock?.now`
   - Add `pmccTimeline: null` to renderer fixtures that build a `GetPositionResult` (`PositionCockpit.spec.tsx`, `PositionDetailPage.test.tsx`, any others `pnpm typecheck` reports)
   - Run both files — all tests must pass
-- [ ] **[Refactor]** `/refactor` _(depends on: Area 4 Green ✓)_
+- [x] **[Refactor]** `/refactor` _(depends on: Area 4 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Consider one `pmccFields(...)` helper in `get-position.ts` replacing the four `isPmcc ? … : null` lines
   - Run `pnpm test && pnpm lint && pnpm typecheck`
@@ -219,17 +219,17 @@ Shared files to watch when areas run in parallel:
 
 **Requires:** Area 6 Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/components/position-cockpit/PmccTimelineSummary.spec.tsx` _(depends on: Area 6 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/renderer/src/components/position-cockpit/PmccTimelineSummary.spec.tsx` _(depends on: Area 6 Green ✓)_
   - Test cases (query by text and role):
     - the six stat labels (`Cycles`, `Realized net credits`, `Average per closed cycle`, `Open cycle credit`, `LEAPS roll net`, `Coverage`) with the Background values
     - the reconciliation sentence and the caption `US-109 · reconciles to the Cost basis drawer above`
     - no cycles: Average `—`, Open cycle credit `—`, LEAPS roll net `no roll yet`
     - no `%` or `annualized` text (positive control: the Cycles stat is present)
   - Run the spec — all new tests must fail
-- [ ] **[Green]** Implement — `src/renderer/src/components/position-cockpit/PmccTimelineSummary.tsx` _(depends on: Area 8 Red ✓)_
+- [x] **[Green]** Implement — `src/renderer/src/components/position-cockpit/PmccTimelineSummary.tsx` _(depends on: Area 8 Red ✓)_
   - The mockup's `TimelineSummary`: owner caption, `StatGrid minWidth={150}` of six items (realized `text-wb-green`, open credit `text-wb-gold`, empty values `text-wb-text-muted`), reconciliation line in `font-wb-mono text-wb-text-secondary` with the basis in `text-wb-sky`
   - Run the spec — all tests must pass
-- [ ] **[Refactor]** `/refactor` _(depends on: Area 8 Green ✓)_
+- [x] **[Refactor]** `/refactor` _(depends on: Area 8 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Extract a shared drawer caption with `PmccCostBasis` only if the markup is identical
   - Run `pnpm test && pnpm lint && pnpm typecheck`
@@ -238,18 +238,18 @@ Shared files to watch when areas run in parallel:
 
 **Requires:** Area 6 Green ✓
 
-- [ ] **[Red]** Write failing tests — `PmccLeapsTrack.spec.tsx`, `PmccCycleGroup.spec.tsx`, `PmccCoverageStrip.spec.tsx`, `PmccLegTimeline.spec.tsx` in `src/renderer/src/components/position-cockpit/` _(depends on: Area 6 Green ✓)_
+- [x] **[Red]** Write failing tests — `PmccLeapsTrack.spec.tsx`, `PmccCycleGroup.spec.tsx`, `PmccCoverageStrip.spec.tsx`, `PmccLegTimeline.spec.tsx` in `src/renderer/src/components/position-cockpit/` _(depends on: Area 6 Green ✓)_
   - Test cases (full list in `plan.md` Area 9 Red):
     - `PmccLeapsTrack`: `LEAPS track` header copy; `Buy LEAPS` row (`$80.00 call · 2027-09-17`, `opens coverage · 368 DTE at fill`, `$25.00`); `LEAPS roll #1` row (`$80.00 2027-09-17 → $85.00 2028-01-21`, `Net credit $2.50 ($250.00)`, `unbroken · +126 days`, `$8.50`); a `CLOSE` row reads `Sold to close` with `—`
     - `PmccCycleGroup`: cycle 2 (header, `Expired worthless`, `1 roll`, `+$1.20 / share (+$120.00)`, exactly three rows, footer `$21.80 / share` `from the US-103 ledger`); cycle 5 (`Closed early`, `−$0.55`, `−$55.00`); cycle 9 open (`Open`, `Net credit, open`, `7 DTE remaining · credit collected, not realized`, no `days held`); assigned (`Assigned` in `text-wb-red`, `— (assigned)`, `settlement recorded by US-111`); unknown row (raw role and date, net unchanged); flag sentence plus `US-102`, absent when unflagged; fees row `+$200.00 · fees $1.00`, no `fees` text at zero
     - `PmccCoverageStrip`: `covered 289 of 333 days · 44 uncovered`; nine segments named `Cycle N`; one roll tick; `today 2027-08-13`; empty copy when there are no cycles
     - `PmccLegTimeline`: LEAPS track precedes `Short-call cycles`; gap rows of 7 and 17 days, none between cycles 6 and 7; empty state copy; closed banner `Position closed 2027-08-20 · the timeline is complete` with the muted class; no `Role` / `Action` column headers
   - Run the four specs — all new tests must fail
-- [ ] **[Green]** Implement — `PmccCoverageStrip.tsx`, `PmccLeapsTrack.tsx`, `PmccCycleGroup.tsx`, `PmccLegTimeline.tsx` _(depends on: Area 9 Red ✓)_
+- [x] **[Green]** Implement — `PmccCoverageStrip.tsx`, `PmccLeapsTrack.tsx`, `PmccCycleGroup.tsx`, `PmccLegTimeline.tsx` _(depends on: Area 9 Red ✓)_
   - From the mockup's `Strip`, `LeapsTrack`, `CycleGroup`, `GapRow`, `Timeline`: two separate panels (sky-tinted LEAPS track, violet-tinted cycles) under the coverage strip; dashed muted gap rows; optional closed banner
   - Tailwind and `wb-*` tokens only (`wb-sky`, `wb-violet`, token opacity classes for the mockup's `rgba()` tints); inline `style` only for the strip's `left` / `width` percentages; use `Badge` and `TablePrimitives`
   - Run the four specs — all tests must pass
-- [ ] **[Refactor]** `/refactor` _(depends on: Area 9 Green ✓)_
+- [x] **[Refactor]** `/refactor` _(depends on: Area 9 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Check no formatting logic sits in a component that belongs in `pmcc-timeline-display.ts`; do not branch inside `LegHistoryTable`
   - Run `pnpm test && pnpm lint && pnpm typecheck`
@@ -262,17 +262,17 @@ Shared files to watch when areas run in parallel:
 
 **Requires:** Area 4 Green ✓, Area 7 Green ✓, Area 8 Green ✓, Area 9 Green ✓
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/components/position-cockpit/PositionCockpit.spec.tsx` _(depends on: Areas 4, 7, 8, 9 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/renderer/src/components/position-cockpit/PositionCockpit.spec.tsx` _(depends on: Areas 4, 7, 8, 9 Green ✓)_
   - Test cases:
     - PMCC with a timeline: drawers in the order `Leg reference`, `Cost basis`, `Timeline summary`, `Leg timeline`; summary `aria-expanded="true"`; timeline `aria-expanded="false"` showing `9 cycles · 44d uncovered`
     - clicking `Leg timeline` reveals `LEAPS track`; clicking again hides it
     - PMCC with `pmccTimeline: null`: neither drawer renders (positive control: `Cost basis` does)
     - wheel in `CC_OPEN`: `Cost basis & history` with the `Running Basis / Share` header; no `Timeline summary`, `Leg timeline`, `LEAPS track` or `Uncovered`
   - Run the spec — the new tests must fail
-- [ ] **[Green]** Implement — `src/renderer/src/components/position-cockpit/PositionCockpit.tsx` _(depends on: Area 10 Red ✓)_
+- [x] **[Green]** Implement — `src/renderer/src/components/position-cockpit/PositionCockpit.tsx` _(depends on: Area 10 Red ✓)_
   - In the PMCC branch after `PmccCostBasis`: `<CollapsedDrawer title="Timeline summary" fieldCount={6} defaultOpen>` wrapping `PmccTimelineSummary`, then `<CollapsedDrawer title="Leg timeline" meta={timelineDrawerMeta(timeline)}>` wrapping `PmccLegTimeline`, both only when `pmccTimeline` is non-null; wheel branch untouched
   - Run the spec — all tests must pass
-- [ ] **[Refactor]** `/refactor` _(depends on: Area 10 Green ✓)_
+- [x] **[Refactor]** `/refactor` _(depends on: Area 10 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - If `PmccLegReference` and `PmccCostBasis` wrap themselves in a drawer, make the two new components match
   - Run `pnpm test && pnpm lint && pnpm typecheck`
@@ -285,7 +285,7 @@ Shared files to watch when areas run in parallel:
 
 ### Area 11 — E2E Tests
 
-- [ ] **[Red]** Write failing e2e tests — `e2e/pmcc-leg-timeline.spec.ts`, `e2e/pmcc-timeline-helpers.ts` _(depends on: all Green tasks ✓)_
+- [x] **[Red]** Write failing e2e tests — `e2e/pmcc-leg-timeline.spec.ts`, `e2e/pmcc-timeline-helpers.ts` _(depends on: all Green tasks ✓)_
   - `pnpm rebuild:electron` first
   - Helpers: launch with `WHEELBASE_FAKE_NOW=2027-08-13T16:00:00Z` (as `e2e/ivr-helpers.ts` does); `seedXyz(page, variant)` over `window.api.testPmccSeedPosition` with the Background legs as literals and small variant patches; readers for the two drawers
   - One `it()` per acceptance scenario — names mirror the AC; assertions are the literals in `plan.md` Area 11
@@ -309,10 +309,10 @@ Shared files to watch when areas run in parallel:
     - AC-17: A classic wheel's leg history is unchanged → `it('A classic wheel\'s leg history is unchanged')`
     - AC-18: Fees reduce the cycle net and the timeline still reconciles → `it('Fees reduce the cycle net and the timeline still reconciles')`
   - Run `pnpm test:e2e e2e/pmcc-leg-timeline.spec.ts` — every new test must fail for the right reason. Since Layers 1–5 are complete, a test that already passes must be shown falsifiable: break its fixture or expected literal once and confirm it fails
-- [ ] **[Green]** Make e2e tests pass _(depends on: E2E Red ✓)_
+- [x] **[Green]** Make e2e tests pass _(depends on: E2E Red ✓)_
   - A failure means an earlier area is incomplete; fix it there, not in the spec
   - Run `pnpm test:e2e` — all tests must pass, including the existing PMCC and wheel specs
-- [ ] **[Refactor]** `/refactor` e2e tests _(depends on: E2E Green ✓)_
+- [x] **[Refactor]** `/refactor` e2e tests _(depends on: E2E Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Keep fixture variants as small patches over one Background literal
 

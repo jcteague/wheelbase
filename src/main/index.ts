@@ -18,6 +18,7 @@ import { registerIvrIpc } from './ipc/ivr'
 import { registerTestSchedulerIpc, seedTestJobsFromEnv } from './ipc/test-scheduler'
 import { registerTestIvHistoryIpc } from './ipc/test-iv-history'
 import { registerTestPmccLedgerIpc } from './ipc/test-pmcc-ledger'
+import { registerTestPmccSeedIpc } from './ipc/test-pmcc-seed'
 import { createFakeClock } from './integrations/fake-clock'
 import { DETECT_ASSIGNMENTS_JOB_NAME, detectAssignments } from './services/detect-assignments'
 import { collectIvHistoryBatch, IVR_COLLECT_JOB_NAME } from './services/ivr-collector'
@@ -77,7 +78,9 @@ function createWindow(): void {
   mainWindow = win
 }
 
-if (is.dev) {
+// An e2e launch gets its own debugging port from Playwright. Pinning 9222 there collides
+// with any dev app already holding it, and the launch then hangs waiting for DevTools
+if (is.dev && !isE2eRun) {
   app.commandLine.appendSwitch('remote-debugging-port', '9222')
 }
 
@@ -218,7 +221,7 @@ app.whenReady().then(() => {
     clock: fakeClock,
     onSettled: notifyIvrSnapshotUpdated
   })
-  registerPositionsHandlers(db, { ivrOnDemand })
+  registerPositionsHandlers(db, { ivrOnDemand, getCurrentDate: fakeClock?.now })
   registerWatchlistIpc({
     db,
     getProvider: () => marketDataFactory.create(),
@@ -301,7 +304,8 @@ app.whenReady().then(() => {
         db,
         provider: marketDataFactory.create(),
         managementWindowDte,
-        profitTargetPercentDefault: profitTargetPercent
+        profitTargetPercentDefault: profitTargetPercent,
+        now: fakeClock?.now()
       })
     }
   })
@@ -311,6 +315,7 @@ app.whenReady().then(() => {
     registerTestSchedulerIpc(scheduler)
     registerTestIvHistoryIpc(db)
     registerTestPmccLedgerIpc(db)
+    registerTestPmccSeedIpc(db)
 
     // Test-only: preseed an active broker environment so detect-assignments and
     // other broker-gated jobs run without going through the credential-save UI

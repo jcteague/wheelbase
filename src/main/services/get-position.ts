@@ -3,6 +3,7 @@ import type {
   CostBasisSnapshotRecord,
   GetPositionResult,
   LegRecord,
+  PositionDetailResult,
   PositionRecord
 } from '../schemas'
 import type {
@@ -17,6 +18,8 @@ import { activeLegSubquery } from './active-leg-sql'
 import { readLegs } from './leg-rows'
 import { pmccEntryDebit } from './pmcc-opening-legs'
 import { pmccLedgerFromLegs, pmccOpenLegs } from './pmcc-ledger'
+import { pmccTimelineFromLegs } from './pmcc-timeline'
+import { ValidationError } from '../core/lifecycle'
 import { logger } from '../logger'
 
 interface PositionRow {
@@ -113,6 +116,24 @@ function mapLatestSnapshot(row: PositionRow): CostBasisSnapshotRecord | null {
   }
 }
 
+type PmccFields = Pick<GetPositionResult, 'initialNetDebit' | 'pmccLedger' | 'pmccOpenLegs'>
+
+const NO_PMCC_FIELDS: PmccFields = {
+  initialNetDebit: null,
+  pmccLedger: null,
+  pmccOpenLegs: null
+}
+
+/** The fields only a PMCC carries, each derived from its legs; all null for a wheel. */
+function pmccFields(position: PositionRecord, legs: LegRecord[]): PmccFields {
+  if (position.strategyType !== 'PMCC') return NO_PMCC_FIELDS
+  return {
+    initialNetDebit: pmccEntryDebit(legs)?.total ?? null,
+    pmccLedger: pmccLedgerFromLegs(legs),
+    pmccOpenLegs: pmccOpenLegs(legs)
+  }
+}
+
 const GET_ALL_SNAPSHOTS_QUERY = `
   SELECT
     id, position_id, basis_per_share, total_premium_collected, final_pnl, trigger_event, snapshot_at, created_at
@@ -172,6 +193,7 @@ const GET_QUERY = `
   WHERE p.id = ?
 `
 
+/** One position with its legs, snapshots and PMCC ledger fields; null when there is none. */
 export function getPosition(db: Database.Database, positionId: string): GetPositionResult | null {
   logger.debug({ positionId }, 'get_position_query_start')
 
@@ -205,11 +227,6 @@ export function getPosition(db: Database.Database, positionId: string): GetPosit
 
   const allSnapshots: CostBasisSnapshotRecord[] = snapshotRows.map(mapSnapshotRow)
 
-  const isPmcc = position.strategyType === 'PMCC'
-  const initialNetDebit = isPmcc ? (pmccEntryDebit(legs)?.total ?? null) : null
-  const pmccLedger = isPmcc ? pmccLedgerFromLegs(legs) : null
-  const openLegs = isPmcc ? pmccOpenLegs(legs) : null
-
   logger.info({ positionId }, 'position_fetched')
 
   return {
@@ -218,8 +235,27 @@ export function getPosition(db: Database.Database, positionId: string): GetPosit
     costBasisSnapshot,
     legs,
     allSnapshots,
-    initialNetDebit,
-    pmccLedger,
-    pmccOpenLegs: openLegs
+    ...pmccFields(position, legs)
   }
+}
+
+/**
+ * The positions:get read: the position plus, for a PMCC, its leg timeline as of
+ * `valuationDate`. Only this read folds the timeline; the services that write share
+ * `getPosition`. Throws not_found for an unknown id.
+ */
+export function getPositionDetail(
+  db: Database.Database,
+  positionId: string,
+  { valuationDate }: { valuationDate: string }
+): PositionDetailResult {
+  logger.debug({ positionId, valuationDate }, 'get_position_detail_start')
+  const detail = getPosition(db, positionId)
+  if (!detail) throw new ValidationError('__root__', 'not_found', 'Position not found')
+  const { position, legs } = detail
+  const pmccTimeline =
+    position.strategyType === 'PMCC'
+      ? pmccTimelineFromLegs(legs, { valuationDate, closedDate: position.closedDate })
+      : null
+  return { ...detail, pmccTimeline }
 }

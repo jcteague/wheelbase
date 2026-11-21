@@ -84,7 +84,8 @@ const CSP_DETAIL: PositionDetail = {
   allSnapshots: [SNAPSHOT],
   initialNetDebit: null,
   pmccLedger: null,
-  pmccOpenLegs: null
+  pmccOpenLegs: null,
+  pmccTimeline: null
 }
 
 const HOLDING_DETAIL: PositionDetail = {

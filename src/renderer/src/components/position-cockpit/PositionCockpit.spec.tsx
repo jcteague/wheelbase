@@ -1,8 +1,9 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { PositionCockpit } from './PositionCockpit'
 import type { PositionDetail, LegDetail, PmccOpenLegs, SnapshotDetail } from '../../api/positions'
 import type { OptionSnapshot } from '../../api/market-data'
 import { SHARES_VERDICT } from '../../lib/verdict'
+import { XYZ_TIMELINE } from './PmccLegTimeline.fixture'
 
 function daysFromToday(n: number): string {
   const d = new Date()
@@ -63,7 +64,8 @@ const baseDetail: PositionDetail = {
   allSnapshots: [baseSnapshot],
   initialNetDebit: null,
   pmccLedger: null,
-  pmccOpenLegs: null
+  pmccOpenLegs: null,
+  pmccTimeline: null
 }
 
 const baseOptionSnapshot: OptionSnapshot = {
@@ -436,6 +438,94 @@ describe('PMCC position', () => {
     render(<PositionCockpit detail={pmccDetail} />)
     expect(screen.queryByRole('button', { name: /Cost basis\s*6 fields/ })).not.toBeInTheDocument()
     expect(screen.queryByText('Cost basis / share')).not.toBeInTheDocument()
+  })
+
+  // [US-109] The Timeline summary and Leg timeline drawers stack beneath the Cost basis drawer.
+  describe('leg timeline drawers', () => {
+    const timelineDetail: PositionDetail = { ...pmccLedgerDetail, pmccTimeline: XYZ_TIMELINE }
+
+    const costBasisButton = (): HTMLElement =>
+      screen.getByRole('button', { name: /Cost basis\s*6 fields/ })
+    const summaryButton = (): HTMLElement =>
+      screen.getByRole('button', { name: /Timeline summary/ })
+    const legTimelineButton = (): HTMLElement =>
+      screen.getByRole('button', { name: /Leg timeline/ })
+    const leapsTrackHeading = (): HTMLElement | null =>
+      screen.queryByRole('heading', { name: 'LEAPS track' })
+
+    it('stacks leg reference, Cost basis, Timeline summary, then Leg timeline', () => {
+      render(<PositionCockpit detail={timelineDetail} />)
+      const inOrder = [
+        screen.getByText('Buy LEAPS call'),
+        costBasisButton(),
+        summaryButton(),
+        legTimelineButton()
+      ]
+      inOrder.slice(1).forEach((later, i) => {
+        expect(
+          inOrder[i].compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING
+        ).toBeTruthy()
+      })
+    })
+
+    it('opens the Timeline summary by default', () => {
+      render(<PositionCockpit detail={timelineDetail} />)
+      expect(summaryButton()).toHaveAttribute('aria-expanded', 'true')
+      expect(summaryButton()).toHaveTextContent('6 fields')
+      expect(screen.getByText('US-109 · reconciles to the Cost basis drawer above')).toBeVisible()
+    })
+
+    it('collapses the Leg timeline with its cycles and uncovered days in the header', () => {
+      render(<PositionCockpit detail={timelineDetail} />)
+      expect(legTimelineButton()).toHaveAttribute('aria-expanded', 'false')
+      expect(within(legTimelineButton()).getByText('9 cycles · 44d uncovered')).toBeVisible()
+      expect(leapsTrackHeading()).not.toBeInTheDocument()
+    })
+
+    it('reveals the LEAPS track on click and hides it on a second click', () => {
+      render(<PositionCockpit detail={timelineDetail} />)
+      fireEvent.click(legTimelineButton())
+      expect(leapsTrackHeading()).toBeVisible()
+      fireEvent.click(legTimelineButton())
+      expect(leapsTrackHeading()).not.toBeInTheDocument()
+      expect(legTimelineButton()).toHaveAttribute('aria-expanded', 'false')
+    })
+
+    it('renders neither drawer when pmccTimeline is null', () => {
+      render(<PositionCockpit detail={{ ...timelineDetail, pmccTimeline: null }} />)
+      expect(costBasisButton()).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Timeline summary/ })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Leg timeline/ })).not.toBeInTheDocument()
+    })
+  })
+})
+
+describe('wheel position never renders the PMCC leg timeline', () => {
+  const ccLeg: LegDetail = {
+    ...baseLeg,
+    id: 'leg-cc',
+    legRole: 'CC_OPEN',
+    instrumentType: 'CALL',
+    strike: '185.00',
+    premiumPerContract: '2.10'
+  }
+  // A timeline on a wheel detail would be a main-process bug; the cockpit must still ignore it.
+  const ccOpenDetail: PositionDetail = {
+    ...noActiveLegDetail,
+    position: { ...noActiveLegDetail.position, phase: 'CC_OPEN' },
+    activeLeg: ccLeg,
+    legs: [baseLeg, assignLeg, ccLeg],
+    pmccTimeline: XYZ_TIMELINE
+  }
+
+  it('CC_OPEN keeps the Cost basis & history leg table and shows no timeline', () => {
+    render(<PositionCockpit detail={ccOpenDetail} />)
+    fireEvent.click(screen.getByRole('button', { name: /Cost basis & history/ }))
+    expect(screen.getByRole('columnheader', { name: 'Running Basis / Share' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: /Timeline summary/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Leg timeline/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'LEAPS track' })).not.toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/uncovered/i)
   })
 })
 

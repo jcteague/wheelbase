@@ -76,11 +76,11 @@ value a literal):
 **Green — implementation:**
 
 - Types from `data-model.md` § Type Design: `PmccTimelineEvent` (discriminated union on `kind`), `PmccShortOutcome`, `PmccCycle` (common shape ∩ union on `status`), `PmccLeapsRow` and `PmccCycleRow` (unions on `kind`), roll `coverage` (union on `unbroken`), `PmccNet`, `PmccLeapsTrack`, `PmccTimeline`.
-- `buildPmccTimeline(input: PmccTimelineInput): PmccTimeline` in `src/main/core/pmcc-timeline.ts`:
-  - sort by date, then rank, then `seq` (research ADR "Timeline order");
+- `buildPmccTimeline(input: PmccTimelineInput): PmccTimeline | null` in `src/main/core/pmcc-timeline.ts` (null with no `LEAPS_OPEN` or `LEAPS_ROLL`; the engine is the one owner of that check):
+  - sort by date, then rank, then `seq` (research ADR "Timeline order"); a `LEAPS_ROLL` carries no `date` and is dated by the earlier of its `closedOn` / `openedOn` (`timelineEventDate`);
   - one pass with `reduce` carrying the contribution prefix; `calculatePmccLedger({ leapsContracts, longStrike: null, contributions: prefix })` gives `basisAfter` at each event;
-  - `SHORT_OPEN` starts a cycle; `SHORT_ROLL` and `SHORT_END` attach to the open cycle; `UNKNOWN` attaches to the cycle open on its date, else the LEAPS track;
-  - nets in dollars from contributions, per share ÷ `100 × leapsContracts`; day counts with `differenceInCalendarDays(parseISO(b), parseISO(a))`.
+  - `SHORT_OPEN` starts a cycle; `SHORT_ROLL` and `SHORT_END` attach to the open cycle holding the contract (attribution rules in `data-model.md` § 2); `UNKNOWN` attaches to the latest cycle open on its date (no end folded, short not yet expired), else the LEAPS track;
+  - nets in dollars from contributions, per share ÷ the shares of the LEAPS held now (`sharesFromContracts` from `costbasis.ts`); day counts with `differenceInCalendarDays(parseISO(b), parseISO(a))`. The contract count is not an output (no `leapsContracts` on `PmccTimeline`).
 - Every row built from a known event carries that event's `fees` (4-dp dollars) so the renderer can show them.
 - No logging, no I/O (core rule).
 
@@ -107,24 +107,27 @@ value a literal):
 - `pmcc-timeline.test.ts`:
   - Background gaps are 7 (2026-10-16 → 2026-10-23), 17, 3, 3, 3, 4, 7 days; no gap between cycles 6 and 7 (same day); `uncoveredDays` 44, `totalDays` 333, `coveredDays` 289.
   - Gap boundary: next cycle sold the day before / the same day / the day after the previous ended → no gap, no gap, a 1-day gap.
-  - Leading gap when the first short was sold after the LEAPS; none when sold the same day.
-  - Trailing gap: last cycle assigned 2027-08-20, valuation 2027-08-24, position open → 4 days. Position closed 2027-08-20, valuation 2027-09-02 → no trailing gap, `totalDays` 340, `coveredDays` 296.
-  - No cycles (LEAPS bought 2027-06-01, valuation 2027-08-13): one gap of 73 days, `coveredDays` 0, `averagePerShare` `null`, `openCreditPerShare` `null`, `leapsRollNetPerShare` `null`.
-  - Flag: LEAPS expiring 2027-09-17, short expiring 2027-10-16 → `{ daysPastLeaps: 29, leapsExpiration: '2027-09-17' }`; short expiring the same day or the day before → `null`; the day after → `daysPastLeaps` 1.
-  - Summary on the Background: `cycleCount` 9, `closedCount` 8, `openCount` 1, `realizedPerShare` `14.0000` / `1400.0000`, `averagePerShare` `1.7500` / `175.0000`, `openCreditPerShare` `1.9500`, `leapsRollNetPerShare` `2.5000`, `shortCreditsPerShare` `15.9500`, `leapsCostPerShare` `22.5000`, `basisPerShare` `6.5500`.
-  - Assigned variant: `closedCount` 9, `openCount` 0, `realizedPerShare` `15.9500`.
+  - Leading gap (`kind: 'LEADING'`, `beforeCycle` 1) when the first short was sold after the LEAPS; none when sold the same day.
+  - Trailing gap (`kind: 'TRAILING'`): when no cycle covers at the window end — not merely when the last cycle sold has ended. Last cycle assigned 2027-08-20, valuation 2027-08-24, position open → 4 days. Position closed 2027-08-20, valuation 2027-09-02 → no trailing gap, `totalDays` 340, `coveredDays` 296.
+  - Window end: a short sold the day before / on / after the window end (LEAPS 2027-06-01, valued 2027-06-05) → a leading gap to the sale or to the window end, never past it; sold after it → `uncoveredDays` 4, `coveredDays` 0, `daysSoFar` 0 and `dteRemaining` = `dteAtOpen`. A short bought back after the window end covers only up to it.
+  - Overlapping cycles (cycle 1 open to 2027-03-19, cycle 2 sold 2027-01-10, expired 2027-01-29, valued 2027-02-10) → no trailing gap; 37 of 149 days covered. A `BETWEEN` gap's neighbours are the cycle that covered furthest before it and the cycle sold at its end.
+  - No cycles (LEAPS bought 2027-06-01, valuation 2027-08-13): one `WHOLE_WINDOW` gap of 73 days, `coveredDays` 0, `average` `null`, `open` `null`, `leapsRollNetPerShare` `null`.
+  - Flag: LEAPS expiring 2027-09-17, open short expiring 2027-10-16 → `{ daysPastLeaps: 29, leapsExpiration: '2027-09-17' }`; short expiring the same day or the day before → `null`; the day after → `daysPastLeaps` 1. An ended cycle is flagged only when `endedOn` is after the LEAPS expiration: bought back the day before / on / after → `null`, `null`, `daysPastLeaps` 1.
+  - Summary on the Background: `cycleCount` 9, `closedCount` 8, `open` `{ count: 1, creditPerShare: '1.9500' }`, `realizedPerShare` `14.0000` / `1400.0000`, `average` `{ perShare: '1.7500', total: '175.0000' }`, `leapsRollNetPerShare` `2.5000`, `shortCreditsPerShare` `15.9500`, `leapsCostPerShare` `22.5000`, `basisPerShare` `6.5500`.
+  - Assigned variant: `closedCount` 9, `open` `null`, `realizedPerShare` `15.9500`.
   - Fee variant: `realizedPerShare` `13.9900`, `shortCreditsPerShare` `15.9400`, `leapsCostPerShare` `22.5100`, `basisPerShare` `6.5700`.
-- `pmcc-timeline.property.test.ts` (generator `pmccTimelineEvents` builds a valid history — one LEAPS, optional LEAPS rolls, sequential cycles with optional rolls and an outcome, fees — so no `fc.pre`):
+- `pmcc-timeline.property.test.ts` (generator `pmccTimelineEvents` builds a valid history — one LEAPS, optional LEAPS rolls, cycles in order of sale that may overlap (one sold before the previous ended), with optional rolls and an outcome, fees, and a valuation date that may fall before the last events — so no `fc.pre`):
   - **Oracle:** `realizedTotal + open total` equals `shortCreditsTotal`, and `summary.basisPerShare` equals `basisPerShare`, from `calculatePmccLedger` over all contributions (dollars, exact `Decimal` equality).
-  - **Invariant:** `coveredDays + uncoveredDays === totalDays`, `uncoveredDays === Σ gap.days`, and both are ≥ 0.
+  - **Coverage oracle:** counting the window's days one by one, against a replay of the generated events, the days some short call covers equal `coveredDays`, the rest `uncoveredDays`, `totalDays` their sum, and the gaps' days are exactly the uncovered ones (so `Σ gap.days` matches).
+  - **Invariant:** an open cycle's `dteRemaining` and `daysSoFar` are measured at the later of the window end and its sale.
   - **Order independence:** any permutation of the input `events` array gives a deeply equal timeline.
   - **Scale invariance:** multiplying every `contracts` and every fee by `k` leaves every per-share figure and `basisAfter` unchanged and multiplies every total by `k`.
   - **Guard:** `cycles.length` equals the number of `SHORT_OPEN` events, whatever the number of rolls.
 
 **Green — implementation:**
 
-- `PmccGap`, `PmccTimelineSummary` and the cycle `flag` per `data-model.md` § 2.
-- Gap rules in the table in `data-model.md` § 2; `windowEnd = closedDate ?? valuationDate` (research ADR "coverage window").
+- `PmccGap` (union on `kind`: `LEADING` / `BETWEEN` / `TRAILING` / `WHOLE_WINDOW`), `PmccTimelineSummary` (with `average` and `open`, each a pair or `null`) and the cycle `flag` per `data-model.md` § 2.
+- Gaps are the complement, inside `[start, windowEnd]`, of the union of the cycles' coverage, each clamped to the window (table in `data-model.md` § 2); `windowEnd = closedDate ?? valuationDate` (research ADR "coverage window").
 - Summary sums in dollars, divides once; ledger fields from one `calculatePmccLedger` call over every contribution.
 - `pmccTimelineEvents` arbitrary in `arbitraries.ts`, built from `positiveMoney`, `contracts` and `orderedDays`.
 
@@ -157,7 +160,7 @@ value a literal):
 
 **Green — implementation:**
 
-- `pmccTimelineFromLegs(legs: LegRecord[], opts: { valuationDate: string; closedDate: string | null }): PmccTimeline | null` in `src/main/services/pmcc-timeline.ts`: group chains with `groupRollChains`, map each `orderedLedgerEvents` entry to a `PmccTimelineEvent` (`seq` = its index, `contribution` from `eventContribution`), add `UNKNOWN` events for non-PMCC roles and unpaired roll legs, call `buildPmccTimeline`.
+- `pmccTimelineFromLegs(legs: LegRecord[], opts: { valuationDate: string; closedDate: string | null }): PmccTimeline | null` in `src/main/services/pmcc-timeline.ts`: group chains with `groupRollChains`, map each `orderedLedgerEvents` entry to a `PmccTimelineEvent` (`seq` = its index, `contribution` from `eventContribution`; a LEAPS roll gets only its two fill dates), add `UNKNOWN` events for non-PMCC roles and unpaired roll legs, and return `buildPmccTimeline`'s result — the engine's `null` for no LEAPS, with no check of its own.
 - DEBUG log `pmcc_timeline_events` with the event kinds and dates; no INFO (nothing is created).
 
 **Refactor — cleanup to consider:**
@@ -172,28 +175,28 @@ value a literal):
 
 **Files to create or modify:**
 
-- `src/main/schemas.ts` — `GetPositionResult.pmccTimeline`
-- `src/main/services/get-position.ts` — compute it
+- `src/main/schemas.ts` — `PositionDetailResult` (`GetPositionResult` + `pmccTimeline`), `GetPositionPayloadSchema`
+- `src/main/services/get-position.ts` — `getPositionDetail` computes it; `getPosition` does not
 - `src/main/services/get-position.test.ts` — add cases
 - `src/main/ipc/positions.ts` — `getCurrentDate` dependency
 - `src/main/ipc/positions.test.ts` — add cases
 - `src/main/index.ts` — pass `fakeClock?.now`
-- renderer test fixtures that build a `GetPositionResult` (e.g. `PositionCockpit.spec.tsx`, `PositionDetailPage.test.tsx`) — add `pmccTimeline: null`
+- renderer test fixtures that build a `PositionDetail` (e.g. `PositionCockpit.spec.tsx`, `PositionDetailPage.test.tsx`) — add `pmccTimeline: null`
 
 **Red — tests to write:**
 
-- `get-position.test.ts`: a PMCC returns `pmccTimeline` whose `valuationDate` is the date passed in and whose `summary.basisPerShare` equals `pmccLedger.basisPerShare`; a wheel returns `pmccTimeline: null`; a `CLOSED` PMCC passes its `closedDate` through (`timeline.closedDate` is the literal).
-- `positions.test.ts`: with `getCurrentDate` returning `2027-08-14T02:30:00Z` the response's `pmccTimeline.valuationDate` is `2027-08-13` (still the 13th in New York); with `2027-08-14T05:00:00Z` it is `2027-08-14`.
+- `get-position.test.ts`: `getPositionDetail` for a PMCC returns `pmccTimeline` whose `valuationDate` is the date passed in and whose `summary.basisPerShare` equals `pmccLedger.basisPerShare`; a wheel returns `pmccTimeline: null`; a `CLOSED` PMCC passes its `closedDate` through (`timeline.closedDate` is the literal); an unknown id throws `not_found`. The roll context (`loadPmccRollContext`, via `getPosition`) carries no `pmccTimeline` and folds none.
+- `positions.test.ts`: with `getCurrentDate` returning `2027-08-14T02:30:00Z` the service is asked for valuation date `2027-08-13` (still the 13th in New York); with `2027-08-14T05:00:00Z` for `2027-08-14`. A throwing service yields an `internal_error` envelope, not a rejected invoke; a non-UUID `positionId` an `invalid_format` error; an unknown id the same `not_found` envelope as before.
 
 **Green — implementation:**
 
-- `pmccTimeline: PmccTimeline | null` on `GetPositionResult` in `src/main/schemas.ts`, typed from `src/main/core/pmcc-timeline.ts` (`contracts/positions-get.md`).
-- `getPosition(db, positionId, opts?: { valuationDate?: string })`; default `etDateOf(new Date())` so the existing internal callers are untouched.
-- `registerPositionsHandlers(db, { ivrOnDemand, getCurrentDate })`; the `positions:get` handler passes `etDateOf((getCurrentDate ?? (() => new Date()))())`.
+- `PositionDetailResult` = `GetPositionResult` + `pmccTimeline: PmccTimeline | null` in `src/main/schemas.ts`, typed from `src/main/core/pmcc-timeline.ts` (`contracts/positions-get.md`); `GetPositionResult`, which the write services share, has no timeline.
+- `getPosition(db, positionId)` — no valuation date, no timeline. `getPositionDetail(db, positionId, { valuationDate })` composes it with `pmccTimelineFromLegs` for a PMCC and throws `ValidationError('__root__', 'not_found', 'Position not found')` for an unknown id.
+- `registerPositionsHandlers(db, { ivrOnDemand, getCurrentDate })`; the `positions:get` handler runs in `handleIpcCall`: `GetPositionPayloadSchema.parse(payload)`, then `getPositionDetail(db, positionId, { valuationDate: etDateOf(getCurrentDate()) })`.
 
 **Refactor — cleanup to consider:**
 
-- `get-position.ts` now derives four PMCC fields; consider one `pmccFields(legs, position, valuationDate)` helper returning them, replacing the four `isPmcc ? … : null` lines.
+- `get-position.ts` derives three PMCC fields in one `pmccFields(position, legs)` helper; the timeline stays out of it, on the read path only.
 
 **Acceptance criteria covered:**
 
@@ -224,7 +227,7 @@ value a literal):
 
 **Refactor — cleanup to consider:**
 
-- Share the `toLegRecord` helper with `src/main/ipc/test-pmcc-ledger.ts` rather than copying it.
+- Share the `toLegRecord` helper with `src/main/ipc/test-pmcc-ledger.ts` rather than copying it; it lives in the test-seam module `src/main/services/test-leg-rows.ts`, not in the production `leg-rows.ts`.
 
 **Acceptance criteria covered:**
 
@@ -406,6 +409,7 @@ produce.
 16. **A closed PMCC shows a complete, muted timeline** — relaunch at 2027-09-02, seed closed 2027-08-20 with cycle 9 assigned: banner `Position closed 2027-08-20 · the timeline is complete`; nine terminal outcome badges and no `Open`; Cycles `9 · 9 closed`; Coverage `296 of 340 days · 44 uncovered`.
 17. **A classic wheel's leg history is unchanged** — wheel taken to `CC_OPEN` then closed call (existing helpers, no fake clock needed): the flat table with `Running Basis / Share` is present; `LEAPS track`, `Short-call cycles`, `Coverage` strip and `Uncovered` are absent.
 18. **Fees reduce the cycle net and the timeline still reconciles** — `$1.00` fee on the LEAPS purchase and on cycle 1's sell: purchase basis `$25.01`; sell-to-open row `+$200.00 · fees $1.00`; cycle 1 `+$1.99 / share (+$199.00)`, footer `$23.02`; Realized `+$13.99 / share (+$1,399.00)`; reconciliation `Realized $13.99 + open $1.95 = $15.94 short-call credits to date. LEAPS cost to date $22.51 − $15.94 = $6.57 cost basis per share.`; `$6.57` matches the `Cost basis` drawer.
+19. **A short call past its expiration with no recorded outcome stops counting as coverage** — relaunch at 2027-08-24 with the plain Background (cycle 9 has no terminal leg): cycle 9 header `$118.00 call · sold 2027-07-23 at 28 DTE · 28 days held`, outcome `Outcome not recorded` in the muted tone (no red, gold or green class), and none of `Open`, `Expired worthless`, `Assigned`, `Closed early`; net label `Net credit, open`, net `+$1.95 / share (+$195.00)`; last row `Expired 2027-08-20 · outcome not recorded` and no `DTE remaining`; a trailing row after cycle 9 `Uncovered · 4 days · 2027-08-20 to 2027-08-24 — no short call open against the LEAPS`; Cycles `9 · 8 closed · 1 open`, Open cycle credit `+$1.95 / share · open`, Coverage `296 of 344 days · 48 uncovered`. A second launch at 2027-08-20: `Open`, `0 DTE remaining · credit collected, not realized`, no trailing gap row (7 gap rows), Coverage `296 of 340 days · 44 uncovered`.
 
 **Green — implementation:**
 
@@ -417,27 +421,28 @@ produce.
 
 **Acceptance criteria covered:**
 
-- All 18 scenarios in OPT-17, one test each (AC audit below).
+- All 19 scenarios in OPT-17, one test each (AC audit below).
 
 ## AC Audit
 
-| #   | Acceptance scenario (OPT-17)                                                   | E2e test |
-| --- | ------------------------------------------------------------------------------ | -------- |
-| 1   | The section separates the LEAPS track from the short-call cycles               | 1        |
-| 2   | The LEAPS roll reads as unbroken coverage, not two disconnected rows           | 2        |
-| 3   | Rolls stay inside their cycle and reduce that cycle's net                      | 3        |
-| 4   | A cycle that simply expired reads its opening credit as its net                | 4        |
-| 5   | A cycle bought back early nets the buyback against the credit                  | 5        |
-| 6   | The open cycle is labelled open and never as realized profit                   | 6        |
-| 7   | Uncovered stretches between cycles are stated as a neutral fact                | 7        |
-| 8   | Running cost basis appears at each group boundary, sourced from US-103         | 8        |
-| 9   | The timeline summary totals the cycles and reconciles to the Cost basis drawer | 9        |
-| 10  | No per-cycle percentage or annualized return is shown                          | 10       |
-| 11  | A cycle ended by assignment shows the outcome without claiming the settlement  | 11       |
-| 12  | A LEAPS with no short call ever sold renders an empty cycles list              | 12       |
-| 13  | A short call that outlasts the LEAPS is flagged on its cycle                   | 13       |
-| 14  | Per-share figures hold and totals scale with contracts                         | 14       |
-| 15  | A leg role this story does not know renders neutrally                          | 15       |
-| 16  | A closed PMCC shows a complete, muted timeline                                 | 16       |
-| 17  | A classic wheel's leg history is unchanged                                     | 17       |
-| 18  | Fees reduce the cycle net and the timeline still reconciles (added 2026-11-11) | 18       |
+| #   | Acceptance scenario (OPT-17)                                                                            | E2e test |
+| --- | ------------------------------------------------------------------------------------------------------- | -------- |
+| 1   | The section separates the LEAPS track from the short-call cycles                                        | 1        |
+| 2   | The LEAPS roll reads as unbroken coverage, not two disconnected rows                                    | 2        |
+| 3   | Rolls stay inside their cycle and reduce that cycle's net                                               | 3        |
+| 4   | A cycle that simply expired reads its opening credit as its net                                         | 4        |
+| 5   | A cycle bought back early nets the buyback against the credit                                           | 5        |
+| 6   | The open cycle is labelled open and never as realized profit                                            | 6        |
+| 7   | Uncovered stretches between cycles are stated as a neutral fact                                         | 7        |
+| 8   | Running cost basis appears at each group boundary, sourced from US-103                                  | 8        |
+| 9   | The timeline summary totals the cycles and reconciles to the Cost basis drawer                          | 9        |
+| 10  | No per-cycle percentage or annualized return is shown                                                   | 10       |
+| 11  | A cycle ended by assignment shows the outcome without claiming the settlement                           | 11       |
+| 12  | A LEAPS with no short call ever sold renders an empty cycles list                                       | 12       |
+| 13  | A short call that outlasts the LEAPS is flagged on its cycle                                            | 13       |
+| 14  | Per-share figures hold and totals scale with contracts                                                  | 14       |
+| 15  | A leg role this story does not know renders neutrally                                                   | 15       |
+| 16  | A closed PMCC shows a complete, muted timeline                                                          | 16       |
+| 17  | A classic wheel's leg history is unchanged                                                              | 17       |
+| 18  | Fees reduce the cycle net and the timeline still reconciles (added 2026-11-11)                          | 18       |
+| 19  | A short call past its expiration with no recorded outcome stops counting as coverage (added 2026-11-12) | 19       |

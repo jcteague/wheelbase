@@ -17,6 +17,7 @@ import type {
   RollPmccShortCallPayload,
   SaveAlertOverridesPayload,
   TestPmccLegEventPayloadInput,
+  TestPmccSeedPositionPayloadInput,
   AssignCspPositionResult,
   CloseCcPositionResult,
   CloseCspPositionResult,
@@ -24,7 +25,7 @@ import type {
   CreatePositionResult,
   ExpireCcPositionResult,
   ExpireCspPositionResult,
-  GetPositionResult,
+  PositionDetailResult,
   ManagementQueueItem as SchemaManagementQueueItem,
   OpenCcPositionResult,
   PositionListItem,
@@ -46,7 +47,7 @@ type IpcResult<T> =
 
 type IpcCreatePositionResult = IpcResult<CreatePositionResult>
 
-type IpcGetPositionResult = IpcResult<GetPositionResult>
+type IpcGetPositionResult = IpcResult<PositionDetailResult>
 
 type IpcCloseCspResult = IpcResult<CloseCspPositionResult>
 
@@ -654,6 +655,10 @@ declare global {
       testPmccRecordLegEvent: (
         payload: TestPmccLegEventPayloadInput
       ) => Promise<IpcResult<AppendPmccSnapshotResult>>
+      /** [US-109] Inserts one PMCC position and its legs exactly as given — no validation. */
+      testPmccSeedPosition: (
+        payload: TestPmccSeedPositionPayloadInput
+      ) => Promise<IpcResult<{ positionId: string }>>
       testIvrSetNow: (nowIso: unknown) => Promise<{ ok: true } | { ok: false; error: string }>
       testIv30History: () => Promise<IpcTestIv30ReadingRow[]>
       testIv30Gaps: () => Promise<

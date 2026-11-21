@@ -52,15 +52,6 @@ function rollNet(received: Decimal, paid: Decimal, contracts: number): PmccRollN
   }
 }
 
-/** Which way a roll's cash went: paid out, taken in, or neither. */
-export type NetDirection = 'debit' | 'credit' | 'even'
-
-/** The direction of a signed received − paid net. */
-export function netDirection(net: Decimal): NetDirection {
-  if (net.isZero()) return 'even'
-  return net.isNegative() ? 'debit' : 'credit'
-}
-
 /** The net of the roll being entered; the inputs are the form's free text. */
 export function pmccRollNet({ received, paid, contracts }: PmccRollCash): PmccRollNet {
   const inflow = parsePositiveInputDecimal(received)

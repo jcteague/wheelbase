@@ -2,14 +2,14 @@ import { useState, type ReactNode } from 'react'
 
 type CollapsedDrawerProps = {
   title: string
-  fieldCount: number
   defaultOpen?: boolean
   children: ReactNode
-}
+} & ({ fieldCount: number; meta?: undefined } | { fieldCount?: number; meta: string })
 
 export function CollapsedDrawer({
   title,
   fieldCount,
+  meta,
   defaultOpen = false,
   children
 }: CollapsedDrawerProps): React.JSX.Element {
@@ -27,7 +27,9 @@ export function CollapsedDrawer({
           <span className="text-[9px]">{open ? '▼' : '▶'}</span>
           {title}
         </span>
-        <span className="font-wb-mono text-[11px] text-wb-text-muted">{fieldCount} fields</span>
+        <span className="font-wb-mono text-[11px] text-wb-text-muted">
+          {meta ?? `${fieldCount} fields`}
+        </span>
       </button>
       {open ? <div>{children}</div> : null}
     </div>

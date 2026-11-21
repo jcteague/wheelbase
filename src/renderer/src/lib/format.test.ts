@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  fmtCount,
   fmtMoneyGrouped,
   computeDte,
   computeDteFromInput,
@@ -23,6 +24,16 @@ describe('fmtMoney', () => {
 
   it('formats fractional dollar strings to two decimals', () => {
     expect(fmtMoney('3.2000')).toBe('$3.20')
+  })
+})
+
+describe('fmtCount', () => {
+  it.each([
+    [0, '0 days'],
+    [1, '1 day'],
+    [2, '2 days']
+  ])('%i reads %s', (n, expected) => {
+    expect(fmtCount(n, 'day')).toBe(expected)
   })
 })
 

@@ -22,7 +22,7 @@ export const PHASE_TOKEN: Record<WheelPhase, PhaseToken> = {
 }
 
 /** Each token's `--wb-*` value; hex because `tintFromColor` appends an alpha to it. */
-const TOKEN_HEX: Record<PhaseToken, string> = {
+export const TOKEN_HEX: Record<PhaseToken, string> = {
   gold: '#e6a817',
   'text-muted': '#484f58',
   green: '#3fb950',

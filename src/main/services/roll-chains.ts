@@ -22,8 +22,11 @@ export interface RollChain {
 
 type RollLeg = LegRecord & { rollChainId: string }
 
-const isRollLeg = (leg: LegRecord): leg is RollLeg =>
-  (leg.legRole === 'ROLL_FROM' || leg.legRole === 'ROLL_TO') && leg.rollChainId !== null
+/** A ROLL_FROM or ROLL_TO leg, paired or not. */
+export const isRollRole = (leg: LegRecord): boolean =>
+  leg.legRole === 'ROLL_FROM' || leg.legRole === 'ROLL_TO'
+
+const isRollLeg = (leg: LegRecord): leg is RollLeg => isRollRole(leg) && leg.rollChainId !== null
 
 const signedPremium = (leg: LegRecord): Decimal =>
   leg.action === 'SELL'

@@ -14,6 +14,7 @@ import {
 import { isWideSpread, spreadPercentOfMid } from '../../../shared/option-spread'
 import { fmtMoney, fmtMoneyGrouped, fmtPct1 } from './format'
 import { formatDelta, leapsDelta, type LegQuote } from './pmcc-card-legs'
+import { signedMoneyGrouped } from './money-format'
 
 export type Tier2Cell = { label: string; value: string; note: string }
 
@@ -26,12 +27,6 @@ export interface PmccTier2Input {
 }
 
 const DASH = '—'
-
-/** `fmtMoneyGrouped` signed `+` or U+2212 `−` (the app's minus): `+$1,215.00`, `−$500.00`. */
-export function signedMoneyGrouped(value: string): string {
-  const amount = new Decimal(value)
-  return `${amount.gte(0) ? '+' : '−'}${fmtMoneyGrouped(amount.abs().toString())}`
-}
 
 function creditsCell({ pmcc }: PmccTier2Input): Tier2Cell {
   const recovered =

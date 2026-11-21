@@ -13,7 +13,7 @@ import type { IvrOnDemand } from './ivr-on-demand'
 import { insertPosition } from './position-rows'
 
 export { listPositions } from './list-positions'
-export { getPosition } from './get-position'
+export { getPosition, getPositionDetail } from './get-position'
 export { closeCspPosition } from './close-csp-position'
 export { expireCspPosition } from './expire-csp-position'
 export { assignCspPosition } from './assign-csp-position'

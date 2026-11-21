@@ -21,6 +21,7 @@
     "!src/main/core/**/*.test.ts",
     "!src/main/core/test-fixtures/**"
   ],
+  "concurrency": 2,
   "coverageAnalysis": "perTest",
   "timeoutMS": 30000,
   "incremental": true,

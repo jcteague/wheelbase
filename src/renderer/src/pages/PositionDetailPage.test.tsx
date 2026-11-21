@@ -235,7 +235,8 @@ const CSP_OPEN_DETAIL = {
   allSnapshots: [],
   initialNetDebit: null,
   pmccLedger: null,
-  pmccOpenLegs: null
+  pmccOpenLegs: null,
+  pmccTimeline: null
 }
 
 // RED: TypeScript will error here until PositionDetail gains the allSnapshots field
@@ -1175,7 +1176,8 @@ const PMCC_DETAIL: PositionDetail = {
   legs: [OPEN_LEAPS, OPEN_SHORT],
   initialNetDebit: '2300.0000',
   pmccLedger: PMCC_LEDGER,
-  pmccOpenLegs: OPEN_LEGS
+  pmccOpenLegs: OPEN_LEGS,
+  pmccTimeline: null
 }
 
 function renderPmcc(detail: PositionDetail = PMCC_DETAIL): void {

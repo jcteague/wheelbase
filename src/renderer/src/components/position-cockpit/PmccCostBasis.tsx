@@ -2,7 +2,7 @@ import Decimal from 'decimal.js'
 import type { PmccLedgerResult } from '../../api/positions'
 import { fmtMoneyGrouped, fmtPct1 } from '../../lib/format'
 import { CollapsedDrawer } from './CollapsedDrawer'
-import { Caption } from '../ui/Caption'
+import { DrawerCaption } from './DrawerCaption'
 import { StatGrid } from '../ui/Stat'
 import { money4 } from '../../../../shared/decimal-text'
 
@@ -12,9 +12,7 @@ type PmccCostBasisProps = { ledger: PmccLedgerResult }
 export function PmccCostBasis({ ledger }: PmccCostBasisProps): React.JSX.Element {
   return (
     <CollapsedDrawer title="Cost basis" fieldCount={6} defaultOpen>
-      <div className="px-5 pt-3">
-        <Caption>US-103 · cash ledger, never a quote</Caption>
-      </div>
+      <DrawerCaption>US-103 · cash ledger, never a quote</DrawerCaption>
       <StatGrid
         minWidth={150}
         items={[

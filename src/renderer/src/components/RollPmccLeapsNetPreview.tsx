@@ -3,10 +3,9 @@
 // re-anchored to the replacement strike.
 import { parseInputDecimal } from '../lib/decimal-input'
 import { fmtMoney } from '../lib/format'
+import { netDirection, type NetDirection } from '../../../shared/net-direction'
 import {
   effectiveCostMove,
-  netDirection,
-  type NetDirection,
   type PmccLeapsLedger,
   type PmccLeapsPostRoll,
   type PmccRollNet

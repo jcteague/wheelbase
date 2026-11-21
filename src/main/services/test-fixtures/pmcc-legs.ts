@@ -45,6 +45,20 @@ export interface PmccFixtures {
   CYCLES: LegRecord[]
   FEES: LegRecord[]
   THREE: LegRecord[]
+  /** [US-109] Cycle 1 bought back early at 0.55 on day 18. */
+  CLOSE_1: LegRecord[]
+  /** [US-109] Cycle 1 assigned at expiration. */
+  ASSIGNED_1: LegRecord[]
+  /** [US-109] `SHORT_ROLL` with $0.65 fees on each leg. */
+  SHORT_ROLL_FEES: LegRecord[]
+  /** [US-109] `LEAPS_ROLL` sold on day 84, its replacement bought two days later. */
+  LEAPS_ROLL_SPLIT: LegRecord[]
+  /** [US-109] A wheel-role leg (`CC_CLOSE`) on a PMCC, dated inside cycle 1. */
+  UNKNOWN_ROLE: LegRecord[]
+  /** [US-109] A `ROLL_TO` whose `ROLL_FROM` was never recorded, dated after cycle 1 expired. */
+  UNPAIRED_ROLL_TO: LegRecord[]
+  /** [US-109] The `OPEN` LEAPS sold to close at 27.50 on day 40, after cycle 1 expired. */
+  LEAPS_CLOSE_1: LegRecord[]
 }
 
 export function pmccFixtures(positionId: string, day: DayFn = FIXED_DAY): PmccFixtures {
@@ -77,6 +91,68 @@ export function pmccFixtures(positionId: string, day: DayFn = FIXED_DAY): PmccFi
     )
   ]
 
+  const shortRollLegs = (rollChainId: string, overrides: Partial<LegRecord> = {}): LegRecord[] => [
+    leg(
+      {
+        legRole: 'ROLL_FROM',
+        action: 'BUY',
+        strike: '108.0000',
+        expiration: day(67),
+        fillDate: day(63),
+        premiumPerContract: '3.0000',
+        rollChainId,
+        ...overrides
+      },
+      0
+    ),
+    leg(
+      {
+        legRole: 'ROLL_TO',
+        action: 'SELL',
+        strike: '112.0000',
+        expiration: day(95),
+        fillDate: day(63),
+        premiumPerContract: '2.4000',
+        rollChainId,
+        ...overrides
+      },
+      1
+    )
+  ]
+
+  const leapsRollLegs = (rollChainId: string, rollToFillDate = day(84)): LegRecord[] => [
+    leg(
+      {
+        legRole: 'ROLL_FROM',
+        action: 'SELL',
+        strike: '80.0000',
+        expiration: day(368),
+        fillDate: day(84),
+        premiumPerContract: '26.0000',
+        rollChainId
+      },
+      0
+    ),
+    leg(
+      {
+        legRole: 'ROLL_TO',
+        action: 'BUY',
+        strike: '85.0000',
+        expiration: day(494),
+        fillDate: rollToFillDate,
+        premiumPerContract: '23.5000',
+        rollChainId
+      },
+      1
+    )
+  ]
+
+  const cycle1End = (
+    fields: Pick<LegRecord, 'legRole' | 'action' | 'fillDate'>,
+    premium: string
+  ): LegRecord =>
+    leg({ strike: '110.0000', expiration: day(32), premiumPerContract: premium, ...fields })
+
   return {
     OPEN: openLegs(),
     EXPIRE_1: [
@@ -99,32 +175,7 @@ export function pmccFixtures(positionId: string, day: DayFn = FIXED_DAY): PmccFi
         premiumPerContract: '1.8000'
       })
     ],
-    SHORT_ROLL: [
-      leg(
-        {
-          legRole: 'ROLL_FROM',
-          action: 'BUY',
-          strike: '108.0000',
-          expiration: day(67),
-          fillDate: day(63),
-          premiumPerContract: '3.0000',
-          rollChainId: 'rc-1'
-        },
-        0
-      ),
-      leg(
-        {
-          legRole: 'ROLL_TO',
-          action: 'SELL',
-          strike: '112.0000',
-          expiration: day(95),
-          fillDate: day(63),
-          premiumPerContract: '2.4000',
-          rollChainId: 'rc-1'
-        },
-        1
-      )
-    ],
+    SHORT_ROLL: shortRollLegs('rc-1'),
     EXPIRE_2: [
       leg({
         legRole: 'SHORT_CALL_EXPIRED',
@@ -135,32 +186,7 @@ export function pmccFixtures(positionId: string, day: DayFn = FIXED_DAY): PmccFi
         premiumPerContract: '0.0000'
       })
     ],
-    LEAPS_ROLL: [
-      leg(
-        {
-          legRole: 'ROLL_FROM',
-          action: 'SELL',
-          strike: '80.0000',
-          expiration: day(368),
-          fillDate: day(84),
-          premiumPerContract: '26.0000',
-          rollChainId: 'rc-2'
-        },
-        0
-      ),
-      leg(
-        {
-          legRole: 'ROLL_TO',
-          action: 'BUY',
-          strike: '85.0000',
-          expiration: day(494),
-          fillDate: day(84),
-          premiumPerContract: '23.5000',
-          rollChainId: 'rc-2'
-        },
-        1
-      )
-    ],
+    LEAPS_ROLL: leapsRollLegs('rc-2'),
     CYCLES: [
       leg({
         legRole: 'SHORT_CALL_OPEN',
@@ -172,7 +198,46 @@ export function pmccFixtures(positionId: string, day: DayFn = FIXED_DAY): PmccFi
       })
     ],
     FEES: openLegs({ fees: '1.0000' }),
-    THREE: openLegs({ contracts: 3 })
+    THREE: openLegs({ contracts: 3 }),
+    CLOSE_1: [
+      cycle1End({ legRole: 'SHORT_CALL_CLOSE', action: 'BUY', fillDate: day(18) }, '0.5500')
+    ],
+    ASSIGNED_1: [
+      cycle1End({ legRole: 'SHORT_CALL_ASSIGNED', action: 'ASSIGN', fillDate: day(32) }, '0.0000')
+    ],
+    SHORT_ROLL_FEES: shortRollLegs('rc-fees', { fees: '0.6500' }),
+    LEAPS_ROLL_SPLIT: leapsRollLegs('rc-split', day(86)),
+    UNKNOWN_ROLE: [
+      leg({
+        legRole: 'CC_CLOSE',
+        action: 'BUY',
+        strike: '110.0000',
+        expiration: day(32),
+        fillDate: day(5),
+        premiumPerContract: '1.0000'
+      })
+    ],
+    UNPAIRED_ROLL_TO: [
+      leg({
+        legRole: 'ROLL_TO',
+        action: 'SELL',
+        strike: '112.0000',
+        expiration: day(70),
+        fillDate: day(40),
+        premiumPerContract: '1.5000',
+        rollChainId: 'rc-orphan'
+      })
+    ],
+    LEAPS_CLOSE_1: [
+      leg({
+        legRole: 'LEAPS_CLOSE',
+        action: 'SELL',
+        strike: '80.0000',
+        expiration: day(368),
+        fillDate: day(40),
+        premiumPerContract: '27.5000'
+      })
+    ]
   }
 }
 

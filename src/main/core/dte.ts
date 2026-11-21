@@ -15,3 +15,8 @@ export function computeDte(expiration: string | null, now: Date = new Date()): n
   const days = differenceInCalendarDays(parseISO(expiration), now)
   return Number.isNaN(days) ? null : days
 }
+
+/** Whole calendar days from `from` to `to`, both `YYYY-MM-DD` dates. */
+export function daysBetween(from: string, to: string): number {
+  return differenceInCalendarDays(parseISO(to), parseISO(from))
+}

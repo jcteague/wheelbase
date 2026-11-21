@@ -1,16 +1,28 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CollapsedDrawer } from './CollapsedDrawer'
 
 describe('CollapsedDrawer', () => {
-  it('shows title and N fields text in header', () => {
+  it('shows title and N fields text in header when meta is absent', () => {
     render(
-      <CollapsedDrawer title="Leg reference" fieldCount={5}>
+      <CollapsedDrawer title="Timeline summary" fieldCount={6}>
         <div>child content</div>
       </CollapsedDrawer>
     )
-    expect(screen.getByText('Leg reference')).toBeInTheDocument()
-    expect(screen.getByText('5 fields')).toBeInTheDocument()
+    expect(screen.getByText('Timeline summary')).toBeInTheDocument()
+    expect(screen.getByText('6 fields')).toBeInTheDocument()
+  })
+
+  it('shows the meta label in place of the field count when meta is given', () => {
+    render(
+      <CollapsedDrawer title="Leg timeline" meta="9 cycles · 44d uncovered">
+        <div>child content</div>
+      </CollapsedDrawer>
+    )
+    const trigger = screen.getByRole('button')
+    expect(within(trigger).getByText('Leg timeline')).toBeInTheDocument()
+    expect(within(trigger).getByText('9 cycles · 44d uncovered')).toBeInTheDocument()
+    expect(within(trigger).queryByText(/fields/)).not.toBeInTheDocument()
   })
 
   it('content is hidden by default when defaultOpen is not set', () => {

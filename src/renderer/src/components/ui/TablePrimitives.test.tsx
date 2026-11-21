@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { TableCell, TableHeader } from './TablePrimitives'
 
 describe('TableHeader', () => {
@@ -64,5 +64,18 @@ describe('TableCell', () => {
     expect(td).toHaveClass('font-wb-mono')
     expect(td).toHaveClass('px-[12px]')
     expect(td).toHaveClass('py-[8px]')
+  })
+
+  it('spans the columns it is given', () => {
+    render(
+      <table>
+        <tbody>
+          <tr>
+            <TableCell colSpan={3}>wide</TableCell>
+          </tr>
+        </tbody>
+      </table>
+    )
+    expect(screen.getByRole('cell', { name: 'wide' })).toHaveAttribute('colspan', '3')
   })
 })

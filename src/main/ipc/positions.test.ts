@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GetPositionResult } from '../schemas'
+import { ValidationError } from '../core/lifecycle'
 
 const assignCspPosition = vi.fn()
 const createPosition = vi.fn()
@@ -8,7 +9,7 @@ const closeCspPosition = vi.fn()
 const closeCoveredCallPosition = vi.fn()
 const expireCcPosition = vi.fn()
 const expireCspPosition = vi.fn()
-const getPosition = vi.fn()
+const getPositionDetail = vi.fn()
 const listPositions = vi.fn()
 const openCoveredCallPosition = vi.fn()
 const recordCallAwayPosition = vi.fn()
@@ -37,7 +38,7 @@ vi.mock('../services/positions', () => ({
   closeCspPosition,
   expireCcPosition,
   expireCspPosition,
-  getPosition,
+  getPositionDetail,
   listPositions,
   openCoveredCallPosition
 }))
@@ -70,6 +71,8 @@ vi.mock('../services/save-position-alert-overrides', () => ({
   savePositionAlertOverrides
 }))
 
+const POSITION_ID = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f'
+
 function getRegisteredHandler(
   calls: Array<[string, (...args: unknown[]) => unknown]>,
   channel: string
@@ -79,10 +82,12 @@ function getRegisteredHandler(
 
 type IpcHandler = (...args: unknown[]) => unknown
 
+type HandlerDeps = { ivrOnDemand?: { collect: () => Promise<void> }; getCurrentDate?: () => Date }
+
 async function registerAndGetChannelHandler(
   channel: string,
   db: never,
-  deps: { ivrOnDemand?: { collect: () => Promise<void> } } = {}
+  deps: HandlerDeps = {}
 ): Promise<IpcHandler | undefined> {
   const { ipcMain } = await import('electron')
   const { registerPositionsHandlers } = await import('./positions')
@@ -103,7 +108,7 @@ describe('registerPositionsHandlers', () => {
     closeCoveredCallPosition.mockReset()
     expireCcPosition.mockReset()
     expireCspPosition.mockReset()
-    getPosition.mockReset()
+    getPositionDetail.mockReset()
     listPositions.mockReset()
     openCoveredCallPosition.mockReset()
     recordCallAwayPosition.mockReset()
@@ -1087,7 +1092,7 @@ describe('registerPositionsHandlers', () => {
     const { ipcMain } = await import('electron')
     const { registerPositionsHandlers } = await import('./positions')
     const db = {} as never
-    getPosition.mockReturnValue({ position: { id: 'p1', ticker: 'AAPL' }, legs: [] })
+    getPositionDetail.mockReturnValue({ position: { id: POSITION_ID, ticker: 'AAPL' }, legs: [] })
 
     registerPositionsHandlers(db)
 
@@ -1096,12 +1101,84 @@ describe('registerPositionsHandlers', () => {
       'positions:get'
     )
 
-    expect(await handler?.(null, { positionId: 'p1' })).toEqual({
+    expect(await handler?.(null, { positionId: POSITION_ID })).toEqual({
       ok: true,
-      position: { id: 'p1', ticker: 'AAPL' },
+      position: { id: POSITION_ID, ticker: 'AAPL' },
       legs: []
     })
-    expect(getPosition).toHaveBeenCalledWith(db, 'p1')
+  })
+
+  it('positions:get returns an internal_error envelope, not a rejection, when the service throws', async () => {
+    getPositionDetail.mockImplementation(() => {
+      throw new Error('disk I/O error')
+    })
+    const handler = await registerAndGetChannelHandler('positions:get', {} as never)
+
+    await expect(handler?.(null, { positionId: POSITION_ID })).resolves.toEqual({
+      ok: false,
+      errors: [
+        { field: '__root__', code: 'internal_error', message: 'An unexpected error occurred' }
+      ]
+    })
+  })
+
+  it('positions:get rejects a payload whose positionId is not an id, without reading', async () => {
+    const handler = await registerAndGetChannelHandler('positions:get', {} as never)
+
+    await expect(handler?.(null, { positionId: 'p1' })).resolves.toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ field: 'positionId', code: 'invalid_format' })]
+    })
+    expect(getPositionDetail).not.toHaveBeenCalled()
+  })
+
+  // [US-109] The PMCC timeline is valued at the Eastern calendar day of the request.
+  describe('positions:get valuation date (US-109)', () => {
+    const db = {} as never
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date('2030-01-01T17:00:00Z'))
+      getPositionDetail.mockReturnValue({ position: { id: POSITION_ID, ticker: 'XYZ' }, legs: [] })
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('values the timeline at the Eastern day of getCurrentDate: 02:30Z on the 14th is still the 13th', async () => {
+      const handler = await registerAndGetChannelHandler('positions:get', db, {
+        getCurrentDate: () => new Date('2027-08-14T02:30:00Z')
+      })
+
+      await handler?.(null, { positionId: POSITION_ID })
+
+      expect(getPositionDetail).toHaveBeenCalledWith(db, POSITION_ID, {
+        valuationDate: '2027-08-13'
+      })
+    })
+
+    it('values the timeline at the Eastern day of getCurrentDate: 05:00Z on the 14th is the 14th', async () => {
+      const handler = await registerAndGetChannelHandler('positions:get', db, {
+        getCurrentDate: () => new Date('2027-08-14T05:00:00Z')
+      })
+
+      await handler?.(null, { positionId: POSITION_ID })
+
+      expect(getPositionDetail).toHaveBeenCalledWith(db, POSITION_ID, {
+        valuationDate: '2027-08-14'
+      })
+    })
+
+    it('values the timeline at the Eastern day of the wall clock when no getCurrentDate is given', async () => {
+      const handler = await registerAndGetChannelHandler('positions:get', db)
+
+      await handler?.(null, { positionId: POSITION_ID })
+
+      expect(getPositionDetail).toHaveBeenCalledWith(db, POSITION_ID, {
+        valuationDate: '2030-01-01'
+      })
+    })
   })
 
   // [US-103] The detail envelope carries the PMCC running ledger through unchanged.
@@ -1123,11 +1200,11 @@ describe('registerPositionsHandlers', () => {
       pmccLedger
     } satisfies Partial<GetPositionResult>
     const result = {
-      position: { id: 'p1', ticker: 'XYZ', strategyType: 'PMCC' },
+      position: { id: POSITION_ID, ticker: 'XYZ', strategyType: 'PMCC' },
       legs: [],
       ...pmccFields
     }
-    getPosition.mockReturnValue(result)
+    getPositionDetail.mockReturnValue(result)
 
     registerPositionsHandlers({} as never)
 
@@ -1136,7 +1213,7 @@ describe('registerPositionsHandlers', () => {
       'positions:get'
     )
 
-    const envelope = (await handler?.(null, { positionId: 'p1' })) as {
+    const envelope = (await handler?.(null, { positionId: POSITION_ID })) as {
       ok: true
     } & GetPositionResult
     expect(envelope.ok).toBe(true)
@@ -1151,8 +1228,8 @@ describe('registerPositionsHandlers', () => {
       long: { id: 'leaps-1', legRole: 'LEAPS_OPEN', strike: '80.0000' },
       short: { id: 'short-1', legRole: 'SHORT_CALL_OPEN', strike: '108.0000' }
     } as unknown as NonNullable<GetPositionResult['pmccOpenLegs']>
-    getPosition.mockReturnValue({
-      position: { id: 'p1', ticker: 'XYZ', strategyType: 'PMCC' },
+    getPositionDetail.mockReturnValue({
+      position: { id: POSITION_ID, ticker: 'XYZ', strategyType: 'PMCC' },
       legs: [],
       pmccOpenLegs
     })
@@ -1164,7 +1241,7 @@ describe('registerPositionsHandlers', () => {
       'positions:get'
     )
 
-    const envelope = (await handler?.(null, { positionId: 'p1' })) as {
+    const envelope = (await handler?.(null, { positionId: POSITION_ID })) as {
       ok: true
     } & GetPositionResult
     expect(envelope.ok).toBe(true)
@@ -1172,18 +1249,12 @@ describe('registerPositionsHandlers', () => {
   })
 
   it('positions:get returns a not_found envelope for an unknown id', async () => {
-    const { ipcMain } = await import('electron')
-    const { registerPositionsHandlers } = await import('./positions')
-    getPosition.mockReturnValue(undefined)
+    getPositionDetail.mockImplementation(() => {
+      throw new ValidationError('__root__', 'not_found', 'Position not found')
+    })
+    const handler = await registerAndGetChannelHandler('positions:get', {} as never)
 
-    registerPositionsHandlers({} as never)
-
-    const handler = getRegisteredHandler(
-      vi.mocked(ipcMain.handle).mock.calls as Array<[string, (...args: unknown[]) => unknown]>,
-      'positions:get'
-    )
-
-    expect(await handler?.(null, { positionId: 'missing' })).toEqual({
+    expect(await handler?.(null, { positionId: POSITION_ID })).toEqual({
       ok: false,
       errors: [{ field: '__root__', code: 'not_found', message: 'Position not found' }]
     })
@@ -1227,7 +1298,7 @@ describe('registerPositionsHandlers', () => {
 
     const registerAndGetHandler = (
       db: never,
-      deps: { ivrOnDemand?: { collect: () => Promise<void> } } = {}
+      deps: HandlerDeps = {}
     ): Promise<IpcHandler | undefined> =>
       registerAndGetChannelHandler('positions:create-pmcc', db, deps)
 

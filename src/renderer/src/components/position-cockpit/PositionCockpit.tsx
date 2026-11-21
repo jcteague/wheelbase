@@ -19,6 +19,8 @@ import { ContextStrip } from './ContextStrip'
 import { CollapsedDrawer } from './CollapsedDrawer'
 import { PmccLegReference } from './PmccLegReference'
 import { PmccCostBasis } from './PmccCostBasis'
+import { PmccTimelineSummary } from './PmccTimelineSummary'
+import { PmccLegTimeline } from './PmccLegTimeline'
 import { SectionCard } from '../ui/SectionCard'
 import { type StatProps, StatGrid } from '../ui/Stat'
 import { LegHistoryTable } from '../LegHistoryTable'
@@ -47,7 +49,8 @@ export function PositionCockpit({
     allSnapshots,
     initialNetDebit,
     pmccLedger,
-    pmccOpenLegs
+    pmccOpenLegs,
+    pmccTimeline
   } = detail
   if (position.strategyType === 'PMCC') {
     return (
@@ -56,6 +59,8 @@ export function PositionCockpit({
           <PmccLegReference openLegs={pmccOpenLegs} initialNetDebit={initialNetDebit} />
         ) : null}
         {pmccLedger ? <PmccCostBasis ledger={pmccLedger} /> : null}
+        {pmccTimeline ? <PmccTimelineSummary timeline={pmccTimeline} /> : null}
+        {pmccTimeline ? <PmccLegTimeline timeline={pmccTimeline} /> : null}
       </div>
     )
   }

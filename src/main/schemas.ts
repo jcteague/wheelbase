@@ -35,6 +35,7 @@ import type {
   PmccLedgerWithStrike,
   PmccOpeningDebitResult
 } from './core/costbasis'
+import type { PmccTimeline } from './core/pmcc-timeline'
 import type { PmccListPhase } from './pmcc-phase'
 import type { PmccOpenLegs } from './services/pmcc-ledger'
 export type { PmccOpenLegs }
@@ -187,6 +188,15 @@ export interface GetPositionResult {
   pmccLedger: PmccLedgerResult | null
   /** PMCC only: the open LEAPS and open short call; null for a wheel or a PMCC with no LEAPS. */
   pmccOpenLegs: PmccOpenLegs | null
+}
+
+export const GetPositionPayloadSchema = z.object({ positionId: PositionIdSchema })
+
+/** What positions:get returns: the position as every service reads it, plus the PMCC timeline. */
+export interface PositionDetailResult extends GetPositionResult {
+  /** PMCC only: the two-track leg timeline folded from every leg as of the Eastern valuation
+   *  date; null for a wheel or a PMCC with no LEAPS leg. */
+  pmccTimeline: PmccTimeline | null
 }
 
 /** One open PMCC leg on the list row: the LEAPS (`LONG`) or a short call (`SHORT`). */
@@ -910,3 +920,15 @@ export const TestPmccLegEventPayloadSchema = z.object({
 })
 export type TestPmccLegEventPayload = z.infer<typeof TestPmccLegEventPayloadSchema>
 export type TestPmccLegEventPayloadInput = z.input<typeof TestPmccLegEventPayloadSchema>
+
+// [US-109] `_test:pmcc-seed-position`: one PMCC position and its legs, inserted exactly as given.
+// Contract: plans/us-109/contracts/test-pmcc-seed-position.md.
+export const TestPmccSeedPositionPayloadSchema = z.object({
+  ticker: z.string().min(1),
+  /** Sets status CLOSED and closed_date; omitted leaves the position ACTIVE. */
+  closedDate: IsoDateSchema.nullable().default(null),
+  /** Inserted in array order; created_at increases by one millisecond per leg. */
+  legs: z.array(TestLegRowSchema).min(1)
+})
+export type TestPmccSeedPositionPayload = z.infer<typeof TestPmccSeedPositionPayloadSchema>
+export type TestPmccSeedPositionPayloadInput = z.input<typeof TestPmccSeedPositionPayloadSchema>

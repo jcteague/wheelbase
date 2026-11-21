@@ -27,6 +27,7 @@ type TableCellProps = {
   className?: string
   style?: React.CSSProperties
   title?: string
+  colSpan?: number
   'data-testid'?: string
 }
 
@@ -35,6 +36,7 @@ export function TableCell({
   className,
   style,
   title,
+  colSpan,
   'data-testid': dataTestId
 }: TableCellProps): React.JSX.Element {
   return (
@@ -46,6 +48,7 @@ export function TableCell({
       )}
       style={style}
       title={title}
+      colSpan={colSpan}
       data-testid={dataTestId}
     >
       {children}

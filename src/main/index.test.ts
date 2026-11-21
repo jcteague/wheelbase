@@ -224,16 +224,19 @@ describe('main process bootstrap', () => {
     )
   })
 
-  it('judges the watchlist snapshot and the screener on the same clock', async () => {
+  it('judges the watchlist snapshot, the screener and the position detail on the same clock', async () => {
     await triggerBootstrap()
 
     const { registerWatchlistIpc } = await import('./ipc/watchlist')
     const { registerScreenerIpc } = await import('./ipc/screener')
+    const { registerPositionsHandlers } = await import('./ipc/positions')
     const watchlistDeps = vi.mocked(registerWatchlistIpc).mock.calls[0]?.[0]
     const screenerDeps = vi.mocked(registerScreenerIpc).mock.calls[0]?.[0]
+    const positionsDeps = vi.mocked(registerPositionsHandlers).mock.calls[0]?.[1]
 
     expect(watchlistDeps?.getCurrentDate).toBe(fakeIvrNow)
     expect(screenerDeps?.getCurrentDate).toBe(fakeIvrNow)
+    expect(positionsDeps?.getCurrentDate).toBe(fakeIvrNow)
   })
 
   it('bootstrap registers detect-assignments job on the scheduler', async () => {
@@ -385,6 +388,25 @@ describe('main process bootstrap', () => {
         managementWindowDte: 21,
         profitTargetPercentDefault: 50
       })
+    )
+  })
+
+  // [US-109] An e2e run that pins WHEELBASE_FAKE_NOW evaluates alerts at that instant too.
+  it('alert-evaluation handler evaluates at the fake clock', async () => {
+    await triggerBootstrap()
+
+    const registration = mockSchedulerRegister.mock.calls
+      .map(([job]) => job)
+      .find((job) => job.name === 'alert-evaluation') as
+      | { handler: () => Promise<unknown> }
+      | undefined
+    expect(registration).toBeDefined()
+
+    await registration!.handler()
+
+    const { evaluateAlerts } = await import('./services/evaluate-alerts')
+    expect(vi.mocked(evaluateAlerts)).toHaveBeenCalledWith(
+      expect.objectContaining({ now: new Date('2026-07-23T15:30:00Z') })
     )
   })
 
@@ -602,9 +624,10 @@ describe('main process bootstrap', () => {
     expect(vi.mocked(registerWatchlistIpc)).toHaveBeenCalledWith(
       expect.objectContaining({ ivrOnDemand: port })
     )
-    expect(vi.mocked(registerPositionsHandlers)).toHaveBeenCalledWith(expect.anything(), {
-      ivrOnDemand: port
-    })
+    expect(vi.mocked(registerPositionsHandlers)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ ivrOnDemand: port })
+    )
   })
 
   it('pushes a snapshot-updated event to the renderer when an IV run settles a ticker', async () => {

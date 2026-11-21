@@ -11,6 +11,11 @@ export function formatSignedMoney(value: string): string {
   return new Decimal(value).gte(0) ? `+${formatted}` : formatted
 }
 
+/** A count with its noun, plural unless exactly one: `1 day`, `0 days`, `7 days`. */
+export function fmtCount(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`
+}
+
 export function fmtPct(value: number): string {
   return `${Math.round(value)}%`
 }

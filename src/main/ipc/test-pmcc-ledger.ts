@@ -2,33 +2,13 @@
 // transaction, so e2e specs can land post-entry events before the stories that record them in
 // production exist. Registered only when NODE_ENV === 'test'. Contract:
 // plans/us-103/contracts/test-pmcc-record-leg-event.md.
-import { randomUUID } from 'node:crypto'
 import { ipcMain } from 'electron'
 import type Database from 'better-sqlite3'
-import {
-  TestPmccLegEventPayloadSchema,
-  type LegRecord,
-  type TestPmccLegEventPayload
-} from '../schemas'
+import { TestPmccLegEventPayloadSchema } from '../schemas'
 import { insertLegRow } from '../services/leg-rows'
+import { toLegRecord } from '../services/test-leg-rows'
 import { appendPmccSnapshot } from '../services/pmcc-ledger'
 import { handleIpcCall } from './utils'
-
-function toLegRecord(
-  positionId: string,
-  leg: TestPmccLegEventPayload['legs'][number],
-  now: string
-): LegRecord {
-  return {
-    ...leg,
-    id: randomUUID(),
-    positionId,
-    instrumentType: 'CALL',
-    fillPrice: leg.premiumPerContract,
-    createdAt: now,
-    updatedAt: now
-  }
-}
 
 export function registerTestPmccLedgerIpc(db: Database.Database): void {
   ipcMain.handle('_test:pmcc-record-leg-event', (_, payload: unknown) =>

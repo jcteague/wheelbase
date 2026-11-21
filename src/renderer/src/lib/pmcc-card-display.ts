@@ -29,7 +29,8 @@ import {
   type LegQuote,
   type OpenLeg
 } from './pmcc-card-legs'
-import { pmccTier2Cells, signedMoneyGrouped, type Tier2Cell } from './pmcc-card-tier2'
+import { minusMoneyGrouped, signedMoneyGrouped } from './money-format'
+import { pmccTier2Cells, type Tier2Cell } from './pmcc-card-tier2'
 import type { PnlTone } from './wheel-card-display'
 
 export type {
@@ -122,7 +123,7 @@ function deriveBasis({ basisTotal, basisPerShare }: PmccListSummary): PmccBasis 
   const paidFor = total.lte(0)
   return {
     // Credits past the LEAPS cost read below zero, with the app's U+2212 `−`.
-    total: `${total.lt(0) ? '−' : ''}${fmtMoneyGrouped(total.abs().toString())}`,
+    total: minusMoneyGrouped(basisTotal),
     sub: paidFor ? 'LEAPS paid for' : `${fmtMoney(basisPerShare)} / share`,
     paidFor
   }

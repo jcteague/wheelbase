@@ -2,7 +2,8 @@
 // call or the LEAPS: both legs of the pair and the one net line the cost-basis history shows.
 import type { LegDetail, RollPmccLeapsResponse } from '../api/positions'
 import { fmtMoney } from '../lib/format'
-import { netDirection, pmccRecordedRollNet } from '../lib/pmcc-roll'
+import { netDirection } from '../../../shared/net-direction'
+import { pmccRecordedRollNet } from '../lib/pmcc-roll'
 import type { PmccRecordedRoll } from '../lib/pmcc-roll-recorded'
 import { AlertBox } from './ui/AlertBox'
 

@@ -21,6 +21,7 @@ import {
   earliestCreatedAt,
   groupRollChains,
   hasLegRole,
+  isRollRole,
   type LegWithRole,
   type RollChain
 } from './roll-chains'
@@ -43,10 +44,6 @@ function byFillThenCreated(a: Ordered, b: Ordered): number {
   return a.fillDate.localeCompare(b.fillDate) || a.createdAt.localeCompare(b.createdAt)
 }
 
-function isRollRole(leg: LegRecord): boolean {
-  return leg.legRole === 'ROLL_FROM' || leg.legRole === 'ROLL_TO'
-}
-
 /** `+premium` for a BUY, `−premium` for a SELL, `0` for EXPIRE / ASSIGN / EXERCISE. */
 function signedCashPerShare(leg: LegRecord): Decimal {
   if (leg.action === 'BUY') return new Decimal(leg.premiumPerContract)
@@ -54,7 +51,8 @@ function signedCashPerShare(leg: LegRecord): Decimal {
   return new Decimal(0)
 }
 
-function legContribution(leg: LegRecord & { legRole: PmccLegRole }): PmccContribution {
+/** The ledger's contribution for one non-roll PMCC leg. */
+export function legContribution(leg: LegWithRole<PmccLegRole>): PmccContribution {
   return {
     side: PMCC_LEG_SIDE[leg.legRole],
     cashPerShare: money4(signedCashPerShare(leg)),
@@ -76,7 +74,8 @@ export function nextPmccRollNumber(legs: LegRecord[], side: 'short' | 'leaps'): 
   return rolls.length + 1
 }
 
-function chainContribution(chain: RollChain): PmccContribution {
+/** The ledger's contribution for one paired roll: its net, on the side it rolled. */
+export function chainContribution(chain: RollChain): PmccContribution {
   return {
     side: isShortCallRoll(chain) ? 'SHORT' : 'LONG',
     cashPerShare: money4(new Decimal(chain.netCreditPerShare).negated()),
@@ -85,20 +84,15 @@ function chainContribution(chain: RollChain): PmccContribution {
   }
 }
 
-function isKnownPmccLeg(leg: LegRecord): leg is LegRecord & { legRole: PmccLegRole } {
-  if (isPmccLegRole(leg.legRole)) return true
-  logger.warn(
-    { positionId: leg.positionId, legId: leg.id, legRole: leg.legRole },
-    'pmcc_ledger_unknown_leg_role'
-  )
-  return false
+export function isKnownPmccLeg(leg: LegRecord): leg is LegWithRole<PmccLegRole> {
+  return isPmccLegRole(leg.legRole)
 }
 
 /** A non-roll leg or a paired roll chain, as the ledger replays them. */
-type LedgerEvent = { leg: LegRecord; chain?: never } | { chain: RollChain; leg?: never }
+export type LedgerEvent = { leg: LegRecord; chain?: never } | { chain: RollChain; leg?: never }
 
 /** Non-roll legs merged with roll chains, in fill-date then created-at order. */
-function orderedLedgerEvents(legs: LegRecord[], chains: RollChain[]): LedgerEvent[] {
+export function orderedLedgerEvents(legs: LegRecord[], chains: RollChain[]): LedgerEvent[] {
   const legEntries = legs
     .filter((leg) => !isRollRole(leg))
     .map((leg) => ({ fillDate: leg.fillDate, createdAt: leg.createdAt, event: { leg } }))
@@ -110,14 +104,26 @@ function orderedLedgerEvents(legs: LegRecord[], chains: RollChain[]): LedgerEven
   return [...legEntries, ...chainEntries].sort(byFillThenCreated).map((entry) => entry.event)
 }
 
+/** The contribution the ledger assigns an event: none for a leg with a non-PMCC role. */
 function eventContribution({ leg, chain }: LedgerEvent): PmccContribution[] {
   if (chain) return [chainContribution(chain)]
   return isKnownPmccLeg(leg) ? [legContribution(leg)] : []
 }
 
+/** Warned here, not in eventContribution, so a caller replaying the same events stays quiet. */
+function warnUnknownLegRole({ leg }: LedgerEvent): void {
+  if (leg === undefined || isKnownPmccLeg(leg)) return
+  logger.warn(
+    { positionId: leg.positionId, legId: leg.id, legRole: leg.legRole },
+    'pmcc_ledger_unknown_leg_role'
+  )
+}
+
 function contributionsFrom(legs: LegRecord[], chains: RollChain[]): PmccContribution[] {
   logger.debug({ chains: chains.map((c) => c.rollChainId) }, 'pmcc_roll_chains')
-  const contributions = orderedLedgerEvents(legs, chains).flatMap(eventContribution)
+  const events = orderedLedgerEvents(legs, chains)
+  events.forEach(warnUnknownLegRole)
+  const contributions = events.flatMap(eventContribution)
   logger.debug({ contributions }, 'pmcc_ledger_contributions')
   return contributions
 }

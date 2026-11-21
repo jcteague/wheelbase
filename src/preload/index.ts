@@ -104,6 +104,7 @@ const api = {
   testSchedulerSimulateWake: (payload: unknown) => invoke('_test:scheduler-simulate-wake', payload),
   testIvSeriesSet: (fixture: unknown) => invoke('_test:iv-series-set', fixture),
   testPmccRecordLegEvent: (payload: unknown) => invoke('_test:pmcc-record-leg-event', payload),
+  testPmccSeedPosition: (payload: unknown) => invoke('_test:pmcc-seed-position', payload),
   testIvrSetNow: (nowIso: unknown) => invoke('_test:ivr-set-now', nowIso),
   testIv30History: () => invoke('_test:iv30-history'),
   testIv30Gaps: () => invoke('_test:iv30-gaps'),

@@ -9,6 +9,7 @@ import {
   CreatePmccPositionPayloadSchema,
   ExpireCcPayloadSchema,
   ExpireCspPayloadSchema,
+  GetPositionPayloadSchema,
   OpenCcPayloadSchema,
   RecordCallAwayPayloadSchema,
   RollCcPayloadSchema,
@@ -24,7 +25,7 @@ import {
   createPosition,
   expireCcPosition,
   expireCspPosition,
-  getPosition,
+  getPositionDetail,
   listPositions,
   openCoveredCallPosition
 } from '../services/positions'
@@ -35,6 +36,7 @@ import { rollCcPosition } from '../services/roll-cc-position'
 import { rollPmccShortCallPosition } from '../services/roll-pmcc-short-call-position'
 import { rollPmccLeapsPosition } from '../services/roll-pmcc-leaps-position'
 import { savePositionAlertOverrides } from '../services/save-position-alert-overrides'
+import { etDateOf } from '../core/trading-calendar'
 import type { CreatePositionPayload } from '../schemas'
 import type { IvrOnDemand } from '../services/ivr-on-demand'
 
@@ -55,7 +57,10 @@ function registerParsedPositionHandler<Payload extends { positionId: string }>(
 
 export function registerPositionsHandlers(
   db: Database.Database,
-  { ivrOnDemand }: { ivrOnDemand?: IvrOnDemand } = {}
+  {
+    ivrOnDemand,
+    getCurrentDate = () => new Date()
+  }: { ivrOnDemand?: IvrOnDemand; getCurrentDate?: () => Date } = {}
 ): void {
   ipcMain.handle('positions:list', () => listPositions(db))
 
@@ -71,16 +76,12 @@ export function registerPositionsHandlers(
     )
   )
 
-  ipcMain.handle('positions:get', (_, payload: { positionId: string }) => {
-    const result = getPosition(db, payload.positionId)
-    if (!result) {
-      return {
-        ok: false,
-        errors: [{ field: '__root__', code: 'not_found', message: 'Position not found' }]
-      }
-    }
-    return { ok: true, ...result }
-  })
+  ipcMain.handle('positions:get', (_, payload: unknown) =>
+    handleIpcCall('positions_get_unhandled_error', () => {
+      const { positionId } = GetPositionPayloadSchema.parse(payload)
+      return getPositionDetail(db, positionId, { valuationDate: etDateOf(getCurrentDate()) })
+    })
+  )
 
   registerParsedPositionHandler(
     db,

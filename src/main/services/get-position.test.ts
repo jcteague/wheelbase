@@ -1,14 +1,22 @@
 import { randomUUID } from 'node:crypto'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { isoDate, makeTestDb } from '../test-utils'
 import type { CreatePmccPositionPayload, LegRecord } from '../schemas'
 import { createPmccPosition, createPosition } from './positions'
 import { assignCspPosition } from './assign-csp-position'
 import { openCoveredCallPosition } from './open-covered-call-position'
-import { getPosition } from './get-position'
+import { getPosition, getPositionDetail } from './get-position'
+import { loadPmccRollContext } from './pmcc-roll-record'
+import { logger } from '../logger'
 import { rollCspPosition } from './roll-csp-position'
-import { appendPmccSnapshot } from './pmcc-ledger'
-import { insertLegs, pmccFixtures } from './test-fixtures/pmcc-legs'
+import {
+  FIXED_DAY,
+  insertLegs,
+  pmccFixtures,
+  recordPmccLegEvent,
+  type PmccFixtures
+} from './test-fixtures/pmcc-legs'
+import { insertPosition } from './position-rows'
 import type Database from 'better-sqlite3'
 
 describe('getPosition', () => {
@@ -399,24 +407,6 @@ describe('getPosition — PMCC initial net debit (US-101)', () => {
 })
 
 // [US-103] The detail read path returns the running PMCC ledger recomputed from the legs.
-type PmccTrigger = 'PMCC_SHORT_EXPIRED' | 'PMCC_SHORT_OPEN' | 'PMCC_SHORT_ROLL' | 'PMCC_LEAPS_ROLL'
-
-function recordLegEvent(
-  db: Database.Database,
-  positionId: string,
-  legs: LegRecord[],
-  triggerEvent: PmccTrigger
-): void {
-  db.transaction(() => {
-    insertLegs(db, legs)
-    appendPmccSnapshot(db, positionId, {
-      triggerEvent,
-      eventDate: legs[0].fillDate,
-      now: new Date().toISOString()
-    })
-  })()
-}
-
 function getDetail(
   db: Database.Database,
   positionId: string
@@ -447,10 +437,10 @@ describe('getPosition — PMCC ledger (US-103)', () => {
     const db = makeTestDb()
     const { position } = createPmccPosition(db, makePmccPayload())
     const F = pmccFixtures(position.id, isoDate)
-    recordLegEvent(db, position.id, F.EXPIRE_1, 'PMCC_SHORT_EXPIRED')
-    recordLegEvent(db, position.id, F.SHORT_2, 'PMCC_SHORT_OPEN')
-    recordLegEvent(db, position.id, F.SHORT_ROLL, 'PMCC_SHORT_ROLL')
-    recordLegEvent(db, position.id, F.LEAPS_ROLL, 'PMCC_LEAPS_ROLL')
+    recordPmccLegEvent(db, position.id, F.EXPIRE_1, 'PMCC_SHORT_EXPIRED')
+    recordPmccLegEvent(db, position.id, F.SHORT_2, 'PMCC_SHORT_OPEN')
+    recordPmccLegEvent(db, position.id, F.SHORT_ROLL, 'PMCC_SHORT_ROLL')
+    recordPmccLegEvent(db, position.id, F.LEAPS_ROLL, 'PMCC_LEAPS_ROLL')
 
     const ledger = getDetail(db, position.id).pmccLedger
 
@@ -465,8 +455,8 @@ describe('getPosition — PMCC ledger (US-103)', () => {
     const db = makeTestDb()
     const { position } = createPmccPosition(db, makePmccPayload())
     const F = pmccFixtures(position.id, isoDate)
-    recordLegEvent(db, position.id, F.EXPIRE_1, 'PMCC_SHORT_EXPIRED')
-    recordLegEvent(db, position.id, F.SHORT_2, 'PMCC_SHORT_OPEN')
+    recordPmccLegEvent(db, position.id, F.EXPIRE_1, 'PMCC_SHORT_EXPIRED')
+    recordPmccLegEvent(db, position.id, F.SHORT_2, 'PMCC_SHORT_OPEN')
 
     const detail = getDetail(db, position.id)
 
@@ -500,7 +490,7 @@ describe('getPosition — PMCC ledger (US-103)', () => {
     const db = makeTestDb()
     const { position } = createPmccPosition(db, makePmccPayload())
     const F = pmccFixtures(position.id, isoDate)
-    recordLegEvent(db, position.id, F.EXPIRE_1, 'PMCC_SHORT_EXPIRED')
+    recordPmccLegEvent(db, position.id, F.EXPIRE_1, 'PMCC_SHORT_EXPIRED')
 
     const detail = getDetail(db, position.id)
 
@@ -531,7 +521,7 @@ describe('getPosition — PMCC open legs (US-104)', () => {
     const db = makeTestDb()
     const { position } = createPmccPosition(db, makePmccPayload())
     const F = pmccFixtures(position.id, isoDate)
-    recordLegEvent(db, position.id, F.SHORT_ROLL, 'PMCC_SHORT_ROLL')
+    recordPmccLegEvent(db, position.id, F.SHORT_ROLL, 'PMCC_SHORT_ROLL')
 
     const openLegs = getDetail(db, position.id).pmccOpenLegs
 
@@ -552,5 +542,108 @@ describe('getPosition — PMCC open legs (US-104)', () => {
     })
 
     expect(getDetail(db, position.id).pmccOpenLegs).toBeNull()
+  })
+})
+
+// [US-109] Only the positions:get read path (getPositionDetail) folds the PMCC leg timeline, as of
+// the valuation date passed in; getPosition, which the write paths share, never does.
+// Legs sit on the fixed fixture calendar (opened 2026-09-14), inserted directly so no opening
+// validation compares them with the real clock.
+function seedPmcc(db: Database.Database, pick: (F: PmccFixtures) => LegRecord[][]): string {
+  const positionId = randomUUID()
+  insertPosition(db, {
+    id: positionId,
+    ticker: 'XYZ',
+    strategyType: 'PMCC',
+    phase: 'PMCC_OPEN',
+    openedDate: FIXED_DAY(0),
+    accountId: null,
+    notes: null,
+    thesis: null,
+    now: '2026-09-14T15:00:00.000Z'
+  })
+  insertLegs(db, pick(pmccFixtures(positionId)).flat())
+  return positionId
+}
+
+describe('getPositionDetail — PMCC timeline (US-109)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('returns the timeline at the valuation date passed in, its basis reconciling to the ledger', () => {
+    const db = makeTestDb()
+    const positionId = seedPmcc(db, (F) => [
+      F.OPEN,
+      F.EXPIRE_1,
+      F.SHORT_2,
+      F.SHORT_ROLL,
+      F.LEAPS_ROLL
+    ])
+
+    const detail = getPositionDetail(db, positionId, { valuationDate: '2026-12-15' })
+
+    expect(detail.pmccTimeline?.valuationDate).toBe('2026-12-15')
+    expect(detail.pmccTimeline?.summary.basisPerShare).toBe('19.3000')
+    expect(detail.pmccTimeline?.summary.basisPerShare).toBe(detail.pmccLedger?.basisPerShare)
+  })
+
+  it("carries a CLOSED PMCC's closed date into the timeline", () => {
+    const db = makeTestDb()
+    const positionId = seedPmcc(db, (F) => [F.OPEN])
+    db.prepare("UPDATE positions SET status = 'CLOSED', closed_date = ? WHERE id = ?").run(
+      '2026-10-20',
+      positionId
+    )
+
+    const detail = getPositionDetail(db, positionId, { valuationDate: '2026-11-02' })
+
+    expect(detail.pmccTimeline?.closedDate).toBe('2026-10-20')
+  })
+
+  it('returns pmccTimeline null for a wheel position', () => {
+    const db = makeTestDb()
+    const { position } = createPosition(db, {
+      ticker: 'AAPL',
+      strike: 180,
+      expiration: '2026-10-16',
+      contracts: 1,
+      premiumPerContract: 2.5,
+      fillDate: '2026-09-14'
+    })
+
+    const detail = getPositionDetail(db, position.id, { valuationDate: '2026-09-21' })
+
+    expect(detail.position.strategyType).toBe('WHEEL')
+    expect(detail.pmccTimeline).toBeNull()
+  })
+
+  it('rejects an unknown id as not found, the error positions:get has always returned', () => {
+    const db = makeTestDb()
+
+    expect(() => getPositionDetail(db, randomUUID(), { valuationDate: '2026-09-21' })).toThrow(
+      expect.objectContaining({
+        field: '__root__',
+        code: 'not_found',
+        message: 'Position not found'
+      })
+    )
+  })
+
+  it('folds no timeline for the internal read a roll loads its position with', () => {
+    const db = makeTestDb()
+    const positionId = seedPmcc(db, (F) => [F.OPEN])
+    const debugSpy = vi.spyOn(logger, 'debug')
+    const timelineLogs = (): number =>
+      debugSpy.mock.calls.filter(([, message]) => message === 'pmcc_timeline_events').length
+
+    const { detail, openLegs } = loadPmccRollContext(db, positionId)
+
+    expect(openLegs.long).toMatchObject({ legRole: 'LEAPS_OPEN', strike: '80.0000' })
+    expect(detail).not.toHaveProperty('pmccTimeline')
+    expect(timelineLogs()).toBe(0)
+    // Positive control: the read path does fold it, and logs that it did.
+    getPositionDetail(db, positionId, { valuationDate: '2026-10-01' })
+    expect(timelineLogs()).toBe(1)
   })
 })
