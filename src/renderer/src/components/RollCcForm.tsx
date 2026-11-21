@@ -84,7 +84,7 @@ function NetCreditDebitPreview({
           <span
             className={`font-wb-mono text-[17px] font-bold ${isCredit ? 'text-wb-green' : 'text-wb-gold'}`}
           >
-            {sign}${Math.abs(net).toFixed(2)}/contract
+            {sign}${Math.abs(net).toFixed(2)}/share
           </span>
           <span
             className={`font-wb-mono text-[11px] opacity-70 ${isCredit ? 'text-wb-green' : 'text-wb-gold'}`}
@@ -169,7 +169,7 @@ export function RollCcForm({
             <SummaryRow label="Expiration" value={`${expiration} (${dte} DTE)`} />
             <SummaryRow
               label="Premium collected"
-              value={`+${fmtMoney(premiumPerContract)}/contract ($${totalPremium})`}
+              value={`+${fmtMoney(premiumPerContract)}/share ($${totalPremium})`}
             />
             <SummaryRow label="Cost basis" value={`${fmtMoney(basisPerShare)}/share`} highlight />
             {hasNetValues && (
@@ -235,13 +235,13 @@ export function RollCcForm({
                 />
               </Field>
               <Field
-                label="New Premium"
+                label="Premium / Share"
                 htmlFor="roll-new-premium"
                 error={errors.new_premium?.message}
               >
                 <NumberInput
                   id="roll-new-premium"
-                  aria-label="New Premium"
+                  aria-label="Premium / Share"
                   type="number"
                   min="0"
                   step="0.01"

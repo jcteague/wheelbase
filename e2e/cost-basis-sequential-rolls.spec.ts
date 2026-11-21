@@ -82,7 +82,7 @@ describe('US-16: cost basis after sequential rolls', () => {
   ): Promise<void> {
     await openRollCspSheet(page)
     await page.fill('[aria-label="Cost to Close"]', opts.costToClose)
-    await page.fill('[aria-label="New Premium"]', opts.newPremium)
+    await page.fill('[aria-label="Premium / Share"]', opts.newPremium)
     if (opts.newStrike) {
       await page.fill('[aria-label="New Strike"]', opts.newStrike)
     }
@@ -160,7 +160,7 @@ describe('US-16: cost basis after sequential rolls', () => {
     await page.click('[data-testid="roll-cc-btn"]')
     await page.waitForSelector('text=Roll Covered Call')
     await page.fill('[aria-label="Cost to Close"]', opts.costToClose)
-    await page.fill('[aria-label="New Premium"]', opts.newPremium)
+    await page.fill('[aria-label="Premium / Share"]', opts.newPremium)
     if (opts.newStrike) {
       await page.fill('[aria-label="New Strike"]', opts.newStrike)
     }

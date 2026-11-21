@@ -21,20 +21,15 @@ import { SectionCard } from './ui/SectionCard'
 
 export type PmccLeg = 'long' | 'short'
 
-const LEG_COPY: Record<
-  PmccLeg,
-  { title: string; action: string; fillLabel: string; flow: 'Debit' | 'Credit' }
-> = {
+const LEG_COPY: Record<PmccLeg, { title: string; action: string; flow: 'Debit' | 'Credit' }> = {
   long: {
     title: 'Buy LEAPS call',
     action: 'BUY TO OPEN',
-    fillLabel: 'Actual purchase / share',
     flow: 'Debit'
   },
   short: {
     title: 'Sell short call',
     action: 'SELL TO OPEN',
-    fillLabel: 'Actual sale / share',
     flow: 'Credit'
   }
 }
@@ -251,7 +246,7 @@ export function PmccLegSection({
         {/* Rule 16 (net debit before fees) reports on `__pair__`, which no input owns, so
             onBlur validation never shows it on its own; each fill re-runs it on blur. */}
         <div className="grid grid-cols-2 gap-3">
-          <Field label={copy.fillLabel} htmlFor={id('fill')} error={legErrors?.fillPrice?.message}>
+          <Field label="Premium / share" htmlFor={id('fill')} error={legErrors?.fillPrice?.message}>
             <NumberInput
               {...register(`${leg}.fillPrice`, { onBlur: () => void trigger('__pair__') })}
               id={id('fill')}

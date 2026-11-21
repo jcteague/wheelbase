@@ -116,7 +116,7 @@ it('renders position summary card with ticker, contracts, open premium, phase tr
 
 it('renders close price input and fill date picker', () => {
   render(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
-  expect(screen.getByLabelText(/close price/i)).toBeInTheDocument()
+  expect(screen.getByLabelText('Premium / Share')).toBeInTheDocument()
   expect(screen.getByLabelText(/fill date/i)).toBeInTheDocument()
 })
 
@@ -124,7 +124,7 @@ it('shows profit P&L preview (+$120.00) when closePrice=1.10 and openPremium=2.3
   const user = userEvent.setup()
   render(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
 
-  const input = screen.getByLabelText(/close price/i)
+  const input = screen.getByLabelText('Premium / Share')
   await user.clear(input)
   await user.type(input, '1.10')
 
@@ -137,7 +137,7 @@ it('shows loss P&L preview (−$120.00) when closePrice=3.50 and openPremium=2.3
   const user = userEvent.setup()
   render(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
 
-  const input = screen.getByLabelText(/close price/i)
+  const input = screen.getByLabelText('Premium / Share')
   await user.clear(input)
   await user.type(input, '3.50')
 
@@ -166,7 +166,7 @@ it('shows inline error "Fill date cannot be before the CC open date" for fill da
   const user = userEvent.setup()
   render(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
 
-  const priceInput = screen.getByLabelText(/close price/i)
+  const priceInput = screen.getByLabelText('Premium / Share')
   await user.clear(priceInput)
   await user.type(priceInput, '1.10')
 
@@ -339,7 +339,7 @@ it('shows server field errors from the handler beside the close price and fill d
   const user = userEvent.setup()
   render(<CloseCcEarlySheet {...DEFAULT_PROPS} />)
 
-  const priceInput = screen.getByLabelText(/close price/i)
+  const priceInput = screen.getByLabelText('Premium / Share')
   await user.clear(priceInput)
   await user.type(priceInput, '1.10')
   const dateInput = screen.getByLabelText(/fill date/i)

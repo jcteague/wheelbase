@@ -126,7 +126,7 @@ export function PositionCockpit({
             { label: 'Expiration', value: activeLeg.expiration },
             { label: 'Contracts', value: activeLeg.contracts },
             {
-              label: 'Premium / Contract',
+              label: 'Premium / Share',
               value: <span className="text-wb-green">{fmtMoney(activeLeg.premiumPerContract)}</span>
             },
             { label: 'Fill Date', value: activeLeg.fillDate },

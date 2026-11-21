@@ -82,7 +82,7 @@ describe('roll open CSP out', () => {
     expect(await page.isVisible('[aria-label="New Strike"]')).toBe(true)
     expect(await page.isVisible('[aria-label="New Expiration"]')).toBe(true)
     expect(await page.isVisible('[aria-label="Cost to Close"]')).toBe(true)
-    expect(await page.isVisible('[aria-label="New Premium"]')).toBe(true)
+    expect(await page.isVisible('[aria-label="Premium / Share"]')).toBe(true)
     expect(await page.isVisible('[aria-label="Fill Date"]')).toBe(true)
   })
 
@@ -92,11 +92,11 @@ describe('roll open CSP out', () => {
     await openRollSheet(page)
 
     await page.fill('[aria-label="Cost to Close"]', '1.20')
-    await page.fill('[aria-label="New Premium"]', '2.80')
+    await page.fill('[aria-label="Premium / Share"]', '2.80')
 
     const bodyText = await page.textContent('body')
     expect(bodyText).toContain('Net Credit')
-    expect(bodyText).toMatch(/\+\$1\.60\/contract/)
+    expect(bodyText).toMatch(/\+\$1\.60\/share/)
     expect(bodyText).toContain('$160.00 total')
   })
 
@@ -106,11 +106,11 @@ describe('roll open CSP out', () => {
     await openRollSheet(page)
 
     await page.fill('[aria-label="Cost to Close"]', '3.00')
-    await page.fill('[aria-label="New Premium"]', '2.50')
+    await page.fill('[aria-label="Premium / Share"]', '2.50')
 
     const bodyText = await page.textContent('body')
     expect(bodyText).toContain('Net Debit')
-    expect(bodyText).toMatch(/-\$0\.50\/contract/)
+    expect(bodyText).toMatch(/-\$0\.50\/share/)
     expect(bodyText).toContain('$50.00 total')
     expect(bodyText).toContain('This roll costs more to close than the new premium provides')
   })
@@ -121,7 +121,7 @@ describe('roll open CSP out', () => {
     await openRollSheet(page)
 
     await page.fill('[aria-label="Cost to Close"]', '1.20')
-    await page.fill('[aria-label="New Premium"]', '2.80')
+    await page.fill('[aria-label="Premium / Share"]', '2.80')
     await selectDate(page, '[aria-label="New Expiration"]', NEW_EXPIRATION)
 
     await page.click('button:has-text("Confirm Roll")')
@@ -141,7 +141,7 @@ describe('roll open CSP out', () => {
     await openRollSheet(page)
 
     await page.fill('[aria-label="Cost to Close"]', '1.20')
-    await page.fill('[aria-label="New Premium"]', '2.80')
+    await page.fill('[aria-label="Premium / Share"]', '2.80')
     await selectDate(page, '[aria-label="New Expiration"]', PAST_EXPIRATION)
 
     await page.click('button:has-text("Confirm Roll")')
@@ -157,7 +157,7 @@ describe('roll open CSP out', () => {
     await openRollSheet(page)
 
     await page.fill('[aria-label="Cost to Close"]', '0')
-    await page.fill('[aria-label="New Premium"]', '2.80')
+    await page.fill('[aria-label="Premium / Share"]', '2.80')
 
     await page.click('button:has-text("Confirm Roll")')
 
@@ -172,7 +172,7 @@ describe('roll open CSP out', () => {
     await openRollSheet(page)
 
     await page.fill('[aria-label="Cost to Close"]', '1.20')
-    await page.fill('[aria-label="New Premium"]', '0')
+    await page.fill('[aria-label="Premium / Share"]', '0')
 
     await page.click('button:has-text("Confirm Roll")')
 

@@ -219,16 +219,16 @@ describe('LegHistoryTable roll pair grouping', () => {
     expect(screen.getByText(/Roll Out/)).toBeInTheDocument()
   })
 
-  it('renders "+$1.60/contract" for a net credit roll (FROM $1.20, TO $2.80)', () => {
+  it('renders "+$1.60/share" for a net credit roll (FROM $1.20, TO $2.80)', () => {
     render(<LegHistoryTable legs={[ROLL_FROM_LEG, ROLL_TO_LEG]} />)
-    expect(screen.getByText(/\+\$1\.60\/contract/)).toBeInTheDocument()
+    expect(screen.getByText(/\+\$1\.60\/share/)).toBeInTheDocument()
   })
 
   it('renders a debit amount for a net debit roll (FROM $3.00, TO $2.50)', () => {
     const debitFrom = { ...ROLL_FROM_LEG, id: 'leg-df', premiumPerContract: '3.0000' }
     const debitTo = { ...ROLL_TO_LEG, id: 'leg-dt', premiumPerContract: '2.5000' }
     render(<LegHistoryTable legs={[debitFrom, debitTo]} />)
-    expect(screen.getByText(/0\.50\/contract/)).toBeInTheDocument()
+    expect(screen.getByText(/0\.50\/share/)).toBeInTheDocument()
   })
 
   it('renders "Roll #1", "Roll #2", "Roll #3" headers for three roll pairs', () => {
@@ -284,7 +284,7 @@ describe('LegHistoryTable roll pair grouping', () => {
   })
 
   it('renders cumulative summary with total dollars for a single credit roll', () => {
-    // ROLL_FROM_LEG: 1 contract, $1.20 → ROLL_TO_LEG: $2.80 → net $1.60/contract × 100 = $160.00
+    // ROLL_FROM_LEG: 1 contract, $1.20 → ROLL_TO_LEG: $2.80 → net $1.60/share × 100 = $160.00
     render(<LegHistoryTable legs={[ROLL_FROM_LEG, ROLL_TO_LEG]} />)
     expect(screen.getByText(/Credits: \+\$160\.00/)).toBeInTheDocument()
     expect(screen.getByText(/Net: \+\$160\.00/)).toBeInTheDocument()

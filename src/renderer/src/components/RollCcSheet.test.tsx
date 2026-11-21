@@ -114,7 +114,7 @@ it('schema validation — rejects empty new expiration', async () => {
   await user.clear(costInput)
   await user.type(costInput, '1.20')
 
-  const premiumInput = screen.getByLabelText(/new premium/i)
+  const premiumInput = screen.getByLabelText('Premium / Share')
   await user.clear(premiumInput)
   await user.type(premiumInput, '2.80')
 
@@ -133,7 +133,7 @@ it('schema validation — rejects new expiration before current expiration', asy
   await user.clear(costInput)
   await user.type(costInput, '1.20')
 
-  const premiumInput = screen.getByLabelText(/new premium/i)
+  const premiumInput = screen.getByLabelText('Premium / Share')
   await user.clear(premiumInput)
   await user.type(premiumInput, '2.80')
 
@@ -221,7 +221,7 @@ it('success screen shows pre-roll basis even when basisPerShare prop updates aft
 
   // fill required fields and submit to capture prevBasis
   await user.type(screen.getByLabelText(/cost to close/i), '1.20')
-  await user.type(screen.getByLabelText(/new premium/i), '2.80')
+  await user.type(screen.getByLabelText('Premium / Share'), '2.80')
   await user.type(screen.getByLabelText(/new expiration/i), '2026-05-16')
   await user.click(screen.getByRole('button', { name: /confirm roll/i }))
 

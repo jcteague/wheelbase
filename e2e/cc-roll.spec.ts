@@ -77,7 +77,7 @@ describe('roll open covered call', () => {
     expect(await page.isVisible('[aria-label="New Strike"]')).toBe(true)
     expect(await page.isVisible('[aria-label="New Expiration"]')).toBe(true)
     expect(await page.isVisible('[aria-label="Cost to Close"]')).toBe(true)
-    expect(await page.isVisible('[aria-label="New Premium"]')).toBe(true)
+    expect(await page.isVisible('[aria-label="Premium / Share"]')).toBe(true)
     expect(await page.isVisible('[aria-label="Fill Date"]')).toBe(true)
   })
 
@@ -90,14 +90,14 @@ describe('roll open covered call', () => {
     await page.fill('[aria-label="New Strike"]', '190')
     await selectDate(page, '[aria-label="New Expiration"]', NEW_EXPIRATION)
     await page.fill('[aria-label="Cost to Close"]', '3.50')
-    await page.fill('[aria-label="New Premium"]', '4.20')
+    await page.fill('[aria-label="Premium / Share"]', '4.20')
 
     const bodyText = await page.textContent('body')
     // Roll type label
     expect(bodyText).toContain('Roll Up & Out')
-    // Net credit preview: $4.20 - $3.50 = $0.70/contract, $70.00 total (1 contract × 100)
+    // Net credit preview: $4.20 - $3.50 = $0.70/share, $70.00 total (1 contract × 100)
     expect(bodyText).toContain('Net Credit')
-    expect(bodyText).toMatch(/\+\$0\.70\/contract/)
+    expect(bodyText).toMatch(/\+\$0\.70\/share/)
     expect(bodyText).toContain('$70.00 total')
   })
 
@@ -125,12 +125,12 @@ describe('roll open covered call', () => {
     await openRollCcSheet(page)
 
     // Roll up & out: new strike $190, new expiration 2026-05-16
-    // cost to close $3.50, new premium $4.20 → net credit $0.70/contract
+    // cost to close $3.50, new premium $4.20 → net credit $0.70/share
     // new cost basis = $174.00 (post-CC) − $0.70 = $173.30/share
     await page.fill('[aria-label="New Strike"]', '190')
     await selectDate(page, '[aria-label="New Expiration"]', NEW_EXPIRATION)
     await page.fill('[aria-label="Cost to Close"]', '3.50')
-    await page.fill('[aria-label="New Premium"]', '4.20')
+    await page.fill('[aria-label="Premium / Share"]', '4.20')
 
     await page.click('button:has-text("Confirm Roll")')
     await page.waitForSelector('text=CC Rolled Successfully')
@@ -141,7 +141,7 @@ describe('roll open covered call', () => {
     expect(bodyText).toContain('Roll From')
     expect(bodyText).toContain('Roll To')
     expect(bodyText).toContain('CC Open (unchanged)')
-    // Net credit: $4.20 − $3.50 = $0.70/contract
+    // Net credit: $4.20 − $3.50 = $0.70/share
     expect(bodyText).toMatch(/\+\$0\.70/)
     // New cost basis: $174.00 − $0.70 = $173.30/share
     expect(bodyText).toContain('173.30')
@@ -155,7 +155,7 @@ describe('roll open covered call', () => {
     // Same strike $185 (default), later expiration → Roll Out
     await selectDate(page, '[aria-label="New Expiration"]', NEW_EXPIRATION)
     await page.fill('[aria-label="Cost to Close"]', '1.80')
-    await page.fill('[aria-label="New Premium"]', '3.10')
+    await page.fill('[aria-label="Premium / Share"]', '3.10')
 
     await page.click('button:has-text("Confirm Roll")')
     await page.waitForSelector('text=CC Rolled Successfully')
@@ -174,7 +174,7 @@ describe('roll open covered call', () => {
     await page.fill('[aria-label="New Strike"]', '182')
     await selectDate(page, '[aria-label="New Expiration"]', NEW_EXPIRATION)
     await page.fill('[aria-label="Cost to Close"]', '2.00')
-    await page.fill('[aria-label="New Premium"]', '2.50')
+    await page.fill('[aria-label="Premium / Share"]', '2.50')
 
     await page.click('button:has-text("Confirm Roll")')
     await page.waitForSelector('text=CC Rolled Successfully')
@@ -193,7 +193,7 @@ describe('roll open covered call', () => {
     await page.fill('[aria-label="New Strike"]', '190')
     await selectDate(page, '[aria-label="New Expiration"]', CC_EXPIRATION)
     await page.fill('[aria-label="Cost to Close"]', '2.00')
-    await page.fill('[aria-label="New Premium"]', '3.50')
+    await page.fill('[aria-label="Premium / Share"]', '3.50')
 
     await page.click('button:has-text("Confirm Roll")')
     await page.waitForSelector('text=CC Rolled Successfully')
@@ -212,11 +212,11 @@ describe('roll open covered call', () => {
     await page.fill('[aria-label="New Strike"]', '190')
     await selectDate(page, '[aria-label="New Expiration"]', NEW_EXPIRATION)
     await page.fill('[aria-label="Cost to Close"]', '5.00')
-    await page.fill('[aria-label="New Premium"]', '3.50')
+    await page.fill('[aria-label="Premium / Share"]', '3.50')
 
     const bodyText = await page.textContent('body')
     expect(bodyText).toContain('Net Debit')
-    expect(bodyText).toMatch(/-\$1\.50\/contract/)
+    expect(bodyText).toMatch(/-\$1\.50\/share/)
     expect(bodyText).toContain('$150.00 total')
     expect(bodyText).toContain('This roll costs more to close than the new premium provides')
 
@@ -231,7 +231,7 @@ describe('roll open covered call', () => {
     await openRollCcSheet(page)
 
     await page.fill('[aria-label="Cost to Close"]', '1.50')
-    await page.fill('[aria-label="New Premium"]', '2.00')
+    await page.fill('[aria-label="Premium / Share"]', '2.00')
     await selectDate(page, '[aria-label="New Expiration"]', BEFORE_CC_EXPIRATION)
 
     await page.click('button:has-text("Confirm Roll")')
@@ -260,7 +260,7 @@ describe('roll open covered call', () => {
     await openRollCcSheet(page)
 
     await page.fill('[aria-label="Cost to Close"]', '0')
-    await page.fill('[aria-label="New Premium"]', '2.80')
+    await page.fill('[aria-label="Premium / Share"]', '2.80')
     await selectDate(page, '[aria-label="New Expiration"]', NEW_EXPIRATION)
 
     await page.click('button:has-text("Confirm Roll")')

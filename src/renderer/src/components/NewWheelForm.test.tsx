@@ -78,7 +78,7 @@ it('renders all required input fields', () => {
   expect(screen.getByLabelText(/strike/i)).toBeInTheDocument()
   expect(screen.getByLabelText(/expiration/i)).toBeInTheDocument()
   expect(screen.getByLabelText(/contracts/i)).toBeInTheDocument()
-  expect(screen.getByLabelText(/premium per contract/i)).toBeInTheDocument()
+  expect(screen.getByLabelText('Premium / Share')).toBeInTheDocument()
 })
 
 it('renders a submit button', () => {
@@ -150,10 +150,7 @@ it('calls mutation with correct payload on valid submit', async () => {
   await user.type(screen.getByLabelText(/strike/i), VALID_FORM_VALUES.strike)
   await user.type(screen.getByLabelText(/expiration/i), VALID_FORM_VALUES.expiration)
   await user.type(screen.getByLabelText(/contracts/i), VALID_FORM_VALUES.contracts)
-  await user.type(
-    screen.getByLabelText(/premium per contract/i),
-    VALID_FORM_VALUES.premiumPerContract
-  )
+  await user.type(screen.getByLabelText('Premium / Share'), VALID_FORM_VALUES.premiumPerContract)
 
   await user.click(screen.getByRole('button', { name: /open wheel|submit/i }))
 
@@ -233,10 +230,7 @@ it('shows inline field error from the 400 mutation error callback', async () => 
   await user.type(screen.getByLabelText(/strike/i), VALID_FORM_VALUES.strike)
   await user.type(screen.getByLabelText(/expiration/i), VALID_FORM_VALUES.expiration)
   await user.type(screen.getByLabelText(/contracts/i), VALID_FORM_VALUES.contracts)
-  await user.type(
-    screen.getByLabelText(/premium per contract/i),
-    VALID_FORM_VALUES.premiumPerContract
-  )
+  await user.type(screen.getByLabelText('Premium / Share'), VALID_FORM_VALUES.premiumPerContract)
 
   await user.click(screen.getByRole('button', { name: /open wheel|submit/i }))
 
@@ -266,10 +260,7 @@ it('maps 400 field errors onto form fields from the mutation error callback', as
   await user.type(screen.getByLabelText(/strike/i), VALID_FORM_VALUES.strike)
   await user.type(screen.getByLabelText(/expiration/i), VALID_FORM_VALUES.expiration)
   await user.type(screen.getByLabelText(/contracts/i), VALID_FORM_VALUES.contracts)
-  await user.type(
-    screen.getByLabelText(/premium per contract/i),
-    VALID_FORM_VALUES.premiumPerContract
-  )
+  await user.type(screen.getByLabelText('Premium / Share'), VALID_FORM_VALUES.premiumPerContract)
 
   await user.click(screen.getByRole('button', { name: /open wheel|submit/i }))
 
@@ -377,7 +368,7 @@ function setMarketDisplay(display: MarketStatusDisplay): void {
 }
 
 const banner = (): HTMLElement => screen.getByTestId('promote-banner')
-const premiumInput = (): HTMLElement => screen.getByLabelText(/premium per contract/i)
+const premiumInput = (): HTMLElement => screen.getByLabelText('Premium / Share')
 
 beforeEach(() => {
   // Call history, not just the return value: the "mounts no market-data hooks" test
@@ -563,10 +554,7 @@ async function submitValidForm(user: ReturnType<typeof userEvent.setup>): Promis
   await user.type(screen.getByLabelText(/strike/i), VALID_FORM_VALUES.strike)
   await user.type(screen.getByLabelText(/expiration/i), VALID_FORM_VALUES.expiration)
   await user.type(screen.getByLabelText(/contracts/i), VALID_FORM_VALUES.contracts)
-  await user.type(
-    screen.getByLabelText(/premium per contract/i),
-    VALID_FORM_VALUES.premiumPerContract
-  )
+  await user.type(screen.getByLabelText('Premium / Share'), VALID_FORM_VALUES.premiumPerContract)
   await user.click(screen.getByRole('button', { name: /open wheel|submit/i }))
   await waitFor(() => expect(mockMutate).toHaveBeenCalledOnce())
 }

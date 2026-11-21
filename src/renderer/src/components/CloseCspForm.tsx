@@ -122,7 +122,7 @@ export function CloseCspForm({
     <SectionCard header="Buy to Close">
       <form onSubmit={handleSubmit(onSubmit)} className="p-5 flex flex-col gap-4">
         <Field
-          label="Close price per contract"
+          label="Premium / Share"
           htmlFor="close_price_per_contract"
           error={errors.close_price_per_contract?.message}
         >

@@ -37,7 +37,7 @@ beforeEach(() => {
 
 it('renders close price input and submit button', () => {
   render(<CloseCspForm {...DEFAULT_PROPS} />)
-  expect(screen.getByTestId('close-price-input')).toBeInTheDocument()
+  expect(screen.getByLabelText('Premium / Share')).toBe(screen.getByTestId('close-price-input'))
   expect(screen.getByTestId('close-csp-submit')).toBeInTheDocument()
 })
 

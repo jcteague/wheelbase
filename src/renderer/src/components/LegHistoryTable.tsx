@@ -128,7 +128,7 @@ function formatNetDisplay(net: RollGroup['net']): { label: string; amount: strin
   const total = net.total.toFixed(2)
   return {
     label: net.isCredit ? 'Net Credit' : 'Net Debit',
-    amount: `${sign}$${perContract}/contract ($${total} total)`
+    amount: `${sign}$${perContract}/share ($${total} total)`
   }
 }
 

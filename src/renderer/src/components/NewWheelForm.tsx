@@ -243,14 +243,14 @@ export function NewWheelForm({
         </Field>
 
         <Field
-          label="Premium / Contract"
+          label="Premium / Share"
           error={errors.premiumPerContract?.message}
           hint={promoted ? "editable — override with the price you'll work" : undefined}
         >
           <NumberInput
             {...register('premiumPerContract')}
             id="premiumPerContract"
-            aria-label="Premium per contract"
+            aria-label="Premium / Share"
             inputMode="decimal"
             placeholder="3.20"
             hasError={Boolean(errors.premiumPerContract)}

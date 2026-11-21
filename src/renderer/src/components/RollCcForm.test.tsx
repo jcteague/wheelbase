@@ -108,7 +108,7 @@ describe('RollCcForm', () => {
     expect(screen.getByLabelText(/new strike/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/new expiration/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/cost to close/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/new premium/i)).toBeInTheDocument()
+    expect(screen.getByLabelText('Premium / Share')).toBeInTheDocument()
     expect(screen.getByLabelText(/fill date/i)).toBeInTheDocument()
   })
 

@@ -53,6 +53,6 @@ it('renders the form header "Close Covered Call Early"', () => {
 
 it('renders close price input and fill date picker', () => {
   render(<CloseCcEarlyForm {...DEFAULT_PROPS} />)
-  expect(screen.getByLabelText(/close price/i)).toBeInTheDocument()
+  expect(screen.getByLabelText('Premium / Share')).toBeInTheDocument()
   expect(screen.getByLabelText(/fill date/i)).toBeInTheDocument()
 })

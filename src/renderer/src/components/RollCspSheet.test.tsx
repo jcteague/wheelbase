@@ -160,11 +160,11 @@ it('shows new leg fields: New Strike (pre-filled), New Expiration, Cost to Close
   expect(screen.getByLabelText(/new strike/i)).toBeInTheDocument()
   expect(screen.getByLabelText(/new expiration/i)).toBeInTheDocument()
   expect(screen.getByLabelText(/cost to close/i)).toBeInTheDocument()
-  expect(screen.getByLabelText(/new premium/i)).toBeInTheDocument()
+  expect(screen.getByLabelText('Premium / Share')).toBeInTheDocument()
   expect(screen.getByLabelText(/fill date/i)).toBeInTheDocument()
 })
 
-it('shows net credit preview (green) when cost $1.20 and premium $2.80: "+$1.60/contract ($160.00 total)"', async () => {
+it('shows net credit preview (green) when cost $1.20 and premium $2.80: "+$1.60/share ($160.00 total)"', async () => {
   const user = userEvent.setup()
   render(<RollCspSheet {...DEFAULT_PROPS} />)
 
@@ -172,18 +172,18 @@ it('shows net credit preview (green) when cost $1.20 and premium $2.80: "+$1.60/
   await user.clear(costInput)
   await user.type(costInput, '1.20')
 
-  const premiumInput = screen.getByLabelText(/new premium/i)
+  const premiumInput = screen.getByLabelText('Premium / Share')
   await user.clear(premiumInput)
   await user.type(premiumInput, '2.80')
 
   await waitFor(() => {
     expect(screen.getByText(/Net Credit/)).toBeInTheDocument()
-    expect(screen.getByText(/\+\$1\.60\/contract/)).toBeInTheDocument()
+    expect(screen.getByText(/\+\$1\.60\/share/)).toBeInTheDocument()
     expect(screen.getByText(/\$160\.00 total/)).toBeInTheDocument()
   })
 })
 
-it('shows net debit preview (amber) when cost $3.00 and premium $2.50: "-$0.50/contract ($50.00 total)" with warning', async () => {
+it('shows net debit preview (amber) when cost $3.00 and premium $2.50: "-$0.50/share ($50.00 total)" with warning', async () => {
   const user = userEvent.setup()
   render(<RollCspSheet {...DEFAULT_PROPS} />)
 
@@ -191,13 +191,13 @@ it('shows net debit preview (amber) when cost $3.00 and premium $2.50: "-$0.50/c
   await user.clear(costInput)
   await user.type(costInput, '3.00')
 
-  const premiumInput = screen.getByLabelText(/new premium/i)
+  const premiumInput = screen.getByLabelText('Premium / Share')
   await user.clear(premiumInput)
   await user.type(premiumInput, '2.50')
 
   await waitFor(() => {
     expect(screen.getByText(/Net Debit/)).toBeInTheDocument()
-    expect(screen.getByText(/-\$0\.50\/contract/)).toBeInTheDocument()
+    expect(screen.getByText(/-\$0\.50\/share/)).toBeInTheDocument()
     expect(screen.getByText(/\$50\.00 total/)).toBeInTheDocument()
     expect(
       screen.getByText(/This roll costs more to close than the new premium provides/)
@@ -213,7 +213,7 @@ it('shows validation error "New expiration must be after the current expiration"
   await user.clear(costInput)
   await user.type(costInput, '1.20')
 
-  const premiumInput = screen.getByLabelText(/new premium/i)
+  const premiumInput = screen.getByLabelText('Premium / Share')
   await user.clear(premiumInput)
   await user.type(premiumInput, '2.80')
 
@@ -330,7 +330,7 @@ it('shows validation error when strike field is cleared and submitted', async ()
   await user.clear(costInput)
   await user.type(costInput, '1.20')
 
-  const premiumInput = screen.getByLabelText(/new premium/i)
+  const premiumInput = screen.getByLabelText('Premium / Share')
   await user.clear(premiumInput)
   await user.type(premiumInput, '2.80')
 

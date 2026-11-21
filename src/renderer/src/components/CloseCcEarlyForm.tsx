@@ -98,15 +98,11 @@ export function CloseCcEarlyForm({
           </div>
         </SectionCard>
 
-        <Field
-          label="Close Price (Buy to Close)"
-          htmlFor="cc-close-price"
-          error={priceError ?? undefined}
-        >
+        <Field label="Premium / Share" htmlFor="cc-close-price" error={priceError ?? undefined}>
           <NumberInput
             id="cc-close-price"
             data-testid="cc-close-price"
-            aria-label="Close Price (Buy to Close)"
+            aria-label="Premium / Share"
             type="number"
             min="0"
             step="0.01"

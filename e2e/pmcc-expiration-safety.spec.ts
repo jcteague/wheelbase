@@ -170,7 +170,7 @@ describe('US-102 — PMCC expiration safety', () => {
     await page.fill('[aria-label="New Strike"]', '190')
     await selectDate(page, '[aria-label="New Expiration"]', localDate(60))
     await page.fill('[aria-label="Cost to Close"]', '3.50')
-    await page.fill('[aria-label="New Premium"]', '4.20')
+    await page.fill('[aria-label="Premium / Share"]', '4.20')
     await page.getByRole('button', { name: 'Confirm Roll', exact: true }).click()
     await page.waitForSelector('text=CC Rolled Successfully')
     const after = await positionDetail(page, position.id)

@@ -254,15 +254,15 @@ describe('PmccLegSection', () => {
     )
   })
 
-  it('labels the long fill "Actual purchase / share" and previews it as a debit', () => {
+  it('labels the long fill "Premium / share" and previews it as a debit', () => {
     render(<Harness leg="long" values={SELECTED} />)
-    expect(screen.getByLabelText('Actual purchase / share')).toHaveValue('25.00')
+    expect(screen.getByLabelText('Premium / share')).toHaveValue('25.00')
     expect(screen.getByText('Debit $2,500.00')).toBeInTheDocument()
   })
 
-  it('labels the short fill "Actual sale / share" and previews it as a credit', () => {
+  it('labels the short fill "Premium / share" and previews it as a credit', () => {
     render(<Harness leg="short" values={SELECTED} />)
-    expect(screen.getByLabelText('Actual sale / share')).toHaveValue('2.00')
+    expect(screen.getByLabelText('Premium / share')).toHaveValue('2.00')
     expect(screen.getByText('Credit $200.00')).toBeInTheDocument()
   })
 
