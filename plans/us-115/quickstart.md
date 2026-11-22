@@ -24,6 +24,7 @@ pnpm test src/main/services/pmcc-ledger.test.ts src/main/services/sell-pmcc-shor
 pnpm test src/main/ipc/positions-sell-pmcc-short.test.ts
 pnpm test src/renderer/src/lib/pmcc-entry.test.ts src/renderer/src/lib/pmcc-sell-short.test.ts
 pnpm test src/renderer/src/lib/pmcc-roll.test.ts src/renderer/src/lib/pmcc-coverage.test.ts
+pnpm test src/renderer/src/lib/pmcc-card-display.test.ts
 pnpm test src/renderer/src/schemas/sell-pmcc-short.test.ts
 pnpm test src/renderer/src/components/PmccLegSection.test.tsx src/renderer/src/components/PmccEntryForm.test.tsx
 pnpm test src/renderer/src/components/SellPmccShort src/renderer/src/components/PositionDetailActions.test.tsx
@@ -57,7 +58,9 @@ pnpm test:e2e e2e/pmcc-sell-short.spec.ts
 The spec launches without `WHEELBASE_FAKE_NOW` and seeds US-109's XYZ Background (cycle 9
 removed) through `_test:pmcc-seed-position`, with every date shifted so that 2027-07-23 lands on
 today in America/New_York (`research.md` ADR "E2e runs on the real clock"). Chains come from
-`WHEELBASE_MOCK_OPTION_SNAPSHOTS`; the chain-unavailable test relaunches with
+`WHEELBASE_MOCK_OPTION_SNAPSHOTS`; the below-the-line test also sets `WHEELBASE_MOCK_STOCK_QUOTES`
+with XYZ at `86.50` (`flatStockQuote`), so its $90.00 call at $1.50 is a possible quote; the
+chain-unavailable test relaunches with
 `FAKE_MARKET_DATA_ERROR=unknown`; the failed-save test adds a `BEFORE INSERT ON
 cost_basis_snapshots` trigger with `sqlite3`.
 

@@ -97,8 +97,12 @@ unchanged.
 | _(Zod path)_ | _(Zod issue code)_          | _(Zod message)_ — wrong type or a missing required field                            |
 | `__root__`   | `internal_error`            | `An unexpected error occurred` — e.g. a storage failure; the transaction rolls back |
 
-`N` is the live LEAPS contract count; `YYYY-MM-DD` is `lastShortRetiredOn(legs)`. Only the first
-broken rule is returned (rule order in `data-model.md` § 3). The renderer maps the
+`N` is the live LEAPS contract count; `YYYY-MM-DD` is `lastShortRetiredOn(legs)`. Of the two
+fill-date floors, `pmccFillDateFloor` (`src/main/core/pmcc-rules.ts`, shared with US-120) picks
+one: `before_previous_short` when the previous short's date is later or ties, `long_after_short`
+when the live LEAPS was bought later. `invalid_phase` also covers a closed PMCC (`PMCC_CLOSED`,
+US-120), whose open legs still list the sold LEAPS. Only the first broken rule is returned (rule
+order in `data-model.md` § 3). The renderer maps the
 `internal_error` envelope to `Could not record the short call. Your entries are preserved. Try
 again.`
 
@@ -107,7 +111,8 @@ again.`
 - Handler: `src/main/ipc/positions.ts` (`registerParsedPositionHandler`)
 - Service: `src/main/services/sell-pmcc-short-position.ts` (`sellPmccShortPosition`)
 - Engine: `src/main/core/lifecycle.ts` (`sellPmccShort`), `src/main/core/pmcc-rules.ts`
-  (`pmccSubsequentShortIssues`), `src/main/core/costbasis.ts` (`projectPmccLedger`)
+  (`pmccSubsequentShortIssues`, `pmccFillDateFloor`), `src/main/core/costbasis.ts`
+  (`projectPmccLedger`)
 - Helpers reused: `loadPmccRollContext`, `logPmccRollRejection`
   (`src/main/services/pmcc-roll-record.ts`); `appendPmccSnapshot`, `lastShortRetiredOn`,
   `nextPmccCycleNumber` (`src/main/services/pmcc-ledger.ts`); `insertLegRow`
