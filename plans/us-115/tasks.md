@@ -202,13 +202,13 @@ Shared files to watch when areas run in parallel:
 
 ### Area 7 — IPC handler, preload and renderer client
 
-- [ ] **[Red]** Write failing tests — `src/main/ipc/positions-sell-pmcc-short.test.ts` _(depends on: Area 6 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/main/ipc/positions-sell-pmcc-short.test.ts` _(depends on: Area 6 Green ✓)_
   - Test cases: channel registered; success envelope with `cycleNumber: 9`; injected clock `2027-07-24T03:30:00Z` rejects a `2027-07-24` fill as future; rejection envelope for `short_not_before_long`; Zod field error; `internal_error`
   - Run `pnpm test src/main/ipc/positions-sell-pmcc-short.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/ipc/positions.ts`, `src/preload/index.ts`, `src/preload/index.d.ts`, `src/renderer/src/api/positions.ts` _(depends on: Area 7 Red ✓)_
+- [x] **[Green]** Implement — `src/main/ipc/positions.ts`, `src/preload/index.ts`, `src/preload/index.d.ts`, `src/renderer/src/api/positions.ts` _(depends on: Area 7 Red ✓)_
   - `registerParsedPositionHandler(db, 'positions:sell-pmcc-short', 'positions_sell_pmcc_short_unhandled_error', SellPmccShortPayloadSchema, …)` with `today: etDateOf(getCurrentDate())`
   - Run the test file plus `pnpm test src/main/ipc/positions.test.ts` — all must pass
-- [ ] **[Refactor]** `/refactor` _(depends on: Area 7 Green ✓)_
+- [x] **[Refactor]** `/refactor` _(depends on: Area 7 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 

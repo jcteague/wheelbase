@@ -800,6 +800,15 @@ describe('write adapters — pass-through and ok:false → ApiError(400)', () =>
       proceedsPerContract: 26,
       replacementDebitPerContract: 23.5,
       newExpiration: '2028-01-21'
+    }),
+    adapterCase('sellPmccShort', positionsApi.sellPmccShort, {
+      positionId,
+      strike: 118,
+      expiration: '2027-08-20',
+      contracts: 1,
+      fillPrice: 1.95,
+      fillDate: '2027-07-23',
+      fees: 0
     })
   ]
 

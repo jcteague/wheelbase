@@ -16,7 +16,8 @@ import {
   RollCspPayloadSchema,
   RollPmccLeapsPayloadSchema,
   RollPmccShortCallPayloadSchema,
-  SaveAlertOverridesPayloadSchema
+  SaveAlertOverridesPayloadSchema,
+  SellPmccShortPayloadSchema
 } from '../schemas'
 import {
   assignCspPosition,
@@ -36,6 +37,7 @@ import { rollCcPosition } from '../services/roll-cc-position'
 import { rollPmccShortCallPosition } from '../services/roll-pmcc-short-call-position'
 import { rollPmccLeapsPosition } from '../services/roll-pmcc-leaps-position'
 import { savePositionAlertOverrides } from '../services/save-position-alert-overrides'
+import { sellPmccShortPosition } from '../services/sell-pmcc-short-position'
 import { etDateOf } from '../core/trading-calendar'
 import type { CreatePositionPayload } from '../schemas'
 import type { IvrOnDemand } from '../services/ivr-on-demand'
@@ -168,6 +170,15 @@ export function registerPositionsHandlers(
     'positions_roll_pmcc_leaps_unhandled_error',
     RollPmccLeapsPayloadSchema,
     rollPmccLeapsPosition
+  )
+
+  registerParsedPositionHandler(
+    db,
+    'positions:sell-pmcc-short',
+    'positions_sell_pmcc_short_unhandled_error',
+    SellPmccShortPayloadSchema,
+    (db, positionId, payload) =>
+      sellPmccShortPosition(db, positionId, payload, { today: etDateOf(getCurrentDate()) })
   )
 
   registerParsedPositionHandler(
