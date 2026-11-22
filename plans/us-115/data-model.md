@@ -43,14 +43,19 @@ Rules run in this order; the first broken one throws `ValidationError(field, cod
 | 6   | fees ≥ 0                                                                   | `fees`       | `must_be_non_negative`      | `Fees cannot be negative.`                                                     | `requireNonNegativeFees`                |
 | 7   | contracts ≤ LEAPS contracts                                                | `contracts`  | `exceeds_leaps_contracts`   | `Cannot sell more short calls than LEAPS contracts held (N).`                  | new `exceedsLeapsContracts(n)`          |
 | 8   | fill date ≤ today                                                          | `fillDate`   | `cannot_be_future`          | `Fill date cannot be in the future.`                                           | extracted `FILL_DATE_IN_FUTURE`         |
-| 9a  | fill date ≥ previous short retired (when that is the later floor, or ties) | `fillDate`   | `before_previous_short`     | `Fill date cannot be before the previous short call was retired (YYYY-MM-DD).` | new `beforePreviousShortRetired(date)`  |
-| 9b  | fill date ≥ live LEAPS fill date (when that is the later floor)            | `fillDate`   | `long_after_short`          | `LEAPS must be acquired no later than the short-call fill.`                    | extracted `LEAPS_AFTER_SHORT`           |
+| 9a  | fill date ≥ previous short retired (`pmccFillDateFloor` → `previousShort`) | `fillDate`   | `before_previous_short`     | `Fill date cannot be before the previous short call was retired (YYYY-MM-DD).` | new `beforePreviousShortRetired(date)`  |
+| 9b  | fill date ≥ live LEAPS fill date (`pmccFillDateFloor` → `leaps`)           | `fillDate`   | `long_after_short`          | `LEAPS must be acquired no later than the short-call fill.`                    | extracted `LEAPS_AFTER_SHORT`           |
 | 10  | expiration ≥ today                                                         | `expiration` | `expired_contract`          | `Use an unexpired contract for opening a current position.`                    | extracted `EXPIRED_CONTRACT`            |
 | 11  | expiration > fill date                                                     | `expiration` | `expiration_not_after_fill` | `Expiration must be after the fill date.`                                      | `EXPIRATION_NOT_AFTER_FILL`             |
 | 12  | `shortExpiresBeforeLeaps(expiration, leaps.expiration)`                    | `expiration` | `short_not_before_long`     | `Short call must expire before the LEAPS call.`                                | `SHORT_NOT_BEFORE_LONG` (US-102)        |
 | 13  | `shortStrikeAboveLeaps(strike, leaps.strike)`                              | `strike`     | `strike_not_above_long`     | `Short-call strike must be above the LEAPS strike.`                            | extracted `SHORT_STRIKE_NOT_ABOVE_LONG` |
 
 Rules 7–13 are `pmccSubsequentShortIssues` (`src/main/core/pmcc-rules.ts`), shared with the form.
+Rule 9 asks `pmccFillDateFloor({ previousShortRetiredOn, leapsFillDate })` which floor binds:
+`previousShort` when `previousShortRetiredOn !== null && previousShortRetiredOn >= leapsFillDate`
+(a tie goes to the previous short), else `leaps`. US-120 reuses the same helper.
+Rule 1 also rejects a closed PMCC (`PMCC_CLOSED`, added by US-120), whose `pmccOpenLegs` stays
+non-null; the header action is gated on the same phase (`plan.md` Area 9).
 Rules 1–6 are field-shape checks the form's own Zod fields already make with the same messages
 (`positiveWholeSchema`, `positiveFillSchema`, the fees field in `pmccLegSchema`); the engine
 repeats them only so a bypassed request gets the same answer. ISO dates compare as strings, as in
@@ -76,17 +81,30 @@ Background (US-109's XYZ, cycle 9 removed): LEAPS `$85.00 · 2028-01-21`, 1 cont
 to date `22.5000`/share (`2250.0000`), short credits `14.0000`/share (`1400.0000`), basis
 `8.5000`, effective share cost `93.5000`, premium recovered `62.2222…` → `62.2%`.
 
-| Case                              | Entry                              | Basis after | Effective after | Recovered after     | Strike line                                           |
-| --------------------------------- | ---------------------------------- | ----------- | --------------- | ------------------- | ----------------------------------------------------- |
-| Sell the next short (AC 1, 3)     | $118 · 2027-08-20 · $1.95 · 1 · $0 | `6.5500`    | `91.5500`       | `70.8889` → `70.9%` | `+$26.45 above` (118 − 91.55)                         |
-| Below the line (AC 4, corrected)  | $89 · 2027-08-20 · $4.10 · 1 · $0  | `4.4000`    | `89.4000`       | `80.4444` → `80.4%` | shortfall `0.4000`                                    |
-| At the line (Q7)                  | strike = effective after           | —           | —               | —                   | `+$0.00 above`, green                                 |
-| Fees                              | $118 · $1.95 · 1 · $1.00           | `6.5600`    | `91.5600`       | `70.8444` → `70.8%` | `+$26.44 above`                                       |
-| Partial (AC 8), 3 LEAPS contracts | $118 · $1.95 · **1** of 3 · $0     | `7.8500`    | `92.8500`       | `65.1111` → `65.1%` | `+$25.15 above`; `2 LEAPS contracts remain uncovered` |
+| Case                              | Entry                              | Basis after | Effective after | Recovered after     | Strike line                           |
+| --------------------------------- | ---------------------------------- | ----------- | --------------- | ------------------- | ------------------------------------- |
+| Sell the next short (AC 1, 3)     | $118 · 2027-08-20 · $1.95 · 1 · $0 | `6.5500`    | `91.5500`       | `70.8889` → `70.9%` | `+$26.45 above` (118 − 91.55)         |
+| Below the line (AC 4, XYZ $86.50) | $90 · 2027-08-20 · $1.50 · 1 · $0  | `7.0000`    | `92.0000`       | `68.8889` → `68.9%` | shortfall `2.0000`                    |
+| At the line (Q7)                  | strike = effective after           | —           | —               | —                   | `+$0.00 above`, green                 |
+| Fees                              | $118 · $1.95 · 1 · $1.00           | `6.5600`    | `91.5600`       | `70.8444` → `70.8%` | `+$26.44 above`                       |
+| Partial (AC 8), 3 LEAPS contracts | $118 · $1.95 · **1** of 3 · $0     | `7.8500`    | `92.8500`       | `65.1111` → `65.1%` | `+$25.15 above`; uncovered note below |
 
-Credit line: `Credit $195.00 · 28 DTE` (1.95 × 100 × 1; 2027-07-23 → 2027-08-20). Partial
-credit: `Credit $195.00`. With fees the credit line shows the gross credit; fees appear only in
-the basis.
+Below the line, checked: credits 1400 + 150 = 1550; basis (2250 − 1550) ÷ 100 = 8.50 − 1.50 =
+7.00; effective share cost 85.00 + 7.00 = 92.00; shortfall 92.00 − 90.00 = 2.00; recovered
+1550 ÷ 2250 = 68.89%. The advisory sentence: `Short strike $90.00 is below your effective share
+cost of $92.00 after this sale. If assigned, covering from the LEAPS realizes roughly $2.00 per
+share of loss. You can still record it.` It can fire only because XYZ ($86.50) is below the
+pre-sale effective share cost ($93.50); a $90.00 call is worth at least S − K.
+
+Partial note (`uncoveredContractsNote(2)`): `2 LEAPS contracts remain uncovered. Only one short
+call can be open at a time, so they stay uncovered until this one is retired.` For one contract:
+`1 LEAPS contract remains uncovered. Only one short call can be open at a time, so it stays
+uncovered until this one is retired.` Detail header badge after the partial sale:
+`LEAPS + short call open · 1 of 3 covered` (`pmccCoverageLabel`).
+
+Credit line: `Credit $195.00 · 28 DTE` (1.95 × 100 × 1; 2027-07-23 → 2027-08-20); below the line
+`Credit $150.00 · 28 DTE`. Partial credit: `Credit $195.00`. With fees the credit line shows the
+gross credit; fees appear only in the basis.
 
 Day counts used on the sheet (valuation date 2027-07-23): LEAPS `182 DTE`; previous cycle
 `expired worthless 2027-07-16 · 7 days uncovered`; 2028-02-18 is 210 days out; 2028-06-16 is 329.
@@ -101,6 +119,7 @@ Day counts used on the sheet (valuation date 2027-07-23): LEAPS `182 DTE`; previ
 | `PmccSubsequentShortInput`                                                                                 | `pmcc-rules.ts`                                      | intersection `PmccSubsequentShortContext & { short: PmccSubsequentShortValues }`                                                                                                                                        | One input for `pmccSubsequentShortIssues`; the form builds `short` from its values, the engine from its decided input                            |
 | `PmccRule` constants                                                                                       | `pmcc-rules.ts`                                      | `{ code, message } as const satisfies PmccRule` (`SHORT_STRIKE_NOT_ABOVE_LONG`, `FILL_DATE_IN_FUTURE`, `EXPIRED_CONTRACT`, `LEAPS_AFTER_SHORT`, `SHORT_CALL_ALREADY_OPEN`)                                              | Literal `code` types and one home per message; `pmccCrossLegIssues` switches to the same constants, so US-101 and US-115 cannot drift            |
 | `exceedsLeapsContracts` / `beforePreviousShortRetired`                                                     | `pmcc-rules.ts`                                      | functions returning `PmccRule` with a template-literal `message`                                                                                                                                                        | Messages that carry a value (`(1)`, `(2027-07-16)`) still have one home and a fixed `code`                                                       |
+| `PmccFillDateFloor`                                                                                        | `pmcc-rules.ts`                                      | discriminated union `{ kind: 'previousShort'; date: string } \| { kind: 'leaps'; date: string }`, returned by `pmccFillDateFloor`                                                                                       | Exactly one floor binds and the caller knows which message to show; US-120 reuses it, so the tie-break has one home                              |
 | `SellPmccShortField`                                                                                       | `src/main/core/lifecycle.ts`                         | union `PmccSubsequentShortField \| 'fillPrice' \| 'fees' \| '__root__' \| '__phase__'`                                                                                                                                  | The engine's `ValidationError` fields are exhaustively known; the contract's error table and the form routing are typed from it                  |
 | `SellPmccShortInput`                                                                                       | `lifecycle.ts`                                       | interface: `currentPhase: WheelPhase`, `openShort: PmccShortCallTerms \| null`, `leaps`, `previousShortRetiredOn`, `today`, plus `strike`, `expiration`, `fillDate`, `fillPrice`, `fees` (strings), `contracts: number` | Mirrors `RollPmccShortCallInput`'s `openShort: … \| null`; the engine never sees a DB row                                                        |
 | `SellPmccShortAccepted`                                                                                    | `lifecycle.ts`                                       | `{ phase: 'PMCC_OPEN' }`                                                                                                                                                                                                | The literal phase documents (and types) that a sale does not move the phase                                                                      |
@@ -119,3 +138,4 @@ Day counts used on the sheet (valuation date 2027-07-23): LEAPS `182 DTE`; previ
 | `ShortfallEvent`                                                                                           | `src/renderer/src/lib/pmcc-roll.ts`                  | `'roll' \| 'sale'`                                                                                                                                                                                                      | The one varying word of US-104's sentence; the rest of the sentence has one home                                                                 |
 | `PmccEndedCycle`                                                                                           | `src/renderer/src/lib/pmcc-sell-short.ts`            | `Extract<PmccCycle, { status: 'ENDED' }>`                                                                                                                                                                               | The coverage card's previous-cycle line reads `outcome` and `endedOn` without optional chaining                                                  |
 | `RollSheet`                                                                                                | `src/renderer/src/pages/usePositionDetailSheets.ts`  | union gains `'pmccSellShort'`                                                                                                                                                                                           | One open sheet at a time, as today                                                                                                               |
+| `PmccCoverageCounts`                                                                                       | `src/renderer/src/lib/pmcc-coverage.ts`              | plain interface `{ shortCount: number; shortContracts: number; leapsContracts: number }`, the input of `pmccCoverageLabel`                                                                                              | Plain type — no advanced constructs needed; the card and the detail header pass the same counts, so both print the same `N of M covered`         |

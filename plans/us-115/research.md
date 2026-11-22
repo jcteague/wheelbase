@@ -67,14 +67,25 @@ Verified in code, not assumed:
    `currentShortCallLeg` treats as closing. US-119 must write `SHORT_CALL_EXPIRED` with
    `fill_date` = the short's expiration date (as the US-109 seed does) and `SHORT_CALL_CLOSE` with
    `fill_date` = the buyback date.
-3. **The detail header reads coverage from open legs.** This story moves `stateLabel` out of
-   `pmcc-card-display.ts` into `src/renderer/src/lib/pmcc-coverage.ts` as
-   `pmccCoverageLabel(shortCount)` and has `PositionDetailActions` pass it to `PhaseBadge`'s
-   `label` for a PMCC. Whichever of US-115 / US-119 lands first creates it; the other reuses it.
-4. **Header gating.** `Sell Short Call →` shows when `hasOpenLeaps && !hasOpenShortCall`;
-   `Roll Short Call →` (and US-119's retire actions) when `hasOpenShortCall`. US-120 must make a
-   closed PMCC (LEAPS sold) read `pmccOpenLegs = null` — today `currentLeapsLeg` ignores
-   `LEAPS_CLOSE`, so a sold LEAPS would still offer this action.
+3. **The detail header reads coverage from open legs.** This story moves `stateLabel` and the
+   card's `N of M covered` text out of `pmcc-card-display.ts` into
+   `src/renderer/src/lib/pmcc-coverage.ts` as
+   `pmccCoverageLabel({ shortCount, shortContracts, leapsContracts })`: `LEAPS open · no short
+call`, `LEAPS + short call open`, or `LEAPS + short call open · 1 of 3 covered` when the short
+   covers fewer contracts than the LEAPS. `PositionDetailActions` passes it to `PhaseBadge`'s
+   `label` for an open PMCC and the positions-list card uses it for its state line, so both read
+   the same `N of M covered`. Whichever of US-115 / US-119 lands first creates it; the other
+   reuses it.
+4. **Header gating.** `Sell Short Call →` shows when `phase === 'PMCC_OPEN' && hasOpenLeaps &&
+!hasOpenShortCall`; `Roll Short Call →` (and US-119's retire actions) when `hasOpenShortCall`.
+   The phase check is required, not belt-and-braces: US-120 keeps `pmccOpenLegs` non-null on a
+   closed PMCC (`PMCC_CLOSED`, LEAPS sold), so the legs alone would still offer this action. A
+   sold LEAPS must never count as open on any surface this story adds (options-expert review,
+   cross-story fixes).
+5. **One fill-date floor helper.** `pmccFillDateFloor({ previousShortRetiredOn, leapsFillDate })`
+   in `src/main/core/pmcc-rules.ts` picks the binding floor and breaks a tie toward the previous
+   short (ADR below). US-120's LEAPS sale reuses it, with `lastShortRetiredOn(legs)` from
+   `pmcc-ledger.ts`, so both stories show the previous-short message on a tie.
 
 ## Architecture Decisions
 
@@ -91,7 +102,7 @@ Verified in code, not assumed:
   US-115/119/120 is the same.
 - **Alternatives considered:** Add `PMCC_LEAPS_ONLY` as the spec reserves and as the story's
   Technical Notes word it ("requires the LEAPS-only phase … returns the LEAPS-plus-short phase")
-  — rejected for the reasons above; recorded as Open Question 3 for John to confirm.
+  — rejected for the reasons above; Open Question 3 (resolved: kept).
 
 ### ADR: One shared rule list, `pmccSubsequentShortIssues`, for the engine and the form
 
@@ -115,15 +126,21 @@ Verified in code, not assumed:
 
 - **Decision:** The service reads `previousShortRetiredOn = lastShortRetiredOn(legs)` (latest
   `fill_date` of a `SHORT_CALL_EXPIRED` / `SHORT_CALL_CLOSE` / `SHORT_CALL_ASSIGNED` leg, or
-  `null`) and passes it with the live LEAPS (`openLegs.long`, including its `fillDate`). The rule
-  reports one floor: `Fill date cannot be before the previous short call was retired
-(YYYY-MM-DD).` when the previous short's date is the later floor (or the two tie), US-101's
-  `LEAPS must be acquired no later than the short-call fill.` when the live LEAPS was bought later.
-  A fill on the floor date is accepted.
+  `null`) and passes it with the live LEAPS (`openLegs.long`, including its `fillDate`). One pure
+  helper, `pmccFillDateFloor({ previousShortRetiredOn, leapsFillDate })` in
+  `src/main/core/pmcc-rules.ts`, returns the binding floor as `PmccFillDateFloor`
+  (`{ kind: 'previousShort'; date } | { kind: 'leaps'; date }`): `previousShort` when
+  `previousShortRetiredOn !== null && previousShortRetiredOn >= leapsFillDate` (a tie goes to the
+  previous short), else `leaps`. The rule reports that one floor: `Fill date cannot be before the
+previous short call was retired (YYYY-MM-DD).` for `previousShort`, US-101's `LEAPS must be
+acquired no later than the short-call fill.` for `leaps`. A fill on the floor date is accepted.
 - **Why:** The story names the previous short's terminal date. The LEAPS floor covers a case the
   story does not: a LEAPS rolled after the last short retired, where a back-dated sale would be
   judged against a LEAPS that was not yet held. Reporting only the binding floor means correcting
-  to the shown date always clears the error. Assumption (pending John) — Open Question 5.
+  to the shown date always clears the error. On a tie both messages are true; the previous-short
+  one is kept because it names the date. US-120 (sell the LEAPS) has the same two floors and
+  reuses `pmccFillDateFloor` (with its own messages), so the two stories cannot break a tie
+  differently (options-expert review, US-120 Q9). Open Question 5 (resolved: kept).
 - **Alternatives considered:** US-105's `latestFillDate(legs)` (`before_last_event`) — rejected:
   its message names neither cause and it would block on unknown-role legs. Previous short only —
   rejected (the rolled-LEAPS case above).
@@ -193,15 +210,19 @@ Verified in code, not assumed:
   sentence moved to a shared `shortfallWarningText({ strike, effectiveAfter, shortfall, event })`
   in `src/renderer/src/lib/pmcc-roll.ts` (`event: 'roll' | 'sale'`). At or above the line the
   preview shows the green `Strike $118.00 is +$26.45 above your effective share cost` (`+$0.00` at
-  the line). The confirm button stays enabled either way.
-- **Why:** The story says "US-104's wording, reused" and puts the wording out of scope. The AC's
-  example ($92.00 at $4.10, effective share cost after $89.40) is **not** below the line, and its
-  sentence describes a gain, so it cannot be produced by the rule the story reuses. The mockup uses
-  the same threshold. Assumption (pending John) — Open Question 1; the e2e uses $89.00 at $4.10
-  (effective share cost after $89.40, $0.40 short).
-- **Alternatives considered:** Implement the AC's sentence verbatim with a threshold against the
-  effective share cost **before** the sale ($93.50) — rejected without John: it would make the
-  sell sheet and the roll sheet disagree about the same strike.
+  the line). The confirm button stays enabled either way. The example (Linear AC corrected): XYZ
+  at $86.50, sell the $90.00 call expiring 2027-08-20 at $1.50 → basis 8.50 − 1.50 = 7.00,
+  effective share cost after 85.00 + 7.00 = $92.00, strike $2.00 below → `Short strike $90.00 is
+below your effective share cost of $92.00 after this sale. If assigned, covering from the LEAPS
+realizes roughly $2.00 per share of loss. You can still record it.`
+- **Why:** The story says "US-104's wording, reused". The AC's original example ($92.00 at $4.10)
+  and the plan's first substitute ($89.00 at $4.10) were both impossible in the market: a call is
+  worth at least S − K, so with XYZ near $104.60 neither could trade at $4.10, and the advisory
+  can only fire once the stock is below the pre-sale effective share cost ($93.50). At $86.50 a
+  28-DTE $90.00 call at $1.50 (Δ ≈ 0.30) is a plausible quote. The mockup uses the same threshold.
+- **Alternatives considered:** A threshold against the effective share cost **before** the sale
+  ($93.50) — rejected: it would make the sell sheet and the roll sheet disagree about the same
+  strike.
 
 ### ADR: Wire money as numbers, rounded to 4 dp in the service
 
@@ -245,33 +266,43 @@ Verified in code, not assumed:
 
 ## Open Questions
 
-1. **The advisory example and wording.** The AC's "Warn when the strike is below the effective
-   share cost" uses a $92.00 call at $4.10, but $92.00 is above the $89.40 effective share cost
-   after that sale, and its sentence ("realizes roughly a $2.60 per share gain … caps the LEAPS
-   below its cost") differs from US-104's shipped wording and from the mockup's. **Assumption
-   (pending John):** keep US-104's threshold (strike below the effective share cost after the sale)
-   and US-104's sentence with "sale" for "roll"; the e2e uses $89.00 at $4.10 → `Short strike
-$89.00 is below your effective share cost of $89.40 after this sale. If assigned, covering from
-the LEAPS realizes roughly $0.40 per share of loss. You can still record it.` Linear should be
-   corrected to a below-the-line example.
+All resolved after the options-expert review (`options-expert-review.md`), approved by John on
+2026-11-22.
+
+1. **The advisory example and wording.** The AC's $92.00 call at $4.10 is above the $89.40 line
+   and impossible in the market (see the advisory ADR). **Resolved: options-expert example, John
+   approved 2026-11-22; Linear AC corrected.** US-104's threshold and sentence with "sale" for
+   "roll"; XYZ at $86.50, the $90.00 call expiring 2027-08-20 at $1.50 → `Short strike $90.00 is
+below your effective share cost of $92.00 after this sale. If assigned, covering from the LEAPS
+realizes roughly $2.00 per share of loss. You can still record it.`
 2. **"Effective share cost if exercised".** The AC names this label; US-103's Cost basis drawer
-   labels it `Effective share cost`. **Assumption (pending John):** keep US-103's label (labels are
-   out of scope) and assert `Effective share cost` = `$91.55`.
+   labels it `Effective share cost`. Keep US-103's label (labels are out of scope) and assert
+   `Effective share cost` = `$91.55`. **Resolved: kept (options-expert review, John approved
+   2026-11-22).**
 3. **LEAPS-only phase.** The story's Technical Notes speak of a LEAPS-only phase and the spec
-   reserves `PMCC_LEAPS_ONLY`. **Assumption (pending John):** no new phase (ADR above; shared with
-   US-119/US-120).
+   reserves `PMCC_LEAPS_ONLY`. No new phase (ADR above; shared with US-119/US-120). **Resolved:
+   kept (options-expert review, John approved 2026-11-22).**
 4. **An already-expired contract.** Not in the AC: a back-dated sale whose expiration is before
-   today. **Assumption (pending John):** rejected with US-101's `Use an unexpired contract for
-opening a current position.` on the expiration, checked before "Expiration must be after the
-   fill date." as US-101 orders them.
-5. **A LEAPS bought after the previous short retired.** **Assumption (pending John):** the floor is
-   the later of the two dates, reported with US-101's `LEAPS must be acquired no later than the
-short-call fill.` when the LEAPS date binds.
+   today. Rejected with US-101's `Use an unexpired contract for opening a current position.` on
+   the expiration, checked before "Expiration must be after the fill date." as US-101 orders them.
+   **Resolved: rejection kept (John kept the default, 2026-11-22).** The options-expert leaned
+   toward allowing it (journals lag; coherent with the timeline's UNRECORDED state); recorded as
+   a possible later option, not v1.
+5. **A LEAPS bought after the previous short retired.** The floor is the later of the two dates
+   (`pmccFillDateFloor`), reported with US-101's `LEAPS must be acquired no later than the
+short-call fill.` when the LEAPS date binds, and with the previous-short message on a tie.
+   **Resolved: kept (options-expert review, John approved 2026-11-22).**
 6. **No previous cycle.** A LEAPS-only position with no cycle ever sold (imported, or US-111's
-   path before any cycle). **Assumption (pending John):** the coverage card's line reads `No short
-call has been sold against this LEAPS yet` (US-109's empty-state copy); the floor is the LEAPS
-   fill date only.
-7. **Where "1 of 3 covered" is read.** **Assumption (pending John):** on the positions-list card,
-   which US-108 already renders from open legs; the sheet shows only the preview's uncovered note.
+   path before any cycle). The coverage card's line reads `No short call has been sold against
+this LEAPS yet` (US-109's empty-state copy); the floor is the LEAPS fill date only. **Resolved:
+   kept (options-expert review, John approved 2026-11-22).**
+7. **Where "1 of 3 covered" is read, and one open short per PMCC.** **Resolved: John approved
+   2026-11-22.** `N of M covered` shows on the detail header badge as well as the positions-list
+   card, both from `pmccCoverageLabel` (convention 3). The one-open-short-per-PMCC rule stays for
+   v1 (John kept the default; the options-expert noted it stops laddering shorts across the
+   uncovered contracts), and the sheet's partial note says so: `2 LEAPS contracts remain
+uncovered. Only one short call can be open at a time, so they stay uncovered until this one is
+retired.`
 8. **Mockup vs story on inputs.** The mockup shows contracts, fill date and fees read-only; the
-   story's UI Changes make them inputs. **Assumption:** inputs, as the story says.
+   story's UI Changes make them inputs. Inputs, as the story says. **Resolved: kept
+   (options-expert review, John approved 2026-11-22).**

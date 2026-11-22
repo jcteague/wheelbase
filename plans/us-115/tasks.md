@@ -27,7 +27,7 @@ Shared files to watch when areas run in parallel:
 | `src/renderer/src/schemas/pmcc-entry.ts`                         | 11 (exports `pmccLegSchema`, `PmccLegFormSlice`), then 12 |
 | `src/renderer/src/lib/pmcc-roll.ts`, `RollPmccShortCallForm.tsx` | 10 only                                                   |
 | `src/renderer/src/components/PositionDetailActions.tsx`          | 9, then 14 passes the new prop                            |
-| `src/renderer/src/lib/pmcc-card-display.ts`                      | 9 only (imports the moved label)                          |
+| `src/renderer/src/lib/pmcc-card-display.ts`                      | 9 only (state line from `pmccCoverageLabel`)              |
 
 ---
 
@@ -44,11 +44,12 @@ Shared files to watch when areas run in parallel:
     - LEAPS bought after the retirement → `long_after_short` only; tie → `before_previous_short` only; `previousShortRetiredOn: null`
     - `expired_contract` before `expiration_not_after_fill`; `2028-01-21` / `2028-02-18` → `SHORT_NOT_BEFORE_LONG`; `85` / `80` → `strike_not_above_long`
     - issue order; `undefined` skips; `pmccCrossLegIssues` regression unchanged
-  - Property cases: agreement with an independent oracle; at most one floor issue and correcting to the named date clears it; every field in `PmccSubsequentShortField`
+    - `pmccFillDateFloor`: previous later → `previousShort`; tie → `previousShort`; LEAPS one day earlier → `previousShort`; LEAPS one day later → `leaps`; `null` previous → `leaps`
+  - Property cases: agreement with an independent oracle; at most one floor issue and correcting to the named date clears it; every field in `PmccSubsequentShortField`; `pmccFillDateFloor` date = `date-fns` `max`, `kind` `previousShort` iff previous non-null and not before the LEAPS fill
   - Run `pnpm test src/main/core/pmcc-rules` — all new tests must fail
 - [ ] **[Green]** Implement — `src/main/core/pmcc-rules.ts` _(depends on: Area 1 Red ✓)_
   - Extract `SHORT_STRIKE_NOT_ABOVE_LONG`, `FILL_DATE_IN_FUTURE`, `EXPIRED_CONTRACT`, `LEAPS_AFTER_SHORT` and use them in `pmccCrossLegIssues`
-  - Add `SHORT_CALL_ALREADY_OPEN`, `exceedsLeapsContracts(n)`, `beforePreviousShortRetired(date)`, `PmccSubsequentShortField`, `PmccSubsequentShortValues`, `PmccSubsequentShortContext`, `PmccSubsequentShortInput`, `pmccSubsequentShortIssues` (order: `data-model.md` § 3 rows 7–13)
+  - Add `SHORT_CALL_ALREADY_OPEN`, `exceedsLeapsContracts(n)`, `beforePreviousShortRetired(date)`, `PmccFillDateFloor`, `pmccFillDateFloor` (exported; tie → previous short; US-120 reuses it), `PmccSubsequentShortField`, `PmccSubsequentShortValues`, `PmccSubsequentShortContext`, `PmccSubsequentShortInput`, `pmccSubsequentShortIssues` (order: `data-model.md` § 3 rows 7–13)
   - No logging, no I/O
   - Run `pnpm test src/main/core/pmcc-rules` — all tests must pass
 - [ ] **[Refactor]** `/refactor` — `src/main/core/pmcc-rules.ts` _(depends on: Area 1 Green ✓)_
@@ -60,7 +61,7 @@ Shared files to watch when areas run in parallel:
 ### Area 3 — Projection: `projectPmccLedger`
 
 - [ ] **[Red]** Write failing tests — `src/main/core/costbasis.test.ts`, `src/main/core/costbasis.property.test.ts`
-  - Test cases: Background + `$1.95` → `6.5500` / `91.5500` / `70.8889`; `$4.10` → `4.4000` / `89.4000`; fees `1.0000` → `6.5600` / `91.5600` / `70.8444`; 3 LEAPS + 1 short → `7.8500` / `92.8500` / `65.1111`; no contributions → unchanged
+  - Test cases: Background + `$1.95` → `6.5500` / `91.5500` / `70.8889`; `$90` at `$1.50` → `7.0000` / `92.0000` / `68.8889`; fees `1.0000` → `6.5600` / `91.5600` / `70.8444`; 3 LEAPS + 1 short → `7.8500` / `92.8500` / `65.1111`; no contributions → unchanged
   - Property cases: oracle `project(calculate(a), b) == calculate(a ++ b)`; order independence `project(project(x, b), c) == project(x, b ++ c)`
   - Run `pnpm test src/main/core/costbasis` — all new tests must fail
 - [ ] **[Green]** Implement — `src/main/core/costbasis.ts` _(depends on: Area 3 Red ✓)_
@@ -110,12 +111,12 @@ Shared files to watch when areas run in parallel:
 
 ### Area 9 — Coverage label and the header action
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/lib/pmcc-coverage.test.ts`, `src/renderer/src/components/PositionDetailActions.test.tsx`
-  - Test cases: `pmccCoverageLabel` `0` / `1` / `3`; LEAPS-only PMCC → badge `LEAPS open · no short call`, `sell-pmcc-short-btn` (`Sell Short Call →`) calls `onSellPmccShort`, no `roll-pmcc-short-btn`; open short → `LEAPS + short call open`, no sell button; no LEAPS → no sell button; `HOLDING_SHARES` → `Open Covered Call →`, no sell button
+- [ ] **[Red]** Write failing tests — `src/renderer/src/lib/pmcc-coverage.test.ts`, `src/renderer/src/lib/pmcc-card-display.test.ts`, `src/renderer/src/components/PositionDetailActions.test.tsx`
+  - Test cases: `pmccCoverageLabel` none / full / `2 of 3` / `1 of 3 covered` / `2 short calls` (`plan.md` Area 9); card partial case reads `LEAPS + short call open · 1 of 3 covered` on its state line and `3 × 100 sh` on its coverage line; LEAPS-only PMCC → badge `LEAPS open · no short call`, `sell-pmcc-short-btn` (`Sell Short Call →`) calls `onSellPmccShort`, no `roll-pmcc-short-btn`; open short → `LEAPS + short call open`, no sell button; 1 of 3 contracts → badge `LEAPS + short call open · 1 of 3 covered`; no LEAPS → no sell button; closed PMCC (`PMCC_CLOSED`, US-120; non-`PMCC_OPEN` stand-in until it lands) with open legs still set → no sell button; `HOLDING_SHARES` → `Open Covered Call →`, no sell button
   - Mockup: `epic-09-pmcc-position-detail.mdx`, presets `sell-short` and `healthy` (header)
   - Run `pnpm test src/renderer/src/lib/pmcc-coverage.test.ts src/renderer/src/components/PositionDetailActions.test.tsx` — all new tests must fail
 - [ ] **[Green]** Implement — `src/renderer/src/lib/pmcc-coverage.ts`, `pmcc-card-display.ts`, `PositionDetailActions.tsx` _(depends on: Area 9 Red ✓)_
-  - Move `stateLabel` to `pmccCoverageLabel`; `PhaseBadge label` for a PMCC; gate the button on `hasOpenLeaps && !hasOpenShortCall`
+  - Move `stateLabel` and the card's `N of M covered` into `pmccCoverageLabel({ shortCount, shortContracts, leapsContracts })`; `pmccCoverage` prop; `PhaseBadge label` for a PMCC in `PMCC_OPEN`; gate the button on `phase === 'PMCC_OPEN' && hasOpenLeaps && !hasOpenShortCall`
   - Run the same tests plus `pnpm test src/renderer/src/lib/pmcc-card-display.test.ts` — all must pass
 - [ ] **[Refactor]** `/refactor` _(depends on: Area 9 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
@@ -142,11 +143,11 @@ Shared files to watch when areas run in parallel:
 ### Area 10 — Preview arithmetic and advisory text
 
 - [ ] **[Red]** Write failing tests — `src/renderer/src/lib/pmcc-sell-short.test.ts`, `src/renderer/src/lib/pmcc-roll.test.ts` _(depends on: Area 3 Green ✓)_
-  - Test cases: preview `195.0000` / `28` / `8.5000 → 6.5500` / `93.5000 → 91.5500` / `62.2222 → 70.8889` / margin `26.4500`; `$89 · $4.10` → shortfall `0.4000`; at the line → margin `0.0000`; 3 LEAPS / 1 contract → `uncoveredContracts` `2`; incomplete → `null`; `shortfallWarningText` `'sale'` and `'roll'` (US-104's sentence byte for byte); `previousCycleLine` expired / closed / none; `coverageCardLine` with and without delta
+  - Test cases: preview `195.0000` / `28` / `8.5000 → 6.5500` / `93.5000 → 91.5500` / `62.2222 → 70.8889` / margin `26.4500`; `$90 · $1.50` → `150.0000`, `7.0000`, `92.0000`, shortfall `2.0000`; at the line → margin `0.0000`; 3 LEAPS / 1 contract → `uncoveredContracts` `2`; `uncoveredContractsNote` `2` and `1` (one-open-short sentence); incomplete → `null`; `shortfallWarningText` `'sale'` (`Short strike $90.00 is below your effective share cost of $92.00 after this sale. …roughly $2.00 per share of loss. You can still record it.`) and `'roll'` (US-104's sentence byte for byte); `previousCycleLine` expired / closed / none; `coverageCardLine` with and without delta
   - Mockup: `SellShortSheet` Coverage and `After this sale` cards
   - Run the two test files — all new tests must fail
 - [ ] **[Green]** Implement — `src/renderer/src/lib/pmcc-sell-short.ts`, `src/renderer/src/lib/pmcc-roll.ts`, `RollPmccShortCallForm.tsx` _(depends on: Area 10 Red ✓)_
-  - `sellPmccShortPreview` over `projectPmccLedger` and `pmccStrikeShortfall`; `shortfallWarningText` rendered by the roll form
+  - `sellPmccShortPreview` over `projectPmccLedger` and `pmccStrikeShortfall`; `uncoveredContractsNote`; `shortfallWarningText` rendered by the roll form
   - Run the two test files plus `pnpm test src/renderer/src/components/RollPmccShortCallForm.test.tsx` — all must pass
 - [ ] **[Refactor]** `/refactor` _(depends on: Area 10 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
@@ -218,7 +219,7 @@ Shared files to watch when areas run in parallel:
 ### Area 13 — The sheet
 
 - [ ] **[Red]** Write failing tests — `SellPmccShortSheet.test.tsx`, `SellPmccShortForm.test.tsx`, `src/renderer/src/hooks/useSellPmccShort.test.ts` _(depends on: Areas 7, 10, 11, 12 Green ✓)_
-  - Test cases (full list in `plan.md` Area 13 Red): eyebrow and title; coverage and previous-cycle lines; the five preview lines with `text-wb-green`; `$89 · $4.10` warning with confirm enabled; `2 LEAPS contracts remain uncovered`; invalid field disables confirm; `Recording…`; payload; server field-error routing; save-failed copy with values kept; success `PMCC updated` / `Cycle 9 opened` / `Done`
+  - Test cases (full list in `plan.md` Area 13 Red): eyebrow and title; coverage and previous-cycle lines; the five preview lines with `text-wb-green`; `$90 · $1.50` warning with confirm enabled; the partial note with `Only one short call can be open at a time`; invalid field disables confirm; `Recording…`; payload; server field-error routing; save-failed copy with values kept; success `PMCC updated` / `Cycle 9 opened` / `Done`
   - Mockup: `SellShortSheet`, preset `sell-short`
   - Run `pnpm test src/renderer/src/components/SellPmccShort src/renderer/src/hooks/useSellPmccShort.test.ts` — all new tests must fail
 - [ ] **[Green]** Implement — `PmccRollSheetDialog.tsx` (`width`), `SellPmccShortSheet.tsx`, `SellPmccShortForm.tsx`, `SellShortCoverageCard.tsx`, `SellPmccShortPreview.tsx`, `SellPmccShortSuccess.tsx`, `useSellPmccShort.ts`, `useSellPmccShortForm.ts` _(depends on: Area 13 Red ✓)_
@@ -236,11 +237,11 @@ Shared files to watch when areas run in parallel:
 ### Area 14 — Detail-page wiring
 
 - [ ] **[Red]** Write failing tests — the detail page test _(depends on: Areas 9, 13 Green ✓)_
-  - Test cases: `Sell Short Call →` opens the sheet titled `XYZ · against $85.00 LEAPS` and closes any other sheet; the sheet does not render while a short is open
+  - Test cases: `Sell Short Call →` opens the sheet titled `XYZ · against $85.00 LEAPS` and closes any other sheet; the sheet does not render while a short is open; a closed PMCC (`PMCC_CLOSED`, US-120) offers no `Sell Short Call →` and renders no sheet; partial badge `LEAPS + short call open · 1 of 3 covered`
   - Mockup: preset `sell-short`
   - Run the test file — all new tests must fail
 - [ ] **[Green]** Implement — `src/renderer/src/pages/usePositionDetailSheets.ts`, `src/renderer/src/pages/PositionDetailPage.tsx` _(depends on: Area 14 Red ✓)_
-  - `'pmccSellShort'` slot; pass `onSellPmccShort`, `pmccOpenLegs.long`, `pmccLedger`, `lastEndedCycle(data.pmccTimeline)`
+  - `'pmccSellShort'` slot; pass `onSellPmccShort`, `pmccCoverage`, `pmccOpenLegs.long`, `pmccLedger`, `lastEndedCycle(data.pmccTimeline)`; render the sheet only in `PMCC_OPEN`
   - Run `pnpm test src/renderer/src/pages` — all tests must pass
 - [ ] **[Refactor]** `/refactor` _(depends on: Area 14 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
@@ -262,11 +263,11 @@ Shared files to watch when areas run in parallel:
     - AC-1: Sell the next short call → `it('Sell the next short call')`
     - AC-2: The sheet shows the LEAPS as coverage context and the previous cycle's outcome → `it("The sheet shows the LEAPS as coverage context and the previous cycle's outcome")`
     - AC-3: The preview shows the cash and the new guardrails before confirming → `it('The preview shows the cash and the new guardrails before confirming')`
-    - AC-4: Warn when the strike is below the effective share cost → `it('Warn when the strike is below the effective share cost')` ($89.00 at $4.10, Q1)
+    - AC-4: Warn when the strike is below the effective share cost → `it('Warn when the strike is below the effective share cost')` (XYZ quoted at $86.50 via `WHEELBASE_MOCK_STOCK_QUOTES`; $90.00 call at $1.50 → effective $92.00, $2.00 short; Q1)
     - AC-5: Reject a short call that breaks the PMCC shape → `it.each(SHAPE_ROWS)('Reject a short call that breaks the PMCC shape: $strike · $expiration')` (4 rows)
     - AC-6: Reject a bypassed short call that would outlast the LEAPS without a partial record → `it('Reject a bypassed short call that would outlast the LEAPS without a partial record')`
     - AC-7: Reject invalid entry → `it.each(INVALID_ROWS)('Reject invalid entry: $field $value')` (6 rows)
-    - AC-8: Partial coverage is allowed and stated → `it('Partial coverage is allowed and stated')`
+    - AC-8: Partial coverage is allowed and stated → `it('Partial coverage is allowed and stated')` (one-open-short note; `1 of 3 covered` on the detail header and the card)
     - AC-9: Reject when a short call is already open → `it('Reject when a short call is already open')`
     - AC-10: Continue when market data cannot supply the picker → `it('Continue when market data cannot supply the picker')` (relaunch with `FAKE_MARKET_DATA_ERROR=unknown`)
     - AC-11: A failed save leaves the position LEAPS-only → `it('A failed save leaves the position LEAPS-only')`
