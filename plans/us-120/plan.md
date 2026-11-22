@@ -54,6 +54,12 @@ Already on `main`:
 - US-4 / US-10 close services (the pattern to mirror).
 - `shortExtrinsic`, `fmtMoneyGrouped`, `signedMoneyGrouped` and `fmtPct1`.
 
+Shared with US-115 / US-119 (planned on `main` in `plans/us-115/`, not yet in `src/`). Whichever story lands first creates each; the others reuse it, never re-implement it:
+
+- `lastShortRetiredOn(legs)` in `src/main/services/pmcc-ledger.ts` (US-115 Area 4). Created in Area 4 below if absent.
+- `pmccFillDateFloor` / `PmccFillDateFloor` in `src/main/core/pmcc-rules.ts`, the one fill-date tie-break (a tie binds on the short). Created in Area 3 below; US-115's `pmccSubsequentShortIssues` floor rows call it.
+- `pmccCoverageLabel(shortCount)` in `src/renderer/src/lib/pmcc-coverage.ts` (US-115 Area 9, shared with US-119). It fixes the LEAPS-only header badge that `PHASE_LABEL.PMCC_OPEN` mislabels; Area 11 uses it.
+
 Not blocking:
 
 - **US-119.** It is the real route to the LEAPS-only state. E2e seeds that state directly.
@@ -170,7 +176,7 @@ No migration.
 
 **Files to create or modify:**
 
-- `src/main/core/pmcc-rules.ts`: add `PmccCloseFloor`, `pmccCloseFillDateFloor`, `PmccLeapsCloseField`, `PmccLeapsCloseValues` and `pmccLeapsCloseIssues`, plus the message constants.
+- `src/main/core/pmcc-rules.ts`: add `PmccFillDateFloor` and `pmccFillDateFloor` (shared with US-115; reuse them if US-115 landed first), `PmccLeapsCloseField`, `PmccLeapsCloseValues` and `pmccLeapsCloseIssues`, plus the message constants.
 - `src/main/core/pmcc-rules.test.ts`
 - `src/main/core/pmcc-rules.property.test.ts`
 - `src/main/core/lifecycle.ts`: add `ClosePmccLeapsInput`, `ClosePmccLeapsAccepted` and `closePmccLeaps`.
@@ -180,15 +186,16 @@ No migration.
 **Red — tests to write:**
 
 - **Floor:**
-  - `pmccCloseFillDateFloor('2027-07-09', '2027-07-16')` gives `{ binding: 'SHORT_RETIRED', date: '2027-07-16' }`.
+  - `pmccFillDateFloor('2027-07-09', '2027-07-16')` gives `{ binding: 'SHORT_RETIRED', date: '2027-07-16' }`.
   - `('2027-06-01', null)` gives `{ binding: 'LEAPS_OPEN', date: '2027-06-01' }`.
-  - A tie on `'2027-07-16'` gives `LEAPS_OPEN`.
+  - A tie on `'2027-07-16'` gives `SHORT_RETIRED`, as US-115 reports its previous-short message on a tie.
   - `('2027-07-20', '2027-07-16')` gives `LEAPS_OPEN` on `2027-07-20`.
 - **Issues**, each asserted on `field`, `code` and `message`:
   - Sale price `'0.0000'` and `'-1.0000'` give `salePricePerShare` / `must_be_positive` / `Sale price must be greater than zero`.
   - Fees `'-1.0000'` gives `fees` / `must_be_non_negative` / `Fees cannot be negative.`; fees `'0.0000'` passes.
   - `2027-07-15` against the short floor gives `fillDate` / `before_short_retired` / `Fill date cannot be before the last short call was retired (2027-07-16)`.
   - `2027-05-31` against the LEAPS floor gives `before_leaps_open` / `Fill date cannot be before the LEAPS was bought (2027-06-01)`.
+  - Tie: LEAPS and last short both `2027-07-16`, fill `2027-07-15` gives `before_short_retired` / `Fill date cannot be before the last short call was retired (2027-07-16)`, and **not** `before_leaps_open`.
   - On the floor date itself, no issue.
   - `2027-07-20` with today `2027-07-19` gives `fillDate` / `cannot_be_future` / `Fill date cannot be in the future`. On today itself, no issue.
   - An `undefined` sale price, fees or fill date gives no issue for that field.
@@ -202,14 +209,14 @@ No migration.
 
 **Property** (`pmcc-rules.property.test.ts`, `lifecycle.property.test.ts`):
 
-- **Floor.** `floor.date` = max(leaps, retired). `binding` is `SHORT_RETIRED` exactly when `retired > leaps`.
+- **Floor.** `floor.date` = max(leaps, retired). `binding` is `SHORT_RETIRED` exactly when `retired ≥ leaps` (ties bind on the short, as US-115).
 - **Acceptance.** `pmccLeapsCloseIssues` is empty exactly when all of these hold: price > 0, fees ≥ 0, and `floor.date ≤ fillDate ≤ today`.
 - **Undecided.** Making any field `undefined` never adds an issue.
 - **Naked-call rule** (`closePmccLeaps`). For every input with `currentPhase: 'PMCC_OPEN'` and a non-null `openShort`, it throws code `short_call_open`. It never returns any value but `{ phase: 'PMCC_CLOSED' }`.
 
 **Green — implementation:**
 
-- `pmccCloseFillDateFloor(leapsFillDate, lastShortRetiredOn): PmccCloseFloor`. ISO dates compare as strings, and a tie goes to the LEAPS.
+- `pmccFillDateFloor(leapsFillDate, lastShortRetiredOn): PmccFillDateFloor`. ISO dates compare as strings; `lastShortRetiredOn !== null && lastShortRetiredOn >= leapsFillDate` binds on the short (US-115's comparison), else on the LEAPS. If US-115 landed first, it already exists: reuse it and add only the cases above that its tests lack.
 - `pmccLeapsCloseIssues(values): PmccIssue<PmccLeapsCloseField>[]`:
   - use `issueIf` in the order above;
   - choose the floor message with an exhaustive `switch (floor.binding)`;
@@ -223,7 +230,7 @@ No migration.
 
 **Refactor — cleanup to consider:**
 
-- Have `pmccCloseFillDateFloor` and US-105's `latestFillDate` share the "terminal short roles" list, if one already exists in `pmcc-ledger.ts`'s `currentShortCallLeg`.
+- Check that `pmccFillDateFloor` is the only floor tie-break in `pmcc-rules.ts` (US-115's rows 9a / 9b call it, no inline copy).
 
 **Acceptance criteria covered:**
 
@@ -246,8 +253,11 @@ No migration.
 - `src/main/services/pmcc-timeline.ts`: `legEvent`'s `LEAPS_CLOSE` case passes `fees: money4(leg.fees)`.
 - `src/main/services/pmcc-timeline.test.ts`
 - `src/main/core/test-fixtures/arbitraries.ts`: the `LEAPS_CLOSE` arbitrary carries `fees`, not `contribution`.
+- `src/main/services/pmcc-ledger.ts`: `lastShortRetiredOn(legs)`, **only if US-115 has not landed** (US-115 plan Area 4; same signature and tests).
 
 **Red — tests to write:**
+
+- `lastShortRetiredOn`, only if created here (US-115 Area 4's cases): no closing leg gives `null`; the Background without cycle 9 gives `2027-07-16`; a later `SHORT_CALL_CLOSE` on `2027-07-18` gives `2027-07-18`; a `SHORT_CALL_ASSIGNED` counts; a `LEAPS_CLOSE` and a short-roll `ROLL_FROM` do not.
 
 - Ledger:
   - `pmccLedgerFromLegs` over the XYZ Background without cycle 9 gives `basisPerShare` `8.5000`, `basisTotal` `850.0000` and `leapsCostPerShare` `22.5000`. This holds with and without a `LEAPS_CLOSE` `SELL` 24.10 leg on 2027-07-19.
@@ -349,7 +359,7 @@ Areas 4 and 5 edit the same two files. Give both to one agent, Area 4 first.
 - Steps:
   1. `loadPmccRollContext(db, positionId)` → `{ detail, openLegs }`.
   2. Compute `fillDate = payload.fillDate ?? today`, `salePrice = money4(payload.salePricePerShare)` and `fees = money4(payload.fees ?? 0)`.
-  3. Compute the floor: `pmccCloseFillDateFloor(openLegs.long.fillDate, latest fillDate over SHORT_CALL_EXPIRED / _CLOSE / _ASSIGNED legs)`.
+  3. Compute the floor: `pmccFillDateFloor(openLegs.long.fillDate, lastShortRetiredOn(detail.legs))` — the shared helpers, no lookup of its own.
   4. Inside `logPmccRollRejection(positionId, 'pmcc_close_rejected', …)`, call `closePmccLeaps({ currentPhase: detail.position.phase, openShort: openLegs.short, salePricePerShare, fees, fillDate, floor, today })`.
   5. Read the ledger: `ledger = pmccLedgerFromLegs(detail.legs)`.
   6. Settle: `settlement = settlePmccClose({ salePricePerShare, contracts: openLegs.long.contracts, fees, basisTotal: ledger.basisTotal })`.
@@ -362,7 +372,6 @@ Areas 4 and 5 edit the same two files. Give both to one agent, Area 4 first.
 
 **Refactor — cleanup to consider:**
 
-- If the "latest terminal short fill" lookup also helps US-119's floor, move it next to `currentShortCallLeg` in `pmcc-ledger.ts` as `lastShortRetiredOn(legs)`.
 - Keep the service under ~120 lines.
 
 **Acceptance criteria covered:**
@@ -461,9 +470,10 @@ Areas 4 and 5 edit the same two files. Give both to one agent, Area 4 first.
   - `bought '2027-07-09 at $23.50'`;
   - `leapsCost '$22.50 / share'`;
   - `mid '$24.10 ($23.80 × $24.40)'`;
+  - `saleHint 'defaults to the mid · bid $23.80 · ask $24.40'`;
   - `delta '0.81'`;
   - `intrinsicExtrinsic '$18.10 · $6.00'`.
-- **With no snapshot**, `mid`, `delta` and `intrinsicExtrinsic` are each `'—'`. With a snapshot but no stock price, `intrinsicExtrinsic` is `'—'`.
+- **With no snapshot**, `mid`, `delta` and `intrinsicExtrinsic` are each `'—'`, and `saleHint` is `'no quote — type your fill'`. With a snapshot but no stock price, `intrinsicExtrinsic` is `'—'`.
 - **`closePmccPositionCard`:**
   - XYZ: `line` `'8 cycles · $14.00 / share credits realized · 62.2% of LEAPS cost recovered · held since 2026-09-14'`;
   - `costBasis` `'$8.50 / share ($850.00)'` and `effectiveShareCost` `'$93.50'`;
@@ -485,6 +495,9 @@ Areas 4 and 5 edit the same two files. Give both to one agent, Area 4 first.
   - Sale `''` or `'0'` gives `null`.
   - A basis of 0 or less gives `percentOfBasis null`.
   - A loss caused by fees alone, with the sale at or above the LEAPS cost, gives `lossNote null` (research Open Question 7).
+  - Credits guard (research Open Question 7): `LEAPS_ONLY` (credits `0.0000`), sale `15.00`, basis `1980` gives `finalPnl '−$480.00'`, `tone 'loss'` and `lossNote null`.
+  - Credits guard: XYZ ledger with `shortCreditsPerShare '-0.5000'` (net buyback debits), sale `6.40` gives `lossNote null`.
+  - Guard positive control: the 6.40 XYZ case above (credits `14.0000`) still gives the note.
   - The `+$160.00` trap: for 24.10, no field of the result is `'+$160.00'`.
 - **`closePmccSuccess`.** Fill `2027-07-19` gives `summary` `'held 308 days · 8 cycles · 62.2% of LEAPS cost recovered by credits'`, and `finalPnl` `'+$1,560.00'`.
 
@@ -492,6 +505,7 @@ Areas 4 and 5 edit the same two files. Give both to one agent, Area 4 first.
 
 - Write the builders in `data-model.md` § 6.
   - `closePmccResult` calls `settlePmccClose` from `src/main/core/costbasis.ts`; there is no renderer arithmetic for the P&L.
+  - `lossNote` is built only when `finalPnl < 0`, sale < `leapsCostPerShare` and `shortCreditsPerShare > 0` (`data-model.md` § 6).
   - Intrinsic comes from `shortExtrinsic`.
   - Days are computed with `differenceInCalendarDays`.
   - Figures come from `pmccLedger` and `pmccTimeline.summary` / `.start`, read rather than recomputed.
@@ -525,7 +539,7 @@ The mockup is `ClosePositionSheet` and the presets `close-*`. Its anatomy:
 - Header: eyebrow `CLOSE POSITION`, title `XYZ $85.00 LEAPS · 2028-01-21`, subtitle `sell to close · position ends`.
 - A `Your LEAPS` `SectionCard`, holding the `StatGrid` of the eight fields.
 - A `This position` `SectionCard`, holding the position line plus `SummaryRow`s for `Cost basis` (highlighted) and `Effective share cost`.
-- A two-column grid of `Sale price / share` (`$` prefix; hint `defaults to the mid` or `no quote — type your fill`), `Fill date` (`DatePicker`) and `Fees`.
+- A two-column grid of `Sale price / share` (`$` prefix; hint `saleHint`: `defaults to the mid · bid $23.80 · ask $24.40`, so bid and ask sit beside the mid default, or `no quote — type your fill`), `Fill date` (`DatePicker`) and `Fees`.
 - An emphasized `Result` card. Above its rows sits the `cashLine` (`data-testid="close-pmcc-cash-line"`). Its rows are `Proceeds · $24.10 × 100 sh`, `Fees` and `Cost basis`. Below them are the large `Final P&L` with `% of basis`, the reconciliation line and the gold loss note. When unpriced, it reads `Enter the sale price to preview the result.`
 - `AlertBox variant="warning"`: `This closes the position. Full leg history is preserved.`
 - Footer: `Cancel` · `Confirm Close` (`Closing…` while pending).
@@ -533,7 +547,7 @@ The mockup is `ClosePositionSheet` and the presets `close-*`. Its anatomy:
 **Red — tests to write** (React Testing Library, `api` mocked):
 
 - The header texts. Each `Your LEAPS` value from Area 9. The `This position` line, `$8.50 / share ($850.00)` and `$93.50`.
-- The sale price input starts at `24.10`, the fill date at `2027-07-19` and fees at `0.00`. Editing the sale price to `6.40` updates the preview to `−$210.00` in `text-wb-red`, shows the loss note in `text-wb-gold`, and leaves `Confirm Close` enabled.
+- The sale price input starts at `24.10`, the fill date at `2027-07-19` and fees at `0.00`. Its hint reads `defaults to the mid · bid $23.80 · ask $24.40`. Editing the sale price to `6.40` updates the preview to `−$210.00` in `text-wb-red`, shows the loss note in `text-wb-gold`, and leaves `Confirm Close` enabled.
 - The gain figure carries `text-wb-green`.
 - Each of the four invalid inputs:
   - shows its message beside its field (`Field` error);
@@ -586,6 +600,9 @@ The mockup is `ClosePositionSheet` and the presets `close-*`. Its anatomy:
   - `today = pmccTimeline.valuationDate`.
 - `src/renderer/src/pages/PositionDetailPage.test.tsx`
 - `src/renderer/src/pages/PositionDetailContent.tsx` and `.test.tsx`: for a PMCC whose latest snapshot has a non-null `finalPnl`, the closed banner reads `Closed on 2027-07-19 · Final P&L +$1,560.00`, in green or red by sign.
+- `PositionDetailActions.tsx`: the `PMCC_OPEN` badge reads `pmccCoverageLabel(shortCount)` (shared with US-115 / US-119; create `src/renderer/src/lib/pmcc-coverage.ts` per US-115 Area 9 if absent). `PMCC_CLOSED` keeps `PHASE_LABEL.PMCC_CLOSED`.
+- `src/renderer/src/components/position-cockpit/PmccCostBasis.tsx` and `PmccCostBasis.spec.tsx`: a `closed` prop; when set, the per-share stat is labelled `Cost basis at close / share` (research ADR "`LEAPS_CLOSE` is a settlement leg").
+- `src/renderer/src/components/position-card/PmccCard.tsx` and its test: a `closed` display labels the footer cell `Cost basis at close`.
 
 **Red — tests to write:**
 
@@ -594,9 +611,11 @@ The mockup is `ClosePositionSheet` and the presets `close-*`. Its anatomy:
   - `PMCC_OPEN` with LEAPS and a short shows no `close-pmcc-btn`. `roll-pmcc-short-btn` is present as a positive control.
   - `PMCC_CLOSED`, with `hasOpenLeaps` still true, shows no button at all (only the phase badge, `PMCC Closed`).
   - A click calls `onClosePmcc`.
+  - Badge: LEAPS-only `PMCC_OPEN` reads `LEAPS open · no short call` (`pmccCoverageLabel(0)`), not `LEAPS + short call open`; with a short open it reads `LEAPS + short call open`.
 - **`PositionDetailActions`, wheel.** `CSP_OPEN`, `HOLDING_SHARES`, `CC_OPEN` and `WHEEL_COMPLETE` with strategy `WHEEL` show no `close-pmcc-btn`, and each keeps its existing buttons.
 - **Page.** Clicking `Close Position →` opens the sheet with today `2027-07-19` from `pmccTimeline.valuationDate`. On success the position query is invalidated.
 - **Content.** A closed PMCC shows `Final P&L +$1,560.00` in the banner. A closed wheel's banner is unchanged.
+- **At close labels.** `PmccCostBasis` with `closed` shows `Cost basis at close / share` `$8.50` and no `Cost basis / share`; without it, `Cost basis / share` (positive control). The closed `PmccCard` shows `Cost basis at close`; an open one shows `Cost basis`.
 
 **Green — implementation:**
 
@@ -642,7 +661,7 @@ Every PMCC test seeds through `_test:pmcc-seed-position` (research ADR "E2e seed
 2. **The sheet shows what is being sold and what it settles against.**
    - `Your LEAPS` reads `$85.00`, `2028-01-21 · 186 DTE`, `2027-07-09 at $23.50`, `1`, `$24.10 ($23.80 × $24.40)` and `$18.10 · $6.00`.
    - The position line contains `8 cycles · $14.00 / share credits realized · 62.2% of LEAPS cost recovered · held since 2026-09-14`.
-   - The sale input is `24.10` and editable: retype `24.05` and it reads `24.05`.
+   - The sale input is `24.10` and editable: retype `24.05` and it reads `24.05`. Its hint reads `defaults to the mid · bid $23.80 · ask $24.40`.
    - The fill date is `2027-07-19` and fees are `0.00`.
 3. **The preview reconciles proceeds to the cost basis before confirming.** With `24.10`:
    - `close-pmcc-cash-line` reads `Proceeds $2,410.00 · fees $0.00 · cost basis $850.00`.
@@ -669,7 +688,7 @@ Every PMCC test seeds through `_test:pmcc-seed-position` (research ADR "E2e seed
    - Fill `2027-05-31` shows `Fill date cannot be before the LEAPS was bought (2027-06-01)` beside `Fill date`, and confirm is disabled.
 8. **Selling the LEAPS under an open short call is refused.** Relaunch at 2027-08-13 and seed the plain Background (the `healthy` state):
    - `close-pmcc-btn` is absent, and `roll-pmcc-short-btn` is present as a positive control.
-   - In the same app, a second seed with `{ patch: { c9Sell: null } }` (`leaps-only`) shows `close-pmcc-btn`.
+   - In the same app, a second seed with `{ patch: { c9Sell: null } }` (`leaps-only`) shows `close-pmcc-btn`, and its badge reads `LEAPS open · no short call`.
    - Back on the first position, `window.api.closePmcc({ positionId, salePricePerShare: 24.1 })` returns `ok: false` with `__root__` / `short_call_open` and the story's message.
    - `tableCount(legs)` and the `cost_basis_snapshots` count are unchanged, and the position is still `PMCC_OPEN` / `ACTIVE`.
 9. **Reject invalid close input — sale price $0.00.** Sale `0.00` shows `Sale price must be greater than zero` beside `Sale price / share`; `Confirm Close` is disabled.
@@ -693,10 +712,10 @@ Every PMCC test seeds through `_test:pmcc-seed-position` (research ADR "E2e seed
 16. **The closed position renders from the terminal snapshot.** Close through the sheet, then reopen the detail page:
    - The banner reads `Closed on 2027-07-19 · Final P&L +$1,560.00`.
    - The header holds only the phase badge `PMCC Closed`. No `close-pmcc-btn`, `roll-pmcc-leaps-btn` or `roll-pmcc-short-btn`.
-   - The `Cost basis` drawer reads effective share cost `$93.50` and premium recovered `62.2%`.
+   - The `Cost basis` drawer reads `Cost basis at close / share` `$8.50`, effective share cost `$93.50` and premium recovered `62.2%`.
    - `Timeline summary` reads Cycles `8 · 8 closed`. `0 open` is asserted only once US-118 renders it; research Open Question 6.
    - With `Leg timeline` expanded, the last LEAPS track row reads `Sold to close`, `$24.10` and `2027-07-19`, and the banner reads `Position closed 2027-07-19 · the timeline is complete`.
-   - The positions list shows XYZ under `position-card-closed`, with `closed — no live marks` and basis `$850.00`.
+   - The positions list shows XYZ under `position-card-closed`, with `closed — no live marks` and `Cost basis at close` `$850.00`.
    - US-118's CLOSED lanes are a named `it.todo` until US-118 lands.
 17. **The wheel is unchanged.** Open a wheel in `CSP_OPEN` with the existing helpers (`e2e/helpers.ts`):
    - The US-4 close form (`CloseCspForm`) is present.

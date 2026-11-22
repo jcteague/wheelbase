@@ -73,8 +73,8 @@ pattern); DEBUG for the parsed payload, the settlement figures and each transact
 | `__root__` | `short_call_open` | `This PMCC has an open short call — selling the LEAPS would leave it naked. Retire or roll the short call first.` | a short call is open |
 | `salePricePerShare` | `must_be_positive` | `Sale price must be greater than zero` | ≤ 0 |
 | `fees` | `must_be_non_negative` | `Fees cannot be negative.` | < 0 |
-| `fillDate` | `before_leaps_open` | `Fill date cannot be before the LEAPS was bought (2027-06-01)` | before the held LEAPS' fill, which binds |
-| `fillDate` | `before_short_retired` | `Fill date cannot be before the last short call was retired (2027-07-16)` | before the last short's terminal fill, which binds |
+| `fillDate` | `before_leaps_open` | `Fill date cannot be before the LEAPS was bought (2027-06-01)` | before the held LEAPS' fill, when it is later than the last short's terminal fill |
+| `fillDate` | `before_short_retired` | `Fill date cannot be before the last short call was retired (2027-07-16)` | before the last short's terminal fill, when it is later or ties (as US-115) |
 | `fillDate` | `cannot_be_future` | `Fill date cannot be in the future` | after today (New York) |
 | `__root__` | `internal_error` | `An unexpected error occurred` | any other throw (e.g. a storage failure); the transaction rolled back, nothing written |
 
@@ -86,6 +86,7 @@ Every rejection leaves the database unchanged: no leg, no snapshot, position sti
 - Handler: `src/main/ipc/positions.ts`
 - Service: `closePmccPosition` in `src/main/services/close-pmcc-position.ts`
 - Engines: `closePmccLeaps` (`src/main/core/lifecycle.ts`), `pmccLeapsCloseIssues` /
-  `pmccCloseFillDateFloor` (`src/main/core/pmcc-rules.ts`), `settlePmccClose`
+  `pmccFillDateFloor` (`src/main/core/pmcc-rules.ts`, shared with US-115), `settlePmccClose`
   (`src/main/core/costbasis.ts`)
 - Snapshot: `appendPmccSnapshot` (`src/main/services/pmcc-ledger.ts`)
+- Floor date: `lastShortRetiredOn` (`src/main/services/pmcc-ledger.ts`, US-115's helper)

@@ -25,6 +25,7 @@ Shared files to watch when areas run in parallel:
 | `src/main/core/costbasis.ts` | 2 (Layer 1); Area 9 only imports it |
 | `src/renderer/src/lib/phase.ts`, `api/positions.ts` | 1 (Layer 1), then 8 (Layer 5) |
 | `src/renderer/src/components/PositionDetailActions.tsx` | 11. US-115 and US-119 edit it too; rebase onto whichever lands first and keep the `phase === 'PMCC_OPEN'` gate |
+| Shared with US-115: `lastShortRetiredOn` (`pmcc-ledger.ts`), `pmccFillDateFloor` (`pmcc-rules.ts`), `pmccCoverageLabel` (`lib/pmcc-coverage.ts`) | 4, 3, 11. Reuse if US-115 landed first; create per US-115's plan otherwise. Never a second copy |
 
 ---
 
@@ -100,12 +101,13 @@ Shared files to watch when areas run in parallel:
     - Floor:
       - `('2027-07-09','2027-07-16')` → `SHORT_RETIRED` on `2027-07-16`;
       - `('2027-06-01', null)` → `LEAPS_OPEN`;
-      - a tie → `LEAPS_OPEN`.
+      - a tie → `SHORT_RETIRED` (as US-115).
     - Issues, each asserted on field, code and the full message:
       - sale `0` → `must_be_positive`;
       - fees `-1` → `must_be_non_negative`;
       - `2027-07-15` → `before_short_retired (2027-07-16)`;
       - `2027-05-31` → `before_leaps_open (2027-06-01)`;
+      - tie on `2027-07-16`, fill `2027-07-15` → `before_short_retired (2027-07-16)`, not `before_leaps_open`;
       - `2027-07-20` → `cannot_be_future`.
     - Boundaries: the floor day and today pass.
     - An `undefined` field gives no issue.
@@ -115,14 +117,14 @@ Shared files to watch when areas run in parallel:
       - a wheel or `PMCC_CLOSED` phase → `invalid_phase`;
       - an open short → `short_call_open` with the story's message, even when the price is also invalid.
   - Property cases:
-    - Floor = max of the two dates, with `binding` correct.
+    - Floor = max of the two dates; `binding` is `SHORT_RETIRED` exactly when retired ≥ LEAPS.
     - The issues list is empty exactly when every rule holds.
     - An `undefined` field never adds an issue.
     - Naked-call rule: any `PMCC_OPEN` input with a non-null `openShort` throws `short_call_open`.
   - Run `pnpm test src/main/core/pmcc-rules.test.ts src/main/core/pmcc-rules.property.test.ts src/main/core/lifecycle.test.ts src/main/core/lifecycle.property.test.ts`. Every new test must fail.
 - [ ] **[Green]** Implement in `src/main/core/pmcc-rules.ts` and `src/main/core/lifecycle.ts` _(depends on: Area 3 Red ✓)_.
-  - `PmccCloseFloor`, a discriminated union on `binding`.
-  - `pmccCloseFillDateFloor`.
+  - `PmccFillDateFloor`, a discriminated union on `binding`.
+  - `pmccFillDateFloor`, shared with US-115 (reuse it if it exists): `lastShortRetiredOn !== null && lastShortRetiredOn >= leapsFillDate` binds on the short.
   - `PmccLeapsCloseField`, a string-literal union.
   - `pmccLeapsCloseIssues`, built from `issueIf` with an exhaustive `switch (floor.binding)`; export each message as a `satisfies PmccRule` constant.
   - `closePmccLeaps`: `requirePmccOpenPhase` → open-short guard → `throwIssue(first)` → `{ phase: 'PMCC_CLOSED' }`.
@@ -131,7 +133,7 @@ Shared files to watch when areas run in parallel:
   - Run the same tests; all must pass.
 - [ ] **[Refactor]** Run `/refactor` on `src/main/core/pmcc-rules.ts` and `src/main/core/lifecycle.ts` _(depends on: Area 3 Green ✓)_.
   - **Invoke the `/refactor` skill.** Do not skip it or treat it as a visual review.
-  - Consider: one list of terminal short roles, shared with `currentShortCallLeg`.
+  - Consider: `pmccFillDateFloor` is the only floor tie-break (US-115's rows 9a / 9b call it).
   - Run `pnpm test && pnpm lint && pnpm typecheck`.
   - Run `pnpm test:mutation --mutate src/main/core/pmcc-rules.ts,src/main/core/lifecycle.ts`. Leave no surviving, reproducible, non-equivalent mutant in the new functions.
 
@@ -143,6 +145,7 @@ Shared files to watch when areas run in parallel:
     - The XYZ ledger is unchanged by a `LEAPS_CLOSE` `SELL` 24.10: `8.5000` / `850.0000` / `22.5000` / `93.5000` / `62.2222`. This holds with and without a `0.65` fee.
     - The timeline `CLOSE` row has `fees '0.6500'` and `total '2410.0000'`; every `basisAfter` and `summary` field is unchanged.
     - `legEvent` gives `LEAPS_CLOSE` with `fees` and no `contribution` key.
+    - Only if US-115 has not landed: `lastShortRetiredOn` — `null` with no closing leg; `2027-07-16` for the Background without cycle 9; a later `SHORT_CALL_CLOSE` and a `SHORT_CALL_ASSIGNED` count; `LEAPS_CLOSE` and `ROLL_FROM` do not.
   - Property cases (`pmcc-timeline.property.test.ts`):
     - Sale invariance: appending a `LEAPS_CLOSE` event changes no `basisAfter`, `costPerShare` or `summary` field, and adds exactly one `CLOSE` row.
   - Update the `LEAPS_CLOSE` arbitrary in `src/main/core/test-fixtures/arbitraries.ts` to carry `fees`.
@@ -153,6 +156,7 @@ Shared files to watch when areas run in parallel:
   - `pmccLedgerFromLegs` and `orderedLedgerEvents` filter with `isPmccBasisLegRole`.
   - The timeline's `LEAPS_CLOSE` union member gets `fees` and no `LedgerEventBase`.
   - `applyEvent` appends the `CLOSE` row without touching the contribution prefix.
+  - `lastShortRetiredOn(legs)` per US-115's plan Area 4, only if absent.
   - Run the same tests, then the whole US-103 and US-109 suites. All must pass.
 - [ ] **[Refactor]** Run `/refactor` _(depends on: Area 4 Green ✓)_.
   - **Invoke the `/refactor` skill.** Do not skip it or treat it as a visual review.
@@ -184,7 +188,7 @@ Same agent as Area 4, after it.
 
 - [ ] **[Red]** Write failing tests in `src/renderer/src/lib/pmcc-close-view.test.ts` _(depends on: Area 2 Green ✓)_.
   - Test cases (full list in `plan.md` Area 9 Red):
-    - LEAPS card: `2028-01-21 · 186 DTE`, `2027-07-09 at $23.50`, `$22.50 / share`, `$24.10 ($23.80 × $24.40)`, `0.81` and `$18.10 · $6.00`. Each reads `—` with no snapshot or price.
+    - LEAPS card: `2028-01-21 · 186 DTE`, `2027-07-09 at $23.50`, `$22.50 / share`, `$24.10 ($23.80 × $24.40)`, `0.81` and `$18.10 · $6.00`; `saleHint` `defaults to the mid · bid $23.80 · ask $24.40`. Each reads `—` with no snapshot or price, and `saleHint` is `no quote — type your fill`.
     - Position card:
       - the XYZ line `8 cycles · $14.00 / share credits realized · 62.2% of LEAPS cost recovered · held since 2026-09-14`;
       - `$8.50 / share ($850.00)` and `$93.50`;
@@ -197,12 +201,13 @@ Same agent as Area 4, after it.
       - unpriced → `null`;
       - basis ≤ 0 → `percentOfBasis null`;
       - a loss from fees alone → `lossNote null`;
+      - credits ≤ 0 → `lossNote null`: `LEAPS_ONLY` sale `15.00` (`−$480.00`, credits `0`), and credits `-0.5000` with sale `6.40`; the XYZ 6.40 case (credits `14.00`) is the positive control;
       - no field equals `+$160.00`.
     - Success: `held 308 days · 8 cycles · 62.2% of LEAPS cost recovered by credits`.
   - Run `pnpm test src/renderer/src/lib/pmcc-close-view.test.ts`. Every new test must fail.
 - [ ] **[Green]** Implement `src/renderer/src/lib/pmcc-close-view.ts` _(depends on: Area 9 Red ✓)_.
   - Builders `closePmccLeapsCard`, `closePmccPositionCard`, `closePmccResult` and `closePmccSuccess`, typed per `data-model.md` § 6. `ClosePmccResultView` is the object `| null`.
-  - `closePmccResult` calls `settlePmccClose`.
+  - `closePmccResult` calls `settlePmccClose`; `lossNote` only when `finalPnl < 0`, sale < LEAPS cost and `shortCreditsPerShare > 0`.
   - Intrinsic comes from `shortExtrinsic`.
   - Money is formatted with `fmtMoneyGrouped` / `signedMoneyGrouped`, using U+2212 for the minus.
   - Days are computed with `differenceInCalendarDays`.
@@ -240,7 +245,7 @@ Same agent as Area 4, after it.
   - Load, compute the defaults, `money4`:
     - `loadPmccRollContext`;
     - the defaults and `money4`;
-    - the floor from `pmccCloseFillDateFloor`.
+    - the floor from `pmccFillDateFloor`.
   - Validate and settle:
     - `closePmccLeaps`, inside `logPmccRollRejection(…, 'pmcc_close_rejected', …)`;
     - `pmccLedgerFromLegs`;
@@ -311,7 +316,7 @@ Same agent as Area 4, after it.
   - Mockup: `ClosePositionSheet`, presets `close-*`.
   - Test cases (full list in `plan.md` Area 10 Red):
     - Header and card texts.
-    - Defaults: `24.10` / `2027-07-19` / `0.00`.
+    - Defaults: `24.10` / `2027-07-19` / `0.00`; the sale hint shows bid and ask (`defaults to the mid · bid $23.80 · ask $24.40`).
     - Editing to `6.40`: `−$210.00` in `text-wb-red`, the gold loss note, and confirm enabled.
     - Each invalid input shows its error beside the field and disables confirm.
     - No snapshot: an empty sale, the `no quote — type your fill` hint, the placeholder, then figures once a price is typed.
@@ -346,8 +351,12 @@ Same agent as Area 4, after it.
     - Wheel phases show no `close-pmcc-btn` and keep their existing buttons.
     - The page opens the sheet with today taken from `pmccTimeline.valuationDate`.
     - The closed-PMCC banner reads `Closed on 2027-07-19 · Final P&L +$1,560.00`; the wheel banner is unchanged.
-  - Run `pnpm test src/renderer/src/components/PositionDetailActions.test.tsx src/renderer/src/pages`. Every new test must fail.
-- [ ] **[Green]** Implement in `PositionDetailActions.tsx`, `usePositionDetailSheets.ts`, `PositionDetailPage.tsx` and `PositionDetailContent.tsx` _(depends on: Area 11 Red ✓)_.
+    - Badge: LEAPS-only `PMCC_OPEN` reads `LEAPS open · no short call` via `pmccCoverageLabel`; with a short open, `LEAPS + short call open`.
+    - Closed labels: `PmccCostBasis` `closed` → `Cost basis at close / share`; closed `PmccCard` → `Cost basis at close`; open ones keep `Cost basis / share` / `Cost basis`.
+  - Run `pnpm test src/renderer/src/components/PositionDetailActions.test.tsx src/renderer/src/components/position-cockpit/PmccCostBasis.spec.tsx src/renderer/src/components/position-card src/renderer/src/pages`. Every new test must fail.
+- [ ] **[Green]** Implement in `PositionDetailActions.tsx`, `usePositionDetailSheets.ts`, `PositionDetailPage.tsx`, `PositionDetailContent.tsx`, `PmccCostBasis.tsx` and `PmccCard.tsx` _(depends on: Area 11 Red ✓)_.
+  - `PhaseBadge label={pmccCoverageLabel(...)}` for `PMCC_OPEN` (create `lib/pmcc-coverage.ts` per US-115 Area 9 if absent); `PMCC_CLOSED` keeps `PHASE_LABEL`.
+  - The "at close" basis labels on closed surfaces.
   - Gate every PMCC button on `phase === 'PMCC_OPEN'`.
   - Add the `onClosePmcc` prop and the `closePmcc` sheet kind.
   - Pass `pmccOpenLegs.long`, `pmccLedger`, `pmccTimeline` and `underlyingPrice`.
@@ -377,7 +386,7 @@ Same agent as Area 4, after it.
   - One `it()` per scenario or outline row. Names mirror the AC, and assertions are the literals in `plan.md` Area 12.
   - AC coverage:
     - AC-1: Close the position by selling the LEAPS → `it('Close the position by selling the LEAPS')`. It asserts `+$1,560.00` and the absence of `+$160.00`, and checks no `broker:` channel.
-    - AC-2: The sheet shows what is being sold and what it settles against → `it('The sheet shows what is being sold and what it settles against')`
+    - AC-2: The sheet shows what is being sold and what it settles against → `it('The sheet shows what is being sold and what it settles against')`. The sale hint shows bid and ask beside the mid.
     - AC-3: The preview reconciles proceeds to the cost basis before confirming → `it('The preview reconciles proceeds to the cost basis before confirming')`
     - AC-4: Fees reduce the realized figure and are counted once → `it('Fees reduce the realized figure and are counted once')`
     - AC-5: A losing close is allowed and shown as one → `it('A losing close is allowed and shown as one')`. Relaunch with `XYZ_BROKEN`; the BROKEN lane is an `it.todo` pending US-118.
@@ -391,7 +400,7 @@ Same agent as Area 4, after it.
     - AC-13: The sheet works with no quote → `it('The sheet works with no quote')`
     - AC-14: A failed save leaves the position open → `it('A failed save leaves the position open')`. Use the `RAISE(ABORT)` trigger on `cost_basis_snapshots`.
     - AC-15: Success state closes the loop → `it('Success state closes the loop')`
-    - AC-16: The closed position renders from the terminal snapshot → `it('The closed position renders from the terminal snapshot')`. The CLOSED lanes and `0 open` are an `it.todo` pending US-118.
+    - AC-16: The closed position renders from the terminal snapshot → `it('The closed position renders from the terminal snapshot')`. The drawer and list card label the basis `Cost basis at close`; the CLOSED lanes and `0 open` are an `it.todo` pending US-118.
     - AC-17: The wheel is unchanged → `it('The wheel is unchanged')`
   - Run `pnpm test:e2e e2e/pmcc-close-position.spec.ts`. Every new test must fail for the right reason. Because Layers 1–7 are complete, a test that already passes must be shown falsifiable: break its fixture or expected literal once and confirm it fails.
 - [ ] **[Green]** Make the e2e tests pass _(depends on: E2E Red ✓)_.
@@ -411,7 +420,7 @@ Same agent as Area 4, after it.
   - Areas 2, 3 and 4: properties named in `plan.md`.
 - [ ] All Green tasks complete (all tests passing)
 - [ ] All Refactor tasks complete (lint and typecheck clean)
-- [ ] No reproducible, non-equivalent surviving mutant in `settlePmccClose`, `pmccCloseFillDateFloor`, `pmccLeapsCloseIssues` or `closePmccLeaps`
+- [ ] No reproducible, non-equivalent surviving mutant in `settlePmccClose`, `pmccFillDateFloor`, `pmccLeapsCloseIssues` or `closePmccLeaps`
 - [ ] E2E tests cover every AC: 17 of 17 (14 scenarios, the outline as 4). The US-118-dependent clauses are named `it.todo`s.
 - [ ] `pnpm test && pnpm lint && pnpm typecheck && pnpm format`, all clean
 - [ ] `/update-spec us-120` run before the plan directory is removed. It must cover:

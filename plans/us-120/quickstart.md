@@ -37,7 +37,7 @@ pnpm test:mutation --mutate src/main/core/costbasis.ts,src/main/core/pmcc-rules.
 ```
 
 Report: `reports/mutation/index.html`. Only the new functions (`settlePmccClose`,
-`pmccCloseFillDateFloor`, `pmccLeapsCloseIssues`, `closePmccLeaps`) need to be clean; kill a
+`pmccFillDateFloor`, `pmccLeapsCloseIssues`, `closePmccLeaps`) need to be clean; kill a
 survivor with a test or record it as equivalent with its reason. A survivor must reproduce
 before acting on it.
 
