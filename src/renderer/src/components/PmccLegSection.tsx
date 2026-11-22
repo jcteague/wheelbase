@@ -20,7 +20,7 @@ import {
   type LegPreset,
   type ShortCallChainBounds
 } from '../lib/pmcc-entry'
-import type { PmccLegFormSlice } from '../schemas/pmcc-entry'
+import type { PmccEntryFormValues, PmccLegFormSlice } from '../schemas/pmcc-entry'
 import { CallContractPicker } from './CallContractPicker'
 import { Field } from './ui/FormField'
 import { NumberInput } from './ui/NumberInput'
@@ -133,13 +133,14 @@ function LegDatePicker({ name, id, label, hasError }: LegDatePickerProps): React
   )
 }
 
-/** The section's form: the slice both sheets share, plus what only US-101's entry form has —
- *  the LEAPS leg, the ticker and rule 16's `__pair__` (read only when `form` is `'entry'`). */
-type PmccLegSectionValues = PmccLegFormSlice & {
-  long?: PmccLegFormSlice['short']
-  ticker?: string
-  __pair__?: string
-}
+/**
+ * The section's form: the slice both sheets share, plus what only US-101's entry form has (the
+ * LEAPS leg, the ticker and rule 16's `__pair__`), picked from that form's own values so a rename
+ * there breaks this type. They are optional because the sell form has none of them; the section
+ * reads them only when `form` is `'entry'` (`data-model.md` § Type Design records why).
+ */
+type PmccLegSectionValues = PmccLegFormSlice &
+  Partial<Pick<PmccEntryFormValues, 'long' | 'ticker' | '__pair__'>>
 
 type PmccLegSectionCommon = {
   preset: LegPreset

@@ -412,12 +412,11 @@ describe('usePositionDetailSheets — sell short call sheet', () => {
     expect(result.current.pmccSellShortRecorded).toBe(false)
   })
 
-  it('opening the sell sheet again starts a new, unrecorded sale', () => {
+  it('opening the sell sheet starts a new, unrecorded sale, even before the last one is closed', () => {
     const result = hookFor(CSP_DETAIL)
 
     act(() => result.current.handleSellPmccShort())
     act(() => result.current.handlePmccShortSold())
-    act(() => result.current.handleCloseSellPmccShort())
     act(() => result.current.handleSellPmccShort())
 
     expect(result.current.pmccSellShortOpen).toBe(true)
