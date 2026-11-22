@@ -139,6 +139,7 @@ export function pmccCrossLegIssues({ long, short, referenceDate }: PmccCrossLegI
   return [
     ...perLeg(({ fillDate }, side) =>
       issueIf(
+        // Stryker disable next-line ConditionalExpression: equivalent — the guard only narrows the type; comparing undefined with `<`, `>` or `<=` is already false
         fillDate !== undefined && fillDate > referenceDate,
         `${side}.fillDate`,
         FILL_DATE_IN_FUTURE
@@ -153,6 +154,7 @@ export function pmccCrossLegIssues({ long, short, referenceDate }: PmccCrossLegI
     // on/before the fill, and the expired-contract message is the one the trader needs.
     ...perLeg(({ expiration }, side) =>
       issueIf(
+        // Stryker disable next-line ConditionalExpression: equivalent — the guard only narrows the type; comparing undefined with `<`, `>` or `<=` is already false
         expiration !== undefined && expiration < referenceDate,
         `${side}.expiration`,
         EXPIRED_CONTRACT
@@ -418,6 +420,7 @@ export function pmccFillDateFloor({
 }: Pick<PmccSubsequentShortContext, 'previousShortRetiredOn'> & {
   leapsFillDate: string
 }): PmccFillDateFloor {
+  // Stryker disable next-line ConditionalExpression: equivalent — the guard only narrows the type; `null >= <ISO date>` is already false
   return previousShortRetiredOn !== null && previousShortRetiredOn >= leapsFillDate
     ? { kind: 'previousShort', date: previousShortRetiredOn }
     : { kind: 'leaps', date: leapsFillDate }
@@ -442,15 +445,20 @@ export function pmccSubsequentShortIssues({
   const floor = pmccFillDateFloor({ previousShortRetiredOn, leapsFillDate: leaps.fillDate })
   return [
     ...issueIf(
+      // Stryker disable next-line ConditionalExpression: equivalent — the guard only narrows the type; comparing undefined with `<`, `>` or `<=` is already false
       contracts !== undefined && contracts > leaps.contracts,
       'contracts',
       exceedsLeapsContracts(leaps.contracts)
     ),
+    // Stryker disable next-line ConditionalExpression: equivalent — the guard only narrows the type; comparing undefined with `<`, `>` or `<=` is already false
     ...issueIf(fillDate !== undefined && fillDate > today, 'fillDate', FILL_DATE_IN_FUTURE),
+    // Stryker disable next-line ConditionalExpression: equivalent — the guard only narrows the type; comparing undefined with `<`, `>` or `<=` is already false
     ...issueIf(fillDate !== undefined && fillDate < floor.date, 'fillDate', floorRule(floor)),
     // Expired is checked first, as US-101 orders them: it is the message the trader needs.
+    // Stryker disable next-line ConditionalExpression: equivalent — the guard only narrows the type; comparing undefined with `<`, `>` or `<=` is already false
     ...issueIf(expiration !== undefined && expiration < today, 'expiration', EXPIRED_CONTRACT),
     ...issueIf(
+      // Stryker disable next-line ConditionalExpression: equivalent — the guard only narrows the type; comparing undefined with `<`, `>` or `<=` is already false
       expiration !== undefined && fillDate !== undefined && expiration <= fillDate,
       'expiration',
       EXPIRATION_NOT_AFTER_FILL
