@@ -76,13 +76,13 @@ export function SellPmccShortForm({
           today={today}
         />
         <PmccLegSection
+          form="sell"
           leg="short"
           preset={SHORT_PRESET}
           today={today}
           ticker={ticker}
           bounds={{ expirationBefore: leaps.expiration, strikeAbove: leaps.strike }}
           fillLabel="Actual sale price / share"
-          pairRule={false}
         >
           <Field
             label="Contracts"

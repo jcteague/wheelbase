@@ -1,12 +1,12 @@
 // [US-115] sellPmccShortPosition — records the next short call against a PMCC's open LEAPS: one
 // SHORT_CALL_OPEN sell leg and one PMCC_SHORT_OPEN snapshot in one transaction, phase unchanged.
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import type Database from 'better-sqlite3'
 import { ValidationError } from '../core/lifecycle'
 import { logger } from '../logger'
 import type { LegRecord, SellPmccShortPayload } from '../schemas'
-import { isoDate, makeTestDb } from '../test-utils'
+import { makeTestDb } from '../test-utils'
 import { getPosition } from './get-position'
 import { createPosition } from './positions'
 import { sellPmccShortPosition } from './sell-pmcc-short-position'
@@ -412,14 +412,20 @@ describe('sellPmccShortPosition — rejections write nothing (US-115)', () => {
   })
 
   it('rejects a wheel position id as invalid_phase', () => {
+    // `createPosition` judges its dates by the system clock: pin it to the sale day.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(NOW))
+    onTestFinished(() => {
+      vi.useRealTimers()
+    })
     const db = makeTestDb()
     const { position } = createPosition(db, {
       ticker: 'AAPL',
       strike: 180,
-      expiration: isoDate(30),
+      expiration: '2027-08-20',
       contracts: 1,
       premiumPerContract: 2.5,
-      fillDate: isoDate(0)
+      fillDate: TODAY
     })
     const before = counts(db, position.id)
 

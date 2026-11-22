@@ -65,6 +65,15 @@ describe('applyIpcFieldErrors', () => {
       expect(setError.mock.calls).toEqual([['date', { message: 'date bad' }]])
     })
 
+    it('shows the save message for an internal error, whose text is not for the trader', () => {
+      const internal = apiError(400, {
+        detail: [
+          { field: '__root__', code: 'internal_error', message: 'An unexpected error occurred' }
+        ]
+      })
+      expect(route(internal, true).mock.calls).toEqual([['root.save', { message: SAVE }]])
+    })
+
     it('shows the save message for a failure without field errors', () => {
       expect(route(apiError(500, 'boom'), true).mock.calls).toEqual([
         ['root.save', { message: SAVE }]

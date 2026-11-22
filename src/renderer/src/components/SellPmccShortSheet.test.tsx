@@ -39,12 +39,11 @@ const mockGetOptionSnapshots = vi.fn<typeof window.api.getOptionSnapshots>()
 const onClose = vi.fn()
 const onRecorded = vi.fn()
 
+type SheetProps = React.ComponentProps<typeof SellPmccShortSheet>
+
 type SheetOverrides = {
   today?: string | null
-  leaps?: typeof XYZ_LEAPS
-  ledger?: typeof XYZ_LEDGER
-  previousCycle?: ReturnType<typeof xyzCycle8> | null
-}
+} & Partial<Pick<SheetProps, 'leaps' | 'ledger' | 'previousCycle'>>
 
 function renderSheet({
   today = TODAY,
@@ -199,12 +198,7 @@ describe('SellPmccShortSheet — without a previous cycle', () => {
 
   it('shows — for premium recovered when the ledger has no LEAPS cost', async () => {
     renderSheet({
-      ledger: {
-        ...XYZ_LEDGER,
-        leapsCostPerShare: '0.0000',
-        leapsCostTotal: '0.0000',
-        premiumRecoveredPercent: null
-      }
+      ledger: { ...XYZ_LEDGER, leapsCostTotal: '0.0000' }
     })
     await enterNextShort()
 
@@ -282,6 +276,20 @@ describe('SellPmccShortSheet — server errors', () => {
     expectEntriesKept()
     expect(screen.queryByTestId('pmcc-sell-short-save-error')).not.toBeInTheDocument()
     expect(onRecorded).not.toHaveBeenCalled()
+  })
+
+  it('a sale rejected because a short call is already open says so, not "Try again"', async () => {
+    const message = 'This PMCC already has an open short call — roll it instead.'
+    mockSellPmccShort.mockResolvedValue({
+      ok: false,
+      errors: [{ field: '__root__', code: 'short_call_already_open', message }]
+    })
+    await submitNextShort()
+
+    const alert = await screen.findByTestId('pmcc-sell-short-save-error')
+    expect(alert).toHaveTextContent(message)
+    expect(alert).not.toHaveTextContent(SAVE_FAILED)
+    expectEntriesKept()
   })
 
   it('an internal error shows the save-failed copy, keeps every entry and allows a retry', async () => {

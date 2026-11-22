@@ -1,8 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { FormProvider, useForm } from 'react-hook-form'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { FormProvider, useForm, type Resolver } from 'react-hook-form'
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import type { OptionChainQuote } from '../api/market-data'
 import { useCallChain } from '../hooks/useCallChain'
 import { useUnderlyingPrice } from '../hooks/useUnderlyingPrice'
@@ -97,13 +97,11 @@ type SectionProps = React.ComponentProps<typeof PmccLegSection>
 function Harness({
   leg,
   values,
-  active,
-  ticker,
-  pairRule
+  active
 }: {
   leg: 'long' | 'short'
   values: PmccEntryFormValues
-} & Pick<SectionProps, 'active' | 'ticker' | 'pairRule'>): React.JSX.Element {
+} & Pick<SectionProps, 'active'>): React.JSX.Element {
   // The entry form's own resolver, so `__pair__` (rule 16) is judged as US-101 judges it.
   const methods = useForm<PmccEntryFormValues>({
     defaultValues: values,
@@ -113,12 +111,11 @@ function Harness({
     <FormProvider {...methods}>
       <input aria-label="Ticker" {...methods.register('ticker')} />
       <PmccLegSection
+        form="entry"
         leg={leg}
         preset={leg === 'long' ? LEAPS_PRESET : SHORT_PRESET}
         today={TODAY}
         active={active}
-        ticker={ticker}
-        pairRule={pairRule}
       />
       <p>{methods.formState.errors.__pair__?.message}</p>
     </FormProvider>
@@ -352,21 +349,24 @@ function SellHarness({
   values = UNSELECTED,
   bounds = BOUNDS,
   fillLabel,
+  resolver,
   children
 }: {
   values?: SellPmccShortFormValues
-} & Pick<SectionProps, 'bounds' | 'fillLabel' | 'children'>): React.JSX.Element {
-  const methods = useForm<SellPmccShortFormValues>({ defaultValues: values })
+  bounds?: ShortCallChainBounds
+  resolver?: Resolver<SellPmccShortFormValues>
+} & Pick<SectionProps, 'fillLabel' | 'children'>): React.JSX.Element {
+  const methods = useForm<SellPmccShortFormValues>({ defaultValues: values, resolver })
   return (
     <FormProvider {...methods}>
       <PmccLegSection
+        form="sell"
         leg="short"
         preset={SHORT_PRESET}
         today={SALE_DAY}
         ticker="XYZ"
         bounds={bounds}
         fillLabel={fillLabel}
-        pairRule={false}
       >
         {children}
       </PmccLegSection>
@@ -409,10 +409,16 @@ describe('PmccLegSection — US-115 options', () => {
     expect(contractOptions()).toEqual(['Choose contract / enter manually', SALE_OPTION])
   })
 
-  it('prefers the ticker prop over the form’s own ticker', () => {
-    render(<Harness leg="short" values={{ ...SELECTED, ticker: 'ABC' }} ticker="XYZ" />)
-    expect(mockUseCallChain).toHaveBeenLastCalledWith(expect.objectContaining({ ticker: 'XYZ' }))
-    expect(mockUseUnderlyingPrice).toHaveBeenLastCalledWith('XYZ', { enabled: true })
+  it('types the sell form apart from the entry form', () => {
+    type SellProps = Extract<SectionProps, { form: 'sell' }>
+    type EntryProps = Extract<SectionProps, { form: 'entry' }>
+    // The sell form has only the short leg and must pass its underlying and the LEAPS bounds.
+    expectTypeOf<SellProps['leg']>().toEqualTypeOf<'short'>()
+    expectTypeOf<SellProps['ticker']>().toEqualTypeOf<string>()
+    expectTypeOf<SellProps['bounds']>().toEqualTypeOf<ShortCallChainBounds>()
+    // The entry form reads its ticker from the form and takes no bounds.
+    expectTypeOf<EntryProps>().not.toHaveProperty('ticker')
+    expectTypeOf<EntryProps>().not.toHaveProperty('bounds')
   })
 
   it('captions the picker with the LEAPS bounds ahead of the preset band', () => {
@@ -445,15 +451,15 @@ describe('PmccLegSection — US-115 options', () => {
     ).toBeInTheDocument()
   })
 
-  it('does not run the net-debit rule on blur with pairRule={false}', async () => {
-    const equalFills = { ...SELECTED, short: { ...SELECTED.short, fillPrice: '25.00' } }
-    render(<Harness leg="short" values={equalFills} pairRule={false} />)
-    fireEvent.blur(screen.getByLabelText('Premium / share'))
+  it('does not validate the form when the fill blurs in the sell form', async () => {
+    const resolver = vi.fn<Resolver<SellPmccShortFormValues>>(async (values) => ({
+      values,
+      errors: {}
+    }))
+    render(<SellHarness fillLabel="Actual sale price / share" resolver={resolver} />)
+    fireEvent.blur(screen.getByLabelText('Actual sale price / share'))
     await settleValidation()
-    expect(screen.getByLabelText('Premium / share')).toHaveValue('25.00')
-    expect(
-      screen.queryByText('This PMCC entry requires a net debit before fees.')
-    ).not.toBeInTheDocument()
+    expect(resolver).not.toHaveBeenCalled()
   })
 
   it('renders its children inside the section', () => {

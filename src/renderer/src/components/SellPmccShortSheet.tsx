@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react'
 import { FormProvider, type FieldPath } from 'react-hook-form'
 import type { PmccLedgerTotals } from '../../../main/core/costbasis'
-import type { SellPmccShortField } from '../../../main/core/lifecycle'
 import type { LegDetail, SellPmccShortResponse } from '../api/positions'
 import { useOptionSnapshots } from '../hooks/useOptionSnapshots'
 import { useRollSheetSubmit } from '../hooks/useRollSheetSubmit'
@@ -11,7 +10,12 @@ import { useSellPmccShort } from '../hooks/useSellPmccShort'
 import { useSellPmccShortForm } from '../hooks/useSellPmccShortForm'
 import { newYorkToday } from '../lib/dates'
 import type { PmccEndedCycle } from '../lib/pmcc-sell-short'
-import { toSellPmccShortPayload, type SellPmccShortFormValues } from '../schemas/sell-pmcc-short'
+import {
+  isSellShortErrorField,
+  SELL_SHORT_FORM_FIELDS,
+  toSellPmccShortPayload,
+  type SellPmccShortFormValues
+} from '../schemas/sell-pmcc-short'
 import { occSymbolForLeg } from '../../../shared/option-symbol'
 import { PmccRollSheetDialog } from './PmccRollSheetDialog'
 import { SellPmccShortForm } from './SellPmccShortForm'
@@ -32,21 +36,6 @@ type SellPmccShortSheetProps = {
 }
 
 const SAVE_FAILED = 'Could not record the short call. Your entries are preserved. Try again.'
-
-type SellShortErrorField = Exclude<SellPmccShortField, '__root__' | '__phase__'>
-
-/** Where each engine field's server error lands; an engine field without a route fails to compile. */
-export const SELL_SHORT_FORM_FIELDS = {
-  contracts: 'contracts',
-  strike: 'short.strike',
-  expiration: 'short.expiration',
-  fillDate: 'short.fillDate',
-  fillPrice: 'short.fillPrice',
-  fees: 'short.fees'
-} as const satisfies Record<SellShortErrorField, FieldPath<SellPmccShortFormValues>>
-
-const isSellShortErrorField = (field: string): field is SellShortErrorField =>
-  Object.hasOwn(SELL_SHORT_FORM_FIELDS, field)
 
 /** The form path a server field error lands on; `null` (`__root__`, `__phase__`) is the save alert. */
 const errorTarget = (field: string): FieldPath<SellPmccShortFormValues> | null =>
@@ -103,7 +92,7 @@ export function SellPmccShortSheet({
     methods,
     mutation,
     toPayload: (values) => toSellPmccShortPayload(positionId, values),
-    errorRouting: { target: errorTarget, saveMessage: SAVE_FAILED }
+    errorRouting: { target: errorTarget, saveMessage: SAVE_FAILED, showUnplacedMessages: true }
   })
 
   return (

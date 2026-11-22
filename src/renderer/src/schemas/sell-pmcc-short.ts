@@ -1,11 +1,12 @@
 // [US-115] The Sell Short Call form's schema. The cross-field rules come from the engine's own
 // `pmccSubsequentShortIssues` (`pmcc-rules.ts`), so the form rejects before the IPC round-trip with
 // the engine's text, routed to the form's own path; the engine's `sellPmccShort` stays the authority.
+import type { FieldPath } from 'react-hook-form'
 import { z } from 'zod'
+import type { SellPmccShortField } from '../../../main/core/lifecycle'
 import {
   pmccSubsequentShortIssues,
-  type PmccSubsequentShortContext,
-  type PmccSubsequentShortField
+  type PmccSubsequentShortContext
 } from '../../../main/core/pmcc-rules'
 import type { SellPmccShortPayload } from '../../../main/schemas'
 import { parseInputDecimal } from '../lib/decimal-input'
@@ -25,13 +26,23 @@ export type SellPmccShortSchema = typeof sellPmccShortObjectSchema
 
 export type SellPmccShortFormValues = z.input<SellPmccShortSchema>
 
-/** Where each rule's field lives in the form: the contract count at the top, the rest in `short`. */
-const FORM_PATH = {
-  contracts: ['contracts'],
-  fillDate: ['short', 'fillDate'],
-  expiration: ['short', 'expiration'],
-  strike: ['short', 'strike']
-} as const satisfies Record<PmccSubsequentShortField, readonly string[]>
+type SellShortErrorField = Exclude<SellPmccShortField, '__root__' | '__phase__'>
+
+/**
+ * Where each engine field's error lands in the form, for the schema's own cross-field rules and
+ * for the server's rejections alike; an engine field without a route fails to compile.
+ */
+export const SELL_SHORT_FORM_FIELDS = {
+  contracts: 'contracts',
+  strike: 'short.strike',
+  expiration: 'short.expiration',
+  fillDate: 'short.fillDate',
+  fillPrice: 'short.fillPrice',
+  fees: 'short.fees'
+} as const satisfies Record<SellShortErrorField, FieldPath<SellPmccShortFormValues>>
+
+export const isSellShortErrorField = (field: string): field is SellShortErrorField =>
+  Object.hasOwn(SELL_SHORT_FORM_FIELDS, field)
 
 function crossFieldRules(
   ctx: SellPmccShortFormContext,
@@ -51,7 +62,11 @@ function crossFieldRules(
   issues
     .filter((issue, index) => issues.findIndex(({ field }) => field === issue.field) === index)
     .forEach(({ field, message }) =>
-      refinement.addIssue({ code: 'custom', path: [...FORM_PATH[field]], message })
+      refinement.addIssue({
+        code: 'custom',
+        path: SELL_SHORT_FORM_FIELDS[field].split('.'),
+        message
+      })
     )
 }
 

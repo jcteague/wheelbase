@@ -75,7 +75,6 @@ function presetCaption(preset: LegPreset, ticker: string, bounds?: ShortCallChai
   return `${ticker} calls before ${bounds.expirationBefore}, strikes above ${fmtMoney(bounds.strikeAbove)} · ${band}`
 }
 
-/** Whether the live LEAPS covers a quote — `filterCallChain`'s bound, for the held quote. */
 function QuoteStrip({ quote }: { quote: OptionChainQuote | undefined }): React.JSX.Element {
   const delta = quote?.greeks ? new Decimal(quote.greeks.delta).abs().toFixed(2) : '—'
   return (
@@ -135,43 +134,41 @@ function LegDatePicker({ name, id, label, hasError }: LegDatePickerProps): React
 }
 
 /** The section's form: the slice both sheets share, plus what only US-101's entry form has —
- *  the LEAPS leg, the ticker (read when no `ticker` prop is given) and rule 16's `__pair__`. */
+ *  the LEAPS leg, the ticker and rule 16's `__pair__` (read only when `form` is `'entry'`). */
 type PmccLegSectionValues = PmccLegFormSlice & {
   long?: PmccLegFormSlice['short']
   ticker?: string
   __pair__?: string
 }
 
-type PmccLegSectionProps = {
-  leg: PmccLeg
+type PmccLegSectionCommon = {
   preset: LegPreset
   /** Local calendar date, `yyyy-MM-dd`, the DTE figures count from. */
   today: string
   /** `false` while the sheet shows the other strategy: the leg's market data stops requesting. */
   active?: boolean
-  /** The underlying, when the form has no `ticker` of its own; defaults to the form's. */
-  ticker?: string
-  /** The live LEAPS a short call must sit inside: the chain, and any held quote, stay in it. */
-  bounds?: ShortCallChainBounds
   /** The fill's label; defaults to `Premium / share`. */
   fillLabel?: string
-  /** Whether the fill's blur re-runs rule 16 on `__pair__`; only the entry form has it. */
-  pairRule?: boolean
   /** Extra fields, after the fill and fees (the sheet's Contracts). */
   children?: React.ReactNode
 }
 
-export function PmccLegSection({
-  leg,
-  preset,
-  today,
-  active = true,
-  ticker: tickerProp,
-  bounds,
-  fillLabel = 'Premium / share',
-  pairRule = true,
-  children
-}: PmccLegSectionProps): React.JSX.Element {
+/**
+ * Which form the section sits in. US-101's entry form holds both legs, reads the ticker from the
+ * form and re-runs rule 16 on `__pair__` when the fill blurs. The Sell Short Call sheet (US-115)
+ * holds only the short leg: it passes the underlying and the live LEAPS bounds the chain, and any
+ * held quote, must stay inside.
+ */
+type PmccLegSectionProps = PmccLegSectionCommon &
+  (
+    | { form: 'entry'; leg: PmccLeg }
+    | { form: 'sell'; leg: 'short'; ticker: string; bounds: ShortCallChainBounds }
+  )
+
+export function PmccLegSection(props: PmccLegSectionProps): React.JSX.Element {
+  const { leg, preset, today, active = true, fillLabel = 'Premium / share', children } = props
+  const bounds = props.form === 'sell' ? props.bounds : undefined
+  const pairRule = props.form === 'entry'
   const copy = LEG_COPY[leg]
   const {
     register,
@@ -184,7 +181,7 @@ export function PmccLegSection({
     control,
     name: ['ticker', 'contracts', `${leg}.contractId`, `${leg}.expiration`, `${leg}.fillPrice`]
   })
-  const ticker = tickerProp ?? formTicker ?? ''
+  const ticker = props.form === 'sell' ? props.ticker : (formTicker ?? '')
 
   // Typing A, AA, AAP, AAPL must not request four chains: market data waits for the ticker
   // to settle, and reads as no ticker meanwhile so the previous ticker's contracts go too.
@@ -290,7 +287,7 @@ export function PmccLegSection({
         <QuoteStrip quote={quote} />
         {/* Rule 16 (net debit before fees) reports on `__pair__`, which no input owns, so
             onBlur validation never shows it on its own; each fill re-runs it on blur — in the
-            entry form only (`pairRule`), since no other form has the rule. */}
+            entry form only (`form: 'entry'`), since no other form has the rule. */}
         <div className="grid grid-cols-2 gap-3">
           <Field label={fillLabel} htmlFor={id('fill')} error={legErrors?.fillPrice?.message}>
             <NumberInput
