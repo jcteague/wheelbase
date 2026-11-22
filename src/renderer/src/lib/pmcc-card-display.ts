@@ -113,11 +113,10 @@ function coverage(legs: readonly PmccLegSummary[]): string {
   return `${sumContracts(legs, 'LONG')} × 100 sh`
 }
 
-function stateLabel(legs: readonly PmccLegSummary[], shortCount: number): string {
+function stateLabel(legs: readonly PmccLegSummary[]): string {
   return pmccCoverageLabel({
-    shortCount,
-    shortContracts: sumContracts(legs, 'SHORT'),
-    leapsContracts: sumContracts(legs, 'LONG')
+    leapsContracts: sumContracts(legs, 'LONG'),
+    shortContracts: legs.filter((leg) => leg.side === 'SHORT').map((leg) => leg.contracts)
   })
 }
 
@@ -205,7 +204,7 @@ function deriveOpen(
     kind: 'open',
     price,
     priceSubline: `${pmccNextDecisionDte(pmcc.legs)}d to next decision`,
-    state: stateLabel(pmcc.legs, shorts.length),
+    state: stateLabel(pmcc.legs),
     coverage: coverage(pmcc.legs),
     legs: quotes.map((quote) => openLeg(quote, signals.actions, targetPercent)),
     pnl: derivePnl(pmcc, quotes),

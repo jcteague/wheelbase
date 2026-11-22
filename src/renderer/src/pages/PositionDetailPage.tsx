@@ -159,14 +159,11 @@ export function PositionDetailPage(): React.JSX.Element {
             <PositionDetailActions
               strategyType={position.strategyType}
               phase={position.phase}
-              hasOpenShortCall={Boolean(pmccOpenLegs?.short)}
-              hasOpenLeaps={Boolean(pmccOpenLegs)}
               pmccCoverage={
                 pmccOpenLegs
                   ? {
-                      shortCount: pmccOpenLegs.short ? 1 : 0,
-                      shortContracts: pmccOpenLegs.short?.contracts ?? 0,
-                      leapsContracts: pmccOpenLegs.long.contracts
+                      leapsContracts: pmccOpenLegs.long.contracts,
+                      shortContracts: pmccOpenLegs.short ? [pmccOpenLegs.short.contracts] : []
                     }
                   : null
               }

@@ -2,10 +2,11 @@
 // The positions-list card [US-108] and the detail header [US-115] pass the same counts, so
 // both print the same `N of M covered`.
 
+/** The open legs, as coverage sees them: one entry per open short call, its contract count. A
+ *  short count without its contracts, or contracts without a short, cannot be written. */
 export interface PmccCoverageCounts {
-  shortCount: number
-  shortContracts: number
   leapsContracts: number
+  shortContracts: readonly number[]
 }
 
 function openLegsLabel(shortCount: number): string {
@@ -14,12 +15,9 @@ function openLegsLabel(shortCount: number): string {
 }
 
 /** Suffixes `N of M covered` only while the shorts cover some, but not all, LEAPS contracts. */
-export function pmccCoverageLabel({
-  shortCount,
-  shortContracts,
-  leapsContracts
-}: PmccCoverageCounts): string {
-  const label = openLegsLabel(shortCount)
-  const partial = shortContracts > 0 && shortContracts < leapsContracts
-  return partial ? `${label} · ${shortContracts} of ${leapsContracts} covered` : label
+export function pmccCoverageLabel({ leapsContracts, shortContracts }: PmccCoverageCounts): string {
+  const label = openLegsLabel(shortContracts.length)
+  const covered = shortContracts.reduce((sum, contracts) => sum + contracts, 0)
+  const partial = covered > 0 && covered < leapsContracts
+  return partial ? `${label} · ${covered} of ${leapsContracts} covered` : label
 }
