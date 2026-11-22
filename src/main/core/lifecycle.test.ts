@@ -13,6 +13,7 @@ import {
   requirePmccOpenPhase,
   rollPmccShortCall,
   rollPmccLeaps,
+  sellPmccShort,
   openPmcc
 } from './lifecycle'
 import type {
@@ -27,7 +28,8 @@ import type {
   OpenPmccInput,
   OpenPmccLegInput,
   RollPmccShortCallInput,
-  RollPmccLeapsInput
+  RollPmccLeapsInput,
+  SellPmccShortInput
 } from './lifecycle'
 
 // ---------------------------------------------------------------------------
@@ -1547,6 +1549,244 @@ describe('rollPmccShortCall', () => {
         }),
         { field: 'newExpiration', code: 'short_not_before_long' }
       )
+    })
+  })
+})
+
+// [US-115] Sell a subsequent short call against an open LEAPS — data-model.md § 3 rule table.
+// Background: LEAPS $85.00 · 2028-01-21 · 1 contract · filled 2027-07-09, the previous short call
+// retired 2027-07-16, today 2027-07-23.
+describe('sellPmccShort', () => {
+  function validInput(overrides: Partial<SellPmccShortInput> = {}): SellPmccShortInput {
+    return {
+      currentPhase: 'PMCC_OPEN',
+      openShort: null,
+      leaps: { strike: '85.0000', expiration: '2028-01-21', fillDate: '2027-07-09', contracts: 1 },
+      previousShortRetiredOn: '2027-07-16',
+      today: '2027-07-23',
+      strike: '118.0000',
+      expiration: '2027-08-20',
+      contracts: 1,
+      fillPrice: '1.9500',
+      fees: '0.0000',
+      fillDate: '2027-07-23',
+      ...overrides
+    }
+  }
+
+  function expectRejection(
+    input: SellPmccShortInput,
+    expected: { field: string; code: string; message?: string }
+  ): void {
+    const e = catchValidation(() => sellPmccShort(input))
+    expect({ field: e.field, code: e.code, message: e.message }).toMatchObject(expected)
+  }
+
+  const OPEN_SHORT = { strike: '118.0000', expiration: '2027-08-20', fillDate: '2027-07-23' }
+  const ALREADY_OPEN = {
+    field: '__root__',
+    code: 'short_call_already_open',
+    message: 'This PMCC already has an open short call — roll it instead.'
+  }
+
+  describe('accepts', () => {
+    it('the next short call, leaving the phase PMCC_OPEN', () => {
+      expect(sellPmccShort(validInput())).toEqual({ phase: 'PMCC_OPEN' })
+    })
+
+    it('fewer contracts than the LEAPS holds (partial coverage)', () => {
+      expect(
+        sellPmccShort(validInput({ leaps: { ...validInput().leaps, contracts: 3 }, contracts: 1 }))
+      ).toEqual({ phase: 'PMCC_OPEN' })
+    })
+  })
+
+  describe('rejects', () => {
+    it('a position that is not PMCC_OPEN', () => {
+      expectRejection(validInput({ currentPhase: 'HOLDING_SHARES' }), {
+        field: '__phase__',
+        code: 'invalid_phase',
+        message: 'Position is not in PMCC_OPEN phase'
+      })
+    })
+
+    it('a PMCC that already has an open short call', () => {
+      expectRejection(validInput({ openShort: OPEN_SHORT }), ALREADY_OPEN)
+    })
+
+    // 1.5 is also above the 1-contract LEAPS: the shape check wins over the LEAPS cap.
+    it.each([0, -1, 1.5])('a contract count of %s', (contracts) => {
+      expectRejection(validInput({ contracts }), {
+        field: 'contracts',
+        code: 'must_be_positive_integer',
+        message: 'Contracts must be a positive whole number.'
+      })
+    })
+
+    // A zero strike is also below the LEAPS strike: the shape check wins over the strike rule.
+    it('a zero strike', () => {
+      expectRejection(validInput({ strike: '0.0000' }), {
+        field: 'strike',
+        code: 'must_be_positive',
+        message: 'Strike must be positive'
+      })
+    })
+
+    it('a zero sale price', () => {
+      expectRejection(validInput({ fillPrice: '0.0000' }), {
+        field: 'fillPrice',
+        code: 'must_be_positive',
+        message: 'Actual fill price must be greater than zero.'
+      })
+    })
+
+    it('negative fees', () => {
+      expectRejection(validInput({ fees: '-1.0000' }), {
+        field: 'fees',
+        code: 'must_be_non_negative',
+        message: 'Fees cannot be negative.'
+      })
+    })
+
+    // Each rule shared with the form (pmccSubsequentShortIssues) surfaces unchanged.
+    it.each<{
+      name: string
+      overrides: Partial<SellPmccShortInput>
+      expected: { field: string; code: string; message: string }
+    }>([
+      {
+        name: 'more contracts than the LEAPS holds',
+        overrides: { contracts: 2 },
+        expected: {
+          field: 'contracts',
+          code: 'exceeds_leaps_contracts',
+          message: 'Cannot sell more short calls than LEAPS contracts held (1).'
+        }
+      },
+      {
+        name: 'a fill date after today',
+        overrides: { fillDate: '2027-07-24' },
+        expected: {
+          field: 'fillDate',
+          code: 'cannot_be_future',
+          message: 'Fill date cannot be in the future.'
+        }
+      },
+      {
+        name: 'a fill date before the previous short call was retired',
+        overrides: { fillDate: '2027-07-15' },
+        expected: {
+          field: 'fillDate',
+          code: 'before_previous_short',
+          message: 'Fill date cannot be before the previous short call was retired (2027-07-16).'
+        }
+      },
+      {
+        name: 'a fill date before the LEAPS fill, with no previous short call',
+        overrides: { previousShortRetiredOn: null, fillDate: '2027-07-08' },
+        expected: {
+          field: 'fillDate',
+          code: 'long_after_short',
+          message: 'LEAPS must be acquired no later than the short-call fill.'
+        }
+      },
+      {
+        name: 'an expired contract',
+        overrides: { fillDate: '2027-07-20', expiration: '2027-07-22' },
+        expected: {
+          field: 'expiration',
+          code: 'expired_contract',
+          message: 'Use an unexpired contract for opening a current position.'
+        }
+      },
+      {
+        name: 'an expiration on the fill date',
+        overrides: { fillDate: '2027-07-23', expiration: '2027-07-23' },
+        expected: {
+          field: 'expiration',
+          code: 'expiration_not_after_fill',
+          message: 'Expiration must be after the fill date.'
+        }
+      },
+      {
+        name: 'an expiration on the LEAPS expiration',
+        overrides: { expiration: '2028-01-21' },
+        expected: {
+          field: 'expiration',
+          code: 'short_not_before_long',
+          message: 'Short call must expire before the LEAPS call.'
+        }
+      },
+      {
+        name: 'a strike at the LEAPS strike',
+        overrides: { strike: '85.0000' },
+        expected: {
+          field: 'strike',
+          code: 'strike_not_above_long',
+          message: 'Short-call strike must be above the LEAPS strike.'
+        }
+      }
+    ])('$name', ({ overrides, expected }) => {
+      expectRejection(validInput(overrides), expected)
+    })
+  })
+
+  describe('rule order', () => {
+    it('reports the phase before an open short call', () => {
+      expectRejection(validInput({ currentPhase: 'CC_OPEN', openShort: OPEN_SHORT }), {
+        field: '__phase__',
+        code: 'invalid_phase'
+      })
+    })
+
+    it('reports an open short call even when every other field is also invalid', () => {
+      expectRejection(
+        validInput({
+          openShort: OPEN_SHORT,
+          contracts: 0,
+          strike: '0.0000',
+          fillPrice: '0.0000',
+          fees: '-1.0000',
+          fillDate: '2027-07-24',
+          expiration: '2028-01-21'
+        }),
+        ALREADY_OPEN
+      )
+    })
+
+    it('reports the contract count before the strike', () => {
+      expectRejection(validInput({ contracts: 0, strike: '0.0000' }), {
+        field: 'contracts',
+        code: 'must_be_positive_integer'
+      })
+    })
+
+    it('reports the strike before the sale price', () => {
+      expectRejection(validInput({ strike: '0.0000', fillPrice: '0.0000' }), {
+        field: 'strike',
+        code: 'must_be_positive'
+      })
+    })
+
+    it('reports the sale price before the fees', () => {
+      expectRejection(validInput({ fillPrice: '0.0000', fees: '-1.0000' }), {
+        field: 'fillPrice',
+        code: 'must_be_positive'
+      })
+    })
+
+    it('reports the fees before the shared rules', () => {
+      expectRejection(validInput({ fees: '-1.0000', contracts: 2, fillDate: '2027-07-24' }), {
+        field: 'fees',
+        code: 'must_be_non_negative'
+      })
+    })
+
+    it('reports the first broken shared rule', () => {
+      expectRejection(validInput({ contracts: 2, expiration: '2028-01-21', strike: '85.0000' }), {
+        field: 'contracts',
+        code: 'exceeds_leaps_contracts'
+      })
     })
   })
 })

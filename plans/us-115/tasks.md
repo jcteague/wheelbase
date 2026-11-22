@@ -128,40 +128,40 @@ Shared files to watch when areas run in parallel:
 
 ### Area 2 — Engine: `sellPmccShort`
 
-- [ ] **[Red]** Write failing tests — `src/main/core/lifecycle.test.ts`, `src/main/core/lifecycle.property.test.ts` _(depends on: Area 1 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/main/core/lifecycle.test.ts`, `src/main/core/lifecycle.property.test.ts` _(depends on: Area 1 Green ✓)_
   - Test cases (full list in `plan.md` Area 2 Red): happy path; partial coverage accepted; `invalid_phase`; `short_call_already_open` wins over every other error; contracts `0` / `-1` / `1.5`; price `0`; fees `-1`; strike `0`; each shared rule thrown with its field / code / message; shape checks before shared rules
   - Property cases: phase guard; open-short guard; accepts iff `pmccSubsequentShortIssues` is empty, otherwise throws exactly its first issue
   - Run `pnpm test src/main/core/lifecycle` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/core/lifecycle.ts` _(depends on: Area 2 Red ✓)_
+- [x] **[Green]** Implement — `src/main/core/lifecycle.ts` _(depends on: Area 2 Red ✓)_
   - `SellPmccShortField`, `SellPmccShortInput`, `SellPmccShortAccepted`, `sellPmccShort`; widen the three helpers' `field` type
   - Run `pnpm test src/main/core/lifecycle` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — `src/main/core/lifecycle.ts` _(depends on: Area 2 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `src/main/core/lifecycle.ts` _(depends on: Area 2 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test:mutation --mutate src/main/core/lifecycle.ts`; kill reproducible survivors in `sellPmccShort`
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
 ### Area 10 — Preview arithmetic and advisory text
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/lib/pmcc-sell-short.test.ts`, `src/renderer/src/lib/pmcc-roll.test.ts` _(depends on: Area 3 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/renderer/src/lib/pmcc-sell-short.test.ts`, `src/renderer/src/lib/pmcc-roll.test.ts` _(depends on: Area 3 Green ✓)_
   - Test cases: preview `195.0000` / `28` / `8.5000 → 6.5500` / `93.5000 → 91.5500` / `62.2222 → 70.8889` / margin `26.4500`; `$90 · $1.50` → `150.0000`, `7.0000`, `92.0000`, shortfall `2.0000`; at the line → margin `0.0000`; 3 LEAPS / 1 contract → `uncoveredContracts` `2`; `uncoveredContractsNote` `2` and `1` (one-open-short sentence); incomplete → `null`; `shortfallWarningText` `'sale'` (`Short strike $90.00 is below your effective share cost of $92.00 after this sale. …roughly $2.00 per share of loss. You can still record it.`) and `'roll'` (US-104's sentence byte for byte); `previousCycleLine` expired / closed / none; `coverageCardLine` with and without delta
   - Mockup: `SellShortSheet` Coverage and `After this sale` cards
   - Run the two test files — all new tests must fail
-- [ ] **[Green]** Implement — `src/renderer/src/lib/pmcc-sell-short.ts`, `src/renderer/src/lib/pmcc-roll.ts`, `RollPmccShortCallForm.tsx` _(depends on: Area 10 Red ✓)_
+- [x] **[Green]** Implement — `src/renderer/src/lib/pmcc-sell-short.ts`, `src/renderer/src/lib/pmcc-roll.ts`, `RollPmccShortCallForm.tsx` _(depends on: Area 10 Red ✓)_
   - `sellPmccShortPreview` over `projectPmccLedger` and `pmccStrikeShortfall`; `uncoveredContractsNote`; `shortfallWarningText` rendered by the roll form
   - Run the two test files plus `pnpm test src/renderer/src/components/RollPmccShortCallForm.test.tsx` — all must pass
-- [ ] **[Refactor]** `/refactor` _(depends on: Area 10 Green ✓)_
+- [x] **[Refactor]** `/refactor` _(depends on: Area 10 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
 ### Area 11 — Form schema
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/schemas/sell-pmcc-short.test.ts` _(depends on: Area 1 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/renderer/src/schemas/sell-pmcc-short.test.ts` _(depends on: Area 1 Green ✓)_
   - Test cases: defaults (`contracts` `'1'`, fill date today, fees `'0.00'`); the six invalid-entry rows and four shape rows on their form paths; first issue per field only; mid-edit fields report only `required`; `toSellPmccShortPayload` numbers; `SellPmccShortFormValues` assignable to `PmccLegFormSlice`
   - Run `pnpm test src/renderer/src/schemas/sell-pmcc-short.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/renderer/src/schemas/sell-pmcc-short.ts`, `src/renderer/src/schemas/pmcc-entry.ts` _(depends on: Area 11 Red ✓)_
+- [x] **[Green]** Implement — `src/renderer/src/schemas/sell-pmcc-short.ts`, `src/renderer/src/schemas/pmcc-entry.ts` _(depends on: Area 11 Red ✓)_
   - Export `pmccLegSchema` and `PmccLegFormSlice`; `superRefine` over `pmccSubsequentShortIssues`
   - Run the test file plus `pnpm test src/renderer/src/schemas/pmcc-entry.test.ts` — all must pass
-- [ ] **[Refactor]** `/refactor` _(depends on: Area 11 Green ✓)_
+- [x] **[Refactor]** `/refactor` _(depends on: Area 11 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Consider: share the issue-to-path mapper with `schemas/roll-pmcc-short-call.ts`
   - Run `pnpm test && pnpm lint && pnpm typecheck`
