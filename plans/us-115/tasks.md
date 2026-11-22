@@ -172,13 +172,13 @@ Shared files to watch when areas run in parallel:
 
 ### Area 6 — Service: `sellPmccShortPosition`
 
-- [ ] **[Red]** Write failing tests — `src/main/services/sell-pmcc-short-position.test.ts` _(depends on: Areas 2, 4, 5 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/main/services/sell-pmcc-short-position.test.ts` _(depends on: Areas 2, 4, 5 Green ✓)_
   - Test cases (full list in `plan.md` Area 6 Red): happy path (cycle `9`, `6.5500`, one leg, one `PMCC_SHORT_OPEN` snapshot, position row unchanged); default fill date; live LEAPS after a seeded LEAPS roll; each rejection writes nothing; storage-failure rollback; `not_found`; wheel → `invalid_phase`; INFO logs on success and rejection
   - Run `pnpm test src/main/services/sell-pmcc-short-position.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/services/sell-pmcc-short-position.ts` _(depends on: Area 6 Red ✓)_
+- [x] **[Green]** Implement — `src/main/services/sell-pmcc-short-position.ts` _(depends on: Area 6 Red ✓)_
   - `loadPmccRollContext` → `lastShortRetiredOn` → `sellPmccShort` inside `logPmccRollRejection(…, 'pmcc_sell_short_rejected', …)` → one transaction: `insertLegRow`, `appendPmccSnapshot('PMCC_SHORT_OPEN')`; `nextPmccCycleNumber`
   - Run the test file — all tests must pass
-- [ ] **[Refactor]** `/refactor` _(depends on: Area 6 Green ✓)_
+- [x] **[Refactor]** `/refactor` _(depends on: Area 6 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Consider: one `pmccLegRecord(...)` shared with `insertPmccLeg`
   - Run `pnpm test && pnpm lint && pnpm typecheck`
