@@ -284,12 +284,12 @@ Shared files to watch when areas run in parallel:
 
 ## Completion Checklist
 
-- [ ] All Red tasks complete (tests written and failing for the right reason)
-- [ ] Core-engine areas have property tests: Area 1 (`pmcc-rules.property.test.ts`), Area 2 (`lifecycle.property.test.ts`), Area 3 (`costbasis.property.test.ts`)
-- [ ] All Green tasks complete (all tests passing)
-- [ ] All Refactor tasks complete (lint + typecheck clean)
-- [ ] No reproducible, non-equivalent surviving mutant in the new code of `pmcc-rules.ts`, `lifecycle.ts`, `costbasis.ts`
-- [ ] E2E tests cover every AC (12 of 12; 20 tests with outline rows)
-- [ ] US-101's entry sheet and US-104's roll sheet unchanged in behaviour (their unit and e2e tests green)
-- [ ] `pnpm test && pnpm lint && pnpm typecheck && pnpm format` — all clean
-- [ ] `/update-spec us-115` run before the plan directory is removed (drop the spec's `PMCC_LEAPS_ONLY` reservation; record `positions:sell-pmcc-short`)
+- [x] All Red tasks complete (tests written and failing for the right reason)
+- [x] Core-engine areas have property tests: Area 1 (`pmcc-rules.property.test.ts`), Area 2 (`lifecycle.property.test.ts`), Area 3 (`costbasis.property.test.ts`)
+- [x] All Green tasks complete (all tests passing)
+- [x] All Refactor tasks complete (lint + typecheck clean)
+- [x] No reproducible, non-equivalent surviving mutant in the new code of `pmcc-rules.ts`, `lifecycle.ts`, `costbasis.ts`
+- [x] E2E tests cover every AC (12 of 12; 20 tests with outline rows)
+- [x] US-101's entry sheet and US-104's roll sheet unchanged in behaviour (their unit and e2e tests green)
+- [x] `pnpm test && pnpm lint && pnpm typecheck && pnpm format` — all clean
+- [x] `/update-spec us-115` run before the plan directory is removed (drop the spec's `PMCC_LEAPS_ONLY` reservation; record `positions:sell-pmcc-short`)

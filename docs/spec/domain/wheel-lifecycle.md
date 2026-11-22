@@ -1,6 +1,6 @@
 # Wheel Lifecycle
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-17,us-101,us-104,us-105 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-17,us-101,us-104,us-105,us-115 -->
 
 ## Overview
 
@@ -38,15 +38,17 @@ The same `WheelPhase` enum also carries a second strategy: the **poor man's
 covered call** (PMCC, us-101). A PMCC position is opened in one step by
 `openPmcc` — a long LEAPS call plus a shorter-dated, higher-strike short call
 recorded together — and lands in `PMCC_OPEN`. Its phases carry a `PMCC_`
-prefix so wheel-only `phase IN (…)` filters exclude it by construction; later
-PMCC phases are reserved by name only (see [Phases](#phases)). See
+prefix so wheel-only `phase IN (…)` filters exclude it by construction; the
+one later PMCC phase, `PMCC_CLOSED`, is reserved by name only (see
+[Phases](#phases)). See
 [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md).
 
 Within `PMCC_OPEN`, `rollPmccShortCall` (us-104) is the PMCC analogue of
 `rollCc`: it validates replacing the open short call with a later or
 different one, keeps the position in `PMCC_OPEN`, and the service appends a
-linked CALL roll pair. Because no `PMCC_LEAPS_ONLY` phase exists yet, "is a
-short call open?" is answered by replaying the legs, not by reading `phase`.
+linked CALL roll pair. "Is a short call open?" is answered by replaying the
+legs, not by reading `phase` — and, since us-115, by design rather than as a
+stopgap: there is no LEAPS-only phase.
 See [us-104 — Roll a PMCC short call](../features/us-104-roll-pmcc-short-call.md).
 
 `rollPmccLeaps` (us-105) is its long-side counterpart: it validates replacing
@@ -56,9 +58,18 @@ and also leaves the position in `PMCC_OPEN`. The service appends the inverted
 linked pair (`ROLL_FROM` SELL / `ROLL_TO` BUY). See
 [us-105 — Roll the PMCC LEAPS](../features/us-105-roll-pmcc-leaps.md).
 
+`sellPmccShort` (us-115) closes the PMCC short-call cycle: once the last short
+has been retired (expired, closed or assigned) and only the LEAPS is open, it
+validates selling the next short call against that LEAPS and returns
+`PMCC_OPEN`. The service appends one `SHORT_CALL_OPEN` SELL leg, which starts
+a new cycle. So the PMCC loop is `PMCC_OPEN` (LEAPS + short) → short retired →
+`PMCC_OPEN` (LEAPS only) → `sellPmccShort` → `PMCC_OPEN` (LEAPS + short),
+with the phase constant throughout and coverage read from the open legs. See
+[us-115 — Sell a subsequent PMCC short call](../features/us-115-sell-subsequent-pmcc-short-call.md).
+
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-17,us-101,us-104,us-105 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-17,us-101,us-104,us-105,us-115 -->
 
 ## Phases
 
@@ -78,7 +89,7 @@ below lists every value and the broader `position.status` (`ACTIVE` /
 | `CC_CLOSED_PROFIT`  | Reserved phase value (referenced for completeness, not produced by any current transition).                                 | `CLOSED` |
 | `CC_CLOSED_LOSS`    | Reserved phase value (referenced for completeness, not produced by any current transition).                                 | `CLOSED` |
 | `WHEEL_COMPLETE`    | Terminal — the CSP expired worthless, or shares were called away.                                                           | `CLOSED` |
-| `PMCC_OPEN`         | PMCC strategy (us-101) — a long LEAPS call and a short call are both open. The only PMCC phase in the enum.                 | `ACTIVE` |
+| `PMCC_OPEN`         | PMCC strategy (us-101) — a long LEAPS call is open, with or without a short call (us-115). The only PMCC phase in the enum. | `ACTIVE` |
 
 Terminal phases set `status = 'CLOSED'` and stamp `closed_date`; non-terminal
 phases leave `status = 'ACTIVE'` and `closed_date = NULL`. The lifecycle
@@ -89,25 +100,37 @@ transitions only produce the phases marked above as terminal exits.
 
 **PMCC phases (us-101).** Only the phase a shipped transition produces enters
 the enum, so `Record<WheelPhase, …>` maps (`PHASE_LABEL`, `PHASE_COLOR`, …)
-stay honest. `PMCC_OPEN` is labelled `'LEAPS + short call open'` (long and
-short label alike) and has a `PHASE_COLOR` distinct from every wheel phase.
-Two further phases are **reserved by name, not added**: `PMCC_LEAPS_ONLY`
-(short call gone, LEAPS still held — US-119 / US-115) and `PMCC_CLOSED`
-(US-111 / US-120). The `PMCC_` prefix — rather than overloading `CC_OPEN` or
+stay honest. `PMCC_OPEN`'s `PHASE_LABEL` is `'LEAPS + short call open'` and
+its `PHASE_COLOR` is distinct from every wheel phase. One further phase is
+**reserved by name, not added**: `PMCC_CLOSED` (US-111 / US-120).
+
+**No LEAPS-only phase (us-115).** The earlier reservation of `PMCC_LEAPS_ONLY`
+(short call gone, LEAPS still held) is dropped. `PMCC_OPEN` is the only open
+PMCC phase, and "LEAPS open · no short call" / "LEAPS + short call open" are
+labels derived from `pmccOpenLegs.short` by the renderer's `pmccCoverageLabel`,
+which adds `· N of M covered` when the short covers fewer contracts than the
+LEAPS. The detail header's `PhaseBadge` shows that label for `PMCC_OPEN`
+(other phases keep `PHASE_LABEL`), which fixes a LEAPS-only page that used to
+read `LEAPS + short call open`; `PHASE_LABEL.PMCC_OPEN` stays for the list.
+Why: the code already answers "is a short open?" by replaying legs (US-104 –
+US-108), US-107 had rejected a LEAPS-only phase, and adding one would force a
+migration of every PMCC row, a phase write in US-104/105/119 and new entries
+in every `Record<WheelPhase, …>` map for a fact the legs already carry.
+US-115, US-119 and US-120 share this convention. The `PMCC_` prefix — rather than overloading `CC_OPEN` or
 adding a separate `PmccPhase` enum — is recorded in
 [pmcc-phase-and-leg-role-names](../architecture/02-adrs/pmcc-phase-and-leg-role-names.md).
 
 A short-call roll (us-104) does not change the phase: `PMCC_OPEN` stays
-`PMCC_OPEN` and the `positions` row (including `updated_at`) is untouched.
-Until `PMCC_LEAPS_ONLY` ships, a `PMCC_OPEN` row can in fact hold a LEAPS with
-no open short (after a short expires), so the open legs are derived from the
-leg history — see [`rollPmccShortCall`](#rollpmccshortcall--pmcc_open--pmcc_open-us-104).
-A LEAPS roll (us-105) likewise leaves the phase and the `positions` row
-alone, whether or not a short is open.
+`PMCC_OPEN` and the `positions` row (including `updated_at`) is untouched. A
+`PMCC_OPEN` row can hold a LEAPS with no open short (after a short is
+retired), so the open legs are derived from the leg history — see
+[`rollPmccShortCall`](#rollpmccshortcall--pmcc_open--pmcc_open-us-104).
+A LEAPS roll (us-105) and a subsequent short sale (us-115) likewise leave the
+phase and the `positions` row alone.
 
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-101,us-104,us-105 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-101,us-104,us-105,us-115 -->
 
 ## Transitions
 
@@ -133,6 +156,7 @@ pure function in `src/main/core/lifecycle.ts`.
                             |
                             |--rollPmccShortCall--> PMCC_OPEN  (us-104; linked ROLL_FROM/ROLL_TO CALL pair; phase unchanged)
                             |--rollPmccLeaps------> PMCC_OPEN  (us-105; inverted ROLL_FROM SELL / ROLL_TO BUY CALL pair; phase unchanged)
+                            |--sellPmccShort------> PMCC_OPEN  (us-115; LEAPS only → one SHORT_CALL_OPEN SELL; phase unchanged)
 ```
 
 `HOLDING_SHARES → CC_OPEN → HOLDING_SHARES` is the **CC sub-loop**: the wheel
@@ -643,7 +667,8 @@ broker module is involved.
 | (new position) | `openPmcc` via `positions:create-pmcc`              | `PMCC_OPEN`             | US-101 (shipped)            |
 | `PMCC_OPEN`    | `rollPmccShortCall` via `positions:roll-pmcc-short` | `PMCC_OPEN` (unchanged) | US-104 (shipped)            |
 | `PMCC_OPEN`    | `rollPmccLeaps` via `positions:roll-pmcc-leaps`     | `PMCC_OPEN` (unchanged) | US-105 (shipped)            |
-| `PMCC_OPEN`    | short call closed / expired (reserved)              | `PMCC_LEAPS_ONLY`       | US-119 / US-115 (not built) |
+| `PMCC_OPEN`    | `sellPmccShort` via `positions:sell-pmcc-short`     | `PMCC_OPEN` (unchanged) | US-115 (shipped)            |
+| `PMCC_OPEN`    | short call closed / expired (retire the short)      | `PMCC_OPEN` (unchanged) | US-119 (not built)          |
 | PMCC phases    | position closed (reserved)                          | `PMCC_CLOSED`           | US-111 / US-120 (not built) |
 
 **Wheel-only consumers see a `PMCC_OPEN` position as:** no active leg (the
@@ -818,9 +843,79 @@ replay. The position row and any open short are untouched. Exposed on
 with an open LEAPS. See
 [us-105 — Roll the PMCC LEAPS](../features/us-105-roll-pmcc-leaps.md).
 
+### `sellPmccShort` — `PMCC_OPEN → PMCC_OPEN` (us-115)
+
+Validates selling the next short call against a PMCC's open LEAPS once the
+previous short has been retired. **Phase does not change**, and the engine
+writes nothing. Input is `SellPmccShortInput`: `currentPhase`,
+`openShort: PmccShortCallTerms | null`, the live `leaps` (strike, expiration,
+fill date, contracts), `previousShortRetiredOn` (or `null`), `today`, plus the
+sale's `strike`, `expiration`, `fillDate`, `fillPrice`, `fees` (4-dp strings)
+and `contracts`. The result is `SellPmccShortAccepted` (`{ phase: 'PMCC_OPEN' }`).
+
+Rules run in a fixed order and the **first failure throws**
+`ValidationError(field, code, message)`:
+
+| #   | Rule (fails when…)                                  | Field        | Code                        |
+| --- | --------------------------------------------------- | ------------ | --------------------------- |
+| 1   | `currentPhase ≠ PMCC_OPEN` (`requirePmccOpenPhase`) | `__phase__`  | `invalid_phase`             |
+| 2   | `openShort ≠ null`                                  | `__root__`   | `short_call_already_open`   |
+| 3   | contracts not a positive whole number               | `contracts`  | `must_be_positive_integer`  |
+| 4   | `strike ≤ 0`                                        | `strike`     | `must_be_positive`          |
+| 5   | `fillPrice ≤ 0`                                     | `fillPrice`  | `must_be_positive`          |
+| 6   | `fees < 0`                                          | `fees`       | `must_be_non_negative`      |
+| 7   | `contracts > leaps.contracts`                       | `contracts`  | `exceeds_leaps_contracts`   |
+| 8   | `fillDate > today`                                  | `fillDate`   | `cannot_be_future`          |
+| 9a  | `fillDate < previousShortRetiredOn` (binding floor) | `fillDate`   | `before_previous_short`     |
+| 9b  | `fillDate < leaps.fillDate` (binding floor)         | `fillDate`   | `long_after_short`          |
+| 10  | `expiration < today`                                | `expiration` | `expired_contract`          |
+| 11  | `expiration ≤ fillDate`                             | `expiration` | `expiration_not_after_fill` |
+| 12  | `expiration` not before `leaps.expiration`          | `expiration` | `short_not_before_long`     |
+| 13  | `strike` not above `leaps.strike`                   | `strike`     | `strike_not_above_long`     |
+
+Messages are in the [`positions:sell-pmcc-short`](../contracts/ipc-handlers.md#positionssell-pmcc-short)
+error table. Notable behaviours:
+
+- **One ordered rule list.** Rules 7–13 are the pure
+  `pmccSubsequentShortIssues` in `src/main/core/pmcc-rules.ts`, which the
+  renderer's `sellPmccShortSchema` also runs (first issue per field;
+  `undefined` = not decided yet, rule skipped). Rules 1–6 repeat the form's
+  field-shape checks only so a bypassed request gets the same answer. The
+  shape rules 12–13 call US-102's `shortExpiresBeforeLeaps` and
+  `shortStrikeAboveLeaps`, the same predicates as `openPmcc`.
+- **One open short per PMCC** (v1). Rule 2 wins even when every other field
+  is invalid; it mirrors `rollPmccShortCall`'s `no_open_short_call`.
+  Partial coverage (`contracts < leaps.contracts`) is allowed.
+- **The binding fill-date floor.** `pmccFillDateFloor({ previousShortRetiredOn,
+leapsFillDate })` picks one floor: the previous short's retirement date when
+  it is non-null and `≥ leapsFillDate` (a tie goes to the previous short),
+  else the LEAPS fill. Only that floor is reported, so correcting to the shown
+  date always clears the error; a fill on the floor is accepted. The LEAPS
+  floor covers a LEAPS rolled after the last short retired. US-120 reuses the
+  helper.
+- **Live LEAPS.** The service passes `openLegs.long` — the `ROLL_TO` of the
+  latest LEAPS roll — so rule 12 judges against the live expiration, not the
+  original entry.
+- **Eastern `today`.** `today` is injected (the handler passes
+  `etDateOf(getCurrentDate())`), not `localToday()`.
+
+**Service.** `sellPmccShortPosition(db, positionId, payload, { today })`
+(`src/main/services/sell-pmcc-short-position.ts`): `loadPmccRollContext` →
+`lastShortRetiredOn(detail.legs)` (latest `fill_date` of a
+`SHORT_CALL_EXPIRED` / `SHORT_CALL_CLOSE` / `SHORT_CALL_ASSIGNED` leg) →
+`sellPmccShort` inside `logPmccRollRejection` → one `db.transaction`:
+`insertLegRow` (`SHORT_CALL_OPEN` / `SELL` / `CALL`, `roll_chain_id NULL`)
+and `appendPmccSnapshot('PMCC_SHORT_OPEN')`. `nextPmccCycleNumber(legs)` =
+`SHORT_CALL_OPEN` legs + 1 names the cycle. The `positions` row is untouched.
+US-119 (retire the short) is the production path into the LEAPS-only state
+and must write `SHORT_CALL_EXPIRED` with `fill_date` = the short's expiration
+and `SHORT_CALL_CLOSE` with `fill_date` = the buyback date, so the floor
+agrees. Exposed on `positions:sell-pmcc-short`. See
+[us-115 — Sell a subsequent PMCC short call](../features/us-115-sell-subsequent-pmcc-short-call.md).
+
 <!-- /generated -->
 
-<!-- generated:from us-17,us-104,us-105 -->
+<!-- generated:from us-17,us-104,us-105,us-115 -->
 
 ## Roll phase-rejection matrix
 
@@ -863,9 +958,19 @@ in the phase-guard property table. `Roll LEAPS →` is shown whenever
 `strategyType === 'PMCC'` and the derived open legs include a LEAPS (with or
 without a short); a `CC_OPEN` wheel never shows it.
 
+**PMCC subsequent short (us-115).** `sellPmccShort` joins the matrix too:
+every phase but `PMCC_OPEN` throws `__phase__` / `invalid_phase` (a closed
+PMCC included), and `lifecycle.property.test.ts` covers the phase guard and
+the open-short guard. The renderer gate is `phase === 'PMCC_OPEN'` **and** an
+open LEAPS **and** no open short. The phase check is required, not
+belt-and-braces: US-120 keeps `pmccOpenLegs` non-null on a closed PMCC, so the
+legs alone would still offer the action. `Sell Short Call →` and
+`Roll Short Call →` are therefore mutually exclusive; a wheel never shows the
+sell-short action.
+
 <!-- /generated -->
 
-<!-- generated:from us-5,us-6,us-8,us-9,us-10,us-11,us-14,us-15,us-101,us-104,us-105 -->
+<!-- generated:from us-5,us-6,us-8,us-9,us-10,us-11,us-14,us-15,us-101,us-104,us-105,us-115 -->
 
 ## Leg enums
 
@@ -936,6 +1041,7 @@ Away", "CC Expired") and annotations — previously the call-away path emitted
 | `openPmcc` (us-101)          | `LEAPS_OPEN` + `SHORT_CALL_OPEN` | `BUY` + `SELL` | `CALL` + `CALL`  |
 | `rollPmccShortCall` (us-104) | `ROLL_FROM` + `ROLL_TO`          | `BUY` + `SELL` | `CALL` + `CALL`  |
 | `rollPmccLeaps` (us-105)     | `ROLL_FROM` + `ROLL_TO`          | `SELL` + `BUY` | `CALL` + `CALL`  |
+| `sellPmccShort` (us-115)     | `SHORT_CALL_OPEN`                | `SELL`         | `CALL`           |
 
 The two `openPmcc` legs are **not** a roll pair: they are linked by
 `position_id` only and `roll_chain_id` is `NULL`. Labels are
@@ -964,6 +1070,13 @@ recognised as **long-side** because `rollFrom.action === 'SELL'`, and its
 `ROLL_TO` becomes the open LEAPS. Both PMCC rolls write through the shared
 `recordPmccRoll`.
 
+A subsequent short (us-115) is a second, post-entry `SHORT_CALL_OPEN` row built
+the way `createPmccPosition` builds US-101's short leg (`premium_per_contract =
+fill_price` = the sale price, `roll_chain_id NULL`), so US-103's ledger reads it
+as `{ side: 'SHORT', cashPerShare: −fillPrice }` and the timeline reads it as a
+`SHORT_OPEN` event that starts a new cycle. A short-roll `ROLL_TO` starts no
+cycle. No role was added.
+
 ### `rollChainId` exposure (us-15)
 
 The `legs.roll_chain_id` column was always written by the two roll services,
@@ -989,7 +1102,7 @@ for timeline grouping.
 
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-12,us-14,us-104,us-105 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-12,us-14,us-104,us-105,us-115 -->
 
 ## Architectural invariant: the engine is pure
 
@@ -1002,7 +1115,9 @@ values that live in the database — `openFillDate`, `expiration`,
 the CC's `ccOpenFillDate` and the position's `openedDate` for `recordCallAway`,
 the current CC's `currentStrike` and `currentExpiration` for `rollCc`, the
 derived open short call and LEAPS expiration for `rollPmccShortCall`, the
-derived open LEAPS (with its fill date) and open short for `rollPmccLeaps` — are
+derived open LEAPS (with its fill date) and open short for `rollPmccLeaps`, the
+live LEAPS, open short, previous-short retirement date and Eastern `today` for
+`sellPmccShort` — are
 looked up by the service layer **before** calling the engine and passed in as
 parameters.
 
@@ -1031,7 +1146,7 @@ the new `cost_basis_snapshots` row commit or roll back together.
 
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-17,us-101,us-104,us-105 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-13,us-14,us-15,us-17,us-101,us-104,us-105,us-115 -->
 
 ## Driven by
 
@@ -1051,5 +1166,6 @@ the new `cost_basis_snapshots` row commit or roll back together.
 - [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md)
 - [us-104 — Roll a PMCC short call](../features/us-104-roll-pmcc-short-call.md)
 - [us-105 — Roll the PMCC LEAPS](../features/us-105-roll-pmcc-leaps.md)
+- [us-115 — Sell a subsequent PMCC short call](../features/us-115-sell-subsequent-pmcc-short-call.md)
 
 <!-- /generated -->
