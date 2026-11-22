@@ -95,7 +95,8 @@ export function filterCallChain(
   return [...inBand, ...standard.filter((q) => !q.greeks)]
 }
 
-const withinLeapsBounds = (q: OptionChainQuote, bounds: ShortCallChainBounds): boolean =>
+/** A short-call quote that expires before the LEAPS and strikes above it. */
+export const withinLeapsBounds = (q: OptionChainQuote, bounds: ShortCallChainBounds): boolean =>
   shortExpiresBeforeLeaps(q.expiration, bounds.expirationBefore) &&
   shortStrikeAboveLeaps(q.strike, bounds.strikeAbove)
 

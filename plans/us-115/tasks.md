@@ -185,14 +185,14 @@ Shared files to watch when areas run in parallel:
 
 ### Area 12 — `PmccLegSection` reused by both sheets
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/components/PmccLegSection.test.tsx` _(depends on: Areas 8, 11 Green ✓)_
+- [x] **[Red]** Write failing tests — `src/renderer/src/components/PmccLegSection.test.tsx` _(depends on: Areas 8, 11 Green ✓)_
   - Test cases: `ticker` and `bounds` props reach `useCallChain` and filter the list; `fillLabel`; selecting a contract never fills the price; `pairRule={false}`; `children` render; manual entry and `Quotes unavailable. Enter your filled trade manually.` unchanged
   - Mockup: `SellShortSheet` picker and fields
   - Run `pnpm test src/renderer/src/components/PmccLegSection.test.tsx` — all new tests must fail
-- [ ] **[Green]** Implement — `src/renderer/src/components/PmccLegSection.tsx` _(depends on: Area 12 Red ✓)_
+- [x] **[Green]** Implement — `src/renderer/src/components/PmccLegSection.tsx` _(depends on: Area 12 Red ✓)_
   - Bind to `PmccLegFormSlice`; optional props with defaults that reproduce US-101
   - Run the test file plus `pnpm test src/renderer/src/components/PmccEntryForm.test.tsx src/renderer/src/components/NewPositionSheet.test.tsx` — all must pass
-- [ ] **[Refactor]** `/refactor` _(depends on: Area 12 Green ✓)_
+- [x] **[Refactor]** `/refactor` _(depends on: Area 12 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 

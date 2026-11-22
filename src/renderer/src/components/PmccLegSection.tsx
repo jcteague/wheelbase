@@ -1,6 +1,8 @@
 // [US-101] One PMCC leg: contract picker, strike / expiration (locked while a chain
 // contract is selected), the selected contract's quote, the actual fill, fees and fill
 // date. The long and short invocations differ only by LEG_COPY and the preset.
+// [US-115] The Sell Short Call sheet reuses the short leg: it passes the ticker and the live
+// LEAPS bounds as props, its own fill label, no `__pair__` rule, and its Contracts field.
 import { parseISO } from 'date-fns'
 import Decimal from 'decimal.js'
 import { useState } from 'react'
@@ -12,8 +14,13 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { useUnderlyingPrice } from '../hooks/useUnderlyingPrice'
 import { parsePositiveInputDecimal } from '../lib/decimal-input'
 import { computeDteFromInput, fmtMoney, fmtMoneyGrouped } from '../lib/format'
-import type { ContractSelection, LegPreset } from '../lib/pmcc-entry'
-import type { PmccEntryFormValues } from '../schemas/pmcc-entry'
+import {
+  withinLeapsBounds,
+  type ContractSelection,
+  type LegPreset,
+  type ShortCallChainBounds
+} from '../lib/pmcc-entry'
+import type { PmccLegFormSlice } from '../schemas/pmcc-entry'
 import { CallContractPicker } from './CallContractPicker'
 import { Field } from './ui/FormField'
 import { NumberInput } from './ui/NumberInput'
@@ -59,12 +66,16 @@ function quoteTime(timestamp: string): string {
   return `${easternDay.format(at)} · ${easternTime.format(at)} ET`
 }
 
-/** `180+ DTE · Δ 0.70–0.85` / `20–45 DTE · Δ 0.25–0.35` */
-function presetCaption(preset: LegPreset): string {
+/** `180+ DTE · Δ 0.70–0.85` / `20–45 DTE · Δ 0.25–0.35`; with LEAPS bounds,
+ *  `XYZ calls before 2028-01-21, strikes above $85.00 · 20–45 DTE · Δ 0.25–0.35`. */
+function presetCaption(preset: LegPreset, ticker: string, bounds?: ShortCallChainBounds): string {
   const dte = preset.dteMax === null ? `${preset.dteMin}+` : `${preset.dteMin}–${preset.dteMax}`
-  return `${dte} DTE · Δ ${preset.deltaMin}–${preset.deltaMax}`
+  const band = `${dte} DTE · Δ ${preset.deltaMin}–${preset.deltaMax}`
+  if (!bounds) return band
+  return `${ticker} calls before ${bounds.expirationBefore}, strikes above ${fmtMoney(bounds.strikeAbove)} · ${band}`
 }
 
+/** Whether the live LEAPS covers a quote — `filterCallChain`'s bound, for the held quote. */
 function QuoteStrip({ quote }: { quote: OptionChainQuote | undefined }): React.JSX.Element {
   const delta = quote?.greeks ? new Decimal(quote.greeks.delta).abs().toFixed(2) : '—'
   return (
@@ -104,7 +115,7 @@ type LegDatePickerProps = {
 }
 
 function LegDatePicker({ name, id, label, hasError }: LegDatePickerProps): React.JSX.Element {
-  const { control } = useFormContext<PmccEntryFormValues>()
+  const { control } = useFormContext<PmccLegSectionValues>()
   return (
     <Controller
       control={control}
@@ -123,6 +134,14 @@ function LegDatePicker({ name, id, label, hasError }: LegDatePickerProps): React
   )
 }
 
+/** The section's form: the slice both sheets share, plus what only US-101's entry form has —
+ *  the LEAPS leg, the ticker (read when no `ticker` prop is given) and rule 16's `__pair__`. */
+type PmccLegSectionValues = PmccLegFormSlice & {
+  long?: PmccLegFormSlice['short']
+  ticker?: string
+  __pair__?: string
+}
+
 type PmccLegSectionProps = {
   leg: PmccLeg
   preset: LegPreset
@@ -130,13 +149,28 @@ type PmccLegSectionProps = {
   today: string
   /** `false` while the sheet shows the other strategy: the leg's market data stops requesting. */
   active?: boolean
+  /** The underlying, when the form has no `ticker` of its own; defaults to the form's. */
+  ticker?: string
+  /** The live LEAPS a short call must sit inside: the chain, and any held quote, stay in it. */
+  bounds?: ShortCallChainBounds
+  /** The fill's label; defaults to `Premium / share`. */
+  fillLabel?: string
+  /** Whether the fill's blur re-runs rule 16 on `__pair__`; only the entry form has it. */
+  pairRule?: boolean
+  /** Extra fields, after the fill and fees (the sheet's Contracts). */
+  children?: React.ReactNode
 }
 
 export function PmccLegSection({
   leg,
   preset,
   today,
-  active = true
+  active = true,
+  ticker: tickerProp,
+  bounds,
+  fillLabel = 'Premium / share',
+  pairRule = true,
+  children
 }: PmccLegSectionProps): React.JSX.Element {
   const copy = LEG_COPY[leg]
   const {
@@ -145,11 +179,12 @@ export function PmccLegSection({
     setValue,
     trigger,
     formState: { errors }
-  } = useFormContext<PmccEntryFormValues>()
-  const [ticker, contracts, contractId, expiration, fillPrice] = useWatch({
+  } = useFormContext<PmccLegSectionValues>()
+  const [formTicker, contracts, contractId, expiration, fillPrice] = useWatch({
     control,
     name: ['ticker', 'contracts', `${leg}.contractId`, `${leg}.expiration`, `${leg}.fillPrice`]
   })
+  const ticker = tickerProp ?? formTicker ?? ''
 
   // Typing A, AA, AAP, AAPL must not request four chains: market data waits for the ticker
   // to settle, and reads as no ticker meanwhile so the previous ticker's contracts go too.
@@ -161,6 +196,7 @@ export function PmccLegSection({
     preset,
     underlyingPrice,
     selectedContractId: contractId,
+    bounds,
     enabled: active
   })
 
@@ -168,16 +204,25 @@ export function PmccLegSection({
   const found = selected ? polled.contracts.find((q) => q.contractId === contractId) : undefined
   // A refetch that no longer carries the selected contract (a new strike bound, a page
   // that shifted) must not drop the selection: hold its last-seen quote, so the picker
-  // still lists it, the strip still shows it and its age still reads as stale.
+  // still lists it, the strip still shows it and its age still reads as stale. A contract
+  // the LEAPS bounds now exclude is not held: the bounds dropped it, not the page.
   const [lastSeen, setLastSeen] = useState(found)
   if (found && found !== lastSeen) setLastSeen(found)
-  const quote = found ?? (selected && lastSeen?.contractId === contractId ? lastSeen : undefined)
+  const held =
+    selected &&
+    lastSeen &&
+    lastSeen.contractId === contractId &&
+    (bounds === undefined || withinLeapsBounds(lastSeen, bounds))
+      ? lastSeen
+      : undefined
+  const quote = found ?? held
   const chain = quote && !found ? { ...polled, contracts: [...polled.contracts, quote] } : polled
   const todayDate = parseISO(today)
   const dte = computeDteFromInput(expiration, todayDate)
   const legErrors = errors[leg]
 
-  const flow = legCashFlow(fillPrice, contracts)
+  // `long.fillPrice` reads `undefined` only in a form without a LEAPS leg, which never renders it.
+  const flow = legCashFlow(fillPrice ?? '', contracts)
 
   function select(selection: ContractSelection | null): void {
     setValue(`${leg}.contractId`, selection?.contractId)
@@ -198,7 +243,7 @@ export function PmccLegSection({
             {copy.action}
           </span>
           <span className="font-wb-mono text-[10px] text-wb-text-secondary">
-            {presetCaption(preset)}
+            {presetCaption(preset, ticker, bounds)}
           </span>
         </div>
         <CallContractPicker
@@ -244,11 +289,14 @@ export function PmccLegSection({
         </div>
         <QuoteStrip quote={quote} />
         {/* Rule 16 (net debit before fees) reports on `__pair__`, which no input owns, so
-            onBlur validation never shows it on its own; each fill re-runs it on blur. */}
+            onBlur validation never shows it on its own; each fill re-runs it on blur — in the
+            entry form only (`pairRule`), since no other form has the rule. */}
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Premium / share" htmlFor={id('fill')} error={legErrors?.fillPrice?.message}>
+          <Field label={fillLabel} htmlFor={id('fill')} error={legErrors?.fillPrice?.message}>
             <NumberInput
-              {...register(`${leg}.fillPrice`, { onBlur: () => void trigger('__pair__') })}
+              {...register(`${leg}.fillPrice`, {
+                onBlur: pairRule ? () => void trigger('__pair__') : undefined
+              })}
               id={id('fill')}
               inputMode="decimal"
               placeholder="0.00"
@@ -264,6 +312,7 @@ export function PmccLegSection({
             />
           </Field>
         </div>
+        {children}
         <Field label="Fill date" htmlFor={id('fill-date')} error={legErrors?.fillDate?.message}>
           <LegDatePicker
             name={`${leg}.fillDate`}
