@@ -780,7 +780,10 @@ describe('US-108: PMCC position card', () => {
     const card = xyzCard(page)
 
     await expect.poll(() => pnlLines(card, 'XYZ'), POLL).toEqual(['+$1,380.00', '+21.7% of basis'])
-    expect(await card.getByText('1 of 3 covered', { exact: true }).count()).toBe(1)
+    expect(
+      await card.getByText('LEAPS + short call open · 1 of 3 covered', { exact: true }).count()
+    ).toBe(1)
+    expect(await card.getByText('3 × 100 sh', { exact: true }).count()).toBe(1)
     expect((await legParts(leapsBlock(card))).title).toBe(`$80.00 LEAPS ×3 · ${localDate(315)}`)
     expect((await legParts(shortBlock(card))).title).toBe(`$108.00 call · ${localDate(14)}`)
   })

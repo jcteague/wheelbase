@@ -292,7 +292,10 @@ export async function listPositions(
 }
 
 /** Row counts straight from SQLite — the only view that can see an orphaned leg. */
-export function tableCount(dbPath: string, table: 'positions' | 'legs'): number {
+export function tableCount(
+  dbPath: string,
+  table: 'positions' | 'legs' | 'cost_basis_snapshots'
+): number {
   return Number(execFileSync('sqlite3', [dbPath, `SELECT count(*) FROM ${table};`]).toString())
 }
 

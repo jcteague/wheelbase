@@ -255,7 +255,7 @@ Shared files to watch when areas run in parallel:
 
 ### Area 15 — E2E Tests
 
-- [ ] **[Red]** Write failing e2e tests — `e2e/pmcc-sell-short.spec.ts`, `e2e/pmcc-sell-short-helpers.ts` _(depends on: all Green tasks ✓)_
+- [x] **[Red]** Write failing e2e tests — `e2e/pmcc-sell-short.spec.ts`, `e2e/pmcc-sell-short-helpers.ts` _(depends on: all Green tasks ✓)_
   - `pnpm rebuild:electron` first
   - Helpers: export `Variant` and `backgroundLegs` and add `VARIANTS.withoutCycle9` in `e2e/pmcc-timeline-helpers.ts`; `tableCount` accepts `cost_basis_snapshots` in `e2e/pmcc-helpers.ts`; `nyToday()` in `e2e/dates.ts`; launch without `WHEELBASE_FAKE_NOW`, with the shifted chain fixture; `shift(iso)`; `seedLeapsOnly`; `directSell`
   - Every test seeds through `_test:pmcc-seed-position`; assertions are the literals in `plan.md` Area 15, dates through `shift`
@@ -273,10 +273,10 @@ Shared files to watch when areas run in parallel:
     - AC-11: A failed save leaves the position LEAPS-only → `it('A failed save leaves the position LEAPS-only')`
     - AC-12: The wheel is unchanged → `it('The wheel is unchanged')`
   - Run `pnpm test:e2e e2e/pmcc-sell-short.spec.ts` — every new test must fail for the right reason. Since Layers 1–6 are complete, a test that already passes must be shown falsifiable: break its fixture or expected literal once (for AC-1, a fixture still at `$8.50`) and confirm it fails
-- [ ] **[Green]** Make e2e tests pass _(depends on: E2E Red ✓)_
+- [x] **[Green]** Make e2e tests pass _(depends on: E2E Red ✓)_
   - A failure means an earlier area is incomplete; fix it there, not in the spec
   - Run `pnpm test:e2e` — all tests must pass, including `open-pmcc-position`, `pmcc-cost-basis`, `pmcc-short-call-roll`, `pmcc-leaps-roll`, `pmcc-leg-timeline`, `pmcc-position-card`, `open-covered-call`
-- [ ] **[Refactor]** `/refactor` e2e tests _(depends on: E2E Green ✓)_
+- [x] **[Refactor]** `/refactor` e2e tests _(depends on: E2E Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Keep variants as patches over the one Background; `shift` is the only date offset
 

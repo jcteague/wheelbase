@@ -117,7 +117,7 @@ type BackgroundLeg = keyof typeof BACKGROUND
 
 /** A scenario as a patch over the Background: field overrides per leg (`null` drops the leg),
  *  legs appended after it, contracts on every leg, and the position's close date. */
-type Variant = {
+export type Variant = {
   patch?: Partial<Record<BackgroundLeg, Partial<SeedLeg> | null>>
   append?: SeedLeg[]
   contracts?: number
@@ -156,10 +156,12 @@ export const VARIANTS = {
     append: [leg('CC_CLOSE', 'BUY', '118.0000', '2027-08-20', '0.5000', '2027-08-04')]
   },
   /** $1.00 on the LEAPS purchase and on cycle 1's sell to open. */
-  fees: { patch: { leapsOpen: { fees: '1.0000' }, c1Sell: { fees: '1.0000' } } }
+  fees: { patch: { leapsOpen: { fees: '1.0000' }, c1Sell: { fees: '1.0000' } } },
+  /** [US-115] LEAPS-only: cycle 8 expired 2027-07-16 and no ninth short call was sold. */
+  withoutCycle9: { patch: { c9Sell: null } }
 } satisfies Record<string, Variant>
 
-function backgroundLegs({ patch = {}, append = [], contracts }: Variant): SeedLeg[] {
+export function backgroundLegs({ patch = {}, append = [], contracts }: Variant): SeedLeg[] {
   const legs = (Object.keys(BACKGROUND) as BackgroundLeg[]).flatMap((key) => {
     const override = patch[key]
     return override === null ? [] : [{ ...BACKGROUND[key], ...override }]
