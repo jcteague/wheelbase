@@ -1,0 +1,148 @@
+# Research: US-120 — Close a PMCC by selling the LEAPS
+
+Story: Linear [OPT-26](https://linear.app/optionswheel/issue/OPT-26) (`US-120`). Linear is the
+source; there is no story file. No comments on the issue (read 2026-11-22). Mockup:
+`mockups/epic-09-pmcc-position-detail.mdx` — `leaps-only` page preset, the `close` preset group
+(`close-position`, `close-losing`, `close-3ct`, `close-no-cycles`, `close-no-quote`,
+`close-success`) and the `closed-sold` page preset. The story says the `close position` preset is
+pending; the mockup file now carries it (`ClosePositionSheet`, line ~2269), so this plan follows it.
+
+## What the code already provides
+
+| Need | Where it is | Notes |
+| --- | --- | --- |
+| Telling "LEAPS open · no short call" from "LEAPS + short call open" | `pmccOpenLegs(legs)` in `src/main/services/pmcc-ledger.ts` → `{ long, short: PmccShortLeg \| null }`; `currentShortCallLeg` replays `SHORT_CALL_OPEN` / short-roll `ROLL_TO` and clears on `SHORT_CALL_EXPIRED` / `SHORT_CALL_CLOSE` / `SHORT_CALL_ASSIGNED` | **Derived from legs, not from the phase.** `WheelPhase` has one PMCC value, `PMCC_OPEN`; `rollPmccShortCall` / `rollPmccLeaps` (`src/main/core/lifecycle.ts`) take `openShort: … \| null` "when the PMCC holds only its LEAPS"; the card reads `'LEAPS open · no short call'` from the open-leg count (`src/renderer/src/lib/pmcc-card-display.ts:117`); `docs/spec/domain/wheel-lifecycle.md` says "a `PMCC_OPEN` row can in fact hold a LEAPS with no open short". The shared convention (keep `PMCC_OPEN`, derive coverage) matches the code. |
+| The LEAPS held now (incl. after a LEAPS roll) | `currentLeapsLeg` in `pmcc-ledger.ts` (`LEAPS_OPEN` or the `ROLL_TO` of a LEAPS roll) | Its `fillDate` is the LEAPS-open floor (2027-07-09 for XYZ, the roll's buy) |
+| Terminal leg role | `LegRole` already has `LEAPS_CLOSE` (`src/main/core/types.ts`), in `PmccLegRole`; `PMCC_LEG_SIDE.LEAPS_CLOSE = 'LONG'` | Reserved by US-101, added to the enum by US-103; nothing writes it yet. The timeline already renders it (`CLOSE` row, `Sold to close`, `src/renderer/src/lib/pmcc-timeline-rows.ts`). |
+| Running basis | `pmccLedgerFromLegs` / `calculatePmccLedger` (`src/main/core/costbasis.ts`), recomputed from legs on every read (spec ADR `pmcc-ledger-recomputed-from-legs`) | **Gap:** `legContribution` turns a `LEAPS_CLOSE` SELL into a `LONG −salePrice` contribution (`pmcc-ledger.test.ts` "records a LEAPS sale as a negative LONG contribution"). After a close that would read basis $8.50 − $24.10 = −$15.60. See ADR below. |
+| Snapshot writer | `appendPmccSnapshot(db, positionId, { triggerEvent, eventDate, now })` in `pmcc-ledger.ts` — the one PMCC writer, no transaction of its own | Always writes `final_pnl NULL`; result typed `finalPnl: null` |
+| Wheel close paths to mirror | US-4 `closeCspPosition` (`src/main/services/close-csp-position.ts`), US-10 `recordCallAwayPosition` (`src/main/services/record-call-away-position.ts`) | Both, in one `db.transaction`: insert the terminal leg, `UPDATE positions SET phase, status='CLOSED', closed_date, updated_at`, append a `cost_basis_snapshots` row copying `basis_per_share` / `total_premium_collected` and carrying `final_pnl`. INFO `position_closed` / `call_away_recorded`. |
+| Columns | `positions.closed_date`, `cost_basis_snapshots.final_pnl` (migration 001), `trigger_event` (004, no CHECK), `legs.fees` (017) | **No migration.** |
+| PMCC write shell | `loadPmccRollContext`, `requirePmccOpenLegs`, `logPmccRollRejection` in `src/main/services/pmcc-roll-record.ts`; `insertLegRow` in `src/main/services/leg-rows.ts` | Reused for the not-found / phase / no-LEAPS guards and the INFO rejection log |
+| Shared rule functions (engine + form) | `src/main/core/pmcc-rules.ts` (`PmccIssue<F>`, `issueIf`, `pmccLeapsRollIssues`, `latestFillDate`); spec ADR `pmcc-validation-pure-engine-mirrored-by-form-schema` | The close rules follow the same split |
+| Valuation date in New York from an injectable clock | `registerPositionsHandlers(db, { getCurrentDate })` + `etDateOf` (US-109); `PositionDetailResult.pmccTimeline.valuationDate` | Lets e2e pin 2027-07-19 with `WHEELBASE_FAKE_NOW` |
+| Timeline figures for the position line | `pmccTimeline.summary.cycleCount`, `pmccTimeline.start` (`src/main/core/pmcc-timeline-types.ts`) | `pmccLedger.shortCreditsPerShare`, `.premiumRecoveredPercent`, `.leapsCostPerShare`, `.basisPerShare`, `.basisTotal`, `.effectiveShareCost` |
+| Intrinsic / extrinsic | `shortExtrinsic({ mid, price, strike })` in `src/main/core/pmcc-card.ts` | The formula is any call's; reused for the LEAPS |
+| Sheet frame / submit | `PmccRollSheetDialog` (440 px fixed), `useRollSheetSubmit`, `SheetHeader` / `SheetBody` / `SheetFooter`, `SectionCard`, `StatGrid`, `SummaryRow`, `AlertBox`, `FormButton`, `Field`, `NumberInput`, `DatePicker` | The story wants 460 px |
+| Money formatting | `fmtMoneyGrouped`, `fmtPct1` (`src/renderer/src/lib/format.ts`), `signedMoneyGrouped` / `minusMoneyGrouped` (U+2212, `src/renderer/src/lib/money-format.ts`) | |
+| Test seed of any PMCC state | `_test:pmcc-seed-position` (US-109), `seedXyz(page, variant)` / `LEAPS_ONLY` / `launchTimeline(fakeNow)` in `e2e/pmcc-timeline-helpers.ts` | US-120's Background is US-109's with `c9Sell` dropped, valued 2027-07-19; the seed writes no snapshot |
+| Storage-failure e2e | `BEFORE INSERT … RAISE(ABORT)` trigger on `cost_basis_snapshots` via `sqlite(dbPath, …)` (spec ADR `storage-failure-e2e-via-sqlite-trigger`, `e2e/pmcc-cost-basis.spec.ts`) | |
+| Quote mocks | `WHEELBASE_MOCK_STOCK_QUOTES`, `WHEELBASE_MOCK_OPTION_SNAPSHOTS`; `flatStockQuote`, `optionSnapshot` in `e2e/market-data-fixtures.ts`; `occSymbol` in `e2e/pmcc-helpers.ts` | |
+| IPC spy (no broker order) | `spyOnIpcChannels` / `invokedIpcChannels` in `e2e/pmcc-helpers.ts` | |
+
+## What does not exist
+
+- **A terminal PMCC phase.** `WheelPhase` ends at `PMCC_OPEN`; `PmccPhase = Extract<WheelPhase, 'PMCC_OPEN'>`; `KNOWN_PMCC_PHASES` (`src/main/pmcc-phase.ts`) and the four renderer `Record<WheelPhase, …>` maps in `src/renderer/src/lib/phase.ts` know only `PMCC_OPEN`.
+- **A terminal PMCC snapshot.** `PmccTriggerEvent` (`src/main/schemas.ts`) has no closing trigger and `appendPmccSnapshot` cannot write `final_pnl`.
+- **A close engine, settlement engine, service, IPC channel, preload entry, renderer API, hook, form schema or sheet.**
+- **US-118's `pmccActionsFor`, two-lane cockpit and CLOSED lanes.** US-118 is unplanned; the header actions are inline JSX in `PositionDetailActions.tsx`.
+- **A header gate for a closed PMCC.** `PositionDetailPage` passes `hasOpenLeaps={Boolean(pmccOpenLegs)}`; `pmccOpenLegs` still returns the LEAPS after a `LEAPS_CLOSE` (nothing clears it), so a closed PMCC would offer `Roll LEAPS →`.
+- **A renderer "today" that e2e can pin.** `newYorkToday()` reads the real clock in the renderer.
+
+## Architecture Decisions
+
+### ADR: Terminal phase `PMCC_CLOSED`; the LEAPS-only state stays `PMCC_OPEN`
+
+- **Decision:** Add `PMCC_CLOSED` to `WheelPhase` and widen `PmccPhase` to `Extract<WheelPhase, 'PMCC_OPEN' | 'PMCC_CLOSED'>`. `closePmccLeaps` returns `{ phase: 'PMCC_CLOSED' }`; the service writes `status = 'CLOSED'` and `closed_date`. US-111's closing settlements land on the same value. **The name is an Assumption (pending John).** The LEAPS-only state is **not** a phase: it stays `PMCC_OPEN` with `pmccOpenLegs(legs).short === null`, the shared convention, because that is how the code already tells the two states apart.
+- **Why:** The story forbids overloading `WHEEL_COMPLETE` and a second closed phase. `PMCC_CLOSED` is the name US-101's ADR reserved (`docs/spec/architecture/02-adrs/pmcc-phase-and-leg-role-names.md`), and the `PMCC_` prefix keeps the wheel jobs' `phase IN (…)` filters and `evaluate-alerts`' `phase = 'PMCC_OPEN'` filter correct by construction. That ADR also reserved `PMCC_LEAPS_ONLY`; the code never adopted it (US-104/US-105 read the open short from legs), so this story does not add it.
+- **Alternatives considered:** `WHEEL_COMPLETE` + `strategy_type` (forbidden by the story). `PMCC_COMPLETE` (no precedent; the reserved name is `PMCC_CLOSED`). Adding `PMCC_LEAPS_ONLY` now (contradicts the code and the shared convention with US-115 / US-119; would make US-119 write a phase transition and every PMCC guard accept two open phases).
+
+### ADR: The terminal leg is the existing `LEAPS_CLOSE` role, `SELL`, on the LEAPS held now
+
+- **Decision:** One leg: `leg_role = 'LEAPS_CLOSE'`, `action = 'SELL'`, `instrument_type = 'CALL'`, `strike` / `expiration` / `contracts` from `currentLeapsLeg`, `premium_per_contract = fill_price = money4(salePricePerShare)`, `fill_date`, `fees = money4(fees)`, `roll_chain_id = NULL`. US-111's "sell the LEAPS" settlement writes the same role.
+- **Why:** The role exists, is already a `PmccLegRole`, and the timeline already renders it as `Sold to close` with no basis cell. The story asks for one role for "LEAPS sold to close" whichever story writes it.
+- **Alternatives considered:** A new `LEAPS_SOLD` role (a duplicate of a reserved name).
+
+### ADR: `LEAPS_CLOSE` is a settlement leg — the US-103 ledger excludes it
+
+- **Decision:** `legContribution` / `eventContribution` (`src/main/services/pmcc-ledger.ts`) give a `LEAPS_CLOSE` leg **no** ledger contribution. Typed: `PmccSettlementLegRole = Extract<PmccLegRole, 'LEAPS_CLOSE'>` and `PmccBasisLegRole = Exclude<PmccLegRole, PmccSettlementLegRole>` in `src/main/core/types.ts`; `PMCC_LEG_SIDE` becomes `Record<PmccBasisLegRole, PmccLedgerSide>`. The timeline's `LEAPS_CLOSE` event carries `fees` but no `contribution`, so the replay cannot fold it. The existing US-103 test "records a LEAPS sale as a negative LONG contribution" is replaced by "a LEAPS sale contributes nothing".
+- **Why:** The AC: "the cost basis at close is still $8.50 per share, because the sale is realized against the basis, not folded into it", and the closed page's guardrails "show their last recorded values" ($93.50, 62.2%). The ledger is recomputed from legs on every read (Cost basis drawer, list card, timeline summary); with the sale folded in they would read basis −$15.60 and LEAPS cost −$1.60. Excluding it keeps every read surface frozen at the close without each surface special-casing a closed position. US-111 reads its settlement cash the same way.
+- **Alternatives considered:** Keep the contribution and have closed surfaces read the terminal snapshot (every reader would need a closed branch; the recomputed-from-legs ADR exists to avoid snapshot reads). Fold the sale in and let `final_pnl = −basis` (changes the meaning of "cost basis" at close; contradicts the AC).
+- **Consequence:** Changes a US-103 rule; `docs/spec/architecture/02-adrs/pmcc-contributions-by-role-and-action.md` is updated by `/update-spec` when this plan completes.
+
+### ADR: Final P&L settles against the recomputed ledger's `basisTotal`
+
+- **Decision:** `finalPnl = salePrice × 100 × contracts − fees − ledger.basisTotal`, with `ledger = pmccLedgerFromLegs(legs)` read **before** the leg is inserted. The terminal snapshot copies `ledger.basisPerShare` and `ledger.shortCreditsTotal` (what `appendPmccSnapshot` writes anyway).
+- **Why:** The story's note says "`basisTotal` comes from the latest US-103 snapshot (`basis_per_share × 100 × contracts`)". Two problems: a rounded per-share basis drifts when multiplied back up (spec ADR `shared-pure-pmcc-opening-debit`; 3 contracts with $0.01 fees gives `6900.0200`), and a PMCC seeded or imported without snapshots has none. The ledger is what `appendPmccSnapshot` writes into every snapshot, so the figure equals the latest snapshot's by construction (spec ADR `pmcc-ledger-recomputed-from-legs`). This is a deviation from the story's Technical Notes; Linear was not edited (read-only) — see Open Questions.
+- **Alternatives considered:** Read the latest snapshot (drift; null on seeded positions).
+
+### ADR: The terminal snapshot is `appendPmccSnapshot` with a `finalPnl`, trigger `PMCC_LEAPS_CLOSED`, written last
+
+- **Decision:** Add `'PMCC_LEAPS_CLOSED'` to `PmccTriggerEvent` and `PmccTerminalTriggerEvent = Extract<PmccTriggerEvent, 'PMCC_LEAPS_CLOSED'>`. `appendPmccSnapshot` takes `finalPnl` exactly when the trigger is terminal (conditional options type) and its result's `snapshot.finalPnl` is `string` for a terminal trigger, `null` otherwise. The service's transaction order is: insert the `LEAPS_CLOSE` leg → `UPDATE positions` → append the snapshot. **Trigger name is an Assumption (pending John).**
+- **Why:** One snapshot writer (spec ADR `pmcc-snapshot-single-writer-in-caller-transaction`); the name follows `PMCC_SHORT_CLOSED` / `PMCC_LEAPS_ROLL`. Writing the snapshot last lets the trigger-based storage-failure test fail the transaction's last write, so a passing "no leg, still open" proves the rollback. Snapshots stay append-only (US-4 / US-10).
+- **Alternatives considered:** A hand-written `INSERT` in the service as US-4 does (a second PMCC writer). Reusing `CALL_AWAY` / `CSP_CLOSE` (wheel triggers).
+
+### ADR: One rule list, `pmccLeapsCloseIssues`, for the engine and the form
+
+- **Decision:** `pmccLeapsCloseIssues(input)` in `src/main/core/pmcc-rules.ts` returns `PmccIssue<PmccLeapsCloseField>[]` for the field rules in order: sale price > 0 (`salePricePerShare` / `must_be_positive` / `Sale price must be greater than zero`), fees ≥ 0 (`fees` / `must_be_non_negative` / `Fees cannot be negative.`), fill date on/after the floor (`fillDate` / `before_leaps_open` / `Fill date cannot be before the LEAPS was bought (YYYY-MM-DD)` or `before_short_retired` / `Fill date cannot be before the last short call was retired (YYYY-MM-DD)`), fill date on/before today (`fillDate` / `cannot_be_future` / `Fill date cannot be in the future`). `closePmccLeaps(input)` in `src/main/core/lifecycle.ts` runs `requirePmccOpenPhase` → the open-short guard (`__root__` / `short_call_open` / `This PMCC has an open short call — selling the LEAPS would leave it naked. Retire or roll the short call first.`) → throws the first issue → returns `{ phase: 'PMCC_CLOSED' }`. The renderer's `closePmccSchema(ctx)` runs the same function in `superRefine`, first issue per path, undecided inputs skipped.
+- **Why:** Spec ADR `pmcc-validation-pure-engine-mirrored-by-form-schema`: the form and the engine cannot disagree on a message. `Fill date cannot be in the future` and `Fees cannot be negative.` are the strings the codebase already uses (`lifecycle.ts:92`, `requireNonNegativeFees`), and match the AC.
+- **Alternatives considered:** Rules only in the engine (the form would have to wait for a round-trip to disable confirm — the AC wants the error beside the field and confirm disabled).
+
+### ADR: The fill-date floor is the later of the LEAPS fill and the last short's terminal fill
+
+- **Decision:** `leapsFillDate = currentLeapsLeg(legs).fillDate`; `lastShortRetiredOn` = the latest `fillDate` among legs with role `SHORT_CALL_EXPIRED`, `SHORT_CALL_CLOSE` or `SHORT_CALL_ASSIGNED`, or `null` when none. The binding bound is the later date; **on a tie, the LEAPS message** (the mockup's `retiredOn > boughtOn` rule). Dates in the messages are ISO (`2027-07-16`), as the AC writes them. Helper: `pmccCloseFillDateFloor(leapsFillDate, lastShortRetiredOn): PmccCloseFloor` in `pmcc-rules.ts`, also used by the renderer.
+- **Why:** The story's rule, with US-119's terminal roles (`SHORT_CALL_EXPIRED` / `SHORT_CALL_CLOSE`) and US-111's cover-and-keep assignment. A short roll's `ROLL_FROM` never ends a cycle, so it is not a floor; a later short's terminal leg is always after it. `latestFillDate(legs)` would give the same date but cannot say which bound binds.
+- **Alternatives considered:** `latestFillDate` plus one generic message (the AC names the binding bound).
+
+### ADR: "Today" is the New York day of main's injectable clock, in the service and in the sheet
+
+- **Decision:** The `positions:close-pmcc` handler passes `{ today: etDateOf(getCurrentDate()) }` to `closePmccPosition(db, positionId, payload, { today })` — the same clock `positions:get` uses. `fillDate` defaults to `today` in the service. The sheet takes `today = detail.pmccTimeline?.valuationDate ?? newYorkToday()`, so the default fill date, DTE, days held and the future-date rule use the day the server validates against.
+- **Why:** The Background fixes the valuation date in America/New_York, and e2e pins 2027-07-19 with `WHEELBASE_FAKE_NOW`; the renderer's real clock (2026) would call every 2027 fill date "in the future". `localToday()` (US-4, US-105) is the local zone and cannot be pinned.
+- **Alternatives considered:** `localToday()` in the service (unpinnable, local zone). A new `today` field on `PositionDetailResult` (duplicates `pmccTimeline.valuationDate`, which every PMCC with a LEAPS already has).
+
+### ADR: `settlePmccClose` in `costbasis.ts`; the sheet's preview calls the same function
+
+- **Decision:** `settlePmccClose({ salePricePerShare, contracts, fees, basisTotal })` returns `{ proceeds, settlementCash, finalPnl, percentOfBasis }` (4-dp strings, `ROUND_HALF_UP`; `percentOfBasis` is `null` when `basisTotal ≤ 0`). The service calls it for the authoritative figure; the renderer's preview helper calls it on every `useWatch` change. No IPC per keystroke.
+- **Why:** Spec ADR `client-side-pnl-preview` (local arithmetic, no debounce) — and the renderer already imports pure `costbasis.ts` functions (`computeUnrealizedPnl`, `computePmccUnrealizedPnl`), so one function serves both and the preview cannot drift from the saved P&L. `percentOfBasis` is added to the story's three fields so the `+183.5% of basis` figure is engine-tested, not renderer arithmetic.
+- **Alternatives considered:** A renderer copy of the arithmetic (the duplication the ADR tolerates, unnecessary here).
+
+### ADR: Payload money as numbers; the engine owns every message
+
+- **Decision:** `ClosePmccPayloadSchema = z.object({ positionId: uuid, salePricePerShare: z.number(), fillDate: IsoDateSchema.optional(), fees: z.number().optional() })`. No `.positive()` / `.nonnegative()` in Zod; the service applies `money4` and the engine rejects 0 / negatives with the AC's messages.
+- **Why:** Every PMCC write payload in `schemas.ts` sends money as numbers and `money4`s it in the service (`RollPmccLeapsPayloadSchema`, `CreatePmccPositionPayloadSchema`); the form schemas convert. A Zod `.positive()` would answer a direct IPC call with Zod's message instead of "Sale price must be greater than zero" (the open-short e2e calls the channel directly). The story's note says "money as 4 dp strings"; this follows the code instead.
+- **Alternatives considered:** Decimal strings (inconsistent with the sibling PMCC payloads and `toRollPmcc…Payload` helpers).
+
+### ADR: Header actions gate on `PMCC_OPEN`; `Close Position →` only when LEAPS-only; open legs unchanged after close
+
+- **Decision:** In `PositionDetailActions`, every PMCC button requires `phase === 'PMCC_OPEN'`; `Close Position →` (`data-testid="close-pmcc-btn"`) additionally requires `hasOpenLeaps && !hasOpenShortCall`. A `PMCC_CLOSED` position shows only its phase badge. `pmccOpenLegs` is **not** changed: after a close it still returns the last-held LEAPS.
+- **Why:** The AC ("Close Position →" not offered under an open short; "the header offers no actions" when closed) and spec ADR `action-buttons-phase-gated` (UI gate on top of the engine guard). `readPmccSummaries` (`src/main/services/list-positions-pmcc.ts`) drops a PMCC whose `pmccOpenLegs` is null, so clearing it would remove the closed position from the list — the AC wants it shown as closed. The roll services already reject a closed PMCC through `requirePmccOpenPhase`.
+- **Alternatives considered:** Make `pmccOpenLegs` null after a `LEAPS_CLOSE` (drops the closed card). Wait for US-118's `pmccActionsFor` (non-blocking per the story; the button goes where the PMCC actions are today).
+- **Consequence for siblings:** US-115 (`Sell Short Call →`) and US-119 (`Record Expiration →` / `Close Short Early →`) edit the same component; each must keep the `phase === 'PMCC_OPEN'` gate.
+
+### ADR: Close Position sheet = `ClosePmccSheet` / `ClosePmccForm` / `ClosePmccSuccess` in the PMCC sheet frame at 460 px
+
+- **Decision:** `PmccRollSheetDialog` gains `width?: number` (default 440, unchanged for the rolls); `ClosePmccSheet` passes 460 and `label="Close Position"`. The form uses React Hook Form + `zodResolver(closePmccSchema(ctx))`, `useWatch` for the preview, and `useRollSheetSubmit` for the single-flight submit and server-error routing. Storage failure shows `Could not close the position. Your entries are preserved. Try again.`
+- **Why:** Spec ADR `sheet-component-pattern` (portal sheet, form + success states, three files past ~200 lines); the PMCC sheets already share this frame and submit hook.
+- **Alternatives considered:** A new frame copied from the roll dialog (duplication).
+
+### ADR: Before US-118, the closed detail page shows `Final P&L` in the closed banner
+
+- **Decision:** `PositionDetailContent`'s existing `Closed on {closedDate}` banner reads `Closed on 2027-07-19 · Final P&L +$1,560.00` for a PMCC whose latest snapshot carries `final_pnl` (green / red by sign). US-118's CLOSED lanes and `0 open` guardrail are not built here; the e2e asserts the surfaces that exist (closed banner, Cost basis drawer, Timeline summary, Leg timeline, list card) — Assumption (pending John).
+- **Why:** The scenario "The closed position renders from the terminal snapshot" must pass as an e2e and the trader must see the realized figure somewhere; one line in the existing banner is the smallest place, and reads the terminal snapshot, never a live mark.
+- **Alternatives considered:** Build US-118's lanes (out of scope). Leave the Final P&L unshown until US-118 (the AC would have no passing e2e).
+
+### ADR: E2e seeds the LEAPS-only state directly
+
+- **Decision:** Every PMCC e2e seeds through `_test:pmcc-seed-position` (US-109): XYZ = `seedXyz(page, { patch: { c9Sell: null } })` at `WHEELBASE_FAKE_NOW=2027-07-19T16:00:00Z`; the no-cycles position = `LEAPS_ONLY` at `2027-08-13T16:00:00Z`; the open-short refusal = the plain US-109 Background at 2027-08-13. Quotes come from `WHEELBASE_MOCK_STOCK_QUOTES` / `WHEELBASE_MOCK_OPTION_SNAPSHOTS`.
+- **Why:** The suite must not depend on US-119's sheets, which are being built in parallel. The seed writes the same leg rows US-119 will (`SHORT_CALL_EXPIRED`, `EXPIRE`, `fill_date = expiration`).
+- **Alternatives considered:** Drive US-119's Record Expiration sheet (couples two unfinished stories).
+
+## Open Questions
+
+Each has a default chosen so the plan is complete.
+
+1. **Terminal phase name.** `PMCC_CLOSED` (US-101's reserved name), shared with US-111. — Assumption (pending John).
+2. **Closing trigger-event name.** `PMCC_LEAPS_CLOSED`. US-111 adds its own terminal trigger(s) to `PmccTerminalTriggerEvent`. — Assumption (pending John).
+3. **Retire the reserved `PMCC_LEAPS_ONLY` name?** The code and the sibling convention keep `PMCC_OPEN` for both open states. Meanwhile `PHASE_LABEL.PMCC_OPEN = 'LEAPS + short call open'` is shown on the header badge of a LEAPS-only position, which is wrong. Not fixed here (US-118 / US-119 territory). — Assumption (pending John): retire the name; relabel in US-118.
+4. **Basis source for the settlement.** The recomputed ledger (equal to the latest snapshot by construction), not `basis_per_share × 100 × contracts` as the story's Technical Notes say. Linear was not updated (read-only here); John may want the note amended.
+5. **`LEAPS_CLOSE` leaves the ledger.** Changes the US-103 rule that a LEAPS sale is a negative LONG contribution. — Assumption (pending John), required by the "cost basis at close is still $8.50" AC.
+6. **Closed page before US-118.** `Final P&L` goes in the existing closed banner; "both lanes read CLOSED" and the `8 · 8 closed · 0 open` guardrail wait for US-118 (the e2e asserts `8 · 8 closed` from the Timeline summary). — Assumption (pending John).
+7. **Losing-close note when the sale is at or above the LEAPS cost but fees cause the loss.** The note is shown only when `finalPnl < 0` **and** `salePrice < leapsCostPerShare`; otherwise the loss shows with no note. — Assumption (pending John).
+8. **`% of basis` when the basis is zero or negative** (credits ≥ LEAPS cost). Omitted. — Assumption (pending John).
+9. **Fill-date tie.** When the LEAPS fill and the last short's retirement are the same day, the LEAPS message is shown. — Assumption (pending John).
+10. **Sale-price default.** The snapshot's `mid` field (the provider's mid), not a recomputed (bid + ask) ÷ 2. Both give $24.10 in the AC. — Assumption.
+11. **AC quotes that abbreviate the result line.** "Proceeds $7,230.00 · cost basis $2,550.00" and "Proceeds $2,100.00 · cost basis $1,980.00" omit the `· fees $0.00 ·` part the fee-free happy path shows. The line always carries all three; those e2e tests assert the parts separately.
+12. **Position line with no cycles.** `0 cycles · no short call was ever sold · held since 2027-06-01` (the mockup appends "held since"); the e2e asserts the AC's prefix.
+13. **Result card layout.** The AC quotes one line (`Proceeds $2,410.00 · fees $0.00 · cost basis $850.00`); the mockup shows three `SummaryRow`s (`Proceeds · $24.10 × 100 sh`, `Fees`, `Cost basis`). The plan renders both: the AC line as the card's first line, the mockup rows under it. — Assumption (pending John).
+14. **Empty sale price message.** With no quote the sale price starts empty; the form shows `Enter a sale price` only after the field is touched, and confirm stays disabled until a price is typed. The wording is not in the story. — Assumption (pending John).
+15. **LEAPS lane BROKEN / CLOSED (US-118).** Scenario 5's "the LEAPS lane reads BROKEN" and scenario 16's "both lanes read CLOSED" / `0 open` need US-118's cockpit; until it lands those clauses are named `it.todo`s in the e2e spec.
