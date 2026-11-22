@@ -3,8 +3,8 @@
 ## Purpose
 
 Returns the underlying's official close for one past trading day, so the expiration sheet can warn
-when the short call probably finished in the money. Advisory only: no write path depends on it,
-and every failure degrades to `close: null`.
+when the underlying closed at or above the short call's strike (the call may have been assigned).
+Advisory only: no write path depends on it, and every failure degrades to `close: null`.
 
 ## Request
 
@@ -40,12 +40,12 @@ and returns the bar whose `date` equals `date`. A provider error is caught and l
 
 ## Error codes
 
-| field      | code             | message                                                |
-| ---------- | ---------------- | ------------------------------------------------------ |
-| `ticker`   | `too_small`      | Zod's message for an empty ticker                      |
-| `ticker`   | `too_big`        | Zod's message for a ticker over `MAX_TICKER_LENGTH`    |
-| `date`     | `invalid_format` | Zod's message for a non-`YYYY-MM-DD` value             |
-| `__root__` | `internal_error` | `An unexpected error occurred`                         |
+| field      | code             | message                                             |
+| ---------- | ---------------- | --------------------------------------------------- |
+| `ticker`   | `too_small`      | Zod's message for an empty ticker                   |
+| `ticker`   | `too_big`        | Zod's message for a ticker over `MAX_TICKER_LENGTH` |
+| `date`     | `invalid_format` | Zod's message for a non-`YYYY-MM-DD` value          |
+| `__root__` | `internal_error` | `An unexpected error occurred`                      |
 
 The renderer treats any `ok: false` as `close: null` and shows `Confirm with your broker that this
 call was not assigned`.

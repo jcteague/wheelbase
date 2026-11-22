@@ -31,11 +31,16 @@ Read these before starting implementation:
 - **API Contracts:** `plans/us-119/contracts/positions-expire-pmcc-short.md`, `plans/us-119/contracts/positions-close-pmcc-short.md`, `plans/us-119/contracts/market-data-stock-close.md`
 - **Quickstart & Verification:** `plans/us-119/quickstart.md`
 
-Three decisions differ from the story's Technical Notes (recorded in `research.md`; John to
-update Linear): no `PMCC_LEAPS_ONLY` phase is added — coverage is read from the open legs; the
-services take the Eastern `today` from the handler's clock; and the cycle-5 effective share cost
-is asserted as `$96.90 (from $96.35)`, the value the Background's $80 LEAPS gives on 2027-04-02
-(open question 1).
+Four decisions differ from the story's text (recorded in `research.md`; Linear is being updated
+to match): no `PMCC_LEAPS_ONLY` phase is added — coverage is read from the open legs; the services
+take the Eastern `today` from the handler's clock; the cycle-5 effective share cost is asserted as
+`$96.90 (from $96.35)`, the value the Background's $80 LEAPS gives on 2027-04-02 (open question 1,
+confirmed by the options-expert; Linear AC corrected); and the closing-price warning reads `XYZ
+closed at $114.30 on 2027-07-16, at or above the $112.00 strike — this call may have been
+assigned. Check with your broker; if it was, record an assignment instead.` rather than the AC's
+"closed above … likely assigned" (open question 6). On a rolled cycle the `% of max` figure is
+labelled `of cycle net credit` and the expiration card shows the expiring contract; a losing
+cycle shows no percentage (open questions 5 and 10).
 
 ## Prerequisites
 
@@ -75,8 +80,8 @@ No migration.
 - `cycleNet` of cycle 5's opening sale (`SHORT`, cash `−2.20`, 100 shares) is `{ netPerShare: '2.2000', netTotal: '220.0000' }`; with the `+0.55` buyback added it is `1.6500` / `165.0000`; a `$1.00` fee on the buyback gives `1.6400` / `164.0000`.
 - `cycleNet` of cycle 2 (sell 1.80, roll debit 0.60) is `1.2000` / `120.0000` — the timeline's US-109 figure.
 - `cycleDaysHeld('2027-06-22', '2027-07-16')` is `24`; `('2027-03-15', '2027-04-02')` is `18`; the same day is `0`.
-- `percentOfMaxCaptured('165.0000', '220.0000')` is `'75.0000'`; `('240.0000', '240.0000')` is `'100.0000'`; `('-90.0000', '220.0000')` is `'-40.9091'`; a max of `'0.0000'` or `'-10.0000'` gives `null`.
-- `retireCycle` for cycle 8 (`EXPIRED`, zero contribution, ended 2027-07-16) returns `{ number: 8, outcome: 'EXPIRED', netPerShare: '2.4000', netTotal: '240.0000', percentOfMax: '100.0000', daysHeld: 24, endedOn: '2027-07-16' }`; for cycle 5 closed at 0.55 on 2027-04-02 it returns `1.6500`, `165.0000`, `'75.0000'`, `18`; at 3.10 it returns `-0.9000`, `-90.0000`, `'-40.9091'`.
+- `percentOfMaxCaptured('165.0000', '220.0000')` is `'75.0000'`; `('240.0000', '240.0000')` is `'100.0000'`; `('0.0000', '220.0000')` is `'0.0000'`; `('-90.0000', '220.0000')` (a losing cycle) gives `null`; a max of `'0.0000'` or `'-10.0000'` gives `null`.
+- `retireCycle` for cycle 8 (`EXPIRED`, zero contribution, ended 2027-07-16) returns `{ number: 8, outcome: 'EXPIRED', netPerShare: '2.4000', netTotal: '240.0000', percentOfMax: '100.0000', rollCount: 0, daysHeld: 24, endedOn: '2027-07-16' }`; for cycle 5 closed at 0.55 on 2027-04-02 it returns `1.6500`, `165.0000`, `'75.0000'`, `18`; at 3.10 it returns `-0.9000`, `-90.0000`, `percentOfMax: null`; for rolled cycle 2 (net `1.2000` / `120.0000`, `rollCount: 1`) closed at 0.30 on 2026-11-30 it returns `0.9000`, `90.0000`, `'75.0000'`, `rollCount: 1`, `38` (`data-model.md` § 9).
 - `findOpenCycle` on the Background timeline at 2027-07-19 cut before cycle 8's expiry returns cycle 8 (`UNRECORDED`) for `{ strike: '112.0000', expiration: '2027-07-16' }`; on the full Background it returns cycle 9 (`OPEN`) for its contract and `null` for cycle 8's contract (already `ENDED`).
 - `buildPmccTimeline` regression: every existing `pmcc-timeline.test.ts` expectation still passes unchanged after the extraction.
 
@@ -85,12 +90,12 @@ No migration.
 - **Oracle / fold law:** for any contributions `cs` and contribution `c`, `extendCycleNet(cycleNet(cs, n), c, n)` equals `cycleNet([...cs, c], n)`.
 - **Invariant:** `cycleNet(cs, n).netTotal` equals `netPerShare × n` to 4 dp, and `cycleNet` is order-independent over `cs`.
 - **Invariant:** `retireCycle` with a zero-cash, zero-fee contribution leaves `netTotal` unchanged and yields `percentOfMax = '100.0000'` whenever the max is positive.
-- **Bound:** `percentOfMaxCaptured(net, max) ≤ 100` whenever `0 < max` and `net ≤ max`; `null` iff `max ≤ 0`.
+- **Bound:** `0 ≤ percentOfMaxCaptured(net, max) ≤ 100` whenever `0 < max` and `0 ≤ net ≤ max`; `null` iff `max ≤ 0` or `net < 0`.
 - **Oracle:** `cycleDaysHeld(a, b)` equals `differenceInCalendarDays(parseISO(b), parseISO(a))` for ordered days.
 
 **Green — implementation:**
 
-- Create `PmccCycleNet` as `Pick<PmccCycleCommon, 'netPerShare' | 'netTotal'>`, `PmccRetireOutcome` as `Extract<PmccShortOutcome, 'EXPIRED' | 'CLOSED'>` and `PmccRetiredCycle<O>` as the intersection of `Pick` slices of `PmccCycleCommon` and the `ENDED` arm of `PmccCycle` with `outcome: O` and `percentOfMax: string | null`, all in `src/main/core/pmcc-cycle.ts` (data-model.md § Type Design).
+- Create `PmccCycleNet` as `Pick<PmccCycleCommon, 'netPerShare' | 'netTotal'>`, `PmccRetireOutcome` as `Extract<PmccShortOutcome, 'EXPIRED' | 'CLOSED'>` and `PmccRetiredCycle<O>` as the intersection of `Pick` slices of `PmccCycleCommon` (including `rollCount`) and the `ENDED` arm of `PmccCycle` with `outcome: O` and `percentOfMax: string | null`, all in `src/main/core/pmcc-cycle.ts` (data-model.md § Type Design).
 - `cycleNet` sums `−contributionDollars(c)` (from `core/costbasis.ts`) with `decimal.js` and divides by `shares`; `extendCycleNet` adds one contribution's dollars to `netTotal` and re-divides; `cycleDaysHeld` wraps `daysBetween`.
 - `findOpenCycle` returns the cycle whose `status !== 'ENDED'` and whose `current` strike and expiration equal the short's (compared with `money4`), typed `Extract<PmccCycle, { status: 'OPEN' | 'UNRECORDED' }> | null`.
 - In `pmcc-timeline.ts`, delete `netDollars`; `toCycle` takes `cycleNet(contributions, ledger.shares)`; `cycleStatus` takes `cycleDaysHeld` for `ENDED` and `UNRECORDED`.
@@ -312,17 +317,18 @@ No migration.
 
 **Red — tests to write:**
 
-- `pmccCoverageLabel(0)` `LEAPS open · no short call`; `(1)` `LEAPS + short call open`; `(2)` `LEAPS + 2 short calls open`; the US-108 card tests still pass.
+- `pmccCoverageLabel` per US-115 Area 9 (reuse it if US-115 landed first): `{ shortCount: 0, shortContracts: 0, leapsContracts: 1 }` `LEAPS open · no short call`; `{ 1, 1, 1 }` `LEAPS + short call open`; `{ 1, 1, 3 }` `LEAPS + short call open · 1 of 3 covered`. The US-108 card's state line uses it, as US-115 plans.
 - `isShortExpirationPassed('2027-07-16', '2027-07-16')` false, `('2027-07-16', '2027-07-17')` true, `('2027-07-16', '2027-07-15')` false.
-- `pmccCloseAdvisory`: close `114.3000`, strike `112.0000` → `likely_assigned`, `XYZ closed above $112.00 on 2027-07-16 — this short call was likely assigned. Record an assignment instead.`; close `112.0000` → `likely_assigned`; close `104.2000` → `below_strike`, `XYZ closed at $104.20 on 2027-07-16 — below the $112.00 strike. Confirm with your broker that this call was not assigned.`; `null` → `no_close`, `Confirm with your broker that this call was not assigned`.
-- `closeEarlyPreview` for cycle 5 (open cycle net `2.2000` / `220.0000`, opened 2027-03-15; ledger basis `16.3500`, strike `80.0000`, 100 shares) at cost `0.55`, fill `2027-04-02`: `previewNetLine` `Cycle net +$1.65 / share · 75.0% of max captured`; `basisAfterLine` `Cost basis after: $16.90 / share (from $16.35)`; `effectiveAfterLine` `Effective share cost after: $96.90 (from $96.35)`; `losing` false. At `3.10`: `Cycle net −$0.90 / share (−$90.00)`, `losing` true. An empty or zero cost returns `null` (the card shows `—`).
-- `expiredCycleNetLine` for cycle 8 `Cycle 8 net +$2.40 / share (+$240.00) · 100% of max`; `closedCycleNetLine` for cycle 5 `+$1.65 / share (+$165.00) · 75.0% of max captured · 18 days held`; `shortSoldLine` `$112.00 · 2027-07-16 · sold at $2.40 · 24 days held`; `leapsContextLine` `$85.00 · 2028-01-21 · 186 DTE`; `percentOfMax: null` renders `—`.
+- `pmccCloseAdvisory`: close `114.3000`, strike `112.0000` → `at_or_above_strike`, `XYZ closed at $114.30 on 2027-07-16, at or above the $112.00 strike — this call may have been assigned. Check with your broker; if it was, record an assignment instead.`; close `112.0000` (the threshold) → `at_or_above_strike`, `XYZ closed at $112.00 on 2027-07-16, at or above the $112.00 strike — …`; close `111.9900` → `below_strike`; close `104.2000` → `below_strike`, `XYZ closed at $104.20 on 2027-07-16 — below the $112.00 strike. Confirm with your broker that this call was not assigned.`; `null` → `no_close`, `Confirm with your broker that this call was not assigned`.
+- `closeEarlyPreview` for cycle 5 (open cycle net `2.2000` / `220.0000`, opened 2027-03-15; ledger basis `16.3500`, strike `80.0000`, 100 shares) at cost `0.55`, fill `2027-04-02`: `previewNetLine` `Cycle net +$1.65 / share · 75.0% of max captured`; `basisAfterLine` `Cost basis after: $16.90 / share (from $16.35)`; `effectiveAfterLine` `Effective share cost after: $96.90 (from $96.35)`; `losing` false. At `3.10`: `Cycle net −$0.90 / share (−$90.00)` (no percentage), `losing` true. Rolled cycle 2 (open net `1.2000` / `120.0000`, `rollCount` 1) at `0.30`: `Cycle net +$0.90 / share · 75.0% of cycle net credit captured`. An empty or zero cost returns `null` (the card shows `—`).
+- `expiredCycleNetLine` for cycle 8 `Cycle 8 net +$2.40 / share (+$240.00) · 100% of max`; for rolled cycle 2 `Cycle 2 net +$1.20 / share (+$120.00) · 100% of cycle net credit`; `closedCycleNetLine` for cycle 5 `+$1.65 / share (+$165.00) · 75.0% of max captured · 18 days held`, for cycle 5 at 3.10 `−$0.90 / share (−$90.00) · 18 days held` (no percentage), for rolled cycle 2 at 0.30 `+$0.90 / share (+$90.00) · 75.0% of cycle net credit captured · 38 days held`; `shortSoldLine` for cycle 8 `$112.00 · 2027-07-16 · sold at $2.40 · 24 days held`, for rolled cycle 2 `$112.00 · 2026-12-18 · sold at $2.40` (the `ROLL_TO` sale, not the 1.80 opening sale); `rolledCycleLine` for cycle 2 `opened 2026-10-23 · rolled 1× · cycle net +$1.20 / share`, `null` for cycle 8; `leapsContextLine` `$85.00 · 2028-01-21 · 186 DTE`; `percentOfMax: null` omits the `· N% of …` segment.
 - `pmccBasisAfter` gives the same `basisPerShare` / `effectiveShareCost` as `calculatePmccLedger` over the full contribution list for cycle 5 (oracle example), and the US-104 roll preview tests still pass.
 
 **Green — implementation:**
 
 - `PmccCloseAdvisory` discriminated union on `kind` and the plain `PmccCloseEarlyPreview` in `src/renderer/src/lib/pmcc-retire.ts` (data-model.md § Type Design). The preview calls `retireCycle` from `src/main/core/pmcc-cycle.ts` with the projected `SHORT` contribution (`cashPerShare = cost`, `fees`) and `pmccBasisAfter` for the basis and effective cost; no arithmetic beyond those calls and formatting.
-- `% of max` uses `fmtPct` (whole) on the expiration sheet and `fmtPct1` on the close-early sheet, as the AC shows. Signs via `signedMoneyGrouped` (U+2212).
+- `% of max` uses `fmtPct` (whole) on the expiration sheet and `fmtPct1` on the close-early sheet, as the AC shows. One private `percentLabel(rollCount)` picks `of max` (`rollCount === 0`, the AC's wording) or `of cycle net credit` (rolled), with `captured` appended on the close-early lines; a `null` `percentOfMax` drops the segment (research.md ADR "Rolled and losing cycles in the retire sheets"). Signs via `signedMoneyGrouped` (U+2212).
+- `shortSoldLine(cycle)` reads the expiring contract from the timeline cycle: `current` strike and expiration, and the sale of the last `ROLL` row's `to` fill (the `ROLL_TO` leg) when `rollCount > 0`, else `opening`; `rolledCycleLine(cycle)` returns `opened {openedOn} · rolled {rollCount}× · cycle net {netPerShare} / share` or `null`.
 
 **Refactor — cleanup to consider:**
 
@@ -330,7 +336,7 @@ No migration.
 
 **Acceptance criteria covered:**
 
-- "The expiration sheet shows what the cycle netted", "Expiring a short that closed in the money…", "The close-early sheet previews the net", "A buyback above the credit…", "the position reads `LEAPS open · no short call`".
+- "The expiration sheet shows what the cycle netted", "Expiring a short that closed in the money…", "The close-early sheet previews the net", "A buyback above the credit…", "the position reads `LEAPS open · no short call`"; open questions 5, 6 and 10 (rolled-cycle label and card, losing cycle, warning wording).
 
 ---
 
@@ -376,14 +382,15 @@ No migration.
 **Red — tests to write** (Testing Library, `window.api` mocked):
 
 - Renders eyebrow `RECORD EXPIRATION`, title `XYZ $112.00 call · 2027-07-16`; the `Coverage · stays open` card `$85.00 · 2028-01-21 · 186 DTE`; the `This cycle · 8` card `$112.00 · 2027-07-16 · sold at $2.40 · 24 days held` and `Cycle 8 net +$2.40 / share (+$240.00) · 100% of max`; the expiration date shown as text with no input or date picker (`queryByRole('textbox')` null).
-- Close `114.3000` → an `AlertBox` with `role="alert"`, the gold warning class and the `likely_assigned` text; `Confirm Expiration` enabled.
+- Rolled cycle 2 (`rollCount` 1, the `data-model.md` § 9 literal): the `This cycle · 2` card shows `$112.00 · 2026-12-18 · sold at $2.40` and `opened 2026-10-23 · rolled 1× · cycle net +$1.20 / share`, not the `$108.00` opening sale (`queryByText(/sold at \$1\.80/)` null, with the card's `$112.00` line as the positive control); the net line ends `· 100% of cycle net credit`.
+- Close `114.3000` → an `AlertBox` with `role="alert"`, the gold warning class and the `at_or_above_strike` text `XYZ closed at $114.30 on 2027-07-16, at or above the $112.00 strike — this call may have been assigned. Check with your broker; if it was, record an assignment instead.`; `Confirm Expiration` enabled.
 - Close `null` → the muted line `Confirm with your broker that this call was not assigned`, no `AlertBox`; Confirm enabled. Close `104.2000` → the below-strike muted line.
 - Confirm calls `expirePmccShort({ positionId })` once; while pending the button is disabled; an `ok: false` `internal_error` shows `Could not record the expiration. Try again.` in a danger `AlertBox` and keeps the sheet on the form.
 - Success shows the `Expired worthless` badge, `Cycle 8 net +$2.40 / share (+$240.00)`, `Sell the next short call →` and `Done`; `Done` calls `onClose`; `Sell the next short call →` calls `onSellNextShort`. With `cycle: null` the net reads `—`.
 
 **Green — implementation:**
 
-- Follow the mockup's `RetireShortSheet` in `expire` mode (preset `expire`): `PmccRollSheetDialog` frame (440 px `SheetPanel`, portal, Escape, focus trap) labelled `Record Expiration`; eyebrow, title; `PmccCoverageContextCard` (LEAPS, Expires, DTE — read-only, "stays open"); a `This cycle · N` card (sold date at price, days held, expired date); the advisory from `useStockClose` + `pmccCloseAdvisory` (`AlertBox variant="warning"` for `likely_assigned`, muted `wb-text-muted` line otherwise, never disabling Confirm); the emphasized Net card with the credit line `Credit … moves from open to realized · basis unchanged` from the mockup; footer `Cancel` · `Confirm Expiration`.
+- Follow the mockup's `RetireShortSheet` in `expire` mode (preset `expire`): `PmccRollSheetDialog` frame (440 px `SheetPanel`, portal, Escape, focus trap) labelled `Record Expiration`; eyebrow, title; `PmccCoverageContextCard` (LEAPS, Expires, DTE — read-only, "stays open"); a `This cycle · N` card showing the expiring contract (`shortSoldLine`: strike, expiration, sale price — the `ROLL_TO` leg's on a rolled cycle — and days held on an unrolled one; plus `rolledCycleLine` on a rolled cycle; research.md ADR "Rolled and losing cycles in the retire sheets"); the advisory from `useStockClose` + `pmccCloseAdvisory` (`AlertBox variant="warning"` for `at_or_above_strike`, muted `wb-text-muted` line otherwise, never disabling Confirm); the emphasized Net card with the credit line `Credit … moves from open to realized · basis unchanged` from the mockup; footer `Cancel` · `Confirm Expiration`.
 - No form: Confirm runs `useExpirePmccShort` (research.md ADR "The expiration sheet is a confirmation").
 - Sheet step union `{ step: 'form' } | { step: 'success'; result: ExpirePmccShortResult }` in local state; `PmccRetireSuccess` shows `outcomeLabel(result.cycle.outcome)` as a `Badge` (positive tone), the net, `Sell the next short call →` (primary) and `Done`.
 - Props: `ticker`, `openShort`, `leaps`, `cycle` (the timeline's open cycle), `today` (`pmccTimeline.valuationDate`), `onClose`, `onSellNextShort`.
@@ -409,16 +416,16 @@ No migration.
 
 **Red — tests to write:**
 
-- Renders eyebrow `CLOSE SHORT EARLY`, title `XYZ $114.00 call · 2027-04-16`, the Coverage card (`$80.00 · 2027-09-17 · 168 DTE`), the `Current short call` card (sold 2027-03-15 at $2.20, expires 2027-04-16, 14 DTE); inputs `Cost to close / share` (`$` prefix), `Fill date` defaulting to `2027-04-02`, `Fees` defaulting to `$0.00`.
+- Renders eyebrow `CLOSE SHORT EARLY`, title `XYZ $114.00 call · 2027-04-16`, the Coverage card (`$80.00 · 2027-09-17 · 168 DTE`), the `Current short call` card (sold 2027-03-15 at $2.20, expires 2027-04-16, 14 DTE); inputs `Cost to close / share` (`$`prefix),`Fill date`defaulting to`2027-04-02`, `Fees`defaulting to`$0.00`.
 - Typing `0.55` updates the Net card live: `Cycle net +$1.65 / share · 75.0% of max captured`, `Cost basis after: $16.90 / share (from $16.35)`, `Effective share cost after: $96.90 (from $96.35)`.
-- Typing `3.10`: `Cycle net −$0.90 / share (−$90.00)` with the loss-colour class (`text-wb-red`), the note `Buying back above the credit collected — this cycle nets a loss` in a warning `AlertBox`, `Confirm Close` enabled.
+- Typing `3.10`: `Cycle net −$0.90 / share (−$90.00)` and no `% of` text in the Net card, with the loss-colour class (`text-wb-red`), the note `Buying back above the credit collected — this cycle nets a loss` in a warning `AlertBox`, `Confirm Close` enabled.
 - Each invalid AC row shows its message beside the field (`aria-describedby`) and disables `Confirm Close`.
 - Confirm sends `{ positionId, costToClosePerContract: 0.55, fillDate: '2027-04-02', fees: 0 }`; a server field error lands on its input via `useRollSheetSubmit`; `internal_error` shows `Could not record the close. Your entries are preserved. Try again.` and keeps the typed values.
 - Success: `Closed early` badge, `+$1.65 / share (+$165.00) · 75.0% of max captured · 18 days held`, `Sell the next short call →`, `Done`.
 
 **Green — implementation:**
 
-- Follow `RetireShortSheet` in `close` mode (preset `close-early`): `PmccRollSheetDialog` labelled `Close Short Early`; `PmccCoverageContextCard`; a `Current short call` card from the current short leg; `ClosePmccShortEarlyForm` (RHF via `useClosePmccShortEarlyForm`, `NumberInput` with `$` prefix, `DatePicker`, optional Fees) with `useWatch` feeding `closeEarlyPreview` into `PmccRetireNetCard` (emphasized card: cycle net, % of max captured, cost basis after from → to, effective share cost after from → to; loss colour + note when `losing`); footer `Cancel` · `Confirm Close` disabled while the form is invalid or pending.
+- Follow `RetireShortSheet` in `close` mode (preset `close-early`): `PmccRollSheetDialog` labelled `Close Short Early`; `PmccCoverageContextCard`; a `Current short call` card from the current short leg (the `ROLL_TO` leg on a rolled cycle — unchanged by open question 10); `ClosePmccShortEarlyForm` (RHF via `useClosePmccShortEarlyForm`, `NumberInput` with `$` prefix, `DatePicker`, optional Fees) with `useWatch` feeding `closeEarlyPreview` into `PmccRetireNetCard` (emphasized card: cycle net, % of max captured, cost basis after from → to, effective share cost after from → to; loss colour + note when `losing`); footer `Cancel` · `Confirm Close` disabled while the form is invalid or pending.
 - Step union `{ step: 'form' } | { step: 'success'; result: ClosePmccShortResult }`; success reuses `PmccRetireSuccess` with `closedCycleNetLine`.
 
 **Refactor — cleanup to consider:**
@@ -450,7 +457,7 @@ No migration.
 
 **Green — implementation:**
 
-- Follow the mockup's header map: open short → `Roll Short Call →` · `Close Short Early →` · `Roll LEAPS →` (+ `Record Expiration →` once `pmccShortExpired`; unlike the mockup, `Close Short Early →` and US-104's `Roll Short Call →` stay after the expiration — research.md ADR "`Record Expiration →` appears only after the expiration date has passed"); no short → `Sell Short Call →` · `Roll LEAPS →` (preset `leaps-only`). `Record Assignment →` and `Close Position` stay out (US-111 / US-120). `PositionDetailActions` gains `pmccShortExpired`, `onClosePmccShortEarly`, `onRecordPmccExpiration`, `onSellPmccShort` props; `PhaseBadge` gets `label={pmccCoverageLabel(shortCount)}` for a PMCC.
+- Follow the mockup's header map: open short → `Roll Short Call →` · `Close Short Early →` · `Roll LEAPS →` (+ `Record Expiration →` once `pmccShortExpired`; unlike the mockup, `Close Short Early →` and US-104's `Roll Short Call →` stay after the expiration — research.md ADR "`Record Expiration →` appears only after the expiration date has passed"); no short → `Sell Short Call →` · `Roll LEAPS →` (preset `leaps-only`). `Record Assignment →` and `Close Position` stay out (US-111 / US-120). `PositionDetailActions` gains `pmccShortExpired`, `onClosePmccShortEarly`, `onRecordPmccExpiration`, `onSellPmccShort` props; `PhaseBadge` gets `label={pmccCoverageLabel({ shortCount, shortContracts, leapsContracts })}` for a PMCC.
 - `PositionDetailPage` computes `pmccShortExpired = isShortExpirationPassed(pmccOpenLegs.short.expiration, pmccTimeline.valuationDate)` and passes `today = pmccTimeline.valuationDate` and the open cycle (`findOpenCycle`) to the sheets. `PmccRetireSheet` (`'expire' | 'close' | null`) in `usePositionDetailSheets`. `onSellNextShort` closes the retire sheet and calls `handleSellPmccShort` (research.md ADR "`Sell Short Call →` and its sheet belong to US-115").
 
 **Refactor — cleanup to consider:**
@@ -505,11 +512,11 @@ fallback cannot produce. Disposal via `disposeTimeline` in `afterEach`.
 1. **Record the short call expiring worthless** — `atCycle8Open` at 2027-07-19: before, `Open cycle credit` reads `+$2.40 / share · open`; click `Record Expiration →`, `Confirm Expiration`, `Done`. Then cycle 8 in the leg timeline ends `Expired worthless` dated `2027-07-16` with net `Net credit` (not `Net credit, open`); `Realized net credits` reads `+$14.00 / share (+$1,400.00)` and `Open cycle credit` reads `—`; the `Cost basis / share` cell reads `$8.50`; the header badge reads `LEAPS open · no short call`; the header shows `Sell Short Call →` and no `Record Expiration →` or `Close Short Early →`.
 2. **The expiration sheet shows what the cycle netted** — `atCycle8Open` at 2027-07-19, open the sheet: `$112.00 · 2027-07-16 · sold at $2.40 · 24 days held`; `Cycle 8 net +$2.40 / share (+$240.00) · 100% of max`; the coverage card `$85.00 · 2028-01-21 · 186 DTE`; the dialog has no textbox and no date picker, and `2027-07-16` is shown as text.
 3. **Record Expiration is offered only once the expiration has passed** — `atCycle8Open` at 2027-07-15: `record-pmcc-expiration-btn` count `0`; `close-pmcc-short-early-btn` visible with `Close Short Early →`.
-4. **Expiring a short that closed in the money is turned toward assignment** — `atCycle8Open` at 2027-07-19 with `_test:iv-series-set` giving XYZ's 2027-07-16 close `114.30`: the warning `XYZ closed above $112.00 on 2027-07-16 — this short call was likely assigned. Record an assignment instead.` is visible in a warning alert; `Confirm Expiration` is enabled.
+4. **Expiring a short that closed in the money is turned toward assignment** — `atCycle8Open` at 2027-07-19 with `_test:iv-series-set` giving XYZ's 2027-07-16 close `114.30`: the warning `XYZ closed at $114.30 on 2027-07-16, at or above the $112.00 strike — this call may have been assigned. Check with your broker; if it was, record an assignment instead.` is visible in a warning alert; `Confirm Expiration` is enabled (wording per open question 6; Linear's AC text is being updated to match).
 5. **When no closing price is available the warning reads "Confirm with your broker that this call was not assigned"** — same seed, no IV series for XYZ: that muted line is visible, no warning alert, `Confirm Expiration` enabled.
 6. **Buy the short call back early** — `atCycle5Open` at 2027-04-02: `Close Short Early →`, cost `0.55`, fill date `2027-04-02`, `Confirm Close`. The success state reads `+$1.65 / share (+$165.00) · 75.0% of max captured · 18 days held`; after `Done`, cycle 5 ends `Closed early` with a buyback row `−$0.55` dated `2027-04-02`; `Cost basis / share` reads `$16.90` (the test fails on a fixture still reading `$16.35`); the badge reads `LEAPS open · no short call`.
-7. **The close-early sheet previews the net before confirming** — `atCycle5Open`: type `0.55` without confirming: `Cycle net +$1.65 / share · 75.0% of max captured`, `Cost basis after: $16.90 / share (from $16.35)`, `Effective share cost after: $96.90 (from $96.35)` (open question 1); no leg recorded yet (cycle 5 still `Open`).
-8. **A buyback above the credit is allowed and shown as a losing cycle** — type `3.10`: `Cycle net −$0.90 / share (−$90.00)` with the loss-colour class; the note `Buying back above the credit collected — this cycle nets a loss`; `Confirm Close` enabled.
+7. **The close-early sheet previews the net before confirming** — `atCycle5Open`: type `0.55` without confirming: `Cycle net +$1.65 / share · 75.0% of max captured`, `Cost basis after: $16.90 / share (from $16.35)`, `Effective share cost after: $96.90 (from $96.35)` (open question 1, resolved); no leg recorded yet (cycle 5 still `Open`).
+8. **A buyback above the credit is allowed and shown as a losing cycle** — type `3.10`: `Cycle net −$0.90 / share (−$90.00)` with the loss-colour class and no `% of` figure in the Net card; the note `Buying back above the credit collected — this cycle nets a loss`; `Confirm Close` enabled.
 9. **Reject invalid close-early input: cost to close $0.00** — `Cost to close must be greater than zero` beside the cost input; `Confirm Close` disabled.
 10. **Reject invalid close-early input: fill date 2027-03-14** — `Fill date cannot be before the short call was sold (2027-03-15)` beside the fill date; Confirm disabled.
 11. **Reject invalid close-early input: fill date 2027-04-17** — `Fill date cannot be after the expiration (2027-04-16)`; Confirm disabled.
@@ -519,7 +526,7 @@ fallback cannot produce. Disposal via `disposeTimeline` in `afterEach`.
 15. **Success state points at the next cycle: after an expiration** — the success view shows the `Expired worthless` badge, `Cycle 8 net +$2.40 / share (+$240.00)`, `Sell the next short call →` and `Done`; `Done` closes the sheet.
 16. **Success state points at the next cycle: after a buyback** — `Closed early` badge, `+$1.65 / share (+$165.00)`, both actions; `Done` closes the sheet.
 17. **"Sell the next short call →" opens US-115's sheet** — after either action, clicking it closes this sheet and opens the dialog named `Sell Short Call`. _(depends on US-115)_
-18. **The wheel is unchanged** — a classic wheel taken to `CC_OPEN` with the existing helpers (real clock): `Close CC Early →` opens the US-8 sheet and `Record Expiration →` follows US-9 (unchanged testIds `close-cc-early-btn`, `record-cc-expiration-btn`); none of `close-pmcc-short-early-btn`, `record-pmcc-expiration-btn`, `% of max`, `Cycle` figures or `LEAPS open · no short call` appear.
+18. **The wheel is unchanged** — a classic wheel taken to `CC_OPEN` with the existing helpers (real clock): `Close CC Early →` opens the US-8 sheet and `Record Expiration →` follows US-9 (unchanged testIds `close-cc-early-btn`, `record-cc-expiration-btn`); none of `close-pmcc-short-early-btn`, `record-pmcc-expiration-btn`, `% of max`, `of cycle net credit`, `Cycle` figures or `LEAPS open · no short call` appear.
 
 **Green — implementation:**
 
@@ -536,27 +543,32 @@ fallback cannot produce. Disposal via `disposeTimeline` in `afterEach`.
 
 ## AC Audit
 
-| #   | Acceptance scenario (OPT-25)                                                                      | E2e test |
-| --- | ------------------------------------------------------------------------------------------------- | -------- |
-| 1   | Record the short call expiring worthless                                                          | 1        |
-| 2   | The expiration sheet shows what the cycle netted                                                  | 2        |
-| 3   | Record Expiration is offered only once the expiration has passed                                  | 3        |
-| 4   | Expiring a short that closed in the money is turned toward assignment — warning, confirm enabled  | 4        |
-| 4b  | … when no closing price is available the warning reads "Confirm with your broker…"                | 5        |
-| 5   | Buy the short call back early                                                                     | 6        |
-| 6   | The close-early sheet previews the net before confirming                                          | 7        |
-| 7   | A buyback above the credit is allowed and shown as a losing cycle                                 | 8        |
-| 8   | Reject invalid close-early input — cost to close $0.00                                            | 9        |
-| 8   | Reject invalid close-early input — fill date 2027-03-14                                           | 10       |
-| 8   | Reject invalid close-early input — fill date 2027-04-17                                           | 11       |
-| 8   | Reject invalid close-early input — fill date 2027-04-03                                           | 12       |
-| 9   | Reject either action when no short call is open                                                   | 13       |
-| 10  | A failed save leaves the cycle open                                                               | 14       |
-| 11  | Success state points at the next cycle — outcome, net, `Done` (expiration)                        | 15       |
-| 11  | Success state points at the next cycle — outcome, net, `Done` (buyback)                           | 16       |
-| 11  | Success state — "Sell the next short call →" opens US-115's sheet                                 | 17       |
-| 12  | The wheel is unchanged                                                                            | 18       |
+| #   | Acceptance scenario (OPT-25)                                                                     | E2e test |
+| --- | ------------------------------------------------------------------------------------------------ | -------- |
+| 1   | Record the short call expiring worthless                                                         | 1        |
+| 2   | The expiration sheet shows what the cycle netted                                                 | 2        |
+| 3   | Record Expiration is offered only once the expiration has passed                                 | 3        |
+| 4   | Expiring a short that closed in the money is turned toward assignment — warning, confirm enabled | 4        |
+| 4b  | … when no closing price is available the warning reads "Confirm with your broker…"               | 5        |
+| 5   | Buy the short call back early                                                                    | 6        |
+| 6   | The close-early sheet previews the net before confirming                                         | 7        |
+| 7   | A buyback above the credit is allowed and shown as a losing cycle                                | 8        |
+| 8   | Reject invalid close-early input — cost to close $0.00                                           | 9        |
+| 8   | Reject invalid close-early input — fill date 2027-03-14                                          | 10       |
+| 8   | Reject invalid close-early input — fill date 2027-04-17                                          | 11       |
+| 8   | Reject invalid close-early input — fill date 2027-04-03                                          | 12       |
+| 9   | Reject either action when no short call is open                                                  | 13       |
+| 10  | A failed save leaves the cycle open                                                              | 14       |
+| 11  | Success state points at the next cycle — outcome, net, `Done` (expiration)                       | 15       |
+| 11  | Success state points at the next cycle — outcome, net, `Done` (buyback)                          | 16       |
+| 11  | Success state — "Sell the next short call →" opens US-115's sheet                                | 17       |
+| 12  | The wheel is unchanged                                                                           | 18       |
 
 Every AC bullet has a named e2e test. Test 7 asserts the effective share cost the Background
-produces (`$96.90 from $96.35`), not the story's `$101.90 from $101.35` — open question 1 in
-`research.md`. Test 17 is red until US-115 merges.
+produces (`$96.90 from $96.35`), not the story's original `$101.90 from $101.35` — open question
+1 in `research.md`, confirmed by the options-expert, Linear AC corrected. Test 4 asserts the
+warning `XYZ closed at $114.30 on 2027-07-16, at or above the $112.00 strike — this call may have
+been assigned. Check with your broker; if it was, record an assignment instead.`, which deviates
+from the AC's text (open question 6; Linear is being updated to match). The rolled-cycle label
+and card (open questions 5 and 10) are not an AC scenario — the AC cycles 5 and 8 are unrolled —
+so they are covered by Areas 1, 8 and 10, not by an e2e test. Test 17 is red until US-115 merges.

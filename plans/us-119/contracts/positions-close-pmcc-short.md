@@ -40,7 +40,8 @@ The service converts numbers with `money4` before calling `closePmccShortEarly`.
     outcome: 'CLOSED'
     netPerShare: string // '1.6500'
     netTotal: string // '165.0000'
-    percentOfMax: string | null // '75.0000'
+    percentOfMax: string | null // '75.0000'; null at cost 3.10 (net below zero: only the loss shows)
+    rollCount: number // 0 — the renderer labels the % `of cycle net credit` when > 0
     daysHeld: number // 18
     endedOn: string // '2027-04-02'
   } | null
@@ -56,21 +57,21 @@ rejection logs INFO `pmcc_short_close_rejected` with the field and code.
 
 Rules run in this order; the first failure is returned.
 
-| field                    | code                          | message                                                         |
-| ------------------------ | ----------------------------- | --------------------------------------------------------------- |
-| `positionId`             | `invalid_format`              | Zod's message for a non-UUID id                                 |
-| `costToClosePerContract` | `invalid_type`                | Zod's message for a non-number                                  |
-| `fillDate`               | `invalid_format`              | Zod's message for a non-`YYYY-MM-DD` value                      |
-| `__root__`               | `not_found`                   | `Position not found`                                            |
-| `__root__`   | `no_active_leg`       | `Position has no active leg` (a `PMCC_OPEN` row with no LEAPS leg; `requirePmccOpenLegs`) |
-| `__phase__`              | `invalid_phase`               | `Position is not in PMCC_OPEN phase` (also a wheel position)    |
-| `__root__`               | `no_open_short_call`          | `This PMCC has no open short call to retire.`                   |
-| `costToClosePerContract` | `must_be_positive`            | `Cost to close must be greater than zero`                       |
-| `fees`                   | `must_not_be_negative`        | `Fees cannot be negative.`                                      |
-| `fillDate`               | `close_date_before_open`      | `Fill date cannot be before the short call was sold (2027-03-15)` |
-| `fillDate`               | `close_date_after_expiration` | `Fill date cannot be after the expiration (2027-04-16)`         |
-| `fillDate`               | `cannot_be_future`            | `Fill date cannot be in the future`                             |
-| `__root__`               | `internal_error`              | `An unexpected error occurred` (storage failure; nothing is written) |
+| field                    | code                          | message                                                                                   |
+| ------------------------ | ----------------------------- | ----------------------------------------------------------------------------------------- |
+| `positionId`             | `invalid_format`              | Zod's message for a non-UUID id                                                           |
+| `costToClosePerContract` | `invalid_type`                | Zod's message for a non-number                                                            |
+| `fillDate`               | `invalid_format`              | Zod's message for a non-`YYYY-MM-DD` value                                                |
+| `__root__`               | `not_found`                   | `Position not found`                                                                      |
+| `__root__`               | `no_active_leg`               | `Position has no active leg` (a `PMCC_OPEN` row with no LEAPS leg; `requirePmccOpenLegs`) |
+| `__phase__`              | `invalid_phase`               | `Position is not in PMCC_OPEN phase` (also a wheel position)                              |
+| `__root__`               | `no_open_short_call`          | `This PMCC has no open short call to retire.`                                             |
+| `costToClosePerContract` | `must_be_positive`            | `Cost to close must be greater than zero`                                                 |
+| `fees`                   | `must_not_be_negative`        | `Fees cannot be negative.`                                                                |
+| `fillDate`               | `close_date_before_open`      | `Fill date cannot be before the short call was sold (2027-03-15)`                         |
+| `fillDate`               | `close_date_after_expiration` | `Fill date cannot be after the expiration (2027-04-16)`                                   |
+| `fillDate`               | `cannot_be_future`            | `Fill date cannot be in the future`                                                       |
+| `__root__`               | `internal_error`              | `An unexpected error occurred` (storage failure; nothing is written)                      |
 
 The dates in the messages are the open short's own fill date and expiration. A cost above the
 cycle's credit is accepted (a losing cycle). Every rejection leaves `legs` and

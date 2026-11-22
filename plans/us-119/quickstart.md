@@ -54,13 +54,16 @@ The spec seeds XYZ through `_test:pmcc-seed-position` with the `atCycle8Open` or
 `atCycle5Open` variant of US-109's Background (`e2e/pmcc-timeline-helpers.ts`) and launches with
 `WHEELBASE_FAKE_NOW`:
 
-| Scenario group                    | `WHEELBASE_FAKE_NOW`   | Eastern date |
-| --------------------------------- | ---------------------- | ------------ |
-| Expiration (cycle 8)              | `2027-07-19T16:00:00Z` | 2027-07-19   |
-| Header gating before expiration   | `2027-07-15T16:00:00Z` | 2027-07-15   |
-| Close early (cycle 5)             | `2027-04-02T16:00:00Z` | 2027-04-02   |
+| Scenario group                  | `WHEELBASE_FAKE_NOW`   | Eastern date |
+| ------------------------------- | ---------------------- | ------------ |
+| Expiration (cycle 8)            | `2027-07-19T16:00:00Z` | 2027-07-19   |
+| Header gating before expiration | `2027-07-15T16:00:00Z` | 2027-07-15   |
+| Close early (cycle 5)           | `2027-04-02T16:00:00Z` | 2027-04-02   |
 
-The in-the-money advisory sets XYZ's 2027-07-16 close to `114.30` through `_test:iv-series-set`.
+The at-or-above-strike advisory sets XYZ's 2027-07-16 close to `114.30` through
+`_test:iv-series-set`; the sheet then reads `XYZ closed at $114.30 on 2027-07-16, at or above the
+$112.00 strike — this call may have been assigned. Check with your broker; if it was, record an
+assignment instead.`
 The storage-failure test makes the temp DB read-only (`chmod 0o444`) before confirming and
 restores it in `afterEach`.
 

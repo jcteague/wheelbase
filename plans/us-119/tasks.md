@@ -14,18 +14,22 @@ Plan: `plans/us-119/plan.md` (area numbers below match it). Story: Linear
   output of the function under test
 - `better-sqlite3` ABI: run `pnpm rebuild:node` before Vitest work and `pnpm rebuild:electron`
   before Layer 8. Do not run a Vitest agent and an e2e agent at the same time
-- Open question 1 (`research.md`): assert `$96.90 (from $96.35)` for the cycle-5 effective share
-  cost, not the story's `$101.90`, unless John has answered otherwise
+- Open question 1 (`research.md`, resolved: confirmed by options-expert; Linear AC corrected):
+  assert `$96.90 (from $96.35)` for the cycle-5 effective share cost
+- Open questions 5, 6 and 10 (resolved): the closing-price warning reads `XYZ closed at $X on
+DATE, at or above the $112.00 strike — this call may have been assigned. Check with your broker;
+if it was, record an assignment instead.`; a rolled cycle labels its % `of cycle net credit` and
+  its expiration card shows the expiring contract; a losing cycle shows no percentage
 
 Shared files to watch when areas run in parallel:
 
-| File                                                     | Areas                                                  |
-| -------------------------------------------------------- | ------------------------------------------------------ |
-| `src/main/core/test-fixtures/arbitraries.ts`             | 1 and 2 (both Layer 1 — add arbitraries in separate blocks) |
-| `src/main/schemas.ts`                                    | 4 only; 6 reads it                                     |
-| `src/preload/index.ts`, `index.d.ts`                     | 7 only (both positions and market-data methods)        |
-| `src/renderer/src/lib/pmcc-roll.ts`                      | 8 only                                                 |
-| `e2e/pmcc-timeline-helpers.ts`, `e2e/pmcc-retire-helpers.ts` | 13 then 14 (sequential)                            |
+| File                                                         | Areas                                                       |
+| ------------------------------------------------------------ | ----------------------------------------------------------- |
+| `src/main/core/test-fixtures/arbitraries.ts`                 | 1 and 2 (both Layer 1 — add arbitraries in separate blocks) |
+| `src/main/schemas.ts`                                        | 4 only; 6 reads it                                          |
+| `src/preload/index.ts`, `index.d.ts`                         | 7 only (both positions and market-data methods)             |
+| `src/renderer/src/lib/pmcc-roll.ts`                          | 8 only                                                      |
+| `e2e/pmcc-timeline-helpers.ts`, `e2e/pmcc-retire-helpers.ts` | 13 then 14 (sequential)                                     |
 
 ---
 
@@ -39,15 +43,15 @@ Shared files to watch when areas run in parallel:
   - Test cases (full list in `plan.md` Area 1 Red):
     - `cycleNet`: cycle 5 sale `2.2000`/`220.0000`; with the 0.55 buyback `1.6500`/`165.0000`; with a $1.00 fee `1.6400`/`164.0000`; cycle 2 `1.2000`/`120.0000`
     - `cycleDaysHeld`: `24` (2027-06-22 → 07-16), `18` (2027-03-15 → 04-02), `0` same day
-    - `percentOfMaxCaptured`: `'75.0000'`, `'100.0000'`, `'-40.9091'`, `null` for max `0` and negative
-    - `retireCycle`: cycle 8 EXPIRED literal; cycle 5 CLOSED at 0.55 and at 3.10
+    - `percentOfMaxCaptured`: `'75.0000'`, `'100.0000'`, `'0.0000'` for a zero net; `null` for a losing net (`-90.0000` of `220.0000`) and for max `0` and negative
+    - `retireCycle`: cycle 8 EXPIRED literal (`rollCount: 0`); cycle 5 CLOSED at 0.55 and at 3.10 (`percentOfMax: null`); rolled cycle 2 CLOSED at 0.30 (`'75.0000'`, `rollCount: 1`, 38 days)
     - `findOpenCycle`: cycle 8 `UNRECORDED` on the cut Background at 2027-07-19; cycle 9 `OPEN` on the full Background; `null` for an `ENDED` cycle's contract
     - `pmcc-timeline.test.ts` passes unchanged (regression gate for the extraction)
-  - Property cases — `src/main/core/pmcc-cycle.property.test.ts`: fold law `extendCycleNet(cycleNet(cs), c) = cycleNet([...cs, c])`; `netTotal = netPerShare × shares` and order independence; zero contribution keeps the net and yields `100.0000`; `percentOfMaxCaptured ≤ 100` when `0 < max`, `net ≤ max`, and `null` iff `max ≤ 0`; `cycleDaysHeld` oracle against `differenceInCalendarDays`
+  - Property cases — `src/main/core/pmcc-cycle.property.test.ts`: fold law `extendCycleNet(cycleNet(cs), c) = cycleNet([...cs, c])`; `netTotal = netPerShare × shares` and order independence; zero contribution keeps the net and yields `100.0000`; `0 ≤ percentOfMaxCaptured ≤ 100` when `0 < max`, `0 ≤ net ≤ max`, and `null` iff `max ≤ 0` or `net < 0`; `cycleDaysHeld` oracle against `differenceInCalendarDays`
   - Add `pmccCycleNet` and `shortCallTerms` arbitraries to `src/main/core/test-fixtures/arbitraries.ts`
   - Run `pnpm test src/main/core/pmcc-cycle` — all new tests must fail
 - [ ] **[Green]** Implement — `src/main/core/pmcc-cycle.ts`, `src/main/core/pmcc-timeline.ts` _(depends on: Area 1 Red ✓)_
-  - Types per `data-model.md` § Type Design: `PmccCycleNet` (`Pick` of `PmccCycleCommon`), `PmccRetireOutcome` (`Extract` of `PmccShortOutcome`), `PmccRetiredCycle<O>` (intersection of `Pick` slices with `outcome: O`, `percentOfMax`)
+  - Types per `data-model.md` § Type Design: `PmccCycleNet` (`Pick` of `PmccCycleCommon`), `PmccRetireOutcome` (`Extract` of `PmccShortOutcome`), `PmccRetiredCycle<O>` (intersection of `Pick` slices incl. `rollCount`, with `outcome: O`, `percentOfMax`)
   - `cycleNet`, `extendCycleNet`, `cycleDaysHeld`, `percentOfMaxCaptured`, `findOpenCycle` (returns `Extract<PmccCycle, { status: 'OPEN' | 'UNRECORDED' }> | null`), `retireCycle` — signatures in `data-model.md` § 3
   - `pmcc-timeline.ts`: delete `netDollars`; `toCycle` calls `cycleNet`; `cycleStatus` calls `cycleDaysHeld`
   - Run `pnpm test src/main/core/pmcc-cycle src/main/core/pmcc-timeline` — all tests must pass
@@ -124,18 +128,19 @@ Shared files to watch when areas run in parallel:
 
 - [ ] **[Red]** Write failing tests — `src/renderer/src/lib/pmcc-coverage.test.ts`, `src/renderer/src/lib/pmcc-retire.test.ts`, `src/renderer/src/lib/pmcc-roll.test.ts` _(depends on: Area 1 Green ✓)_
   - Test cases (full list in `plan.md` Area 8 Red):
-    - `pmccCoverageLabel` 0 / 1 / 2; US-108 card tests unchanged
+    - `pmccCoverageLabel` no short / covered / `1 of 3 covered`, per US-115 Area 9; the US-108 card's state line uses it
     - `isShortExpirationPassed` on, after, before the expiration
-    - `pmccCloseAdvisory`: 114.30 and 112.00 → `likely_assigned` text; 104.20 → `below_strike` text; `null` → `Confirm with your broker that this call was not assigned`
-    - `closeEarlyPreview` cycle 5 at 0.55: `Cycle net +$1.65 / share · 75.0% of max captured`, `Cost basis after: $16.90 / share (from $16.35)`, `Effective share cost after: $96.90 (from $96.35)`; at 3.10: `Cycle net −$0.90 / share (−$90.00)`, `losing`; empty / zero cost → `null`
-    - copy builders: `Cycle 8 net +$2.40 / share (+$240.00) · 100% of max`; `+$1.65 / share (+$165.00) · 75.0% of max captured · 18 days held`; `$112.00 · 2027-07-16 · sold at $2.40 · 24 days held`; `$85.00 · 2028-01-21 · 186 DTE`; `—` for null percent
+    - `pmccCloseAdvisory`: 114.30 → `at_or_above_strike`, `XYZ closed at $114.30 on 2027-07-16, at or above the $112.00 strike — this call may have been assigned. Check with your broker; if it was, record an assignment instead.`; 112.00 (threshold) → `at_or_above_strike` with `closed at $112.00`; 111.99 and 104.20 → `below_strike` text; `null` → `Confirm with your broker that this call was not assigned`
+    - `closeEarlyPreview` cycle 5 at 0.55: `Cycle net +$1.65 / share · 75.0% of max captured`, `Cost basis after: $16.90 / share (from $16.35)`, `Effective share cost after: $96.90 (from $96.35)`; at 3.10: `Cycle net −$0.90 / share (−$90.00)` (no percentage), `losing`; rolled cycle 2 at 0.30: `Cycle net +$0.90 / share · 75.0% of cycle net credit captured`; empty / zero cost → `null`
+    - copy builders: `Cycle 8 net +$2.40 / share (+$240.00) · 100% of max`; rolled `Cycle 2 net +$1.20 / share (+$120.00) · 100% of cycle net credit`; `+$1.65 / share (+$165.00) · 75.0% of max captured · 18 days held`; losing `−$0.90 / share (−$90.00) · 18 days held`; rolled `+$0.90 / share (+$90.00) · 75.0% of cycle net credit captured · 38 days held`; `shortSoldLine` `$112.00 · 2027-07-16 · sold at $2.40 · 24 days held` and rolled `$112.00 · 2026-12-18 · sold at $2.40`; `rolledCycleLine` `opened 2026-10-23 · rolled 1× · cycle net +$1.20 / share` (null for cycle 8); `$85.00 · 2028-01-21 · 186 DTE`; a null percent omits the segment
     - `pmccBasisAfter` oracle against `calculatePmccLedger`; US-104 roll preview tests unchanged
   - Run `pnpm test src/renderer/src/lib/pmcc-` — all new tests must fail
 - [ ] **[Green]** Implement — `src/renderer/src/lib/pmcc-coverage.ts`, `src/renderer/src/lib/pmcc-retire.ts`, `src/renderer/src/lib/pmcc-roll.ts`, `src/renderer/src/lib/pmcc-card-display.ts` _(depends on: Area 8 Red ✓)_
   - `pmccCoverageLabel` moved from the card's private `stateLabel` (which now delegates)
   - `PmccCloseAdvisory` discriminated union on `kind`; plain `PmccCloseEarlyPreview`; the preview calls `retireCycle` and `pmccBasisAfter` only
   - `pmccBasisAfter(ledger, contribution)` extracted from `pmccPostRollEffectiveCost`
-  - `fmtPct` on the expiration line, `fmtPct1` on the close-early lines; U+2212 signs via `signedMoneyGrouped`
+  - `fmtPct` on the expiration line, `fmtPct1` on the close-early lines; `percentLabel(rollCount)` → `of max` / `of cycle net credit`; null percent drops the segment; U+2212 signs via `signedMoneyGrouped`
+  - `shortSoldLine(cycle)` from `current` + the `ROLL_TO` sale (rolled) or `opening`; `rolledCycleLine(cycle)`
   - Run `pnpm test src/renderer/src/lib` — all tests must pass
 - [ ] **[Refactor]** `/refactor` _(depends on: Area 8 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
@@ -234,10 +239,10 @@ Shared files to watch when areas run in parallel:
 **Requires:** Area 8 Green ✓, Area 9 Green ✓
 
 - [ ] **[Red]** Write failing tests — `src/renderer/src/components/PmccExpirationSheet.test.tsx` _(depends on: Areas 8 and 9 Green ✓)_
-  - Test cases (full list in `plan.md` Area 10 Red): eyebrow, title, coverage card, this-cycle card and net line; no textbox or date picker; `likely_assigned` warning `AlertBox` with Confirm enabled; muted no-close and below-strike lines; Confirm sends `{ positionId }` once, disabled while pending; `Could not record the expiration. Try again.`; success badge `Expired worthless`, net, `Sell the next short call →` → `onSellNextShort`, `Done` → `onClose`; `cycle: null` → `—`
+  - Test cases (full list in `plan.md` Area 10 Red): eyebrow, title, coverage card, this-cycle card and net line; no textbox or date picker; rolled cycle 2 card shows the expiring `$112.00 · 2026-12-18 · sold at $2.40` contract plus `opened 2026-10-23 · rolled 1× · cycle net +$1.20 / share` and `100% of cycle net credit`, not the 1.80 opening sale; `at_or_above_strike` warning `AlertBox` (`XYZ closed at $114.30 on 2027-07-16, at or above the $112.00 strike — …`) with Confirm enabled; muted no-close and below-strike lines; Confirm sends `{ positionId }` once, disabled while pending; `Could not record the expiration. Try again.`; success badge `Expired worthless`, net, `Sell the next short call →` → `onSellNextShort`, `Done` → `onClose`; `cycle: null` → `—`
   - Run `pnpm test src/renderer/src/components/PmccExpirationSheet.test.tsx` — all new tests must fail
 - [ ] **[Green]** Implement — `src/renderer/src/components/PmccExpirationSheet.tsx`, `PmccCoverageContextCard.tsx`, `PmccRetireSuccess.tsx` _(depends on: Area 10 Red ✓)_
-  - Mockup `RetireShortSheet` in `expire` mode: `PmccRollSheetDialog` frame (440 px) labelled `Record Expiration`; eyebrow `RECORD EXPIRATION`; `Coverage · stays open` card; `This cycle · N` card; advisory (`AlertBox variant="warning"` or muted line, never disabling Confirm); emphasized Net card with `Credit … moves from open to realized · basis unchanged`; footer `Cancel` · `Confirm Expiration`
+  - Mockup `RetireShortSheet` in `expire` mode: `PmccRollSheetDialog` frame (440 px) labelled `Record Expiration`; eyebrow `RECORD EXPIRATION`; `Coverage · stays open` card; `This cycle · N` card showing the expiring contract (+ `rolledCycleLine` on a rolled cycle); advisory (`AlertBox variant="warning"` or muted line, never disabling Confirm); emphasized Net card with `Credit … moves from open to realized · basis unchanged`; footer `Cancel` · `Confirm Expiration`
   - No form; step union `{ step: 'form' } | { step: 'success'; result: ExpirePmccShortResult }`
   - Run `pnpm test src/renderer/src/components/PmccExpirationSheet.test.tsx` — all tests must pass
 - [ ] **[Refactor]** `/refactor` _(depends on: Area 10 Green ✓)_
@@ -249,7 +254,7 @@ Shared files to watch when areas run in parallel:
 **Requires:** Area 8 Green ✓, Area 9 Green ✓ (Green also needs Area 10 Green ✓)
 
 - [ ] **[Red]** Write failing tests — `src/renderer/src/components/ClosePmccShortEarlySheet.test.tsx` _(depends on: Areas 8 and 9 Green ✓)_
-  - Test cases (full list in `plan.md` Area 11 Red): eyebrow, title, coverage card `$80.00 · 2027-09-17 · 168 DTE`, current short card (14 DTE); inputs and defaults; live preview at 0.55 (three lines) and 3.10 (loss colour + note, Confirm enabled); each invalid row beside its field with Confirm disabled; submit payload; server field error routed; `Could not record the close. Your entries are preserved. Try again.` with values kept; success `Closed early` and the net line
+  - Test cases (full list in `plan.md` Area 11 Red): eyebrow, title, coverage card `$80.00 · 2027-09-17 · 168 DTE`, current short card (14 DTE); inputs and defaults; live preview at 0.55 (three lines) and 3.10 (loss colour + note, no percentage, Confirm enabled); each invalid row beside its field with Confirm disabled; submit payload; server field error routed; `Could not record the close. Your entries are preserved. Try again.` with values kept; success `Closed early` and the net line
   - Run `pnpm test src/renderer/src/components/ClosePmccShortEarlySheet.test.tsx` — all new tests must fail
 - [ ] **[Green]** Implement — `src/renderer/src/components/ClosePmccShortEarlySheet.tsx`, `ClosePmccShortEarlyForm.tsx`, `PmccRetireNetCard.tsx` _(depends on: Area 11 Red ✓, Area 10 Green ✓)_
   - Mockup `RetireShortSheet` in `close` mode: `PmccRollSheetDialog` labelled `Close Short Early`; eyebrow `CLOSE SHORT EARLY`; coverage + current short cards; `NumberInput` (`$`), `DatePicker`, optional Fees; `useWatch` → `closeEarlyPreview` → `PmccRetireNetCard` (emphasized); footer `Cancel` · `Confirm Close` disabled when invalid or pending; `useRollSheetSubmit` for server errors
@@ -272,7 +277,7 @@ Shared files to watch when areas run in parallel:
   - Test cases: open short at 2027-07-19 → `close-pmcc-short-early-btn`, `record-pmcc-expiration-btn`, `roll-pmcc-short-btn`, no `sell-pmcc-short-btn`; at 2027-07-15 and 2027-07-16 → no `Record Expiration →`; LEAPS-only → `Sell Short Call →`, `Roll LEAPS →`, badge `LEAPS open · no short call`, none of the short actions; open short badge `LEAPS + short call open`; wheel `CC_OPEN` tests unchanged; page opens the right dialog and one sheet at a time
   - Run `pnpm test src/renderer/src/components/PositionDetailActions.test.tsx src/renderer/src/pages` — all new tests must fail
 - [ ] **[Green]** Implement — `src/renderer/src/components/PositionDetailActions.tsx`, `src/renderer/src/pages/usePositionDetailSheets.ts`, `src/renderer/src/pages/PositionDetailPage.tsx` _(depends on: Area 12 Red ✓)_
-  - Mockup header map (`leaps-only` preset for the no-short state); `PhaseBadge label={pmccCoverageLabel(shortCount)}` for a PMCC
+  - Mockup header map (`leaps-only` preset for the no-short state); `PhaseBadge label={pmccCoverageLabel({ shortCount, shortContracts, leapsContracts })}` for a PMCC
   - `pmccShortExpired` from `isShortExpirationPassed(short.expiration, pmccTimeline.valuationDate)`; `today = pmccTimeline.valuationDate`; open cycle via `findOpenCycle`
   - `PmccRetireSheet` (`'expire' | 'close' | null`); `onSellNextShort` → close sheet + `handleSellPmccShort` (add `Sell Short Call →` / `sell-pmcc-short-btn` / `sellPmccShortOpen` with these names if US-115 has not)
   - Run `pnpm test src/renderer` — all tests must pass
@@ -307,7 +312,7 @@ Shared files to watch when areas run in parallel:
     - AC-1: Record the short call expiring worthless → `it('Record the short call expiring worthless')` (2027-07-19)
     - AC-2: The expiration sheet shows what the cycle netted → `it('The expiration sheet shows what the cycle netted')`
     - AC-3: Record Expiration is offered only once the expiration has passed → `it('Record Expiration is offered only once the expiration has passed')` (2027-07-15)
-    - AC-4: Expiring a short that closed in the money is turned toward assignment → `it('Expiring a short that closed in the money is turned toward assignment')` (close 114.30 via `_test:iv-series-set`)
+    - AC-4: Expiring a short that closed in the money is turned toward assignment → `it('Expiring a short that closed in the money is turned toward assignment')` (close 114.30 via `_test:iv-series-set`; asserts `XYZ closed at $114.30 on 2027-07-16, at or above the $112.00 strike — this call may have been assigned. Check with your broker; if it was, record an assignment instead.` — open question 6, deviates from the AC text, Linear being updated)
     - AC-4b: …when no closing price is available → `it('When no closing price is available the warning reads "Confirm with your broker that this call was not assigned"')`
     - AC-5: Buy the short call back early → `it('Buy the short call back early')` (2027-04-02; asserts `$16.90`, fails on `$16.35`)
     - AC-6: The close-early sheet previews the net before confirming → `it('The close-early sheet previews the net before confirming')`
@@ -341,5 +346,5 @@ Shared files to watch when areas run in parallel:
 - [ ] No reproducible, non-equivalent surviving mutant in the new code of `pmcc-cycle.ts`, `pmcc-rules.ts`, `lifecycle.ts`
 - [ ] E2E tests cover every AC (18 of 18; AC-11c after US-115)
 - [ ] `pnpm test && pnpm lint && pnpm typecheck && pnpm format` — all clean
-- [ ] Open questions in `research.md` answered by John, or the assumptions confirmed
+- [ ] Open questions 7 and 9 in `research.md` answered by John, or the assumptions confirmed (1–6, 8 and 10 resolved by the options-expert review, John approved 2026-11-22)
 - [ ] `/update-spec us-119` run before the plan directory is removed (supersedes the reserved `PMCC_LEAPS_ONLY` in US-101's ADR and `docs/spec/domain/wheel-lifecycle.md`)
