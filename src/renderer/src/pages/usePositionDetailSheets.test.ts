@@ -311,7 +311,8 @@ describe('usePositionDetailSheets — roll sheets', () => {
     ['handleRollCsp', 'rollCspOpen', 'handleCloseRollCsp'],
     ['handleRollCc', 'rollCcOpen', 'handleCloseRollCc'],
     ['handleRollPmccShort', 'rollPmccShortOpen', 'handleCloseRollPmccShort'],
-    ['handleRollPmccLeaps', 'rollPmccLeapsOpen', 'handleCloseRollPmccLeaps']
+    ['handleRollPmccLeaps', 'rollPmccLeapsOpen', 'handleCloseRollPmccLeaps'],
+    ['handleSellPmccShort', 'pmccSellShortOpen', 'handleCloseSellPmccShort']
   ] as const)('%s opens %s over the content; %s closes it', (open, flag, close) => {
     const result = hookFor(CSP_DETAIL)
 
@@ -346,7 +347,7 @@ describe('usePositionDetailSheets — roll sheets', () => {
     expect(result.current.pmccRollRecorded).toEqual({ kind: 'leaps', result: LEAPS_ROLL_RESPONSE })
   })
 
-  it.each(['handleRollPmccShort', 'handleRollPmccLeaps'] as const)(
+  it.each(['handleRollPmccShort', 'handleRollPmccLeaps', 'handleSellPmccShort'] as const)(
     '%s clears a recorded banner of either kind',
     (open) => {
       const result = hookFor(CSP_DETAIL)
@@ -370,5 +371,56 @@ describe('usePositionDetailSheets — roll sheets', () => {
 
     act(() => result.current.handlePmccShortRollRecorded(UP_OUT_RESPONSE))
     expect(result.current.pmccRollRecorded).toEqual({ kind: 'short', result: UP_OUT_RESPONSE })
+  })
+})
+
+// [US-115] The Sell Short Call sheet shares the roll sheets' slot, and stays open on its success
+// view once the sale is recorded, until it is closed.
+describe('usePositionDetailSheets — sell short call sheet', () => {
+  it('opening the sell sheet closes an open roll sheet', () => {
+    const result = hookFor(CSP_DETAIL)
+
+    act(() => result.current.handleRollPmccLeaps())
+    act(() => result.current.handleSellPmccShort())
+
+    expect(result.current.pmccSellShortOpen).toBe(true)
+    expect(result.current.rollPmccLeapsOpen).toBe(false)
+  })
+
+  it('opening a roll sheet closes the sell sheet', () => {
+    const result = hookFor(CSP_DETAIL)
+
+    act(() => result.current.handleSellPmccShort())
+    act(() => result.current.handleRollPmccLeaps())
+
+    expect(result.current.pmccSellShortOpen).toBe(false)
+    expect(result.current.rollPmccLeapsOpen).toBe(true)
+  })
+
+  it('a recorded sale keeps the sheet open on its success view until it is closed', () => {
+    const result = hookFor(CSP_DETAIL)
+
+    act(() => result.current.handleSellPmccShort())
+    expect(result.current.pmccSellShortRecorded).toBe(false)
+    act(() => result.current.handlePmccShortSold())
+
+    expect(result.current.pmccSellShortOpen).toBe(true)
+    expect(result.current.pmccSellShortRecorded).toBe(true)
+
+    act(() => result.current.handleCloseSellPmccShort())
+    expect(result.current.pmccSellShortOpen).toBe(false)
+    expect(result.current.pmccSellShortRecorded).toBe(false)
+  })
+
+  it('opening the sell sheet again starts a new, unrecorded sale', () => {
+    const result = hookFor(CSP_DETAIL)
+
+    act(() => result.current.handleSellPmccShort())
+    act(() => result.current.handlePmccShortSold())
+    act(() => result.current.handleCloseSellPmccShort())
+    act(() => result.current.handleSellPmccShort())
+
+    expect(result.current.pmccSellShortOpen).toBe(true)
+    expect(result.current.pmccSellShortRecorded).toBe(false)
   })
 })

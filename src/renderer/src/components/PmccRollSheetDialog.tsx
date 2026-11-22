@@ -1,4 +1,4 @@
-// [US-104][US-105] The PMCC roll sheets' frame: a portalled right-hand sheet holding one labelled
+// [US-104][US-105][US-115] The PMCC roll and sell sheets' frame: a portalled right-hand sheet holding one labelled
 // dialog that takes focus on open and closes on Escape or a scrim click.
 import { useEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
@@ -7,12 +7,15 @@ import { SheetOverlay, SheetPanel } from './ui/Sheet'
 
 type PmccRollSheetDialogProps = {
   label: string
+  /** The panel's width in px; the roll sheets' 440 unless a sheet asks for another. */
+  width?: number
   onClose: () => void
   children: ReactNode
 }
 
 export function PmccRollSheetDialog({
   label,
+  width = 440,
   onClose,
   children
 }: PmccRollSheetDialogProps): React.JSX.Element {
@@ -33,7 +36,7 @@ export function PmccRollSheetDialog({
 
   return createPortal(
     <SheetOverlay onClose={onClose}>
-      <SheetPanel width={440}>
+      <SheetPanel width={width}>
         <div
           ref={dialogRef}
           role="dialog"

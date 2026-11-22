@@ -39,8 +39,8 @@ type CallAwayContext = {
   positionOpenedDate: string
 }
 
-/** The roll sheets share one slot, so two can never be open at once. */
-type RollSheet = 'csp' | 'cc' | 'pmccShort' | 'pmccLeaps' | null
+/** The roll sheets (and US-115's sell sheet) share one slot, so two can never be open at once. */
+type RollSheet = 'csp' | 'cc' | 'pmccShort' | 'pmccLeaps' | 'pmccSellShort' | null
 
 type PositionDetailSheetsResult = {
   assignmentWaterfall: Array<{ label: string; amount: string }>
@@ -76,6 +76,12 @@ type PositionDetailSheetsResult = {
   rollPmccLeapsOpen: boolean
   handleRollPmccLeaps: () => void
   handleCloseRollPmccLeaps: () => void
+  pmccSellShortOpen: boolean
+  handleSellPmccShort: () => void
+  handleCloseSellPmccShort: () => void
+  /** The open sell sheet has recorded its sale and shows its success view until closed. */
+  pmccSellShortRecorded: boolean
+  handlePmccShortSold: () => void
   /** One banner slot, so a short-call and a LEAPS roll confirmation can never show at once. */
   pmccRollRecorded: PmccRecordedRoll | null
   handlePmccShortRollRecorded: (response: RollPmccShortCallResponse) => void
@@ -132,6 +138,7 @@ export function usePositionDetailSheets(
   const [ccExpirationCtx, setCcExpirationCtx] = useState<ActiveLegSheetContext | null>(null)
   const [rollSheet, setRollSheet] = useState<RollSheet>(null)
   const [pmccRollRecorded, setPmccRollRecorded] = useState<PmccRecordedRoll | null>(null)
+  const [pmccSellShortRecorded, setPmccSellShortRecorded] = useState(false)
 
   const assignmentWaterfall = useMemo(() => getAssignmentWaterfall(data), [data])
   const overlayOpen =
@@ -205,10 +212,14 @@ export function usePositionDetailSheets(
     }
   }, [data])
 
-  const closeRollSheet = (): void => setRollSheet(null)
-  // A new PMCC roll replaces the last one's confirmation.
-  const openPmccRollSheet = (sheet: 'pmccShort' | 'pmccLeaps'): void => {
+  const closeRollSheet = (): void => {
+    setRollSheet(null)
+    setPmccSellShortRecorded(false)
+  }
+  // A new PMCC roll or sale replaces the last roll's confirmation; each opening starts afresh.
+  const openPmccRollSheet = (sheet: 'pmccShort' | 'pmccLeaps' | 'pmccSellShort'): void => {
     setPmccRollRecorded(null)
+    setPmccSellShortRecorded(false)
     setRollSheet(sheet)
   }
   const recordPmccRoll = (recorded: PmccRecordedRoll): void => {
@@ -253,6 +264,11 @@ export function usePositionDetailSheets(
     rollPmccLeapsOpen: rollSheet === 'pmccLeaps',
     handleRollPmccLeaps: () => openPmccRollSheet('pmccLeaps'),
     handleCloseRollPmccLeaps: closeRollSheet,
+    pmccSellShortOpen: rollSheet === 'pmccSellShort',
+    handleSellPmccShort: () => openPmccRollSheet('pmccSellShort'),
+    handleCloseSellPmccShort: closeRollSheet,
+    pmccSellShortRecorded,
+    handlePmccShortSold: () => setPmccSellShortRecorded(true),
     pmccRollRecorded,
     handlePmccShortRollRecorded: (result: RollPmccShortCallResponse) =>
       recordPmccRoll({ kind: 'short', result }),

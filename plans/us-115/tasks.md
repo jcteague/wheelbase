@@ -218,14 +218,14 @@ Shared files to watch when areas run in parallel:
 
 ### Area 13 — The sheet
 
-- [ ] **[Red]** Write failing tests — `SellPmccShortSheet.test.tsx`, `SellPmccShortForm.test.tsx`, `src/renderer/src/hooks/useSellPmccShort.test.ts` _(depends on: Areas 7, 10, 11, 12 Green ✓)_
+- [x] **[Red]** Write failing tests — `SellPmccShortSheet.test.tsx`, `SellPmccShortForm.test.tsx`, `src/renderer/src/hooks/useSellPmccShort.test.ts` _(depends on: Areas 7, 10, 11, 12 Green ✓)_
   - Test cases (full list in `plan.md` Area 13 Red): eyebrow and title; coverage and previous-cycle lines; the five preview lines with `text-wb-green`; `$90 · $1.50` warning with confirm enabled; the partial note with `Only one short call can be open at a time`; invalid field disables confirm; `Recording…`; payload; server field-error routing; save-failed copy with values kept; success `PMCC updated` / `Cycle 9 opened` / `Done`
   - Mockup: `SellShortSheet`, preset `sell-short`
   - Run `pnpm test src/renderer/src/components/SellPmccShort src/renderer/src/hooks/useSellPmccShort.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `PmccRollSheetDialog.tsx` (`width`), `SellPmccShortSheet.tsx`, `SellPmccShortForm.tsx`, `SellShortCoverageCard.tsx`, `SellPmccShortPreview.tsx`, `SellPmccShortSuccess.tsx`, `useSellPmccShort.ts`, `useSellPmccShortForm.ts` _(depends on: Area 13 Red ✓)_
+- [x] **[Green]** Implement — `PmccRollSheetDialog.tsx` (`width`), `SellPmccShortSheet.tsx`, `SellPmccShortForm.tsx`, `SellShortCoverageCard.tsx`, `SellPmccShortPreview.tsx`, `SellPmccShortSuccess.tsx`, `useSellPmccShort.ts`, `useSellPmccShortForm.ts` _(depends on: Area 13 Red ✓)_
   - `useRollSheetSubmit` with `SELL_SHORT_FORM_FIELDS`; `newYorkToday()`; LEAPS delta from `useOptionSnapshots`
   - Run the same tests plus the US-104 / US-105 sheet tests — all must pass
-- [ ] **[Refactor]** `/refactor` _(depends on: Area 13 Green ✓)_
+- [x] **[Refactor]** `/refactor` _(depends on: Area 13 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Consider: share the footer with `RollPmccShortCallForm`
   - Run `pnpm test && pnpm lint && pnpm typecheck`
@@ -236,14 +236,14 @@ Shared files to watch when areas run in parallel:
 
 ### Area 14 — Detail-page wiring
 
-- [ ] **[Red]** Write failing tests — the detail page test _(depends on: Areas 9, 13 Green ✓)_
+- [x] **[Red]** Write failing tests — the detail page test _(depends on: Areas 9, 13 Green ✓)_
   - Test cases: `Sell Short Call →` opens the sheet titled `XYZ · against $85.00 LEAPS` and closes any other sheet; the sheet does not render while a short is open; a closed PMCC (`PMCC_CLOSED`, US-120) offers no `Sell Short Call →` and renders no sheet; partial badge `LEAPS + short call open · 1 of 3 covered`
   - Mockup: preset `sell-short`
   - Run the test file — all new tests must fail
-- [ ] **[Green]** Implement — `src/renderer/src/pages/usePositionDetailSheets.ts`, `src/renderer/src/pages/PositionDetailPage.tsx` _(depends on: Area 14 Red ✓)_
+- [x] **[Green]** Implement — `src/renderer/src/pages/usePositionDetailSheets.ts`, `src/renderer/src/pages/PositionDetailPage.tsx` _(depends on: Area 14 Red ✓)_
   - `'pmccSellShort'` slot; pass `onSellPmccShort`, `pmccCoverage`, `pmccOpenLegs.long`, `pmccLedger`, `lastEndedCycle(data.pmccTimeline)`; render the sheet only in `PMCC_OPEN`
   - Run `pnpm test src/renderer/src/pages` — all tests must pass
-- [ ] **[Refactor]** `/refactor` _(depends on: Area 14 Green ✓)_
+- [x] **[Refactor]** `/refactor` _(depends on: Area 14 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
