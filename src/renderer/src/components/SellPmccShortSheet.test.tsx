@@ -39,7 +39,19 @@ const mockGetOptionSnapshots = vi.fn<typeof window.api.getOptionSnapshots>()
 const onClose = vi.fn()
 const onRecorded = vi.fn()
 
-function renderSheet({ today = TODAY }: { today?: string | null } = {}): void {
+type SheetOverrides = {
+  today?: string | null
+  leaps?: typeof XYZ_LEAPS
+  ledger?: typeof XYZ_LEDGER
+  previousCycle?: ReturnType<typeof xyzCycle8> | null
+}
+
+function renderSheet({
+  today = TODAY,
+  leaps = XYZ_LEAPS,
+  ledger = XYZ_LEDGER,
+  previousCycle = xyzCycle8()
+}: SheetOverrides = {}): void {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } }
   })
@@ -48,9 +60,9 @@ function renderSheet({ today = TODAY }: { today?: string | null } = {}): void {
       <SellPmccShortSheet
         positionId={SELL_PMCC_ID}
         ticker="XYZ"
-        leaps={XYZ_LEAPS}
-        ledger={XYZ_LEDGER}
-        previousCycle={xyzCycle8()}
+        leaps={leaps}
+        ledger={ledger}
+        previousCycle={previousCycle}
         today={today ?? undefined}
         onClose={onClose}
         onRecorded={onRecorded}
@@ -161,6 +173,44 @@ describe('SellPmccShortSheet — dialog', () => {
       )
     )
     expect(mockGetOptionSnapshots).toHaveBeenCalledWith({ symbols: [LEAPS_SYMBOL] })
+  })
+  it('shows Δ — when the LEAPS cannot form an option symbol', async () => {
+    renderSheet({ leaps: { ...XYZ_LEAPS, strike: '0.0000' } })
+
+    await waitFor(() =>
+      expect(screen.getByTestId('pmcc-sell-short-coverage')).toHaveTextContent(
+        '$0.00 · 2028-01-21 · 182 DTE · Δ —'
+      )
+    )
+  })
+})
+
+describe('SellPmccShortSheet — without a previous cycle', () => {
+  it('accepts a fill after the LEAPS fill when no short call has ended', async () => {
+    renderSheet({ previousCycle: null })
+    const user = userEvent.setup()
+    const fillDate = screen.getByLabelText('Fill date')
+    await user.clear(fillDate)
+    await user.type(fillDate, '2027-07-12')
+    await enterNextShort()
+
+    expect(record()).toBeEnabled()
+  })
+
+  it('shows — for premium recovered when the ledger has no LEAPS cost', async () => {
+    renderSheet({
+      ledger: {
+        ...XYZ_LEDGER,
+        leapsCostPerShare: '0.0000',
+        leapsCostTotal: '0.0000',
+        premiumRecoveredPercent: null
+      }
+    })
+    await enterNextShort()
+
+    expect(screen.getByTestId('pmcc-sell-short-recovered')).toHaveTextContent(
+      'Premium recovered after: — (from —)'
+    )
   })
 })
 
