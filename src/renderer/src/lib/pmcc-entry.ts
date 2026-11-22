@@ -1,7 +1,8 @@
 // [US-101] The PMCC contract picker's view model. Pure: the chain arrives through
 // `useCallChain`, and everything here only filters, labels and classifies it.
-import { addDays, differenceInMilliseconds, format, parseISO } from 'date-fns'
+import { addDays, differenceInMilliseconds, format, parseISO, subDays } from 'date-fns'
 import Decimal from 'decimal.js'
+import { shortExpiresBeforeLeaps, shortStrikeAboveLeaps } from '../../../main/core/pmcc-rules'
 import { parseOccSymbol } from '../../../shared/option-symbol'
 import type { OptionChainQuote } from '../api/market-data'
 import { computeDteFromInput, fmtMoney } from './format'
@@ -46,6 +47,13 @@ export function chainNoticeMessage(notice: ChainNotice): string | null {
   return notice === null ? null : CHAIN_NOTICE_COPY[notice]
 }
 
+/** [US-115] The live LEAPS that bounds a subsequent short call's chain: the short must expire
+ *  before `expirationBefore` and strike above `strikeAbove`. */
+export interface ShortCallChainBounds {
+  expirationBefore: string
+  strikeAbove: string
+}
+
 /** What a chain pick writes into a leg; `null` means "Enter manually". */
 export type ContractSelection = { contractId: string; strike: string; expiration: string }
 
@@ -57,23 +65,27 @@ export type FilterCallChainOptions = {
   underlying?: string
   /** The leg's selected contract, kept in place even when its delta leaves the band. */
   keepContractId?: string
+  /** The live LEAPS a short call must sit inside: drops every contract that breaks it. */
+  bounds?: ShortCallChainBounds
 }
 
 /**
  * The contracts whose absolute delta sits inside the preset's band (plus the kept
  * contract, in place), then every contract without Greeks — missing Greeks must never
  * hide a structurally valid contract. Adjusted-root contracts never appear: a PMCC
- * entry records standard 100-share deliverables only.
+ * entry records standard 100-share deliverables only, and with `bounds` neither does a
+ * contract the LEAPS cannot cover — not even the kept one.
  */
 export function filterCallChain(
   quotes: OptionChainQuote[],
   preset: LegPreset,
-  { underlying, keepContractId }: FilterCallChainOptions = {}
+  { underlying, keepContractId, bounds }: FilterCallChainOptions = {}
 ): OptionChainQuote[] {
-  const standard =
-    underlying === undefined
-      ? quotes
-      : quotes.filter((q) => parseOccSymbol(q.contractId)?.underlying === underlying)
+  const standard = quotes.filter(
+    (q) =>
+      (underlying === undefined || parseOccSymbol(q.contractId)?.underlying === underlying) &&
+      (bounds === undefined || withinLeapsBounds(q, bounds))
+  )
   const inBand = standard.filter((q) => {
     if (!q.greeks) return false
     if (q.contractId === keepContractId) return true
@@ -82,6 +94,10 @@ export function filterCallChain(
   })
   return [...inBand, ...standard.filter((q) => !q.greeks)]
 }
+
+const withinLeapsBounds = (q: OptionChainQuote, bounds: ShortCallChainBounds): boolean =>
+  shortExpiresBeforeLeaps(q.expiration, bounds.expirationBefore) &&
+  shortStrikeAboveLeaps(q.strike, bounds.strikeAbove)
 
 /** A leg's chain request; `idle` — no valid ticker yet, so nothing was requested. */
 export type ChainStatus = 'idle' | 'pending' | 'error' | 'success'
@@ -112,14 +128,21 @@ export function deriveChainNotice({
 
 const isoDay = (date: Date): string => format(date, 'yyyy-MM-dd')
 
+/** The preset's expiration window; with `bounds`, it ends no later than the day before the
+ *  LEAPS expires, so the request never pages through contracts the LEAPS cannot cover. */
 export function chainWindow(
   preset: LegPreset,
-  today: Date
+  today: Date,
+  bounds?: ShortCallChainBounds
 ): { expirationFrom: string; expirationTo?: string } {
   const expirationFrom = isoDay(addDays(today, preset.dteMin))
-  return preset.dteMax === null
-    ? { expirationFrom }
-    : { expirationFrom, expirationTo: isoDay(addDays(today, preset.dteMax)) }
+  const ends = [
+    preset.dteMax === null ? undefined : isoDay(addDays(today, preset.dteMax)),
+    bounds && isoDay(subDays(parseISO(bounds.expirationBefore), 1))
+  ].filter((end): end is string => end !== undefined)
+  // ISO days sort as strings: the earlier end wins.
+  const [expirationTo] = ends.sort()
+  return expirationTo === undefined ? { expirationFrom } : { expirationFrom, expirationTo }
 }
 
 /** Halves the chain request when the underlying's price is known (the 250-contract page cap). */

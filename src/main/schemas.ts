@@ -37,7 +37,7 @@ import type {
 } from './core/costbasis'
 import type { PmccTimeline } from './core/pmcc-timeline'
 import type { PmccListPhase } from './pmcc-phase'
-import type { PmccOpenLegs } from './services/pmcc-ledger'
+import type { AppendPmccSnapshotResult, PmccOpenLegs } from './services/pmcc-ledger'
 export type { PmccOpenLegs }
 import { LegAction, LegRole } from './core/types'
 import type {
@@ -592,6 +592,36 @@ export interface RollPmccShortCallResult extends RollResultBase<'PMCC_OPEN'> {
   ledger: PmccLedgerResult
   shortCallRollNumber: number
 }
+
+// ---------------------------------------------------------------------------
+// Sell PMCC short call schemas
+// ---------------------------------------------------------------------------
+
+// [US-115] The next short call against an open LEAPS. Only types and ISO dates are checked
+// here; every range (contracts, strike, fill price, fees) is the engine's rule.
+export const SellPmccShortPayloadSchema = z.object({
+  positionId: PositionIdSchema,
+  strike: z.number(),
+  expiration: IsoDateSchema,
+  /** 1..LEAPS contracts — the range is the engine's rule, not Zod's, so a bypass gets the domain message. */
+  contracts: z.number(),
+  /** Actual sale price per share. */
+  fillPrice: z.number(),
+  /** Defaults to the Eastern calendar day of the request. */
+  fillDate: IsoDateSchema.optional(),
+  /** Total fees for the sale. */
+  fees: z.number().default(0)
+})
+
+export type SellPmccShortPayload = z.infer<typeof SellPmccShortPayloadSchema>
+
+/** The leg just written (US-101's type), the snapshot and ledger from `appendPmccSnapshot`, and
+ *  the cycle this short starts. The phase stays `PMCC_OPEN`. */
+export type SellPmccShortResult = {
+  position: Pick<PositionRecord, 'id' | 'ticker'> & { phase: 'PMCC_OPEN'; status: 'ACTIVE' }
+  shortLeg: CreatePmccPositionResult['shortLeg']
+  cycleNumber: number
+} & AppendPmccSnapshotResult<'PMCC_SHORT_OPEN'>
 
 // ---------------------------------------------------------------------------
 // Market data schemas

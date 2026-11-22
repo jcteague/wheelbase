@@ -6,7 +6,8 @@ import {
   filterCallChain,
   strikeBounds,
   type ChainStatus,
-  type LegPreset
+  type LegPreset,
+  type ShortCallChainBounds
 } from '../lib/pmcc-entry'
 import { tickerSchema } from '../schemas/common'
 import { marketDataQueryKeys } from './marketDataQueryKeys'
@@ -21,6 +22,8 @@ export type UseCallChainInput = {
   underlyingPrice: string | null
   /** The leg's selected contract — kept in the list even once its delta leaves the band. */
   selectedContractId?: string
+  /** [US-115] The live LEAPS: the chain holds only calls expiring before it and striking above it. */
+  bounds?: ShortCallChainBounds
   /** `false` while the leg is off screen: no request and no polling; loaded contracts stay. */
   enabled?: boolean
 }
@@ -32,15 +35,21 @@ export type UseCallChainResult = {
   error: ApiError | null
 }
 
-type OptionChainKey = ReturnType<typeof marketDataQueryKeys.optionChain>
+/** The chain's key plus its LEAPS bounds (`null` without them): the same request bounded by a
+ *  different LEAPS is a different list. */
+type CallChainKey = readonly [
+  ...ReturnType<typeof marketDataQueryKeys.optionChain>,
+  ShortCallChainBounds | null
+]
 
 /** [US-101] One leg's call chain, polled, narrowed to the ticker's standard contracts in
- *  the preset's delta band. */
+ *  the preset's delta band — and, with `bounds` [US-115], to those the LEAPS covers. */
 export function useCallChain({
   ticker,
   preset,
   underlyingPrice,
   selectedContractId,
+  bounds,
   enabled = true
 }: UseCallChainInput): UseCallChainResult {
   const parsed = tickerSchema.safeParse(ticker)
@@ -49,12 +58,12 @@ export function useCallChain({
   const filter: OptionChainFilter = {
     underlying: parsed.success ? parsed.data : ticker,
     type: 'call',
-    ...chainWindow(preset, new Date()),
+    ...chainWindow(preset, new Date(), bounds),
     ...strikeBounds(preset, underlyingPrice)
   }
 
-  const query = useQuery<OptionChainQuote[], ApiError, OptionChainQuote[], OptionChainKey>({
-    queryKey: marketDataQueryKeys.optionChain(filter),
+  const query = useQuery<OptionChainQuote[], ApiError, OptionChainQuote[], CallChainKey>({
+    queryKey: [...marketDataQueryKeys.optionChain(filter), bounds ?? null],
     queryFn: () => getOptionChain(filter),
     enabled: enabled && parsed.success,
     staleTime: STALE_TIME_MS,
@@ -67,7 +76,8 @@ export function useCallChain({
     select: (quotes) =>
       filterCallChain(quotes, preset, {
         underlying: filter.underlying,
-        keepContractId: selectedContractId
+        keepContractId: selectedContractId,
+        bounds
       })
   })
 

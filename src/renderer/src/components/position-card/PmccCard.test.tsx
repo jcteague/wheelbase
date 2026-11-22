@@ -557,7 +557,8 @@ describe('PmccCard — contracts and coverage', () => {
   it('states partial coverage', () => {
     renderCard(XYZ_PARTIAL_COVERAGE)
 
-    expect(screen.getByText('1 of 3 covered')).toBeInTheDocument()
+    expect(screen.getByText('LEAPS + short call open · 1 of 3 covered')).toBeInTheDocument()
+    expect(screen.getByText('3 × 100 sh')).toBeInTheDocument()
     expect(pnl()).toHaveTextContent(/^\+\$1,380\.00\+21\.7% of basis$/)
   })
 

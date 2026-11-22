@@ -1,4 +1,5 @@
 import type { StrategyType, WheelPhase } from '../../../main/core/types'
+import { pmccCoverageLabel, type PmccCoverageCounts } from '../lib/pmcc-coverage'
 import { PhaseBadge } from './PhaseBadge'
 
 type PositionDetailActionsProps = {
@@ -6,6 +7,7 @@ type PositionDetailActionsProps = {
   phase: WheelPhase
   hasOpenShortCall: boolean
   hasOpenLeaps: boolean
+  pmccCoverage: PmccCoverageCounts | null
   hasCostBasis: boolean
   ccExpired: boolean
   onOpenCc: () => void
@@ -18,6 +20,7 @@ type PositionDetailActionsProps = {
   onRecordExpiration: () => void
   onRollPmccShort: () => void
   onRollPmccLeaps: () => void
+  onSellPmccShort: () => void
 }
 
 type ActionButtonProps = {
@@ -43,6 +46,7 @@ export function PositionDetailActions({
   phase,
   hasOpenShortCall,
   hasOpenLeaps,
+  pmccCoverage,
   hasCostBasis,
   ccExpired,
   onOpenCc,
@@ -54,12 +58,25 @@ export function PositionDetailActions({
   onRecordAssignment,
   onRecordExpiration,
   onRollPmccShort,
-  onRollPmccLeaps
+  onRollPmccLeaps,
+  onSellPmccShort
 }: PositionDetailActionsProps): React.JSX.Element {
+  const openPmcc = strategyType === 'PMCC' && phase === 'PMCC_OPEN'
+  // An open PMCC's badge reads its coverage from the open legs; every other phase keeps
+  // PHASE_LABEL (the positions list still reads PHASE_LABEL.PMCC_OPEN).
+  const coverageLabel =
+    openPmcc && pmccCoverage !== null ? pmccCoverageLabel(pmccCoverage) : undefined
   return (
     <div className="flex items-center gap-2.5">
-      <PhaseBadge phase={phase} />
+      <PhaseBadge phase={phase} label={coverageLabel} />
       <div className="w-px h-4 bg-wb-border mx-1" />
+      {openPmcc && hasOpenLeaps && !hasOpenShortCall && (
+        <ActionButton
+          testId="sell-pmcc-short-btn"
+          label="Sell Short Call →"
+          onClick={onSellPmccShort}
+        />
+      )}
       {strategyType === 'PMCC' && hasOpenShortCall && (
         <ActionButton
           testId="roll-pmcc-short-btn"

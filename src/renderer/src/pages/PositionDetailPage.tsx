@@ -146,6 +146,15 @@ export function PositionDetailPage(): React.JSX.Element {
               phase={position.phase}
               hasOpenShortCall={Boolean(pmccOpenLegs?.short)}
               hasOpenLeaps={Boolean(pmccOpenLegs)}
+              pmccCoverage={
+                pmccOpenLegs
+                  ? {
+                      shortCount: pmccOpenLegs.short ? 1 : 0,
+                      shortContracts: pmccOpenLegs.short?.contracts ?? 0,
+                      leapsContracts: pmccOpenLegs.long.contracts
+                    }
+                  : null
+              }
               hasCostBasis={Boolean(costBasisSnapshot)}
               ccExpired={ccExpired}
               onOpenCc={handleOpenCc}

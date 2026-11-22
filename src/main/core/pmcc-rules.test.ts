@@ -5,9 +5,12 @@ import {
   leapsStrikeNotBelowShortMessage,
   LONG_NOT_AFTER_SHORT,
   pmccCrossLegIssues,
+  pmccFillDateFloor,
   pmccLeapsRollIssues,
   pmccShortRollIssues,
+  pmccSubsequentShortIssues,
   ROLL_NO_CHANGE,
+  SHORT_CALL_ALREADY_OPEN,
   SHORT_NOT_BEFORE_LONG,
   shortExpiresBeforeLeaps,
   shortStrikeAboveLeaps,
@@ -18,7 +21,10 @@ import {
   type PmccLeapsRollField,
   type PmccLeapsRollInput,
   type PmccShortRollField,
-  type PmccShortRollInput
+  type PmccShortRollInput,
+  type PmccSubsequentShortContext,
+  type PmccSubsequentShortInput,
+  type PmccSubsequentShortValues
 } from './pmcc-rules'
 
 const TODAY = '2026-09-14'
@@ -511,5 +517,322 @@ describe('pmccLeapsRollIssues', () => {
     )
     expect(issues({ newStrike: undefined, newExpiration: '2027-09-17' })).toEqual([])
     expect(issues({ newExpiration: undefined, newStrike: '80' })).toEqual([])
+  })
+})
+
+// [US-115] Selling the next short call against an open LEAPS. Background: LEAPS $85.00 expiring
+// 2028-01-21, 1 contract, filled 2027-07-09; the previous short retired 2027-07-16; today is
+// 2027-07-23.
+const SALE_CONTEXT: PmccSubsequentShortContext = {
+  leaps: { strike: '85.0000', expiration: '2028-01-21', contracts: 1, fillDate: '2027-07-09' },
+  previousShortRetiredOn: '2027-07-16',
+  today: '2027-07-23'
+}
+const SALE: PmccSubsequentShortValues = {
+  strike: '118.0000',
+  expiration: '2027-08-20',
+  contracts: 1,
+  fillDate: '2027-07-23'
+}
+
+function sale({
+  short,
+  leaps,
+  ...context
+}: {
+  short?: Partial<PmccSubsequentShortValues>
+  leaps?: Partial<PmccSubsequentShortContext['leaps']>
+  previousShortRetiredOn?: string | null
+} = {}): PmccSubsequentShortInput {
+  return {
+    ...SALE_CONTEXT,
+    ...context,
+    leaps: { ...SALE_CONTEXT.leaps, ...leaps },
+    short: { ...SALE, ...short }
+  }
+}
+
+const BEFORE_PREVIOUS_SHORT = {
+  field: 'fillDate',
+  code: 'before_previous_short',
+  message: 'Fill date cannot be before the previous short call was retired (2027-07-16).'
+}
+const LEAPS_FILLED_AFTER_SALE = {
+  field: 'fillDate',
+  code: 'long_after_short',
+  message: 'LEAPS must be acquired no later than the short-call fill.'
+}
+const STRIKE_AT_OR_BELOW_LEAPS = {
+  field: 'strike',
+  code: 'strike_not_above_long',
+  message: 'Short-call strike must be above the LEAPS strike.'
+}
+
+describe('pmccSubsequentShortIssues', () => {
+  it('accepts the Background sale', () => {
+    expect(pmccSubsequentShortIssues(sale())).toEqual([])
+  })
+
+  describe('contracts cap', () => {
+    it('reports more contracts than the LEAPS holds, naming the LEAPS count', () => {
+      expect(pmccSubsequentShortIssues(sale({ short: { contracts: 2 } }))).toEqual([
+        {
+          field: 'contracts',
+          code: 'exceeds_leaps_contracts',
+          message: 'Cannot sell more short calls than LEAPS contracts held (1).'
+        }
+      ])
+    })
+
+    it('accepts as many contracts as the LEAPS holds', () => {
+      expect(
+        pmccSubsequentShortIssues(sale({ leaps: { contracts: 3 }, short: { contracts: 3 } }))
+      ).toEqual([])
+    })
+
+    it('names a three-contract LEAPS when four are sold', () => {
+      expect(
+        pmccSubsequentShortIssues(sale({ leaps: { contracts: 3 }, short: { contracts: 4 } }))
+      ).toEqual([
+        {
+          field: 'contracts',
+          code: 'exceeds_leaps_contracts',
+          message: 'Cannot sell more short calls than LEAPS contracts held (3).'
+        }
+      ])
+    })
+  })
+
+  it('reports a fill date after today', () => {
+    expect(pmccSubsequentShortIssues(sale({ short: { fillDate: '2027-07-24' } }))).toEqual([
+      { field: 'fillDate', code: 'cannot_be_future', message: 'Fill date cannot be in the future.' }
+    ])
+  })
+
+  describe('fill-date floor', () => {
+    it('reports a fill the day before the previous short was retired, naming that date', () => {
+      expect(pmccSubsequentShortIssues(sale({ short: { fillDate: '2027-07-15' } }))).toEqual([
+        BEFORE_PREVIOUS_SHORT
+      ])
+    })
+
+    it.each(['2027-07-16', '2027-07-17'])(
+      'accepts a fill on %s, on or after the retirement',
+      (fillDate) => {
+        expect(pmccSubsequentShortIssues(sale({ short: { fillDate } }))).toEqual([])
+      }
+    )
+
+    it('reports only the LEAPS floor when the LEAPS was bought after the retirement', () => {
+      expect(
+        pmccSubsequentShortIssues(
+          sale({ leaps: { fillDate: '2027-07-20' }, short: { fillDate: '2027-07-18' } })
+        )
+      ).toEqual([LEAPS_FILLED_AFTER_SALE])
+    })
+
+    it('accepts a fill on the LEAPS fill date when that floor binds', () => {
+      expect(
+        pmccSubsequentShortIssues(
+          sale({ leaps: { fillDate: '2027-07-20' }, short: { fillDate: '2027-07-20' } })
+        )
+      ).toEqual([])
+    })
+
+    it('reports only the previous-short floor when both floors fall on the same day', () => {
+      expect(
+        pmccSubsequentShortIssues(
+          sale({ leaps: { fillDate: '2027-07-16' }, short: { fillDate: '2027-07-15' } })
+        )
+      ).toEqual([BEFORE_PREVIOUS_SHORT])
+    })
+
+    it('judges the fill against the LEAPS alone when no short was ever retired', () => {
+      expect(
+        pmccSubsequentShortIssues(
+          sale({ previousShortRetiredOn: null, short: { fillDate: '2027-07-08' } })
+        )
+      ).toEqual([LEAPS_FILLED_AFTER_SALE])
+      expect(
+        pmccSubsequentShortIssues(
+          sale({ previousShortRetiredOn: null, short: { fillDate: '2027-07-09' } })
+        )
+      ).toEqual([])
+    })
+  })
+
+  describe('expiration', () => {
+    it('reports an expired contract, and not an expiration on or before the fill', () => {
+      expect(
+        pmccSubsequentShortIssues(
+          sale({ short: { expiration: '2027-07-22', fillDate: '2027-07-20' } })
+        )
+      ).toEqual([
+        {
+          field: 'expiration',
+          code: 'expired_contract',
+          message: 'Use an unexpired contract for opening a current position.'
+        }
+      ])
+    })
+
+    it('reports an expiration on the fill date, which today does not count as expired', () => {
+      expect(
+        pmccSubsequentShortIssues(
+          sale({ short: { expiration: '2027-07-23', fillDate: '2027-07-23' } })
+        )
+      ).toEqual([
+        {
+          field: 'expiration',
+          code: 'expiration_not_after_fill',
+          message: 'Expiration must be after the fill date.'
+        }
+      ])
+    })
+
+    it.each(['2028-01-21', '2028-02-18'])(
+      "reports a short call expiring on %s, not before the LEAPS, with US-102's message",
+      (expiration) => {
+        const issues = pmccSubsequentShortIssues(sale({ short: { expiration } }))
+        expect(issues).toEqual([
+          {
+            field: 'expiration',
+            code: 'short_not_before_long',
+            message: 'Short call must expire before the LEAPS call.'
+          }
+        ])
+        expect(issues[0].message).toBe(SHORT_NOT_BEFORE_LONG.message)
+      }
+    )
+
+    it('accepts a short call expiring the day before the LEAPS', () => {
+      expect(pmccSubsequentShortIssues(sale({ short: { expiration: '2028-01-20' } }))).toEqual([])
+    })
+  })
+
+  describe('strike', () => {
+    it.each(['85.0000', '80.0000'])(
+      'reports a short strike of %s, not above the LEAPS',
+      (strike) => {
+        expect(pmccSubsequentShortIssues(sale({ short: { strike } }))).toEqual([
+          STRIKE_AT_OR_BELOW_LEAPS
+        ])
+      }
+    )
+
+    it('accepts a short strike one hundredth of a cent above the LEAPS', () => {
+      expect(pmccSubsequentShortIssues(sale({ short: { strike: '85.0001' } }))).toEqual([])
+    })
+  })
+
+  it('reports contracts, expiration and strike issues in that order', () => {
+    const issues = pmccSubsequentShortIssues(
+      sale({ short: { contracts: 2, expiration: '2028-02-18', strike: '80.0000' } })
+    )
+    expect(issues.map(({ field, code }) => [field, code])).toEqual([
+      ['contracts', 'exceeds_leaps_contracts'],
+      ['expiration', 'short_not_before_long'],
+      ['strike', 'strike_not_above_long']
+    ])
+  })
+
+  it('reports the fill-date issues before the expiration issues', () => {
+    const issues = pmccSubsequentShortIssues(
+      sale({ short: { fillDate: '2027-07-15', expiration: '2027-07-15' } })
+    )
+    expect(issues.map(({ field, code }) => [field, code])).toEqual([
+      ['fillDate', 'before_previous_short'],
+      ['expiration', 'expired_contract'],
+      ['expiration', 'expiration_not_after_fill']
+    ])
+  })
+
+  describe('undecided values', () => {
+    it('skips the contracts cap only, when contracts is undecided', () => {
+      expect(
+        pmccSubsequentShortIssues(sale({ short: { contracts: undefined, strike: '80.0000' } }))
+      ).toEqual([STRIKE_AT_OR_BELOW_LEAPS])
+    })
+
+    it('skips the strike rule only, when the strike is undecided', () => {
+      expect(
+        pmccSubsequentShortIssues(sale({ short: { strike: undefined, contracts: 2 } })).map(
+          ({ code }) => code
+        )
+      ).toEqual(['exceeds_leaps_contracts'])
+    })
+
+    it('skips the fill-date rules only, when the fill date is undecided', () => {
+      // With a fill on today, the expired expiration would also be on/before the fill.
+      expect(
+        pmccSubsequentShortIssues(
+          sale({ short: { fillDate: undefined, expiration: '2027-07-22' } })
+        ).map(({ code }) => code)
+      ).toEqual(['expired_contract'])
+    })
+
+    it('skips the expiration rules only, when the expiration is undecided', () => {
+      expect(
+        pmccSubsequentShortIssues(
+          sale({ short: { expiration: undefined, fillDate: '2027-07-15', strike: '80.0000' } })
+        ).map(({ code }) => code)
+      ).toEqual(['before_previous_short', 'strike_not_above_long'])
+    })
+
+    it('reports nothing while every value is undecided', () => {
+      expect(
+        pmccSubsequentShortIssues(
+          sale({
+            short: {
+              contracts: undefined,
+              strike: undefined,
+              expiration: undefined,
+              fillDate: undefined
+            }
+          })
+        )
+      ).toEqual([])
+    })
+  })
+})
+
+describe('pmccFillDateFloor', () => {
+  it.each<[string, string | null, string, ReturnType<typeof pmccFillDateFloor>]>([
+    [
+      'the previous short retired after the LEAPS fill',
+      '2027-07-16',
+      '2027-07-09',
+      { kind: 'previousShort', date: '2027-07-16' }
+    ],
+    [
+      'both on the same day (tie)',
+      '2027-07-16',
+      '2027-07-16',
+      { kind: 'previousShort', date: '2027-07-16' }
+    ],
+    [
+      'the LEAPS filled one day earlier',
+      '2027-07-16',
+      '2027-07-15',
+      { kind: 'previousShort', date: '2027-07-16' }
+    ],
+    [
+      'the LEAPS filled one day later',
+      '2027-07-16',
+      '2027-07-17',
+      { kind: 'leaps', date: '2027-07-17' }
+    ],
+    ['no short ever retired', null, '2027-07-09', { kind: 'leaps', date: '2027-07-09' }]
+  ])('picks the binding floor when %s', (_label, previousShortRetiredOn, leapsFillDate, floor) => {
+    expect(pmccFillDateFloor({ previousShortRetiredOn, leapsFillDate })).toEqual(floor)
+  })
+})
+
+describe('SHORT_CALL_ALREADY_OPEN', () => {
+  it('tells the trader to roll the open short call instead', () => {
+    expect(SHORT_CALL_ALREADY_OPEN).toEqual({
+      code: 'short_call_already_open',
+      message: 'This PMCC already has an open short call — roll it instead.'
+    })
   })
 })

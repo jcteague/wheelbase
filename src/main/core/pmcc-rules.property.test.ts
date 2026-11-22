@@ -3,16 +3,29 @@
 import { describe, expect, it } from 'vitest'
 import fc from 'fast-check'
 import Decimal from 'decimal.js'
+import { addDays, format, isAfter, isBefore, max, parseISO } from 'date-fns'
 import {
   pmccCrossLegIssues,
+  pmccFillDateFloor,
   pmccLeapsRollIssues,
   pmccShortRollIssues,
+  pmccSubsequentShortIssues,
   SHORT_NOT_BEFORE_LONG,
   shortExpiresBeforeLeaps,
   shortStrikeAboveLeaps,
-  type PmccCrossLegValues
+  type PmccCrossLegValues,
+  type PmccIssue,
+  type PmccSubsequentShortContext,
+  type PmccSubsequentShortField,
+  type PmccSubsequentShortInput,
+  type PmccSubsequentShortValues
 } from './pmcc-rules'
-import { isoDay, positiveMoney, strictlyOrderedDays } from './test-fixtures/arbitraries'
+import {
+  isoDay,
+  nonPositiveMoney,
+  positiveMoney,
+  strictlyOrderedDays
+} from './test-fixtures/arbitraries'
 
 // Before every `isoDay` (2020+), so no generated expiration is expired or on/before its fill.
 const REFERENCE_DATE = '2019-12-31'
@@ -225,6 +238,171 @@ describe('pmccLeapsRollIssues — replacement-expiry rule', () => {
         expect(issues.map(({ code }) => code)).toEqual(
           onOrBefore ? ['expiration_not_after_fill'] : []
         )
+      })
+    )
+  })
+})
+
+// [US-115] Selling a subsequent short call against an open LEAPS.
+
+const shiftDay = (day: string, days: number): string =>
+  format(addDays(parseISO(day), days), 'yyyy-MM-dd')
+
+/** A sale with every value decided, so the oracle reads them without guards. */
+type DecidedSale = PmccSubsequentShortContext & {
+  short: { [K in keyof PmccSubsequentShortValues]: NonNullable<PmccSubsequentShortValues[K]> }
+}
+
+// Each date sits a few days either side of the date it is judged against, and contracts and
+// strike sit near the LEAPS', so every rule holds in most draws and breaks in some.
+const subsequentSale: fc.Arbitrary<DecidedSale> = fc
+  .record({
+    today: isoDay,
+    fillBack: fc.integer({ min: -2, max: 10 }),
+    previousBeforeFill: fc.option(fc.integer({ min: -3, max: 10 }), { nil: null }),
+    leapsFillBeforeFill: fc.integer({ min: -3, max: 10 }),
+    expirationAhead: fc.integer({ min: -3, max: 40 }),
+    leapsAfterShort: fc.integer({ min: -3, max: 300 }),
+    leapsContracts: fc.integer({ min: 1, max: 5 }),
+    extraContracts: fc.integer({ min: -3, max: 1 }),
+    leapsStrike: positiveMoney(200),
+    strikeGap: fc.oneof(
+      { arbitrary: positiveMoney(50), weight: 3 },
+      { arbitrary: nonPositiveMoney(50), weight: 1 }
+    )
+  })
+  .map((draw) => {
+    const fillDate = shiftDay(draw.today, -draw.fillBack)
+    const expiration = shiftDay(draw.today, draw.expirationAhead)
+    return {
+      leaps: {
+        strike: draw.leapsStrike,
+        expiration: shiftDay(expiration, draw.leapsAfterShort),
+        contracts: draw.leapsContracts,
+        fillDate: shiftDay(fillDate, -draw.leapsFillBeforeFill)
+      },
+      previousShortRetiredOn:
+        draw.previousBeforeFill === null ? null : shiftDay(fillDate, -draw.previousBeforeFill),
+      today: draw.today,
+      short: {
+        strike: new Decimal(draw.leapsStrike).plus(draw.strikeGap).toFixed(4),
+        expiration,
+        contracts: Math.max(1, draw.leapsContracts + draw.extraContracts),
+        fillDate
+      }
+    }
+  })
+
+const FLOOR_CODES = ['before_previous_short', 'long_after_short']
+const floorIssues = (input: PmccSubsequentShortInput): PmccIssue<PmccSubsequentShortField>[] =>
+  pmccSubsequentShortIssues(input).filter(
+    ({ field, code }) => field === 'fillDate' && FLOOR_CODES.includes(code)
+  )
+
+describe('pmccSubsequentShortIssues — agreement', () => {
+  it('reports nothing iff every subsequent-short rule holds by an independent oracle', () => {
+    fc.assert(
+      fc.property(subsequentSale, (input) => {
+        const { leaps, previousShortRetiredOn, today, short } = input
+        const fill = parseISO(short.fillDate)
+        const expiration = parseISO(short.expiration)
+        const floor = max(
+          [leaps.fillDate, previousShortRetiredOn]
+            .filter((day): day is string => day !== null)
+            .map((day) => parseISO(day))
+        )
+        const valid =
+          short.contracts <= leaps.contracts &&
+          !isAfter(fill, parseISO(today)) &&
+          !isBefore(fill, floor) &&
+          !isBefore(expiration, parseISO(today)) &&
+          isAfter(expiration, fill) &&
+          shortExpiresBeforeLeaps(short.expiration, leaps.expiration) &&
+          shortStrikeAboveLeaps(short.strike, leaps.strike)
+        expect(pmccSubsequentShortIssues(input).length === 0).toBe(valid)
+      })
+    )
+  })
+})
+
+describe('pmccSubsequentShortIssues — one floor', () => {
+  it('reports at most one fill-date floor issue', () => {
+    fc.assert(
+      fc.property(subsequentSale, (input) => {
+        expect(floorIssues(input).length).toBeLessThanOrEqual(1)
+      })
+    )
+  })
+
+  it('clears the floor once the fill moves to the date a before_previous_short message names', () => {
+    // The fill is before the previous short's retirement, which is on or after the LEAPS fill.
+    const beforePrevious = fc
+      .record({
+        sale: subsequentSale,
+        retiredOn: isoDay,
+        fillBefore: fc.integer({ min: 1, max: 30 }),
+        leapsFillBefore: fc.integer({ min: 0, max: 30 })
+      })
+      .map(({ sale, retiredOn, fillBefore, leapsFillBefore }) => ({
+        ...sale,
+        previousShortRetiredOn: retiredOn,
+        leaps: { ...sale.leaps, fillDate: shiftDay(retiredOn, -leapsFillBefore) },
+        short: { ...sale.short, fillDate: shiftDay(retiredOn, -fillBefore) }
+      }))
+
+    fc.assert(
+      fc.property(beforePrevious, (input) => {
+        const [issue] = floorIssues(input)
+        expect(issue.code).toBe('before_previous_short')
+        const named = /\((\d{4}-\d{2}-\d{2})\)\.$/.exec(issue.message)?.[1]
+        expect(named).toBe(input.previousShortRetiredOn)
+        expect(floorIssues({ ...input, short: { ...input.short, fillDate: named } })).toEqual([])
+      })
+    )
+  })
+})
+
+describe('pmccSubsequentShortIssues — fields', () => {
+  // A Record, so adding a field to the union without listing it here is a type error.
+  const FIELDS: Record<PmccSubsequentShortField, true> = {
+    contracts: true,
+    fillDate: true,
+    expiration: true,
+    strike: true
+  }
+
+  it('reports every issue on a field of PmccSubsequentShortField', () => {
+    fc.assert(
+      fc.property(subsequentSale, (input) => {
+        pmccSubsequentShortIssues(input).forEach(({ field }) => {
+          expect(Object.keys(FIELDS)).toContain(field)
+        })
+      })
+    )
+  })
+})
+
+describe('pmccFillDateFloor', () => {
+  // A tie is drawn deliberately: independent days almost never coincide.
+  const floors = fc
+    .tuple(fc.option(isoDay, { nil: null }), isoDay, fc.boolean())
+    .map(([previous, leapsFillDate, tie]) => ({
+      previousShortRetiredOn: tie && previous !== null ? leapsFillDate : previous,
+      leapsFillDate
+    }))
+
+  it('binds on the later date, and on the previous short when it is not before the LEAPS fill', () => {
+    fc.assert(
+      fc.property(floors, ({ previousShortRetiredOn, leapsFillDate }) => {
+        const leaps = parseISO(leapsFillDate)
+        const later =
+          previousShortRetiredOn === null ? leaps : max([parseISO(previousShortRetiredOn), leaps])
+        const previousBinds =
+          previousShortRetiredOn !== null && !isBefore(parseISO(previousShortRetiredOn), leaps)
+        expect(pmccFillDateFloor({ previousShortRetiredOn, leapsFillDate })).toEqual({
+          kind: previousBinds ? 'previousShort' : 'leaps',
+          date: format(later, 'yyyy-MM-dd')
+        })
       })
     )
   })

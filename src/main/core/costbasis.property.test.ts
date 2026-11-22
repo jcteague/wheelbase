@@ -16,11 +16,14 @@ import {
   computeUnrealizedPnl,
   calculatePmccOpeningDebit,
   calculatePmccLedger,
-  computePmccUnrealizedPnl
+  computePmccUnrealizedPnl,
+  projectPmccLedger
 } from './costbasis'
 import type {
   PmccContribution,
   PmccLedgerInput,
+  PmccLedgerTotals,
+  PmccLedgerWithStrike,
   PmccOpeningDebitInput,
   PmccUnrealizedPnlInput
 } from './costbasis'
@@ -622,6 +625,53 @@ describe('calculatePmccLedger', () => {
         expect(result.premiumRecoveredPercent === null).toBe(money(result.leapsCostTotal).lte(0))
         expect(result.effectiveShareCost === null).toBe(input.longStrike === null)
       })
+    )
+  })
+})
+
+describe('projectPmccLedger', () => {
+  const contributionList = fc.array(pmccContribution, { maxLength: 8 })
+  const totals: fc.Arbitrary<PmccLedgerTotals> = fc.record({
+    leapsCostTotal: signedMoney(100_000),
+    shortCreditsTotal: signedMoney(100_000)
+  })
+
+  it('projecting b onto the ledger of a equals the ledger of a ++ b', () => {
+    fc.assert(
+      fc.property(
+        contracts,
+        positiveMoney(),
+        contributionList,
+        contributionList,
+        (leapsContracts, longStrike, a, b) => {
+          const ledger = calculatePmccLedger({ leapsContracts, longStrike, contributions: a })
+          expect(
+            projectPmccLedger({ ledger, leapsContracts, longStrike, contributions: b })
+          ).toEqual(
+            calculatePmccLedger({ leapsContracts, longStrike, contributions: [...a, ...b] })
+          )
+        }
+      )
+    )
+  })
+
+  it('projecting b then c equals projecting b ++ c', () => {
+    fc.assert(
+      fc.property(
+        totals,
+        contracts,
+        positiveMoney(),
+        contributionList,
+        contributionList,
+        (ledger, leapsContracts, longStrike, b, c) => {
+          const project = (
+            from: PmccLedgerTotals,
+            contributions: PmccContribution[]
+          ): PmccLedgerWithStrike =>
+            projectPmccLedger({ ledger: from, leapsContracts, longStrike, contributions })
+          expect(project(project(ledger, b), c)).toEqual(project(ledger, [...b, ...c]))
+        }
+      )
     )
   })
 })

@@ -177,6 +177,25 @@ export function currentShortCallLeg(
   return orderedLedgerEvents(legs, chains).reduce<PmccShortLeg | null>(applyShortCallEvent, null)
 }
 
+const laterDate = (latest: string | null, date: string): string =>
+  latest !== null && latest >= date ? latest : date
+
+/** [US-115] The latest fill date of a leg that retired a short call; `null` when none has. */
+export function lastShortRetiredOn(legs: LegRecord[]): string | null {
+  return legs
+    .filter((leg) => SHORT_CALL_CLOSING_ROLES.has(leg.legRole))
+    .map((leg) => leg.fillDate)
+    .reduce<string | null>(laterDate, null)
+}
+
+/**
+ * [US-115] The number US-109 gives the next short-call cycle: 1 + the SHORT_CALL_OPEN legs.
+ * A short roll's ROLL_TO stays in its cycle, so it does not count.
+ */
+export function nextPmccCycleNumber(legs: LegRecord[]): number {
+  return legs.filter((leg) => hasLegRole(leg, 'SHORT_CALL_OPEN')).length + 1
+}
+
 /** The PMCC's open legs now: the LEAPS and, if one is open, the short call. */
 export type PmccOpenLegs = { long: PmccLongLeg; short: PmccShortLeg | null }
 

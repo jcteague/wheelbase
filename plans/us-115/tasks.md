@@ -37,7 +37,7 @@ Shared files to watch when areas run in parallel:
 
 ### Area 1 — Shared rules: `pmccSubsequentShortIssues` and the extracted US-101 constants
 
-- [ ] **[Red]** Write failing tests — `src/main/core/pmcc-rules.test.ts`, `src/main/core/pmcc-rules.property.test.ts`
+- [x] **[Red]** Write failing tests — `src/main/core/pmcc-rules.test.ts`, `src/main/core/pmcc-rules.property.test.ts`
   - Test cases (full list in `plan.md` Area 1 Red):
     - valid Background sale → `[]`
     - contracts cap `(1)` / `(3)`; fill in the future; fill `2027-07-15` → `… retired (2027-07-16).`, fill `2027-07-16` accepted
@@ -47,12 +47,12 @@ Shared files to watch when areas run in parallel:
     - `pmccFillDateFloor`: previous later → `previousShort`; tie → `previousShort`; LEAPS one day earlier → `previousShort`; LEAPS one day later → `leaps`; `null` previous → `leaps`
   - Property cases: agreement with an independent oracle; at most one floor issue and correcting to the named date clears it; every field in `PmccSubsequentShortField`; `pmccFillDateFloor` date = `date-fns` `max`, `kind` `previousShort` iff previous non-null and not before the LEAPS fill
   - Run `pnpm test src/main/core/pmcc-rules` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/core/pmcc-rules.ts` _(depends on: Area 1 Red ✓)_
+- [x] **[Green]** Implement — `src/main/core/pmcc-rules.ts` _(depends on: Area 1 Red ✓)_
   - Extract `SHORT_STRIKE_NOT_ABOVE_LONG`, `FILL_DATE_IN_FUTURE`, `EXPIRED_CONTRACT`, `LEAPS_AFTER_SHORT` and use them in `pmccCrossLegIssues`
   - Add `SHORT_CALL_ALREADY_OPEN`, `exceedsLeapsContracts(n)`, `beforePreviousShortRetired(date)`, `PmccFillDateFloor`, `pmccFillDateFloor` (exported; tie → previous short; US-120 reuses it), `PmccSubsequentShortField`, `PmccSubsequentShortValues`, `PmccSubsequentShortContext`, `PmccSubsequentShortInput`, `pmccSubsequentShortIssues` (order: `data-model.md` § 3 rows 7–13)
   - No logging, no I/O
   - Run `pnpm test src/main/core/pmcc-rules` — all tests must pass
-- [ ] **[Refactor]** `/refactor` — `src/main/core/pmcc-rules.ts` _(depends on: Area 1 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `src/main/core/pmcc-rules.ts` _(depends on: Area 1 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Consider: one `decided(...)` guard helper; `PmccRule` stays module-private
   - Run `pnpm test:mutation --mutate src/main/core/pmcc-rules.ts`; kill reproducible survivors in the new code
@@ -60,14 +60,14 @@ Shared files to watch when areas run in parallel:
 
 ### Area 3 — Projection: `projectPmccLedger`
 
-- [ ] **[Red]** Write failing tests — `src/main/core/costbasis.test.ts`, `src/main/core/costbasis.property.test.ts`
+- [x] **[Red]** Write failing tests — `src/main/core/costbasis.test.ts`, `src/main/core/costbasis.property.test.ts`
   - Test cases: Background + `$1.95` → `6.5500` / `91.5500` / `70.8889`; `$90` at `$1.50` → `7.0000` / `92.0000` / `68.8889`; fees `1.0000` → `6.5600` / `91.5600` / `70.8444`; 3 LEAPS + 1 short → `7.8500` / `92.8500` / `65.1111`; no contributions → unchanged
   - Property cases: oracle `project(calculate(a), b) == calculate(a ++ b)`; order independence `project(project(x, b), c) == project(x, b ++ c)`
   - Run `pnpm test src/main/core/costbasis` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/core/costbasis.ts` _(depends on: Area 3 Red ✓)_
+- [x] **[Green]** Implement — `src/main/core/costbasis.ts` _(depends on: Area 3 Red ✓)_
   - Extract `ledgerFromTotals`; `calculatePmccLedger` delegates to it; add `PmccLedgerTotals`, `ProjectPmccLedgerInput`, `projectPmccLedger`
   - Run `pnpm test src/main/core/costbasis` — all tests (old and new) must pass
-- [ ] **[Refactor]** `/refactor` — `src/main/core/costbasis.ts` _(depends on: Area 3 Green ✓)_
+- [x] **[Refactor]** `/refactor` — `src/main/core/costbasis.ts` _(depends on: Area 3 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Consider: note (do not do) rewriting `pmccPostRollEffectiveCost` / `pmccLeapsPostRoll` over the projection
   - Run `pnpm test:mutation --mutate src/main/core/costbasis.ts`; kill reproducible survivors in the new code
@@ -75,50 +75,50 @@ Shared files to watch when areas run in parallel:
 
 ### Area 4 — Ledger helpers: `lastShortRetiredOn`, `nextPmccCycleNumber`
 
-- [ ] **[Red]** Write failing tests — `src/main/services/pmcc-ledger.test.ts`
+- [x] **[Red]** Write failing tests — `src/main/services/pmcc-ledger.test.ts`
   - Test cases: `null` with no closing leg; `2027-07-16` for the Background without cycle 9; a later `SHORT_CALL_CLOSE` wins; `SHORT_CALL_ASSIGNED` counts; `LEAPS_CLOSE` and short-roll legs do not; cycle number `2` and `9`; equals `buildPmccTimeline(...).cycles.length + 1`
   - Run `pnpm test src/main/services/pmcc-ledger.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/services/pmcc-ledger.ts` _(depends on: Area 4 Red ✓)_
+- [x] **[Green]** Implement — `src/main/services/pmcc-ledger.ts` _(depends on: Area 4 Red ✓)_
   - Both helpers read `SHORT_CALL_CLOSING_ROLES`; pure reductions
   - Run `pnpm test src/main/services/pmcc-ledger.test.ts` — all tests must pass
-- [ ] **[Refactor]** `/refactor` _(depends on: Area 4 Green ✓)_
+- [x] **[Refactor]** `/refactor` _(depends on: Area 4 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
 ### Area 5 — Schemas: payload and result
 
-- [ ] **[Red]** Write failing tests — `src/main/schemas.test.ts`
+- [x] **[Red]** Write failing tests — `src/main/schemas.test.ts`
   - Test cases: full payload parses; `fees` defaults to `0`; `fillDate` optional; `contracts: 0`, `fillPrice: 0`, `strike: 80` parse; bad date and missing strike fail on their paths; `expectTypeOf` on `SellPmccShortResult['snapshot']['triggerEvent']`
   - Run `pnpm test src/main/schemas.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/main/schemas.ts` _(depends on: Area 5 Red ✓)_
+- [x] **[Green]** Implement — `src/main/schemas.ts` _(depends on: Area 5 Red ✓)_
   - `SellPmccShortPayloadSchema`, `SellPmccShortPayload`, `SellPmccShortResult` per `contracts/positions-sell-pmcc-short.md`
   - Run `pnpm test src/main/schemas.test.ts` — all tests must pass
-- [ ] **[Refactor]** `/refactor` _(depends on: Area 5 Green ✓)_
+- [x] **[Refactor]** `/refactor` _(depends on: Area 5 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
 ### Area 8 — Chain bounded by the LEAPS
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/lib/pmcc-entry.test.ts`, `src/renderer/src/hooks/useCallChain.test.ts`
+- [x] **[Red]** Write failing tests — `src/renderer/src/lib/pmcc-entry.test.ts`, `src/renderer/src/hooks/useCallChain.test.ts`
   - Test cases: `filterCallChain` with bounds drops the `85` / `80` strikes and the `2028-01-21` / `2028-02-18` expirations, keeps `118 · 2027-08-20`, drops a kept contract that breaks a bound; `chainWindow` clamps to the day before a 35-day LEAPS and is unchanged for a 182-day one; no bounds → existing behaviour; `useCallChain` puts `bounds` in its query key
   - Run `pnpm test src/renderer/src/lib/pmcc-entry.test.ts src/renderer/src/hooks/useCallChain.test.ts` — all new tests must fail
-- [ ] **[Green]** Implement — `src/renderer/src/lib/pmcc-entry.ts`, `src/renderer/src/hooks/useCallChain.ts` _(depends on: Area 8 Red ✓)_
+- [x] **[Green]** Implement — `src/renderer/src/lib/pmcc-entry.ts`, `src/renderer/src/hooks/useCallChain.ts` _(depends on: Area 8 Red ✓)_
   - `ShortCallChainBounds`; filters use `shortExpiresBeforeLeaps` and `shortStrikeAboveLeaps`
   - Run the same tests — all must pass
-- [ ] **[Refactor]** `/refactor` _(depends on: Area 8 Green ✓)_
+- [x] **[Refactor]** `/refactor` _(depends on: Area 8 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 
 ### Area 9 — Coverage label and the header action
 
-- [ ] **[Red]** Write failing tests — `src/renderer/src/lib/pmcc-coverage.test.ts`, `src/renderer/src/lib/pmcc-card-display.test.ts`, `src/renderer/src/components/PositionDetailActions.test.tsx`
+- [x] **[Red]** Write failing tests — `src/renderer/src/lib/pmcc-coverage.test.ts`, `src/renderer/src/lib/pmcc-card-display.test.ts`, `src/renderer/src/components/PositionDetailActions.test.tsx`
   - Test cases: `pmccCoverageLabel` none / full / `2 of 3` / `1 of 3 covered` / `2 short calls` (`plan.md` Area 9); card partial case reads `LEAPS + short call open · 1 of 3 covered` on its state line and `3 × 100 sh` on its coverage line; LEAPS-only PMCC → badge `LEAPS open · no short call`, `sell-pmcc-short-btn` (`Sell Short Call →`) calls `onSellPmccShort`, no `roll-pmcc-short-btn`; open short → `LEAPS + short call open`, no sell button; 1 of 3 contracts → badge `LEAPS + short call open · 1 of 3 covered`; no LEAPS → no sell button; closed PMCC (`PMCC_CLOSED`, US-120; non-`PMCC_OPEN` stand-in until it lands) with open legs still set → no sell button; `HOLDING_SHARES` → `Open Covered Call →`, no sell button
   - Mockup: `epic-09-pmcc-position-detail.mdx`, presets `sell-short` and `healthy` (header)
   - Run `pnpm test src/renderer/src/lib/pmcc-coverage.test.ts src/renderer/src/components/PositionDetailActions.test.tsx` — all new tests must fail
-- [ ] **[Green]** Implement — `src/renderer/src/lib/pmcc-coverage.ts`, `pmcc-card-display.ts`, `PositionDetailActions.tsx` _(depends on: Area 9 Red ✓)_
+- [x] **[Green]** Implement — `src/renderer/src/lib/pmcc-coverage.ts`, `pmcc-card-display.ts`, `PositionDetailActions.tsx` _(depends on: Area 9 Red ✓)_
   - Move `stateLabel` and the card's `N of M covered` into `pmccCoverageLabel({ shortCount, shortContracts, leapsContracts })`; `pmccCoverage` prop; `PhaseBadge label` for a PMCC in `PMCC_OPEN`; gate the button on `phase === 'PMCC_OPEN' && hasOpenLeaps && !hasOpenShortCall`
   - Run the same tests plus `pnpm test src/renderer/src/lib/pmcc-card-display.test.ts` — all must pass
-- [ ] **[Refactor]** `/refactor` _(depends on: Area 9 Green ✓)_
+- [x] **[Refactor]** `/refactor` _(depends on: Area 9 Green ✓)_
   - **Invoke the `/refactor` skill** — do not skip or treat as a visual review
   - Run `pnpm test && pnpm lint && pnpm typecheck`
 

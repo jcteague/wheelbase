@@ -3,12 +3,16 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OptionChainQuote } from '../api/market-data'
-import { LEAPS_PRESET, SHORT_PRESET } from '../lib/pmcc-entry'
+import { LEAPS_PRESET, SHORT_PRESET, type ShortCallChainBounds } from '../lib/pmcc-entry'
 import { useCallChain } from './useCallChain'
 
 const mockOptionChain = vi.fn()
 const KEEP = 'XYZ270917C00080000'
 const LOW = 'XYZ270917C00070000'
+const LEAPS_BOUNDS: ShortCallChainBounds = {
+  expirationBefore: '2026-10-19',
+  strikeAbove: '85.0000'
+}
 
 function quote(contractId: string, delta: string): OptionChainQuote {
   return {
@@ -27,8 +31,9 @@ function quote(contractId: string, delta: string): OptionChainQuote {
   }
 }
 
-function makeWrapper(): ({ children }: { children: React.ReactNode }) => React.ReactElement {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+function makeWrapper(
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+): ({ children }: { children: React.ReactNode }) => React.ReactElement {
   const Wrapper = ({ children }: { children: React.ReactNode }): React.ReactElement =>
     createElement(QueryClientProvider, { client: queryClient }, children)
   Wrapper.displayName = 'QueryClientWrapper'
@@ -91,6 +96,91 @@ describe('useCallChain', () => {
       expirationTo: '2026-10-29',
       strikeFrom: '100.00'
     })
+  })
+
+  it('ends the short window the day before the LEAPS when bounds are passed', async () => {
+    mockOptionChain.mockResolvedValue({ ok: true, snapshots: [], nextCursor: null })
+
+    renderHook(
+      () =>
+        useCallChain({
+          ticker: 'XYZ',
+          preset: SHORT_PRESET,
+          underlyingPrice: '100.00',
+          bounds: LEAPS_BOUNDS
+        }),
+      { wrapper: makeWrapper() }
+    )
+
+    await waitFor(() => expect(mockOptionChain).toHaveBeenCalledOnce())
+    expect(mockOptionChain).toHaveBeenCalledWith({
+      underlying: 'XYZ',
+      type: 'call',
+      expirationFrom: '2026-10-04',
+      expirationTo: '2026-10-18',
+      strikeFrom: '100.00'
+    })
+  })
+
+  it('drops contracts that break the LEAPS bounds', async () => {
+    mockOptionChain.mockResolvedValue({
+      ok: true,
+      snapshots: [
+        { ...quote('XYZ261016C00085000', '0.30'), strike: '85.0000', expiration: '2026-10-16' },
+        { ...quote('XYZ261016C00118000', '0.30'), strike: '118.0000', expiration: '2026-10-16' }
+      ],
+      nextCursor: null
+    })
+
+    const { result } = renderHook(
+      () =>
+        useCallChain({
+          ticker: 'XYZ',
+          preset: SHORT_PRESET,
+          underlyingPrice: null,
+          bounds: LEAPS_BOUNDS
+        }),
+      { wrapper: makeWrapper() }
+    )
+
+    await waitFor(() => expect(result.current.status).toBe('success'))
+    expect(result.current.contracts.map((q) => q.contractId)).toEqual(['XYZ261016C00118000'])
+  })
+
+  it('keys the chain query by its LEAPS bounds', async () => {
+    mockOptionChain.mockResolvedValue({ ok: true, snapshots: [], nextCursor: null })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+    renderHook(
+      () =>
+        useCallChain({
+          ticker: 'XYZ',
+          preset: SHORT_PRESET,
+          underlyingPrice: null,
+          bounds: LEAPS_BOUNDS
+        }),
+      { wrapper: makeWrapper(queryClient) }
+    )
+
+    await waitFor(() => expect(mockOptionChain).toHaveBeenCalledOnce())
+    expect(
+      queryClient
+        .getQueryCache()
+        .getAll()
+        .map((q) => q.queryKey)
+    ).toEqual([
+      [
+        'market',
+        'option-chain',
+        {
+          underlying: 'XYZ',
+          type: 'call',
+          expirationFrom: '2026-10-04',
+          expirationTo: '2026-10-18'
+        },
+        { expirationBefore: '2026-10-19', strikeAbove: '85.0000' }
+      ]
+    ])
   })
 
   it('returns the success status and the delta-filtered contracts', async () => {

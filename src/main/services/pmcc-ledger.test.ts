@@ -14,13 +14,22 @@ import {
   currentLongStrike,
   currentShortCallLeg,
   isShortCallRoll,
+  lastShortRetiredOn,
   leapsContracts,
+  nextPmccCycleNumber,
   pmccLedgerFromLegs,
   pmccOpenLegs
 } from './pmcc-ledger'
+import { pmccTimelineFromLegs } from './pmcc-timeline'
 import { insertPosition } from './position-rows'
 import { groupRollChains } from './roll-chains'
-import { FIXED_DAY, insertLegs, makePmccLeg, pmccFixtures } from './test-fixtures/pmcc-legs'
+import {
+  FIXED_DAY,
+  insertLegs,
+  makePmccLeg,
+  pmccFixtures,
+  xyzBackgroundWithoutCycle9
+} from './test-fixtures/pmcc-legs'
 
 const POSITION_ID = 'pmcc-1'
 const NOW = '2026-09-14T15:00:00.000Z'
@@ -32,6 +41,7 @@ const THROUGH_LEAPS_ROLL = [
   ...F.SHORT_ROLL,
   ...F.LEAPS_ROLL
 ]
+const BACKGROUND = xyzBackgroundWithoutCycle9(POSITION_ID)
 
 function seedPmcc(db: Database.Database): void {
   insertPosition(db, {
@@ -599,5 +609,90 @@ describe('pmccOpenLegs', () => {
 
   it('has a null short after the short call expires', () => {
     expect(pmccOpenLegs([...F.OPEN, ...F.EXPIRE_1])).toEqual({ long: F.OPEN[0], short: null })
+  })
+})
+
+// [US-115] Ledger helpers for selling the next short call: the fill-date floor and the cycle number.
+describe('lastShortRetiredOn', () => {
+  const shortLeg = (
+    legRole: 'SHORT_CALL_CLOSE' | 'SHORT_CALL_ASSIGNED',
+    action: 'BUY' | 'ASSIGN',
+    fillDate: string
+  ): LegRecord =>
+    makePmccLeg(POSITION_ID, {
+      legRole,
+      action,
+      strike: '112.0000',
+      expiration: '2027-07-16',
+      fillDate,
+      premiumPerContract: action === 'BUY' ? '0.5000' : '0.0000'
+    })
+
+  it('is null when no leg retired a short call', () => {
+    expect(lastShortRetiredOn(F.OPEN)).toBeNull()
+    expect(lastShortRetiredOn([])).toBeNull()
+  })
+
+  it("is cycle 8's 2027-07-16 expiration on the Background without cycle 9", () => {
+    expect(lastShortRetiredOn(BACKGROUND)).toBe('2027-07-16')
+  })
+
+  it('does not depend on input order', () => {
+    expect(lastShortRetiredOn([...BACKGROUND].reverse())).toBe('2027-07-16')
+  })
+
+  it('is a SHORT_CALL_CLOSE filled 2027-07-18, after it, wherever the leg sits in the list', () => {
+    const close = shortLeg('SHORT_CALL_CLOSE', 'BUY', '2027-07-18')
+    expect(lastShortRetiredOn([...BACKGROUND, close])).toBe('2027-07-18')
+    expect(lastShortRetiredOn([close, ...BACKGROUND])).toBe('2027-07-18')
+  })
+
+  it('counts a SHORT_CALL_ASSIGNED', () => {
+    const assigned = shortLeg('SHORT_CALL_ASSIGNED', 'ASSIGN', '2027-07-20')
+    expect(lastShortRetiredOn([...BACKGROUND, assigned])).toBe('2027-07-20')
+    expect(lastShortRetiredOn([...F.OPEN, ...F.ASSIGNED_1])).toBe('2026-10-16')
+  })
+
+  it.each([
+    ['a LEAPS_CLOSE', F.LEAPS_CLOSE_1],
+    ["a short roll's ROLL_FROM", F.SHORT_ROLL]
+  ])('does not count %s', (_label, legs) => {
+    expect(lastShortRetiredOn([...F.OPEN, ...legs])).toBeNull()
+    expect(lastShortRetiredOn([...F.OPEN, ...F.EXPIRE_1, ...legs])).toBe('2026-10-16')
+  })
+})
+
+describe('nextPmccCycleNumber', () => {
+  const timelineCycleCount = (legs: LegRecord[]): number => {
+    const timeline = pmccTimelineFromLegs(legs, { valuationDate: '2027-07-23', closedDate: null })
+    if (timeline === null) throw new Error('fixture has no LEAPS leg')
+    return timeline.cycles.length
+  }
+
+  it('is 1 before any short call is sold', () => {
+    expect(nextPmccCycleNumber([F.OPEN[0]])).toBe(1)
+  })
+
+  it('is 2 after the opening legs (one SHORT_CALL_OPEN)', () => {
+    expect(nextPmccCycleNumber(F.OPEN)).toBe(2)
+  })
+
+  it("is not moved by a short roll's ROLL_TO", () => {
+    expect(nextPmccCycleNumber([...F.OPEN, ...F.SHORT_ROLL])).toBe(2)
+  })
+
+  it('is 9 on the Background without cycle 9 (eight opens, one short roll)', () => {
+    expect(nextPmccCycleNumber(BACKGROUND)).toBe(9)
+  })
+
+  it.each([
+    ['the opening legs', F.OPEN],
+    [
+      'three cycles through a short roll and a LEAPS roll',
+      [...THROUGH_LEAPS_ROLL, ...F.EXPIRE_2, ...F.CYCLES]
+    ],
+    ['the Background without cycle 9', BACKGROUND]
+  ])('equals the US-109 timeline cycle count + 1 on %s', (_label, legs) => {
+    expect(nextPmccCycleNumber(legs)).toBe(timelineCycleCount(legs) + 1)
   })
 })

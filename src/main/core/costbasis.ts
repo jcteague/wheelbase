@@ -473,7 +473,7 @@ export function contributionDollars(contribution: PmccContribution): Decimal {
     .plus(contribution.fees)
 }
 
-function sumSide(contributions: PmccContribution[], side: PmccLedgerSide): Decimal {
+function sumSide(contributions: readonly PmccContribution[], side: PmccLedgerSide): Decimal {
   return contributions
     .filter((contribution) => contribution.side === side)
     .reduce((total, contribution) => total.plus(contributionDollars(contribution)), new Decimal(0))
@@ -482,17 +482,22 @@ function sumSide(contributions: PmccContribution[], side: PmccLedgerSide): Decim
 /** A PMCC ledger computed with a known LEAPS strike: its effective share cost is always reported. */
 export type PmccLedgerWithStrike = PmccLedgerResult & { effectiveShareCost: string }
 
-/** With a known LEAPS strike the effective share cost is always reported. */
-export function calculatePmccLedger(
-  input: PmccLedgerInput & { longStrike: string }
-): PmccLedgerWithStrike
-export function calculatePmccLedger(input: PmccLedgerInput): PmccLedgerResult
-export function calculatePmccLedger(input: PmccLedgerInput): PmccLedgerResult {
-  assertPositiveContracts(input.leapsContracts, 'leapsContracts')
-  const shares = sharesFromContracts(input.leapsContracts)
+interface LedgerTotalsInput {
+  leapsContracts: number
+  longStrike: string | null
+  leapsCostTotal: Decimal
+  shortCreditsTotal: Decimal
+}
 
-  const leapsCostTotal = sumSide(input.contributions, 'LONG')
-  const shortCreditsTotal = sumSide(input.contributions, 'SHORT').negated()
+/**
+ * Every ledger figure from the two dollar totals: one per-share division, one rounding each.
+ * Callers validate `leapsContracts` first, before reading any contribution.
+ */
+function ledgerFromTotals(input: LedgerTotalsInput & { longStrike: string }): PmccLedgerWithStrike
+function ledgerFromTotals(input: LedgerTotalsInput): PmccLedgerResult
+function ledgerFromTotals(input: LedgerTotalsInput): PmccLedgerResult {
+  const shares = sharesFromContracts(input.leapsContracts)
+  const { leapsCostTotal, shortCreditsTotal } = input
   const basisTotal = leapsCostTotal.minus(shortCreditsTotal)
   const basisPerShare = basisTotal.dividedBy(shares)
 
@@ -509,4 +514,48 @@ export function calculatePmccLedger(input: PmccLedgerInput): PmccLedgerResult {
       ? null
       : fixed4(shortCreditsTotal.dividedBy(leapsCostTotal).times(100))
   }
+}
+
+/** With a known LEAPS strike the effective share cost is always reported. */
+export function calculatePmccLedger(
+  input: PmccLedgerInput & { longStrike: string }
+): PmccLedgerWithStrike
+export function calculatePmccLedger(input: PmccLedgerInput): PmccLedgerResult
+export function calculatePmccLedger(input: PmccLedgerInput): PmccLedgerResult {
+  assertPositiveContracts(input.leapsContracts, 'leapsContracts')
+  return ledgerFromTotals({
+    leapsContracts: input.leapsContracts,
+    longStrike: input.longStrike,
+    leapsCostTotal: sumSide(input.contributions, 'LONG'),
+    shortCreditsTotal: sumSide(input.contributions, 'SHORT').negated()
+  })
+}
+
+/** The two dollar totals a PMCC ledger is projected from; any full ledger satisfies it. */
+export type PmccLedgerTotals = Pick<PmccLedgerResult, 'leapsCostTotal' | 'shortCreditsTotal'>
+
+export interface ProjectPmccLedgerInput {
+  ledger: PmccLedgerTotals
+  leapsContracts: number
+  longStrike: string
+  contributions: readonly PmccContribution[]
+}
+
+/**
+ * The ledger after `contributions`, projected from an existing ledger's dollar totals. Equals
+ * `calculatePmccLedger` over the existing contributions plus these, since 4-dp dollars sum exactly.
+ */
+export function projectPmccLedger(input: ProjectPmccLedgerInput): PmccLedgerWithStrike {
+  assertPositiveContracts(input.leapsContracts, 'leapsContracts')
+  return ledgerFromTotals({
+    leapsContracts: input.leapsContracts,
+    longStrike: input.longStrike,
+    leapsCostTotal: new Decimal(input.ledger.leapsCostTotal).plus(
+      sumSide(input.contributions, 'LONG')
+    ),
+    // A credit is negative cash, so subtracting the SHORT sum adds it to the credits.
+    shortCreditsTotal: new Decimal(input.ledger.shortCreditsTotal).minus(
+      sumSide(input.contributions, 'SHORT')
+    )
+  })
 }
