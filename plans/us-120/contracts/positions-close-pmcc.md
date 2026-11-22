@@ -62,21 +62,21 @@ pattern); DEBUG for the parsed payload, the settlement figures and each transact
 
 ## Error codes
 
-| field | code | message | when |
-| --- | --- | --- | --- |
-| `positionId` | `invalid_format` | Zod's message | not a UUID |
-| `salePricePerShare` | `invalid_type` | Zod's message | missing or not a number |
-| `fillDate` | `invalid_format` | Zod's message | not `YYYY-MM-DD` |
-| `__root__` | `not_found` | `Position not found` | no such position |
-| `__phase__` | `invalid_phase` | `Position is not in PMCC_OPEN phase` | a wheel, or a PMCC already `PMCC_CLOSED` |
-| `__root__` | `no_active_leg` | `Position has no active leg` | PMCC with no LEAPS (existing `requirePmccOpenLegs`) |
-| `__root__` | `short_call_open` | `This PMCC has an open short call — selling the LEAPS would leave it naked. Retire or roll the short call first.` | a short call is open |
-| `salePricePerShare` | `must_be_positive` | `Sale price must be greater than zero` | ≤ 0 |
-| `fees` | `must_be_non_negative` | `Fees cannot be negative.` | < 0 |
-| `fillDate` | `before_leaps_open` | `Fill date cannot be before the LEAPS was bought (2027-06-01)` | before the held LEAPS' fill, when it is later than the last short's terminal fill |
-| `fillDate` | `before_short_retired` | `Fill date cannot be before the last short call was retired (2027-07-16)` | before the last short's terminal fill, when it is later or ties (as US-115) |
-| `fillDate` | `cannot_be_future` | `Fill date cannot be in the future` | after today (New York) |
-| `__root__` | `internal_error` | `An unexpected error occurred` | any other throw (e.g. a storage failure); the transaction rolled back, nothing written |
+| field               | code                   | message                                                                                                           | when                                                                                   |
+| ------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `positionId`        | `invalid_format`       | Zod's message                                                                                                     | not a UUID                                                                             |
+| `salePricePerShare` | `invalid_type`         | Zod's message                                                                                                     | missing or not a number                                                                |
+| `fillDate`          | `invalid_format`       | Zod's message                                                                                                     | not `YYYY-MM-DD`                                                                       |
+| `__root__`          | `not_found`            | `Position not found`                                                                                              | no such position                                                                       |
+| `__phase__`         | `invalid_phase`        | `Position is not in PMCC_OPEN phase`                                                                              | a wheel, or a PMCC already `PMCC_CLOSED`                                               |
+| `__root__`          | `no_active_leg`        | `Position has no active leg`                                                                                      | PMCC with no LEAPS (existing `requirePmccOpenLegs`)                                    |
+| `__root__`          | `short_call_open`      | `This PMCC has an open short call — selling the LEAPS would leave it naked. Retire or roll the short call first.` | a short call is open                                                                   |
+| `salePricePerShare` | `must_be_positive`     | `Sale price must be greater than zero`                                                                            | ≤ 0                                                                                    |
+| `fees`              | `must_be_non_negative` | `Fees cannot be negative.`                                                                                        | < 0                                                                                    |
+| `fillDate`          | `before_leaps_open`    | `Fill date cannot be before the LEAPS was bought (2027-06-01)`                                                    | before the held LEAPS' fill, when it is later than the last short's terminal fill      |
+| `fillDate`          | `before_short_retired` | `Fill date cannot be before the last short call was retired (2027-07-16)`                                         | before the last short's terminal fill, when it is later or ties (as US-115)            |
+| `fillDate`          | `cannot_be_future`     | `Fill date cannot be in the future`                                                                               | after today (New York)                                                                 |
+| `__root__`          | `internal_error`       | `An unexpected error occurred`                                                                                    | any other throw (e.g. a storage failure); the transaction rolled back, nothing written |
 
 Every rejection leaves the database unchanged: no leg, no snapshot, position still
 `PMCC_OPEN` / `ACTIVE` with `closed_date NULL`.

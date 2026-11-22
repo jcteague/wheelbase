@@ -58,7 +58,7 @@ Shared with US-115 / US-119 (planned on `main` in `plans/us-115/`, not yet in `s
 
 - `lastShortRetiredOn(legs)` in `src/main/services/pmcc-ledger.ts` (US-115 Area 4). Created in Area 4 below if absent.
 - `pmccFillDateFloor` / `PmccFillDateFloor` in `src/main/core/pmcc-rules.ts`, the one fill-date tie-break (a tie binds on the short). Created in Area 3 below; US-115's `pmccSubsequentShortIssues` floor rows call it.
-- `pmccCoverageLabel(shortCount)` in `src/renderer/src/lib/pmcc-coverage.ts` (US-115 Area 9, shared with US-119). It fixes the LEAPS-only header badge that `PHASE_LABEL.PMCC_OPEN` mislabels; Area 11 uses it.
+- `pmccCoverageLabel({ shortCount, shortContracts, leapsContracts })` in `src/renderer/src/lib/pmcc-coverage.ts` (US-115 Area 9, shared with US-119). It fixes the LEAPS-only header badge that `PHASE_LABEL.PMCC_OPEN` mislabels; Area 11 uses it.
 
 Not blocking:
 
@@ -186,10 +186,10 @@ No migration.
 **Red — tests to write:**
 
 - **Floor:**
-  - `pmccFillDateFloor('2027-07-09', '2027-07-16')` gives `{ binding: 'SHORT_RETIRED', date: '2027-07-16' }`.
-  - `('2027-06-01', null)` gives `{ binding: 'LEAPS_OPEN', date: '2027-06-01' }`.
-  - A tie on `'2027-07-16'` gives `SHORT_RETIRED`, as US-115 reports its previous-short message on a tie.
-  - `('2027-07-20', '2027-07-16')` gives `LEAPS_OPEN` on `2027-07-20`.
+  - `pmccFillDateFloor({ previousShortRetiredOn: '2027-07-16', leapsFillDate: '2027-07-09' })` gives `{ kind: 'previousShort', date: '2027-07-16' }`.
+  - `{ previousShortRetiredOn: null, leapsFillDate: '2027-06-01' }` gives `{ kind: 'leaps', date: '2027-06-01' }`.
+  - A tie on `'2027-07-16'` gives `previousShort`, as US-115 reports its previous-short message on a tie.
+  - `{ previousShortRetiredOn: '2027-07-16', leapsFillDate: '2027-07-20' }` gives `leaps` on `2027-07-20`.
 - **Issues**, each asserted on `field`, `code` and `message`:
   - Sale price `'0.0000'` and `'-1.0000'` give `salePricePerShare` / `must_be_positive` / `Sale price must be greater than zero`.
   - Fees `'-1.0000'` gives `fees` / `must_be_non_negative` / `Fees cannot be negative.`; fees `'0.0000'` passes.
@@ -209,17 +209,17 @@ No migration.
 
 **Property** (`pmcc-rules.property.test.ts`, `lifecycle.property.test.ts`):
 
-- **Floor.** `floor.date` = max(leaps, retired). `binding` is `SHORT_RETIRED` exactly when `retired ≥ leaps` (ties bind on the short, as US-115).
+- **Floor.** `floor.date` = max(leaps, retired). `kind` is `previousShort` exactly when `retired ≥ leaps` (ties bind on the short, as US-115).
 - **Acceptance.** `pmccLeapsCloseIssues` is empty exactly when all of these hold: price > 0, fees ≥ 0, and `floor.date ≤ fillDate ≤ today`.
 - **Undecided.** Making any field `undefined` never adds an issue.
 - **Naked-call rule** (`closePmccLeaps`). For every input with `currentPhase: 'PMCC_OPEN'` and a non-null `openShort`, it throws code `short_call_open`. It never returns any value but `{ phase: 'PMCC_CLOSED' }`.
 
 **Green — implementation:**
 
-- `pmccFillDateFloor(leapsFillDate, lastShortRetiredOn): PmccFillDateFloor`. ISO dates compare as strings; `lastShortRetiredOn !== null && lastShortRetiredOn >= leapsFillDate` binds on the short (US-115's comparison), else on the LEAPS. If US-115 landed first, it already exists: reuse it and add only the cases above that its tests lack.
+- `pmccFillDateFloor({ previousShortRetiredOn, leapsFillDate }): PmccFillDateFloor` (US-115's signature). ISO dates compare as strings; `lastShortRetiredOn !== null && lastShortRetiredOn >= leapsFillDate` binds on the short (US-115's comparison), else on the LEAPS. If US-115 landed first, it already exists: reuse it and add only the cases above that its tests lack.
 - `pmccLeapsCloseIssues(values): PmccIssue<PmccLeapsCloseField>[]`:
   - use `issueIf` in the order above;
-  - choose the floor message with an exhaustive `switch (floor.binding)`;
+  - choose the floor message with an exhaustive `switch (floor.kind)`;
   - export the messages as `const … satisfies PmccRule` so the renderer tests can import them.
 - `closePmccLeaps(input: ClosePmccLeapsInput): ClosePmccLeapsAccepted`:
   - `requirePmccOpenPhase(input.currentPhase)`;
@@ -359,7 +359,7 @@ Areas 4 and 5 edit the same two files. Give both to one agent, Area 4 first.
 - Steps:
   1. `loadPmccRollContext(db, positionId)` → `{ detail, openLegs }`.
   2. Compute `fillDate = payload.fillDate ?? today`, `salePrice = money4(payload.salePricePerShare)` and `fees = money4(payload.fees ?? 0)`.
-  3. Compute the floor: `pmccFillDateFloor(openLegs.long.fillDate, lastShortRetiredOn(detail.legs))` — the shared helpers, no lookup of its own.
+  3. Compute the floor: `pmccFillDateFloor({ previousShortRetiredOn: lastShortRetiredOn(detail.legs), leapsFillDate: openLegs.long.fillDate })` — the shared helpers, no lookup of its own.
   4. Inside `logPmccRollRejection(positionId, 'pmcc_close_rejected', …)`, call `closePmccLeaps({ currentPhase: detail.position.phase, openShort: openLegs.short, salePricePerShare, fees, fillDate, floor, today })`.
   5. Read the ledger: `ledger = pmccLedgerFromLegs(detail.legs)`.
   6. Settle: `settlement = settlePmccClose({ salePricePerShare, contracts: openLegs.long.contracts, fees, basisTotal: ledger.basisTotal })`.
@@ -427,7 +427,7 @@ Areas 4 and 5 edit the same two files. Give both to one agent, Area 4 first.
 
 **Red — tests to write:**
 
-- **Schema.** `ctx` is `{ floor: { binding: 'SHORT_RETIRED', date: '2027-07-16' }, today: '2027-07-19' }`.
+- **Schema.** `ctx` is `{ floor: { kind: 'previousShort', date: '2027-07-16' }, today: '2027-07-19' }`.
   - Sale `0` gives an error on `salePrice`: `Sale price must be greater than zero`.
   - Fill `2027-07-15` gives an error on `fillDate`: `Fill date cannot be before the last short call was retired (2027-07-16)`.
   - Fill `2027-07-20` gives `Fill date cannot be in the future`.
@@ -600,7 +600,7 @@ The mockup is `ClosePositionSheet` and the presets `close-*`. Its anatomy:
   - `today = pmccTimeline.valuationDate`.
 - `src/renderer/src/pages/PositionDetailPage.test.tsx`
 - `src/renderer/src/pages/PositionDetailContent.tsx` and `.test.tsx`: for a PMCC whose latest snapshot has a non-null `finalPnl`, the closed banner reads `Closed on 2027-07-19 · Final P&L +$1,560.00`, in green or red by sign.
-- `PositionDetailActions.tsx`: the `PMCC_OPEN` badge reads `pmccCoverageLabel(shortCount)` (shared with US-115 / US-119; create `src/renderer/src/lib/pmcc-coverage.ts` per US-115 Area 9 if absent). `PMCC_CLOSED` keeps `PHASE_LABEL.PMCC_CLOSED`.
+- `PositionDetailActions.tsx`: the `PMCC_OPEN` badge reads `pmccCoverageLabel({ shortCount, shortContracts, leapsContracts })` (shared with US-115 / US-119; create `src/renderer/src/lib/pmcc-coverage.ts` per US-115 Area 9 if absent). `PMCC_CLOSED` keeps `PHASE_LABEL.PMCC_CLOSED`.
 - `src/renderer/src/components/position-cockpit/PmccCostBasis.tsx` and `PmccCostBasis.spec.tsx`: a `closed` prop; when set, the per-share stat is labelled `Cost basis at close / share` (research ADR "`LEAPS_CLOSE` is a settlement leg").
 - `src/renderer/src/components/position-card/PmccCard.tsx` and its test: a `closed` display labels the footer cell `Cost basis at close`.
 
@@ -611,7 +611,7 @@ The mockup is `ClosePositionSheet` and the presets `close-*`. Its anatomy:
   - `PMCC_OPEN` with LEAPS and a short shows no `close-pmcc-btn`. `roll-pmcc-short-btn` is present as a positive control.
   - `PMCC_CLOSED`, with `hasOpenLeaps` still true, shows no button at all (only the phase badge, `PMCC Closed`).
   - A click calls `onClosePmcc`.
-  - Badge: LEAPS-only `PMCC_OPEN` reads `LEAPS open · no short call` (`pmccCoverageLabel(0)`), not `LEAPS + short call open`; with a short open it reads `LEAPS + short call open`.
+  - Badge: LEAPS-only `PMCC_OPEN` reads `LEAPS open · no short call` (`pmccCoverageLabel({ shortCount: 0, shortContracts: 0, leapsContracts: 1 })`), not `LEAPS + short call open`; with a short open it reads `LEAPS + short call open`.
 - **`PositionDetailActions`, wheel.** `CSP_OPEN`, `HOLDING_SHARES`, `CC_OPEN` and `WHEEL_COMPLETE` with strategy `WHEEL` show no `close-pmcc-btn`, and each keeps its existing buttons.
 - **Page.** Clicking `Close Position →` opens the sheet with today `2027-07-19` from `pmccTimeline.valuationDate`. On success the position query is invalidated.
 - **Content.** A closed PMCC shows `Final P&L +$1,560.00` in the banner. A closed wheel's banner is unchanged.
@@ -696,31 +696,40 @@ Every PMCC test seeds through `_test:pmcc-seed-position` (research ADR "E2e seed
 11. **Reject invalid close input — fill date 2027-07-20.** Shows `Fill date cannot be in the future` beside `Fill date`; disabled.
 12. **Reject invalid close input — fees −$1.00.** Fees `-1.00` shows `Fees cannot be negative.` beside `Fees`; disabled.
 13. **The sheet works with no quote.** Relaunch with `NO_LEAPS_QUOTE` (XYZ quote only):
-   - Mid, Δ and Intrinsic · extrinsic each read `—`.
-   - The sale input is empty, and the Result card shows `Enter the sale price to preview the result.`
-   - Typing `24.10` shows `Proceeds $2,410.00 · fees $0.00 · cost basis $850.00` and `+$1,560.00`.
-   - Confirming succeeds: the position is `CLOSED`.
+
+- Mid, Δ and Intrinsic · extrinsic each read `—`.
+- The sale input is empty, and the Result card shows `Enter the sale price to preview the result.`
+- Typing `24.10` shows `Proceeds $2,410.00 · fees $0.00 · cost basis $850.00` and `+$1,560.00`.
+- Confirming succeeds: the position is `CLOSED`.
+
 14. **A failed save leaves the position open.**
-   - Install the `BEFORE INSERT ON cost_basis_snapshots … RAISE(ABORT)` trigger through `sqlite(dbPath, …)`, then confirm.
-   - `Could not close the position. Your entries are preserved. Try again.` appears, and the sale input still reads `24.10`.
-   - The DB holds no `LEAPS_CLOSE` leg, the phase is `PMCC_OPEN` / `ACTIVE` with `closed_date` null, and the snapshot count is unchanged.
-   - Close the sheet: the `Cost basis` drawer still reads `$8.50`, and `Close Position →` is still offered.
+
+- Install the `BEFORE INSERT ON cost_basis_snapshots … RAISE(ABORT)` trigger through `sqlite(dbPath, …)`, then confirm.
+- `Could not close the position. Your entries are preserved. Try again.` appears, and the sale input still reads `24.10`.
+- The DB holds no `LEAPS_CLOSE` leg, the phase is `PMCC_OPEN` / `ACTIVE` with `closed_date` null, and the snapshot count is unchanged.
+- Close the sheet: the `Cost basis` drawer still reads `$8.50`, and `Close Position →` is still offered.
+
 15. **Success state closes the loop.** After the happy-path confirm:
-   - The sheet reads `PMCC closed`, `+$1,560.00` and `held 308 days · 8 cycles · 62.2% of LEAPS cost recovered by credits`.
-   - No `annualized` and no `/yr` text appears; the positive control `Final P&L` is found.
-   - `Back to positions` lands on the list.
+
+- The sheet reads `PMCC closed`, `+$1,560.00` and `held 308 days · 8 cycles · 62.2% of LEAPS cost recovered by credits`.
+- No `annualized` and no `/yr` text appears; the positive control `Final P&L` is found.
+- `Back to positions` lands on the list.
+
 16. **The closed position renders from the terminal snapshot.** Close through the sheet, then reopen the detail page:
-   - The banner reads `Closed on 2027-07-19 · Final P&L +$1,560.00`.
-   - The header holds only the phase badge `PMCC Closed`. No `close-pmcc-btn`, `roll-pmcc-leaps-btn` or `roll-pmcc-short-btn`.
-   - The `Cost basis` drawer reads `Cost basis at close / share` `$8.50`, effective share cost `$93.50` and premium recovered `62.2%`.
-   - `Timeline summary` reads Cycles `8 · 8 closed`. `0 open` is asserted only once US-118 renders it; research Open Question 6.
-   - With `Leg timeline` expanded, the last LEAPS track row reads `Sold to close`, `$24.10` and `2027-07-19`, and the banner reads `Position closed 2027-07-19 · the timeline is complete`.
-   - The positions list shows XYZ under `position-card-closed`, with `closed — no live marks` and `Cost basis at close` `$850.00`.
-   - US-118's CLOSED lanes are a named `it.todo` until US-118 lands.
+
+- The banner reads `Closed on 2027-07-19 · Final P&L +$1,560.00`.
+- The header holds only the phase badge `PMCC Closed`. No `close-pmcc-btn`, `roll-pmcc-leaps-btn` or `roll-pmcc-short-btn`.
+- The `Cost basis` drawer reads `Cost basis at close / share` `$8.50`, effective share cost `$93.50` and premium recovered `62.2%`.
+- `Timeline summary` reads Cycles `8 · 8 closed`. `0 open` is asserted only once US-118 renders it; research Open Question 6.
+- With `Leg timeline` expanded, the last LEAPS track row reads `Sold to close`, `$24.10` and `2027-07-19`, and the banner reads `Position closed 2027-07-19 · the timeline is complete`.
+- The positions list shows XYZ under `position-card-closed`, with `closed — no live marks` and `Cost basis at close` `$850.00`.
+- US-118's CLOSED lanes are a named `it.todo` until US-118 lands.
+
 17. **The wheel is unchanged.** Open a wheel in `CSP_OPEN` with the existing helpers (`e2e/helpers.ts`):
-   - The US-4 close form (`CloseCspForm`) is present.
-   - The page contains none of `LEAPS`, `cycle` or `Effective share cost`, and has no `close-pmcc-btn`.
-   - After closing the CSP the US-4 way, there is still no `close-pmcc-btn`.
+
+- The US-4 close form (`CloseCspForm`) is present.
+- The page contains none of `LEAPS`, `cycle` or `Effective share cost`, and has no `close-pmcc-btn`.
+- After closing the CSP the US-4 way, there is still no `close-pmcc-btn`.
 
 **Green — implementation:**
 
@@ -736,25 +745,25 @@ Every PMCC test seeds through `_test:pmcc-seed-position` (research ADR "E2e seed
 
 ## AC Audit
 
-| # | Acceptance scenario (OPT-26) | E2e test |
-| --- | --- | --- |
-| 1 | Close the position by selling the LEAPS | 1 |
-| 2 | The sheet shows what is being sold and what it settles against | 2 |
-| 3 | The preview reconciles proceeds to the cost basis before confirming | 3 |
-| 4 | Fees reduce the realized figure and are counted once | 4 |
-| 5 | A losing close is allowed and shown as one | 5 |
-| 6 | Proceeds scale with contracts, per-share figures do not | 6 |
-| 7 | A LEAPS that never had a short call closes against its own cost | 7 |
-| 8 | Selling the LEAPS under an open short call is refused | 8 |
-| 9 | Reject invalid close input — sale price $0.00 | 9 |
-| 10 | Reject invalid close input — fill date 2027-07-15 | 10 |
-| 11 | Reject invalid close input — fill date 2027-07-20 | 11 |
-| 12 | Reject invalid close input — fees −$1.00 | 12 |
-| 13 | The sheet works with no quote | 13 |
-| 14 | A failed save leaves the position open | 14 |
-| 15 | Success state closes the loop | 15 |
-| 16 | The closed position renders from the terminal snapshot | 16 (US-118's CLOSED lanes and `0 open` remain `it.todo`) |
-| 17 | The wheel is unchanged | 17 |
+| #   | Acceptance scenario (OPT-26)                                        | E2e test                                                 |
+| --- | ------------------------------------------------------------------- | -------------------------------------------------------- |
+| 1   | Close the position by selling the LEAPS                             | 1                                                        |
+| 2   | The sheet shows what is being sold and what it settles against      | 2                                                        |
+| 3   | The preview reconciles proceeds to the cost basis before confirming | 3                                                        |
+| 4   | Fees reduce the realized figure and are counted once                | 4                                                        |
+| 5   | A losing close is allowed and shown as one                          | 5                                                        |
+| 6   | Proceeds scale with contracts, per-share figures do not             | 6                                                        |
+| 7   | A LEAPS that never had a short call closes against its own cost     | 7                                                        |
+| 8   | Selling the LEAPS under an open short call is refused               | 8                                                        |
+| 9   | Reject invalid close input — sale price $0.00                       | 9                                                        |
+| 10  | Reject invalid close input — fill date 2027-07-15                   | 10                                                       |
+| 11  | Reject invalid close input — fill date 2027-07-20                   | 11                                                       |
+| 12  | Reject invalid close input — fees −$1.00                            | 12                                                       |
+| 13  | The sheet works with no quote                                       | 13                                                       |
+| 14  | A failed save leaves the position open                              | 14                                                       |
+| 15  | Success state closes the loop                                       | 15                                                       |
+| 16  | The closed position renders from the terminal snapshot              | 16 (US-118's CLOSED lanes and `0 open` remain `it.todo`) |
+| 17  | The wheel is unchanged                                              | 17                                                       |
 
 Two parts of the AC depend on US-118, which is not built:
 

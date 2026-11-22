@@ -18,14 +18,14 @@ Plan: `plans/us-120/plan.md`; the area numbers below match it. Story: Linear
 
 Shared files to watch when areas run in parallel:
 
-| File | Areas |
-| --- | --- |
-| `src/main/core/types.ts`, `src/main/schemas.ts` | 1 (Layer 1), then 6 (Layer 3) |
-| `src/main/services/pmcc-ledger.ts`, `pmcc-ledger.test.ts` | 4 then 5: **one agent, in sequence** (both Layer 2) |
-| `src/main/core/costbasis.ts` | 2 (Layer 1); Area 9 only imports it |
-| `src/renderer/src/lib/phase.ts`, `api/positions.ts` | 1 (Layer 1), then 8 (Layer 5) |
-| `src/renderer/src/components/PositionDetailActions.tsx` | 11. US-115 and US-119 edit it too; rebase onto whichever lands first and keep the `phase === 'PMCC_OPEN'` gate |
-| Shared with US-115: `lastShortRetiredOn` (`pmcc-ledger.ts`), `pmccFillDateFloor` (`pmcc-rules.ts`), `pmccCoverageLabel` (`lib/pmcc-coverage.ts`) | 4, 3, 11. Reuse if US-115 landed first; create per US-115's plan otherwise. Never a second copy |
+| File                                                                                                                                             | Areas                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `src/main/core/types.ts`, `src/main/schemas.ts`                                                                                                  | 1 (Layer 1), then 6 (Layer 3)                                                                                  |
+| `src/main/services/pmcc-ledger.ts`, `pmcc-ledger.test.ts`                                                                                        | 4 then 5: **one agent, in sequence** (both Layer 2)                                                            |
+| `src/main/core/costbasis.ts`                                                                                                                     | 2 (Layer 1); Area 9 only imports it                                                                            |
+| `src/renderer/src/lib/phase.ts`, `api/positions.ts`                                                                                              | 1 (Layer 1), then 8 (Layer 5)                                                                                  |
+| `src/renderer/src/components/PositionDetailActions.tsx`                                                                                          | 11. US-115 and US-119 edit it too; rebase onto whichever lands first and keep the `phase === 'PMCC_OPEN'` gate |
+| Shared with US-115: `lastShortRetiredOn` (`pmcc-ledger.ts`), `pmccFillDateFloor` (`pmcc-rules.ts`), `pmccCoverageLabel` (`lib/pmcc-coverage.ts`) | 4, 3, 11. Reuse if US-115 landed first; create per US-115's plan otherwise. Never a second copy                |
 
 ---
 
@@ -99,9 +99,9 @@ Shared files to watch when areas run in parallel:
 - [ ] **[Red]** Write failing tests in `src/main/core/pmcc-rules.test.ts`, `pmcc-rules.property.test.ts`, `lifecycle.test.ts` and `lifecycle.property.test.ts` _(depends on: Area 1 Green ✓)_.
   - Test cases (full list in `plan.md` Area 3 Red):
     - Floor:
-      - `('2027-07-09','2027-07-16')` → `SHORT_RETIRED` on `2027-07-16`;
-      - `('2027-06-01', null)` → `LEAPS_OPEN`;
-      - a tie → `SHORT_RETIRED` (as US-115).
+      - `{ previousShortRetiredOn: '2027-07-16', leapsFillDate: '2027-07-09' }` → `previousShort` on `2027-07-16`;
+      - `{ previousShortRetiredOn: null, leapsFillDate: '2027-06-01' }` → `leaps`;
+      - a tie → `previousShort` (as US-115).
     - Issues, each asserted on field, code and the full message:
       - sale `0` → `must_be_positive`;
       - fees `-1` → `must_be_non_negative`;
@@ -117,16 +117,16 @@ Shared files to watch when areas run in parallel:
       - a wheel or `PMCC_CLOSED` phase → `invalid_phase`;
       - an open short → `short_call_open` with the story's message, even when the price is also invalid.
   - Property cases:
-    - Floor = max of the two dates; `binding` is `SHORT_RETIRED` exactly when retired ≥ LEAPS.
+    - Floor = max of the two dates; `kind` is `previousShort` exactly when retired ≥ LEAPS.
     - The issues list is empty exactly when every rule holds.
     - An `undefined` field never adds an issue.
     - Naked-call rule: any `PMCC_OPEN` input with a non-null `openShort` throws `short_call_open`.
   - Run `pnpm test src/main/core/pmcc-rules.test.ts src/main/core/pmcc-rules.property.test.ts src/main/core/lifecycle.test.ts src/main/core/lifecycle.property.test.ts`. Every new test must fail.
 - [ ] **[Green]** Implement in `src/main/core/pmcc-rules.ts` and `src/main/core/lifecycle.ts` _(depends on: Area 3 Red ✓)_.
-  - `PmccFillDateFloor`, a discriminated union on `binding`.
+  - `PmccFillDateFloor`, a discriminated union on `kind` (US-115's type).
   - `pmccFillDateFloor`, shared with US-115 (reuse it if it exists): `lastShortRetiredOn !== null && lastShortRetiredOn >= leapsFillDate` binds on the short.
   - `PmccLeapsCloseField`, a string-literal union.
-  - `pmccLeapsCloseIssues`, built from `issueIf` with an exhaustive `switch (floor.binding)`; export each message as a `satisfies PmccRule` constant.
+  - `pmccLeapsCloseIssues`, built from `issueIf` with an exhaustive `switch (floor.kind)`; export each message as a `satisfies PmccRule` constant.
   - `closePmccLeaps`: `requirePmccOpenPhase` → open-short guard → `throwIssue(first)` → `{ phase: 'PMCC_CLOSED' }`.
   - Reuse the existing `Fill date cannot be in the future` string.
   - No I/O and no logging.
@@ -355,7 +355,7 @@ Same agent as Area 4, after it.
     - Closed labels: `PmccCostBasis` `closed` → `Cost basis at close / share`; closed `PmccCard` → `Cost basis at close`; open ones keep `Cost basis / share` / `Cost basis`.
   - Run `pnpm test src/renderer/src/components/PositionDetailActions.test.tsx src/renderer/src/components/position-cockpit/PmccCostBasis.spec.tsx src/renderer/src/components/position-card src/renderer/src/pages`. Every new test must fail.
 - [ ] **[Green]** Implement in `PositionDetailActions.tsx`, `usePositionDetailSheets.ts`, `PositionDetailPage.tsx`, `PositionDetailContent.tsx`, `PmccCostBasis.tsx` and `PmccCard.tsx` _(depends on: Area 11 Red ✓)_.
-  - `PhaseBadge label={pmccCoverageLabel(...)}` for `PMCC_OPEN` (create `lib/pmcc-coverage.ts` per US-115 Area 9 if absent); `PMCC_CLOSED` keeps `PHASE_LABEL`.
+  - `PhaseBadge label={pmccCoverageLabel({ shortCount, shortContracts, leapsContracts })}` for `PMCC_OPEN` (create `lib/pmcc-coverage.ts` per US-115 Area 9 if absent); `PMCC_CLOSED` keeps `PHASE_LABEL`.
   - The "at close" basis labels on closed surfaces.
   - Gate every PMCC button on `phase === 'PMCC_OPEN'`.
   - Add the `onClosePmcc` prop and the `closePmcc` sheet kind.

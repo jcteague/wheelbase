@@ -5,20 +5,20 @@ No migration. Every column used exists: `positions.phase` / `status` / `closed_d
 
 ## 1. Vocabulary changes (`src/main/core/types.ts`, `src/main/schemas.ts`)
 
-| Name | Change | Value |
-| --- | --- | --- |
-| `WheelPhase` (Zod enum) | add | `'PMCC_CLOSED'` (after `'PMCC_OPEN'`) — Resolved: confirmed by options-expert review, John approved 2026-11-22 |
-| `PmccPhase` | widen | `Extract<WheelPhase, 'PMCC_OPEN' \| 'PMCC_CLOSED'>` |
-| `PmccOpenPhase` | new | `Extract<PmccPhase, 'PMCC_OPEN'>` — what every PMCC write guard accepts |
-| `PmccClosedPhase` | new | `Extract<PmccPhase, 'PMCC_CLOSED'>` — what `closePmccLeaps` returns (US-111 returns it too) |
-| `PmccSettlementLegRole` | new | `Extract<PmccLegRole, 'LEAPS_CLOSE'>` |
-| `PmccBasisLegRole` | new | `Exclude<PmccLegRole, PmccSettlementLegRole>` |
-| `isPmccBasisLegRole(role)` | new guard | `isPmccLegRole(role) && role !== 'LEAPS_CLOSE'` |
-| `PmccTriggerEvent` (Zod enum) | add | `'PMCC_LEAPS_CLOSED'` — Assumption (pending John) |
-| `PmccTerminalTriggerEvent` | new | `Extract<PmccTriggerEvent, 'PMCC_LEAPS_CLOSED'>` (US-111 widens it) |
-| `KNOWN_PMCC_PHASES` (`src/main/pmcc-phase.ts`) | add | `PMCC_CLOSED: true` (forced by `Record<PmccPhase, true>`) |
-| Renderer `WheelPhase` mirror (`src/renderer/src/api/positions.ts`) | add | `'PMCC_CLOSED'` |
-| `PHASE_TOKEN` / `PHASE_COLOR` / `PHASE_LABEL` / `PHASE_LABEL_SHORT` (`src/renderer/src/lib/phase.ts`) | add | `'text-muted'` / its hex / `'PMCC Closed'` / `'Closed'` (forced by `Record<WheelPhase, …>`) |
+| Name                                                                                                  | Change    | Value                                                                                                          |
+| ----------------------------------------------------------------------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------- |
+| `WheelPhase` (Zod enum)                                                                               | add       | `'PMCC_CLOSED'` (after `'PMCC_OPEN'`) — Resolved: confirmed by options-expert review, John approved 2026-11-22 |
+| `PmccPhase`                                                                                           | widen     | `Extract<WheelPhase, 'PMCC_OPEN' \| 'PMCC_CLOSED'>`                                                            |
+| `PmccOpenPhase`                                                                                       | new       | `Extract<PmccPhase, 'PMCC_OPEN'>` — what every PMCC write guard accepts                                        |
+| `PmccClosedPhase`                                                                                     | new       | `Extract<PmccPhase, 'PMCC_CLOSED'>` — what `closePmccLeaps` returns (US-111 returns it too)                    |
+| `PmccSettlementLegRole`                                                                               | new       | `Extract<PmccLegRole, 'LEAPS_CLOSE'>`                                                                          |
+| `PmccBasisLegRole`                                                                                    | new       | `Exclude<PmccLegRole, PmccSettlementLegRole>`                                                                  |
+| `isPmccBasisLegRole(role)`                                                                            | new guard | `isPmccLegRole(role) && role !== 'LEAPS_CLOSE'`                                                                |
+| `PmccTriggerEvent` (Zod enum)                                                                         | add       | `'PMCC_LEAPS_CLOSED'` — Assumption (pending John)                                                              |
+| `PmccTerminalTriggerEvent`                                                                            | new       | `Extract<PmccTriggerEvent, 'PMCC_LEAPS_CLOSED'>` (US-111 widens it)                                            |
+| `KNOWN_PMCC_PHASES` (`src/main/pmcc-phase.ts`)                                                        | add       | `PMCC_CLOSED: true` (forced by `Record<PmccPhase, true>`)                                                      |
+| Renderer `WheelPhase` mirror (`src/renderer/src/api/positions.ts`)                                    | add       | `'PMCC_CLOSED'`                                                                                                |
+| `PHASE_TOKEN` / `PHASE_COLOR` / `PHASE_LABEL` / `PHASE_LABEL_SHORT` (`src/renderer/src/lib/phase.ts`) | add       | `'text-muted'` / its hex / `'PMCC Closed'` / `'Closed'` (forced by `Record<WheelPhase, …>`)                    |
 
 `PMCC_LEAPS_ONLY` is **not** added (research ADR "Terminal phase").
 
@@ -36,21 +36,21 @@ than computing the date again. `pmccFillDateFloor` encodes US-115's comparison
 ```typescript
 /** Which earlier event bounds a fill date, and its date. */
 export type PmccFillDateFloor =
-  | { binding: 'LEAPS_OPEN'; date: string } // the held LEAPS' fill (incl. a LEAPS roll's buy)
-  | { binding: 'SHORT_RETIRED'; date: string } // lastShortRetiredOn(legs)
+  | { kind: 'leaps'; date: string } // the held LEAPS' fill (incl. a LEAPS roll's buy)
+  | { kind: 'previousShort'; date: string } // lastShortRetiredOn(legs)
 
 /** The later of the two; a tie binds on the short (as US-115). `lastShortRetiredOn` is null with no cycle. */
-export function pmccFillDateFloor(
-  leapsFillDate: string,
-  lastShortRetiredOn: string | null
-): PmccFillDateFloor
+export function pmccFillDateFloor(input: {
+  previousShortRetiredOn: string | null
+  leapsFillDate: string
+}): PmccFillDateFloor
 ```
 
-| XYZ Background | `leapsFillDate` | `lastShortRetiredOn` | Floor |
-| --- | --- | --- | --- |
-| After cycle 8 expired | `2027-07-09` (LEAPS roll's buy) | `2027-07-16` | `{ SHORT_RETIRED, 2027-07-16 }` |
-| LEAPS only | `2027-06-01` | `null` | `{ LEAPS_OPEN, 2027-06-01 }` |
-| Same day | `2027-07-16` | `2027-07-16` | `{ SHORT_RETIRED, 2027-07-16 }` (tie, as US-115) |
+| XYZ Background        | `leapsFillDate`                 | `lastShortRetiredOn` | Floor                                            |
+| --------------------- | ------------------------------- | -------------------- | ------------------------------------------------ |
+| After cycle 8 expired | `2027-07-09` (LEAPS roll's buy) | `2027-07-16`         | `{ previousShort, 2027-07-16 }`                  |
+| LEAPS only            | `2027-06-01`                    | `null`               | `{ leaps, 2027-06-01 }`                          |
+| Same day              | `2027-07-16`                    | `2027-07-16`         | `{ previousShort, 2027-07-16 }` (tie, as US-115) |
 
 ### 2.2 Rule list (`src/main/core/pmcc-rules.ts`)
 
@@ -118,16 +118,16 @@ input or a contract count that is not a positive integer (same guard as `sharesF
 
 ### 3.1 `legs` — the terminal leg
 
-| Column | Value | XYZ |
-| --- | --- | --- |
-| `leg_role` | `'LEAPS_CLOSE'` | |
-| `action` | `'SELL'` | |
-| `instrument_type` | `'CALL'` | |
-| `strike` / `expiration` / `contracts` | `currentLeapsLeg(legs)`'s | `85.0000` / `2028-01-21` / `1` |
-| `premium_per_contract`, `fill_price` | `money4(salePricePerShare)` | `24.1000` |
-| `fill_date` | `payload.fillDate ?? today` | `2027-07-19` |
-| `fees` | `money4(payload.fees ?? 0)` | `0.0000` (`0.6500` in the fees scenario) |
-| `roll_chain_id` | `NULL` | |
+| Column                                | Value                       | XYZ                                      |
+| ------------------------------------- | --------------------------- | ---------------------------------------- |
+| `leg_role`                            | `'LEAPS_CLOSE'`             |                                          |
+| `action`                              | `'SELL'`                    |                                          |
+| `instrument_type`                     | `'CALL'`                    |                                          |
+| `strike` / `expiration` / `contracts` | `currentLeapsLeg(legs)`'s   | `85.0000` / `2028-01-21` / `1`           |
+| `premium_per_contract`, `fill_price`  | `money4(salePricePerShare)` | `24.1000`                                |
+| `fill_date`                           | `payload.fillDate ?? today` | `2027-07-19`                             |
+| `fees`                                | `money4(payload.fees ?? 0)` | `0.0000` (`0.6500` in the fees scenario) |
+| `roll_chain_id`                       | `NULL`                      |                                          |
 
 ### 3.2 `positions`
 
@@ -139,13 +139,13 @@ UPDATE positions
 
 ### 3.3 `cost_basis_snapshots` — via `appendPmccSnapshot`, last
 
-| Column | Value | XYZ |
-| --- | --- | --- |
-| `basis_per_share` | `pmccLedgerFromLegs(legs).basisPerShare` — **unchanged by the sale** | `8.5000` |
-| `total_premium_collected` | `.shortCreditsTotal` | `1400.0000` |
-| `final_pnl` | `settlePmccClose(...).finalPnl` | `1560.0000` (`1559.3500` with fees) |
-| `trigger_event` | `'PMCC_LEAPS_CLOSED'` | |
-| `snapshot_at` | `fill_date` | `2027-07-19` |
+| Column                    | Value                                                                | XYZ                                 |
+| ------------------------- | -------------------------------------------------------------------- | ----------------------------------- |
+| `basis_per_share`         | `pmccLedgerFromLegs(legs).basisPerShare` — **unchanged by the sale** | `8.5000`                            |
+| `total_premium_collected` | `.shortCreditsTotal`                                                 | `1400.0000`                         |
+| `final_pnl`               | `settlePmccClose(...).finalPnl`                                      | `1560.0000` (`1559.3500` with fees) |
+| `trigger_event`           | `'PMCC_LEAPS_CLOSED'`                                                |                                     |
+| `snapshot_at`             | `fill_date`                                                          | `2027-07-19`                        |
 
 `appendPmccSnapshot` signature after this story:
 
@@ -173,8 +173,8 @@ compile unchanged; their `finalPnl: null` result types still hold.
 
 ## 4. Ledger change (US-103 rule)
 
-| Leg | Before | After |
-| --- | --- | --- |
+| Leg                        | Before                                          | After               |
+| -------------------------- | ----------------------------------------------- | ------------------- |
 | `LEAPS_CLOSE` `SELL` 24.10 | `{ side: 'LONG', cashPerShare: '-24.1000', … }` | **no contribution** |
 
 - `PMCC_LEG_SIDE: Record<PmccBasisLegRole, PmccLedgerSide>` (drops `LEAPS_CLOSE`).
@@ -189,17 +189,17 @@ Reads after the XYZ close: `basisPerShare 8.5000`, `basisTotal 850.0000`,
 
 ## 5. Validation rules (from the acceptance criteria), checked in this order
 
-| # | Rule | Field | Code | Message |
-| --- | --- | --- | --- | --- |
-| 1 | Position exists | `__root__` | `not_found` | `Position not found` |
-| 2 | Strategy is PMCC and phase is `PMCC_OPEN` | `__phase__` | `invalid_phase` | `Position is not in PMCC_OPEN phase` |
-| 3 | A LEAPS is held | `__root__` | `no_active_leg` | `Position has no active leg` (existing `requirePmccOpenLegs`) |
-| 4 | No short call is open | `__root__` | `short_call_open` | `This PMCC has an open short call — selling the LEAPS would leave it naked. Retire or roll the short call first.` |
-| 5 | Sale price > 0 | `salePricePerShare` | `must_be_positive` | `Sale price must be greater than zero` |
-| 6 | Fees ≥ 0 | `fees` | `must_be_non_negative` | `Fees cannot be negative.` |
-| 7a | Fill date ≥ floor, floor binds on LEAPS (LEAPS bought later) | `fillDate` | `before_leaps_open` | `Fill date cannot be before the LEAPS was bought (YYYY-MM-DD)` |
-| 7b | Fill date ≥ floor, floor binds on short (later, or a tie) | `fillDate` | `before_short_retired` | `Fill date cannot be before the last short call was retired (YYYY-MM-DD)` |
-| 8 | Fill date ≤ today (New York) | `fillDate` | `cannot_be_future` | `Fill date cannot be in the future` |
+| #   | Rule                                                         | Field               | Code                   | Message                                                                                                           |
+| --- | ------------------------------------------------------------ | ------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 1   | Position exists                                              | `__root__`          | `not_found`            | `Position not found`                                                                                              |
+| 2   | Strategy is PMCC and phase is `PMCC_OPEN`                    | `__phase__`         | `invalid_phase`        | `Position is not in PMCC_OPEN phase`                                                                              |
+| 3   | A LEAPS is held                                              | `__root__`          | `no_active_leg`        | `Position has no active leg` (existing `requirePmccOpenLegs`)                                                     |
+| 4   | No short call is open                                        | `__root__`          | `short_call_open`      | `This PMCC has an open short call — selling the LEAPS would leave it naked. Retire or roll the short call first.` |
+| 5   | Sale price > 0                                               | `salePricePerShare` | `must_be_positive`     | `Sale price must be greater than zero`                                                                            |
+| 6   | Fees ≥ 0                                                     | `fees`              | `must_be_non_negative` | `Fees cannot be negative.`                                                                                        |
+| 7a  | Fill date ≥ floor, floor binds on LEAPS (LEAPS bought later) | `fillDate`          | `before_leaps_open`    | `Fill date cannot be before the LEAPS was bought (YYYY-MM-DD)`                                                    |
+| 7b  | Fill date ≥ floor, floor binds on short (later, or a tie)    | `fillDate`          | `before_short_retired` | `Fill date cannot be before the last short call was retired (YYYY-MM-DD)`                                         |
+| 8   | Fill date ≤ today (New York)                                 | `fillDate`          | `cannot_be_future`     | `Fill date cannot be in the future`                                                                               |
 
 Rules 1 and 3 are the service guards `loadPmccRollContext` / `requirePmccOpenLegs` (reused, not
 restated); 2 and 4 are in `closePmccLeaps` (a closed PMCC still has `pmccOpenLegs`, so its
@@ -257,16 +257,16 @@ Builders: `closePmccLeapsCard`, `closePmccPositionCard`, `closePmccResult` (call
 
 ## 7. Reference figures (the story's Background, verified)
 
-| Case | Inputs | Proceeds | Fees | Basis | Final P&L | % of basis |
-| --- | --- | --- | --- | --- | --- | --- |
-| Happy path | 24.10 × 1, fees 0 | `2410.0000` | `0.0000` | `850.0000` | `1560.0000` | `183.5294` |
-| Fees | 24.10 × 1, fees 0.65 | `2410.0000` | `0.6500` | `850.0000` | `1559.3500` | `183.4529` |
-| Losing | 6.40 × 1 | `640.0000` | `0.0000` | `850.0000` | `-210.0000` | `-24.7059` |
-| Losing, no credits | 15.00 × 1, `LEAPS_ONLY` basis 19.80 | `1500.0000` | `0.0000` | `1980.0000` | `-480.0000` | `-24.2424` (loss note `null`: credits 0) |
-| 3 contracts | 24.10 × 3 | `7230.0000` | `0.0000` | `2550.0000` | `4680.0000` | `183.5294` |
-| No cycles | 21.00 × 1, basis 19.80 | `2100.0000` | `0.0000` | `1980.0000` | `120.0000` | `6.0606` |
-| LEAPS leg alone (trap) | 24.10 − 22.50 | — | — | — | `+$160.00` must **not** appear | — |
-| Rounding | 20.0001 × 1, fees 0.0090, basis 2000.0000 | `2000.0100` (settlement cash `2000.0010`) | `0.0090` | `2000.0000` | `0.0010` | `0.0001` (0.00005 rounds up; `ROUND_HALF_EVEN` would give `0.0000`) |
+| Case                   | Inputs                                    | Proceeds                                  | Fees     | Basis       | Final P&L                      | % of basis                                                          |
+| ---------------------- | ----------------------------------------- | ----------------------------------------- | -------- | ----------- | ------------------------------ | ------------------------------------------------------------------- |
+| Happy path             | 24.10 × 1, fees 0                         | `2410.0000`                               | `0.0000` | `850.0000`  | `1560.0000`                    | `183.5294`                                                          |
+| Fees                   | 24.10 × 1, fees 0.65                      | `2410.0000`                               | `0.6500` | `850.0000`  | `1559.3500`                    | `183.4529`                                                          |
+| Losing                 | 6.40 × 1                                  | `640.0000`                                | `0.0000` | `850.0000`  | `-210.0000`                    | `-24.7059`                                                          |
+| Losing, no credits     | 15.00 × 1, `LEAPS_ONLY` basis 19.80       | `1500.0000`                               | `0.0000` | `1980.0000` | `-480.0000`                    | `-24.2424` (loss note `null`: credits 0)                            |
+| 3 contracts            | 24.10 × 3                                 | `7230.0000`                               | `0.0000` | `2550.0000` | `4680.0000`                    | `183.5294`                                                          |
+| No cycles              | 21.00 × 1, basis 19.80                    | `2100.0000`                               | `0.0000` | `1980.0000` | `120.0000`                     | `6.0606`                                                            |
+| LEAPS leg alone (trap) | 24.10 − 22.50                             | —                                         | —        | —           | `+$160.00` must **not** appear | —                                                                   |
+| Rounding               | 20.0001 × 1, fees 0.0090, basis 2000.0000 | `2000.0100` (settlement cash `2000.0010`) | `0.0090` | `2000.0000` | `0.0010`                       | `0.0001` (0.00005 rounds up; `ROUND_HALF_EVEN` would give `0.0000`) |
 
 Day counts: held 2026-09-14 → 2027-07-19 = **308**; DTE 2027-07-19 → 2028-01-21 = **186**;
 recovered 14.00 ÷ 22.50 = **62.2%**; intrinsic 103.10 − 85.00 = **18.10**; extrinsic
@@ -274,18 +274,18 @@ recovered 14.00 ÷ 22.50 = **62.2%**; intrinsic 103.10 − 85.00 = **18.10**; ex
 
 ## Type Design
 
-| Type | File | Construct | What it buys |
-| --- | --- | --- | --- |
-| `PmccPhase` / `PmccOpenPhase` / `PmccClosedPhase` | `src/main/core/types.ts` | `Extract<WheelPhase, …>` chain | The terminal phase is a `WheelPhase` value, so `KNOWN_PMCC_PHASES` and the four renderer `Record<WheelPhase, …>` maps fail to compile until they name it; `closePmccLeaps` cannot return an open phase |
-| `PmccSettlementLegRole` / `PmccBasisLegRole` | `src/main/core/types.ts` | `Extract` / `Exclude` over `PmccLegRole` | `PMCC_LEG_SIDE: Record<PmccBasisLegRole, …>` cannot map `LEAPS_CLOSE`, and `legContribution` cannot be called with one, so "the sale is folded into the basis" does not type-check |
-| `PmccTimelineEvent` `LEAPS_CLOSE` member | `src/main/core/pmcc-timeline-types.ts` | Union member without `LedgerEventBase` | The replay cannot append a sale's contribution — there is none to append |
-| `PmccFillDateFloor` | `src/main/core/pmcc-rules.ts` | Discriminated union on `binding` | The message is chosen by `switch (floor.binding)`; "a floor with no reason" is unrepresentable, and an exhaustive switch catches a third bound (US-111). Shared with US-115, so the tie-break lives in one place |
-| `PmccLeapsCloseField` | `src/main/core/pmcc-rules.ts` | String-literal union | The renderer's server-error routing (`Record<CloseErrorField, keyof ClosePmccFormValues>`) fails to compile on a missing or misspelled field |
-| `PmccIssue<PmccLeapsCloseField>` | `src/main/core/pmcc-rules.ts` | Existing generic | Engine and form share one issue shape |
-| `PmccTerminalTriggerEvent` | `src/main/schemas.ts` | `Extract<PmccTriggerEvent, …>` | Names the triggers that close a PMCC once; US-111 widens it |
-| `AppendPmccSnapshotOptions<T>` / `AppendedPmccSnapshot<T>` | `src/main/services/pmcc-ledger.ts` | Conditional types over `T extends PmccTerminalTriggerEvent` | A terminal snapshot without `final_pnl`, or an open-position snapshot with one, does not type-check; the result's `finalPnl` is `string` exactly when terminal, so `ClosePmccPositionResult` needs no cast |
-| `ClosePmccPositionResult` | `src/main/schemas.ts` | Interface with literal members (`phase: PmccClosedPhase`, `status: 'CLOSED'`, `costBasisSnapshot: … & { triggerEvent: 'PMCC_LEAPS_CLOSED'; finalPnl: string }`) | The renderer's success state reads a non-null final P&L without a fallback |
-| `ClosePmccPayload` | `src/main/schemas.ts` | `z.infer` of `ClosePmccPayloadSchema` | The preload typing and the handler share one shape |
-| `PmccCloseSettlement.percentOfBasis` | `src/main/core/costbasis.ts` | `string \| null` | "Percent of a non-positive basis" cannot be rendered by accident |
-| `ClosePmccResultView` | `src/renderer/src/lib/pmcc-close-view.ts` | Object `\| null` | Unpriced → one null check in the component; every figure exists together or not at all |
-| `ClosePmccLeapsCard`, `ClosePmccPositionCard`, `ClosePmccSuccessView`, `ClosePmccFormValues` | renderer | Plain object types | Plain types — no advanced constructs needed |
+| Type                                                                                         | File                                      | Construct                                                                                                                                                       | What it buys                                                                                                                                                                                                  |
+| -------------------------------------------------------------------------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PmccPhase` / `PmccOpenPhase` / `PmccClosedPhase`                                            | `src/main/core/types.ts`                  | `Extract<WheelPhase, …>` chain                                                                                                                                  | The terminal phase is a `WheelPhase` value, so `KNOWN_PMCC_PHASES` and the four renderer `Record<WheelPhase, …>` maps fail to compile until they name it; `closePmccLeaps` cannot return an open phase        |
+| `PmccSettlementLegRole` / `PmccBasisLegRole`                                                 | `src/main/core/types.ts`                  | `Extract` / `Exclude` over `PmccLegRole`                                                                                                                        | `PMCC_LEG_SIDE: Record<PmccBasisLegRole, …>` cannot map `LEAPS_CLOSE`, and `legContribution` cannot be called with one, so "the sale is folded into the basis" does not type-check                            |
+| `PmccTimelineEvent` `LEAPS_CLOSE` member                                                     | `src/main/core/pmcc-timeline-types.ts`    | Union member without `LedgerEventBase`                                                                                                                          | The replay cannot append a sale's contribution — there is none to append                                                                                                                                      |
+| `PmccFillDateFloor`                                                                          | `src/main/core/pmcc-rules.ts`             | Discriminated union on `kind` (US-115's type)                                                                                                                   | The message is chosen by `switch (floor.kind)`; "a floor with no reason" is unrepresentable, and an exhaustive switch catches a third bound (US-111). Shared with US-115, so the tie-break lives in one place |
+| `PmccLeapsCloseField`                                                                        | `src/main/core/pmcc-rules.ts`             | String-literal union                                                                                                                                            | The renderer's server-error routing (`Record<CloseErrorField, keyof ClosePmccFormValues>`) fails to compile on a missing or misspelled field                                                                  |
+| `PmccIssue<PmccLeapsCloseField>`                                                             | `src/main/core/pmcc-rules.ts`             | Existing generic                                                                                                                                                | Engine and form share one issue shape                                                                                                                                                                         |
+| `PmccTerminalTriggerEvent`                                                                   | `src/main/schemas.ts`                     | `Extract<PmccTriggerEvent, …>`                                                                                                                                  | Names the triggers that close a PMCC once; US-111 widens it                                                                                                                                                   |
+| `AppendPmccSnapshotOptions<T>` / `AppendedPmccSnapshot<T>`                                   | `src/main/services/pmcc-ledger.ts`        | Conditional types over `T extends PmccTerminalTriggerEvent`                                                                                                     | A terminal snapshot without `final_pnl`, or an open-position snapshot with one, does not type-check; the result's `finalPnl` is `string` exactly when terminal, so `ClosePmccPositionResult` needs no cast    |
+| `ClosePmccPositionResult`                                                                    | `src/main/schemas.ts`                     | Interface with literal members (`phase: PmccClosedPhase`, `status: 'CLOSED'`, `costBasisSnapshot: … & { triggerEvent: 'PMCC_LEAPS_CLOSED'; finalPnl: string }`) | The renderer's success state reads a non-null final P&L without a fallback                                                                                                                                    |
+| `ClosePmccPayload`                                                                           | `src/main/schemas.ts`                     | `z.infer` of `ClosePmccPayloadSchema`                                                                                                                           | The preload typing and the handler share one shape                                                                                                                                                            |
+| `PmccCloseSettlement.percentOfBasis`                                                         | `src/main/core/costbasis.ts`              | `string \| null`                                                                                                                                                | "Percent of a non-positive basis" cannot be rendered by accident                                                                                                                                              |
+| `ClosePmccResultView`                                                                        | `src/renderer/src/lib/pmcc-close-view.ts` | Object `\| null`                                                                                                                                                | Unpriced → one null check in the component; every figure exists together or not at all                                                                                                                        |
+| `ClosePmccLeapsCard`, `ClosePmccPositionCard`, `ClosePmccSuccessView`, `ClosePmccFormValues` | renderer                                  | Plain object types                                                                                                                                              | Plain types — no advanced constructs needed                                                                                                                                                                   |
