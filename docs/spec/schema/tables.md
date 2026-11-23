@@ -1,6 +1,6 @@
 # Database Tables
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-35,us-37,us-44,us-50,us-121,us-101,us-103,us-104,us-105 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-35,us-37,us-44,us-50,us-121,us-101,us-103,us-104,us-105,us-115 -->
 
 ## Overview
 
@@ -36,8 +36,8 @@ and `cost_basis_snapshots.trigger_event` are plain `TEXT` whose vocabulary is
 enforced by the Zod/TypeScript enums, which is why new values (the wheel
 roles, the PMCC roles and PMCC trigger events of US-101 / US-103) ship
 without a migration. The same holds for new row conventions: US-104's PMCC
-short-call roll and US-105's PMCC LEAPS roll write only existing columns and
-values.
+short-call roll, US-105's PMCC LEAPS roll and US-115's subsequent short
+call write only existing columns and values.
 
 Migrations are SQL files in `migrations/` discovered by filename order via
 `src/main/db/migrate.ts`. See [Migrations](./migrations.md) for the change
@@ -47,7 +47,7 @@ and [Cost Basis](../domain/cost-basis.md) for how snapshots are produced.
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-57-58,us-101,us-104,us-105 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-57-58,us-101,us-104,us-105,us-115 -->
 
 ## `positions`
 
@@ -113,10 +113,14 @@ list view can render an "Active" / "Closed" split.
 - **Roll PMCC LEAPS** (US-105): no UPDATE either — `phase` stays
   `PMCC_OPEN`; any open short call is untouched. Driven by
   [us-105 — Roll the PMCC LEAPS](../features/us-105-roll-pmcc-leaps.md).
+- **Sell a subsequent PMCC short call** (US-115): no UPDATE — `phase` stays
+  `PMCC_OPEN`, `status` `ACTIVE`. There is no LEAPS-only phase: whether a
+  short is open is derived from the legs, never stored on this row. Driven by
+  [us-115 — Sell a subsequent PMCC short call](../features/us-115-sell-subsequent-pmcc-short-call.md).
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-101,us-103,us-104,us-105 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-101,us-103,us-104,us-105,us-115 -->
 
 ## `legs`
 
@@ -301,7 +305,7 @@ feature in [the feature pages](../features/); the common shape is:
 - Later PMCC leg events (row shapes fixed by US-103's ledger, written by
   the consumer stories): every PMCC leg is `instrument_type='CALL'`; the
   side comes from `leg_role`, the direction from `action` —
-  `SHORT_CALL_OPEN` `SELL` (subsequent short, US-115), `SHORT_CALL_CLOSE`
+  `SHORT_CALL_OPEN` `SELL` (subsequent short, US-115 — shipped, below), `SHORT_CALL_CLOSE`
   `BUY` and `SHORT_CALL_EXPIRED` `EXPIRE` with premium `0` (US-119),
   `SHORT_CALL_ASSIGNED` `ASSIGN` with premium `0` (US-111), `LEAPS_CLOSE`
   `SELL` (US-120). PMCC rolls are an ordinary `ROLL_FROM` / `ROLL_TO` pair
@@ -348,17 +352,37 @@ feature in [the feature pages](../features/); the common shape is:
   uses too. Driven by
   [us-105 — Roll the PMCC LEAPS](../features/us-105-roll-pmcc-leaps.md).
 
+- Subsequent PMCC short call `SHORT_CALL_OPEN` (US-115,
+  `sellPmccShortPosition`): **one** row, not a pair — `action='SELL'`,
+  `instrument_type='CALL'`, `roll_chain_id=NULL`, `strike` / `expiration` /
+  `contracts` from the payload (`contracts` 1 … the live LEAPS count; fewer
+  is partial coverage), `premium_per_contract` = `fill_price` = the actual
+  sale price per share (`money4`), `fees` = the entered fees (`money4`,
+  default `0.0000`), `fill_date` default today (Eastern). Built the way
+  `insertPmccLeg` builds US-101's short leg and written through
+  `insertLegRow`, so US-103's ledger reads it as
+  `{ side: 'SHORT', cashPerShare: −fillPrice }` and the timeline as a
+  `SHORT_OPEN` event that starts a new cycle (cycle number = count of
+  `SHORT_CALL_OPEN` rows, `nextPmccCycleNumber`). Written only when no short
+  is open, so at most one open short per PMCC. Its `fill_date` may not
+  precede the latest `fill_date` of a `SHORT_CALL_EXPIRED` /
+  `SHORT_CALL_CLOSE` / `SHORT_CALL_ASSIGNED` row (`lastShortRetiredOn`) or
+  the live LEAPS' fill. The row and its `PMCC_SHORT_OPEN` snapshot are
+  written in one transaction; a failed snapshot rolls the leg back. No new
+  `leg_role` value, no migration. Driven by
+  [us-115 — Sell a subsequent PMCC short call](../features/us-115-sell-subsequent-pmcc-short-call.md).
+
 **One full-column insert helper.** `insertLegRow(db, leg: LegRecord)`
 (`src/main/services/leg-rows.ts`, US-104) is the single INSERT built from
 the same column list `readLegs` maps back — the inverse of the reader. Both
-PMCC roll services (through `recordPmccRoll`), `createPmccPosition`'s `insertPmccLeg`, the PMCC unit
+PMCC roll services (through `recordPmccRoll`), the US-115 sell-short service, `createPmccPosition`'s `insertPmccLeg`, the PMCC unit
 fixtures and the `_test:pmcc-record-leg-event` seam all go through it. The
 wheel open / roll services keep their own literal INSERTs, since they never
 build a `LegRecord` first.
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-101,us-103,us-104,us-105 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-12-refactor,us-14,us-33,us-101,us-103,us-104,us-105,us-115 -->
 
 ## `cost_basis_snapshots`
 
@@ -399,6 +423,7 @@ audit trail of how basis evolved over the life of the wheel.
 | PMCC open (US-101)                           | Yes                     | `NULL`                                                             |
 | Roll PMCC short call (US-104)                | Yes — `PMCC_SHORT_ROLL` | `NULL`                                                             |
 | Roll PMCC LEAPS (US-105)                     | Yes — `PMCC_LEAPS_ROLL` | `NULL`                                                             |
+| Sell subsequent PMCC short call (US-115)     | Yes — `PMCC_SHORT_OPEN` | `NULL`                                                             |
 | Any later PMCC leg event (US-103 convention) | Yes — one row per event | `NULL` (terminal PMCC P&L is US-111 / US-120)                      |
 
 The two "no snapshot" cases are deliberate: at CC close / CC expiry the
@@ -462,6 +487,20 @@ after a $2.50 credit roll from `21.8000`, `total_premium_collected`
 unchanged at `320.0000` (a LEAPS roll moves no short credit), `final_pnl`
 `NULL`. Driven by
 [us-105 — Roll the PMCC LEAPS](../features/us-105-roll-pmcc-leaps.md).
+
+US-115's subsequent short call is the first production writer of
+`PMCC_SHORT_OPEN` (until then only the dev-only `_test:pmcc-record-leg-event`
+seam wrote it): one row per sale, by `appendPmccSnapshot(db, positionId,
+{ triggerEvent: 'PMCC_SHORT_OPEN', eventDate: fillDate, now })` in the same
+transaction as the leg. `basis_per_share` is the ledger over every leg —
+`6.5500` after a $1.95 sale from `8.5000` on one LEAPS contract (`7.8500`
+when the same contract is sold against three LEAPS contracts, the credit
+prorated over all of them) — and it equals the renderer's
+`projectPmccLedger` preview exactly, because both sum 4-dp dollar totals.
+`total_premium_collected` = `shortCreditsTotal` (`1400.0000 + 195.0000 =
+1595.0000` in that example), `final_pnl` `NULL`,
+`snapshot_at = makeSnapshotAt(fillDate)`. Driven by
+[us-115 — Sell a subsequent PMCC short call](../features/us-115-sell-subsequent-pmcc-short-call.md).
 
 ### Tie-breaking on simultaneous snapshots
 

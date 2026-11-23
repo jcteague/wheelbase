@@ -2,6 +2,9 @@
 import type { FieldValues, Path, UseFormSetError } from 'react-hook-form'
 import { ipcFieldErrorsOf, type ApiError } from '../api/error'
 
+/** The IPC envelope's code for an unexpected failure (`handleIpcCall`). */
+const INTERNAL_ERROR = 'internal_error'
+
 export type IpcFieldErrorRouting<T extends FieldValues> = {
   /** The form path an IPC field error belongs on, or `null` when it has none. */
   target: (field: string) => Path<T> | null
@@ -10,6 +13,7 @@ export type IpcFieldErrorRouting<T extends FieldValues> = {
   /**
    * Show an unplaceable field error's own message as `root.save` instead of `saveMessage`,
    * for a form whose server rejections (a phase or not-found guard) are written for the trader.
+   * An `internal_error` (a storage failure) is never written for the trader: it keeps `saveMessage`.
    */
   showUnplacedMessages?: boolean
 }
@@ -27,7 +31,9 @@ export function applyIpcFieldErrors<T extends FieldValues>(
   fieldErrors.forEach((fe) => {
     const path = target(fe.field)
     if (path === null)
-      setError('root.save', { message: showUnplacedMessages ? fe.message : saveMessage })
+      setError('root.save', {
+        message: showUnplacedMessages && fe.code !== INTERNAL_ERROR ? fe.message : saveMessage
+      })
     else setError(path, { message: fe.message })
   })
 }

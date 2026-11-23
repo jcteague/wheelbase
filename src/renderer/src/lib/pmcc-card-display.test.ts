@@ -846,7 +846,10 @@ describe('derivePmccCardDisplay — two short calls against one LEAPS', () => {
 describe('derivePmccCardDisplay — partial coverage', () => {
   it('states how many LEAPS contracts are covered and marks the uncovered ones too', () => {
     const display = openDisplay(XYZ_PARTIAL_COVERAGE, BG_SNAPSHOTS)
-    expect(display.coverage).toBe('1 of 3 covered')
+    expect(display).toMatchObject({
+      state: 'LEAPS + short call open · 1 of 3 covered',
+      coverage: '3 × 100 sh'
+    })
     expect(display.pnl).toEqual({
       amount: '+$1,380.00',
       tone: 'gain',

@@ -8,7 +8,8 @@ import {
   deriveChainNotice,
   filterCallChain,
   formatContractOption,
-  strikeBounds
+  strikeBounds,
+  type ShortCallChainBounds
 } from './pmcc-entry'
 
 const TODAY = new Date(2026, 8, 14)
@@ -36,6 +37,11 @@ function quote(overrides: Partial<OptionChainQuote> & { delta?: string | null })
 }
 
 const LEAPS_FIXTURE = quote({})
+
+const LEAPS_BOUNDS: ShortCallChainBounds = {
+  expirationBefore: '2028-01-21',
+  strikeAbove: '85.0000'
+}
 
 describe('filterCallChain', () => {
   it('keeps a Δ 0.80 call for the LEAPS preset and drops 0.60 and 0.90', () => {
@@ -95,6 +101,58 @@ describe('filterCallChain', () => {
         keepContractId: 'XYZ1270917C00080000'
       })
     ).toEqual([])
+  })
+})
+
+describe('filterCallChain with LEAPS bounds', () => {
+  const inBounds = { strike: '118.0000', expiration: '2027-08-20', delta: '0.30' }
+
+  it('drops a strike at or below the LEAPS strike and keeps one above it', () => {
+    const atLeaps = quote({ ...inBounds, contractId: 'AT', strike: '85.0000' })
+    const belowLeaps = quote({ ...inBounds, contractId: 'BELOW', strike: '80.0000' })
+    const above = quote({ ...inBounds, contractId: 'ABOVE' })
+
+    expect(
+      filterCallChain([atLeaps, belowLeaps, above], SHORT_PRESET, { bounds: LEAPS_BOUNDS }).map(
+        (q) => q.contractId
+      )
+    ).toEqual(['ABOVE'])
+  })
+
+  it('drops an expiration on or after the LEAPS expiration and keeps one before it', () => {
+    const onLeaps = quote({ ...inBounds, contractId: 'ON', expiration: '2028-01-21' })
+    const afterLeaps = quote({ ...inBounds, contractId: 'AFTER', expiration: '2028-02-18' })
+    const before = quote({ ...inBounds, contractId: 'BEFORE' })
+
+    expect(
+      filterCallChain([onLeaps, afterLeaps, before], SHORT_PRESET, { bounds: LEAPS_BOUNDS }).map(
+        (q) => q.contractId
+      )
+    ).toEqual(['BEFORE'])
+  })
+
+  it('drops the kept contract when it breaks a bound', () => {
+    const kept = quote({ ...inBounds, contractId: 'KEPT', strike: '80.0000' })
+
+    expect(
+      filterCallChain([kept], SHORT_PRESET, { keepContractId: 'KEPT', bounds: LEAPS_BOUNDS })
+    ).toEqual([])
+  })
+
+  it('drops a contract without greeks when it breaks a bound', () => {
+    const noGreeks = quote({ ...inBounds, contractId: 'NO_GREEKS', delta: null })
+    const pastLeaps = quote({
+      ...inBounds,
+      contractId: 'PAST',
+      expiration: '2028-02-18',
+      delta: null
+    })
+
+    expect(
+      filterCallChain([pastLeaps, noGreeks], SHORT_PRESET, { bounds: LEAPS_BOUNDS }).map(
+        (q) => q.contractId
+      )
+    ).toEqual(['NO_GREEKS'])
   })
 })
 
@@ -161,6 +219,48 @@ describe('chainWindow', () => {
     expect(chainWindow(SHORT_PRESET, TODAY)).toEqual({
       expirationFrom: '2026-10-04',
       expirationTo: '2026-10-29'
+    })
+  })
+
+  describe('with LEAPS bounds', () => {
+    const leapsExpiring = (expirationBefore: string): ShortCallChainBounds => ({
+      expirationBefore,
+      strikeAbove: '85.0000'
+    })
+
+    it('ends the short window the day before a LEAPS 35 days out', () => {
+      expect(chainWindow(SHORT_PRESET, TODAY, leapsExpiring('2026-10-19'))).toEqual({
+        expirationFrom: '2026-10-04',
+        expirationTo: '2026-10-18'
+      })
+    })
+
+    it('ends the short window the day before a LEAPS 45 days out', () => {
+      expect(chainWindow(SHORT_PRESET, TODAY, leapsExpiring('2026-10-29'))).toEqual({
+        expirationFrom: '2026-10-04',
+        expirationTo: '2026-10-28'
+      })
+    })
+
+    it('keeps the 45-day end for a LEAPS 47 days out', () => {
+      expect(chainWindow(SHORT_PRESET, TODAY, leapsExpiring('2026-10-30'))).toEqual({
+        expirationFrom: '2026-10-04',
+        expirationTo: '2026-10-29'
+      })
+    })
+
+    it('keeps the 45-day end for a LEAPS 182 days out', () => {
+      expect(chainWindow(SHORT_PRESET, TODAY, leapsExpiring('2027-03-15'))).toEqual({
+        expirationFrom: '2026-10-04',
+        expirationTo: '2026-10-29'
+      })
+    })
+
+    it('ends an open-ended window the day before the LEAPS', () => {
+      expect(chainWindow(LEAPS_PRESET, TODAY, leapsExpiring('2027-09-17'))).toEqual({
+        expirationFrom: '2027-03-13',
+        expirationTo: '2027-09-16'
+      })
     })
   })
 })

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, type RenderResult } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, vi } from 'vitest'
 import { usePosition } from '../hooks/usePosition'
@@ -6,7 +6,15 @@ import { useOptionSnapshots } from '../hooks/useOptionSnapshots'
 import { useStockQuotes } from '../hooks/useStockQuotes'
 import { PositionDetail } from '../api/positions'
 import type { OptionSnapshotsBySymbol, StockQuotesByTicker } from '../api/market-data'
+import { XYZ_TIMELINE } from '../components/position-cockpit/PmccLegTimeline.fixture'
 import { OPEN_LEAPS, OPEN_LEGS, OPEN_SHORT } from '../test-fixtures/pmcc-roll'
+import {
+  SELL_PMCC_ID,
+  SOLD_RESPONSE,
+  XYZ_LEAPS,
+  XYZ_LEAPS_3,
+  XYZ_LEDGER
+} from '../test-fixtures/pmcc-sell-short'
 import { PositionDetailPage } from './PositionDetailPage'
 
 vi.mock('../hooks/usePosition')
@@ -125,6 +133,38 @@ vi.mock('../components/RollPmccLeapsSheet', async () => {
         <button onClick={() => onRecorded(LEAPS_UP_OUT_RESPONSE)}>record leaps credit roll</button>
         <button onClick={() => onRecorded(LEAPS_DEBIT_RESPONSE)}>record leaps debit roll</button>
         <button onClick={onClose}>close leaps sheet</button>
+      </div>
+    )
+  }
+})
+
+// [US-115] Stand-in for the Sell Short Call sheet: a dialog of the same name reporting what it
+// was opened with, whose buttons report a recorded sale or close it.
+vi.mock('../components/SellPmccShortSheet', async () => {
+  const { SOLD_RESPONSE } = await import('../test-fixtures/pmcc-sell-short')
+  return {
+    SellPmccShortSheet: ({
+      leaps,
+      ledger,
+      previousCycle,
+      onClose,
+      onRecorded
+    }: {
+      leaps: { strike: string; contracts: number }
+      ledger: { leapsCostTotal: string }
+      previousCycle: { number: number } | null
+      onClose: () => void
+      onRecorded?: (response: typeof SOLD_RESPONSE) => void
+    }) => (
+      <div
+        role="dialog"
+        aria-label="Sell Short Call"
+        data-leaps-strike={leaps.strike}
+        data-leaps-cost={ledger.leapsCostTotal}
+        data-previous-cycle={previousCycle?.number ?? 'none'}
+      >
+        <button onClick={() => onRecorded?.(SOLD_RESPONSE)}>record sale</button>
+        <button onClick={onClose}>close sell sheet</button>
       </div>
     )
   }
@@ -1180,14 +1220,18 @@ const PMCC_DETAIL: PositionDetail = {
   pmccTimeline: null
 }
 
-function renderPmcc(detail: PositionDetail = PMCC_DETAIL): void {
+function mockPmccDetail(detail: PositionDetail): void {
   mockUsePosition.mockReturnValue({
     isLoading: false,
     isError: false,
     data: detail,
     error: null
   } as unknown as ReturnType<typeof usePosition>)
-  render(<PositionDetailPage />)
+}
+
+function renderPmcc(detail: PositionDetail = PMCC_DETAIL): RenderResult {
+  mockPmccDetail(detail)
+  return render(<PositionDetailPage />)
 }
 
 const UP_OUT_BANNER =
@@ -1373,6 +1417,121 @@ describe('PositionDetailPage — Roll LEAPS', () => {
     await user.click(screen.getByText('record debit roll'))
     expect(screen.getByTestId('pmcc-roll-recorded-banner')).toBeInTheDocument()
     expect(screen.queryByTestId('pmcc-leaps-roll-recorded-banner')).not.toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// [US-115] Sell Short Call — the action, the sheet's slot and when the sheet may render
+// ---------------------------------------------------------------------------
+
+/** US-109's XYZ with cycle 9 removed: the $85 LEAPS open, cycle 8 expired worthless. */
+const LEAPS_ONLY_DETAIL: PositionDetail = {
+  ...PMCC_DETAIL,
+  position: { ...PMCC_DETAIL.position, id: SELL_PMCC_ID },
+  legs: [XYZ_LEAPS],
+  pmccLedger: XYZ_LEDGER,
+  pmccOpenLegs: { long: XYZ_LEAPS, short: null },
+  pmccTimeline: { ...XYZ_TIMELINE, cycles: XYZ_TIMELINE.cycles.slice(0, 8) }
+}
+
+/** The same PMCC once cycle 9's short is open. */
+const SHORT_OPEN_DETAIL: PositionDetail = {
+  ...LEAPS_ONLY_DETAIL,
+  legs: [XYZ_LEAPS, SOLD_RESPONSE.shortLeg],
+  pmccOpenLegs: { long: XYZ_LEAPS, short: SOLD_RESPONSE.shortLeg }
+}
+
+const sellSheet = (): HTMLElement | null =>
+  screen.queryByRole('dialog', { name: 'Sell Short Call' })
+
+describe('PositionDetailPage — Sell Short Call', () => {
+  it('opens the sheet on the live LEAPS, its ledger and the last ended cycle', async () => {
+    const user = userEvent.setup()
+    renderPmcc(LEAPS_ONLY_DETAIL)
+    expect(sellSheet()).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Sell Short Call →' }))
+
+    const sheet = screen.getByRole('dialog', { name: 'Sell Short Call' })
+    expect(sheet).toHaveAttribute('data-leaps-strike', '85.0000')
+    expect(sheet).toHaveAttribute('data-leaps-cost', '2250.0000')
+    expect(sheet).toHaveAttribute('data-previous-cycle', '8')
+  })
+
+  it('opening it closes any other sheet', async () => {
+    const user = userEvent.setup()
+    renderPmcc(LEAPS_ONLY_DETAIL)
+    await user.click(screen.getByTestId('roll-pmcc-leaps-btn'))
+    expect(screen.getByRole('dialog', { name: 'Roll LEAPS' })).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('sell-pmcc-short-btn'))
+
+    expect(sellSheet()).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Roll LEAPS' })).not.toBeInTheDocument()
+  })
+
+  it('closes the sheet when cancelled', async () => {
+    const user = userEvent.setup()
+    renderPmcc(LEAPS_ONLY_DETAIL)
+    await user.click(screen.getByTestId('sell-pmcc-short-btn'))
+    await user.click(screen.getByText('close sell sheet'))
+    expect(sellSheet()).not.toBeInTheDocument()
+  })
+
+  it('is not rendered while a short call is open, even with the slot set', async () => {
+    const user = userEvent.setup()
+    const { rerender } = renderPmcc(LEAPS_ONLY_DETAIL)
+    await user.click(screen.getByTestId('sell-pmcc-short-btn'))
+    expect(sellSheet()).toBeInTheDocument()
+
+    mockPmccDetail(SHORT_OPEN_DETAIL)
+    rerender(<PositionDetailPage />)
+
+    expect(sellSheet()).not.toBeInTheDocument()
+  })
+
+  it('stays on its success view after its own sale opens the short, until it is closed', async () => {
+    const user = userEvent.setup()
+    const { rerender } = renderPmcc(LEAPS_ONLY_DETAIL)
+    await user.click(screen.getByTestId('sell-pmcc-short-btn'))
+    await user.click(screen.getByText('record sale'))
+
+    mockPmccDetail(SHORT_OPEN_DETAIL)
+    rerender(<PositionDetailPage />)
+    expect(sellSheet()).toBeInTheDocument()
+
+    await user.click(screen.getByText('close sell sheet'))
+    expect(sellSheet()).not.toBeInTheDocument()
+    expect(screen.queryByTestId('sell-pmcc-short-btn')).not.toBeInTheDocument()
+  })
+
+  // Stand-in for a closed PMCC: US-120 adds `PMCC_CLOSED` and keeps `pmccOpenLegs` set. Until it
+  // lands, a non-`PMCC_OPEN` phase stands in; switch this to `PMCC_CLOSED` when it does.
+  it('a closed PMCC offers no Sell Short Call and renders no sheet, even with the slot set', async () => {
+    const user = userEvent.setup()
+    const closed: PositionDetail = {
+      ...LEAPS_ONLY_DETAIL,
+      position: { ...LEAPS_ONLY_DETAIL.position, phase: 'WHEEL_COMPLETE' }
+    }
+    const { rerender } = renderPmcc(LEAPS_ONLY_DETAIL)
+    await user.click(screen.getByTestId('sell-pmcc-short-btn'))
+    expect(sellSheet()).toBeInTheDocument()
+
+    mockPmccDetail(closed)
+    rerender(<PositionDetailPage />)
+
+    expect(sellSheet()).not.toBeInTheDocument()
+    expect(screen.queryByTestId('sell-pmcc-short-btn')).not.toBeInTheDocument()
+  })
+
+  it('reads partial coverage on the header badge: 1 of 3 LEAPS contracts covered', () => {
+    renderPmcc({
+      ...SHORT_OPEN_DETAIL,
+      legs: [XYZ_LEAPS_3, SOLD_RESPONSE.shortLeg],
+      pmccOpenLegs: { long: XYZ_LEAPS_3, short: SOLD_RESPONSE.shortLeg }
+    })
+    expect(screen.getByText('LEAPS + short call open · 1 of 3 covered')).toBeInTheDocument()
+    expect(screen.queryByTestId('sell-pmcc-short-btn')).not.toBeInTheDocument()
   })
 })
 

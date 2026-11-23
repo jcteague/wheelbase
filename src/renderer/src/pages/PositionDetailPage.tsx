@@ -11,6 +11,7 @@ import { RollCspSheet } from '../components/RollCspSheet'
 import { PmccRollRecordedBanner } from '../components/PmccRollRecordedBanner'
 import { RollPmccLeapsSheet } from '../components/RollPmccLeapsSheet'
 import { RollPmccShortCallSheet } from '../components/RollPmccShortCallSheet'
+import { SellPmccShortSheet } from '../components/SellPmccShortSheet'
 import { PageHeader, PageLayout } from '../components/PageLayout'
 import { PositionDetailActions } from '../components/PositionDetailActions'
 import { Breadcrumb } from '../components/ui/Breadcrumb'
@@ -24,6 +25,7 @@ import { latestFillDate } from '../../../main/core/pmcc-rules'
 import { isOptionInstrument } from '../../../main/core/types'
 import { computeDte, fmtDate } from '../lib/format'
 import { pmccLeapsLedger } from '../lib/pmcc-roll'
+import { lastEndedCycle } from '../lib/pmcc-sell-short'
 import { PositionDetailContent } from './PositionDetailContent'
 import { usePositionDetailSheets } from './usePositionDetailSheets'
 
@@ -112,6 +114,11 @@ export function PositionDetailPage(): React.JSX.Element {
     rollPmccLeapsOpen,
     handleRollPmccLeaps,
     handleCloseRollPmccLeaps,
+    pmccSellShortOpen,
+    handleSellPmccShort,
+    handleCloseSellPmccShort,
+    pmccSellShortRecorded,
+    handlePmccShortSold,
     pmccRollRecorded,
     handlePmccShortRollRecorded,
     handlePmccLeapsRollRecorded
@@ -134,6 +141,14 @@ export function PositionDetailPage(): React.JSX.Element {
     position.phase === 'CC_OPEN' && activeLeg ? computeDte(activeLeg.expiration) <= 0 : false
   const assignLeg = legs.find((leg) => leg.legRole === 'ASSIGN')
   const leapsLedger = pmccLeapsLedger(pmccLedger)
+  // Only an open PMCC with its LEAPS and no short call sells one — except that the sheet's own
+  // sale opens the short, and the sheet then stays on its success view until it is closed.
+  const sellPmccShortShown =
+    pmccSellShortOpen &&
+    position.phase === 'PMCC_OPEN' &&
+    pmccOpenLegs !== null &&
+    pmccLedger !== null &&
+    (pmccOpenLegs.short === null || pmccSellShortRecorded)
 
   return (
     <PageLayout
@@ -144,8 +159,14 @@ export function PositionDetailPage(): React.JSX.Element {
             <PositionDetailActions
               strategyType={position.strategyType}
               phase={position.phase}
-              hasOpenShortCall={Boolean(pmccOpenLegs?.short)}
-              hasOpenLeaps={Boolean(pmccOpenLegs)}
+              pmccCoverage={
+                pmccOpenLegs
+                  ? {
+                      leapsContracts: pmccOpenLegs.long.contracts,
+                      shortContracts: pmccOpenLegs.short ? [pmccOpenLegs.short.contracts] : []
+                    }
+                  : null
+              }
               hasCostBasis={Boolean(costBasisSnapshot)}
               ccExpired={ccExpired}
               onOpenCc={handleOpenCc}
@@ -158,6 +179,7 @@ export function PositionDetailPage(): React.JSX.Element {
               onRollCc={handleRollCc}
               onRollPmccShort={handleRollPmccShort}
               onRollPmccLeaps={handleRollPmccLeaps}
+              onSellPmccShort={handleSellPmccShort}
             />
           }
         />
@@ -305,6 +327,17 @@ export function PositionDetailPage(): React.JSX.Element {
           ledger={leapsLedger}
           onClose={handleCloseRollPmccLeaps}
           onRecorded={handlePmccLeapsRollRecorded}
+        />
+      )}
+      {sellPmccShortShown && (
+        <SellPmccShortSheet
+          positionId={position.id}
+          ticker={position.ticker}
+          leaps={pmccOpenLegs.long}
+          ledger={pmccLedger}
+          previousCycle={lastEndedCycle(data.pmccTimeline)}
+          onClose={handleCloseSellPmccShort}
+          onRecorded={handlePmccShortSold}
         />
       )}
     </PageLayout>

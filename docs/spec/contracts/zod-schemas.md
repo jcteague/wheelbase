@@ -1,6 +1,6 @@
 # Zod Schemas
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-44,us-101,us-103,us-104,us-105 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-44,us-101,us-103,us-104,us-105,us-115 -->
 
 ## Overview
 
@@ -18,9 +18,11 @@ Three classes of types are catalogued below: **core enums** (the discriminator v
 
 **One ordered rule list per PMCC roll (us-105).** The LEAPS roll follows the same pattern with `pmccLeapsRollIssues` (fill date on/before the LEAPS expiration and on/after the position's last recorded event, US-102's long-side comparator, strike below the open short, expiration after fill, no-change), consumed by both `rollPmccLeaps` and the renderer's `rollPmccLeapsSchema(ctx)`, whose context `{ currentLeaps, openShort, lastEventDate }` is `PmccLeapsRollContext` (`lastEventDate` from the pure `latestFillDate(legs)`). Its payload is **not** derived from `RollPayloadBaseSchema` — a LEAPS roll's money is proceeds and a debit, not a cost to close and a premium — and its result widens the roll base to carry the leg-pair direction: `RollLegPair<From, To>` and `RollResultBase<Phase, From, To>`, with `RollPmccLeapsResult extends RollResultBase<'PMCC_OPEN', 'SELL', 'BUY'>` and `ledger: PmccLedgerWithStrike`. See [us-105 — Roll the PMCC LEAPS](../features/us-105-roll-pmcc-leaps.md).
 
+**Types-only payload, engine-owned ranges (us-115).** `SellPmccShortPayloadSchema` checks only types and ISO dates — `contracts`, `strike`, `fillPrice` and `fees` are bare `z.number()`, with no `.positive()` / `.int()` — so a bypassed `0` fill price or `0` contracts comes back with the AC's domain message on the right field from the `sellPmccShort` engine instead of a Zod message (the pattern `CreatePmccPositionPayloadSchema` set). Money still crosses as numbers formatted with `money4` in the service; the story's "4-dp strings" note was rejected so the PMCC surface keeps one convention. The renderer's `sellPmccShortSchema(ctx)` runs the same pure `pmccSubsequentShortIssues` as the engine. See [us-115 — Sell a subsequent PMCC short call](../features/us-115-sell-subsequent-pmcc-short-call.md).
+
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-101,us-103 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-101,us-103,us-115 -->
 
 ## Core enums
 
@@ -30,7 +32,7 @@ The discriminators that drive the wheel and PMCC lifecycles. They live in `src/m
 
 The lifecycle state of a wheel. Values used across the extracted plans: `CSP_OPEN`, `CSP_CLOSED_PROFIT`, `CSP_CLOSED_LOSS`, `HOLDING_SHARES`, `CC_OPEN`, `WHEEL_COMPLETE`. The lifecycle engine (`src/main/core/lifecycle.ts`) is the sole authority on legal transitions; every handler that accepts a position ID validates `currentPhase` against the expected value and rejects mismatches with `field: '__phase__' / code: 'invalid_phase'`. `WHEEL_COMPLETE` is terminal — it is reached by CSP expiry (us-5) and by call-away (us-10), and no further transitions are valid from it.
 
-**PMCC phases (us-101).** `PMCC_OPEN` (LEAPS + short call open) is added to the shared enum — the first phase of a `strategyType: 'PMCC'` position, produced only by `openPmcc`. The `PMCC_` prefix keeps wheel-only SQL filters (`phase IN ('CSP_OPEN','CC_OPEN')`) correct by construction. `PMCC_LEAPS_ONLY` and `PMCC_CLOSED` are **reserved by name but not added** (later Epic 09 stories), so every `Record<WheelPhase, …>` map stays honest. The strategy itself is `StrategyType = z.enum(['WHEEL', 'PMCC'])` in `src/main/core/types.ts`. Driven by [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md); see the [phase and leg-role names ADR](../architecture/02-adrs/pmcc-phase-and-leg-role-names.md).
+**PMCC phases (us-101).** `PMCC_OPEN` (LEAPS + short call open) is added to the shared enum — the first phase of a `strategyType: 'PMCC'` position, produced only by `openPmcc`. The `PMCC_` prefix keeps wheel-only SQL filters (`phase IN ('CSP_OPEN','CC_OPEN')`) correct by construction. `PMCC_CLOSED` is **reserved by name but not added** (US-111 / US-120), so every `Record<WheelPhase, …>` map stays honest. **(us-115)** `PMCC_LEAPS_ONLY` is no longer reserved: US-115 decided that `PMCC_OPEN` stays the only open PMCC phase and that "LEAPS open · no short call" vs "LEAPS + short call open" is derived from the open legs (`pmccOpenLegs`, renderer label `pmccCoverageLabel`), not stored — a phase would have meant migrating every PMCC row and a phase write in US-104/105/119 for a fact the legs already carry. The strategy itself is `StrategyType = z.enum(['WHEEL', 'PMCC'])` in `src/main/core/types.ts`. Driven by [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md); see the [phase and leg-role names ADR](../architecture/02-adrs/pmcc-phase-and-leg-role-names.md).
 
 ### `WheelStatus`
 
@@ -40,7 +42,7 @@ The lifecycle state of a wheel. Values used across the extracted plans: `CSP_OPE
 
 The role each leg plays in the wheel history. Wheel values: `CSP_OPEN`, `CSP_CLOSE`, `ROLL_FROM`, `ROLL_TO`, `CC_OPEN`, `CC_CLOSE`, `CC_EXPIRED`, `CALLED_AWAY`, `EXPIRE`, `ASSIGN`; the six PMCC values are below. us-11 added `CC_EXPIRED` and `CALLED_AWAY` so terminal CC events render with their own row labels and annotations in the leg-history table — `expire-cc-position.ts` now persists `CC_EXPIRED` (was generic `EXPIRE`) and `record-call-away-position.ts` now persists `CALLED_AWAY` (was generic `CC_CLOSE`). Active-leg resolution is phase-aware (`CSP_OPEN → CSP_OPEN|ROLL_TO`, `CC_OPEN → CC_OPEN|ROLL_TO`) so the most recent roll's `ROLL_TO` leg becomes the effective open leg. us-13 (planned) widens the position-list active-leg subquery to include `ROLL_TO` as well — see `list-positions.ts` note in the [IPC handlers](./ipc-handlers.md) page.
 
-**PMCC leg roles (us-101, us-103).** `LEAPS_OPEN` (`BUY` / `CALL`) and `SHORT_CALL_OPEN` (`SELL` / `CALL`) are the two roles `createPmccPosition` writes (us-101). us-103 added the four roles us-101 had only reserved — `LEAPS_CLOSE`, `SHORT_CALL_CLOSE`, `SHORT_CALL_EXPIRED`, `SHORT_CALL_ASSIGNED` — because the PMCC ledger is the first code that must _consume_ every PMCC role, even though later Epic 09 stories are the ones that _write_ them. `LegRole` has no SQL CHECK, so no migration; no `LEG_ROLE_LABEL` text was added for the new roles. Driven by [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md) and [us-103 — PMCC cost-basis ledger](../features/us-103-pmcc-cost-basis.md); see the [phase and leg-role names ADR](../architecture/02-adrs/pmcc-phase-and-leg-role-names.md).
+**PMCC leg roles (us-101, us-103).** `LEAPS_OPEN` (`BUY` / `CALL`) and `SHORT_CALL_OPEN` (`SELL` / `CALL`) are the two roles `createPmccPosition` writes (us-101). us-103 added the four roles us-101 had only reserved — `LEAPS_CLOSE`, `SHORT_CALL_CLOSE`, `SHORT_CALL_EXPIRED`, `SHORT_CALL_ASSIGNED` — because the PMCC ledger is the first code that must _consume_ every PMCC role, even though later Epic 09 stories are the ones that _write_ them. **(us-115)** `positions:sell-pmcc-short` writes a second, post-entry `SHORT_CALL_OPEN` (each one starts a new cycle); no role was added. `LegRole` has no SQL CHECK, so no migration; no `LEG_ROLE_LABEL` text was added for the new roles. Driven by [us-101 — Open a PMCC position](../features/us-101-open-pmcc-position.md) and [us-103 — PMCC cost-basis ledger](../features/us-103-pmcc-cost-basis.md); see the [phase and leg-role names ADR](../architecture/02-adrs/pmcc-phase-and-leg-role-names.md).
 
 ### `PmccLegRole` / `isPmccLegRole`
 
@@ -51,7 +53,7 @@ The PMCC slice of `LegRole`, in `src/main/core/types.ts` (us-103). Both are deri
 `TriggerEvent` names the event that wrote a `cost_basis_snapshots` row. Since us-103 it is `TriggerEvent = WheelTriggerEvent | PmccTriggerEvent` in `src/main/schemas.ts`:
 
 - **`WheelTriggerEvent`** (module-private TypeScript union) — the eight wheel values: `CSP_OPEN`, `CSP_CLOSE`, `CSP_EXPIRE`, `CSP_ASSIGN`, `CSP_ROLL`, `CC_OPEN`, `CC_ROLL`, `CALL_AWAY`.
-- **`PmccTriggerEvent`** — a `z.enum` exported both as the Zod enum and as its `z.infer` type, with six values: `PMCC_OPEN` (added by us-101, moved here from the old flat union), `PMCC_SHORT_OPEN`, `PMCC_SHORT_EXPIRED`, `PMCC_SHORT_CLOSED`, `PMCC_SHORT_ROLL`, `PMCC_LEAPS_ROLL`. One list serves the snapshot writer's parameter type (`appendPmccSnapshot<T extends PmccTriggerEvent>`), the dev-only test payload schema, and `TriggerEvent`. us-103 owns the whole PMCC vocabulary up front so later stories pass a name (US-104 passes `'PMCC_SHORT_ROLL'`) rather than coining one — per-consumer coining would drift in a column with no CHECK.
+- **`PmccTriggerEvent`** — a `z.enum` exported both as the Zod enum and as its `z.infer` type, with six values: `PMCC_OPEN` (added by us-101, moved here from the old flat union), `PMCC_SHORT_OPEN`, `PMCC_SHORT_EXPIRED`, `PMCC_SHORT_CLOSED`, `PMCC_SHORT_ROLL`, `PMCC_LEAPS_ROLL`. One list serves the snapshot writer's parameter type (`appendPmccSnapshot<T extends PmccTriggerEvent>`), the dev-only test payload schema, and `TriggerEvent`. us-103 owns the whole PMCC vocabulary up front so later stories pass a name (US-104 passes `'PMCC_SHORT_ROLL'`; **us-115** passes `'PMCC_SHORT_OPEN'`, its first production writer — before that only the dev-only seam wrote it) rather than coining one — per-consumer coining would drift in a column with no CHECK.
 
 `TriggerEvent` is a strict superset of its pre-us-103 value set. The value set is the contract; the column is unconstrained TEXT (see [schema/tables](../schema/tables.md)). Driven by [us-101](../features/us-101-open-pmcc-position.md) and [us-103 — PMCC cost-basis ledger](../features/us-103-pmcc-cost-basis.md).
 
@@ -76,7 +78,7 @@ export type InstrumentType = z.infer<typeof InstrumentType>
 
 <!-- /generated -->
 
-<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-12,us-13,us-14,us-32,us-33,us-44,us-57-58,us-121,us-101,us-103,us-104,us-105 -->
+<!-- generated:from us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-12,us-13,us-14,us-32,us-33,us-44,us-57-58,us-121,us-101,us-103,us-104,us-105,us-115 -->
 
 ## Payload schemas
 
@@ -237,6 +239,23 @@ export type RollPmccLeapsPayload = z.infer<typeof RollPmccLeapsPayloadSchema>
 
 Its own `z.object`, deliberately **not** `RollPayloadBaseSchema`: a LEAPS roll sells the long call to close and buys the replacement, so the money fields are named for what they are (`proceedsPerContract`, `replacementDebitPerContract`) and the AC's field-level errors land beside the right inputs. Money crosses the IPC as numbers, formatted to 4 dp in the service. `fillDate` is ISO-checked, as on the PMCC short roll, because it orders legs in the open-leg replay. Zod guards shape and positivity; every cross-field rule — fill date within the current LEAPS' life, replacement outlasting the open short, strike below it, expiring after the fill, strike or expiration changed — belongs to `rollPmccLeaps` and `pmccLeapsRollIssues`. `newStrike` defaults service-side to the open LEAPS strike. Error table: [`positions:roll-pmcc-leaps`](./ipc-handlers.md#positionsroll-pmcc-leaps). Mirrored in the renderer as `RollPmccLeapsPayload = IpcPayload<'rollPmccLeaps'>`. Bound to `positions:roll-pmcc-leaps`. Driven by [us-105 — Roll the PMCC LEAPS](../features/us-105-roll-pmcc-leaps.md).
 
+### `SellPmccShortPayloadSchema`
+
+```typescript
+export const SellPmccShortPayloadSchema = z.object({
+  positionId: PositionIdSchema,
+  strike: z.number(),
+  expiration: IsoDateSchema,
+  contracts: z.number(), // 1..LEAPS contracts — the engine's rule, not Zod's
+  fillPrice: z.number(), // actual sale price per share
+  fillDate: IsoDateSchema.optional(), // defaults to the Eastern calendar day of the request
+  fees: z.number().default(0) // total fees for the sale
+})
+export type SellPmccShortPayload = z.infer<typeof SellPmccShortPayloadSchema>
+```
+
+The payload IS the contract, so the field set is listed. Its own `z.object`, not `RollPayloadBaseSchema` — a sale has no cost to close. Zod guards **only types and the two ISO dates**: unlike the roll schemas there is no `.positive()` or `.int()`, so `0` contracts or a `0` fill price reaches the engine and is rejected with its domain message (`Contracts must be a positive whole number.` / `Actual fill price must be greater than zero.`) on the right field. Every rule — phase, no open short, positive whole contracts at most the LEAPS count, fill not in the future and not before the binding floor, expiration unexpired, after the fill and before the live LEAPS, strike above the LEAPS — belongs to the pure `sellPmccShort` engine and `pmccSubsequentShortIssues`. Nothing about the LEAPS is in the payload; the service reads it from the stored legs. Money is formatted with `money4` in the service. Error table: [`positions:sell-pmcc-short`](./ipc-handlers.md#positionssell-pmcc-short). Preload `window.api.sellPmccShort` typed with `SellPmccShortPayload`. Bound to `positions:sell-pmcc-short`. Driven by [us-115 — Sell a subsequent PMCC short call](../features/us-115-sell-subsequent-pmcc-short-call.md).
+
 ### `GetStockQuotesPayloadSchema`
 
 ```typescript
@@ -372,6 +391,17 @@ Lives in `src/renderer/src/schemas/roll-pmcc-leaps.ts`; drives the `Roll LEAPS` 
 - **Defaults and payload:** `EMPTY_ROLL_PMCC_LEAPS_DEFAULTS(today, currentStrike)` (strike pre-filled to the current LEAPS strike at 2 dp, `fillDate: today`; no `.default()`); `toRollPmccLeapsPayload(values, positionId)` maps `proceeds → proceedsPerContract`, `newDebit → replacementDebitPerContract`, numbers via `inputToNumber`, `fillDate` omitted when empty.
 - Driven by [us-105 — Roll the PMCC LEAPS](../features/us-105-roll-pmcc-leaps.md).
 
+### Renderer PMCC sell-short schema — `sellPmccShortSchema(ctx)`
+
+Lives in `src/renderer/src/schemas/sell-pmcc-short.ts`; drives the `Sell Short Call` sheet through `useSellPmccShortForm` (`mode: 'onChange'`, `zodResolver`).
+
+- **Factory over the live LEAPS:** `sellPmccShortSchema(ctx)` takes `SellPmccShortFormContext` (a re-export of `PmccSubsequentShortContext` — the live LEAPS terms and contracts, `previousShortRetiredOn`, `today`). `SellPmccShortFormValues` is `z.input<ReturnType<typeof sellPmccShortSchema>>`, asserted assignable to `PmccLegFormSlice`.
+- **Same field paths as the entry form:** the leg sits at `short` and the quantity at `contracts`, so the generalised `PmccLegSection` binds to both sheets unchanged. `src/renderer/src/schemas/pmcc-entry.ts` now exports `pmccLegSchema` (reused for `short`) and `PmccLegFormSlice` (`Pick<PmccEntryFormValues, 'short' | 'contracts'>`); `contracts` reuses `positiveWholeSchema`'s rule.
+- **Cross-field rules are the engine's:** the `superRefine` runs `pmccSubsequentShortIssues` (an undecided value is `undefined` and its rule is skipped) and reports the first issue per field, mapping `contracts` → `contracts` and the others → `short.*`.
+- **Server errors:** `SELL_SHORT_FORM_FIELDS` (`as const satisfies Record<Exclude<SellPmccShortField, '__root__' | '__phase__'>, FieldPath<SellPmccShortFormValues>>`) routes both IPC field errors and the schema's own cross-field paths; it moved here from `SellPmccShortSheet.tsx`.
+- **Defaults and payload:** `EMPTY_SELL_PMCC_SHORT_DEFAULTS(today, leapsContracts)` (contracts = the LEAPS count, fill date today, fees `'0.00'`); `toSellPmccShortPayload(positionId, values)` maps to numbers and ISO dates.
+- Driven by [us-115 — Sell a subsequent PMCC short call](../features/us-115-sell-subsequent-pmcc-short-call.md).
+
 ### Dev-only `TestPmccLegEventPayloadSchema`
 
 A test seam, not a production contract: bound to `_test:pmcc-record-leg-event`, which is registered only when `NODE_ENV === 'test'` (elsewhere the call fails with `__root__` / `not_registered`). It lets e2e tests insert arbitrary PMCC leg rows and append a ledger snapshot before the stories that write those legs exist. Lives in the dev-only section at the end of `src/main/schemas.ts`.
@@ -383,7 +413,7 @@ A test seam, not a production contract: bound to `_test:pmcc-record-leg-event`, 
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-101,us-103,us-104,us-105 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-101,us-103,us-104,us-105,us-115 -->
 
 ## Result interfaces
 
@@ -683,6 +713,17 @@ export interface RollPmccLeapsResult extends RollResultBase<'PMCC_OPEN', 'SELL',
 
 Returned by `positions:roll-pmcc-leaps`. The leg pair is the inverse of every other roll: the open LEAPS sold to close (`ROLL_FROM` / `SELL` / `CALL`, premium = fill = proceeds) and the replacement bought (`ROLL_TO` / `BUY` / `CALL`, premium = fill = replacement debit), sharing a fresh `rollChainId`, both `fees '0.0000'`. The snapshot is written by `appendPmccSnapshot`; `ledger` is the post-roll ledger, typed `PmccLedgerWithStrike` (`PmccLedgerResult & { effectiveShareCost: string }`, from `src/main/core/costbasis.ts` — the `calculatePmccLedger` overload with a `longStrike`, also returned by `pmccLedgerFromLegs` and `AppendPmccSnapshotResult`), its `effectiveShareCost` re-anchored on the replacement strike; `leapsRollNumber` counts long-side chains including this one. The preload mirrors it as `IpcRollPmccLeapsResult`; the renderer as `RollPmccLeapsResponse = IpcSuccess<'rollPmccLeaps'>`. The engine's own result, `RollPmccLeapsAccepted` in `src/main/core/lifecycle.ts`, is just `{ phase: 'PMCC_OPEN' }`. Driven by [us-105 — Roll the PMCC LEAPS](../features/us-105-roll-pmcc-leaps.md).
 
+### `SellPmccShortResult`
+
+A type alias, not a roll result — there is no leg pair:
+
+- `position`: `Pick<PositionRecord, 'id' | 'ticker'> & { phase: 'PMCC_OPEN'; status: 'ACTIVE' }`
+- `shortLeg`: US-101's `CreatePmccPositionResult['shortLeg']` by indexed access (`SHORT_CALL_OPEN` / `SELL` / `CALL`, `fillPrice: string`)
+- `cycleNumber`: the cycle this short starts — `SHORT_CALL_OPEN` legs before it + 1 (`nextPmccCycleNumber`)
+- intersected with `AppendPmccSnapshotResult<'PMCC_SHORT_OPEN'>`: `snapshot` (`triggerEvent: 'PMCC_SHORT_OPEN'`, `finalPnl: null`) and `ledger: PmccLedgerWithStrike` — the post-sale ledger, equal to `projectPmccLedger` over the pre-sale one
+
+Returned by `positions:sell-pmcc-short`. The engine's own result, `SellPmccShortAccepted` in `src/main/core/lifecycle.ts`, is `{ phase: 'PMCC_OPEN' }`. Driven by [us-115 — Sell a subsequent PMCC short call](../features/us-115-sell-subsequent-pmcc-short-call.md).
+
 ### `CreatePmccPositionResult`
 
 Returned inside `{ ok: true, ... }` by `positions:create-pmcc`. Every record is narrowed with literals so callers need no casts:
@@ -753,7 +794,7 @@ interface IpcStreamErrorEvent {
 
 <!-- /generated -->
 
-<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-44,us-57-58,us-121,us-101,us-103,us-104,us-105 -->
+<!-- generated:from us-2,us-4,us-5,us-6,us-7,us-8,us-9,us-10,us-11,us-12,us-13,us-14,us-15,us-32,us-33,us-35,us-37,us-44,us-57-58,us-121,us-101,us-103,us-104,us-105,us-115 -->
 
 ## Driven by
 
@@ -781,6 +822,7 @@ interface IpcStreamErrorEvent {
 - [us-103 — PMCC cost-basis ledger](../features/us-103-pmcc-cost-basis.md) — `LegRole + 'LEAPS_CLOSE' / 'SHORT_CALL_CLOSE' / 'SHORT_CALL_EXPIRED' / 'SHORT_CALL_ASSIGNED'`, `PmccLegRole` / `isPmccLegRole` (from `PMCC_LEG_ROLE_VALUES`), `PmccTriggerEvent` + `TriggerEvent = WheelTriggerEvent | PmccTriggerEvent`, `GetPositionResult.pmccLedger`, `PmccListSummary` basis fields, `AppendPmccSnapshotResult<T>`, dev-only `TestPmccLegEventPayloadSchema` / `TestPmccLegEventPayload` / `TestPmccLegEventPayloadInput`
 - [us-104 — Roll a PMCC short call](../features/us-104-roll-pmcc-short-call.md) — `RollPmccShortCallPayloadSchema` / `RollPmccShortCallPayload` / `RollPmccShortCallResult`, generic `RollResultBase<Phase>` (with `RollCspResult` / `RollCcResult` as aliases), `GetPositionResult.pmccOpenLegs` / `PmccOpenLegs`; renderer `rollPmccShortCallSchema(ctx)`, `RollPmccShortCallContext`, `EMPTY_ROLL_PMCC_SHORT_CALL_DEFAULTS`, `toRollPmccShortCallPayload`, `moneySchema` / `inputToNumber` moved to `schemas/common.ts`
 - [us-105 — Roll the PMCC LEAPS](../features/us-105-roll-pmcc-leaps.md) — `RollPmccLeapsPayloadSchema` / `RollPmccLeapsPayload` / `RollPmccLeapsResult`, `RollLegPair<From, To>`, `RollResultBase<Phase, From, To>`, nullable `PmccListSummary.short`; renderer `rollPmccLeapsSchema(ctx)`, `RollPmccLeapsContext`, `EMPTY_ROLL_PMCC_LEAPS_DEFAULTS`, `toRollPmccLeapsPayload`, `decidedDate` in `schemas/common.ts`
+- [us-115 — Sell a subsequent PMCC short call](../features/us-115-sell-subsequent-pmcc-short-call.md) — `SellPmccShortPayloadSchema` / `SellPmccShortPayload` / `SellPmccShortResult`; `PMCC_LEAPS_ONLY` reservation dropped (no new enum value, role or trigger); renderer `sellPmccShortSchema(ctx)`, `SellPmccShortFormContext`, `SellPmccShortFormValues`, `EMPTY_SELL_PMCC_SHORT_DEFAULTS`, `toSellPmccShortPayload`, `SELL_SHORT_FORM_FIELDS`, exported `pmccLegSchema` / `PmccLegFormSlice`
 <!-- /generated -->
 
 <!-- generated:from us-35 -->

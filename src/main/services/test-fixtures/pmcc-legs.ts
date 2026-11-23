@@ -241,6 +241,109 @@ export function pmccFixtures(positionId: string, day: DayFn = FIXED_DAY): PmccFi
   }
 }
 
+/** One half of a paired roll, before its role, fill date and chain id are set. */
+type RollHalf = Pick<LegRecord, 'action' | 'strike' | 'expiration'> & { price: string }
+
+/**
+ * [US-115] US-109's XYZ Background with cycle 9 removed (plans/us-115/data-model.md § 5), the
+ * same legs as `BACKGROUND` in e2e/pmcc-timeline-helpers.ts: the $80 · 2027-09-17 LEAPS bought
+ * 2026-09-14 at $25.00, eight short-call cycles (cycle 2 rolled, cycle 5 bought back) and the
+ * LEAPS rolled to $85 · 2028-01-21 on 2027-07-09. Cycle 8 expired 2027-07-16; no short is open.
+ */
+export function xyzBackgroundWithoutCycle9(positionId: string): LegRecord[] {
+  const leg = (fields: LegFields, seq = 0): LegRecord => makePmccLeg(positionId, fields, seq)
+  const sell = (
+    strike: string,
+    expiration: string,
+    price: string,
+    fillDate: string,
+    seq = 0
+  ): LegRecord =>
+    leg(
+      {
+        legRole: 'SHORT_CALL_OPEN',
+        action: 'SELL',
+        strike,
+        expiration,
+        fillDate,
+        premiumPerContract: price
+      },
+      seq
+    )
+  const expire = (strike: string, expiration: string): LegRecord =>
+    leg({
+      legRole: 'SHORT_CALL_EXPIRED',
+      action: 'EXPIRE',
+      strike,
+      expiration,
+      fillDate: expiration,
+      premiumPerContract: '0.0000'
+    })
+
+  /** A paired roll: the ROLL_FROM then the ROLL_TO, both filled on `fillDate`. */
+  const roll = (
+    rollChainId: string,
+    fillDate: string,
+    from: RollHalf,
+    to: RollHalf
+  ): LegRecord[] => {
+    const half = ({ price, ...fields }: RollHalf, legRole: 'ROLL_FROM' | 'ROLL_TO'): LegFields => ({
+      ...fields,
+      legRole,
+      fillDate,
+      premiumPerContract: price,
+      rollChainId
+    })
+    return [leg(half(from, 'ROLL_FROM'), 0), leg(half(to, 'ROLL_TO'), 1)]
+  }
+
+  return [
+    leg({
+      legRole: 'LEAPS_OPEN',
+      action: 'BUY',
+      strike: '80.0000',
+      expiration: '2027-09-17',
+      fillDate: '2026-09-14',
+      premiumPerContract: '25.0000'
+    }),
+    sell('110.0000', '2026-10-16', '2.0000', '2026-09-14', 1),
+    expire('110.0000', '2026-10-16'),
+    sell('108.0000', '2026-11-20', '1.8000', '2026-10-23'),
+    ...roll(
+      'rc-c2',
+      '2026-11-06',
+      { action: 'BUY', strike: '108.0000', expiration: '2026-11-20', price: '3.0000' },
+      { action: 'SELL', strike: '112.0000', expiration: '2026-12-18', price: '2.4000' }
+    ),
+    expire('112.0000', '2026-12-18'),
+    sell('112.0000', '2027-02-05', '1.7000', '2027-01-04'),
+    expire('112.0000', '2027-02-05'),
+    sell('114.0000', '2027-03-12', '1.5500', '2027-02-08'),
+    expire('114.0000', '2027-03-12'),
+    sell('114.0000', '2027-04-16', '2.2000', '2027-03-15'),
+    leg({
+      legRole: 'SHORT_CALL_CLOSE',
+      action: 'BUY',
+      strike: '114.0000',
+      expiration: '2027-04-16',
+      fillDate: '2027-04-02',
+      premiumPerContract: '0.5500'
+    }),
+    sell('116.0000', '2027-05-07', '1.7500', '2027-04-05'),
+    expire('116.0000', '2027-05-07'),
+    sell('116.0000', '2027-06-18', '1.7500', '2027-05-07', 1),
+    expire('116.0000', '2027-06-18'),
+    sell('112.0000', '2027-07-16', '2.4000', '2027-06-22'),
+    ...roll(
+      'rc-l1',
+      '2027-07-09',
+      { action: 'SELL', strike: '80.0000', expiration: '2027-09-17', price: '26.0000' },
+      { action: 'BUY', strike: '85.0000', expiration: '2028-01-21', price: '23.5000' }
+    ),
+    expire('112.0000', '2027-07-16')
+  ]
+}
+
 /** Writes fixture legs straight into `legs`, as a consumer story's service would. */
 export function insertLegs(db: Database.Database, legs: LegRecord[]): void {
   legs.forEach((leg) => insertLegRow(db, leg))

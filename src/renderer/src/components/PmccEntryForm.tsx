@@ -228,8 +228,20 @@ export function PmccEntryForm({
               />
             </Field>
           </div>
-          <PmccLegSection leg="long" preset={LEAPS_PRESET} today={today} active={active} />
-          <PmccLegSection leg="short" preset={SHORT_PRESET} today={today} active={active} />
+          <PmccLegSection
+            form="entry"
+            leg="long"
+            preset={LEAPS_PRESET}
+            today={today}
+            active={active}
+          />
+          <PmccLegSection
+            form="entry"
+            leg="short"
+            preset={SHORT_PRESET}
+            today={today}
+            active={active}
+          />
           {pairError ? <ErrorAlert message={pairError} /> : null}
           <PmccCashFlows debit={debit} />
           <details className="font-wb-mono text-xs text-wb-text-secondary">

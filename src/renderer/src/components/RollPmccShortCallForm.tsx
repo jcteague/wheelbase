@@ -9,7 +9,8 @@ import {
   pmccPostRollEffectiveCost,
   pmccRollLabel,
   pmccRollNet,
-  pmccStrikeShortfall
+  pmccStrikeShortfall,
+  shortfallWarningText
 } from '../lib/pmcc-roll'
 import { shortRollCoverage } from '../lib/pmcc-roll-coverage'
 import type {
@@ -157,9 +158,12 @@ export function RollPmccShortCallForm({
         />
         {shortfall && postRoll ? (
           <AlertBox variant="warning" data-testid="pmcc-roll-warning">
-            Short strike {fmtMoney(newStrike)} is below your effective share cost of{' '}
-            {fmtMoney(postRoll.effectiveAfter)} after this roll. If assigned, covering from the
-            LEAPS realizes roughly {fmtMoney(shortfall)} per share of loss. You can still record it.
+            {shortfallWarningText({
+              strike: newStrike,
+              effectiveAfter: postRoll.effectiveAfter,
+              shortfall,
+              event: 'roll'
+            })}
           </AlertBox>
         ) : null}
         {errors.__roll__ ? (

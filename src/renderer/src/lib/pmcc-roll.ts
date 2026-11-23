@@ -12,6 +12,7 @@ import {
 import type { PmccLegTerms } from '../../../main/core/lifecycle'
 import type { PmccLedgerResult } from '../api/positions'
 import { ISO_DATE_REGEX } from '../schemas/common'
+import { fmtMoney } from './format'
 import { parseInputDecimal, parsePositiveInputDecimal } from './decimal-input'
 import { money4 } from '../../../shared/decimal-text'
 
@@ -184,6 +185,20 @@ export function pmccStrikeShortfall(strike: string, effectiveAfter: string): str
   const parsed = parseInputDecimal(strike)
   if (parsed === null || parsed.gte(effectiveAfter)) return null
   return money(new Decimal(effectiveAfter).minus(parsed))
+}
+
+/** The recorded event a shortfall advisory names: a short roll or a new short sale. */
+export type ShortfallEvent = 'roll' | 'sale'
+
+/** US-104's below-effective-cost advisory, for a roll or a sale. */
+export function shortfallWarningText(input: {
+  strike: string
+  effectiveAfter: string
+  shortfall: string
+  event: ShortfallEvent
+}): string {
+  const { strike, effectiveAfter, shortfall, event } = input
+  return `Short strike ${fmtMoney(strike)} is below your effective share cost of ${fmtMoney(effectiveAfter)} after this ${event}. If assigned, covering from the LEAPS realizes roughly ${fmtMoney(shortfall)} per share of loss. You can still record it.`
 }
 
 /**

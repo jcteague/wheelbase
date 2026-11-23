@@ -5,8 +5,7 @@ import { PositionDetailActions } from './PositionDetailActions'
 
 const BASE_PROPS = {
   strategyType: 'WHEEL' as const,
-  hasOpenShortCall: false,
-  hasOpenLeaps: false,
+  pmccCoverage: null,
   hasCostBasis: true,
   ccExpired: false,
   onOpenCc: vi.fn(),
@@ -18,8 +17,12 @@ const BASE_PROPS = {
   onRollCsp: vi.fn(),
   onRollCc: vi.fn(),
   onRollPmccShort: vi.fn(),
-  onRollPmccLeaps: vi.fn()
+  onRollPmccLeaps: vi.fn(),
+  onSellPmccShort: vi.fn()
 }
+
+const LEAPS_ONLY = { leapsContracts: 1, shortContracts: [] }
+const ONE_SHORT = { leapsContracts: 1, shortContracts: [1] }
 
 const WHEEL_TEST_IDS = [
   'record-call-away-btn',
@@ -43,6 +46,7 @@ beforeEach(() => {
   BASE_PROPS.onRollCc.mockReset()
   BASE_PROPS.onRollPmccShort.mockReset()
   BASE_PROPS.onRollPmccLeaps.mockReset()
+  BASE_PROPS.onSellPmccShort.mockReset()
 })
 
 it('renders "Close CC Early →" button when phase=CC_OPEN', () => {
@@ -194,13 +198,15 @@ describe('PMCC roll short call action', () => {
     render(
       <PositionDetailActions
         {...BASE_PROPS}
+        pmccCoverage={ONE_SHORT}
         strategyType="PMCC"
         phase="PMCC_OPEN"
-        hasOpenShortCall
       />
     )
-    expect(screen.getByTestId('roll-pmcc-short-btn')).toHaveTextContent('Roll Short Call →')
-    expect(screen.getAllByRole('button')).toHaveLength(1)
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'Roll Short Call →',
+      'Roll LEAPS →'
+    ])
     WHEEL_TEST_IDS.forEach((testId) => expect(screen.queryByTestId(testId)).not.toBeInTheDocument())
   })
 
@@ -209,9 +215,9 @@ describe('PMCC roll short call action', () => {
     render(
       <PositionDetailActions
         {...BASE_PROPS}
+        pmccCoverage={ONE_SHORT}
         strategyType="PMCC"
         phase="PMCC_OPEN"
-        hasOpenShortCall
       />
     )
     await user.click(screen.getByTestId('roll-pmcc-short-btn'))
@@ -219,14 +225,7 @@ describe('PMCC roll short call action', () => {
   })
 
   it('PMCC without an open short call shows no roll button', () => {
-    render(
-      <PositionDetailActions
-        {...BASE_PROPS}
-        strategyType="PMCC"
-        phase="PMCC_OPEN"
-        hasOpenShortCall={false}
-      />
-    )
+    render(<PositionDetailActions {...BASE_PROPS} strategyType="PMCC" phase="PMCC_OPEN" />)
     expect(screen.queryByTestId('roll-pmcc-short-btn')).not.toBeInTheDocument()
     expect(screen.queryAllByRole('button')).toHaveLength(0)
   })
@@ -235,9 +234,9 @@ describe('PMCC roll short call action', () => {
     render(
       <PositionDetailActions
         {...BASE_PROPS}
+        pmccCoverage={ONE_SHORT}
         strategyType="WHEEL"
         phase="CC_OPEN"
-        hasOpenShortCall
       />
     )
     expect(screen.getByTestId('roll-cc-btn')).toBeInTheDocument()
@@ -251,10 +250,9 @@ describe('PMCC roll LEAPS action', () => {
     render(
       <PositionDetailActions
         {...BASE_PROPS}
+        pmccCoverage={ONE_SHORT}
         strategyType="PMCC"
         phase="PMCC_OPEN"
-        hasOpenShortCall
-        hasOpenLeaps
       />
     )
     expect(screen.getAllByRole('button').map((b) => b.dataset.testid)).toEqual([
@@ -265,17 +263,17 @@ describe('PMCC roll LEAPS action', () => {
     WHEEL_TEST_IDS.forEach((testId) => expect(screen.queryByTestId(testId)).not.toBeInTheDocument())
   })
 
-  it('PMCC with open LEAPS and no short call shows only "Roll LEAPS →"', () => {
+  it('PMCC with open LEAPS and no short call shows "Sell Short Call →" then "Roll LEAPS →"', () => {
     render(
       <PositionDetailActions
         {...BASE_PROPS}
         strategyType="PMCC"
         phase="PMCC_OPEN"
-        hasOpenShortCall={false}
-        hasOpenLeaps
+        pmccCoverage={LEAPS_ONLY}
       />
     )
     expect(screen.getAllByRole('button').map((b) => b.dataset.testid)).toEqual([
+      'sell-pmcc-short-btn',
       'roll-pmcc-leaps-btn'
     ])
   })
@@ -283,22 +281,19 @@ describe('PMCC roll LEAPS action', () => {
   it('calls onRollPmccLeaps when "Roll LEAPS →" is clicked', async () => {
     const user = userEvent.setup()
     render(
-      <PositionDetailActions {...BASE_PROPS} strategyType="PMCC" phase="PMCC_OPEN" hasOpenLeaps />
+      <PositionDetailActions
+        {...BASE_PROPS}
+        pmccCoverage={LEAPS_ONLY}
+        strategyType="PMCC"
+        phase="PMCC_OPEN"
+      />
     )
     await user.click(screen.getByTestId('roll-pmcc-leaps-btn'))
     expect(BASE_PROPS.onRollPmccLeaps).toHaveBeenCalledOnce()
   })
 
   it('PMCC without open LEAPS shows no roll buttons', () => {
-    render(
-      <PositionDetailActions
-        {...BASE_PROPS}
-        strategyType="PMCC"
-        phase="PMCC_OPEN"
-        hasOpenShortCall={false}
-        hasOpenLeaps={false}
-      />
-    )
+    render(<PositionDetailActions {...BASE_PROPS} strategyType="PMCC" phase="PMCC_OPEN" />)
     expect(screen.queryByTestId('roll-pmcc-leaps-btn')).not.toBeInTheDocument()
     expect(screen.queryByTestId('roll-pmcc-short-btn')).not.toBeInTheDocument()
     expect(screen.queryAllByRole('button')).toHaveLength(0)
@@ -308,14 +303,113 @@ describe('PMCC roll LEAPS action', () => {
     render(
       <PositionDetailActions
         {...BASE_PROPS}
+        pmccCoverage={ONE_SHORT}
         strategyType="WHEEL"
         phase="CC_OPEN"
-        hasOpenShortCall
-        hasOpenLeaps
       />
     )
     expect(screen.getByTestId('roll-cc-btn')).toBeInTheDocument()
     expect(screen.queryByTestId('roll-pmcc-short-btn')).not.toBeInTheDocument()
     expect(screen.queryByTestId('roll-pmcc-leaps-btn')).not.toBeInTheDocument()
+  })
+})
+
+// [US-115] Sell the next short call against an open LEAPS
+describe('PMCC sell short call action and coverage badge', () => {
+  it('LEAPS-only PMCC reads "LEAPS open · no short call" and offers "Sell Short Call →"', () => {
+    render(
+      <PositionDetailActions
+        {...BASE_PROPS}
+        strategyType="PMCC"
+        phase="PMCC_OPEN"
+        pmccCoverage={LEAPS_ONLY}
+      />
+    )
+    expect(screen.getByText('LEAPS open · no short call')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sell Short Call →' })).toHaveAttribute(
+      'data-testid',
+      'sell-pmcc-short-btn'
+    )
+    expect(screen.getByRole('button', { name: 'Roll LEAPS →' })).toBeInTheDocument()
+    expect(screen.queryByTestId('roll-pmcc-short-btn')).not.toBeInTheDocument()
+  })
+
+  it('calls onSellPmccShort when "Sell Short Call →" is clicked', async () => {
+    const user = userEvent.setup()
+    render(
+      <PositionDetailActions
+        {...BASE_PROPS}
+        strategyType="PMCC"
+        phase="PMCC_OPEN"
+        pmccCoverage={LEAPS_ONLY}
+      />
+    )
+    await user.click(screen.getByRole('button', { name: 'Sell Short Call →' }))
+    expect(BASE_PROPS.onSellPmccShort).toHaveBeenCalledOnce()
+    expect(BASE_PROPS.onRollPmccLeaps).not.toHaveBeenCalled()
+  })
+
+  it('PMCC with an open short reads "LEAPS + short call open" and offers no sell', () => {
+    render(
+      <PositionDetailActions
+        {...BASE_PROPS}
+        strategyType="PMCC"
+        phase="PMCC_OPEN"
+        pmccCoverage={ONE_SHORT}
+      />
+    )
+    expect(screen.getByText('LEAPS + short call open')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Roll Short Call →' })).toBeInTheDocument()
+    expect(screen.queryByTestId('sell-pmcc-short-btn')).not.toBeInTheDocument()
+  })
+
+  it('PMCC with a 1-contract short against 3 LEAPS contracts states 1 of 3 covered', () => {
+    render(
+      <PositionDetailActions
+        {...BASE_PROPS}
+        strategyType="PMCC"
+        phase="PMCC_OPEN"
+        pmccCoverage={{ leapsContracts: 3, shortContracts: [1] }}
+      />
+    )
+    expect(screen.getByText('LEAPS + short call open · 1 of 3 covered')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Roll Short Call →' })).toBeInTheDocument()
+    expect(screen.queryByTestId('sell-pmcc-short-btn')).not.toBeInTheDocument()
+  })
+
+  // Stand-in for a closed PMCC: US-120 adds `PMCC_CLOSED` and keeps `pmccOpenLegs` set. Until it
+  // lands, a non-`PMCC_OPEN` phase stands in; switch this to `phase="PMCC_CLOSED"` when it does.
+  it('closed PMCC with its legs still set offers no sell and reads its phase label', () => {
+    render(
+      <PositionDetailActions
+        {...BASE_PROPS}
+        strategyType="PMCC"
+        phase="WHEEL_COMPLETE"
+        pmccCoverage={LEAPS_ONLY}
+      />
+    )
+    expect(screen.getByText('Wheel Complete')).toBeInTheDocument()
+    expect(screen.queryByText('LEAPS open · no short call')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('sell-pmcc-short-btn')).not.toBeInTheDocument()
+  })
+
+  it('PMCC with no open LEAPS offers no sell', () => {
+    render(
+      <PositionDetailActions
+        {...BASE_PROPS}
+        strategyType="PMCC"
+        phase="PMCC_OPEN"
+        pmccCoverage={null}
+      />
+    )
+    expect(screen.getByText('LEAPS + short call open')).toBeInTheDocument()
+    expect(screen.queryByTestId('sell-pmcc-short-btn')).not.toBeInTheDocument()
+  })
+
+  it('HOLDING_SHARES wheel offers "Open Covered Call →", no sell, and its phase label', () => {
+    render(<PositionDetailActions {...BASE_PROPS} phase="HOLDING_SHARES" />)
+    expect(screen.getByText('Holding Shares')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open Covered Call →' })).toBeInTheDocument()
+    expect(screen.queryByTestId('sell-pmcc-short-btn')).not.toBeInTheDocument()
   })
 })

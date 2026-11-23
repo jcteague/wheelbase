@@ -3,11 +3,14 @@
 // [US-104] Likewise the short-call roll's date and no-change rules, shared by
 // `rollPmccShortCall` and the renderer's Roll Short Call schema.
 // [US-105] And the LEAPS roll's rules, shared by `rollPmccLeaps` and the Roll LEAPS schema.
+// [US-115] And a subsequent short call's rules, shared by `sellPmccShort` and the Sell Short
+// Call schema.
 // Pure: no database, broker or logging imports.
 import Decimal from 'decimal.js'
 import { format, isBefore, parseISO } from 'date-fns'
 import type {
   PmccField,
+  PmccFilledLegTerms,
   PmccLegTerms,
   PmccShortCallTerms,
   RollPmccLeapsInput,
@@ -55,6 +58,30 @@ type PmccRule = Pick<PmccIssue, 'code' | 'message'>
 export const EXPIRATION_NOT_AFTER_FILL = {
   code: 'expiration_not_after_fill',
   message: 'Expiration must be after the fill date.'
+} as const satisfies PmccRule
+
+/** A short call must sit above its LEAPS strike — US-101's entry and US-115's later sale. */
+export const SHORT_STRIKE_NOT_ABOVE_LONG = {
+  code: 'strike_not_above_long',
+  message: 'Short-call strike must be above the LEAPS strike.'
+} as const satisfies PmccRule
+
+/** An opening fill cannot be after the day it is judged on — US-101's entry and US-115's sale. */
+export const FILL_DATE_IN_FUTURE = {
+  code: 'cannot_be_future',
+  message: 'Fill date cannot be in the future.'
+} as const satisfies PmccRule
+
+/** An opening leg cannot be an already-expired contract — US-101's entry and US-115's sale. */
+export const EXPIRED_CONTRACT = {
+  code: 'expired_contract',
+  message: 'Use an unexpired contract for opening a current position.'
+} as const satisfies PmccRule
+
+/** A short call cannot be filled before the LEAPS that covers it — US-101's entry and US-115's sale. */
+export const LEAPS_AFTER_SHORT = {
+  code: 'long_after_short',
+  message: 'LEAPS must be acquired no later than the short-call fill.'
 } as const satisfies PmccRule
 
 /** A roll must move the strike, the expiration, or both — shared by both PMCC rolls (US-104, US-105). */
@@ -111,26 +138,27 @@ export function pmccCrossLegIssues({ long, short, referenceDate }: PmccCrossLegI
 
   return [
     ...perLeg(({ fillDate }, side) =>
-      issueIf(fillDate !== undefined && fillDate > referenceDate, `${side}.fillDate`, {
-        code: 'cannot_be_future',
-        message: 'Fill date cannot be in the future.'
-      })
+      issueIf(
+        // Stryker disable next-line ConditionalExpression: equivalent — the guard only narrows the type; comparing undefined with `<`, `>` or `<=` is already false
+        fillDate !== undefined && fillDate > referenceDate,
+        `${side}.fillDate`,
+        FILL_DATE_IN_FUTURE
+      )
     ),
     ...issueIf(
       long.fillDate !== undefined && short.fillDate !== undefined && long.fillDate > short.fillDate,
       'short.fillDate',
-      {
-        code: 'long_after_short',
-        message: 'LEAPS must be acquired no later than the short-call fill.'
-      }
+      LEAPS_AFTER_SHORT
     ),
     // Expired is checked first: with fill dates on the reference date, a past expiration is also
     // on/before the fill, and the expired-contract message is the one the trader needs.
     ...perLeg(({ expiration }, side) =>
-      issueIf(expiration !== undefined && expiration < referenceDate, `${side}.expiration`, {
-        code: 'expired_contract',
-        message: 'Use an unexpired contract for opening a current position.'
-      })
+      issueIf(
+        // Stryker disable next-line ConditionalExpression: equivalent — the guard only narrows the type; comparing undefined with `<`, `>` or `<=` is already false
+        expiration !== undefined && expiration < referenceDate,
+        `${side}.expiration`,
+        EXPIRED_CONTRACT
+      )
     ),
     ...perLeg(({ expiration, fillDate }, side) =>
       issueIf(
@@ -151,10 +179,7 @@ export function pmccCrossLegIssues({ long, short, referenceDate }: PmccCrossLegI
         short.strike !== undefined &&
         !shortStrikeAboveLeaps(short.strike, long.strike),
       'short.strike',
-      {
-        code: 'strike_not_above_long',
-        message: 'Short-call strike must be above the LEAPS strike.'
-      }
+      SHORT_STRIKE_NOT_ABOVE_LONG
     ),
     ...issueIf(
       long.fillPrice !== undefined &&
@@ -334,6 +359,119 @@ export function pmccLeapsRollIssues({
         new Decimal(newStrike).eq(currentLeaps.strike),
       '__roll__',
       ROLL_NO_CHANGE
+    )
+  ]
+}
+
+// [US-115] Selling a subsequent short call against an open LEAPS.
+
+/** The fields a subsequent short call's rules report on — the form's own fields. */
+export type PmccSubsequentShortField = 'contracts' | 'fillDate' | 'expiration' | 'strike'
+
+/** The sale's own values. `undefined` marks one not yet decided (a form field mid-edit); every
+ *  rule that reads it is skipped. */
+export type PmccSubsequentShortValues = {
+  [K in 'strike' | 'expiration' | 'fillDate']: string | undefined
+} & { contracts: number | undefined }
+
+/** The facts the sale is judged against: the live LEAPS, the day the previous short call was
+ *  retired (`null` when none was ever sold) and today. */
+export interface PmccSubsequentShortContext {
+  leaps: PmccFilledLegTerms & { contracts: number }
+  previousShortRetiredOn: string | null
+  today: string
+}
+
+export type PmccSubsequentShortInput = PmccSubsequentShortContext & {
+  short: PmccSubsequentShortValues
+}
+
+/** The binding fill-date floor: the previous short's retirement or the LEAPS fill. */
+export type PmccFillDateFloor =
+  | { kind: 'previousShort'; date: string }
+  | { kind: 'leaps'; date: string }
+
+/** Only one short call can be open on a PMCC at a time; an open one is rolled, not added to. */
+export const SHORT_CALL_ALREADY_OPEN = {
+  code: 'short_call_already_open',
+  message: 'This PMCC already has an open short call — roll it instead.'
+} as const satisfies PmccRule
+
+/** A short call cannot cover more contracts than the LEAPS holds; the message names that count. */
+export const exceedsLeapsContracts = (leapsContracts: number): PmccRule => ({
+  code: 'exceeds_leaps_contracts',
+  message: `Cannot sell more short calls than LEAPS contracts held (${leapsContracts}).`
+})
+
+/** The next short call cannot be filled before the previous one was retired; names that day. */
+export const beforePreviousShortRetired = (retiredOn: string): PmccRule => ({
+  code: 'before_previous_short',
+  message: `Fill date cannot be before the previous short call was retired (${retiredOn}).`
+})
+
+/**
+ * The fill-date floor that binds: the later of the previous short's retirement and the live
+ * LEAPS fill. A tie goes to the previous short, whose message names the date. US-120's LEAPS
+ * sale reuses it, so both stories break a tie the same way. ISO dates compare as strings.
+ */
+export function pmccFillDateFloor({
+  previousShortRetiredOn,
+  leapsFillDate
+}: Pick<PmccSubsequentShortContext, 'previousShortRetiredOn'> & {
+  leapsFillDate: string
+}): PmccFillDateFloor {
+  // Stryker disable next-line ConditionalExpression: equivalent — the guard only narrows the type; `null >= <ISO date>` is already false
+  return previousShortRetiredOn !== null && previousShortRetiredOn >= leapsFillDate
+    ? { kind: 'previousShort', date: previousShortRetiredOn }
+    : { kind: 'leaps', date: leapsFillDate }
+}
+
+/** The binding floor's rule: the previous short's dated message, or US-101's LEAPS-fill one. */
+const floorRule = (floor: PmccFillDateFloor): PmccRule =>
+  floor.kind === 'previousShort' ? beforePreviousShortRetired(floor.date) : LEAPS_AFTER_SHORT
+
+/**
+ * Every broken rule for a short call sold against an open LEAPS, in the order `sellPmccShort`
+ * checks them (rules 7–13 of data-model §3): contracts cap → fill not in the future → fill-date
+ * floor → expiration not past → expiration after the fill → expires before the LEAPS → strike
+ * above the LEAPS. ISO dates compare as strings.
+ */
+export function pmccSubsequentShortIssues({
+  leaps,
+  previousShortRetiredOn,
+  today,
+  short: { contracts, fillDate, expiration, strike }
+}: PmccSubsequentShortInput): PmccIssue<PmccSubsequentShortField>[] {
+  const floor = pmccFillDateFloor({ previousShortRetiredOn, leapsFillDate: leaps.fillDate })
+  return [
+    ...issueIf(
+      // Stryker disable next-line ConditionalExpression: equivalent — the guard only narrows the type; comparing undefined with `<`, `>` or `<=` is already false
+      contracts !== undefined && contracts > leaps.contracts,
+      'contracts',
+      exceedsLeapsContracts(leaps.contracts)
+    ),
+    // Stryker disable next-line ConditionalExpression: equivalent — the guard only narrows the type; comparing undefined with `<`, `>` or `<=` is already false
+    ...issueIf(fillDate !== undefined && fillDate > today, 'fillDate', FILL_DATE_IN_FUTURE),
+    // Stryker disable next-line ConditionalExpression: equivalent — the guard only narrows the type; comparing undefined with `<`, `>` or `<=` is already false
+    ...issueIf(fillDate !== undefined && fillDate < floor.date, 'fillDate', floorRule(floor)),
+    // Expired is checked first, as US-101 orders them: it is the message the trader needs.
+    // Stryker disable next-line ConditionalExpression: equivalent — the guard only narrows the type; comparing undefined with `<`, `>` or `<=` is already false
+    ...issueIf(expiration !== undefined && expiration < today, 'expiration', EXPIRED_CONTRACT),
+    ...issueIf(
+      // Stryker disable next-line ConditionalExpression: equivalent — the guard only narrows the type; comparing undefined with `<`, `>` or `<=` is already false
+      expiration !== undefined && fillDate !== undefined && expiration <= fillDate,
+      'expiration',
+      EXPIRATION_NOT_AFTER_FILL
+    ),
+    ...issueIf(
+      expiration !== undefined && !shortExpiresBeforeLeaps(expiration, leaps.expiration),
+      'expiration',
+      SHORT_NOT_BEFORE_LONG
+    ),
+    ...issueIf(
+      strike !== undefined && !shortStrikeAboveLeaps(strike, leaps.strike),
+      'strike',
+      SHORT_STRIKE_NOT_ABOVE_LONG
     )
   ]
 }

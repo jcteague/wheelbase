@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 import {
   AssignCspPayloadSchema,
   CollectIvrNowBatchSchema,
@@ -9,9 +9,11 @@ import {
   RollCcPayloadSchema,
   RollCspPayloadSchema,
   SavePmccScreeningCriteriaPayloadSchema,
+  SellPmccShortPayloadSchema,
   SetStockQuoteTickersPayloadSchema,
   WatchlistEntryPayloadSchema,
-  WatchlistRemovePayloadSchema
+  WatchlistRemovePayloadSchema,
+  type SellPmccShortResult
 } from './schemas'
 
 const VALID_POSITION_ID = '11111111-1111-4111-8111-111111111111'
@@ -518,6 +520,84 @@ describe('CreatePmccPositionPayloadSchema', () => {
       short: { ...PMCC_FIXTURE.short, deliverableShares: 100.5 }
     })
     expect(result.success).toBe(true)
+  })
+})
+
+// [US-115] The Background sale: $118.00 · 2027-08-20 · $1.95 · 1 contract · fill 2027-07-23,
+// with the data-model's $1.00 fees row.
+const SELL_PMCC_SHORT_FIXTURE = {
+  positionId: VALID_POSITION_ID,
+  strike: 118,
+  expiration: '2027-08-20',
+  contracts: 1,
+  fillPrice: 1.95,
+  fillDate: '2027-07-23',
+  fees: 1
+}
+
+describe('SellPmccShortPayloadSchema', () => {
+  it('parses a full payload unchanged', () => {
+    expect(SellPmccShortPayloadSchema.parse(SELL_PMCC_SHORT_FIXTURE)).toEqual({
+      positionId: VALID_POSITION_ID,
+      strike: 118,
+      expiration: '2027-08-20',
+      contracts: 1,
+      fillPrice: 1.95,
+      fillDate: '2027-07-23',
+      fees: 1
+    })
+  })
+
+  it('defaults omitted fees to 0', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { fees, ...payload } = SELL_PMCC_SHORT_FIXTURE
+    expect(SellPmccShortPayloadSchema.parse(payload).fees).toBe(0)
+  })
+
+  it('leaves an omitted fill date undefined for the service to default', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { fillDate, ...payload } = SELL_PMCC_SHORT_FIXTURE
+    expect(SellPmccShortPayloadSchema.parse(payload).fillDate).toBeUndefined()
+  })
+
+  it.each([
+    ['contracts', 0],
+    ['fillPrice', 0],
+    ['strike', 80]
+  ] as const)('leaves %s = %s to the engine (passes Zod)', (field, value) => {
+    const result = SellPmccShortPayloadSchema.safeParse({
+      ...SELL_PMCC_SHORT_FIXTURE,
+      [field]: value
+    })
+    expect(result.success).toBe(true)
+    expect(result.data?.[field]).toBe(value)
+  })
+
+  it('rejects a malformed expiration at expiration with the shared ISO-date message', () => {
+    const result = SellPmccShortPayloadSchema.safeParse({
+      ...SELL_PMCC_SHORT_FIXTURE,
+      expiration: '08/20/2027'
+    })
+    expect(result.error?.issues).toHaveLength(1)
+    expect(result.error?.issues[0].path).toEqual(['expiration'])
+    expect(result.error?.issues[0].message).toBe('Must be a valid date (YYYY-MM-DD)')
+  })
+
+  it('rejects a missing strike at strike', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { strike, ...payload } = SELL_PMCC_SHORT_FIXTURE
+    const result = SellPmccShortPayloadSchema.safeParse(payload)
+    expect(result.error?.issues).toHaveLength(1)
+    expect(result.error?.issues[0].path).toEqual(['strike'])
+    expect(result.error?.issues[0].code).toBe('invalid_type')
+  })
+})
+
+describe('SellPmccShortResult', () => {
+  it('narrows the snapshot trigger event to PMCC_SHORT_OPEN', () => {
+    expectTypeOf<
+      SellPmccShortResult['snapshot']['triggerEvent']
+    >().toEqualTypeOf<'PMCC_SHORT_OPEN'>()
   })
 })
 

@@ -30,6 +30,7 @@ const api = {
   rollCc: (payload: unknown) => invoke('positions:roll-cc', payload),
   rollPmccShortCall: (payload: unknown) => invoke('positions:roll-pmcc-short', payload),
   rollPmccLeaps: (payload: unknown) => invoke('positions:roll-pmcc-leaps', payload),
+  sellPmccShort: (payload: unknown) => invoke('positions:sell-pmcc-short', payload),
   saveAlertOverrides: (payload: unknown) => invoke('positions:save-alert-overrides', payload),
   setStockQuoteTickers: (payload: unknown) =>
     invoke('market-data:set-stock-quote-tickers', payload),

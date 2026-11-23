@@ -19,10 +19,11 @@ import {
   rollCc,
   rollCsp,
   rollPmccLeaps,
-  rollPmccShortCall
+  rollPmccShortCall,
+  sellPmccShort
 } from './lifecycle'
-import type { OpenPmccInput, OpenPmccLegInput, PmccField } from './lifecycle'
-import { pmccCrossLegIssues } from './pmcc-rules'
+import type { OpenPmccInput, OpenPmccLegInput, PmccField, SellPmccShortInput } from './lifecycle'
+import { pmccCrossLegIssues, pmccSubsequentShortIssues } from './pmcc-rules'
 import type { WheelPhase } from './types'
 import {
   contracts,
@@ -31,6 +32,7 @@ import {
   nonPositiveMoney,
   orderedDays,
   positiveMoney,
+  signedMoney,
   strictlyOrderedDays,
   ticker,
   wheelPhase
@@ -1043,6 +1045,152 @@ describe('rollPmccLeaps', () => {
           ).toEqual({ phase: 'PMCC_OPEN' })
         }
       )
+    )
+  })
+})
+
+// [US-115] Selling a subsequent short call: the two guards win over everything else, and past
+// them the engine agrees with the rules it shares with the form.
+describe('sellPmccShort', () => {
+  const plus = (a: string, b: string): string => new Decimal(a).plus(b).toFixed(4)
+
+  const filledLeg = fc.record({ strike: positiveMoney(), expiration: isoDay, fillDate: isoDay })
+
+  // Every field drawn freely, shape-invalid values included; the phase and open short are set
+  // per property.
+  const anySale = (
+    currentPhase: fc.Arbitrary<WheelPhase>,
+    openShort: fc.Arbitrary<SellPmccShortInput['openShort']>
+  ): fc.Arbitrary<SellPmccShortInput> =>
+    fc.record({
+      currentPhase,
+      openShort,
+      leaps: fc.record({
+        strike: positiveMoney(),
+        expiration: isoDay,
+        fillDate: isoDay,
+        contracts
+      }),
+      previousShortRetiredOn: fc.option(isoDay, { nil: null }),
+      today: isoDay,
+      strike: signedMoney(),
+      expiration: isoDay,
+      contracts: fc.constantFrom(-1, 0, 1, 1.5, 2, 60),
+      fillPrice: signedMoney(),
+      fees: signedMoney(10),
+      fillDate: isoDay
+    })
+
+  // A valid sale: floors ≤ fill ≤ today ≤ expiration, fill < expiration < LEAPS expiration,
+  // contracts within the LEAPS count and the strike above the LEAPS strike.
+  const validSale: fc.Arbitrary<SellPmccShortInput> = fc
+    .record({
+      days: strictlyOrderedDays(4),
+      leapsFilledEarly: fc.boolean(),
+      previousShort: fc.constantFrom('early' as const, 'fill' as const, 'none' as const),
+      todayIsExpiration: fc.boolean(),
+      leapsStrike: positiveMoney(),
+      strikeGap: positiveMoney(),
+      leapsContracts: contracts,
+      coveredShare: fc.double({ min: 0, max: 1, noNaN: true }),
+      fillPrice: positiveMoney(),
+      fees: nonNegativeMoney(10)
+    })
+    .map(({ days: [early, fillDate, expiration, leapsExpiration], ...r }) => ({
+      currentPhase: 'PMCC_OPEN' as const,
+      openShort: null,
+      leaps: {
+        strike: r.leapsStrike,
+        expiration: leapsExpiration,
+        fillDate: r.leapsFilledEarly ? early : fillDate,
+        contracts: r.leapsContracts
+      },
+      previousShortRetiredOn: { early, fill: fillDate, none: null }[r.previousShort],
+      today: r.todayIsExpiration ? expiration : fillDate,
+      strike: plus(r.leapsStrike, r.strikeGap),
+      expiration,
+      contracts: Math.max(1, Math.ceil(r.coveredShare * r.leapsContracts)),
+      fillPrice: r.fillPrice,
+      fees: r.fees,
+      fillDate
+    }))
+
+  // Each value is replaced one time in four, so about one draw in eight keeps the whole valid
+  // sale and the property sees both outcomes.
+  const sometimes = <T>(replacement: fc.Arbitrary<T>): fc.Arbitrary<T | undefined> =>
+    fc.oneof(
+      { arbitrary: fc.constant(undefined), weight: 3 },
+      { arbitrary: replacement, weight: 1 }
+    )
+
+  // A valid sale with any of the values the shared rules read replaced — the shape rules still
+  // hold, so only pmccSubsequentShortIssues can reject it.
+  const sharedRulePerturbed: fc.Arbitrary<SellPmccShortInput> = fc
+    .record({
+      sale: validSale,
+      contracts: sometimes(contracts),
+      strike: sometimes(positiveMoney()),
+      expiration: sometimes(isoDay),
+      fillDate: sometimes(isoDay),
+      today: sometimes(isoDay),
+      leapsFillDate: sometimes(isoDay),
+      previousShortRetiredOn: sometimes(fc.option(isoDay, { nil: null }))
+    })
+    .map(({ sale, leapsFillDate, ...patch }) => ({
+      ...sale,
+      contracts: patch.contracts ?? sale.contracts,
+      strike: patch.strike ?? sale.strike,
+      expiration: patch.expiration ?? sale.expiration,
+      fillDate: patch.fillDate ?? sale.fillDate,
+      today: patch.today ?? sale.today,
+      previousShortRetiredOn:
+        patch.previousShortRetiredOn === undefined
+          ? sale.previousShortRetiredOn
+          : patch.previousShortRetiredOn,
+      leaps: { ...sale.leaps, fillDate: leapsFillDate ?? sale.leaps.fillDate }
+    }))
+
+  it('rejects every phase other than PMCC_OPEN, whatever the rest of the input', () => {
+    fc.assert(
+      fc.property(
+        anySale(
+          wheelPhase.filter((phase) => phase !== 'PMCC_OPEN'),
+          fc.option(filledLeg, { nil: null })
+        ),
+        (input) => {
+          const error = validationErrorOf(() => sellPmccShort(input))
+          expect({ field: error.field, code: error.code }).toEqual({
+            field: '__phase__',
+            code: 'invalid_phase'
+          })
+        }
+      )
+    )
+  })
+
+  it('rejects a PMCC_OPEN position with an open short call, whatever the rest of the input', () => {
+    fc.assert(
+      fc.property(anySale(fc.constant('PMCC_OPEN'), filledLeg), (input) => {
+        const error = validationErrorOf(() => sellPmccShort(input))
+        expect({ field: error.field, code: error.code, message: error.message }).toEqual({
+          field: '__root__',
+          code: 'short_call_already_open',
+          message: 'This PMCC already has an open short call — roll it instead.'
+        })
+      })
+    )
+  })
+  it('accepts exactly when the shared rules report no issues, and throws the first', () => {
+    fc.assert(
+      fc.property(sharedRulePerturbed, (input) => {
+        const [first] = pmccSubsequentShortIssues({ ...input, short: input })
+        if (first === undefined) {
+          expect(sellPmccShort(input)).toEqual({ phase: 'PMCC_OPEN' })
+        } else {
+          const error = validationErrorOf(() => sellPmccShort(input))
+          expect({ field: error.field, code: error.code, message: error.message }).toEqual(first)
+        }
+      })
     )
   })
 })

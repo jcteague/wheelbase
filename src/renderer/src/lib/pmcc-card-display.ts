@@ -31,6 +31,7 @@ import {
 } from './pmcc-card-legs'
 import { minusMoneyGrouped, signedMoneyGrouped } from './money-format'
 import { pmccTier2Cells, type Tier2Cell } from './pmcc-card-tier2'
+import { pmccCoverageLabel } from './pmcc-coverage'
 import type { PnlTone } from './wheel-card-display'
 
 export type {
@@ -107,15 +108,16 @@ export interface PmccCardDisplayOptions {
 const DASH = '—'
 const NO_MARK = 'unavailable — a leg has no mark'
 
+/** The share count the LEAPS controls; partial coverage is stated on the state line. */
 function coverage(legs: readonly PmccLegSummary[]): string {
-  const longs = sumContracts(legs, 'LONG')
-  const shorts = sumContracts(legs, 'SHORT')
-  return shorts > 0 && shorts < longs ? `${shorts} of ${longs} covered` : `${longs} × 100 sh`
+  return `${sumContracts(legs, 'LONG')} × 100 sh`
 }
 
-function stateLabel(shortCount: number): string {
-  if (shortCount === 0) return 'LEAPS open · no short call'
-  return shortCount === 1 ? 'LEAPS + short call open' : `LEAPS + ${shortCount} short calls open`
+function stateLabel(legs: readonly PmccLegSummary[]): string {
+  return pmccCoverageLabel({
+    leapsContracts: sumContracts(legs, 'LONG'),
+    shortContracts: legs.filter((leg) => leg.side === 'SHORT').map((leg) => leg.contracts)
+  })
 }
 
 function deriveBasis({ basisTotal, basisPerShare }: PmccListSummary): PmccBasis {
@@ -202,7 +204,7 @@ function deriveOpen(
     kind: 'open',
     price,
     priceSubline: `${pmccNextDecisionDte(pmcc.legs)}d to next decision`,
-    state: stateLabel(shorts.length),
+    state: stateLabel(pmcc.legs),
     coverage: coverage(pmcc.legs),
     legs: quotes.map((quote) => openLeg(quote, signals.actions, targetPercent)),
     pnl: derivePnl(pmcc, quotes),

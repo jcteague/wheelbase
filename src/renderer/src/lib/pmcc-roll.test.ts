@@ -10,6 +10,7 @@ import {
   pmccRecordedRollNet,
   pmccRollNet,
   pmccStrikeShortfall,
+  shortfallWarningText,
   leapsCoverageChange,
   pmccLeapsPostRoll,
   effectiveCostMove,
@@ -292,6 +293,34 @@ describe('pmccStrikeShortfall', () => {
 
   it.each(['104.30', '112.00'])('is null when the open short strike covers %s', (effective) => {
     expect(pmccStrikeShortfall('112.0000', effective)).toBeNull()
+  })
+})
+
+describe('shortfallWarningText', () => {
+  it("is US-104's roll advisory, byte for byte", () => {
+    expect(
+      shortfallWarningText({
+        strike: '98',
+        effectiveAfter: '101.70',
+        shortfall: '3.70',
+        event: 'roll'
+      })
+    ).toBe(
+      'Short strike $98.00 is below your effective share cost of $101.70 after this roll. If assigned, covering from the LEAPS realizes roughly $3.70 per share of loss. You can still record it.'
+    )
+  })
+
+  it('names the sale for a new short call', () => {
+    expect(
+      shortfallWarningText({
+        strike: '90.0000',
+        effectiveAfter: '92.0000',
+        shortfall: '2.0000',
+        event: 'sale'
+      })
+    ).toBe(
+      'Short strike $90.00 is below your effective share cost of $92.00 after this sale. If assigned, covering from the LEAPS realizes roughly $2.00 per share of loss. You can still record it.'
+    )
   })
 })
 

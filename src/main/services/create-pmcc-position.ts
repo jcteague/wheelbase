@@ -37,15 +37,23 @@ type PmccLegRecord<R extends PmccLegRole> = LegRecord & {
   fillPrice: string
 }
 
+/** The decided terms a PMCC leg row stores; the fill price is also its premium. */
+type PmccLegRowTerms = Pick<
+  OpenPmccLegInput,
+  'strike' | 'expiration' | 'contracts' | 'fillPrice' | 'fillDate' | 'fees'
+>
+
 interface NewPmccLegRow<R extends PmccLegRole> {
   id: string
   positionId: string
   legRole: R
-  leg: OpenPmccLegInput
+  leg: PmccLegRowTerms
   now: string
 }
 
-function insertPmccLeg<R extends PmccLegRole>(
+/** Inserts one opening PMCC leg (LEAPS buy or short-call sell) and returns its record.
+ *  [US-115] Also writes the subsequent short call sold against an open LEAPS. */
+export function insertPmccLeg<R extends PmccLegRole>(
   db: Database.Database,
   row: NewPmccLegRow<R>
 ): PmccLegRecord<R> {

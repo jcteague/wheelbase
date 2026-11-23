@@ -6,7 +6,11 @@ import {
   pmccCrossLegIssues,
   pmccLeapsRollIssues,
   pmccShortRollIssues,
-  type PmccIssue
+  pmccSubsequentShortIssues,
+  SHORT_CALL_ALREADY_OPEN,
+  type PmccIssue,
+  type PmccSubsequentShortContext,
+  type PmccSubsequentShortField
 } from './pmcc-rules'
 import type { OptionInstrumentType, WheelPhase } from './types'
 
@@ -133,7 +137,7 @@ export type PmccField = 'ticker' | '__pair__' | `${PmccSide}.${keyof OpenPmccLeg
 
 const PMCC_SIDES: readonly PmccSide[] = ['long', 'short']
 
-function rejectPmcc(field: PmccField, code: string, message: string): never {
+function rejectPmcc(field: PmccField | SellPmccShortField, code: string, message: string): never {
   throw new ValidationError(field, code, message)
 }
 
@@ -158,19 +162,22 @@ function requireStandardDeliverable(deliverableShares: number, field: PmccField)
   }
 }
 
-function requirePositiveWholeContracts(contracts: number, field: PmccField): void {
+function requirePositiveWholeContracts(
+  contracts: number,
+  field: PmccField | SellPmccShortField
+): void {
   if (!Number.isInteger(contracts) || contracts <= 0) {
     rejectPmcc(field, 'must_be_positive_integer', 'Contracts must be a positive whole number.')
   }
 }
 
-function requirePositiveFillPrice(fillPrice: string, field: PmccField): void {
+function requirePositiveFillPrice(fillPrice: string, field: PmccField | SellPmccShortField): void {
   if (new Decimal(fillPrice).lte(0)) {
     rejectPmcc(field, 'must_be_positive', 'Actual fill price must be greater than zero.')
   }
 }
 
-function requireNonNegativeFees(fees: string, field: PmccField): void {
+function requireNonNegativeFees(fees: string, field: PmccField | SellPmccShortField): void {
   if (new Decimal(fees).lt(0)) {
     rejectPmcc(field, 'must_be_non_negative', 'Fees cannot be negative.')
   }
@@ -623,6 +630,55 @@ export function rollPmccShortCall<S extends PmccShortCallTerms>(
   if (firstIssue) throwIssue(firstIssue)
 
   return { phase: 'PMCC_OPEN', openShort, newStrike }
+}
+
+/** Every field `sellPmccShort` can reject on: the shared rules' fields plus the money fields,
+ *  the open-short guard's `__root__` and the phase guard's `__phase__`. */
+export type SellPmccShortField =
+  | PmccSubsequentShortField
+  | 'fillPrice'
+  | 'fees'
+  | '__root__'
+  | '__phase__'
+
+export interface SellPmccShortInput extends PmccSubsequentShortContext {
+  currentPhase: WheelPhase
+  /** The PMCC's open short call; must be `null` — only one short call can be open at a time. */
+  openShort: PmccShortCallTerms | null
+  strike: string
+  expiration: string
+  contracts: number
+  /** The actual sale price per share. */
+  fillPrice: string
+  fees: string
+  fillDate: string
+}
+
+/** A sale does not move the phase. */
+export interface SellPmccShortAccepted {
+  phase: 'PMCC_OPEN'
+}
+
+/**
+ * [US-115] Validates selling a subsequent short call against a PMCC's open LEAPS. Rules run in
+ * the order of data-model §3 and the first failure throws: phase → no open short → contracts →
+ * strike → sale price → fees → the rules shared with the Sell Short Call form
+ * (`pmccSubsequentShortIssues`). The phase is unchanged.
+ */
+export function sellPmccShort(input: SellPmccShortInput): SellPmccShortAccepted {
+  requirePmccOpenPhase(input.currentPhase)
+  // The mirror of rollPmccShortCall's no-open-short guard: an open short is rolled, not added to.
+  if (input.openShort !== null) throwIssue({ field: '__root__', ...SHORT_CALL_ALREADY_OPEN })
+
+  requirePositiveWholeContracts(input.contracts, 'contracts')
+  requirePositiveStrike(input.strike)
+  requirePositiveFillPrice(input.fillPrice, 'fillPrice')
+  requireNonNegativeFees(input.fees, 'fees')
+
+  const [firstIssue] = pmccSubsequentShortIssues({ ...input, short: input })
+  if (firstIssue) throwIssue(firstIssue)
+
+  return { phase: 'PMCC_OPEN' }
 }
 
 export interface RollPmccLeapsInput {

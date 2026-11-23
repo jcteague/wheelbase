@@ -16,6 +16,7 @@ import type {
   RollPmccLeapsPayload,
   RollPmccShortCallPayload,
   SaveAlertOverridesPayload,
+  SellPmccShortPayload,
   TestPmccLegEventPayloadInput,
   TestPmccSeedPositionPayloadInput,
   AssignCspPositionResult,
@@ -34,7 +35,8 @@ import type {
   RollCspResult,
   RollPmccLeapsResult,
   RollPmccShortCallResult,
-  SavePmccScreeningCriteriaPayload
+  SavePmccScreeningCriteriaPayload,
+  SellPmccShortResult
 } from '../main/schemas'
 import type { AppendPmccSnapshotResult } from '../main/services/pmcc-ledger'
 import type { PmccScreeningCriteria } from '../main/core/pmcc-screener'
@@ -70,6 +72,8 @@ type IpcRollCcResult = IpcResult<RollCcResult>
 type IpcRollPmccShortCallResult = IpcResult<RollPmccShortCallResult>
 
 type IpcRollPmccLeapsResult = IpcResult<RollPmccLeapsResult>
+
+type IpcSellPmccShortResult = IpcResult<SellPmccShortResult>
 
 type IpcCreatePmccPositionResult = IpcResult<CreatePmccPositionResult>
 
@@ -535,6 +539,7 @@ declare global {
       rollCc: (payload: RollCcPayload) => Promise<IpcRollCcResult>
       rollPmccShortCall: (payload: RollPmccShortCallPayload) => Promise<IpcRollPmccShortCallResult>
       rollPmccLeaps: (payload: RollPmccLeapsPayload) => Promise<IpcRollPmccLeapsResult>
+      sellPmccShort: (payload: SellPmccShortPayload) => Promise<IpcSellPmccShortResult>
       saveAlertOverrides: (
         payload: SaveAlertOverridesPayload
       ) => Promise<IpcSaveAlertOverridesResult>

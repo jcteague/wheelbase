@@ -12,7 +12,8 @@ const positiveFillSchema = moneySchema('Actual fill price must be greater than z
 const required = (message: string, schema: z.ZodString): z.ZodPipe<z.ZodString, z.ZodString> =>
   z.string().min(1, message).pipe(schema)
 
-const pmccLegSchema = z.object({
+/** One PMCC call leg as the trader enters it — US-101's two legs and US-115's later sale. */
+export const pmccLegSchema = z.object({
   // OCC symbol when picked from the chain; absent for manual entry.
   contractId: z.string().optional(),
   strike: moneySchema('Strike must be positive', (v) => v > 0),
@@ -25,10 +26,20 @@ const pmccLegSchema = z.object({
   fillDate: isoDateSchema
 })
 
-const positiveWholeSchema = z.string().refine((v) => {
-  const parsed = parseInputDecimal(v)
-  return parsed !== null && parsed.isInteger() && parsed.gt(0)
-}, 'Contracts must be a positive whole number.')
+/** A positive whole contract count, or `undefined` while the input is not yet one. */
+export function decidedContracts(value: string): number | undefined {
+  const parsed = parseInputDecimal(value)
+  return parsed !== null && parsed.isInteger() && parsed.gt(0) ? parsed.toNumber() : undefined
+}
+
+export const positiveWholeSchema = z
+  .string()
+  .refine((v) => decidedContracts(v) !== undefined, 'Contracts must be a positive whole number.')
+
+/** The short call's leg: its fill price is required with the short call's own message. */
+export const pmccShortLegSchema = pmccLegSchema.extend({
+  fillPrice: required('Enter the actual short-call fill price.', positiveFillSchema)
+})
 
 type LegValues = z.infer<typeof pmccLegSchema>
 
@@ -65,9 +76,7 @@ const pmccEntryObjectSchema = z.object({
   long: pmccLegSchema.extend({
     fillPrice: required('Enter the actual LEAPS fill price.', positiveFillSchema)
   }),
-  short: pmccLegSchema.extend({
-    fillPrice: required('Enter the actual short-call fill price.', positiveFillSchema)
-  }),
+  short: pmccShortLegSchema,
   thesis: z.string().trim().max(500).optional(),
   notes: z.string().trim().max(5_000).optional(),
   // Never a real input: the key rule 16 reports on, so `errors.__pair__` and
@@ -76,6 +85,10 @@ const pmccEntryObjectSchema = z.object({
 })
 
 export type PmccEntryFormValues = z.infer<typeof pmccEntryObjectSchema>
+
+/** The short leg and contract count `PmccLegSection` binds to — shared by the entry form and
+ *  US-115's Sell Short Call sheet. */
+export type PmccLegFormSlice = Pick<PmccEntryFormValues, 'short' | 'contracts'>
 
 /** `today` is the local calendar date (`yyyy-MM-dd`) the date rules are judged against. */
 export function pmccEntrySchema(today: string): typeof pmccEntryObjectSchema {

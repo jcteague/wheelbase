@@ -11,7 +11,8 @@ import {
   computeUnrealizedPnl,
   calculatePmccOpeningDebit,
   calculatePmccLedger,
-  computePmccUnrealizedPnl
+  computePmccUnrealizedPnl,
+  projectPmccLedger
 } from './costbasis'
 import type {
   CostBasisResult,
@@ -22,7 +23,10 @@ import type {
   PmccContribution,
   PmccLedgerInput,
   PmccLedgerSide,
-  PmccUnrealizedPnlInput
+  PmccLedgerTotals,
+  PmccLedgerWithStrike,
+  PmccUnrealizedPnlInput,
+  ProjectPmccLedgerInput
 } from './costbasis'
 
 describe('calculateInitialCspBasis', () => {
@@ -1121,6 +1125,112 @@ describe('calculatePmccLedger', () => {
       effectiveShareCost: '80.0000',
       premiumRecoveredPercent: null
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// projectPmccLedger — [US-115] the ledger after a projected leg, from the current totals
+// ---------------------------------------------------------------------------
+
+describe('projectPmccLedger', () => {
+  const short = (cashPerShare: string, contracts = 1, fees = '0.0000'): PmccContribution => ({
+    side: 'SHORT',
+    cashPerShare,
+    contracts,
+    fees
+  })
+
+  // US-109's XYZ Background with cycle 9 removed (data-model.md § 5).
+  const background: PmccLedgerWithStrike = {
+    basisPerShare: '8.5000',
+    basisTotal: '850.0000',
+    leapsCostPerShare: '22.5000',
+    leapsCostTotal: '2250.0000',
+    shortCreditsPerShare: '14.0000',
+    shortCreditsTotal: '1400.0000',
+    effectiveShareCost: '93.5000',
+    premiumRecoveredPercent: '62.2222'
+  }
+  const backgroundTotals: PmccLedgerTotals = {
+    leapsCostTotal: '2250.0000',
+    shortCreditsTotal: '1400.0000'
+  }
+  const project = (
+    contributions: PmccContribution[],
+    overrides: Partial<ProjectPmccLedgerInput> = {}
+  ): PmccLedgerWithStrike =>
+    projectPmccLedger({
+      ledger: backgroundTotals,
+      leapsContracts: 1,
+      longStrike: '85.0000',
+      contributions,
+      ...overrides
+    })
+
+  it('projects the next short call sold at $1.95 onto the Background ledger', () => {
+    expect(project([short('-1.9500')])).toEqual({
+      basisPerShare: '6.5500',
+      basisTotal: '655.0000',
+      leapsCostPerShare: '22.5000',
+      leapsCostTotal: '2250.0000',
+      shortCreditsPerShare: '15.9500',
+      shortCreditsTotal: '1595.0000',
+      effectiveShareCost: '91.5500',
+      premiumRecoveredPercent: '70.8889'
+    })
+  })
+
+  it('projects the $90.00 call sold at $1.50 below the line', () => {
+    const result = project([short('-1.5000')])
+    expect(result.basisPerShare).toBe('7.0000')
+    expect(result.shortCreditsTotal).toBe('1550.0000')
+    expect(result.effectiveShareCost).toBe('92.0000')
+    expect(result.premiumRecoveredPercent).toBe('68.8889')
+  })
+
+  it('takes the fees out of the projected credit', () => {
+    const result = project([short('-1.9500', 1, '1.0000')])
+    expect(result.basisPerShare).toBe('6.5600')
+    expect(result.shortCreditsTotal).toBe('1594.0000')
+    expect(result.effectiveShareCost).toBe('91.5600')
+    expect(result.premiumRecoveredPercent).toBe('70.8444')
+  })
+
+  it('divides by every LEAPS contract when one short covers one of three', () => {
+    const result = project([short('-1.9500', 1)], {
+      ledger: { leapsCostTotal: '6750.0000', shortCreditsTotal: '4200.0000' },
+      leapsContracts: 3
+    })
+    expect(result.basisPerShare).toBe('7.8500')
+    expect(result.basisTotal).toBe('2355.0000')
+    expect(result.effectiveShareCost).toBe('92.8500')
+    expect(result.premiumRecoveredPercent).toBe('65.1111')
+  })
+
+  it('adds a LONG contribution to the LEAPS cost, not to the short credits', () => {
+    // The XYZ fixture of calculatePmccLedger's LEAPS-roll case: after the short roll, then the
+    // LEAPS roll's net credit.
+    const result = projectPmccLedger({
+      ledger: { leapsCostTotal: '2500.0000', shortCreditsTotal: '320.0000' },
+      leapsContracts: 1,
+      longStrike: '85.0000',
+      contributions: [{ side: 'LONG', cashPerShare: '-2.5000', contracts: 1, fees: '0.0000' }]
+    })
+    expect(result.leapsCostTotal).toBe('2250.0000')
+    expect(result.shortCreditsTotal).toBe('320.0000')
+    expect(result.basisPerShare).toBe('19.3000')
+    expect(result.effectiveShareCost).toBe('104.3000')
+    expect(result.premiumRecoveredPercent).toBe('14.2222')
+  })
+
+  it('returns the input ledger’s figures for no contributions', () => {
+    expect(project([], { ledger: background })).toEqual(background)
+  })
+
+  it.each([0, -1, 1.5])('throws for leapsContracts %s', (leapsContracts) => {
+    expect(() => project([short('-1.9500')], { leapsContracts })).toThrow(
+      'leapsContracts must be a positive integer'
+    )
   })
 })
 
